@@ -1,0 +1,22 @@
+[package]
+name = "doka-lang"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name="doka_lang_lib"
+path="src/lib.rs"
+
+[[bin]]
+name="doka_lang"
+path="src/main.rs"
+
+[workspace]
+members = [
+    "lexer"
+]
+
+[dependencies]
+"lexer" = { path = "lexer" }
