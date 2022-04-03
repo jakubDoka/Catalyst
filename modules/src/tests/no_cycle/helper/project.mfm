@@ -1,0 +1,5 @@
+root: "foot.mf"
+
+dependencies {
+    a: "helper"
+}

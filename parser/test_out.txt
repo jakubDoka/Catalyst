@@ -1,0 +1,10 @@
+StructField "root: \"\"":
+ Ident "root"
+ String "\"\""
+StructField "dependency {\n            a: \"\"\n        }":
+ Ident "dependency"
+ InlineConstructor "{\n            a: \"\"\n        }":
+  StructField "a: \"\"":
+   Ident "a"
+   String "\"\""
+
