@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+cranelift-entity = "0.82.1"
+lexer = { path = "../lexer" }
+parser = { path = "../parser" }
+modules = { path = "../modules" }
+typec = { path = "../typec" }
+instance = { path = "../instance" }

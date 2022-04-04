@@ -4,6 +4,8 @@
         "conv",
         "Cranelift",
         "funcs",
-        "insts"
+        "insts",
+        "repr",
+        "typec"
     ]
 }

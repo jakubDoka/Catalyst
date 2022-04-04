@@ -1,9 +1,8 @@
 use cranelift_entity::{packed_option::PackedOption, EntityList};
 
-use super::{value::Value, inst::Inst};
+use super::{inst::Inst, value::Value};
 
-
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Ent {
     pub args: EntityList<Value>,
     pub prev: PackedOption<Block>,
@@ -12,4 +11,5 @@ pub struct Ent {
     pub last: PackedOption<Inst>,
 }
 
+crate::impl_linked_node!(inout Block, Ent);
 lexer::gen_entity!(Block);

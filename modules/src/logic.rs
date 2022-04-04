@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
-    process::Command, ops::{Deref, DerefMut},
+    process::Command,
 };
 
 use cranelift_entity::PrimaryMap;
@@ -24,13 +24,12 @@ use crate::{
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
-pub struct SourceManager {
+pub struct Modules {
     units: PrimaryMap<Unit, unit::Ent>,
     modules: PrimaryMap<Module, module::Ent>,
-    sources: Sources,
 }
 
-impl SourceManager {
+impl Modules {
     pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
     pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
     pub const RESOURCE_ROOT_VAR: &'static str = "MF_ROOT";
@@ -40,22 +39,21 @@ impl SourceManager {
     pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
 
     pub fn new() -> Self {
-        SourceManager {
+        Modules {
             units: PrimaryMap::new(),
             modules: PrimaryMap::new(),
-            sources: Sources::new(),
         }
     }
 
-    pub fn load(&mut self, root_path: &Path) -> Result<Vec<Vec<Module>>> {
+    pub fn load(&mut self, sources: &mut Sources, root_path: &Path) -> Result<Vec<Vec<Module>>> {
         let mut unit_map = Map::new();
         let mut module_map = Map::new();
 
-        let unit_order = self.load_units(&mut unit_map, root_path)?;
+        let unit_order = self.load_units(sources, &mut unit_map, root_path)?;
         let mut module_orders = Vec::with_capacity(unit_order.len());
 
         for unit in unit_order {
-            let module_order = self.load_unit_modules(&unit_map, &mut module_map, unit)?;
+            let module_order = self.load_unit_modules(sources, &unit_map, &mut module_map, unit)?;
             module_orders.push(module_order);
         }
 
@@ -64,6 +62,7 @@ impl SourceManager {
 
     pub fn load_unit_modules(
         &mut self,
+        sources: &mut Sources,
         unit_map: &Map<Unit>,
         map: &mut Map<Module>,
         unit: Unit,
@@ -97,15 +96,15 @@ impl SourceManager {
             })?;
 
             let source = SourceEnt::new(path, content);
-            let source = self.sources.add(source);
-            let content = self.sources.get(source).content();
+            let source = sources.add(source);
+            let content = sources.get(source).content();
             self.modules[slot].source = source;
 
             ast_data.clear();
             Parser::parse_imports(content, &mut ast_data, &mut ast_temp, source)
                 .map_err(Convert::convert)?;
 
-            if let Some(imports) = ModuleImports::new(&ast_data, &self.sources).imports() {
+            if let Some(imports) = ModuleImports::new(&ast_data, &sources).imports() {
                 for ModuleImport {
                     nick,
                     name,
@@ -114,14 +113,14 @@ impl SourceManager {
                 {
                     buffer.clear();
                     let unit = unit_map
-                        .get((self.sources.display(name), unit))
+                        .get((sources.display(name), unit))
                         .copied()
                         .unwrap_or(unit);
 
                     buffer.push(&self.units[unit].root_path);
                     buffer.push(&self.units[unit].local_source_path);
                     buffer.set_extension("");
-                    buffer.push(self.sources.display(path_span));
+                    buffer.push(sources.display(path_span));
                     buffer.set_extension(Self::SOURCE_FILE_EXTENSION);
 
                     let Ok(path) = buffer.canonicalize() else {
@@ -140,7 +139,7 @@ impl SourceManager {
                     };
 
                     let name = nick.unwrap_or(name);
-                    map.insert((self.sources.display(name), slot), id);
+                    map.insert((sources.display(name), slot), id);
                     if id.0 >= base_line {
                         graph.add_edge(id.0 - base_line);
                     }
@@ -158,7 +157,12 @@ impl SourceManager {
         Ok(ordering)
     }
 
-    pub fn load_units(&mut self, map: &mut Map<Unit>, root: &Path) -> Result<Vec<Unit>> {
+    pub fn load_units(
+        &mut self,
+        sources: &mut Sources,
+        map: &mut Map<Unit>,
+        root: &Path,
+    ) -> Result<Vec<Unit>> {
         let mf_root = std::env::var(Self::RESOURCE_ROOT_VAR)
             .unwrap_or_else(|_| Self::DEFAULT_RESOURCE_ROOT_VAR.to_string());
         let mf_root = PathBuf::from(mf_root);
@@ -188,8 +192,8 @@ impl SourceManager {
 
             // all parsing components assume source code is registered in sources
             let source = SourceEnt::new(buffer.clone(), contents);
-            let source = self.sources.add(source);
-            let contents = self.sources.get(source).content();
+            let source = sources.add(source);
+            let contents = sources.get(source).content();
 
             self.units[slot].source = source;
 
@@ -197,7 +201,7 @@ impl SourceManager {
             Parser::parse_manifest(contents, &mut ast_data, &mut ast_temp, source)
                 .map_err(Convert::convert)?;
 
-            let manifest = Manifest::new(&ast_data, &self.sources);
+            let manifest = Manifest::new(&ast_data, &sources);
 
             if let Some(dependency) = manifest.dependencies() {
                 for ManifestDepInfo {
@@ -206,14 +210,14 @@ impl SourceManager {
                     version,
                 } in dependency
                 {
-                    let path_str = self.sources.display(span_path);
+                    let path_str = sources.display(span_path);
                     let path = if path_str.starts_with(Self::GITHUB_DOMAIN) {
                         let path = Path::join(&mf_root, path_str);
                         if !path.exists() {
                             Self::download_git_repo(
                                 &path,
                                 path_str,
-                                self.sources.display(version),
+                                sources.display(version),
                                 span_path,
                             )?;
                         }
@@ -235,7 +239,7 @@ impl SourceManager {
                         id
                     };
 
-                    map.insert((self.sources.display(name), slot), id);
+                    map.insert((sources.display(name), slot), id);
                     graph.add_edge(id.0);
                 }
             }
@@ -279,20 +283,6 @@ impl SourceManager {
     }
 }
 
-impl Deref for SourceManager {
-    type Target = Sources;
-
-    fn deref(&self) -> &Self::Target {
-        &self.sources
-    }
-}
-
-impl DerefMut for SourceManager {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.sources
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -308,23 +298,25 @@ mod test {
     #[test]
     fn test_no_cycle() {
         let mut map = Map::new();
-        let mut manager = SourceManager::new();
+        let mut sources = Sources::new();
+        let mut modules = Modules::new();
 
-        manager
-            .load_units(&mut map, Path::new("src/tests/no_cycle"))
+        modules
+            .load_units(&mut sources, &mut map, Path::new("src/tests/no_cycle"))
             .unwrap();
 
-        assert_eq!(manager.units.len(), 3);
+        assert_eq!(modules.units.len(), 3);
     }
 
     #[test]
     fn test_cycle() {
         let mut map = Map::new();
-        let mut manager = SourceManager::new();
+        let mut sources = Sources::new();
+        let mut modules = Modules::new();
 
         assert!(matches!(
-            manager
-                .load_units(&mut map, Path::new("src/tests/cycle"))
+            modules
+                .load_units(&mut sources, &mut map, Path::new("src/tests/cycle"))
                 .unwrap_err()
                 .kind(),
             error::Kind::UnitCycle(_)
@@ -333,11 +325,14 @@ mod test {
 
     #[test]
     fn full_load() {
-        let mut manager = SourceManager::new();
+        let mut sources = Sources::new();
+        let mut modules = Modules::new();
 
-        manager.load(Path::new("src/tests/no_cycle")).unwrap();
+        modules
+            .load(&mut sources, Path::new("src/tests/no_cycle"))
+            .unwrap();
 
-        assert_eq!(manager.units.len(), 3);
-        assert_eq!(manager.modules.len(), 6);
+        assert_eq!(modules.units.len(), 3);
+        assert_eq!(modules.modules.len(), 6);
     }
 }

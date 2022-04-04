@@ -32,7 +32,7 @@ impl<'a> Parser<'a> {
         let inter_state = InterState::new(source);
         Self::parse_with(source_str, ast_file, temp, inter_state, Self::take_imports)
     }
-    
+
     pub fn parse_manifest(
         source_str: &'a str,
         ast_file: &'a mut ast::Data,
@@ -100,12 +100,12 @@ impl<'a> Parser<'a> {
         self.skip_new_lines();
 
         self.expect(token::Kind::LeftCurly)?;
-        
+
         self.temp.mark_frame();
         let end = self.list(
-            token::Kind::LeftCurly, 
-            token::Kind::NewLine, 
-            token::Kind::RightCurly, 
+            token::Kind::LeftCurly,
+            token::Kind::NewLine,
+            token::Kind::RightCurly,
             Self::import,
         )?;
         let imports = self.alloc(ast::Kind::Imports, span.join(end));
@@ -235,9 +235,9 @@ impl<'a> Parser<'a> {
 
     fn function_argument(&mut self) -> Result {
         let span = self.current.span();
-        
+
         self.temp.mark_frame();
-        
+
         // arguments
         self.list(
             token::Kind::None,
@@ -245,11 +245,11 @@ impl<'a> Parser<'a> {
             token::Kind::Colon,
             Self::type_expr,
         )?;
-        
+
         // argument type
         let ty = self.type_expr()?;
         self.temp.acc(ty);
-        
+
         let end = self.ast_file.span(ty);
 
         Ok(self.alloc(ast::Kind::FunctionArgument, span.join(end)))
@@ -472,11 +472,14 @@ impl InterState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::{fmt::Write};
+    use std::fmt::Write;
 
     #[test]
     fn test_code_chunk() {
-        let test_string = "       
+        let test_string = "
+        #repr = \"int\"
+        struct int
+        
         fn main() -> int {
             ret 0
         }
@@ -512,8 +515,6 @@ mod test {
         let mut result = String::new();
 
         writeln!(result, "{}", ast::FileDisplay::new(&ast_file, test_string)).unwrap();
-
-
 
         let mut f = std::fs::OpenOptions::new()
             .write(true)

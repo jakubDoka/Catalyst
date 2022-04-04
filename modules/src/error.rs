@@ -1,6 +1,6 @@
 use std::{any::TypeId, path::PathBuf};
 
-use lexer::{prelude::Span, map::ID};
+use lexer::{map::ID, prelude::Span};
 use parser::prelude::AnyError;
 
 use crate::{module::Module, unit::Unit};

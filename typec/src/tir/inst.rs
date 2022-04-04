@@ -1,5 +1,5 @@
 use cranelift_entity::packed_option::PackedOption;
-use parser::ast::Ast;
+use lexer::prelude::Span;
 
 use super::value::Value;
 
@@ -8,24 +8,27 @@ pub struct Ent {
     pub prev: PackedOption<Inst>,
     pub next: PackedOption<Inst>,
     pub kind: Kind,
-    pub ast: Ast,
+    pub span: Span,
     pub result: PackedOption<Value>,
 }
 
 impl Ent {
-    pub fn new(kind: Kind, value: Option<Value>, ast: Ast) -> Self {
+    pub fn new(kind: Kind, value: Option<Value>, span: Span) -> Self {
         Self {
             prev: None.into(),
             next: None.into(),
             kind,
-            ast,
+            span,
             result: value.into(),
         }
     }
 }
 
+crate::impl_linked_node!(inout Inst, Ent);
+
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    IntLit,
     Return,
 }
 

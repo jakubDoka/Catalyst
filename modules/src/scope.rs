@@ -33,10 +33,7 @@ impl Scope {
             .map(|item| {
                 item.pointer.may_read::<T>().ok_or_else(|| {
                     if item.pointer.is_of::<Collision>() {
-                        Error::new(
-                            error::Kind::ScopeItemCollision(id),
-                            span,
-                        )
+                        Error::new(error::Kind::ScopeItemCollision(id), span)
                     } else {
                         Error::new(
                             error::Kind::ScopeItemMismatch(TypeId::of::<T>(), item.pointer.id),
