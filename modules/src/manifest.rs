@@ -1,4 +1,4 @@
-use lexer::prelude::{Sources, Span};
+use lexer::{Sources, Span};
 use parser::ast::{self, Ast};
 
 pub struct Manifest<'a> {

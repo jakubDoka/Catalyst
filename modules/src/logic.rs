@@ -7,11 +7,11 @@ use std::{
 use cranelift_entity::PrimaryMap;
 use lexer::{
     map::Map,
-    prelude::{SourceEnt, Sources, Span},
+    {SourceEnt, Sources, Span},
 };
 use parser::{
     ast,
-    prelude::{Convert, Parser},
+    {Convert, Parser},
 };
 
 use crate::{

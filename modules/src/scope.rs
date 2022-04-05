@@ -3,7 +3,7 @@ use std::any::TypeId;
 use cranelift_entity::packed_option::ReservedValue;
 use lexer::{
     map::{Map, ID},
-    prelude::{Source, Span},
+    {Source, Span},
 };
 
 use crate::error::{self, Error};

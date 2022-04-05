@@ -3,16 +3,15 @@
 
 pub extern crate cranelift_entity;
 
-mod logic;
+pub mod logic;
 pub mod map;
-mod source_info;
+pub mod source_info;
 pub mod token;
 
-pub mod prelude {
-    pub use crate::logic::Lexer;
-    pub use crate::source_info::*;
-    pub use crate::token::Token;
-}
+pub use logic::*;
+pub use map::*;
+pub use source_info::*;
+pub use token::Token;
 
 #[macro_export]
 macro_rules! gen_entity {

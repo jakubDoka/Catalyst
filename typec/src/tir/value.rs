@@ -1,4 +1,4 @@
-use lexer::prelude::Span;
+use lexer::Span;
 
 use crate::ty::Ty;
 

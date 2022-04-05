@@ -15,6 +15,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cli"
+version = "0.1.0"
+
+[[package]]
 name = "cranelift-bforest"
 version = "0.82.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -62,10 +66,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66bc82ef522c1f643baf7d4d40b7c52643ee4549d8960b0e6a047daacb83f897"
 
 [[package]]
+name = "cranelift-frontend"
+version = "0.82.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cc35e4251864b17515845ba47447bca88fec9ca1a4186b19fe42526e36140e8"
+dependencies = [
+ "cranelift-codegen",
+ "log",
+ "smallvec",
+ "target-lexicon",
+]
+
+[[package]]
 name = "gen"
 version = "0.1.0"
 dependencies = [
+ "cranelift-codegen",
  "cranelift-entity",
+ "cranelift-frontend",
  "instance",
  "lexer",
  "modules",
@@ -130,6 +148,7 @@ dependencies = [
 name = "meta_mach"
 version = "0.1.0"
 dependencies = [
+ "cli",
  "gen",
  "instance",
  "lexer",

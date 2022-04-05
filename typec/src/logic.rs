@@ -1,9 +1,9 @@
 use cranelift_entity::packed_option::ReservedValue;
-use lexer::prelude::Sources;
+use lexer::Sources;
 use modules::scope::{self, Scope};
 use parser::{
     ast::{self, Ast},
-    prelude::{Convert, Parser},
+    {Convert, Parser},
 };
 
 use crate::{
@@ -227,7 +227,7 @@ impl<'a> Builder<'a> {
 mod test {
     use std::path::PathBuf;
 
-    use lexer::prelude::{SourceEnt, Span};
+    use lexer::{SourceEnt, Span};
 
     use crate::ty::Types;
 

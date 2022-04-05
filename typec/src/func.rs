@@ -8,13 +8,13 @@ use crate::{
     ty::Ty,
 };
 use cranelift_entity::{packed_option::PackedOption, EntityList, ListPool, PrimaryMap};
-use lexer::prelude::Sources;
+use lexer::Sources;
 use parser::ast::{self, Ast};
 
 pub struct Functions {
     funcs: PrimaryMap<Func, Ent>,
     blocks: PrimaryMap<Block, block::Ent>,
-    values: PrimaryMap<Value, value::Ent>,
+    pub values: PrimaryMap<Value, value::Ent>,
     insts: PrimaryMap<Inst, inst::Ent>,
     value_slices: ListPool<Value>,
 }
@@ -30,6 +30,10 @@ impl Functions {
         }
     }
 
+    pub fn signature_of(&self, func: Func) -> &Signature {
+        &self.funcs[func].sig
+    }
+
     pub fn create_block(&mut self, func: Func) -> Block {
         let under = self.funcs[func].end.expand();
         let block = self.blocks.push(block::Ent::default());
@@ -43,8 +47,11 @@ impl Functions {
         self.blocks[block].args.push(param, &mut self.value_slices);
     }
 
-    pub fn block_params(&self, block: Block) -> &[Value] {
-        self.blocks[block].args.as_slice(&self.value_slices)
+    pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &value::Ent)> + '_ {
+        self.blocks[block].args
+            .as_slice(&self.value_slices)
+            .iter()
+            .map(|&value| (value, &self.values[value]))
     }
 
     pub fn add_value(&mut self, value: value::Ent) -> Value {

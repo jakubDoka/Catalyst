@@ -4,6 +4,7 @@
         "conv",
         "Cranelift",
         "funcs",
+        "iconst",
         "insts",
         "repr",
         "typec"

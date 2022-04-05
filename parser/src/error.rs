@@ -1,5 +1,5 @@
 use lexer::{
-    prelude::{Source, SourceEnt, Span},
+    {Source, SourceEnt, Span},
     token,
 };
 

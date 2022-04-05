@@ -1,7 +1,7 @@
 use std::str::Chars;
 
 use crate::{
-    prelude::{Span, SpanDisplay},
+    {Span, SpanDisplay, Sources},
     source_info::Source,
     token::{self, Token},
 };
@@ -119,6 +119,19 @@ impl<'a> Lexer<'a> {
 
     pub fn source_content(&self) -> &str {
         self.str
+    }
+}
+
+pub fn int_value(sources: &Sources, span: Span) -> u64 {
+    let mut chars = sources.display(span).chars();
+    let mut value = 0;
+    while let Some(c @ '0'..='9') = chars.next() {
+        value = value * 10 + (c as u64 - '0' as u64);
+    }
+
+    match chars.next() {
+        None => return value,
+        _ => todo!("unhandled int literal {:?}", sources.display(span)),
     }
 }
 

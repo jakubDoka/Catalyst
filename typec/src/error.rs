@@ -1,4 +1,4 @@
-use parser::prelude::AnyError;
+use parser::AnyError;
 
 pub type Error = AnyError<Kind>;
 

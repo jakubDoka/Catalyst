@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use lexer::prelude::Source;
+use lexer::Source;
 
 #[derive(Debug, Default)]
 pub struct Ent {

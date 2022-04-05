@@ -1,6 +1,6 @@
 use cranelift_entity::{packed_option::ReservedValue, EntityList};
 use lexer::{
-    prelude::*,
+    *,
     token::{self, Token},
 };
 

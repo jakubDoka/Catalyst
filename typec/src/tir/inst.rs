@@ -1,5 +1,5 @@
 use cranelift_entity::packed_option::PackedOption;
-use lexer::prelude::Span;
+use lexer::Span;
 
 use super::value::Value;
 

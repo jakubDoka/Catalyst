@@ -1,6 +1,6 @@
 pub use crate::error::Error;
 use cranelift_entity::{packed_option::ReservedValue, *};
-use lexer::prelude::*;
+use lexer::*;
 
 #[derive(Debug)]
 pub struct Temp {

@@ -14,6 +14,14 @@ impl Types {
         }
     }
 
+    pub fn slice(&self, slice: EntityList<Ty>) -> &[Ty] {
+        slice.as_slice(&self.ty_cons)
+    }
+
+    pub fn get(&self, ty: Ty) -> &Ent {
+        &self.types[ty]
+    }
+
     pub fn add(&mut self, ty: Ent) -> Ty {
         self.types.push(ty)
     }
@@ -26,6 +34,12 @@ impl Types {
 pub struct Ent {
     pub id: ID,
     pub kind: Kind,
+}
+
+impl Ent {
+    pub fn new(kind: Kind, id: ID) -> Self {
+        Self { id, kind }
+    }
 }
 
 pub enum Kind {
