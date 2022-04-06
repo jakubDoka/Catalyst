@@ -136,10 +136,12 @@ pub fn compile() {
     let mut tir_to_mir_lookup = SecondaryMap::new();
     let mut mir_to_ir_lookup = SecondaryMap::new();
     let ptr_ty = module.isa().pointer_type(); 
+    let system_call_convention = module.isa().default_call_conv();
     for (func, _) in t_functions.ents.iter() {
         tir_to_mir_lookup.clear();
         Translator {
             ptr_ty,
+            system_call_convention,
             value_lookup: &mut tir_to_mir_lookup,
             function: &mut function,
             t_functions: &t_functions,

@@ -8,7 +8,7 @@ use crate::{
     ty::Ty,
 };
 use cranelift_entity::{packed_option::PackedOption, EntityList, ListPool, PrimaryMap};
-use lexer::Sources;
+use lexer::{Sources, Span};
 use parser::ast::{self, Ast};
 
 pub struct Functions {
@@ -28,10 +28,6 @@ impl Functions {
             insts: PrimaryMap::new(),
             value_slices: ListPool::new(),
         }
-    }
-
-    pub fn signature_of(&self, func: Func) -> &Signature {
-        &self.ents[func].sig
     }
 
     pub fn create_block(&mut self, func: Func) -> Block {
@@ -146,7 +142,7 @@ pub struct Ent {
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
     //pub params: EntityList<Ty>,
-    pub call_conv: Ast,
+    pub call_conv: Span,
     pub args: EntityList<Ty>,
     pub ret: PackedOption<Ty>,
 }

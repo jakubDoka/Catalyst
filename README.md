@@ -1,1 +1,43 @@
 # Catalyst
+
+## TODO
+
+- [ ] Language constructs
+    - [ ] Functions
+        - [ ] Linage
+        - [ ] Call convention
+        - [ ] Generics
+        - [ ] Methods
+        - [ ] Procedures
+        - [ ] Statements
+            - [x] Return
+            - [ ] Break - also as top level code segmentation
+            - [ ] Continue - only loop
+            - [ ] Defer - not allowed in loops
+            - [ ] Expressions
+                - [ ] Control Flow
+                    - [ ] If-Elif-Else
+                    - [ ] Loop
+                - [ ] Binary
+                - [ ] Unary
+                - [ ] Call
+                    - [ ] Procedural
+                    - [ ] Object-Oriented
+                - [ ] Constants
+                    - [ ] Folding
+                    - [x] Integer
+                    - [ ] Float
+                    - [ ] Structures
+                    - [ ] Arrays
+    - [ ] Macros
+        - [ ] Jit
+        - [ ] Tokens
+        - [ ] Ast
+        - [ ] Tir
+        - [ ] Mir
+        - [ ] Ir
+    - [ ] Structures
+        - [ ] generics
+        - [ ] Safe tagged unions
+        - [ ] Structs
+        - [ ] Bounds

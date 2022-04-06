@@ -69,7 +69,7 @@ impl<'a> Collector<'a> {
         .into();
 
         let sig = Signature {
-            call_conv,
+            call_conv: self.ast.nodes[call_conv].span,
             args,
             ret,
         };

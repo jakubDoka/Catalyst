@@ -1,4 +1,4 @@
 
-fn main() -> int {
+fn "default" main() -> int {
     ret 10
 }

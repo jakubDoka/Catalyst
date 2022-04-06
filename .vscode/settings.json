@@ -3,11 +3,14 @@
         "canonicalize",
         "conv",
         "Cranelift",
+        "Elif",
         "ents",
+        "fastcall",
         "funcs",
         "iconst",
         "insts",
         "repr",
+        "structs",
         "typec"
     ]
 }

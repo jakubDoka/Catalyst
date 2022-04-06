@@ -1,14 +1,17 @@
-use cranelift_codegen::ir;
-use cranelift_entity::SecondaryMap;
-use lexer::Sources;
-use typec::{self, tir, Ty};
+use std::str::FromStr;
 
-use crate::{error::Error, func, mir};
+use cranelift_codegen::{ir, isa::CallConv};
+use cranelift_entity::SecondaryMap;
+use lexer::{Sources, SourcesExt};
+use typec::{self, tir, Ty, Signature};
+
+use crate::{error::{Error, self}, func, mir};
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
 typec::gen_context!(Translator<'a> {
     ptr_ty: ir::Type,
+    system_call_convention: CallConv,
     value_lookup: &'a mut SecondaryMap<tir::Value, mir::Value>,
     function: &'a mut func::Function,
     t_functions: &'a typec::Functions,
@@ -20,16 +23,25 @@ impl<'a> Translator<'a> {
     pub fn translate_func(&mut self, func: typec::Func) -> Result<()> {
         self.function.clear();
 
-        let signature = self.t_functions.signature_of(func);
-        self.function
-            .signature
-            .params
-            .extend(self.t_types.slice(signature.args).iter().map(|&ty| {
-                let repr = Self::repr_low(self.t_types, self.ptr_ty, ty);
-                ir::AbiParam::new(repr)
-            }));
+        let Signature { call_conv, args, ret } = self.t_functions.ents[func].sig;
+        
+        self.function.signature.call_conv = {
+            let str = self.sources.display(call_conv.strip_sides());
+            if str == "default" {
+                self.system_call_convention
+            } else {
+                CallConv::from_str(str)
+                    .map_err(|_| Error::new(error::Kind::InvalidCallConv, call_conv))?
+            }
+        };
+        
+        let params = self.t_types.slice(args).iter().map(|&ty| {
+            let repr = Self::repr_low(self.t_types, self.ptr_ty, ty);
+            ir::AbiParam::new(repr)
+        });
+        self.function.signature.params.extend(params);
 
-        if let Some(ret_ty) = signature.ret.expand() {
+        if let Some(ret_ty) = ret.expand() {
             let repr = Self::repr_low(self.t_types, self.ptr_ty, ret_ty);
             self.function
                 .signature
@@ -182,7 +194,8 @@ mod test {
         let mut function = Function::new();
 
         Translator {
-            ptr_ty: ir::types::INVALID,
+            ptr_ty: ir::types::I32,
+            system_call_convention: CallConv::Fast,
             value_lookup: &mut SecondaryMap::new(),
             function: &mut function,
             t_functions: &functions,
