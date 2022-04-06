@@ -7,11 +7,10 @@ use std::{
 use cranelift_entity::PrimaryMap;
 use lexer::{
     map::Map,
-    {SourceEnt, Sources, Span},
+    SourcesExt, {SourceEnt, Sources, Span},
 };
 use parser::{
-    ast,
-    {Convert, Parser},
+    ast, {Convert, Parser},
 };
 
 use crate::{
@@ -24,49 +23,28 @@ use crate::{
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
-pub struct Modules {
-    units: PrimaryMap<Unit, unit::Ent>,
-    modules: PrimaryMap<Module, module::Ent>,
+pub type Modules = PrimaryMap<Module, module::Ent>;
+pub type Units = PrimaryMap<Unit, unit::Ent>;
+
+pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
+pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
+pub const RESOURCE_ROOT_VAR: &'static str = "MF_ROOT";
+pub const DEFAULT_RESOURCE_ROOT_VAR: &'static str = ".mp_build_resources";
+pub const MANIFEST_LOCAL_PATH: &'static str = "project.mfm";
+pub const GITHUB_DOMAIN: &'static str = "github.com";
+pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
+
+pub struct ModuleLoader<'a> {
+    pub sources: &'a mut Sources,
+    pub modules: &'a mut Modules,
+    pub units: &'a mut Units,
+    pub frontier: &'a mut VecDeque<(PathBuf, Span, Module)>,
+    pub ctx: &'a mut UnitLoaderContext,
+    pub map: &'a mut Map<Module>,
 }
 
-impl Modules {
-    pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
-    pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
-    pub const RESOURCE_ROOT_VAR: &'static str = "MF_ROOT";
-    pub const DEFAULT_RESOURCE_ROOT_VAR: &'static str = ".mp_build_resources";
-    pub const MANIFEST_LOCAL_PATH: &'static str = "project.mfm";
-    pub const GITHUB_DOMAIN: &'static str = "github.com";
-    pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
-
-    pub fn new() -> Self {
-        Modules {
-            units: PrimaryMap::new(),
-            modules: PrimaryMap::new(),
-        }
-    }
-
-    pub fn load(&mut self, sources: &mut Sources, root_path: &Path) -> Result<Vec<Vec<Module>>> {
-        let mut unit_map = Map::new();
-        let mut module_map = Map::new();
-
-        let unit_order = self.load_units(sources, &mut unit_map, root_path)?;
-        let mut module_orders = Vec::with_capacity(unit_order.len());
-
-        for unit in unit_order {
-            let module_order = self.load_unit_modules(sources, &unit_map, &mut module_map, unit)?;
-            module_orders.push(module_order);
-        }
-
-        Ok(module_orders)
-    }
-
-    pub fn load_unit_modules(
-        &mut self,
-        sources: &mut Sources,
-        unit_map: &Map<Unit>,
-        map: &mut Map<Module>,
-        unit: Unit,
-    ) -> Result<Vec<Module>> {
+impl<'a> ModuleLoader<'a> {
+    pub fn load_unit_modules(&mut self, unit: Unit) -> Result<Vec<Module>> {
         let unit_ent = &self.units[unit];
         let base_line = self.modules.len() as u32;
 
@@ -78,16 +56,11 @@ impl Modules {
 
         let id = path.as_path().into();
         let module = self.modules.push(module::Ent::new(id));
-        map.insert(id, module);
+        self.map.insert(id, module);
 
-        let mut frontier = VecDeque::new();
-        frontier.push_back((path, Span::default(), module));
-        let mut ast_data = ast::Data::new();
-        let mut ast_temp = ast::Temp::new();
-        let mut graph = GenericGraph::new();
-        let mut buffer = PathBuf::new();
+        self.frontier.push_back((path, Span::default(), module));
 
-        while let Some((path, span, slot)) = frontier.pop_front() {
+        while let Some((path, span, slot)) = self.frontier.pop_front() {
             let content = std::fs::read_to_string(&path).map_err(|err| {
                 error::Error::new(
                     error::Kind::ModuleLoadFailed(path.clone(), err), // todo: save module path
@@ -96,112 +69,148 @@ impl Modules {
             })?;
 
             let source = SourceEnt::new(path, content);
-            let source = sources.add(source);
-            let content = sources.get(source).content();
+            let source = self.sources.push(source);
+            let content = self.sources[source].content();
             self.modules[slot].source = source;
 
-            ast_data.clear();
-            Parser::parse_imports(content, &mut ast_data, &mut ast_temp, source)
+            self.ctx.ast.clear();
+            Parser::parse_imports(content, &mut self.ctx.ast, &mut self.ctx.ast_temp, source)
                 .map_err(Convert::convert)?;
 
-            if let Some(imports) = ModuleImports::new(&ast_data, &sources).imports() {
+            if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
                 for ModuleImport {
                     nick,
                     name,
                     path: path_span,
                 } in imports
                 {
-                    buffer.clear();
-                    let unit = unit_map
-                        .get((sources.display(name), unit))
+                    self.ctx.buffer.clear();
+                    let unit = self
+                        .ctx
+                        .map
+                        .get((self.sources.display(name), unit))
                         .copied()
                         .unwrap_or(unit);
 
-                    buffer.push(&self.units[unit].root_path);
-                    buffer.push(&self.units[unit].local_source_path);
-                    buffer.set_extension("");
-                    buffer.push(sources.display(path_span));
-                    buffer.set_extension(Self::SOURCE_FILE_EXTENSION);
+                    self.ctx.buffer.push(&self.units[unit].root_path);
+                    self.ctx.buffer.push(&self.units[unit].local_source_path);
+                    self.ctx.buffer.set_extension("");
+                    self.ctx.buffer.push(self.sources.display(path_span));
+                    self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
 
-                    let Ok(path) = buffer.canonicalize() else {
-                        return Err(error::Error::new(error::Kind::ModuleNotFound(buffer), path_span));
+                    let Ok(path) = self.ctx.buffer.canonicalize() else {
+                        return Err(error::Error::new(error::Kind::ModuleNotFound(self.ctx.buffer.clone()), path_span));
                     };
 
                     let id = path.as_path().into();
 
-                    let id = if let Some(&id) = map.get(id) {
+                    let id = if let Some(&id) = self.map.get(id) {
                         id
                     } else {
                         let module = self.modules.push(module::Ent::new(id));
-                        map.insert(id, module);
-                        frontier.push_back((path, path_span, module));
+                        self.map.insert(id, module);
+                        self.frontier.push_back((path, path_span, module));
                         module
                     };
 
                     let name = nick.unwrap_or(name);
-                    map.insert((sources.display(name), slot), id);
+                    self.map.insert((self.sources.display(name), slot), id);
                     if id.0 >= base_line {
-                        graph.add_edge(id.0 - base_line);
+                        self.ctx.graph.add_edge(id.0 - base_line);
                     }
                 }
             }
-            graph.close_node();
+            self.ctx.graph.close_node();
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Module>::len(&graph));
-        if let Some(mut cycle) = graph.detect_cycles(Module(0), Some(&mut ordering)) {
+        let mut ordering = Vec::with_capacity(TreeStorage::<Module>::len(&self.ctx.graph));
+        if let Some(mut cycle) = self.ctx.graph.detect_cycles(Module(0), Some(&mut ordering)) {
             cycle.iter_mut().for_each(|id| id.0 += base_line);
             return Err(Error::spanless(error::Kind::ModuleCycle(cycle)));
         }
 
         Ok(ordering)
     }
+}
 
-    pub fn load_units(
-        &mut self,
-        sources: &mut Sources,
-        map: &mut Map<Unit>,
-        root: &Path,
-    ) -> Result<Vec<Unit>> {
-        let mf_root = std::env::var(Self::RESOURCE_ROOT_VAR)
-            .unwrap_or_else(|_| Self::DEFAULT_RESOURCE_ROOT_VAR.to_string());
-        let mf_root = PathBuf::from(mf_root);
+pub struct UnitLoaderContext {
+    mf_root: PathBuf,
+    graph: GenericGraph,
+    buffer: PathBuf,
+    frontier: VecDeque<(PathBuf, Span, Unit)>,
+    map: Map<Unit>,
+    ast: ast::Data,
+    ast_temp: ast::Temp,
+}
 
-        let mut graph = GenericGraph::new();
-        let mut buffer = PathBuf::new();
+impl UnitLoaderContext {
+    pub fn new() -> Self {
+        Self {
+            mf_root: PathBuf::from(
+                std::env::var(RESOURCE_ROOT_VAR)
+                    .unwrap_or_else(|_| DEFAULT_RESOURCE_ROOT_VAR.to_string()),
+            ),
+            graph: GenericGraph::new(),
+            buffer: PathBuf::new(),
+            frontier: VecDeque::new(),
+            map: Map::new(),
+            ast: ast::Data::new(),
+            ast_temp: ast::Temp::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.graph.clear();
+        self.frontier.clear();
+        self.map.clear();
+        self.ast.clear();
+    }
+}
+
+pub struct UnitLoader<'a> {
+    pub sources: &'a mut Sources,
+    pub units: &'a mut Units,
+    pub ctx: &'a mut UnitLoaderContext,
+}
+
+impl<'a> UnitLoader<'a> {
+    pub fn load_units(&mut self, root: &Path) -> Result<Vec<Unit>> {
+        self.ctx.clear();
 
         let Ok(root) = root.canonicalize() else {
             return Err(Error::new(error::Kind::UnitNotFound(root.to_owned()), Span::default()));
         };
 
         let slot = self.units.push(unit::Ent::new());
-        map.insert(root.as_path(), slot);
+        self.ctx.map.insert(root.as_path(), slot);
 
-        let mut frontier = VecDeque::new();
-        frontier.push_back((root, Span::default(), slot));
-        let mut ast_data = ast::Data::new();
-        let mut ast_temp = ast::Temp::new();
+        self.ctx.frontier.push_back((root, Span::default(), slot));
 
-        while let Some((path, span, slot)) = frontier.pop_front() {
-            buffer.clear();
-            buffer.push(&path);
-            buffer.push(Self::MANIFEST_LOCAL_PATH);
-            let contents = std::fs::read_to_string(&buffer).map_err(|err| {
-                Error::new(error::Kind::UnitLoadFailed(buffer.clone(), err), span)
+        while let Some((path, span, slot)) = self.ctx.frontier.pop_front() {
+            self.ctx.buffer.clear();
+            self.ctx.buffer.push(&path);
+            self.ctx.buffer.push(MANIFEST_LOCAL_PATH);
+            let contents = std::fs::read_to_string(&self.ctx.buffer).map_err(|err| {
+                Error::new(
+                    error::Kind::UnitLoadFailed(self.ctx.buffer.clone(), err),
+                    span,
+                )
             })?;
 
-            // all parsing components assume source code is registered in sources
-            let source = SourceEnt::new(buffer.clone(), contents);
-            let source = sources.add(source);
-            let contents = sources.get(source).content();
+            {
+                // all parsing components assume source code is registered in sources
+                let source = SourceEnt::new(self.ctx.buffer.clone(), contents);
+                let source = self.sources.push(source);
+                let contents = self.sources[source].content();
 
-            self.units[slot].source = source;
+                self.units[slot].source = source;
 
-            ast_data.clear();
-            Parser::parse_manifest(contents, &mut ast_data, &mut ast_temp, source)
-                .map_err(Convert::convert)?;
+                self.ctx.ast.clear();
+                Parser::parse_manifest(contents, &mut self.ctx.ast, &mut self.ctx.ast_temp, source)
+                    .map_err(Convert::convert)?;
+            }
 
-            let manifest = Manifest::new(&ast_data, &sources);
+            let manifest = Manifest::new(&self.ctx.ast, &self.sources);
 
             if let Some(dependency) = manifest.dependencies() {
                 for ManifestDepInfo {
@@ -210,14 +219,14 @@ impl Modules {
                     version,
                 } in dependency
                 {
-                    let path_str = sources.display(span_path);
-                    let path = if path_str.starts_with(Self::GITHUB_DOMAIN) {
-                        let path = Path::join(&mf_root, path_str);
+                    let path_str = self.sources.display(span_path);
+                    let path = if path_str.starts_with(GITHUB_DOMAIN) {
+                        let path = Path::join(&self.ctx.mf_root, path_str);
                         if !path.exists() {
                             Self::download_git_repo(
                                 &path,
                                 path_str,
-                                sources.display(version),
+                                self.sources.display(version),
                                 span_path,
                             )?;
                         }
@@ -230,32 +239,32 @@ impl Modules {
                         return Err(Error::new(error::Kind::UnitNotFound(path), span));
                     };
 
-                    let id = if let Some(&id) = map.get(path.as_path()) {
+                    let id = if let Some(&id) = self.ctx.map.get(path.as_path()) {
                         id
                     } else {
                         let id = self.units.push(unit::Ent::new());
-                        map.insert(path.as_path(), id);
-                        frontier.push_back((path, span_path, id));
+                        self.ctx.map.insert(path.as_path(), id);
+                        self.ctx.frontier.push_back((path, span_path, id));
                         id
                     };
 
-                    map.insert((sources.display(name), slot), id);
-                    graph.add_edge(id.0);
+                    self.ctx.map.insert((self.sources.display(name), slot), id);
+                    self.ctx.graph.add_edge(id.0);
                 }
             }
 
             let root_path_str = manifest
                 .get_string_tag("root")
-                .unwrap_or(Self::DEFAULT_ROOT_SOURCE_PATH);
+                .unwrap_or(DEFAULT_ROOT_SOURCE_PATH);
             // we preserve already loaded path segments
             self.units[slot].local_source_path = PathBuf::from(root_path_str);
             self.units[slot].root_path = path;
 
-            graph.close_node();
+            self.ctx.graph.close_node();
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&graph));
-        if let Some(cycle) = graph.detect_cycles(slot, Some(&mut ordering)) {
+        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.graph));
+        if let Some(cycle) = self.ctx.graph.detect_cycles(slot, Some(&mut ordering)) {
             return Err(Error::spanless(error::Kind::UnitCycle(cycle)));
         }
 
@@ -297,28 +306,36 @@ mod test {
 
     #[test]
     fn test_no_cycle() {
-        let mut map = Map::new();
         let mut sources = Sources::new();
-        let mut modules = Modules::new();
+        let mut units = Units::new();
+        let mut ctx = UnitLoaderContext::new();
 
-        modules
-            .load_units(&mut sources, &mut map, Path::new("src/tests/no_cycle"))
-            .unwrap();
+        UnitLoader {
+            sources: &mut sources,
+            units: &mut units,
+            ctx: &mut ctx,
+        }
+        .load_units(Path::new("src/tests/no_cycle"))
+        .unwrap();
 
-        assert_eq!(modules.units.len(), 3);
+        assert_eq!(units.len(), 3);
     }
 
     #[test]
     fn test_cycle() {
-        let mut map = Map::new();
         let mut sources = Sources::new();
-        let mut modules = Modules::new();
+        let mut modules = Units::new();
+        let mut ctx = UnitLoaderContext::new();
 
         assert!(matches!(
-            modules
-                .load_units(&mut sources, &mut map, Path::new("src/tests/cycle"))
-                .unwrap_err()
-                .kind(),
+            UnitLoader {
+                sources: &mut sources,
+                units: &mut modules,
+                ctx: &mut ctx,
+            }
+            .load_units(Path::new("src/tests/cycle"))
+            .unwrap_err()
+            .kind(),
             error::Kind::UnitCycle(_)
         ));
     }
@@ -327,12 +344,36 @@ mod test {
     fn full_load() {
         let mut sources = Sources::new();
         let mut modules = Modules::new();
+        let mut units = Units::new();
+        let mut ctx = UnitLoaderContext::new();
 
-        modules
-            .load(&mut sources, Path::new("src/tests/no_cycle"))
+        let mut map = Map::new();
+        let mut frontier = VecDeque::new();
+
+        let unit_order = UnitLoader {
+            sources: &mut sources,
+            units: &mut units,
+            ctx: &mut ctx,
+        }
+        .load_units(Path::new("src/tests/no_cycle"))
+        .unwrap();
+        let mut module_orders = Vec::with_capacity(unit_order.len());
+
+        for unit in unit_order {
+            let module_order = ModuleLoader {
+                sources: &mut sources,
+                units: &mut units,
+                modules: &mut modules,
+                ctx: &mut ctx,
+                frontier: &mut frontier,
+                map: &mut map,
+            }
+            .load_unit_modules(unit)
             .unwrap();
+            module_orders.push(module_order);
+        }
 
-        assert_eq!(modules.units.len(), 3);
-        assert_eq!(modules.modules.len(), 6);
+        assert_eq!(units.len(), 3);
+        assert_eq!(modules.len(), 6);
     }
 }

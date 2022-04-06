@@ -54,9 +54,9 @@ impl Temp {
 }
 
 pub struct Data {
-    nodes: PrimaryMap<Ast, Ent>,
-    conns: ListPool<Ast>,
-    elements: EntityList<Ast>,
+    pub nodes: PrimaryMap<Ast, Ent>,
+    pub conns: ListPool<Ast>,
+    pub elements: EntityList<Ast>,
 }
 
 impl Data {
@@ -66,10 +66,6 @@ impl Data {
             conns: ListPool::new(),
             elements: EntityList::new(),
         }
-    }
-
-    pub fn get(&self, ast: Ast) -> &Ent {
-        &self.nodes[ast]
     }
 
     pub fn push(&mut self, node: Ast) {
@@ -95,18 +91,8 @@ impl Data {
     }
 
     #[inline]
-    pub fn kind(&self, ast: Ast) -> Kind {
-        self.nodes[ast].kind
-    }
-
-    #[inline]
     pub fn children(&self, ast: Ast) -> &[Ast] {
         self.nodes[ast].children.as_slice(&self.conns)
-    }
-
-    #[inline]
-    pub fn span(&self, ast: Ast) -> Span {
-        self.nodes[ast].span
     }
 
     #[inline]
@@ -207,6 +193,7 @@ impl std::fmt::Display for FileDisplay<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Ent {
     pub kind: Kind,
     pub children: EntityList<Ast>,

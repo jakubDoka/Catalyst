@@ -1,9 +1,9 @@
 use std::str::Chars;
 
 use crate::{
-    {Span, SpanDisplay, Sources},
     source_info::Source,
     token::{self, Token},
+    SourcesExt, {Sources, Span, SpanDisplay},
 };
 
 pub struct Lexer<'a> {

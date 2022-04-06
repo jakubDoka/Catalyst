@@ -1,7 +1,7 @@
 use cranelift_entity::{packed_option::ReservedValue, EntityList};
 use lexer::{
-    *,
     token::{self, Token},
+    *,
 };
 
 use crate::{
@@ -228,7 +228,7 @@ impl<'a> Parser<'a> {
         let body = self.block()?;
         self.temp.acc(body);
 
-        let end = self.ast_file.span(body);
+        let end = self.ast_file.nodes[body].span;
 
         Ok(self.alloc(ast::Kind::Function, span.join(end)))
     }
@@ -250,7 +250,7 @@ impl<'a> Parser<'a> {
         let ty = self.type_expr()?;
         self.temp.acc(ty);
 
-        let end = self.ast_file.span(ty);
+        let end = self.ast_file.nodes[ty].span;
 
         Ok(self.alloc(ast::Kind::FunctionArgument, span.join(end)))
     }
@@ -314,7 +314,7 @@ impl<'a> Parser<'a> {
         } else {
             let expr = self.expr()?;
             self.temp.acc(expr);
-            self.ast_file.span(expr)
+            self.ast_file.nodes[expr].span
         };
         Ok(self.alloc(ast::Kind::Return, span.join(end)))
     }
@@ -340,7 +340,7 @@ impl<'a> Parser<'a> {
             self.expect(token::Kind::Colon)?;
             self.advance();
             let expr = self.expr()?;
-            (expr, self.ast_file.span(expr))
+            (expr, self.ast_file.nodes[expr].span)
         };
 
         self.temp.acc(expr);
@@ -397,7 +397,7 @@ impl<'a> Parser<'a> {
         loop {
             let ast = function_arg(self)?;
             self.temp.acc(ast);
-            let end_span = self.ast_file.span(ast);
+            let end_span = self.ast_file.nodes[ast].span;
 
             if end == self.current.kind() {
                 let end = self.current.span();

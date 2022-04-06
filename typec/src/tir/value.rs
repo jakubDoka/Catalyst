@@ -14,4 +14,3 @@ impl Ent {
 }
 
 lexer::gen_entity!(Value);
-modules::impl_item_data_for_entity!(Value);

@@ -12,7 +12,7 @@ use lexer::Sources;
 use parser::ast::{self, Ast};
 
 pub struct Functions {
-    funcs: PrimaryMap<Func, Ent>,
+    pub ents: PrimaryMap<Func, Ent>,
     blocks: PrimaryMap<Block, block::Ent>,
     pub values: PrimaryMap<Value, value::Ent>,
     insts: PrimaryMap<Inst, inst::Ent>,
@@ -22,7 +22,7 @@ pub struct Functions {
 impl Functions {
     pub fn new() -> Self {
         Functions {
-            funcs: PrimaryMap::new(),
+            ents: PrimaryMap::new(),
             blocks: PrimaryMap::new(),
             values: PrimaryMap::new(),
             insts: PrimaryMap::new(),
@@ -31,13 +31,13 @@ impl Functions {
     }
 
     pub fn signature_of(&self, func: Func) -> &Signature {
-        &self.funcs[func].sig
+        &self.ents[func].sig
     }
 
     pub fn create_block(&mut self, func: Func) -> Block {
-        let under = self.funcs[func].end.expand();
+        let under = self.ents[func].end.expand();
         let block = self.blocks.push(block::Ent::default());
-        let func = &mut self.funcs[func];
+        let func = &mut self.ents[func];
         self.blocks
             .insert(block, under, &mut func.start, &mut func.end);
         block
@@ -48,7 +48,8 @@ impl Functions {
     }
 
     pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &value::Ent)> + '_ {
-        self.blocks[block].args
+        self.blocks[block]
+            .args
             .as_slice(&self.value_slices)
             .iter()
             .map(|&value| (value, &self.values[value]))
@@ -63,7 +64,7 @@ impl Functions {
     }
 
     pub fn add_inst(&mut self, func: Func, inst: inst::Ent) -> Inst {
-        self.add_inst_to_block(self.funcs[func].end.unwrap(), inst)
+        self.add_inst_to_block(self.ents[func].end.unwrap(), inst)
     }
 
     pub fn add_inst_to_block(&mut self, block: Block, inst: inst::Ent) -> Inst {
@@ -101,15 +102,15 @@ impl Functions {
     }
 
     pub fn blocks_of(&self, func: Func) -> impl Iterator<Item = (Block, &block::Ent)> {
-        self.blocks.linked_iter(self.funcs[func].start.expand())
+        self.blocks.linked_iter(self.ents[func].start.expand())
     }
 
     pub fn add(&mut self, ent: Ent) -> Func {
-        self.funcs.push(ent)
+        self.ents.push(ent)
     }
 
     pub fn get(&self, func: Func) -> &Ent {
-        &self.funcs[func]
+        &self.ents[func]
     }
 }
 
@@ -151,4 +152,3 @@ pub struct Signature {
 }
 
 lexer::gen_entity!(Func);
-modules::impl_item_data_for_entity!(Func);

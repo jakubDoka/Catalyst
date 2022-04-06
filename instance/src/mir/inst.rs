@@ -7,14 +7,14 @@ pub struct Ent {
     pub prev: PackedOption<Inst>,
     pub next: PackedOption<Inst>,
     pub kind: Kind,
-    pub value: PackedOption<Value>
+    pub value: PackedOption<Value>,
 }
 
 impl Ent {
     pub fn valueless(kind: Kind) -> Self {
         Self::new(kind, None)
     }
-    
+
     pub fn with_value(kind: Kind, value: Value) -> Self {
         Self::new(kind, value.into())
     }
@@ -24,7 +24,7 @@ impl Ent {
             prev: None.into(),
             next: None.into(),
             kind,
-            value: value.into()
+            value: value.into(),
         }
     }
 }

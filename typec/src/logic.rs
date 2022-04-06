@@ -1,6 +1,6 @@
 use cranelift_entity::packed_option::ReservedValue;
-use lexer::Sources;
-use modules::scope::{self, Scope};
+use lexer::{Sources, SourcesExt};
+use modules::{scope::{self, Scope}, module::{Module, self}, logic::Modules};
 use parser::{
     ast::{self, Ast},
     {Convert, Parser},
@@ -23,15 +23,16 @@ crate::gen_context!(Collector<'a> {
     scope: &'a mut Scope,
     functions: &'a mut Functions,
     types: &'a mut Types,
+    modules: &'a mut Modules,
     sources: &'a Sources,
     ast: &'a ast::Data,
 });
 
 impl<'a> Collector<'a> {
-    pub fn collect_items(&mut self) -> Result {
+    pub fn collect_items(&mut self, module: Module) -> Result {
         for (ast, &ast::Ent { kind, span, .. }) in self.ast.elements() {
             match kind {
-                ast::Kind::Function => self.collect_function(ast)?,
+                ast::Kind::Function => self.collect_function(ast, module)?,
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
         }
@@ -39,9 +40,9 @@ impl<'a> Collector<'a> {
         Ok(())
     }
 
-    fn collect_function(&mut self, ast: Ast) -> Result {
+    fn collect_function(&mut self, ast: Ast, module: Module) -> Result {
         let children = self.ast.children(ast);
-        let current_span = self.ast.span(ast);
+        let current_span = self.ast.nodes[ast].span;
         let &[call_conv, name, .., return_type, _body] = children else {
             unreachable!();
         };
@@ -78,32 +79,40 @@ impl<'a> Collector<'a> {
             ..Default::default()
         };
         let func = self.functions.add(ent);
+        let name_span = self.ast.nodes[name].span;
+        let id = self.sources.display(name_span).into();
         self.scope
             .insert(
                 current_span.source(),
-                self.sources.display(self.ast.span(name)),
+                id,
                 scope::Item::new(func, current_span),
             )
             .map_err(Convert::convert)?;
+        
+        let module_item = module::Item::new(id, func, current_span);
+        self.modules[module].items.push(module_item);
 
         Ok(())
     }
 
-    fn parse_type(&mut self, ty: Ast) -> Result<Ty> {
-        let &ast::Ent { kind, span, .. } = self.ast.get(ty);
-        match kind {
-            ast::Kind::Ident => {
-                return self
-                    .scope
-                    .get(self.sources.display(span), span)
-                    .map_err(Convert::convert);
-            }
-            _ => todo!(
-                "Unhandled type expr {:?}: {}",
-                kind,
-                self.sources.display(span)
-            ),
+    pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
+        parse_type(self.scope, self.ast, self.sources, ty)
+    }
+}
+
+pub fn parse_type(scope: &Scope, ast: &ast::Data, sources: &Sources, ty: Ast) -> Result<Ty> {
+    let ast::Ent { kind, span, .. } = ast.nodes[ty];
+    match kind {
+        ast::Kind::Ident => {
+            return scope
+                .get(sources.display(span), span)
+                .map_err(Convert::convert);
         }
+        _ => todo!(
+            "Unhandled type expr {:?}: {}",
+            kind,
+            sources.display(span)
+        ),
     }
 }
 
@@ -116,16 +125,6 @@ crate::gen_context!(Builder<'a> {
 });
 
 impl<'a> Builder<'a> {
-    pub fn coll<'b>(&'b mut self) -> Collector<'b> {
-        Collector {
-            scope: self.scope,
-            sources: self.sources,
-            ast: self.ast,
-            functions: self.functions,
-            types: self.types,
-        }
-    }
-
     pub fn build_function_ir(&mut self, func: Func) -> Result {
         let ast = self.functions.get(func).ast;
 
@@ -147,9 +146,9 @@ impl<'a> Builder<'a> {
         self.scope.mark_frame();
         for &param in params {
             let children = self.ast.children(param);
-            let ty = self.coll().parse_type(children[children.len() - 1])?;
+            let ty = self.parse_type(children[children.len() - 1])?;
             for &name in &children[0..children.len() - 1] {
-                let name_span = self.ast.span(name);
+                let name_span = self.ast.nodes[name].span;
                 let name_str = self.sources.display(name_span);
                 let value = self.functions.add_value(value::Ent::new(ty, name_span));
                 self.scope
@@ -171,12 +170,13 @@ impl<'a> Builder<'a> {
     }
 
     fn build_stmt(&mut self, func: Func, stmt: Ast) -> Result<Option<Value>> {
-        match self.ast.kind(stmt) {
+        let ast::Ent { kind, span, .. } = self.ast.nodes[stmt];
+        match kind {
             ast::Kind::Return => self.build_return(func, stmt),
             kind => todo!(
                 "Unhandled statement {:?}: {}",
                 kind,
-                self.sources.display(self.ast.span(stmt))
+                self.sources.display(span)
             ),
         }
     }
@@ -186,24 +186,25 @@ impl<'a> Builder<'a> {
         let value = self.build_expr(func, children[0])?;
         self.functions.add_inst(
             func,
-            inst::Ent::new(inst::Kind::Return, Some(value), self.ast.span(stmt)),
+            inst::Ent::new(inst::Kind::Return, Some(value), self.ast.nodes[stmt].span),
         );
         Ok(None)
     }
 
     fn build_expr(&mut self, func: Func, ast: Ast) -> Result<Value> {
-        match self.ast.kind(ast) {
+        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
+        match kind {
             ast::Kind::Int(_) | ast::Kind::String => self.build_literal(func, ast),
             kind => todo!(
                 "Unhandled expression {:?}: {}",
                 kind,
-                self.sources.display(self.ast.span(ast))
+                self.sources.display(span)
             ),
         }
     }
 
     fn build_literal(&mut self, func: Func, ast: Ast) -> Result<Value> {
-        let &ast::Ent { kind, span, .. } = self.ast.get(ast);
+        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
         let (ty, kind) = match kind {
             ast::Kind::Int(base) => match base {
                 _ => ("int", inst::Kind::IntLit),
@@ -221,13 +222,17 @@ impl<'a> Builder<'a> {
             .add_inst(func, inst::Ent::new(kind, Some(value), span));
         Ok(value)
     }
+
+    pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
+        parse_type(self.scope, self.ast, self.sources, ty)
+    }
 }
 
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
 
-    use lexer::{SourceEnt, Span};
+    use lexer::{SourceEnt, Span, ID};
 
     use crate::ty::Types;
 
@@ -239,13 +244,15 @@ mod test {
         let mut sources = Sources::new();
         let mut functions = Functions::new();
         let mut types = Types::new();
+        let mut modules = Modules::new();
+
         let test_str = "
         fn main() -> int {
             ret 0
         }
         ";
 
-        let source = sources.add(SourceEnt::new(PathBuf::from(""), test_str.to_string()));
+        let source = sources.push(SourceEnt::new(PathBuf::from(""), test_str.to_string()));
         scope
             .insert(
                 source,
@@ -253,6 +260,9 @@ mod test {
                 scope::Item::new(Ty(0), Span::new(source, 0, 0)),
             )
             .unwrap();
+        
+        let module = module::Ent::new(ID::default());
+        let module = modules.push(module);
 
         let mut ast_data = ast::Data::new();
         let mut ast_temp = ast::Temp::new();
@@ -265,10 +275,11 @@ mod test {
             scope: &mut scope,
             functions: &mut functions,
             types: &mut types,
+            modules: &mut modules,
             sources: &sources,
             ast: &ast_data,
         }
-        .collect_items()
+        .collect_items(module)
         .unwrap();
 
         let func = scope.get::<Func>("main", Span::default()).unwrap();

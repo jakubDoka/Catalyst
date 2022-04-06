@@ -1,42 +1,26 @@
 use std::{
-    ops::{Range, RangeBounds},
+    ops::{IndexMut, Range, RangeBounds},
     path::{Path, PathBuf},
 };
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
 
-pub struct Sources {
-    sources: PrimaryMap<Source, SourceEnt>,
-}
+pub type Sources = PrimaryMap<Source, SourceEnt>;
 
-impl Sources {
-    pub fn new() -> Self {
-        Sources {
-            sources: PrimaryMap::new(),
-        }
-    }
+impl SourcesExt for Sources {}
 
-    #[inline]
-    pub fn display(&self, span: Span) -> &str {
-        &self.sources[span.source].content[span.range()]
-    }
-
-    pub fn add(&mut self, source: SourceEnt) -> Source {
-        self.sources.push(source)
-    }
-
-    #[inline]
-    pub fn get(&self, source: Source) -> &SourceEnt {
-        &self.sources[source]
+pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
+    fn display(&self, span: Span) -> &str {
+        &self[span.source].content[span.range()]
     }
 }
 
 crate::gen_entity!(Source);
 
 pub struct SourceEnt {
-    path: PathBuf,
-    content: String,
-    mapping: LineMapping,
+    pub path: PathBuf,
+    pub content: String,
+    pub mapping: LineMapping,
 }
 
 impl SourceEnt {

@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use cranelift_entity::packed_option::ReservedValue;
+use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 use lexer::{
     map::{Map, ID},
     {Source, Span},
@@ -23,11 +23,11 @@ impl Scope {
         }
     }
 
-    pub fn get<T: 'static + ItemData>(&self, id: impl Into<ID>, span: Span) -> Result<T, Error> {
+    pub fn get<T: 'static + EntityRef>(&self, id: impl Into<ID>, span: Span) -> Result<T, Error> {
         self.get_by_id(id.into(), span)
     }
 
-    pub fn get_by_id<T: 'static + ItemData>(&self, id: ID, span: Span) -> Result<T, Error> {
+    pub fn get_by_id<T: 'static + EntityRef>(&self, id: ID, span: Span) -> Result<T, Error> {
         self.map
             .get(id)
             .map(|item| {
@@ -141,7 +141,7 @@ pub struct Item {
 }
 
 impl Item {
-    pub fn new(data: impl 'static + ItemData, span: Span) -> Self {
+    pub fn new(data: impl 'static + EntityRef, span: Span) -> Self {
         Self {
             info: Info { span },
             pointer: Pointer::write(data),
@@ -178,24 +178,24 @@ pub struct Pointer {
 }
 
 impl Pointer {
-    pub fn write<T: 'static + ItemData>(data: T) -> Self {
+    pub fn write<T: 'static + EntityRef>(data: T) -> Self {
         Self {
             id: TypeId::of::<T>(),
-            data: data.encode(),
+            data: data.index(),
         }
     }
 
-    pub fn is_of<T: 'static + ItemData>(&self) -> bool {
+    pub fn is_of<T: 'static + EntityRef>(&self) -> bool {
         self.id == TypeId::of::<T>()
     }
 
-    pub fn read<T: 'static + ItemData>(&self) -> T {
+    pub fn read<T: 'static + EntityRef>(&self) -> T {
         self.may_read().unwrap()
     }
 
-    pub fn may_read<T: 'static + ItemData>(&self) -> Option<T> {
+    pub fn may_read<T: 'static + EntityRef>(&self) -> Option<T> {
         if self.is_of::<T>() {
-            Some(T::decode(self.data))
+            Some(T::new(self.data))
         } else {
             None
         }
@@ -211,34 +211,15 @@ impl Default for Pointer {
     }
 }
 
-pub trait ItemData {
-    fn encode(self) -> usize;
-    fn decode(data: usize) -> Self;
-}
-
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Collision;
 
-impl ItemData for Collision {
-    fn encode(self) -> usize {
+impl EntityRef for Collision {
+    fn index(self) -> usize {
         0
     }
 
-    fn decode(_: usize) -> Self {
+    fn new(_: usize) -> Self {
         Self
     }
-}
-
-#[macro_export]
-macro_rules! impl_item_data_for_entity {
-    ($type:ty) => {
-        impl $crate::scope::ItemData for $type {
-            fn encode(self) -> usize {
-                $crate::cranelift_entity::EntityRef::index(self)
-            }
-
-            fn decode(data: usize) -> Self {
-                $crate::cranelift_entity::EntityRef::new(data)
-            }
-        }
-    };
 }

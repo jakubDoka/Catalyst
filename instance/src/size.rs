@@ -1,4 +1,3 @@
-
 #[derive(Debug)]
 pub struct Size {
     pub arch32: i32,

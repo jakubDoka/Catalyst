@@ -1,12 +1,16 @@
+use cranelift_entity::EntityRef;
 use lexer::{
     map::ID,
-    {Source, Sources, Span},
+    SourcesExt, {Source, Sources, Span},
 };
 use parser::ast;
+
+use crate::scope;
 
 pub struct Ent {
     pub id: ID,
     pub source: Source,
+    pub items: Vec<Item>,
 }
 
 impl Ent {
@@ -14,6 +18,23 @@ impl Ent {
         Self {
             id,
             source: Source::default(),
+            items: Vec::new(),
+        }
+    }
+}
+
+pub struct Item {
+    pub id: ID,
+    pub kind: scope::Pointer,
+    pub span: Span,
+}
+
+impl Item {
+    pub fn new(id: ID, kind: impl EntityRef + 'static, span: Span) -> Self {
+        Self {
+            id,
+            kind: scope::Pointer::write(kind),
+            span,
         }
     }
 }
@@ -35,11 +56,11 @@ impl<'a> ModuleImports<'a> {
             assert!(e.kind != ast::Kind::Import);
             self.ast_data.slice(e.children).iter().map(|&c| {
                 let (nick, path) = match self.ast_data.children(c) {
-                    &[nick, path] => (Some(self.ast_data.span(nick)), path),
+                    &[nick, path] => (Some(self.ast_data.nodes[nick].span), path),
                     &[path] => (None, path),
                     _ => unreachable!(),
                 };
-                let path = self.ast_data.span(path).strip_sides();
+                let path = self.ast_data.nodes[path].span.strip_sides();
                 if let Some(split) = self.sources.display(path).find('/') {
                     ModuleImport {
                         nick,

@@ -3,6 +3,7 @@
         "canonicalize",
         "conv",
         "Cranelift",
+        "ents",
         "funcs",
         "iconst",
         "insts",

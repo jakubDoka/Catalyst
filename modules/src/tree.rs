@@ -89,6 +89,11 @@ impl GenericGraph {
     pub fn add_edge(&mut self, to: u32) {
         self.edges.push(to);
     }
+
+    pub fn clear(&mut self) {
+        self.hints.truncate(1);
+        self.edges.clear();
+    }
 }
 
 impl<T: EntityRef + 'static + Debug> TreeStorage<T> for GenericGraph {

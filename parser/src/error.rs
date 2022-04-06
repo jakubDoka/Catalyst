@@ -1,6 +1,5 @@
 use lexer::{
-    {Source, SourceEnt, Span},
-    token,
+    token, {Source, SourceEnt, Span},
 };
 
 pub type Error = AnyError<Kind>;

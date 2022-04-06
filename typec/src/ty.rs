@@ -47,4 +47,3 @@ pub enum Kind {
 }
 
 lexer::gen_entity!(Ty);
-modules::impl_item_data_for_entity!(Ty);

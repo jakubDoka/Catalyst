@@ -1,7 +1,7 @@
-use cranelift_codegen::{packed_option::PackedOption};
+use cranelift_codegen::packed_option::PackedOption;
 use cranelift_entity::EntityList;
 
-use super::{Value, Inst};
+use super::{Inst, Value};
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Ent {

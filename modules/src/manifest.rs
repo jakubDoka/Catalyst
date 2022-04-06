@@ -1,4 +1,4 @@
-use lexer::{Sources, Span};
+use lexer::{Sources, SourcesExt, Span};
 use parser::ast::{self, Ast};
 
 pub struct Manifest<'a> {
@@ -12,8 +12,10 @@ impl<'a> Manifest<'a> {
     }
 
     pub fn get_string_tag(&self, name: &str) -> Option<&'a str> {
-        self.find_tag(name)
-            .map(|tag| self.sources.display(self.ast_data.span(tag).strip_sides()))
+        self.find_tag(name).map(|tag| {
+            self.sources
+                .display(self.ast_data.nodes[tag].span.strip_sides())
+        })
     }
 
     pub fn dependencies(&self) -> Option<impl Iterator<Item = ManifestDepInfo> + 'a> {
@@ -23,8 +25,8 @@ impl<'a> Manifest<'a> {
                     return None;
                 };
 
-                let name = self.ast_data.span(name);
-                let path = self.ast_data.span(path).strip_sides();
+                let name = self.ast_data.nodes[name].span;
+                let path = self.ast_data.nodes[path].span.strip_sides();
 
                 let split = self.sources.display(path).find('@').unwrap_or(path.len());
                 let version = path.slice(split + 1..);
@@ -45,7 +47,7 @@ impl<'a> Manifest<'a> {
                 continue;
             };
 
-            if name != self.sources.display(self.ast_data.span(nm)) {
+            if name != self.sources.display(self.ast_data.nodes[nm].span) {
                 continue;
             };
 

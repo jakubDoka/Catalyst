@@ -1,5 +1,4 @@
-use std::collections::{HashSet, HashMap};
-
+use std::collections::{HashMap, HashSet};
 
 pub struct CmdInput {
     args: Vec<String>,

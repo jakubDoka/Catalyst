@@ -1,4 +1,4 @@
-use cranelift_codegen::{ir, packed_option::PackedOption, isa::CallConv};
+use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 use cranelift_entity::{EntityList, ListPool, PrimaryMap};
 use typec::tir::LinkedList;
 
@@ -65,7 +65,8 @@ impl Function {
     }
 
     pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &value::Ent)> + '_ {
-        self.blocks[block].params
+        self.blocks[block]
+            .params
             .as_slice(&self.value_slices)
             .iter()
             .map(|&value| (value, &self.values[value]))
