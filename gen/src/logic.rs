@@ -1,5 +1,4 @@
-use cranelift_codegen::ir::InstBuilder;
-use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::ir::{InstBuilder, Signature};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_entity::SecondaryMap;
 use cranelift_frontend::FunctionBuilder;
@@ -14,18 +13,10 @@ typec::gen_context!(Generator<'a> {
 
 impl<'a> Generator<'a> {
     pub fn generate(&mut self) {
-        self.builder.func.signature.call_conv = CallConv::WindowsFastcall; // temporary
-        self.builder.func.clear();
-        self.builder
-            .func
-            .signature
-            .params
-            .extend_from_slice(&self.source.signature.params);
-        self.builder
-            .func
-            .signature
-            .returns
-            .extend_from_slice(&self.source.signature.returns);
+        Self::transfer_signature(
+            &self.source.signature,
+            &mut self.builder.func.signature
+        );
 
         for (id, _) in self.source.blocks() {
             self.generate_block(id);
@@ -33,6 +24,12 @@ impl<'a> Generator<'a> {
 
         self.builder.seal_all_blocks();
         self.builder.finalize();
+    }
+
+    fn transfer_signature(from: &Signature, to: &mut Signature) {
+        to.clear(from.call_conv);
+        to.params.extend(from.params.iter().cloned());
+        to.returns.extend(from.returns.iter().cloned());
     }
 
     fn generate_block(&mut self, id: mir::Block) {
@@ -94,7 +91,7 @@ mod test {
         let mut types = Types::new();
         let mut modules = Modules::new();
         let test_str = "
-        fn main() -> int {
+        fn \"windows_fastcall\" main() -> int {
             ret 0
         }
         ";
@@ -146,7 +143,7 @@ mod test {
         let mut function = Function::new();
 
         Translator {
-            ptr_ty: ir::types::INVALID,
+            ptr_ty: ir::types::I32,
             value_lookup: &mut SecondaryMap::new(),
             function: &mut function,
             t_functions: &functions,
