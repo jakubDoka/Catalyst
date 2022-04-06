@@ -74,6 +74,7 @@ impl<'a> Generator<'a> {
 mod test {
     use std::path::PathBuf;
 
+    use cranelift_codegen::isa::CallConv;
     use cranelift_frontend::FunctionBuilderContext;
     use instance::{logic::Translator, Function};
     use lexer::{SourceEnt, Sources, Span, ID};
@@ -144,6 +145,7 @@ mod test {
 
         Translator {
             ptr_ty: ir::types::I32,
+            system_call_convention: CallConv::WindowsFastcall,
             value_lookup: &mut SecondaryMap::new(),
             function: &mut function,
             t_functions: &functions,
