@@ -9,6 +9,8 @@ edition = "2021"
 cranelift-entity = "0.82.1"
 cranelift-codegen = "0.82.1"
 cranelift-frontend = "0.82.1"
+cranelift-module = "0.82.1"
+
 lexer = { path = "../lexer" }
 parser = { path = "../parser" }
 modules = { path = "../modules" }

@@ -1,5 +1,7 @@
-use cranelift_entity::packed_option::PackedOption;
+use cranelift_entity::{packed_option::PackedOption, EntityList};
 use lexer::Span;
+
+use crate::Func;
 
 use super::value::Value;
 
@@ -28,6 +30,7 @@ crate::impl_linked_node!(inout Inst, Ent);
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    Call(Func, EntityList<Value>),
     IntLit,
     Return,
 }

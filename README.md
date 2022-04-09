@@ -5,10 +5,10 @@
 - [ ] Language constructs
     - [ ] Functions
         - [ ] Linage
-        - [ ] Call convention
+        - [x] Call convention
         - [ ] Generics
         - [ ] Methods
-        - [ ] Procedures
+        - [x] Procedures
         - [ ] Statements
             - [x] Return
             - [ ] Break - also as top level code segmentation
@@ -18,7 +18,7 @@
                 - [ ] Control Flow
                     - [ ] If-Elif-Else
                     - [ ] Loop
-                - [ ] Binary
+                - [x] Binary
                 - [ ] Unary
                 - [ ] Call
                     - [ ] Procedural

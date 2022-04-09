@@ -154,6 +154,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-entity",
  "cranelift-frontend",
+ "cranelift-module",
  "instance",
  "lexer",
  "modules",

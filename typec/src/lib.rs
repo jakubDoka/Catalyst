@@ -10,20 +10,3 @@ pub mod ty;
 pub use func::*;
 pub use logic::*;
 pub use ty::*;
-
-#[macro_export]
-macro_rules! gen_context {
-    ($name:ident<$($lifetime:lifetime),*> { $($field_name:ident: $field_type:ty),* $(,)?}) => {
-        pub struct $name<$($lifetime),*> {
-            $(pub $field_name: $field_type),*
-        }
-
-        impl<$($lifetime),*> From<($($field_type),*)> for $name<$($lifetime),*> {
-            fn from(($($field_name),*): ($($field_type),*)) -> Self {
-                Self {
-                    $($field_name),*
-                }
-            }
-        }
-    };
-}

@@ -5,6 +5,8 @@ use std::{
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
 
+use crate::Map;
+
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 
 impl SourcesExt for Sources {}
@@ -14,6 +16,47 @@ pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
         &self[span.source].content[span.range()]
     }
 }
+
+pub struct BuiltinSource {
+    pub spans: Map<Span>,
+    pub source: Source,   
+}
+
+impl BuiltinSource {
+    pub fn new(sources: &mut Sources) -> Self {
+        assert!(sources.is_empty());
+        
+        let source = SourceEnt {
+            content: "".to_string(),
+            path: PathBuf::new(),
+            mapping: LineMapping::new(""),
+        };
+        
+        let source = sources.push(source);
+
+        Self {
+            spans: Map::new(),
+            source,
+        }
+    }
+
+    pub fn make_span(&mut self, sources: &mut Sources, content: &str) -> Span {
+        if let Some(&span) = self.spans.get(content) {
+            return span;
+        }
+        
+        let span = {
+            let ent = &mut sources[self.source];
+            let len = ent.content.len();
+            ent.content.push_str(content);
+            Span::new(self.source, len, len + content.len())
+        };
+        
+        self.spans.insert(content, span);
+        span
+    }
+}
+
 
 crate::gen_entity!(Source);
 
@@ -198,6 +241,16 @@ impl Span {
 
     pub fn source(&self) -> Source {
         self.source
+    }
+}
+
+impl ReservedValue for Span {
+    fn reserved_value() -> Self {
+        Span::default()
+    }
+
+    fn is_reserved_value(&self) -> bool {
+        self.source.is_reserved_value()
     }
 }
 

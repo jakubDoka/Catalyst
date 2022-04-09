@@ -12,8 +12,8 @@ pub enum Kind {
 
 #[derive(Debug)]
 pub struct AnyError<K> {
-    kind: K,
-    span: Span,
+    pub kind: K,
+    pub span: Span,
 }
 
 impl<K> AnyError<K> {

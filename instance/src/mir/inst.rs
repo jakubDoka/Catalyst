@@ -1,4 +1,6 @@
 use cranelift_codegen::packed_option::PackedOption;
+use cranelift_entity::EntityList;
+use typec::Func;
 
 use super::value::Value;
 
@@ -31,6 +33,7 @@ impl Ent {
 
 #[derive(Debug)]
 pub enum Kind {
+    Call(Func, EntityList<Value>),
     IntLit(u64),
     Return,
 }

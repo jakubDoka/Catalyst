@@ -1,0 +1,4 @@
+
+fn other(a, b, c: int) -> int {
+    ret a + b * c
+}

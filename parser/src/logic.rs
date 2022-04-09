@@ -172,7 +172,7 @@ impl<'a> Parser<'a> {
                 _ => todo!(
                     "unhandled {:?} as top level item:\n{}",
                     self.current.kind(),
-                    self.lexer.display(self.current.span())
+                    self.lexer.pretty_print(self.current.span())
                 ),
             }
         }
@@ -225,10 +225,16 @@ impl<'a> Parser<'a> {
             self.temp.acc_nil();
         }
 
-        let body = self.block()?;
-        self.temp.acc(body);
-
-        let end = self.ast_file.nodes[body].span;
+        let end = if self.current.kind() == token::Kind::LeftCurly {
+            let body = self.block()?;
+            self.temp.acc(body);
+            self.ast_file.nodes[body].span
+        } else {
+            let end = self.current.span();
+            self.advance();
+            self.temp.acc_nil();
+            end
+        };
 
         Ok(self.alloc(ast::Kind::Function, span.join(end)))
     }
@@ -260,7 +266,7 @@ impl<'a> Parser<'a> {
             token::Kind::Ident => self.type_ident_expr(),
             _ => todo!(
                 "unhandled token as type expr:\n{}",
-                self.lexer.display(self.current.span())
+                self.lexer.pretty_print(self.current.span())
             ),
         }
     }
@@ -272,7 +278,7 @@ impl<'a> Parser<'a> {
             token::Kind::String => ast::Kind::String,
             _ => todo!(
                 "unhandled token as literal expr:\n{}",
-                self.lexer.display(self.current.span())
+                self.lexer.pretty_print(self.current.span())
             ),
         };
         self.advance();
@@ -292,14 +298,102 @@ impl<'a> Parser<'a> {
     }
 
     fn expr(&mut self) -> Result {
+        let prev = self.simple_expr()?;
+        if self.current.kind() == token::Kind::Operator {
+            let precedence = {
+                let span = self.current.span();
+                let str = self.lexer.display(span);
+                Self::precedence(str)
+            };
+            self.composite_expr(prev, precedence)
+        } else {
+            Ok(prev)
+        }
+    }
+
+    fn composite_expr(&mut self, mut prev: Ast, prev_precedence: usize) -> Result {
+        while self.current.kind() == token::Kind::Operator {
+            let op = {
+                let span = self.current.span();
+                let ent = ast::Ent::childless(ast::Kind::Ident, span);
+                self.advance();
+                self.ast_file.nodes.push(ent)
+            };
+            
+            let mut expr = self.simple_expr()?;
+
+            let precedence = {
+                let span = self.current.span();
+                let str = self.lexer.display(span);
+                Self::precedence(str)
+            };
+
+            if precedence < prev_precedence {    
+                expr = self.composite_expr(expr, precedence)?;
+            }
+
+            let span = {
+                let start = self.ast_file.nodes[prev].span;
+                let end = self.ast_file.nodes[expr].span;
+                start.join(end)
+            };
+
+            self.temp.mark_frame();
+            self.temp.acc(prev);
+            self.temp.acc(op);
+            self.temp.acc(expr);
+
+            prev = self.alloc(ast::Kind::Binary, span);
+        }
+
+        Ok(prev)
+    }
+
+    fn simple_expr(&mut self) -> Result {
         match self.current.kind() {
             token::Kind::Ret => self.return_expr(),
+            token::Kind::Ident => self.ident_expr(),
             token::Kind::Int(_) | token::Kind::String => Ok(self.literal_expr()),
             _ => todo!(
-                "unhandled token as expr:\n{}",
-                self.lexer.display(self.current.span())
+                "unhandled token as simple expr:\n{}",
+                self.lexer.pretty_print(self.current.span())
             ),
         }
+    }
+
+    fn ident_expr(&mut self) -> Result {
+        let span = self.current.span();
+        self.temp.mark_frame();
+        let ident = self.ident()?;
+
+        match self.current.kind() {
+            token::Kind::LeftParen => {
+                self.temp.acc(ident);
+                let end = self.list(
+                    token::Kind::LeftParen, 
+                    token::Kind::Comma, 
+                    token::Kind::RightParen, 
+                    Self::expr
+                )?;
+
+                return Ok(self.alloc(ast::Kind::Call, span.join(end)))
+            },
+            token::Kind::LeftBracket => {
+                self.temp.acc(ident);
+                self.advance();
+                let index = self.expr()?;
+                self.expect(token::Kind::RightBracket)?;
+                let end = self.current.span();
+                self.advance();
+                self.temp.acc(index);
+                return Ok(self.alloc(ast::Kind::Index, span.join(end)))
+            },
+            _ => {
+                self.pop_frame();
+            }
+        }
+
+        Ok(ident)
     }
 
     fn return_expr(&mut self) -> Result {
@@ -448,6 +542,30 @@ impl<'a> Parser<'a> {
 
     fn pop_frame(&mut self) -> EntityList<Ast> {
         self.temp.save_frame(self.ast_file)
+    }
+
+    pub const EQUAL_SIGN_PRECEDENCE: usize = 14;
+
+    pub const INFINITE_PRECEDENCE: usize = usize::MAX;
+
+    pub fn precedence(op: &str) -> usize {
+        match op {
+            "*" | "/" | "%" => 3,
+            "+" | "-" => 4,
+            "<<" | ">>" => 5,
+            "<" | ">" | "<=" | ">=" => 6,
+            "==" | "!=" => 7,
+            "&" => 8,
+            "^" => 9,
+            "|" => 10,
+            "&&" => 11,
+            "||" => 12,
+            _ => if op.ends_with('=') {
+                Self::EQUAL_SIGN_PRECEDENCE
+            } else {
+                Self::INFINITE_PRECEDENCE
+            },
+        }
     }
 }
 

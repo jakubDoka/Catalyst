@@ -171,7 +171,7 @@ pub struct Info {
     pub span: Span,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Pointer {
     id: TypeId,
     data: usize,

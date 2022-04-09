@@ -31,6 +31,7 @@ pub enum Kind {
     Fn,
     Ret,
     Use,
+    Extern,
 
     Ident,
     Operator,

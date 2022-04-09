@@ -1,5 +1,6 @@
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 use cranelift_entity::{EntityList, ListPool, PrimaryMap};
+use lexer::Span;
 use typec::tir::LinkedList;
 
 use crate::mir::{
@@ -10,6 +11,7 @@ use crate::mir::{
 
 #[derive(Debug)]
 pub struct Function {
+    pub name: Span,
     pub signature: ir::Signature,
 
     pub values: PrimaryMap<Value, value::Ent>,
@@ -24,6 +26,7 @@ pub struct Function {
 impl Function {
     pub fn new() -> Self {
         Function {
+            name: Span::default(),
             signature: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),
             value_slices: ListPool::new(),
@@ -34,21 +37,19 @@ impl Function {
         }
     }
 
-    pub fn create_block(&mut self, params: impl Iterator<Item = value::Ent>) -> Block {
-        let params = EntityList::from_iter(
-            params.map(|value| self.values.push(value)),
-            &mut self.value_slices,
-        );
-
+    pub fn create_block(&mut self) -> Block {
         let block = block::Ent {
-            params,
             ..Default::default()
         };
         let block = self.blocks.push(block);
         self.blocks
-            .insert(block, self.start.expand(), &mut self.start, &mut self.end);
+            .insert(block, self.end.expand(), &mut self.start, &mut self.end);
 
         block
+    }
+
+    pub fn push_block_param(&mut self, block: Block, param: Value) {
+        self.blocks[block].params.push(param, &mut self.value_slices);
     }
 
     pub fn add_inst(&mut self, inst: inst::Ent) -> Inst {
@@ -80,5 +81,13 @@ impl Function {
         self.insts.clear();
         self.start.take();
         self.end.take();
+    }
+
+    pub fn make_values(&mut self, arg_iter: impl Iterator<Item = Value>) -> EntityList<Value> {
+        EntityList::from_iter(arg_iter, &mut self.value_slices)
+    }
+
+    pub fn values(&self, list: EntityList<Value>) -> &[Value] {
+        list.as_slice(&self.value_slices)
     }
 }

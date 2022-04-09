@@ -7,6 +7,7 @@ use parser::ast;
 
 use crate::scope;
 
+#[derive(Debug)]
 pub struct Ent {
     pub id: ID,
     pub source: Source,
@@ -23,6 +24,7 @@ impl Ent {
     }
 }
 
+#[derive(Debug)]
 pub struct Item {
     pub id: ID,
     pub kind: scope::Pointer,
@@ -37,9 +39,17 @@ impl Item {
             span,
         }
     }
+
+    pub fn to_scope_item(&self) -> scope::Item {
+        scope::Item {
+            info: scope::Info { span: self.span },
+            pointer: self.kind,
+        }
+    }
 }
 
 lexer::gen_entity!(Module);
+
 
 pub struct ModuleImports<'a> {
     ast_data: &'a ast::Data,

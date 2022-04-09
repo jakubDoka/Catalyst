@@ -1,5 +1,5 @@
 use cranelift_entity::packed_option::ReservedValue;
-use lexer::{Sources, SourcesExt};
+use lexer::{Sources, SourcesExt, Span, ID};
 use modules::{scope::{self, Scope}, module::{Module, self}, logic::Modules};
 use parser::{
     ast::{self, Ast},
@@ -7,7 +7,7 @@ use parser::{
 };
 
 use crate::{
-    error::Error,
+    error::{Error, self},
     func::{self, Func, Functions, Signature},
     tir::{
         block::Block,
@@ -19,14 +19,14 @@ use crate::{
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
-crate::gen_context!(Collector<'a> {
-    scope: &'a mut Scope,
-    functions: &'a mut Functions,
-    types: &'a mut Types,
-    modules: &'a mut Modules,
-    sources: &'a Sources,
-    ast: &'a ast::Data,
-});
+pub struct Collector<'a> {
+    pub scope: &'a mut Scope,
+    pub functions: &'a mut Functions,
+    pub types: &'a mut Types,
+    pub modules: &'a mut Modules,
+    pub sources: &'a Sources,
+    pub ast: &'a ast::Data,
+}
 
 impl<'a> Collector<'a> {
     pub fn collect_items(&mut self, module: Module) -> Result {
@@ -68,19 +68,25 @@ impl<'a> Collector<'a> {
         }
         .into();
 
+        let call_conv = if call_conv.is_reserved_value() {
+            Span::default()
+        } else {
+            self.ast.nodes[call_conv].span
+        };
         let sig = Signature {
-            call_conv: self.ast.nodes[call_conv].span,
+            call_conv,
             args,
             ret,
         };
+        let name = self.ast.nodes[name].span;
         let ent = func::Ent {
             sig,
             ast,
+            name, 
             ..Default::default()
         };
         let func = self.functions.add(ent);
-        let name_span = self.ast.nodes[name].span;
-        let id = self.sources.display(name_span).into();
+        let id = self.sources.display(name).into();
         self.scope
             .insert(
                 current_span.source(),
@@ -116,24 +122,30 @@ pub fn parse_type(scope: &Scope, ast: &ast::Data, sources: &Sources, ty: Ast) ->
     }
 }
 
-crate::gen_context!(Builder<'a> {
-    functions: &'a mut Functions,
-    scope: &'a mut Scope,
-    types: &'a mut Types,
-    sources: &'a Sources,
-    ast: &'a ast::Data,
-});
+pub struct FuncBuilder<'a> {
+    pub functions: &'a mut Functions,
+    pub scope: &'a mut Scope,
+    pub types: &'a mut Types,
+    pub sources: &'a Sources,
+    pub ast: &'a ast::Data,
+    pub func: Func,
+}
 
-impl<'a> Builder<'a> {
-    pub fn build_function_ir(&mut self, func: Func) -> Result {
-        let ast = self.functions.get(func).ast;
+impl<'a> FuncBuilder<'a> {
+    pub fn build(&mut self) -> Result {
+        let func_ent = &mut self.functions.ents[self.func];
+        let ast = func_ent.ast;
+        let &body_ast = self.ast.children(ast).last().unwrap();
+        
+        if body_ast.is_reserved_value() {
+            func_ent.kind = func::Kind::External;
+            return Ok(());
+        }
 
-        let entry_point = self.functions.create_block(func);
+        let entry_point = self.functions.create_block(self.func);
         self.build_function_args(entry_point, ast)?;
 
-        let &body_ast = self.ast.children(ast).last().unwrap();
-
-        self.build_block(func, body_ast)?;
+        self.build_block(body_ast)?;
 
         Ok(())
     }
@@ -150,7 +162,7 @@ impl<'a> Builder<'a> {
             for &name in &children[0..children.len() - 1] {
                 let name_span = self.ast.nodes[name].span;
                 let name_str = self.sources.display(name_span);
-                let value = self.functions.add_value(value::Ent::new(ty, name_span));
+                let value = self.functions.values.push(value::Ent::new(ty, name_span));
                 self.scope
                     .push_item(name_str, scope::Item::new(value, name_span));
                 self.functions.push_block_param(entry_point, value);
@@ -160,19 +172,19 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    fn build_block(&mut self, func: Func, block_ast: Ast) -> Result<Option<Value>> {
+    fn build_block(&mut self, block_ast: Ast) -> Result<Option<Value>> {
         let mut value = None;
         for &stmt in self.ast.children(block_ast) {
-            value = self.build_stmt(func, stmt)?;
+            value = self.build_stmt(stmt)?;
         }
 
         Ok(value)
     }
 
-    fn build_stmt(&mut self, func: Func, stmt: Ast) -> Result<Option<Value>> {
+    fn build_stmt(&mut self, stmt: Ast) -> Result<Option<Value>> {
         let ast::Ent { kind, span, .. } = self.ast.nodes[stmt];
         match kind {
-            ast::Kind::Return => self.build_return(func, stmt),
+            ast::Kind::Return => self.build_return(stmt),
             kind => todo!(
                 "Unhandled statement {:?}: {}",
                 kind,
@@ -181,20 +193,51 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn build_return(&mut self, func: Func, stmt: Ast) -> Result<Option<Value>> {
-        let children = self.ast.children(stmt);
-        let value = self.build_expr(func, children[0])?;
-        self.functions.add_inst(
-            func,
-            inst::Ent::new(inst::Kind::Return, Some(value), self.ast.nodes[stmt].span),
-        );
-        Ok(None)
+    fn build_return(&mut self, stmt: Ast) -> Result<Option<Value>> {
+        let value = {
+            let children = self.ast.children(stmt);
+            let ast = children[0];
+            let span = self.ast.nodes[ast].span;
+            
+            let return_type = self.functions.ents[self.func].sig.ret.expand();
+            let return_value = self.build_optional_expr(ast)?;
+
+            match (return_type, return_value) {
+                (None, Some(_)) => {
+                    return Err(Error::new(error::Kind::UnexpectedValue, span));
+                },
+                (Some(_), None) => {
+                    return Err(Error::new(error::Kind::ExpectedValue, span));
+                },
+                (Some(expected), Some(actual)) => {
+                    self.expect_expr_ty(actual, expected)?;
+                    Some(actual)
+                },
+                (None, None) => None,
+            }
+        };
+
+        {
+            let span = self.ast.nodes[stmt].span;
+            let ent = inst::Ent::new(inst::Kind::Return, value, span);
+            self.functions.add_inst(self.func, ent);
+        }
+
+        Ok(value)
     }
 
-    fn build_expr(&mut self, func: Func, ast: Ast) -> Result<Value> {
+    fn build_expr(&mut self, ast: Ast) -> Result<Value> {
+        self.build_optional_expr(ast)?
+            .ok_or_else(|| Error::new(error::Kind::ExpectedValue, self.ast.nodes[ast].span))
+    }
+
+    fn build_optional_expr(&mut self, ast: Ast) -> Result<Option<Value>> {
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
         match kind {
-            ast::Kind::Int(_) | ast::Kind::String => self.build_literal(func, ast),
+            ast::Kind::Int(_) | ast::Kind::String => self.build_literal(ast).map(Some),
+            ast::Kind::Call => self.build_call(ast),
+            ast::Kind::Binary => self.build_binary(ast),
+            ast::Kind::Ident => self.build_ident(ast).map(Some),
             kind => todo!(
                 "Unhandled expression {:?}: {}",
                 kind,
@@ -203,7 +246,110 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn build_literal(&mut self, func: Func, ast: Ast) -> Result<Value> {
+    fn build_ident(&mut self, ast: Ast) -> Result<Value> {
+        let span = self.ast.nodes[ast].span;
+        let str = self.sources.display(span);
+        self.scope.get::<Value>(str, span)
+            .map_err(Convert::convert)
+    }
+
+    fn build_binary(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let &[left, op, right] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let left = self.build_expr(left)?;
+        let right = self.build_expr(right)?;
+
+        let id = {
+            let op_id: ID = {
+                let span = self.ast.nodes[op].span;
+                let str = self.sources.display(span);
+                str.into()
+            };
+    
+            let left_id = {
+                let ty = self.functions.values[left].ty;
+                self.types.get(ty).id
+            };
+            
+            ID::new("<binary>") + op_id + left_id
+        };
+
+        let func = {
+            let span = self.ast.nodes[ast].span;
+            self.scope.get::<Func>(id, span).map_err(Convert::convert)?
+        };
+
+        let value = {
+            let sig = self.functions.ents[func].sig;
+            if let Some(ty) = sig.ret.expand() {
+                let span = self.ast.nodes[ast].span;
+                let ent = value::Ent::new(ty, span);
+                Some(self.functions.values.push(ent))
+            } else {
+                None
+            }
+        };
+
+        let inst = {
+            let span = self.ast.nodes[ast].span;
+            let args = self.functions.make_values([left, right].iter().cloned());
+            inst::Ent::new(inst::Kind::Call(func, args), value, span)
+        };
+
+        self.functions.add_inst(self.func, inst);
+
+        Ok(value)
+    }
+
+    fn build_call(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let children = self.ast.children(ast);
+        let span = self.ast.nodes[ast].span;
+        
+        let called_func = {
+            let ast = children[0];
+            let span = self.ast.nodes[ast].span;
+            let name = self.sources.display(span);
+            self.scope.get::<Func>(name, span).map_err(Convert::convert)?
+        };
+        
+        let args = {
+            let sig_args = {
+                let args = self.functions.ents[called_func].sig.args;
+                self.types.slice(args).to_owned() // TODO: avoid in the future
+            };
+
+            if sig_args.len() != children.len() - 1 {
+                let kind = error::Kind::ArgCountMismatch(children.len() - 1, sig_args.len());
+                return Err(Error::new(kind, span));
+            }
+
+            let mut args = vec![];
+            for (&arg, ty) in children[1..].iter().zip(sig_args) {
+                let expr = self.build_expr(arg)?;
+                self.expect_expr_ty(expr, ty)?;
+                args.push(expr);
+            }
+            self.functions.make_values(args.into_iter())
+        };
+
+        let return_value = {
+            let ty = self.functions.ents[called_func].sig.ret;
+            ty.expand()
+                .map(|ty| self.functions.add_value(value::Ent::new(ty, span)))
+        };
+
+        {
+            let kind = inst::Kind::Call(called_func, args);
+            let ent = inst::Ent::new(kind, return_value, span);
+            self.functions.add_inst(self.func, ent);
+        }
+
+        Ok(return_value)
+    }
+
+    fn build_literal(&mut self, ast: Ast) -> Result<Value> {
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
         let (ty, kind) = match kind {
             ast::Kind::Int(base) => match base {
@@ -219,8 +365,21 @@ impl<'a> Builder<'a> {
         let value = value::Ent::new(ty, span);
         let value = self.functions.add_value(value);
         self.functions
-            .add_inst(func, inst::Ent::new(kind, Some(value), span));
+            .add_inst(self.func, inst::Ent::new(kind, Some(value), span));
         Ok(value)
+    }
+
+    fn expect_expr_ty(&self, expr: Value, expected: Ty) -> Result {
+        let value::Ent { ty, span, .. } = self.functions.values[expr];
+        self.expect_ty(ty, expected, span)
+    }
+
+    fn expect_ty(&self, ty: Ty, expected: Ty, span: Span) -> Result {
+        if ty == expected {
+            Ok(())
+        } else {
+            Err(Error::new(error::Kind::TypeMismatch(ty, expected), span))
+        }
     }
 
     pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
@@ -284,14 +443,15 @@ mod test {
 
         let func = scope.get::<Func>("main", Span::default()).unwrap();
 
-        Builder {
+        FuncBuilder {
             scope: &mut scope,
             functions: &mut functions,
             types: &mut types,
             sources: &sources,
             ast: &ast_data,
+            func,
         }
-        .build_function_ir(func)
+        .build()
         .unwrap();
 
         println!("{}", functions.display(func, &sources, &ast_data));

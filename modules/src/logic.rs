@@ -45,6 +45,7 @@ pub struct ModuleLoader<'a> {
 
 impl<'a> ModuleLoader<'a> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> Result<Vec<Module>> {
+        self.ctx.clear();
         let unit_ent = &self.units[unit];
         let base_line = self.modules.len() as u32;
 
@@ -289,91 +290,5 @@ impl<'a> UnitLoader<'a> {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_extension() {
-        let mut path = PathBuf::from("/home/user/project/src/main.rs");
-        path.set_extension("");
-
-        assert_eq!(path.to_str(), Some("/home/user/project/src/main"));
-    }
-
-    #[test]
-    fn test_no_cycle() {
-        let mut sources = Sources::new();
-        let mut units = Units::new();
-        let mut ctx = UnitLoaderContext::new();
-
-        UnitLoader {
-            sources: &mut sources,
-            units: &mut units,
-            ctx: &mut ctx,
-        }
-        .load_units(Path::new("src/tests/no_cycle"))
-        .unwrap();
-
-        assert_eq!(units.len(), 3);
-    }
-
-    #[test]
-    fn test_cycle() {
-        let mut sources = Sources::new();
-        let mut modules = Units::new();
-        let mut ctx = UnitLoaderContext::new();
-
-        assert!(matches!(
-            UnitLoader {
-                sources: &mut sources,
-                units: &mut modules,
-                ctx: &mut ctx,
-            }
-            .load_units(Path::new("src/tests/cycle"))
-            .unwrap_err()
-            .kind(),
-            error::Kind::UnitCycle(_)
-        ));
-    }
-
-    #[test]
-    fn full_load() {
-        let mut sources = Sources::new();
-        let mut modules = Modules::new();
-        let mut units = Units::new();
-        let mut ctx = UnitLoaderContext::new();
-
-        let mut map = Map::new();
-        let mut frontier = VecDeque::new();
-
-        let unit_order = UnitLoader {
-            sources: &mut sources,
-            units: &mut units,
-            ctx: &mut ctx,
-        }
-        .load_units(Path::new("src/tests/no_cycle"))
-        .unwrap();
-        let mut module_orders = Vec::with_capacity(unit_order.len());
-
-        for unit in unit_order {
-            let module_order = ModuleLoader {
-                sources: &mut sources,
-                units: &mut units,
-                modules: &mut modules,
-                ctx: &mut ctx,
-                frontier: &mut frontier,
-                map: &mut map,
-            }
-            .load_unit_modules(unit)
-            .unwrap();
-            module_orders.push(module_order);
-        }
-
-        assert_eq!(units.len(), 3);
-        assert_eq!(modules.len(), 6);
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     ty::Ty,
 };
 use cranelift_entity::{packed_option::PackedOption, EntityList, ListPool, PrimaryMap};
-use lexer::{Sources, Span};
+use lexer::{Sources, Span, ID};
 use parser::ast::{self, Ast};
 
 pub struct Functions {
@@ -108,6 +108,10 @@ impl Functions {
     pub fn get(&self, func: Func) -> &Ent {
         &self.ents[func]
     }
+
+    pub fn values(&self, list: EntityList<Value>) -> &[Value] {
+        list.as_slice(&self.value_slices)
+    }
 }
 
 pub struct Display<'a> {
@@ -133,10 +137,26 @@ impl std::fmt::Display for Display<'_> {
 #[derive(Default)]
 pub struct Ent {
     pub sig: Signature,
+    pub name: Span,
+    pub kind: Kind,
     pub ast: Ast,
+    pub id: ID,
     pub return_type: PackedOption<Ty>,
     pub start: PackedOption<Block>,
     pub end: PackedOption<Block>,
+}
+
+#[derive(PartialEq, Eq)]
+pub enum Kind {
+    Local,
+    External,
+    Builtin,
+}
+
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Local
+    }
 }
 
 #[derive(Clone, Copy, Default)]

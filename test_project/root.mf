@@ -1,4 +1,9 @@
+use {
+    "root/dep"
+}
 
 fn "default" main() -> int {
-    ret 10
+    ret other(1, 2, 3)
 }
+
+fn "default" printf(str: int) extern

@@ -1,15 +1,22 @@
 use cranelift_codegen::ir::{InstBuilder, Signature};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::SecondaryMap;
+use cranelift_entity::{SecondaryMap, EntityList};
 use cranelift_frontend::FunctionBuilder;
+use cranelift_module::{FuncId, Module};
 use instance::mir;
+use lexer::{Sources, SourcesExt};
+use typec::Func;
 use typec::tir::LinkedList;
 
-typec::gen_context!(Generator<'a> {
-    builder: &'a mut FunctionBuilder<'a>,
-    value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
-    source: &'a instance::Function,
-});
+pub struct Generator<'a> {
+    pub module: &'a mut dyn Module,
+    pub builder: &'a mut FunctionBuilder<'a>,
+    pub value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
+    pub t_functions: &'a typec::Functions,
+    pub function_lookup: &'a SecondaryMap<Func, PackedOption<FuncId>>,
+    pub source: &'a instance::Function,
+    pub sources: &'a Sources,
+}
 
 impl<'a> Generator<'a> {
     pub fn generate(&mut self) {
@@ -37,6 +44,7 @@ impl<'a> Generator<'a> {
         self.builder.switch_to_block(block);
 
         for (value, ent) in self.source.block_params(id) {
+            println!("{value:?}");
             let ir_value = self.builder.append_block_param(block, ent.repr);
             self.value_lookup[value] = ir_value.into();
         }
@@ -52,6 +60,31 @@ impl<'a> Generator<'a> {
 
     fn generate_inst(&mut self, inst: &mir::inst::Ent) {
         match inst.kind {
+            mir::Kind::Call(func, args) => {
+                if self.t_functions.ents[func].kind == typec::func::Kind::Builtin {
+                    self.generate_native_call(func, args, inst.value);
+                    return;
+                }
+
+                let ir_inst = {
+                    let func_ref = {
+                        let ir_func = self.function_lookup[func].unwrap();
+                        self.module.declare_func_in_func(ir_func, self.builder.func)
+                    };
+                    
+                    let args: Vec<_> = self.source
+                        .values(args)
+                        .iter()
+                        .map(|&value| self.value_lookup[value].unwrap())
+                        .collect();
+                    
+                    self.builder.ins().call(func_ref, &args)
+                };
+                
+                self.builder.inst_results(ir_inst).get(0).map(|&value| {
+                    self.value_lookup[inst.value.unwrap()] = value.into();
+                });
+            }
             mir::Kind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.source.values[value].repr;
@@ -68,105 +101,120 @@ impl<'a> Generator<'a> {
             }
         }
     }
-}
 
-#[cfg(test)]
-mod test {
-    use std::path::PathBuf;
+    fn generate_native_call(&mut self, func: Func, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        let name = self.t_functions.ents[func].name;
+        let str = self.sources.display(name);
 
-    use cranelift_codegen::isa::CallConv;
-    use cranelift_frontend::FunctionBuilderContext;
-    use instance::{logic::Translator, Function};
-    use lexer::{SourceEnt, Sources, Span, ID};
-    use modules::{scope::{self, Scope}, module, logic::Modules};
-    use parser::{ast, Parser};
-    use typec::{Builder, Collector, Func, Functions, Types};
-
-    use super::*;
-
-    #[test]
-    fn test_translation() {
-        let mut scope = Scope::new();
-        let mut sources = Sources::new();
-        let mut functions = Functions::new();
-        let mut types = Types::new();
-        let mut modules = Modules::new();
-        let test_str = "
-        fn \"windows_fastcall\" main() -> int {
-            ret 0
+        match str {
+            "+" => self.generate_native_add(args, result),
+            "-" => self.generate_native_sub(args, result),
+            "*" => self.generate_native_mul(args, result),
+            "/" => self.generate_native_div(args, result),
+            _ => todo!("Unhandled native function: {:?}", str),
         }
-        ";
+    }
 
-        let int = types.add(typec::ty::Ent::new(typec::Kind::Int(-1), "int".into()));
+    fn generate_native_add(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        match self.source.values(args) {
+            &[value] => {
+                self.value_lookup[result.unwrap()] = self.value_lookup[value];
+            }
+            &[left, right] => {
+                let left = self.value_lookup[left].unwrap();
+                let right = self.value_lookup[right].unwrap();
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
-        let source = sources.push(SourceEnt::new(PathBuf::from(""), test_str.to_string()));
-        scope
-            .insert(
-                source,
-                "int",
-                scope::Item::new(int, Span::new(source, 0, 0)),
-            )
-            .unwrap();
+                assert!(ty == self.builder.func.dfg.value_type(right));
+                
+                let add = if ty.is_int() {
+                    self.builder.ins().iadd(left, right)
+                } else {
+                    todo!("Unimplemented addition for {}", ty);
+                };
 
-        let module = module::Ent::new(ID::default());
-        let module = modules.push(module);
-
-        let mut ast_data = ast::Data::new();
-        let mut ast_temp = ast::Temp::new();
-
-        let inter_state =
-            Parser::parse_imports(test_str, &mut ast_data, &mut ast_temp, source).unwrap();
-        Parser::parse_code_chunk(test_str, &mut ast_data, &mut ast_temp, inter_state).unwrap();
-
-        Collector {
-            scope: &mut scope,
-            functions: &mut functions,
-            types: &mut types,
-            modules: &mut modules,
-            sources: &sources,
-            ast: &ast_data,
+                self.value_lookup[result.unwrap()] = add.into();
+            }
+            _ => unreachable!(),
         }
-        .collect_items(module)
-        .unwrap();
+    }
 
-        let func = scope.get::<Func>("main", Span::default()).unwrap();
+    fn generate_native_sub(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        match self.source.values(args) {
+            &[value] => {
+                let value = self.value_lookup[value].unwrap();
+                let ty = self.builder.func.dfg.value_type(value);
 
-        Builder {
-            scope: &mut scope,
-            functions: &mut functions,
-            types: &mut types,
-            sources: &sources,
-            ast: &ast_data,
+                let neg = if ty.is_int() {
+                    self.builder.ins().ineg(value)
+                } else {
+                    todo!("Unimplemented subtraction for {}", ty);
+                };
+
+                self.value_lookup[result.unwrap()] = neg.into();
+            }
+            &[left, right] => {
+                let left = self.value_lookup[left].unwrap();
+                let right = self.value_lookup[right].unwrap();
+                
+                let ty = self.builder.func.dfg.value_type(left); 
+
+                assert!(ty == self.builder.func.dfg.value_type(right));
+                
+                let sub = if ty.is_int() {
+                    self.builder.ins().isub(left, right)
+                } else {
+                    todo!("Unimplemented subtraction for {}", ty);
+                };
+
+                self.value_lookup[result.unwrap()] = sub.into();
+            }
+            _ => unreachable!(),
         }
-        .build_function_ir(func)
-        .unwrap();
+    }
 
-        let mut function = Function::new();
+    fn generate_native_mul(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        match self.source.values(args) {
+            &[left, right] => {
+                let left = self.value_lookup[left].unwrap();
+                let right = self.value_lookup[right].unwrap();
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
-        Translator {
-            ptr_ty: ir::types::I32,
-            system_call_convention: CallConv::WindowsFastcall,
-            value_lookup: &mut SecondaryMap::new(),
-            function: &mut function,
-            t_functions: &functions,
-            t_types: &types,
-            sources: &sources,
+                assert!(ty == self.builder.func.dfg.value_type(right));
+                
+                let mul = if ty.is_int() {
+                    self.builder.ins().imul(left, right)
+                } else {
+                    todo!("Unimplemented multiplication for {}", ty);
+                };
+
+                self.value_lookup[result.unwrap()] = mul.into();
+            }
+            _ => unreachable!(),
         }
-        .translate_func(func)
-        .unwrap();
+    }
 
-        let mut context = FunctionBuilderContext::new();
-        let mut ir_function = ir::Function::new();
+    fn generate_native_div(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        match self.source.values(args) {
+            &[left, right] => {
+                let left = self.value_lookup[left].unwrap();
+                let right = self.value_lookup[right].unwrap();
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
-        let mut builder = FunctionBuilder::new(&mut ir_function, &mut context);
+                assert!(ty == self.builder.func.dfg.value_type(right));
+                
+                let div = if ty.is_int() {
+                    self.builder.ins().sdiv(left, right)
+                } else {
+                    todo!("Unimplemented division for {}", ty);
+                };
 
-        Generator {
-            builder: &mut builder,
-            value_lookup: &mut SecondaryMap::new(),
-            source: &function,
+                self.value_lookup[result.unwrap()] = div.into();
+            }
+            _ => unreachable!(),
         }
-        .generate();
-
-        println!("{}", ir_function.display());
     }
 }

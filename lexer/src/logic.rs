@@ -78,6 +78,7 @@ impl<'a> Lexer<'a> {
                         "fn" => token::Kind::Fn,
                         "ret" => token::Kind::Ret,
                         "use" => token::Kind::Use,
+                        "extern" => token::Kind::Extern,
                         _ => token::Kind::Ident,
                     }
                 }
@@ -113,7 +114,11 @@ impl<'a> Lexer<'a> {
         self.source
     }
 
-    pub fn display(&self, span: Span) -> SpanDisplay {
+    pub fn display(&self, span: Span) -> &str {
+        &self.str[span.range()]
+    }
+
+    pub fn pretty_print(&self, span: Span) -> SpanDisplay {
         SpanDisplay::new(self.source_content(), span)
     }
 
@@ -149,42 +154,5 @@ pub trait IsOperator: Sized {
             self.self_(),
             '+' | '-' | '*' | '/' | '%' | '^' | '=' | '<' | '>' | '!' | '&' | '|' | '?' | ':'
         )
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::{source_info::Source, token};
-
-    use super::Lexer;
-    use std::fmt::Write;
-
-    #[test]
-    fn test() {
-        let test_string = "
-            ident
-            0 \"
-        string
-            \"
-            fn ret use 
-            () {}
-            ;,
-        ";
-
-        let mut chars = Lexer::new(0, test_string, Source::default());
-        let mut f = String::new();
-
-        loop {
-            let token = chars.next_token();
-            if token.kind() == token::Kind::Eof {
-                break;
-            }
-            token.range();
-            writeln!(f, "{:?}", token.kind()).unwrap();
-            token.span().pretty_print(&mut f, test_string).unwrap();
-            writeln!(f).unwrap();
-        }
-
-        std::fs::write("test_out.txt", f).unwrap();
     }
 }
