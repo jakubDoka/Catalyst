@@ -220,6 +220,7 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    If,
     Binary,
     Index,
     Call,

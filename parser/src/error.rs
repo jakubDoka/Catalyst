@@ -1,5 +1,5 @@
 use lexer::{
-    token, {Source, SourceEnt, Span},
+    token, Span, Sources,
 };
 
 pub type Error = AnyError<Kind>;
@@ -9,6 +9,53 @@ pub enum Kind {
     Expected(token::Kind, token::Kind),
     ExpectedFork(Vec<token::Kind>, token::Kind),
 }
+
+#[macro_export]
+macro_rules! impl_error_display {
+    (($self:ident, $sources:ident, {$($name:ident: $ty:ty,)*}, $f:ident) => $body:tt) => {
+        pub struct Display {
+            $($name: $ty,)*
+            error: Error,
+            sources: lexer::Sources,
+        }
+
+        impl<'a> Display {
+            pub fn new(sources: lexer::Sources, error: Error, $($name: $ty),*) -> Self {
+                Self {
+                    $($name,)*
+                    error,
+                    sources,
+                }
+            }
+        }
+
+        impl<'a> std::fmt::Display for Display {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                self.error.print_into(&($(&self.$name),*), &self.sources, f)
+            }
+        }
+
+        impl $crate::error::AnyErrorKind<($(&$ty),*)> for Kind {
+            fn print(&$self, $sources: &lexer::Sources, ($($name),*): &($(&$ty),*), $f: &mut impl std::fmt::Write) -> std::fmt::Result {
+                $body
+
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_error_display!((self, _sources, {}, f) => {
+    match self {
+        Kind::Expected(expected, found) => {
+            write!(f, "expected {:?}, found {:?}", expected, found)?;
+        }
+        Kind::ExpectedFork(expected, found) => {
+            let expected = expected.iter().map(|kind| format!("{:?}", kind)).collect::<Vec<_>>().join(" | ");
+            write!(f, "expected one of {:?}, found {:?}", expected, found)?;
+        }
+    }
+});
 
 #[derive(Debug)]
 pub struct AnyError<K> {
@@ -32,22 +79,23 @@ impl<K> AnyError<K> {
         }
     }
 
-    pub fn print_into<T: ErrorState>(
+    pub fn print_into<T>(
         &self,
         state: &T,
+        sources: &Sources,
         f: &mut impl std::fmt::Write,
     ) -> std::fmt::Result
     where
         K: AnyErrorKind<T>,
     {
-        let source_ent = state.source_data(self.span.source());
+        let source_ent = &sources[self.span.source()];
         self.span.pretty_print_with_line_info(
             f,
             source_ent.content(),
             source_ent.path(),
             source_ent.line_mapping(),
         )?;
-        self.kind.print(state, f)
+        self.kind.print(sources, state, f)
     }
 }
 
@@ -64,10 +112,6 @@ pub trait Convert<T> {
     fn convert(self) -> T;
 }
 
-pub trait ErrorState {
-    fn source_data(&self, source: Source) -> &SourceEnt;
-}
-
 pub trait AnyErrorKind<T> {
-    fn print(&self, state: &T, f: &mut impl std::fmt::Write) -> std::fmt::Result;
+    fn print(&self, sources: &Sources, state: &T, f: &mut impl std::fmt::Write) -> std::fmt::Result;
 }

@@ -32,6 +32,8 @@ pub enum Kind {
     Ret,
     Use,
     Extern,
+    If,
+    Else,
 
     Ident,
     Operator,

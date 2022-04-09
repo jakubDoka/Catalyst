@@ -79,6 +79,8 @@ impl<'a> Lexer<'a> {
                         "ret" => token::Kind::Ret,
                         "use" => token::Kind::Use,
                         "extern" => token::Kind::Extern,
+                        "if" => token::Kind::If,
+                        "else" => token::Kind::Else,
                         _ => token::Kind::Ident,
                     }
                 }

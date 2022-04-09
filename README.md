@@ -31,7 +31,8 @@
                     - [ ] Arrays
     - [ ] Macros
         - [ ] Jit
-        - [ ] Tokens
+        - [ ] String
+        - [ ] Token
         - [ ] Ast
         - [ ] Tir
         - [ ] Mir
@@ -41,3 +42,4 @@
         - [ ] Safe tagged unions
         - [ ] Structs
         - [ ] Bounds
+- [ ] error display

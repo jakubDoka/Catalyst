@@ -111,7 +111,7 @@ impl<'a> FunctionTranslator<'a> {
         for (id, value) in self.t_functions.block_params(id) {
             let value = {
                 let repr = self.repr_lookup[value.ty];
-                let ent = value::Ent::new(repr);
+                let ent = value::Ent::repr(repr);
                 self.function.values.push(ent)
             };
             
@@ -138,7 +138,7 @@ impl<'a> FunctionTranslator<'a> {
                         if let Some(value) = inst.result.expand() {
                             let ty = self.t_functions.values[value].ty;
                             let repr = self.repr_lookup[ty];
-                            let ent = mir::value::Ent::new(repr);
+                            let ent = mir::value::Ent::repr(repr);
                             let mir_value = self.function.values.push(ent);
                             self.value_lookup[value] = mir_value;
                             Some(mir_value)
@@ -157,7 +157,7 @@ impl<'a> FunctionTranslator<'a> {
                 let value = {
                     let ty = self.t_functions.values[inst_value].ty;
                     let repr = self.repr_lookup[ty];
-                    let ent = mir::value::Ent::new(repr);
+                    let ent = mir::value::Ent::repr(repr);
                     self.function.values.push(ent)
                 };
 

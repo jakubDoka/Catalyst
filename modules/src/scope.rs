@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::{any::TypeId, collections::HashMap};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 use lexer::{
@@ -7,6 +7,8 @@ use lexer::{
 };
 
 use crate::error::{self, Error};
+
+pub type ScopeItemLexicon = HashMap<TypeId, &'static str>; 
 
 pub struct Scope {
     map: Map<Item>,

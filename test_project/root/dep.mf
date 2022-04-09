@@ -2,3 +2,7 @@
 fn other(a, b, c: int) -> int {
     ret a + b * c
 }
+
+fn bti(b: bool) -> int {
+    ret if b { 1 } else { 0 }
+}

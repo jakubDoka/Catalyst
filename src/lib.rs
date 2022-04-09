@@ -4,7 +4,8 @@ use std::process::Command;
 use std::{collections::VecDeque, path::Path};
 use cranelift_codegen::isa::CallConv;
 use modules::module::{ModuleImports, self};
-use typec::ty;
+use modules::scope::ScopeItemLexicon;
+use typec::{ty, Ty};
 use cli::CmdInput;
 use cranelift_codegen::Context;
 use cranelift_codegen::settings::Flags;
@@ -19,7 +20,18 @@ use modules::{logic::{Modules, UnitLoaderContext, Units, UnitLoader, ModuleLoade
 use parser::{ast, Parser};
 use typec::{Collector, Func, FuncBuilder};
 
-pub fn compile() {
+macro_rules! unwrap {
+    ($expr:expr, $err:ident, $mapping:expr) => {
+        match ($expr) {
+            Ok(p) => p,
+            Err($err) => {
+                return Err($mapping);
+            },
+        }
+    };
+}
+
+pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
     // cli
     let input = CmdInput::new();
     
@@ -42,29 +54,47 @@ pub fn compile() {
     let mut unit_load_ctx = UnitLoaderContext::new();
     let mut modules = Modules::new();
     let mut units = Units::new();
-    
-    let module_order = {
-        let unit_order = UnitLoader {
-            sources: &mut sources,
-            units: &mut units,
-            ctx: &mut unit_load_ctx,
+    let scope_item_lexicon = {
+        let mut map = ScopeItemLexicon::new();
+
+        for (id, name) in [
+            (std::any::TypeId::of::<module::Module>(), "module"),
+            (std::any::TypeId::of::<Ty>(), "type"),
+            (std::any::TypeId::of::<Func>(), "function"),
+        ] {
+            map.insert(id, name);
         }
-        .load_units(path)
-        .unwrap();
+
+        map
+    };
+
+    let module_order = {
+        let unit_order = unwrap!(UnitLoader {
+                    sources: &mut sources,
+                units: &mut units,
+                ctx: &mut unit_load_ctx,
+            }
+            .load_units(path),
+            err,
+            Box::new(modules::error::Display::new(sources, err, modules, units, scope_item_lexicon))
+        );
+
       
         let mut module_order = vec![];
         
         for unit in unit_order {
-            let local_module_order = ModuleLoader {
-                sources: &mut sources,
-                modules: &mut modules,
-                units: &mut units,
-                frontier: &mut module_frontier,
-                ctx: &mut unit_load_ctx,
-                map: &mut module_map,
-            }
-            .load_unit_modules(unit)
-            .unwrap();
+            let local_module_order = unwrap!(ModuleLoader {
+                    sources: &mut sources,
+                    modules: &mut modules,
+                    units: &mut units,
+                    frontier: &mut module_frontier,
+                    ctx: &mut unit_load_ctx,
+                    map: &mut module_map,
+                }
+                .load_unit_modules(unit),
+                err,
+                Box::new(modules::error::Display::new(sources, err, modules, units, scope_item_lexicon))
+            );
             
             module_order.extend(local_module_order.into_iter().rev());
         }
@@ -73,12 +103,6 @@ pub fn compile() {
 
         module_order
     };
-
-    for &module in &module_order {
-        let source = modules[module].source;
-        let path = sources[source].path.clone();
-        println!("{}", path.to_str().unwrap());
-    }
 
     // settings
     let setting_builder = cranelift_codegen::settings::builder();
@@ -158,8 +182,11 @@ pub fn compile() {
         }
 
         ast.clear();
-        let inter_state = Parser::parse_imports(content, &mut ast, &mut ast_temp, source)
-            .unwrap();
+        let inter_state = unwrap!(
+            Parser::parse_imports(content, &mut ast, &mut ast_temp, source),
+            err,
+            Box::new(parser::error::Display::new(sources, err))
+        );
 
         if let Some(imports) = ModuleImports::new(&ast, &sources).imports() {
             for import in imports {
@@ -172,32 +199,39 @@ pub fn compile() {
         }
 
         ast.clear();
-        Parser::parse_code_chunk(content, &mut ast, &mut ast_temp, inter_state)
-            .unwrap();
+        unwrap!(
+            Parser::parse_code_chunk(content, &mut ast, &mut ast_temp, inter_state),
+            err,
+            Box::new(parser::error::Display::new(sources, err))
+        );
         
-        Collector {
-            scope: &mut scope,
-            functions: &mut t_functions,
-            types: &mut t_types,
-            modules: &mut modules,
-            sources: &sources,
-            ast: &ast,
-        }
-        .collect_items(module)
-        .unwrap();
-
-        for func in modules[module].items.iter().filter_map(|i| i.kind.may_read::<Func>()) {
-            FuncBuilder {
+        unwrap!(Collector {
                 scope: &mut scope,
                 functions: &mut t_functions,
                 types: &mut t_types,
+                modules: &mut modules,
                 sources: &sources,
                 ast: &ast,
-                func,
             }
-            .build()
-            .inspect_err(|e| eprintln!("{}", sources.display(e.span)))
-            .unwrap();
+            .collect_items(module),
+            err,
+            Box::new(typec::error::Display::new(sources, err, modules, units, scope_item_lexicon))
+        );
+
+        for func in modules[module].items.iter().filter_map(|i| i.kind.may_read::<Func>()) {
+            unwrap!(FuncBuilder {
+                    scope: &mut scope,
+                    functions: &mut t_functions,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    func,
+                }
+                .build()
+                .inspect_err(|e| eprintln!("{}", sources.display(e.span))),
+                err,
+                Box::new(typec::error::Display::new(sources, err, modules, units, scope_item_lexicon))
+            );
 
             println!("{}", t_functions.display(func, &sources, &ast));
         }
@@ -312,4 +346,6 @@ pub fn compile() {
         .unwrap();
     
     assert!(status.success(), "{status:?}");
+
+    Ok(())
 }

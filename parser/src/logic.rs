@@ -354,11 +354,40 @@ impl<'a> Parser<'a> {
             token::Kind::Ret => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
             token::Kind::Int(_) | token::Kind::String => Ok(self.literal_expr()),
+            token::Kind::If => self.if_expr(),
+            token::Kind::LeftCurly => self.block(),
             _ => todo!(
                 "unhandled token as simple expr:\n{}",
                 self.lexer.pretty_print(self.current.span())
             ),
         }
+    }
+
+    pub fn if_expr(&mut self) -> Result {
+        self.temp.mark_frame();
+        let span = self.current.span();
+        self.advance();
+
+        let cond = self.expr()?;
+        let then = self.block()?;
+        let otherwise = if self.current.kind() == token::Kind::Else {
+            self.advance();
+            self.expr()? // this allows omitting {} but allows 'else if'
+        } else {
+            Ast::reserved_value()
+        };
+
+        self.temp.acc(cond);
+        self.temp.acc(then);
+        self.temp.acc(otherwise);
+
+        let end = if otherwise.is_reserved_value() {
+            self.ast_file.nodes[then].span
+        } else {
+            self.ast_file.nodes[otherwise].span
+        };
+
+        Ok(self.alloc(ast::Kind::If, span.join(end)))
     }
 
     fn ident_expr(&mut self) -> Result {

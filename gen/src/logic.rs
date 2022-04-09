@@ -199,6 +199,7 @@ impl<'a> Generator<'a> {
     fn generate_native_div(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[left, right] => {
+                let signed = self.source.values[left].flags.is_signed();
                 let left = self.value_lookup[left].unwrap();
                 let right = self.value_lookup[right].unwrap();
                 
@@ -207,7 +208,11 @@ impl<'a> Generator<'a> {
                 assert!(ty == self.builder.func.dfg.value_type(right));
                 
                 let div = if ty.is_int() {
-                    self.builder.ins().sdiv(left, right)
+                    if signed {
+                        self.builder.ins().sdiv(left, right)
+                    } else {
+                        self.builder.ins().udiv(left, right)
+                    }
                 } else {
                     todo!("Unimplemented division for {}", ty);
                 };

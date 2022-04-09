@@ -1,3 +1,5 @@
+#![feature(generic_associated_types)]
+
 pub mod ast;
 pub mod error;
 pub mod logic;
