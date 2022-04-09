@@ -15,7 +15,7 @@ pub struct Functions {
     pub ents: PrimaryMap<Func, Ent>,
     blocks: PrimaryMap<Block, block::Ent>,
     pub values: PrimaryMap<Value, value::Ent>,
-    insts: PrimaryMap<Inst, inst::Ent>,
+    pub insts: PrimaryMap<Inst, inst::Ent>,
     value_slices: ListPool<Value>,
 }
 
@@ -39,6 +39,10 @@ impl Functions {
         block
     }
 
+    pub fn select_block(&mut self, func: Func, block: Block) {
+        self.ents[func].current = block.into();
+    }
+
     pub fn push_block_param(&mut self, block: Block, param: Value) {
         self.blocks[block].args.push(param, &mut self.value_slices);
     }
@@ -60,7 +64,7 @@ impl Functions {
     }
 
     pub fn add_inst(&mut self, func: Func, inst: inst::Ent) -> Inst {
-        self.add_inst_to_block(self.ents[func].end.unwrap(), inst)
+        self.add_inst_to_block(self.ents[func].current.unwrap(), inst)
     }
 
     pub fn add_inst_to_block(&mut self, block: Block, inst: inst::Ent) -> Inst {
@@ -141,6 +145,7 @@ pub struct Ent {
     pub kind: Kind,
     pub ast: Ast,
     pub id: ID,
+    pub current: PackedOption<Block>,
     pub return_type: PackedOption<Ty>,
     pub start: PackedOption<Block>,
     pub end: PackedOption<Block>,

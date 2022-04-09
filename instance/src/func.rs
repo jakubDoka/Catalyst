@@ -19,6 +19,7 @@ pub struct Function {
     pub blocks: PrimaryMap<Block, block::Ent>,
     pub insts: PrimaryMap<Inst, inst::Ent>,
 
+    pub current: PackedOption<Block>,
     pub start: PackedOption<Block>,
     pub end: PackedOption<Block>,
 }
@@ -32,6 +33,7 @@ impl Function {
             value_slices: ListPool::new(),
             blocks: PrimaryMap::new(),
             insts: PrimaryMap::new(),
+            current: Default::default(),
             start: Default::default(),
             end: Default::default(),
         }
@@ -54,7 +56,7 @@ impl Function {
 
     pub fn add_inst(&mut self, inst: inst::Ent) -> Inst {
         let inst = self.insts.push(inst);
-        let block = self.end.unwrap();
+        let block = self.current.unwrap();
         let block = &mut self.blocks[block];
         self.insts
             .insert(inst, block.last.expand(), &mut block.first, &mut block.last);
@@ -89,5 +91,9 @@ impl Function {
 
     pub fn values(&self, list: EntityList<Value>) -> &[Value] {
         list.as_slice(&self.value_slices)
+    }
+
+    pub fn select_block(&mut self, block: Block) {
+        self.current = block.into();
     }
 }

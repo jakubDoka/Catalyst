@@ -3,7 +3,7 @@ use lexer::Span;
 
 use crate::Func;
 
-use super::value::Value;
+use super::{value::Value, Block};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ent {
@@ -30,7 +30,10 @@ crate::impl_linked_node!(inout Inst, Ent);
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    JumpIfFalse(Block),
+    Jump(Block),
     Call(Func, EntityList<Value>),
+    BoolLit(bool),
     IntLit,
     Return,
 }

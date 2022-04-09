@@ -236,6 +236,7 @@ pub enum Kind {
     String,
     Ident,
     Int(i16),
+    Bool(bool),
     None,
 }
 

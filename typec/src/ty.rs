@@ -44,6 +44,7 @@ impl Ent {
 
 pub enum Kind {
     Int(i16),
+    Bool,
 }
 
 lexer::gen_entity!(Ty);

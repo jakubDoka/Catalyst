@@ -81,6 +81,8 @@ impl<'a> Lexer<'a> {
                         "extern" => token::Kind::Extern,
                         "if" => token::Kind::If,
                         "else" => token::Kind::Else,
+                        "true" => token::Kind::Bool(true),
+                        "false" => token::Kind::Bool(false),
                         _ => token::Kind::Ident,
                     }
                 }

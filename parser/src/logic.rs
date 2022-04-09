@@ -276,6 +276,7 @@ impl<'a> Parser<'a> {
         let kind = match self.current.kind() {
             token::Kind::Int(i) => ast::Kind::Int(i),
             token::Kind::String => ast::Kind::String,
+            token::Kind::Bool(value) => ast::Kind::Bool(value),
             _ => todo!(
                 "unhandled token as literal expr:\n{}",
                 self.lexer.pretty_print(self.current.span())
@@ -353,7 +354,7 @@ impl<'a> Parser<'a> {
         match self.current.kind() {
             token::Kind::Ret => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
-            token::Kind::Int(_) | token::Kind::String => Ok(self.literal_expr()),
+            token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) => Ok(self.literal_expr()),
             token::Kind::If => self.if_expr(),
             token::Kind::LeftCurly => self.block(),
             _ => todo!(

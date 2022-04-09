@@ -40,6 +40,7 @@ pub enum Kind {
 
     Int(i16),
     String,
+    Bool(bool),
 
     LeftCurly,
     RightCurly,

@@ -2,7 +2,7 @@ use cranelift_codegen::packed_option::PackedOption;
 use cranelift_entity::EntityList;
 use typec::Func;
 
-use super::value::Value;
+use super::{value::Value, Block};
 
 #[derive(Debug)]
 pub struct Ent {
@@ -33,8 +33,11 @@ impl Ent {
 
 #[derive(Debug)]
 pub enum Kind {
+    JumpIfFalse(Block),
+    Jump(Block),
     Call(Func, EntityList<Value>),
     IntLit(u64),
+    BoolLit(bool),
     Return,
 }
 

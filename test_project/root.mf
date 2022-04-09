@@ -3,7 +3,15 @@ use {
 }
 
 fn "default" main() -> int {
-    ret other(1, 2, 3)
+    ret other(1, 2, 3) + bti(true) + bti(false)
+}
+
+fn fib(x: int) -> int {
+    if x < 2 {
+        1
+    } else {
+        fib(x - 1) + fib(x - 2)
+    }
 }
 
 fn "default" printf(str: int) extern

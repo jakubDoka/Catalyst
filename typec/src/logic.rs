@@ -144,6 +144,7 @@ impl<'a> FuncBuilder<'a> {
 
         let entry_point = self.functions.create_block(self.func);
         self.build_function_args(entry_point, ast)?;
+        self.functions.select_block(self.func, entry_point);
 
         self.build_block(body_ast)?;
 
@@ -182,14 +183,10 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn build_stmt(&mut self, stmt: Ast) -> Result<Option<Value>> {
-        let ast::Ent { kind, span, .. } = self.ast.nodes[stmt];
+        let ast::Ent { kind, .. } = self.ast.nodes[stmt];
         match kind {
             ast::Kind::Return => self.build_return(stmt),
-            kind => todo!(
-                "Unhandled statement {:?}: {}",
-                kind,
-                self.sources.display(span)
-            ),
+            _ => self.build_optional_expr(stmt),
         }
     }
 
@@ -234,15 +231,98 @@ impl<'a> FuncBuilder<'a> {
     fn build_optional_expr(&mut self, ast: Ast) -> Result<Option<Value>> {
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
         match kind {
-            ast::Kind::Int(_) | ast::Kind::String => self.build_literal(ast).map(Some),
+            ast::Kind::Int(_) | ast::Kind::String | ast::Kind::Bool(_) => self.build_literal(ast).map(Some),
             ast::Kind::Call => self.build_call(ast),
             ast::Kind::Binary => self.build_binary(ast),
             ast::Kind::Ident => self.build_ident(ast).map(Some),
+            ast::Kind::If => self.build_if(ast),
             kind => todo!(
                 "Unhandled expression {:?}: {}",
                 kind,
                 self.sources.display(span)
             ),
+        }
+    }
+
+    fn build_if(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let &[cond, then, otherwise] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let cond = self.build_expr(cond)?;
+        let bool = self.scope.get::<Ty>("bool", Span::default()).unwrap();
+        self.expect_expr_ty(cond, bool)?;
+
+        let otherwise_block = if otherwise.is_reserved_value() {
+            None
+        } else {
+            Some(self.functions.create_block(self.func))
+        };
+
+        let skip_block = self.functions.create_block(self.func);
+        let skip = {
+            let span = self.ast.nodes[ast].span;
+            let target = otherwise_block.unwrap_or(skip_block);
+            let kind = inst::Kind::JumpIfFalse(target);
+            inst::Ent::new(kind, Some(cond), span)
+        };
+        self.functions.add_inst(self.func, skip);
+
+        let then_block = self.functions.create_block(self.func);
+        let jump = {
+            let span = self.ast.nodes[ast].span;
+            let kind = inst::Kind::Jump(then_block);
+            inst::Ent::new(kind, None, span)
+        };
+        self.functions.add_inst(self.func, jump);
+
+        self.functions.select_block(self.func, then_block);
+        let then_value = self.build_block(then)?;
+        let join = {
+            let span = self.ast.nodes[ast].span;
+            let kind = inst::Kind::Jump(skip_block);
+            inst::Ent::new(kind, None, span)
+        };
+        let then_jump = self.functions.add_inst(self.func, join);
+
+        let mut otherwise_value = None;
+        let mut otherwise_jump = None;
+        if let Some(otherwise_block) = otherwise_block {
+            self.functions.select_block(self.func, otherwise_block);
+            otherwise_value = self.build_block(otherwise)?;
+            let join = {
+                let span = self.ast.nodes[ast].span;
+                let kind = inst::Kind::Jump(skip_block);
+                inst::Ent::new(kind, None, span)
+            };
+            otherwise_jump = self.functions.add_inst(self.func, join).into();
+        }
+
+        self.functions.select_block(self.func, skip_block);
+
+        match (then_value, otherwise_value) {
+            // here we forward the expression
+            (Some(then_expr), Some(else_expr)) => { 
+                let then_ty = self.functions.values[then_expr].ty;
+                let else_ty = self.functions.values[else_expr].ty;
+
+                if then_ty != else_ty {
+                    return Ok(None);
+                }
+
+                self.functions.insts[then_jump].result = then_expr.into();
+                self.functions.insts[otherwise_jump.unwrap()].result = else_expr.into();
+
+                let skip_param = {
+                    let span = self.ast.nodes[ast].span;
+                    let ent = value::Ent::new(then_ty, span);
+                    self.functions.values.push(ent)
+                };
+                self.functions.push_block_param(skip_block, skip_param);
+
+                Ok(Some(skip_param))
+            },
+            _ => Ok(None),
         }
     }
 
@@ -277,7 +357,7 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let func = {
-            let span = self.ast.nodes[ast].span;
+            let span = self.ast.nodes[op].span;
             self.scope.get::<Func>(id, span).map_err(Convert::convert)?
         };
 
@@ -355,6 +435,7 @@ impl<'a> FuncBuilder<'a> {
             ast::Kind::Int(base) => match base {
                 _ => ("int", inst::Kind::IntLit),
             },
+            ast::Kind::Bool(b) => ("bool", inst::Kind::BoolLit(b)),
             kind => todo!(
                 "Unhandled literal {:?}: {}",
                 kind,

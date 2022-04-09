@@ -12,8 +12,9 @@ pub struct Generator<'a> {
     pub module: &'a mut dyn Module,
     pub builder: &'a mut FunctionBuilder<'a>,
     pub value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
-    pub t_functions: &'a typec::Functions,
     pub function_lookup: &'a SecondaryMap<Func, PackedOption<FuncId>>,
+    pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
+    pub t_functions: &'a typec::Functions,
     pub source: &'a instance::Function,
     pub sources: &'a Sources,
 }
@@ -24,6 +25,11 @@ impl<'a> Generator<'a> {
             &self.source.signature,
             &mut self.builder.func.signature
         );
+
+        for (id, _) in self.source.blocks() {
+            let block = self.builder.create_block();
+            self.block_lookup[id] = block.into();
+        }
 
         for (id, _) in self.source.blocks() {
             self.generate_block(id);
@@ -40,7 +46,7 @@ impl<'a> Generator<'a> {
     }
 
     fn generate_block(&mut self, id: mir::Block) {
-        let block = self.builder.create_block();
+        let block = self.block_lookup[id].unwrap();
         self.builder.switch_to_block(block);
 
         for (value, ent) in self.source.block_params(id) {
@@ -99,6 +105,26 @@ impl<'a> Generator<'a> {
                     self.builder.ins().return_(&[]);
                 }
             }
+            mir::Kind::JumpIfFalse(block) => {
+                let block = self.block_lookup[block].unwrap();
+                let value = self.value_lookup[inst.value.unwrap()];
+                self.builder.ins().brz(value.unwrap(), block, &[]);
+            },
+            mir::Kind::Jump(block) => {
+                let block = self.block_lookup[block].unwrap();
+                if let Some(value) = inst.value.expand() {
+                    let value = self.value_lookup[value];
+                    self.builder.ins().jump(block, &[value.unwrap()]);
+                } else {
+                    self.builder.ins().jump(block, &[]);
+                }
+            },
+            mir::Kind::BoolLit(literal) => {
+                let value = inst.value.unwrap();
+                let repr = self.source.values[value].repr;
+                let ir_value = self.builder.ins().bconst(repr, literal);
+                self.value_lookup[value] = ir_value.into();
+            },
         }
     }
 

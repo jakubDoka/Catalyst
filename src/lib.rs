@@ -122,7 +122,8 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
     let builtin_items: Vec<module::Item> = {
         let builtin_types = [
-            ("int", ty::Kind::Int(-1))
+            ("int", ty::Kind::Int(-1)),
+            ("bool", ty::Kind::Bool),
         ];
 
         let builtin_binary_operators = "+ - * /";
@@ -253,6 +254,8 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
     let mut tir_to_mir_lookup = SecondaryMap::new();
     let mut mir_to_ir_lookup = SecondaryMap::new();
+    let mut mir_block_lookup = SecondaryMap::new();
+    let mut ir_block_lookup = SecondaryMap::new();
     let mut func_lookup = SecondaryMap::new();
     let mut repr_lookup = SecondaryMap::new();
     let ptr_ty = module.isa().pointer_type(); 
@@ -302,6 +305,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             system_call_convention,
             value_lookup: &mut tir_to_mir_lookup,
             function: &mut function,
+            block_lookup: &mut mir_block_lookup,
             t_functions: &t_functions,
             repr_lookup: &repr_lookup,
             t_types: &t_types,
@@ -315,6 +319,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_builder_ctx);
         Generator {
             module: &mut module,
+            block_lookup: &mut ir_block_lookup,
             function_lookup: &mut func_lookup,
             builder: &mut builder,
             value_lookup: &mut mir_to_ir_lookup,
@@ -329,6 +334,11 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
         let id = func_lookup[func].unwrap();
         module.define_function(id, &mut ctx).unwrap();
+
+        tir_to_mir_lookup.clear();
+        mir_to_ir_lookup.clear();
+        mir_block_lookup.clear();
+        ir_block_lookup.clear();
     }
 
     // linking

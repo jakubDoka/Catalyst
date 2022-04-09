@@ -27,6 +27,7 @@ impl<'a> TypeTranslator<'a> {
                     8 => ir::types::I8,
                     _ => self.ptr_ty,
                 },
+                ty::Kind::Bool => ir::types::B1,
             };
             self.repr_lookup[id] = repr;
         }
@@ -38,6 +39,7 @@ pub struct FunctionTranslator<'a> {
     pub system_call_convention: CallConv,
     pub repr_lookup: &'a SecondaryMap<Ty, Type>,
     pub value_lookup: &'a mut SecondaryMap<tir::Value, mir::Value>,
+    pub block_lookup: &'a mut SecondaryMap<tir::Block, mir::Block>,
     pub function: &'a mut func::Function,
     pub t_functions: &'a typec::Functions,
     pub t_types: &'a typec::Types,
@@ -59,6 +61,11 @@ impl<'a> FunctionTranslator<'a> {
 
         self.function.name = self.t_functions.ents[func].name;
         
+        for (id, _) in self.t_functions.blocks_of(func) {
+            let block = self.function.create_block();
+            self.block_lookup[id] = block;
+        }
+
         for (id, _) in self.t_functions.blocks_of(func) {
             self.translate_block(id)?;
         }
@@ -106,7 +113,8 @@ impl<'a> FunctionTranslator<'a> {
     }
 
     pub fn translate_block(&mut self, id: tir::Block) -> Result {
-        let block = self.function.create_block();
+        let block = self.block_lookup[id];
+        self.function.select_block(block);
 
         for (id, value) in self.t_functions.block_params(id) {
             let value = {
@@ -179,6 +187,43 @@ impl<'a> FunctionTranslator<'a> {
                 };
                 self.function.add_inst(inst);
             }
+            tir::Kind::JumpIfFalse(block) => {
+                let inst = {
+                    let block = self.block_lookup[block];
+                    let value = self.value_lookup[inst.result.unwrap()];
+                    let kind = mir::inst::Kind::JumpIfFalse(block);
+                    mir::inst::Ent::with_value(kind, value)
+                };
+
+                self.function.add_inst(inst);
+            },
+            tir::Kind::Jump(block) => {
+                let inst = {
+                    let block = self.block_lookup[block];
+                    let value = inst.result.map(|value| self.value_lookup[value]);
+                    let kind = mir::inst::Kind::Jump(block);
+                    mir::inst::Ent::new(kind, value)
+                };
+
+                self.function.add_inst(inst);
+            },
+            tir::Kind::BoolLit(literal) => {
+                let value = {
+                    let ty = self.t_functions.values[inst.result.unwrap()].ty;
+                    let repr = self.repr_lookup[ty];
+                    let ent = mir::value::Ent::repr(repr);
+                    self.function.values.push(ent)
+                };
+
+                self.value_lookup[inst.result.unwrap()] = value;
+
+                let inst = {
+                    let kind = mir::inst::Kind::BoolLit(literal);
+                    mir::inst::Ent::with_value(kind, value)
+                };
+
+                self.function.add_inst(inst);
+            },
         }
 
         Ok(())
