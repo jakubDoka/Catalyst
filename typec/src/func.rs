@@ -5,23 +5,23 @@ use crate::{
         value::{self, Value},
         LinkedList,
     },
-    ty::Ty,
+    ty::{Ty, self}, Types,
 };
 use cranelift_entity::{packed_option::PackedOption, EntityList, ListPool, PrimaryMap};
-use lexer::{Sources, Span, ID};
+use lexer::{Sources, Span, ID, ListPoolExt, SourcesExt};
 use parser::ast::{self, Ast};
 
-pub struct Functions {
+pub struct Funcs {
     pub ents: PrimaryMap<Func, Ent>,
-    blocks: PrimaryMap<Block, block::Ent>,
+    pub blocks: PrimaryMap<Block, block::Ent>,
     pub values: PrimaryMap<Value, value::Ent>,
     pub insts: PrimaryMap<Inst, inst::Ent>,
-    value_slices: ListPool<Value>,
+    pub value_slices: ListPool<Value>,
 }
 
-impl Functions {
+impl Funcs {
     pub fn new() -> Self {
-        Functions {
+        Funcs {
             ents: PrimaryMap::new(),
             blocks: PrimaryMap::new(),
             values: PrimaryMap::new(),
@@ -30,69 +30,26 @@ impl Functions {
         }
     }
 
-    pub fn create_block(&mut self, func: Func) -> Block {
-        let under = self.ents[func].end.expand();
-        let block = self.blocks.push(block::Ent::default());
-        let func = &mut self.ents[func];
-        self.blocks
-            .insert(block, under, &mut func.start, &mut func.end);
-        block
-    }
-
-    pub fn select_block(&mut self, func: Func, block: Block) {
-        self.ents[func].current = block.into();
-    }
-
-    pub fn push_block_param(&mut self, block: Block, param: Value) {
-        self.blocks[block].args.push(param, &mut self.value_slices);
-    }
-
     pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &value::Ent)> + '_ {
-        self.blocks[block]
-            .args
-            .as_slice(&self.value_slices)
+        let args = self.blocks[block].args;
+        let view = self.value_slices.view(args);
+        view
             .iter()
             .map(|&value| (value, &self.values[value]))
-    }
-
-    pub fn add_value(&mut self, value: value::Ent) -> Value {
-        self.values.push(value)
-    }
-
-    pub fn make_values(&mut self, values: impl Iterator<Item = Value>) -> EntityList<Value> {
-        EntityList::from_iter(values, &mut self.value_slices)
-    }
-
-    pub fn add_inst(&mut self, func: Func, inst: inst::Ent) -> Inst {
-        self.add_inst_to_block(self.ents[func].current.unwrap(), inst)
-    }
-
-    pub fn add_inst_to_block(&mut self, block: Block, inst: inst::Ent) -> Inst {
-        let last = self.blocks[block].last.expand();
-        let inst = self.insts.push(inst);
-        let block = &mut self.blocks[block];
-        self.insts
-            .insert(inst, last, &mut block.first, &mut block.last);
-        inst
-    }
-
-    pub fn is_block_terminated(&self, block: Block) -> bool {
-        self.blocks[block]
-            .last
-            .expand()
-            .map_or(false, |last| self.insts[last].kind.is_terminating())
     }
 
     pub fn display<'a>(
         &'a self,
         func: Func,
+        types: &'a Types,
         sources: &'a Sources,
         ast_data: &'a ast::Data,
     ) -> Display<'a> {
         Display {
-            func_data: self,
+            funcs: self,
             func,
-            _sources: sources,
+            types,
+            sources,
             _ast_data: ast_data,
         }
     }
@@ -104,36 +61,84 @@ impl Functions {
     pub fn blocks_of(&self, func: Func) -> impl Iterator<Item = (Block, &block::Ent)> {
         self.blocks.linked_iter(self.ents[func].start.expand())
     }
-
-    pub fn add(&mut self, ent: Ent) -> Func {
-        self.ents.push(ent)
-    }
-
-    pub fn get(&self, func: Func) -> &Ent {
-        &self.ents[func]
-    }
-
-    pub fn values(&self, list: EntityList<Value>) -> &[Value] {
-        list.as_slice(&self.value_slices)
-    }
 }
 
 pub struct Display<'a> {
     func: Func,
-    func_data: &'a Functions,
-    _sources: &'a Sources,
+    funcs: &'a Funcs,
+    types: &'a Types,
+    sources: &'a Sources,
     _ast_data: &'a ast::Data,
 }
 
 impl std::fmt::Display for Display<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "fn {{",)?;
-        for (id, _) in self.func_data.blocks_of(self.func) {
-            writeln!(f, "  {:?}:", id)?;
-            for (id, inst) in self.func_data.insts_of(id) {
-                writeln!(f, "    {:?}: {:?}", id, inst)?;
+        let func = &self.funcs.ents[self.func];
+        writeln!(f, "fn {}{} {{", self.sources.display(func.name), SignatureDisplay::new(&func.sig, self.types))?;
+        for (id, _) in self.funcs.blocks_of(self.func) {
+            let args = self.funcs.block_params(id)
+                .map(|(value, ent)| {
+                    format!(
+                        "{}: {}",
+                        value,
+                        ty::Display::new(self.types, ent.ty),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(f, "  {}({}):", id, args)?;
+            for (_, inst) in self.funcs.insts_of(id) {
+                write!(f, "    ")?;
+                match inst.kind {
+                    inst::Kind::Variable => {
+                        writeln!(f, "var {}", inst.value.unwrap())?;
+                    },
+                    inst::Kind::Assign(value) => {
+                        writeln!(f, "{} = {}", value, inst.value.unwrap())?;
+                    },
+                    inst::Kind::JumpIfFalse(block) => {
+                        writeln!(f, "if {} goto {}", inst.value.unwrap(), block)?;
+                    },
+                    inst::Kind::Jump(block) => {
+                        if let Some(value) = inst.value.expand() {
+                            writeln!(f, "goto {}({})", block, value)?;
+                        } else {
+                            writeln!(f, "goto {}", block)?;
+                        }
+                    },
+                    inst::Kind::Call(func, args) => {
+                        let name = self.funcs.ents[func].name;
+                        let args = self.funcs.value_slices
+                            .view(args)
+                            .iter()
+                            .map(|&value| format!("{value}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let ty = self.funcs.values[inst.value.unwrap()].ty;
+                        let ty = ty::Display::new(self.types, ty);
+                        writeln!(f, "{}: {} = {}({})", inst.value.unwrap(), ty, self.sources.display(name), args)?;
+                    },
+                    inst::Kind::BoolLit(value) => {
+                        let ty = self.funcs.values[inst.value.unwrap()].ty;
+                        let ty = ty::Display::new(self.types, ty);
+                        writeln!(f, "{}: {} = {}", inst.value.unwrap(), ty, value)?;
+                    },
+                    inst::Kind::IntLit => {
+                        let ty = self.funcs.values[inst.value.unwrap()].ty;
+                        let ty = ty::Display::new(self.types, ty);
+                        writeln!(f, "{}: {} = {}", inst.value.unwrap(), ty, self.sources.display(inst.span))?;
+                    },
+                    inst::Kind::Return => {
+                        if let Some(value) = inst.value.expand() {
+                            writeln!(f, "return {}", value)?;
+                        } else {
+                            writeln!(f, "return")?;
+                        }
+                    },
+                }
             }
         }
+        writeln!(f, "}}")?;
         Ok(())
     }
 }
@@ -145,7 +150,6 @@ pub struct Ent {
     pub kind: Kind,
     pub ast: Ast,
     pub id: ID,
-    pub current: PackedOption<Block>,
     pub return_type: PackedOption<Ty>,
     pub start: PackedOption<Block>,
     pub end: PackedOption<Block>,
@@ -170,6 +174,34 @@ pub struct Signature {
     pub call_conv: Span,
     pub args: EntityList<Ty>,
     pub ret: PackedOption<Ty>,
+}
+
+pub struct SignatureDisplay<'a> {
+    pub sig: &'a Signature,
+    pub types: &'a Types,
+}
+
+impl<'a> SignatureDisplay<'a> {
+    pub fn new(sig: &'a Signature, types: &'a Types) -> Self {
+        SignatureDisplay { sig, types }
+    }
+}
+
+impl std::fmt::Display for SignatureDisplay<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        for (i, &ty) in self.types.cons.view(self.sig.args).iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", ty::Display::new(self.types, ty))?;
+        }
+        write!(f, ")")?;
+        if let Some(ty) = self.sig.ret.expand() {
+            write!(f, " -> {}", ty::Display::new(self.types, ty))?;
+        }
+        Ok(())
+    }
 }
 
 lexer::gen_entity!(Func);

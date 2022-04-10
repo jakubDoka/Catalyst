@@ -103,7 +103,6 @@ impl LineMapping {
     }
 
     pub fn line_data_at(&self, pos: usize) -> (usize, usize) {
-        println!("{:?} {}", self.new_lines, pos);
         match self.new_lines.binary_search(&(pos as u32)) {
             Ok(i) | Err(i) => (i - 1, pos - self.new_lines[i - 1] as usize),
         }

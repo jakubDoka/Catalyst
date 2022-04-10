@@ -11,7 +11,7 @@ pub struct Ent {
     pub next: PackedOption<Inst>,
     pub kind: Kind,
     pub span: Span,
-    pub result: PackedOption<Value>,
+    pub value: PackedOption<Value>,
 }
 
 impl Ent {
@@ -21,7 +21,7 @@ impl Ent {
             next: None.into(),
             kind,
             span,
-            result: value.into(),
+            value: value.into(),
         }
     }
 }
@@ -30,6 +30,8 @@ crate::impl_linked_node!(inout Inst, Ent);
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    Variable,
+    Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
     Call(Func, EntityList<Value>),
@@ -40,7 +42,7 @@ pub enum Kind {
 
 impl Kind {
     pub fn is_terminating(&self) -> bool {
-        matches!(self, Kind::Return)
+        matches!(self, Self::Return | Self::Jump(_))
     }
 }
 

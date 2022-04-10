@@ -1,7 +1,8 @@
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, Signature};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{SecondaryMap, EntityList};
-use cranelift_frontend::FunctionBuilder;
+use cranelift_entity::{SecondaryMap, EntityList, EntityRef};
+use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Module};
 use instance::mir;
 use lexer::{Sources, SourcesExt};
@@ -14,7 +15,7 @@ pub struct Generator<'a> {
     pub value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
     pub function_lookup: &'a SecondaryMap<Func, PackedOption<FuncId>>,
     pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
-    pub t_functions: &'a typec::Functions,
+    pub t_functions: &'a typec::Funcs,
     pub source: &'a instance::Function,
     pub sources: &'a Sources,
 }
@@ -50,7 +51,6 @@ impl<'a> Generator<'a> {
         self.builder.switch_to_block(block);
 
         for (value, ent) in self.source.block_params(id) {
-            println!("{value:?}");
             let ir_value = self.builder.append_block_param(block, ent.repr);
             self.value_lookup[value] = ir_value.into();
         }
@@ -81,7 +81,7 @@ impl<'a> Generator<'a> {
                     let args: Vec<_> = self.source
                         .values(args)
                         .iter()
-                        .map(|&value| self.value_lookup[value].unwrap())
+                        .map(|&value| self.use_value(value))
                         .collect();
                     
                     self.builder.ins().call(func_ref, &args)
@@ -99,22 +99,22 @@ impl<'a> Generator<'a> {
             }
             mir::Kind::Return => {
                 if let Some(value) = inst.value.expand() {
-                    let ir_value = self.value_lookup[value];
-                    self.builder.ins().return_(&[ir_value.unwrap()]);
+                    let ir_value = self.use_value(value);
+                    self.builder.ins().return_(&[ir_value]);
                 } else {
                     self.builder.ins().return_(&[]);
                 }
             }
             mir::Kind::JumpIfFalse(block) => {
                 let block = self.block_lookup[block].unwrap();
-                let value = self.value_lookup[inst.value.unwrap()];
-                self.builder.ins().brz(value.unwrap(), block, &[]);
+                let value = self.use_value(inst.value.unwrap());
+                self.builder.ins().brz(value, block, &[]);
             },
             mir::Kind::Jump(block) => {
                 let block = self.block_lookup[block].unwrap();
                 if let Some(value) = inst.value.expand() {
-                    let value = self.value_lookup[value];
-                    self.builder.ins().jump(block, &[value.unwrap()]);
+                    let value = self.use_value(value);
+                    self.builder.ins().jump(block, &[value]);
                 } else {
                     self.builder.ins().jump(block, &[]);
                 }
@@ -124,6 +124,27 @@ impl<'a> Generator<'a> {
                 let repr = self.source.values[value].repr;
                 let ir_value = self.builder.ins().bconst(repr, literal);
                 self.value_lookup[value] = ir_value.into();
+            },
+            mir::Kind::Assign(left) => {
+                let left_value = self.source.values[left];
+                if left_value.flags.is_pointer() {
+                    todo!();
+                } else {
+                    let variable = Variable::new(left.index());
+                    let right = self.use_value(inst.value.unwrap());
+                    self.builder.def_var(variable, right);
+                }            
+            },
+            mir::Kind::Variable => {
+                let value = inst.value.unwrap();
+                let repr = self.source.values[value].repr;
+                let flags = self.source.values[value].flags;
+                if flags.is_mutable() {
+                    let variable = Variable::new(value.index());
+                    self.builder.declare_var(variable, repr);
+                    let value = self.value_lookup[value].unwrap();
+                    self.builder.def_var(variable, value);
+                }
             },
         }
     }
@@ -137,6 +158,12 @@ impl<'a> Generator<'a> {
             "-" => self.generate_native_sub(args, result),
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
+            "<" | 
+            ">" | 
+            "<=" | 
+            ">=" | 
+            "==" | 
+            "!="=> self.generate_native_cmp(str, args, result),
             _ => todo!("Unhandled native function: {:?}", str),
         }
     }
@@ -144,11 +171,11 @@ impl<'a> Generator<'a> {
     fn generate_native_add(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[value] => {
-                self.value_lookup[result.unwrap()] = self.value_lookup[value];
+                self.value_lookup[result.unwrap()] = self.use_value(value).into();
             }
             &[left, right] => {
-                let left = self.value_lookup[left].unwrap();
-                let right = self.value_lookup[right].unwrap();
+                let left = self.use_value(left);
+                let right = self.use_value(right);
                 
                 let ty = self.builder.func.dfg.value_type(left); 
 
@@ -169,7 +196,7 @@ impl<'a> Generator<'a> {
     fn generate_native_sub(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[value] => {
-                let value = self.value_lookup[value].unwrap();
+                let value = self.use_value(value);
                 let ty = self.builder.func.dfg.value_type(value);
 
                 let neg = if ty.is_int() {
@@ -181,8 +208,8 @@ impl<'a> Generator<'a> {
                 self.value_lookup[result.unwrap()] = neg.into();
             }
             &[left, right] => {
-                let left = self.value_lookup[left].unwrap();
-                let right = self.value_lookup[right].unwrap();
+                let left = self.use_value(left);
+                let right = self.use_value(right);
                 
                 let ty = self.builder.func.dfg.value_type(left); 
 
@@ -203,8 +230,8 @@ impl<'a> Generator<'a> {
     fn generate_native_mul(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[left, right] => {
-                let left = self.value_lookup[left].unwrap();
-                let right = self.value_lookup[right].unwrap();
+                let left = self.use_value(left);
+                let right = self.use_value(right);
                 
                 let ty = self.builder.func.dfg.value_type(left); 
 
@@ -226,8 +253,8 @@ impl<'a> Generator<'a> {
         match self.source.values(args) {
             &[left, right] => {
                 let signed = self.source.values[left].flags.is_signed();
-                let left = self.value_lookup[left].unwrap();
-                let right = self.value_lookup[right].unwrap();
+                let left = self.use_value(left);
+                let right = self.use_value(right);
                 
                 let ty = self.builder.func.dfg.value_type(left); 
 
@@ -246,6 +273,60 @@ impl<'a> Generator<'a> {
                 self.value_lookup[result.unwrap()] = div.into();
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn generate_native_cmp(&mut self, op: &str, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+        let &[left, right] = self.source.values(args) else {
+            unreachable!();
+        };
+
+        let signed = self.source.values[left].flags.is_signed();
+
+        let left = self.use_value(left);
+        let right = self.use_value(right);
+
+        let ty = self.builder.func.dfg.value_type(left);
+        assert!(ty == self.builder.func.dfg.value_type(right));
+
+        let result = result.unwrap();
+
+        if ty.is_int() {
+            let inst = if signed {
+                match op {
+                    "<" => IntCC::SignedLessThan,
+                    ">" => IntCC::SignedGreaterThan,
+                    "<=" => IntCC::SignedLessThanOrEqual,
+                    ">=" => IntCC::SignedGreaterThanOrEqual,
+                    "==" => IntCC::Equal,
+                    "!=" => IntCC::NotEqual,
+                    _ => unreachable!(),
+                }
+            } else {
+                match op {
+                    "<" => IntCC::UnsignedLessThan,
+                    ">" => IntCC::UnsignedGreaterThan,
+                    "<=" => IntCC::UnsignedLessThanOrEqual,
+                    ">=" => IntCC::UnsignedGreaterThanOrEqual,
+                    "==" => IntCC::Equal,
+                    "!=" => IntCC::NotEqual,
+                    _ => unreachable!(),
+                }
+            };
+
+            let value = self.builder.ins().icmp(inst, left, right);
+            self.value_lookup[result] = value.into();
+        } else {
+            todo!("Unimplemented comparison for {}", ty);
+        }
+    }
+
+    fn use_value(&mut self, value: mir::Value) -> ir::Value {
+        if self.source.values[value].flags.is_mutable() {
+            let variable = Variable::new(value.index());
+            self.builder.use_var(variable)
+        } else {
+            self.value_lookup[value].unwrap()
         }
     }
 }

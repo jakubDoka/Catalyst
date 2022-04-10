@@ -1,5 +1,5 @@
 use cranelift_entity::packed_option::ReservedValue;
-use lexer::{Sources, SourcesExt, Span, ID};
+use lexer::{Sources, SourcesExt, Span, ID, ListPoolExt, SpanDisplay};
 use modules::{scope::{self, Scope}, module::{Module, self}, logic::Modules};
 use parser::{
     ast::{self, Ast},
@@ -8,20 +8,20 @@ use parser::{
 
 use crate::{
     error::{Error, self},
-    func::{self, Func, Functions, Signature},
+    func::{self, Func, Funcs, Signature},
     tir::{
         block::Block,
         inst,
         value::{self, Value},
     },
-    ty::{Ty, Types},
+    ty::{Ty, Types}, builder::Builder,
 };
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
 pub struct Collector<'a> {
     pub scope: &'a mut Scope,
-    pub functions: &'a mut Functions,
+    pub functions: &'a mut Funcs,
     pub types: &'a mut Types,
     pub modules: &'a mut Modules,
     pub sources: &'a Sources,
@@ -59,7 +59,7 @@ impl<'a> Collector<'a> {
             }
         }
 
-        let args = self.types.add_slice(&args);
+        let args = self.types.cons.list(&args);
 
         let ret = if return_type.is_reserved_value() {
             None
@@ -85,7 +85,7 @@ impl<'a> Collector<'a> {
             name, 
             ..Default::default()
         };
-        let func = self.functions.add(ent);
+        let func = self.functions.ents.push(ent);
         let id = self.sources.display(name).into();
         self.scope
             .insert(
@@ -123,18 +123,19 @@ pub fn parse_type(scope: &Scope, ast: &ast::Data, sources: &Sources, ty: Ast) ->
 }
 
 pub struct FuncBuilder<'a> {
-    pub functions: &'a mut Functions,
+    pub builder: &'a mut Builder<'a>,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
     pub sources: &'a Sources,
+    pub loops: &'a mut Vec<Loop>,
     pub ast: &'a ast::Data,
-    pub func: Func,
 }
 
 impl<'a> FuncBuilder<'a> {
     pub fn build(&mut self) -> Result {
-        let func_ent = &mut self.functions.ents[self.func];
+        let func_ent = &mut self.builder.func_ent();
         let ast = func_ent.ast;
+        let ret = func_ent.sig.ret.expand();
         let &body_ast = self.ast.children(ast).last().unwrap();
         
         if body_ast.is_reserved_value() {
@@ -142,11 +143,30 @@ impl<'a> FuncBuilder<'a> {
             return Ok(());
         }
 
-        let entry_point = self.functions.create_block(self.func);
+        let entry_point = self.builder.create_block();
         self.build_function_args(entry_point, ast)?;
-        self.functions.select_block(self.func, entry_point);
+        self.builder.select_block(entry_point);
 
-        self.build_block(body_ast)?;
+        let expr = self.build_block(body_ast)?;
+        
+        if !self.builder.is_closed() {
+            match (ret, expr) {
+                (Some(ty), Some(expr)) => {
+                    self.expect_expr_ty(expr, ty)?;
+                    {
+                        let kind = inst::Kind::Return;
+                        let span = self.ast.nodes[body_ast].span;
+                        self.builder.add_inst(kind, expr, span);
+                    }
+                },
+                (Some(_), None) => return Err(Error::new(
+                    error::Kind::ExpectedValue,
+                    self.ast.nodes[body_ast].span,
+                )),
+                (None, Some(_)) |
+                (None, None) => (),
+            }
+        }
 
         Ok(())
     }
@@ -163,10 +183,10 @@ impl<'a> FuncBuilder<'a> {
             for &name in &children[0..children.len() - 1] {
                 let name_span = self.ast.nodes[name].span;
                 let name_str = self.sources.display(name_span);
-                let value = self.functions.values.push(value::Ent::new(ty, name_span));
+                let value = self.builder.add_value(ty, name_span);
                 self.scope
                     .push_item(name_str, scope::Item::new(value, name_span));
-                self.functions.push_block_param(entry_point, value);
+                self.builder.push_block_param(entry_point, value);
             }
         }
 
@@ -174,10 +194,18 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn build_block(&mut self, block_ast: Ast) -> Result<Option<Value>> {
+        self.scope.mark_frame();
+
         let mut value = None;
         for &stmt in self.ast.children(block_ast) {
             value = self.build_stmt(stmt)?;
+            if self.builder.is_closed() {
+                // TODO: emit warning
+                break;
+            }
         }
+
+        self.scope.pop_frame();
 
         Ok(value)
     }
@@ -196,7 +224,7 @@ impl<'a> FuncBuilder<'a> {
             let ast = children[0];
             let span = self.ast.nodes[ast].span;
             
-            let return_type = self.functions.ents[self.func].sig.ret.expand();
+            let return_type = self.builder.func_ent().sig.ret.expand();
             let return_value = self.build_optional_expr(ast)?;
 
             match (return_type, return_value) {
@@ -216,8 +244,7 @@ impl<'a> FuncBuilder<'a> {
 
         {
             let span = self.ast.nodes[stmt].span;
-            let ent = inst::Ent::new(inst::Kind::Return, value, span);
-            self.functions.add_inst(self.func, ent);
+            self.builder.add_inst(inst::Kind::Return, value, span);
         }
 
         Ok(value)
@@ -236,15 +263,114 @@ impl<'a> FuncBuilder<'a> {
             ast::Kind::Binary => self.build_binary(ast),
             ast::Kind::Ident => self.build_ident(ast).map(Some),
             ast::Kind::If => self.build_if(ast),
+            ast::Kind::Variable => self.build_variable(ast),
+            ast::Kind::Loop => self.build_loop(ast),
+            ast::Kind::Break => self.build_break(ast),
+            ast::Kind::Block => self.build_block(ast),
             kind => todo!(
-                "Unhandled expression {:?}: {}",
+                "Unhandled expression {:?}:\n{}",
                 kind,
-                self.sources.display(span)
+                SpanDisplay::new(self.sources[span.source()].content(), span),
             ),
         }
     }
 
+    fn build_break(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let span = self.ast.nodes[ast].span;
+        let &[value] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let &Loop { end, .. } = self.loops.last()
+            .ok_or_else(|| Error::new(error::Kind::InvalidBreak, span))?;
+
+        if value.is_reserved_value() {
+            let kind = inst::Kind::Jump(end);
+            self.builder.add_inst(kind, None, span);
+        } else {
+            let kind = inst::Kind::Jump(end);
+            let value = self.build_expr(value)?;
+            self.builder.add_inst(kind, value, span);
+            
+            let loop_header = self.loops.last_mut().unwrap();
+            if let Some(ty) = loop_header.ty {
+                self.expect_expr_ty(value, ty)?;
+            } else {
+                let ty = self.builder.funcs.values[value].ty;
+                loop_header.ty = ty.into();
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn build_loop(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let span = self.ast.nodes[ast].span;
+        
+        let &[body] = self.ast.children(ast) else {
+            unreachable!();
+        };
+        
+        let start = self.builder.create_block();
+        let end = self.builder.create_block();
+
+        let loop_header = Loop {
+            _start: start,
+            end,
+            ty: None,
+        };
+
+        self.loops.push(loop_header);
+
+        self.builder.add_inst(inst::Kind::Jump(start), None, span);
+
+        self.builder.select_block(start);
+        self.build_block(body)?;
+        if !self.builder.is_closed() {
+            self.builder.add_inst(inst::Kind::Jump(start), None, span);
+        }
+        
+        self.builder.select_block(end);
+
+        let loop_header = self.loops.pop().unwrap();
+
+        let mut result = None;
+        if let Some(ty) = loop_header.ty {
+            let value = self.builder.add_value(ty, span);
+            self.builder.push_block_param(loop_header.end, value);
+            result = Some(value);
+        }
+
+        Ok(result)
+    }
+
+    fn build_variable(&mut self, ast: Ast) -> Result<Option<Value>> { // always none
+        let &[name, value] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let id: ID = {
+            let span = self.ast.nodes[name].span;
+            let str = self.sources.display(span);
+            str.into()
+        };
+
+        let value = self.build_expr(value)?;
+        let span = self.ast.nodes[ast].span;
+
+        {
+            let span = self.ast.nodes[ast].span;
+            self.builder.add_inst(inst::Kind::Variable, value, span);
+        }
+
+        self.scope.push_item(id, scope::Item::new(value, span));
+
+        Ok(None)
+    } 
+
     fn build_if(&mut self, ast: Ast) -> Result<Option<Value>> {
+        let span = self.ast.nodes[ast].span;
+
         let &[cond, then, otherwise] = self.ast.children(ast) else {
             unreachable!();
         };
@@ -252,73 +378,75 @@ impl<'a> FuncBuilder<'a> {
         let cond = self.build_expr(cond)?;
         let bool = self.scope.get::<Ty>("bool", Span::default()).unwrap();
         self.expect_expr_ty(cond, bool)?;
-
+        
+        let then_block = self.builder.create_block();
         let otherwise_block = if otherwise.is_reserved_value() {
             None
         } else {
-            Some(self.functions.create_block(self.func))
+            Some(self.builder.create_block())
         };
+        let skip_block = self.builder.create_block();
 
-        let skip_block = self.functions.create_block(self.func);
-        let skip = {
-            let span = self.ast.nodes[ast].span;
+        {
             let target = otherwise_block.unwrap_or(skip_block);
             let kind = inst::Kind::JumpIfFalse(target);
-            inst::Ent::new(kind, Some(cond), span)
+            self.builder.add_inst(kind, Some(cond), span);
         };
-        self.functions.add_inst(self.func, skip);
 
-        let then_block = self.functions.create_block(self.func);
-        let jump = {
-            let span = self.ast.nodes[ast].span;
+        {
             let kind = inst::Kind::Jump(then_block);
-            inst::Ent::new(kind, None, span)
-        };
-        self.functions.add_inst(self.func, jump);
+            self.builder.add_inst(kind, None, span);
+        }
 
-        self.functions.select_block(self.func, then_block);
+        self.builder.select_block(then_block);
         let then_value = self.build_block(then)?;
-        let join = {
-            let span = self.ast.nodes[ast].span;
-            let kind = inst::Kind::Jump(skip_block);
-            inst::Ent::new(kind, None, span)
-        };
-        let then_jump = self.functions.add_inst(self.func, join);
+        let mut then_jump = None;
+        if !self.builder.is_closed() {
+            then_jump = {
+                let kind = inst::Kind::Jump(skip_block);
+                self.builder.add_inst(kind, None, span).into()
+            };
+        }
 
         let mut otherwise_value = None;
         let mut otherwise_jump = None;
         if let Some(otherwise_block) = otherwise_block {
-            self.functions.select_block(self.func, otherwise_block);
+            self.builder.select_block(otherwise_block);
             otherwise_value = self.build_block(otherwise)?;
-            let join = {
-                let span = self.ast.nodes[ast].span;
-                let kind = inst::Kind::Jump(skip_block);
-                inst::Ent::new(kind, None, span)
-            };
-            otherwise_jump = self.functions.add_inst(self.func, join).into();
+            if !self.builder.is_closed() {
+                otherwise_jump = {
+                    let kind = inst::Kind::Jump(skip_block);
+                    self.builder.add_inst(kind, None, span).into()
+                };
+            }
         }
 
-        self.functions.select_block(self.func, skip_block);
+        self.builder.select_block(skip_block);
 
         match (then_value, otherwise_value) {
             // here we forward the expression
             (Some(then_expr), Some(else_expr)) => { 
-                let then_ty = self.functions.values[then_expr].ty;
-                let else_ty = self.functions.values[else_expr].ty;
+                let then_ty = self.builder.funcs.values[then_expr].ty;
+                let else_ty = self.builder.funcs.values[else_expr].ty;
 
                 if then_ty != else_ty {
                     return Ok(None);
                 }
 
-                self.functions.insts[then_jump].result = then_expr.into();
-                self.functions.insts[otherwise_jump.unwrap()].result = else_expr.into();
+                if let Some(then_jump) = then_jump {
+                    self.builder.funcs.insts[then_jump].value = then_expr.into();
+                }
+
+                if let Some(otherwise_jump) = otherwise_jump {
+                    self.builder.funcs.insts[otherwise_jump].value = else_expr.into();
+                }
 
                 let skip_param = {
                     let span = self.ast.nodes[ast].span;
                     let ent = value::Ent::new(then_ty, span);
-                    self.functions.values.push(ent)
+                    self.builder.funcs.values.push(ent)
                 };
-                self.functions.push_block_param(skip_block, skip_param);
+                self.builder.push_block_param(skip_block, skip_param);
 
                 Ok(Some(skip_param))
             },
@@ -345,12 +473,17 @@ impl<'a> FuncBuilder<'a> {
             let op_id: ID = {
                 let span = self.ast.nodes[op].span;
                 let str = self.sources.display(span);
+
+                if str == "=" {
+                    return self.build_assign(left, right, span).map(Some);
+                }
+
                 str.into()
             };
     
             let left_id = {
-                let ty = self.functions.values[left].ty;
-                self.types.get(ty).id
+                let ty = self.builder.funcs.values[left].ty;
+                self.types.ents[ty].id
             };
             
             ID::new("<binary>") + op_id + left_id
@@ -362,25 +495,29 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let value = {
-            let sig = self.functions.ents[func].sig;
+            let sig = self.builder.funcs.ents[func].sig;
             if let Some(ty) = sig.ret.expand() {
                 let span = self.ast.nodes[ast].span;
                 let ent = value::Ent::new(ty, span);
-                Some(self.functions.values.push(ent))
+                Some(self.builder.funcs.values.push(ent))
             } else {
                 None
             }
         };
 
-        let inst = {
+        {
             let span = self.ast.nodes[ast].span;
-            let args = self.functions.make_values([left, right].iter().cloned());
-            inst::Ent::new(inst::Kind::Call(func, args), value, span)
-        };
-
-        self.functions.add_inst(self.func, inst);
+            let args = self.builder.funcs.value_slices.list(&[left, right]);
+            self.builder.add_inst(inst::Kind::Call(func, args), value, span);
+        }
 
         Ok(value)
+    }
+
+    fn build_assign(&mut self, left: Value, right: Value, span: Span) -> Result<Value> {
+        let kind = inst::Kind::Assign(left);
+        self.builder.add_inst(kind, Some(right), span); 
+        return Ok(left);
     }
 
     fn build_call(&mut self, ast: Ast) -> Result<Option<Value>> {
@@ -396,8 +533,8 @@ impl<'a> FuncBuilder<'a> {
         
         let args = {
             let sig_args = {
-                let args = self.functions.ents[called_func].sig.args;
-                self.types.slice(args).to_owned() // TODO: avoid in the future
+                let args = self.builder.funcs.ents[called_func].sig.args;
+                self.types.cons.view(args).to_owned() // TODO: avoid in the future
             };
 
             if sig_args.len() != children.len() - 1 {
@@ -411,19 +548,18 @@ impl<'a> FuncBuilder<'a> {
                 self.expect_expr_ty(expr, ty)?;
                 args.push(expr);
             }
-            self.functions.make_values(args.into_iter())
+            self.builder.funcs.value_slices.list(&args)
         };
 
         let return_value = {
-            let ty = self.functions.ents[called_func].sig.ret;
+            let ty = self.builder.funcs.ents[called_func].sig.ret;
             ty.expand()
-                .map(|ty| self.functions.add_value(value::Ent::new(ty, span)))
+                .map(|ty| self.builder.add_value(ty, span))
         };
 
         {
             let kind = inst::Kind::Call(called_func, args);
-            let ent = inst::Ent::new(kind, return_value, span);
-            self.functions.add_inst(self.func, ent);
+            self.builder.add_inst(kind, return_value, span);
         }
 
         Ok(return_value)
@@ -443,15 +579,13 @@ impl<'a> FuncBuilder<'a> {
             ),
         };
         let ty = self.scope.get(ty, span).unwrap();
-        let value = value::Ent::new(ty, span);
-        let value = self.functions.add_value(value);
-        self.functions
-            .add_inst(self.func, inst::Ent::new(kind, Some(value), span));
+        let value = self.builder.add_value(ty, span);
+        self.builder.add_inst(kind, value, span);
         Ok(value)
     }
 
     fn expect_expr_ty(&self, expr: Value, expected: Ty) -> Result {
-        let value::Ent { ty, span, .. } = self.functions.values[expr];
+        let value::Ent { ty, span, .. } = self.builder.funcs.values[expr];
         self.expect_ty(ty, expected, span)
     }
 
@@ -468,73 +602,8 @@ impl<'a> FuncBuilder<'a> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use std::path::PathBuf;
-
-    use lexer::{SourceEnt, Span, ID};
-
-    use crate::ty::Types;
-
-    use super::*;
-
-    #[test]
-    fn test_collect_items() {
-        let mut scope = Scope::new();
-        let mut sources = Sources::new();
-        let mut functions = Functions::new();
-        let mut types = Types::new();
-        let mut modules = Modules::new();
-
-        let test_str = "
-        fn main() -> int {
-            ret 0
-        }
-        ";
-
-        let source = sources.push(SourceEnt::new(PathBuf::from(""), test_str.to_string()));
-        scope
-            .insert(
-                source,
-                "int",
-                scope::Item::new(Ty(0), Span::new(source, 0, 0)),
-            )
-            .unwrap();
-        
-        let module = module::Ent::new(ID::default());
-        let module = modules.push(module);
-
-        let mut ast_data = ast::Data::new();
-        let mut ast_temp = ast::Temp::new();
-
-        let inter_state =
-            Parser::parse_imports(test_str, &mut ast_data, &mut ast_temp, source).unwrap();
-        Parser::parse_code_chunk(test_str, &mut ast_data, &mut ast_temp, inter_state).unwrap();
-
-        Collector {
-            scope: &mut scope,
-            functions: &mut functions,
-            types: &mut types,
-            modules: &mut modules,
-            sources: &sources,
-            ast: &ast_data,
-        }
-        .collect_items(module)
-        .unwrap();
-
-        let func = scope.get::<Func>("main", Span::default()).unwrap();
-
-        FuncBuilder {
-            scope: &mut scope,
-            functions: &mut functions,
-            types: &mut types,
-            sources: &sources,
-            ast: &ast_data,
-            func,
-        }
-        .build()
-        .unwrap();
-
-        println!("{}", functions.display(func, &sources, &ast_data));
-    }
+pub struct Loop {
+    _start: Block,
+    end: Block,
+    ty: Option<Ty>,
 }

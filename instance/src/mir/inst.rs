@@ -33,6 +33,8 @@ impl Ent {
 
 #[derive(Debug)]
 pub enum Kind {
+    Variable,
+    Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
     Call(Func, EntityList<Value>),

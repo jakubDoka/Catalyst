@@ -34,6 +34,9 @@ pub enum Kind {
     Extern,
     If,
     Else,
+    Loop,
+    Break,
+    Let,
 
     Ident,
     Operator,

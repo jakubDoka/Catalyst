@@ -3,7 +3,40 @@ use {
 }
 
 fn "default" main() -> int {
-    ret other(1, 2, 3) + bti(true) + bti(false)
+    if other(1, 2, 3) != 7 {
+        ret 1
+    }
+
+    if bti(true) != 1 {
+        ret 2
+    }
+
+    if bti(false) != 0 {
+        ret 3
+    }
+
+    if fib(5) != 8 {
+        ret 4
+    }
+
+    if iter_fib(5) != 8 {
+        ret 5
+    }
+
+    {
+        let i = 1
+        let b = 0
+        if loop { if i > 100 {
+            break b
+        } else {
+            b += i
+            i += 1
+        } } != 5050 {
+            ret 6
+        }
+    }
+
+    0
 }
 
 fn fib(x: int) -> int {
@@ -11,6 +44,24 @@ fn fib(x: int) -> int {
         1
     } else {
         fib(x - 1) + fib(x - 2)
+    }
+}
+
+fn iter_fib(x: int) -> int {
+    let i = 1
+    let a = 1
+    let b = 1
+    
+    loop {
+        if i >= x {
+            break b
+        }
+
+        let c = a + b
+        a = b
+        b = c
+
+        i += 1
     }
 }
 

@@ -1,4 +1,4 @@
-use cranelift_entity::{EntityList, ListPool, PrimaryMap};
+use cranelift_entity::{ListPool, PrimaryMap};
 use lexer::map::ID;
 
 pub struct Types {
@@ -13,22 +13,6 @@ impl Types {
             cons: ListPool::new(),
         }
     }
-
-    pub fn slice(&self, slice: EntityList<Ty>) -> &[Ty] {
-        slice.as_slice(&self.cons)
-    }
-
-    pub fn get(&self, ty: Ty) -> &Ent {
-        &self.ents[ty]
-    }
-
-    pub fn add(&mut self, ty: Ent) -> Ty {
-        self.ents.push(ty)
-    }
-
-    pub fn add_slice(&mut self, slice: &[Ty]) -> EntityList<Ty> {
-        EntityList::from_slice(slice, &mut self.cons)
-    }
 }
 
 pub struct Ent {
@@ -42,6 +26,27 @@ impl Ent {
     }
 }
 
+pub struct Display<'a> {
+    types: &'a Types,
+    ty: Ty,
+}
+
+impl<'a> Display<'a> {
+    pub fn new(types: &'a Types, ty: Ty) -> Self {
+        Self { types, ty }
+    }
+}
+
+impl std::fmt::Display for Display<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.types.ents[self.ty].kind {
+            Kind::Int(base) => write!(f, "int{}", if base > 10 { base.to_string() } else { "".to_string() }),
+            Kind::Bool => write!(f, "bool"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Kind {
     Int(i16),
     Bool,

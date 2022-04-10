@@ -289,6 +289,7 @@ impl<'a> Parser<'a> {
     fn block(&mut self) -> Result {
         let span = self.current.span();
         self.temp.mark_frame();
+        self.expect(token::Kind::LeftCurly)?;
         let end = self.list(
             token::Kind::LeftCurly,
             token::Kind::NewLine,
@@ -314,12 +315,8 @@ impl<'a> Parser<'a> {
 
     fn composite_expr(&mut self, mut prev: Ast, prev_precedence: usize) -> Result {
         while self.current.kind() == token::Kind::Operator {
-            let op = {
-                let span = self.current.span();
-                let ent = ast::Ent::childless(ast::Kind::Ident, span);
-                self.advance();
-                self.ast_file.nodes.push(ent)
-            };
+            let op_span = self.current.span();
+            self.advance();
             
             let mut expr = self.simple_expr()?;
 
@@ -337,6 +334,32 @@ impl<'a> Parser<'a> {
                 let start = self.ast_file.nodes[prev].span;
                 let end = self.ast_file.nodes[expr].span;
                 start.join(end)
+            };
+
+            let op = if prev_precedence == Self::EQUAL_SIGN_PRECEDENCE && op_span.len() > 1 {
+                // transforms `a += b` into `a = a + b` for any operator ending with `=` except `==` and `!=`
+                let op = {
+                    let span = op_span.slice(..op_span.len() - 1);
+                    let ent = ast::Ent::childless(ast::Kind::Ident, span);
+                    self.ast_file.nodes.push(ent)
+                };
+
+                let equal = {
+                    let span = op_span.slice(op_span.len() - 1..);
+                    let ent = ast::Ent::childless(ast::Kind::Ident, span);
+                    self.ast_file.nodes.push(ent)
+                };
+
+                self.temp.mark_frame();
+                self.temp.acc(prev);
+                self.temp.acc(op);
+                self.temp.acc(expr);
+                expr = self.alloc(ast::Kind::Binary, span);
+
+                equal
+            } else {
+                let ent = ast::Ent::childless(ast::Kind::Ident, op_span);
+                self.ast_file.nodes.push(ent)
             };
 
             self.temp.mark_frame();
@@ -357,11 +380,70 @@ impl<'a> Parser<'a> {
             token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) => Ok(self.literal_expr()),
             token::Kind::If => self.if_expr(),
             token::Kind::LeftCurly => self.block(),
+            token::Kind::Let => self.variable_expr(),
+            token::Kind::Loop => self.loop_expr(),
+            token::Kind::Break => self.break_expr(),
             _ => todo!(
                 "unhandled token as simple expr:\n{}",
                 self.lexer.pretty_print(self.current.span())
             ),
         }
+    }
+
+    pub fn break_expr(&mut self) -> Result {
+        let span = self.current.span();
+        self.advance();
+
+        self.temp.mark_frame();
+
+        let end = if self.current.kind() == token::Kind::NewLine {
+            self.temp.acc_nil();
+            span
+        } else {
+            let value = self.expr()?;
+            self.temp.acc(value);
+            self.ast_file.nodes[value].span
+        };
+
+        Ok(self.alloc(ast::Kind::Break, span.join(end)))
+    }
+
+    pub fn loop_expr(&mut self) -> Result {
+        let span = self.current.span();
+        self.advance();
+
+        self.temp.mark_frame();
+
+        let body = self.block()?;
+        self.temp.acc(body);
+        let end = self.ast_file.nodes[body].span;
+
+        Ok(self.alloc(ast::Kind::Loop, span.join(end)))
+    }
+
+    pub fn variable_expr(&mut self) -> Result {
+        let span = self.current.span();
+        self.advance();
+
+        self.temp.mark_frame();
+
+        let name = self.ident()?;
+        self.temp.acc(name);
+
+        {
+            let span = self.current.span();
+            let str = self.lexer.display(span);
+            if str != "=" {
+                return Err(Error::new(error::Kind::ExpectedAssignment, span));
+            }
+            self.advance();
+        }
+
+        let value = self.expr()?;
+        self.temp.acc(value);
+        let end = self.ast_file.nodes[value].span;
+
+        Ok(self.alloc(ast::Kind::Variable, span.join(end)))
     }
 
     pub fn if_expr(&mut self) -> Result {
@@ -373,7 +455,11 @@ impl<'a> Parser<'a> {
         let then = self.block()?;
         let otherwise = if self.current.kind() == token::Kind::Else {
             self.advance();
-            self.expr()? // this allows omitting {} but allows 'else if'
+            if self.current.kind() == token::Kind::If {
+                self.if_expr()?
+            } else {
+                self.block()?
+            }
         } else {
             Ast::reserved_value()
         };

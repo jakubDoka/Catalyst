@@ -2,7 +2,7 @@ use cranelift_codegen::ir::Type;
 
 use crate::size::Size;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Ent {
     pub repr: Type,
     pub offset: Size,
@@ -33,7 +33,7 @@ impl Ent {
 
 lexer::gen_entity!(Value);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Flags(u8);
 
 impl std::ops::BitOr for Flags {
@@ -41,6 +41,12 @@ impl std::ops::BitOr for Flags {
 
     fn bitor(self, rhs: Self) -> Self {
         Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for Flags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
     }
 }
 
@@ -63,4 +69,5 @@ macro_rules! gen_flag_getter {
 gen_flag_getter!(
     is_signed SIGNED 0,
     is_pointer POINTER 1,
+    is_mutable MUTABLE 2,
 );

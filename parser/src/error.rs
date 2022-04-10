@@ -8,6 +8,7 @@ pub type Error = AnyError<Kind>;
 pub enum Kind {
     Expected(token::Kind, token::Kind),
     ExpectedFork(Vec<token::Kind>, token::Kind),
+    ExpectedAssignment,
 }
 
 #[macro_export]
@@ -53,6 +54,9 @@ impl_error_display!((self, _sources, {}, f) => {
         Kind::ExpectedFork(expected, found) => {
             let expected = expected.iter().map(|kind| format!("{:?}", kind)).collect::<Vec<_>>().join(" | ");
             write!(f, "expected one of {:?}, found {:?}", expected, found)?;
+        }
+        Kind::ExpectedAssignment => {
+            write!(f, "expected assignment")?;
         }
     }
 });

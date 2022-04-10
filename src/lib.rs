@@ -5,6 +5,7 @@ use std::{collections::VecDeque, path::Path};
 use cranelift_codegen::isa::CallConv;
 use modules::module::{ModuleImports, self};
 use modules::scope::ScopeItemLexicon;
+use typec::builder::Builder;
 use typec::{ty, Ty};
 use cli::CmdInput;
 use cranelift_codegen::Context;
@@ -15,7 +16,7 @@ use cranelift_module::{Module, Linkage};
 use cranelift_object::{ObjectModule, ObjectBuilder};
 use gen::logic::Generator;
 use instance::logic::{FunctionTranslator, TypeTranslator};
-use lexer::{Sources, Map, Span, SourcesExt, BuiltinSource, ID};
+use lexer::{Sources, Map, Span, SourcesExt, BuiltinSource, ID, ListPoolExt};
 use modules::{logic::{Modules, UnitLoaderContext, Units, UnitLoader, ModuleLoader}, scope::Scope};
 use parser::{ast, Parser};
 use typec::{Collector, Func, FuncBuilder};
@@ -118,7 +119,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
     // typec
     let mut t_types = typec::Types::new();
-    let mut t_functions = typec::Functions::new();
+    let mut t_functions = typec::Funcs::new();
 
     let builtin_items: Vec<module::Item> = {
         let builtin_types = [
@@ -126,9 +127,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             ("bool", ty::Kind::Bool),
         ];
 
-        let builtin_binary_operators = "+ - * /";
-
-        let mut vec = Vec::with_capacity(builtin_types.len() + builtin_binary_operators.split(' ').count());
+        let mut vec = vec![];
 
         for (name, kind) in builtin_types {
             let span = builtin_source.make_span(&mut sources, name);
@@ -136,43 +135,59 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             
             let ty = {
                 let ent = ty::Ent::new(kind, id);
-                t_types.add(ent)
+                t_types.ents.push(ent)
             };
             
             let item = module::Item::new(id, ty, span);
             vec.push(item);
 
-            for name in builtin_binary_operators.split(' ') {
-                let name = builtin_source.make_span(&mut sources, name);
+            for name in "+ - * / < > <= >= == !=".split(' ') {
+                match kind {
+                    ty::Kind::Bool if !"".contains(name) => {
+                        continue;
+                    }
+                    ty::Kind::Int(_) if !"+ - * / < > <= >= == !=".contains(name) => {
+                        continue;
+                    }
+                    _ => {}, 
+                }
+
+                let span = builtin_source.make_span(&mut sources, name);
                 let sig = {
-                    let args = t_types.add_slice(&[ty, ty]);
-                    let ret = ty.into();
+                    let args = t_types.cons.list(&[ty, ty]);
+                    let ret = if "< > <= >= == !=".contains(name) {
+                        Ty(1).into() // bool
+                    } else {
+                        ty.into()
+                    };
                     typec::Signature { args, ret, call_conv: Span::default() }
                 };
                 
                 let id = {
-                    let name = sources.display(name);
+                    let name = sources.display(span);
                     ID::new("<binary>") + ID::new(name) + id
                 };
 
                 let func = {
                     let ent = typec::func::Ent {
                         sig,
-                        name,
+                        name: span,
                         id,
                         kind: typec::func::Kind::Builtin,
                         ..Default::default()                    
                     };
-                    t_functions.add(ent)
+                    t_functions.ents.push(ent)
                 };
 
-                let item = module::Item::new(id, func, name);
+                let item = module::Item::new(id, func, span);
                 vec.push(item);
             }
         }
 
         vec
     };
+
+    let mut loops = vec![];
     
     for module in module_order {        
         let source = modules[module].source;
@@ -205,6 +220,8 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             err,
             Box::new(parser::error::Display::new(sources, err))
         );
+
+        println!("{}", ast::FileDisplay::new(&ast, content));
         
         unwrap!(Collector {
                 scope: &mut scope,
@@ -219,14 +236,18 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             Box::new(typec::error::Display::new(sources, err, modules, units, scope_item_lexicon))
         );
 
-        for func in modules[module].items.iter().filter_map(|i| i.kind.may_read::<Func>()) {
+        for func in modules[module].items.iter().filter_map(|i| i.kind.may_read::<Func>()) {            
             unwrap!(FuncBuilder {
                     scope: &mut scope,
-                    functions: &mut t_functions,
+                    builder: &mut Builder { 
+                        funcs: & mut t_functions,
+                        func: func, 
+                        block: None, 
+                    },
+                    loops: &mut loops,
                     types: &mut t_types,
                     sources: &sources,
                     ast: &ast,
-                    func,
                 }
                 .build()
                 .inspect_err(|e| eprintln!("{}", sources.display(e.span))),
@@ -234,7 +255,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
                 Box::new(typec::error::Display::new(sources, err, modules, units, scope_item_lexicon))
             );
 
-            println!("{}", t_functions.display(func, &sources, &ast));
+            println!("{}", t_functions.display(func, &t_types, &sources, &ast));
         }
 
         scope.clear();

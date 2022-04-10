@@ -28,7 +28,32 @@ macro_rules! gen_entity {
                 }
             }
 
+            
+            impl std::fmt::Display for $name {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "{}{}", stringify!($name).chars().next().unwrap().to_lowercase(), self.0)
+                }
+            }
+
             impl $crate::map::IDFilter for $name {}
         )*
     };
+}
+
+use cranelift_entity::{EntityRef, packed_option::ReservedValue, EntityList, ListPool};
+
+
+pub trait ListPoolExt<T: EntityRef + ReservedValue> {
+    fn list(&mut self, slice: &[T]) -> EntityList<T>;
+    fn view(&self, list: EntityList<T>) -> &[T];
+}
+
+impl<T: EntityRef + ReservedValue> ListPoolExt<T> for ListPool<T> {
+    fn list(&mut self, slice: &[T]) -> EntityList<T> {
+        EntityList::from_slice(slice, self)
+    }
+
+    fn view(&self, list: EntityList<T>) -> &[T] {
+        list.as_slice(self)
+    }
 }

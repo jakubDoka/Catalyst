@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use cranelift_codegen::{ir::{self, Type}, isa::CallConv};
 use cranelift_entity::SecondaryMap;
-use lexer::{Sources, SourcesExt};
+use lexer::{Sources, SourcesExt, ListPoolExt};
 use typec::{self, tir, Ty, Signature, ty};
 
-use crate::{error::{Error, self}, func, mir::{self, value}};
+use crate::{error::{Error, self}, func, mir::{self, value::{self, Flags}}};
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -41,7 +41,7 @@ pub struct FunctionTranslator<'a> {
     pub value_lookup: &'a mut SecondaryMap<tir::Value, mir::Value>,
     pub block_lookup: &'a mut SecondaryMap<tir::Block, mir::Block>,
     pub function: &'a mut func::Function,
-    pub t_functions: &'a typec::Functions,
+    pub t_functions: &'a typec::Funcs,
     pub t_types: &'a typec::Types,
     pub sources: &'a Sources,
 }
@@ -96,7 +96,7 @@ impl<'a> FunctionTranslator<'a> {
             }
         };
         
-        let params = t_types.slice(args).iter().map(|&ty| {
+        let params = t_types.cons.view(args).iter().map(|&ty| {
             let repr = repr_lookup[ty];
             ir::AbiParam::new(repr)
         });
@@ -138,12 +138,13 @@ impl<'a> FunctionTranslator<'a> {
         match inst.kind {
             tir::Kind::Call(func, args) => {
                 let inst = {
-                    let arg_iter = self.t_functions.values(args).iter().map(|&arg| self.value_lookup[arg]);
+                    let arg_iter = self.t_functions.value_slices
+                        .view(args).iter().map(|&arg| self.value_lookup[arg]);
                     let args = self.function.make_values(arg_iter);
                     let kind = mir::inst::Kind::Call(func, args);
                     
                     let return_value = {
-                        if let Some(value) = inst.result.expand() {
+                        if let Some(value) = inst.value.expand() {
                             let ty = self.t_functions.values[value].ty;
                             let repr = self.repr_lookup[ty];
                             let ent = mir::value::Ent::repr(repr);
@@ -160,7 +161,7 @@ impl<'a> FunctionTranslator<'a> {
                 self.function.add_inst(inst);
             }
             tir::Kind::IntLit => {
-                let inst_value = inst.result.unwrap();
+                let inst_value = inst.value.unwrap();
 
                 let value = {
                     let ty = self.t_functions.values[inst_value].ty;
@@ -175,12 +176,13 @@ impl<'a> FunctionTranslator<'a> {
                     mir::inst::Ent::with_value(kind, value)
                 };
 
+                println!("{} => {}", inst_value, value);
                 self.value_lookup[inst_value] = value;
                 self.function.add_inst(inst);
             }
             tir::Kind::Return => {
                 let inst = {
-                    let value = inst.result.unwrap();
+                    let value = inst.value.unwrap();
                     let value = self.value_lookup[value];
                     let kind = mir::inst::Kind::Return;
                     mir::inst::Ent::with_value(kind, value)
@@ -190,7 +192,7 @@ impl<'a> FunctionTranslator<'a> {
             tir::Kind::JumpIfFalse(block) => {
                 let inst = {
                     let block = self.block_lookup[block];
-                    let value = self.value_lookup[inst.result.unwrap()];
+                    let value = self.value_lookup[inst.value.unwrap()];
                     let kind = mir::inst::Kind::JumpIfFalse(block);
                     mir::inst::Ent::with_value(kind, value)
                 };
@@ -200,7 +202,8 @@ impl<'a> FunctionTranslator<'a> {
             tir::Kind::Jump(block) => {
                 let inst = {
                     let block = self.block_lookup[block];
-                    let value = inst.result.map(|value| self.value_lookup[value]);
+                    println!("{:?} {}", inst.value, self.sources.display(inst.span));
+                    let value = inst.value.map(|value| self.value_lookup[value]);
                     let kind = mir::inst::Kind::Jump(block);
                     mir::inst::Ent::new(kind, value)
                 };
@@ -209,19 +212,33 @@ impl<'a> FunctionTranslator<'a> {
             },
             tir::Kind::BoolLit(literal) => {
                 let value = {
-                    let ty = self.t_functions.values[inst.result.unwrap()].ty;
+                    let ty = self.t_functions.values[inst.value.unwrap()].ty;
                     let repr = self.repr_lookup[ty];
                     let ent = mir::value::Ent::repr(repr);
                     self.function.values.push(ent)
                 };
 
-                self.value_lookup[inst.result.unwrap()] = value;
+                self.value_lookup[inst.value.unwrap()] = value;
 
                 let inst = {
                     let kind = mir::inst::Kind::BoolLit(literal);
                     mir::inst::Ent::with_value(kind, value)
                 };
 
+                self.function.add_inst(inst);
+            },
+            tir::Kind::Assign(left) => {
+                let left = self.value_lookup[left];
+                self.function.values[left].flags |= Flags::MUTABLE;
+                let right = self.value_lookup[inst.value.unwrap()];
+                let kind = mir::inst::Kind::Assign(left);
+                let inst = mir::inst::Ent::with_value(kind, right);
+                self.function.add_inst(inst);
+            },
+            tir::Kind::Variable => {
+                let value = self.value_lookup[inst.value.unwrap()];
+                let kind = mir::inst::Kind::Variable;
+                let inst = mir::inst::Ent::with_value(kind, value);
                 self.function.add_inst(inst);
             },
         }

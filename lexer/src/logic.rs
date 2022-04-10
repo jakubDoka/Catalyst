@@ -69,8 +69,8 @@ impl<'a> Lexer<'a> {
                         _ => token::Kind::Operator,
                     }
                 }
-                _ if c.is_alphabetic() => {
-                    while let Some(true) = self.peek().map(|c| c.is_alphanumeric()) {
+                _ if c.is_alphabetic() || c == '_' => {
+                    while let Some(true) = self.peek().map(|c| c.is_alphanumeric() || c == '_') {
                         self.next();
                     }
 
@@ -83,11 +83,14 @@ impl<'a> Lexer<'a> {
                         "else" => token::Kind::Else,
                         "true" => token::Kind::Bool(true),
                         "false" => token::Kind::Bool(false),
+                        "let" => token::Kind::Let,
+                        "loop" => token::Kind::Loop,
+                        "break" => token::Kind::Break,
                         _ => token::Kind::Ident,
                     }
                 }
 
-                _ => todo!(),
+                char => todo!("{char:?}"),
             };
 
             return self.new_token(kind, start);

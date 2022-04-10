@@ -12,6 +12,7 @@ pub enum Kind {
     ArgCountMismatch(usize, usize),
     ExpectedValue,
     UnexpectedValue,
+    InvalidBreak,
 }
 
 parser::impl_error_display!((self, sources, {
@@ -26,7 +27,7 @@ parser::impl_error_display!((self, sources, {
         Kind::TypeMismatch(expected, found) => {
             write!(f, "expected {:?}, found {:?}", expected, found)?;
         }
-        Kind::ArgCountMismatch(expected, found) => {
+        Kind::ArgCountMismatch(found, expected) => {
             write!(f, "expected {} arguments, found {}", expected, found)?;
         }
         Kind::ExpectedValue => {
@@ -34,6 +35,9 @@ parser::impl_error_display!((self, sources, {
         }
         Kind::UnexpectedValue => {
             write!(f, "unexpected value")?;
+        }
+        Kind::InvalidBreak => {
+            write!(f, "invalid break, allowed only inside loop")?;
         }
     };
 });

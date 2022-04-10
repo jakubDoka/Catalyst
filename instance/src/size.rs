@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Size {
     pub arch32: i32,
     pub arch64: i32,

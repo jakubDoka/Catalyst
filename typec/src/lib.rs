@@ -6,6 +6,7 @@ pub mod func;
 pub mod logic;
 pub mod tir;
 pub mod ty;
+pub mod builder;
 
 pub use func::*;
 pub use logic::*;
