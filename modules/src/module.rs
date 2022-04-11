@@ -50,7 +50,6 @@ impl Item {
 
 lexer::gen_entity!(Module);
 
-
 pub struct ModuleImports<'a> {
     ast_data: &'a ast::Data,
     sources: &'a Sources,

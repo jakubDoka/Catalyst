@@ -6,3 +6,26 @@ fn other(a, b, c: int) -> int {
 fn bti(b: bool) -> int {
     ret if b { 1 } else { 0 }
 }
+
+fn structure_test() -> int {
+    let something = Something::{
+        a: 1
+        b {
+            x: 1
+            y: 2
+        }
+        e: true
+    }
+
+    something.b.y - something.a - something.b.x 
+}
+
+struct Something {
+    a: int
+    b: SomethingElse
+    e: bool
+}
+
+struct SomethingElse {
+    x, y: i16
+}

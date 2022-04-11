@@ -51,7 +51,9 @@ impl Function {
     }
 
     pub fn push_block_param(&mut self, block: Block, param: Value) {
-        self.blocks[block].params.push(param, &mut self.value_slices);
+        self.blocks[block]
+            .params
+            .push(param, &mut self.value_slices);
     }
 
     pub fn add_inst(&mut self, inst: inst::Ent) -> Inst {

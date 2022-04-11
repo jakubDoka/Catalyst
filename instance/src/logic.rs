@@ -1,24 +1,46 @@
 use std::str::FromStr;
 
-use cranelift_codegen::{ir::{self, Type}, isa::CallConv};
-use cranelift_entity::SecondaryMap;
-use lexer::{Sources, SourcesExt, ListPoolExt};
-use typec::{self, tir, Ty, Signature, ty};
+use crate::types as ity;
+use cranelift_codegen::{
+    ir::{self, Type},
+    isa::CallConv,
+};
+use cranelift_entity::{EntityList, SecondaryMap};
+use lexer::{ListPoolExt, Sources, SourcesExt, ID};
+use modules::tree::{GenericGraph, TreeStorage};
+use typec::{self, tir, ty, Signature, Ty};
 
-use crate::{error::{Error, self}, func, mir::{self, value::{self, Flags}}};
+use crate::{
+    error::{self, Error},
+    func,
+    mir::{
+        self,
+        value::{self, Flags},
+    },
+    size::Size,
+    types::Types,
+};
 
 type Result<T = ()> = std::result::Result<T, Error>;
 
 pub struct TypeTranslator<'a> {
-    pub repr_lookup: &'a mut SecondaryMap<Ty, Type>,
     pub t_types: &'a typec::Types,
+    pub t_graph: &'a GenericGraph,
+    pub types: &'a mut Types,
     pub ptr_ty: Type,
 }
 
 impl<'a> TypeTranslator<'a> {
     pub fn translate(&mut self) -> Result {
-        self.repr_lookup.resize(self.t_types.ents.len());
-        for (id, ty) in self.t_types.ents.iter() {
+        let order = {
+            let mut vec: Vec<Ty> = Vec::with_capacity(self.t_types.ents.len());
+            self.t_graph.total_ordering(&mut vec);
+            vec
+        };
+
+        self.types.ents.resize(self.t_types.ents.len());
+        for id in order {
+            let ty = &self.t_types.ents[id];
             let repr = match ty.kind {
                 ty::Kind::Int(base) => match base {
                     64 => ir::types::I64,
@@ -28,21 +50,84 @@ impl<'a> TypeTranslator<'a> {
                     _ => self.ptr_ty,
                 },
                 ty::Kind::Bool => ir::types::B1,
+                ty::Kind::Struct(fields) => {
+                    self.translate_struct(id, fields)?;
+                    continue;
+                }
+                ty::Kind::Unresolved => unreachable!(),
             };
-            self.repr_lookup[id] = repr;
+
+            let bytes = repr.bytes() as i32;
+            let size = Size::new(bytes, bytes);
+            self.types.ents[id] = ity::Ent {
+                repr,
+                size,
+                small: true,
+                align: size.min(Size::PTR),
+            };
         }
         Ok(())
-    }    
+    }
+
+    pub fn translate_struct(&mut self, ty: Ty, fields: EntityList<Ty>) -> Result {
+        let fields = self.t_types.cons.view(fields);
+        let ty_id = self.t_types.ents[ty].id;
+
+        let align = fields
+            .iter()
+            .map(|&field| self.types.ents[field].align)
+            .fold(Size::ZERO, |acc, align| acc.max(align).min(Size::PTR));
+
+        let mut size = Size::ZERO;
+        for (i, &field) in fields.iter().enumerate() {
+            let ent = &self.types.ents[field];
+
+            let field = ity::Field {
+                repr: ent.repr,
+                offset: size,
+            };
+            let id = ty_id + ID(i as u64);
+            assert!(self.types.fields.insert(id, field).is_none(), "{id:?}");
+
+            size = size + ent.size;
+            let padding = align - size % align;
+            if padding != align {
+                size = size + padding;
+            }
+        }
+
+        let (repr, small) = Self::smallest_repr_for(size, self.ptr_ty);
+        self.types.ents[ty] = ity::Ent {
+            repr,
+            small,
+            size,
+            align,
+        };
+
+        Ok(())
+    }
+
+    pub fn smallest_repr_for(size: Size, ptr_ty: Type) -> (Type, bool) {
+        let size = size.arch(ptr_ty.bytes() == 4);
+        let repr = match size {
+            0 => ir::types::INVALID,
+            1 => ir::types::I8,
+            2 => ir::types::I16,
+            4 => ir::types::I32,
+            _ => ptr_ty,
+        };
+        (repr, size == repr.bytes() as i32)
+    }
 }
 
 pub struct FunctionTranslator<'a> {
     pub system_call_convention: CallConv,
-    pub repr_lookup: &'a SecondaryMap<Ty, Type>,
     pub value_lookup: &'a mut SecondaryMap<tir::Value, mir::Value>,
     pub block_lookup: &'a mut SecondaryMap<tir::Block, mir::Block>,
     pub function: &'a mut func::Function,
     pub t_functions: &'a typec::Funcs,
     pub t_types: &'a typec::Types,
+    pub types: &'a Types,
     pub sources: &'a Sources,
 }
 
@@ -51,16 +136,16 @@ impl<'a> FunctionTranslator<'a> {
         self.function.clear();
 
         Self::translate_signature(
-            &self.t_functions.ents[func].sig, 
-            &mut self.function.signature, 
+            &self.t_functions.ents[func].sig,
+            &mut self.function.signature,
             self.sources,
-            self.repr_lookup,
-            self.t_types, 
-            self.system_call_convention
+            self.types,
+            self.t_types,
+            self.system_call_convention,
         )?;
 
         self.function.name = self.t_functions.ents[func].name;
-        
+
         for (id, _) in self.t_functions.blocks_of(func) {
             let block = self.function.create_block();
             self.block_lookup[id] = block;
@@ -74,14 +159,17 @@ impl<'a> FunctionTranslator<'a> {
     }
 
     pub fn translate_signature(
-        &Signature { call_conv, args, ret }: &Signature, 
-        target: &mut ir::Signature, 
+        &Signature {
+            call_conv,
+            args,
+            ret,
+        }: &Signature,
+        target: &mut ir::Signature,
         sources: &Sources,
-        repr_lookup: &SecondaryMap<Ty, Type>,
+        types: &Types,
         t_types: &typec::Types,
         system_call_convention: CallConv,
     ) -> Result<()> {
-
         target.call_conv = {
             if call_conv.len() < 2 {
                 CallConv::Fast
@@ -95,18 +183,16 @@ impl<'a> FunctionTranslator<'a> {
                 }
             }
         };
-        
+
         let params = t_types.cons.view(args).iter().map(|&ty| {
-            let repr = repr_lookup[ty];
+            let repr = types.ents[ty].repr;
             ir::AbiParam::new(repr)
         });
         target.params.extend(params);
 
         if let Some(ty) = ret.expand() {
-            let repr = repr_lookup[ty];
-            target
-                .returns
-                .push(ir::AbiParam::new(repr));
+            let repr = types.ents[ty].repr;
+            target.returns.push(ir::AbiParam::new(repr));
         }
 
         Ok(())
@@ -118,11 +204,11 @@ impl<'a> FunctionTranslator<'a> {
 
         for (id, value) in self.t_functions.block_params(id) {
             let value = {
-                let repr = self.repr_lookup[value.ty];
+                let repr = self.types.ents[value.ty].repr;
                 let ent = value::Ent::repr(repr);
                 self.function.values.push(ent)
             };
-            
+
             self.function.push_block_param(block, value);
             self.value_lookup[id] = value;
         }
@@ -138,15 +224,19 @@ impl<'a> FunctionTranslator<'a> {
         match inst.kind {
             tir::Kind::Call(func, args) => {
                 let inst = {
-                    let arg_iter = self.t_functions.value_slices
-                        .view(args).iter().map(|&arg| self.value_lookup[arg]);
+                    let arg_iter = self
+                        .t_functions
+                        .value_slices
+                        .view(args)
+                        .iter()
+                        .map(|&arg| self.value_lookup[arg]);
                     let args = self.function.make_values(arg_iter);
                     let kind = mir::inst::Kind::Call(func, args);
-                    
+
                     let return_value = {
                         if let Some(value) = inst.value.expand() {
                             let ty = self.t_functions.values[value].ty;
-                            let repr = self.repr_lookup[ty];
+                            let repr = self.types.ents[ty].repr;
                             let ent = mir::value::Ent::repr(repr);
                             let mir_value = self.function.values.push(ent);
                             self.value_lookup[value] = mir_value;
@@ -155,7 +245,7 @@ impl<'a> FunctionTranslator<'a> {
                             None
                         }
                     };
-                    
+
                     mir::inst::Ent::new(kind, return_value)
                 };
                 self.function.add_inst(inst);
@@ -165,7 +255,7 @@ impl<'a> FunctionTranslator<'a> {
 
                 let value = {
                     let ty = self.t_functions.values[inst_value].ty;
-                    let repr = self.repr_lookup[ty];
+                    let repr = self.types.ents[ty].repr;
                     let ent = mir::value::Ent::repr(repr);
                     self.function.values.push(ent)
                 };
@@ -198,7 +288,7 @@ impl<'a> FunctionTranslator<'a> {
                 };
 
                 self.function.add_inst(inst);
-            },
+            }
             tir::Kind::Jump(block) => {
                 let inst = {
                     let block = self.block_lookup[block];
@@ -209,12 +299,12 @@ impl<'a> FunctionTranslator<'a> {
                 };
 
                 self.function.add_inst(inst);
-            },
+            }
             tir::Kind::BoolLit(literal) => {
                 let value = {
                     let ty = self.t_functions.values[inst.value.unwrap()].ty;
-                    let repr = self.repr_lookup[ty];
-                    let ent = mir::value::Ent::repr(repr);
+                    let repr = self.types.ents[ty];
+                    let ent = mir::value::Ent::repr(repr.repr);
                     self.function.values.push(ent)
                 };
 
@@ -226,7 +316,7 @@ impl<'a> FunctionTranslator<'a> {
                 };
 
                 self.function.add_inst(inst);
-            },
+            }
             tir::Kind::Assign(left) => {
                 let left = self.value_lookup[left];
                 self.function.values[left].flags |= Flags::MUTABLE;
@@ -234,13 +324,37 @@ impl<'a> FunctionTranslator<'a> {
                 let kind = mir::inst::Kind::Assign(left);
                 let inst = mir::inst::Ent::with_value(kind, right);
                 self.function.add_inst(inst);
-            },
+            }
             tir::Kind::Variable => {
-                let value = self.value_lookup[inst.value.unwrap()];
+                let mut value = self.value_lookup[inst.value.unwrap()];
+
+                {
+                    let mut ent = self.function.values[value];
+                    let owned = ent.flags.is_owned();
+                    ent.flags |= Flags::OWNED;
+                    if owned {
+                        let copy = {
+                            ent.offset = Size::ZERO;
+                            self.function.values.push(ent)
+                        };
+
+                        let inst = {
+                            let kind = mir::inst::Kind::Copy(value);
+                            mir::inst::Ent::with_value(kind, copy)
+                        };
+                        self.function.add_inst(inst);
+
+                        value = copy;
+                    }
+                    // flags could change to owned which we want, either way
+                    // the value will end up owned
+                    self.function.values[value].flags = ent.flags;
+                }
+
                 let kind = mir::inst::Kind::Variable;
                 let inst = mir::inst::Ent::with_value(kind, value);
                 self.function.add_inst(inst);
-            },
+            }
         }
 
         Ok(())

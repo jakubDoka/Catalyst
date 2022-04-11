@@ -1,9 +1,14 @@
 use std::{any::TypeId, path::PathBuf};
 
 use lexer::{map::ID, Span};
-use parser::{AnyError};
+use parser::AnyError;
 
-use crate::{module::Module, unit::Unit, logic::{Modules, Units}, scope::ScopeItemLexicon};
+use crate::{
+    logic::{Modules, Units},
+    module::Module,
+    scope::ScopeItemLexicon,
+    unit::Unit,
+};
 
 pub type Error = AnyError<Kind>;
 
@@ -25,10 +30,10 @@ pub enum Kind {
     ScopeItemCollision(ID),
 }
 
-parser::impl_error_display!((self, sources, { 
-    modules: Modules, 
+parser::impl_error_display!((self, sources, {
+    modules: Modules,
     units: Units,
-    scope_item_lexicon: ScopeItemLexicon, 
+    scope_item_lexicon: ScopeItemLexicon,
 }, f) => {
     match self {
         Kind::ModuleNotFound(path) => write!(f, "module not found: {:?}", path),

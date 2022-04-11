@@ -33,6 +33,7 @@ impl Ent {
 
 #[derive(Debug)]
 pub enum Kind {
+    Copy(Value),
     Variable,
     Assign(Value),
     JumpIfFalse(Block),

@@ -1,20 +1,26 @@
 use cranelift_entity::packed_option::ReservedValue;
-use lexer::{Sources, SourcesExt, Span, ID, ListPoolExt, SpanDisplay};
-use modules::{scope::{self, Scope}, module::{Module, self}, logic::Modules};
+use lexer::{ListPoolExt, Sources, SourcesExt, Span, SpanDisplay, ID};
+use modules::{
+    logic::Modules,
+    module::{self, Module},
+    scope::{self, Scope},
+    tree::GenericGraph,
+};
 use parser::{
     ast::{self, Ast},
     {Convert, Parser},
 };
 
 use crate::{
-    error::{Error, self},
+    builder::Builder,
+    error::{self, Error},
     func::{self, Func, Funcs, Signature},
     tir::{
         block::Block,
         inst,
         value::{self, Value},
     },
-    ty::{Ty, Types}, builder::Builder,
+    ty::{self, Ty, Types},
 };
 
 type Result<T = ()> = std::result::Result<T, Error>;
@@ -26,13 +32,15 @@ pub struct Collector<'a> {
     pub modules: &'a mut Modules,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
+    pub module: Module,
 }
 
 impl<'a> Collector<'a> {
-    pub fn collect_items(&mut self, module: Module) -> Result {
+    pub fn collect_items(&mut self) -> Result {
         for (ast, &ast::Ent { kind, span, .. }) in self.ast.elements() {
             match kind {
-                ast::Kind::Function => self.collect_function(ast, module)?,
+                ast::Kind::Function => self.collect_function(ast)?,
+                ast::Kind::Struct => self.collect_struct(ast)?,
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
         }
@@ -40,7 +48,36 @@ impl<'a> Collector<'a> {
         Ok(())
     }
 
-    fn collect_function(&mut self, ast: Ast, module: Module) -> Result {
+    fn collect_struct(&mut self, ast: Ast) -> Result {
+        let source = self.ast.nodes[ast].span.source();
+        let &[name, ..] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let span = self.ast.nodes[name].span;
+        let scope_id = {
+            let str = self.sources.display(span);
+            ID::new(str)
+        };
+        let id = self.modules[self.module].id + scope_id;
+        let ent = ty::Ent {
+            id,
+            ast,
+            kind: ty::Kind::Unresolved,
+            name: span,
+        };
+        let ty = self.types.ents.push(ent);
+
+        let item = module::Item::new(scope_id, ty, span);
+        self.scope
+            .insert(source, scope_id, item.to_scope_item())
+            .map_err(Convert::convert)?;
+        self.modules[self.module].items.push(item);
+
+        Ok(())
+    }
+
+    fn collect_function(&mut self, ast: Ast) -> Result {
         let children = self.ast.children(ast);
         let current_span = self.ast.nodes[ast].span;
         let &[call_conv, name, .., return_type, _body] = children else {
@@ -82,7 +119,7 @@ impl<'a> Collector<'a> {
         let ent = func::Ent {
             sig,
             ast,
-            name, 
+            name,
             ..Default::default()
         };
         let func = self.functions.ents.push(ent);
@@ -94,9 +131,9 @@ impl<'a> Collector<'a> {
                 scope::Item::new(func, current_span),
             )
             .map_err(Convert::convert)?;
-        
+
         let module_item = module::Item::new(id, func, current_span);
-        self.modules[module].items.push(module_item);
+        self.modules[self.module].items.push(module_item);
 
         Ok(())
     }
@@ -114,11 +151,84 @@ pub fn parse_type(scope: &Scope, ast: &ast::Data, sources: &Sources, ty: Ast) ->
                 .get(sources.display(span), span)
                 .map_err(Convert::convert);
         }
-        _ => todo!(
-            "Unhandled type expr {:?}: {}",
-            kind,
-            sources.display(span)
-        ),
+        _ => todo!("Unhandled type expr {:?}: {}", kind, sources.display(span)),
+    }
+}
+
+pub struct TypeBuilder<'a> {
+    pub scope: &'a mut Scope,
+    pub types: &'a mut Types,
+    pub sources: &'a Sources,
+    pub ast: &'a ast::Data,
+    pub graph: &'a mut GenericGraph,
+    pub ty: Ty,
+}
+
+impl<'a> TypeBuilder<'a> {
+    pub fn build(&mut self) -> Result {
+        let ty::Ent { id, ast, .. } = self.types.ents[self.ty];
+        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
+
+        match kind {
+            ast::Kind::Struct => self.build_struct(id, ast)?,
+            _ => todo!(
+                "Unhandled type decl {:?}: {}",
+                kind,
+                self.sources.display(span)
+            ),
+        }
+
+        Ok(())
+    }
+
+    pub fn build_struct(&mut self, id: ID, ast: Ast) -> Result {
+        println!("Building struct {:?} {:?}", id, self.ty);
+
+        let &[name, body] = self.ast.children(ast) else {
+            unreachable!();
+        };
+        let name = self.ast.nodes[name].span;
+
+        // fields are inserted into centralized hash map for faster lookup
+        // and memory efficiency, though we still need field ordering when
+        // calculating offsets
+        let fields = {
+            let mut fields = vec![]; // TODO: rather reuse allocation
+            for &field in self.ast.children(body) {
+                let children = self.ast.children(field);
+                let &[.., ty] = children else {
+                    unreachable!();
+                };
+                let ty = self.parse_type(ty)?;
+                for &name in &children[..children.len() - 1] {
+                    let id = {
+                        let span = self.ast.nodes[name].span;
+                        let str = self.sources.display(span);
+                        id + ID::new(str)
+                    };
+                    let field = ty::Field::new(ty, fields.len() as u32, None);
+                    assert!(self.types.fields.insert(id, field).is_none());
+                    fields.push(ty);
+                    self.graph.add_edge(ty.as_u32());
+                }
+            }
+            self.types.cons.list(&fields)
+        };
+
+        let ent = ty::Ent {
+            id,
+            kind: ty::Kind::Struct(fields),
+            ast,
+            name,
+        };
+        self.types.ents[self.ty] = ent;
+        self.graph.close_node();
+
+        Ok(())
+    }
+
+    pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
+        parse_type(self.scope, self.ast, self.sources, ty)
     }
 }
 
@@ -137,7 +247,7 @@ impl<'a> FuncBuilder<'a> {
         let ast = func_ent.ast;
         let ret = func_ent.sig.ret.expand();
         let &body_ast = self.ast.children(ast).last().unwrap();
-        
+
         if body_ast.is_reserved_value() {
             func_ent.kind = func::Kind::External;
             return Ok(());
@@ -148,7 +258,7 @@ impl<'a> FuncBuilder<'a> {
         self.builder.select_block(entry_point);
 
         let expr = self.build_block(body_ast)?;
-        
+
         if !self.builder.is_closed() {
             match (ret, expr) {
                 (Some(ty), Some(expr)) => {
@@ -158,13 +268,14 @@ impl<'a> FuncBuilder<'a> {
                         let span = self.ast.nodes[body_ast].span;
                         self.builder.add_inst(kind, expr, span);
                     }
-                },
-                (Some(_), None) => return Err(Error::new(
-                    error::Kind::ExpectedValue,
-                    self.ast.nodes[body_ast].span,
-                )),
-                (None, Some(_)) |
-                (None, None) => (),
+                }
+                (Some(_), None) => {
+                    return Err(Error::new(
+                        error::Kind::ExpectedValue,
+                        self.ast.nodes[body_ast].span,
+                    ))
+                }
+                (None, Some(_)) | (None, None) => (),
             }
         }
 
@@ -223,21 +334,21 @@ impl<'a> FuncBuilder<'a> {
             let children = self.ast.children(stmt);
             let ast = children[0];
             let span = self.ast.nodes[ast].span;
-            
+
             let return_type = self.builder.func_ent().sig.ret.expand();
             let return_value = self.build_optional_expr(ast)?;
 
             match (return_type, return_value) {
                 (None, Some(_)) => {
                     return Err(Error::new(error::Kind::UnexpectedValue, span));
-                },
+                }
                 (Some(_), None) => {
                     return Err(Error::new(error::Kind::ExpectedValue, span));
-                },
+                }
                 (Some(expected), Some(actual)) => {
                     self.expect_expr_ty(actual, expected)?;
                     Some(actual)
-                },
+                }
                 (None, None) => None,
             }
         };
@@ -258,7 +369,9 @@ impl<'a> FuncBuilder<'a> {
     fn build_optional_expr(&mut self, ast: Ast) -> Result<Option<Value>> {
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
         match kind {
-            ast::Kind::Int(_) | ast::Kind::String | ast::Kind::Bool(_) => self.build_literal(ast).map(Some),
+            ast::Kind::Int(_) | ast::Kind::String | ast::Kind::Bool(_) => {
+                self.build_literal(ast).map(Some)
+            }
             ast::Kind::Call => self.build_call(ast),
             ast::Kind::Binary => self.build_binary(ast),
             ast::Kind::Ident => self.build_ident(ast).map(Some),
@@ -281,7 +394,9 @@ impl<'a> FuncBuilder<'a> {
             unreachable!();
         };
 
-        let &Loop { end, .. } = self.loops.last()
+        let &Loop { end, .. } = self
+            .loops
+            .last()
             .ok_or_else(|| Error::new(error::Kind::InvalidBreak, span))?;
 
         if value.is_reserved_value() {
@@ -291,7 +406,7 @@ impl<'a> FuncBuilder<'a> {
             let kind = inst::Kind::Jump(end);
             let value = self.build_expr(value)?;
             self.builder.add_inst(kind, value, span);
-            
+
             let loop_header = self.loops.last_mut().unwrap();
             if let Some(ty) = loop_header.ty {
                 self.expect_expr_ty(value, ty)?;
@@ -306,11 +421,11 @@ impl<'a> FuncBuilder<'a> {
 
     fn build_loop(&mut self, ast: Ast) -> Result<Option<Value>> {
         let span = self.ast.nodes[ast].span;
-        
+
         let &[body] = self.ast.children(ast) else {
             unreachable!();
         };
-        
+
         let start = self.builder.create_block();
         let end = self.builder.create_block();
 
@@ -329,7 +444,7 @@ impl<'a> FuncBuilder<'a> {
         if !self.builder.is_closed() {
             self.builder.add_inst(inst::Kind::Jump(start), None, span);
         }
-        
+
         self.builder.select_block(end);
 
         let loop_header = self.loops.pop().unwrap();
@@ -344,7 +459,8 @@ impl<'a> FuncBuilder<'a> {
         Ok(result)
     }
 
-    fn build_variable(&mut self, ast: Ast) -> Result<Option<Value>> { // always none
+    fn build_variable(&mut self, ast: Ast) -> Result<Option<Value>> {
+        // always none
         let &[name, value] = self.ast.children(ast) else {
             unreachable!();
         };
@@ -366,7 +482,7 @@ impl<'a> FuncBuilder<'a> {
         self.scope.push_item(id, scope::Item::new(value, span));
 
         Ok(None)
-    } 
+    }
 
     fn build_if(&mut self, ast: Ast) -> Result<Option<Value>> {
         let span = self.ast.nodes[ast].span;
@@ -378,7 +494,7 @@ impl<'a> FuncBuilder<'a> {
         let cond = self.build_expr(cond)?;
         let bool = self.scope.get::<Ty>("bool", Span::default()).unwrap();
         self.expect_expr_ty(cond, bool)?;
-        
+
         let then_block = self.builder.create_block();
         let otherwise_block = if otherwise.is_reserved_value() {
             None
@@ -425,7 +541,7 @@ impl<'a> FuncBuilder<'a> {
 
         match (then_value, otherwise_value) {
             // here we forward the expression
-            (Some(then_expr), Some(else_expr)) => { 
+            (Some(then_expr), Some(else_expr)) => {
                 let then_ty = self.builder.funcs.values[then_expr].ty;
                 let else_ty = self.builder.funcs.values[else_expr].ty;
 
@@ -449,7 +565,7 @@ impl<'a> FuncBuilder<'a> {
                 self.builder.push_block_param(skip_block, skip_param);
 
                 Ok(Some(skip_param))
-            },
+            }
             _ => Ok(None),
         }
     }
@@ -457,8 +573,7 @@ impl<'a> FuncBuilder<'a> {
     fn build_ident(&mut self, ast: Ast) -> Result<Value> {
         let span = self.ast.nodes[ast].span;
         let str = self.sources.display(span);
-        self.scope.get::<Value>(str, span)
-            .map_err(Convert::convert)
+        self.scope.get::<Value>(str, span).map_err(Convert::convert)
     }
 
     fn build_binary(&mut self, ast: Ast) -> Result<Option<Value>> {
@@ -480,12 +595,12 @@ impl<'a> FuncBuilder<'a> {
 
                 str.into()
             };
-    
+
             let left_id = {
                 let ty = self.builder.funcs.values[left].ty;
                 self.types.ents[ty].id
             };
-            
+
             ID::new("<binary>") + op_id + left_id
         };
 
@@ -508,7 +623,8 @@ impl<'a> FuncBuilder<'a> {
         {
             let span = self.ast.nodes[ast].span;
             let args = self.builder.funcs.value_slices.list(&[left, right]);
-            self.builder.add_inst(inst::Kind::Call(func, args), value, span);
+            self.builder
+                .add_inst(inst::Kind::Call(func, args), value, span);
         }
 
         Ok(value)
@@ -516,21 +632,23 @@ impl<'a> FuncBuilder<'a> {
 
     fn build_assign(&mut self, left: Value, right: Value, span: Span) -> Result<Value> {
         let kind = inst::Kind::Assign(left);
-        self.builder.add_inst(kind, Some(right), span); 
+        self.builder.add_inst(kind, Some(right), span);
         return Ok(left);
     }
 
     fn build_call(&mut self, ast: Ast) -> Result<Option<Value>> {
         let children = self.ast.children(ast);
         let span = self.ast.nodes[ast].span;
-        
+
         let called_func = {
             let ast = children[0];
             let span = self.ast.nodes[ast].span;
             let name = self.sources.display(span);
-            self.scope.get::<Func>(name, span).map_err(Convert::convert)?
+            self.scope
+                .get::<Func>(name, span)
+                .map_err(Convert::convert)?
         };
-        
+
         let args = {
             let sig_args = {
                 let args = self.builder.funcs.ents[called_func].sig.args;
@@ -553,8 +671,7 @@ impl<'a> FuncBuilder<'a> {
 
         let return_value = {
             let ty = self.builder.funcs.ents[called_func].sig.ret;
-            ty.expand()
-                .map(|ty| self.builder.add_value(ty, span))
+            ty.expand().map(|ty| self.builder.add_value(ty, span))
         };
 
         {

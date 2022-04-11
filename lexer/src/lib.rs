@@ -28,7 +28,7 @@ macro_rules! gen_entity {
                 }
             }
 
-            
+
             impl std::fmt::Display for $name {
                 fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                     write!(f, "{}{}", stringify!($name).chars().next().unwrap().to_lowercase(), self.0)
@@ -40,8 +40,7 @@ macro_rules! gen_entity {
     };
 }
 
-use cranelift_entity::{EntityRef, packed_option::ReservedValue, EntityList, ListPool};
-
+use cranelift_entity::{packed_option::ReservedValue, EntityList, EntityRef, ListPool};
 
 pub trait ListPoolExt<T: EntityRef + ReservedValue> {
     fn list(&mut self, slice: &[T]) -> EntityList<T>;

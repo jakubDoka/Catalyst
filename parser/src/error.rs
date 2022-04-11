@@ -1,6 +1,4 @@
-use lexer::{
-    token, Span, Sources,
-};
+use lexer::{token, Sources, Span};
 
 pub type Error = AnyError<Kind>;
 
@@ -117,5 +115,6 @@ pub trait Convert<T> {
 }
 
 pub trait AnyErrorKind<T> {
-    fn print(&self, sources: &Sources, state: &T, f: &mut impl std::fmt::Write) -> std::fmt::Result;
+    fn print(&self, sources: &Sources, state: &T, f: &mut impl std::fmt::Write)
+        -> std::fmt::Result;
 }

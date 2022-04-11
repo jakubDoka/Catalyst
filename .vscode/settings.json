@@ -10,6 +10,7 @@
         "iconst",
         "insts",
         "repr",
+        "struct",
         "structs",
         "typec"
     ]

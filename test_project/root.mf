@@ -36,6 +36,10 @@ fn "default" main() -> int {
         }
     }
 
+    if structure_test() != 0 {
+        ret 7
+    }
+
     0
 }
 

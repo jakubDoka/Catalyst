@@ -1,7 +1,10 @@
-use modules::{logic::{Modules, Units}, scope::ScopeItemLexicon};
+use modules::{
+    logic::{Modules, Units},
+    scope::ScopeItemLexicon,
+};
 use parser::AnyError;
 
-use crate::Ty;
+use crate::{ty, Ty, Types};
 
 pub type Error = AnyError<Kind>;
 
@@ -16,16 +19,17 @@ pub enum Kind {
 }
 
 parser::impl_error_display!((self, sources, {
-    modules: Modules, 
+    modules: Modules,
     units: Units,
-    scope_item_lexicon: ScopeItemLexicon, 
+    types: Types,
+    scope_item_lexicon: ScopeItemLexicon,
 }, f) => {
     match self {
         Kind::Modules(kind) => {
             kind.print(sources, &(modules, units, scope_item_lexicon), f)?;
         }
-        Kind::TypeMismatch(expected, found) => {
-            write!(f, "expected {:?}, found {:?}", expected, found)?;
+        &Kind::TypeMismatch(expected, found) => {
+            write!(f, "expected {}, found {}", ty::Display::new(types, sources, expected), ty::Display::new(types, sources, found))?;
         }
         Kind::ArgCountMismatch(found, expected) => {
             write!(f, "expected {} arguments, found {}", expected, found)?;

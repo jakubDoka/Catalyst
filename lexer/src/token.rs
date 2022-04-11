@@ -37,6 +37,7 @@ pub enum Kind {
     Loop,
     Break,
     Let,
+    Struct,
 
     Ident,
     Operator,
@@ -56,7 +57,9 @@ pub enum Kind {
 
     Comma,
     Colon,
+    Dot,
     RightArrow,
+    DoubleColon,
 
     NewLine,
 

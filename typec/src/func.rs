@@ -5,10 +5,11 @@ use crate::{
         value::{self, Value},
         LinkedList,
     },
-    ty::{Ty, self}, Types,
+    ty::{self, Ty},
+    Types,
 };
 use cranelift_entity::{packed_option::PackedOption, EntityList, ListPool, PrimaryMap};
-use lexer::{Sources, Span, ID, ListPoolExt, SourcesExt};
+use lexer::{ListPoolExt, Sources, SourcesExt, Span, ID};
 use parser::ast::{self, Ast};
 
 pub struct Funcs {
@@ -33,9 +34,7 @@ impl Funcs {
     pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &value::Ent)> + '_ {
         let args = self.blocks[block].args;
         let view = self.value_slices.view(args);
-        view
-            .iter()
-            .map(|&value| (value, &self.values[value]))
+        view.iter().map(|&value| (value, &self.values[value]))
     }
 
     pub fn display<'a>(
@@ -74,14 +73,21 @@ pub struct Display<'a> {
 impl std::fmt::Display for Display<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let func = &self.funcs.ents[self.func];
-        writeln!(f, "fn {}{} {{", self.sources.display(func.name), SignatureDisplay::new(&func.sig, self.types))?;
+        writeln!(
+            f,
+            "fn {}{} {{",
+            self.sources.display(func.name),
+            SignatureDisplay::new(&func.sig, self.sources, self.types)
+        )?;
         for (id, _) in self.funcs.blocks_of(self.func) {
-            let args = self.funcs.block_params(id)
+            let args = self
+                .funcs
+                .block_params(id)
                 .map(|(value, ent)| {
                     format!(
                         "{}: {}",
                         value,
-                        ty::Display::new(self.types, ent.ty),
+                        ty::Display::new(self.types, self.sources, ent.ty),
                     )
                 })
                 .collect::<Vec<_>>()
@@ -92,49 +98,64 @@ impl std::fmt::Display for Display<'_> {
                 match inst.kind {
                     inst::Kind::Variable => {
                         writeln!(f, "var {}", inst.value.unwrap())?;
-                    },
+                    }
                     inst::Kind::Assign(value) => {
                         writeln!(f, "{} = {}", value, inst.value.unwrap())?;
-                    },
+                    }
                     inst::Kind::JumpIfFalse(block) => {
                         writeln!(f, "if {} goto {}", inst.value.unwrap(), block)?;
-                    },
+                    }
                     inst::Kind::Jump(block) => {
                         if let Some(value) = inst.value.expand() {
                             writeln!(f, "goto {}({})", block, value)?;
                         } else {
                             writeln!(f, "goto {}", block)?;
                         }
-                    },
+                    }
                     inst::Kind::Call(func, args) => {
                         let name = self.funcs.ents[func].name;
-                        let args = self.funcs.value_slices
+                        let args = self
+                            .funcs
+                            .value_slices
                             .view(args)
                             .iter()
                             .map(|&value| format!("{value}"))
                             .collect::<Vec<_>>()
                             .join(", ");
                         let ty = self.funcs.values[inst.value.unwrap()].ty;
-                        let ty = ty::Display::new(self.types, ty);
-                        writeln!(f, "{}: {} = {}({})", inst.value.unwrap(), ty, self.sources.display(name), args)?;
-                    },
+                        let ty = ty::Display::new(self.types, self.sources, ty);
+                        writeln!(
+                            f,
+                            "{}: {} = {}({})",
+                            inst.value.unwrap(),
+                            ty,
+                            self.sources.display(name),
+                            args
+                        )?;
+                    }
                     inst::Kind::BoolLit(value) => {
                         let ty = self.funcs.values[inst.value.unwrap()].ty;
-                        let ty = ty::Display::new(self.types, ty);
+                        let ty = ty::Display::new(self.types, self.sources, ty);
                         writeln!(f, "{}: {} = {}", inst.value.unwrap(), ty, value)?;
-                    },
+                    }
                     inst::Kind::IntLit => {
                         let ty = self.funcs.values[inst.value.unwrap()].ty;
-                        let ty = ty::Display::new(self.types, ty);
-                        writeln!(f, "{}: {} = {}", inst.value.unwrap(), ty, self.sources.display(inst.span))?;
-                    },
+                        let ty = ty::Display::new(self.types, self.sources, ty);
+                        writeln!(
+                            f,
+                            "{}: {} = {}",
+                            inst.value.unwrap(),
+                            ty,
+                            self.sources.display(inst.span)
+                        )?;
+                    }
                     inst::Kind::Return => {
                         if let Some(value) = inst.value.expand() {
                             writeln!(f, "return {}", value)?;
                         } else {
                             writeln!(f, "return")?;
                         }
-                    },
+                    }
                 }
             }
         }
@@ -178,12 +199,17 @@ pub struct Signature {
 
 pub struct SignatureDisplay<'a> {
     pub sig: &'a Signature,
+    pub sources: &'a Sources,
     pub types: &'a Types,
 }
 
 impl<'a> SignatureDisplay<'a> {
-    pub fn new(sig: &'a Signature, types: &'a Types) -> Self {
-        SignatureDisplay { sig, types }
+    pub fn new(sig: &'a Signature, sources: &'a Sources, types: &'a Types) -> Self {
+        SignatureDisplay {
+            sig,
+            types,
+            sources,
+        }
     }
 }
 
@@ -194,11 +220,11 @@ impl std::fmt::Display for SignatureDisplay<'_> {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", ty::Display::new(self.types, ty))?;
+            write!(f, "{}", ty::Display::new(self.types, self.sources, ty))?;
         }
         write!(f, ")")?;
         if let Some(ty) = self.sig.ret.expand() {
-            write!(f, " -> {}", ty::Display::new(self.types, ty))?;
+            write!(f, " -> {}", ty::Display::new(self.types, self.sources, ty))?;
         }
         Ok(())
     }

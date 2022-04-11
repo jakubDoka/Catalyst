@@ -8,7 +8,7 @@ use lexer::{
 
 use crate::error::{self, Error};
 
-pub type ScopeItemLexicon = HashMap<TypeId, &'static str>; 
+pub type ScopeItemLexicon = HashMap<TypeId, &'static str>;
 
 pub struct Scope {
     map: Map<Item>,

@@ -220,6 +220,12 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    DotExpr,
+    ConstructorBody,
+    Constructor,
+    StructField,
+    StructFields,
+    Struct,
     Break,
     Loop,
     Variable,
@@ -227,7 +233,6 @@ pub enum Kind {
     Binary,
     Index,
     Call,
-    StructField,
     InlineConstructor,
     Return,
     Import,

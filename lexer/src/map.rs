@@ -168,7 +168,7 @@ impl<T> Default for Map<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct ID(u64);
+pub struct ID(pub u64);
 
 impl ID {
     pub fn new(data: &str) -> Self {
@@ -185,6 +185,16 @@ impl ID {
                 .wrapping_add(acc << 8)
                 .wrapping_sub(b as u64)
         }))
+    }
+}
+
+impl ReservedValue for ID {
+    fn reserved_value() -> Self {
+        Self(u64::MAX)
+    }
+
+    fn is_reserved_value(&self) -> bool {
+        self.0 == u64::MAX
     }
 }
 

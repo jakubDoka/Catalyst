@@ -19,6 +19,14 @@ where
         self.detect_cycles_with_resources(root, &mut CycleDetectResources::new(), ordering)
     }
 
+    fn total_ordering(&self, ordering: &mut Vec<I>) -> Option<Vec<I>> {
+        let mut resources = CycleDetectResources::new();
+        (0..self.len())
+            .map(|i| self.detect_cycles_with_resources(I::new(i), &mut resources, Some(ordering)))
+            .find(|r| r.is_some())
+            .unwrap_or(None)
+    }
+
     /// Returns none if no cycles found, otherwise returns sequence
     /// of nodes creating the cycle. `stack` should be empty, lookup
     /// has to be as long as the number of nodes. Optionally, ordering
@@ -125,7 +133,6 @@ impl<I> CycleDetectResources<I> {
     }
 
     pub fn clear(&mut self) {
-        self.stack.clear();
         self.lookup.clear();
     }
 }

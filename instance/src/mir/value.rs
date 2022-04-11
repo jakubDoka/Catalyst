@@ -56,7 +56,7 @@ macro_rules! gen_flag_getter {
             $(
                 pub const $const_name: Self = Self(1 << $index);
             )*
-            
+
             $(
                 pub fn $name(&self) -> bool {
                     self.0 & (1 << $index) != 0
@@ -70,4 +70,6 @@ gen_flag_getter!(
     is_signed SIGNED 0,
     is_pointer POINTER 1,
     is_mutable MUTABLE 2,
+    is_owned OWNED 3,
+    is_on_stack ON_STACK 4,
 );

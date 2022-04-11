@@ -44,7 +44,7 @@ impl<'a> Lexer<'a> {
                 ']' => token::Kind::RightBracket,
 
                 ',' => token::Kind::Comma,
-                ':' => token::Kind::Colon,
+                '.' => token::Kind::Dot,
 
                 '0'..='9' => {
                     while let Some('0'..='9') = self.peek() {
@@ -66,6 +66,8 @@ impl<'a> Lexer<'a> {
 
                     match self.view(start) {
                         "->" => token::Kind::RightArrow,
+                        ":" => token::Kind::Colon,
+                        "::" => token::Kind::DoubleColon,
                         _ => token::Kind::Operator,
                     }
                 }
@@ -86,6 +88,7 @@ impl<'a> Lexer<'a> {
                         "let" => token::Kind::Let,
                         "loop" => token::Kind::Loop,
                         "break" => token::Kind::Break,
+                        "struct" => token::Kind::Struct,
                         _ => token::Kind::Ident,
                     }
                 }

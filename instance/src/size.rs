@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Size {
     pub arch32: i32,
     pub arch64: i32,
@@ -23,6 +23,20 @@ impl Size {
             self.arch32
         } else {
             self.arch64
+        }
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        Size {
+            arch32: self.arch32.max(other.arch32),
+            arch64: self.arch64.max(other.arch64),
+        }
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        Size {
+            arch32: self.arch32.min(other.arch32),
+            arch64: self.arch64.min(other.arch64),
         }
     }
 }
@@ -51,3 +65,14 @@ impl_op!(
     Div-div(/),
     Rem-rem(%)
 );
+
+impl std::ops::Mul<i32> for Size {
+    type Output = Size;
+
+    fn mul(self, other: i32) -> Size {
+        Size {
+            arch32: self.arch32 * other,
+            arch64: self.arch64 * other,
+        }
+    }
+}

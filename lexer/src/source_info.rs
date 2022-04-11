@@ -19,19 +19,19 @@ pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
 
 pub struct BuiltinSource {
     pub spans: Map<Span>,
-    pub source: Source,   
+    pub source: Source,
 }
 
 impl BuiltinSource {
     pub fn new(sources: &mut Sources) -> Self {
         assert!(sources.is_empty());
-        
+
         let source = SourceEnt {
             content: "".to_string(),
             path: PathBuf::new(),
             mapping: LineMapping::new(""),
         };
-        
+
         let source = sources.push(source);
 
         Self {
@@ -44,7 +44,7 @@ impl BuiltinSource {
         if let Some(&span) = self.spans.get(content) {
             return span;
         }
-        
+
         let span = {
             let ent = &mut sources[self.source];
             let len = ent.content.len();
@@ -56,7 +56,6 @@ impl BuiltinSource {
         span
     }
 }
-
 
 crate::gen_entity!(Source);
 

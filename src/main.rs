@@ -1,4 +1,3 @@
-
 fn main() {
     match catalyst_lib::compile() {
         Ok(()) => println!("compiled"),
