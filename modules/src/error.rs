@@ -1,14 +1,9 @@
 use std::{any::TypeId, path::PathBuf};
 
-use lexer::{map::ID, Span};
-use parser::AnyError;
+use lexer::*;
+use parser::*;
 
-use crate::{
-    logic::{Modules, Units},
-    module::Module,
-    scope::ScopeItemLexicon,
-    unit::Unit,
-};
+use crate::*;
 
 pub type Error = AnyError<Kind>;
 
@@ -64,8 +59,8 @@ parser::impl_error_display!((self, sources, {
         Kind::GitCloneStatus(status) => write!(f, "git clone failed: {}", status),
         Kind::ScopeCollision(span) => write!(f, "scope collision: {:?}", span),
         Kind::ScopeItemMismatch(expected, found) => {
-            let expected = scope_item_lexicon.get(expected).unwrap();
-            let found = scope_item_lexicon.get(found).unwrap();
+            let expected = scope_item_lexicon.get(expected).expect("scope item type not registered");
+            let found = scope_item_lexicon.get(found).expect("scope item type not registered");
             write!(f, "scope item mismatch: expected {:?}, found {:?}", expected, found)
         },
         Kind::ScopeItemNotFound => write!(f, "scope item not found"),

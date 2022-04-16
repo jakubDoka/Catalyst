@@ -2,28 +2,22 @@
 
 use cli::CmdInput;
 use cranelift_codegen::isa::CallConv;
+use cranelift_codegen::packed_option::PackedOption;
 use cranelift_codegen::settings::Flags;
 use cranelift_codegen::Context;
-use cranelift_entity::SecondaryMap;
+use cranelift_entity::{PrimaryMap, SecondaryMap, EntitySet};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{Linkage, Module, FuncId};
+use cranelift_object::object::elf::R_TILEPRO_MF_IMM15_X1;
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use gen::logic::Generator;
-use instance::logic::{FunctionTranslator, TypeTranslator};
-use lexer::{BuiltinSource, ListPoolExt, Map, Sources, SourcesExt, Span, ID};
-use modules::module::{self, ModuleImports};
-use modules::scope::ScopeItemLexicon;
-use modules::tree::GenericGraph;
-use modules::{
-    logic::{ModuleLoader, Modules, UnitLoader, UnitLoaderContext, Units},
-    scope::Scope,
-};
-use parser::{ast, Parser};
+use gen::*;
+use instance::*;
+use lexer::*;
+use modules::*;
+use parser::*;
 use std::process::Command;
 use std::{collections::VecDeque, path::Path};
-use typec::builder::Builder;
-use typec::{ty, Ty, TypeBuilder};
-use typec::{Collector, Func, FuncBuilder};
+use typec::*;
 
 macro_rules! unwrap {
     ($expr:expr, $err:ident, $mapping:expr) => {
@@ -36,7 +30,7 @@ macro_rules! unwrap {
     };
 }
 
-pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
+pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
     // cli
     let input = CmdInput::new();
 
@@ -56,7 +50,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
     let mut scope = Scope::new();
     let mut module_map = Map::new();
     let mut module_frontier = VecDeque::new();
-    let mut unit_load_ctx = UnitLoaderContext::new();
+    let mut unit_load_ctx = LoaderContext::new();
     let mut modules = Modules::new();
     let mut units = Units::new();
     let scope_item_lexicon = {
@@ -66,6 +60,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             (std::any::TypeId::of::<module::Module>(), "module"),
             (std::any::TypeId::of::<Ty>(), "type"),
             (std::any::TypeId::of::<Func>(), "function"),
+            (std::any::TypeId::of::<Tir>(), "tir"),
         ] {
             map.insert(id, name);
         }
@@ -75,7 +70,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
     let module_order = {
         let unit_order = unwrap!(
-            UnitLoader {
+            unit::Loader {
                 sources: &mut sources,
                 units: &mut units,
                 ctx: &mut unit_load_ctx,
@@ -95,7 +90,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
         for unit in unit_order {
             let local_module_order = unwrap!(
-                ModuleLoader {
+                module::Loader {
                     sources: &mut sources,
                     modules: &mut modules,
                     units: &mut units,
@@ -136,11 +131,12 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
     // typec
     let mut t_types = typec::Types::new();
-    let mut t_functions = typec::Funcs::new();
+    let mut t_funcs = typec::Funcs::new();
     let mut t_graph = GenericGraph::new();
 
     let builtin_items: Vec<module::Item> = {
         let builtin_types = [
+            ("nothing", ty::Kind::Nothing),
             ("bool", ty::Kind::Bool),
             ("int", ty::Kind::Int(-1)),
             ("i8", ty::Kind::Int(8)),
@@ -179,7 +175,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
                 let sig = {
                     let args = t_types.cons.list(&[ty, ty]);
                     let ret = if "< > <= >= == !=".contains(name) {
-                        Ty(0).into() // bool
+                        Ty(1).into() // bool
                     } else {
                         ty.into()
                     };
@@ -192,7 +188,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
                 let id = {
                     let name = sources.display(span);
-                    ID::new("<binary>") + ID::new(name) + id
+                    typec::func::Builder::binary_id(id, ID::new(name))
                 };
 
                 let func = {
@@ -203,7 +199,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
                         kind: typec::func::Kind::Builtin,
                         ..Default::default()
                     };
-                    t_functions.ents.push(ent)
+                    t_funcs.push(ent)
                 };
 
                 let item = module::Item::new(id, func, span);
@@ -214,7 +210,9 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
         vec
     };
 
-    let mut loops = vec![];
+    let mut func_ast = SecondaryMap::new();
+    let mut bodies = SecondaryMap::new();
+    let mut t_temp = tir::Temp::new();
 
     for module in module_order {
         let source = modules[module].source;
@@ -252,10 +250,12 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
 
         unwrap!(
             Collector {
+                nothing: Ty(0),
                 scope: &mut scope,
-                functions: &mut t_functions,
+                functions: &mut t_funcs,
                 types: &mut t_types,
                 modules: &mut modules,
+                func_ast: &mut func_ast,
                 sources: &sources,
                 ast: &ast,
                 module,
@@ -272,56 +272,68 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             ))
         );
 
-        for item in modules[module].items.iter() {
-            if let Some(func) = item.kind.may_read::<Func>() {
-                unwrap!(
-                    FuncBuilder {
-                        scope: &mut scope,
-                        builder: &mut Builder {
-                            funcs: &mut t_functions,
-                            func: func,
-                            block: None,
-                        },
-                        loops: &mut loops,
-                        types: &mut t_types,
-                        sources: &sources,
-                        ast: &ast,
-                    }
-                    .build(),
+        for ty in modules[module]
+            .items
+            .iter()
+            .filter_map(|item| item.kind.may_read::<Ty>())
+        {
+            unwrap!(
+                typec::ty::Builder {
+                    scope: &mut scope,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    graph: &mut t_graph,
+                    ty
+                }
+                .build(),
+                err,
+                Box::new(typec::error::Display::new(
+                    sources,
                     err,
-                    Box::new(typec::error::Display::new(
-                        sources,
-                        err,
-                        modules,
-                        units,
-                        t_types,
-                        scope_item_lexicon
-                    ))
-                );
+                    modules,
+                    units,
+                    t_types,
+                    scope_item_lexicon
+                ))
+            );
+        }
 
-                println!("{}", t_functions.display(func, &t_types, &sources, &ast));
-            } else if let Some(ty) = item.kind.may_read::<Ty>() {
-                unwrap!(
-                    TypeBuilder {
-                        scope: &mut scope,
-                        types: &mut t_types,
-                        sources: &sources,
-                        ast: &ast,
-                        graph: &mut t_graph,
-                        ty
-                    }
-                    .build(),
+        for func in modules[module]
+            .items
+            .iter()
+            .filter_map(|item| item.kind.may_read::<Func>())
+        {
+            unwrap!(
+                typec::func::Builder {
+                    nothing: Ty(0),
+                    bool: Ty(1),
+                    scope: &mut scope,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    func,
+                    funcs: &mut t_funcs,
+                    func_ast: &func_ast,
+                    body: &mut bodies[func],
+                    temp: &mut t_temp,
+                }
+                .build(),
+                err,
+                Box::new(typec::error::Display::new(
+                    sources,
                     err,
-                    Box::new(typec::error::Display::new(
-                        sources,
-                        err,
-                        modules,
-                        units,
-                        t_types,
-                        scope_item_lexicon
-                    ))
-                );
-            }
+                    modules,
+                    units,
+                    t_types,
+                    scope_item_lexicon
+                ))
+            );
+
+            println!(
+                "{}",
+                typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body)
+            );
         }
 
         scope.clear();
@@ -341,13 +353,14 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
     let mut module = ObjectModule::new(builder);
 
     // instance
-    let mut function = instance::Function::new();
+    let mut function = instance::func::Func::new();
 
-    let mut tir_to_mir_lookup = SecondaryMap::new();
+    let mut stack_slot_lookup = SecondaryMap::new();
     let mut mir_to_ir_lookup = SecondaryMap::new();
-    let mut mir_block_lookup = SecondaryMap::new();
     let mut ir_block_lookup = SecondaryMap::new();
-    let mut func_lookup = SecondaryMap::new();
+    let mut tir_mapping = SecondaryMap::new();
+    let mut has_struct_ret = EntitySet::new();
+    let mut func_lookup = SecondaryMap::<Func, PackedOption<FuncId>>::new();
     let mut types = instance::types::Types::new();
     let ptr_ty = module.isa().pointer_type();
     let system_call_convention = module.isa().default_call_conv();
@@ -362,7 +375,7 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
     .unwrap();
 
     // declare everything
-    for (id, ent) in t_functions.ents.iter() {
+    for (id, ent) in t_funcs.iter() {
         let name = sources.display(ent.name);
         let linkage = match ent.kind {
             typec::func::Kind::Local => Linkage::Export,
@@ -370,15 +383,18 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
             typec::func::Kind::External => Linkage::Import,
         };
 
-        FunctionTranslator::translate_signature(
+        let returns_struct = instance::func::Translator::translate_signature(
             &ent.sig,
             &mut ctx.func.signature,
-            &sources,
             &types,
             &t_types,
             system_call_convention,
         )
         .unwrap();
+
+        if returns_struct {
+            has_struct_ret.insert(id);
+        }
 
         let func = module
             .declare_function(name, linkage, &ctx.func.signature)
@@ -390,23 +406,29 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
     }
 
     // define everything
-    for (func, ent) in t_functions.ents.iter() {
+    for (func, ent) in t_funcs.iter() {
         if ent.kind != typec::func::Kind::Local {
             continue;
         }
 
-        tir_to_mir_lookup.clear();
-        FunctionTranslator {
+        tir_mapping.clear();
+
+        instance::func::Translator {
             system_call_convention,
-            value_lookup: &mut tir_to_mir_lookup,
-            function: &mut function,
-            block_lookup: &mut mir_block_lookup,
-            t_functions: &t_functions,
-            t_types: &t_types,
+            func_id: func,
             types: &types,
+            t_types: &t_types,
+            t_funcs: &t_funcs,
+            func: &mut function,
+            tir_mapping: &mut tir_mapping,
+            body: &bodies[func],
+            nothing: Ty(0),
+            ptr_ty,
+            return_dest: None,
+            has_struct_ret: &has_struct_ret,
             sources: &sources,
         }
-        .translate_func(func)
+        .translate_func()
         .unwrap();
 
         ctx.clear();
@@ -414,13 +436,15 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_builder_ctx);
         Generator {
             module: &mut module,
-            block_lookup: &mut ir_block_lookup,
             function_lookup: &mut func_lookup,
             builder: &mut builder,
             value_lookup: &mut mir_to_ir_lookup,
             source: &function,
-            t_functions: &t_functions,
             sources: &sources,
+            block_lookup: &mut ir_block_lookup,
+            stack_slot_lookup: &mut stack_slot_lookup,
+            t_functions: &t_funcs,
+            types: &types,
         }
         .generate();
 
@@ -429,9 +453,8 @@ pub fn compile() -> Result<(), Box<dyn std::fmt::Display>> {
         let id = func_lookup[func].unwrap();
         module.define_function(id, &mut ctx).unwrap();
 
-        tir_to_mir_lookup.clear();
+        stack_slot_lookup.clear();
         mir_to_ir_lookup.clear();
-        mir_block_lookup.clear();
         ir_block_lookup.clear();
     }
 

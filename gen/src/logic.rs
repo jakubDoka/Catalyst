@@ -1,13 +1,13 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, Signature};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{EntityList, EntityRef, SecondaryMap};
+use cranelift_entity::{SecondaryMap, EntityList, EntityRef};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Module};
 use instance::mir;
 use lexer::{Sources, SourcesExt};
-use typec::tir::LinkedList;
 use typec::Func;
+use typec::tir::LinkedList;
 
 pub struct Generator<'a> {
     pub module: &'a mut dyn Module,
@@ -22,7 +22,10 @@ pub struct Generator<'a> {
 
 impl<'a> Generator<'a> {
     pub fn generate(&mut self) {
-        Self::transfer_signature(&self.source.signature, &mut self.builder.func.signature);
+        Self::transfer_signature(
+            &self.source.signature,
+            &mut self.builder.func.signature
+        );
 
         for (id, _) in self.source.blocks() {
             let block = self.builder.create_block();
@@ -74,17 +77,16 @@ impl<'a> Generator<'a> {
                         let ir_func = self.function_lookup[func].unwrap();
                         self.module.declare_func_in_func(ir_func, self.builder.func)
                     };
-
-                    let args: Vec<_> = self
-                        .source
+                    
+                    let args: Vec<_> = self.source
                         .values(args)
                         .iter()
                         .map(|&value| self.use_value(value))
                         .collect();
-
+                    
                     self.builder.ins().call(func_ref, &args)
                 };
-
+                
                 self.builder.inst_results(ir_inst).get(0).map(|&value| {
                     self.value_lookup[inst.value.unwrap()] = value.into();
                 });
@@ -107,7 +109,7 @@ impl<'a> Generator<'a> {
                 let block = self.block_lookup[block].unwrap();
                 let value = self.use_value(inst.value.unwrap());
                 self.builder.ins().brz(value, block, &[]);
-            }
+            },
             mir::Kind::Jump(block) => {
                 let block = self.block_lookup[block].unwrap();
                 if let Some(value) = inst.value.expand() {
@@ -116,13 +118,13 @@ impl<'a> Generator<'a> {
                 } else {
                     self.builder.ins().jump(block, &[]);
                 }
-            }
+            },
             mir::Kind::BoolLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.source.values[value].repr;
                 let ir_value = self.builder.ins().bconst(repr, literal);
                 self.value_lookup[value] = ir_value.into();
-            }
+            },
             mir::Kind::Assign(left) => {
                 let left_value = self.source.values[left];
                 if left_value.flags.is_pointer() {
@@ -131,8 +133,8 @@ impl<'a> Generator<'a> {
                     let variable = Variable::new(left.index());
                     let right = self.use_value(inst.value.unwrap());
                     self.builder.def_var(variable, right);
-                }
-            }
+                }            
+            },
             mir::Kind::Variable => {
                 let value = inst.value.unwrap();
                 let repr = self.source.values[value].repr;
@@ -143,26 +145,11 @@ impl<'a> Generator<'a> {
                     let value = self.value_lookup[value].unwrap();
                     self.builder.def_var(variable, value);
                 }
-            }
-            mir::Kind::Copy(target) => {
-                let target_value = self.source.values[target];
-                if target_value.flags.is_pointer() {
-                    todo!();
-                } else {
-                    let target = self.use_value(target);
-                    let copy = self.builder.ins().copy(target);
-                    self.value_lookup[inst.value.unwrap()] = copy.into();
-                }
-            }
+            },
         }
     }
 
-    fn generate_native_call(
-        &mut self,
-        func: Func,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_call(&mut self, func: Func, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         let name = self.t_functions.ents[func].name;
         let str = self.sources.display(name);
 
@@ -171,16 +158,17 @@ impl<'a> Generator<'a> {
             "-" => self.generate_native_sub(args, result),
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
-            "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
+            "<" | 
+            ">" | 
+            "<=" | 
+            ">=" | 
+            "==" | 
+            "!="=> self.generate_native_cmp(str, args, result),
             _ => todo!("Unhandled native function: {:?}", str),
         }
     }
 
-    fn generate_native_add(
-        &mut self,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_add(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[value] => {
                 self.value_lookup[result.unwrap()] = self.use_value(value).into();
@@ -188,11 +176,11 @@ impl<'a> Generator<'a> {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-
-                let ty = self.builder.func.dfg.value_type(left);
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-
+                
                 let add = if ty.is_int() {
                     self.builder.ins().iadd(left, right)
                 } else {
@@ -205,11 +193,7 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_sub(
-        &mut self,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_sub(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[value] => {
                 let value = self.use_value(value);
@@ -226,11 +210,11 @@ impl<'a> Generator<'a> {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-
-                let ty = self.builder.func.dfg.value_type(left);
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-
+                
                 let sub = if ty.is_int() {
                     self.builder.ins().isub(left, right)
                 } else {
@@ -243,20 +227,16 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_mul(
-        &mut self,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_mul(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-
-                let ty = self.builder.func.dfg.value_type(left);
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-
+                
                 let mul = if ty.is_int() {
                     self.builder.ins().imul(left, right)
                 } else {
@@ -269,21 +249,17 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_div(
-        &mut self,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_div(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         match self.source.values(args) {
             &[left, right] => {
                 let signed = self.source.values[left].flags.is_signed();
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-
-                let ty = self.builder.func.dfg.value_type(left);
+                
+                let ty = self.builder.func.dfg.value_type(left); 
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-
+                
                 let div = if ty.is_int() {
                     if signed {
                         self.builder.ins().sdiv(left, right)
@@ -300,12 +276,7 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_cmp(
-        &mut self,
-        op: &str,
-        args: EntityList<mir::Value>,
-        result: PackedOption<mir::Value>,
-    ) {
+    fn generate_native_cmp(&mut self, op: &str, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
         let &[left, right] = self.source.values(args) else {
             unreachable!();
         };

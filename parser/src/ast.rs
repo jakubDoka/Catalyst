@@ -1,4 +1,3 @@
-pub use crate::error::Error;
 use cranelift_entity::{packed_option::ReservedValue, *};
 use lexer::*;
 
@@ -221,10 +220,11 @@ impl Ent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     DotExpr,
+    ConstructorField,
     ConstructorBody,
     Constructor,
     StructField,
-    StructFields,
+    StructBody,
     Struct,
     Break,
     Loop,

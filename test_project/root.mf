@@ -24,8 +24,8 @@ fn "default" main() -> int {
     }
 
     {
-        let i = 1
-        let b = 0
+        pin i = 1
+        pin b = 0
         if loop { if i > 100 {
             break b
         } else {
@@ -52,16 +52,16 @@ fn fib(x: int) -> int {
 }
 
 fn iter_fib(x: int) -> int {
-    let i = 1
-    let a = 1
-    let b = 1
+    pin i = 1
+    pin a = 1
+    pin b = 1
     
     loop {
         if i >= x {
             break b
         }
 
-        let c = a + b
+        pin c = a + b
         a = b
         b = c
 

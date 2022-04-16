@@ -1,5 +1,5 @@
 
-fn other(a, b, c: int) -> int {
+fn other(a: int, b: int, c: int) -> int {
     ret a + b * c
 }
 
@@ -8,16 +8,15 @@ fn bti(b: bool) -> int {
 }
 
 fn structure_test() -> int {
-    let something = Something::{
+    pin something = Something::{
         a: 1
         b {
             x: 1
-            y: 2
         }
         e: true
     }
 
-    something.b.y - something.a - something.b.x 
+    something.a - something.b.x 
 }
 
 struct Something {
@@ -27,5 +26,5 @@ struct Something {
 }
 
 struct SomethingElse {
-    x, y: i16
+    x: int 
 }

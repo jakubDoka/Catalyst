@@ -35,8 +35,8 @@ target-lexicon = "0.12.3"
 
 lexer = { path = "lexer" }
 parser = { path = "parser" }
-typec = { path = "typec" }
 modules = { path = "modules" }
+typec = { path = "typec" }
 instance = { path = "instance" }
 gen = { path = "gen" }
 cli = { path = "cli" }

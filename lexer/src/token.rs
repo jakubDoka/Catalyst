@@ -36,7 +36,7 @@ pub enum Kind {
     Else,
     Loop,
     Break,
-    Let,
+    Pin,
     Struct,
 
     Ident,

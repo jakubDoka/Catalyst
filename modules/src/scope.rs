@@ -1,10 +1,7 @@
 use std::{any::TypeId, collections::HashMap};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
-use lexer::{
-    map::{Map, ID},
-    {Source, Span},
-};
+use lexer::*;
 
 use crate::error::{self, Error};
 
@@ -63,6 +60,16 @@ impl Scope {
         let id = id.into();
         self.stack
             .push(ScopeSlot::new(id, self.map.insert(id, item)));
+    }
+
+    pub fn pop_item(&mut self) {
+        assert!(
+            *self.frames.last().unwrap() <= self.stack.len(),
+            "{:?} < {}",
+            self.frames.last(),
+            self.stack.len()
+        );
+        self.stack.pop().unwrap();
     }
 
     pub fn pop_frame(&mut self) {

@@ -1,5 +1,5 @@
 use lexer::{Sources, SourcesExt, Span};
-use parser::ast::{self, Ast};
+use parser::*;
 
 pub struct Manifest<'a> {
     ast_data: &'a ast::Data,

@@ -1,6 +1,6 @@
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
-use crate::unit::Unit;
+use crate::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rel<A>(pub Unit, pub A);

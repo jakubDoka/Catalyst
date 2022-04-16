@@ -1,8 +1,10 @@
 {
     "cSpell.words": [
+        "bitflags",
         "canonicalize",
         "conv",
         "Cranelift",
+        "deast",
         "Elif",
         "ents",
         "fastcall",
