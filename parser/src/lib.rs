@@ -422,7 +422,7 @@ impl<'a> Parser<'a> {
             }
             token::Kind::If => self.if_expr(),
             token::Kind::LeftCurly => self.block(),
-            token::Kind::Pin => self.variable_expr(),
+            token::Kind::Let => self.variable_expr(),
             token::Kind::Loop => self.loop_expr(),
             token::Kind::Break => self.break_expr(),
             _ => todo!(
@@ -467,6 +467,11 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         self.advance();
 
+        let mutable = self.current.kind() == token::Kind::Mut;
+        if mutable {
+            self.advance();
+        }
+
         self.temp.mark_frame();
 
         let name = self.ident()?;
@@ -485,7 +490,7 @@ impl<'a> Parser<'a> {
         self.temp.acc(value);
         let end = self.ast_file.nodes[value].span;
 
-        Ok(self.alloc(ast::Kind::Variable, span.join(end)))
+        Ok(self.alloc(ast::Kind::Variable(mutable), span.join(end)))
     }
 
     pub fn if_expr(&mut self) -> Result {

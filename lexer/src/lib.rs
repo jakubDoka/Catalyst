@@ -136,10 +136,11 @@ impl<'a> Lexer<'a> {
                         "else" => token::Kind::Else,
                         "true" => token::Kind::Bool(true),
                         "false" => token::Kind::Bool(false),
-                        "pin" => token::Kind::Pin,
+                        "let" => token::Kind::Let,
                         "loop" => token::Kind::Loop,
                         "break" => token::Kind::Break,
                         "struct" => token::Kind::Struct,
+                        "mut" => token::Kind::Mut,
                         _ => token::Kind::Ident,
                     }
                 }

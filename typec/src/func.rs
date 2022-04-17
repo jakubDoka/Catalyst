@@ -132,7 +132,7 @@ impl<'a> Builder<'a> {
             ast::Kind::Return => self.build_return(ast)?,
             ast::Kind::Int(width) => self.build_int(ast, width)?,
             ast::Kind::Bool(value) => self.build_bool(ast, value)?,
-            ast::Kind::Variable => self.build_variable(ast)?,
+            ast::Kind::Variable(mutable) => self.build_variable(mutable, ast)?,
             ast::Kind::Constructor => self.build_constructor(ast)?,
             ast::Kind::DotExpr => self.build_dot_expr(ast)?,
             ast::Kind::Call => self.build_call(ast)?,
@@ -396,7 +396,7 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
-    fn build_variable(&mut self, ast: Ast) -> Result<Tir> {
+    fn build_variable(&mut self, mutable: bool, ast: Ast) -> Result<Tir> {
         let span = self.ast.nodes[ast].span;
         let &[name, value] = self.ast.children(ast) else {
             unreachable!();
@@ -409,7 +409,7 @@ impl<'a> Builder<'a> {
         };
 
         let value = self.build_expr(value)?;
-        self.body.ents[value].flags.insert(tir::Flags::ASSIGNABLE);
+        self.body.ents[value].flags.insert(tir::Flags::ASSIGNABLE & mutable);
 
         {
             let item = scope::Item::new(value, span);
@@ -528,7 +528,15 @@ impl<'a> Builder<'a> {
         let value = self.scope.get::<Tir>(id, span)
             .map_err(Convert::convert)?;
 
-        Ok(value)
+        // this allows better error messages
+        let result = {
+            let mut copy = self.body.ents[value];
+            copy.kind = tir::Kind::Access(value);
+            copy.span = span;        
+            self.body.ents.push(copy)
+        };
+
+        Ok(result)
     }
 
     fn build_binary(&mut self, ast: Ast) -> Result<Tir> {

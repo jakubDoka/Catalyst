@@ -14,6 +14,7 @@ pub struct Collector<'a> {
     pub modules: &'a mut Modules,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
+    pub type_ast: &'a mut SecondaryMap<Ty, Ast>,
     pub func_ast: &'a mut SecondaryMap<Func, Ast>,
     pub module: Module,
 }
@@ -22,8 +23,16 @@ impl<'a> Collector<'a> {
     pub fn collect_items(&mut self) -> Result {
         for (ast, &ast::Ent { kind, span, .. }) in self.ast.elements() {
             match kind {
-                ast::Kind::Function => self.collect_function(ast)?,
+                ast::Kind::Function => (),
                 ast::Kind::Struct => self.collect_struct(ast)?,
+                _ => (todo!("Unhandled top-level item:\n{}", self.sources.display(span))),
+            }
+        }
+
+        for (ast, &ast::Ent { kind, span, .. }) in self.ast.elements() {
+            match kind {
+                ast::Kind::Function => self.collect_function(ast)?,
+                ast::Kind::Struct => (),
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
         }
@@ -45,11 +54,11 @@ impl<'a> Collector<'a> {
         let id = self.modules[self.module].id + scope_id;
         let ent = ty::Ent {
             id,
-            ast,
             kind: ty::Kind::Unresolved,
             name: span,
         };
         let ty = self.types.ents.push(ent);
+        self.type_ast[ty] = ast;
 
         let item = module::Item::new(scope_id, ty, span);
         self.scope

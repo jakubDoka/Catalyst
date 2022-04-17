@@ -1,3 +1,4 @@
+use cranelift_entity::packed_option::ReservedValue;
 use lexer::{token, Sources, Span};
 
 pub type Error = AnyError<Kind>;
@@ -90,13 +91,16 @@ impl<K> AnyError<K> {
     where
         K: AnyErrorKind<T>,
     {
-        let source_ent = &sources[self.span.source()];
-        self.span.pretty_print_with_line_info(
-            f,
-            source_ent.content(),
-            source_ent.path(),
-            source_ent.line_mapping(),
-        )?;
+        if !self.span.source().is_reserved_value() {
+            let source_ent = &sources[self.span.source()];
+            self.span.pretty_print_with_line_info(
+                f,
+                source_ent.content(),
+                source_ent.path(),
+                source_ent.line_mapping(),
+            )?;
+        }
+        
         self.kind.print(sources, state, f)
     }
 }

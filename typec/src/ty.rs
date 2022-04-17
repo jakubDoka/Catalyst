@@ -1,7 +1,7 @@
 use crate::Result;
 use cranelift_entity::{
     packed_option::{PackedOption, ReservedValue},
-    EntityList, ListPool, PrimaryMap,
+    EntityList, ListPool, PrimaryMap, SecondaryMap,
 };
 use lexer::*;
 use modules::*;
@@ -12,13 +12,15 @@ pub struct Builder<'a> {
     pub types: &'a mut Types,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
+    pub type_ast: &'a SecondaryMap<Ty, Ast>,
     pub graph: &'a mut GenericGraph,
     pub ty: Ty,
 }
 
 impl<'a> Builder<'a> {
     pub fn build(&mut self) -> Result {
-        let Ent { id, ast, .. } = self.types.ents[self.ty];
+        let Ent { id, .. } = self.types.ents[self.ty];
+        let ast = self.type_ast[self.ty];
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
 
         match kind {
@@ -34,10 +36,9 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_struct(&mut self, id: ID, ast: Ast) -> Result {
-        let &[name, body] = self.ast.children(ast) else {
+        let &[.., body] = self.ast.children(ast) else {
             unreachable!();
         };
-        let name = self.ast.nodes[name].span;
 
         // fields are inserted into centralized hash map for faster lookup
         // and memory efficiency, though we still need field ordering when
@@ -65,13 +66,7 @@ impl<'a> Builder<'a> {
             self.types.cons.list(&fields)
         };
 
-        let ent = Ent {
-            id,
-            kind: Kind::Struct(fields),
-            ast,
-            name,
-        };
-        self.types.ents[self.ty] = ent;
+        self.types.ents[self.ty].kind = Kind::Struct(fields);
         self.graph.close_node();
 
         Ok(())
@@ -136,7 +131,6 @@ impl ReservedValue for Field {
 pub struct Ent {
     pub id: ID,
     pub name: Span,
-    pub ast: Ast,
     pub kind: Kind,
 }
 
@@ -146,7 +140,6 @@ impl Ent {
             id,
             kind,
             name: Default::default(),
-            ast: Default::default(),
         }
     }
 }

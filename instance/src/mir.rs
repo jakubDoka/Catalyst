@@ -2,9 +2,10 @@ use std::{marker::PhantomData, ops::IndexMut};
 
 use cranelift_codegen::{packed_option::PackedOption, ir::Type};
 use cranelift_entity::{EntityRef, PrimaryMap, EntityList};
-use typec::Ty;
+use lexer::{Sources, ListPoolExt};
+use typec::{Ty, ty};
 
-use crate::Size;
+use crate::{Size, func};
 
 impl<E: EntityRef, N: LinkedNode<E>> LinkedList<E, N> for PrimaryMap<E, N> {}
 
@@ -191,10 +192,10 @@ bitflags::bitflags! {
     pub struct Flags: u32 {
         /// The value is a pointer.
         const POINTER = 1 << 0;
-        /// The value is mutable.
-        const MUTABLE = 1 << 1;
+        /// The value can be assigned to
+        const ASSIGNABLE = 1 << 2;
         /// The value is unsigned integer.
-        const UNSIGNED = 1 << 2;
+        const UNSIGNED = 1 << 3;
     }
 }
 
@@ -212,3 +213,108 @@ impl StackEnt {
 }
 
 lexer::gen_entity!(Stack);
+
+pub struct Display<'a> {
+    sources: &'a Sources,
+    func: &'a func::Func,
+    types: &'a typec::Types,
+}
+
+impl<'a> Display<'a> {
+    pub fn new(sources: &'a Sources, func: &'a func::Func, types: &'a typec::Types) -> Self {
+        Self { sources, func, types }
+    }
+
+    pub fn value_to_string(&self, value: Value) -> String {
+        format!(
+            "{}:{}>{}", 
+            value,
+            self.func.values[value].offset.arch64,
+            ty::Display::new(
+                self.types, 
+                self.sources, 
+                self.func.values[value].ty
+            ),
+        )
+    }
+}
+
+impl std::fmt::Display for Display<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {{", self.func.sig)?;
+
+        for (i, stack) in self.func.stacks.iter() {
+            writeln!(f, "  {} = stack({})", i, stack.size)?;
+        }
+
+        for (id, block) in self.func.blocks.linked_iter(self.func.start.expand()) {
+            writeln!(f, 
+                "  {}({}): {{", 
+                id, 
+                self.func.value_slices
+                    .view(block.params)
+                    .iter()
+                    .map(|&v| self.value_to_string(v))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )?;
+
+            for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
+                match inst.kind {
+                    InstKind::Offset(target) => {
+                        writeln!(f, "    {} = offset {}", self.value_to_string(inst.value.unwrap()), target)?;
+                    }
+                    InstKind::StackAddr(stack) => {
+                        writeln!(f, "    {} = stack {}", self.value_to_string(inst.value.unwrap()), stack)?;
+                    },
+                    InstKind::Variable => {
+                        writeln!(f, "    let {}", inst.value.unwrap())?;
+                    },
+                    InstKind::Assign(value) => {
+                        writeln!(f, "    {} = {}", inst.value.unwrap(), value)?;
+                    },
+                    InstKind::JumpIfFalse(block) => {
+                        writeln!(f, "    if {} goto {}", inst.value.unwrap(), block)?;
+                    },
+                    InstKind::Jump(block) => {
+                        if let Some(value) = inst.value.expand() {
+                            writeln!(f, "    goto {} with {}", block, value)?;
+                        } else {
+                            writeln!(f, "    goto {}", block)?;
+                        }
+                    },
+                    InstKind::Call(func, values) => {
+                        let args = self.func.value_slices
+                            .view(values)
+                            .iter()
+                            .map(|&v| format!("{v}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        if let Some(value) = inst.value.expand() {
+                            writeln!(f, "    {} = call {}({})", self.value_to_string(value), func, args)?;
+                        } else {
+                            writeln!(f, "    call {}({})", func, args)?;
+                        }
+                    },
+                    InstKind::IntLit(value) => {
+                        writeln!(f, "    {} = {}", self.value_to_string(inst.value.unwrap()), value)?;
+                    },
+                    InstKind::BoolLit(value) => {
+                        writeln!(f, "    {} = {}", self.value_to_string(inst.value.unwrap()), value)?;
+                    },
+                    InstKind::Return => {
+                        if let Some(value) = inst.value.expand() {
+                            writeln!(f, "    return {}", value)?;
+                        } else {
+                            writeln!(f, "    return")?;
+                        }
+                    },
+                }
+            }
+
+            writeln!(f, "  }}")?;
+        }
+
+        Ok(())
+    }
+}

@@ -4,9 +4,8 @@
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, Signature, StackSlotData, MemFlags};
-use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{SecondaryMap, EntityList, EntityRef};
+use cranelift_entity::{SecondaryMap, EntityList, EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Module};
 use instance::*;
@@ -20,6 +19,7 @@ pub struct Generator<'a> {
     pub function_lookup: &'a SecondaryMap<Func, PackedOption<FuncId>>,
     pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
     pub stack_slot_lookup: &'a mut SecondaryMap<mir::Stack, PackedOption<ir::StackSlot>>,
+    pub variable_set: &'a mut EntitySet<Variable>,
     pub t_functions: &'a typec::Funcs,
     pub types: &'a instance::Types,
     pub source: &'a instance::func::Func,
@@ -142,8 +142,9 @@ impl<'a> Generator<'a> {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let flags = self.source.values[value].flags;
-                if flags.contains(mir::Flags::MUTABLE) {
+                if flags.contains(mir::Flags::ASSIGNABLE) {
                     let variable = Variable::new(value.index());
+                    self.variable_set.insert(variable);
                     self.builder.declare_var(variable, repr);
                     let value = self.value_lookup[value].unwrap();
                     self.builder.def_var(variable, value);
@@ -174,8 +175,8 @@ impl<'a> Generator<'a> {
                     self.source.values[target].flags.contains(mir::Flags::POINTER),
                 ) {
                     (true, true) => {
-                        let target_ir = self.use_value(target);
-                        let value_ir = self.use_value(value);
+                        let target_ir = self.use_value_as_pointer(target);
+                        let value_ir = self.use_value_as_pointer(value);
                         self.builder.emit_small_memory_copy(
                             self.module.isa().frontend_config(), 
                             target_ir, 
@@ -188,35 +189,42 @@ impl<'a> Generator<'a> {
                         )
                     },
                     (true, false) => {
-                        let offset = {
-                            let offset = self.source.values[value].offset;
-                            self.unwrap_size(offset)
-                        };
-                        let repr = self.repr_of(target);
                         let value = self.use_value(value);
-                        let value = self.builder.ins().load(repr, MemFlags::new(), value, offset);
-                        
-                        let variable = Variable::new(target.index());
-                        let right = self.use_value(inst.value.unwrap());
-                        self.builder.def_var(variable, right);
+                        self.assign_value(target, value);
                     },
                     (false, true) => {
                         let offset = {
                             let offset = self.source.values[target].offset;
                             self.unwrap_size(offset)
                         };
-                        let target = self.use_value(target);
-                        let value = self.use_value(value);
+                        let repr = self.repr_of(value);
+                        let target = self.use_value_as_pointer(target);
+                        let value = {
+                            let value = self.use_value(value);
+                            if repr == ir::types::B1 {
+                                self.builder.ins().bint(ir::types::I8, value)
+                            } else {
+                                value
+                            }
+                        };
                         self.builder.ins().store(MemFlags::new(), value, target, offset as i32);
                     },
                     (false, false) => {
-                        let variable = Variable::new(target.index());
-                        let right = self.use_value(inst.value.unwrap());
-                        self.builder.def_var(variable, right);
+                        let value = self.use_value(value);
+                        self.assign_value(target, value);
                     },
                 }
             },
-            InstKind::StackAddr(_) => todo!(),
+            InstKind::StackAddr(stack) => {
+                let value = inst.value.unwrap();
+                let stack = self.stack_slot_lookup[stack].unwrap();
+                let _offset = {
+                    let offset = self.source.values[value].offset;
+                    self.unwrap_size(offset)
+                };
+                let addr = self.builder.ins().stack_addr(self.module.isa().pointer_type(), stack, 0);
+                self.value_lookup[value] = addr.into();
+            },
         }
     }
 
@@ -401,12 +409,97 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn assign_value(&mut self, target: mir::Value, value: ir::Value) {
+        let mir::ValueEnt { flags, offset, .. } = self.source.values[target];
+        let offset = self.unwrap_size(offset);
+        if flags.contains(mir::Flags::ASSIGNABLE) {
+            let variable = Variable::new(target.index());
+            let target_ir = self.builder.use_var(variable);
+            let value = self.set_bit_field(target_ir, value, offset);
+            self.builder.def_var(variable, value);
+        } else {
+            let target_ir = self.use_value(target);
+            let value = self.set_bit_field(target_ir, value, offset);
+            self.value_lookup[target] = value.into();                
+        }
+    }
+
+    fn set_bit_field(&mut self, mut target: ir::Value, mut value: ir::Value, offset: i32) -> ir::Value {        
+        let target_ty = self.builder.func.dfg.value_type(target);
+        let value_ty = self.builder.func.dfg.value_type(value);
+
+        if target_ty == value_ty {
+            return value;
+        }
+
+        if value_ty == ir::types::B1 {
+            value = self.builder.ins().bint(ir::types::I8, value);
+        }
+
+        value = self.builder.ins().uextend(target_ty, value);
+        
+        let mask = {
+            let value_bits = value_ty.as_int().bits();
+            ((1 << value_bits) - 1) << offset * 8
+        };
+
+        target = self.builder.ins().band_imm(target, !mask);
+        value = self.builder.ins().ishl_imm(value, offset as i64 * 8);
+        
+        self.builder.ins().bor(target, value)
+    }
+
     fn use_value(&mut self, value: mir::Value) -> ir::Value {
-        if self.source.values[value].flags.contains(mir::Flags::MUTABLE) {
-            let variable = Variable::new(value.index());
+        self.use_value_low(value, false)
+    }
+
+    fn use_value_as_pointer(&mut self, value: mir::Value) -> ir::Value {
+        self.use_value_low(value, true)
+    }
+
+    fn use_value_low(&mut self, value: mir::Value, as_pointer: bool) -> ir::Value {
+        let mir::ValueEnt { ty, flags, offset, .. } = self.source.values[value];
+        let repr = self.types.ents[ty].repr;
+        let variable = Variable::new(value.index());
+        let value = if flags.contains(mir::Flags::ASSIGNABLE) && self.variable_set.contains(variable) {
             self.builder.use_var(variable)
         } else {
             self.value_lookup[value].unwrap()
+        };
+
+        let offset = self.unwrap_size(offset);
+        
+        if flags.contains(mir::Flags::POINTER) {
+            let loader_repr = repr.as_int();
+            if self.types.ents[ty].flags.contains(types::Flags::ON_STACK) || as_pointer {
+                value
+            } else {
+                let value = self.builder.ins().load(loader_repr, MemFlags::new(), value, offset);
+                if repr == ir::types::B1 {
+                    self.builder.ins().icmp_imm(IntCC::NotEqual, value, 0)
+                } else {
+                    value
+                }
+            }
+        } else {
+            assert!(!as_pointer);
+            self.read_bit_field(value, offset, repr)
         }
+    }
+
+    fn read_bit_field(&mut self, mut value: ir::Value, offset: i32, repr: ir::Type) -> ir::Value {
+        if self.builder.func.dfg.value_type(value) == repr {
+            return value;
+        }
+
+        let load_repr = repr.as_int();
+
+        let mask = ((1 << load_repr.bits()) - 1) << offset * 8;
+        value = self.builder.ins().band_imm(value, mask);
+        value = self.builder.ins().ushr_imm(value, offset as i64 * 8);
+        if repr == ir::types::B1 {
+            value = self.builder.ins().icmp_imm(IntCC::NotEqual, value, 0);
+        }
+        value
     }
 }

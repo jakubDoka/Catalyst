@@ -88,6 +88,7 @@ impl Ent {
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
     Variable(Tir),
+    Access(Tir),
     Assign(Tir, Tir),
     Break(Tir, PackedOption<Tir>),
     Loop(Tir),
@@ -194,16 +195,15 @@ impl<'a> Display<'a> {
         match ent.kind {
             Kind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
-                writeln!(f, ".{}", self.types.fields.get(id).unwrap().index)?;
+                write!(f, ".{}", self.types.fields.get(id).unwrap().index)?;
             }
             Kind::Constructor(fields) => {
-                writeln!(
-                    f,
-                    "{}::{{",
-                    ty::Display::new(self.types, self.sources, ent.ty)
-                )?;
+                writeln!(f, "::{{")?;
                 for &field in self.data.cons.view(fields).iter() {
                     self.fmt(field, f, displayed, level + 1, true)?;
+                }
+                for _ in 0..level {
+                    write!(f, "  ")?;
                 }
                 write!(f, "}}")?;
             }
@@ -277,6 +277,9 @@ impl<'a> Display<'a> {
             Kind::Variable(tir) => {
                 write!(f, "let ")?;
                 self.fmt(tir, f, displayed, level, false)?;
+            }
+            Kind::Access(value) => {
+                self.fmt(value, f, displayed, level, false)?;
             }
             Kind::Invalid => unreachable!(),
         }

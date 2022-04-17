@@ -228,7 +228,8 @@ pub enum Kind {
     Struct,
     Break,
     Loop,
-    Variable,
+    /// (mutable)
+    Variable(bool), 
     If,
     Binary,
     Index,

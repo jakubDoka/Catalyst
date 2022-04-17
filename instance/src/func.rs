@@ -1,7 +1,6 @@
-use cranelift_codegen::ir::{ValueDef, Type};
-use cranelift_codegen::settings::OptLevel;
+use cranelift_codegen::ir::Type;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
-use cranelift_entity::{EntityList, ListPool, PrimaryMap, SecondaryMap, EntityRef, EntitySet};
+use cranelift_entity::{EntityList, ListPool, PrimaryMap, SecondaryMap, EntitySet};
 
 use crate::{Result, Types};
 use crate::*;
@@ -36,19 +35,22 @@ impl Translator<'_> {
             self.system_call_convention
         )?;
         
+        
+        let entry_point = self.func.create_block();
+        
         if has_struct_ret {
             let value = self.flagged_value_from_ty(sig.ret, mir::Flags::POINTER);
             self.return_dest = Some(value);
+            self.func.push_block_param(entry_point, value);
         }
-
-        let entry_point = self.func.create_block();
+        
         for &tir in self.body.cons.view(args) {
             let value = self.translate_value(tir).unwrap();
             self.func.push_block_param(entry_point, value);
         }
         self.func.select_block(entry_point);
 
-        let value = self.translate_block(body, None)?;
+        let value = self.translate_block(body, self.return_dest)?;
 
         if !self.func.is_terminated() {
             self.func.add_inst(InstEnt::new(InstKind::Return, value));
@@ -88,13 +90,14 @@ impl Translator<'_> {
             tir::Kind::If(cons, then, otherwise) => self.translate_if(cons, then, otherwise, ty, dest)?,
             tir::Kind::IntLit(_) => self.translate_int_lit(ty, span, dest)?,
             tir::Kind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
-            tir::Kind::Variable(value) => self.translate_variable(ty, value)?,
+            tir::Kind::Variable(value) => self.translate_variable(value)?,
             tir::Kind::Constructor(data) => self.translate_constructor(ty, data, dest)?,
             tir::Kind::FieldAccess(value, field) => self.translate_field_access(value, field, dest)?,
             tir::Kind::Block(_) => self.translate_block(tir, dest)?,
             tir::Kind::Loop(body) => self.translate_loop(ty, tir, body, dest)?,
             tir::Kind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
-            tir::Kind::Assign(a, b) => self.translate_assign(a, b, dest)?,
+            tir::Kind::Assign(a, b) => self.translate_assign(a, b)?,
+            tir::Kind::Access(value) => self.translate_expr(value, dest)?,
             _ => todo!("Unhandled tir::Kind:{:?}", kind),
         };
 
@@ -103,11 +106,14 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_assign(&mut self, a: Tir, b: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_assign(&mut self, a: Tir, b: Tir) -> Result<Option<Value>> {
         let a = self.translate_expr(a, None)?.unwrap();
-        let b = self.translate_expr(b, dest)?.unwrap();
+        let b = self.translate_expr(b, Some(a))?.unwrap();
 
-        self.func.values[a].flags.insert(mir::Flags::MUTABLE);
+
+        if a == b {
+            return Ok(None);
+        }
 
         {
             let kind = InstKind::Assign(b);
@@ -126,7 +132,10 @@ impl Translator<'_> {
             .unwrap();
         
         let value = if let Some(value) = value.expand() {
-            self.translate_expr(value, dest)?
+            dest
+                .is_none()
+                .then_some(self.translate_expr(value, dest)?)
+                .flatten()
         } else {
             None
         };
@@ -144,10 +153,11 @@ impl Translator<'_> {
         let enter_block = self.func.create_block();
         let exit_block = self.func.create_block();
         
-        let (value, on_stack) = self.unwrap_dest(ty, dest);
+        let on_stack = self.types.ents[ty].flags.contains(types::Flags::ON_STACK);
+        let value = self.unwrap_dest(ty, dest);
 
         let loop_header = Loop {
-            enter: enter_block,
+            _enter: enter_block,
             exit: exit_block,
             marker: tir,
             dest,
@@ -181,9 +191,9 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_field_access(&mut self, header: Tir, field: ID, dest: Option<Value>) -> Result<Option<Value>> {
-        let ty = self.body.ents[header].ty;
-        let header = self.translate_expr(header, None)?.unwrap();
+    fn translate_field_access(&mut self, tir_header: Tir, field: ID, dest: Option<Value>) -> Result<Option<Value>> {
+        let ty = self.body.ents[tir_header].ty;
+        let header = self.translate_expr(tir_header, None)?.unwrap();
 
         let (field_id, field_ty) = {
             let ty_id = self.t_types.ents[ty].id;
@@ -197,14 +207,11 @@ impl Translator<'_> {
             unreachable!()
         };
 
-        if !self.func.values[header].flags.contains(mir::Flags::POINTER) {
-            todo!()
-        }
+        let is_pointer = self.func.values[header].flags.contains(mir::Flags::POINTER);
 
         let value = {
-            let size = self.types.ents[field_ty].size;
             let offset = self.func.values[header].offset + offset;
-            let ent = ValueEnt::new(field_ty, offset, mir::Flags::POINTER);
+            let ent = ValueEnt::new(field_ty, offset, mir::Flags::POINTER & is_pointer);
             self.func.values.push(ent)
         };
 
@@ -241,13 +248,16 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(&mut self, ty: Ty, data: EntityList<Tir>, dest: Option<Value>) -> Result<Option<Value>> {
-        let (Some(value), on_stack) = self.unwrap_dest(ty, dest) else {
+    fn translate_constructor(&mut self, ty: Ty, data: EntityList<Tir>, dest: Option<Value>) -> Result<Option<Value>> {        
+        let Some(mut value) = self.unwrap_dest(ty, dest).or(dest) else {
             unreachable!();
         };
 
-        if !on_stack {
-            todo!("{}", ty::Display::new(self.t_types, self.sources, ty))
+        let on_stack = self.types.ents[ty].flags.contains(types::Flags::ON_STACK);
+        if !on_stack && dest.is_none() {
+            let kind = InstKind::IntLit(0);
+            let ent = InstEnt::new(kind, value.into());
+            self.func.add_inst(ent);
         }
 
         let data_view = self.body.cons.view(data);
@@ -274,6 +284,21 @@ impl Translator<'_> {
             };
 
             self.translate_expr(data, Some(dest))?;
+            if !on_stack {
+                let new_value = {
+                    let mut value = self.func.values[value];
+                    value.offset = value.offset;    
+                    self.func.values.push(value)
+                };
+
+                {
+                    let kind = InstKind::Offset(dest);
+                    let ent = InstEnt::new(kind, new_value.into());
+                    self.func.add_inst(ent);
+                }
+
+                value = new_value;
+            }
 
             offset = offset + size;
         }
@@ -281,12 +306,29 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_variable(&mut self, ty: Ty, value: Tir) -> Result<Option<Value>> {
-        let kind = InstKind::Variable;
-        let (dest, _) = self.unwrap_dest(ty, None);
+    fn translate_variable(&mut self, value: Tir) -> Result<Option<Value>> {
+        let ty = self.body.ents[value].ty;
+        let on_stack = self.types.ents[ty].flags.contains(types::Flags::ON_STACK);
+        let assignable = self.body.ents[value].flags.contains(tir::Flags::ASSIGNABLE);
+
+        let dest = if on_stack {
+            self.unwrap_dest(ty, None)
+        } else {
+            None
+        };
+        
         let value = self.translate_expr(value, dest)?;
-        let ent = InstEnt::new(kind, value);
-        self.func.add_inst(ent);
+
+        {
+            let kind = InstKind::Variable;
+            let ent = InstEnt::new(kind, value);
+            self.func.add_inst(ent);
+        }
+        
+        println!("=={:?}", assignable);
+
+        self.func.values[value.unwrap()].flags.insert(mir::Flags::ASSIGNABLE & assignable);
+        
         Ok(None)
     }
 
@@ -313,8 +355,10 @@ impl Translator<'_> {
     fn translate_if(&mut self, cons: Tir, then: Tir, otherwise: PackedOption<Tir>, ty: Ty, dest: Option<Value>) -> Result<Option<Value>> {
         let cond = self.translate_expr(cons, None)?;
         
-        let (value, on_stack) = self.unwrap_dest(ty, dest);
-        
+        let on_stack = self.types.ents[ty].flags.contains(types::Flags::ON_STACK);
+        let value = self.unwrap_dest(ty, dest);
+        let block_dest = on_stack.then_some(value.or(dest)).flatten();
+
         let then_block = self.func.create_block();
         let otherwise_block = otherwise.is_some().then(|| self.func.create_block());
         let skip_block = self.func.create_block();
@@ -333,8 +377,10 @@ impl Translator<'_> {
 
         {
             self.func.select_block(then_block);
-            let value = self.translate_block(then, value)?;
-            
+            let value = {
+                let value = self.translate_block(then, block_dest)?;
+                (!on_stack).then_some(value).flatten()
+            };
 
             if !self.func.is_terminated() {
                 let kind = InstKind::Jump(skip_block);
@@ -345,7 +391,10 @@ impl Translator<'_> {
 
         if let Some(block) = otherwise_block {
             self.func.select_block(block);
-            let value = self.translate_block(otherwise.unwrap(), value)?;
+            let value = {
+                let value = self.translate_block(otherwise.unwrap(), block_dest)?;
+                (!on_stack).then_some(value).flatten()
+            };
             
             if !self.func.is_terminated() {
                 let kind = InstKind::Jump(skip_block);
@@ -354,25 +403,23 @@ impl Translator<'_> {
             }
         }
 
-        let result = if !on_stack {
-            let value = self.value_from_ty(ty);
+        if !on_stack && let Some(value) = value {
             self.func.push_block_param(skip_block, value);
-            Some(value)
-        } else {
-            value
         };
 
         self.func.select_block(skip_block);
 
-        Ok(result)
+        Ok(value)
     }
 
     fn translate_call(&mut self, func: typec::Func, args: EntityList<Tir>, dest: Option<Value>) -> Result<Option<Value>> {
         let has_struct_ret = self.has_struct_ret.contains(func);
 
-        let (value, _) = {
+        let dest = has_struct_ret.then_some(dest).flatten();
+
+        let value = {
             let ret = self.t_funcs[func].sig.ret;
-            self.unwrap_dest(ret, dest)
+            self.unwrap_dest(ret, dest).or(dest)
         };
         
         let args = {
@@ -396,10 +443,10 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn unwrap_dest(&mut self, ret: Ty, dest: Option<Value>) -> (Option<Value>, bool) {
+    fn unwrap_dest(&mut self, ret: Ty, dest: Option<Value>) -> Option<Value> {
         let on_stack = self.types.ents[ret].flags.contains(types::Flags::ON_STACK);
         let has_ret = ret != self.nothing;
-        (dest.or_else(|| has_ret.then(|| {
+        (dest.is_none() && has_ret).then(|| {
             if on_stack {
                 // stack needs to be allocated to pass valid pointer
                 let stack = {
@@ -421,7 +468,7 @@ impl Translator<'_> {
                 // no need to allocate, register is enough
                 self.value_from_ty(ret)
             }
-        })), on_stack || dest.is_some())
+        })
     }
 
     fn translate_return(&mut self, value: Option<Tir>) -> Result<Option<Value>> {
@@ -432,7 +479,12 @@ impl Translator<'_> {
             None
         };
 
-        self.func.add_inst(InstEnt::new(InstKind::Return, value));
+        {
+            let kind = InstKind::Return;
+            let ent = InstEnt::new(kind, value);
+            self.func.add_inst(ent);
+        }
+
         Ok(None)
     }
 
@@ -471,10 +523,13 @@ impl Translator<'_> {
         if ty::Kind::Nothing != t_types.ents[source.ret].kind {
             let types::Ent { repr, flags, .. } = types.ents[source.ret];
             if flags.contains(types::Flags::ON_STACK) {
-                target.params.push(ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn));
+                let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);
+                target.params.push(ret);
                 result = true;
+                target.returns.push(ret);
+            } else {
+                target.returns.push(ir::AbiParam::new(repr));
             }
-            target.returns.push(ir::AbiParam::new(repr));
         }
         
         target.params.extend(
@@ -490,7 +545,7 @@ impl Translator<'_> {
 
 #[derive(Debug)]
 pub struct Loop {
-    enter: Block,
+    _enter: Block,
     exit: Block,
     marker: Tir,
     dest: Option<Value>,
@@ -502,7 +557,6 @@ pub struct Func {
     pub sig: ir::Signature,
 
     pub values: PrimaryMap<Value, ValueEnt>,
-    pub value_sizes: PrimaryMap<Value, Size>,
     pub value_slices: ListPool<Value>,
     pub blocks: PrimaryMap<Block, BlockEnt>,
     pub insts: PrimaryMap<Inst, InstEnt>,
@@ -521,7 +575,6 @@ impl Func {
             sig: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),
             value_slices: ListPool::new(),
-            value_sizes: PrimaryMap::new(),
             blocks: PrimaryMap::new(),
             insts: PrimaryMap::new(),
             stacks: PrimaryMap::new(),

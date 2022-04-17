@@ -24,8 +24,8 @@ fn "default" main() -> int {
     }
 
     {
-        pin i = 1
-        pin b = 0
+        let mut i = 1
+        let mut b = 0
         if loop { if i > 100 {
             break b
         } else {
@@ -40,6 +40,10 @@ fn "default" main() -> int {
         ret 7
     }
 
+    if init_something().a != 0 {
+        ret 8
+    }
+
     0
 }
 
@@ -52,16 +56,16 @@ fn fib(x: int) -> int {
 }
 
 fn iter_fib(x: int) -> int {
-    pin i = 1
-    pin a = 1
-    pin b = 1
+    let mut i = 1
+    let mut a = 1
+    let mut b = 1
     
     loop {
         if i >= x {
             break b
         }
 
-        pin c = a + b
+        let c = a + b
         a = b
         b = c
 

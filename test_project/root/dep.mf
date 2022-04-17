@@ -8,15 +8,34 @@ fn bti(b: bool) -> int {
 }
 
 fn structure_test() -> int {
-    pin something = Something::{
-        a: 1
+    let mut something = init_something()
+    something = Something::{
+        a: 2
         b {
-            x: 1
+            e: true
+            f: false
         }
         e: true
     }
 
-    something.a - something.b.x 
+    let something_else = init_something_else()
+
+    something.a - bti(something.b.e) - bti(something_else.f)
+}
+
+fn init_something_else() -> SomethingElse {
+    SomethingElse::{ e: false; f: true }
+}
+
+fn init_something() -> Something {
+    Something::{
+        a: 0
+        b {
+            e: false
+            f: false           
+        }
+        e: false
+    }
 }
 
 struct Something {
@@ -26,5 +45,6 @@ struct Something {
 }
 
 struct SomethingElse {
-    x: int 
+    e: bool
+    f: bool
 }
