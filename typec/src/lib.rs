@@ -4,31 +4,34 @@
 #![feature(bool_to_option)]
 
 pub mod collector;
-pub mod error;
 pub mod func;
 pub mod tir;
 pub mod ty;
+pub mod error;
 
 pub use collector::*;
 pub use func::*;
 pub use tir::*;
 pub use ty::*;
+pub use error::Error;
 
-use error::Error;
 use lexer::*;
 use modules::*;
 use parser::*;
 
-pub type Result<T = ()> = std::result::Result<T, Error>;
+pub trait TypeParser {
 
-pub fn parse_type(scope: &Scope, ast: &ast::Data, sources: &Sources, ty: Ast) -> Result<Ty> {
-    let ast::Ent { kind, span, .. } = ast.nodes[ty];
-    match kind {
-        ast::Kind::Ident => {
-            return scope
-                .get(sources.display(span), span)
-                .map_err(Convert::convert);
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics);
+
+    fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+        let (scope, _types, sources, ast, diagnostics) = self.state();
+        let ast::Ent { kind, span, .. } = ast.nodes[ty];
+        match kind {
+            ast::Kind::Ident => {
+                let str = sources.display(span);
+                return scope.get(diagnostics, str, span)
+            }
+            _ => todo!("Unhandled type expr {:?}: {}", kind, sources.display(span)),
         }
-        _ => todo!("Unhandled type expr {:?}: {}", kind, sources.display(span)),
     }
 }

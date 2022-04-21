@@ -1,5 +1,6 @@
 #![feature(auto_traits)]
 #![feature(negative_impls)]
+#![feature(int_log)]
 
 pub extern crate cranelift_entity;
 
@@ -140,6 +141,7 @@ impl<'a> Lexer<'a> {
                         "loop" => token::Kind::Loop,
                         "break" => token::Kind::Break,
                         "struct" => token::Kind::Struct,
+                        "bound" => token::Kind::Bound,
                         "mut" => token::Kind::Mut,
                         _ => token::Kind::Ident,
                     }
@@ -178,10 +180,6 @@ impl<'a> Lexer<'a> {
 
     pub fn display(&self, span: Span) -> &str {
         &self.str[span.range()]
-    }
-
-    pub fn pretty_print(&self, span: Span) -> SpanDisplay {
-        SpanDisplay::new(self.source_content(), span)
     }
 
     pub fn source_content(&self) -> &str {

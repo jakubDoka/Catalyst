@@ -157,21 +157,48 @@ impl Span {
         self.start as usize..self.end as usize
     }
 
-    pub fn pretty_print_with_line_info(
-        &self,
-        f: &mut impl std::fmt::Write,
-        source: &str,
-        path: &Path,
-        line_mapping: &LineMapping,
-    ) -> std::fmt::Result {
-        let (line, col) = line_mapping.line_data_at(self.start as usize);
+    pub fn join(self, other: Self) -> Self {
+        if other.source.is_reserved_value() {
+            return self;
+        }
 
-        writeln!(f, "|> {}:{}:{} ", path.display(), line + 1, col + 1)?;
+        assert!(self.source == other.source);
 
-        self.pretty_print(f, source)
+        Self {
+            start: self.start,
+            end: other.end,
+            source: self.source,
+        }
     }
 
-    pub fn pretty_print(&self, f: &mut impl std::fmt::Write, source: &str) -> std::fmt::Result {
+    pub fn source(&self) -> Source {
+        self.source
+    }
+
+    pub fn log(&self, sources: &Sources) -> String {
+        let mut string = String::new();
+        self.loc_to(sources, &mut string).unwrap();
+        self.underline_to(ansi_term::Color::Red.normal(), '^', sources, &mut string, &|_| Ok(())).unwrap();
+        string
+    }
+
+    pub fn underline_to(
+        &self,
+        color: ansi_term::Style,
+        underline_char: char,
+        sources: &Sources, 
+        to: &mut String,
+        message: &dyn Fn(&mut String) -> std::fmt::Result,
+    ) -> std::fmt::Result {
+        use std::fmt::Write;
+        if self.is_reserved_value() {
+            return writeln!(to, "undefined span");
+        }
+
+        let (prefix, suffix) = (color.prefix(), color.suffix());
+
+        // called immediately for `?` use
+        let source = &sources[self.source].content;
         let range = self.range();
         let left = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
         let right = source[range.end..]
@@ -181,12 +208,14 @@ impl Span {
         let span = &source[range.clone()];
 
         if span == "\n" {
-            writeln!(f, "| {}", &source[left..range.start])?;
-            write!(f, "| ")?;
+            writeln!(to, "{prefix}|{suffix} {}", &source[left..range.start])?;
+            write!(to, "{prefix}| ")?;
             for _ in left..range.start {
-                write!(f, " ")?;
+                write!(to, " ")?;
             }
-            write!(f, "^")?;
+            write!(to, "^")?;
+            message(to)?;
+            writeln!(to, "|{suffix}")?;
             return Ok(());
         }
 
@@ -208,38 +237,36 @@ impl Span {
         );
 
         for line in source[left..right].split('\n') {
-            writeln!(f, "| {}", line)?;
+            writeln!(to, "{prefix}|{suffix} {}", line)?;
         }
 
-        write!(f, "| ")?;
+        write!(to, "{prefix}|{suffix} ")?;
 
         for _ in 0..min {
-            write!(f, " ")?;
+            write!(to, " ")?;
         }
 
+        write!(to, "{prefix}")?;
         for _ in min..max {
-            write!(f, "^")?;
+            to.write_char(underline_char)?;
         }
+        message(to)?;
+        writeln!(to, "{suffix}")?;
 
         Ok(())
+
     }
 
-    pub fn join(self, other: Self) -> Self {
-        if other.source.is_reserved_value() {
-            return self;
+    pub fn loc_to(&self, sources: &Sources, to: &mut impl std::fmt::Write) -> std::fmt::Result {
+        if self.is_reserved_value() {
+            return writeln!(to, "undefined span");
         }
 
-        assert!(self.source == other.source);
+        let source_ent = &sources[self.source()];
 
-        Self {
-            start: self.start,
-            end: other.end,
-            source: self.source,
-        }
-    }
+        let (line, col) = source_ent.mapping.line_data_at(self.range().start);
 
-    pub fn source(&self) -> Source {
-        self.source
+        writeln!(to, "|> {}:{}:{} ", source_ent.path.display(), line + 1, col + 1)
     }
 }
 
@@ -250,44 +277,5 @@ impl ReservedValue for Span {
 
     fn is_reserved_value(&self) -> bool {
         self.source.is_reserved_value()
-    }
-}
-
-pub struct SpanLineDisplay<'a> {
-    source_ent: &'a SourceEnt,
-    span: Span,
-}
-
-impl<'a> SpanLineDisplay<'a> {
-    pub fn new(source_ent: &'a SourceEnt, span: Span) -> Self {
-        Self { source_ent, span }
-    }
-}
-
-impl std::fmt::Display for SpanLineDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.span.pretty_print_with_line_info(
-            f,
-            self.source_ent.content(),
-            self.source_ent.path(),
-            self.source_ent.line_mapping(),
-        )
-    }
-}
-
-pub struct SpanDisplay<'a> {
-    source: &'a str,
-    span: Span,
-}
-
-impl<'a> SpanDisplay<'a> {
-    pub fn new(source: &'a str, span: Span) -> Self {
-        Self { source, span }
-    }
-}
-
-impl std::fmt::Display for SpanDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.span.pretty_print(f, self.source)
     }
 }

@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 cranelift-entity = "0.82.1"
 lexer = { path = "../lexer" }
+errors = { path = "../errors" }

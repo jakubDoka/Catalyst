@@ -1,15 +1,14 @@
 use std::{
     collections::VecDeque,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use cranelift_entity::{EntityRef, PrimaryMap};
 
-use crate::{error, Error, *};
 use lexer::*;
 use parser::*;
-
-pub type Result<T = ()> = std::result::Result<T, Error>;
+use crate::error::Error;
+use crate::*;
 
 pub type Modules = PrimaryMap<Module, Ent>;
 
@@ -28,19 +27,21 @@ pub struct Loader<'a> {
     pub frontier: &'a mut VecDeque<(PathBuf, Span, Module)>,
     pub ctx: &'a mut LoaderContext,
     pub map: &'a mut Map<Module>,
+    pub diagnostics: &'a mut errors::Diagnostics,
 }
 
 impl<'a> Loader<'a> {
-    pub fn load_unit_modules(&mut self, unit: Unit) -> Result<Vec<Module>> {
+    pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Module>> {
         self.ctx.clear();
         let unit_ent = &self.units[unit];
         let base_line = self.modules.len() as u32;
 
-        let Ok(path) = unit_ent.get_absolute_source_path() else {
-            return Err(Error::spanless(error::Kind::ModuleNotFound(
-                Path::join(&unit_ent.root_path, &unit_ent.local_source_path)
-            )));
-        };
+        let path = unit_ent.get_absolute_source_path().map_err(|trace| {
+            self.diagnostics.push(Error::RootModuleNotFound {
+                unit,
+                trace,
+            });
+        })?;
 
         let id = path.as_path().into();
         let module = self.modules.push(Ent::new(id));
@@ -49,21 +50,22 @@ impl<'a> Loader<'a> {
         self.frontier.push_back((path, Span::default(), module));
 
         while let Some((path, span, slot)) = self.frontier.pop_front() {
-            let content = std::fs::read_to_string(&path).map_err(|err| {
-                Error::new(
-                    error::Kind::ModuleLoadFailed(path.clone(), err), // todo: save module path
-                    span,
-                )
-            })?;
+            let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
+                self.diagnostics.push(Error::ModuleLoadFail {
+                    path: path.clone(),
+                    trace: err,
+                    loc: span,
+                });
+            }) else { 
+                continue; 
+            };
 
             let source = SourceEnt::new(path, content);
             let source = self.sources.push(source);
-            let content = self.sources[source].content();
             self.modules[slot].source = source;
 
             self.ctx.ast.clear();
-            Parser::parse_imports(content, &mut self.ctx.ast, &mut self.ctx.ast_temp, source)
-                .map_err(Convert::convert)?;
+            Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
 
             if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
                 for ModuleImport {
@@ -86,8 +88,13 @@ impl<'a> Loader<'a> {
                     self.ctx.buffer.push(self.sources.display(path_span));
                     self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
 
-                    let Ok(path) = self.ctx.buffer.canonicalize() else {
-                        return Err(Error::new(error::Kind::ModuleNotFound(self.ctx.buffer.clone()), path_span));
+                    let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
+                        self.diagnostics.push(Error::ModuleNotFound {
+                            trace: err,
+                            loc: path_span,
+                        });
+                    }) else {
+                        continue;
                     };
 
                     let id = path.as_path().into();
@@ -112,10 +119,14 @@ impl<'a> Loader<'a> {
         }
 
         let mut ordering = Vec::with_capacity(TreeStorage::<Module>::len(&self.ctx.graph));
-        if let Some(mut cycle) = self.ctx.graph.detect_cycles(Module(0), Some(&mut ordering)) {
-            cycle.iter_mut().for_each(|id| id.0 += base_line);
-            return Err(Error::spanless(error::Kind::ModuleCycle(cycle)));
-        }
+        self.ctx.graph.detect_cycles(Module(0), Some(&mut ordering)).map_err(|mut err| {
+            err
+                .iter_mut()
+                .for_each(|id| id.0 += base_line);
+            self.diagnostics.push(Error::ModuleCycle {
+                cycle: err,
+            });
+        })?;
 
         Ok(ordering)
     }
@@ -156,7 +167,7 @@ impl Item {
 
     pub fn to_scope_item(&self) -> scope::Item {
         scope::Item {
-            info: scope::Info { span: self.span },
+            span: self.span,
             pointer: self.kind,
         }
     }

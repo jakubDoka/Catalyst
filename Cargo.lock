@@ -12,6 +12,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -52,6 +61,7 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "env_logger",
+ "errors",
  "gen",
  "instance",
  "lexer",
@@ -189,6 +199,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "errors"
+version = "0.1.0"
+dependencies = [
+ "ansi_term",
+]
+
+[[package]]
 name = "gen"
 version = "0.1.0"
 dependencies = [
@@ -260,7 +277,9 @@ dependencies = [
 name = "lexer"
 version = "0.1.0"
 dependencies = [
+ "ansi_term",
  "cranelift-entity",
+ "errors",
 ]
 
 [[package]]
@@ -289,6 +308,7 @@ name = "modules"
 version = "0.1.0"
 dependencies = [
  "cranelift-entity",
+ "errors",
  "lexer",
  "parser",
 ]
@@ -309,6 +329,7 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "cranelift-entity",
+ "errors",
  "lexer",
 ]
 
@@ -371,8 +392,10 @@ dependencies = [
 name = "typec"
 version = "0.1.0"
 dependencies = [
+ "ansi_term",
  "bitflags",
  "cranelift-entity",
+ "errors",
  "lexer",
  "modules",
  "parser",

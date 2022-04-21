@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 cranelift-entity = "0.82.1"
+errors = { path = "../errors" }
+ansi_term = "0.12.1"

@@ -261,16 +261,19 @@ impl Translator<'_> {
         }
 
         let data_view = self.body.cons.view(data);
+        let ty_id = self.t_types.ents[ty].id;
 
-        let mut offset = Size::ZERO;
-        for &data in data_view {
-            let ty = self.body.ents[data].ty;
-            let size = self.types.ents[ty].size;
+        for (i, &data) in data_view.iter().enumerate() {
+            let id = types::TypeTranslator::field_id(ty_id, i as u64);
+            let Some(&types::Field { offset }) = self.types.fields.get(id) else {
+                unreachable!()
+            };
+            
 
             let dest = {
                 let of_value = {
                     let mut value = self.func.values[value];
-                    value.offset = value.offset + offset;    
+                    value.offset = offset;    
                     self.func.values.push(value)
                 };
 
@@ -284,10 +287,10 @@ impl Translator<'_> {
             };
 
             self.translate_expr(data, Some(dest))?;
+            
             if !on_stack {
                 let new_value = {
-                    let mut value = self.func.values[value];
-                    value.offset = value.offset;    
+                    let value = self.func.values[value];
                     self.func.values.push(value)
                 };
 
@@ -299,8 +302,6 @@ impl Translator<'_> {
 
                 value = new_value;
             }
-
-            offset = offset + size;
         }
 
         Ok(Some(value))

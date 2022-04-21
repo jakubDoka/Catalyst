@@ -1,6 +1,5 @@
 use cranelift_entity::{packed_option::ReservedValue, SecondaryMap};
 
-use crate::Result;
 use crate::*;
 use lexer::*;
 use modules::*;
@@ -16,11 +15,12 @@ pub struct Collector<'a> {
     pub ast: &'a ast::Data,
     pub type_ast: &'a mut SecondaryMap<Ty, Ast>,
     pub func_ast: &'a mut SecondaryMap<Func, Ast>,
+    pub diagnostics: &'a mut errors::Diagnostics,
     pub module: Module,
 }
 
 impl<'a> Collector<'a> {
-    pub fn collect_items(&mut self) -> Result {
+    pub fn collect_items(&mut self) -> errors::Result {
         for (ast, &ast::Ent { kind, span, .. }) in self.ast.elements() {
             match kind {
                 ast::Kind::Function => (),
@@ -40,7 +40,7 @@ impl<'a> Collector<'a> {
         Ok(())
     }
 
-    fn collect_struct(&mut self, ast: Ast) -> Result {
+    fn collect_struct(&mut self, ast: Ast) -> errors::Result {
         let source = self.ast.nodes[ast].span.source();
         let &[name, ..] = self.ast.children(ast) else {
             unreachable!();
@@ -61,15 +61,13 @@ impl<'a> Collector<'a> {
         self.type_ast[ty] = ast;
 
         let item = module::Item::new(scope_id, ty, span);
-        self.scope
-            .insert(source, scope_id, item.to_scope_item())
-            .map_err(Convert::convert)?;
+        drop(self.scope.insert(self.diagnostics, source, scope_id, item.to_scope_item()));
         self.modules[self.module].items.push(item);
 
         Ok(())
     }
 
-    fn collect_function(&mut self, ast: Ast) -> Result {
+    fn collect_function(&mut self, ast: Ast) -> errors::Result {
         let children = self.ast.children(ast);
         let current_span = self.ast.nodes[ast].span;
         let &[call_conv, name, .., return_type, _body] = children else {
@@ -131,17 +129,17 @@ impl<'a> Collector<'a> {
 
         {
             let module_item = module::Item::new(id, func, current_span);
-            self.scope
-                .insert(current_span.source(), id, module_item.to_scope_item())
-                .map_err(Convert::convert)?;
+            drop(self.scope.insert(self.diagnostics, current_span.source(), id, module_item.to_scope_item()));
 
             self.modules[self.module].items.push(module_item);
         }
 
         Ok(())
     }
+}
 
-    pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
-        parse_type(self.scope, self.ast, self.sources, ty)
+impl TypeParser for Collector<'_> {
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics) {
+        (self.scope, self.types, self.sources, self.ast, self.diagnostics)
     }
 }

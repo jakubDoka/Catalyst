@@ -1,0 +1,54 @@
+fn other(a: int, b: int, c: int) -> int {
+    ret a + b * c
+}
+
+Function "fn other(a: int, b: int, c: int) -> int {\r\n    ret a + b * c\r\n}":
+ NIL
+ Ident "other"
+ FunctionArgument "a: int":
+  Ident "a"
+  Ident "int":
+   Ident "int"
+ FunctionArgument "b: int":
+  Ident "b"
+  Ident "int":
+   Ident "int"
+ FunctionArgument "c: int":
+  Ident "c"
+  Ident "int":
+   Ident "int"
+ Ident "int":
+  Ident "int"
+ Block "{\r\n    ret a + b * c\r\n}":
+  Return "ret a + b * c":
+   Binary "a + b * c":
+    Ident "a"
+    Ident "+"
+    Binary "b * c":
+     Ident "b"
+     Ident "*"
+     Ident "c"
+
+t9: nothing = {
+    t8: nothing = return t7: int = f10(
+        t3: int = t0: int = parameter 0, 
+        t6: int = f12(
+            t4: int = t1: int = parameter 1, 
+            t5: int = t2: int = parameter 2
+        )
+    )
+  }
+
+(i64, i64, i64) -> i64 windows_fastcall {
+  b0(v0:0>int, v1:0>int, v2:0>int): {
+    v4:0>int = call f12(v1, v2)
+    v3:0>int = call f10(v0, v4)
+    return v3
+  }
+
+function u0:0(i64, i64, i64) -> i64 windows_fastcall {
+block0(v0: i64, v1: i64, v2: i64):
+    v3 = imul v1, v2
+    v4 = iadd v0, v3
+    return v4
+}

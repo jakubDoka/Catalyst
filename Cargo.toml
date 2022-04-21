@@ -22,6 +22,7 @@ members = [
     "instance",
     "gen",
     "cli",
+    "errors",
 ]
 
 [features]
@@ -39,6 +40,7 @@ cranelift-native = "0.82.1"
 target-lexicon = "0.12.3"
 
 lexer = { path = "lexer" }
+errors = { path = "errors" }
 parser = { path = "parser" }
 modules = { path = "modules" }
 typec = { path = "typec" }

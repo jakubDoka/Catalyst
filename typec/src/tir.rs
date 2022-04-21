@@ -92,6 +92,7 @@ pub enum Kind {
     Assign(Tir, Tir),
     Break(Tir, PackedOption<Tir>),
     Loop(Tir),
+    LoopInProgress(PackedOption<Tir>, bool),
     FieldAccess(Tir, ID),
     Constructor(EntityList<Tir>),
     If(Tir, Tir, PackedOption<Tir>),
@@ -281,7 +282,7 @@ impl<'a> Display<'a> {
             Kind::Access(value) => {
                 self.fmt(value, f, displayed, level, false)?;
             }
-            Kind::Invalid => unreachable!(),
+            Kind::Invalid | Kind::LoopInProgress(..) => unreachable!(),
         }
 
         if ident {

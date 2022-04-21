@@ -2,15 +2,34 @@ use std::{any::TypeId, collections::HashMap};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 use lexer::*;
+use crate::*;
 
-use crate::error::{self, Error};
+pub struct ItemLexicon {
+    map: HashMap<TypeId, &'static str>,
+}
 
-pub type ScopeItemLexicon = HashMap<TypeId, &'static str>;
+impl ItemLexicon {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn register<T: 'static>(&mut self, name: &'static str) {
+        self.map.insert(TypeId::of::<T>(), name);
+    }
+
+    pub fn name_of(&self, item: TypeId) -> &str {
+        self.map.get(&item).unwrap()
+    }
+}
+
 
 pub struct Scope {
     map: Map<Item>,
     frames: Vec<usize>,
     stack: Vec<ScopeSlot>,
+    pub dependencies: Vec<Source>,
 }
 
 impl Scope {
@@ -19,30 +38,47 @@ impl Scope {
             map: Map::new(),
             frames: Vec::new(),
             stack: Vec::new(),
+            dependencies: Vec::new(),
         }
     }
 
-    pub fn get<T: 'static + EntityRef>(&self, id: impl Into<ID>, span: Span) -> Result<T, Error> {
-        self.get_by_id(id.into(), span)
+    pub fn get<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: impl Into<ID>, span: Span) -> errors::Result<T> {
+        self.get_by_id(diagnostics, id.into(), span)
     }
 
-    pub fn get_by_id<T: 'static + EntityRef>(&self, id: ID, span: Span) -> Result<T, Error> {
-        self.map
-            .get(id)
-            .map(|item| {
-                item.pointer.may_read::<T>().ok_or_else(|| {
-                    if item.pointer.is_of::<Collision>() {
-                        Error::new(error::Kind::ScopeItemCollision(id), span)
-                    } else {
-                        Error::new(
-                            error::Kind::ScopeItemMismatch(TypeId::of::<T>(), item.pointer.id),
-                            span,
-                        )
-                    }
-                })
-            })
-            .ok_or_else(|| Error::new(error::Kind::ScopeItemNotFound, span))
-            .flatten()
+    pub fn get_by_id<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: ID, span: Span) -> errors::Result<T> {
+        let Some(item) = self.map.get(id) else {
+            diagnostics.push(Error::ScopeItemNotFound {
+                loc: span,
+            });
+            return Err(());
+        };
+        
+        let Some(data) = item.pointer.may_read::<T>() else {
+            if item.pointer.is_of::<Collision>() {
+                let suggestions = self.dependencies
+                    .iter()
+                    .filter_map(|&source| self.map.get((id, source)).map(|item| item.span))
+                    .collect::<Vec<_>>();
+                
+                diagnostics.push(Error::AmbiguousScopeItem {
+                    loc: span,
+                    suggestions,
+                });
+
+                return Err(());
+            }
+
+            diagnostics.push(Error::InvalidScopeItem {
+                loc: span,
+                expected: TypeId::of::<T>(),
+                found: item.pointer.id,
+            });
+
+            return Err(());
+        };
+
+        Ok(data)
     }
 
     pub fn push_frame(&mut self, frame: impl Iterator<Item = (impl Into<ID>, Item)>) {
@@ -76,7 +112,7 @@ impl Scope {
         let len = self.frames.pop().unwrap();
         self.stack.drain(len..).for_each(|slot| {
             if let Some(shadow) = slot.shadow {
-                assert!(self.map.insert(slot.id, shadow).is_some());
+                self.map.insert(slot.id, shadow);
             } else {
                 assert!(self.map.remove(slot.id).is_some());
             }
@@ -85,19 +121,20 @@ impl Scope {
 
     pub fn insert(
         &mut self,
+        diagnostics: &mut errors::Diagnostics,
         current_source: Source,
         id: impl Into<ID>,
         item: Item,
-    ) -> Result<(), Error> {
-        self.insert_by_id(current_source, id.into(), item)
+    ) -> errors::Result {
+        self.insert_by_id(diagnostics, current_source, id.into(), item)
     }
 
-    fn insert_by_id(&mut self, current_source: Source, id: ID, item: Item) -> Result<(), Error> {
-        let item_source = item.info.span.source();
+    fn insert_by_id(&mut self, diagnostics: &mut errors::Diagnostics, current_source: Source, id: ID, item: Item) -> errors::Result {
+        let item_source = item.span.source();
 
         match self.map.insert(id, Item::collision()) {
             Some(colliding) => {
-                let colliding_source = colliding.info.span.source();
+                let colliding_source = colliding.span.source();
                 if colliding.pointer.is_of::<Collision>() {
                     if item_source == current_source {
                         assert!(self.map.insert(id, item) == Some(Item::collision()));
@@ -109,10 +146,11 @@ impl Scope {
                         assert!(self.map.insert(id, colliding) == Some(Item::collision()));
                         assert!(self.map.insert((id, item_source), item).is_none());
                     } else {
-                        return Err(Error::new(
-                            error::Kind::ScopeCollision(colliding.info.span),
-                            item.info.span,
-                        ));
+                        diagnostics.push(Error::ScopeCollision {
+                            new: item.span,
+                            existing: colliding.span,
+                        });
+                        return Err(());
                     }
                 } else {
                     assert!(self.map.insert((id, item_source), item).is_none());
@@ -129,6 +167,7 @@ impl Scope {
         self.map.clear();
         self.frames.clear();
         self.stack.clear();
+        self.dependencies.clear();
     }
 }
 
@@ -145,21 +184,21 @@ impl ScopeSlot {
 
 #[derive(Default, PartialEq, Eq)]
 pub struct Item {
-    pub info: Info,
+    pub span: Span,
     pub pointer: Pointer,
 }
 
 impl Item {
     pub fn new(data: impl 'static + EntityRef, span: Span) -> Self {
         Self {
-            info: Info { span },
+            span,
             pointer: Pointer::write(data),
         }
     }
 
     fn collision() -> Item {
         Item {
-            info: Default::default(),
+            span: Default::default(),
             pointer: Pointer::write(Collision),
         }
     }
@@ -171,13 +210,8 @@ impl ReservedValue for Item {
     }
 
     fn is_reserved_value(&self) -> bool {
-        self.info.span.source().is_reserved_value()
+        self.span.source().is_reserved_value()
     }
-}
-
-#[derive(Default, PartialEq, Eq)]
-pub struct Info {
-    pub span: Span,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

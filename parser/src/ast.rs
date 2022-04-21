@@ -231,6 +231,7 @@ pub enum Kind {
     /// (mutable)
     Variable(bool), 
     If,
+    Unary,
     Binary,
     Index,
     Call,

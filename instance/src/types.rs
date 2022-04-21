@@ -20,7 +20,7 @@ impl<'a> TypeTranslator<'a> {
     pub fn translate(&mut self) -> Result {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.t_types.ents.len());
-            self.t_graph.total_ordering(&mut vec);
+            self.t_graph.total_ordering(&mut vec).unwrap();
             vec
         };
 

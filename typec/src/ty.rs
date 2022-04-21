@@ -1,6 +1,6 @@
-use crate::Result;
+use crate::TypeParser;
 use cranelift_entity::{
-    packed_option::{PackedOption, ReservedValue},
+    packed_option::ReservedValue,
     EntityList, ListPool, PrimaryMap, SecondaryMap,
 };
 use lexer::*;
@@ -15,10 +15,11 @@ pub struct Builder<'a> {
     pub type_ast: &'a SecondaryMap<Ty, Ast>,
     pub graph: &'a mut GenericGraph,
     pub ty: Ty,
+    pub diagnostics: &'a mut errors::Diagnostics,
 }
 
 impl<'a> Builder<'a> {
-    pub fn build(&mut self) -> Result {
+    pub fn build(&mut self) -> errors::Result {
         let Ent { id, .. } = self.types.ents[self.ty];
         let ast = self.type_ast[self.ty];
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
@@ -35,7 +36,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    pub fn build_struct(&mut self, id: ID, ast: Ast) -> Result {
+    pub fn build_struct(&mut self, id: ID, ast: Ast) -> errors::Result {
         let &[.., body] = self.ast.children(ast) else {
             unreachable!();
         };
@@ -47,20 +48,25 @@ impl<'a> Builder<'a> {
             let mut fields = vec![]; // TODO: rather reuse allocation
             for &field in self.ast.children(body) {
                 let children = self.ast.children(field);
-                let &[.., ty] = children else {
+                let &[.., field_ty_ast] = children else {
                     unreachable!();
                 };
-                let ty = self.parse_type(ty)?;
+                let field_ty = self.parse_type(field_ty_ast)?;
                 for &name in &children[..children.len() - 1] {
+                    let span = self.ast.nodes[name].span;
                     let id = {
-                        let span = self.ast.nodes[name].span;
                         let str = self.sources.display(span);
                         Self::field_id(id, ID::new(str))
                     };
-                    let field = Field::new(ty, fields.len() as u32, None);
+                    let field = Field {
+                        span,
+                        parent: self.ty,
+                        ty: field_ty,
+                        index: fields.len() as u32,
+                    };
                     assert!(self.types.fields.insert(id, field).is_none());
-                    fields.push(ty);
-                    self.graph.add_edge(ty.as_u32());
+                    fields.push(field_ty);
+                    self.graph.add_edge(field_ty.as_u32());
                 }
             }
             self.types.cons.list(&fields)
@@ -72,12 +78,14 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    pub fn parse_type(&mut self /* mut on purpose */, ty: Ast) -> Result<Ty> {
-        crate::parse_type(self.scope, self.ast, self.sources, ty)
-    }
-
     pub fn field_id(ty: ID, name: ID) -> ID {
         ty + name
+    }
+}
+
+impl TypeParser for Builder<'_> {
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics) {
+        (self.scope, self.types, self.sources, self.ast, self.diagnostics)
     }
 }
 
@@ -99,27 +107,19 @@ impl Types {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Field {
+    pub parent: Ty,
     pub ty: Ty,
     pub index: u32,
-    pub next: PackedOption<ID>,
-}
-
-impl Field {
-    pub fn new(ty: Ty, index: u32, next: impl Into<PackedOption<ID>>) -> Self {
-        Self {
-            ty,
-            index,
-            next: next.into(),
-        }
-    }
+    pub span: Span,
 }
 
 impl ReservedValue for Field {
     fn reserved_value() -> Self {
         Field {
+            parent: Ty::reserved_value(),
             ty: Ty::reserved_value(),
+            span: Span::reserved_value(),
             index: u32::MAX,
-            next: Default::default(),
         }
     }
 
@@ -158,22 +158,9 @@ impl<'a> Display<'a> {
 
 impl std::fmt::Display for Display<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self.types.ents[self.ty].kind {
-            Kind::Struct(_) => {
-                let name = self.types.ents[self.ty].name;
-                write!(f, "struct {}", self.sources.display(name))
-            }
-            Kind::Int(base) => {
-                if base > 0 {
-                    write!(f, "i{}", base)
-                } else {
-                    write!(f, "int")
-                }
-            }
-            Kind::Bool => write!(f, "bool"),
-            Kind::Nothing => write!(f, "nothing"),
-            Kind::Unresolved => unreachable!(),
-        }
+        let mut str = String::new();
+        self.ty.display(self.types, self.sources, &mut str)?;
+        write!(f, "{str}")
     }
 }
 
@@ -187,3 +174,27 @@ pub enum Kind {
 }
 
 lexer::gen_entity!(Ty);
+
+impl Ty {
+    pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
+        use std::fmt::Write;
+        match types.ents[self].kind {
+            Kind::Struct(_) => {
+                let name = types.ents[self].name;
+                write!(to, "{}", sources.display(name))?;
+            }
+            Kind::Int(base) => {
+                if base > 0 {
+                    write!(to, "i{}", base)?;
+                } else {
+                    write!(to, "int")?;
+                }
+            }
+            Kind::Bool => write!(to, "bool")?,
+            Kind::Nothing => write!(to, "nothing")?,
+            Kind::Unresolved => write!(to, "unresolved")?,
+        }
+
+        Ok(())
+    }
+}

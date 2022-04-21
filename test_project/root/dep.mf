@@ -1,4 +1,3 @@
-
 fn other(a: int, b: int, c: int) -> int {
     ret a + b * c
 }
@@ -20,7 +19,11 @@ fn structure_test() -> int {
 
     let something_else = init_something_else()
 
-    something.a - bti(something.b.e) - bti(something_else.f)
+    if something.e {} else {
+        ret -1
+    }
+
+    something.a - bti(something.b.e) + -bti(something_else.f)
 }
 
 fn init_something_else() -> SomethingElse {
@@ -47,4 +50,15 @@ struct Something {
 struct SomethingElse {
     e: bool
     f: bool
+}
+
+bound Bound {
+    fn operation()
+    fn something_with_int(i: int)
+    fn return_stuff(s: Self) -> bool
+
+    fn default_member(s: Self) -> int {
+        Self::operation()
+        ret Self::something_with_int(42) * bti(s.return_stuff())
+    }
 }

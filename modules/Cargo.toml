@@ -9,3 +9,4 @@ edition = "2021"
 cranelift-entity = "0.82.1"
 lexer = { path = "../lexer" }
 parser = { path = "../parser" }
+errors = { path = "../errors" }

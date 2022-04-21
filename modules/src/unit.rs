@@ -6,8 +6,8 @@ use std::{collections::VecDeque, path::PathBuf};
 use crate::*;
 use lexer::*;
 use parser::*;
+use crate::error::Error;
 
-use crate::{error, Error};
 
 pub type Units = PrimaryMap<Unit, Ent>;
 
@@ -15,15 +15,19 @@ pub struct Loader<'a> {
     pub sources: &'a mut Sources,
     pub units: &'a mut Units,
     pub ctx: &'a mut LoaderContext,
+    pub diagnostics: &'a mut errors::Diagnostics,
 }
 
 impl<'a> Loader<'a> {
-    pub fn load_units(&mut self, root: &Path) -> Result<Vec<Unit>> {
+    pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
         self.ctx.clear();
 
-        let Ok(root) = root.canonicalize() else {
-            return Err(Error::new(error::Kind::UnitNotFound(root.to_owned()), Span::default()));
-        };
+        let root = root.canonicalize().map_err(|err| {
+            self.diagnostics.push(Error::RootUnitNotFound {
+                path: root.to_path_buf(),
+                trace: err,
+            });
+        })?;
 
         let slot = self.units.push(unit::Ent::new());
         self.ctx.map.insert(root.as_path(), slot);
@@ -34,24 +38,24 @@ impl<'a> Loader<'a> {
             self.ctx.buffer.clear();
             self.ctx.buffer.push(&path);
             self.ctx.buffer.push(MANIFEST_LOCAL_PATH);
-            let contents = std::fs::read_to_string(&self.ctx.buffer).map_err(|err| {
-                Error::new(
-                    error::Kind::UnitLoadFailed(self.ctx.buffer.clone(), err),
-                    span,
-                )
-            })?;
+            let Ok(contents) = std::fs::read_to_string(&self.ctx.buffer).map_err(|err| {
+                self.diagnostics.push(Error::ManifestLoadFail {
+                    path: path.clone(),
+                    trace: err,
+                    loc: span,
+                })
+            }) else {
+                continue;
+            };
 
             {
                 // all parsing components assume source code is registered in sources
                 let source = SourceEnt::new(self.ctx.buffer.clone(), contents);
                 let source = self.sources.push(source);
-                let contents = self.sources[source].content();
-
                 self.units[slot].source = source;
 
                 self.ctx.ast.clear();
-                Parser::parse_manifest(contents, &mut self.ctx.ast, &mut self.ctx.ast_temp, source)
-                    .map_err(Convert::convert)?;
+                Parser::parse_manifest(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
             }
 
             let manifest = Manifest::new(&self.ctx.ast, &self.sources);
@@ -59,28 +63,35 @@ impl<'a> Loader<'a> {
             if let Some(dependency) = manifest.dependencies() {
                 for ManifestDepInfo {
                     name,
-                    path: span_path,
+                    path: path_span,
                     version,
-                } in dependency
-                {
-                    let path_str = self.sources.display(span_path);
+                } in dependency {
+                    let path_str = self.sources.display(path_span);
                     let path = if path_str.starts_with(GITHUB_DOMAIN) {
                         let path = Path::join(&self.ctx.mf_root, path_str);
                         if !path.exists() {
-                            Self::download_git_repo(
+                            if self.download_git_repo(
                                 &path,
                                 path_str,
                                 self.sources.display(version),
-                                span_path,
-                            )?;
+                                path_span,
+                            ).map_err(|err| self.diagnostics.push(err)).is_err() {
+                                continue;
+                            }
                         }
                         path
                     } else {
                         Path::join(&path, path_str)
                     };
 
-                    let Ok(path) = path.canonicalize() else {
-                        return Err(Error::new(error::Kind::UnitNotFound(path), span));
+                    let Ok(path) = path.canonicalize().map_err(|err| {
+                        self.diagnostics.push(Error::UnitNotFound {
+                            path: path.to_path_buf(),
+                            trace: err,
+                            loc: path_span,
+                        });
+                    }) else {
+                        continue;
                     };
 
                     let id = if let Some(&id) = self.ctx.map.get(path.as_path()) {
@@ -88,7 +99,7 @@ impl<'a> Loader<'a> {
                     } else {
                         let id = self.units.push(unit::Ent::new());
                         self.ctx.map.insert(path.as_path(), id);
-                        self.ctx.frontier.push_back((path, span_path, id));
+                        self.ctx.frontier.push_back((path, path_span, id));
                         id
                     };
 
@@ -108,15 +119,23 @@ impl<'a> Loader<'a> {
         }
 
         let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.graph));
-        if let Some(cycle) = self.ctx.graph.detect_cycles(slot, Some(&mut ordering)) {
-            return Err(Error::spanless(error::Kind::UnitCycle(cycle)));
-        }
+        self.ctx.graph.detect_cycles(slot, Some(&mut ordering)).map_err(|err| {
+            self.diagnostics.push(Error::UnitCycle {
+                cycle: err,
+            })
+        })?;
 
         Ok(ordering)
     }
 
-    fn download_git_repo(path: &Path, link: &str, version: &str, span: Span) -> Result<()> {
-        std::fs::create_dir_all(path).map_err(|err| Error::new(error::Kind::MkDir(err), span))?;
+    fn download_git_repo(&self, path: &Path, link: &str, version: &str, span: Span) -> Result<(), Error> {
+        std::fs::create_dir_all(path).map_err(|err| {
+            Error::MkGirtDir {
+                path: path.to_path_buf(),
+                trace: err,
+                loc: span,
+            }
+        })?;
 
         let status = Command::new("git")
             .arg("clone")
@@ -126,11 +145,19 @@ impl<'a> Loader<'a> {
             .arg(link)
             .arg(path)
             .status()
-            .or_else(|err| Err(Error::new(error::Kind::GitClone(err), span)))?;
+            .map_err(|err| {
+                Error::GitCloneExec {
+                    trace: err,
+                    loc: span,
+                }
+            })?;
 
-        if !status.success() {
-            return Err(Error::spanless(error::Kind::GitCloneStatus(status)));
-        }
+        status.success().then_some(()).ok_or_else(|| { 
+            Error::GitCloneStatus {
+                code: status,
+                loc: span,
+            }
+        })?;
 
         Ok(())
     }

@@ -4,26 +4,28 @@
 
 - [ ] Language constructs
     - [ ] Functions
-        - [ ] Linage
+        - [ ] Linkage
         - [x] Call convention
         - [ ] Generics
         - [ ] Methods
         - [x] Procedures
         - [ ] Statements
             - [x] Return
-            - [ ] Break - also as top level code segmentation
+            - [x] Break - also as top level code segmentation
             - [ ] Continue - only loop
             - [ ] Defer - not allowed in loops
+            - [x] Variables
             - [ ] Expressions
-                - [ ] Control Flow
-                    - [ ] If-Elif-Else
-                    - [ ] Loop
+                - [x] Control Flow
+                    - [x] If-Elif-Else
+                    - [x] Loop
                 - [x] Binary
-                - [ ] Unary
+                - [x] Unary
                 - [ ] Call
-                    - [ ] Procedural
+                    - [x] Procedural
                     - [ ] Object-Oriented
                 - [ ] Constants
+                    - [x] Boolean
                     - [ ] Folding
                     - [x] Integer
                     - [ ] Float
@@ -37,9 +39,24 @@
         - [ ] Tir
         - [ ] Mir
         - [ ] Ir
+    - [ ] Pointers
+        - [ ] Mutable
+        - [ ] Immutable
+    - [ ] References
+        - [ ] Mutable
+        - [ ] Immutable
     - [ ] Structures
-        - [ ] generics
+        - [ ] Generics
         - [ ] Safe tagged unions
-        - [ ] Structs
+        - [x] Structs
         - [ ] Bounds
-- [ ] error display
+    - [ ] Visibility
+        - [ ] Package Export
+        - [x] Package Public
+        - [ ] File Private
+
+- [ ] Diagnostics
+    - [ ] Bundler
+    - [ ] Builder
+    - [ ] Recovery
+    - [ ] Warnings

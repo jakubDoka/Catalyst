@@ -15,16 +15,16 @@ where
     /// Return number of nodes in tree.
     fn len(&self) -> usize;
 
-    fn detect_cycles(&self, root: I, ordering: Option<&mut Vec<I>>) -> Option<Vec<I>> {
+    fn detect_cycles(&self, root: I, ordering: Option<&mut Vec<I>>) -> Result<(), Vec<I>> {
         self.detect_cycles_with_resources(root, &mut CycleDetectResources::new(), ordering)
     }
 
-    fn total_ordering(&self, ordering: &mut Vec<I>) -> Option<Vec<I>> {
+    fn total_ordering(&self, ordering: &mut Vec<I>) -> Result<(), Vec<I>> {
         let mut resources = CycleDetectResources::new();
         (0..self.len())
             .map(|i| self.detect_cycles_with_resources(I::new(i), &mut resources, Some(ordering)))
-            .find(|r| r.is_some())
-            .unwrap_or(None)
+            .find(|r| r.is_err())
+            .unwrap_or(Ok(()))
     }
 
     /// Returns none if no cycles found, otherwise returns sequence
@@ -37,7 +37,7 @@ where
         root: I,
         CycleDetectResources { stack, lookup }: &mut CycleDetectResources<I>,
         mut ordering: Option<&mut Vec<I>>,
-    ) -> Option<Vec<I>> {
+    ) -> Result<(), Vec<I>> {
         lookup.resize(self.len(), (false, false));
         stack.push((root, 0));
 
@@ -45,7 +45,7 @@ where
             let (seen, in_recurse) = lookup[node.index()];
 
             if in_recurse {
-                return Some(
+                return Err(
                     stack
                         .drain(stack.iter().position(|i| i.0 == node).unwrap()..)
                         .map(|i| i.0)
@@ -72,7 +72,7 @@ where
             stack.push((self.child(node, index), 0));
         }
 
-        None
+        Ok(())
     }
 }
 

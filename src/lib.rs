@@ -1,4 +1,5 @@
 #![feature(result_option_inspect)]
+#![feature(let_else)]
 
 use cli::CmdInput;
 use std::str::FromStr;
@@ -18,21 +19,10 @@ use typec::*;
 use std::process::Command;
 use std::{collections::VecDeque, path::Path};
 
-macro_rules! unwrap {
-    ($expr:expr, $err:ident, $mapping:expr) => {
-        match ($expr) {
-            Ok(p) => p,
-            Err($err) => {
-                return Err($mapping);
-            }
-        }
-    };
-}
-
 /// compiles the catalyst source code, taking command like args as input,
 /// complete compilation only works on windows with msvc and you have to invoke
 /// compiler inside Native Tools Command Prompt
-pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
+pub fn compile() {
     // cli
     let input = CmdInput::new();
 
@@ -54,46 +44,37 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
     let mut unit_load_ctx = LoaderContext::new();
     let mut modules = Modules::new();
     let mut units = Units::new();
+
+    // errors
+    let mut diagnostics = errors::Diagnostics::new();
     
     let scope_item_lexicon = {
-        let mut map = ScopeItemLexicon::new();
+        let mut map = ItemLexicon::new();
 
-        for (id, name) in [
-            (std::any::TypeId::of::<module::Module>(), "module"),
-            (std::any::TypeId::of::<Ty>(), "type"),
-            (std::any::TypeId::of::<Func>(), "function"),
-            (std::any::TypeId::of::<Tir>(), "tir"),
-        ] {
-            map.insert(id, name);
-        }
+        map.register::<module::Module>("module");
+        map.register::<typec::Ty>("type");
+        map.register::<Func>("function");
+        map.register::<Tir>("tir");
 
         map
     };
     
     let module_order = {
         let mut module_frontier = VecDeque::new();
-        
-        let unit_order = unwrap!(
-            unit::Loader {
-                sources: &mut sources,
-                units: &mut units,
-                ctx: &mut unit_load_ctx,
-            }
-            .load_units(path),
-            err,
-            Box::new(modules::error::Display::new(
-                sources,
-                err,
-                modules,
-                units,
-                scope_item_lexicon
-            ))
-        );
+    
+        let unit_order = unit::Loader {
+            sources: &mut sources,
+            units: &mut units,
+            ctx: &mut unit_load_ctx,
+            diagnostics: &mut diagnostics,
+        }
+        .load_units(path)
+        .unwrap_or_default();
 
         let mut module_order = vec![];
 
         for unit in unit_order {
-            let local_module_order = unwrap!(
+            let Ok(local_module_order) =
                 module::Loader {
                     sources: &mut sources,
                     modules: &mut modules,
@@ -101,17 +82,11 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
                     frontier: &mut module_frontier,
                     ctx: &mut unit_load_ctx,
                     map: &mut module_map,
+                    diagnostics: &mut diagnostics,
                 }
-                .load_unit_modules(unit),
-                err,
-                Box::new(modules::error::Display::new(
-                    sources,
-                    err,
-                    modules,
-                    units,
-                    scope_item_lexicon
-                ))
-            );
+                .load_unit_modules(unit) else {
+                    continue;
+                };
 
             module_order.extend(local_module_order.into_iter().rev());
         }
@@ -170,6 +145,48 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
                 let item = module::Item::new(id, ty, span);
                 vec.push(item);
 
+                for name in "-".split(' ') {
+                    match kind {
+                        ty::Kind::Bool if !"".contains(name) => {
+                            continue;
+                        }
+                        ty::Kind::Int(_) if !"-".contains(name) => {
+                            continue;
+                        }
+                        _ => {}
+                    }
+
+                    let span = builtin_source.make_span(&mut sources, name);
+                    let sig = {
+                        let args = t_types.cons.list(&[ty]);
+                        let ret = ty;
+                        typec::Signature {
+                            args,
+                            ret,
+                            call_conv: Span::default(),
+                        }
+                    };
+
+                    let id = {
+                        let name = sources.display(span);
+                        typec::func::Builder::unary_id(id, ID::new(name))
+                    };
+
+                    let func = {
+                        let ent = typec::func::Ent {
+                            sig,
+                            name: span,
+                            id,
+                            kind: typec::func::Kind::Builtin,
+                            ..Default::default()
+                        };
+                        t_funcs.push(ent)
+                    };
+
+                    let item = module::Item::new(id, func, span);
+                    vec.push(item);
+                }
+
                 for name in "+ - * / < > <= >= == !=".split(' ') {
                     match kind {
                         ty::Kind::Bool if !"".contains(name) => {
@@ -185,9 +202,9 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
                     let sig = {
                         let args = t_types.cons.list(&[ty, ty]);
                         let ret = if "< > <= >= == !=".contains(name) {
-                            Ty(1).into() // bool
+                            Ty(1) // bool
                         } else {
-                            ty.into()
+                            ty
                         };
                         typec::Signature {
                             args,
@@ -223,92 +240,66 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
         let mut type_ast = SecondaryMap::new();
         let mut func_ast = SecondaryMap::new();
         let mut t_temp = tir::Temp::new();
-    
+
         for module in module_order {
             let source = modules[module].source;
-            let content = &sources[source].content;
     
             for item in builtin_items.iter() {
-                scope.insert(source, item.id, item.to_scope_item()).unwrap();
+                scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()).unwrap();
             }
     
             ast.clear();
-            let inter_state = unwrap!(
-                Parser::parse_imports(content, &mut ast, &mut ast_temp, source),
-                err,
-                Box::new(parser::error::Display::new(sources, err))
-            );
+            let inter_state = Parser::parse_imports(&sources, &mut diagnostics, &mut ast, &mut ast_temp, source);
     
+            scope.dependencies.clear();
             if let Some(imports) = ModuleImports::new(&ast, &sources).imports() {
                 for import in imports {
                     let name = sources.display(import.name);
                     let &dep = module_map.get((name, module)).unwrap();
                     for item in modules[dep].items.iter() {
-                        scope.insert(source, item.id, item.to_scope_item()).unwrap();
+                        drop(scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()));
                     }
+                    scope.dependencies.push(modules[dep].source);
                 }
             }
     
             ast.clear();
-            unwrap!(
-                Parser::parse_code_chunk(content, &mut ast, &mut ast_temp, inter_state),
-                err,
-                Box::new(parser::error::Display::new(sources, err))
-            );
+            Parser::parse_code_chunk(&sources, &mut diagnostics, &mut ast, &mut ast_temp, inter_state);
     
-            println!("{}", ast::FileDisplay::new(&ast, content));
+            println!("{}", ast::FileDisplay::new(&ast, &sources[source].content));
     
-            unwrap!(
-                Collector {
-                    nothing: Ty(0),
-                    scope: &mut scope,
-                    functions: &mut t_funcs,
-                    types: &mut t_types,
-                    modules: &mut modules,
-                    func_ast: &mut func_ast,
-                    sources: &sources,
-                    ast: &ast,
-                    type_ast: &mut type_ast,
-                    module,
-                }
-                .collect_items(),
-                err,
-                Box::new(typec::error::Display::new(
-                    sources,
-                    err,
-                    modules,
-                    units,
-                    t_types,
-                    scope_item_lexicon
-                ))
-            );
+            drop(Collector {
+                nothing: Ty(0),
+                scope: &mut scope,
+                functions: &mut t_funcs,
+                types: &mut t_types,
+                modules: &mut modules,
+                func_ast: &mut func_ast,
+                sources: &sources,
+                ast: &ast,
+                type_ast: &mut type_ast,
+                module,
+                diagnostics: &mut diagnostics,
+            }
+            .collect_items());
+            
     
             for ty in modules[module]
                 .items
                 .iter()
                 .filter_map(|item| item.kind.may_read::<Ty>())
             {
-                unwrap!(
-                    typec::ty::Builder {
-                        scope: &mut scope,
-                        types: &mut t_types,
-                        sources: &sources,
-                        ast: &ast,
-                        type_ast: &type_ast,
-                        graph: &mut t_graph,
-                        ty
-                    }
-                    .build(),
-                    err,
-                    Box::new(typec::error::Display::new(
-                        sources,
-                        err,
-                        modules,
-                        units,
-                        t_types,
-                        scope_item_lexicon
-                    ))
-                );
+                drop(typec::ty::Builder {
+                    scope: &mut scope,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    type_ast: &type_ast,
+                    graph: &mut t_graph,
+                    diagnostics: &mut diagnostics,
+                    ty
+                }
+                .build());
             }
     
             for func in modules[module]
@@ -316,32 +307,25 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
                 .iter()
                 .filter_map(|item| item.kind.may_read::<Func>())
             {
-                unwrap!(
-                    typec::func::Builder {
-                        nothing: Ty(0),
-                        bool: Ty(1),
-                        scope: &mut scope,
-                        types: &mut t_types,
-                        sources: &sources,
-                        ast: &ast,
-                        func,
-                        funcs: &mut t_funcs,
-                        func_ast: &func_ast,
-                        body: &mut bodies[func],
-                        temp: &mut t_temp,
-                    }
-                    .build(),
-                    err,
-                    Box::new(typec::error::Display::new(
-                        sources,
-                        err,
-                        modules,
-                        units,
-                        t_types,
-                        scope_item_lexicon
-                    ))
-                );
-    
+
+                if (typec::func::Builder {
+                    nothing: Ty(0),
+                    bool: Ty(1),
+                    scope: &mut scope,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    func,
+                    funcs: &mut t_funcs,
+                    func_ast: &func_ast,
+                    body: &mut bodies[func],
+                    temp: &mut t_temp,
+                    diagnostics: &mut diagnostics,
+                }
+                .build().is_err()) {
+                    continue;
+                };    
+                
                 println!(
                     "{}",
                     typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body)
@@ -350,6 +334,29 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
     
             scope.clear();
         }
+    }
+
+    let errors = {
+        let mut errors = String::new();
+        
+        diagnostics
+            .iter::<parser::Error>()
+            .map(|errs| errs
+                .for_each(|err| drop(err.display(&sources, &mut errors)))
+            );
+        
+        diagnostics
+            .iter::<typec::Error>()
+            .map(|errs| errs
+                .for_each(|err| drop(err.display(&sources, &t_types, &mut errors)))
+            );
+        
+        errors
+    };
+
+    if !errors.is_empty() {
+        println!("{errors}");
+        return;
     }
 
     // cranelift
@@ -485,7 +492,7 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
     std::fs::write("catalyst.o", &binary).unwrap();
 
     if input.enabled("no-link") {
-        return Ok(());
+        return;
     }
 
     let linker = input.field("linker").unwrap_or("link");
@@ -501,6 +508,4 @@ pub fn compile() -> std::result::Result<(), Box<dyn std::fmt::Display>> {
     std::fs::remove_file("catalyst.o").unwrap();
 
     assert!(status.success(), "{status:?}");
-
-    Ok(())
 }
