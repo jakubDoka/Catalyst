@@ -40,7 +40,7 @@ impl<'a> TypeTranslator<'a> {
                     self.translate_struct(id, fields)?;
                     continue;
                 }
-                ty::Kind::Nothing => ir::types::INVALID,
+                ty::Kind::Nothing | ty::Kind::Bound(..) => ir::types::INVALID,
                 ty::Kind::Unresolved => unreachable!(),
             };
 
@@ -57,7 +57,7 @@ impl<'a> TypeTranslator<'a> {
     }
 
     pub fn translate_struct(&mut self, ty: Ty, fields: EntityList<Ty>) -> Result {
-        let fields = self.t_types.cons.view(fields);
+        let fields = self.t_types.cons.get(fields);
         let ty_id = self.t_types.ents[ty].id;
 
         let align = fields

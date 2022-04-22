@@ -5,7 +5,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, Signature, StackSlotData, MemFlags};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{SecondaryMap, EntityList, EntityRef, EntitySet};
+use cranelift_entity::{SecondaryMap, EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Module};
 use instance::*;
@@ -18,7 +18,7 @@ pub struct Generator<'a> {
     pub value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
     pub function_lookup: &'a SecondaryMap<Func, PackedOption<FuncId>>,
     pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
-    pub stack_slot_lookup: &'a mut SecondaryMap<mir::Stack, PackedOption<ir::StackSlot>>,
+    pub stack_slot_lookup: &'a mut SecondaryMap<mir::StackSlot, PackedOption<ir::StackSlot>>,
     pub variable_set: &'a mut EntitySet<Variable>,
     pub t_functions: &'a typec::Funcs,
     pub types: &'a instance::Types,
@@ -92,7 +92,7 @@ impl<'a> Generator<'a> {
                     };
                     
                     let args: Vec<_> = self.source.value_slices
-                        .view(args)
+                        .get(args)
                         .iter()
                         .map(|&value| self.use_value(value))
                         .collect();
@@ -237,7 +237,7 @@ impl<'a> Generator<'a> {
         self.types.ents[ty].repr
     }
 
-    fn generate_native_call(&mut self, func: Func, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
+    fn generate_native_call(&mut self, func: Func, args: ValueList, result: PackedOption<mir::Value>) {
         let name = self.t_functions[func].name;
         let str = self.sources.display(name);
 
@@ -256,8 +256,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_add(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
-        match self.source.value_slices.view(args) {
+    fn generate_native_add(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        match self.source.value_slices.get(args) {
             &[value] => {
                 self.value_lookup[result.unwrap()] = self.use_value(value).into();
             }
@@ -281,8 +281,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_sub(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
-        match self.source.value_slices.view(args) {
+    fn generate_native_sub(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        match self.source.value_slices.get(args) {
             &[value] => {
                 let value = self.use_value(value);
                 let ty = self.builder.func.dfg.value_type(value);
@@ -315,8 +315,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_mul(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
-        match self.source.value_slices.view(args) {
+    fn generate_native_mul(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        match self.source.value_slices.get(args) {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
@@ -337,8 +337,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_div(&mut self, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
-        match self.source.value_slices.view(args) {
+    fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        match self.source.value_slices.get(args) {
             &[left, right] => {
                 let signed = !self.source.values[left].flags.contains(mir::Flags::UNSIGNED);
                 let left = self.use_value(left);
@@ -364,8 +364,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn generate_native_cmp(&mut self, op: &str, args: EntityList<mir::Value>, result: PackedOption<mir::Value>) {
-        let &[left, right] = self.source.value_slices.view(args) else {
+    fn generate_native_cmp(&mut self, op: &str, args: ValueList, result: PackedOption<mir::Value>) {
+        let &[left, right] = self.source.value_slices.get(args) else {
             unreachable!();
         };
 

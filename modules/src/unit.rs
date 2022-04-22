@@ -191,7 +191,7 @@ pub struct LoaderContext {
     pub frontier: VecDeque<(PathBuf, Span, Unit)>,
     pub map: Map<Unit>,
     pub ast: ast::Data,
-    pub ast_temp: ast::Temp,
+    pub ast_temp: Stack<Ast>,
 }
 
 impl LoaderContext {
@@ -206,7 +206,7 @@ impl LoaderContext {
             frontier: VecDeque::new(),
             map: Map::new(),
             ast: ast::Data::new(),
-            ast_temp: ast::Temp::new(),
+            ast_temp: Stack::new(),
         }
     }
 

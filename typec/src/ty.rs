@@ -1,4 +1,4 @@
-use crate::TypeParser;
+use crate::{TypeParser, Func};
 use cranelift_entity::{
     packed_option::ReservedValue,
     EntityList, ListPool, PrimaryMap, SecondaryMap,
@@ -91,6 +91,7 @@ impl TypeParser for Builder<'_> {
 
 pub struct Types {
     pub ents: PrimaryMap<Ty, Ent>,
+    pub funcs: ListPool<Func>,
     pub fields: Map<Field>,
     pub cons: ListPool<Ty>,
 }
@@ -98,6 +99,7 @@ pub struct Types {
 impl Types {
     pub fn new() -> Self {
         Types {
+            funcs: ListPool::new(),
             ents: PrimaryMap::new(),
             cons: ListPool::new(),
             fields: Map::new(),
@@ -128,6 +130,7 @@ impl ReservedValue for Field {
     }
 }
 
+#[derive(Default)]
 pub struct Ent {
     pub id: ID,
     pub name: Span,
@@ -166,11 +169,18 @@ impl std::fmt::Display for Display<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
+    Bound(EntityList<Func>),
     Struct(EntityList<Ty>),
     Int(i16),
     Bool,
     Nothing,
     Unresolved,
+}
+
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Unresolved
+    }
 }
 
 lexer::gen_entity!(Ty);
@@ -179,7 +189,7 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(_) => {
+            Kind::Struct(_) | Kind::Bound(_) => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
             }

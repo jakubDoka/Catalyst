@@ -3,7 +3,7 @@ use cranelift_entity::{
     EntityList, PrimaryMap, SecondaryMap,
 };
 
-use crate::{tir::Temp, Error, *};
+use crate::{Error, *};
 use lexer::*;
 use parser::*;
 
@@ -18,7 +18,7 @@ pub struct Builder<'a> {
     pub body: &'a mut tir::Data,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
-    pub temp: &'a mut Temp,
+    pub temp: &'a mut Stack<Tir>,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
     pub diagnostics: &'a mut errors::Diagnostics,
@@ -45,7 +45,7 @@ impl<'a> Builder<'a> {
         let args = {
             let ast_args =
                 &header[Parser::FUNCTION_ARG_START..header.len() - Parser::FUNCTION_ARG_END];
-            let args = self.types.cons.view(func_ent.sig.args);
+            let args = self.types.cons.get(func_ent.sig.args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
                 let &[name, ..] = self.ast.children(ast) else {
@@ -70,7 +70,7 @@ impl<'a> Builder<'a> {
 
                 tir_args.push(arg);
             }
-            self.body.cons.list(&tir_args)
+            self.body.cons.push(&tir_args)
         };
 
         let root = self.build_block(body_ast)?;
@@ -105,7 +105,7 @@ impl<'a> Builder<'a> {
             let Ok(expr) = self.build_expr(stmt) else {
                 continue; // Recover here
             };
-            self.temp.acc(expr);
+            self.temp.push(expr);
             final_expr = Some(expr);
             terminating |= self.body.ents[expr].flags.contains(tir::Flags::TERMINATING);
             if terminating {
@@ -120,8 +120,8 @@ impl<'a> Builder<'a> {
                 self.nothing
             };
 
-            let slice = self.temp.frame_view();
-            let items = self.body.cons.list(slice);
+            let slice = self.temp.top_frame();
+            let items = self.body.cons.push(slice);
 
             let kind = tir::Kind::Block(items);
             let flags = tir::Flags::TERMINATING & terminating;
@@ -190,7 +190,7 @@ impl<'a> Builder<'a> {
         let result = {
             let ty = self.funcs[func].sig.ret;
             let span = self.ast.nodes[ast].span;
-            let args = self.body.cons.list(&[expr]);
+            let args = self.body.cons.push(&[expr]);
             let kind = tir::Kind::Call(func, args);
             let ent = tir::Ent::new(kind, ty, span);
             self.body.ents.push(ent)
@@ -346,7 +346,7 @@ impl<'a> Builder<'a> {
 
         /* check signature */
         {
-            let arg_tys = self.types.cons.view(sig.args).to_vec(); // TODO: avoid allocation
+            let arg_tys = self.types.cons.get(sig.args).to_vec(); // TODO: avoid allocation
             
             let because = self.funcs[func].name;
             if arg_tys.len() != args.len() {
@@ -378,7 +378,7 @@ impl<'a> Builder<'a> {
 
         let result = {
             let ty = sig.ret;
-            let args = self.body.cons.list(&args);
+            let args = self.body.cons.push(&args);
             let kind = tir::Kind::Call(func, args);
             let ent = tir::Ent::new(kind, ty, span);
             self.body.ents.push(ent)
@@ -449,7 +449,7 @@ impl<'a> Builder<'a> {
                 return Err(());
             };
 
-            self.types.cons.view(fields).to_vec() // TODO: don't allocate
+            self.types.cons.get(fields).to_vec() // TODO: don't allocate
         };
 
         let mut initial_values = vec![Tir::reserved_value(); fields.len()]; // TODO: don't allocate
@@ -515,7 +515,7 @@ impl<'a> Builder<'a> {
 
         let result = {
             let span = self.ast.nodes[body].span;
-            let fields = self.body.cons.list(&initial_values);
+            let fields = self.body.cons.push(&initial_values);
             let kind = tir::Kind::Constructor(fields);
             let ent = tir::Ent::new(kind, ty, span);
             self.body.ents.push(ent)
@@ -723,7 +723,7 @@ impl<'a> Builder<'a> {
         /* sanity check */
         {
             let func_ent = &self.funcs[func];
-            let args = self.types.cons.view(func_ent.sig.args);
+            let args = self.types.cons.get(func_ent.sig.args);
 
             let arg_count = args.len();
             if arg_count != 2 {
@@ -746,7 +746,7 @@ impl<'a> Builder<'a> {
 
         let tir = {
             let ty = self.funcs[func].sig.ret;
-            let args = self.body.cons.list(&[left, right]);
+            let args = self.body.cons.push(&[left, right]);
             let kind = tir::Kind::Call(func, args);
             let ent = tir::Ent::new(kind, ty, span);
             self.body.ents.push(ent)
@@ -839,13 +839,13 @@ impl TypeParser for Builder<'_> {
     }
 }
 
-#[derive(Default)]
+#[derive(Copy, Clone, Default)]
 pub struct Ent {
     pub sig: Signature,
     pub name: Span,
     pub kind: Kind,
     pub body: Tir,
-    pub args: EntityList<Tir>,
+    pub args: TirList,
     pub id: ID,
 }
 
@@ -855,10 +855,11 @@ impl Ent {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Kind {
     Local,
     External,
+    Owned(Ty),
     Builtin,
 }
 
@@ -895,7 +896,7 @@ impl<'a> SignatureDisplay<'a> {
 impl std::fmt::Display for SignatureDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(")?;
-        for (i, &ty) in self.types.cons.view(self.sig.args).iter().enumerate() {
+        for (i, &ty) in self.types.cons.get(self.sig.args).iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }

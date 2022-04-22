@@ -36,7 +36,7 @@ pub fn compile() {
 
     // parser
     let mut ast = ast::Data::new();
-    let mut ast_temp = ast::Temp::new();
+    let mut ast_temp = Stack::new();
 
     // modules
     let mut scope = Scope::new();
@@ -48,7 +48,7 @@ pub fn compile() {
     // errors
     let mut diagnostics = errors::Diagnostics::new();
     
-    let scope_item_lexicon = {
+    let _scope_item_lexicon = {
         let mut map = ItemLexicon::new();
 
         map.register::<module::Module>("module");
@@ -117,6 +117,9 @@ pub fn compile() {
     let mut t_funcs = typec::Funcs::new();
     let mut t_graph = GenericGraph::new();
     
+    const NOTHING: Ty = Ty(0);
+    const BOOL: Ty = Ty(1);
+
     let mut bodies = SecondaryMap::new();
     /* perform type checking and build tir */ {
         let builtin_items: Vec<module::Item> = {
@@ -202,7 +205,7 @@ pub fn compile() {
                     let sig = {
                         let args = t_types.cons.list(&[ty, ty]);
                         let ret = if "< > <= >= == !=".contains(name) {
-                            Ty(1) // bool
+                            BOOL
                         } else {
                             ty
                         };
@@ -239,7 +242,7 @@ pub fn compile() {
 
         let mut type_ast = SecondaryMap::new();
         let mut func_ast = SecondaryMap::new();
-        let mut t_temp = tir::Temp::new();
+        let mut t_temp = Stack::new();
 
         for module in module_order {
             let source = modules[module].source;
@@ -269,9 +272,9 @@ pub fn compile() {
             println!("{}", ast::FileDisplay::new(&ast, &sources[source].content));
     
             drop(Collector {
-                nothing: Ty(0),
+                nothing: NOTHING,
                 scope: &mut scope,
-                functions: &mut t_funcs,
+                funcs: &mut t_funcs,
                 types: &mut t_types,
                 modules: &mut modules,
                 func_ast: &mut func_ast,
@@ -281,8 +284,7 @@ pub fn compile() {
                 module,
                 diagnostics: &mut diagnostics,
             }
-            .collect_items());
-            
+            .collect_items(ast.elements()));
     
             for ty in modules[module]
                 .items
@@ -309,8 +311,8 @@ pub fn compile() {
             {
 
                 if (typec::func::Builder {
-                    nothing: Ty(0),
-                    bool: Ty(1),
+                    nothing: NOTHING,
+                    bool: BOOL,
                     scope: &mut scope,
                     types: &mut t_types,
                     sources: &sources,
@@ -394,7 +396,7 @@ pub fn compile() {
         for (id, ent) in t_funcs.iter() {
             let name = sources.display(ent.name);
             let linkage = match ent.kind {
-                typec::func::Kind::Local => Linkage::Export,
+                typec::func::Kind::Local | typec::func::Kind::Owned(_) => Linkage::Export,
                 typec::func::Kind::Builtin => continue,
                 typec::func::Kind::External => Linkage::Import,
             };
@@ -446,7 +448,7 @@ pub fn compile() {
                 func: &mut function,
                 tir_mapping: &mut tir_mapping,
                 body: &bodies[func],
-                nothing: Ty(0),
+                nothing: NOTHING,
                 ptr_ty,
                 return_dest: None,
                 has_struct_ret: &has_struct_ret,

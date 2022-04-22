@@ -53,9 +53,9 @@ struct SomethingElse {
 }
 
 bound Bound {
-    fn operation()
-    fn something_with_int(i: int)
-    fn return_stuff(s: Self) -> bool
+    fn operation() extern
+    fn something_with_int(i: int) extern
+    fn return_stuff(s: Self) -> bool extern
 
     fn default_member(s: Self) -> int {
         Self::operation()

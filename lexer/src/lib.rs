@@ -7,12 +7,14 @@ pub extern crate cranelift_entity;
 pub mod map;
 pub mod source_info;
 pub mod token;
+pub mod stack;
 
 use std::str::Chars;
 
 pub use map::*;
 pub use source_info::*;
 pub use token::*;
+pub use stack::*;
 
 #[macro_export]
 macro_rules! gen_entity {
@@ -45,7 +47,7 @@ use cranelift_entity::{packed_option::ReservedValue, EntityList, EntityRef, List
 
 pub trait ListPoolExt<T: EntityRef + ReservedValue> {
     fn list(&mut self, slice: &[T]) -> EntityList<T>;
-    fn view(&self, list: EntityList<T>) -> &[T];
+    fn get(&self, list: EntityList<T>) -> &[T];
 }
 
 impl<T: EntityRef + ReservedValue> ListPoolExt<T> for ListPool<T> {
@@ -53,7 +55,7 @@ impl<T: EntityRef + ReservedValue> ListPoolExt<T> for ListPool<T> {
         EntityList::from_slice(slice, self)
     }
 
-    fn view(&self, list: EntityList<T>) -> &[T] {
+    fn get(&self, list: EntityList<T>) -> &[T] {
         list.as_slice(self)
     }
 }

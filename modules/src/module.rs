@@ -188,7 +188,7 @@ impl<'a> ModuleImports<'a> {
     pub fn imports(&self) -> Option<impl Iterator<Item = ModuleImport> + 'a> {
         self.ast_data.elements().next().map(|(_, e)| {
             assert!(e.kind != ast::Kind::Import);
-            self.ast_data.slice(e.children).iter().map(|&c| {
+            self.ast_data.conns[e.children].iter().map(|&c| {
                 let (nick, path) = match self.ast_data.children(c) {
                     &[nick, path] => (Some(self.ast_data.nodes[nick].span), path),
                     &[path] => (None, path),

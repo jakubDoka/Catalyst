@@ -1,57 +1,22 @@
 use cranelift_entity::{
     packed_option::{PackedOption, ReservedValue},
-    EntityList, EntitySet, ListPool, PrimaryMap,
+    EntitySet, PrimaryMap,
 };
 
 use crate::*;
 use lexer::*;
 
-pub struct Temp {
-    pub frames: Vec<usize>,
-    pub stack: Vec<Tir>,
-}
-
-impl Temp {
-    pub fn new() -> Self {
-        Self {
-            frames: vec![Default::default()],
-            stack: Vec::new(),
-        }
-    }
-
-    pub fn frame_view(&self) -> &[Tir] {
-        let &start = self.frames.last().unwrap();
-        &self.stack[start..]
-    }
-
-    pub fn acc(&mut self, tir: Tir) {
-        self.stack.push(tir);
-    }
-
-    pub fn mark_frame(&mut self) {
-        let len = self.stack.len();
-        self.frames.push(len);
-    }
-
-    pub fn pop_frame(&mut self) {
-        let frame = self.frames.pop().unwrap();
-        self.stack.truncate(frame);
-    }
-}
-
-lexer::gen_entity!(FrameId);
-
 #[derive(Clone)]
 pub struct Data {
     pub ents: PrimaryMap<Tir, Ent>,
-    pub cons: ListPool<Tir>,
+    pub cons: StackMap<TirList, Tir>,
 }
 
 impl Data {
     pub fn new() -> Self {
         Self {
             ents: PrimaryMap::new(),
-            cons: ListPool::new(),
+            cons: StackMap::new(),
         }
     }
 }
@@ -94,12 +59,12 @@ pub enum Kind {
     Loop(Tir),
     LoopInProgress(PackedOption<Tir>, bool),
     FieldAccess(Tir, ID),
-    Constructor(EntityList<Tir>),
+    Constructor(TirList),
     If(Tir, Tir, PackedOption<Tir>),
-    Block(EntityList<Tir>),
+    Block(TirList),
     Return(PackedOption<Tir>),
     Argument(u32),
-    Call(Func, EntityList<Tir>),
+    Call(Func, TirList),
     IntLit(i16),
     BoolLit(bool),
     Invalid,
@@ -118,6 +83,7 @@ impl Default for Kind {
 }
 
 lexer::gen_entity!(Tir);
+lexer::gen_entity!(TirList);
 
 bitflags::bitflags! {
     #[derive(Default)]
@@ -200,7 +166,7 @@ impl<'a> Display<'a> {
             }
             Kind::Constructor(fields) => {
                 writeln!(f, "::{{")?;
-                for &field in self.data.cons.view(fields).iter() {
+                for &field in self.data.cons.get(fields).iter() {
                     self.fmt(field, f, displayed, level + 1, true)?;
                 }
                 for _ in 0..level {
@@ -219,9 +185,9 @@ impl<'a> Display<'a> {
                 }
             }
             Kind::Block(content) => {
-                if !content.is_empty() {
+                if !content.is_reserved_value() {
                     writeln!(f, "{{")?;
-                    for &expr in self.data.cons.view(content).iter() {
+                    for &expr in self.data.cons.get(content).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -243,7 +209,7 @@ impl<'a> Display<'a> {
             }
             Kind::Call(func, args) => {
                 write!(f, "{func}(")?;
-                for (i, &arg) in self.data.cons.view(args).iter().enumerate() {
+                for (i, &arg) in self.data.cons.get(args).iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }

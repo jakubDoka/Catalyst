@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::Type;
+use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
-use cranelift_entity::{EntityList, ListPool, PrimaryMap, SecondaryMap, EntitySet};
+use cranelift_entity::{PrimaryMap, SecondaryMap, EntitySet};
 
 use crate::{Result, Types};
 use crate::*;
@@ -37,16 +38,19 @@ impl Translator<'_> {
         
         
         let entry_point = self.func.create_block();
-        
-        if has_struct_ret {
-            let value = self.flagged_value_from_ty(sig.ret, mir::Flags::POINTER);
-            self.return_dest = Some(value);
-            self.func.push_block_param(entry_point, value);
-        }
-        
-        for &tir in self.body.cons.view(args) {
-            let value = self.translate_value(tir).unwrap();
-            self.func.push_block_param(entry_point, value);
+        {
+            if has_struct_ret {
+                let value = self.flagged_value_from_ty(sig.ret, mir::Flags::POINTER);
+                self.return_dest = Some(value);
+                self.func.value_slices.push_one(value);
+            }
+            
+            for &tir in self.body.cons.get(args) {
+                let value = self.translate_value(tir).unwrap();
+                self.func.value_slices.push_one(value);
+            }
+
+            self.func.blocks[entry_point].params = self.func.value_slices.close_frame();
         }
         self.func.select_block(entry_point);
 
@@ -64,11 +68,11 @@ impl Translator<'_> {
             unreachable!()
         };
 
-        if stmts.is_empty() {
+        if stmts.is_reserved_value() {
             return Ok(None);
         }
 
-        let stmts = self.body.cons.view(stmts);
+        let stmts = self.body.cons.get(stmts);
         for &stmt in stmts[..stmts.len() - 1].iter() {
             self.translate_expr(stmt, None)?;
         }
@@ -184,7 +188,8 @@ impl Translator<'_> {
         }
 
         if !on_stack && let Some(value) = value {
-            self.func.push_block_param(exit_block, value);
+            let values = self.func.value_slices.push(&[value]);
+            self.func.blocks[exit_block].params = values;
         }
         self.func.select_block(exit_block);
 
@@ -248,7 +253,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(&mut self, ty: Ty, data: EntityList<Tir>, dest: Option<Value>) -> Result<Option<Value>> {        
+    fn translate_constructor(&mut self, ty: Ty, data: TirList, dest: Option<Value>) -> Result<Option<Value>> {        
         let Some(mut value) = self.unwrap_dest(ty, dest).or(dest) else {
             unreachable!();
         };
@@ -260,7 +265,7 @@ impl Translator<'_> {
             self.func.add_inst(ent);
         }
 
-        let data_view = self.body.cons.view(data);
+        let data_view = self.body.cons.get(data);
         let ty_id = self.t_types.ents[ty].id;
 
         for (i, &data) in data_view.iter().enumerate() {
@@ -405,7 +410,8 @@ impl Translator<'_> {
         }
 
         if !on_stack && let Some(value) = value {
-            self.func.push_block_param(skip_block, value);
+            let values = self.func.value_slices.push(&[value]);
+            self.func.blocks[skip_block].params = values;
         };
 
         self.func.select_block(skip_block);
@@ -413,7 +419,7 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_call(&mut self, func: typec::Func, args: EntityList<Tir>, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_call(&mut self, func: typec::Func, args: TirList, dest: Option<Value>) -> Result<Option<Value>> {
         let has_struct_ret = self.has_struct_ret.contains(func);
 
         let dest = has_struct_ret.then_some(dest).flatten();
@@ -424,7 +430,7 @@ impl Translator<'_> {
         };
         
         let args = {
-            let args_view = self.body.cons.view(args);
+            let args_view = self.body.cons.get(args);
             let mut args = Vec::with_capacity(args_view.len() + has_struct_ret as usize);
             if has_struct_ret {
                 args.push(value.unwrap());
@@ -432,7 +438,7 @@ impl Translator<'_> {
             for &arg in args_view {
                 args.push(self.translate_expr(arg, None)?.unwrap());
             }
-            self.func.value_slices.list(&args)
+            self.func.value_slices.push(&args)
         };
 
         { 
@@ -534,7 +540,7 @@ impl Translator<'_> {
         }
         
         target.params.extend(
-            t_types.cons.view(source.args)
+            t_types.cons.get(source.args)
                 .iter()
                 .map(|&ty| types.ents[ty].repr)
                 .map(|repr| ir::AbiParam::new(repr)),
@@ -558,10 +564,10 @@ pub struct Func {
     pub sig: ir::Signature,
 
     pub values: PrimaryMap<Value, ValueEnt>,
-    pub value_slices: ListPool<Value>,
+    pub value_slices: StackMap<ValueList, Value>,
     pub blocks: PrimaryMap<Block, BlockEnt>,
     pub insts: PrimaryMap<Inst, InstEnt>,
-    pub stacks: PrimaryMap<Stack, StackEnt>,
+    pub stacks: PrimaryMap<StackSlot, StackEnt>,
 
     pub current: PackedOption<Block>,
     pub start: PackedOption<Block>,
@@ -575,7 +581,7 @@ impl Func {
             name: Span::default(),
             sig: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),
-            value_slices: ListPool::new(),
+            value_slices: StackMap::new(),
             blocks: PrimaryMap::new(),
             insts: PrimaryMap::new(),
             stacks: PrimaryMap::new(),
@@ -598,12 +604,6 @@ impl Func {
         block
     }
 
-    pub fn push_block_param(&mut self, block: Block, param: Value) {
-        self.blocks[block]
-            .params
-            .push(param, &mut self.value_slices);
-    }
-
     pub fn add_inst(&mut self, inst: InstEnt) -> Inst {
         assert!(!self.is_terminated());
         let block = &mut self.blocks[self.current.unwrap()];
@@ -623,9 +623,8 @@ impl Func {
     }
 
     pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &ValueEnt)> + '_ {
-        self.blocks[block]
-            .params
-            .as_slice(&self.value_slices)
+        self.value_slices
+            .get(self.blocks[block].params)
             .iter()
             .map(|&value| (value, &self.values[value]))
     }

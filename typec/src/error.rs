@@ -398,7 +398,6 @@ impl Error {
             #[allow(unused)]
             Error::OperatorArgCountMismatch { because, expected, got, loc } => todo!(),
             #[allow(unused)]
-            
             Error::BinaryTypeMismatch { expected, got, loc } => todo!(),
         }
 

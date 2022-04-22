@@ -1,8 +1,8 @@
 use std::{marker::PhantomData, ops::IndexMut};
 
 use cranelift_codegen::{packed_option::PackedOption, ir::Type};
-use cranelift_entity::{EntityRef, PrimaryMap, EntityList};
-use lexer::{Sources, ListPoolExt};
+use cranelift_entity::{EntityRef, PrimaryMap};
+use lexer::Sources;
 use typec::{Ty, ty};
 
 use crate::{Size, func};
@@ -100,7 +100,7 @@ pub struct BlockEnt {
     pub next: PackedOption<Block>,
     pub start: PackedOption<Inst>,
     pub end: PackedOption<Inst>,
-    pub params: EntityList<Value>,
+    pub params: ValueList,
 }
 
 crate::impl_linked_node!(inout Block, BlockEnt);
@@ -136,12 +136,12 @@ impl InstEnt {
 #[derive(Debug)]
 pub enum InstKind {
     Offset(Value),
-    StackAddr(Stack),
+    StackAddr(StackSlot),
     Variable,
     Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
-    Call(typec::Func, EntityList<Value>),
+    Call(typec::Func, ValueList),
     IntLit(u64),
     BoolLit(bool),
     Return,
@@ -186,6 +186,7 @@ impl ValueEnt {
 }
 
 lexer::gen_entity!(Value);
+lexer::gen_entity!(ValueList);
 
 bitflags::bitflags! {
     #[derive(Default)]
@@ -212,7 +213,7 @@ impl StackEnt {
     }
 }
 
-lexer::gen_entity!(Stack);
+lexer::gen_entity!(StackSlot);
 
 pub struct Display<'a> {
     sources: &'a Sources,
@@ -252,7 +253,7 @@ impl std::fmt::Display for Display<'_> {
                 "  {}({}): {{", 
                 id, 
                 self.func.value_slices
-                    .view(block.params)
+                    .get(block.params)
                     .iter()
                     .map(|&v| self.value_to_string(v))
                     .collect::<Vec<_>>()
@@ -285,7 +286,7 @@ impl std::fmt::Display for Display<'_> {
                     },
                     InstKind::Call(func, values) => {
                         let args = self.func.value_slices
-                            .view(values)
+                            .get(values)
                             .iter()
                             .map(|&v| format!("{v}"))
                             .collect::<Vec<_>>()
