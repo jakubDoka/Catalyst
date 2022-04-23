@@ -25,6 +25,9 @@ members = [
     "errors",
 ]
 
+[profile.release]
+debug = true
+
 [features]
 logging = ["log", "env_logger"]
 

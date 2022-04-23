@@ -3,13 +3,13 @@ use std::{marker::PhantomData, ops::Index};
 use cranelift_entity::EntityRef;
 
 #[derive(Clone, Debug)]
-pub struct StackMap<E: EntityRef, T> {
+pub struct StackMap<E: EntityRef, T, S: EntityRef = Unused> {
     data: Vec<T>,
     indices: Vec<u32>,
-    _ph: PhantomData<E>,
+    _ph: PhantomData<(E, S)>,
 }
 
-impl<E: EntityRef, T> StackMap<E, T> {
+impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
     pub fn new() -> Self {
         StackMap {
             data: Vec::new(),
@@ -30,8 +30,10 @@ impl<E: EntityRef, T> StackMap<E, T> {
         }
     }
 
-    pub fn push_one(&mut self, value: T) {
+    pub fn push_one(&mut self, value: T) -> S {
+        let id = self.data.len();
         self.data.push(value);
+        S::new(id)
     }
 
     pub fn close_frame(&mut self) -> E {
@@ -46,13 +48,15 @@ impl<E: EntityRef, T> StackMap<E, T> {
     }
 }
 
-impl<E: EntityRef, T> Index<E> for StackMap<E, T> {
-    type Output = [T];
+impl<E: EntityRef, T, S: EntityRef> Index<S> for StackMap<E, T, S> {
+    type Output = T;
 
-    fn index(&self, id: E) -> &Self::Output {
-        self.get(id)
+    fn index(&self, id: S) -> &Self::Output {
+        &self.data[id.index()]
     }
 }
+
+crate::gen_entity!(Unused);
 
 pub struct Stack<T> {
     data: Vec<T>,

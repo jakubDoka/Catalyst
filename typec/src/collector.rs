@@ -136,7 +136,6 @@ impl<'a> Collector<'a> {
 
         let sig = {
             let args = {
-                let mut temp = vec![];
                 for &ast in
                     &children[Parser::FUNCTION_ARG_START..children.len() - Parser::FUNCTION_ARG_END]
                 {
@@ -145,11 +144,11 @@ impl<'a> Collector<'a> {
                     let ty = children[amount];
                     let ty = self.parse_type(ty)?;
                     for _ in 0..amount {
-                        temp.push(ty);
+                        self.types.cons.push_one(ty);
                     }
                 }
 
-                self.types.cons.list(&temp)
+                self.types.cons.close_frame()
             };
 
             let ret = if return_type.is_reserved_value() {

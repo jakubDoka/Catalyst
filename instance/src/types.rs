@@ -2,7 +2,7 @@ use cranelift_codegen::{
     ir::{self, Type},
     packed_option::ReservedValue,
 };
-use cranelift_entity::{EntityList, SecondaryMap};
+use cranelift_entity::{SecondaryMap};
 use lexer::*;
 use modules::*;
 use typec::*;
@@ -56,19 +56,19 @@ impl<'a> TypeTranslator<'a> {
         Ok(())
     }
 
-    pub fn translate_struct(&mut self, ty: Ty, fields: EntityList<Ty>) -> Result {
-        let fields = self.t_types.cons.get(fields);
+    pub fn translate_struct(&mut self, ty: Ty, fields: SFieldList) -> Result {
+        let fields = self.t_types.sfields.get(fields);
         let ty_id = self.t_types.ents[ty].id;
 
         let align = fields
             .iter()
-            .map(|&field| self.types.ents[field].align)
+            .map(|field| self.types.ents[field.ty].align)
             .fold(Size::ZERO, |acc, align| acc.max(align).min(Size::PTR));
 
         let mut size = Size::ZERO;
         let mut copyable = true;
         for (i, &field) in fields.iter().enumerate() {
-            let ent = &self.types.ents[field];
+            let ent = &self.types.ents[field.ty];
 
             copyable &= ent.flags.contains(Flags::COPYABLE);
 
@@ -89,7 +89,6 @@ impl<'a> TypeTranslator<'a> {
         let flags = 
             (Flags::COPYABLE & copyable) | 
             (Flags::ON_STACK & on_stack);
-        println!("{:?}", flags);
         self.types.ents[ty] = Ent {
             repr,
             flags,

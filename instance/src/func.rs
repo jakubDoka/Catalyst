@@ -19,7 +19,7 @@ pub struct Translator<'a> {
     pub func: &'a mut Func,
     pub body: &'a tir::Data,
     pub return_dest: Option<Value>,
-    pub has_struct_ret: &'a EntitySet<typec::Func>,
+    pub has_sret: &'a EntitySet<typec::Func>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
 }
@@ -28,7 +28,7 @@ impl Translator<'_> {
     pub fn translate_func(&mut self) -> Result {
         let func::Ent { sig, body, args, .. } = self.t_funcs[self.func_id];
         
-        let has_struct_ret = Self::translate_signature(
+        let has_sret = Self::translate_signature(
             &sig, 
             &mut self.func.sig, 
             self.types, 
@@ -39,7 +39,7 @@ impl Translator<'_> {
         
         let entry_point = self.func.create_block();
         {
-            if has_struct_ret {
+            if has_sret {
                 let value = self.flagged_value_from_ty(sig.ret, mir::Flags::POINTER);
                 self.return_dest = Some(value);
                 self.func.value_slices.push_one(value);
@@ -71,8 +71,12 @@ impl Translator<'_> {
         if stmts.is_reserved_value() {
             return Ok(None);
         }
-
+        
         let stmts = self.body.cons.get(stmts);
+        if stmts.is_empty() {
+            return Ok(None);
+        }
+
         for &stmt in stmts[..stmts.len() - 1].iter() {
             self.translate_expr(stmt, None)?;
         }
@@ -196,15 +200,13 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_field_access(&mut self, tir_header: Tir, field: ID, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_field_access(&mut self, tir_header: Tir, field: SField, dest: Option<Value>) -> Result<Option<Value>> {
         let ty = self.body.ents[tir_header].ty;
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
         let (field_id, field_ty) = {
             let ty_id = self.t_types.ents[ty].id;
-            let Some(&typec::Field { index, ty, .. }) = self.t_types.fields.get(field) else {
-                unreachable!()
-            };
+            let typec::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
             (types::TypeTranslator::field_id(ty_id, index as u64), ty)
         };
 
@@ -331,8 +333,6 @@ impl Translator<'_> {
             self.func.add_inst(ent);
         }
         
-        println!("=={:?}", assignable);
-
         self.func.values[value.unwrap()].flags.insert(mir::Flags::ASSIGNABLE & assignable);
         
         Ok(None)
@@ -420,9 +420,9 @@ impl Translator<'_> {
     }
 
     fn translate_call(&mut self, func: typec::Func, args: TirList, dest: Option<Value>) -> Result<Option<Value>> {
-        let has_struct_ret = self.has_struct_ret.contains(func);
+        let has_sret = self.has_sret.contains(func);
 
-        let dest = has_struct_ret.then_some(dest).flatten();
+        let dest = has_sret.then_some(dest).flatten();
 
         let value = {
             let ret = self.t_funcs[func].sig.ret;
@@ -431,8 +431,8 @@ impl Translator<'_> {
         
         let args = {
             let args_view = self.body.cons.get(args);
-            let mut args = Vec::with_capacity(args_view.len() + has_struct_ret as usize);
-            if has_struct_ret {
+            let mut args = Vec::with_capacity(args_view.len() + has_sret as usize);
+            if has_sret {
                 args.push(value.unwrap());
             }
             for &arg in args_view {

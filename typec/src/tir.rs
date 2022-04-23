@@ -58,7 +58,7 @@ pub enum Kind {
     Break(Tir, PackedOption<Tir>),
     Loop(Tir),
     LoopInProgress(PackedOption<Tir>, bool),
-    FieldAccess(Tir, ID),
+    FieldAccess(Tir, SField),
     Constructor(TirList),
     If(Tir, Tir, PackedOption<Tir>),
     Block(TirList),
@@ -162,7 +162,7 @@ impl<'a> Display<'a> {
         match ent.kind {
             Kind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
-                write!(f, ".{}", self.types.fields.get(id).unwrap().index)?;
+                write!(f, ".{}", self.types.sfields[id].index)?;
             }
             Kind::Constructor(fields) => {
                 writeln!(f, "::{{")?;

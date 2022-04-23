@@ -23,6 +23,8 @@ use std::{collections::VecDeque, path::Path};
 /// complete compilation only works on windows with msvc and you have to invoke
 /// compiler inside Native Tools Command Prompt
 pub fn compile() {
+    let total_now = std::time::Instant::now();
+
     // cli
     let input = CmdInput::new();
 
@@ -120,6 +122,8 @@ pub fn compile() {
     const NOTHING: Ty = Ty(0);
     const BOOL: Ty = Ty(1);
 
+    let total_type_check;
+
     let mut bodies = SecondaryMap::new();
     /* perform type checking and build tir */ {
         let builtin_items: Vec<module::Item> = {
@@ -161,7 +165,7 @@ pub fn compile() {
 
                     let span = builtin_source.make_span(&mut sources, name);
                     let sig = {
-                        let args = t_types.cons.list(&[ty]);
+                        let args = t_types.cons.push(&[ty]);
                         let ret = ty;
                         typec::Signature {
                             args,
@@ -203,7 +207,7 @@ pub fn compile() {
 
                     let span = builtin_source.make_span(&mut sources, name);
                     let sig = {
-                        let args = t_types.cons.list(&[ty, ty]);
+                        let args = t_types.cons.push(&[ty, ty]);
                         let ret = if "< > <= >= == !=".contains(name) {
                             BOOL
                         } else {
@@ -244,6 +248,8 @@ pub fn compile() {
         let mut func_ast = SecondaryMap::new();
         let mut t_temp = Stack::new();
 
+        let total_type_check_now = std::time::Instant::now();
+
         for module in module_order {
             let source = modules[module].source;
     
@@ -269,7 +275,7 @@ pub fn compile() {
             ast.clear();
             Parser::parse_code_chunk(&sources, &mut diagnostics, &mut ast, &mut ast_temp, inter_state);
     
-            println!("{}", ast::FileDisplay::new(&ast, &sources[source].content));
+            //println!("{}", ast::FileDisplay::new(&ast, &sources[source].content));
     
             drop(Collector {
                 nothing: NOTHING,
@@ -328,15 +334,15 @@ pub fn compile() {
                     continue;
                 };    
                 
-                println!(
-                    "{}",
-                    typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body)
-                );
+                //println!("{}", typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
             }
     
             scope.clear();
         }
+
+        total_type_check = total_type_check_now.elapsed();
     }
+
 
     let errors = {
         let mut errors = String::new();
@@ -348,11 +354,17 @@ pub fn compile() {
             );
         
         diagnostics
+            .iter::<modules::Error>()
+            .map(|errs| errs
+                .for_each(|err| panic!("{:?}", err))
+            );
+
+        diagnostics
             .iter::<typec::Error>()
             .map(|errs| errs
                 .for_each(|err| drop(err.display(&sources, &t_types, &mut errors)))
             );
-        
+
         errors
     };
 
@@ -390,7 +402,7 @@ pub fn compile() {
     .unwrap();
     
     let mut func_lookup = SecondaryMap::new();
-    let mut has_struct_ret = EntitySet::new();
+    let mut has_sret = EntitySet::new();
     
     /* declare function headers */ {
         for (id, ent) in t_funcs.iter() {
@@ -411,7 +423,7 @@ pub fn compile() {
             .unwrap();
     
             if returns_struct {
-                has_struct_ret.insert(id);
+                has_sret.insert(id);
             }
     
             let func = module
@@ -424,7 +436,10 @@ pub fn compile() {
         }
     }
 
-    
+    let mut total_definition = std::time::Duration::new(0, 0); 
+    let mut total_translation = std::time::Duration::new(0, 0); 
+    let mut total_generation = std::time::Duration::new(0, 0); 
+
     /* define */ {
         let mut variable_set = EntitySet::new();
         let mut stack_slot_lookup = SecondaryMap::new();
@@ -437,6 +452,7 @@ pub fn compile() {
                 continue;
             }
     
+            let now = std::time::Instant::now();
             tir_mapping.clear();
             function.clear();
             instance::func::Translator {
@@ -451,14 +467,16 @@ pub fn compile() {
                 nothing: NOTHING,
                 ptr_ty,
                 return_dest: None,
-                has_struct_ret: &has_struct_ret,
+                has_sret: &has_sret,
                 sources: &sources,
             }
             .translate_func()
             .unwrap();
+            total_translation += now.elapsed();
+
     
-            println!("{}", mir::Display::new(&sources, &function, &t_types));
-    
+            //println!("{}", mir::Display::new(&sources, &function, &t_types));
+            let now = std::time::Instant::now();
             ctx.clear();
             mir_to_ir_lookup.clear();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_builder_ctx);
@@ -476,11 +494,15 @@ pub fn compile() {
                 variable_set: &mut variable_set,
             }
             .generate();
-    
-            println!("{}", ctx.func.display());
-    
+            total_generation += now.elapsed();
+
+            //println!("{}", ctx.func.display());
+            
             let id = func_lookup[func].unwrap();
+
+            let now = std::time::Instant::now();
             module.define_function(id, &mut ctx).unwrap();
+            total_definition += now.elapsed();
     
             stack_slot_lookup.clear();
             mir_to_ir_lookup.clear();
@@ -488,6 +510,7 @@ pub fn compile() {
             variable_set.clear();
         }
     }
+
 
     // linking
     let binary = module.finish().emit().unwrap();
@@ -510,4 +533,12 @@ pub fn compile() {
     std::fs::remove_file("catalyst.o").unwrap();
 
     assert!(status.success(), "{status:?}");
+
+    let total = total_now.elapsed();
+
+    println!("parsing and generating tir: {:?}", total_type_check);
+    println!("translating tir to mir: {:?}", total_translation);
+    println!("translating mir to cir: {:?}", total_generation);
+    println!("translating cir to bite code: {:?}", total_definition);
+    println!("compilation time: {:?}", total);
 }

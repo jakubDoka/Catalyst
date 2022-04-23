@@ -4,6 +4,7 @@ use lexer::Span;
 
 use crate::{Unit, Module};
 
+#[derive(Debug)]
 pub enum Error {
     ScopeCollision {
         new: Span,

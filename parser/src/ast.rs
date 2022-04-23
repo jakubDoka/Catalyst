@@ -36,7 +36,7 @@ impl Data {
 
     #[inline]
     pub fn children(&self, ast: Ast) -> &[Ast] {
-        &self.conns[self.nodes[ast].children]
+        self.conns.get(self.nodes[ast].children)
     }
 
     #[inline]
@@ -54,7 +54,7 @@ impl Data {
     }
 
     pub fn slice(&self, list: AstList) -> &[Ast] {
-        &self.conns[list]
+        self.conns.get(list)
     }
 
     pub fn clear(&mut self) {
@@ -103,7 +103,7 @@ impl Data {
         }
 
         writeln!(f, ":")?;
-        for child in &self.conns[children] {
+        for child in self.conns.get(children) {
             self.fmt_one(f, *child, depth + 1, source)?;
         }
 
@@ -168,7 +168,7 @@ pub enum Kind {
     ConstructorField,
     ConstructorBody,
     Constructor,
-    StructField,
+    SField,
     StructBody,
     Struct,
     Break,

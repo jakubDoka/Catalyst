@@ -1,6 +1,6 @@
 use crate::{TypeParser, Func};
 use cranelift_entity::{
-    packed_option::ReservedValue,
+    packed_option::{ReservedValue, PackedOption},
     EntityList, ListPool, PrimaryMap, SecondaryMap,
 };
 use lexer::*;
@@ -45,31 +45,32 @@ impl<'a> Builder<'a> {
         // and memory efficiency, though we still need field ordering when
         // calculating offsets
         let fields = {
-            let mut fields = vec![]; // TODO: rather reuse allocation
-            for &field in self.ast.children(body) {
-                let children = self.ast.children(field);
-                let &[.., field_ty_ast] = children else {
+            for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
+                let &[name, field_ty_ast] = self.ast.children(field_ast) else {
                     unreachable!();
                 };
                 let field_ty = self.parse_type(field_ty_ast)?;
-                for &name in &children[..children.len() - 1] {
-                    let span = self.ast.nodes[name].span;
-                    let id = {
-                        let str = self.sources.display(span);
-                        Self::field_id(id, ID::new(str))
-                    };
-                    let field = Field {
+                
+                let span = self.ast.nodes[name].span;
+                
+                let id = {
+                    let str = self.sources.display(span);
+                    Self::field_id(id, ID::new(str))
+                };
+
+                let field = {
+                    let field = SFieldEnt {
                         span,
-                        parent: self.ty,
                         ty: field_ty,
-                        index: fields.len() as u32,
+                        index: i as u32,
                     };
-                    assert!(self.types.fields.insert(id, field).is_none());
-                    fields.push(field_ty);
-                    self.graph.add_edge(field_ty.as_u32());
-                }
+                    self.types.sfields.push_one(field)
+                };
+
+                assert!(self.types.sfield_lookup.insert(id, SFieldRef::new(field)).is_none());
+                self.graph.add_edge(field_ty.as_u32());
             }
-            self.types.cons.list(&fields)
+            self.types.sfields.close_frame()
         };
 
         self.types.ents[self.ty].kind = Kind::Struct(fields);
@@ -92,8 +93,9 @@ impl TypeParser for Builder<'_> {
 pub struct Types {
     pub ents: PrimaryMap<Ty, Ent>,
     pub funcs: ListPool<Func>,
-    pub fields: Map<Field>,
-    pub cons: ListPool<Ty>,
+    pub cons: StackMap<TyList, Ty>,
+    pub sfield_lookup: Map<SFieldRef>,
+    pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
 }
 
 impl Types {
@@ -101,24 +103,50 @@ impl Types {
         Types {
             funcs: ListPool::new(),
             ents: PrimaryMap::new(),
-            cons: ListPool::new(),
-            fields: Map::new(),
+            cons: StackMap::new(),
+            sfield_lookup: Map::new(),
+            sfields: StackMap::new(),
         }
     }
 }
 
+pub struct SFieldRef {
+    pub field: SField,
+    pub next: PackedOption<ID>,
+}
+
+impl SFieldRef {
+    pub fn new(field: SField) -> Self {
+        SFieldRef {
+            field,
+            next: None.into(),
+        }
+    }
+}
+
+impl ReservedValue for SFieldRef {
+    fn reserved_value() -> Self {
+        SFieldRef {
+            field: ReservedValue::reserved_value(),
+            next: None.into(),
+        }
+    }
+
+    fn is_reserved_value(&self) -> bool {
+        self.field.is_reserved_value()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-pub struct Field {
-    pub parent: Ty,
+pub struct SFieldEnt {
     pub ty: Ty,
     pub index: u32,
     pub span: Span,
 }
 
-impl ReservedValue for Field {
+impl ReservedValue for SFieldEnt {
     fn reserved_value() -> Self {
-        Field {
-            parent: Ty::reserved_value(),
+        SFieldEnt {
             ty: Ty::reserved_value(),
             span: Span::reserved_value(),
             index: u32::MAX,
@@ -170,7 +198,7 @@ impl std::fmt::Display for Display<'_> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     Bound(EntityList<Func>),
-    Struct(EntityList<Ty>),
+    Struct(SFieldList),
     Int(i16),
     Bool,
     Nothing,
@@ -184,6 +212,9 @@ impl Default for Kind {
 }
 
 lexer::gen_entity!(Ty);
+lexer::gen_entity!(TyList);
+lexer::gen_entity!(SField);
+lexer::gen_entity!(SFieldList);
 
 impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {

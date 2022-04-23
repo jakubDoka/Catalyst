@@ -174,7 +174,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.current.kind() {
                 token::Kind::Fn => break self.function(),
-                token::Kind::Struct => break self.struct_decl(),
+                token::Kind::Struct => break self.sdecl(),
                 token::Kind::NewLine => self.advance(),
                 token::Kind::Eof => break Ast::reserved_value(),
                 token::Kind::Bound => break self.bound(),
@@ -212,7 +212,7 @@ impl<'a> Parser<'a> {
         self.alloc(ast::Kind::Bound, span.join(end))
     }
 
-    fn struct_decl(&mut self) -> Ast {
+    fn sdecl(&mut self) -> Ast {
         let span = self.current.span();
         self.advance();
 
@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
             token::Kind::LeftCurly,
             token::Kind::NewLine,
             token::Kind::RightCurly,
-            Self::struct_field,
+            Self::sfield,
         );
 
         let fields = self.alloc(ast::Kind::StructBody, end);
@@ -236,7 +236,7 @@ impl<'a> Parser<'a> {
         self.alloc(ast::Kind::Struct, span.join(end))
     }
 
-    fn struct_field(&mut self) -> Ast {
+    fn sfield(&mut self) -> Ast {
         let span = self.current.span();
 
         self.stack.mark_frame();
@@ -251,7 +251,7 @@ impl<'a> Parser<'a> {
         self.stack.push(ty);
         let end = self.ast_file.nodes[ty].span;
 
-        self.alloc(ast::Kind::StructField, span.join(end))
+        self.alloc(ast::Kind::SField, span.join(end))
     }
 
     fn _compute_next(&mut self) {

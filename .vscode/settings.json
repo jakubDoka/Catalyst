@@ -12,6 +12,8 @@
         "iconst",
         "insts",
         "repr",
+        "sfield",
+        "sfields",
         "struct",
         "structs",
         "typec"

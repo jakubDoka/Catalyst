@@ -1,6 +1,6 @@
 use cranelift_entity::{
     packed_option::ReservedValue,
-    EntityList, PrimaryMap, SecondaryMap,
+    PrimaryMap, SecondaryMap,
 };
 
 use crate::{Error, *};
@@ -393,19 +393,21 @@ impl<'a> Builder<'a> {
         };
 
         let header = self.build_expr(header)?;
-        let ty = self.body.ents[header].ty;
-
+        
         let span = self.ast.nodes[field].span;
-        let id = {
-            let ty_id = self.types.ents[ty].id;
-            let str = self.sources.display(span);
-            ty::Builder::field_id(ty_id, ID::new(str))
+        let field_id = {
+            let ty = self.body.ents[header].ty;
+            let id = {
+                let ty_id = self.types.ents[ty].id;
+                let str = self.sources.display(span);
+                ty::Builder::field_id(ty_id, ID::new(str))
+            };
+            self.find_field(ty, id, span)?
         };
 
-        let ty::Field { ty, .. } = self.find_field(ty, id, span)?;
-
         let result = {
-            let kind = tir::Kind::FieldAccess(header, id);
+            let ty = self.types.sfields[field_id].ty;
+            let kind = tir::Kind::FieldAccess(header, field_id);
             let ent = tir::Ent::new(kind, ty, span);
             self.body.ents.push(ent)
         };
@@ -440,19 +442,15 @@ impl<'a> Builder<'a> {
         let span = self.ast.nodes[body].span;
         let ty_id = self.types.ents[ty].id;
 
-        let fields = {
-            let ty::Kind::Struct(fields) = self.types.ents[ty].kind else {
-                self.diagnostics.push(Error::ExpectedStruct {
-                    got: ty,
-                    loc: span,
-                });
-                return Err(());
-            };
+        let ty::Kind::Struct(fields) = self.types.ents[ty].kind else {
+            self.diagnostics.push(Error::ExpectedStruct {
+                got: ty,
+                loc: span,
+            });
+            return Err(());
+        };           
 
-            self.types.cons.get(fields).to_vec() // TODO: don't allocate
-        };
-
-        let mut initial_values = vec![Tir::reserved_value(); fields.len()]; // TODO: don't allocate
+        let mut initial_values = vec![Tir::reserved_value(); self.types.sfields.get(fields).len()]; // TODO: don't allocate
         for &field in self.ast.children(body) {
             let &[name, expr] = self.ast.children(field) else {
                 unreachable!();
@@ -464,12 +462,11 @@ impl<'a> Builder<'a> {
                 ty::Builder::field_id(ty_id, ID::new(str))
             };
 
-            let Ok(ty::Field { index, span: hint, .. }) = self.find_field(ty, id, span) else {
+            let Ok(field) = self.find_field(ty, id, span) else {
                 continue;
             };
-            let index = index as usize;
 
-            let field_ty = fields[index];
+            let ty::SFieldEnt { ty: field_ty, span: hint, index, .. } = self.types.sfields[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
                 ast::Kind::InlineConstructor => self.build_constructor_low(field_ty, expr),
@@ -486,7 +483,7 @@ impl<'a> Builder<'a> {
                 loc,
             }));
 
-            initial_values[index] = value;
+            initial_values[index as usize] = value;
         }
 
         if initial_values.iter().any(Tir::is_reserved_value) {
@@ -494,14 +491,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, &value)| (value == Tir::reserved_value()).then_some(index))
-                .filter_map(|i| self.types.fields
-                    .iter()
-                    .find(|(_, field)| 
-                        field.parent == ty && 
-                        field.index == i as u32
-                    )
-                )
-                .map(|(_, field)| field.span)
+                .map(|i| self.types.sfields.get(fields)[i].span)
                 .collect::<Vec<_>>();
 
             self.diagnostics.push(Error::ConstructorMissingFields {
@@ -792,11 +782,13 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
-    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<Field> {
-        self.types.fields.get(id).cloned().ok_or_else(|| {
-            let candidates = self.types.fields.iter()
-                .filter_map(|(_, field)| (field.parent == on).then_some(field.span))
-                .collect::<Vec<_>>();
+    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<SField> {
+        self.types.sfield_lookup.get(id).map(|f| f.field).ok_or_else(|| {
+            let candidates = if let ty::Kind::Struct(fields) = self.types.ents[on].kind {
+                self.types.sfields.get(fields).iter().map(|sfref| sfref.span).collect()
+            } else {
+                Vec::new()
+            };
             
             self.diagnostics.push(Error::UnknownField {
                 candidates,
@@ -871,9 +863,9 @@ impl Default for Kind {
 
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
-    //pub params: EntityList<Ty>,
+    //pub params: TyList,
     pub call_conv: Span,
-    pub args: EntityList<Ty>,
+    pub args: TyList,
     pub ret: Ty,
 }
 
