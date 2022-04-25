@@ -1,7 +1,9 @@
-use crate::{TypeParser, Func};
+use std::iter::Inspect;
+
+use crate::*;
 use cranelift_entity::{
     packed_option::{ReservedValue, PackedOption},
-    EntityList, ListPool, PrimaryMap, SecondaryMap,
+    PrimaryMap, SecondaryMap,
 };
 use lexer::*;
 use modules::*;
@@ -50,7 +52,7 @@ impl<'a> Builder<'a> {
                     unreachable!();
                 };
                 let field_ty = self.parse_type(field_ty_ast)?;
-                
+
                 let span = self.ast.nodes[name].span;
                 
                 let id = {
@@ -67,7 +69,8 @@ impl<'a> Builder<'a> {
                     self.types.sfields.push_one(field)
                 };
 
-                assert!(self.types.sfield_lookup.insert(id, SFieldRef::new(field)).is_none());
+                assert!(self.types.sfield_lookup.insert(id, SFieldRef::new(field))
+                    .map(|f| f.next.is_some()).unwrap_or(true));
                 self.graph.add_edge(field_ty.as_u32());
             }
             self.types.sfields.close_frame()
@@ -92,26 +95,73 @@ impl TypeParser for Builder<'_> {
 
 pub struct Types {
     pub ents: PrimaryMap<Ty, Ent>,
-    pub funcs: ListPool<Func>,
-    pub cons: StackMap<TyList, Ty>,
+    pub funcs: StackMap<FuncList, Func>,
+    pub args: StackMap<TyList, Ty>,
     pub sfield_lookup: Map<SFieldRef>,
     pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
+    params: Vec<Ty>,
 }
 
 impl Types {
     pub fn new() -> Self {
         Types {
-            funcs: ListPool::new(),
+            funcs: StackMap::new(),
             ents: PrimaryMap::new(),
-            cons: StackMap::new(),
+            args: StackMap::new(),
             sfield_lookup: Map::new(),
             sfields: StackMap::new(),
+            params: Vec::new(),
         }
     }
+
+    pub fn active_params(&self, popper: &InstancePopper) -> &[Ty] {
+        &self.params[..popper.len]
+    }
+
+    pub fn push_params(&mut self, params: TyList) -> InstancePopper {
+        let params = self.args.get(params);
+        for (&ty, &param) in params.iter().zip(&self.params) {
+            self.ents[param] = self.ents[ty];
+        }
+
+        return InstancePopper {
+            len: params.len(),
+        };
+    }
+
+    pub fn pop_params(&mut self, popper: InstancePopper) {
+        for (i, &param) in self.params[0..popper.len].iter().enumerate() {
+            self.ents[param] = Ent {
+                kind: Kind::Param(i as u32),
+                ..Default::default()
+            };
+        }
+    }
+
+    pub fn get_parameter(&mut self, i: usize, name: Span) -> Ty {
+        for i in self.params.len()..=i {
+            let ty = {
+                let ent = Ent {
+                    kind: Kind::Param(i as u32),
+                    ..Default::default()
+                };
+                self.ents.push(ent)
+            };
+            self.params.push(ty);
+        }
+        let ty = self.params[i];
+        self.ents[ty].name = name;
+        ty
+    }
+}
+
+pub struct InstancePopper {
+    len: usize,
 }
 
 pub struct SFieldRef {
     pub field: SField,
+    pub ambiguous: bool,
     pub next: PackedOption<ID>,
 }
 
@@ -119,6 +169,7 @@ impl SFieldRef {
     pub fn new(field: SField) -> Self {
         SFieldRef {
             field,
+            ambiguous: false,
             next: None.into(),
         }
     }
@@ -128,6 +179,7 @@ impl ReservedValue for SFieldRef {
     fn reserved_value() -> Self {
         SFieldRef {
             field: ReservedValue::reserved_value(),
+            ambiguous: false,
             next: None.into(),
         }
     }
@@ -158,7 +210,7 @@ impl ReservedValue for SFieldEnt {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Ent {
     pub id: ID,
     pub name: Span,
@@ -197,9 +249,10 @@ impl std::fmt::Display for Display<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
-    Bound(EntityList<Func>),
+    Bound(FuncList),
     Struct(SFieldList),
     Int(i16),
+    Param(u32),
     Bool,
     Nothing,
     Unresolved,
@@ -220,7 +273,7 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(_) | Kind::Bound(_) => {
+            Kind::Struct(..) | Kind::Bound(..) |  Kind::Param(..) => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
             }

@@ -3,6 +3,7 @@ use std::{
     path::PathBuf,
 };
 
+use cranelift_entity::packed_option::ReservedValue;
 use cranelift_entity::{EntityRef, PrimaryMap};
 
 use lexer::*;
@@ -33,39 +34,45 @@ pub struct Loader<'a> {
 impl<'a> Loader<'a> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Module>> {
         self.ctx.clear();
-        let unit_ent = &self.units[unit];
         let base_line = self.modules.len() as u32;
+        
+        {
+            let unit_ent = &self.units[unit];
+            let path = unit_ent.get_absolute_source_path().map_err(|trace| {
+                self.diagnostics.push(Error::RootModuleNotFound {
+                    unit,
+                    trace,
+                });
+            })?;
 
-        let path = unit_ent.get_absolute_source_path().map_err(|trace| {
-            self.diagnostics.push(Error::RootModuleNotFound {
-                unit,
-                trace,
-            });
-        })?;
-
-        let id = path.as_path().into();
-        let module = self.modules.push(Ent::new(id));
-        self.map.insert(id, module);
-
-        self.frontier.push_back((path, Span::default(), module));
+            let id = path.as_path().into();
+            let module = self.modules.push(Ent::new(id));
+            self.map.insert(id, module);
+            self.frontier.push_back((path, Span::default(), module));
+        }
 
         while let Some((path, span, slot)) = self.frontier.pop_front() {
-            let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
-                self.diagnostics.push(Error::ModuleLoadFail {
-                    path: path.clone(),
-                    trace: err,
-                    loc: span,
-                });
-            }) else { 
-                continue; 
-            };
-
-            let source = SourceEnt::new(path, content);
-            let source = self.sources.push(source);
-            self.modules[slot].source = source;
-
-            self.ctx.ast.clear();
-            Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
+            {
+                let source = {
+                    let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
+                        self.diagnostics.push(Error::ModuleLoadFail {
+                            path: path.clone(),
+                            trace: err,
+                            loc: span,
+                        });
+                    }) else { 
+                        continue; 
+                    };
+                    
+                    let source = SourceEnt::new(path, content);
+                    self.sources.push(source)
+                };
+                
+                self.modules[slot].source = source;
+    
+                self.ctx.ast.clear();
+                Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
+            }
 
             if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
                 for ModuleImport {
@@ -74,42 +81,47 @@ impl<'a> Loader<'a> {
                     path: path_span,
                 } in imports
                 {
-                    self.ctx.buffer.clear();
-                    let unit = self
-                        .ctx
-                        .map
-                        .get((self.sources.display(name), unit))
-                        .copied()
-                        .unwrap_or(unit);
+                    {
+                        let unit = self
+                            .ctx
+                            .map
+                            .get((self.sources.display(name), unit))
+                            .copied()
+                            .unwrap_or(unit);
+                    
+                        self.ctx.buffer.clear();
+                        self.ctx.buffer.push(&self.units[unit].root_path);
+                        self.ctx.buffer.push(&self.units[unit].local_source_path);
+                        self.ctx.buffer.set_extension("");
+                        self.ctx.buffer.push(self.sources.display(path_span));
+                        self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
+                    }
 
-                    self.ctx.buffer.push(&self.units[unit].root_path);
-                    self.ctx.buffer.push(&self.units[unit].local_source_path);
-                    self.ctx.buffer.set_extension("");
-                    self.ctx.buffer.push(self.sources.display(path_span));
-                    self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
 
-                    let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
-                        self.diagnostics.push(Error::ModuleNotFound {
-                            trace: err,
-                            loc: path_span,
-                        });
-                    }) else {
-                        continue;
+                    let id = {
+                        let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
+                            self.diagnostics.push(Error::ModuleNotFound {
+                                trace: err,
+                                path: self.ctx.buffer.clone(),
+                                loc: path_span,
+                            });
+                        }) else {
+                            continue;
+                        };
+
+                        let id = path.as_path().into();
+
+                        if let Some(&id) = self.map.get(id) {
+                            id
+                        } else {
+                            let module = self.modules.push(Ent::new(id));
+                            self.map.insert(id, module);
+                            self.frontier.push_back((path, path_span, module));
+                            module
+                        }
                     };
 
-                    let id = path.as_path().into();
-
-                    let id = if let Some(&id) = self.map.get(id) {
-                        id
-                    } else {
-                        let module = self.modules.push(Ent::new(id));
-                        self.map.insert(id, module);
-                        self.frontier.push_back((path, path_span, module));
-                        module
-                    };
-
-                    let name = nick.unwrap_or(name);
-                    self.map.insert((self.sources.display(name), slot), id);
+                    self.map.insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
                         self.ctx.graph.add_edge(id.0 - base_line);
                     }
@@ -189,12 +201,22 @@ impl<'a> ModuleImports<'a> {
         self.ast_data.elements().next().map(|(_, e)| {
             assert!(e.kind != ast::Kind::Import);
             self.ast_data.conns.get(e.children).iter().map(|&c| {
-                let (nick, path) = match self.ast_data.children(c) {
-                    &[nick, path] => (Some(self.ast_data.nodes[nick].span), path),
-                    &[path] => (None, path),
-                    _ => unreachable!(),
+                let &[nick, path] = self.ast_data.children(c) else {
+                    unreachable!();
                 };
+                
                 let path = self.ast_data.nodes[path].span.strip_sides();
+                let nick = if nick.is_reserved_value() {
+                    let split_index = self.sources
+                        .display(path)
+                        .rfind('/')
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+                    path.slice(split_index..)
+                } else {
+                    self.ast_data.nodes[nick].span
+                };
+
                 if let Some(split) = self.sources.display(path).find('/') {
                     ModuleImport {
                         nick,
@@ -214,7 +236,7 @@ impl<'a> ModuleImports<'a> {
 }
 
 pub struct ModuleImport {
-    pub nick: Option<Span>,
+    pub nick: Span,
     pub name: Span,
     pub path: Span,
 }

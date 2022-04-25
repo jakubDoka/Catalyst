@@ -161,6 +161,7 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    Generics,
     Instantiation,
     Path,
     Bound,
@@ -168,7 +169,8 @@ pub enum Kind {
     ConstructorField,
     ConstructorBody,
     Constructor,
-    SField,
+    /// (used)
+    SField(bool),
     StructBody,
     Struct,
     Break,

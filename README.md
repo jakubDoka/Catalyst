@@ -29,7 +29,7 @@
                     - [ ] Folding
                     - [x] Integer
                     - [ ] Float
-                    - [ ] Structures
+                    - [x] Structures
                     - [ ] Arrays
     - [ ] Macros
         - [ ] Jit
@@ -56,7 +56,6 @@
         - [ ] File Private
 
 - [ ] Diagnostics
-    - [ ] Bundler
-    - [ ] Builder
-    - [ ] Recovery
+    - [ ] Errors
+    - [x] Recovery
     - [ ] Warnings

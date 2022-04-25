@@ -7,10 +7,10 @@ use cranelift_codegen::ir::{InstBuilder, Signature, StackSlotData, MemFlags};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_entity::{SecondaryMap, EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{FuncId, Module, Linkage};
 use instance::*;
 use lexer::*;
-use typec::Func;
+use typec::{Func, ty};
 
 pub struct Generator<'a> {
     pub module: &'a mut dyn Module,
@@ -22,6 +22,7 @@ pub struct Generator<'a> {
     pub variable_set: &'a mut EntitySet<Variable>,
     pub t_functions: &'a typec::Funcs,
     pub types: &'a instance::Types,
+    pub t_types: &'a typec::Types,
     pub source: &'a instance::func::Func,
     pub sources: &'a Sources,
 }
@@ -502,4 +503,16 @@ impl<'a> Generator<'a> {
         }
         value
     }
+}
+
+/// returns none if function should not even be linked
+pub fn func_linkage(kind: typec::func::Kind) -> Option<Linkage> {
+    use typec::func::Kind::*;
+    Some(match kind {
+        Local |
+        Owned(_) |
+        Instance(_) => Linkage::Export,
+        Builtin => return None,
+        External => Linkage::Import,
+    })
 }

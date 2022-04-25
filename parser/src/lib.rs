@@ -15,19 +15,19 @@ pub struct Parser<'a> {
     sources: &'a Sources,
     diagnostics: &'a mut errors::Diagnostics,
     lexer: Lexer<'a>,
-    ast_file: &'a mut ast::Data,
-    stack: &'a mut Stack<Ast>,
+    data: &'a mut ast::Data,
+    stack: &'a mut FramedStack<Ast>,
 }
 
 impl<'a> Parser<'a> {
-    pub const FUNCTION_ARG_START: usize = 2;
+    pub const FUNCTION_ARG_START: usize = 3;
     pub const FUNCTION_ARG_END: usize = 2;
 
     pub fn parse_imports(
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,
         ast_file: &'a mut ast::Data,
-        temp: &'a mut Stack<Ast>,
+        temp: &'a mut FramedStack<Ast>,
         source: Source,
     ) -> InterState {
         let inter_state = InterState::new(source);
@@ -38,7 +38,7 @@ impl<'a> Parser<'a> {
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,
         ast_file: &'a mut ast::Data,
-        temp: &'a mut Stack<Ast>,
+        temp: &'a mut FramedStack<Ast>,
         source: Source,
     ) {
         let inter_state = InterState::new(source);
@@ -49,7 +49,7 @@ impl<'a> Parser<'a> {
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,
         ast_file: &'a mut ast::Data,
-        temp: &'a mut Stack<Ast>,
+        temp: &'a mut FramedStack<Ast>,
         inter_state: InterState,
     ) -> InterState {
         Self::parse_with(sources, diagnostics, ast_file, temp, inter_state, Self::take_chunk)
@@ -59,7 +59,7 @@ impl<'a> Parser<'a> {
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,
         ast_file: &'a mut ast::Data,
-        temp: &'a mut Stack<Ast>,
+        temp: &'a mut FramedStack<Ast>,
         InterState {
             mut next,
             mut current,
@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
             sources,
             diagnostics,
             lexer,
-            ast_file,
+            data: ast_file,
             stack: temp,
         };
 
@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
         );
         let imports = self.alloc(ast::Kind::Imports, span.join(end));
 
-        self.ast_file.push(imports);
+        self.data.push(imports);
 
         
     }
@@ -133,12 +133,11 @@ impl<'a> Parser<'a> {
         );
 
         for &item in self.stack.top_frame() {
-            self.ast_file.push(item);
+            self.data.push(item);
         }
 
         self.stack.pop_frame();
 
-        
     }
 
     fn take_chunk(&mut self) {
@@ -147,10 +146,8 @@ impl<'a> Parser<'a> {
             if item.is_reserved_value() {
                 break;
             }
-            self.ast_file.push(item);
-        }
-
-        
+            self.data.push(item);
+        }        
     }
 
     fn import(&mut self) -> Ast {
@@ -159,6 +156,8 @@ impl<'a> Parser<'a> {
         if self.current.kind() == token::Kind::Ident {
             let ident = self.ident();
             self.stack.push(ident);
+        } else {
+            self.stack.push_default();
         }
 
         self.skip_new_lines();
@@ -190,27 +189,33 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn bound(&mut self) -> Ast {
-        let span = self.current.span();
-        self.advance();
-        
-        self.stack.mark_frame();
-        
-        let ident = self.ident();
-        self.stack.push(ident);
-        
-        self.stack.mark_frame();
-        let end = self.list(
-            token::Kind::LeftCurly, 
-            token::Kind::NewLine, 
-            token::Kind::RightCurly, 
-            Self::function,
-        );
-        let body = self.alloc(ast::Kind::Block, span.join(end));
-        self.stack.push(body);
+fn bound(&mut self) -> Ast {
+    let span = self.current.span();
+    self.advance();
+    
+    self.stack.mark_frame();
+    
+    let ident = self.ident();
+    self.stack.push(ident);
+    
+    self.stack.mark_frame();
+    let end = self.list(
+        token::Kind::LeftCurly, 
+        token::Kind::NewLine, 
+        token::Kind::RightCurly, 
+        Self::function,
+    );
+    let body = self.alloc(
+        ast::Kind::Block, 
+        span.join(end)
+    );
+    self.stack.push(body);
 
-        self.alloc(ast::Kind::Bound, span.join(end))
-    }
+    self.alloc(
+        ast::Kind::Bound, 
+        span.join(end)
+    )
+}
 
     fn sdecl(&mut self) -> Ast {
         let span = self.current.span();
@@ -239,6 +244,11 @@ impl<'a> Parser<'a> {
     fn sfield(&mut self) -> Ast {
         let span = self.current.span();
 
+        let used = self.current.kind() == token::Kind::Use;
+        if used {
+            self.advance();
+        }
+
         self.stack.mark_frame();
 
         let name = self.ident();
@@ -249,9 +259,9 @@ impl<'a> Parser<'a> {
 
         let ty = self.type_expr();
         self.stack.push(ty);
-        let end = self.ast_file.nodes[ty].span;
+        let end = self.data.nodes[ty].span;
 
-        self.alloc(ast::Kind::SField, span.join(end))
+        self.alloc(ast::Kind::SField(used), span.join(end))
     }
 
     fn _compute_next(&mut self) {
@@ -269,11 +279,15 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         self.advance();
 
-        // call convention
         self.stack.mark_frame();
+        
+        let generics = self.generics();
+        self.stack.push(generics);
+
+        // call convention
         if self.current.kind() == token::Kind::String {
             let ast = self
-                .ast_file
+                .data
                 .alloc_sonless(ast::Kind::String, self.current.span());
             self.stack.push(ast);
             self.advance();
@@ -301,10 +315,11 @@ impl<'a> Parser<'a> {
             self.stack.push_default();
         }
 
+        // body
         let end = if self.current.kind() == token::Kind::LeftCurly {
             let body = self.block();
             self.stack.push(body);
-            self.ast_file.nodes[body].span
+            self.data.nodes[body].span
         } else {
             let end = self.current.span();
             self.advance();
@@ -329,11 +344,33 @@ impl<'a> Parser<'a> {
         let ty = self.type_expr();
         self.stack.push(ty);
 
-        let end = self.ast_file.nodes[ty].span;
+        let end = self.data.nodes[ty].span;
 
         self.alloc(ast::Kind::FunctionArgument, span.join(end))
     }
 
+    fn generics(&mut self) -> Ast {
+        if self.current.kind() != token::Kind::LeftBracket {
+            return Ast::reserved_value();
+        }
+
+        self.stack.mark_frame();
+
+        let span = self.list(
+            token::Kind::LeftBracket, 
+            token::Kind::Comma, 
+            token::Kind::RightBracket, 
+            Self::ident,
+        );
+
+        if self.stack.top_frame().is_empty() {
+            self.stack.pop_frame();
+            return Ast::reserved_value();
+        }
+
+        self.alloc(ast::Kind::Generics, span)
+    }
+ 
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
             token::Kind::Ident => self.type_ident_expr(),
@@ -362,7 +399,7 @@ impl<'a> Parser<'a> {
             },
         };
         self.advance();
-        self.ast_file.alloc_sonless(kind, span)
+        self.data.alloc_sonless(kind, span)
     }
 
     fn block(&mut self) -> Ast {
@@ -410,8 +447,8 @@ impl<'a> Parser<'a> {
             }
 
             let span = {
-                let start = self.ast_file.nodes[prev].span;
-                let end = self.ast_file.nodes[expr].span;
+                let start = self.data.nodes[prev].span;
+                let end = self.data.nodes[expr].span;
                 start.join(end)
             };
 
@@ -420,13 +457,13 @@ impl<'a> Parser<'a> {
                 let op = {
                     let span = op_span.slice(..op_span.len() - 1);
                     let ent = ast::Ent::childless(ast::Kind::Ident, span);
-                    self.ast_file.nodes.push(ent)
+                    self.data.nodes.push(ent)
                 };
 
                 let equal = {
                     let span = op_span.slice(op_span.len() - 1..);
                     let ent = ast::Ent::childless(ast::Kind::Ident, span);
-                    self.ast_file.nodes.push(ent)
+                    self.data.nodes.push(ent)
                 };
 
                 self.stack.mark_frame();
@@ -438,7 +475,7 @@ impl<'a> Parser<'a> {
                 equal
             } else {
                 let ent = ast::Ent::childless(ast::Kind::Ident, op_span);
-                self.ast_file.nodes.push(ent)
+                self.data.nodes.push(ent)
             };
 
             self.stack.mark_frame();
@@ -454,7 +491,7 @@ impl<'a> Parser<'a> {
 
     fn simple_expr(&mut self) -> Ast {
         match self.current.kind() {
-            token::Kind::Ret => self.return_expr(),
+            token::Kind::Return => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
             token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) => {
                 self.literal_expr()
@@ -479,13 +516,13 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         let op = {
             let ent = ast::Ent::childless(ast::Kind::Ident, span);
-            self.ast_file.nodes.push(ent)
+            self.data.nodes.push(ent)
         };
         
         self.advance();
         
         let expr = self.simple_expr();
-        let end = self.ast_file.nodes[expr].span;
+        let end = self.data.nodes[expr].span;
 
         self.stack.mark_frame();
         self.stack.push(op);
@@ -505,7 +542,7 @@ impl<'a> Parser<'a> {
         } else {
             let value = self.expr();
             self.stack.push(value);
-            self.ast_file.nodes[value].span
+            self.data.nodes[value].span
         };
 
         self.alloc(ast::Kind::Break, span.join(end))
@@ -519,7 +556,7 @@ impl<'a> Parser<'a> {
 
         let body = self.block();
         self.stack.push(body);
-        let end = self.ast_file.nodes[body].span;
+        let end = self.data.nodes[body].span;
 
         self.alloc(ast::Kind::Loop, span.join(end))
     }
@@ -552,7 +589,7 @@ impl<'a> Parser<'a> {
 
         let value = self.expr();
         self.stack.push(value);
-        let end = self.ast_file.nodes[value].span;
+        let end = self.data.nodes[value].span;
 
         self.alloc(ast::Kind::Variable(mutable), span.join(end))
     }
@@ -580,9 +617,9 @@ impl<'a> Parser<'a> {
         self.stack.push(otherwise);
 
         let end = if otherwise.is_reserved_value() {
-            self.ast_file.nodes[then].span
+            self.data.nodes[then].span
         } else {
-            self.ast_file.nodes[otherwise].span
+            self.data.nodes[otherwise].span
         };
 
         self.alloc(ast::Kind::If, span.join(end))
@@ -648,7 +685,7 @@ impl<'a> Parser<'a> {
             return self.alloc(ast::Kind::Constructor, span.join(end));
         }
 
-        if self.ast_file.nodes[result].kind == ast::Kind::Instantiation {
+        if self.data.nodes[result].kind == ast::Kind::Instantiation {
             self.expect_many(&[
                 token::Kind::LeftBracket, 
                 token::Kind::LeftParen,
@@ -667,7 +704,7 @@ impl<'a> Parser<'a> {
                         let span = self.current.span();
                         self.advance();
                         let ent = ast::Ent::childless(ast::Kind::Ident, span);
-                        self.ast_file.nodes.push(ent)
+                        self.data.nodes.push(ent)
                     };
                     self.stack.push(field);
                     self.alloc(ast::Kind::DotExpr, span)
@@ -713,7 +750,7 @@ impl<'a> Parser<'a> {
         } else {
             let expr = self.expr();
             self.stack.push(expr);
-            self.ast_file.nodes[expr].span
+            self.data.nodes[expr].span
         };
         self.alloc(ast::Kind::Return, span.join(end))
     }
@@ -740,7 +777,7 @@ impl<'a> Parser<'a> {
             self.expect(token::Kind::Colon);
             self.advance();
             let expr = self.expr();
-            (expr, self.ast_file.nodes[expr].span)
+            (expr, self.data.nodes[expr].span)
         };
 
         self.stack.push(expr);
@@ -749,7 +786,7 @@ impl<'a> Parser<'a> {
 
     fn type_ident_expr(&mut self) -> Ast {
         let span = self.current.span();
-        let name = self.ast_file.alloc_sonless(ast::Kind::Ident, span);
+        let name = self.data.alloc_sonless(ast::Kind::Ident, span);
         self.advance();
         self.stack.mark_frame();
         self.stack.push(name);
@@ -767,7 +804,7 @@ impl<'a> Parser<'a> {
     fn ident(&mut self) -> Ast {
         self.expect(token::Kind::Ident);
         let res = self
-            .ast_file
+            .data
             .alloc_sonless(ast::Kind::Ident, self.current.span());
         self.advance();
         res
@@ -798,7 +835,7 @@ impl<'a> Parser<'a> {
         loop {
             let ast = function_arg(self);
             self.stack.push(ast);
-            let end_span = self.ast_file.nodes[ast].span;
+            let end_span = self.data.nodes[ast].span;
 
             if end == self.current.kind() {
                 let end = self.current.span();
@@ -838,11 +875,11 @@ impl<'a> Parser<'a> {
 
     fn alloc(&mut self, kind: ast::Kind, span: Span) -> Ast {
         let cons = self.pop_frame();
-        self.ast_file.alloc_ent(ast::Ent::new(kind, cons, span))
+        self.data.alloc_ent(ast::Ent::new(kind, cons, span))
     }
 
     fn pop_frame(&mut self) -> AstList {
-        self.stack.save_and_pop_frame(&mut self.ast_file.conns)
+        self.stack.save_and_pop_frame(&mut self.data.conns)
     }
 
     pub const EQUAL_SIGN_PRECEDENCE: usize = 14;

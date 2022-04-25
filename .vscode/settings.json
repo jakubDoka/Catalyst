@@ -5,6 +5,7 @@
         "conv",
         "Cranelift",
         "deast",
+        "Deque",
         "Elif",
         "ents",
         "fastcall",
@@ -12,8 +13,10 @@
         "iconst",
         "insts",
         "repr",
+        "rfind",
         "sfield",
         "sfields",
+        "sret",
         "struct",
         "structs",
         "typec"

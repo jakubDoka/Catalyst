@@ -122,6 +122,32 @@ impl<'a> Lexer<'a> {
                         "->" => token::Kind::RightArrow,
                         ":" => token::Kind::Colon,
                         "::" => token::Kind::DoubleColon,
+                        "/*" => {
+                            let mut depth = 1;
+                            while depth > 0 {
+                                match (self.next(), self.next()) {
+                                    (Some('*'), Some('/')) => {
+                                        depth -= 1;
+                                    }
+                                    (Some('/'), Some('*')) => {
+                                        depth += 1;
+                                    }
+                                    (None, _) => {
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            continue;
+                        }
+                        "//" => {
+                            loop {
+                                if let Some('\n') = self.next() {
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
                         _ => token::Kind::Operator,
                     }
                 }
@@ -132,7 +158,7 @@ impl<'a> Lexer<'a> {
 
                     match self.view(start) {
                         "fn" => token::Kind::Fn,
-                        "ret" => token::Kind::Ret,
+                        "return" => token::Kind::Return,
                         "use" => token::Kind::Use,
                         "extern" => token::Kind::Extern,
                         "if" => token::Kind::If,

@@ -1,10 +1,15 @@
-use errors::Palette;
+use errors::{Palette, write_styled};
 use lexer::*;
 
 use crate::*;
 
 
 pub enum Error {
+    BinaryOperatorNotFound {
+        left_ty: Ty,
+        right_ty: Ty,
+        loc: Span,
+    },
     ReturnTypeMismatch {
         because: Option<Span>,
         expected: Ty,
@@ -394,6 +399,16 @@ impl Error {
                     }
                 )?;
     
+            },
+            &Error::BinaryOperatorNotFound { left_ty, right_ty, loc } => {
+                write_styled!(
+                    to, 
+                    Palette::error().bold(), 
+                    "|> Binary operator '{}' {} '{}' does not exist.",
+                    ty::Display::new(types, sources, left_ty),
+                    sources.display(loc),
+                    ty::Display::new(types, sources, right_ty)
+                )
             },
             #[allow(unused)]
             Error::OperatorArgCountMismatch { because, expected, got, loc } => todo!(),

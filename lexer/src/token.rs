@@ -46,7 +46,7 @@ macro_rules! gen_kind {
 
 gen_kind!(
     Fn = "'fn'",
-    Ret = "'ret'",
+    Return = "'return'",
     Use = "'use'",
     Extern = "'extern'",
     If = "'if'",

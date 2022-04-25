@@ -54,6 +54,8 @@ impl Translator<'_> {
         }
         self.func.select_block(entry_point);
 
+        println!("{}", self.sources.display(self.t_funcs[self.func_id].name));
+
         let value = self.translate_block(body, self.return_dest)?;
 
         if !self.func.is_terminated() {
@@ -94,7 +96,7 @@ impl Translator<'_> {
         let tir::Ent { kind, ty, span, .. } = self.body.ents[tir];
         let value = match kind {
             tir::Kind::Return(value) => self.translate_return(value.expand())?,
-            tir::Kind::Call(func, args) => self.translate_call(func, args, dest)?,
+            tir::Kind::Call(func, args) => self.translate_call(func, tir, args, dest)?,
             tir::Kind::If(cons, then, otherwise) => self.translate_if(cons, then, otherwise, ty, dest)?,
             tir::Kind::IntLit(_) => self.translate_int_lit(ty, span, dest)?,
             tir::Kind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
@@ -419,13 +421,13 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_call(&mut self, func: typec::Func, args: TirList, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_call(&mut self, func: typec::Func, tir: Tir, args: TirList, dest: Option<Value>) -> Result<Option<Value>> {
         let has_sret = self.has_sret.contains(func);
 
         let dest = has_sret.then_some(dest).flatten();
 
         let value = {
-            let ret = self.t_funcs[func].sig.ret;
+            let ret = self.body.ents[tir].ty;
             self.unwrap_dest(ret, dest).or(dest)
         };
         
@@ -518,7 +520,7 @@ impl Translator<'_> {
     /// translates a `source` into the `target` and returns true if 
     /// signature has struct return type
     pub fn translate_signature(
-        source: &typec::Signature,
+        source: &typec::Sig,
         target: &mut ir::Signature,
         types: &Types,
         t_types: &typec::Types,
@@ -540,7 +542,7 @@ impl Translator<'_> {
         }
         
         target.params.extend(
-            t_types.cons.get(source.args)
+            t_types.args.get(source.args)
                 .iter()
                 .map(|&ty| types.ents[ty].repr)
                 .map(|repr| ir::AbiParam::new(repr)),

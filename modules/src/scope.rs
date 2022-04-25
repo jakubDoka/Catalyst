@@ -29,7 +29,7 @@ pub struct Scope {
     map: Map<Item>,
     frames: Vec<usize>,
     stack: Vec<ScopeSlot>,
-    pub dependencies: Vec<Source>,
+    pub dependencies: Vec<(Source, Span)>,
 }
 
 impl Scope {
@@ -58,7 +58,7 @@ impl Scope {
             if item.pointer.is_of::<Collision>() {
                 let suggestions = self.dependencies
                     .iter()
-                    .filter_map(|&source| self.map.get((id, source)).map(|item| item.span))
+                    .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
                     .collect::<Vec<_>>();
                 
                 diagnostics.push(Error::AmbiguousScopeItem {

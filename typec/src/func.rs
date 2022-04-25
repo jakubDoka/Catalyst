@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use cranelift_entity::{
     packed_option::ReservedValue,
     PrimaryMap, SecondaryMap,
@@ -18,7 +20,7 @@ pub struct Builder<'a> {
     pub body: &'a mut tir::Data,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
-    pub temp: &'a mut Stack<Tir>,
+    pub temp: &'a mut FramedStack<Tir>,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
     pub diagnostics: &'a mut errors::Diagnostics,
@@ -31,7 +33,7 @@ impl<'a> Builder<'a> {
         let ret = func_ent.sig.ret;
         let ast = self.func_ast[self.func];
         let header = self.ast.children(ast);
-        let &[.., ret_ast, _] = header else {
+        let &[generics, .., ret_ast, _] = header else {
             unreachable!();
         };
         let &body_ast = header.last().unwrap();
@@ -42,10 +44,21 @@ impl<'a> Builder<'a> {
         }
 
         self.scope.mark_frame();
+
+        if !generics.is_reserved_value() {
+            for (i, &ty) in self.ast.children(generics).iter().enumerate() {
+                let span = self.ast.nodes[ty].span;
+                let name = self.sources.display(span);
+                let id = ID::new(name);
+                let ty = self.types.get_parameter(i, span);
+                self.scope.push_item(id, scope::Item::new(ty, span));
+            }
+        }
+
         let args = {
             let ast_args =
                 &header[Parser::FUNCTION_ARG_START..header.len() - Parser::FUNCTION_ARG_END];
-            let args = self.types.cons.get(func_ent.sig.args);
+            let args = self.types.args.get(func_ent.sig.args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
                 let &[name, ..] = self.ast.children(ast) else {
@@ -299,7 +312,7 @@ impl<'a> Builder<'a> {
             unreachable!();
         };
 
-        let mut args = vec![];
+        let mut args = vec![]; // NO we cant get rid of this, until we add a stack
         let (id, span) = if self.ast.nodes[caller].kind == ast::Kind::DotExpr {
             let &[expr, name] = self.ast.children(caller) else {
                 unreachable!();
@@ -344,9 +357,8 @@ impl<'a> Builder<'a> {
         }
         
 
-        /* check signature */
-        {
-            let arg_tys = self.types.cons.get(sig.args).to_vec(); // TODO: avoid allocation
+        let (ret, func) = {
+            let arg_tys = self.types.args.get(sig.args).to_vec(); // TODO: avoid allocation
             
             let because = self.funcs[func].name;
             if arg_tys.len() != args.len() {
@@ -360,27 +372,80 @@ impl<'a> Builder<'a> {
                 return Err(());
             }
 
-            // here we type check all arguments and then check for errors
-            args
-                .iter()
-                .zip(arg_tys)
-                .map(|(&arg, ty)| {
-                    self.expect_tir_ty(arg, ty, |_, got, loc| Error::CallArgTypeMismatch {
-                        because,
-                        expected: ty,
-                        got,
-                        loc,
+            if sig.params.is_reserved_value() {
+                // here we type check all arguments and then check for errors
+                args
+                    .iter()
+                    .zip(arg_tys)
+                    .map(|(&arg, ty)| {
+                        self.expect_tir_ty(arg, ty, |_, got, loc| Error::CallArgTypeMismatch {
+                            because,
+                            expected: ty,
+                            got,
+                            loc,
+                        })
                     })
-                })
-                // fold prevents allocation
-                .fold(Ok(()), |acc, err| acc.and(err))?;
-        }
+                    // fold prevents allocation
+                    .fold(Ok(()), |acc, err| acc.and(err))?;
+                
+                (sig.ret, func)
+            } else {
+                let params = self.types.args.get(sig.params);
+                let mut param_slots = vec![Ty::default(); params.len()];
+
+                args
+                    .iter()
+                    .zip(arg_tys)
+                    .map(|(&arg, ty)| {
+                        if let ty::Kind::Param(index) = self.types.ents[ty].kind {
+                            let slot = param_slots[index as usize];
+                            if slot.is_reserved_value() {
+                                param_slots[index as usize] = self.body.ents[arg].ty;
+                                return Ok(());
+                            }
+                        }
+                        self.expect_tir_ty(arg, ty, |_, got, loc| Error::CallArgTypeMismatch {
+                            because,
+                            expected: ty,
+                            got,
+                            loc,
+                        })    
+                    })
+                    // fold prevents allocation
+                    .fold(Ok(()), |acc, err| acc.and(err))?;
+                
+                if param_slots.contains(&Ty::default()) {
+                    todo!()
+                }
+
+                let ret = if let ty::Kind::Param(index) = self.types.ents[sig.ret].kind {
+                    param_slots[index as usize]
+                } else {
+                    sig.ret
+                };
+
+                let func = {
+                    let i_params = self.types.args.push(&param_slots);
+                    let sig = Sig {
+                        params: i_params,
+                        ..sig
+                    };
+                    let ent = Ent {
+                        sig,
+                        kind: Kind::Instance(func),
+                        ..self.funcs[func]
+                    };
+                    self.funcs.push(ent)
+                };
+
+                (ret, func)
+            }
+        };
 
         let result = {
-            let ty = sig.ret;
             let args = self.body.cons.push(&args);
             let kind = tir::Kind::Call(func, args);
-            let ent = tir::Ent::new(kind, ty, span);
+            let ent = tir::Ent::new(kind, ret, span);
             self.body.ents.push(ent)
         };
 
@@ -708,12 +773,19 @@ impl<'a> Builder<'a> {
             Self::binary_id(left_id, op_id)
         };
 
-        let func = self.scope.get::<Func>(self.diagnostics, id, op_span)?;
+        let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, op_span) else {
+            self.diagnostics.push(Error::BinaryOperatorNotFound {
+                left_ty: self.body.ents[left].ty,
+                right_ty: self.body.ents[right].ty,
+                loc: op_span,
+            });
+            return Err(());
+        };
 
         /* sanity check */
         {
             let func_ent = &self.funcs[func];
-            let args = self.types.cons.get(func_ent.sig.args);
+            let args = self.types.args.get(func_ent.sig.args);
 
             let arg_count = args.len();
             if arg_count != 2 {
@@ -833,7 +905,7 @@ impl TypeParser for Builder<'_> {
 
 #[derive(Copy, Clone, Default)]
 pub struct Ent {
-    pub sig: Signature,
+    pub sig: Sig,
     pub name: Span,
     pub kind: Kind,
     pub body: Tir,
@@ -845,6 +917,19 @@ impl Ent {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn get_link_name(&self, types: &Types, sources: &Sources, buffer: &mut String) {
+        buffer.write_str(sources.display(self.name)).unwrap();
+        if !self.sig.params.is_reserved_value() {
+            buffer.write_char('[').unwrap();
+            for &ty in types.args.get(self.sig.params) {
+                ty.display(types, sources, buffer).unwrap();
+                buffer.write_char(',').unwrap();
+            }
+            buffer.pop().unwrap();
+            buffer.write_char(']').unwrap();
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -852,6 +937,7 @@ pub enum Kind {
     Local,
     External,
     Owned(Ty),
+    Instance(Func),
     Builtin,
 }
 
@@ -862,21 +948,21 @@ impl Default for Kind {
 }
 
 #[derive(Clone, Copy, Default)]
-pub struct Signature {
-    //pub params: TyList,
+pub struct Sig {
+    pub params: TyList,
     pub call_conv: Span,
     pub args: TyList,
     pub ret: Ty,
 }
 
 pub struct SignatureDisplay<'a> {
-    pub sig: &'a Signature,
+    pub sig: &'a Sig,
     pub sources: &'a Sources,
     pub types: &'a Types,
 }
 
 impl<'a> SignatureDisplay<'a> {
-    pub fn new(sig: &'a Signature, sources: &'a Sources, types: &'a Types) -> Self {
+    pub fn new(sig: &'a Sig, sources: &'a Sources, types: &'a Types) -> Self {
         SignatureDisplay {
             sig,
             types,
@@ -888,7 +974,7 @@ impl<'a> SignatureDisplay<'a> {
 impl std::fmt::Display for SignatureDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(")?;
-        for (i, &ty) in self.types.cons.get(self.sig.args).iter().enumerate() {
+        for (i, &ty) in self.types.args.get(self.sig.args).iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
@@ -900,3 +986,4 @@ impl std::fmt::Display for SignatureDisplay<'_> {
 }
 
 lexer::gen_entity!(Func);
+lexer::gen_entity!(FuncList);

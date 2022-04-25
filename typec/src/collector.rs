@@ -1,5 +1,3 @@
-use std::vec;
-
 use cranelift_entity::{packed_option::ReservedValue, SecondaryMap};
 
 use crate::*;
@@ -9,6 +7,7 @@ use parser::*;
 
 pub struct Collector<'a> {
     pub nothing: Ty,
+    pub any: Ty,
     pub scope: &'a mut Scope,
     pub funcs: &'a mut Funcs,
     pub types: &'a mut Types,
@@ -73,7 +72,6 @@ impl<'a> Collector<'a> {
         });
 
         let funcs = {
-            let mut vec = vec![];
             for &func in self.ast.children(body) {
                 let func_id = self.funcs.push(func::Ent {
                     kind: func::Kind::Owned(slot),
@@ -81,9 +79,9 @@ impl<'a> Collector<'a> {
                 });
                 self.func_ast[func_id] = func;
                 bound_funcs.push(func_id);
-                vec.push(func_id);
+                self.types.funcs.push_one(func_id);
             }
-            self.types.funcs.list(&vec)
+            self.types.funcs.close_frame()
         };
 
         self.types.ents[slot].kind = ty::Kind::Bound(funcs);
@@ -130,11 +128,27 @@ impl<'a> Collector<'a> {
     fn collect_function(&mut self, prepared: Option<Func>, ast: Ast) -> errors::Result<Func> {
         let children = self.ast.children(ast);
         let current_span = self.ast.nodes[ast].span;
-        let &[call_conv, name, .., return_type, _body] = children else {
+        let &[generics, call_conv, name, .., return_type, _body] = children else {
             unreachable!();
         };
 
         let sig = {
+			self.scope.mark_frame();
+
+			let params = {
+				if !generics.is_reserved_value() {
+					for (i, &param) in self.ast.children(generics).iter().enumerate() {
+						let span = self.ast.nodes[param].span;
+						let str = self.sources.display(span);
+						let ty = self.types.get_parameter(i, span);
+						self.scope.push_item(str, scope::Item::new(ty, span));
+						self.types.args.push_one(ty);
+					}
+				}
+
+				self.types.args.close_frame()
+			};
+
             let args = {
                 for &ast in
                     &children[Parser::FUNCTION_ARG_START..children.len() - Parser::FUNCTION_ARG_END]
@@ -144,27 +158,32 @@ impl<'a> Collector<'a> {
                     let ty = children[amount];
                     let ty = self.parse_type(ty)?;
                     for _ in 0..amount {
-                        self.types.cons.push_one(ty);
+                        self.types.args.push_one(ty);
                     }
                 }
 
-                self.types.cons.close_frame()
+                self.types.args.close_frame()
             };
 
+			
             let ret = if return_type.is_reserved_value() {
                 self.nothing
             } else {
-                self.parse_type(return_type)?
+				self.parse_type(return_type)?
             };
-
-            let call_conv = if call_conv.is_reserved_value() {
+			
+			self.scope.pop_frame();
+            
+			let call_conv = if call_conv.is_reserved_value() {
                 Span::default()
             } else {
                 self.ast.nodes[call_conv].span
             };
 
-            Signature {
+
+            Sig {
                 call_conv,
+				params,
                 args,
                 ret,
             }

@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ops::Index};
 
-use cranelift_entity::EntityRef;
+use cranelift_entity::{EntityRef, packed_option::ReservedValue};
 
 #[derive(Clone, Debug)]
 pub struct StackMap<E: EntityRef, T, S: EntityRef = Unused> {
@@ -18,7 +18,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
-    pub fn push(&mut self, value: &[T]) -> E where T: Clone {
+    pub fn push(&mut self, value: &[T]) -> E where T: Clone, E: ReservedValue {
         self.data.extend_from_slice(value);
         self.close_frame()
     }
@@ -30,13 +30,24 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn get_iter(&self, id: E) -> impl Iterator<Item = (S, &T)> + Clone {
+        self.get(id)
+            .iter()
+            .enumerate()
+            .map(move |(i, v)| (S::new(i + id.index()), v))
+    }
+
     pub fn push_one(&mut self, value: T) -> S {
         let id = self.data.len();
         self.data.push(value);
         S::new(id)
     }
 
-    pub fn close_frame(&mut self) -> E {
+    pub fn close_frame(&mut self) -> E where E: ReservedValue {
+        if self.data.len() == self.indices[self.indices.len() - 1] as usize {
+            return E::reserved_value();
+        }
+
         let id = self.indices.len() - 1;
         self.indices.push(self.data.len() as u32);
         E::new(id)
@@ -58,14 +69,14 @@ impl<E: EntityRef, T, S: EntityRef> Index<S> for StackMap<E, T, S> {
 
 crate::gen_entity!(Unused);
 
-pub struct Stack<T> {
+pub struct FramedStack<T> {
     data: Vec<T>,
     frames: Vec<u32>,   
 }
 
-impl<T> Stack<T> {
+impl<T> FramedStack<T> {
     pub fn new() -> Self {
-        Stack {
+        FramedStack {
             data: Vec::new(),
             frames: vec![0],
         }
@@ -95,7 +106,7 @@ impl<T> Stack<T> {
         self.data.truncate(self.frames.pop().unwrap().clone() as usize);
     }
 
-    pub fn save_and_pop_frame<E: EntityRef>(&mut self, stack_map: &mut StackMap<E, T>) -> E where T: Clone {
+    pub fn save_and_pop_frame<E: EntityRef + ReservedValue, S: EntityRef>(&mut self, stack_map: &mut StackMap<E, T, S>) -> E where T: Clone {
         let id = stack_map.push(self.top_frame());
         self.pop_frame();
         id

@@ -2,13 +2,14 @@
 #![feature(let_else)]
 
 use cli::CmdInput;
+use cranelift_codegen::packed_option::ReservedValue;
 use std::str::FromStr;
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings::Flags;
 use cranelift_codegen::Context;
 use cranelift_entity::{SecondaryMap, EntitySet};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{Module, Linkage};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use gen::*;
 use instance::*;
@@ -38,7 +39,7 @@ pub fn compile() {
 
     // parser
     let mut ast = ast::Data::new();
-    let mut ast_temp = Stack::new();
+    let mut ast_temp = FramedStack::new();
 
     // modules
     let mut scope = Scope::new();
@@ -50,7 +51,7 @@ pub fn compile() {
     // errors
     let mut diagnostics = errors::Diagnostics::new();
     
-    let _scope_item_lexicon = {
+    let scope_item_lexicon = {
         let mut map = ItemLexicon::new();
 
         map.register::<module::Module>("module");
@@ -121,6 +122,7 @@ pub fn compile() {
     
     const NOTHING: Ty = Ty(0);
     const BOOL: Ty = Ty(1);
+    const ANY: Ty = Ty(2);
 
     let total_type_check;
 
@@ -130,6 +132,7 @@ pub fn compile() {
             let builtin_types = [
                 ("nothing", ty::Kind::Nothing),
                 ("bool", ty::Kind::Bool),
+                ("any", ty::Kind::Bound(Default::default())),
                 ("int", ty::Kind::Int(-1)),
                 ("i8", ty::Kind::Int(8)),
                 ("i16", ty::Kind::Int(16)),
@@ -165,12 +168,12 @@ pub fn compile() {
 
                     let span = builtin_source.make_span(&mut sources, name);
                     let sig = {
-                        let args = t_types.cons.push(&[ty]);
+                        let args = t_types.args.push(&[ty]);
                         let ret = ty;
-                        typec::Signature {
+                        typec::Sig {
                             args,
                             ret,
-                            call_conv: Span::default(),
+                            ..Default::default()
                         }
                     };
 
@@ -207,16 +210,16 @@ pub fn compile() {
 
                     let span = builtin_source.make_span(&mut sources, name);
                     let sig = {
-                        let args = t_types.cons.push(&[ty, ty]);
+                        let args = t_types.args.push(&[ty, ty]);
                         let ret = if "< > <= >= == !=".contains(name) {
                             BOOL
                         } else {
                             ty
                         };
-                        typec::Signature {
+                        typec::Sig {
                             args,
                             ret,
-                            call_conv: Span::default(),
+                            ..Default::default()
                         }
                     };
 
@@ -246,7 +249,7 @@ pub fn compile() {
 
         let mut type_ast = SecondaryMap::new();
         let mut func_ast = SecondaryMap::new();
-        let mut t_temp = Stack::new();
+        let mut t_temp = FramedStack::new();
 
         let total_type_check_now = std::time::Instant::now();
 
@@ -263,12 +266,14 @@ pub fn compile() {
             scope.dependencies.clear();
             if let Some(imports) = ModuleImports::new(&ast, &sources).imports() {
                 for import in imports {
-                    let name = sources.display(import.name);
-                    let &dep = module_map.get((name, module)).unwrap();
+                    let nick = sources.display(import.nick);
+                    let Some(&dep) = module_map.get((nick, module)) else {
+                        continue; // recovery, module might not exist due to previous recovery
+                    };
                     for item in modules[dep].items.iter() {
                         drop(scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()));
                     }
-                    scope.dependencies.push(modules[dep].source);
+                    scope.dependencies.push((modules[dep].source, import.nick));
                 }
             }
     
@@ -279,6 +284,7 @@ pub fn compile() {
     
             drop(Collector {
                 nothing: NOTHING,
+                any: ANY,
                 scope: &mut scope,
                 funcs: &mut t_funcs,
                 types: &mut t_types,
@@ -356,7 +362,7 @@ pub fn compile() {
         diagnostics
             .iter::<modules::Error>()
             .map(|errs| errs
-                .for_each(|err| panic!("{:?}", err))
+                .for_each(|err| drop(err.display(&sources, &scope_item_lexicon, &units, &modules, &mut errors)))
             );
 
         diagnostics
@@ -405,14 +411,29 @@ pub fn compile() {
     let mut has_sret = EntitySet::new();
     
     /* declare function headers */ {
+        let mut name_buffer = String::with_capacity(1024);
         for (id, ent) in t_funcs.iter() {
-            let name = sources.display(ent.name);
-            let linkage = match ent.kind {
-                typec::func::Kind::Local | typec::func::Kind::Owned(_) => Linkage::Export,
-                typec::func::Kind::Builtin => continue,
-                typec::func::Kind::External => Linkage::Import,
+            let Some(linkage) = gen::func_linkage(ent.kind) else {
+                continue;
             };
-    
+            
+            name_buffer.clear();
+            let popper = if let typec::func::Kind::Instance(_) = ent.kind {
+                let popper = t_types.push_params(ent.sig.params);
+                for (&param, &real_param) in t_types.active_params(&popper).iter().zip(t_types.args.get(ent.sig.params)) {
+                    types.ents[param] = types.ents[real_param];
+                }
+                ent.get_link_name(&t_types, &sources, &mut name_buffer);
+                Some(popper)
+            } else {
+                if !ent.sig.params.is_reserved_value() {
+                    continue;
+                }
+                ent.get_link_name(&t_types, &sources, &mut name_buffer);
+                None
+            };
+
+
             let returns_struct = instance::func::Translator::translate_signature(
                 &ent.sig,
                 &mut ctx.func.signature,
@@ -421,13 +442,17 @@ pub fn compile() {
                 system_call_convention,
             )
             .unwrap();
+
+            if let Some(popper) = popper {
+                t_types.pop_params(popper);
+            }
     
             if returns_struct {
                 has_sret.insert(id);
             }
     
             let func = module
-                .declare_function(name, linkage, &ctx.func.signature)
+                .declare_function(&name_buffer, linkage, &ctx.func.signature)
                 .unwrap();
     
             ctx.func.signature.clear(CallConv::Fast);
@@ -447,11 +472,26 @@ pub fn compile() {
         let mut ir_block_lookup = SecondaryMap::new();
         let mut tir_mapping = SecondaryMap::new();   
         
-        for (func, ent) in t_funcs.iter() {
-            if ent.kind != typec::func::Kind::Local {
+        for (id, ent) in t_funcs.iter() {
+            if gen::func_linkage(ent.kind).map(|l| l == Linkage::Import).unwrap_or(true) {
                 continue;
             }
-    
+
+            println!("{}", sources.display(ent.name));
+
+            let (popper, func) = if let typec::func::Kind::Instance(func) = ent.kind {
+                let popper = t_types.push_params(ent.sig.params);
+                for (&param, &real_param) in t_types.active_params(&popper).iter().zip(t_types.args.get(ent.sig.params)) {
+                    types.ents[param] = types.ents[real_param];
+                }
+                (Some(popper), func)
+            } else {
+                if !ent.sig.params.is_reserved_value() {
+                    continue;
+                }
+                (None, id)
+            };
+            
             let now = std::time::Instant::now();
             tir_mapping.clear();
             function.clear();
@@ -474,6 +514,9 @@ pub fn compile() {
             .unwrap();
             total_translation += now.elapsed();
 
+            if let Some(popper) = popper {
+                t_types.pop_params(popper);
+            }
     
             //println!("{}", mir::Display::new(&sources, &function, &t_types));
             let now = std::time::Instant::now();
@@ -492,13 +535,14 @@ pub fn compile() {
                 t_functions: &t_funcs,
                 types: &types,
                 variable_set: &mut variable_set,
+                t_types: &t_types,
             }
             .generate();
             total_generation += now.elapsed();
 
             //println!("{}", ctx.func.display());
             
-            let id = func_lookup[func].unwrap();
+            let id = func_lookup[id].unwrap();
 
             let now = std::time::Instant::now();
             module.define_function(id, &mut ctx).unwrap();

@@ -1,13 +1,13 @@
 file = open("bench_project/root.mf", "w")
-file.write("fn main() -> int { ret 0 }")
+file.write("fn main() -> int { return 0 }")
 for i in range(10000):
     file.write(f"""
     fn other{i}(a: int, b: int, c: int) -> int {{
-        ret a + b * c
+        return a + b * c
     }}
 
     fn bti{i}(b: bool) -> int {{
-        ret if b {{ 1 }} else {{ 0 }}
+        return if b {{ 1 }} else {{ 0 }}
     }}
 
     fn structure_test{i}() -> int {{
@@ -24,7 +24,7 @@ for i in range(10000):
         let something_else = init_something_else{i}()
 
         if something.e {{}} else {{
-            ret -1
+            return -1
         }}
 
         something.a - bti{i}(something.b.e) + -bti{i}(something_else.f)

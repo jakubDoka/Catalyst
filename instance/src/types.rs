@@ -26,33 +26,41 @@ impl<'a> TypeTranslator<'a> {
 
         self.types.ents.resize(self.t_types.ents.len());
         for id in order {
-            let ty = &self.t_types.ents[id];
-            let repr = match ty.kind {
-                ty::Kind::Int(base) => match base {
-                    64 => ir::types::I64,
-                    32 => ir::types::I32,
-                    16 => ir::types::I16,
-                    8 => ir::types::I8,
-                    _ => self.ptr_ty,
-                },
-                ty::Kind::Bool => ir::types::B1,
-                ty::Kind::Struct(fields) => {
-                    self.translate_struct(id, fields)?;
-                    continue;
-                }
-                ty::Kind::Nothing | ty::Kind::Bound(..) => ir::types::INVALID,
-                ty::Kind::Unresolved => unreachable!(),
-            };
-
-            let bytes = repr.bytes() as i32;
-            let size = Size::new(bytes, bytes);
-            self.types.ents[id] = Ent {
-                repr,
-                size,
-                flags: Flags::COPYABLE,
-                align: size.min(Size::PTR),
-            };
+            self.translate_specific(id)?;
         }
+        Ok(())
+    }
+
+    pub fn translate_specific(&mut self, id: Ty) -> Result {
+        let ty = &self.t_types.ents[id];
+        let repr = match ty.kind {
+            ty::Kind::Int(base) => match base {
+                64 => ir::types::I64,
+                32 => ir::types::I32,
+                16 => ir::types::I16,
+                8 => ir::types::I8,
+                _ => self.ptr_ty,
+            },
+            ty::Kind::Bool => ir::types::B1,
+            ty::Kind::Struct(fields) => {
+                self.translate_struct(id, fields)?;
+                return Ok(());
+            }
+            ty::Kind::Nothing 
+            | ty::Kind::Bound(..) 
+            | ty::Kind::Param(_) => ir::types::INVALID,
+            ty::Kind::Unresolved => unreachable!(),
+        };
+
+        let bytes = repr.bytes() as i32;
+        let size = Size::new(bytes, bytes);
+        self.types.ents[id] = Ent {
+            repr,
+            size,
+            flags: Flags::COPYABLE,
+            align: size.min(Size::PTR),
+        };
+
         Ok(())
     }
 

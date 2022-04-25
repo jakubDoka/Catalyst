@@ -32,7 +32,7 @@ impl<'a> Loader<'a> {
         let slot = self.units.push(unit::Ent::new());
         self.ctx.map.insert(root.as_path(), slot);
 
-        self.ctx.frontier.push_back((root, Span::default(), slot));
+        self.ctx.frontier.push_back((root, None, slot));
 
         while let Some((path, span, slot)) = self.ctx.frontier.pop_front() {
             self.ctx.buffer.clear();
@@ -99,7 +99,7 @@ impl<'a> Loader<'a> {
                     } else {
                         let id = self.units.push(unit::Ent::new());
                         self.ctx.map.insert(path.as_path(), id);
-                        self.ctx.frontier.push_back((path, path_span, id));
+                        self.ctx.frontier.push_back((path, Some(path_span), id));
                         id
                     };
 
@@ -188,10 +188,10 @@ pub struct LoaderContext {
     pub mf_root: PathBuf,
     pub graph: GenericGraph,
     pub buffer: PathBuf,
-    pub frontier: VecDeque<(PathBuf, Span, Unit)>,
+    pub frontier: VecDeque<(PathBuf, Option<Span>, Unit)>,
     pub map: Map<Unit>,
     pub ast: ast::Data,
-    pub ast_temp: Stack<Ast>,
+    pub ast_temp: FramedStack<Ast>,
 }
 
 impl LoaderContext {
@@ -206,7 +206,7 @@ impl LoaderContext {
             frontier: VecDeque::new(),
             map: Map::new(),
             ast: ast::Data::new(),
-            ast_temp: Stack::new(),
+            ast_temp: FramedStack::new(),
         }
     }
 
