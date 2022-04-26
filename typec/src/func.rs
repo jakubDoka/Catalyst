@@ -23,6 +23,7 @@ pub struct Builder<'a> {
     pub temp: &'a mut FramedStack<Tir>,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
+    pub modules: &'a Modules,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
@@ -44,6 +45,10 @@ impl<'a> Builder<'a> {
         }
 
         self.scope.mark_frame();
+        if let func::Kind::Owned(ty) = func_ent.kind {
+            let span = self.ast.nodes[ast].span;
+            self.scope.push_item("Self", scope::Item::new(ty, span));
+        }
 
         if !generics.is_reserved_value() {
             for (i, &ty) in self.ast.children(generics).iter().enumerate() {
@@ -158,6 +163,7 @@ impl<'a> Builder<'a> {
             ast::Kind::Return => self.build_return(ast)?,
             ast::Kind::Int(width) => self.build_int(ast, width)?,
             ast::Kind::Bool(value) => self.build_bool(ast, value)?,
+            ast::Kind::Char => self.build_char(ast)?,
             ast::Kind::Variable(mutable) => self.build_variable(mutable, ast)?,
             ast::Kind::Constructor => self.build_constructor(ast)?,
             ast::Kind::DotExpr => self.build_dot_expr(ast)?,
@@ -172,6 +178,12 @@ impl<'a> Builder<'a> {
             ),
         };
         Ok(expr)
+    }
+
+    fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let span = self.ast.nodes[ast].span;
+        let ent = tir::Ent::new(tir::Kind::CharLit, self.types.builtin.char, span);
+        Ok(self.body.ents.push(ent))
     }
 
     fn build_unary(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -320,23 +332,16 @@ impl<'a> Builder<'a> {
 
             let expr = self.build_expr(expr)?;
             args.push(expr);
+            let ty = self.body.ents[expr].ty;
 
             let span = self.ast.nodes[name].span;
-            let name_id = {
-                let str = self.sources.display(span);
-                ID::new(str)
-            };
+            let name_id = self.ident_id(name, Some(ty))?;
 
-            let ty_id = {
-                let ty = self.body.ents[expr].ty;
-                self.types.ents[ty].id
-            };
-
-            (Self::func_id(ty_id, name_id), span)
+            (name_id, span)
         } else {
             let span = self.ast.nodes[caller].span;
-            let str = self.sources.display(span);
-            (ID::new(str), span)
+            let name_id = self.ident_id(caller, None)?;
+            (name_id, span)
         };
 
         // TODO: Handle function pointer as field
@@ -452,6 +457,96 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
+    fn ident_id(&mut self, ast: Ast, owner: Option<Ty>) -> errors::Result<ID> {
+        let children = self.ast.children(ast);
+        match (children, owner) {
+            (&[module, _, item], None) | (&[module, item], Some(_)) => {
+                let module_id = {
+                    let span = self.ast.nodes[module].span;
+                    let id = {
+                        let str = self.sources.display(span);
+                        ID::new(str)
+                    };
+
+                    let module = self.scope.get::<Module>(self.diagnostics, id, span)?;
+                    let source = self.modules[module].source;
+                    ID::from(source)
+                };
+                
+                let id = {
+                    let name = {
+                        let span = self.ast.nodes[item].span;
+                        let str = self.sources.display(span);
+                        ID::new(str)
+                    };
+                    
+                    let ty = { 
+                        let ty = if let Some(owner) = owner {
+                            owner
+                        } else {
+                            let span = self.ast.nodes[item].span;
+                            let id = {
+                                let str = self.sources.display(span);
+                                ID::new(str)
+                            };
+                            self.scope.get::<Ty>(self.diagnostics, id, span)?
+                        };
+
+                        self.types.ents[ty].id
+                    };
+
+                    Self::owned_func_id(ty, name)
+                };
+
+                Ok(id + module_id)
+            }
+            (&[module_or_type, item], None) => {
+                let item_id = {
+                    let span = self.ast.nodes[item].span;
+                    let str = self.sources.display(span);
+                    ID::new(str)
+                };
+
+                
+                let span = self.ast.nodes[module_or_type].span;
+                let id = {
+                    let str = self.sources.display(span);
+                    ID::new(str)
+                };
+
+                Ok(if let Some(module) = self.scope.may_get::<Module>(self.diagnostics, id, span)? {
+                    let source = self.modules[module].source;
+                    item_id + ID::from(source)
+                } else {
+                    let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
+                    Self::owned_func_id(self.types.ents[ty].id, item_id)
+                })
+            }
+            (&[], None) => {
+                let span = self.ast.nodes[ast].span;
+                let str = self.sources.display(span);
+                return Ok(ID::new(str));
+            }
+            (&[], Some(ty)) => {
+                let name = {
+                    let span = self.ast.nodes[ast].span;
+                    let str = self.sources.display(span);
+                    ID::new(str)
+                };
+
+                let ty = self.types.ents[ty].id;
+                Ok(Self::owned_func_id(ty, name))
+            }
+            _ => {
+                self.diagnostics.push(Error::InvalidPath {
+                    loc: self.ast.nodes[ast].span,
+                });
+                Err(())
+            },
+        }
+
+    }
+
     fn build_dot_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[header, field] = self.ast.children(ast) else {
             unreachable!();
@@ -496,8 +591,8 @@ impl<'a> Builder<'a> {
 
         let span = self.ast.nodes[name].span;
         let ty = {
-            let str = self.sources.display(span);
-            self.scope.get::<Ty>(self.diagnostics, str, span)?
+            let id = self.ident_id(name, None)?;
+            self.scope.get::<Ty>(self.diagnostics, id, span)?
         };
 
         self.build_constructor_low(ty, body)
@@ -892,7 +987,7 @@ impl<'a> Builder<'a> {
         ID::new("<binary>") + left + op
     }
 
-    pub fn func_id(ty: ID, name: ID) -> ID {
+    pub fn owned_func_id(ty: ID, name: ID) -> ID {
         ty + name
     }
 }
@@ -911,6 +1006,7 @@ pub struct Ent {
     pub body: Tir,
     pub args: TirList,
     pub id: ID,
+    pub flags: Flags,
 }
 
 impl Ent {
@@ -931,6 +1027,16 @@ impl Ent {
         }
     }
 }
+
+bitflags::bitflags! {
+    #[derive(Default)]
+    pub struct Flags: u32 {
+        const ENTRY = 1 << 0;
+        const GENERIC = 1 << 1;
+    }
+}
+
+crate::impl_bool_bit_and!(Flags);
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Kind {

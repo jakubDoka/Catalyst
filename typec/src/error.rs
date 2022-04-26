@@ -5,6 +5,14 @@ use crate::*;
 
 
 pub enum Error {
+    GenericEntry {
+        tag: Span,
+        generics: Span,
+        loc: Span,
+    },
+    InvalidPath {
+        loc: Span,
+    },
     BinaryOperatorNotFound {
         left_ty: Ty,
         right_ty: Ty,
@@ -94,6 +102,39 @@ impl Error {
     pub fn display(&self, sources: &Sources, types: &Types, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
+            Error::GenericEntry { tag, generics, loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to, 
+                    &|to| {
+                        write!(to, "function cannot be both entry point and generic")
+                    }
+                )?;
+                tag.loc_to(sources, to)?;
+                tag.underline_to(
+                    Palette::info().bold(), 
+                    '~', 
+                    sources, 
+                    to, 
+                    &|to| {
+                        write!(to, "consider removing this")
+                    }
+                )?;
+                generics.loc_to(sources, to)?;
+                generics.underline_to(
+                    Palette::info().bold(), 
+                    '~',
+                    sources, 
+                    to,
+                    &|to| {
+                        write!(to, "or removing this")
+                    }
+                )?;
+                writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
+            },
             Error::ReturnTypeMismatch { because, expected, got, loc } => {
                 loc.loc_to(sources, to)?;
                 loc.underline_to(
@@ -409,6 +450,19 @@ impl Error {
                     sources.display(loc),
                     ty::Display::new(types, sources, right_ty)
                 )
+            },
+            Error::InvalidPath { loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to,
+                    &|to| {
+                        write!(to, "invalid path syntax")
+                    }
+                )?;
+                writeln!(to, "|> possible syntaxes: '<module>::<item>' '<module>::<type>::<item>'")?;
             },
             #[allow(unused)]
             Error::OperatorArgCountMismatch { because, expected, got, loc } => todo!(),

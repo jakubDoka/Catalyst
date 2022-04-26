@@ -1,5 +1,3 @@
-use std::iter::Inspect;
-
 use crate::*;
 use cranelift_entity::{
     packed_option::{ReservedValue, PackedOption},
@@ -99,19 +97,29 @@ pub struct Types {
     pub args: StackMap<TyList, Ty>,
     pub sfield_lookup: Map<SFieldRef>,
     pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
+    pub builtin: BuiltinTable,
     params: Vec<Ty>,
 }
 
 impl Types {
-    pub fn new() -> Self {
-        Types {
+    pub fn new(graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) -> Self {
+        let mut tys = Types {
             funcs: StackMap::new(),
             ents: PrimaryMap::new(),
             args: StackMap::new(),
             sfield_lookup: Map::new(),
             sfields: StackMap::new(),
+            builtin: BuiltinTable::new(),
             params: Vec::new(),
-        }
+        };
+
+        tys.init(graph, sources, builtin_source);
+
+        tys
+    }
+
+    fn init(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
+        self.init_builtin_table(graph, sources, builtin_source);
     }
 
     pub fn active_params(&self, popper: &InstancePopper) -> &[Ty] {
@@ -152,6 +160,65 @@ impl Types {
         let ty = self.params[i];
         self.ents[ty].name = name;
         ty
+    }
+}
+
+macro_rules! gen_builtin_table {
+    ($($name:ident: $repr:expr,)*) => {
+        #[derive(Default)]
+        pub struct BuiltinTable {
+            $(
+                pub $name: Ty,
+            )*
+        }
+
+        impl BuiltinTable {
+            pub fn all(&self) -> [Ty; 8] {
+                [$(self.$name),*]
+            }
+        }
+
+        impl Types {
+            pub fn init_builtin_table(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
+                $(
+                    let ent = Ent {
+                        id: ID::new(stringify!($name)),
+                        name: builtin_source.make_span(sources, stringify!($name)),
+                        kind: $repr,
+                    };
+                    let ty = self.ents.push(ent);
+                    graph.close_node();
+                    self.builtin.$name = ty;
+                )*
+            }
+        }
+    };
+}
+
+impl BuiltinTable {
+    pub fn signed_integers(&self) -> [Ty; 5] {
+        [self.i8, self.i16, self.i32, self.i64, self.int]
+    }
+
+    pub fn integers(&self) -> [Ty; 5] {
+        [self.i8, self.i16, self.i32, self.i64, self.int]
+    }
+}
+
+gen_builtin_table!(
+    nothing: ty::Kind::Nothing,
+    bool: ty::Kind::Bool,
+    char: ty::Kind::Int(32),
+    int: ty::Kind::Int(-1),
+    i8: ty::Kind::Int(8),
+    i16: ty::Kind::Int(16),
+    i32: ty::Kind::Int(32),
+    i64: ty::Kind::Int(64),
+);
+
+impl BuiltinTable {
+    pub fn new() -> Self {
+        BuiltinTable::default()
     }
 }
 
@@ -210,7 +277,7 @@ impl ReservedValue for SFieldEnt {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct Ent {
     pub id: ID,
     pub name: Span,
@@ -273,19 +340,15 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(..) | Kind::Bound(..) |  Kind::Param(..) => {
+            Kind::Struct(..) 
+            | Kind::Bound(..) 
+            | Kind::Param(..)
+            | Kind::Int(..)
+            | Kind::Nothing
+            | Kind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
             }
-            Kind::Int(base) => {
-                if base > 0 {
-                    write!(to, "i{}", base)?;
-                } else {
-                    write!(to, "int")?;
-                }
-            }
-            Kind::Bool => write!(to, "bool")?,
-            Kind::Nothing => write!(to, "nothing")?,
             Kind::Unresolved => write!(to, "unresolved")?,
         }
 

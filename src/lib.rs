@@ -17,8 +17,7 @@ use lexer::*;
 use modules::*;
 use parser::*;
 use typec::*;
-use std::process::Command;
-use std::{collections::VecDeque, path::Path};
+use std::{collections::VecDeque, path::Path, fmt::Write};
 
 /// compiles the catalyst source code, taking command like args as input,
 /// complete compilation only works on windows with msvc and you have to invoke
@@ -99,7 +98,7 @@ pub fn compile() {
         module_order
     };
 
-    let isa = {
+    let (isa, triple) = {
         let setting_builder = cranelift_codegen::settings::builder();
         let flags = Flags::new(setting_builder);
     
@@ -109,16 +108,20 @@ pub fn compile() {
                 || target_lexicon::Triple::host(), 
                 |target| target_lexicon::triple!(target),     
             );
-        cranelift_codegen::isa::lookup(target_triple)
-            .unwrap()
-            .finish(flags)
-            .unwrap()
+        
+        (
+            cranelift_codegen::isa::lookup(target_triple.clone())
+                .unwrap()
+                .finish(flags)
+                .unwrap(),
+            target_triple,
+        )
     };
 
     // typec
-    let mut t_types = typec::Types::new();
-    let mut t_funcs = typec::Funcs::new();
     let mut t_graph = GenericGraph::new();
+    let mut t_types = typec::Types::new(&mut t_graph, &mut sources, &mut builtin_source);
+    let mut t_funcs = typec::Funcs::new();
     
     const NOTHING: Ty = Ty(0);
     const BOOL: Ty = Ty(1);
@@ -128,128 +131,12 @@ pub fn compile() {
 
     let mut bodies = SecondaryMap::new();
     /* perform type checking and build tir */ {
-        let builtin_items: Vec<module::Item> = {
-            let builtin_types = [
-                ("nothing", ty::Kind::Nothing),
-                ("bool", ty::Kind::Bool),
-                ("any", ty::Kind::Bound(Default::default())),
-                ("int", ty::Kind::Int(-1)),
-                ("i8", ty::Kind::Int(8)),
-                ("i16", ty::Kind::Int(16)),
-                ("i32", ty::Kind::Int(32)),
-                ("i64", ty::Kind::Int(64)),
-            ];
-
-            let mut vec = vec![];
-
-            for (name, kind) in builtin_types {
-                let span = builtin_source.make_span(&mut sources, name);
-                let id = name.into();
-
-                let ty = {
-                    let ent = ty::Ent::new(kind, id);
-                    t_graph.close_node();
-                    t_types.ents.push(ent)
-                };
-
-                let item = module::Item::new(id, ty, span);
-                vec.push(item);
-
-                for name in "-".split(' ') {
-                    match kind {
-                        ty::Kind::Bool if !"".contains(name) => {
-                            continue;
-                        }
-                        ty::Kind::Int(_) if !"-".contains(name) => {
-                            continue;
-                        }
-                        _ => {}
-                    }
-
-                    let span = builtin_source.make_span(&mut sources, name);
-                    let sig = {
-                        let args = t_types.args.push(&[ty]);
-                        let ret = ty;
-                        typec::Sig {
-                            args,
-                            ret,
-                            ..Default::default()
-                        }
-                    };
-
-                    let id = {
-                        let name = sources.display(span);
-                        typec::func::Builder::unary_id(id, ID::new(name))
-                    };
-
-                    let func = {
-                        let ent = typec::func::Ent {
-                            sig,
-                            name: span,
-                            id,
-                            kind: typec::func::Kind::Builtin,
-                            ..Default::default()
-                        };
-                        t_funcs.push(ent)
-                    };
-
-                    let item = module::Item::new(id, func, span);
-                    vec.push(item);
-                }
-
-                for name in "+ - * / < > <= >= == !=".split(' ') {
-                    match kind {
-                        ty::Kind::Bool if !"".contains(name) => {
-                            continue;
-                        }
-                        ty::Kind::Int(_) if !"+ - * / < > <= >= == !=".contains(name) => {
-                            continue;
-                        }
-                        _ => {}
-                    }
-
-                    let span = builtin_source.make_span(&mut sources, name);
-                    let sig = {
-                        let args = t_types.args.push(&[ty, ty]);
-                        let ret = if "< > <= >= == !=".contains(name) {
-                            BOOL
-                        } else {
-                            ty
-                        };
-                        typec::Sig {
-                            args,
-                            ret,
-                            ..Default::default()
-                        }
-                    };
-
-                    let id = {
-                        let name = sources.display(span);
-                        typec::func::Builder::binary_id(id, ID::new(name))
-                    };
-
-                    let func = {
-                        let ent = typec::func::Ent {
-                            sig,
-                            name: span,
-                            id,
-                            kind: typec::func::Kind::Builtin,
-                            ..Default::default()
-                        };
-                        t_funcs.push(ent)
-                    };
-
-                    let item = module::Item::new(id, func, span);
-                    vec.push(item);
-                }
-            }
-
-            vec
-        };
+        let builtin_items = typec::create_builtin_items(&mut t_types, &mut t_funcs, &mut sources, &mut builtin_source);
 
         let mut type_ast = SecondaryMap::new();
         let mut func_ast = SecondaryMap::new();
         let mut t_temp = FramedStack::new();
+        let mut c_ctx = collector::Context::new();
 
         let total_type_check_now = std::time::Instant::now();
 
@@ -270,6 +157,7 @@ pub fn compile() {
                     let Some(&dep) = module_map.get((nick, module)) else {
                         continue; // recovery, module might not exist due to previous recovery
                     };
+                    scope.insert(&mut diagnostics, source, nick, scope::Item::new(dep, import.nick)).unwrap();
                     for item in modules[dep].items.iter() {
                         drop(scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()));
                     }
@@ -294,6 +182,7 @@ pub fn compile() {
                 ast: &ast,
                 type_ast: &mut type_ast,
                 module,
+                ctx: &mut c_ctx,
                 diagnostics: &mut diagnostics,
             }
             .collect_items(ast.elements()));
@@ -334,6 +223,7 @@ pub fn compile() {
                     func_ast: &func_ast,
                     body: &mut bodies[func],
                     temp: &mut t_temp,
+                    modules: &modules,
                     diagnostics: &mut diagnostics,
                 }
                 .build().is_err()) {
@@ -356,19 +246,19 @@ pub fn compile() {
         diagnostics
             .iter::<parser::Error>()
             .map(|errs| errs
-                .for_each(|err| drop(err.display(&sources, &mut errors)))
+                .for_each(|err| err.display(&sources, &mut errors).unwrap())
             );
         
         diagnostics
             .iter::<modules::Error>()
             .map(|errs| errs
-                .for_each(|err| drop(err.display(&sources, &scope_item_lexicon, &units, &modules, &mut errors)))
+                .for_each(|err| err.display(&sources, &scope_item_lexicon, &units, &modules, &mut errors).unwrap())
             );
 
         diagnostics
             .iter::<typec::Error>()
             .map(|errs| errs
-                .for_each(|err| drop(err.display(&sources, &t_types, &mut errors)))
+                .for_each(|err| err.display(&sources, &t_types, &mut errors).unwrap())
             );
 
         errors
@@ -409,6 +299,7 @@ pub fn compile() {
     
     let mut func_lookup = SecondaryMap::new();
     let mut has_sret = EntitySet::new();
+    let mut seen_entry = false;
     
     /* declare function headers */ {
         let mut name_buffer = String::with_capacity(1024);
@@ -417,29 +308,40 @@ pub fn compile() {
                 continue;
             };
             
-            name_buffer.clear();
             let popper = if let typec::func::Kind::Instance(_) = ent.kind {
                 let popper = t_types.push_params(ent.sig.params);
                 for (&param, &real_param) in t_types.active_params(&popper).iter().zip(t_types.args.get(ent.sig.params)) {
                     types.ents[param] = types.ents[real_param];
                 }
-                ent.get_link_name(&t_types, &sources, &mut name_buffer);
                 Some(popper)
             } else {
                 if !ent.sig.params.is_reserved_value() {
                     continue;
                 }
-                ent.get_link_name(&t_types, &sources, &mut name_buffer);
                 None
             };
 
+            name_buffer.clear();
+            if ent.flags.contains(typec::func::Flags::ENTRY) {
+                name_buffer.push_str("main");
+                if seen_entry {
+                    todo!("emit error since multiple entries in executable cannot exist")
+                }
+                seen_entry = true;
+            } else if linkage == Linkage::Import {
+                name_buffer.push_str(sources.display(ent.name));
+            } else {
+                write!(name_buffer, "{}", id.0).unwrap();
+            }
 
             let returns_struct = instance::func::Translator::translate_signature(
                 &ent.sig,
                 &mut ctx.func.signature,
                 &types,
                 &t_types,
+                &sources,
                 system_call_convention,
+                ent.flags.contains(typec::func::Flags::ENTRY),
             )
             .unwrap();
 
@@ -463,7 +365,7 @@ pub fn compile() {
 
     let mut total_definition = std::time::Duration::new(0, 0); 
     let mut total_translation = std::time::Duration::new(0, 0); 
-    let mut total_generation = std::time::Duration::new(0, 0); 
+    let mut total_generation = std::time::Duration::new(0, 0);
 
     /* define */ {
         let mut variable_set = EntitySet::new();
@@ -476,8 +378,6 @@ pub fn compile() {
             if gen::func_linkage(ent.kind).map(|l| l == Linkage::Import).unwrap_or(true) {
                 continue;
             }
-
-            println!("{}", sources.display(ent.name));
 
             let (popper, func) = if let typec::func::Kind::Instance(func) = ent.kind {
                 let popper = t_types.push_params(ent.sig.params);
@@ -540,7 +440,7 @@ pub fn compile() {
             .generate();
             total_generation += now.elapsed();
 
-            //println!("{}", ctx.func.display());
+            println!("{}", ctx.func.display());
             
             let id = func_lookup[id].unwrap();
 
@@ -564,12 +464,20 @@ pub fn compile() {
         return;
     }
 
-    let linker = input.field("linker").unwrap_or("link");
-    let status = Command::new(linker)
+    // does not work, Why?
+    // let status = cc::windows_registry::find(&triple.to_string(), "link.exe")
+    //     .unwrap()
+    //     .arg("catalyst.o")
+    //     .arg("libcmt.lib")
+    //     .arg("libucrt.lib")
+    //     .arg("/entry:main")
+    //     .status()
+    //     .unwrap();
+    
+    let status = cc::windows_registry::find(&triple.to_string(), "link.exe")
+        .unwrap()
         .arg("catalyst.o")
-        .arg("libvcruntime.lib")
-        .arg("libcmt.lib")
-        .arg("libucrt.lib")
+        .arg("ucrt.lib")
         .arg("/entry:main")
         .status()
         .unwrap();

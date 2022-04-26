@@ -99,6 +99,12 @@ impl<'a> Lexer<'a> {
 
                 ',' => token::Kind::Comma,
                 '.' => token::Kind::Dot,
+                '\'' => {
+                    while let Some(true) = self.next().map(|c| c != '\'') {}
+                    token::Kind::Char
+                }
+
+                '#' => token::Kind::Hash,
 
                 '0'..='9' => {
                     while let Some('0'..='9') = self.peek() {
@@ -171,6 +177,7 @@ impl<'a> Lexer<'a> {
                         "struct" => token::Kind::Struct,
                         "bound" => token::Kind::Bound,
                         "mut" => token::Kind::Mut,
+                        "impl" => token::Kind::Impl,
                         _ => token::Kind::Ident,
                     }
                 }
@@ -226,6 +233,21 @@ pub fn int_value(sources: &Sources, span: Span) -> u64 {
         None => return value,
         _ => todo!("unhandled int literal {:?}", sources.display(span)),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CharError {
+    ExtraCharacters,
+    NoCharacter,
+}
+
+pub fn char_value(sources: &Sources, span: Span) -> Result<char, CharError> {
+    let mut chars = sources.display(span.strip_sides()).chars();
+    let char = chars.next().ok_or(CharError::NoCharacter)?;
+    if chars.next().is_some() {
+        return Err(CharError::ExtraCharacters);
+    }
+    Ok(char)
 }
 
 impl IsOperator for char {

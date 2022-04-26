@@ -12,6 +12,7 @@
         "funcs",
         "iconst",
         "insts",
+        "putchar",
         "repr",
         "rfind",
         "sfield",

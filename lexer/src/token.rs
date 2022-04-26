@@ -57,7 +57,7 @@ gen_kind!(
     Struct = "'struct'",
     Bound = "'bound'",
     Mut = "'mut'",
-
+    Impl = "'impl'",
 
     Ident = "<ident>",
     Operator = "<operator>",
@@ -65,6 +65,7 @@ gen_kind!(
     Int(i16) = "<int>",
     String = "<string>",
     Bool(bool) = "<bool>",
+    Char = "<char>",
 
     LeftCurly = "'{'",
     RightCurly = "'}'",
@@ -80,6 +81,8 @@ gen_kind!(
     Dot = "'.'",
     RightArrow = "'->'",
     DoubleColon = "'::'",
+
+    Hash = "'#'",
 
     NewLine = "'\\n' | ';'",
 

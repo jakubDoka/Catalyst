@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use cranelift_codegen::ir::Type;
 use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
@@ -26,14 +28,16 @@ pub struct Translator<'a> {
 
 impl Translator<'_> {
     pub fn translate_func(&mut self) -> Result {
-        let func::Ent { sig, body, args, .. } = self.t_funcs[self.func_id];
+        let func::Ent { sig, body, args, flags, .. } = self.t_funcs[self.func_id];
         
         let has_sret = Self::translate_signature(
             &sig, 
             &mut self.func.sig, 
-            self.types, 
+            self.types,
             self.t_types, 
-            self.system_call_convention
+            self.sources,
+            self.system_call_convention,
+            flags.contains(typec::func::Flags::ENTRY),
         )?;
         
         
@@ -53,8 +57,6 @@ impl Translator<'_> {
             self.func.blocks[entry_point].params = self.func.value_slices.close_frame();
         }
         self.func.select_block(entry_point);
-
-        println!("{}", self.sources.display(self.t_funcs[self.func_id].name));
 
         let value = self.translate_block(body, self.return_dest)?;
 
@@ -98,8 +100,6 @@ impl Translator<'_> {
             tir::Kind::Return(value) => self.translate_return(value.expand())?,
             tir::Kind::Call(func, args) => self.translate_call(func, tir, args, dest)?,
             tir::Kind::If(cons, then, otherwise) => self.translate_if(cons, then, otherwise, ty, dest)?,
-            tir::Kind::IntLit(_) => self.translate_int_lit(ty, span, dest)?,
-            tir::Kind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
             tir::Kind::Variable(value) => self.translate_variable(value)?,
             tir::Kind::Constructor(data) => self.translate_constructor(ty, data, dest)?,
             tir::Kind::FieldAccess(value, field) => self.translate_field_access(value, field, dest)?,
@@ -108,12 +108,35 @@ impl Translator<'_> {
             tir::Kind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
             tir::Kind::Assign(a, b) => self.translate_assign(a, b)?,
             tir::Kind::Access(value) => self.translate_expr(value, dest)?,
+            tir::Kind::IntLit(_) => self.translate_int_lit(ty, span, dest)?,
+            tir::Kind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
+            tir::Kind::CharLit => self.translate_char_lit(ty, span, dest)?,
             _ => todo!("Unhandled tir::Kind:{:?}", kind),
         };
 
         self.tir_mapping[tir] = value.into();
 
         Ok(value)
+    }
+
+    pub fn translate_char_lit(&mut self, ty: Ty, span: Span, dest: Option<Value>) -> Result<Option<Value>> {
+        let literal = lexer::char_value(self.sources, span).unwrap() as u64;
+
+        let value = self.value_from_ty(ty);
+
+        {
+            let kind = InstKind::IntLit(literal);
+            let ent = InstEnt::new(kind, value.into());
+            self.func.add_inst(ent);
+        }
+
+        if let Some(dest) = dest {
+            let kind = InstKind::Assign(value);
+            let ent = InstEnt::new(kind, dest.into());
+            self.func.add_inst(ent);
+        }
+
+        Ok(Some(value))
     }
 
     fn translate_assign(&mut self, a: Tir, b: Tir) -> Result<Option<Value>> {
@@ -277,12 +300,11 @@ impl Translator<'_> {
             let Some(&types::Field { offset }) = self.types.fields.get(id) else {
                 unreachable!()
             };
-            
 
             let dest = {
                 let of_value = {
                     let mut value = self.func.values[value];
-                    value.offset = offset;    
+                    value.offset = value.offset + offset;    
                     self.func.values.push(value)
                 };
 
@@ -524,9 +546,25 @@ impl Translator<'_> {
         target: &mut ir::Signature,
         types: &Types,
         t_types: &typec::Types,
+        sources: &Sources,
         system_call_convention: CallConv,
+        is_entry: bool,
     ) -> Result<bool> {
-        target.clear(system_call_convention);
+        let call_conv = if is_entry {
+            system_call_convention
+        } else if source.call_conv.is_reserved_value() {
+            CallConv::Fast
+        } else {
+            let str = sources.display(source.call_conv.strip_sides());
+            if str == "default" {
+                system_call_convention
+            } else {
+                let cc = CallConv::from_str(str);
+                // TODO: error handling
+                cc.unwrap_or(CallConv::Fast)
+            }
+        };
+        target.clear(call_conv);
         
         let mut result = false;
         if ty::Kind::Nothing != t_types.ents[source.ret].kind {

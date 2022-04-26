@@ -67,6 +67,7 @@ pub enum Kind {
     Call(Func, TirList),
     IntLit(i16),
     BoolLit(bool),
+    CharLit,
     Invalid,
 }
 
@@ -218,10 +219,9 @@ impl<'a> Display<'a> {
 
                 write!(f, ")")?;
             }
-            Kind::IntLit(_) => {
-                write!(f, "{}", self.sources.display(ent.span))?;
-            }
-            Kind::BoolLit(_) => {
+            Kind::IntLit(..)
+            | Kind::CharLit
+            | Kind::BoolLit(_) => {
                 write!(f, "{}", self.sources.display(ent.span))?;
             }
             Kind::Loop(block) => {

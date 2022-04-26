@@ -2,3 +2,25 @@
 fn [T] move_in_and_out(arg: T) -> T {
     arg
 }
+
+struct Goo {
+    field: int
+}
+
+impl Goo {
+    fn new() -> Self {
+        Self::{
+            field: 0
+        }
+    }
+
+    fn field(s: Self) -> int {
+        s.field
+    }
+}
+
+/*
+    fn bti(b: bool) -> int {
+        return if b { 1 } else { 0 }
+    }
+*/

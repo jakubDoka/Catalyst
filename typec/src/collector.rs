@@ -1,6 +1,6 @@
 use cranelift_entity::{packed_option::ReservedValue, SecondaryMap};
 
-use crate::*;
+use crate::{*, Error};
 use lexer::*;
 use modules::*;
 use parser::*;
@@ -17,34 +17,49 @@ pub struct Collector<'a> {
     pub type_ast: &'a mut SecondaryMap<Ty, Ast>,
     pub func_ast: &'a mut SecondaryMap<Func, Ast>,
     pub diagnostics: &'a mut errors::Diagnostics,
+    pub ctx: &'a mut Context,
     pub module: Module,
 }
 
 impl<'a> Collector<'a> {
     pub fn collect_items<'f>(&mut self, elements: impl Iterator<Item = (Ast, &'f ast::Ent)> + Clone) -> errors::Result {
-        let mut bound_funcs = vec![];
-
         for (ast, &ast::Ent { kind, span, .. }) in elements.clone() {
+            if kind == ast::Kind::Tag {
+                self.ctx.tags.push(ast);
+                continue;
+            }
+
             match kind {
-                ast::Kind::Function => (),
+                ast::Kind::Function 
+				| ast::Kind::Impl => (),
                 ast::Kind::Struct => drop(self.collect_struct(ast)),
-                ast::Kind::Bound => drop(self.collect_bound(ast, &mut bound_funcs)), // for now
+                ast::Kind::Bound => drop(self.collect_bound(ast)), // for now
                 _ => (todo!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
+
+            self.ctx.tags.clear();
         }
 
         for (ast, &ast::Ent { kind, span, .. }) in elements {
+            if kind == ast::Kind::Tag {
+                self.ctx.tags.push(ast);
+                continue;
+            }
+
             match kind {
                 ast::Kind::Function => drop(self.collect_function(None, ast)),
-                ast::Kind::Struct => (),
-                ast::Kind::Bound => (),
+                ast::Kind::Impl => drop(self.collect_impl(ast)),
+				ast::Kind::Struct
+                | ast::Kind::Bound => (),
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
+
+            self.ctx.tags.clear();
         }
 
         // due to the unique nested structure of bounds, (being types and also functions),
         // we have to defer the scope insertion after all types have been inserted.
-        for func in bound_funcs {
+        while let Some(func) = self.ctx.bound_funcs.pop() {
             let ast = self.func_ast[func];
             self.collect_function(Some(func), ast)?;
         }
@@ -52,7 +67,34 @@ impl<'a> Collector<'a> {
         Ok(())
     }
 
-    fn collect_bound(&mut self, ast: Ast, bound_funcs: &mut Vec<Func>) -> errors::Result {
+	fn collect_impl(&mut self, ast: Ast) -> errors::Result {
+		let &[ty, body] = self.ast.children(ast) else {
+			unreachable!();
+		};
+
+		let span = self.ast.nodes[ty].span;
+		let ty = self.parse_type(ty)?;
+
+		self.scope.mark_frame();
+		self.scope.push_item("Self", scope::Item::new(ty, span));
+
+		for &func in self.ast.children(body) {
+			let reserved = {
+				let ent = func::Ent {
+        			kind: func::Kind::Owned(ty),
+					..Default::default()
+				};
+				self.funcs.push(ent)
+			};
+			self.collect_function(Some(reserved), func)?;
+		}
+
+		self.scope.pop_frame();
+
+		Ok(())
+	}
+
+    fn collect_bound(&mut self, ast: Ast) -> errors::Result {
         let source = self.ast.nodes[ast].span.source();
         let &[name, body] = self.ast.children(ast) else {
             unreachable!();
@@ -78,7 +120,7 @@ impl<'a> Collector<'a> {
                     ..Default::default()
                 });
                 self.func_ast[func_id] = func;
-                bound_funcs.push(func_id);
+                self.ctx.bound_funcs.push(func_id);
                 self.types.funcs.push_one(func_id);
             }
             self.types.funcs.close_frame()
@@ -195,7 +237,7 @@ impl<'a> Collector<'a> {
             let span = self.ast.nodes[name].span;
             let str = self.sources.display(span);
             if let func::Kind::Owned(owner) = self.funcs[func].kind {
-                ID::new(str) + self.types.ents[owner].id
+                func::Builder::owned_func_id(self.types.ents[owner].id, ID::new(str))
             } else {
                 ID::new(str)
             }
@@ -203,10 +245,25 @@ impl<'a> Collector<'a> {
         let id = self.modules[self.module].id + scope_id;
 
         {
+            let tag = self.find_simple_tag("entry");
+            let flags = {
+                (func::Flags::ENTRY & tag.is_some()) |
+                (func::Flags::GENERIC & !generics.is_reserved_value())
+            };
+
+            if flags.contains(func::Flags::ENTRY | func::Flags::GENERIC) {
+                self.diagnostics.push(Error::GenericEntry {
+                    tag: tag.unwrap(),
+                    generics: self.ast.nodes[generics].span,
+                    loc: self.ast.nodes[name].span, 
+                })
+            }
+
             let ent = func::Ent {
                 id,
                 sig,
                 name: self.ast.nodes[name].span,
+                flags,
                 ..self.funcs[func]
             };
             self.funcs[func] = ent;
@@ -220,6 +277,28 @@ impl<'a> Collector<'a> {
         }
 
         Ok(func)
+    }
+
+    pub fn find_simple_tag(&self, name: &str) -> Option<Span> {
+        self.ctx.tags
+            .iter()
+            .rev()
+            .map(|&tag| self.ast.nodes[tag].span)
+            .find(|&span| self.sources.display(span)[1..].trim() == name)
+    }
+}
+
+pub struct Context {
+    pub bound_funcs: Vec<Func>,
+    pub tags: Vec<Ast>,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            bound_funcs: Vec::new(),
+            tags: Vec::new(),
+        }
     }
 }
 

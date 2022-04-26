@@ -46,7 +46,24 @@ impl Scope {
         self.get_by_id(diagnostics, id.into(), span)
     }
 
+    pub fn may_get<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: impl Into<ID>, span: Span) -> errors::Result<Option<T>> {
+        self.may_get_by_id(diagnostics, id.into(), span)
+    }
+
     pub fn get_by_id<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: ID, span: Span) -> errors::Result<T> {
+        let Some(data) = self.may_get_by_id(diagnostics, id, span)? else {
+            diagnostics.push(Error::InvalidScopeItem {
+                loc: span,
+                expected: TypeId::of::<T>(),
+                found: self.map.get(id).unwrap().pointer.id,
+            });
+            return Err(());
+        };
+
+        Ok(data)
+    }
+
+    pub fn may_get_by_id<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: ID, span: Span) -> errors::Result<Option<T>> {
         let Some(item) = self.map.get(id) else {
             diagnostics.push(Error::ScopeItemNotFound {
                 loc: span,
@@ -54,31 +71,21 @@ impl Scope {
             return Err(());
         };
         
-        let Some(data) = item.pointer.may_read::<T>() else {
-            if item.pointer.is_of::<Collision>() {
-                let suggestions = self.dependencies
-                    .iter()
-                    .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
-                    .collect::<Vec<_>>();
-                
-                diagnostics.push(Error::AmbiguousScopeItem {
-                    loc: span,
-                    suggestions,
-                });
-
-                return Err(());
-            }
-
-            diagnostics.push(Error::InvalidScopeItem {
+        if item.pointer.is_of::<Collision>() {
+            let suggestions = self.dependencies
+                .iter()
+                .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
+                .collect::<Vec<_>>();
+            
+            diagnostics.push(Error::AmbiguousScopeItem {
                 loc: span,
-                expected: TypeId::of::<T>(),
-                found: item.pointer.id,
+                suggestions,
             });
 
             return Err(());
-        };
+        }
 
-        Ok(data)
+        Ok(item.pointer.may_read::<T>())
     }
 
     pub fn push_frame(&mut self, frame: impl Iterator<Item = (impl Into<ID>, Item)>) {
@@ -154,10 +161,10 @@ impl Scope {
                     }
                 } else {
                     assert!(self.map.insert((id, item_source), item).is_none());
-                    assert!(self.map.insert((id, colliding_source), colliding).is_none());
+                    assert!(self.map.insert((id, colliding_source), colliding).is_none(), "{:?}", colliding);
                 }
             }
-            None => assert!(self.map.insert(id, item).is_none()),
+            None => assert!(self.map.insert(id, item) == Some(Item::collision())),
         }
 
         Ok(())
@@ -182,7 +189,7 @@ impl ScopeSlot {
     }
 }
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Item {
     pub span: Span,
     pub pointer: Pointer,
@@ -198,7 +205,7 @@ impl Item {
 
     fn collision() -> Item {
         Item {
-            span: Default::default(),
+            span: Span::new(Source(0), 0, 0),
             pointer: Pointer::write(Collision),
         }
     }

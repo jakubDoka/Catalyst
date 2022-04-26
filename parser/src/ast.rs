@@ -161,6 +161,10 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    Char,
+    Tag,
+    Impl,
+    ImplBody,
     Generics,
     Instantiation,
     Path,

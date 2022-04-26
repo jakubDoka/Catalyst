@@ -3,7 +3,8 @@ use {
     "root/generics"
 }
 
-fn "default" main() -> int {
+#entry
+fn main() -> int {
     if other(1, 2, 3) != 7 {
         return 1
     }
@@ -38,6 +39,7 @@ fn "default" main() -> int {
     }
 
     if structure_test() != 0 {
+        return structure_test()
         return 7
     }
 
@@ -48,6 +50,13 @@ fn "default" main() -> int {
     if move_in_and_out(0) != 0 {
         return 9
     }
+
+    if Goo::new().field() != 0 {
+        return 10
+    }
+
+    putchar('h')
+    exit(-34)
 
     0
 }
@@ -78,4 +87,6 @@ fn iter_fib(x: int) -> int {
     }
 }
 
-fn "default" printf(str: int) extern
+fn "default" putchar(char: char) -> char extern
+
+fn "default" exit(code: int) extern

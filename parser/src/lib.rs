@@ -177,6 +177,8 @@ impl<'a> Parser<'a> {
                 token::Kind::NewLine => self.advance(),
                 token::Kind::Eof => break Ast::reserved_value(),
                 token::Kind::Bound => break self.bound(),
+                token::Kind::Impl => break self.implementation(),
+                token::Kind::Hash => break self.tag(),
                 _ => {
                     let span = self.current.span();
                     todo!(
@@ -189,33 +191,70 @@ impl<'a> Parser<'a> {
         }
     }
 
-fn bound(&mut self) -> Ast {
-    let span = self.current.span();
-    self.advance();
-    
-    self.stack.mark_frame();
-    
-    let ident = self.ident();
-    self.stack.push(ident);
-    
-    self.stack.mark_frame();
-    let end = self.list(
-        token::Kind::LeftCurly, 
-        token::Kind::NewLine, 
-        token::Kind::RightCurly, 
-        Self::function,
-    );
-    let body = self.alloc(
-        ast::Kind::Block, 
-        span.join(end)
-    );
-    self.stack.push(body);
+    fn tag(&mut self) -> Ast {
+        let span = self.current.span();
+        
+        self.advance();
+        
+        self.stack.mark_frame();
+        let expr = self.expr();
+        self.stack.push(expr);
 
-    self.alloc(
-        ast::Kind::Bound, 
-        span.join(end)
-    )
-}
+        let end = self.data.nodes[expr].span;
+
+        self.alloc(ast::Kind::Tag, span.join(end))
+    }
+
+    fn implementation(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        self.stack.mark_frame();
+        
+        let ident = self.ident();
+        self.stack.push(ident);
+
+        self.expect(token::Kind::LeftCurly);
+        self.stack.mark_frame();
+        let end = self.list(
+            token::Kind::LeftCurly,
+            token::Kind::NewLine,
+            token::Kind::RightCurly,
+            Self::function,
+        );
+        let functions = self.alloc(ast::Kind::ImplBody, span.join(end));
+        self.stack.push(functions);
+
+        self.alloc(ast::Kind::Impl, span.join(end))
+    }
+
+    fn bound(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+        
+        self.stack.mark_frame();
+        
+        let ident = self.ident();
+        self.stack.push(ident);
+        
+        self.stack.mark_frame();
+        let end = self.list(
+            token::Kind::LeftCurly, 
+            token::Kind::NewLine, 
+            token::Kind::RightCurly, 
+            Self::function,
+        );
+        let body = self.alloc(
+            ast::Kind::Block, 
+            span.join(end)
+        );
+        self.stack.push(body);
+
+        self.alloc(
+            ast::Kind::Bound, 
+            span.join(end)
+        )
+    }
 
     fn sdecl(&mut self) -> Ast {
         let span = self.current.span();
@@ -390,6 +429,7 @@ fn bound(&mut self) -> Ast {
             token::Kind::Int(i) => ast::Kind::Int(i),
             token::Kind::String => ast::Kind::String,
             token::Kind::Bool(value) => ast::Kind::Bool(value),
+            token::Kind::Char => ast::Kind::Char,
             _ => {
                 let span = self.current.span();
                 todo!(
@@ -493,7 +533,7 @@ fn bound(&mut self) -> Ast {
         match self.current.kind() {
             token::Kind::Return => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
-            token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) => {
+            token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) | token::Kind::Char => {
                 self.literal_expr()
             }
             token::Kind::If => self.if_expr(),

@@ -10,7 +10,7 @@ use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Module, Linkage};
 use instance::*;
 use lexer::*;
-use typec::{Func, ty};
+use typec::Func;
 
 pub struct Generator<'a> {
     pub module: &'a mut dyn Module,

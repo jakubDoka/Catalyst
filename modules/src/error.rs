@@ -104,12 +104,12 @@ impl Error {
                     to, 
                     &|to| write!(to, "ambiguous scope item, multiple items with this identifier are imported"),
                 )?;
-                writeln!(to, "|> specify the module with syntax '<module>::<ident>'\n")?;
+                writeln!(to, "|> specify the module with syntax '<module>::<ident>'")?;
                 write!(to, "|> possible options:")?;
-                
                 for &suggestion in suggestions {
                     write!(to, " {}::{}", sources.display(suggestion), sources.display(*loc))?;
                 }
+                writeln!(to)?;
             },
             &Error::InvalidScopeItem { loc, expected, found } => {
                 loc.loc_to(sources, to)?;
@@ -277,6 +277,8 @@ impl Error {
                 writeln!(to, "|> syntax for git links is 'github.com/<user>/<repo>[@tag]' ([...] is optional)")?;
             },
         }
+
+        writeln!(to)?;
 
         Ok(())
     }
