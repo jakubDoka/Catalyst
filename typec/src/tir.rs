@@ -52,6 +52,8 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    DerefPointer(Tir),
+    TakePointer(Tir),
     Variable(Tir),
     Access(Tir),
     Assign(Tir, Tir),
@@ -90,9 +92,11 @@ bitflags::bitflags! {
     #[derive(Default)]
     pub struct Flags: u32 {
         /// Can we assign to this expression?
-        const ASSIGNABLE = 1 << 2;
+        const ASSIGNABLE = 1 << 0;
         /// This expression terminates execution.
-        const TERMINATING = 1 << 3;
+        const TERMINATING = 1 << 1;
+        /// This expression will always reside stack
+        const SPILLED = 1 << 2;
     }
 }
 
@@ -161,6 +165,14 @@ impl<'a> Display<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
+            Kind::TakePointer(tir) => {
+                write!(f, "take_pointer ")?;
+                self.fmt(tir, f, displayed, level + 1, true)?;
+            }
+            Kind::DerefPointer(tir) => {
+                write!(f, "deref_pointer ")?;
+                self.fmt(tir, f, displayed, level + 1, true)?;
+            }
             Kind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
                 write!(f, ".{}", self.types.sfields[id].index)?;

@@ -10,11 +10,11 @@ struct Goo {
 impl Goo {
     fn new() -> Self {
         Self::{
-            field: 0
+            field: 10
         }
     }
 
-    fn field(s: Self) -> int {
+    fn field(s: *Self) -> int {
         s.field
     }
 }

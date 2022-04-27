@@ -102,6 +102,10 @@ impl GenericGraph {
         self.hints.truncate(1);
         self.edges.clear();
     }
+
+    pub fn len(&self) -> usize {
+        self.hints.len() - 1
+    }
 }
 
 impl<T: EntityRef + 'static + Debug> TreeStorage<T> for GenericGraph {

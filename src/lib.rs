@@ -53,7 +53,7 @@ pub fn compile() {
     let scope_item_lexicon = {
         let mut map = ItemLexicon::new();
 
-        map.register::<module::Module>("module");
+        map.register::<Source>("module");
         map.register::<typec::Ty>("type");
         map.register::<Func>("function");
         map.register::<Tir>("tir");
@@ -140,9 +140,10 @@ pub fn compile() {
 
         let total_type_check_now = std::time::Instant::now();
 
-        for module in module_order {
-            let source = modules[module].source;
-    
+        let mut func_buffer = vec![];
+        let mut ty_buffer = vec![];
+
+        for source in module_order {    
             for item in builtin_items.iter() {
                 scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()).unwrap();
             }
@@ -154,14 +155,14 @@ pub fn compile() {
             if let Some(imports) = ModuleImports::new(&ast, &sources).imports() {
                 for import in imports {
                     let nick = sources.display(import.nick);
-                    let Some(&dep) = module_map.get((nick, module)) else {
+                    let Some(&dep) = module_map.get((nick, source)) else {
                         continue; // recovery, module might not exist due to previous recovery
                     };
                     scope.insert(&mut diagnostics, source, nick, scope::Item::new(dep, import.nick)).unwrap();
                     for item in modules[dep].items.iter() {
                         drop(scope.insert(&mut diagnostics, source, item.id, item.to_scope_item()));
                     }
-                    scope.dependencies.push((modules[dep].source, import.nick));
+                    scope.dependencies.push((dep, import.nick));
                 }
             }
     
@@ -181,17 +182,18 @@ pub fn compile() {
                 sources: &sources,
                 ast: &ast,
                 type_ast: &mut type_ast,
-                module,
+                module: source,
                 ctx: &mut c_ctx,
                 diagnostics: &mut diagnostics,
             }
             .collect_items(ast.elements()));
     
-            for ty in modules[module]
+            ty_buffer.extend(modules[source]
                 .items
                 .iter()
-                .filter_map(|item| item.kind.may_read::<Ty>())
-            {
+                .filter_map(|item| item.kind.may_read::<Ty>()));
+
+            for ty in ty_buffer.drain(..) {
                 drop(typec::ty::Builder {
                     scope: &mut scope,
                     types: &mut t_types,
@@ -199,18 +201,19 @@ pub fn compile() {
                     ast: &ast,
                     type_ast: &type_ast,
                     graph: &mut t_graph,
+                    modules: &mut modules,
                     diagnostics: &mut diagnostics,
                     ty
                 }
                 .build());
             }
-    
-            for func in modules[module]
+
+            func_buffer.extend(modules[source]
                 .items
                 .iter()
-                .filter_map(|item| item.kind.may_read::<Func>())
-            {
-
+                .filter_map(|item| item.kind.may_read::<Func>()));
+    
+            for func in func_buffer.drain(..) {
                 if (typec::func::Builder {
                     nothing: NOTHING,
                     bool: BOOL,
@@ -223,7 +226,7 @@ pub fn compile() {
                     func_ast: &func_ast,
                     body: &mut bodies[func],
                     temp: &mut t_temp,
-                    modules: &modules,
+                    modules: &mut modules,
                     diagnostics: &mut diagnostics,
                 }
                 .build().is_err()) {
@@ -239,6 +242,10 @@ pub fn compile() {
         total_type_check = total_type_check_now.elapsed();
     }
 
+    for _ in t_graph.len()..t_types.ents.len() {
+        t_graph.close_node();
+    }
+
 
     let errors = {
         let mut errors = String::new();
@@ -252,7 +259,7 @@ pub fn compile() {
         diagnostics
             .iter::<modules::Error>()
             .map(|errs| errs
-                .for_each(|err| err.display(&sources, &scope_item_lexicon, &units, &modules, &mut errors).unwrap())
+                .for_each(|err| err.display(&sources, &scope_item_lexicon, &units, &mut errors).unwrap())
             );
 
         diagnostics
@@ -440,6 +447,7 @@ pub fn compile() {
             .generate();
             total_generation += now.elapsed();
 
+            println!("{}", sources.display(ent.name));
             println!("{}", ctx.func.display());
             
             let id = func_lookup[id].unwrap();
@@ -464,7 +472,6 @@ pub fn compile() {
         return;
     }
 
-    // does not work, Why?
     // let status = cc::windows_registry::find(&triple.to_string(), "link.exe")
     //     .unwrap()
     //     .arg("catalyst.o")

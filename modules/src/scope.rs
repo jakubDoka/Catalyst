@@ -42,6 +42,10 @@ impl Scope {
         }
     }
 
+    pub fn weak_get<T: 'static + EntityRef>(&self, id: impl Into<ID>) -> Option<T> {
+        self.map.get(id).map(|item| item.pointer.may_read()).flatten()
+    }
+
     pub fn get<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: impl Into<ID>, span: Span) -> errors::Result<T> {
         self.get_by_id(diagnostics, id.into(), span)
     }

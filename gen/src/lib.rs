@@ -101,9 +101,12 @@ impl<'a> Generator<'a> {
                     self.builder.ins().call(func_ref, &args)
                 };
                 
-                self.builder.inst_results(ir_inst).get(0).map(|&value| {
-                    self.value_lookup[inst.value.unwrap()] = value.into();
-                });
+                if let Some(value) = inst.value.expand() {
+                    if !self.source.values[value].flags.contains(mir::Flags::POINTER) {
+                        let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
+                        self.value_lookup[inst.value.unwrap()] = ret.into();
+                    }
+                }
             }
             mir::InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
@@ -151,7 +154,11 @@ impl<'a> Generator<'a> {
                     self.builder.def_var(variable, value);
                 }
             },
-            InstKind::Offset(value) => {
+            InstKind::DerefPointer(value) if self.source.values[value].flags.contains(mir::Flags::POINTER) =>  {
+                let value = self.use_value(value);
+                self.value_lookup[inst.value.unwrap()] = value.into();
+            }
+            InstKind::Offset(value) | InstKind::TakePointer(value) | InstKind::DerefPointer(value) => {
                 self.value_lookup[inst.value.unwrap()] = 
                     self.value_lookup[value].unwrap().into(); // check
             },
@@ -457,6 +464,7 @@ impl<'a> Generator<'a> {
     fn use_value_as_pointer(&mut self, value: mir::Value) -> ir::Value {
         self.use_value_low(value, true)
     }
+
 
     fn use_value_low(&mut self, value: mir::Value, as_pointer: bool) -> ir::Value {
         let mir::ValueEnt { ty, flags, offset, .. } = self.source.values[value];

@@ -18,7 +18,7 @@ pub struct Collector<'a> {
     pub func_ast: &'a mut SecondaryMap<Func, Ast>,
     pub diagnostics: &'a mut errors::Diagnostics,
     pub ctx: &'a mut Context,
-    pub module: Module,
+    pub module: Source,
 }
 
 impl<'a> Collector<'a> {
@@ -303,7 +303,7 @@ impl Context {
 }
 
 impl TypeParser for Collector<'_> {
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics) {
-        (self.scope, self.types, self.sources, self.ast, self.diagnostics)
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics) {
+        (self.scope, self.types, self.sources, self.modules, self.ast, self.diagnostics)
     }
 }

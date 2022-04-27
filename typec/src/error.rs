@@ -5,6 +5,10 @@ use crate::*;
 
 
 pub enum Error {
+    NonPointerDereference {
+        loc: Span,
+        ty: Ty,
+    },
     GenericEntry {
         tag: Span,
         generics: Span,
@@ -102,6 +106,21 @@ impl Error {
     pub fn display(&self, sources: &Sources, types: &Types, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
+            Error::NonPointerDereference { loc, ty } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to, 
+                    &|to| {
+                        write!(to, "'")?;
+                        ty.display(types, sources, to)?;
+                        write!(to, "' cannot be dereferenced")
+                    }
+                )?;
+                writeln!(to, "|> types that can be dereferenced: &<type> *<type>")?;
+            }
             Error::GenericEntry { tag, generics, loc } => {
                 loc.loc_to(sources, to)?;
                 loc.underline_to(

@@ -4,14 +4,14 @@ use std::{
 };
 
 use cranelift_entity::packed_option::ReservedValue;
-use cranelift_entity::{EntityRef, PrimaryMap};
+use cranelift_entity::{EntityRef, SecondaryMap};
 
 use lexer::*;
 use parser::*;
 use crate::error::Error;
 use crate::*;
 
-pub type Modules = PrimaryMap<Module, Ent>;
+pub type Modules = SecondaryMap<Source, Ent>;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -25,16 +25,16 @@ pub struct Loader<'a> {
     pub sources: &'a mut Sources,
     pub modules: &'a mut Modules,
     pub units: &'a mut Units,
-    pub frontier: &'a mut VecDeque<(PathBuf, Span, Module)>,
+    pub frontier: &'a mut VecDeque<(PathBuf, Span, Source)>,
     pub ctx: &'a mut LoaderContext,
-    pub map: &'a mut Map<Module>,
+    pub map: &'a mut Map<Source>,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
 impl<'a> Loader<'a> {
-    pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Module>> {
+    pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
         self.ctx.clear();
-        let base_line = self.modules.len() as u32;
+        let base_line = self.sources.len() as u32;
         
         {
             let unit_ent = &self.units[unit];
@@ -46,14 +46,15 @@ impl<'a> Loader<'a> {
             })?;
 
             let id = path.as_path().into();
-            let module = self.modules.push(Ent::new(id));
+            let module = self.sources.push(Default::default());
+            self.modules[module] = Ent::new(id);
             self.map.insert(id, module);
             self.frontier.push_back((path, Span::default(), module));
         }
 
         while let Some((path, span, slot)) = self.frontier.pop_front() {
             {
-                let source = {
+                {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
                         self.diagnostics.push(Error::ModuleLoadFail {
                             path: path.clone(),
@@ -65,15 +66,14 @@ impl<'a> Loader<'a> {
                     };
                     
                     let source = SourceEnt::new(path, content);
-                    self.sources.push(source)
-                };
-                
-                self.modules[slot].source = source;
-    
+                    self.sources[slot] = source;
+                }
+                    
                 self.ctx.ast.clear();
-                Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
+                Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, slot);
             }
-
+            
+            let mut counter = 0;
             if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
                 for ModuleImport {
                     nick,
@@ -114,24 +114,28 @@ impl<'a> Loader<'a> {
                         if let Some(&id) = self.map.get(id) {
                             id
                         } else {
-                            let module = self.modules.push(Ent::new(id));
+                            let module = Source::new(self.sources.len() + counter);
+                            counter += 1;
+                            self.modules[module] = Ent::new(id);
                             self.map.insert(id, module);
                             self.frontier.push_back((path, path_span, module));
                             module
                         }
                     };
-
+                    
                     self.map.insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
                         self.ctx.graph.add_edge(id.0 - base_line);
                     }
                 }
             }
+            for _ in 0..counter { self.sources.push(Default::default()); }
+            
             self.ctx.graph.close_node();
         }
-
-        let mut ordering = Vec::with_capacity(TreeStorage::<Module>::len(&self.ctx.graph));
-        self.ctx.graph.detect_cycles(Module(0), Some(&mut ordering)).map_err(|mut err| {
+        
+        let mut ordering = Vec::with_capacity(TreeStorage::<Source>::len(&self.ctx.graph));
+        self.ctx.graph.detect_cycles(Source(0), Some(&mut ordering)).map_err(|mut err| {
             err
                 .iter_mut()
                 .for_each(|id| id.0 += base_line);
@@ -140,14 +144,15 @@ impl<'a> Loader<'a> {
             });
         })?;
 
+        ordering.iter_mut().for_each(|id| id.0 += base_line);
+
         Ok(ordering)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Ent {
     pub id: ID,
-    pub source: Source,
     pub items: Vec<Item>,
 }
 
@@ -155,13 +160,12 @@ impl Ent {
     pub fn new(id: ID) -> Self {
         Self {
             id,
-            source: Source::default(),
             items: Vec::new(),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Item {
     pub id: ID,
     pub kind: scope::Pointer,
@@ -184,8 +188,6 @@ impl Item {
         }
     }
 }
-
-lexer::gen_entity!(Module);
 
 pub struct ModuleImports<'a> {
     ast_data: &'a ast::Data,

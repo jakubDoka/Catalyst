@@ -51,14 +51,35 @@ fn main() -> int {
         return 9
     }
 
-    if Goo::new().field() != 0 {
+    if Goo::new().field() != 10 {
         return 10
+    }
+
+    // stress test
+    if (*PtrTest::{ a: false; b: false; c: true }.as_ptr().as_ptr_ptr()).c {} else {
+        return 11
     }
 
     putchar('h')
     exit(-34)
 
     0
+}
+
+struct PtrTest {
+    a: bool
+    b: bool
+    c: bool
+}
+
+impl PtrTest {
+    fn as_ptr(s: *Self) -> *Self {
+        s
+    }
+
+    fn as_ptr_ptr(s: * *Self) -> * *Self {
+        s
+    }
 }
 
 fn fib(x: int) -> int {

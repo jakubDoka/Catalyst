@@ -135,6 +135,8 @@ impl InstEnt {
 
 #[derive(Debug)]
 pub enum InstKind {
+    DerefPointer(Value),
+    TakePointer(Value),
     Offset(Value),
     StackAddr(StackSlot),
     Variable,
@@ -262,6 +264,12 @@ impl std::fmt::Display for Display<'_> {
 
             for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
+                    InstKind::TakePointer(target) => {
+                        writeln!(f, "    {} = ptr {}", self.value_to_string(inst.value.unwrap()), target)?;
+                    }
+                    InstKind::DerefPointer(target) => {
+                        writeln!(f, "    {} = deref {}", self.value_to_string(inst.value.unwrap()), target)?;
+                    }
                     InstKind::Offset(target) => {
                         writeln!(f, "    {} = offset {}", self.value_to_string(inst.value.unwrap()), target)?;
                     }

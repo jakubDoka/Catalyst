@@ -21,18 +21,57 @@ use parser::*;
 
 pub trait TypeParser {
 
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics);
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics);
 
     fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let (scope, _types, sources, ast, diagnostics) = self.state();
+        let (scope, _types, sources, _modules, ast, diagnostics) = self.state();
         let ast::Ent { kind, span, .. } = ast.nodes[ty];
         match kind {
             ast::Kind::Ident => {
                 let str = sources.display(span);
-                return scope.get(diagnostics, str, span)
+                scope.get(diagnostics, str, span)
             }
+            ast::Kind::Pointer => self.parse_pointer_type(ty),
             _ => todo!("Unhandled type expr {:?}: {}", kind, sources.display(span)),
         }
+    }
+
+    fn parse_pointer_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+        let ast = self.state().4;
+        let inner_ty = {
+            let inner = ast.children(ty)[0];
+            self.parse_type(inner)?
+        };
+        
+        
+        let (scope, types, _, modules, ast, diagnostics) = self.state();
+        let source = types.ents[inner_ty].name.source();
+        let id = {
+            let ty = types.ents[inner_ty].id;
+            Self::pointer_id(ty)
+        };
+
+        if let Some(ptr) = scope.weak_get::<Ty>(id) {
+            return Ok(ptr);
+        }
+
+        let name = ast.nodes[ty].span; 
+        let ent = ty::Ent {
+            id,
+            name,
+            kind: ty::Kind::Pointer(inner_ty),
+        };
+        let ty = types.ents.push(ent);
+        let item = modules::Item::new(id, ty, name);
+        
+        drop(scope.insert(diagnostics, source, id, item.to_scope_item()));
+        modules[source].items.push(item);
+
+        Ok(ty)
+    }
+
+    fn pointer_id(id: ID) -> ID {
+        ID::new("*") + id
     }
 }
 
@@ -113,7 +152,6 @@ fn create_func(
     dest: &mut Vec<module::Item>,
 ) {
     let span = builtin_source.make_span(sources, name);
-    println!("{}", name);
     let sig = Sig {
         args: types.args.push(args),
         ret,

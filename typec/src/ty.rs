@@ -14,6 +14,7 @@ pub struct Builder<'a> {
     pub ast: &'a ast::Data,
     pub type_ast: &'a SecondaryMap<Ty, Ast>,
     pub graph: &'a mut GenericGraph,
+    pub modules: &'a mut Modules,
     pub ty: Ty,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
@@ -22,6 +23,9 @@ impl<'a> Builder<'a> {
     pub fn build(&mut self) -> errors::Result {
         let Ent { id, .. } = self.types.ents[self.ty];
         let ast = self.type_ast[self.ty];
+        if ast.is_reserved_value() {
+            return Ok(());
+        }
         let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
 
         match kind {
@@ -86,8 +90,8 @@ impl<'a> Builder<'a> {
 }
 
 impl TypeParser for Builder<'_> {
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics) {
-        (self.scope, self.types, self.sources, self.ast, self.diagnostics)
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics) {
+        (self.scope, self.types, self.sources, self.modules, self.ast, self.diagnostics)
     }
 }
 
@@ -116,6 +120,13 @@ impl Types {
         tys.init(graph, sources, builtin_source);
 
         tys
+    }
+
+    pub fn base_of(&self, ty: Ty) -> Ty {
+        match self.ents[ty].kind {
+            ty::Kind::Pointer(base) => base,
+            _ => ty,
+        }
     }
 
     fn init(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
@@ -318,6 +329,7 @@ impl std::fmt::Display for Display<'_> {
 pub enum Kind {
     Bound(FuncList),
     Struct(SFieldList),
+    Pointer(Ty),
     Int(i16),
     Param(u32),
     Bool,
@@ -348,6 +360,10 @@ impl Ty {
             | Kind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
+            }
+            Kind::Pointer(ty) => {
+                write!(to, "*")?;
+                ty.display(types, sources, to)?;
             }
             Kind::Unresolved => write!(to, "unresolved")?,
         }

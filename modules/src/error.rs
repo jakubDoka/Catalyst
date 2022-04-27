@@ -1,9 +1,9 @@
 use std::{any::TypeId, path::PathBuf};
 
 use errors::{Palette, write_styled};
-use lexer::{Span, Sources, SourcesExt};
+use lexer::{Span, Sources, SourcesExt, Source};
 
-use crate::{Unit, Module, Modules, ItemLexicon, Units};
+use crate::{Unit, ItemLexicon, Units};
 
 #[derive(Debug)]
 pub enum Error {
@@ -38,7 +38,7 @@ pub enum Error {
         loc: Span,
     },
     ModuleCycle {
-        cycle: Vec<Module>,
+        cycle: Vec<Source>,
     },
     RootUnitNotFound {
         path: PathBuf,
@@ -75,7 +75,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn display(&self, sources: &Sources, scope_item_lexicon: &ItemLexicon, units: &Units, modules: &Modules, to: &mut String) -> std::fmt::Result {
+    pub fn display(&self, sources: &Sources, scope_item_lexicon: &ItemLexicon, units: &Units, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
             Error::ScopeCollision { new, existing } => {
@@ -180,7 +180,7 @@ impl Error {
             Error::ModuleCycle { cycle } => {
                 write_styled!(to, Palette::error().bold(), "|> module cycle detected:\n",);
                 for &module in cycle {
-                    writeln!(to, "|\t{}", sources[modules[module].source].path.display())?;
+                    writeln!(to, "|\t{}", sources[module].path.display())?;
                 }
                 writeln!(to, "|> meta-programing features rely on this restriction")?;
             },

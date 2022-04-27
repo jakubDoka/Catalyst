@@ -23,7 +23,7 @@ pub struct Builder<'a> {
     pub temp: &'a mut FramedStack<Tir>,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
-    pub modules: &'a Modules,
+    pub modules: &'a mut Modules,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
@@ -171,6 +171,7 @@ impl<'a> Builder<'a> {
             ast::Kind::Block => self.build_block(ast)?,
             ast::Kind::Loop => self.build_loop(ast)?,
             ast::Kind::Break => self.build_break(ast)?,
+            ast::Kind::Deref => self.build_deref(ast)?,
             _ => todo!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
@@ -178,6 +179,21 @@ impl<'a> Builder<'a> {
             ),
         };
         Ok(expr)
+    }
+
+    fn build_deref(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let expr = self.ast.children(ast)[0];
+        let target = self.build_expr(expr)?;
+        let ty = self.body.ents[target].ty;
+        let deref_ty = self.types.base_of(ty);
+        if ty == deref_ty {
+            self.diagnostics.push(Error::NonPointerDereference {
+                loc: self.ast.nodes[ast].span,
+                ty,
+            });
+            return Err(());
+        }
+        Ok(self.deref_ptr(deref_ty, target))
     }
 
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -324,47 +340,66 @@ impl<'a> Builder<'a> {
             unreachable!();
         };
 
-        let mut args = vec![]; // NO we cant get rid of this, until we add a stack
-        let (id, span) = if self.ast.nodes[caller].kind == ast::Kind::DotExpr {
+        let (id, span, mut obj) = if self.ast.nodes[caller].kind == ast::Kind::DotExpr {
             let &[expr, name] = self.ast.children(caller) else {
                 unreachable!();
             };
 
             let expr = self.build_expr(expr)?;
-            args.push(expr);
-            let ty = self.body.ents[expr].ty;
+            let ty = {
+                let ty = self.body.ents[expr].ty;
+                self.types.base_of(ty)
+            };
 
             let span = self.ast.nodes[name].span;
             let name_id = self.ident_id(name, Some(ty))?;
 
-            (name_id, span)
+            (name_id, span, Some(expr))
         } else {
             let span = self.ast.nodes[caller].span;
             let name_id = self.ident_id(caller, None)?;
-            (name_id, span)
+            (name_id, span, None)
         };
 
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics ,id, span)?;
-
-        let sig = self.funcs[func].sig;
-
-        // we first collect results, its in a way of recovery
-        // TODO: This can be optimized when needed
-        {
-            let temp = self.ast.children(ast)[1..]
-                .iter()
-                .map(|&expr| self.build_expr(expr))
-                .collect::<Vec<_>>();
-            for i in temp {
-                args.push(i?);
+        
+        
+        let Ent { sig, flags, .. } = self.funcs[func];
+        
+        let arg_tys = self.types.args.get(sig.args).to_vec(); // TODO: avoid allocation
+        
+        // handle auto ref or deref
+        if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
+            let ty = self.body.ents[*obj].ty;
+            if ty != expected { 
+                if self.types.base_of(expected) == ty {
+                    *obj = self.take_ptr(expected, *obj);
+                } else if self.types.base_of(ty) == expected {
+                    *obj = self.deref_ptr(expected, *obj);
+                }
             }
         }
         
+        // we first collect results, its in a way of recovery
+        // TODO: This can be optimized when needed
+        let args = {
+            let mut vec = Vec::with_capacity(arg_tys.len() + obj.is_some() as usize);
+            obj.map(|obj| vec.push(obj));
+            // error recovery
+            self.ast
+                .children(ast)[1..]
+                .iter()
+                .fold(Ok(()), |acc, &arg| 
+                    self.build_expr(arg)
+                        .map(|arg| vec.push(arg))
+                        .and(acc)
+                )?;
+            vec
+        };
+        
 
         let (ret, func) = {
-            let arg_tys = self.types.args.get(sig.args).to_vec(); // TODO: avoid allocation
-            
             let because = self.funcs[func].name;
             if arg_tys.len() != args.len() {
                 let loc = self.ast.nodes[ast].span;
@@ -377,7 +412,7 @@ impl<'a> Builder<'a> {
                 return Err(());
             }
 
-            if sig.params.is_reserved_value() {
+            if !flags.contains(Flags::GENERIC) {
                 // here we type check all arguments and then check for errors
                 args
                     .iter()
@@ -390,7 +425,6 @@ impl<'a> Builder<'a> {
                             loc,
                         })
                     })
-                    // fold prevents allocation
                     .fold(Ok(()), |acc, err| acc.and(err))?;
                 
                 (sig.ret, func)
@@ -457,6 +491,22 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
+    fn take_ptr(&mut self, ptr_ty: Ty, target: Tir) -> Tir {
+        let ent = &mut self.body.ents[target];
+        ent.flags.insert(tir::Flags::SPILLED);
+        let span = ent.span;
+        let kind = tir::Kind::TakePointer(target);
+        let ent = tir::Ent::new(kind, ptr_ty, span);
+        self.body.ents.push(ent)
+    }
+
+    fn deref_ptr(&mut self, deref_ty: Ty, target: Tir) -> Tir {
+        let span = self.body.ents[target].span;
+        let kind = tir::Kind::DerefPointer(target);
+        let deref = tir::Ent::new(kind, deref_ty, span);    
+        self.body.ents.push(deref)
+    }
+
     fn ident_id(&mut self, ast: Ast, owner: Option<Ty>) -> errors::Result<ID> {
         let children = self.ast.children(ast);
         match (children, owner) {
@@ -468,8 +518,7 @@ impl<'a> Builder<'a> {
                         ID::new(str)
                     };
 
-                    let module = self.scope.get::<Module>(self.diagnostics, id, span)?;
-                    let source = self.modules[module].source;
+                    let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
                     ID::from(source)
                 };
                 
@@ -514,8 +563,7 @@ impl<'a> Builder<'a> {
                     ID::new(str)
                 };
 
-                Ok(if let Some(module) = self.scope.may_get::<Module>(self.diagnostics, id, span)? {
-                    let source = self.modules[module].source;
+                Ok(if let Some(source) = self.scope.may_get::<Source>(self.diagnostics, id, span)? {
                     item_id + ID::from(source)
                 } else {
                     let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
@@ -552,18 +600,24 @@ impl<'a> Builder<'a> {
             unreachable!();
         };
 
-        let header = self.build_expr(header)?;
+        let mut header = self.build_expr(header)?;
+        
+        let ty = self.body.ents[header].ty;
+        let base_ty = self.types.base_of(ty);
         
         let span = self.ast.nodes[field].span;
         let field_id = {
-            let ty = self.body.ents[header].ty;
             let id = {
-                let ty_id = self.types.ents[ty].id;
+                let ty_id = self.types.ents[base_ty].id;
                 let str = self.sources.display(span);
                 ty::Builder::field_id(ty_id, ID::new(str))
             };
             self.find_field(ty, id, span)?
         };
+
+        if base_ty != ty {
+            header = self.deref_ptr(base_ty, header);
+        }
 
         let result = {
             let ty = self.types.sfields[field_id].ty;
@@ -993,8 +1047,8 @@ impl<'a> Builder<'a> {
 }
 
 impl TypeParser for Builder<'_> {
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &ast::Data, &mut errors::Diagnostics) {
-        (&mut self.scope, &mut self.types, &self.sources, &self.ast, &mut self.diagnostics)
+    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics) {
+        (self.scope, self.types, &self.sources, self.modules, &self.ast, &mut self.diagnostics)
     }
 }
 

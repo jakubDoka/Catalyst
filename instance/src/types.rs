@@ -46,6 +46,7 @@ impl<'a> TypeTranslator<'a> {
                 self.translate_struct(id, fields)?;
                 return Ok(());
             }
+            ty::Kind::Pointer(..) => self.ptr_ty,
             ty::Kind::Nothing 
             | ty::Kind::Bound(..) 
             | ty::Kind::Param(_) => ir::types::INVALID,

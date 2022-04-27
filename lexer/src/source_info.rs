@@ -59,6 +59,7 @@ impl BuiltinSource {
 
 crate::gen_entity!(Source);
 
+#[derive(Default)]
 pub struct SourceEnt {
     pub path: PathBuf,
     pub content: String,
@@ -87,6 +88,7 @@ impl SourceEnt {
     }
 }
 
+#[derive(Default)]
 pub struct LineMapping {
     new_lines: Vec<u32>,
 }
@@ -102,6 +104,10 @@ impl LineMapping {
     }
 
     pub fn line_data_at(&self, pos: usize) -> (usize, usize) {
+        if pos == 0 {
+            return (0, 0);
+        }
+        
         match self.new_lines.binary_search(&(pos as u32)) {
             Ok(i) | Err(i) => (i - 1, pos - self.new_lines[i - 1] as usize),
         }

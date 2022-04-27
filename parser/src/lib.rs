@@ -412,6 +412,15 @@ impl<'a> Parser<'a> {
  
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
+            token::Kind::Operator => {
+                match self.lexer.display(self.current.span()) {
+                    "*" => self.type_pointer_expr(),
+                    _ => todo!(
+                        "unhandled token as type expr:\n{}",
+                        self.current.span().log(self.sources),
+                    ),
+                }
+            }
             token::Kind::Ident => self.type_ident_expr(),
             _ => {
                 let span = self.current.span();
@@ -421,6 +430,18 @@ impl<'a> Parser<'a> {
                 )
             }
         }
+    }
+
+    fn type_pointer_expr(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        self.stack.mark_frame();
+
+        let ty = self.type_expr();
+        self.stack.push(ty);
+
+        self.alloc(ast::Kind::Pointer, span.join(self.data.nodes[ty].span))
     }
 
     fn literal_expr(&mut self) -> Ast {
@@ -530,7 +551,8 @@ impl<'a> Parser<'a> {
     }
 
     fn simple_expr(&mut self) -> Ast {
-        match self.current.kind() {
+        let span = self.current.span();
+        let result = match self.current.kind() {
             token::Kind::Return => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
             token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) | token::Kind::Char => {
@@ -542,6 +564,7 @@ impl<'a> Parser<'a> {
             token::Kind::Loop => self.loop_expr(),
             token::Kind::Break => self.break_expr(),
             token::Kind::Operator => self.unary(),
+            token::Kind::LeftParen => self.paren_expr(),
             _ => {
                 let span = self.current.span();
                 todo!(
@@ -549,11 +572,85 @@ impl<'a> Parser<'a> {
                     span.log(self.sources)
                 );
             }
+        };
+
+        self.handle_tail_expr(span, result)
+    }
+
+    fn handle_tail_expr(&mut self, span: Span, mut result: Ast) -> Ast {
+        loop {
+            self.stack.mark_frame();
+            self.stack.push(result);
+            result = match self.current.kind() {
+                token::Kind::Dot => {
+                    self.advance();
+                    // can be the tuple field
+                    self.expect_many(&[token::Kind::Ident, token::Kind::Int(-1)]);
+                    let field = {
+                        let span = self.current.span();
+                        self.advance();
+                        let ent = ast::Ent::childless(ast::Kind::Ident, span);
+                        self.data.nodes.push(ent)
+                    };
+                    self.stack.push(field);
+                    self.alloc(ast::Kind::DotExpr, span)
+                }
+                token::Kind::LeftParen => {
+                    let end = self.list(
+                        token::Kind::LeftParen,
+                        token::Kind::Comma,
+                        token::Kind::RightParen,
+                        Self::expr,
+                    );
+
+                    self.alloc(ast::Kind::Call, span.join(end))
+                }
+                token::Kind::LeftBracket => {
+                    self.advance();
+                    let index = self.expr();
+                    self.expect(token::Kind::RightBracket);
+                    let end = self.current.span();
+                    self.advance();
+                    self.stack.push(index);
+                    self.alloc(ast::Kind::Index, span.join(end))
+                }
+                _ => {
+                    self.pop_frame();
+                    break;
+                }
+            };
         }
+
+        result
+    }
+
+    fn paren_expr(&mut self) -> Ast {
+        self.advance();
+
+        let expr = self.expr();
+        
+        self.expect_many(&[
+            token::Kind::RightParen,
+            token::Kind::Comma,
+        ]);
+
+        if self.current.kind() == token::Kind::Comma {
+            todo!("tuples are not yet supported");
+        } else {
+            self.advance();
+        }
+
+        expr
     }
 
     fn unary(&mut self) -> Ast {
         let span = self.current.span();
+
+        match self.lexer.display(span) {
+            "*" => return self.deref(),
+            _ => (),
+        }
+
         let op = {
             let ent = ast::Ent::childless(ast::Kind::Ident, span);
             self.data.nodes.push(ent)
@@ -568,6 +665,18 @@ impl<'a> Parser<'a> {
         self.stack.push(op);
         self.stack.push(expr);
         self.alloc(ast::Kind::Unary, span.join(end))
+    }
+
+    fn deref(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        let expr = self.simple_expr();
+        let end = self.data.nodes[expr].span;
+
+        self.stack.mark_frame();
+        self.stack.push(expr);
+        self.alloc(ast::Kind::Deref, span.join(end))
     }
 
     fn break_expr(&mut self) -> Ast {
@@ -730,49 +839,6 @@ impl<'a> Parser<'a> {
                 token::Kind::LeftBracket, 
                 token::Kind::LeftParen,
             ])
-        }
-
-        loop {
-            self.stack.mark_frame();
-            self.stack.push(result);
-            result = match self.current.kind() {
-                token::Kind::Dot => {
-                    self.advance();
-                    // can be the tuple field
-                    self.expect_many(&[token::Kind::Ident, token::Kind::Int(-1)]);
-                    let field = {
-                        let span = self.current.span();
-                        self.advance();
-                        let ent = ast::Ent::childless(ast::Kind::Ident, span);
-                        self.data.nodes.push(ent)
-                    };
-                    self.stack.push(field);
-                    self.alloc(ast::Kind::DotExpr, span)
-                }
-                token::Kind::LeftParen => {
-                    let end = self.list(
-                        token::Kind::LeftParen,
-                        token::Kind::Comma,
-                        token::Kind::RightParen,
-                        Self::expr,
-                    );
-
-                    self.alloc(ast::Kind::Call, span.join(end))
-                }
-                token::Kind::LeftBracket => {
-                    self.advance();
-                    let index = self.expr();
-                    self.expect(token::Kind::RightBracket);
-                    let end = self.current.span();
-                    self.advance();
-                    self.stack.push(index);
-                    self.alloc(ast::Kind::Index, span.join(end))
-                }
-                _ => {
-                    self.pop_frame();
-                    break;
-                }
-            };
         }
 
         result
