@@ -338,7 +338,7 @@ impl<'a> Parser<'a> {
         self.stack.push(name);
 
         // arguments
-        self.list(
+        let end = self.list(
             token::Kind::LeftParen,
             token::Kind::Comma,
             token::Kind::RightParen,
@@ -355,18 +355,21 @@ impl<'a> Parser<'a> {
         }
 
         // body
-        let end = if self.current.kind() == token::Kind::LeftCurly {
+        let (end, external) = if self.current.kind() == token::Kind::LeftCurly {
             let body = self.block();
             self.stack.push(body);
-            self.data.nodes[body].span
-        } else {
+            (self.data.nodes[body].span, false)
+        } else if self.current.kind() == token::Kind::Extern {
             let end = self.current.span();
             self.advance();
             self.stack.push_default();
-            end
+            (end, true)
+        } else {
+            self.stack.push_default();
+            (end, false)
         };
 
-        self.alloc(ast::Kind::Function, span.join(end))
+        self.alloc(ast::Kind::Function(external), span.join(end))
     }
 
     fn func_arg(&mut self) -> Ast {
@@ -399,7 +402,7 @@ impl<'a> Parser<'a> {
             token::Kind::LeftBracket, 
             token::Kind::Comma, 
             token::Kind::RightBracket, 
-            Self::ident,
+            Self::generic_param,
         );
 
         if self.stack.top_frame().is_empty() {
@@ -408,6 +411,34 @@ impl<'a> Parser<'a> {
         }
 
         self.alloc(ast::Kind::Generics, span)
+    }
+
+    fn generic_param(&mut self) -> Ast {
+        let span = self.current.span();
+
+        self.stack.mark_frame();
+
+        let name = self.ident();
+        self.stack.push(name);
+
+        let mut end = span;
+        if self.current.kind() == token::Kind::Colon {
+            self.advance();
+    
+            let ty = self.type_expr();
+            self.stack.push(ty);
+            end = self.data.nodes[ty].span;
+
+            while self.lexer.display(self.current.span()) == "+" {
+                self.advance();
+                self.skip_new_lines();
+                let ty = self.type_expr();
+                self.stack.push(ty);
+                end = self.data.nodes[ty].span;
+            }
+        }
+
+        self.alloc(ast::Kind::GenericParam, span.join(end))
     }
  
     fn type_expr(&mut self) -> Ast {

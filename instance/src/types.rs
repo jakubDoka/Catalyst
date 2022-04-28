@@ -49,7 +49,8 @@ impl<'a> TypeTranslator<'a> {
             ty::Kind::Pointer(..) => self.ptr_ty,
             ty::Kind::Nothing 
             | ty::Kind::Bound(..) 
-            | ty::Kind::Param(_) => ir::types::INVALID,
+            | ty::Kind::Param(..)
+            | ty::Kind::BoundCombo(..) => ir::types::INVALID,
             ty::Kind::Unresolved => unreachable!(),
         };
 

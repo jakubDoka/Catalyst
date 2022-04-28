@@ -19,8 +19,22 @@ impl Goo {
     }
 }
 
-/*
-    fn bti(b: bool) -> int {
-        return if b { 1 } else { 0 }
+
+fn bti(b: bool) -> int {
+    return if b { 1 } else { 0 }
+}
+
+fn [T: Spec] foo() -> int {
+    T::new().field() + T::twenty()
+}
+
+bound Spec {
+    fn new() -> Self
+    fn field(s: *Self) -> int
+}
+
+impl Spec {
+    fn twenty() -> int {
+        20
     }
-*/
+}

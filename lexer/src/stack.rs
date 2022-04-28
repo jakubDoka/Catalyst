@@ -53,6 +53,21 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         E::new(id)
     }
 
+    pub fn top(&self) -> &[T] {
+        let id = self.indices.len() - 1;
+        &self.data[self.indices[id] as usize..]
+    }
+
+    pub fn top_mut(&mut self) -> &mut [T] {
+        let id = self.indices.len() - 1;
+        &mut self.data[self.indices[id] as usize..]
+    }
+
+    pub fn discard(&mut self) {
+        let id = self.indices.len() - 1;
+        self.data.truncate(self.indices[id] as usize);
+    }
+
     pub fn clear(&mut self) {
         self.data.clear();
         self.indices.truncate(1);

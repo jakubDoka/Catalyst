@@ -9,11 +9,11 @@ fn main() -> int {
         return 1
     }
 
-    if bti(true) != 1 {
+    if structs::bti(true) != 1 {
         return 2
     }
 
-    if bti(false) != 0 {
+    if generics::bti(false) != 0 {
         return 3
     }
 

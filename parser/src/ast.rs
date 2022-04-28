@@ -167,6 +167,7 @@ pub enum Kind {
     Tag,
     Impl,
     ImplBody,
+    GenericParam,
     Generics,
     Instantiation,
     Path,
@@ -193,7 +194,8 @@ pub enum Kind {
     Import,
     Imports,
     Block,
-    Function,
+    /// (external)
+    Function(bool),
     Instance,
     FunctionArgument,
     String,

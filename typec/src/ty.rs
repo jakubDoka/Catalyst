@@ -30,6 +30,7 @@ impl<'a> Builder<'a> {
 
         match kind {
             ast::Kind::Struct => self.build_struct(id, ast)?,
+            ast::Kind::Bound => self.build_bound(id, ast)?,
             _ => todo!(
                 "Unhandled type decl {:?}: {}",
                 kind,
@@ -37,6 +38,10 @@ impl<'a> Builder<'a> {
             ),
         }
 
+        Ok(())
+    }
+
+    pub fn build_bound(&mut self, id: ID, ast: Ast) -> errors::Result {
         Ok(())
     }
 
@@ -122,6 +127,15 @@ impl Types {
         tys
     }
 
+    pub fn id_of(&self, ty: Ty) -> ID {
+        match self.ents[ty].kind {
+            Kind::Param(.., ty) if let Some(ty) = ty.expand() => {
+                self.ents[ty].id
+            }
+            _ => self.ents[ty].id,
+        }
+    }
+
     pub fn base_of(&self, ty: Ty) -> Ty {
         match self.ents[ty].kind {
             ty::Kind::Pointer(base) => base,
@@ -151,17 +165,17 @@ impl Types {
     pub fn pop_params(&mut self, popper: InstancePopper) {
         for (i, &param) in self.params[0..popper.len].iter().enumerate() {
             self.ents[param] = Ent {
-                kind: Kind::Param(i as u32),
+                kind: Kind::Param(i as u32, None.into()),
                 ..Default::default()
             };
         }
     }
 
-    pub fn get_parameter(&mut self, i: usize, name: Span) -> Ty {
+    pub fn get_parameter(&mut self, i: usize, name: Span, bound: Option<Ty>) -> Ty {
         for i in self.params.len()..=i {
             let ty = {
                 let ent = Ent {
-                    kind: Kind::Param(i as u32),
+                    kind: Kind::Param(i as u32, None.into()),
                     ..Default::default()
                 };
                 self.ents.push(ent)
@@ -170,6 +184,7 @@ impl Types {
         }
         let ty = self.params[i];
         self.ents[ty].name = name;
+        self.ents[ty].kind = Kind::Param(i as u32, bound.into());
         ty
     }
 }
@@ -327,11 +342,12 @@ impl std::fmt::Display for Display<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
+    BoundCombo(TyList),
     Bound(FuncList),
     Struct(SFieldList),
     Pointer(Ty),
     Int(i16),
-    Param(u32),
+    Param(u32, PackedOption<Ty>),
     Bool,
     Nothing,
     Unresolved,
@@ -360,6 +376,14 @@ impl Ty {
             | Kind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
+            }
+            Kind::BoundCombo(list) => {
+                for (i, ty) in types.args.get(list).iter().enumerate() {
+                    if i != 0 {
+                        write!(to, " + ")?;
+                    }
+                    ty.display(types, sources, to)?;
+                }
             }
             Kind::Pointer(ty) => {
                 write!(to, "*")?;

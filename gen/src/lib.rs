@@ -520,7 +520,7 @@ pub fn func_linkage(kind: typec::func::Kind) -> Option<Linkage> {
         Local |
         Owned(_) |
         Instance(_) => Linkage::Export,
-        Builtin => return None,
+        Builtin | Ignored => return None,
         External => Linkage::Import,
     })
 }

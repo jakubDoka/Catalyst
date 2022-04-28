@@ -30,7 +30,7 @@ impl<'a> Collector<'a> {
             }
 
             match kind {
-                ast::Kind::Function 
+                ast::Kind::Function(..) 
 				| ast::Kind::Impl => (),
                 ast::Kind::Struct => drop(self.collect_struct(ast)),
                 ast::Kind::Bound => drop(self.collect_bound(ast)), // for now
@@ -47,7 +47,7 @@ impl<'a> Collector<'a> {
             }
 
             match kind {
-                ast::Kind::Function => drop(self.collect_function(None, ast)),
+                ast::Kind::Function(..) => drop(self.collect_function(None, ast)),
                 ast::Kind::Impl => drop(self.collect_impl(ast)),
 				ast::Kind::Struct
                 | ast::Kind::Bound => (),
@@ -56,13 +56,34 @@ impl<'a> Collector<'a> {
 
             self.ctx.tags.clear();
         }
-
+        
         // due to the unique nested structure of bounds, (being types and also functions),
         // we have to defer the scope insertion after all types have been inserted.
-        while let Some(func) = self.ctx.bound_funcs.pop() {
-            let ast = self.func_ast[func];
-            self.collect_function(Some(func), ast)?;
+        {
+            self.scope.mark_frame();
+
+            let mut prev = None;
+            while let Some(func) = self.ctx.bound_funcs.pop() {
+                let ast = self.func_ast[func];
+                let func::Kind::Owned(bound) = self.funcs[func].kind else {
+                    unreachable!();
+                };
+                
+                if Some(bound) != prev {
+                    if prev.is_some() {
+                        self.scope.pop_item();
+                    }
+                    let span = self.types.ents[bound].name;
+                    self.scope.push_item("Self", scope::Item::new(bound, span));
+                    prev = Some(bound);
+                }
+                
+                drop(self.collect_function(Some(func), ast));
+            }
+    
+            self.scope.pop_frame();
         }
+
 
         Ok(())
     }
@@ -131,7 +152,7 @@ impl<'a> Collector<'a> {
 
         {
             let item = module::Item::new(scope_id, slot, name);
-            drop(self.scope.insert(self.diagnostics, source, id, item.to_scope_item()));
+            drop(self.scope.insert(self.diagnostics, source, scope_id, item.to_scope_item()));
             self.modules[self.module].items.push(item);
         }
 
@@ -169,7 +190,9 @@ impl<'a> Collector<'a> {
 
     fn collect_function(&mut self, prepared: Option<Func>, ast: Ast) -> errors::Result<Func> {
         let children = self.ast.children(ast);
-        let current_span = self.ast.nodes[ast].span;
+        let ast::Ent { span: current_span, kind: ast::Kind::Function(external), .. } = self.ast.nodes[ast] else {
+            unreachable!();
+        };
         let &[generics, call_conv, name, .., return_type, _body] = children else {
             unreachable!();
         };
@@ -180,9 +203,10 @@ impl<'a> Collector<'a> {
 			let params = {
 				if !generics.is_reserved_value() {
 					for (i, &param) in self.ast.children(generics).iter().enumerate() {
-						let span = self.ast.nodes[param].span;
+						let name = self.ast.children(param)[0];
+                        let span = self.ast.nodes[name].span;
 						let str = self.sources.display(span);
-						let ty = self.types.get_parameter(i, span);
+						let ty = self.types.get_parameter(i, span, None);
 						self.scope.push_item(str, scope::Item::new(ty, span));
 						self.types.args.push_one(ty);
 					}
@@ -245,15 +269,18 @@ impl<'a> Collector<'a> {
         let id = self.modules[self.module].id + scope_id;
 
         {
-            let tag = self.find_simple_tag("entry");
+            let is_entry = self.find_simple_tag("entry");
+            let is_inline = self.find_simple_tag("inline");
             let flags = {
-                (func::Flags::ENTRY & tag.is_some()) |
+                (func::Flags::EXTERNAL & external) |
+                (func::Flags::INLINE & is_inline.is_some()) |
+                (func::Flags::ENTRY & is_entry.is_some()) |
                 (func::Flags::GENERIC & !generics.is_reserved_value())
             };
 
             if flags.contains(func::Flags::ENTRY | func::Flags::GENERIC) {
                 self.diagnostics.push(Error::GenericEntry {
-                    tag: tag.unwrap(),
+                    tag: is_entry.unwrap(),
                     generics: self.ast.nodes[generics].span,
                     loc: self.ast.nodes[name].span, 
                 })

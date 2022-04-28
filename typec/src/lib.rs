@@ -2,6 +2,7 @@
 #![feature(explicit_generic_args_with_impl_trait)]
 #![feature(let_chains)]
 #![feature(bool_to_option)]
+#![feature(if_let_guard)]
 
 pub mod collector;
 pub mod func;
@@ -32,7 +33,7 @@ pub trait TypeParser {
                 scope.get(diagnostics, str, span)
             }
             ast::Kind::Pointer => self.parse_pointer_type(ty),
-            _ => todo!("Unhandled type expr {:?}: {}", kind, sources.display(span)),
+            _ => todo!("Unhandled type expr {:?}: {}", kind, span.log(sources)),
         }
     }
 

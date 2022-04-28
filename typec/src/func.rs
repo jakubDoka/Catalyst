@@ -40,7 +40,11 @@ impl<'a> Builder<'a> {
         let &body_ast = header.last().unwrap();
 
         if body_ast.is_reserved_value() {
-            func_ent.kind = func::Kind::External;
+            if func_ent.flags.contains(func::Flags::EXTERNAL) {
+                func_ent.kind = func::Kind::External;
+            } else {
+                func_ent.kind = func::Kind::Ignored;
+            }
             return Ok(());
         }
 
@@ -51,11 +55,51 @@ impl<'a> Builder<'a> {
         }
 
         if !generics.is_reserved_value() {
-            for (i, &ty) in self.ast.children(generics).iter().enumerate() {
-                let span = self.ast.nodes[ty].span;
-                let name = self.sources.display(span);
-                let id = ID::new(name);
-                let ty = self.types.get_parameter(i, span);
+            for (i, &item) in self.ast.children(generics).iter().enumerate() {
+                let name = self.ast.children(item)[0];
+                let span = self.ast.nodes[name].span;
+                let str = self.sources.display(span);
+                let id = ID::new(str);
+                
+                for &bound in &self.ast.children(item)[1..] {
+                    let Ok(ty) = self.parse_type(bound) else {
+                        continue;
+                    };
+                    self.types.args.push_one(ty);
+                }
+
+                self.types.args.top_mut().sort_by_key(|ty| ty.0);
+                let duplicates = self.types.args
+                    .top()
+                    .windows(2)
+                    .any(|w| w[0] == w[1]);
+                
+                if duplicates {
+                    self.diagnostics.push(Error::DuplicateBound {
+                        loc: span,
+                    });
+                }
+
+                let item = self.types.args
+                    .top()
+                    .iter()
+                    .map(|&ty| self.types.ents[ty].id)
+                    .fold(None, |acc, ty| acc.map(|id| id + ty).or(Some(ty)))
+                    .map(|id| if let Some(item) = self.scope.weak_get::<Ty>(id) {
+                        self.types.args.discard();
+                        item   
+                    } else {
+                        let bounds = self.types.args.close_frame();
+                        let ent = ty::Ent {
+                            id,
+                            name: span,
+                            kind: ty::Kind::BoundCombo(bounds),
+                        };
+                        self.types.ents.push(ent)
+                    });
+                
+                let ty = self.types.get_parameter(i, span, item);
+
                 self.scope.push_item(id, scope::Item::new(ty, span));
             }
         }
@@ -63,7 +107,7 @@ impl<'a> Builder<'a> {
         let args = {
             let ast_args =
                 &header[Parser::FUNCTION_ARG_START..header.len() - Parser::FUNCTION_ARG_END];
-            let args = self.types.args.get(func_ent.sig.args);
+            let args = self.types.args.get(self.funcs[self.func].sig.args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
                 let &[name, ..] = self.ast.children(ast) else {
@@ -214,7 +258,7 @@ impl<'a> Builder<'a> {
             let id = {
                 let ty = {
                     let ty = self.body.ents[expr].ty;
-                    self.types.ents[ty].id
+                    self.types.id_of(ty)
                 };
 
                 let op = {
@@ -436,7 +480,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .zip(arg_tys)
                     .map(|(&arg, ty)| {
-                        if let ty::Kind::Param(index) = self.types.ents[ty].kind {
+                        if let ty::Kind::Param(index, _bound) = self.types.ents[ty].kind {
                             let slot = param_slots[index as usize];
                             if slot.is_reserved_value() {
                                 param_slots[index as usize] = self.body.ents[arg].ty;
@@ -457,7 +501,7 @@ impl<'a> Builder<'a> {
                     todo!()
                 }
 
-                let ret = if let ty::Kind::Param(index) = self.types.ents[sig.ret].kind {
+                let ret = if let ty::Kind::Param(index, _bound) = self.types.ents[sig.ret].kind {
                     param_slots[index as usize]
                 } else {
                     sig.ret
@@ -541,7 +585,7 @@ impl<'a> Builder<'a> {
                             self.scope.get::<Ty>(self.diagnostics, id, span)?
                         };
 
-                        self.types.ents[ty].id
+                        self.types.id_of(ty)
                     };
 
                     Self::owned_func_id(ty, name)
@@ -567,7 +611,7 @@ impl<'a> Builder<'a> {
                     item_id + ID::from(source)
                 } else {
                     let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-                    Self::owned_func_id(self.types.ents[ty].id, item_id)
+                    Self::owned_func_id(self.types.id_of(ty), item_id)
                 })
             }
             (&[], None) => {
@@ -582,7 +626,7 @@ impl<'a> Builder<'a> {
                     ID::new(str)
                 };
 
-                let ty = self.types.ents[ty].id;
+                let ty = self.types.id_of(ty);
                 Ok(Self::owned_func_id(ty, name))
             }
             _ => {
@@ -916,7 +960,7 @@ impl<'a> Builder<'a> {
 
             let left_id = {
                 let ty = self.body.ents[left].ty;
-                self.types.ents[ty].id
+                self.types.id_of(ty)
             };
 
             Self::binary_id(left_id, op_id)
@@ -1087,6 +1131,8 @@ bitflags::bitflags! {
     pub struct Flags: u32 {
         const ENTRY = 1 << 0;
         const GENERIC = 1 << 1;
+        const INLINE = 1 << 2;
+        const EXTERNAL = 1 << 3;
     }
 }
 
@@ -1099,6 +1145,7 @@ pub enum Kind {
     Owned(Ty),
     Instance(Func),
     Builtin,
+    Ignored,
 }
 
 impl Default for Kind {

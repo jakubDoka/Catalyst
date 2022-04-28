@@ -5,6 +5,9 @@ use crate::*;
 
 
 pub enum Error {
+    DuplicateBound {
+        loc: Span,
+    },
     NonPointerDereference {
         loc: Span,
         ty: Ty,
@@ -120,6 +123,18 @@ impl Error {
                     }
                 )?;
                 writeln!(to, "|> types that can be dereferenced: &<type> *<type>")?;
+            }
+            Error::DuplicateBound { loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to, 
+                    &|to| {
+                        write!(to, "this generic parameter contains duplicate bound")
+                    }
+                )?;
             }
             Error::GenericEntry { tag, generics, loc } => {
                 loc.loc_to(sources, to)?;

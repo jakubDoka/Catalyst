@@ -447,8 +447,8 @@ pub fn compile() {
             .generate();
             total_generation += now.elapsed();
 
-            println!("{}", sources.display(ent.name));
-            println!("{}", ctx.func.display());
+            // println!("{}", sources.display(ent.name));
+            // println!("{}", ctx.func.display());
             
             let id = func_lookup[id].unwrap();
 
@@ -463,8 +463,6 @@ pub fn compile() {
         }
     }
 
-
-    // linking
     let binary = module.finish().emit().unwrap();
     std::fs::write("catalyst.o", &binary).unwrap();
 
@@ -489,6 +487,7 @@ pub fn compile() {
         .status()
         .unwrap();
     
+    // linking
     std::fs::remove_file("catalyst.o").unwrap();
 
     assert!(status.success(), "{status:?}");
