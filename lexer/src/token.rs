@@ -59,36 +59,26 @@ gen_kind!(
     Mut = "'mut'",
     Impl = "'impl'",
     As = "'as'",
-
     Ident = "<ident>",
     Operator = "<operator>",
-
     Int(i16) = "<int>",
     String = "<string>",
     Bool(bool) = "<bool>",
     Char = "<char>",
-
     LeftCurly = "'{'",
     RightCurly = "'}'",
-
     LeftParen = "'('",
     RightParen = "')'",
-
     LeftBracket = "'['",
     RightBracket = "']'",
-
     Comma = "','",
     Colon = "':'",
     Dot = "'.'",
     RightArrow = "'->'",
     DoubleColon = "'::'",
-
     Hash = "'#'",
-
     NewLine = "'\\n' | ';'",
-
     Eof = "<eof>",
-
     None = "<none>",
 );
 

@@ -45,12 +45,10 @@ where
             let (seen, in_recurse) = lookup[node.index()];
 
             if in_recurse {
-                return Err(
-                    stack
-                        .drain(stack.iter().position(|i| i.0 == node).unwrap()..)
-                        .map(|i| i.0)
-                        .collect(),
-                );
+                return Err(stack
+                    .drain(stack.iter().position(|i| i.0 == node).unwrap()..)
+                    .map(|i| i.0)
+                    .collect());
             }
 
             let done = self.node_len(node) == index;

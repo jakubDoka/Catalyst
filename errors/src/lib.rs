@@ -1,7 +1,10 @@
 #![feature(type_name_of_val)]
 #![feature(if_let_guard)]
 
-use std::{any::{Any, TypeId}, collections::HashMap};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
 use ansi_term::Color;
 
@@ -28,7 +31,8 @@ impl Diagnostics {
     }
 
     pub fn iter<T: Any + 'static>(&self) -> Option<impl Iterator<Item = &T>> {
-        self.errors.get(&TypeId::of::<T>())
+        self.errors
+            .get(&TypeId::of::<T>())
             .map(|storage| storage.downcast_ref::<Vec<T>>().unwrap().iter())
     }
 

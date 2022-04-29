@@ -66,7 +66,7 @@ pub enum Kind {
     Block(TirList),
     Return(PackedOption<Tir>),
     Argument(u32),
-    Call(Func, TirList),
+    Call(PackedOption<Ty>, Func, TirList),
     IntLit(i16),
     BoolLit(bool),
     CharLit,
@@ -105,11 +105,13 @@ macro_rules! impl_bool_bit_and {
     ($flags:ty) => {
         impl std::ops::BitAnd<bool> for $flags {
             type Output = Self;
-        
+
             fn bitand(self, rhs: bool) -> Self {
-                Self { bits: self.bits & (!rhs as u32).wrapping_add(u32::MAX) }
+                Self {
+                    bits: self.bits & (!rhs as u32).wrapping_add(u32::MAX),
+                }
             }
-        }        
+        }
     };
 }
 
@@ -220,7 +222,14 @@ impl<'a> Display<'a> {
             Kind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
             }
-            Kind::Call(func, args) => {
+            Kind::Call(caller, func, args) => {
+                if let Some(caller) = caller.expand() {
+                    write!(
+                        f,
+                        "{}::",
+                        ty::Display::new(self.types, self.sources, caller)
+                    )?;
+                }
                 write!(f, "{func}(")?;
                 for (i, &arg) in self.data.cons.get(args).iter().enumerate() {
                     if i > 0 {
@@ -231,9 +240,7 @@ impl<'a> Display<'a> {
 
                 write!(f, ")")?;
             }
-            Kind::IntLit(..)
-            | Kind::CharLit
-            | Kind::BoolLit(_) => {
+            Kind::IntLit(..) | Kind::CharLit | Kind::BoolLit(_) => {
                 write!(f, "{}", self.sources.display(ent.span))?;
             }
             Kind::Loop(block) => {

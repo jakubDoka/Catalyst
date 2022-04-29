@@ -1,7 +1,7 @@
 use crate::*;
 use cranelift_entity::{
-    packed_option::{ReservedValue, PackedOption},
-    PrimaryMap
+    packed_option::{PackedOption, ReservedValue},
+    PrimaryMap,
 };
 use lexer::*;
 use modules::*;
@@ -61,7 +61,7 @@ impl<'a> Builder<'a> {
                 let field_ty = self.parse_type(field_ty_ast)?;
 
                 let span = self.ast.nodes[name].span;
-                
+
                 let id = {
                     let str = self.sources.display(span);
                     Self::field_id(id, ID::new(str))
@@ -76,8 +76,12 @@ impl<'a> Builder<'a> {
                     self.types.sfields.push_one(field)
                 };
 
-                assert!(self.types.sfield_lookup.insert(id, SFieldRef::new(field))
-                    .map(|f| f.next.is_some()).unwrap_or(true));
+                assert!(self
+                    .types
+                    .sfield_lookup
+                    .insert(id, SFieldRef::new(field))
+                    .map(|f| f.next.is_some())
+                    .unwrap_or(true));
                 self.graph.add_edge(field_ty.as_u32());
             }
             self.types.sfields.close_frame()
@@ -95,8 +99,24 @@ impl<'a> Builder<'a> {
 }
 
 impl TypeParser for Builder<'_> {
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics) {
-        (self.scope, self.types, self.sources, self.modules, self.ast, self.diagnostics)
+    fn state(
+        &mut self,
+    ) -> (
+        &mut Scope,
+        &mut Types,
+        &Sources,
+        &mut Modules,
+        &ast::Data,
+        &mut errors::Diagnostics,
+    ) {
+        (
+            self.scope,
+            self.types,
+            self.sources,
+            self.modules,
+            self.ast,
+            self.diagnostics,
+        )
     }
 }
 
@@ -107,12 +127,16 @@ pub struct Types {
     pub sfield_lookup: Map<SFieldRef>,
     pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
     pub builtin: BuiltinTable,
-    pub bound_cons: Map<Span>,
+    pub bound_cons: Map<BoundImpl>,
     params: Vec<Ty>,
 }
 
 impl Types {
-    pub fn new(graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) -> Self {
+    pub fn new(
+        graph: &mut GenericGraph,
+        sources: &mut Sources,
+        builtin_source: &mut BuiltinSource,
+    ) -> Self {
         let mut tys = Types {
             funcs: StackMap::new(),
             ents: PrimaryMap::new(),
@@ -129,9 +153,13 @@ impl Types {
         tys
     }
 
+    pub fn implements(&self, ty: Ty, bound: Ty) -> bool {
+        todo!();
+    }
+
     pub fn id_of(&self, ty: Ty) -> ID {
         match self.ents[ty].kind {
-            Kind::Param(.., ty) if let Some(ty) = ty.expand() => {
+            Kind::Param(.., ty) => {
                 self.ents[ty].id
             }
             _ => self.ents[ty].id,
@@ -145,7 +173,12 @@ impl Types {
         }
     }
 
-    fn init(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
+    fn init(
+        &mut self,
+        graph: &mut GenericGraph,
+        sources: &mut Sources,
+        builtin_source: &mut BuiltinSource,
+    ) {
         self.init_builtin_table(graph, sources, builtin_source);
     }
 
@@ -159,25 +192,23 @@ impl Types {
             self.ents[param] = self.ents[ty];
         }
 
-        return InstancePopper {
-            len: params.len(),
-        };
+        return InstancePopper { len: params.len() };
     }
 
     pub fn pop_params(&mut self, popper: InstancePopper) {
-        for (i, &param) in self.params[0..popper.len].iter().enumerate() {
+        for &param in self.params[0..popper.len].iter() {
             self.ents[param] = Ent {
-                kind: Kind::Param(i as u32, None.into()),
+                kind: Kind::Unresolved,
                 ..Default::default()
             };
         }
     }
 
-    pub fn get_parameter(&mut self, i: usize, name: Span, bound: Option<Ty>) -> Ty {
-        for i in self.params.len()..=i {
+    pub fn get_parameter(&mut self, i: usize, name: Span, bound: Ty) -> Ty {
+        for _ in self.params.len()..=i {
             let ty = {
                 let ent = Ent {
-                    kind: Kind::Param(i as u32, None.into()),
+                    kind: Kind::Unresolved,
                     ..Default::default()
                 };
                 self.ents.push(ent)
@@ -186,8 +217,35 @@ impl Types {
         }
         let ty = self.params[i];
         self.ents[ty].name = name;
-        self.ents[ty].kind = Kind::Param(i as u32, bound.into());
+        self.ents[ty].kind = Kind::Param(i as u32, bound);
         ty
+    }
+}
+
+pub struct BoundImpl {
+    pub span: Span,
+    pub funcs: FuncList,
+}
+
+impl BoundImpl {
+    pub fn new(span: Span) -> Self {
+        BoundImpl {
+            span,
+            funcs: Default::default(),
+        }
+    }
+}
+
+impl ReservedValue for BoundImpl {
+    fn reserved_value() -> Self {
+        BoundImpl {
+            span: Span::default(),
+            funcs: FuncList::default(),
+        }
+    }
+
+    fn is_reserved_value(&self) -> bool {
+        self.span.is_reserved_value() && self.funcs.is_reserved_value()
     }
 }
 
@@ -201,7 +259,7 @@ macro_rules! gen_builtin_table {
         }
 
         impl BuiltinTable {
-            pub fn all(&self) -> [Ty; 8] {
+            pub fn all(&self) -> [Ty; 9] {
                 [$(self.$name),*]
             }
         }
@@ -235,6 +293,7 @@ impl BuiltinTable {
 
 gen_builtin_table!(
     nothing: ty::Kind::Nothing,
+    any: ty::Kind::Bound(FuncList::default()),
     bool: ty::Kind::Bool,
     char: ty::Kind::Int(32),
     int: ty::Kind::Int(-1),
@@ -349,7 +408,7 @@ pub enum Kind {
     Struct(SFieldList),
     Pointer(Ty),
     Int(i16),
-    Param(u32, PackedOption<Ty>),
+    Param(u32, Ty),
     Bool,
     Nothing,
     Unresolved,
@@ -370,8 +429,8 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(..) 
-            | Kind::Bound(..) 
+            Kind::Struct(..)
+            | Kind::Bound(..)
             | Kind::Param(..)
             | Kind::Int(..)
             | Kind::Nothing

@@ -41,16 +41,12 @@ impl Data {
 
     #[inline]
     pub fn elements(&self) -> impl Iterator<Item = (Ast, &Ent)> + Clone {
-        self.elements
-            .iter()
-            .map(|&ast| (ast, &self.nodes[ast]))
+        self.elements.iter().map(|&ast| (ast, &self.nodes[ast]))
     }
 
     #[inline]
     pub fn children_iter(&self, ast: Ast) -> impl Iterator<Item = &Ent> {
-        self.children(ast)
-            .iter()
-            .map(|&ast| &self.nodes[ast])
+        self.children(ast).iter().map(|&ast| &self.nodes[ast])
     }
 
     pub fn slice(&self, list: AstList) -> &[Ast] {
@@ -184,7 +180,7 @@ pub enum Kind {
     Break,
     Loop,
     /// (mutable)
-    Variable(bool), 
+    Variable(bool),
     If,
     Unary,
     Binary,

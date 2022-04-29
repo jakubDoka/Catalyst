@@ -3,12 +3,12 @@ use std::str::FromStr;
 use cranelift_codegen::ir::Type;
 use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
-use cranelift_entity::{PrimaryMap, SecondaryMap, EntitySet};
+use cranelift_entity::{EntitySet, PrimaryMap, SecondaryMap};
 
-use crate::{Result, Types};
 use crate::*;
+use crate::{Result, Types};
 use lexer::*;
-use typec::{*, func};
+use typec::{func, *};
 
 pub struct Translator<'a> {
     pub func_id: typec::Func,
@@ -28,19 +28,24 @@ pub struct Translator<'a> {
 
 impl Translator<'_> {
     pub fn translate_func(&mut self) -> Result {
-        let func::Ent { sig, body, args, flags, .. } = self.t_funcs[self.func_id];
-        
+        let func::Ent {
+            sig,
+            body,
+            args,
+            flags,
+            ..
+        } = self.t_funcs[self.func_id];
+
         let has_sret = Self::translate_signature(
-            &sig, 
-            &mut self.func.sig, 
+            &sig,
+            &mut self.func.sig,
             self.types,
-            self.t_types, 
+            self.t_types,
             self.sources,
             self.system_call_convention,
             flags.contains(typec::func::Flags::ENTRY),
         )?;
-        
-        
+
         let entry_point = self.func.create_block();
         {
             if has_sret {
@@ -48,7 +53,7 @@ impl Translator<'_> {
                 self.return_dest = Some(value);
                 self.func.value_slices.push_one(value);
             }
-            
+
             for &tir in self.body.cons.get(args) {
                 let value = self.translate_value(tir).unwrap();
                 self.func.value_slices.push_one(value);
@@ -75,7 +80,7 @@ impl Translator<'_> {
         if stmts.is_reserved_value() {
             return Ok(None);
         }
-        
+
         let stmts = self.body.cons.get(stmts);
         if stmts.is_empty() {
             return Ok(None);
@@ -102,7 +107,9 @@ impl Translator<'_> {
             tir::Kind::If(..) => self.translate_if(tir, dest)?,
             tir::Kind::Variable(value) => self.translate_variable(value)?,
             tir::Kind::Constructor(..) => self.translate_constructor(tir, dest)?,
-            tir::Kind::FieldAccess(value, field) => self.translate_field_access(value, field, dest)?,
+            tir::Kind::FieldAccess(value, field) => {
+                self.translate_field_access(value, field, dest)?
+            }
             tir::Kind::Block(..) => self.translate_block(tir, dest)?,
             tir::Kind::Loop(..) => self.translate_loop(tir, dest)?,
             tir::Kind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
@@ -128,7 +135,7 @@ impl Translator<'_> {
 
         let mir_value = self.translate_expr(value, dest)?.unwrap();
 
-        // // funny thing, any stack allocated value treated as 
+        // // funny thing, any stack allocated value treated as
         // // value is pointer but pointer treated as pointer is value
         let value = self.value_from_ty(ty);
 
@@ -143,7 +150,7 @@ impl Translator<'_> {
             let ent = InstEnt::new(kind, dest.into());
             self.func.add_inst(ent);
         }
-        
+
         self.tir_mapping[tir] = value.into();
 
         Ok(Some(value))
@@ -155,7 +162,7 @@ impl Translator<'_> {
         };
 
         let mir_value = self.translate_expr(value, dest)?.unwrap();
-        
+
         let value = self.flagged_value_from_ty(ty, mir::Flags::POINTER);
 
         {
@@ -175,7 +182,12 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_char_lit(&mut self, ty: Ty, span: Span, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_char_lit(
+        &mut self,
+        ty: Ty,
+        span: Span,
+        dest: Option<Value>,
+    ) -> Result<Option<Value>> {
         let literal = lexer::char_value(self.sources, span).unwrap() as u64;
 
         let value = self.value_from_ty(ty);
@@ -199,7 +211,6 @@ impl Translator<'_> {
         let a = self.translate_expr(a, None)?.unwrap();
         let b = self.translate_expr(b, Some(a))?.unwrap();
 
-
         if a == b {
             return Ok(None);
         }
@@ -213,16 +224,21 @@ impl Translator<'_> {
         Ok(None)
     }
 
-    fn translate_break(&mut self, loop_header_marker: Tir, value: PackedOption<Tir>) -> Result<Option<Value>> {
-        let &Loop { exit, dest, .. } = self.func.loops
+    fn translate_break(
+        &mut self,
+        loop_header_marker: Tir,
+        value: PackedOption<Tir>,
+    ) -> Result<Option<Value>> {
+        let &Loop { exit, dest, .. } = self
+            .func
+            .loops
             .iter()
             .rev()
             .find(|loop_header| loop_header.marker == loop_header_marker)
             .unwrap();
-        
+
         let value = if let Some(value) = value.expand() {
-            dest
-                .is_none()
+            dest.is_none()
                 .then_some(self.translate_expr(value, dest)?)
                 .flatten()
         } else {
@@ -232,7 +248,7 @@ impl Translator<'_> {
         {
             let kind = InstKind::Jump(exit);
             let ent = InstEnt::new(kind, value);
-            self.func.add_inst(ent); 
+            self.func.add_inst(ent);
         }
 
         Ok(None)
@@ -241,11 +257,11 @@ impl Translator<'_> {
     fn translate_loop(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::Loop(body), .. } = self.body.ents[tir] else {
             unreachable!()
-        };        
-        
+        };
+
         let enter_block = self.func.create_block();
         let exit_block = self.func.create_block();
-        
+
         let on_stack = self.on_stack(tir);
         let value = self.unwrap_dest_low(ty, on_stack, dest);
 
@@ -285,7 +301,12 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_field_access(&mut self, tir_header: Tir, field: SField, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_field_access(
+        &mut self,
+        tir_header: Tir,
+        field: SField,
+        dest: Option<Value>,
+    ) -> Result<Option<Value>> {
         let ty = self.body.ents[tir_header].ty;
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
@@ -323,7 +344,12 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_bool_lit(&mut self, ty: Ty, literal_value: bool, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_bool_lit(
+        &mut self,
+        ty: Ty,
+        literal_value: bool,
+        dest: Option<Value>,
+    ) -> Result<Option<Value>> {
         let value = self.value_from_ty(ty);
 
         {
@@ -341,11 +367,11 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {        
+    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::Constructor(data), .. } = self.body.ents[tir] else {
             unreachable!()
         };
-        
+
         let on_stack = self.on_stack(tir);
         let Some(mut value) = self.unwrap_dest_low(ty, on_stack, dest).or(dest) else {
             unreachable!();
@@ -369,7 +395,7 @@ impl Translator<'_> {
             let dest = {
                 let of_value = {
                     let mut value = self.func.values[value];
-                    value.offset = value.offset + offset;    
+                    value.offset = value.offset + offset;
                     self.func.values.push(value)
                 };
 
@@ -383,7 +409,7 @@ impl Translator<'_> {
             };
 
             self.translate_expr(data, Some(dest))?;
-            
+
             if !on_stack {
                 let new_value = {
                     let value = self.func.values[value];
@@ -406,13 +432,13 @@ impl Translator<'_> {
     fn translate_variable(&mut self, tir: Tir) -> Result<Option<Value>> {
         let assignable = self.body.ents[tir].flags.contains(tir::Flags::ASSIGNABLE);
         let on_stack = self.on_stack(tir);
-        
+
         let dest = if on_stack {
             self.unwrap_dest(tir, None)
         } else {
             None
         };
-        
+
         let value = self.translate_expr(tir, dest)?;
 
         {
@@ -420,13 +446,20 @@ impl Translator<'_> {
             let ent = InstEnt::new(kind, value);
             self.func.add_inst(ent);
         }
-        
-        self.func.values[value.unwrap()].flags.insert(mir::Flags::ASSIGNABLE & assignable);
-        
+
+        self.func.values[value.unwrap()]
+            .flags
+            .insert(mir::Flags::ASSIGNABLE & assignable);
+
         Ok(None)
     }
 
-    fn translate_int_lit(&mut self, ty: Ty, span: Span, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_int_lit(
+        &mut self,
+        ty: Ty,
+        span: Span,
+        dest: Option<Value>,
+    ) -> Result<Option<Value>> {
         let literal_value = lexer::int_value(self.sources, span);
 
         let value = self.value_from_ty(ty);
@@ -450,7 +483,7 @@ impl Translator<'_> {
         let tir::Ent { ty, kind: tir::Kind::If(cond, then, otherwise), .. } = self.body.ents[tir] else {
             unreachable!();
         };
-        
+
         let cond = self.translate_expr(cond, None)?;
 
         let on_stack = self.on_stack(tir);
@@ -493,7 +526,7 @@ impl Translator<'_> {
                 let value = self.translate_block(otherwise.unwrap(), block_dest)?;
                 (!on_stack).then_some(value).flatten()
             };
-            
+
             if !self.func.is_terminated() {
                 let kind = InstKind::Jump(skip_block);
                 let ent = InstEnt::new(kind, value);
@@ -512,16 +545,29 @@ impl Translator<'_> {
     }
 
     fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
-        let tir::Ent { ty, kind: tir::Kind::Call(func, args), .. } = self.body.ents[tir] else {
+        let tir::Ent { ty, kind: tir::Kind::Call(caller, func, args), .. } = self.body.ents[tir] else {
             unreachable!();
+        };
+
+        let func = if let func::Kind::Bound(bound, index) = self.t_funcs[func].kind {
+            let id = {
+                let bound = self.t_types.ents[bound].id;
+                let implementor = self.t_types.ents[caller.unwrap()].id;
+                typec::Collector::bound_impl_id(bound, implementor)
+            };
+
+            let funcs = self.t_types.bound_cons.get(id).unwrap().funcs;
+            self.t_types.funcs.get(funcs)[index as usize]
+        } else {
+            func
         };
 
         let on_stack = self.on_stack(tir);
         let has_sret = self.has_sret.contains(func);
-        
+
         let dest = on_stack.then_some(dest).flatten();
         let value = self.unwrap_dest_low(ty, on_stack, dest).or(dest);
-        
+
         let args = {
             let args_view = self.body.cons.get(args);
             let mut args = Vec::with_capacity(args_view.len() + has_sret as usize);
@@ -533,8 +579,6 @@ impl Translator<'_> {
             }
             self.func.value_slices.push(&args)
         };
-
-       
 
         if on_stack && !has_sret {
             let temp = {
@@ -581,7 +625,7 @@ impl Translator<'_> {
                     let ent = InstEnt::new(kind, value.into());
                     self.func.add_inst(ent);
                 }
-                
+
                 value
             } else {
                 // no need to allocate, register is enough
@@ -592,8 +636,8 @@ impl Translator<'_> {
 
     fn on_stack(&self, tir: Tir) -> bool {
         let tir::Ent { ty, flags, .. } = self.body.ents[tir];
-        self.types.ents[ty].flags.contains(types::Flags::ON_STACK) 
-        || flags.contains(tir::Flags::SPILLED)
+        self.types.ents[ty].flags.contains(types::Flags::ON_STACK)
+            || flags.contains(tir::Flags::SPILLED)
     }
 
     fn translate_return(&mut self, value: Option<Tir>) -> Result<Option<Value>> {
@@ -614,7 +658,7 @@ impl Translator<'_> {
     }
 
     fn translate_value(&mut self, tir: Tir) -> Option<Value> {
-        let tir::Ent { ty, ..} = self.body.ents[tir];
+        let tir::Ent { ty, .. } = self.body.ents[tir];
         if ty == self.nothing {
             return None;
         }
@@ -623,17 +667,16 @@ impl Translator<'_> {
         Some(value)
     }
 
-    
     fn value_from_ty(&mut self, ty: Ty) -> Value {
         self.flagged_value_from_ty(ty, Default::default())
     }
-    
+
     fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::Flags) -> Value {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
     }
 
-    /// translates a `source` into the `target` and returns true if 
+    /// translates a `source` into the `target` and returns true if
     /// signature has struct return type
     pub fn translate_signature(
         source: &typec::Sig,
@@ -659,7 +702,7 @@ impl Translator<'_> {
             }
         };
         target.clear(call_conv);
-        
+
         let mut result = false;
         if ty::Kind::Nothing != t_types.ents[source.ret].kind {
             let types::Ent { repr, flags, .. } = types.ents[source.ret];
@@ -672,9 +715,11 @@ impl Translator<'_> {
                 target.returns.push(ir::AbiParam::new(repr));
             }
         }
-        
+
         target.params.extend(
-            t_types.args.get(source.args)
+            t_types
+                .args
+                .get(source.args)
                 .iter()
                 .map(|&ty| types.ents[ty].repr)
                 .map(|repr| ir::AbiParam::new(repr)),
@@ -776,9 +821,10 @@ impl Func {
 
     pub fn is_terminated(&self) -> bool {
         self.current.expand().map_or(false, |current| {
-            self.blocks[current].end.expand().map_or(false, |end| {
-                self.insts[end].kind.is_terminating()
-            })
+            self.blocks[current]
+                .end
+                .expand()
+                .map_or(false, |end| self.insts[end].kind.is_terminating())
         })
     }
 

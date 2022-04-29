@@ -6,15 +6,15 @@ pub extern crate cranelift_entity;
 
 pub mod map;
 pub mod source_info;
-pub mod token;
 pub mod stack;
+pub mod token;
 
 use std::str::Chars;
 
 pub use map::*;
 pub use source_info::*;
-pub use token::*;
 pub use stack::*;
+pub use token::*;
 
 #[macro_export]
 macro_rules! gen_entity {

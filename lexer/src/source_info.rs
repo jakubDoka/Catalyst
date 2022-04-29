@@ -107,7 +107,7 @@ impl LineMapping {
         if pos == 0 {
             return (0, 0);
         }
-        
+
         match self.new_lines.binary_search(&(pos as u32)) {
             Ok(i) | Err(i) => (i - 1, pos - self.new_lines[i - 1] as usize),
         }
@@ -184,7 +184,14 @@ impl Span {
     pub fn log(&self, sources: &Sources) -> String {
         let mut string = String::new();
         self.loc_to(sources, &mut string).unwrap();
-        self.underline_to(ansi_term::Color::Red.normal(), '^', sources, &mut string, &|_| Ok(())).unwrap();
+        self.underline_to(
+            ansi_term::Color::Red.normal(),
+            '^',
+            sources,
+            &mut string,
+            &|_| Ok(()),
+        )
+        .unwrap();
         string
     }
 
@@ -192,7 +199,7 @@ impl Span {
         &self,
         color: ansi_term::Style,
         underline_char: char,
-        sources: &Sources, 
+        sources: &Sources,
         to: &mut String,
         message: &dyn Fn(&mut String) -> std::fmt::Result,
     ) -> std::fmt::Result {
@@ -260,7 +267,6 @@ impl Span {
         writeln!(to, "{suffix}")?;
 
         Ok(())
-
     }
 
     pub fn loc_to(&self, sources: &Sources, to: &mut impl std::fmt::Write) -> std::fmt::Result {
@@ -272,7 +278,13 @@ impl Span {
 
         let (line, col) = source_ent.mapping.line_data_at(self.range().start);
 
-        writeln!(to, "|> {}:{}:{} ", source_ent.path.display(), line + 1, col + 1)
+        writeln!(
+            to,
+            "|> {}:{}:{} ",
+            source_ent.path.display(),
+            line + 1,
+            col + 1
+        )
     }
 }
 

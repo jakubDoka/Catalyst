@@ -3,11 +3,11 @@
 #![feature(let_else)]
 
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{InstBuilder, Signature, StackSlotData, MemFlags};
+use cranelift_codegen::ir::{InstBuilder, MemFlags, Signature, StackSlotData};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{SecondaryMap, EntityRef, EntitySet};
+use cranelift_entity::{EntityRef, EntitySet, SecondaryMap};
 use cranelift_frontend::{FunctionBuilder, Variable};
-use cranelift_module::{FuncId, Module, Linkage};
+use cranelift_module::{FuncId, Linkage, Module};
 use instance::*;
 use lexer::*;
 use typec::Func;
@@ -29,10 +29,7 @@ pub struct Generator<'a> {
 
 impl<'a> Generator<'a> {
     pub fn generate(&mut self) {
-        Self::transfer_signature(
-            &self.source.sig,
-            &mut self.builder.func.signature
-        );
+        Self::transfer_signature(&self.source.sig, &mut self.builder.func.signature);
 
         for (id, stack) in self.source.stacks.iter() {
             let slot = StackSlotData::new(ir::StackSlotKind::ExplicitSlot, stack.size);
@@ -91,18 +88,23 @@ impl<'a> Generator<'a> {
                         let ir_func = self.function_lookup[func].unwrap();
                         self.module.declare_func_in_func(ir_func, self.builder.func)
                     };
-                    
-                    let args: Vec<_> = self.source.value_slices
+
+                    let args: Vec<_> = self
+                        .source
+                        .value_slices
                         .get(args)
                         .iter()
                         .map(|&value| self.use_value(value))
                         .collect();
-                    
+
                     self.builder.ins().call(func_ref, &args)
                 };
-                
+
                 if let Some(value) = inst.value.expand() {
-                    if !self.source.values[value].flags.contains(mir::Flags::POINTER) {
+                    if !self.source.values[value]
+                        .flags
+                        .contains(mir::Flags::POINTER)
+                    {
                         let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
                         self.value_lookup[inst.value.unwrap()] = ret.into();
                     }
@@ -126,7 +128,7 @@ impl<'a> Generator<'a> {
                 let block = self.block_lookup[block].unwrap();
                 let value = self.use_value(inst.value.unwrap());
                 self.builder.ins().brz(value, block, &[]);
-            },
+            }
             mir::InstKind::Jump(block) => {
                 let block = self.block_lookup[block].unwrap();
                 if let Some(value) = inst.value.expand() {
@@ -135,13 +137,13 @@ impl<'a> Generator<'a> {
                 } else {
                     self.builder.ins().jump(block, &[]);
                 }
-            },
+            }
             mir::InstKind::BoolLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let ir_value = self.builder.ins().bconst(repr, literal);
                 self.value_lookup[value] = ir_value.into();
-            },
+            }
             mir::InstKind::Variable => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
@@ -153,15 +155,21 @@ impl<'a> Generator<'a> {
                     let value = self.value_lookup[value].unwrap();
                     self.builder.def_var(variable, value);
                 }
-            },
-            InstKind::DerefPointer(value) if self.source.values[value].flags.contains(mir::Flags::POINTER) =>  {
+            }
+            InstKind::DerefPointer(value)
+                if self.source.values[value]
+                    .flags
+                    .contains(mir::Flags::POINTER) =>
+            {
                 let value = self.use_value(value);
                 self.value_lookup[inst.value.unwrap()] = value.into();
             }
-            InstKind::Offset(value) | InstKind::TakePointer(value) | InstKind::DerefPointer(value) => {
-                self.value_lookup[inst.value.unwrap()] = 
-                    self.value_lookup[value].unwrap().into(); // check
-            },
+            InstKind::Offset(value)
+            | InstKind::TakePointer(value)
+            | InstKind::DerefPointer(value) => {
+                self.value_lookup[inst.value.unwrap()] = self.value_lookup[value].unwrap().into();
+                // check
+            }
             InstKind::Assign(value) => {
                 let target = inst.value.unwrap();
 
@@ -179,27 +187,31 @@ impl<'a> Generator<'a> {
                 };
 
                 match (
-                    self.source.values[value].flags.contains(mir::Flags::POINTER), 
-                    self.source.values[target].flags.contains(mir::Flags::POINTER),
+                    self.source.values[value]
+                        .flags
+                        .contains(mir::Flags::POINTER),
+                    self.source.values[target]
+                        .flags
+                        .contains(mir::Flags::POINTER),
                 ) {
                     (true, true) => {
                         let target_ir = self.use_value_as_pointer(target);
                         let value_ir = self.use_value_as_pointer(value);
                         self.builder.emit_small_memory_copy(
-                            self.module.isa().frontend_config(), 
-                            target_ir, 
-                            value_ir, 
-                            size as u64, 
-                            dest_align as u8, 
-                            src_align as u8, 
-                            false, 
+                            self.module.isa().frontend_config(),
+                            target_ir,
+                            value_ir,
+                            size as u64,
+                            dest_align as u8,
+                            src_align as u8,
+                            false,
                             MemFlags::new(),
                         )
-                    },
+                    }
                     (true, false) => {
                         let value = self.use_value(value);
                         self.assign_value(target, value);
-                    },
+                    }
                     (false, true) => {
                         let offset = {
                             let offset = self.source.values[target].offset;
@@ -215,14 +227,16 @@ impl<'a> Generator<'a> {
                                 value
                             }
                         };
-                        self.builder.ins().store(MemFlags::new(), value, target, offset as i32);
-                    },
+                        self.builder
+                            .ins()
+                            .store(MemFlags::new(), value, target, offset as i32);
+                    }
                     (false, false) => {
                         let value = self.use_value(value);
                         self.assign_value(target, value);
-                    },
+                    }
                 }
-            },
+            }
             InstKind::StackAddr(stack) => {
                 let value = inst.value.unwrap();
                 let stack = self.stack_slot_lookup[stack].unwrap();
@@ -230,9 +244,12 @@ impl<'a> Generator<'a> {
                     let offset = self.source.values[value].offset;
                     self.unwrap_size(offset)
                 };
-                let addr = self.builder.ins().stack_addr(self.module.isa().pointer_type(), stack, 0);
+                let addr =
+                    self.builder
+                        .ins()
+                        .stack_addr(self.module.isa().pointer_type(), stack, 0);
                 self.value_lookup[value] = addr.into();
-            },
+            }
         }
     }
 
@@ -245,7 +262,12 @@ impl<'a> Generator<'a> {
         self.types.ents[ty].repr
     }
 
-    fn generate_native_call(&mut self, func: Func, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_call(
+        &mut self,
+        func: Func,
+        args: ValueList,
+        result: PackedOption<mir::Value>,
+    ) {
         let name = self.t_functions[func].name;
         let str = self.sources.display(name);
 
@@ -254,12 +276,7 @@ impl<'a> Generator<'a> {
             "-" => self.generate_native_sub(args, result),
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
-            "<" | 
-            ">" | 
-            "<=" | 
-            ">=" | 
-            "==" | 
-            "!="=> self.generate_native_cmp(str, args, result),
+            "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
             _ => todo!("Unhandled native function: {:?}", str),
         }
     }
@@ -272,11 +289,11 @@ impl<'a> Generator<'a> {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-                
-                let ty = self.builder.func.dfg.value_type(left); 
+
+                let ty = self.builder.func.dfg.value_type(left);
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-                
+
                 let add = if ty.is_int() {
                     self.builder.ins().iadd(left, right)
                 } else {
@@ -306,11 +323,11 @@ impl<'a> Generator<'a> {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-                
-                let ty = self.builder.func.dfg.value_type(left); 
+
+                let ty = self.builder.func.dfg.value_type(left);
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-                
+
                 let sub = if ty.is_int() {
                     self.builder.ins().isub(left, right)
                 } else {
@@ -328,11 +345,11 @@ impl<'a> Generator<'a> {
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-                
-                let ty = self.builder.func.dfg.value_type(left); 
+
+                let ty = self.builder.func.dfg.value_type(left);
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-                
+
                 let mul = if ty.is_int() {
                     self.builder.ins().imul(left, right)
                 } else {
@@ -348,14 +365,16 @@ impl<'a> Generator<'a> {
     fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
         match self.source.value_slices.get(args) {
             &[left, right] => {
-                let signed = !self.source.values[left].flags.contains(mir::Flags::UNSIGNED);
+                let signed = !self.source.values[left]
+                    .flags
+                    .contains(mir::Flags::UNSIGNED);
                 let left = self.use_value(left);
                 let right = self.use_value(right);
-                
-                let ty = self.builder.func.dfg.value_type(left); 
+
+                let ty = self.builder.func.dfg.value_type(left);
 
                 assert!(ty == self.builder.func.dfg.value_type(right));
-                
+
                 let div = if ty.is_int() {
                     if signed {
                         self.builder.ins().sdiv(left, right)
@@ -377,7 +396,9 @@ impl<'a> Generator<'a> {
             unreachable!();
         };
 
-        let signed = !self.source.values[left].flags.contains(mir::Flags::UNSIGNED);
+        let signed = !self.source.values[left]
+            .flags
+            .contains(mir::Flags::UNSIGNED);
 
         let left = self.use_value(left);
         let right = self.use_value(right);
@@ -428,11 +449,16 @@ impl<'a> Generator<'a> {
         } else {
             let target_ir = self.use_value(target);
             let value = self.set_bit_field(target_ir, value, offset);
-            self.value_lookup[target] = value.into();                
+            self.value_lookup[target] = value.into();
         }
     }
 
-    fn set_bit_field(&mut self, mut target: ir::Value, mut value: ir::Value, offset: i32) -> ir::Value {        
+    fn set_bit_field(
+        &mut self,
+        mut target: ir::Value,
+        mut value: ir::Value,
+        offset: i32,
+    ) -> ir::Value {
         let target_ty = self.builder.func.dfg.value_type(target);
         let value_ty = self.builder.func.dfg.value_type(value);
 
@@ -445,7 +471,7 @@ impl<'a> Generator<'a> {
         }
 
         value = self.builder.ins().uextend(target_ty, value);
-        
+
         let mask = {
             let value_bits = value_ty.as_int().bits();
             ((1 << value_bits) - 1) << offset * 8
@@ -453,7 +479,7 @@ impl<'a> Generator<'a> {
 
         target = self.builder.ins().band_imm(target, !mask);
         value = self.builder.ins().ishl_imm(value, offset as i64 * 8);
-        
+
         self.builder.ins().bor(target, value)
     }
 
@@ -465,25 +491,30 @@ impl<'a> Generator<'a> {
         self.use_value_low(value, true)
     }
 
-
     fn use_value_low(&mut self, value: mir::Value, as_pointer: bool) -> ir::Value {
-        let mir::ValueEnt { ty, flags, offset, .. } = self.source.values[value];
+        let mir::ValueEnt {
+            ty, flags, offset, ..
+        } = self.source.values[value];
         let repr = self.types.ents[ty].repr;
         let variable = Variable::new(value.index());
-        let value = if flags.contains(mir::Flags::ASSIGNABLE) && self.variable_set.contains(variable) {
-            self.builder.use_var(variable)
-        } else {
-            self.value_lookup[value].unwrap()
-        };
+        let value =
+            if flags.contains(mir::Flags::ASSIGNABLE) && self.variable_set.contains(variable) {
+                self.builder.use_var(variable)
+            } else {
+                self.value_lookup[value].unwrap()
+            };
 
         let offset = self.unwrap_size(offset);
-        
+
         if flags.contains(mir::Flags::POINTER) {
             let loader_repr = repr.as_int();
             if self.types.ents[ty].flags.contains(types::Flags::ON_STACK) || as_pointer {
                 value
             } else {
-                let value = self.builder.ins().load(loader_repr, MemFlags::new(), value, offset);
+                let value = self
+                    .builder
+                    .ins()
+                    .load(loader_repr, MemFlags::new(), value, offset);
                 if repr == ir::types::B1 {
                     self.builder.ins().icmp_imm(IntCC::NotEqual, value, 0)
                 } else {
@@ -517,10 +548,8 @@ impl<'a> Generator<'a> {
 pub fn func_linkage(kind: typec::func::Kind) -> Option<Linkage> {
     use typec::func::Kind::*;
     Some(match kind {
-        Local |
-        Owned(_) |
-        Instance(_) => Linkage::Export,
-        Builtin | Ignored => return None,
+        Local | Owned(..) | Instance(..) => Linkage::Export,
+        Builtin | Bound(..) => return None,
         External => Linkage::Import,
     })
 }

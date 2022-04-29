@@ -33,7 +33,9 @@ fn bti(b: bool) -> int {
 }
 
 fn [T: Spec] foo() -> int {
-    T::new().field() + T::twenty()
+    T::try()
+    T::and_this()
+    T::new().field()
 }
 
 bound Spec {

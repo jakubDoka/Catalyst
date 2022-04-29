@@ -1,11 +1,11 @@
 use errors::Palette;
-use lexer::{token, Span, Sources};
+use lexer::{token, Sources, Span};
 
 pub enum Error {
     ExpectedAssign {
         got: token::Kind,
         loc: Span,
-    },    
+    },
     UnexpectedToken {
         got: token::Kind,
         expected: Vec<token::Kind>,
@@ -19,37 +19,27 @@ impl Error {
         match self {
             Error::ExpectedAssign { got, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| write!(to, "expected '=' but got {}", got.as_str())
-                )?;
-            },
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected '=' but got {}", got.as_str())
+                })?;
+            }
             Error::UnexpectedToken { got, expected, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected ")?;
-                        for (i, expected) in expected.iter().enumerate() {
-                            if i > 0 {
-                                write!(to, " | ")?;
-                            }
-                            write!(to, "{}", expected.as_str())?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected ")?;
+                    for (i, expected) in expected.iter().enumerate() {
+                        if i > 0 {
+                            write!(to, " | ")?;
                         }
-                        write!(to, " but got {}", got.as_str())
+                        write!(to, "{}", expected.as_str())?;
                     }
-                )?;
-            },
+                    write!(to, " but got {}", got.as_str())
+                })?;
+            }
         }
 
         writeln!(to)?;
 
         Ok(())
-    } 
+    }
 }

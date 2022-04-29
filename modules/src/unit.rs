@@ -3,11 +3,10 @@ use std::path::Path;
 use std::process::Command;
 use std::{collections::VecDeque, path::PathBuf};
 
+use crate::error::Error;
 use crate::*;
 use lexer::*;
 use parser::*;
-use crate::error::Error;
-
 
 pub type Units = PrimaryMap<Unit, Ent>;
 
@@ -55,7 +54,13 @@ impl<'a> Loader<'a> {
                 self.units[slot].source = source;
 
                 self.ctx.ast.clear();
-                Parser::parse_manifest(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, source);
+                Parser::parse_manifest(
+                    self.sources,
+                    self.diagnostics,
+                    &mut self.ctx.ast,
+                    &mut self.ctx.ast_temp,
+                    source,
+                );
             }
 
             let manifest = Manifest::new(&self.ctx.ast, &self.sources);
@@ -65,17 +70,22 @@ impl<'a> Loader<'a> {
                     name,
                     path: path_span,
                     version,
-                } in dependency {
+                } in dependency
+                {
                     let path_str = self.sources.display(path_span);
                     let path = if path_str.starts_with(GITHUB_DOMAIN) {
                         let path = Path::join(&self.ctx.mf_root, path_str);
                         if !path.exists() {
-                            if self.download_git_repo(
-                                &path,
-                                path_str,
-                                self.sources.display(version),
-                                path_span,
-                            ).map_err(|err| self.diagnostics.push(err)).is_err() {
+                            if self
+                                .download_git_repo(
+                                    &path,
+                                    path_str,
+                                    self.sources.display(version),
+                                    path_span,
+                                )
+                                .map_err(|err| self.diagnostics.push(err))
+                                .is_err()
+                            {
                                 continue;
                             }
                         }
@@ -119,22 +129,25 @@ impl<'a> Loader<'a> {
         }
 
         let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.graph));
-        self.ctx.graph.detect_cycles(slot, Some(&mut ordering)).map_err(|err| {
-            self.diagnostics.push(Error::UnitCycle {
-                cycle: err,
-            })
-        })?;
+        self.ctx
+            .graph
+            .detect_cycles(slot, Some(&mut ordering))
+            .map_err(|err| self.diagnostics.push(Error::UnitCycle { cycle: err }))?;
 
         Ok(ordering)
     }
 
-    fn download_git_repo(&self, path: &Path, link: &str, version: &str, span: Span) -> Result<(), Error> {
-        std::fs::create_dir_all(path).map_err(|err| {
-            Error::MkGirtDir {
-                path: path.to_path_buf(),
-                trace: err,
-                loc: span,
-            }
+    fn download_git_repo(
+        &self,
+        path: &Path,
+        link: &str,
+        version: &str,
+        span: Span,
+    ) -> Result<(), Error> {
+        std::fs::create_dir_all(path).map_err(|err| Error::MkGirtDir {
+            path: path.to_path_buf(),
+            trace: err,
+            loc: span,
         })?;
 
         let status = Command::new("git")
@@ -145,19 +158,18 @@ impl<'a> Loader<'a> {
             .arg(link)
             .arg(path)
             .status()
-            .map_err(|err| {
-                Error::GitCloneExec {
-                    trace: err,
-                    loc: span,
-                }
+            .map_err(|err| Error::GitCloneExec {
+                trace: err,
+                loc: span,
             })?;
 
-        status.success().then_some(()).ok_or_else(|| { 
-            Error::GitCloneStatus {
+        status
+            .success()
+            .then_some(())
+            .ok_or_else(|| Error::GitCloneStatus {
                 code: status,
                 loc: span,
-            }
-        })?;
+            })?;
 
         Ok(())
     }

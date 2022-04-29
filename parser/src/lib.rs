@@ -31,7 +31,14 @@ impl<'a> Parser<'a> {
         source: Source,
     ) -> InterState {
         let inter_state = InterState::new(source);
-        Self::parse_with(sources, diagnostics, ast_file, temp, inter_state, Self::take_imports)
+        Self::parse_with(
+            sources,
+            diagnostics,
+            ast_file,
+            temp,
+            inter_state,
+            Self::take_imports,
+        )
     }
 
     pub fn parse_manifest(
@@ -42,7 +49,14 @@ impl<'a> Parser<'a> {
         source: Source,
     ) {
         let inter_state = InterState::new(source);
-        Self::parse_with(sources, diagnostics, ast_file, temp, inter_state, Self::take_manifest);
+        Self::parse_with(
+            sources,
+            diagnostics,
+            ast_file,
+            temp,
+            inter_state,
+            Self::take_manifest,
+        );
     }
 
     pub fn parse_code_chunk(
@@ -52,7 +66,14 @@ impl<'a> Parser<'a> {
         temp: &'a mut FramedStack<Ast>,
         inter_state: InterState,
     ) -> InterState {
-        Self::parse_with(sources, diagnostics, ast_file, temp, inter_state, Self::take_chunk)
+        Self::parse_with(
+            sources,
+            diagnostics,
+            ast_file,
+            temp,
+            inter_state,
+            Self::take_chunk,
+        )
     }
 
     pub fn parse_with(
@@ -98,7 +119,7 @@ impl<'a> Parser<'a> {
     fn take_imports(&mut self) {
         self.skip_new_lines();
         if self.current.kind() != token::Kind::Use {
-            return ;
+            return;
         }
 
         let span = self.current.span();
@@ -118,8 +139,6 @@ impl<'a> Parser<'a> {
         let imports = self.alloc(ast::Kind::Imports, span.join(end));
 
         self.data.push(imports);
-
-        
     }
 
     fn take_manifest(&mut self) {
@@ -137,7 +156,6 @@ impl<'a> Parser<'a> {
         }
 
         self.stack.pop_frame();
-
     }
 
     fn take_chunk(&mut self) {
@@ -147,7 +165,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.data.push(item);
-        }        
+        }
     }
 
     fn import(&mut self) -> Ast {
@@ -193,9 +211,9 @@ impl<'a> Parser<'a> {
 
     fn tag(&mut self) -> Ast {
         let span = self.current.span();
-        
+
         self.advance();
-        
+
         self.stack.mark_frame();
         let expr = self.expr();
         self.stack.push(expr);
@@ -210,7 +228,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         self.stack.mark_frame();
-        
+
         let ident = self.ident();
         self.stack.push(ident);
 
@@ -261,10 +279,9 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
-        
         let func = self.simple_expr();
         self.stack.push(func);
-        
+
         self.expect(token::Kind::As);
         self.advance();
 
@@ -279,29 +296,23 @@ impl<'a> Parser<'a> {
     fn bound(&mut self) -> Ast {
         let span = self.current.span();
         self.advance();
-        
+
         self.stack.mark_frame();
-        
+
         let ident = self.ident();
         self.stack.push(ident);
-        
+
         self.stack.mark_frame();
         let end = self.list(
-            token::Kind::LeftCurly, 
-            token::Kind::NewLine, 
-            token::Kind::RightCurly, 
+            token::Kind::LeftCurly,
+            token::Kind::NewLine,
+            token::Kind::RightCurly,
             Self::func,
         );
-        let body = self.alloc(
-            ast::Kind::Block, 
-            span.join(end)
-        );
+        let body = self.alloc(ast::Kind::Block, span.join(end));
         self.stack.push(body);
 
-        self.alloc(
-            ast::Kind::Bound, 
-            span.join(end)
-        )
+        self.alloc(ast::Kind::Bound, span.join(end))
     }
 
     fn sdecl(&mut self) -> Ast {
@@ -367,7 +378,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         self.stack.mark_frame();
-        
+
         let generics = self.generics();
         self.stack.push(generics);
 
@@ -447,9 +458,9 @@ impl<'a> Parser<'a> {
         self.stack.mark_frame();
 
         let span = self.list(
-            token::Kind::LeftBracket, 
-            token::Kind::Comma, 
-            token::Kind::RightBracket, 
+            token::Kind::LeftBracket,
+            token::Kind::Comma,
+            token::Kind::RightBracket,
             Self::generic_param,
         );
 
@@ -472,7 +483,7 @@ impl<'a> Parser<'a> {
         let mut end = span;
         if self.current.kind() == token::Kind::Colon {
             self.advance();
-    
+
             let ty = self.type_expr();
             self.stack.push(ty);
             end = self.data.nodes[ty].span;
@@ -488,25 +499,20 @@ impl<'a> Parser<'a> {
 
         self.alloc(ast::Kind::GenericParam, span.join(end))
     }
- 
+
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
-            token::Kind::Operator => {
-                match self.lexer.display(self.current.span()) {
-                    "*" => self.type_pointer_expr(),
-                    _ => todo!(
-                        "unhandled token as type expr:\n{}",
-                        self.current.span().log(self.sources),
-                    ),
-                }
-            }
+            token::Kind::Operator => match self.lexer.display(self.current.span()) {
+                "*" => self.type_pointer_expr(),
+                _ => todo!(
+                    "unhandled token as type expr:\n{}",
+                    self.current.span().log(self.sources),
+                ),
+            },
             token::Kind::Ident => self.type_ident_expr(),
             _ => {
                 let span = self.current.span();
-                todo!(
-                    "unhandled token as type expr:\n{}",
-                    span.log(self.sources),
-                )
+                todo!("unhandled token as type expr:\n{}", span.log(self.sources),)
             }
         }
     }
@@ -536,7 +542,7 @@ impl<'a> Parser<'a> {
                     "unhandled token as literal expr:\n{}",
                     span.log(self.sources),
                 )
-            },
+            }
         };
         self.advance();
         self.data.alloc_sonless(kind, span)
@@ -634,9 +640,10 @@ impl<'a> Parser<'a> {
         let result = match self.current.kind() {
             token::Kind::Return => self.return_expr(),
             token::Kind::Ident => self.ident_expr(),
-            token::Kind::Int(_) | token::Kind::String | token::Kind::Bool(_) | token::Kind::Char => {
-                self.literal_expr()
-            }
+            token::Kind::Int(_)
+            | token::Kind::String
+            | token::Kind::Bool(_)
+            | token::Kind::Char => self.literal_expr(),
             token::Kind::If => self.if_expr(),
             token::Kind::LeftCurly => self.block(),
             token::Kind::Let => self.variable_expr(),
@@ -707,11 +714,8 @@ impl<'a> Parser<'a> {
         self.advance();
 
         let expr = self.expr();
-        
-        self.expect_many(&[
-            token::Kind::RightParen,
-            token::Kind::Comma,
-        ]);
+
+        self.expect_many(&[token::Kind::RightParen, token::Kind::Comma]);
 
         if self.current.kind() == token::Kind::Comma {
             todo!("tuples are not yet supported");
@@ -734,9 +738,9 @@ impl<'a> Parser<'a> {
             let ent = ast::Ent::childless(ast::Kind::Ident, span);
             self.data.nodes.push(ent)
         };
-        
+
         self.advance();
-        
+
         let expr = self.simple_expr();
         let end = self.data.nodes[expr].span;
 
@@ -857,17 +861,20 @@ impl<'a> Parser<'a> {
         let mut span = self.current.span();
         let mut result = self.ident();
 
-        /* handle possible path */ {
+        /* handle possible path */
+        {
             self.stack.mark_frame();
             self.stack.push(result);
-            while self.current.kind() == token::Kind::DoubleColon && self.next.kind() == token::Kind::Ident {
+            while self.current.kind() == token::Kind::DoubleColon
+                && self.next.kind() == token::Kind::Ident
+            {
                 self.advance();
                 span = span.join(self.current.span());
                 let ident = self.ident();
                 self.stack.push(ident);
             }
-    
-            // we simplify one segment path into ident, this happens when 
+
+            // we simplify one segment path into ident, this happens when
             // while loop does not run at all
             if self.stack.top_frame().len() == 1 {
                 self.stack.pop_frame();
@@ -877,47 +884,44 @@ impl<'a> Parser<'a> {
         }
 
         // handle instantiation
-        if self.current.kind() == token::Kind::DoubleColon && self.next.kind() == token::Kind::LeftBracket {
+        if self.current.kind() == token::Kind::DoubleColon
+            && self.next.kind() == token::Kind::LeftBracket
+        {
             self.stack.mark_frame();
             self.stack.push(result);
-            
+
             self.advance();
-            
+
             let end = self.list(
-                token::Kind::LeftBracket, 
-                token::Kind::Comma, 
-                token::Kind::RightBracket, 
-                Self::type_expr
+                token::Kind::LeftBracket,
+                token::Kind::Comma,
+                token::Kind::RightBracket,
+                Self::type_expr,
             );
 
             result = self.alloc(ast::Kind::Instantiation, span.join(end));
         }
 
         // handle constructor
-        if self.current.kind() == token::Kind::DoubleColon && self.next.kind() == token::Kind::LeftCurly {
+        if self.current.kind() == token::Kind::DoubleColon
+            && self.next.kind() == token::Kind::LeftCurly
+        {
             self.stack.mark_frame();
             self.stack.push(result);
-            
+
             self.advance();
-            
+
             self.stack.mark_frame();
             let end = self.list(
-                token::Kind::LeftCurly, 
-                token::Kind::NewLine, 
-                token::Kind::RightCurly, 
-                Self::constructor_field
+                token::Kind::LeftCurly,
+                token::Kind::NewLine,
+                token::Kind::RightCurly,
+                Self::constructor_field,
             );
             let body = self.alloc(ast::Kind::ConstructorBody, end);
             self.stack.push(body);
 
             return self.alloc(ast::Kind::Constructor, span.join(end));
-        }
-
-        if self.data.nodes[result].kind == ast::Kind::Instantiation {
-            self.expect_many(&[
-                token::Kind::LeftBracket, 
-                token::Kind::LeftParen,
-            ])
         }
 
         result

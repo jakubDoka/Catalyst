@@ -2,7 +2,7 @@ use cranelift_codegen::{
     ir::{self, Type},
     packed_option::ReservedValue,
 };
-use cranelift_entity::{SecondaryMap};
+use cranelift_entity::SecondaryMap;
 use lexer::*;
 use modules::*;
 use typec::*;
@@ -47,8 +47,8 @@ impl<'a> TypeTranslator<'a> {
                 return Ok(());
             }
             ty::Kind::Pointer(..) => self.ptr_ty,
-            ty::Kind::Nothing 
-            | ty::Kind::Bound(..) 
+            ty::Kind::Nothing
+            | ty::Kind::Bound(..)
             | ty::Kind::Param(..)
             | ty::Kind::BoundCombo(..) => ir::types::INVALID,
             ty::Kind::Unresolved => unreachable!(),
@@ -82,9 +82,7 @@ impl<'a> TypeTranslator<'a> {
 
             copyable &= ent.flags.contains(Flags::COPYABLE);
 
-            let field = Field {
-                offset: size,
-            };
+            let field = Field { offset: size };
             let id = Self::field_id(ty_id, i as u64);
             assert!(self.types.fields.insert(id, field).is_none(), "{id:?}");
 
@@ -96,9 +94,7 @@ impl<'a> TypeTranslator<'a> {
         }
 
         let (repr, on_stack) = Self::smallest_repr_for(size, self.ptr_ty);
-        let flags = 
-            (Flags::COPYABLE & copyable) | 
-            (Flags::ON_STACK & on_stack);
+        let flags = (Flags::COPYABLE & copyable) | (Flags::ON_STACK & on_stack);
         self.types.ents[ty] = Ent {
             repr,
             flags,

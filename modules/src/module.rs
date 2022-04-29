@@ -1,15 +1,12 @@
-use std::{
-    collections::VecDeque,
-    path::PathBuf,
-};
+use std::{collections::VecDeque, path::PathBuf};
 
 use cranelift_entity::packed_option::ReservedValue;
 use cranelift_entity::{EntityRef, SecondaryMap};
 
-use lexer::*;
-use parser::*;
 use crate::error::Error;
 use crate::*;
+use lexer::*;
+use parser::*;
 
 pub type Modules = SecondaryMap<Source, Ent>;
 
@@ -35,14 +32,12 @@ impl<'a> Loader<'a> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
         self.ctx.clear();
         let base_line = self.sources.len() as u32;
-        
+
         {
             let unit_ent = &self.units[unit];
             let path = unit_ent.get_absolute_source_path().map_err(|trace| {
-                self.diagnostics.push(Error::RootModuleNotFound {
-                    unit,
-                    trace,
-                });
+                self.diagnostics
+                    .push(Error::RootModuleNotFound { unit, trace });
             })?;
 
             let id = path.as_path().into();
@@ -61,18 +56,24 @@ impl<'a> Loader<'a> {
                             trace: err,
                             loc: span,
                         });
-                    }) else { 
-                        continue; 
+                    }) else {
+                        continue;
                     };
-                    
+
                     let source = SourceEnt::new(path, content);
                     self.sources[slot] = source;
                 }
-                    
+
                 self.ctx.ast.clear();
-                Parser::parse_imports(self.sources, self.diagnostics, &mut self.ctx.ast, &mut self.ctx.ast_temp, slot);
+                Parser::parse_imports(
+                    self.sources,
+                    self.diagnostics,
+                    &mut self.ctx.ast,
+                    &mut self.ctx.ast_temp,
+                    slot,
+                );
             }
-            
+
             let mut counter = 0;
             if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
                 for ModuleImport {
@@ -88,7 +89,7 @@ impl<'a> Loader<'a> {
                             .get((self.sources.display(name), unit))
                             .copied()
                             .unwrap_or(unit);
-                    
+
                         self.ctx.buffer.clear();
                         self.ctx.buffer.push(&self.units[unit].root_path);
                         self.ctx.buffer.push(&self.units[unit].local_source_path);
@@ -96,7 +97,6 @@ impl<'a> Loader<'a> {
                         self.ctx.buffer.push(self.sources.display(path_span));
                         self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
                     }
-
 
                     let id = {
                         let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
@@ -122,27 +122,28 @@ impl<'a> Loader<'a> {
                             module
                         }
                     };
-                    
+
                     self.map.insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
                         self.ctx.graph.add_edge(id.0 - base_line);
                     }
                 }
             }
-            for _ in 0..counter { self.sources.push(Default::default()); }
-            
+            for _ in 0..counter {
+                self.sources.push(Default::default());
+            }
+
             self.ctx.graph.close_node();
         }
-        
+
         let mut ordering = Vec::with_capacity(TreeStorage::<Source>::len(&self.ctx.graph));
-        self.ctx.graph.detect_cycles(Source(0), Some(&mut ordering)).map_err(|mut err| {
-            err
-                .iter_mut()
-                .for_each(|id| id.0 += base_line);
-            self.diagnostics.push(Error::ModuleCycle {
-                cycle: err,
-            });
-        })?;
+        self.ctx
+            .graph
+            .detect_cycles(Source(0), Some(&mut ordering))
+            .map_err(|mut err| {
+                err.iter_mut().for_each(|id| id.0 += base_line);
+                self.diagnostics.push(Error::ModuleCycle { cycle: err });
+            })?;
 
         ordering.iter_mut().for_each(|id| id.0 += base_line);
 
@@ -206,10 +207,11 @@ impl<'a> ModuleImports<'a> {
                 let &[nick, path] = self.ast_data.children(c) else {
                     unreachable!();
                 };
-                
+
                 let path = self.ast_data.nodes[path].span.strip_sides();
                 let nick = if nick.is_reserved_value() {
-                    let split_index = self.sources
+                    let split_index = self
+                        .sources
                         .display(path)
                         .rfind('/')
                         .map(|i| i + 1)

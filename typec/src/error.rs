@@ -1,8 +1,7 @@
-use errors::{Palette, write_styled};
+use errors::{write_styled, Palette};
 use lexer::*;
 
 use crate::*;
-
 
 pub enum Error {
     MissingBoundImplFunc {
@@ -119,245 +118,161 @@ impl Error {
         match self {
             Error::NonPointerDereference { loc, ty } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to, 
-                    &|to| {
-                        write!(to, "'")?;
-                        ty.display(types, sources, to)?;
-                        write!(to, "' cannot be dereferenced")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "'")?;
+                    ty.display(types, sources, to)?;
+                    write!(to, "' cannot be dereferenced")
+                })?;
                 writeln!(to, "|> types that can be dereferenced: &<type> *<type>")?;
             }
             Error::DuplicateBound { loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to, 
-                    &|to| {
-                        write!(to, "this generic parameter contains duplicate bound")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "this generic parameter contains duplicate bound")
+                })?;
             }
             Error::GenericEntry { tag, generics, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to, 
-                    &|to| {
-                        write!(to, "function cannot be both entry point and generic")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "function cannot be both entry point and generic")
+                })?;
                 tag.loc_to(sources, to)?;
-                tag.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to, 
-                    &|to| {
-                        write!(to, "consider removing this")
-                    }
-                )?;
+                tag.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "consider removing this")
+                })?;
                 generics.loc_to(sources, to)?;
-                generics.underline_to(
-                    Palette::info().bold(), 
-                    '~',
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "or removing this")
-                    }
-                )?;
+                generics.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "or removing this")
+                })?;
                 writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
-            },
-            Error::ReturnTypeMismatch { because, expected, got, loc } => {
+            }
+            Error::ReturnTypeMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected '")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "' but got '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "' but got '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
 
                 if let Some(because) = because {
                     because.loc_to(sources, to)?;
-                    because.underline_to(
-                        Palette::info().bold(), 
-                        '~', 
-                        sources, 
-                        to,
-                        &|to| write!(to, "consider changing this return type"),
-                    )?;
+                    because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                        write!(to, "consider changing this return type")
+                    })?;
                 }
-            },
-            Error::BreakValueTypeMismatch { because, expected, got, loc } => {
+            }
+            Error::BreakValueTypeMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "'")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "' is not consistent with")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "'")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "' is not consistent with")
+                })?;
 
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "'")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "' return value of this break")
-                    }
-                )?;
-            },
-            Error::MissingBreakValue { because, expected, loc } => {
+                because.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "'")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "' return value of this break")
+                })?;
+            }
+            Error::MissingBreakValue {
+                because,
+                expected,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected this break to have value")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected this break to have value")
+                })?;
 
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "because of '")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "' return value in previous break")
-                    }
-                )?;
-            },
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "because of '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "' return value in previous break")
+                })?;
+            }
             &Error::MissingBoundImplFunc { func, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "missing implementation of '{}'", sources.display(func))
-                    }
-                )?;
-            },
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "missing implementation of '{}'", sources.display(func))
+                })?;
+            }
             Error::DuplicateBoundImpl { because, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "this bound impl is colliding with")
-                    }
-                )?;
-                
-                because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "this bound impl")
-                    }
-                )?;
-            },
-            Error::FunctionParamMismatch { because, expected, got, loc } => {
-                loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected ")?;
-                        write!(to, "{}", expected)?;
-                        write!(to, " arguments but got ")?;
-                        write!(to, "{}", got)
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "this bound impl is colliding with")
+                })?;
 
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to,
-                    &|to| write!(to, "because of this definition"),
-                )?;
-            },
-            Error::CallArgTypeMismatch { because, expected, got, loc } => {
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "this bound impl")
+                })?;
+            }
+            Error::FunctionParamMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected '")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "' as a function argument but got '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected ")?;
+                    write!(to, "{}", expected)?;
+                    write!(to, " arguments but got ")?;
+                    write!(to, "{}", got)
+                })?;
 
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to,
-                    &|to| write!(to, "because of this definition"),
-                )?;
-            },
-            Error::UnknownField { candidates, on, loc } => {
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "because of this definition")
+                })?;
+            }
+            Error::CallArgTypeMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "unknown field on type '")?;
-                        on.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "' as a function argument but got '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+
+                because.loc_to(sources, to)?;
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "because of this definition")
+                })?;
+            }
+            Error::UnknownField {
+                candidates,
+                on,
+                loc,
+            } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "unknown field on type '")?;
+                    on.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+
                 if candidates.is_empty() {
                     writeln!(to, "|> type has no fields\n")?;
                 } else {
@@ -367,188 +282,147 @@ impl Error {
                     }
                     writeln!(to)?;
                 }
-            },
+            }
             Error::ExpectedStruct { got, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected struct type but got '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-            },
-            Error::ConstructorFieldTypeMismatch { because, expected, got, loc } => {
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected struct type but got '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+            }
+            Error::ConstructorFieldTypeMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "got '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "' which does not match")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "got '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "' which does not match")
+                })?;
 
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "this field of type '")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-            },
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "this field of type '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+            }
             Error::ConstructorMissingFields { on, missing, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "missing fields in constructor of '")?;
-                        on.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "missing fields in constructor of '")?;
+                    on.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
 
                 write!(to, "|> missing fields:",)?;
                 for &field in missing {
                     write!(to, " '{}'", sources.display(field))?;
                 }
                 writeln!(to)?;
-            },
+            }
             Error::UnexpectedReturnValue { because, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "return value is not expected")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "return value is not expected")
+                })?;
+
                 because.loc_to(sources, to)?;
-                because.underline_to(
-                    Palette::info().bold(), 
-                    '~', 
-                    sources, 
+                because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "because of this definition")
+                })?;
+                writeln!(
                     to,
-                    &|to| write!(to, "because of this definition"),
+                    "|> you can add a return type with ') -> <type> {{' syntax"
                 )?;
-                writeln!(to, "|> you can add a return type with ') -> <type> {{' syntax")?;
-            },
+            }
             Error::IfConditionTypeMismatch { got, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "expected 'bool' type but got '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected 'bool' type but got '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
                 writeln!(to, "|> if can only take 'bool' as condition\n")?;
-            },
+            }
             Error::AssignToNonAssignable { because, loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "cannot assign to non-assignable type")
-                    }
-                )?;
-                
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "cannot assign to non-assignable type")
+                })?;
+
                 if let Some(because) = because {
                     because.loc_to(sources, to)?;
-                    because.underline_to(
-                        Palette::info().bold(), 
-                        '~', 
-                        sources, 
+                    because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                        write!(to, "because this value is declared immutable")
+                    })?;
+
+                    writeln!(
                         to,
-                        &|to| write!(to, "because this value is declared immutable"),
+                        "|> you can make it mutable with 'let mut <name> = <value>' syntax\n"
                     )?;
-    
-                    writeln!(to, "|> you can make it mutable with 'let mut <name> = <value>' syntax\n")?;
                 }
-            },
-            Error::AssignTypeMismatch { because, expected, got, loc } => {
+            }
+            Error::AssignTypeMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "cannot assign '")?;
-                        got.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-                
-                because.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
-                    to,
-                    &|to| {
-                        write!(to, "because this is '")?;
-                        expected.display(types, sources, to)?;
-                        write!(to, "'")
-                    }
-                )?;
-    
-            },
-            &Error::BinaryOperatorNotFound { left_ty, right_ty, loc } => {
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "cannot assign '")?;
+                    got.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+
+                because.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "because this is '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+            }
+            &Error::BinaryOperatorNotFound {
+                left_ty,
+                right_ty,
+                loc,
+            } => {
                 write_styled!(
-                    to, 
-                    Palette::error().bold(), 
+                    to,
+                    Palette::error().bold(),
                     "|> Binary operator '{}' {} '{}' does not exist.",
                     ty::Display::new(types, sources, left_ty),
                     sources.display(loc),
                     ty::Display::new(types, sources, right_ty)
                 )
-            },
+            }
             Error::InvalidPath { loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_to(
-                    Palette::error().bold(), 
-                    '^', 
-                    sources, 
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "invalid path syntax")
+                })?;
+                writeln!(
                     to,
-                    &|to| {
-                        write!(to, "invalid path syntax")
-                    }
+                    "|> possible syntaxes: '<module>::<item>' '<module>::<type>::<item>'"
                 )?;
-                writeln!(to, "|> possible syntaxes: '<module>::<item>' '<module>::<type>::<item>'")?;
-            },
+            }
             #[allow(unused)]
-            Error::OperatorArgCountMismatch { because, expected, got, loc } => todo!(),
+            Error::OperatorArgCountMismatch {
+                because,
+                expected,
+                got,
+                loc,
+            } => todo!(),
             #[allow(unused)]
             Error::BinaryTypeMismatch { expected, got, loc } => todo!(),
         }
 
         writeln!(to)?;
-        
+
         Ok(())
     }
 }

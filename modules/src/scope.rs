@@ -1,8 +1,8 @@
 use std::{any::TypeId, collections::HashMap};
 
+use crate::*;
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 use lexer::*;
-use crate::*;
 
 pub struct ItemLexicon {
     map: HashMap<TypeId, &'static str>,
@@ -24,7 +24,6 @@ impl ItemLexicon {
     }
 }
 
-
 pub struct Scope {
     map: Map<Item>,
     frames: Vec<usize>,
@@ -43,18 +42,36 @@ impl Scope {
     }
 
     pub fn weak_get<T: 'static + EntityRef>(&self, id: impl Into<ID>) -> Option<T> {
-        self.map.get(id).map(|item| item.pointer.may_read()).flatten()
+        self.map
+            .get(id)
+            .map(|item| item.pointer.may_read())
+            .flatten()
     }
 
-    pub fn get<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: impl Into<ID>, span: Span) -> errors::Result<T> {
+    pub fn get<T: 'static + EntityRef>(
+        &self,
+        diagnostics: &mut errors::Diagnostics,
+        id: impl Into<ID>,
+        span: Span,
+    ) -> errors::Result<T> {
         self.get_by_id(diagnostics, id.into(), span)
     }
 
-    pub fn may_get<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: impl Into<ID>, span: Span) -> errors::Result<Option<T>> {
+    pub fn may_get<T: 'static + EntityRef>(
+        &self,
+        diagnostics: &mut errors::Diagnostics,
+        id: impl Into<ID>,
+        span: Span,
+    ) -> errors::Result<Option<T>> {
         self.may_get_by_id(diagnostics, id.into(), span)
     }
 
-    pub fn get_by_id<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: ID, span: Span) -> errors::Result<T> {
+    pub fn get_by_id<T: 'static + EntityRef>(
+        &self,
+        diagnostics: &mut errors::Diagnostics,
+        id: ID,
+        span: Span,
+    ) -> errors::Result<T> {
         let Some(data) = self.may_get_by_id(diagnostics, id, span)? else {
             diagnostics.push(Error::InvalidScopeItem {
                 loc: span,
@@ -67,20 +84,26 @@ impl Scope {
         Ok(data)
     }
 
-    pub fn may_get_by_id<T: 'static + EntityRef>(&self, diagnostics: &mut errors::Diagnostics, id: ID, span: Span) -> errors::Result<Option<T>> {
+    pub fn may_get_by_id<T: 'static + EntityRef>(
+        &self,
+        diagnostics: &mut errors::Diagnostics,
+        id: ID,
+        span: Span,
+    ) -> errors::Result<Option<T>> {
         let Some(item) = self.map.get(id) else {
             diagnostics.push(Error::ScopeItemNotFound {
                 loc: span,
             });
             return Err(());
         };
-        
+
         if item.pointer.is_of::<Collision>() {
-            let suggestions = self.dependencies
+            let suggestions = self
+                .dependencies
                 .iter()
                 .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
                 .collect::<Vec<_>>();
-            
+
             diagnostics.push(Error::AmbiguousScopeItem {
                 loc: span,
                 suggestions,
@@ -140,7 +163,13 @@ impl Scope {
         self.insert_by_id(diagnostics, current_source, id.into(), item)
     }
 
-    fn insert_by_id(&mut self, diagnostics: &mut errors::Diagnostics, current_source: Source, id: ID, item: Item) -> errors::Result {
+    fn insert_by_id(
+        &mut self,
+        diagnostics: &mut errors::Diagnostics,
+        current_source: Source,
+        id: ID,
+        item: Item,
+    ) -> errors::Result {
         let item_source = item.span.source();
 
         match self.map.insert(id, Item::collision()) {
@@ -165,7 +194,11 @@ impl Scope {
                     }
                 } else {
                     assert!(self.map.insert((id, item_source), item).is_none());
-                    assert!(self.map.insert((id, colliding_source), colliding).is_none(), "{:?}", colliding);
+                    assert!(
+                        self.map.insert((id, colliding_source), colliding).is_none(),
+                        "{:?}",
+                        colliding
+                    );
                 }
             }
             None => assert!(self.map.insert(id, item) == Some(Item::collision())),

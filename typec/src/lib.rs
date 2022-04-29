@@ -5,24 +5,32 @@
 #![feature(if_let_guard)]
 
 pub mod collector;
+pub mod error;
 pub mod func;
 pub mod tir;
 pub mod ty;
-pub mod error;
 
 pub use collector::*;
+pub use error::Error;
 pub use func::*;
 pub use tir::*;
 pub use ty::*;
-pub use error::Error;
 
 use lexer::*;
 use modules::*;
 use parser::*;
 
 pub trait TypeParser {
-
-    fn state(&mut self) -> (&mut Scope, &mut Types, &Sources, &mut Modules, &ast::Data, &mut errors::Diagnostics);
+    fn state(
+        &mut self,
+    ) -> (
+        &mut Scope,
+        &mut Types,
+        &Sources,
+        &mut Modules,
+        &ast::Data,
+        &mut errors::Diagnostics,
+    );
 
     fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let (scope, _types, sources, _modules, ast, diagnostics) = self.state();
@@ -43,8 +51,7 @@ pub trait TypeParser {
             let inner = ast.children(ty)[0];
             self.parse_type(inner)?
         };
-        
-        
+
         let (scope, types, _, modules, ast, diagnostics) = self.state();
         let source = types.ents[inner_ty].name.source();
         let id = {
@@ -56,7 +63,7 @@ pub trait TypeParser {
             return Ok(ptr);
         }
 
-        let name = ast.nodes[ty].span; 
+        let name = ast.nodes[ty].span;
         let ent = ty::Ent {
             id,
             name,
@@ -64,11 +71,49 @@ pub trait TypeParser {
         };
         let ty = types.ents.push(ent);
         let item = modules::Item::new(id, ty, name);
-        
+
         drop(scope.insert(diagnostics, source, id, item.to_scope_item()));
         modules[source].items.push(item);
 
         Ok(ty)
+    }
+
+    fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> errors::Result<Ty> {
+        for &bound in asts {
+            let Ok(ty) = self.parse_type(bound) else {
+                continue;
+            };
+            self.state().1.args.push_one(ty);
+        }
+
+        let (scope, types, .., diagnostics) = self.state();
+
+        types.args.top_mut().sort_by_key(|ty| ty.0);
+        let duplicates = types.args.top().windows(2).any(|w| w[0] == w[1]);
+
+        if duplicates {
+            diagnostics.push(Error::DuplicateBound { loc: span });
+        }
+
+        let id = ID::new("<bound_combo>") + types.args.top().iter()
+            .map(|&ty| types.ents[ty].id)
+            .fold(None, |acc, id| acc.map(|acc| acc + id).or(Some(id)))
+            .unwrap_or_else(|| types.ents[types.builtin.any].id);
+
+        let item = if let Some(item) = scope.weak_get::<Ty>(id) {
+            types.args.discard();
+            item
+        } else {
+            let bounds = types.args.close_frame();
+            let ent = ty::Ent {
+                id,
+                name: span,
+                kind: ty::Kind::BoundCombo(bounds),
+            };
+            types.ents.push(ent)
+        };
+            
+        Ok(item)
     }
 
     fn pointer_id(id: ID) -> ID {
@@ -105,15 +150,15 @@ pub fn create_builtin_items(
                 .then_some(types.builtin.bool)
                 .unwrap_or(ty);
             create_func(
-                op, 
+                op,
                 &[ty, ty],
-                ret, 
-                id, 
-                types, 
-                funcs, 
-                sources, 
+                ret,
+                id,
+                types,
+                funcs,
+                sources,
                 builtin_source,
-                &mut vec
+                &mut vec,
             );
         }
     }
@@ -125,15 +170,15 @@ pub fn create_builtin_items(
                 func::Builder::unary_id(id, ID::new(op))
             };
             create_func(
-                op, 
+                op,
                 &[ty],
-                ty, 
-                id, 
-                types, 
-                funcs, 
-                sources, 
+                ty,
+                id,
+                types,
+                funcs,
+                sources,
                 builtin_source,
-                &mut vec
+                &mut vec,
             );
         }
     }
