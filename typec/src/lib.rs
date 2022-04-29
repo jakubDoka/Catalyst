@@ -162,7 +162,6 @@ fn create_func(
         let ent = func::Ent {
             sig,
             name: span,
-            id,
             kind: func::Kind::Builtin,
             ..Default::default()
         };

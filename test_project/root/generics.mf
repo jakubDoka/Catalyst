@@ -17,6 +17,14 @@ impl Goo {
     fn field(s: *Self) -> int {
         s.field
     }
+
+    fn something() {}
+}
+
+impl Spec as Goo {
+    use something as try
+
+    fn and_this() {}
 }
 
 
@@ -31,6 +39,8 @@ fn [T: Spec] foo() -> int {
 bound Spec {
     fn new() -> Self
     fn field(s: *Self) -> int
+    fn try()
+    fn and_this()
 }
 
 impl Spec {

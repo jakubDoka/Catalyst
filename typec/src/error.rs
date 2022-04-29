@@ -5,6 +5,14 @@ use crate::*;
 
 
 pub enum Error {
+    MissingBoundImplFunc {
+        func: Span,
+        loc: Span,
+    },
+    DuplicateBoundImpl {
+        because: Span,
+        loc: Span,
+    },
     DuplicateBound {
         loc: Span,
     },
@@ -248,6 +256,41 @@ impl Error {
                         write!(to, "because of '")?;
                         expected.display(types, sources, to)?;
                         write!(to, "' return value in previous break")
+                    }
+                )?;
+            },
+            &Error::MissingBoundImplFunc { func, loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to,
+                    &|to| {
+                        write!(to, "missing implementation of '{}'", sources.display(func))
+                    }
+                )?;
+            },
+            Error::DuplicateBoundImpl { because, loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(
+                    Palette::error().bold(), 
+                    '^', 
+                    sources, 
+                    to,
+                    &|to| {
+                        write!(to, "this bound impl is colliding with")
+                    }
+                )?;
+                
+                because.loc_to(sources, to)?;
+                because.underline_to(
+                    Palette::info().bold(), 
+                    '~', 
+                    sources, 
+                    to,
+                    &|to| {
+                        write!(to, "this bound impl")
                     }
                 )?;
             },

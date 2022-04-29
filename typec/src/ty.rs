@@ -1,7 +1,7 @@
 use crate::*;
 use cranelift_entity::{
     packed_option::{ReservedValue, PackedOption},
-    PrimaryMap, SecondaryMap,
+    PrimaryMap
 };
 use lexer::*;
 use modules::*;
@@ -12,7 +12,7 @@ pub struct Builder<'a> {
     pub types: &'a mut Types,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
-    pub type_ast: &'a SecondaryMap<Ty, Ast>,
+    pub ctx: &'a mut Context,
     pub graph: &'a mut GenericGraph,
     pub modules: &'a mut Modules,
     pub ty: Ty,
@@ -22,7 +22,7 @@ pub struct Builder<'a> {
 impl<'a> Builder<'a> {
     pub fn build(&mut self) -> errors::Result {
         let Ent { id, .. } = self.types.ents[self.ty];
-        let ast = self.type_ast[self.ty];
+        let ast = self.ctx.type_ast[self.ty];
         if ast.is_reserved_value() {
             return Ok(());
         }
@@ -41,7 +41,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    pub fn build_bound(&mut self, id: ID, ast: Ast) -> errors::Result {
+    pub fn build_bound(&mut self, _id: ID, _ast: Ast) -> errors::Result {
         Ok(())
     }
 
@@ -107,6 +107,7 @@ pub struct Types {
     pub sfield_lookup: Map<SFieldRef>,
     pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
     pub builtin: BuiltinTable,
+    pub bound_cons: Map<Span>,
     params: Vec<Ty>,
 }
 
@@ -119,6 +120,7 @@ impl Types {
             sfield_lookup: Map::new(),
             sfields: StackMap::new(),
             builtin: BuiltinTable::new(),
+            bound_cons: Map::new(),
             params: Vec::new(),
         };
 

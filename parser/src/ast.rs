@@ -161,6 +161,7 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    UseBoundFunc,
     Deref,
     Pointer,
     Char,

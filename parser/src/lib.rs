@@ -172,7 +172,7 @@ impl<'a> Parser<'a> {
     fn item(&mut self) -> Ast {
         loop {
             match self.current.kind() {
-                token::Kind::Fn => break self.function(),
+                token::Kind::Fn => break self.func(),
                 token::Kind::Struct => break self.sdecl(),
                 token::Kind::NewLine => self.advance(),
                 token::Kind::Eof => break Ast::reserved_value(),
@@ -214,18 +214,66 @@ impl<'a> Parser<'a> {
         let ident = self.ident();
         self.stack.push(ident);
 
-        self.expect(token::Kind::LeftCurly);
-        self.stack.mark_frame();
-        let end = self.list(
-            token::Kind::LeftCurly,
-            token::Kind::NewLine,
-            token::Kind::RightCurly,
-            Self::function,
-        );
-        let functions = self.alloc(ast::Kind::ImplBody, span.join(end));
-        self.stack.push(functions);
+        // handle bound impl
+        let mut end = span;
+        let parser = if self.current.kind() == token::Kind::As {
+            self.advance();
+            let ty = self.type_expr();
+            self.stack.push(ty);
+            end = self.data.nodes[ty].span;
+            Self::bound_impl_item
+        } else {
+            self.stack.push_default();
+            Self::func
+        };
+
+        // implementation can already map as a sugar
+        if self.current.kind() == token::Kind::LeftCurly {
+            self.stack.mark_frame();
+            end = self.list(
+                token::Kind::LeftCurly,
+                token::Kind::NewLine,
+                token::Kind::RightCurly,
+                parser,
+            );
+            let functions = self.alloc(ast::Kind::ImplBody, span.join(end));
+            self.stack.push(functions);
+        } else {
+            self.stack.push_default();
+        }
 
         self.alloc(ast::Kind::Impl, span.join(end))
+    }
+
+    /// '<func> | <use_bound_func>'
+    fn bound_impl_item(&mut self) -> Ast {
+        match self.current.kind() {
+            token::Kind::Fn => self.func(),
+            token::Kind::Use => self.use_bound_func(),
+            _ => todo!("unhandled {:?} in bound impl", self.current.kind()),
+        }
+    }
+
+    /// 'use <simple_expr> as <ident>'
+    fn use_bound_func(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        self.stack.mark_frame();
+
+        
+        let func = self.simple_expr();
+        self.stack.push(func);
+        
+        self.expect(token::Kind::As);
+        self.advance();
+
+        let ident = self.ident();
+        self.stack.push(ident);
+
+        let end = self.data.nodes[ident].span;
+
+        self.alloc(ast::Kind::UseBoundFunc, span.join(end))
     }
 
     fn bound(&mut self) -> Ast {
@@ -242,7 +290,7 @@ impl<'a> Parser<'a> {
             token::Kind::LeftCurly, 
             token::Kind::NewLine, 
             token::Kind::RightCurly, 
-            Self::function,
+            Self::func,
         );
         let body = self.alloc(
             ast::Kind::Block, 
@@ -314,7 +362,7 @@ impl<'a> Parser<'a> {
         self.next = self.lexer.next_token();
     }
 
-    fn function(&mut self) -> Ast {
+    fn func(&mut self) -> Ast {
         let span = self.current.span();
         self.advance();
 

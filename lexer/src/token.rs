@@ -58,6 +58,7 @@ gen_kind!(
     Bound = "'bound'",
     Mut = "'mut'",
     Impl = "'impl'",
+    As = "'as'",
 
     Ident = "<ident>",
     Operator = "<operator>",

@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use cranelift_entity::{
     packed_option::ReservedValue,
-    PrimaryMap, SecondaryMap,
+    PrimaryMap
 };
 
 use crate::{Error, *};
@@ -16,7 +16,7 @@ pub struct Builder<'a> {
     pub nothing: Ty,
     pub bool: Ty,
     pub funcs: &'a mut Funcs,
-    pub func_ast: &'a SecondaryMap<Func, Ast>,
+    pub ctx: &'a mut Context,
     pub body: &'a mut tir::Data,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
@@ -28,11 +28,146 @@ pub struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
+    pub fn verify_bound_impls(&mut self) -> errors::Result {
+        // we have to collect all functions first and the check if all bound 
+        // functions are implemented, its done here
+        {
+            while let Some((implementor, bound, impl_block)) = self.ctx.bounds_to_verify.pop() {
+                let &[.., body] = self.ast.children(impl_block) else {
+                    unreachable!();
+                };
+
+                // handle use expressions
+                if !body.is_reserved_value() {
+                    for &ast in self.ast.children(body) {
+                        if self.ast.nodes[ast].kind != ast::Kind::UseBoundFunc {
+                            continue;
+                        }
+    
+                        let &[func, ident] = self.ast.children(ast) else {
+                            unreachable!();
+                        };
+    
+                        let Ok(id) = self.ident_id(func, Some(implementor)) else {
+                            continue;
+                        };
+    
+                        let span = self.ast.nodes[func].span;
+                        let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, span) else {
+                            continue;
+                        };
+    
+                        let id = {
+                            let func = {
+                                let span = self.ast.nodes[ident].span;
+                                let str = self.sources.display(span);
+                                ID::new(str)
+                            };
+                            let bound = self.types.ents[bound].id;
+                            let implementor = self.types.ents[implementor].id;
+                            Collector::bound_impl_owned_func_id(bound, implementor, func)
+                        };
+                        
+                        {
+                            let item = modules::Item::new(id, func, span);
+                            drop(self.scope.insert(self.diagnostics, span.source(), id, item.to_scope_item()));
+                            self.modules[span.source()].items.push(item);
+                        }
+                    }
+                }
+
+                // check if all functions exist and match the signature
+                {
+                    let ty::Kind::Bound(funcs) = self.types.ents[bound].kind else {
+                        unreachable!();
+                    };
+
+                    for &func in self.types.funcs.get(funcs) {
+                        let ent = &self.funcs[func];
+                        
+                        let (sugar_id, certain_id) = {
+                            let func = {
+                                let span = ent.name;
+                                let str = self.sources.display(span);
+                                ID::new(str)
+                            };
+                            let ty = self.types.ents[implementor].id;
+                            let sugar_id = Self::owned_func_id(ty, func);
+                            let bound = self.types.ents[bound].id;
+                            let certain_id = Collector::bound_impl_owned_func_id(bound, ty, func);
+                            (sugar_id, certain_id)
+                        };
+
+                        let maybe_other = None // looks better
+                            .or_else(|| self.scope.weak_get::<Func>(certain_id))
+                            .or_else(|| self.scope.weak_get::<Func>(sugar_id));
+
+                        let Some(other) = maybe_other else {
+                            self.diagnostics.push(Error::MissingBoundImplFunc {
+                                func: ent.name,
+                                loc: self.ast.nodes[impl_block].span,
+                            });
+                            continue;
+                        };
+
+                        let Ok(()) = self.compare_bound_impl_signatures(func, other, bound, implementor, self.ast.nodes[impl_block].span) else {
+                            todo!("signatures does not match, there are three error opportunities, i cannot bother now");
+                        };
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn compare_bound_impl_signatures(&self, bound_func: Func, impl_func: Func, bound: Ty, implementor: Ty, _loc: Span) -> errors::Result {
+        let a = self.funcs[bound_func].sig;
+        let b = self.funcs[impl_func].sig;
+
+        let check = |(&a, &b)| {
+            let (a, b) = (self.types.base_of(a), self.types.base_of(b));
+            a == b || (a == bound && b == implementor)
+        };
+
+        // params
+        {
+            let a = self.types.args.get(a.params);
+            let b = self.types.args.get(b.params);
+
+            if !a.iter().zip(b.iter()).all(check) {
+                println!("parameters {:?} {:?}", a, b);
+                return Err(())
+            }
+        }
+
+        // args
+        {
+            let a = self.types.args.get(a.args);
+            let b = self.types.args.get(b.args);
+
+            if !a.iter().zip(b.iter()).all(check) {
+                println!("arguments {:?} {:?}", a, b);
+                return Err(())
+            }
+        }
+
+        // ret
+        {
+            if !check((&a.ret, &b.ret)) {
+                println!("return {:?} {:?}", a.ret, b.ret);
+                return Err(())
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn build(&mut self) -> errors::Result {
         let func_ent = &mut self.funcs[self.func];
 
         let ret = func_ent.sig.ret;
-        let ast = self.func_ast[self.func];
+        let ast = self.ctx.func_ast[self.func];
         let header = self.ast.children(ast);
         let &[generics, .., ret_ast, _] = header else {
             unreachable!();
@@ -67,7 +202,7 @@ impl<'a> Builder<'a> {
                     };
                     self.types.args.push_one(ty);
                 }
-
+                
                 self.types.args.top_mut().sort_by_key(|ty| ty.0);
                 let duplicates = self.types.args
                     .top()
@@ -837,7 +972,7 @@ impl<'a> Builder<'a> {
         } else {
             let value = self.build_expr(value)?;
             self.expect_tir_ty(value, ret, |s, got, loc| {
-                let &[.., ret_ast, _] = s.ast.children(s.func_ast[s.func]) else {
+                let &[.., ret_ast, _] = s.ast.children(s.ctx.func_ast[s.func]) else {
                     unreachable!();
                 };
                 let ret_span = (!ret_ast.is_reserved_value()).then(|| s.ast.nodes[ret_ast].span);
@@ -1103,7 +1238,6 @@ pub struct Ent {
     pub kind: Kind,
     pub body: Tir,
     pub args: TirList,
-    pub id: ID,
     pub flags: Flags,
 }
 

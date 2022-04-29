@@ -178,6 +178,7 @@ impl<'a> Lexer<'a> {
                         "bound" => token::Kind::Bound,
                         "mut" => token::Kind::Mut,
                         "impl" => token::Kind::Impl,
+                        "as" => token::Kind::As,
                         _ => token::Kind::Ident,
                     }
                 }

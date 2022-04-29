@@ -133,8 +133,6 @@ pub fn compile() {
     /* perform type checking and build tir */ {
         let builtin_items = typec::create_builtin_items(&mut t_types, &mut t_funcs, &mut sources, &mut builtin_source);
 
-        let mut type_ast = SecondaryMap::new();
-        let mut func_ast = SecondaryMap::new();
         let mut t_temp = FramedStack::new();
         let mut c_ctx = collector::Context::new();
 
@@ -178,16 +176,33 @@ pub fn compile() {
                 funcs: &mut t_funcs,
                 types: &mut t_types,
                 modules: &mut modules,
-                func_ast: &mut func_ast,
                 sources: &sources,
                 ast: &ast,
-                type_ast: &mut type_ast,
                 module: source,
                 ctx: &mut c_ctx,
                 diagnostics: &mut diagnostics,
             }
             .collect_items(ast.elements()));
     
+            drop(typec::func::Builder {
+                nothing: NOTHING,
+                bool: BOOL,
+                scope: &mut scope,
+                types: &mut t_types,
+                sources: &sources,
+                ast: &ast,
+                funcs: &mut t_funcs,
+                ctx: &mut c_ctx,
+                temp: &mut t_temp,
+                modules: &mut modules,
+                diagnostics: &mut diagnostics,
+                
+                // does not matter
+                body: &mut typec::tir::Data::default(), 
+                func: Default::default(),
+            }
+            .verify_bound_impls());
+
             ty_buffer.extend(modules[source]
                 .items
                 .iter()
@@ -199,7 +214,7 @@ pub fn compile() {
                     types: &mut t_types,
                     sources: &sources,
                     ast: &ast,
-                    type_ast: &type_ast,
+                    ctx: &mut c_ctx,
                     graph: &mut t_graph,
                     modules: &mut modules,
                     diagnostics: &mut diagnostics,
@@ -223,7 +238,7 @@ pub fn compile() {
                     ast: &ast,
                     func,
                     funcs: &mut t_funcs,
-                    func_ast: &func_ast,
+                    ctx: &mut c_ctx,
                     body: &mut bodies[func],
                     temp: &mut t_temp,
                     modules: &mut modules,

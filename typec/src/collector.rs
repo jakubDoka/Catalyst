@@ -14,8 +14,6 @@ pub struct Collector<'a> {
     pub modules: &'a mut Modules,
     pub sources: &'a Sources,
     pub ast: &'a ast::Data,
-    pub type_ast: &'a mut SecondaryMap<Ty, Ast>,
-    pub func_ast: &'a mut SecondaryMap<Func, Ast>,
     pub diagnostics: &'a mut errors::Diagnostics,
     pub ctx: &'a mut Context,
     pub module: Source,
@@ -47,7 +45,7 @@ impl<'a> Collector<'a> {
             }
 
             match kind {
-                ast::Kind::Function(..) => drop(self.collect_function(None, ast)),
+                ast::Kind::Function(..) => drop(self.collect_function(None, None, ast)),
                 ast::Kind::Impl => drop(self.collect_impl(ast)),
 				ast::Kind::Struct
                 | ast::Kind::Bound => (),
@@ -64,7 +62,7 @@ impl<'a> Collector<'a> {
 
             let mut prev = None;
             while let Some(func) = self.ctx.bound_funcs.pop() {
-                let ast = self.func_ast[func];
+                let ast = self.ctx.func_ast[func];
                 let func::Kind::Owned(bound) = self.funcs[func].kind else {
                     unreachable!();
                 };
@@ -78,39 +76,80 @@ impl<'a> Collector<'a> {
                     prev = Some(bound);
                 }
                 
-                drop(self.collect_function(Some(func), ast));
+                drop(self.collect_function(Some(func), None, ast));
             }
     
             self.scope.pop_frame();
         }
 
-
         Ok(())
     }
 
 	fn collect_impl(&mut self, ast: Ast) -> errors::Result {
-		let &[ty, body] = self.ast.children(ast) else {
+		let &[ty, dest, body] = self.ast.children(ast) else {
 			unreachable!();
 		};
 
 		let span = self.ast.nodes[ty].span;
 		let ty = self.parse_type(ty)?;
 
-		self.scope.mark_frame();
-		self.scope.push_item("Self", scope::Item::new(ty, span));
+        if !dest.is_reserved_value() {
+            let dest = self.parse_type(dest)?;
+            let id = {
+                let dest_id = self.types.ents[dest].id;
+                let bound_id = self.types.ents[ty].id;
+                Self::bound_impl_id(bound_id, dest_id)
+            };
+            
+            if let Some(&collision) = self.types.bound_cons.get(id) {
+                self.diagnostics.push(Error::DuplicateBoundImpl {
+                    loc: self.ast.nodes[ast].span,
+                    because: collision,
+                });
+                return Err(());
+            }
+            
+            if !body.is_reserved_value() {
+                self.scope.mark_frame();
+                self.scope.push_item("Self", scope::Item::new(dest, span));
 
-		for &func in self.ast.children(body) {
-			let reserved = {
-				let ent = func::Ent {
-        			kind: func::Kind::Owned(ty),
-					..Default::default()
-				};
-				self.funcs.push(ent)
-			};
-			self.collect_function(Some(reserved), func)?;
-		}
+                for &func in self.ast.children(body) {
+                    if let ast::Kind::UseBoundFunc = self.ast.nodes[func].kind {
+                        continue;
+                    }
 
-		self.scope.pop_frame();
+                    let reserved = {
+                        let ent = func::Ent {
+                            kind: func::Kind::Owned(ty),
+                            ..Default::default()
+                        };
+                        self.funcs.push(ent)
+                    };
+                    let id = self.types.ents[dest].id;
+                    self.collect_function(Some(reserved), Some(id), func)?;
+                }
+
+                self.scope.pop_frame();    
+            }
+
+            self.ctx.bounds_to_verify.push((dest, ty, ast));
+        } else if !body.is_reserved_value() {
+            self.scope.mark_frame();
+            self.scope.push_item("Self", scope::Item::new(ty, span));
+
+            for &func in self.ast.children(body) {
+                let reserved = {
+                    let ent = func::Ent {
+                        kind: func::Kind::Owned(ty),
+                        ..Default::default()
+                    };
+                    self.funcs.push(ent)
+                };
+                self.collect_function(Some(reserved), None, func)?;
+            }
+
+            self.scope.pop_frame();
+        }
 
 		Ok(())
 	}
@@ -140,7 +179,7 @@ impl<'a> Collector<'a> {
                     kind: func::Kind::Owned(slot),
                     ..Default::default()
                 });
-                self.func_ast[func_id] = func;
+                self.ctx.func_ast[func_id] = func;
                 self.ctx.bound_funcs.push(func_id);
                 self.types.funcs.push_one(func_id);
             }
@@ -148,7 +187,7 @@ impl<'a> Collector<'a> {
         };
 
         self.types.ents[slot].kind = ty::Kind::Bound(funcs);
-        self.type_ast[slot] = ast;
+        self.ctx.type_ast[slot] = ast;
 
         {
             let item = module::Item::new(scope_id, slot, name);
@@ -177,7 +216,7 @@ impl<'a> Collector<'a> {
             name: span,
         };
         let ty = self.types.ents.push(ent);
-        self.type_ast[ty] = ast;
+        self.ctx.type_ast[ty] = ast;
 
         {
             let item = module::Item::new(scope_id, ty, span);
@@ -188,7 +227,7 @@ impl<'a> Collector<'a> {
         Ok(())
     }
 
-    fn collect_function(&mut self, prepared: Option<Func>, ast: Ast) -> errors::Result<Func> {
+    fn collect_function(&mut self, prepared: Option<Func>, implementor: Option<ID>, ast: Ast) -> errors::Result<Func> {
         let children = self.ast.children(ast);
         let ast::Ent { span: current_span, kind: ast::Kind::Function(external), .. } = self.ast.nodes[ast] else {
             unreachable!();
@@ -260,13 +299,19 @@ impl<'a> Collector<'a> {
         let scope_id = {
             let span = self.ast.nodes[name].span;
             let str = self.sources.display(span);
+            let id = ID::new(str);
             if let func::Kind::Owned(owner) = self.funcs[func].kind {
-                func::Builder::owned_func_id(self.types.ents[owner].id, ID::new(str))
+                if let Some(implementor) = implementor {
+                    let bound = self.types.ents[owner].id;
+                    Self::bound_impl_owned_func_id(bound, implementor, id)
+                } else {
+                    let owner = self.types.ents[owner].id;
+                    func::Builder::owned_func_id(owner, id)
+                }
             } else {
-                ID::new(str)
+                id
             }
         };
-        let id = self.modules[self.module].id + scope_id;
 
         {
             let is_entry = self.find_simple_tag("entry");
@@ -287,14 +332,13 @@ impl<'a> Collector<'a> {
             }
 
             let ent = func::Ent {
-                id,
                 sig,
                 name: self.ast.nodes[name].span,
                 flags,
                 ..self.funcs[func]
             };
             self.funcs[func] = ent;
-            self.func_ast[func] = ast;
+            self.ctx.func_ast[func] = ast;
         }
 
         {
@@ -313,11 +357,23 @@ impl<'a> Collector<'a> {
             .map(|&tag| self.ast.nodes[tag].span)
             .find(|&span| self.sources.display(span)[1..].trim() == name)
     }
+
+    pub fn bound_impl_id(bound: ID, ty: ID) -> ID {
+        ID::new("<impl>") + bound + ty
+    }
+
+    pub fn bound_impl_owned_func_id(bound: ID, implementor: ID, func: ID) -> ID {
+        implementor + func::Builder::owned_func_id(bound, func)
+    }
 }
 
 pub struct Context {
     pub bound_funcs: Vec<Func>,
     pub tags: Vec<Ast>,
+    /// (implementor, bound, impl block)
+    pub bounds_to_verify: Vec<(Ty, Ty, Ast)>,
+    pub type_ast: SecondaryMap<Ty, Ast>,
+    pub func_ast: SecondaryMap<Func, Ast>,
 }
 
 impl Context {
@@ -325,6 +381,9 @@ impl Context {
         Self {
             bound_funcs: Vec::new(),
             tags: Vec::new(),
+            bounds_to_verify: Vec::new(),
+            type_ast: SecondaryMap::new(),
+            func_ast: SecondaryMap::new(),
         }
     }
 }
