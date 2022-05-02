@@ -24,7 +24,9 @@ impl Goo {
 impl Spec as Goo {
     use something as try
 
-    fn and_this() {}
+    fn and_this() {
+        putchar('y')
+    }
 }
 
 
@@ -45,8 +47,4 @@ bound Spec {
     fn and_this()
 }
 
-impl Spec {
-    fn twenty() -> int {
-        20
-    }
-}
+fn "default" putchar(char: char) -> char extern

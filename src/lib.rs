@@ -6,7 +6,7 @@ use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::settings::Flags;
 use cranelift_codegen::Context;
-use cranelift_entity::{EntitySet, SecondaryMap};
+use cranelift_entity::EntitySet;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -121,20 +121,18 @@ pub fn compile() {
     let mut t_types = typec::Types::new(&mut t_graph, &mut sources, &mut builtin_source);
     let mut t_funcs = typec::Funcs::new();
 
-    const NOTHING: Ty = Ty(0);
-    const BOOL: Ty = Ty(1);
-    const ANY: Ty = Ty(2);
-
     let total_type_check;
 
     let mut bodies = SecondaryMap::new();
     /* perform type checking and build tir */
     {
-        let builtin_items = typec::create_builtin_items(
+        let b_source = builtin_source.source;
+        typec::create_builtin_items(
             &mut t_types,
             &mut t_funcs,
             &mut sources,
             &mut builtin_source,
+            &mut modules[b_source].items,
         );
 
         let mut t_temp = FramedStack::new();
@@ -146,12 +144,11 @@ pub fn compile() {
         let mut ty_buffer = vec![];
 
         for source in module_order {
-            for item in builtin_items.iter() {
+            for item in modules[builtin_source.source].items.iter() {
                 scope
                     .insert(&mut diagnostics, source, item.id, item.to_scope_item())
                     .unwrap();
             }
-
             ast.clear();
             let inter_state =
                 Parser::parse_imports(&sources, &mut diagnostics, &mut ast, &mut ast_temp, source);
@@ -161,8 +158,8 @@ pub fn compile() {
                 for import in imports {
                     let nick = sources.display(import.nick);
                     let Some(&dep) = module_map.get((nick, source)) else {
-                        continue; // recovery, module might not exist due to previous recovery
-                    };
+                    continue; // recovery, module might not exist due to previous recovery
+                };
                     scope
                         .insert(
                             &mut diagnostics,
@@ -191,8 +188,6 @@ pub fn compile() {
 
             drop(
                 Collector {
-                    nothing: NOTHING,
-                    any: ANY,
                     scope: &mut scope,
                     funcs: &mut t_funcs,
                     types: &mut t_types,
@@ -204,27 +199,6 @@ pub fn compile() {
                     diagnostics: &mut diagnostics,
                 }
                 .collect_items(ast.elements()),
-            );
-
-            drop(
-                typec::func::Builder {
-                    nothing: NOTHING,
-                    bool: BOOL,
-                    scope: &mut scope,
-                    types: &mut t_types,
-                    sources: &sources,
-                    ast: &ast,
-                    funcs: &mut t_funcs,
-                    ctx: &mut c_ctx,
-                    temp: &mut t_temp,
-                    modules: &mut modules,
-                    diagnostics: &mut diagnostics,
-
-                    // does not matter
-                    body: &mut typec::tir::Data::default(),
-                    func: Default::default(),
-                }
-                .verify_bound_impls(),
             );
 
             ty_buffer.extend(
@@ -251,6 +225,25 @@ pub fn compile() {
                 );
             }
 
+            drop(
+                typec::func::Builder {
+                    scope: &mut scope,
+                    types: &mut t_types,
+                    sources: &sources,
+                    ast: &ast,
+                    funcs: &mut t_funcs,
+                    ctx: &mut c_ctx,
+                    temp: &mut t_temp,
+                    modules: &mut modules,
+                    diagnostics: &mut diagnostics,
+
+                    // does not matter
+                    body: &mut typec::tir::Data::default(),
+                    func: Default::default(),
+                }
+                .verify_bound_impls(),
+            );
+
             func_buffer.extend(
                 modules[source]
                     .items
@@ -260,8 +253,6 @@ pub fn compile() {
 
             for func in func_buffer.drain(..) {
                 if (typec::func::Builder {
-                    nothing: NOTHING,
-                    bool: BOOL,
                     scope: &mut scope,
                     types: &mut t_types,
                     sources: &sources,
@@ -282,6 +273,8 @@ pub fn compile() {
 
                 //println!("{}", typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
             }
+
+            println!("typecheck {}", scope.collision_rate());
 
             scope.clear();
         }
@@ -355,7 +348,7 @@ pub fn compile() {
                 continue;
             };
 
-            let popper = if let typec::func::Kind::Instance(_) = ent.kind {
+            if let typec::func::Kind::Instance(_) = ent.kind {
                 let popper = t_types.push_params(ent.sig.params);
                 for (&param, &real_param) in t_types
                     .active_params(&popper)
@@ -364,13 +357,11 @@ pub fn compile() {
                 {
                     types.ents[param] = types.ents[real_param];
                 }
-                Some(popper)
             } else {
                 if !ent.sig.params.is_reserved_value() {
                     continue;
                 }
-                None
-            };
+            }
 
             name_buffer.clear();
             if ent.flags.contains(typec::func::Flags::ENTRY) {
@@ -395,10 +386,6 @@ pub fn compile() {
                 ent.flags.contains(typec::func::Flags::ENTRY),
             )
             .unwrap();
-
-            if let Some(popper) = popper {
-                t_types.pop_params(popper);
-            }
 
             if returns_struct {
                 has_sret.insert(id);
@@ -434,7 +421,7 @@ pub fn compile() {
                 continue;
             }
 
-            let (popper, func) = if let typec::func::Kind::Instance(func) = ent.kind {
+            let func = if let typec::func::Kind::Instance(func) = ent.kind {
                 let popper = t_types.push_params(ent.sig.params);
                 for (&param, &real_param) in t_types
                     .active_params(&popper)
@@ -443,12 +430,12 @@ pub fn compile() {
                 {
                     types.ents[param] = types.ents[real_param];
                 }
-                (Some(popper), func)
+                func
             } else {
                 if !ent.sig.params.is_reserved_value() {
                     continue;
                 }
-                (None, id)
+                id
             };
 
             let now = std::time::Instant::now();
@@ -463,7 +450,6 @@ pub fn compile() {
                 func: &mut function,
                 tir_mapping: &mut tir_mapping,
                 body: &bodies[func],
-                nothing: NOTHING,
                 ptr_ty,
                 return_dest: None,
                 has_sret: &has_sret,
@@ -473,11 +459,7 @@ pub fn compile() {
             .unwrap();
             total_translation += now.elapsed();
 
-            if let Some(popper) = popper {
-                t_types.pop_params(popper);
-            }
-
-            //println!("{}", mir::Display::new(&sources, &function, &t_types));
+            // println!("{}", mir::Display::new(&sources, &function, &t_types));
             let now = std::time::Instant::now();
             ctx.clear();
             mir_to_ir_lookup.clear();
@@ -491,7 +473,7 @@ pub fn compile() {
                 sources: &sources,
                 block_lookup: &mut ir_block_lookup,
                 stack_slot_lookup: &mut stack_slot_lookup,
-                t_functions: &t_funcs,
+                t_funcs: &t_funcs,
                 types: &types,
                 variable_set: &mut variable_set,
                 t_types: &t_types,
@@ -503,7 +485,6 @@ pub fn compile() {
             // println!("{}", ctx.func.display());
 
             let id = func_lookup[id].unwrap();
-
             let now = std::time::Instant::now();
             module.define_function(id, &mut ctx).unwrap();
             total_definition += now.elapsed();

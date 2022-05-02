@@ -1,58 +1,50 @@
+import sys
+AMOUNT = int(sys.argv[1])
+
 file = open("bench_project/root.mf", "w")
-file.write("fn main() -> int { return 0 }")
-for i in range(10000):
+file.write(f"""
+    #entry
+    fn main() -> int {{ 
+        gathering()
+    }}
+
+    bound B {{
+        fn new() -> Self
+        fn foo(s: *Self) -> int
+        fn bar(s: *Self) -> int
+    }}
+
+    fn [T: B] great() -> int {{
+        let s = T::new();
+        s.foo() + s.bar()
+    }}
+
+    fn gathering() -> int {{
+        let mut sum = 0;
+        {";".join((f"sum += great::[S{i*i}]()") for i in range(AMOUNT))}
+        sum
+    }}
+""".replace(";" , "\n"))
+for i in range(AMOUNT):
+    i *= i
     file.write(f"""
-    fn other{i}(a: int, b: int, c: int) -> int {{
-        return a + b * c
-    }}
+        struct S{i} {{
+            data: int
+        }}
 
-    fn bti{i}(b: bool) -> int {{
-        return if b {{ 1 }} else {{ 0 }}
-    }}
-
-    fn structure_test{i}() -> int {{
-        let mut something = init_something{i}()
-        something = Something{i}::{{
-            a: 2
-            b {{
-                e: true
-                f: false
+        impl B as S{i} {{
+            fn new() -> Self {{
+                S{i}::{{
+                    data: {i}
+                }}
             }}
-            e: true
-        }}
 
-        let something_else = init_something_else{i}()
-
-        if something.e {{}} else {{
-            return -1
-        }}
-
-        something.a - bti{i}(something.b.e) + -bti{i}(something_else.f)
-    }}
-
-    fn init_something_else{i}() -> SomethingElse{i} {{
-        SomethingElse{i}::{{ e: false; f: true }}
-    }}
-
-    fn init_something{i}() -> Something{i} {{
-        Something{i}::{{
-            a: 0
-            b {{
-                e: false
-                f: false           
+            fn foo(s: *Self) -> int {{
+                s.data
             }}
-            e: false
+
+            fn bar(s: *Self) -> int {{
+                s.data * 2
+            }}
         }}
-    }}
-
-    struct Something{i} {{
-        a: int
-        b: SomethingElse{i}
-        e: bool
-    }}
-
-    struct SomethingElse{i} {{
-        e: bool
-        f: bool
-    }}
     """)

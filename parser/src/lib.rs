@@ -935,7 +935,7 @@ impl<'a> Parser<'a> {
             || self.current.kind() == token::Kind::Comma
         {
             self.stack.push_default();
-            Span::default()
+            span
         } else {
             let expr = self.expr();
             self.stack.push(expr);

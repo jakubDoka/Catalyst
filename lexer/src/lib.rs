@@ -1,6 +1,7 @@
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(int_log)]
+#![feature(bool_to_option)]
 
 pub extern crate cranelift_entity;
 
@@ -266,4 +267,6 @@ pub trait IsOperator: Sized {
             '+' | '-' | '*' | '/' | '%' | '^' | '=' | '<' | '>' | '!' | '&' | '|' | '?' | ':'
         )
     }
-}
+} 
+
+

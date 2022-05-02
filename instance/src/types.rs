@@ -2,7 +2,6 @@ use cranelift_codegen::{
     ir::{self, Type},
     packed_option::ReservedValue,
 };
-use cranelift_entity::SecondaryMap;
 use lexer::*;
 use modules::*;
 use typec::*;
@@ -46,12 +45,12 @@ impl<'a> TypeTranslator<'a> {
                 self.translate_struct(id, fields)?;
                 return Ok(());
             }
-            ty::Kind::Pointer(..) => self.ptr_ty,
+            ty::Kind::Ptr(..) => self.ptr_ty,
             ty::Kind::Nothing
             | ty::Kind::Bound(..)
             | ty::Kind::Param(..)
-            | ty::Kind::BoundCombo(..) => ir::types::INVALID,
-            ty::Kind::Unresolved => unreachable!(),
+            | ty::Kind::BoundCombo(..)
+            | ty::Kind::Unresolved => ir::types::INVALID,
         };
 
         let bytes = repr.bytes() as i32;
@@ -148,7 +147,7 @@ pub struct Ent {
     pub flags: Flags,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Field {
     pub offset: Size,
 }

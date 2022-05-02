@@ -58,15 +58,17 @@ fn main() -> int {
     }
 
     // stress test
-    if (*PtrTest::{ a: false; b: false; c: true }.as_ptr().as_ptr_ptr()).c {} else {
+    if (*PtrTest::{ a: false; b: false; c: true }.as_ptr()).c {} else {
         return 11
     }
 
-    if foo::[Goo]() != 10 {
+    
+
+    if foo::[Goo]() + foo::[Goo]() != 20 {
         return 12
     }
 
-    putchar('h')
+    //generics::putchar('h')
     exit(-34)
 
     0
@@ -113,7 +115,5 @@ fn iter_fib(x: int) -> int {
         i += 1
     }
 }
-
-fn "default" putchar(char: char) -> char extern
 
 fn "default" exit(code: int) extern

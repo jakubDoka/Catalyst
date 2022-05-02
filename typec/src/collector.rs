@@ -1,4 +1,4 @@
-use cranelift_entity::{packed_option::ReservedValue, SecondaryMap};
+use cranelift_entity::packed_option::ReservedValue;
 
 use crate::{Error, *};
 use lexer::*;
@@ -6,8 +6,6 @@ use modules::*;
 use parser::*;
 
 pub struct Collector<'a> {
-    pub nothing: Ty,
-    pub any: Ty,
     pub scope: &'a mut Scope,
     pub funcs: &'a mut Funcs,
     pub types: &'a mut Types,
@@ -122,12 +120,12 @@ impl<'a> Collector<'a> {
 
                     let reserved = {
                         let ent = func::Ent {
-                            kind: func::Kind::Owned(ty),
+                            kind: func::Kind::Owned(dest),
                             ..Default::default()
                         };
                         self.funcs.push(ent)
                     };
-                    let id = self.types.ents[dest].id;
+                    let id = self.types.ents[ty].id;
                     self.collect_function(Some(reserved), Some(id), func)?;
                 }
 
@@ -173,6 +171,7 @@ impl<'a> Collector<'a> {
             id,
             name,
             kind: ty::Kind::Unresolved,
+            generic: true,
         });
 
         let funcs = {
@@ -187,6 +186,16 @@ impl<'a> Collector<'a> {
             }
             self.types.funcs.close_frame()
         };
+
+        // bound implements it self
+        {
+            let id = Self::bound_impl_id(id, id);
+            assert!(self
+                .types
+                .bound_cons
+                .insert(id, BoundImpl { span: name, funcs })
+                .is_none());
+        }
 
         self.types.ents[slot].kind = ty::Kind::Bound(funcs);
         self.ctx.type_ast[slot] = ast;
@@ -219,6 +228,7 @@ impl<'a> Collector<'a> {
             id,
             kind: ty::Kind::Unresolved,
             name: span,
+            generic: false,
         };
         let ty = self.types.ents.push(ent);
         self.ctx.type_ast[ty] = ast;
@@ -238,7 +248,7 @@ impl<'a> Collector<'a> {
     fn collect_function(
         &mut self,
         prepared: Option<Func>,
-        implementor: Option<ID>,
+        bound: Option<ID>,
         ast: Ast,
     ) -> errors::Result<Func> {
         let children = self.ast.children(ast);
@@ -253,35 +263,36 @@ impl<'a> Collector<'a> {
             self.scope.mark_frame();
 
             let params = {
-                let add = if let Some(func) = prepared
-                    && let
-                        func::Kind::Bound(owner, ..)
-                        | func::Kind::Owned(owner) = self.funcs[func].kind
-                    && let ty::Kind::Bound(..) = self.types.ents[owner].kind 
-                {
-                    let span = self.types.ents[owner].name;
-                    let ty = self.types.get_parameter(0, span, owner);
-                    self.scope.push_item("Self", scope::Item::new(ty, span));
-                    self.types.args.push_one(owner);
-                    1
-                } else {
-                    0
-                };
-
+                // push the generic parameters
                 if !generics.is_reserved_value() {
-                    for (i, &param) in self.ast.children(generics).iter().enumerate() {
-                        let children = self.ast.children(param);
+                    let ast = self.ast.children(generics);
+                    for (i, &ast) in ast.iter().enumerate() {
+                        let children = self.ast.children(ast);
                         let name = children[0];
                         let span = self.ast.nodes[name].span;
                         let Ok(bound) = self.parse_composite_bound(&children[1..], span) else {
                             continue;
                         };
-                        let ty = self.types.get_parameter(i + add, span, bound);
-                        
+
                         let str = self.sources.display(span);
-                        self.scope.push_item(str, scope::Item::new(ty, span));
+                        let params = self.types.parameters();
+                        self.scope.push_item(str, scope::Item::new(params[i], span));
                         self.types.args.push_one(bound);
                     }
+                }
+
+                // if this is a bound owned function, push the self as well
+                if let Some(func) = prepared
+                    && let
+                        func::Kind::Bound(owner, ..)
+                        | func::Kind::Owned(owner) = self.funcs[func].kind
+                    && let ty::Kind::Bound(..) = self.types.ents[owner].kind
+                {
+                    let params = self.types.parameters();
+                    let param = params[self.types.args.top().len()];
+                    let span = self.types.ents[owner].name;
+                    self.scope.push_item("Self", scope::Item::new(param, span));
+                    self.types.args.push_one(owner);
                 }
 
                 self.types.args.close_frame()
@@ -304,7 +315,7 @@ impl<'a> Collector<'a> {
             };
 
             let ret = if return_type.is_reserved_value() {
-                self.nothing
+                self.types.builtin.nothing
             } else {
                 self.parse_type(return_type)?
             };
@@ -332,8 +343,8 @@ impl<'a> Collector<'a> {
             let str = self.sources.display(span);
             let id = ID::new(str);
             if let func::Kind::Owned(owner) | func::Kind::Bound(owner, ..) = self.funcs[func].kind {
-                if let Some(implementor) = implementor {
-                    let bound = self.types.ents[owner].id;
+                if let Some(bound) = bound {
+                    let implementor = self.types.ents[owner].id;
                     Self::bound_impl_owned_func_id(bound, implementor, id)
                 } else {
                     let owner = self.types.ents[owner].id;

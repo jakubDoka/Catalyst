@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use cranelift_entity::packed_option::ReservedValue;
-use cranelift_entity::{EntityRef, SecondaryMap};
+use cranelift_entity::EntityRef;
 
 use crate::error::Error;
 use crate::*;

@@ -5,7 +5,7 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Signature, StackSlotData};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{EntityRef, EntitySet, SecondaryMap};
+use cranelift_entity::{EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Linkage, Module};
 use instance::*;
@@ -20,7 +20,7 @@ pub struct Generator<'a> {
     pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
     pub stack_slot_lookup: &'a mut SecondaryMap<mir::StackSlot, PackedOption<ir::StackSlot>>,
     pub variable_set: &'a mut EntitySet<Variable>,
-    pub t_functions: &'a typec::Funcs,
+    pub t_funcs: &'a typec::Funcs,
     pub types: &'a instance::Types,
     pub t_types: &'a typec::Types,
     pub source: &'a instance::func::Func,
@@ -78,7 +78,7 @@ impl<'a> Generator<'a> {
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
             mir::InstKind::Call(func, args) => {
-                if self.t_functions[func].kind == typec::func::Kind::Builtin {
+                if self.t_funcs[func].kind == typec::func::Kind::Builtin {
                     self.generate_native_call(func, args, inst.value);
                     return;
                 }
@@ -268,7 +268,7 @@ impl<'a> Generator<'a> {
         args: ValueList,
         result: PackedOption<mir::Value>,
     ) {
-        let name = self.t_functions[func].name;
+        let name = self.t_funcs[func].name;
         let str = self.sources.display(name);
 
         match str {

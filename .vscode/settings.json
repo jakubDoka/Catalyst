@@ -4,6 +4,7 @@
         "canonicalize",
         "conv",
         "Cranelift",
+        "dealloc",
         "deast",
         "Deque",
         "Elif",

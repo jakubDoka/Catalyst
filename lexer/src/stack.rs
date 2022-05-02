@@ -37,6 +37,16 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn get_mut(&mut self, id: E) -> &mut [T] {
+        match (
+            self.indices.get(id.index()),
+            self.indices.get(id.index() + 1),
+        ) {
+            (Some(start), Some(end)) => &mut self.data[*start as usize..*end as usize],
+            _ => &mut [],
+        }
+    }
+
     pub fn get_iter(&self, id: E) -> impl Iterator<Item = (S, &T)> + Clone {
         self.get(id)
             .iter()

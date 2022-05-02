@@ -10,8 +10,6 @@ pub type Funcs = PrimaryMap<Func, Ent>;
 
 pub struct Builder<'a> {
     pub func: Func,
-    pub nothing: Ty,
-    pub bool: Ty,
     pub funcs: &'a mut Funcs,
     pub ctx: &'a mut Context,
     pub body: &'a mut tir::Data,
@@ -30,9 +28,10 @@ impl<'a> Builder<'a> {
         // functions are implemented, its done here
         {
             while let Some((implementor, bound, impl_block)) = self.ctx.bounds_to_verify.pop() {
-                let &[.., body] = self.ast.children(impl_block) else {
+                let &[.., implementor_ast, body] = self.ast.children(impl_block) else {
                     unreachable!();
                 };
+                let implementor_span = self.ast.nodes[implementor_ast].span;
 
                 // handle use expressions
                 if !body.is_reserved_value() {
@@ -45,7 +44,7 @@ impl<'a> Builder<'a> {
                             unreachable!();
                         };
 
-                        let Ok(id) = self.ident_id(func, Some(implementor)) else {
+                        let Ok(id) = self.ident_id(func, Some((implementor, implementor_span))) else {
                             continue;
                         };
 
@@ -78,6 +77,8 @@ impl<'a> Builder<'a> {
                     }
                 }
 
+                let impl_span = self.ast.nodes[impl_block].span;
+
                 // check if all functions exist and match the signature
                 let funcs = {
                     let ty::Kind::Bound(funcs) = self.types.ents[bound].kind else {
@@ -85,9 +86,9 @@ impl<'a> Builder<'a> {
                     };
 
                     // TODO: don't allocate if it impacts performance
-                    let mut vec = Vec::with_capacity(self.types.funcs.get(funcs).len());
-                    for &func in self.types.funcs.get(funcs) {
-                        let ent = &self.funcs[func];
+                    let mut vec = self.types.funcs.get(funcs).to_vec();
+                    for func in &mut vec {
+                        let ent = &self.funcs[*func];
 
                         let (sugar_id, certain_id) = {
                             let func = {
@@ -109,17 +110,18 @@ impl<'a> Builder<'a> {
                         let Some(other) = maybe_other else {
                             self.diagnostics.push(Error::MissingBoundImplFunc {
                                 func: ent.name,
-                                loc: self.ast.nodes[impl_block].span,
+                                loc: impl_span,
                             });
                             continue;
                         };
 
-                        let Ok(()) = self.compare_bound_impl_signatures(func, other, bound, implementor, self.ast.nodes[impl_block].span) else {
-                            todo!("signatures does not match, there are three error opportunities, i cannot bother now");
-                        };
+                        {
+                            let Ok(()) = self.compare_signatures(*func, other, impl_span) else {
+                                todo!("signatures does not match, there are three error opportunities, i cannot bother now");
+                            };
+                        }
 
-                        vec.push(other);
-                        println!("{}", self.funcs[other].name.log(self.sources));
+                        *func = other;
                     }
 
                     self.types.funcs.push(&vec)
@@ -130,6 +132,7 @@ impl<'a> Builder<'a> {
                     let bound = self.types.ents[bound].id;
                     Collector::bound_impl_id(bound, implementor)
                 };
+
                 assert!(self
                     .types
                     .bound_cons
@@ -147,48 +150,53 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    pub fn compare_bound_impl_signatures(
+    pub fn compare_signatures(
         &self,
         bound_func: Func,
         impl_func: Func,
-        bound: Ty,
-        implementor: Ty,
         _loc: Span,
     ) -> errors::Result {
-        let a = self.funcs[bound_func].sig;
-        let b = self.funcs[impl_func].sig;
-
-        let check = |(&a, &b)| {
-            let (a, b) = (self.types.base_of(a), self.types.base_of(b));
-            a == b || (a == bound && b == implementor)
-        };
+        let a = self.funcs[impl_func].sig;
+        let b = self.funcs[bound_func].sig;
 
         // params
         {
-            let a = self.types.args.get(a.params);
-            let b = self.types.args.get(b.params);
+            let a_params = self.types.args.get(a.params);
+            let b_params = self.types.args.get(b.params);
 
-            if !a.iter().zip(b.iter()).all(check) {
-                println!("parameters {:?} {:?}", a, b);
+            if !a_params
+                .iter()
+                .zip(b_params.iter())
+                .all(|(&ap, &bp)| self.types.compatible(ap, bp, a.params, b.params))
+            {
+                println!("parameters {:?} {:?}", a_params, b_params);
                 return Err(());
             }
         }
 
         // args
         {
-            let a = self.types.args.get(a.args);
-            let b = self.types.args.get(b.args);
+            let a_args = self.types.args.get(a.args);
+            let b_args = self.types.args.get(b.args);
 
-            if !a.iter().zip(b.iter()).all(check) {
-                println!("arguments {:?} {:?}", a, b);
+            if !a_args
+                .iter()
+                .zip(b_args.iter())
+                .all(|(&aa, &ba)| self.types.compatible(aa, ba, a.params, b.params))
+            {
+                println!("arguments {:?} {:?}", a_args, b_args);
                 return Err(());
             }
         }
 
         // ret
         {
-            if !check((&a.ret, &b.ret)) {
-                println!("return {:?} {:?}", a.ret, b.ret);
+            if !self.types.compatible(a.ret, b.ret, a.params, b.params) {
+                println!(
+                    "return {} {}",
+                    ty::Display::new(self.types, self.sources, a.ret),
+                    ty::Display::new(self.types, self.sources, b.ret),
+                );
                 return Err(());
             }
         }
@@ -197,9 +205,15 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build(&mut self) -> errors::Result {
-        let func_ent = &mut self.funcs[self.func];
+        let Ent {
+            flags,
+            kind,
+            sig: Sig {
+                ret, params, args, ..
+            },
+            ..
+        } = self.funcs[self.func];
 
-        let ret = func_ent.sig.ret;
         let ast = self.ctx.func_ast[self.func];
         let header = self.ast.children(ast);
         let &[generics, .., ret_ast, _] = header else {
@@ -208,40 +222,56 @@ impl<'a> Builder<'a> {
         let &body_ast = header.last().unwrap();
 
         if body_ast.is_reserved_value() {
-            if func_ent.flags.contains(func::Flags::EXTERNAL) {
-                func_ent.kind = func::Kind::External;
+            if flags.contains(func::Flags::EXTERNAL) {
+                self.funcs[self.func].kind = func::Kind::External;
             }
             return Ok(());
         }
 
         self.scope.mark_frame();
-        if let func::Kind::Owned(ty) = func_ent.kind {
+        if let func::Kind::Owned(ty) = kind {
             let span = self.ast.nodes[ast].span;
             self.scope.push_item("Self", scope::Item::new(ty, span));
         }
 
         if !generics.is_reserved_value() {
-            for (i, &item) in self.ast.children(generics).iter().enumerate() {
-                let children = self.ast.children(item);
-                let name = children[0];
+            let ast = self.ast.children(generics);
+            let bounds = self.types.args.get(params);
+            let params = self.types.parameters();
+            for ((&item, &param), &bound_combo) in ast.iter().zip(params).zip(bounds) {
+                let name = self.ast.children(item)[0];
                 let span = self.ast.nodes[name].span;
                 let str = self.sources.display(span);
-                let id = ID::new(str);
+                self.scope.push_item(str, scope::Item::new(param, span));
 
-                let Ok(item) = self.parse_composite_bound(&children[1..], span) else {
-                    continue;
+                let ty::Kind::BoundCombo(bounds) = self.types.ents[bound_combo].kind else {
+                    unreachable!();
                 };
 
-                let ty = self.types.get_parameter(i, span, item);
+                for &bound in self.types.args.get(bounds) {
+                    let ty::Kind::Bound(funcs) = self.types.ents[bound].kind else {
+                        unreachable!();
+                    };
 
-                self.scope.push_item(id, scope::Item::new(ty, span));
+                    // TODO: can caching ids make less cache misses?
+                    for &func in self.types.funcs.get(funcs) {
+                        let name = self.funcs[func].name;
+                        let id = {
+                            let str = self.sources.display(name);
+                            let id = ID::new(str);
+                            let bound = self.types.ents[bound_combo].id;
+                            Self::owned_func_id(bound, id)
+                        };
+                        self.scope.push_item(id, scope::Item::new(func, name));
+                    }
+                }
             }
         }
 
         let args = {
             let ast_args =
                 &header[Parser::FUNCTION_ARG_START..header.len() - Parser::FUNCTION_ARG_END];
-            let args = self.types.args.get(self.funcs[self.func].sig.args);
+            let args = self.types.args.get(args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
                 let &[name, ..] = self.ast.children(ast) else {
@@ -273,7 +303,9 @@ impl<'a> Builder<'a> {
         self.funcs[self.func].body = root;
         self.funcs[self.func].args = args;
 
-        if !self.body.ents[root].flags.contains(tir::Flags::TERMINATING) && ret != self.nothing {
+        if !self.body.ents[root].flags.contains(tir::Flags::TERMINATING)
+            && ret != self.types.builtin.nothing
+        {
             let because = Some(self.ast.nodes[ret_ast].span);
             self.expect_tir_ty(root, ret, |_, got, loc| Error::ReturnTypeMismatch {
                 because,
@@ -312,7 +344,7 @@ impl<'a> Builder<'a> {
             let ty = if let Some(expr) = final_expr {
                 self.body.ents[expr].ty
             } else {
-                self.nothing
+                self.types.builtin.nothing
             };
 
             let slice = self.temp.top_frame();
@@ -362,15 +394,15 @@ impl<'a> Builder<'a> {
         let expr = self.ast.children(ast)[0];
         let target = self.build_expr(expr)?;
         let ty = self.body.ents[target].ty;
-        let deref_ty = self.types.base_of(ty);
-        if ty == deref_ty {
+        
+        if !matches!(self.types.ents[ty].kind, ty::Kind::Ptr(..)) {
             self.diagnostics.push(Error::NonPointerDereference {
                 loc: self.ast.nodes[ast].span,
                 ty,
             });
             return Err(());
         }
-        Ok(self.deref_ptr(deref_ty, target))
+        Ok(self.deref_ptr(target))
     }
 
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -390,7 +422,7 @@ impl<'a> Builder<'a> {
         let func = {
             let span = self.ast.nodes[op].span;
             let id = {
-                let ty = self.types.id_of(operand_ty);
+                let ty = self.base_id_of(operand_ty);
 
                 let op = {
                     let str = self.sources.display(span);
@@ -466,7 +498,12 @@ impl<'a> Builder<'a> {
 
         let result = {
             let kind = tir::Kind::Break(loop_expr, value.into());
-            let ent = tir::Ent::with_flags(kind, self.nothing, tir::Flags::TERMINATING, span);
+            let ent = tir::Ent::with_flags(
+                kind,
+                self.types.builtin.nothing,
+                tir::Flags::TERMINATING,
+                span,
+            );
             self.body.ents.push(ent)
         };
 
@@ -481,7 +518,7 @@ impl<'a> Builder<'a> {
 
         let loop_slot = {
             let kind = tir::Kind::LoopInProgress(None.into(), true);
-            let ent = tir::Ent::new(kind, self.nothing, span);
+            let ent = tir::Ent::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
@@ -500,7 +537,7 @@ impl<'a> Builder<'a> {
             };
             let ty = ret
                 .map(|ret| self.body.ents[ret].ty)
-                .unwrap_or(self.nothing);
+                .unwrap_or(self.types.builtin.nothing);
             let flags = tir::Flags::TERMINATING & infinite;
             let kind = tir::Kind::Loop(block);
             let span = span;
@@ -515,16 +552,16 @@ impl<'a> Builder<'a> {
             unreachable!();
         };
 
-        let (id, span, mut obj, owner, instantiation) =
+        let (id, fn_span, mut obj, caller, instantiation) =
             if self.ast.nodes[caller].kind == ast::Kind::DotExpr {
                 let &[expr, name] = self.ast.children(caller) else {
-                unreachable!();
-            };
+                    unreachable!();
+                };
 
                 let expr = self.build_expr(expr)?;
                 let ty = {
                     let ty = self.body.ents[expr].ty;
-                    self.types.base_of(ty)
+                    self.types.ptr_base_of(ty)
                 };
 
                 let (ident, instantiation) = {
@@ -535,7 +572,8 @@ impl<'a> Builder<'a> {
                     }
                 };
 
-                let name_id = self.ident_id(ident, Some(ty))?;
+                let span = self.body.ents[expr].span;
+                let name_id = self.ident_id(ident, Some((ty, span)))?;
 
                 let span = self.ast.nodes[name].span;
                 (name_id, span, Some(expr), Some(ty), instantiation)
@@ -551,11 +589,11 @@ impl<'a> Builder<'a> {
                 let (name_id, owner) = self.ident_id_low(ident, None)?;
 
                 let span = self.ast.nodes[caller].span;
-                (name_id, span, None, owner, instantiation)
+                (name_id, span, None, owner.map(|(ty, _)| ty), instantiation)
             };
 
         // TODO: Handle function pointer as field
-        let func = self.scope.get::<Func>(self.diagnostics, id, span)?;
+        let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
         let Ent { sig, flags, .. } = self.funcs[func];
 
@@ -563,13 +601,8 @@ impl<'a> Builder<'a> {
 
         // handle auto ref or deref
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
-            let ty = self.body.ents[*obj].ty;
-            if ty != expected {
-                if self.types.base_of(expected) == ty {
-                    *obj = self.take_ptr(expected, *obj);
-                } else if self.types.base_of(ty) == expected {
-                    *obj = self.deref_ptr(expected, *obj);
-                }
+            if let Ok(corrected) = self.ptr_correct(*obj, expected) {
+                *obj = corrected;
             }
         }
 
@@ -577,8 +610,9 @@ impl<'a> Builder<'a> {
         // TODO: This can be optimized when needed
         let args = {
             let mut vec = Vec::with_capacity(arg_tys.len() + obj.is_some() as usize);
-            obj.map(|obj| vec.push(obj));
-            // error recovery
+            if let Some(obj) = obj {
+                vec.push(obj);
+            }
             self.ast.children(ast)[1..]
                 .iter()
                 .fold(Ok(()), |acc, &arg| {
@@ -589,12 +623,13 @@ impl<'a> Builder<'a> {
 
         let (ret, func) = {
             let because = self.funcs[func].name;
-            if arg_tys.len() != args.len() {
+            let args_len = args.len();
+            if arg_tys.len() != args_len {
                 let loc = self.ast.nodes[ast].span;
                 self.diagnostics.push(Error::FunctionParamMismatch {
                     because,
                     expected: arg_tys.len(),
-                    got: args.len(),
+                    got: args_len,
                     loc,
                 });
                 return Err(());
@@ -632,57 +667,58 @@ impl<'a> Builder<'a> {
                     }
                 }
 
+                let foreign_params = sig.params;
+                let home_params = self.funcs[self.func].sig.params;
+
                 args.iter()
                     .zip(arg_tys)
                     .map(|(&arg, ty)| {
-                        if let ty::Kind::Param(index, _bound) = self.types.ents[ty].kind {
-                            let slot = param_slots[index as usize];
-                            if slot.is_reserved_value() {
-                                param_slots[index as usize] = self.body.ents[arg].ty;
-                                return Ok(());
-                            }
-                        }
-                        self.expect_tir_ty(arg, ty, |_, got, loc| Error::CallArgTypeMismatch {
-                            because,
-                            expected: ty,
-                            got,
-                            loc,
-                        })
+                        let arg_ty = self.body.ents[arg].ty;
+                        self.infer_parameters(arg_ty, ty, &mut param_slots, home_params, foreign_params)
                     })
                     // fold prevents allocation
                     .fold(Ok(()), |acc, err| acc.and(err))?;
 
-                if param_slots.contains(&Ty::default()) {
-                    todo!()
+                if let (None, Some(ty), Some(param)) = (obj, caller, param_slots.last_mut()) && param.is_reserved_value() {
+                    *param = ty;
                 }
 
-                let ret = if let ty::Kind::Param(index, _bound) = self.types.ents[sig.ret].kind {
-                    param_slots[index as usize]
+                if param_slots.iter().any(|param| param.is_reserved_value()) {
+                    todo!("this is an error");
+                }
+
+                let generic = param_slots.iter().any(|&params| self.types.ents[params].generic);
+
+                let ret = self.instantiate(sig.ret, &param_slots)?;
+                
+                if generic {
+                    (ret, func)
                 } else {
-                    sig.ret
-                };
-
-                let func = {
-                    let i_params = self.types.args.push(&param_slots);
-                    let sig = Sig {
-                        params: i_params,
-                        ..sig
+    
+                    let func = {
+                        let i_params = self.types.args.push(&param_slots);
+                        let sig = Sig {
+                            params: i_params,
+                            ..sig
+                        };
+                        let ent = Ent {
+                            sig,
+                            kind: Kind::Instance(func),
+                            ..self.funcs[func]
+                        };
+                        self.funcs.push(ent)
                     };
-                    let ent = Ent {
-                        sig,
-                        kind: Kind::Instance(func),
-                        ..self.funcs[func]
-                    };
-                    self.funcs.push(ent)
-                };
+    
+                    (ret, func)
+                }
 
-                (ret, func)
             }
         };
 
         let result = {
+            let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&args);
-            let kind = tir::Kind::Call(owner.into(), func, args);
+            let kind = tir::Kind::Call(caller.into(), func, args);
             let ent = tir::Ent::new(kind, ret, span);
             self.body.ents.push(ent)
         };
@@ -690,27 +726,62 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
-    fn take_ptr(&mut self, ptr_ty: Ty, target: Tir) -> Tir {
-        let ent = &mut self.body.ents[target];
-        ent.flags.insert(tir::Flags::SPILLED);
-        let span = ent.span;
-        let kind = tir::Kind::TakePointer(target);
-        let ent = tir::Ent::new(kind, ptr_ty, span);
-        self.body.ents.push(ent)
+    fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> errors::Result<Tir> {
+        let ty = self.body.ents[target].ty;
+
+        let target_depth = self.types.ptr_depth_of(ty);
+        let expected_depth = self.types.ptr_depth_of(expected);
+
+        for _ in expected_depth..target_depth {
+            target = self.deref_ptr(target);
+        }
+
+        for _ in target_depth..expected_depth {
+            target = self.take_ptr(target);
+        }
+
+        let ty = self.body.ents[target].ty;
+        if ty != expected {
+            return Err(());
+        }
+
+        Ok(target)
     }
 
-    fn deref_ptr(&mut self, deref_ty: Ty, target: Tir) -> Tir {
+    fn take_ptr(&mut self, target: Tir) -> Tir {
+        let tir::Ent {
+            ty, span, flags, kind, ..
+        } = &mut self.body.ents[target];
+        let (span, ty) = (*span, *ty);
+        if let &mut tir::Kind::Access(target) = kind {
+            self.body.ents[target].flags.insert(tir::Flags::SPILLED);
+        } else {
+            flags.insert(tir::Flags::SPILLED);
+        }
+        
+        let kind = tir::Kind::TakePtr(target);
+        let ptr_ty = self.pointer_of(ty);
+        let deref = tir::Ent::new(kind, ptr_ty, span);
+        self.body.ents.push(deref)
+    }
+
+    fn deref_ptr(&mut self, target: Tir) -> Tir {
         let span = self.body.ents[target].span;
         let kind = tir::Kind::DerefPointer(target);
+        let deref_ty = self.types.deref_ptr(self.body.ents[target].ty);
         let deref = tir::Ent::new(kind, deref_ty, span);
         self.body.ents.push(deref)
     }
 
-    fn ident_id(&mut self, ast: Ast, owner: Option<Ty>) -> errors::Result<ID> {
+    fn ident_id(&mut self, ast: Ast, owner: Option<(Ty, Span)>) -> errors::Result<ID> {
         self.ident_id_low(ast, owner).map(|(id, _)| id)
     }
 
-    fn ident_id_low(&mut self, ast: Ast, owner: Option<Ty>) -> errors::Result<(ID, Option<Ty>)> {
+    fn ident_id_low(
+        &mut self,
+        ast: Ast,
+        owner: Option<(Ty, Span)>,
+    ) -> errors::Result<(ID, Option<(Ty, Span)>)> {
         let children = self.ast.children(ast);
         match (children, owner) {
             (&[module, _, item], None) | (&[module, item], Some(_)) => {
@@ -725,7 +796,7 @@ impl<'a> Builder<'a> {
                     ID::from(source)
                 };
 
-                let ty = if let Some(owner) = owner {
+                let (ty, span) = if let Some(owner) = owner {
                     owner
                 } else {
                     let span = self.ast.nodes[item].span;
@@ -733,7 +804,7 @@ impl<'a> Builder<'a> {
                         let str = self.sources.display(span);
                         ID::new(str)
                     };
-                    self.scope.get::<Ty>(self.diagnostics, id, span)?
+                    (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
                 };
 
                 let id = {
@@ -743,12 +814,11 @@ impl<'a> Builder<'a> {
                         ID::new(str)
                     };
 
-                    let ty = self.types.id_of(ty);
-
+                    let ty = self.base_id_of(ty);
                     Self::owned_func_id(ty, name)
                 };
 
-                Ok((id + module_id, Some(ty)))
+                Ok((id + module_id, Some((ty, span))))
             }
             (&[module_or_type, item], None) => {
                 let item_id = {
@@ -770,7 +840,10 @@ impl<'a> Builder<'a> {
                         (item_id + ID::from(source), None)
                     } else {
                         let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-                        (Self::owned_func_id(self.types.id_of(ty), item_id), Some(ty))
+                        (
+                            Self::owned_func_id(self.base_id_of(ty), item_id),
+                            Some((ty, span)),
+                        )
                     },
                 )
             }
@@ -779,15 +852,15 @@ impl<'a> Builder<'a> {
                 let str = self.sources.display(span);
                 return Ok((ID::new(str), None));
             }
-            (&[], Some(ty)) => {
+            (&[], Some((ty, span))) => {
                 let name = {
                     let span = self.ast.nodes[ast].span;
                     let str = self.sources.display(span);
                     ID::new(str)
                 };
 
-                let ty_id = self.types.id_of(ty);
-                Ok((Self::owned_func_id(ty_id, name), Some(ty)))
+                let ty_id = self.base_id_of(ty);
+                Ok((Self::owned_func_id(ty_id, name), Some((ty, span))))
             }
             _ => {
                 self.diagnostics.push(Error::InvalidPath {
@@ -806,7 +879,7 @@ impl<'a> Builder<'a> {
         let mut header = self.build_expr(header)?;
 
         let ty = self.body.ents[header].ty;
-        let base_ty = self.types.base_of(ty);
+        let base_ty = self.types.ptr_base_of(ty);
 
         let span = self.ast.nodes[field].span;
         let field_id = {
@@ -819,7 +892,7 @@ impl<'a> Builder<'a> {
         };
 
         if base_ty != ty {
-            header = self.deref_ptr(base_ty, header);
+            header = self.deref_ptr(header);
         }
 
         let result = {
@@ -834,7 +907,7 @@ impl<'a> Builder<'a> {
 
     fn build_bool(&mut self, ast: Ast, value: bool) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let ty = self.bool;
+        let ty = self.types.builtin.bool;
         let kind = tir::Kind::BoolLit(value);
         let ent = tir::Ent::new(kind, ty, span);
         let result = self.body.ents.push(ent);
@@ -962,7 +1035,7 @@ impl<'a> Builder<'a> {
 
         let result = {
             let kind = tir::Kind::Variable(value);
-            let ent = tir::Ent::new(kind, self.nothing, span);
+            let ent = tir::Ent::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
@@ -997,9 +1070,11 @@ impl<'a> Builder<'a> {
         let ret = self.funcs[self.func].sig.ret;
 
         let value = if value.is_reserved_value() {
-            self.expect_ty(self.nothing, ret, |s| Error::UnexpectedReturnValue {
-                because: s.funcs[s.func].name,
-                loc: span,
+            self.expect_ty(self.types.builtin.nothing, ret, |s| {
+                Error::UnexpectedReturnValue {
+                    because: s.funcs[s.func].name,
+                    loc: span,
+                }
             })?;
             None
         } else {
@@ -1021,7 +1096,12 @@ impl<'a> Builder<'a> {
 
         let result = {
             let kind = tir::Kind::Return(value.into());
-            let ent = tir::Ent::with_flags(kind, self.nothing, tir::Flags::TERMINATING, span);
+            let ent = tir::Ent::with_flags(
+                kind,
+                self.types.builtin.nothing,
+                tir::Flags::TERMINATING,
+                span,
+            );
             self.body.ents.push(ent)
         };
 
@@ -1035,9 +1115,11 @@ impl<'a> Builder<'a> {
         };
 
         let cond = self.build_expr(cond)?;
-        drop(self.expect_tir_ty(cond, self.bool, |_, got, loc| {
-            Error::IfConditionTypeMismatch { got, loc }
-        }));
+        drop(
+            self.expect_tir_ty(cond, self.types.builtin.bool, |_, got, loc| {
+                Error::IfConditionTypeMismatch { got, loc }
+            }),
+        );
 
         let then = self.build_block(then);
         let otherwise = if otherwise.is_reserved_value() {
@@ -1053,10 +1135,10 @@ impl<'a> Builder<'a> {
             if then == otherwise {
                 then
             } else {
-                self.nothing
+                self.types.builtin.nothing
             }
         } else {
-            self.nothing
+            self.types.builtin.nothing
         };
 
         let flags = {
@@ -1125,7 +1207,7 @@ impl<'a> Builder<'a> {
                 ID::new(str)
             };
 
-            let left_id = self.types.id_of(left_ty);
+            let left_id = self.base_id_of(left_ty);
 
             Self::binary_id(left_id, op_id)
         };
@@ -1266,6 +1348,14 @@ impl<'a> Builder<'a> {
 
     pub fn owned_func_id(ty: ID, name: ID) -> ID {
         ty + name
+    }
+
+    fn base_id_of(&self, ty: Ty) -> ID {
+        if self.func.is_reserved_value() {
+            return self.types.base_id_of(ty, TyList::reserved_value());
+        }
+        let params = self.funcs[self.func].sig.params;
+        self.types.base_id_of(ty, params)
     }
 }
 

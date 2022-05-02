@@ -3,7 +3,7 @@ use std::str::FromStr;
 use cranelift_codegen::ir::Type;
 use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
-use cranelift_entity::{EntitySet, PrimaryMap, SecondaryMap};
+use cranelift_entity::{EntitySet, PrimaryMap};
 
 use crate::*;
 use crate::{Result, Types};
@@ -14,7 +14,6 @@ pub struct Translator<'a> {
     pub func_id: typec::Func,
     pub system_call_convention: CallConv,
     pub types: &'a Types,
-    pub nothing: Ty,
     pub ptr_ty: Type,
     pub t_types: &'a typec::Types,
     pub t_funcs: &'a typec::Funcs,
@@ -66,7 +65,11 @@ impl Translator<'_> {
         let value = self.translate_block(body, self.return_dest)?;
 
         if !self.func.is_terminated() {
-            self.func.add_inst(InstEnt::new(InstKind::Return, value));
+            if sig.ret == self.t_types.builtin.nothing {
+                self.func.add_inst(InstEnt::new(InstKind::Return, None));
+            } else {
+                self.func.add_inst(InstEnt::new(InstKind::Return, value));
+            }
         }
 
         Ok(())
@@ -118,7 +121,7 @@ impl Translator<'_> {
             tir::Kind::IntLit(..) => self.translate_int_lit(ty, span, dest)?,
             tir::Kind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
             tir::Kind::CharLit => self.translate_char_lit(ty, span, dest)?,
-            tir::Kind::TakePointer(..) => self.translate_take_pointer(tir, dest)?,
+            tir::Kind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
             tir::Kind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
             _ => todo!("Unhandled tir::Kind::{:?}", kind),
         };
@@ -129,7 +132,7 @@ impl Translator<'_> {
     }
 
     fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
-        let tir::Ent { ty, kind: tir::Kind::TakePointer(value), .. } = self.body.ents[tir] else {
+        let tir::Ent { ty, kind: tir::Kind::TakePtr(value), .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
@@ -157,7 +160,7 @@ impl Translator<'_> {
     }
 
     fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
-        let tir::Ent { kind: tir::Kind::DerefPointer(value), ty, .. } = self.body.ents[tir] else {
+        let tir::Ent { ty, kind: tir::Kind::DerefPointer(value), .. } = self.body.ents[tir] else {
             unreachable!()
         };
 
@@ -311,7 +314,7 @@ impl Translator<'_> {
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
         let (field_id, field_ty) = {
-            let ty = self.t_types.base_of(ty);
+            let ty = self.t_types.base_of(ty, self.t_funcs[self.func_id].sig.params);
             let ty_id = self.t_types.ents[ty].id;
             let typec::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
             (types::TypeTranslator::field_id(ty_id, index as u64), ty)
@@ -570,10 +573,14 @@ impl Translator<'_> {
 
         let args = {
             let args_view = self.body.cons.get(args);
-            let mut args = Vec::with_capacity(args_view.len() + has_sret as usize);
+
+            let mut args =
+                Vec::with_capacity(args_view.len() + caller.is_some() as usize + has_sret as usize);
+
             if has_sret {
                 args.push(value.unwrap());
             }
+
             for &arg in args_view {
                 args.push(self.translate_expr(arg, None)?.unwrap());
             }
@@ -608,7 +615,7 @@ impl Translator<'_> {
     }
 
     fn unwrap_dest_low(&mut self, ret: Ty, on_stack: bool, dest: Option<Value>) -> Option<Value> {
-        let has_ret = ret != self.nothing;
+        let has_ret = ret != self.t_types.builtin.nothing;
         (dest.is_none() && has_ret).then(|| {
             if on_stack {
                 // stack needs to be allocated to pass valid pointer
@@ -659,7 +666,7 @@ impl Translator<'_> {
 
     fn translate_value(&mut self, tir: Tir) -> Option<Value> {
         let tir::Ent { ty, .. } = self.body.ents[tir];
-        if ty == self.nothing {
+        if ty == self.t_types.builtin.nothing {
             return None;
         }
         let value = self.value_from_ty(ty);

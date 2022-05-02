@@ -122,6 +122,7 @@ pub struct Span {
 }
 
 impl Span {
+    #[inline]
     pub fn new(source: Source, start: usize, progress: usize) -> Span {
         Span {
             start: start as u32,
@@ -130,6 +131,7 @@ impl Span {
         }
     }
 
+    #[inline]
     pub fn strip_sides(&self) -> Span {
         Span {
             start: self.start + 1,
@@ -138,6 +140,7 @@ impl Span {
         }
     }
 
+    #[inline]
     pub fn slice(&self, range: impl RangeBounds<usize>) -> Span {
         Span {
             start: self.start
@@ -155,14 +158,17 @@ impl Span {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         (self.end - self.start) as usize
     }
 
+    #[inline]
     pub fn range(&self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
 
+    #[inline]
     pub fn join(self, other: Self) -> Self {
         if other.source.is_reserved_value() {
             return self;
@@ -177,6 +183,7 @@ impl Span {
         }
     }
 
+    #[inline]
     pub fn source(&self) -> Source {
         self.source
     }

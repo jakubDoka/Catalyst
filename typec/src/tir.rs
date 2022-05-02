@@ -52,8 +52,9 @@ impl Ent {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
+    Type,
     DerefPointer(Tir),
-    TakePointer(Tir),
+    TakePtr(Tir),
     Variable(Tir),
     Access(Tir),
     Assign(Tir, Tir),
@@ -167,7 +168,7 @@ impl<'a> Display<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
-            Kind::TakePointer(tir) => {
+            Kind::TakePtr(tir) => {
                 write!(f, "take_pointer ")?;
                 self.fmt(tir, f, displayed, level + 1, true)?;
             }
@@ -221,6 +222,9 @@ impl<'a> Display<'a> {
             }
             Kind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
+            }
+            Kind::Type => {
+                write!(f, "<type>")?;
             }
             Kind::Call(caller, func, args) => {
                 if let Some(caller) = caller.expand() {

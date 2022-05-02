@@ -11,6 +11,7 @@ pub mod tir;
 pub mod ty;
 
 pub use collector::*;
+use cranelift_entity::packed_option::ReservedValue;
 pub use error::Error;
 pub use func::*;
 pub use tir::*;
@@ -32,6 +33,80 @@ pub trait TypeParser {
         &mut errors::Diagnostics,
     );
 
+    fn instantiate(&mut self, target: Ty, params: &[Ty]) -> errors::Result<Ty> {
+        let (_scope, types, _sources, _modules, _data, _diag) = self.state();
+        let ty::Ent { kind, generic, .. } = types.ents[target];
+
+        if !generic {
+            return Ok(target);
+        }
+        
+        match kind {
+            ty::Kind::Param(i, ..) => return Ok(params[i as usize]),
+            ty::Kind::Ptr(ty, ..) => {
+                let ty = self.instantiate(ty, params)?;
+                return Ok(self.pointer_of(ty));
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn infer_parameters(
+        &mut self,
+        reference: Ty,
+        parametrized: Ty,
+        params: &mut [Ty],
+        home_params: TyList,
+        foreign_params: TyList,
+    ) -> errors::Result {
+
+        
+        let (_scope, types, _sources, _modules, _data, _diag) = self.state();
+        let mut frontier = vec![(reference, parametrized)];
+
+        while let Some((reference, parametrized)) = frontier.pop() {
+            let ty::Ent { kind, generic, .. } = types.ents[parametrized];
+            if !generic {
+                continue;
+            }
+
+            match (kind, types.ents[reference].kind) {
+                (ty::Kind::Param(index), _) => {
+                    let other = params[index as usize];
+                    if !other.is_reserved_value() {
+                        if types.base_of_low(parametrized, foreign_params) != types.base_of_low(other, home_params) {
+                            todo!()
+                        }
+                    } else {
+                        if !types.compatible(reference, parametrized, home_params, foreign_params) {
+                            todo!("{} {}",
+                                ty::Display::new(types, _sources, reference), 
+                                ty::Display::new(types, _sources, parametrized)
+                            );
+                        }
+    
+                        params[index as usize] = reference;
+                    }
+
+                }
+                (ty::Kind::Ptr(ty, depth), ty::Kind::Ptr(ref_ty, ref_depth))
+                    if depth == ref_depth =>
+                {
+                    frontier.push((ref_ty, ty));
+                }
+                (a, b) if a == b => {}
+                _ => {
+                    todo!("{} {}", 
+                        ty::Display::new(types, _sources, reference), 
+                        ty::Display::new(types, _sources, parametrized),
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let (scope, _types, sources, _modules, ast, diagnostics) = self.state();
         let ast::Ent { kind, span, .. } = ast.nodes[ty];
@@ -40,42 +115,56 @@ pub trait TypeParser {
                 let str = sources.display(span);
                 scope.get(diagnostics, str, span)
             }
-            ast::Kind::Pointer => self.parse_pointer_type(ty),
+            ast::Kind::Pointer => self.parse_ptr_type(ty),
             _ => todo!("Unhandled type expr {:?}: {}", kind, span.log(sources)),
         }
     }
 
-    fn parse_pointer_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+    fn parse_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let ast = self.state().4;
         let inner_ty = {
             let inner = ast.children(ty)[0];
             self.parse_type(inner)?
         };
 
-        let (scope, types, _, modules, ast, diagnostics) = self.state();
-        let source = types.ents[inner_ty].name.source();
-        let id = {
-            let ty = types.ents[inner_ty].id;
-            Self::pointer_id(ty)
-        };
+        Ok(self.pointer_of(inner_ty))
+    }
+
+    fn pointer_of(&mut self, ty: Ty) -> Ty {
+        let (scope, types, _sources, modules, _ast, diagnostics) = self.state();
+        let ty::Ent {
+            kind,
+            id,
+            name,
+            generic,
+            ..
+        } = types.ents[ty];
+        let id = Self::pointer_id(id);
 
         if let Some(ptr) = scope.weak_get::<Ty>(id) {
-            return Ok(ptr);
+            return ptr;
         }
 
-        let name = ast.nodes[ty].span;
+        let depth = if let ty::Kind::Ptr(.., depth) = kind {
+            depth
+        } else {
+            0
+        };
+
         let ent = ty::Ent {
             id,
             name,
-            kind: ty::Kind::Pointer(inner_ty),
+            kind: ty::Kind::Ptr(ty, depth + 1),
+            generic,
         };
-        let ty = types.ents.push(ent);
-        let item = modules::Item::new(id, ty, name);
+        let ptr = types.ents.push(ent);
+        let item = modules::Item::new(id, ptr, name);
 
-        drop(scope.insert(diagnostics, source, id, item.to_scope_item()));
-        modules[source].items.push(item);
+        drop(scope.insert(diagnostics, name.source(), id, item.to_scope_item()));
+        
+        modules[name.source()].items.push(item);
 
-        Ok(ty)
+        ptr
     }
 
     fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> errors::Result<Ty> {
@@ -95,24 +184,48 @@ pub trait TypeParser {
             diagnostics.push(Error::DuplicateBound { loc: span });
         }
 
-        let id = ID::new("<bound_combo>") + types.args.top().iter()
-            .map(|&ty| types.ents[ty].id)
-            .fold(None, |acc, id| acc.map(|acc| acc + id).or(Some(id)))
-            .unwrap_or_else(|| types.ents[types.builtin.any].id);
+        let id = ID::new("<bound_combo>")
+            + types
+                .args
+                .top()
+                .iter()
+                .map(|&ty| types.ents[ty].id)
+                .fold(None, |acc, id| acc.map(|acc| acc + id).or(Some(id)))
+                .unwrap_or_else(|| types.ents[types.builtin.any].id);
 
         let item = if let Some(item) = scope.weak_get::<Ty>(id) {
             types.args.discard();
             item
         } else {
+            // make bound combo implement all contained bounds
+            for &ty in types.args.top() {
+                let ty::Kind::Bound(funcs) = types.ents[ty].kind else {
+                    unreachable!();
+                };
+                let bound = types.ents[ty].id;
+                let id = Collector::bound_impl_id(bound, id);
+                assert!(types
+                    .bound_cons
+                    .insert(
+                        id,
+                        BoundImpl {
+                            span: Default::default(),
+                            funcs
+                        }
+                    )
+                    .is_none());
+            }
+
             let bounds = types.args.close_frame();
             let ent = ty::Ent {
                 id,
                 name: span,
                 kind: ty::Kind::BoundCombo(bounds),
+                generic: true,
             };
             types.ents.push(ent)
         };
-            
+
         Ok(item)
     }
 
@@ -126,18 +239,17 @@ pub fn create_builtin_items(
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
-) -> Vec<module::Item> {
+    target: &mut Vec<module::Item>,
+) {
     let comparison_operators = "== != < > <= >=";
     let math_operators = "+ - * / %";
     let integer_binary_operators = format!("{} {}", comparison_operators, math_operators);
     let math_unary_operators = "-";
     let integer_unary_operators = format!("{}", math_unary_operators);
 
-    let mut vec = vec![];
-
     for ty in types.builtin.all() {
         let ent = &types.ents[ty];
-        vec.push(modules::Item::new(ent.id, ty, ent.name));
+        target.push(modules::Item::new(ent.id, ty, ent.name));
     }
 
     for op in integer_binary_operators.split(' ') {
@@ -158,7 +270,7 @@ pub fn create_builtin_items(
                 funcs,
                 sources,
                 builtin_source,
-                &mut vec,
+                target,
             );
         }
     }
@@ -178,12 +290,10 @@ pub fn create_builtin_items(
                 funcs,
                 sources,
                 builtin_source,
-                &mut vec,
+                target,
             );
         }
     }
-
-    vec
 }
 
 fn create_func(

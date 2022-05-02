@@ -132,6 +132,8 @@ pub struct Types {
 }
 
 impl Types {
+    pub const MAX_PARAMS: usize = 32;
+
     pub fn new(
         graph: &mut GenericGraph,
         sources: &mut Sources,
@@ -153,23 +155,66 @@ impl Types {
         tys
     }
 
-    pub fn implements(&self, ty: Ty, bound: Ty) -> bool {
-        todo!();
-    }
-
-    pub fn id_of(&self, ty: Ty) -> ID {
+    pub fn deref_ptr(&self, ty: Ty) -> Ty {
         match self.ents[ty].kind {
-            Kind::Param(.., ty) => {
-                self.ents[ty].id
-            }
-            _ => self.ents[ty].id,
+            Kind::Ptr(ty, ..) => ty,
+            _ => unreachable!(),
         }
     }
 
-    pub fn base_of(&self, ty: Ty) -> Ty {
+    pub fn ptr_depth_of(&self, ty: Ty) -> u32 {
         match self.ents[ty].kind {
-            ty::Kind::Pointer(base) => base,
-            _ => ty,
+            Kind::Ptr(.., depth) => depth,
+            _ => 0,
+        }
+    }
+
+    pub fn compatible(&self, input: Ty, against: Ty, home_params: TyList, foreign_params: TyList) -> bool {
+        let a = &[against];
+        let bounds = match self.ents[self.base_of(against, foreign_params)].kind {
+            Kind::Bound(..) => a,
+            Kind::BoundCombo(combo) => self.args.get(combo),
+            _ => return self.base_of_low(input, home_params) == self.base_of_low(against, foreign_params),
+        };
+
+        let (implementor, imp_id) = self.base_of_low(input,home_params);
+        let implementor = self.ents[implementor].id;
+
+        bounds.iter().all(|&bound| {
+            let (bound, bound_id) = self.base_of_low(bound, foreign_params);
+            let bound = self.ents[bound].id;
+            let id = Collector::bound_impl_id(bound, implementor);
+            self.bound_cons.get(id).is_some() && imp_id == bound_id
+        })
+    }
+
+    pub fn base_id_of(&self, ty: Ty, params: TyList) -> ID {
+        self.ents[self.base_of(ty, params)].id
+    }
+
+    pub fn base_of(&self, ty: Ty, params: TyList) -> Ty {
+        self.base_of_low(ty, params).0
+    }
+
+    pub fn base_of_low(&self, mut ty: Ty, params: TyList) -> (Ty, ID) {
+        let mut id = ID(0);
+        loop {
+            match self.ents[ty].kind {
+                Kind::Ptr(inner, ..) => {
+                    id = id + ID::new("*");
+                    ty = inner;
+                }
+                Kind::Param(index) => {
+                    return (self.args.get(params)[index as usize], id);
+                }
+                Kind::BoundCombo(..)
+                | Kind::Bound(..)
+                | Kind::Struct(..)
+                | Kind::Int(..)
+                | Kind::Bool
+                | Kind::Nothing
+                | Kind::Unresolved => return (ty, id),
+            }
         }
     }
 
@@ -180,48 +225,55 @@ impl Types {
         builtin_source: &mut BuiltinSource,
     ) {
         self.init_builtin_table(graph, sources, builtin_source);
-    }
 
-    pub fn active_params(&self, popper: &InstancePopper) -> &[Ty] {
-        &self.params[..popper.len]
-    }
-
-    pub fn push_params(&mut self, params: TyList) -> InstancePopper {
-        let params = self.args.get(params);
-        for (&ty, &param) in params.iter().zip(&self.params) {
-            self.ents[param] = self.ents[ty];
-        }
-
-        return InstancePopper { len: params.len() };
-    }
-
-    pub fn pop_params(&mut self, popper: InstancePopper) {
-        for &param in self.params[0..popper.len].iter() {
-            self.ents[param] = Ent {
-                kind: Kind::Unresolved,
-                ..Default::default()
-            };
-        }
-    }
-
-    pub fn get_parameter(&mut self, i: usize, name: Span, bound: Ty) -> Ty {
-        for _ in self.params.len()..=i {
+        self.params.reserve(Self::MAX_PARAMS);
+        for i in 0..Self::MAX_PARAMS {
             let ty = {
                 let ent = Ent {
-                    kind: Kind::Unresolved,
+                    id: ID::new("<param>") + ID(i as u64),
+                    kind: Kind::Param(i as u32),
+                    generic: true,
+                    name: builtin_source.make_span(sources, "param"),
                     ..Default::default()
                 };
                 self.ents.push(ent)
             };
             self.params.push(ty);
         }
-        let ty = self.params[i];
-        self.ents[ty].name = name;
-        self.ents[ty].kind = Kind::Param(i as u32, bound);
-        ty
+    }
+
+    pub fn active_params(&self, popper: &InstanceMarker) -> &[Ty] {
+        &self.params[..popper.len]
+    }
+
+    pub fn push_params(&mut self, params: TyList) -> InstanceMarker {
+        let params = self.args.get(params);
+        for (&ty, &param) in params.iter().zip(&self.params) {
+            self.ents[param] = self.ents[ty];
+        }
+
+        return InstanceMarker { len: params.len() };
+    }
+
+    pub fn parameters(&self) -> &[Ty] {
+        &self.params
+    }
+
+    pub fn param_id(index: usize, ty: ID) -> ID {
+        ID::new("<param>") + ID(index as u64) + ty
+    }
+
+    pub fn ptr_base_of(&self, mut ty: Ty) -> Ty {
+        loop {
+            match self.ents[ty].kind {
+                Kind::Ptr(base, ..) => ty = base,
+                _ => return ty,
+            }
+        }
     }
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct BoundImpl {
     pub span: Span,
     pub funcs: FuncList,
@@ -271,6 +323,7 @@ macro_rules! gen_builtin_table {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
+                        generic: false || matches!($repr, Kind::Bound(..)),
                     };
                     let ty = self.ents.push(ent);
                     graph.close_node();
@@ -309,10 +362,11 @@ impl BuiltinTable {
     }
 }
 
-pub struct InstancePopper {
+pub struct InstanceMarker {
     len: usize,
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct SFieldRef {
     pub field: SField,
     pub ambiguous: bool,
@@ -369,16 +423,7 @@ pub struct Ent {
     pub id: ID,
     pub name: Span,
     pub kind: Kind,
-}
-
-impl Ent {
-    pub fn new(kind: Kind, id: ID) -> Self {
-        Self {
-            id,
-            kind,
-            name: Default::default(),
-        }
-    }
+    pub generic: bool,
 }
 
 pub struct Display<'a> {
@@ -406,9 +451,11 @@ pub enum Kind {
     BoundCombo(TyList),
     Bound(FuncList),
     Struct(SFieldList),
-    Pointer(Ty),
+    /// (inner, depth)
+    Ptr(Ty, u32),
     Int(i16),
-    Param(u32, Ty),
+    /// (index)
+    Param(u32),
     Bool,
     Nothing,
     Unresolved,
@@ -429,14 +476,12 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(..)
-            | Kind::Bound(..)
-            | Kind::Param(..)
-            | Kind::Int(..)
-            | Kind::Nothing
-            | Kind::Bool => {
+            Kind::Struct(..) | Kind::Bound(..) | Kind::Int(..) | Kind::Nothing | Kind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
+            }
+            Kind::Param(index) => {
+                write!(to, "param{}", index)?;
             }
             Kind::BoundCombo(list) => {
                 for (i, ty) in types.args.get(list).iter().enumerate() {
@@ -446,7 +491,7 @@ impl Ty {
                     ty.display(types, sources, to)?;
                 }
             }
-            Kind::Pointer(ty) => {
+            Kind::Ptr(ty, ..) => {
                 write!(to, "*")?;
                 ty.display(types, sources, to)?;
             }
