@@ -314,7 +314,9 @@ impl Translator<'_> {
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
         let (field_id, field_ty) = {
-            let ty = self.t_types.base_of(ty, self.t_funcs[self.func_id].sig.params);
+            let ty = self
+                .t_types
+                .base_of(ty, self.t_funcs[self.func_id].sig.params);
             let ty_id = self.t_types.ents[ty].id;
             let typec::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
             (types::TypeTranslator::field_id(ty_id, index as u64), ty)

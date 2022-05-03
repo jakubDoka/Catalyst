@@ -5,7 +5,7 @@ use std::{
 
 use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
 
-use crate::Map;
+use crate::{Map, ID};
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 
@@ -14,6 +14,10 @@ impl SourcesExt for Sources {}
 pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
     fn display(&self, span: Span) -> &str {
         &self[span.source].content[span.range()]
+    }
+
+    fn id(&self, span: Span) -> ID {
+        ID::new(self.display(span))
     }
 }
 

@@ -54,11 +54,7 @@ impl<'a> Builder<'a> {
                         };
 
                         let id = {
-                            let func = {
-                                let span = self.ast.nodes[ident].span;
-                                let str = self.sources.display(span);
-                                ID::new(str)
-                            };
+                            let func = self.id_of(ident);
                             let bound = self.types.ents[bound].id;
                             let implementor = self.types.ents[implementor].id;
                             Collector::bound_impl_owned_func_id(bound, implementor, func)
@@ -91,11 +87,7 @@ impl<'a> Builder<'a> {
                         let ent = &self.funcs[*func];
 
                         let (sugar_id, certain_id) = {
-                            let func = {
-                                let span = ent.name;
-                                let str = self.sources.display(span);
-                                ID::new(str)
-                            };
+                            let func = self.sources.id(ent.name);
                             let ty = self.types.ents[implementor].id;
                             let sugar_id = Self::owned_func_id(ty, func);
                             let bound = self.types.ents[bound].id;
@@ -115,11 +107,7 @@ impl<'a> Builder<'a> {
                             continue;
                         };
 
-                        {
-                            let Ok(()) = self.compare_signatures(*func, other, impl_span) else {
-                                todo!("signatures does not match, there are three error opportunities, i cannot bother now");
-                            };
-                        }
+                        drop(self.compare_signatures(*func, other));
 
                         *func = other;
                     }
@@ -150,55 +138,52 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    pub fn compare_signatures(
-        &self,
-        bound_func: Func,
-        impl_func: Func,
-        _loc: Span,
-    ) -> errors::Result {
+    pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
         let a = self.funcs[impl_func].sig;
         let b = self.funcs[bound_func].sig;
 
-        // params
-        {
-            let a_params = self.types.args.get(a.params);
-            let b_params = self.types.args.get(b.params);
+        let a_param_len = self.types.args.len(a.params);
+        let b_param_len = self.types.args.len(b.params);
 
-            if !a_params
-                .iter()
-                .zip(b_params.iter())
-                .all(|(&ap, &bp)| self.types.compatible(ap, bp, a.params, b.params))
-            {
-                println!("parameters {:?} {:?}", a_params, b_params);
-                return Err(());
-            }
+        if a_param_len != b_param_len - 1 {
+            self.diagnostics.push(Error::BoundImplFuncParamCount {
+                impl_func: self.funcs[impl_func].name,
+                bound_func: self.funcs[bound_func].name,
+                expected: b_param_len,
+                found: a_param_len,
+            });
+            return Err(());
         }
 
-        // args
-        {
-            let a_args = self.types.args.get(a.args);
-            let b_args = self.types.args.get(b.args);
+        // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
+        let mut params = vec![Ty::reserved_value(); b_param_len];
 
-            if !a_args
-                .iter()
-                .zip(b_args.iter())
-                .all(|(&aa, &ba)| self.types.compatible(aa, ba, a.params, b.params))
-            {
-                println!("arguments {:?} {:?}", a_args, b_args);
-                return Err(());
-            }
-        }
+        let iter = {
+            // TODO: same here
+            let a_args = self.types.args.get(a.args).to_vec();
+            let b_args = self.types.args.get(b.args).to_vec();
+            let ast_params = {
+                let children = self.ast.children(self.ctx.func_ast[impl_func]);
+                let has_ret = (a.ret != self.types.builtin.nothing) as usize;
+                &children
+                    [Parser::FUNCTION_ARG_START..children.len() - Parser::FUNCTION_RET + has_ret]
+            };
 
-        // ret
-        {
-            if !self.types.compatible(a.ret, b.ret, a.params, b.params) {
-                println!(
-                    "return {} {}",
-                    ty::Display::new(self.types, self.sources, a.ret),
-                    ty::Display::new(self.types, self.sources, b.ret),
-                );
-                return Err(());
-            }
+            let a = a_args.into_iter().chain(std::iter::once(a.ret));
+            let b = b_args.into_iter().chain(std::iter::once(b.ret));
+            a.zip(b).zip(ast_params)
+        };
+
+        for ((referenced, parametrized), &ast) in iter {
+            let span = self.ast.nodes[ast].span;
+            drop(self.infer_parameters(
+                referenced,
+                parametrized,
+                &mut params,
+                a.params,
+                b.params,
+                span,
+            ));
         }
 
         Ok(())
@@ -257,8 +242,7 @@ impl<'a> Builder<'a> {
                     for &func in self.types.funcs.get(funcs) {
                         let name = self.funcs[func].name;
                         let id = {
-                            let str = self.sources.display(name);
-                            let id = ID::new(str);
+                            let id = self.sources.id(name);
                             let bound = self.types.ents[bound_combo].id;
                             Self::owned_func_id(bound, id)
                         };
@@ -394,7 +378,7 @@ impl<'a> Builder<'a> {
         let expr = self.ast.children(ast)[0];
         let target = self.build_expr(expr)?;
         let ty = self.body.ents[target].ty;
-        
+
         if !matches!(self.types.ents[ty].kind, ty::Kind::Ptr(..)) {
             self.diagnostics.push(Error::NonPointerDereference {
                 loc: self.ast.nodes[ast].span,
@@ -424,10 +408,7 @@ impl<'a> Builder<'a> {
             let id = {
                 let ty = self.base_id_of(operand_ty);
 
-                let op = {
-                    let str = self.sources.display(span);
-                    ID::new(str)
-                };
+                let op = self.sources.id(span);
 
                 Self::unary_id(ty, op)
             };
@@ -655,7 +636,7 @@ impl<'a> Builder<'a> {
                 let mut param_slots = vec![Ty::default(); params.len()];
 
                 if let Some(instantiation) = instantiation {
-                    if params.len() != self.ast.children(instantiation).len() - 1 {
+                    if params.len() > self.ast.children(instantiation).len() - 1 {
                         todo!("this is an error");
                     }
 
@@ -672,9 +653,16 @@ impl<'a> Builder<'a> {
 
                 args.iter()
                     .zip(arg_tys)
-                    .map(|(&arg, ty)| {
-                        let arg_ty = self.body.ents[arg].ty;
-                        self.infer_parameters(arg_ty, ty, &mut param_slots, home_params, foreign_params)
+                    .map(|(&arg, arg_ty)| {
+                        let tir::Ent { ty, span, .. } = self.body.ents[arg];
+                        self.infer_parameters(
+                            ty,
+                            arg_ty,
+                            &mut param_slots,
+                            home_params,
+                            foreign_params,
+                            span,
+                        )
                     })
                     // fold prevents allocation
                     .fold(Ok(()), |acc, err| acc.and(err))?;
@@ -683,18 +671,30 @@ impl<'a> Builder<'a> {
                     *param = ty;
                 }
 
-                if param_slots.iter().any(|param| param.is_reserved_value()) {
-                    todo!("this is an error");
-                }
+                param_slots
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
+                    // OK if no cycles performed
+                    .fold(Ok(()), |_, param| {
+                        let span = self.ast.nodes[ast].span;
+                        self.diagnostics.push(Error::UnknownGenericParam {
+                            func: self.funcs[func].name,
+                            param,
+                            loc: span,
+                        });
+                        Err(())
+                    })?;
 
-                let generic = param_slots.iter().any(|&params| self.types.ents[params].generic);
+                let generic = param_slots
+                    .iter()
+                    .any(|&params| self.types.ents[params].flags.contains(ty::Flags::GENERIC));
 
                 let ret = self.instantiate(sig.ret, &param_slots)?;
-                
+
                 if generic {
                     (ret, func)
                 } else {
-    
                     let func = {
                         let i_params = self.types.args.push(&param_slots);
                         let sig = Sig {
@@ -708,10 +708,9 @@ impl<'a> Builder<'a> {
                         };
                         self.funcs.push(ent)
                     };
-    
+
                     (ret, func)
                 }
-
             }
         };
 
@@ -750,7 +749,11 @@ impl<'a> Builder<'a> {
 
     fn take_ptr(&mut self, target: Tir) -> Tir {
         let tir::Ent {
-            ty, span, flags, kind, ..
+            ty,
+            span,
+            flags,
+            kind,
+            ..
         } = &mut self.body.ents[target];
         let (span, ty) = (*span, *ty);
         if let &mut tir::Kind::Access(target) = kind {
@@ -758,7 +761,7 @@ impl<'a> Builder<'a> {
         } else {
             flags.insert(tir::Flags::SPILLED);
         }
-        
+
         let kind = tir::Kind::TakePtr(target);
         let ptr_ty = self.pointer_of(ty);
         let deref = tir::Ent::new(kind, ptr_ty, span);
@@ -787,10 +790,7 @@ impl<'a> Builder<'a> {
             (&[module, _, item], None) | (&[module, item], Some(_)) => {
                 let module_id = {
                     let span = self.ast.nodes[module].span;
-                    let id = {
-                        let str = self.sources.display(span);
-                        ID::new(str)
-                    };
+                    let id = self.sources.id(span);
 
                     let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
                     ID::from(source)
@@ -800,20 +800,12 @@ impl<'a> Builder<'a> {
                     owner
                 } else {
                     let span = self.ast.nodes[item].span;
-                    let id = {
-                        let str = self.sources.display(span);
-                        ID::new(str)
-                    };
+                    let id = self.sources.id(span);
                     (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
                 };
 
                 let id = {
-                    let name = {
-                        let span = self.ast.nodes[item].span;
-                        let str = self.sources.display(span);
-                        ID::new(str)
-                    };
-
+                    let name = self.id_of(item);
                     let ty = self.base_id_of(ty);
                     Self::owned_func_id(ty, name)
                 };
@@ -821,17 +813,10 @@ impl<'a> Builder<'a> {
                 Ok((id + module_id, Some((ty, span))))
             }
             (&[module_or_type, item], None) => {
-                let item_id = {
-                    let span = self.ast.nodes[item].span;
-                    let str = self.sources.display(span);
-                    ID::new(str)
-                };
+                let item_id = self.id_of(item);
 
                 let span = self.ast.nodes[module_or_type].span;
-                let id = {
-                    let str = self.sources.display(span);
-                    ID::new(str)
-                };
+                let id = self.sources.id(span);
 
                 Ok(
                     if let Some(source) =
@@ -847,18 +832,9 @@ impl<'a> Builder<'a> {
                     },
                 )
             }
-            (&[], None) => {
-                let span = self.ast.nodes[ast].span;
-                let str = self.sources.display(span);
-                return Ok((ID::new(str), None));
-            }
+            (&[], None) => return Ok((self.id_of(ast), None)),
             (&[], Some((ty, span))) => {
-                let name = {
-                    let span = self.ast.nodes[ast].span;
-                    let str = self.sources.display(span);
-                    ID::new(str)
-                };
-
+                let name = self.id_of(ast);
                 let ty_id = self.base_id_of(ty);
                 Ok((Self::owned_func_id(ty_id, name), Some((ty, span))))
             }
@@ -948,8 +924,8 @@ impl<'a> Builder<'a> {
 
             let span = self.ast.nodes[name].span;
             let id = {
-                let str = self.sources.display(span);
-                ty::Builder::field_id(ty_id, ID::new(str))
+                let id = self.sources.id(span);
+                ty::Builder::field_id(ty_id, id)
             };
 
             let Ok(field) = self.find_field(ty, id, span) else {
@@ -1163,10 +1139,7 @@ impl<'a> Builder<'a> {
 
     fn build_ident(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let id = {
-            let str = self.sources.display(span);
-            ID::new(str)
-        };
+        let id = self.sources.id(span);
 
         let value = self.scope.get::<Tir>(self.diagnostics, id, span)?;
 
@@ -1356,6 +1329,12 @@ impl<'a> Builder<'a> {
         }
         let params = self.funcs[self.func].sig.params;
         self.types.base_id_of(ty, params)
+    }
+}
+
+impl AstIDExt for Builder<'_> {
+    fn state(&self) -> (&Data, &Sources) {
+        (self.ast, self.sources)
     }
 }
 

@@ -1,6 +1,7 @@
 use std::{
+    fmt::Debug,
     ops::{Deref, DerefMut, Index, IndexMut},
-    path::Path, fmt::Debug,
+    path::Path,
 };
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
@@ -79,7 +80,7 @@ impl<T: Default + Clone> Map<T> {
         let local_index = current.iter().position(|(o_id, _)| *o_id == id)?;
         let new_len = current.len() - 1;
         current.swap(local_index, new_len);
-        let ret = std::mem::take(&mut current[new_len].1);    
+        let ret = std::mem::take(&mut current[new_len].1);
         self.lookup[index] = self.storage.resize(node, new_len);
         Some(ret)
     }
@@ -91,7 +92,7 @@ impl<T: Default + Clone> Map<T> {
     pub fn insert_by_id(&mut self, id: ID, t: T) -> Option<T> {
         let index = self.index_of(id);
         let node = self.lookup[index];
-        let current = self.storage.get_mut(node); 
+        let current = self.storage.get_mut(node);
         if let Some((_, duplicate)) = current.iter_mut().find(|(o_id, _)| *o_id == id) {
             return Some(std::mem::replace(duplicate, t));
         }
@@ -112,11 +113,7 @@ impl<T: Default + Clone> Map<T> {
     fn expand(&mut self) {
         let mut new = Self::with_capacity(self.storage.len() * 2);
 
-        for &node in self
-            .lookup
-            .iter()
-            .filter(|n| !n.is_reserved_value())
-        {   
+        for &node in self.lookup.iter().filter(|n| !n.is_reserved_value()) {
             self.storage.get_mut(node).iter_mut().for_each(|node| {
                 let (id, node) = std::mem::take(node);
                 new.insert_by_id(id, node);
@@ -134,11 +131,15 @@ impl<T: Default + Clone> Map<T> {
         let index = self.index_of(id);
         let current = self.storage.get(self.lookup[index]);
 
-        current.iter().find_map(|(o_id, value)| (*o_id == id).then(|| value))
+        current
+            .iter()
+            .find_map(|(o_id, value)| (*o_id == id).then(|| value))
     }
 
     pub fn clear(&mut self) {
-        self.lookup.iter_mut().for_each(|x| *x = MapStorageNode::reserved_value());
+        self.lookup
+            .iter_mut()
+            .for_each(|x| *x = MapStorageNode::reserved_value());
         self.storage.clear();
     }
 
@@ -159,7 +160,7 @@ impl<T: Default + Clone> Map<T> {
             collisions += len - 1;
             total += len;
         }
-        
+
         collisions as f64 / total as f64
     }
 }
@@ -212,7 +213,9 @@ impl<T: Default + Clone> MapStorage<T> {
             return MapStorageNode::reserved_value();
         }
 
-        let free_slot = self.free.get(size - 1)
+        let free_slot = self
+            .free
+            .get(size - 1)
             .and_then(|&x| (x != u32::MAX).then_some(x));
 
         if let Some(free_slot) = free_slot {
@@ -235,7 +238,9 @@ impl<T: Default + Clone> MapStorage<T> {
     pub fn resize(&mut self, node: MapStorageNode, new_len: usize) -> MapStorageNode {
         let new = self.alloc(new_len);
 
-        for (i, j) in (node.start as usize..node.end as usize).zip(new.start as usize..new.end as usize) {
+        for (i, j) in
+            (node.start as usize..node.end as usize).zip(new.start as usize..new.end as usize)
+        {
             self.data[j] = std::mem::take(&mut self.data[i]);
         }
 
@@ -251,7 +256,11 @@ impl<T: Default + Clone> MapStorage<T> {
 
         let size = (node.end - node.start) as usize - 1;
         self.free.resize(self.free.len().max(size + 1), u32::MAX);
-        self.data[node.start as usize].0 = MapStorageNode { start: u32::MAX, end: self.free[size] }.to_id();
+        self.data[node.start as usize].0 = MapStorageNode {
+            start: u32::MAX,
+            end: self.free[size],
+        }
+        .to_id();
         self.free[size] = node.start;
     }
 

@@ -35,12 +35,12 @@ pub trait TypeParser {
 
     fn instantiate(&mut self, target: Ty, params: &[Ty]) -> errors::Result<Ty> {
         let (_scope, types, _sources, _modules, _data, _diag) = self.state();
-        let ty::Ent { kind, generic, .. } = types.ents[target];
+        let ty::Ent { kind, flags, .. } = types.ents[target];
 
-        if !generic {
+        if !flags.contains(ty::Flags::GENERIC) {
             return Ok(target);
         }
-        
+
         match kind {
             ty::Kind::Param(i, ..) => return Ok(params[i as usize]),
             ty::Kind::Ptr(ty, ..) => {
@@ -58,36 +58,33 @@ pub trait TypeParser {
         params: &mut [Ty],
         home_params: TyList,
         foreign_params: TyList,
+        span: Span,
     ) -> errors::Result {
-
-        
-        let (_scope, types, _sources, _modules, _data, _diag) = self.state();
+        let (_scope, types, _sources, _modules, _data, diag) = self.state();
+        // TODO: user preallocated vec if needed
         let mut frontier = vec![(reference, parametrized)];
 
         while let Some((reference, parametrized)) = frontier.pop() {
-            let ty::Ent { kind, generic, .. } = types.ents[parametrized];
-            if !generic {
+            let ty::Ent { kind, flags, .. } = types.ents[parametrized];
+            if !flags.contains(ty::Flags::GENERIC) {
                 continue;
             }
 
             match (kind, types.ents[reference].kind) {
                 (ty::Kind::Param(index), _) => {
                     let other = params[index as usize];
+                    let (parametrized, parametrized_id) =
+                        types.base_of_low(parametrized, foreign_params);
                     if !other.is_reserved_value() {
-                        if types.base_of_low(parametrized, foreign_params) != types.base_of_low(other, home_params) {
+                        let (other, other_id) = types.base_of_low(other, home_params);
+                        if other_id != parametrized_id || other != parametrized {
                             todo!()
                         }
                     } else {
-                        if !types.compatible(reference, parametrized, home_params, foreign_params) {
-                            todo!("{} {}",
-                                ty::Display::new(types, _sources, reference), 
-                                ty::Display::new(types, _sources, parametrized)
-                            );
-                        }
-    
+                        let base_ref = types.base_of(parametrized, home_params);
+                        drop(types.implements(base_ref, parametrized, diag, span));
                         params[index as usize] = reference;
                     }
-
                 }
                 (ty::Kind::Ptr(ty, depth), ty::Kind::Ptr(ref_ty, ref_depth))
                     if depth == ref_depth =>
@@ -96,8 +93,9 @@ pub trait TypeParser {
                 }
                 (a, b) if a == b => {}
                 _ => {
-                    todo!("{} {}", 
-                        ty::Display::new(types, _sources, reference), 
+                    todo!(
+                        "{} {}",
+                        ty::Display::new(types, _sources, reference),
                         ty::Display::new(types, _sources, parametrized),
                     );
                 }
@@ -108,11 +106,24 @@ pub trait TypeParser {
     }
 
     fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+        let res = self.parse_type_optional(ty)?;
+        if res.is_reserved_value() {
+            todo!("emit error")
+        }
+        Ok(res)
+    }
+
+    fn parse_type_optional(&mut self, ty: Ast) -> errors::Result<Ty> {
         let (scope, _types, sources, _modules, ast, diagnostics) = self.state();
         let ast::Ent { kind, span, .. } = ast.nodes[ty];
         match kind {
             ast::Kind::Ident => {
                 let str = sources.display(span);
+
+                if str == "_" {
+                    return Ok(Ty::reserved_value());
+                }
+
                 scope.get(diagnostics, str, span)
             }
             ast::Kind::Pointer => self.parse_ptr_type(ty),
@@ -136,7 +147,7 @@ pub trait TypeParser {
             kind,
             id,
             name,
-            generic,
+            flags,
             ..
         } = types.ents[ty];
         let id = Self::pointer_id(id);
@@ -155,13 +166,13 @@ pub trait TypeParser {
             id,
             name,
             kind: ty::Kind::Ptr(ty, depth + 1),
-            generic,
+            flags,
         };
         let ptr = types.ents.push(ent);
         let item = modules::Item::new(id, ptr, name);
 
         drop(scope.insert(diagnostics, name.source(), id, item.to_scope_item()));
-        
+
         modules[name.source()].items.push(item);
 
         ptr
@@ -221,7 +232,7 @@ pub trait TypeParser {
                 id,
                 name: span,
                 kind: ty::Kind::BoundCombo(bounds),
-                generic: true,
+                flags: ty::Flags::GENERIC,
             };
             types.ents.push(ent)
         };

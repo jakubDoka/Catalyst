@@ -68,7 +68,7 @@ fn main() -> int {
         return 12
     }
 
-    //generics::putchar('h')
+    putchar('h')
     exit(-34)
 
     0

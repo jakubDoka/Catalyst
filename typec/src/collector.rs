@@ -161,17 +161,14 @@ impl<'a> Collector<'a> {
         };
 
         let name = self.ast.nodes[name].span;
-        let scope_id = {
-            let str = self.sources.display(name);
-            ID::new(str)
-        };
+        let scope_id = self.sources.id(name);
         let id = self.modules[self.module].id + scope_id;
 
         let slot = self.types.ents.push(ty::Ent {
             id,
             name,
             kind: ty::Kind::Unresolved,
-            generic: true,
+            flags: ty::Flags::GENERIC,
         });
 
         let funcs = {
@@ -219,16 +216,13 @@ impl<'a> Collector<'a> {
         };
 
         let span = self.ast.nodes[name].span;
-        let scope_id = {
-            let str = self.sources.display(span);
-            ID::new(str)
-        };
+        let scope_id = self.sources.id(span);
         let id = self.modules[self.module].id + scope_id;
         let ent = ty::Ent {
             id,
             kind: ty::Kind::Unresolved,
             name: span,
-            generic: false,
+            flags: Default::default(),
         };
         let ty = self.types.ents.push(ent);
         self.ctx.type_ast[ty] = ast;
@@ -455,5 +449,11 @@ impl TypeParser for Collector<'_> {
             self.ast,
             self.diagnostics,
         )
+    }
+}
+
+impl AstIDExt for Collector<'_> {
+    fn state(&self) -> (&Data, &Sources) {
+        (self.ast, self.sources)
     }
 }

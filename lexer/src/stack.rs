@@ -37,6 +37,16 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn len(&self, id: E) -> usize {
+        match (
+            self.indices.get(id.index()),
+            self.indices.get(id.index() + 1),
+        ) {
+            (Some(start), Some(end)) => *end as usize - *start as usize,
+            _ => 0,
+        }
+    }
+
     pub fn get_mut(&mut self, id: E) -> &mut [T] {
         match (
             self.indices.get(id.index()),

@@ -1,8 +1,9 @@
-use crate::*;
+use crate::{Error, *};
 use cranelift_entity::{
     packed_option::{PackedOption, ReservedValue},
     PrimaryMap,
 };
+use errors::Diagnostics;
 use lexer::*;
 use modules::*;
 use parser::*;
@@ -63,8 +64,8 @@ impl<'a> Builder<'a> {
                 let span = self.ast.nodes[name].span;
 
                 let id = {
-                    let str = self.sources.display(span);
-                    Self::field_id(id, ID::new(str))
+                    let name = self.sources.id(span);
+                    Self::field_id(id, name)
                 };
 
                 let field = {
@@ -120,6 +121,12 @@ impl TypeParser for Builder<'_> {
     }
 }
 
+impl AstIDExt for Builder<'_> {
+    fn state(&self) -> (&Data, &Sources) {
+        (self.ast, self.sources)
+    }
+}
+
 pub struct Types {
     pub ents: PrimaryMap<Ty, Ent>,
     pub funcs: StackMap<FuncList, Func>,
@@ -169,23 +176,39 @@ impl Types {
         }
     }
 
-    pub fn compatible(&self, input: Ty, against: Ty, home_params: TyList, foreign_params: TyList) -> bool {
-        let a = &[against];
-        let bounds = match self.ents[self.base_of(against, foreign_params)].kind {
+    pub fn implements(
+        &self,
+        input: Ty,
+        bound: Ty,
+        diagnostics: &mut Diagnostics,
+        span: Span,
+    ) -> errors::Result {
+        // bound can be pain Bound or BoundCombo
+        let a = &[bound];
+        let bounds = match self.ents[bound].kind {
             Kind::Bound(..) => a,
             Kind::BoundCombo(combo) => self.args.get(combo),
-            _ => return self.base_of_low(input, home_params) == self.base_of_low(against, foreign_params),
+            _ => unreachable!("{:?}", self.ents[bound].kind),
         };
 
-        let (implementor, imp_id) = self.base_of_low(input,home_params);
-        let implementor = self.ents[implementor].id;
+        let input_id = self.ents[input].id;
 
-        bounds.iter().all(|&bound| {
-            let (bound, bound_id) = self.base_of_low(bound, foreign_params);
-            let bound = self.ents[bound].id;
-            let id = Collector::bound_impl_id(bound, implementor);
-            self.bound_cons.get(id).is_some() && imp_id == bound_id
-        })
+        let mut result = Ok(());
+
+        for &bound in bounds {
+            let bound_id = self.ents[bound].id;
+            let id = Collector::bound_impl_id(bound_id, input_id);
+            if self.bound_cons.get(id).is_none() {
+                diagnostics.push(Error::MissingBound {
+                    input,
+                    bound,
+                    loc: span,
+                });
+                result = Err(());
+            }
+        }
+
+        result
     }
 
     pub fn base_id_of(&self, ty: Ty, params: TyList) -> ID {
@@ -208,6 +231,7 @@ impl Types {
                     return (self.args.get(params)[index as usize], id);
                 }
                 Kind::BoundCombo(..)
+                | Kind::Instance(..)
                 | Kind::Bound(..)
                 | Kind::Struct(..)
                 | Kind::Int(..)
@@ -232,8 +256,8 @@ impl Types {
                 let ent = Ent {
                     id: ID::new("<param>") + ID(i as u64),
                     kind: Kind::Param(i as u32),
-                    generic: true,
                     name: builtin_source.make_span(sources, "param"),
+                    flags: ty::Flags::GENERIC,
                     ..Default::default()
                 };
                 self.ents.push(ent)
@@ -323,7 +347,7 @@ macro_rules! gen_builtin_table {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
-                        generic: false || matches!($repr, Kind::Bound(..)),
+                        flags: Flags::GENERIC & matches!($repr, Kind::Bound(..)),
                     };
                     let ty = self.ents.push(ent);
                     graph.close_node();
@@ -423,8 +447,34 @@ pub struct Ent {
     pub id: ID,
     pub name: Span,
     pub kind: Kind,
-    pub generic: bool,
+    pub flags: Flags,
 }
+
+bitflags::bitflags! {
+    #[derive(Default)]
+    pub struct Flags: u32 {
+        const GENERIC = 1 << 0;
+    }
+}
+
+impl Flags {
+    pub const MAX_PARAMS: u32 = 32;
+    pub const PARAMS_WIDTH: u32 = 5;
+    pub const FLAGS_WIDTH: u32 = 32;
+    pub const PARAM_SHIFT: u32 = Self::FLAGS_WIDTH - Self::PARAMS_WIDTH;
+    pub const CLEAR_PARAMS_MASK: u32 = (1 << Self::PARAM_SHIFT) - 1;
+
+    pub fn set_param_count(&mut self, count: usize) {
+        self.bits &= Self::CLEAR_PARAMS_MASK;
+        self.bits |= (count as u32) << Self::PARAM_SHIFT;
+    }
+
+    pub fn param_count(&self) -> usize {
+        (self.bits >> Self::PARAM_SHIFT) as usize
+    }
+}
+
+crate::impl_bool_bit_and!(Flags);
 
 pub struct Display<'a> {
     types: &'a Types,
@@ -451,6 +501,8 @@ pub enum Kind {
     BoundCombo(TyList),
     Bound(FuncList),
     Struct(SFieldList),
+    /// (base, params)
+    Instance(Ty, TyList),
     /// (inner, depth)
     Ptr(Ty, u32),
     Int(i16),
@@ -479,6 +531,18 @@ impl Ty {
             Kind::Struct(..) | Kind::Bound(..) | Kind::Int(..) | Kind::Nothing | Kind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
+            }
+            Kind::Instance(base, params) => {
+                let base = types.ents[base].name;
+                write!(to, "{}", sources.display(base))?;
+                write!(to, "[")?;
+                for (i, param) in types.args.get(params).iter().enumerate() {
+                    if i != 0 {
+                        write!(to, ", ")?;
+                    }
+                    param.display(types, sources, to)?;
+                }
+                write!(to, "]")?;
             }
             Kind::Param(index) => {
                 write!(to, "param{}", index)?;

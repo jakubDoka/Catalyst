@@ -4,6 +4,22 @@ use lexer::*;
 use crate::*;
 
 pub enum Error {
+    UnknownGenericParam {
+        loc: Span,
+        func: Span,
+        param: usize,
+    },
+    MissingBound {
+        loc: Span,
+        input: Ty,
+        bound: Ty,
+    },
+    BoundImplFuncParamCount {
+        impl_func: Span,
+        bound_func: Span,
+        expected: usize,
+        found: usize,
+    },
     MissingBoundImplFunc {
         func: Span,
         loc: Span,
@@ -146,6 +162,16 @@ impl Error {
                 })?;
                 writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
             }
+            Error::MissingBound { loc, input, bound } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "type '")?;
+                    input.display(types, sources, to)?;
+                    write!(to, "' does not implement bound '")?;
+                    bound.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
+            }
             Error::ReturnTypeMismatch {
                 because,
                 expected,
@@ -164,9 +190,42 @@ impl Error {
                 if let Some(because) = because {
                     because.loc_to(sources, to)?;
                     because.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
-                        write!(to, "consider changing this return type")
+                        write!(to, "because of this return typ declaration")
                     })?;
                 }
+            }
+            Error::BoundImplFuncParamCount {
+                impl_func,
+                bound_func,
+                expected,
+                found,
+            } => {
+                impl_func.loc_to(sources, to)?;
+                impl_func.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected {} parameter(s) but got {}", expected, found)
+                })?;
+                bound_func.loc_to(sources, to)?;
+                bound_func.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "expected because of this function")
+                })?;
+            }
+            Error::UnknownGenericParam { loc, func, param } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "unknown generic parameter {}", param)
+                })?;
+
+                func.loc_to(sources, to)?;
+                func.underline_to(Palette::info().bold(), '~', sources, to, &|to| {
+                    write!(to, "function demanding the parameter")
+                })?;
+
+                writeln!(
+                    to,
+                    "|> specify parameters explicitly: <function_name>::[<ty>, ..]"
+                )?;
+                writeln!(to, "|> use '_' instead of type for known parameters")?;
+                writeln!(to, "|> omit tali parameters that are known")?;
             }
             Error::BreakValueTypeMismatch {
                 because,

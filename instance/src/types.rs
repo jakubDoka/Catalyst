@@ -46,6 +46,7 @@ impl<'a> TypeTranslator<'a> {
                 return Ok(());
             }
             ty::Kind::Ptr(..) => self.ptr_ty,
+            ty::Kind::Instance(..) => todo!(),
             ty::Kind::Nothing
             | ty::Kind::Bound(..)
             | ty::Kind::Param(..)
