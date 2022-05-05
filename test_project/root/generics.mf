@@ -7,14 +7,6 @@ struct [T] Loo {
     field: T
 }
 
-struct [T] Cycle1 {
-    c: Cycle2[T]
-}
-
-struct [T] Cycle2 {
-    c: Cycle1[T]
-}
-
 struct Goo {
     field: int
 }
