@@ -13,6 +13,7 @@ pub mod ty;
 pub use collector::*;
 use cranelift_entity::packed_option::ReservedValue;
 pub use error::Error;
+use errors::Diagnostics;
 pub use func::*;
 pub use tir::*;
 pub use ty::*;
@@ -21,230 +22,377 @@ use lexer::*;
 use modules::*;
 use parser::*;
 
-pub trait TypeParser {
-    fn state(
-        &mut self,
-    ) -> (
-        &mut Scope,
-        &mut Types,
-        &Sources,
-        &mut Modules,
-        &ast::Data,
-        &mut errors::Diagnostics,
-    );
+pub trait TyDump {
+    fn add(&mut self, ty: Ty);
+}
 
-    fn instantiate(&mut self, target: Ty, params: &[Ty]) -> errors::Result<Ty> {
-        let (_scope, types, _sources, _modules, _data, _diag) = self.state();
-        let ty::Ent { kind, flags, .. } = types.ents[target];
+impl TyDump for () {
+    fn add(&mut self, _ty: Ty) {}
+}
 
-        if !flags.contains(ty::Flags::GENERIC) {
-            return Ok(target);
-        }
-
-        match kind {
-            ty::Kind::Param(i, ..) => return Ok(params[i as usize]),
-            ty::Kind::Ptr(ty, ..) => {
-                let ty = self.instantiate(ty, params)?;
-                return Ok(self.pointer_of(ty));
-            }
-            _ => todo!(),
-        }
-    }
-
-    fn infer_parameters(
-        &mut self,
-        reference: Ty,
-        parametrized: Ty,
-        params: &mut [Ty],
-        home_params: TyList,
-        foreign_params: TyList,
-        span: Span,
-    ) -> errors::Result {
-        let (_scope, types, _sources, _modules, _data, diag) = self.state();
-        // TODO: user preallocated vec if needed
-        let mut frontier = vec![(reference, parametrized)];
-
-        while let Some((reference, parametrized)) = frontier.pop() {
-            let ty::Ent { kind, flags, .. } = types.ents[parametrized];
-            if !flags.contains(ty::Flags::GENERIC) {
-                continue;
-            }
-
-            match (kind, types.ents[reference].kind) {
-                (ty::Kind::Param(index), _) => {
-                    let other = params[index as usize];
-                    let (parametrized, parametrized_id) =
-                        types.base_of_low(parametrized, foreign_params);
-                    if !other.is_reserved_value() {
-                        let (other, other_id) = types.base_of_low(other, home_params);
-                        if other_id != parametrized_id || other != parametrized {
-                            todo!()
-                        }
-                    } else {
-                        let base_ref = types.base_of(parametrized, home_params);
-                        drop(types.implements(base_ref, parametrized, diag, span));
-                        params[index as usize] = reference;
-                    }
-                }
-                (ty::Kind::Ptr(ty, depth), ty::Kind::Ptr(ref_ty, ref_depth))
-                    if depth == ref_depth =>
-                {
-                    frontier.push((ref_ty, ty));
-                }
-                (a, b) if a == b => {}
-                _ => {
-                    todo!(
-                        "{} {}",
-                        ty::Display::new(types, _sources, reference),
-                        ty::Display::new(types, _sources, parametrized),
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let res = self.parse_type_optional(ty)?;
-        if res.is_reserved_value() {
-            todo!("emit error")
-        }
-        Ok(res)
-    }
-
-    fn parse_type_optional(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let (scope, _types, sources, _modules, ast, diagnostics) = self.state();
-        let ast::Ent { kind, span, .. } = ast.nodes[ty];
-        match kind {
-            ast::Kind::Ident => {
-                let str = sources.display(span);
-
-                if str == "_" {
-                    return Ok(Ty::reserved_value());
-                }
-
-                scope.get(diagnostics, str, span)
-            }
-            ast::Kind::Pointer => self.parse_ptr_type(ty),
-            _ => todo!("Unhandled type expr {:?}: {}", kind, span.log(sources)),
-        }
-    }
-
-    fn parse_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let ast = self.state().4;
-        let inner_ty = {
-            let inner = ast.children(ty)[0];
-            self.parse_type(inner)?
-        };
-
-        Ok(self.pointer_of(inner_ty))
-    }
-
-    fn pointer_of(&mut self, ty: Ty) -> Ty {
-        let (scope, types, _sources, modules, _ast, diagnostics) = self.state();
-        let ty::Ent {
-            kind,
-            id,
-            name,
-            flags,
-            ..
-        } = types.ents[ty];
-        let id = Self::pointer_id(id);
-
-        if let Some(ptr) = scope.weak_get::<Ty>(id) {
-            return ptr;
-        }
-
-        let depth = if let ty::Kind::Ptr(.., depth) = kind {
-            depth
-        } else {
-            0
-        };
-
-        let ent = ty::Ent {
-            id,
-            name,
-            kind: ty::Kind::Ptr(ty, depth + 1),
-            flags,
-        };
-        let ptr = types.ents.push(ent);
-        let item = modules::Item::new(id, ptr, name);
-
-        drop(scope.insert(diagnostics, name.source(), id, item.to_scope_item()));
-
-        modules[name.source()].items.push(item);
-
-        ptr
-    }
-
-    fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> errors::Result<Ty> {
-        for &bound in asts {
-            let Ok(ty) = self.parse_type(bound) else {
-                continue;
-            };
-            self.state().1.args.push_one(ty);
-        }
-
-        let (scope, types, .., diagnostics) = self.state();
-
-        types.args.top_mut().sort_by_key(|ty| ty.0);
-        let duplicates = types.args.top().windows(2).any(|w| w[0] == w[1]);
-
-        if duplicates {
-            diagnostics.push(Error::DuplicateBound { loc: span });
-        }
-
-        let id = ID::new("<bound_combo>")
-            + types
-                .args
-                .top()
-                .iter()
-                .map(|&ty| types.ents[ty].id)
-                .fold(None, |acc, id| acc.map(|acc| acc + id).or(Some(id)))
-                .unwrap_or_else(|| types.ents[types.builtin.any].id);
-
-        let item = if let Some(item) = scope.weak_get::<Ty>(id) {
-            types.args.discard();
-            item
-        } else {
-            // make bound combo implement all contained bounds
-            for &ty in types.args.top() {
-                let ty::Kind::Bound(funcs) = types.ents[ty].kind else {
-                    unreachable!();
-                };
-                let bound = types.ents[ty].id;
-                let id = Collector::bound_impl_id(bound, id);
-                assert!(types
-                    .bound_cons
-                    .insert(
-                        id,
-                        BoundImpl {
-                            span: Default::default(),
-                            funcs
-                        }
-                    )
-                    .is_none());
-            }
-
-            let bounds = types.args.close_frame();
-            let ent = ty::Ent {
-                id,
-                name: span,
-                kind: ty::Kind::BoundCombo(bounds),
-                flags: ty::Flags::GENERIC,
-            };
-            types.ents.push(ent)
-        };
-
-        Ok(item)
-    }
-
-    fn pointer_id(id: ID) -> ID {
-        ID::new("*") + id
+impl TyDump for Vec<Ty> {
+    fn add(&mut self, ty: Ty) {
+        self.push(ty);
     }
 }
 
+/// use at instantiation stage where all parameters are inferred but
+/// we have to catch all falsely marked generic types
+pub fn late_instantiate(target: Ty, types: &mut Types, new_ty_dump: &mut Vec<Ty>) -> Ty {
+    instantiate_low(target, &[], types, new_ty_dump).unwrap()
+}
+
+/// use at type checking stage when changing context of a type, this is needed for example when
+/// generic function call return a value
+pub fn instantiate(target: Ty, params: &[Ty], types: &mut Types) -> errors::Result<Ty> {
+    instantiate_low(target, params, types, &mut ())
+}
+
+/// instantiates new type, call this only when clearly necessary, function can add new entities to `types`
+/// so keep the target abstract for as long as possible, if you want to create instance of a generic type,
+/// wrap the existing generic type ins [`ty::Kind::Instance`] and provide parameters. Instances will get
+/// resolved later, similarly as generic functions do.
+pub fn instantiate_low(
+    target: Ty,
+    params: &[Ty],
+    types: &mut Types,
+    new_type_dump: &mut impl TyDump,
+) -> errors::Result<Ty> {
+    let ty::Ent { kind, flags, .. } = types.ents[target];
+
+    if !flags.contains(ty::Flags::GENERIC) {
+        return Ok(target);
+    }
+
+    let result = match kind {
+        ty::Kind::Param(i, ..) => params[i as usize],
+        ty::Kind::Ptr(ty, ..) => {
+            let ty = instantiate_low(ty, params, types, new_type_dump)?;
+            pointer_of(ty, types)
+        }
+        _ => todo!(),
+    };
+
+    if result != target {
+        new_type_dump.add(result);
+    }
+
+    Ok(result)
+}
+
+/// performs pattern matching on `parametrized` and `reference`,
+/// matched parameters are placed into `params`, `home_params` are backing
+/// parameters of reference and `foreign_params` are backing parameters for `parametrized`,
+/// this function is mainly used for inferring parameters on generic calls but also when pattern
+/// matching two possibly generic function signatures.
+pub fn infer_parameters(
+    reference: Ty,
+    parametrized: Ty,
+    params: &mut [Ty],
+    home_params: TyList,
+    foreign_params: TyList,
+    span: Span,
+    types: &Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result {
+    // TODO: user preallocated vec if needed
+    let mut frontier = vec![(reference, parametrized)];
+
+    while let Some((reference, parametrized)) = frontier.pop() {
+        let ty::Ent { kind, flags, .. } = types.ents[parametrized];
+        if !flags.contains(ty::Flags::GENERIC) {
+            continue;
+        }
+
+        match (kind, types.ents[reference].kind) {
+            (ty::Kind::Param(index), _) => {
+                // we use `base_of_low` because we want to compare parameter
+                // backing bounds correctly
+
+                let other = params[index as usize];
+                let (parametrized, parametrized_id) =
+                    types.base_of_low(parametrized, foreign_params);
+
+                if !other.is_reserved_value() {
+                    // parameter is already inferred so we just check for equality
+                    let (other, other_id) = types.base_of_low(other, home_params);
+                    if other_id != parametrized_id || other != parametrized {
+                        todo!()
+                    }
+                } else {
+                    let base_ref = types.base_of(parametrized, home_params);
+                    drop(types.implements(base_ref, parametrized, diagnostics, span));
+                    params[index as usize] = reference;
+                }
+            }
+            (ty::Kind::Ptr(ty, depth), ty::Kind::Ptr(ref_ty, ref_depth)) if depth == ref_depth => {
+                frontier.push((ref_ty, ty));
+            }
+            (a, b) if a == b => {}
+            _ => diagnostics.push(Error::GenericTypeMismatch {
+                found: reference,
+                expected: parametrized,
+                loc: span,
+            }),
+        }
+    }
+
+    Ok(())
+}
+
+/// parse type parses and ast representation of a type into `ty::Ent`, saves it into `types` ins case new
+/// instance was created and returns the id to the type.
+pub fn parse_type(
+    ty: Ast,
+    sources: &Sources,
+    ast: &ast::Data,
+    scope: &Scope,
+    types: &mut Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result<Ty> {
+    let res = parse_type_optional(ty, sources, ast, scope, types, diagnostics)?;
+    if res.is_reserved_value() {
+        let span = ast.nodes[ty].span;
+        diagnostics.push(Error::ExpectedConcreteType { loc: span });
+        return Err(());
+    }
+    Ok(res)
+}
+
+#[macro_export]
+macro_rules! parse_type {
+    ($self:expr, $ty:expr) => {
+        parse_type(
+            $ty,
+            $self.sources,
+            $self.ast,
+            $self.scope,
+            $self.types,
+            $self.diagnostics,
+        )
+    };
+}
+
+/// parse a type just like `parse_type` but can return `Ty::reserved_value` in case the ty is '_'.
+pub fn parse_type_optional(
+    ty: Ast,
+    sources: &Sources,
+    ast: &ast::Data,
+    scope: &Scope,
+    types: &mut Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result<Ty> {
+    let ast::Ent { kind, span, .. } = ast.nodes[ty];
+    match kind {
+        ast::Kind::Ident => {
+            let str = sources.display(span);
+
+            if str == "_" {
+                return Ok(Ty::reserved_value());
+            }
+
+            scope.get(diagnostics, str, span)
+        }
+        ast::Kind::Instantiation => {
+            parse_instance_type(ty, sources, ast, scope, types, diagnostics)
+        }
+        ast::Kind::Pointer => parse_ptr_type(ty, sources, ast, scope, types, diagnostics),
+        _ => {
+            diagnostics.push(Error::InvalidTypeExpression { loc: span });
+            return Err(());
+        }
+    }
+}
+
+/// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], if instance already exists, it is reused.
+pub fn parse_instance_type(
+    ty: Ast,
+    sources: &Sources,
+    ast: &ast::Data,
+    scope: &Scope,
+    types: &mut Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result<Ty> {
+    let children = ast.children(ty);
+    let header = parse_type(children[0], sources, ast, scope, types, diagnostics)?;
+
+    let mut id = ID::new("<instance>") + types.ents[header].id;
+    let mut generic = false;
+
+    for &param in &children[1..] {
+        let param = parse_type(param, sources, ast, scope, types, diagnostics)?;
+        id = id + types.ents[param].id;
+        generic |= types.ents[param].flags.contains(ty::Flags::GENERIC);
+        types.args.push_one(param);
+    }
+
+    if let Some(&already) = types.instances.get(id) {
+        types.args.discard();
+        return Ok(already);
+    }
+
+    let params = types.args.close_frame();
+
+    let result = {
+        let ent = ty::Ent {
+            id,
+            name: ast.nodes[ty].span,
+            kind: ty::Kind::Instance(header, params),
+            flags: ty::Flags::GENERIC & generic,
+        };
+        types.ents.push(ent)
+    };
+
+    types.instances.insert(id, result);
+
+    Ok(result)
+}
+
+/// further specification of [`parse_type`], it already expects that ty is a [`ast::Kind::Pointer`]
+pub fn parse_ptr_type(
+    ty: Ast,
+    sources: &Sources,
+    ast: &ast::Data,
+    scope: &Scope,
+    types: &mut Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result<Ty> {
+    let inner_ty = {
+        let inner = ast.children(ty)[0];
+        parse_type(inner, sources, ast, scope, types, diagnostics)?
+    };
+
+    Ok(pointer_of(inner_ty, types))
+}
+
+/// creates a pointer of `ty`, already instantiated entities will be reused.
+pub fn pointer_of(ty: Ty, types: &mut Types) -> Ty {
+    let ty::Ent {
+        kind,
+        id,
+        name,
+        flags,
+        ..
+    } = types.ents[ty];
+    let id = pointer_id(id);
+
+    if let Some(&already) = types.instances.get(id) {
+        return already;
+    }
+
+    let depth = if let ty::Kind::Ptr(.., depth) = kind {
+        depth
+    } else {
+        0
+    };
+
+    let ent = ty::Ent {
+        id,
+        name,
+        kind: ty::Kind::Ptr(ty, depth + 1),
+        flags,
+    };
+    let ptr = types.ents.push(ent);
+
+    assert!(types.instances.insert(id, ptr).is_none());
+
+    ptr
+}
+
+/// parses an composite bound that can be found after type parameters on generic functions,
+/// if such bound already exists no instantiation is performed.
+pub fn parse_composite_bound(
+    asts: &[Ast],
+    span: Span,
+    sources: &Sources,
+    ast: &ast::Data,
+    scope: &Scope,
+    types: &mut Types,
+    diagnostics: &mut Diagnostics,
+) -> errors::Result<Ty> {
+    for &bound in asts {
+        let Ok(ty) = parse_type(bound, sources, ast, scope, types, diagnostics) else {
+            continue;
+        };
+        types.args.push_one(ty);
+    }
+
+    types.args.top_mut().sort_by_key(|ty| ty.0);
+    let duplicates = types.args.top().windows(2).any(|w| w[0] == w[1]);
+
+    if duplicates {
+        diagnostics.push(Error::DuplicateBound { loc: span });
+    }
+
+    let id = ID::new("<bound_combo>")
+        + types
+            .args
+            .top()
+            .iter()
+            .map(|&ty| types.ents[ty].id)
+            .fold(types.ents[types.builtin.any].id, |acc, id| acc + id);
+
+    if let Some(&already) = types.instances.get(id) {
+        types.args.discard();
+        return Ok(already);
+    }
+
+    // make bound combo implement all contained bounds
+    for &ty in types.args.top() {
+        let ty::Kind::Bound(funcs) = types.ents[ty].kind else {
+            unreachable!();
+        };
+        let bound = types.ents[ty].id;
+        let id = Collector::bound_impl_id(bound, id);
+        assert!(types
+            .bound_cons
+            .insert(
+                id,
+                BoundImpl {
+                    span: Default::default(),
+                    funcs
+                }
+            )
+            .is_none());
+    }
+
+    let combo = {
+        let bounds = types.args.close_frame();
+        let ent = ty::Ent {
+            id,
+            name: span,
+            kind: ty::Kind::BoundCombo(bounds),
+            flags: ty::Flags::GENERIC,
+        };
+        types.ents.push(ent)
+    };
+
+    assert!(types.instances.insert(id, combo).is_none());
+
+    Ok(combo)
+}
+
+#[macro_export]
+macro_rules! parse_composite_bound {
+    ($self:expr, $asts:expr, $span:expr) => {
+        parse_composite_bound(
+            $asts,
+            $span,
+            $self.sources,
+            $self.ast,
+            $self.scope,
+            $self.types,
+            $self.diagnostics,
+        )
+    };
+}
+
+/// computes id of a pointer to `ty`
+fn pointer_id(ty: ID) -> ID {
+    ID::new("*") + ty
+}
+
+/// instantiates all builtin items like types, operators and functions.
 pub fn create_builtin_items(
     types: &mut Types,
     funcs: &mut Funcs,

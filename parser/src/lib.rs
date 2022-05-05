@@ -209,12 +209,16 @@ impl<'a> Parser<'a> {
                 token::Kind::Impl => break self.implementation(),
                 token::Kind::Hash => break self.tag(),
                 _ => {
-                    let span = self.current.span();
-                    todo!(
-                        "unhandled {:?} as top level item:\n{}",
-                        self.current.kind(),
-                        span.log(self.sources),
-                    )
+                    self.expect_many(&[
+                        token::Kind::Fn,
+                        token::Kind::Struct,
+                        token::Kind::NewLine,
+                        token::Kind::Eof,
+                        token::Kind::Bound,
+                        token::Kind::Impl,
+                        token::Kind::Hash,
+                    ]);
+                    self.advance();
                 }
             }
         }
@@ -332,6 +336,9 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
+        let generics = self.generics(false);
+        self.stack.push(generics);
+
         let name = self.ident();
         self.stack.push(name);
 
@@ -390,7 +397,7 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
-        let generics = self.generics();
+        let generics = self.generics(true);
         self.stack.push(generics);
 
         // call convention
@@ -461,18 +468,24 @@ impl<'a> Parser<'a> {
         self.alloc(ast::Kind::FunctionArgument, span.join(end))
     }
 
-    fn generics(&mut self) -> Ast {
+    fn generics(&mut self, has_bounds: bool) -> Ast {
         if self.current.kind() != token::Kind::LeftBracket {
             return Ast::reserved_value();
         }
 
         self.stack.mark_frame();
 
+        let parser = if has_bounds {
+            Self::generic_param
+        } else {
+            Self::ident
+        };
+
         let span = self.list(
             token::Kind::LeftBracket,
             token::Kind::Comma,
             token::Kind::RightBracket,
-            Self::generic_param,
+            parser,
         );
 
         if self.stack.top_frame().is_empty() {
@@ -991,14 +1004,18 @@ impl<'a> Parser<'a> {
         self.stack.mark_frame();
         self.stack.push(name);
 
-        let end = self.list(
-            token::Kind::LeftBracket,
-            token::Kind::Comma,
-            token::Kind::RightBracket,
-            Self::type_expr,
-        );
+        if self.current.kind() == token::Kind::LeftBracket {
+            let end = self.list(
+                token::Kind::LeftBracket,
+                token::Kind::Comma,
+                token::Kind::RightBracket,
+                Self::type_expr,
+            );
 
-        self.alloc(ast::Kind::Ident, span.join(end))
+            return self.alloc(ast::Kind::Instantiation, span.join(end));
+        }
+
+        self.alloc(ast::Kind::Ident, span)
     }
 
     fn ident(&mut self) -> Ast {

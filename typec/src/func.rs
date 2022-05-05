@@ -176,13 +176,15 @@ impl<'a> Builder<'a> {
 
         for ((referenced, parametrized), &ast) in iter {
             let span = self.ast.nodes[ast].span;
-            drop(self.infer_parameters(
+            drop(infer_parameters(
                 referenced,
                 parametrized,
                 &mut params,
                 a.params,
                 b.params,
                 span,
+                &mut self.types,
+                &mut self.diagnostics,
             ));
         }
 
@@ -222,7 +224,7 @@ impl<'a> Builder<'a> {
         if !generics.is_reserved_value() {
             let ast = self.ast.children(generics);
             let bounds = self.types.args.get(params);
-            let params = self.types.parameters();
+            let params = self.types.fn_params();
             for ((&item, &param), &bound_combo) in ast.iter().zip(params).zip(bounds) {
                 let name = self.ast.children(item)[0];
                 let span = self.ast.nodes[name].span;
@@ -258,6 +260,8 @@ impl<'a> Builder<'a> {
             let args = self.types.args.get(args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
+                self.ctx.use_type(ty, self.types);
+
                 let &[name, ..] = self.ast.children(ast) else {
                     unreachable!();
                 };
@@ -286,6 +290,10 @@ impl<'a> Builder<'a> {
         let root = self.build_block(body_ast)?;
         self.funcs[self.func].body = root;
         self.funcs[self.func].args = args;
+
+        self.body.used_types = self.types.args.push(&self.ctx.used_types);
+        self.ctx.used_types.clear();
+        self.ctx.used_types_set.clear();
 
         if !self.body.ents[root].flags.contains(tir::Flags::TERMINATING)
             && ret != self.types.builtin.nothing
@@ -386,6 +394,7 @@ impl<'a> Builder<'a> {
             });
             return Err(());
         }
+
         Ok(self.deref_ptr(target))
     }
 
@@ -641,7 +650,7 @@ impl<'a> Builder<'a> {
                     }
 
                     for (i, &param) in self.ast.children(instantiation)[1..].iter().enumerate() {
-                        let Ok(ty) = self.parse_type(param) else {
+                        let Ok(ty) = parse_type!(self, param) else {
                             continue;
                         };
                         param_slots[i] = ty;
@@ -655,13 +664,15 @@ impl<'a> Builder<'a> {
                     .zip(arg_tys)
                     .map(|(&arg, arg_ty)| {
                         let tir::Ent { ty, span, .. } = self.body.ents[arg];
-                        self.infer_parameters(
+                        infer_parameters(
                             ty,
                             arg_ty,
                             &mut param_slots,
                             home_params,
                             foreign_params,
                             span,
+                            self.types,
+                            self.diagnostics,
                         )
                     })
                     // fold prevents allocation
@@ -690,20 +701,27 @@ impl<'a> Builder<'a> {
                     .iter()
                     .any(|&params| self.types.ents[params].flags.contains(ty::Flags::GENERIC));
 
-                let ret = self.instantiate(sig.ret, &param_slots)?;
+                let ret = instantiate(sig.ret, &param_slots, self.types)?;
+
+                self.ctx.use_type(ret, self.types);
 
                 if generic {
                     (ret, func)
                 } else {
                     let func = {
                         let i_params = self.types.args.push(&param_slots);
+
+                        // println!("====== {} {:?}", ty::Display::new(self.types, self.sources, ret), self.types.ents[ret]);
+
                         let sig = Sig {
                             params: i_params,
+                            ret,
                             ..sig
                         };
                         let ent = Ent {
                             sig,
                             kind: Kind::Instance(func),
+                            flags: self.funcs[func].flags & !func::Flags::GENERIC,
                             ..self.funcs[func]
                         };
                         self.funcs.push(ent)
@@ -763,7 +781,7 @@ impl<'a> Builder<'a> {
         }
 
         let kind = tir::Kind::TakePtr(target);
-        let ptr_ty = self.pointer_of(ty);
+        let ptr_ty = pointer_of(ty, self.types);
         let deref = tir::Ent::new(kind, ptr_ty, span);
         self.body.ents.push(deref)
     }
@@ -772,6 +790,7 @@ impl<'a> Builder<'a> {
         let span = self.body.ents[target].span;
         let kind = tir::Kind::DerefPointer(target);
         let deref_ty = self.types.deref_ptr(self.body.ents[target].ty);
+        self.ctx.use_type(deref_ty, self.types);
         let deref = tir::Ent::new(kind, deref_ty, span);
         self.body.ents.push(deref)
     }
@@ -858,23 +877,23 @@ impl<'a> Builder<'a> {
         let base_ty = self.types.ptr_base_of(ty);
 
         let span = self.ast.nodes[field].span;
-        let field_id = {
+        let (field_id, field_ty) = {
             let id = {
                 let ty_id = self.types.ents[base_ty].id;
                 let str = self.sources.display(span);
                 ty::Builder::field_id(ty_id, ID::new(str))
             };
-            self.find_field(ty, id, span)?
+            self.find_field(base_ty, id, span)?
         };
 
-        if base_ty != ty {
+        while base_ty != self.body.ents[header].ty {
             header = self.deref_ptr(header);
         }
 
         let result = {
-            let ty = self.types.sfields[field_id].ty;
+            self.ctx.use_type(field_ty, self.types);
             let kind = tir::Kind::FieldAccess(header, field_id);
-            let ent = tir::Ent::new(kind, ty, span);
+            let ent = tir::Ent::new(kind, field_ty, span);
             self.body.ents.push(ent)
         };
 
@@ -905,6 +924,8 @@ impl<'a> Builder<'a> {
     }
 
     fn build_constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
+        self.ctx.use_type(ty, self.types);
+
         let span = self.ast.nodes[body].span;
         let ty_id = self.types.ents[ty].id;
 
@@ -928,15 +949,12 @@ impl<'a> Builder<'a> {
                 ty::Builder::field_id(ty_id, id)
             };
 
-            let Ok(field) = self.find_field(ty, id, span) else {
+            let Ok((field, field_ty)) = self.find_field(ty, id, span) else {
                 continue;
             };
 
             let ty::SFieldEnt {
-                ty: field_ty,
-                span: hint,
-                index,
-                ..
+                span: hint, index, ..
             } = self.types.sfields[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
@@ -1265,11 +1283,18 @@ impl<'a> Builder<'a> {
         Ok(result)
     }
 
-    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<SField> {
+    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(SField, Ty)> {
         self.types
             .sfield_lookup
             .get(id)
-            .map(|f| f.field)
+            .map(|f| {
+                let ty = self.types.sfields[f.field].ty;
+                if let ty::Kind::Instance(_, params) = self.types.ents[on].kind {
+                    (f.field, self.types.ensure_no_param(ty, params))
+                } else {
+                    (f.field, ty)
+                }
+            })
             .ok_or_else(|| {
                 let candidates = if let ty::Kind::Struct(fields) = self.types.ents[on].kind {
                     self.types
@@ -1335,28 +1360,6 @@ impl<'a> Builder<'a> {
 impl AstIDExt for Builder<'_> {
     fn state(&self) -> (&Data, &Sources) {
         (self.ast, self.sources)
-    }
-}
-
-impl TypeParser for Builder<'_> {
-    fn state(
-        &mut self,
-    ) -> (
-        &mut Scope,
-        &mut Types,
-        &Sources,
-        &mut Modules,
-        &ast::Data,
-        &mut errors::Diagnostics,
-    ) {
-        (
-            self.scope,
-            self.types,
-            &self.sources,
-            self.modules,
-            &self.ast,
-            &mut self.diagnostics,
-        )
     }
 }
 

@@ -1,4 +1,4 @@
-use cranelift_entity::packed_option::ReservedValue;
+use cranelift_entity::{packed_option::ReservedValue, EntitySet};
 
 use crate::{Error, *};
 use lexer::*;
@@ -90,10 +90,10 @@ impl<'a> Collector<'a> {
 		};
 
         let span = self.ast.nodes[ty].span;
-        let ty = self.parse_type(ty)?;
+        let ty = parse_type!(self, ty)?;
 
         if !dest.is_reserved_value() {
-            let dest = self.parse_type(dest)?;
+            let dest = parse_type!(self, dest)?;
             let id = {
                 let dest_id = self.types.ents[dest].id;
                 let bound_id = self.types.ents[ty].id;
@@ -211,9 +211,11 @@ impl<'a> Collector<'a> {
 
     fn collect_struct(&mut self, ast: Ast) -> errors::Result {
         let source = self.ast.nodes[ast].span.source();
-        let &[name, ..] = self.ast.children(ast) else {
+        let &[generics, name, ..] = self.ast.children(ast) else {
             unreachable!();
         };
+
+        // dbg!(generics, self.sources.display(self.ast.nodes[name].span));
 
         let span = self.ast.nodes[name].span;
         let scope_id = self.sources.id(span);
@@ -222,7 +224,7 @@ impl<'a> Collector<'a> {
             id,
             kind: ty::Kind::Unresolved,
             name: span,
-            flags: Default::default(),
+            flags: ty::Flags::GENERIC & !generics.is_reserved_value(),
         };
         let ty = self.types.ents.push(ent);
         self.ctx.type_ast[ty] = ast;
@@ -264,12 +266,12 @@ impl<'a> Collector<'a> {
                         let children = self.ast.children(ast);
                         let name = children[0];
                         let span = self.ast.nodes[name].span;
-                        let Ok(bound) = self.parse_composite_bound(&children[1..], span) else {
+                        let Ok(bound) = parse_composite_bound!(self, &children[1..], span) else {
                             continue;
                         };
 
                         let str = self.sources.display(span);
-                        let params = self.types.parameters();
+                        let params = self.types.fn_params();
                         self.scope.push_item(str, scope::Item::new(params[i], span));
                         self.types.args.push_one(bound);
                     }
@@ -282,7 +284,7 @@ impl<'a> Collector<'a> {
                         | func::Kind::Owned(owner) = self.funcs[func].kind
                     && let ty::Kind::Bound(..) = self.types.ents[owner].kind
                 {
-                    let params = self.types.parameters();
+                    let params = self.types.fn_params();
                     let param = params[self.types.args.top().len()];
                     let span = self.types.ents[owner].name;
                     self.scope.push_item("Self", scope::Item::new(param, span));
@@ -299,7 +301,10 @@ impl<'a> Collector<'a> {
                     let children = self.ast.children(ast);
                     let amount = children.len() - 1;
                     let ty = children[amount];
-                    let ty = self.parse_type(ty)?;
+                    let Ok(ty) = parse_type!(self, ty) else {
+                        continue;
+                    };
+
                     for _ in 0..amount {
                         self.types.args.push_one(ty);
                     }
@@ -311,7 +316,7 @@ impl<'a> Collector<'a> {
             let ret = if return_type.is_reserved_value() {
                 self.types.builtin.nothing
             } else {
-                self.parse_type(return_type)?
+                parse_type!(self, return_type)?
             };
 
             self.scope.pop_frame();
@@ -416,6 +421,8 @@ pub struct Context {
     pub bounds_to_verify: Vec<(Ty, Ty, Ast)>,
     pub type_ast: SecondaryMap<Ty, Ast>,
     pub func_ast: SecondaryMap<Func, Ast>,
+    pub used_types: Vec<Ty>,
+    pub used_types_set: EntitySet<Ty>,
 }
 
 impl Context {
@@ -426,29 +433,16 @@ impl Context {
             bounds_to_verify: Vec::new(),
             type_ast: SecondaryMap::new(),
             func_ast: SecondaryMap::new(),
+            used_types: Vec::new(),
+            used_types_set: EntitySet::new(),
         }
     }
-}
 
-impl TypeParser for Collector<'_> {
-    fn state(
-        &mut self,
-    ) -> (
-        &mut Scope,
-        &mut Types,
-        &Sources,
-        &mut Modules,
-        &ast::Data,
-        &mut errors::Diagnostics,
-    ) {
-        (
-            self.scope,
-            self.types,
-            self.sources,
-            self.modules,
-            self.ast,
-            self.diagnostics,
-        )
+    pub fn use_type(&mut self, ty: Ty, types: &Types) {
+        if !self.used_types_set.contains(ty) && types.ents[ty].flags.contains(ty::Flags::GENERIC) {
+            self.used_types.push(ty);
+            self.used_types_set.insert(ty);
+        }
     }
 }
 

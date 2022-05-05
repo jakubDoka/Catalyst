@@ -10,6 +10,7 @@ use lexer::*;
 pub struct Data {
     pub ents: PrimaryMap<Tir, Ent>,
     pub cons: StackMap<TirList, Tir>,
+    pub used_types: TyList,
 }
 
 impl Data {
@@ -17,6 +18,7 @@ impl Data {
         Self {
             ents: PrimaryMap::new(),
             cons: StackMap::new(),
+            used_types: TyList::reserved_value(),
         }
     }
 }

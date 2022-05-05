@@ -319,7 +319,7 @@ impl Translator<'_> {
                 .base_of(ty, self.t_funcs[self.func_id].sig.params);
             let ty_id = self.t_types.ents[ty].id;
             let typec::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
-            (types::TypeTranslator::field_id(ty_id, index as u64), ty)
+            (types::Translator::field_id(ty_id, index as u64), ty)
         };
 
         let Some(&types::Field { offset }) = self.types.fields.get(field_id) else {
@@ -392,7 +392,7 @@ impl Translator<'_> {
         let ty_id = self.t_types.ents[ty].id;
 
         for (i, &data) in data_view.iter().enumerate() {
-            let id = types::TypeTranslator::field_id(ty_id, i as u64);
+            let id = types::Translator::field_id(ty_id, i as u64);
             let Some(&types::Field { offset }) = self.types.fields.get(id) else {
                 unreachable!()
             };

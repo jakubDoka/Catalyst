@@ -3,7 +3,6 @@
 
 use cli::CmdInput;
 use cranelift_codegen::isa::CallConv;
-use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::settings::Flags;
 use cranelift_codegen::Context;
 use cranelift_entity::EntitySet;
@@ -274,7 +273,7 @@ pub fn compile() {
                 //println!("{}", typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
             }
 
-            println!("typecheck {}", scope.collision_rate());
+            // println!("typecheck {}", scope.collision_rate());
 
             scope.clear();
         }
@@ -327,9 +326,10 @@ pub fn compile() {
     let ptr_ty = module.isa().pointer_type();
     let system_call_convention = module.isa().default_call_conv();
 
-    TypeTranslator {
+    instance::types::Translator {
         t_types: &t_types,
         t_graph: &t_graph,
+        sources: &sources,
         types: &mut types,
         ptr_ty,
     }
@@ -348,8 +348,12 @@ pub fn compile() {
                 continue;
             };
 
-            if let typec::func::Kind::Instance(_) = ent.kind {
-                let popper = t_types.push_params(ent.sig.params);
+            if ent.flags.contains(typec::func::Flags::GENERIC) {
+                continue;
+            }
+
+            let popper = if let typec::func::Kind::Instance(_) = ent.kind {
+                let popper = t_types.push_params(ent.sig.params, false);
                 for (&param, &real_param) in t_types
                     .active_params(&popper)
                     .iter()
@@ -357,11 +361,10 @@ pub fn compile() {
                 {
                     types.ents[param] = types.ents[real_param];
                 }
+                Some(popper)
             } else {
-                if !ent.sig.params.is_reserved_value() {
-                    continue;
-                }
-            }
+                None
+            };
 
             name_buffer.clear();
             if ent.flags.contains(typec::func::Flags::ENTRY) {
@@ -397,6 +400,8 @@ pub fn compile() {
 
             ctx.func.signature.clear(CallConv::Fast);
 
+            popper.map(|p| t_types.pop_params(p));
+
             func_lookup[id] = func.into();
         }
     }
@@ -421,21 +426,26 @@ pub fn compile() {
                 continue;
             }
 
-            let func = if let typec::func::Kind::Instance(func) = ent.kind {
-                let popper = t_types.push_params(ent.sig.params);
+            if ent.flags.contains(typec::func::Flags::GENERIC) {
+                continue;
+            }
+
+            let (func, popper) = if let typec::func::Kind::Instance(func) = ent.kind {
+                // dbg!(t_types.ents[Ty(9)]);
+                let popper = t_types.push_params(ent.sig.params, false);
+                // println!("{:?}", popper);
                 for (&param, &real_param) in t_types
                     .active_params(&popper)
                     .iter()
                     .zip(t_types.args.get(ent.sig.params))
                 {
+                    // println!(",,,, {:?} {:?}", param, real_param);
                     types.ents[param] = types.ents[real_param];
                 }
-                func
+                // dbg!(t_types.ents[Ty(9)]);
+                (func, Some(popper))
             } else {
-                if !ent.sig.params.is_reserved_value() {
-                    continue;
-                }
-                id
+                (id, None)
             };
 
             let now = std::time::Instant::now();
@@ -480,6 +490,8 @@ pub fn compile() {
             }
             .generate();
             total_generation += now.elapsed();
+
+            popper.map(|p| t_types.pop_params(p));
 
             // println!("{}", sources.display(ent.name));
             // println!("{}", ctx.func.display());

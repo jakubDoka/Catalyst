@@ -10,7 +10,7 @@ use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Linkage, Module};
 use instance::*;
 use lexer::*;
-use typec::Func;
+use typec::{ty, Func};
 
 pub struct Generator<'a> {
     pub module: &'a mut dyn Module,
@@ -85,6 +85,7 @@ impl<'a> Generator<'a> {
 
                 let ir_inst = {
                     let func_ref = {
+                        // println!("{:?}", self.sources.display(self.t_funcs[func].name));
                         let ir_func = self.function_lookup[func].unwrap();
                         self.module.declare_func_in_func(ir_func, self.builder.func)
                     };
@@ -94,7 +95,10 @@ impl<'a> Generator<'a> {
                         .value_slices
                         .get(args)
                         .iter()
-                        .map(|&value| self.use_value(value))
+                        .map(|&value| {
+                            //dbg!(self.source.values[value].ty, self.t_types.ents[self.source.values[value].ty], self.types.ents[self.source.values[value].ty].repr);
+                            self.use_value(value)
+                        })
                         .collect();
 
                     self.builder.ins().call(func_ref, &args)
@@ -113,6 +117,7 @@ impl<'a> Generator<'a> {
             mir::InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
+                // println!("{:?} {}", repr, literal);
                 let ir_value = self.builder.ins().iconst(repr, literal as i64);
                 self.value_lookup[value] = ir_value.into();
             }
@@ -531,7 +536,7 @@ impl<'a> Generator<'a> {
         if self.builder.func.dfg.value_type(value) == repr {
             return value;
         }
-
+        // dbg!(repr, self.builder.func.dfg.value_type(value));
         let load_repr = repr.as_int();
 
         let mask = ((1 << load_repr.bits()) - 1) << offset * 8;

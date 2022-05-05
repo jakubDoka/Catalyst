@@ -47,9 +47,24 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build_struct(&mut self, id: ID, ast: Ast) -> errors::Result {
-        let &[.., body] = self.ast.children(ast) else {
+        let &[generics, .., body] = self.ast.children(ast) else {
             unreachable!();
         };
+
+        self.scope.mark_frame();
+
+        if !generics.is_reserved_value() {
+            for (&ident, &param) in self
+                .ast
+                .children(generics)
+                .iter()
+                .zip(self.types.ty_params())
+            {
+                let span = self.ast.nodes[ident].span;
+                let id = self.sources.id(span);
+                self.scope.push_item(id, scope::Item::new(param, span))
+            }
+        }
 
         // fields are inserted into centralized hash map for faster lookup
         // and memory efficiency, though we still need field ordering when
@@ -59,7 +74,7 @@ impl<'a> Builder<'a> {
                 let &[name, field_ty_ast] = self.ast.children(field_ast) else {
                     unreachable!();
                 };
-                let field_ty = self.parse_type(field_ty_ast)?;
+                let field_ty = parse_type!(self, field_ty_ast)?;
 
                 let span = self.ast.nodes[name].span;
 
@@ -83,6 +98,13 @@ impl<'a> Builder<'a> {
                     .insert(id, SFieldRef::new(field))
                     .map(|f| f.next.is_some())
                     .unwrap_or(true));
+
+                let field_ty = if let Kind::Instance(header, ..) = self.types.ents[field_ty].kind {
+                    header
+                } else {
+                    field_ty
+                };
+
                 self.graph.add_edge(field_ty.as_u32());
             }
             self.types.sfields.close_frame()
@@ -91,33 +113,13 @@ impl<'a> Builder<'a> {
         self.types.ents[self.ty].kind = Kind::Struct(fields);
         self.graph.close_node();
 
+        self.scope.pop_frame();
+
         Ok(())
     }
 
     pub fn field_id(ty: ID, name: ID) -> ID {
         ty + name
-    }
-}
-
-impl TypeParser for Builder<'_> {
-    fn state(
-        &mut self,
-    ) -> (
-        &mut Scope,
-        &mut Types,
-        &Sources,
-        &mut Modules,
-        &ast::Data,
-        &mut errors::Diagnostics,
-    ) {
-        (
-            self.scope,
-            self.types,
-            self.sources,
-            self.modules,
-            self.ast,
-            self.diagnostics,
-        )
     }
 }
 
@@ -135,6 +137,7 @@ pub struct Types {
     pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
     pub builtin: BuiltinTable,
     pub bound_cons: Map<BoundImpl>,
+    pub instances: Map<Ty>,
     params: Vec<Ty>,
 }
 
@@ -155,6 +158,7 @@ impl Types {
             builtin: BuiltinTable::new(),
             bound_cons: Map::new(),
             params: Vec::new(),
+            instances: Map::new(),
         };
 
         tys.init(graph, sources, builtin_source);
@@ -219,10 +223,18 @@ impl Types {
         self.base_of_low(ty, params).0
     }
 
+    pub fn ensure_no_param(&self, ty: Ty, params: TyList) -> Ty {
+        match self.ents[ty].kind {
+            Kind::Param(index) => self.args.get(params)[index as usize],
+            _ => ty,
+        }
+    }
+
     pub fn base_of_low(&self, mut ty: Ty, params: TyList) -> (Ty, ID) {
         let mut id = ID(0);
         loop {
-            match self.ents[ty].kind {
+            let Ent { kind, .. } = self.ents[ty];
+            match kind {
                 Kind::Ptr(inner, ..) => {
                     id = id + ID::new("*");
                     ty = inner;
@@ -255,7 +267,7 @@ impl Types {
             let ty = {
                 let ent = Ent {
                     id: ID::new("<param>") + ID(i as u64),
-                    kind: Kind::Param(i as u32),
+                    kind: Kind::Param((i % (Self::MAX_PARAMS / 2)) as u32),
                     name: builtin_source.make_span(sources, "param"),
                     flags: ty::Flags::GENERIC,
                     ..Default::default()
@@ -263,24 +275,50 @@ impl Types {
                 self.ents.push(ent)
             };
             self.params.push(ty);
+            graph.close_node();
         }
     }
 
     pub fn active_params(&self, popper: &InstanceMarker) -> &[Ty] {
-        &self.params[..popper.len]
+        &popper
+            .is_ty
+            .then_some(&self.params[Self::MAX_PARAMS / 2..])
+            .unwrap_or(self.params.as_slice())[..popper.len]
     }
 
-    pub fn push_params(&mut self, params: TyList) -> InstanceMarker {
+    pub fn push_params(&mut self, params: TyList, ty_params: bool) -> InstanceMarker {
         let params = self.args.get(params);
-        for (&ty, &param) in params.iter().zip(&self.params) {
+        assert!(params.len() <= Self::MAX_PARAMS / 2);
+        let used = ty_params
+            .then_some(&self.params[Self::MAX_PARAMS / 2..])
+            .unwrap_or(self.params.as_slice());
+        for (&ty, &param) in params.iter().zip(used) {
             self.ents[param] = self.ents[ty];
         }
 
-        return InstanceMarker { len: params.len() };
+        return InstanceMarker {
+            len: params.len(),
+            is_ty: ty_params,
+        };
     }
 
-    pub fn parameters(&self) -> &[Ty] {
-        &self.params
+    pub fn pop_params(&mut self, popper: InstanceMarker) {
+        let params = popper
+            .is_ty
+            .then_some(&self.params[Self::MAX_PARAMS / 2..])
+            .unwrap_or(self.params.as_slice());
+        for (i, &param) in params[..popper.len].iter().enumerate() {
+            self.ents[param] = self.ents[self.params[self.params.len() - 1]];
+            self.ents[param].kind = Kind::Param(i as u32);
+        }
+    }
+
+    pub fn fn_params(&self) -> &[Ty] {
+        &self.params[..Self::MAX_PARAMS / 2]
+    }
+
+    pub fn ty_params(&self) -> &[Ty] {
+        &self.params[Self::MAX_PARAMS / 2..]
     }
 
     pub fn param_id(index: usize, ty: ID) -> ID {
@@ -386,7 +424,9 @@ impl BuiltinTable {
     }
 }
 
+#[derive(Debug)]
 pub struct InstanceMarker {
+    is_ty: bool,
     len: usize,
 }
 

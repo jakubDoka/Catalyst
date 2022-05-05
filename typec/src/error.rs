@@ -4,6 +4,17 @@ use lexer::*;
 use crate::*;
 
 pub enum Error {
+    InvalidTypeExpression {
+        loc: Span,
+    },
+    ExpectedConcreteType {
+        loc: Span,
+    },
+    GenericTypeMismatch {
+        expected: Ty,
+        found: Ty,
+        loc: Span,
+    },
     UnknownGenericParam {
         loc: Span,
         func: Span,
@@ -468,6 +479,32 @@ impl Error {
                     to,
                     "|> possible syntaxes: '<module>::<item>' '<module>::<type>::<item>'"
                 )?;
+            }
+            Error::InvalidTypeExpression { loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "invalid type expression")
+                })?;
+            }
+            Error::ExpectedConcreteType { loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected concrete type")
+                })?;
+            }
+            Error::GenericTypeMismatch {
+                expected,
+                found,
+                loc,
+            } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_to(Palette::error().bold(), '^', sources, to, &|to| {
+                    write!(to, "expected type '")?;
+                    expected.display(types, sources, to)?;
+                    write!(to, "' but got '")?;
+                    found.display(types, sources, to)?;
+                    write!(to, "'")
+                })?;
             }
             #[allow(unused)]
             Error::OperatorArgCountMismatch {
