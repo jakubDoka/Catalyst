@@ -6,7 +6,7 @@ pub const FUNCTION_ARG_END: usize = 2;
 pub const FUNCTION_RET: usize = 2;
 
 pub trait AstIDExt {
-    fn state(&self) -> (&Data, &Sources);
+    fn state(&self) -> (&AstData, &Sources);
 
     fn id_of(&self, node: Ast) -> ID {
         let (ast, sources) = self.state();
@@ -16,23 +16,23 @@ pub trait AstIDExt {
 }
 
 #[derive(Clone, Copy)]
-pub struct Ent {
-    pub kind: Kind,
+pub struct AstEnt {
+    pub kind: AstKind,
     pub children: AstList,
     pub span: Span,
 }
 
-impl Ent {
-    pub fn new(kind: Kind, children: AstList, span: Span) -> Self {
-        Ent {
+impl AstEnt {
+    pub fn new(kind: AstKind, children: AstList, span: Span) -> Self {
+        AstEnt {
             kind,
             children,
             span,
         }
     }
 
-    pub fn childless(kind: Kind, span: Span) -> Self {
-        Ent {
+    pub fn childless(kind: AstKind, span: Span) -> Self {
+        AstEnt {
             kind,
             children: Default::default(),
             span,
@@ -41,13 +41,13 @@ impl Ent {
 }
 
 
-pub struct Data {
-    pub nodes: PrimaryMap<Ast, Ent>,
+pub struct AstData {
+    pub nodes: PrimaryMap<Ast, AstEnt>,
     pub conns: StackMap<AstList, Ast>,
     pub elements: Vec<Ast>,
 }
 
-impl Data {
+impl AstData {
     pub fn new() -> Self {
         Self {
             nodes: PrimaryMap::new(),
@@ -60,17 +60,17 @@ impl Data {
         self.elements.push(node);
     }
 
-    pub fn alloc(&mut self, kind: Kind, conns: &[Ast], span: Span) -> Ast {
+    pub fn alloc(&mut self, kind: AstKind, conns: &[Ast], span: Span) -> Ast {
         let list = self.conns.push(conns);
-        let ent = Ent::new(kind, list, span);
+        let ent = AstEnt::new(kind, list, span);
         self.alloc_ent(ent)
     }
 
-    pub fn alloc_sonless(&mut self, ident: Kind, span: Span) -> Ast {
-        self.alloc_ent(Ent::childless(ident, span))
+    pub fn alloc_sonless(&mut self, ident: AstKind, span: Span) -> Ast {
+        self.alloc_ent(AstEnt::childless(ident, span))
     }
 
-    pub fn alloc_ent(&mut self, ent: Ent) -> Ast {
+    pub fn alloc_ent(&mut self, ent: AstEnt) -> Ast {
         self.nodes.push(ent)
     }
 
@@ -80,12 +80,12 @@ impl Data {
     }
 
     #[inline]
-    pub fn elements(&self) -> impl Iterator<Item = (Ast, &Ent)> + Clone {
+    pub fn elements(&self) -> impl Iterator<Item = (Ast, &AstEnt)> + Clone {
         self.elements.iter().map(|&ast| (ast, &self.nodes[ast]))
     }
 
     #[inline]
-    pub fn children_iter(&self, ast: Ast) -> impl Iterator<Item = &Ent> {
+    pub fn children_iter(&self, ast: Ast) -> impl Iterator<Item = &AstEnt> {
         self.children(ast).iter().map(|&ast| &self.nodes[ast])
     }
 
@@ -122,7 +122,7 @@ impl Data {
             return Ok(());
         }
 
-        let Ent {
+        let AstEnt {
             kind,
             children,
             span,
@@ -147,14 +147,14 @@ impl Data {
     }
 }
 
-impl std::fmt::Debug for Data {
+impl std::fmt::Debug for AstData {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.fmt(f, None)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
+pub enum AstKind {
     UseBoundFunc,
     Deref,
     Pointer,

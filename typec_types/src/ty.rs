@@ -2,10 +2,10 @@ use module_types::tree::GenericGraph;
 use storage::*;
 use lexer_types::*;
 
-use crate::func::*;
+use crate::*;
 
 pub struct Types {
-    pub ents: PrimaryMap<Ty, Ent>,
+    pub ents: PrimaryMap<Ty, TyEnt>,
     pub funcs: StackMap<FuncList, Func>,
     pub args: StackMap<TyList, Ty>,
     pub sfield_lookup: Map<SFieldRef>,
@@ -43,14 +43,14 @@ impl Types {
 
     pub fn deref_ptr(&self, ty: Ty) -> Ty {
         match self.ents[ty].kind {
-            Kind::Ptr(ty, ..) => ty,
+            TyKind::Ptr(ty, ..) => ty,
             _ => unreachable!(),
         }
     }
 
     pub fn ptr_depth_of(&self, ty: Ty) -> u32 {
         match self.ents[ty].kind {
-            Kind::Ptr(.., depth) => depth,
+            TyKind::Ptr(.., depth) => depth,
             _ => 0,
         }
     }
@@ -65,7 +65,7 @@ impl Types {
 
     pub fn ensure_no_param(&self, ty: Ty, params: TyList) -> Ty {
         match self.ents[ty].kind {
-            Kind::Param(index) => self.args.get(params)[index as usize],
+            TyKind::Param(index) => self.args.get(params)[index as usize],
             _ => ty,
         }
     }
@@ -73,23 +73,23 @@ impl Types {
     pub fn base_of_low(&self, mut ty: Ty, params: TyList) -> (Ty, ID) {
         let mut id = ID(0);
         loop {
-            let Ent { kind, .. } = self.ents[ty];
+            let TyEnt { kind, .. } = self.ents[ty];
             match kind {
-                Kind::Ptr(inner, ..) => {
+                TyKind::Ptr(inner, ..) => {
                     id = id + ID::new("*");
                     ty = inner;
                 }
-                Kind::Param(index) => {
+                TyKind::Param(index) => {
                     return (self.args.get(params)[index as usize], id);
                 }
-                Kind::BoundCombo(..)
-                | Kind::Instance(..)
-                | Kind::Bound(..)
-                | Kind::Struct(..)
-                | Kind::Int(..)
-                | Kind::Bool
-                | Kind::Nothing
-                | Kind::Unresolved => return (ty, id),
+                TyKind::BoundCombo(..)
+                | TyKind::Instance(..)
+                | TyKind::Bound(..)
+                | TyKind::Struct(..)
+                | TyKind::Int(..)
+                | TyKind::Bool
+                | TyKind::Nothing
+                | TyKind::Unresolved => return (ty, id),
             }
         }
     }
@@ -105,11 +105,11 @@ impl Types {
         self.params.reserve(Self::MAX_PARAMS);
         for i in 0..Self::MAX_PARAMS {
             let ty = {
-                let ent = Ent {
+                let ent = TyEnt {
                     id: ID::new("<param>") + ID(i as u64),
-                    kind: Kind::Param((i % (Self::MAX_PARAMS / 2)) as u32),
+                    kind: TyKind::Param((i % (Self::MAX_PARAMS / 2)) as u32),
                     name: builtin_source.make_span(sources, "param"),
-                    flags: Flags::GENERIC,
+                    flags: TyFlags::GENERIC,
                     ..Default::default()
                 };
                 self.ents.push(ent)
@@ -149,7 +149,7 @@ impl Types {
             .unwrap_or(self.params.as_slice());
         for (i, &param) in params[..popper.len].iter().enumerate() {
             self.ents[param] = self.ents[self.params[self.params.len() - 1]];
-            self.ents[param].kind = Kind::Param(i as u32);
+            self.ents[param].kind = TyKind::Param(i as u32);
         }
     }
 
@@ -164,7 +164,7 @@ impl Types {
     pub fn ptr_base_of(&self, mut ty: Ty) -> Ty {
         loop {
             match self.ents[ty].kind {
-                Kind::Ptr(base, ..) => ty = base,
+                TyKind::Ptr(base, ..) => ty = base,
                 _ => return ty,
             }
         }
@@ -217,11 +217,11 @@ macro_rules! gen_builtin_table {
         impl Types {
             pub fn init_builtin_table(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
                 $(
-                    let ent = Ent {
+                    let ent = TyEnt {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
-                        flags: Flags::GENERIC & matches!($repr, Kind::Bound(..)),
+                        flags: TyFlags::GENERIC & matches!($repr, TyKind::Bound(..)),
                     };
                     let ty = self.ents.push(ent);
                     graph.close_node();
@@ -243,15 +243,15 @@ impl BuiltinTable {
 }
 
 gen_builtin_table!(
-    nothing: Kind::Nothing,
-    any: Kind::Bound(FuncList::default()),
-    bool: Kind::Bool,
-    char: Kind::Int(32),
-    int: Kind::Int(-1),
-    i8: Kind::Int(8),
-    i16: Kind::Int(16),
-    i32: Kind::Int(32),
-    i64: Kind::Int(64),
+    nothing: TyKind::Nothing,
+    any: TyKind::Bound(FuncList::default()),
+    bool: TyKind::Bool,
+    char: TyKind::Int(32),
+    int: TyKind::Int(-1),
+    i8: TyKind::Int(8),
+    i16: TyKind::Int(16),
+    i32: TyKind::Int(32),
+    i64: TyKind::Int(64),
 );
 
 impl BuiltinTable {
@@ -319,21 +319,21 @@ impl ReservedValue for SFieldEnt {
 }
 
 #[derive(Default, Clone, Copy, Debug)]
-pub struct Ent {
+pub struct TyEnt {
     pub id: ID,
     pub name: Span,
-    pub kind: Kind,
-    pub flags: Flags,
+    pub kind: TyKind,
+    pub flags: TyFlags,
 }
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u32 {
+    pub struct TyFlags: u32 {
         const GENERIC = 1 << 0;
     }
 }
 
-impl Flags {
+impl TyFlags {
     pub const MAX_PARAMS: u32 = 32;
     pub const PARAMS_WIDTH: u32 = 5;
     pub const FLAGS_WIDTH: u32 = 32;
@@ -350,21 +350,21 @@ impl Flags {
     }
 }
 
-impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(TyFlags);
 
-pub struct Display<'a> {
+pub struct TyDisplay<'a> {
     types: &'a Types,
     sources: &'a Sources,
     ty: Ty,
 }
 
-impl<'a> Display<'a> {
+impl<'a> TyDisplay<'a> {
     pub fn new(types: &'a Types, sources: &'a Sources, ty: Ty) -> Self {
         Self { types, ty, sources }
     }
 }
 
-impl std::fmt::Display for Display<'_> {
+impl std::fmt::Display for TyDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut str = String::new();
         self.ty.display(self.types, self.sources, &mut str)?;
@@ -373,7 +373,7 @@ impl std::fmt::Display for Display<'_> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Kind {
+pub enum TyKind {
     BoundCombo(TyList),
     Bound(FuncList),
     Struct(SFieldList),
@@ -389,9 +389,9 @@ pub enum Kind {
     Unresolved,
 }
 
-impl Default for Kind {
+impl Default for TyKind {
     fn default() -> Self {
-        Kind::Unresolved
+        TyKind::Unresolved
     }
 }
 
@@ -404,11 +404,11 @@ impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match types.ents[self].kind {
-            Kind::Struct(..) | Kind::Bound(..) | Kind::Int(..) | Kind::Nothing | Kind::Bool => {
+            TyKind::Struct(..) | TyKind::Bound(..) | TyKind::Int(..) | TyKind::Nothing | TyKind::Bool => {
                 let name = types.ents[self].name;
                 write!(to, "{}", sources.display(name))?;
             }
-            Kind::Instance(base, params) => {
+            TyKind::Instance(base, params) => {
                 let base = types.ents[base].name;
                 write!(to, "{}", sources.display(base))?;
                 write!(to, "[")?;
@@ -420,10 +420,10 @@ impl Ty {
                 }
                 write!(to, "]")?;
             }
-            Kind::Param(index) => {
+            TyKind::Param(index) => {
                 write!(to, "param{}", index)?;
             }
-            Kind::BoundCombo(list) => {
+            TyKind::BoundCombo(list) => {
                 for (i, ty) in types.args.get(list).iter().enumerate() {
                     if i != 0 {
                         write!(to, " + ")?;
@@ -431,11 +431,11 @@ impl Ty {
                     ty.display(types, sources, to)?;
                 }
             }
-            Kind::Ptr(ty, ..) => {
+            TyKind::Ptr(ty, ..) => {
                 write!(to, "*")?;
                 ty.display(types, sources, to)?;
             }
-            Kind::Unresolved => write!(to, "unresolved")?,
+            TyKind::Unresolved => write!(to, "unresolved")?,
         }
 
         Ok(())

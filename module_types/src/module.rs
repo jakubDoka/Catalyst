@@ -2,15 +2,15 @@ use storage::*;
 use lexer_types::*;
 use crate::scope;
 
-pub type Modules = SecondaryMap<Source, Ent>;
+pub type Modules = SecondaryMap<Source, ModuleEnt>;
 
 #[derive(Debug, Clone, Default)]
-pub struct Ent {
+pub struct ModuleEnt {
     pub id: ID,
-    pub items: Vec<Item>,
+    pub items: Vec<ModuleItem>,
 }
 
-impl Ent {
+impl ModuleEnt {
     pub fn new(id: ID) -> Self {
         Self {
             id,
@@ -20,23 +20,23 @@ impl Ent {
 }
 
 #[derive(Debug, Clone)]
-pub struct Item {
+pub struct ModuleItem {
     pub id: ID,
-    pub kind: scope::Pointer,
+    pub kind: scope::ScopePointer,
     pub span: Span,
 }
 
-impl Item {
+impl ModuleItem {
     pub fn new(id: ID, kind: impl EntityRef + 'static, span: Span) -> Self {
         Self {
             id,
-            kind: scope::Pointer::write(kind),
+            kind: scope::ScopePointer::write(kind),
             span,
         }
     }
 
-    pub fn to_scope_item(&self) -> scope::Item {
-        scope::Item {
+    pub fn to_scope_item(&self) -> scope::ScopeItem {
+        scope::ScopeItem {
             span: self.span,
             pointer: self.kind,
         }

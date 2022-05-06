@@ -1,10 +1,10 @@
 use storage::*;
 use lexer_types::*;
-use module_types::{error::Error, scope::ItemLexicon, units::Units};
+use module_types::{error::ModuleError, scope::ItemLexicon, units::Units};
 
 
 pub fn display(
-    error: &Error,
+    error: &ModuleError,
     sources: &Sources,
     scope_item_lexicon: &ItemLexicon,
     units: &Units,
@@ -12,7 +12,7 @@ pub fn display(
 ) -> std::fmt::Result {
     use std::fmt::Write;
     match error {
-        Error::ScopeCollision { new, existing } => {
+        ModuleError::ScopeCollision { new, existing } => {
             new.loc_to(sources, to)?;
             new.underline_error(sources, to, &|to| {
                 write!(to, "item with this identifier already exists")
@@ -21,7 +21,7 @@ pub fn display(
                 write!(to, "identifier is used here")
             })?;
         }
-        Error::AmbiguousScopeItem { loc, suggestions } => {
+        ModuleError::AmbiguousScopeItem { loc, suggestions } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(
@@ -41,7 +41,7 @@ pub fn display(
             }
             writeln!(to)?;
         }
-        &Error::InvalidScopeItem {
+        &ModuleError::InvalidScopeItem {
             loc,
             expected,
             found,
@@ -56,7 +56,7 @@ pub fn display(
                 )
             })?;
         }
-        Error::ScopeItemNotFound { loc } => {
+        ModuleError::ScopeItemNotFound { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(
@@ -65,7 +65,7 @@ pub fn display(
                 )
             })?;
         }
-        Error::RootModuleNotFound { unit, trace } => {
+        ModuleError::RootModuleNotFound { unit, trace } => {
             let unit = &units[*unit];
             let path = unit.root_path.clone();
             let source_path = unit.get_absolute_source_path().unwrap();
@@ -78,7 +78,7 @@ pub fn display(
             writeln!(to, "|> path searched: {}", source_path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::ModuleLoadFail { path, trace, loc } => {
+        ModuleError::ModuleLoadFail { path, trace, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "module could not be loaded",)
@@ -86,7 +86,7 @@ pub fn display(
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::ModuleNotFound { trace, path, loc } => {
+        ModuleError::ModuleNotFound { trace, path, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "module not found",)
@@ -94,19 +94,19 @@ pub fn display(
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::ModuleCycle { cycle } => {
+        ModuleError::ModuleCycle { cycle } => {
             write_colored!(to, ansi_consts::ERR, "|> module cycle detected:\n",)?;
             for &module in cycle {
                 writeln!(to, "|\t{}", sources[module].path.display())?;
             }
             writeln!(to, "|> meta-programing features rely on this restriction")?;
         }
-        Error::RootUnitNotFound { path, trace } => {
+        ModuleError::RootUnitNotFound { path, trace } => {
             write_colored!(to, ansi_consts::ERR, "|> root of project not found",)?;
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::ManifestLoadFail { path, trace, loc } => {
+        ModuleError::ManifestLoadFail { path, trace, loc } => {
             if let Some(loc) = loc {
                 loc.loc_to(sources, to)?;
                 loc.underline_error(sources, to, &|to| {
@@ -122,7 +122,7 @@ pub fn display(
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::UnitNotFound { path, trace, loc } => {
+        ModuleError::UnitNotFound { path, trace, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "unit not found",)
@@ -130,14 +130,14 @@ pub fn display(
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::UnitCycle { cycle } => {
+        ModuleError::UnitCycle { cycle } => {
             write_colored!(to, ansi_consts::ERR, "|> unit cycle detected:\n",)?;
             for &unit in cycle {
                 writeln!(to, "|\t{}", units[unit].root_path.display())?;
             }
             writeln!(to, "|> it's not realistic to allow cycles")?;
         }
-        Error::MkGirtDir { path, trace, loc } => {
+        ModuleError::MkGirtDir { path, trace, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "could not create girt directory",)
@@ -145,7 +145,7 @@ pub fn display(
             writeln!(to, "|> while attempting to create path: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::GitCloneExec { trace, loc } => {
+        ModuleError::GitCloneExec { trace, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "git clone of this repo failed to execute",)
@@ -153,7 +153,7 @@ pub fn display(
             writeln!(to, "|> make sure you have git installed")?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
-        Error::GitCloneStatus { code, loc } => {
+        ModuleError::GitCloneStatus { code, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(

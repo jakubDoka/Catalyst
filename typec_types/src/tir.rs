@@ -1,16 +1,15 @@
 use storage::*;
 use lexer_types::*;
-use crate::ty::{self, *};
-use crate::func::*;
+use crate::*;
 
 #[derive(Clone)]
-pub struct Data {
-    pub ents: PrimaryMap<Tir, Ent>,
+pub struct TirData {
+    pub ents: PrimaryMap<Tir, TirEnt>,
     pub cons: StackMap<TirList, Tir>,
     pub used_types: TyList,
 }
 
-impl Data {
+impl TirData {
     pub fn new() -> Self {
         Self {
             ents: PrimaryMap::new(),
@@ -20,22 +19,22 @@ impl Data {
     }
 }
 
-impl Default for Data {
+impl Default for TirData {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Ent {
-    pub kind: Kind,
+pub struct TirEnt {
+    pub kind: TirKind,
     pub ty: Ty,
-    pub flags: Flags,
+    pub flags: TirFlags,
     pub span: Span,
 }
 
-impl Ent {
-    pub fn with_flags(kind: Kind, ty: Ty, flags: Flags, span: Span) -> Self {
+impl TirEnt {
+    pub fn with_flags(kind: TirKind, ty: Ty, flags: TirFlags, span: Span) -> Self {
         Self {
             kind,
             ty,
@@ -44,13 +43,13 @@ impl Ent {
         }
     }
 
-    pub fn new(kind: Kind, ty: Ty, span: Span) -> Self {
+    pub fn new(kind: TirKind, ty: Ty, span: Span) -> Self {
         Self::with_flags(kind, ty, Default::default(), span)
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Kind {
+pub enum TirKind {
     Type,
     DerefPointer(Tir),
     TakePtr(Tir),
@@ -73,13 +72,13 @@ pub enum Kind {
     Invalid,
 }
 
-impl Kind {
+impl TirKind {
     pub fn is_terminating(&self) -> bool {
-        matches!(self, Kind::Return(_))
+        matches!(self, TirKind::Return(_))
     }
 }
 
-impl Default for Kind {
+impl Default for TirKind {
     fn default() -> Self {
         Self::Invalid
     }
@@ -90,7 +89,7 @@ gen_entity!(TirList);
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u32 {
+    pub struct TirFlags: u32 {
         /// Can we assign to this expression?
         const ASSIGNABLE = 1 << 0;
         /// This expression terminates execution.
@@ -100,17 +99,17 @@ bitflags! {
     }
 }
 
-impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(TirFlags);
 
-pub struct Display<'a> {
+pub struct TirDisplay<'a> {
     pub types: &'a Types,
     pub sources: &'a Sources,
-    pub data: &'a Data,
+    pub data: &'a TirData,
     pub root: Tir,
 }
 
-impl<'a> Display<'a> {
-    pub fn new(types: &'a Types, sources: &'a Sources, data: &'a Data, root: Tir) -> Self {
+impl<'a> TirDisplay<'a> {
+    pub fn new(types: &'a Types, sources: &'a Sources, data: &'a TirData, root: Tir) -> Self {
         Self {
             types,
             sources,
@@ -145,26 +144,26 @@ impl<'a> Display<'a> {
             write!(
                 f,
                 "{root}: {} = ",
-                ty::Display::new(self.types, self.sources, self.data.ents[root].ty)
+                TyDisplay::new(self.types, self.sources, self.data.ents[root].ty)
             )?;
         }
         displayed.insert(root);
 
         let ent = self.data.ents[root];
         match ent.kind {
-            Kind::TakePtr(tir) => {
+            TirKind::TakePtr(tir) => {
                 write!(f, "take_pointer ")?;
                 self.fmt(tir, f, displayed, level + 1, true)?;
             }
-            Kind::DerefPointer(tir) => {
+            TirKind::DerefPointer(tir) => {
                 write!(f, "deref_pointer ")?;
                 self.fmt(tir, f, displayed, level + 1, true)?;
             }
-            Kind::FieldAccess(expr, id) => {
+            TirKind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
                 write!(f, ".{}", self.types.sfields[id].index)?;
             }
-            Kind::Constructor(fields) => {
+            TirKind::Constructor(fields) => {
                 writeln!(f, "::{{")?;
                 for &field in self.data.cons.get(fields).iter() {
                     self.fmt(field, f, displayed, level + 1, true)?;
@@ -174,7 +173,7 @@ impl<'a> Display<'a> {
                 }
                 write!(f, "}}")?;
             }
-            Kind::If(cond, then, otherwise) => {
+            TirKind::If(cond, then, otherwise) => {
                 write!(f, "if ")?;
                 self.fmt(cond, f, displayed, level, false)?;
                 write!(f, " then ")?;
@@ -184,7 +183,7 @@ impl<'a> Display<'a> {
                     self.fmt(otherwise, f, displayed, level, false)?;
                 }
             }
-            Kind::Block(content) => {
+            TirKind::Block(content) => {
                 if !content.is_reserved_value() {
                     writeln!(f, "{{")?;
                     for &expr in self.data.cons.get(content).iter() {
@@ -198,24 +197,24 @@ impl<'a> Display<'a> {
                     write!(f, "{{}}")?;
                 }
             }
-            Kind::Return(expr) => {
+            TirKind::Return(expr) => {
                 write!(f, "return ")?;
                 if let Some(expr) = expr.expand() {
                     self.fmt(expr, f, displayed, level, false)?;
                 }
             }
-            Kind::Argument(id) => {
+            TirKind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
             }
-            Kind::Type => {
+            TirKind::Type => {
                 write!(f, "<type>")?;
             }
-            Kind::Call(caller, func, args) => {
+            TirKind::Call(caller, func, args) => {
                 if let Some(caller) = caller.expand() {
                     write!(
                         f,
                         "{}::",
-                        ty::Display::new(self.types, self.sources, caller)
+                        TyDisplay::new(self.types, self.sources, caller)
                     )?;
                 }
                 write!(f, "{func}(")?;
@@ -228,14 +227,14 @@ impl<'a> Display<'a> {
 
                 write!(f, ")")?;
             }
-            Kind::IntLit(..) | Kind::CharLit | Kind::BoolLit(_) => {
+            TirKind::IntLit(..) | TirKind::CharLit | TirKind::BoolLit(_) => {
                 write!(f, "{}", self.sources.display(ent.span))?;
             }
-            Kind::Loop(block) => {
+            TirKind::Loop(block) => {
                 write!(f, "loop ")?;
                 self.fmt(block, f, displayed, level, false)?;
             }
-            Kind::Break(loop_expr, ret) => {
+            TirKind::Break(loop_expr, ret) => {
                 write!(f, "break ")?;
                 self.fmt(loop_expr, f, displayed, level, false)?;
                 if let Some(ret) = ret.expand() {
@@ -243,19 +242,19 @@ impl<'a> Display<'a> {
                     self.fmt(ret, f, displayed, level, false)?;
                 }
             }
-            Kind::Assign(left, right) => {
+            TirKind::Assign(left, right) => {
                 self.fmt(left, f, displayed, level, false)?;
                 write!(f, " = ")?;
                 self.fmt(right, f, displayed, level, false)?;
             }
-            Kind::Variable(tir) => {
+            TirKind::Variable(tir) => {
                 write!(f, "let ")?;
                 self.fmt(tir, f, displayed, level, false)?;
             }
-            Kind::Access(value) => {
+            TirKind::Access(value) => {
                 self.fmt(value, f, displayed, level, false)?;
             }
-            Kind::Invalid | Kind::LoopInProgress(..) => unreachable!(),
+            TirKind::Invalid | TirKind::LoopInProgress(..) => unreachable!(),
         }
 
         if ident {
@@ -266,7 +265,7 @@ impl<'a> Display<'a> {
     }
 }
 
-impl std::fmt::Display for Display<'_> {
+impl std::fmt::Display for TirDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut displayed = EntitySet::new();
         self.fmt(self.root, f, &mut displayed, 1, true)

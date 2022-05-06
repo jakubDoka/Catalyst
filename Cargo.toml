@@ -35,7 +35,6 @@ members = [
 debug = true
 
 [dependencies]
-cranelift-entity = "0.82.1"
 cranelift-codegen = "0.82.1"
 cranelift-frontend = "0.82.1"
 cranelift-module = "0.82.1"
@@ -45,10 +44,16 @@ target-lexicon = "0.12.3"
 cc = "1.0.73"
 
 lexer = { path = "lexer" }
+lexer_types = { path = "lexer_types" }
 errors = { path = "errors" }
 parser = { path = "parser" }
+ast = { path = "ast" }
 modules = { path = "modules" }
+module_types = { path = "module_types" }
 typec = { path = "typec" }
+typec_types = { path = "typec_types" }
 instance = { path = "instance" }
+instance_types = { path = "instance_types" }
 gen = { path = "gen" }
 cli = { path = "cli" }
+storage = { path = "storage" }

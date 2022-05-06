@@ -1,6 +1,5 @@
 use cranelift_codegen::{
     ir::{self, Type},
-    packed_option::ReservedValue,
 };
 
 use instance_types::*;
@@ -10,21 +9,21 @@ use lexer_types::*;
 use typec_types::*;
 use crate::*;
 
-pub struct Translator<'a> {
-    pub t_types: &'a ty::Types,
+pub struct ReprBuilder<'a> {
+    pub t_types: &'a Types,
     pub t_graph: &'a GenericGraph,
     pub sources: &'a Sources,
-    pub types: &'a mut instance_types::Types,
+    pub types: &'a mut instance_types::Reprs,
     pub ptr_ty: Type,
 }
 
-impl<'a> Translator<'a> {
+impl<'a> ReprBuilder<'a> {
     pub fn translate(&mut self) -> errors::Result {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.t_types.ents.len());
             self.t_graph.total_ordering(&mut vec).unwrap();
             for &ty in &vec {
-                println!("{}", ty::Display::new(self.t_types, self.sources, ty));
+                println!("{}", TyDisplay::new(self.t_types, self.sources, ty));
             }
             vec
         };
@@ -56,41 +55,41 @@ impl<'a> Translator<'a> {
 
 pub fn resolve_type_repr(
     id: Ty,
-    t_types: &ty::Types,
-    types: &mut types::Types,
+    t_types: &Types,
+    reprs: &mut Reprs,
     ptr_ty: Type,
     skip_generic: bool,
 ) {
     let ty = &t_types.ents[id];
     let repr = match ty.kind {
-        _ if ty.flags.contains(ty::Flags::GENERIC) && skip_generic => ir::types::INVALID,
-        ty::Kind::Int(base) => match base {
+        _ if ty.flags.contains(TyFlags::GENERIC) && skip_generic => ir::types::INVALID,
+        TyKind::Int(base) => match base {
             64 => ir::types::I64,
             32 => ir::types::I32,
             16 => ir::types::I16,
             8 => ir::types::I8,
             _ => ptr_ty,
         },
-        ty::Kind::Bool => ir::types::B1,
-        ty::Kind::Struct(fields) => {
-            resolve_struct_repr(id, fields, t_types, types, ptr_ty);
+        TyKind::Bool => ir::types::B1,
+        TyKind::Struct(fields) => {
+            resolve_struct_repr(id, fields, t_types, reprs, ptr_ty);
             return;
         }
-        ty::Kind::Ptr(..) => ptr_ty,
-        ty::Kind::Instance(..) => todo!(),
-        ty::Kind::Nothing
-        | ty::Kind::Bound(..)
-        | ty::Kind::Param(..)
-        | ty::Kind::BoundCombo(..)
-        | ty::Kind::Unresolved => ir::types::INVALID,
+        TyKind::Ptr(..) => ptr_ty,
+        TyKind::Instance(..) => todo!(),
+        TyKind::Nothing
+        | TyKind::Bound(..)
+        | TyKind::Param(..)
+        | TyKind::BoundCombo(..)
+        | TyKind::Unresolved => ir::types::INVALID,
     };
 
     let bytes = repr.bytes() as i32;
     let size = Size::new(bytes, bytes);
-    types.ents[id] = types::Ent {
+    reprs.ents[id] = ReprEnt {
         repr,
         size,
-        flags: Flags::COPYABLE,
+        flags: ReprFlags::COPYABLE,
         align: size.min(Size::PTR),
     };
 }
@@ -105,8 +104,8 @@ macro_rules! resolve_type_repr {
 pub fn resolve_struct_repr(
     ty: Ty,
     fields: SFieldList,
-    t_types: &ty::Types,
-    types: &mut Types,
+    t_types: &Types,
+    reprs: &mut Reprs,
     ptr_ty: Type,
 ) {
     let fields = t_types.sfields.get(fields);
@@ -114,19 +113,19 @@ pub fn resolve_struct_repr(
 
     let align = fields
         .iter()
-        .map(|field| types.ents[field.ty].align)
+        .map(|field| reprs.ents[field.ty].align)
         .fold(Size::ZERO, |acc, align| acc.max(align).min(Size::PTR));
 
     let mut size = Size::ZERO;
     let mut copyable = true;
     for (i, &field) in fields.iter().enumerate() {
-        let ent = &types.ents[field.ty];
+        let ent = &reprs.ents[field.ty];
 
-        copyable &= ent.flags.contains(Flags::COPYABLE);
+        copyable &= ent.flags.contains(ReprFlags::COPYABLE);
 
-        let field = Field { offset: size };
+        let field = ReprField { offset: size };
         let id = ID::raw_field(ty_id, i as u64);
-        assert!(types.fields.insert(id, field).is_none(), "{id:?}");
+        assert!(reprs.fields.insert(id, field).is_none(), "{id:?}");
 
         size = size + ent.size;
         let padding = align - size % align;
@@ -135,9 +134,9 @@ pub fn resolve_struct_repr(
         }
     }
 
-    let (repr, on_stack) = Translator::smallest_repr_for(size, ptr_ty);
-    let flags = (Flags::COPYABLE & copyable) | (Flags::ON_STACK & on_stack);
-    types.ents[ty] = Ent {
+    let (repr, on_stack) = ReprBuilder::smallest_repr_for(size, ptr_ty);
+    let flags = (ReprFlags::COPYABLE & copyable) | (ReprFlags::ON_STACK & on_stack);
+    reprs.ents[ty] = ReprEnt {
         repr,
         flags,
         size,

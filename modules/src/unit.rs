@@ -4,32 +4,33 @@ use std::path::Path;
 use std::process::Command;
 use std::{collections::VecDeque, path::PathBuf};
 
-use module_types::{*, error::Error};
+use module_types::{*, error::ModuleError};
 use lexer_types::*;
 use ast::*;
 use storage::*;
-use crate::*;
 use parser::*;
+use crate::manifest::*;
+use crate::module::*;
 
-pub struct Loader<'a> {
+pub struct UnitBuilder<'a> {
     pub sources: &'a mut Sources,
     pub units: &'a mut Units,
     pub ctx: &'a mut LoaderContext,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
-impl<'a> Loader<'a> {
+impl<'a> UnitBuilder<'a> {
     pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
         self.ctx.clear();
 
         let root = root.canonicalize().map_err(|err| {
-            self.diagnostics.push(Error::RootUnitNotFound {
+            self.diagnostics.push(ModuleError::RootUnitNotFound {
                 path: root.to_path_buf(),
                 trace: err,
             });
         })?;
 
-        let slot = self.units.push(units::Ent::new());
+        let slot = self.units.push(units::UnitEnt::new());
         self.ctx.map.insert(root.as_path(), slot);
 
         self.ctx.frontier.push_back((root, None, slot));
@@ -39,7 +40,7 @@ impl<'a> Loader<'a> {
             self.ctx.buffer.push(&path);
             self.ctx.buffer.push(MANIFEST_LOCAL_PATH);
             let Ok(contents) = std::fs::read_to_string(&self.ctx.buffer).map_err(|err| {
-                self.diagnostics.push(Error::ManifestLoadFail {
+                self.diagnostics.push(ModuleError::ManifestLoadFail {
                     path: path.clone(),
                     trace: err,
                     loc: span,
@@ -96,7 +97,7 @@ impl<'a> Loader<'a> {
                     };
 
                     let Ok(path) = path.canonicalize().map_err(|err| {
-                        self.diagnostics.push(Error::UnitNotFound {
+                        self.diagnostics.push(ModuleError::UnitNotFound {
                             path: path.to_path_buf(),
                             trace: err,
                             loc: path_span,
@@ -108,7 +109,7 @@ impl<'a> Loader<'a> {
                     let id = if let Some(&id) = self.ctx.map.get(path.as_path()) {
                         id
                     } else {
-                        let id = self.units.push(units::Ent::new());
+                        let id = self.units.push(units::UnitEnt::new());
                         self.ctx.map.insert(path.as_path(), id);
                         self.ctx.frontier.push_back((path, Some(path_span), id));
                         id
@@ -133,7 +134,7 @@ impl<'a> Loader<'a> {
         self.ctx
             .graph
             .detect_cycles(slot, Some(&mut ordering))
-            .map_err(|err| self.diagnostics.push(Error::UnitCycle { cycle: err }))?;
+            .map_err(|err| self.diagnostics.push(ModuleError::UnitCycle { cycle: err }))?;
 
         Ok(ordering)
     }
@@ -144,8 +145,8 @@ impl<'a> Loader<'a> {
         link: &str,
         version: &str,
         span: Span,
-    ) -> Result<(), Error> {
-        std::fs::create_dir_all(path).map_err(|err| Error::MkGirtDir {
+    ) -> Result<(), ModuleError> {
+        std::fs::create_dir_all(path).map_err(|err| ModuleError::MkGirtDir {
             path: path.to_path_buf(),
             trace: err,
             loc: span,
@@ -159,7 +160,7 @@ impl<'a> Loader<'a> {
             .arg(link)
             .arg(path)
             .status()
-            .map_err(|err| Error::GitCloneExec {
+            .map_err(|err| ModuleError::GitCloneExec {
                 trace: err,
                 loc: span,
             })?;
@@ -167,7 +168,7 @@ impl<'a> Loader<'a> {
         status
             .success()
             .then_some(())
-            .ok_or_else(|| Error::GitCloneStatus {
+            .ok_or_else(|| ModuleError::GitCloneStatus {
                 code: status,
                 loc: span,
             })?;
@@ -182,7 +183,7 @@ pub struct LoaderContext {
     pub buffer: PathBuf,
     pub frontier: VecDeque<(PathBuf, Option<Span>, Unit)>,
     pub map: Map<Unit>,
-    pub ast: ast::Data,
+    pub ast: AstData,
     pub ast_temp: FramedStack<Ast>,
 }
 
@@ -197,7 +198,7 @@ impl LoaderContext {
             buffer: PathBuf::new(),
             frontier: VecDeque::new(),
             map: Map::new(),
-            ast: ast::Data::new(),
+            ast: AstData::new(),
             ast_temp: FramedStack::new(),
         }
     }

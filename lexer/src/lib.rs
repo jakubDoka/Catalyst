@@ -3,7 +3,7 @@
 #![feature(int_log)]
 #![feature(bool_to_option)]
 
-pub(self) use lexer_types::*;
+use lexer_types::*;
 use std::str::Chars;
 
 pub struct Lexer<'a> {
@@ -26,42 +26,42 @@ impl<'a> Lexer<'a> {
             let start = self.progress();
             let c = match self.peek() {
                 Some(c) => c,
-                None => return self.new_token(token::Kind::Eof, start),
+                None => return self.new_token(TokenKind::Eof, start),
             };
 
             self.next();
 
             let kind = match c {
-                '\n' | ';' => token::Kind::NewLine,
+                '\n' | ';' => TokenKind::NewLine,
 
-                '{' => token::Kind::LeftCurly,
-                '}' => token::Kind::RightCurly,
+                '{' => TokenKind::LeftCurly,
+                '}' => TokenKind::RightCurly,
 
-                '(' => token::Kind::LeftParen,
-                ')' => token::Kind::RightParen,
+                '(' => TokenKind::LeftParen,
+                ')' => TokenKind::RightParen,
 
-                '[' => token::Kind::LeftBracket,
-                ']' => token::Kind::RightBracket,
+                '[' => TokenKind::LeftBracket,
+                ']' => TokenKind::RightBracket,
 
-                ',' => token::Kind::Comma,
-                '.' => token::Kind::Dot,
+                ',' => TokenKind::Comma,
+                '.' => TokenKind::Dot,
                 '\'' => {
                     while let Some(true) = self.next().map(|c| c != '\'') {}
-                    token::Kind::Char
+                    TokenKind::Char
                 }
 
-                '#' => token::Kind::Hash,
+                '#' => TokenKind::Hash,
 
                 '0'..='9' => {
                     while let Some('0'..='9') = self.peek() {
                         self.next();
                     }
-                    token::Kind::Int(-1)
+                    TokenKind::Int(-1)
                 }
 
                 '"' => {
                     while let Some(true) = self.next().map(|c| c != '"') {}
-                    token::Kind::String
+                    TokenKind::String
                 }
 
                 _ if c.is_whitespace() => continue,
@@ -71,9 +71,9 @@ impl<'a> Lexer<'a> {
                     }
 
                     match self.view(start) {
-                        "->" => token::Kind::RightArrow,
-                        ":" => token::Kind::Colon,
-                        "::" => token::Kind::DoubleColon,
+                        "->" => TokenKind::RightArrow,
+                        ":" => TokenKind::Colon,
+                        "::" => TokenKind::DoubleColon,
                         "/*" => {
                             let mut depth = 1;
                             while depth > 0 {
@@ -100,7 +100,7 @@ impl<'a> Lexer<'a> {
                             }
                             continue;
                         }
-                        _ => token::Kind::Operator,
+                        _ => TokenKind::Operator,
                     }
                 }
                 _ if c.is_alphabetic() || c == '_' => {
@@ -109,23 +109,23 @@ impl<'a> Lexer<'a> {
                     }
 
                     match self.view(start) {
-                        "fn" => token::Kind::Fn,
-                        "return" => token::Kind::Return,
-                        "use" => token::Kind::Use,
-                        "extern" => token::Kind::Extern,
-                        "if" => token::Kind::If,
-                        "else" => token::Kind::Else,
-                        "true" => token::Kind::Bool(true),
-                        "false" => token::Kind::Bool(false),
-                        "let" => token::Kind::Let,
-                        "loop" => token::Kind::Loop,
-                        "break" => token::Kind::Break,
-                        "struct" => token::Kind::Struct,
-                        "bound" => token::Kind::Bound,
-                        "mut" => token::Kind::Mut,
-                        "impl" => token::Kind::Impl,
-                        "as" => token::Kind::As,
-                        _ => token::Kind::Ident,
+                        "fn" => TokenKind::Fn,
+                        "return" => TokenKind::Return,
+                        "use" => TokenKind::Use,
+                        "extern" => TokenKind::Extern,
+                        "if" => TokenKind::If,
+                        "else" => TokenKind::Else,
+                        "true" => TokenKind::Bool(true),
+                        "false" => TokenKind::Bool(false),
+                        "let" => TokenKind::Let,
+                        "loop" => TokenKind::Loop,
+                        "break" => TokenKind::Break,
+                        "struct" => TokenKind::Struct,
+                        "bound" => TokenKind::Bound,
+                        "mut" => TokenKind::Mut,
+                        "impl" => TokenKind::Impl,
+                        "as" => TokenKind::As,
+                        _ => TokenKind::Ident,
                     }
                 }
 
@@ -136,7 +136,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn new_token(&mut self, kind: token::Kind, start: usize) -> Token {
+    fn new_token(&mut self, kind: TokenKind, start: usize) -> Token {
         Token::new(kind, Span::new(self.source(), start, self.progress()))
     }
 

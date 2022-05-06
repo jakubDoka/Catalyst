@@ -13,7 +13,7 @@ pub struct Loop {
 }
 
 #[derive(Debug)]
-pub struct Func {
+pub struct FuncCtx {
     pub name: Span,
     pub sig: ir::Signature,
 
@@ -29,9 +29,9 @@ pub struct Func {
     pub loops: Vec<Loop>,
 }
 
-impl Func {
+impl FuncCtx {
     pub fn new() -> Self {
-        Func {
+        FuncCtx {
             name: Span::default(),
             sig: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),

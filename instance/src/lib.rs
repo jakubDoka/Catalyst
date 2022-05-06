@@ -5,8 +5,7 @@
 
 pub mod error;
 pub mod func;
-pub mod types;
+pub mod repr;
 
-pub use error::*;
-pub use func::*;
-pub use types::*;
+pub use func::MirBuilder;
+pub use repr::ReprBuilder;

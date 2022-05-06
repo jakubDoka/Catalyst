@@ -2,10 +2,10 @@ use crate::*;
 
 use typec_types::*;
 
-pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String) -> std::fmt::Result {
+pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut String) -> std::fmt::Result {
     use std::fmt::Write;
     match error {
-        Error::NonPointerDereference { loc, ty } => {
+        TyError::NonPointerDereference { loc, ty } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "'")?;
@@ -14,13 +14,13 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             })?;
             writeln!(to, "|> types that can be dereferenced: &<type> *<type>")?;
         }
-        Error::DuplicateBound { loc } => {
+        TyError::DuplicateBound { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "this generic parameter contains duplicate bound")
             })?;
         }
-        Error::GenericEntry { tag, generics, loc } => {
+        TyError::GenericEntry { tag, generics, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "function cannot be both entry point and generic")
@@ -35,7 +35,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             })?;
             writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
         }
-        Error::MissingBound { loc, input, bound } => {
+        TyError::MissingBound { loc, input, bound } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "type '")?;
@@ -45,7 +45,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "'")
             })?;
         }
-        Error::ReturnTypeMismatch {
+        TyError::ReturnTypeMismatch {
             because,
             expected,
             got,
@@ -67,7 +67,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 })?;
             }
         }
-        Error::BoundImplFuncParamCount {
+        TyError::BoundImplFuncParamCount {
             impl_func,
             bound_func,
             expected,
@@ -82,7 +82,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "expected because of this function")
             })?;
         }
-        Error::UnknownGenericParam { loc, func, param } => {
+        TyError::UnknownGenericParam { loc, func, param } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "unknown generic parameter {}", param)
@@ -100,7 +100,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             writeln!(to, "|> use '_' instead of type for known parameters")?;
             writeln!(to, "|> omit tali parameters that are known")?;
         }
-        Error::BreakValueTypeMismatch {
+        TyError::BreakValueTypeMismatch {
             because,
             expected,
             got,
@@ -120,7 +120,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "' return value of this break")
             })?;
         }
-        Error::MissingBreakValue {
+        TyError::MissingBreakValue {
             because,
             expected,
             loc,
@@ -137,13 +137,13 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "' return value in previous break")
             })?;
         }
-        &Error::MissingBoundImplFunc { func, loc } => {
+        &TyError::MissingBoundImplFunc { func, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "missing implementation of '{}'", sources.display(func))
             })?;
         }
-        Error::DuplicateBoundImpl { because, loc } => {
+        TyError::DuplicateBoundImpl { because, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "this bound impl is colliding with")
@@ -154,7 +154,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "this bound impl")
             })?;
         }
-        Error::FunctionParamMismatch {
+        TyError::FunctionParamMismatch {
             because,
             expected,
             got,
@@ -173,7 +173,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "because of this definition")
             })?;
         }
-        Error::CallArgTypeMismatch {
+        TyError::CallArgTypeMismatch {
             because,
             expected,
             got,
@@ -193,7 +193,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "because of this definition")
             })?;
         }
-        Error::UnknownField {
+        TyError::UnknownField {
             candidates,
             on,
             loc,
@@ -215,7 +215,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 writeln!(to)?;
             }
         }
-        Error::ExpectedStruct { got, loc } => {
+        TyError::ExpectedStruct { got, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "expected struct type but got '")?;
@@ -223,7 +223,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "'")
             })?;
         }
-        Error::ConstructorFieldTypeMismatch {
+        TyError::ConstructorFieldTypeMismatch {
             because,
             expected,
             got,
@@ -243,7 +243,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "'")
             })?;
         }
-        Error::ConstructorMissingFields { on, missing, loc } => {
+        TyError::ConstructorMissingFields { on, missing, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "missing fields in constructor of '")?;
@@ -257,7 +257,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             }
             writeln!(to)?;
         }
-        Error::UnexpectedReturnValue { because, loc } => {
+        TyError::UnexpectedReturnValue { because, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "return value is not expected")
@@ -272,7 +272,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 "|> you can add a return type with ') -> <type> {{' syntax"
             )?;
         }
-        Error::IfConditionTypeMismatch { got, loc } => {
+        TyError::IfConditionTypeMismatch { got, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "expected 'bool' type but got '")?;
@@ -281,7 +281,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             })?;
             writeln!(to, "|> if can only take 'bool' as condition\n")?;
         }
-        Error::AssignToNonAssignable { because, loc } => {
+        TyError::AssignToNonAssignable { because, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "cannot assign to non-assignable type")
@@ -299,7 +299,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 )?;
             }
         }
-        Error::AssignTypeMismatch {
+        TyError::AssignTypeMismatch {
             because,
             expected,
             got,
@@ -318,7 +318,7 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 write!(to, "'")
             })?;
         }
-        &Error::BinaryOperatorNotFound {
+        &TyError::BinaryOperatorNotFound {
             left_ty,
             right_ty,
             loc,
@@ -327,12 +327,12 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 to,
                 ansi_consts::ERR,
                 "|> Binary operator '{}' {} '{}' does not exist.",
-                ty::Display::new(types, sources, left_ty),
+                TyDisplay::new(types, sources, left_ty),
                 sources.display(loc),
-                ty::Display::new(types, sources, right_ty)
+                TyDisplay::new(types, sources, right_ty)
             )?;
         }
-        Error::InvalidPath { loc } => {
+        TyError::InvalidPath { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "invalid path syntax")
@@ -342,19 +342,19 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
                 "|> possible syntaxes: '<module>::<item>' '<module>::<type>::<item>'"
             )?;
         }
-        Error::InvalidTypeExpression { loc } => {
+        TyError::InvalidTypeExpression { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "invalid type expression")
             })?;
         }
-        Error::ExpectedConcreteType { loc } => {
+        TyError::ExpectedConcreteType { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "expected concrete type")
             })?;
         }
-        Error::GenericTypeMismatch {
+        TyError::GenericTypeMismatch {
             expected,
             found,
             loc,
@@ -369,14 +369,14 @@ pub fn display(error: &Error, sources: &Sources, types: &Types, to: &mut String)
             })?;
         }
         #[allow(unused)]
-        Error::OperatorArgCountMismatch {
+        TyError::OperatorArgCountMismatch {
             because,
             expected,
             got,
             loc,
         } => todo!(),
         #[allow(unused)]
-        Error::BinaryTypeMismatch { expected, got, loc } => todo!(),
+        TyError::BinaryTypeMismatch { expected, got, loc } => todo!(),
     }
 
     writeln!(to)?;

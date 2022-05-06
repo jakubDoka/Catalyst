@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use lexer_types::*;
 use storage::*;
 
-pub type Units = PrimaryMap<Unit, Ent>;
+pub type Units = PrimaryMap<Unit, UnitEnt>;
 
 #[derive(Debug, Default)]
-pub struct Ent {
+pub struct UnitEnt {
     pub local_source_path: PathBuf,
     pub root_path: PathBuf,
     pub source: Source,
 }
 
-impl Ent {
+impl UnitEnt {
     pub fn new() -> Self {
         Self::default()
     }

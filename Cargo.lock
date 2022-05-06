@@ -41,10 +41,10 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 name = "catalyst"
 version = "0.1.0"
 dependencies = [
+ "ast",
  "cc",
  "cli",
  "cranelift-codegen",
- "cranelift-entity",
  "cranelift-frontend",
  "cranelift-module",
  "cranelift-native",
@@ -52,11 +52,16 @@ dependencies = [
  "errors",
  "gen",
  "instance",
+ "instance_types",
  "lexer",
+ "lexer_types",
+ "module_types",
  "modules",
  "parser",
+ "storage",
  "target-lexicon",
  "typec",
+ "typec_types",
 ]
 
 [[package]]
@@ -187,14 +192,12 @@ name = "gen"
 version = "0.1.0"
 dependencies = [
  "cranelift-codegen",
- "cranelift-entity",
  "cranelift-frontend",
  "cranelift-module",
- "instance",
- "lexer",
- "modules",
- "parser",
- "typec",
+ "instance_types",
+ "lexer_types",
+ "storage",
+ "typec_types",
 ]
 
 [[package]]

@@ -1,18 +1,18 @@
 use ast::Ast;
 use lexer_types::*;
-use module_types::{*, scope::Scope, tree::GenericGraph, modules::Modules};
+use module_types::{*, scope::Scope, tree::GenericGraph, module::Modules};
 use typec_types::*;
 use storage::*;
 
-use crate::collector::Context;
+use crate::scope::ScopeContext;
 use crate::*;
 
 pub struct TyBuilder<'a> {
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
     pub sources: &'a Sources,
-    pub ast: &'a ast::Data,
-    pub ctx: &'a mut Context,
+    pub ast: &'a AstData,
+    pub ctx: &'a mut ScopeContext,
     pub graph: &'a mut GenericGraph,
     pub modules: &'a mut Modules,
     pub ty: Ty,
@@ -21,16 +21,16 @@ pub struct TyBuilder<'a> {
 
 impl<'a> TyBuilder<'a> {
     pub fn build(&mut self) -> errors::Result {
-        let Ent { id, .. } = self.types.ents[self.ty];
+        let TyEnt { id, .. } = self.types.ents[self.ty];
         let ast = self.ctx.type_ast[self.ty];
         if ast.is_reserved_value() {
             return Ok(());
         }
-        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
+        let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
         match kind {
-            ast::Kind::Struct => self.build_struct(id, ast)?,
-            ast::Kind::Bound => self.build_bound(id, ast)?,
+            ast::AstKind::Struct => self.build_struct(id, ast)?,
+            ast::AstKind::Bound => self.build_bound(id, ast)?,
             _ => todo!(
                 "Unhandled type decl {:?}: {}",
                 kind,
@@ -61,7 +61,7 @@ impl<'a> TyBuilder<'a> {
             {
                 let span = self.ast.nodes[ident].span;
                 let id = self.sources.id(span);
-                self.scope.push_item(id, scope::Item::new(param, span))
+                self.scope.push_item(id, ScopeItem::new(param, span))
             }
         }
 
@@ -98,7 +98,7 @@ impl<'a> TyBuilder<'a> {
                     .map(|f| f.next.is_some())
                     .unwrap_or(true));
 
-                let field_ty = if let Kind::Instance(header, ..) = self.types.ents[field_ty].kind {
+                let field_ty = if let TyKind::Instance(header, ..) = self.types.ents[field_ty].kind {
                     header
                 } else {
                     field_ty
@@ -109,7 +109,7 @@ impl<'a> TyBuilder<'a> {
             self.types.sfields.close_frame()
         };
 
-        self.types.ents[self.ty].kind = Kind::Struct(fields);
+        self.types.ents[self.ty].kind = TyKind::Struct(fields);
         self.graph.close_node();
 
         self.scope.pop_frame();
@@ -121,7 +121,7 @@ impl<'a> TyBuilder<'a> {
 }
 
 impl AstIDExt for TyBuilder<'_> {
-    fn state(&self) -> (&ast::Data, &Sources) {
+    fn state(&self) -> (&AstData, &Sources) {
         (self.ast, self.sources)
     }
 }

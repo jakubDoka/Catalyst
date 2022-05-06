@@ -5,12 +5,14 @@
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Signature, StackSlotData};
 use cranelift_codegen::{ir, packed_option::PackedOption};
-use cranelift_entity::{EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Linkage, Module};
-use instance::*;
+use instance_types::*;
+use storage::*;
+use typec_types::*;
+use lexer_types::*;
 
-pub struct Generator<'a> {
+pub struct CirBuilder<'a> {
     pub module: &'a mut dyn Module,
     pub builder: &'a mut FunctionBuilder<'a>,
     pub value_lookup: &'a mut SecondaryMap<mir::Value, PackedOption<ir::Value>>,
@@ -18,14 +20,14 @@ pub struct Generator<'a> {
     pub block_lookup: &'a mut SecondaryMap<mir::Block, PackedOption<ir::Block>>,
     pub stack_slot_lookup: &'a mut SecondaryMap<mir::StackSlot, PackedOption<ir::StackSlot>>,
     pub variable_set: &'a mut EntitySet<Variable>,
-    pub t_funcs: &'a typec::Funcs,
-    pub types: &'a instance::Types,
-    pub t_types: &'a typec::Types,
-    pub source: &'a instance::func::Func,
+    pub t_funcs: &'a Funcs,
+    pub types: &'a Reprs,
+    pub t_types: &'a Types,
+    pub source: &'a FuncCtx,
     pub sources: &'a Sources,
 }
 
-impl<'a> Generator<'a> {
+impl<'a> CirBuilder<'a> {
     pub fn generate(&mut self) {
         Self::transfer_signature(&self.source.sig, &mut self.builder.func.signature);
 
@@ -76,7 +78,7 @@ impl<'a> Generator<'a> {
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
             mir::InstKind::Call(func, args) => {
-                if self.t_funcs[func].kind == typec::func::Kind::Builtin {
+                if self.t_funcs[func].kind == TFuncKind::Builtin {
                     self.generate_native_call(func, args, inst.value);
                     return;
                 }
@@ -511,7 +513,7 @@ impl<'a> Generator<'a> {
 
         if flags.contains(mir::Flags::POINTER) {
             let loader_repr = repr.as_int();
-            if self.types.ents[ty].flags.contains(types::Flags::ON_STACK) || as_pointer {
+            if self.types.ents[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
                 value
             } else {
                 let value = self
@@ -548,8 +550,8 @@ impl<'a> Generator<'a> {
 }
 
 /// returns none if function should not even be linked
-pub fn func_linkage(kind: typec::func::Kind) -> Option<Linkage> {
-    use typec::func::Kind::*;
+pub fn func_linkage(kind: TFuncKind) -> Option<Linkage> {
+    use TFuncKind::*;
     Some(match kind {
         Local | Owned(..) | Instance(..) => Linkage::Export,
         Builtin | Bound(..) => return None,

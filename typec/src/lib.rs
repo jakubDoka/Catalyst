@@ -4,16 +4,20 @@
 #![feature(bool_to_option)]
 #![feature(if_let_guard)]
 
-pub mod collector;
+pub mod scope;
 pub mod error;
-pub mod func_builder;
-pub mod ty_builder;
+pub mod func;
+pub mod ty;
+
+pub use scope::{ScopeBuilder, ScopeContext};
+pub use ty::TyBuilder;
+pub use func::TirBuilder;
 
 use errors::*;
 use lexer_types::*;
 use storage::*;
 use module_types::{*, scope::Scope};
-use typec_types::{*, Error};
+use typec_types::{*, TyError};
 use ast::*;
 
 pub trait TyDump {
@@ -44,7 +48,7 @@ pub fn instantiate(target: Ty, params: &[Ty], types: &mut Types) -> errors::Resu
 
 /// instantiates new type, call this only when clearly necessary, function can add new entities to `types`
 /// so keep the target abstract for as long as possible, if you want to create instance of a generic type,
-/// wrap the existing generic type ins [`ty::Kind::Instance`] and provide parameters. Instances will get
+/// wrap the existing generic type ins [`Kind::Instance`] and provide parameters. Instances will get
 /// resolved later, similarly as generic functions do.
 pub fn instantiate_low(
     target: Ty,
@@ -52,15 +56,15 @@ pub fn instantiate_low(
     types: &mut Types,
     new_type_dump: &mut impl TyDump,
 ) -> errors::Result<Ty> {
-    let ty::Ent { kind, flags, .. } = types.ents[target];
+    let TyEnt { kind, flags, .. } = types.ents[target];
 
-    if !flags.contains(ty::Flags::GENERIC) {
+    if !flags.contains(TyFlags::GENERIC) {
         return Ok(target);
     }
 
     let result = match kind {
-        ty::Kind::Param(i, ..) => params[i as usize],
-        ty::Kind::Ptr(ty, ..) => {
+        TyKind::Param(i, ..) => params[i as usize],
+        TyKind::Ptr(ty, ..) => {
             let ty = instantiate_low(ty, params, types, new_type_dump)?;
             pointer_of(ty, types)
         }
@@ -93,13 +97,13 @@ pub fn infer_parameters(
     let mut frontier = vec![(reference, parametrized)];
 
     while let Some((reference, parametrized)) = frontier.pop() {
-        let ty::Ent { kind, flags, .. } = types.ents[parametrized];
-        if !flags.contains(ty::Flags::GENERIC) {
+        let TyEnt { kind, flags, .. } = types.ents[parametrized];
+        if !flags.contains(TyFlags::GENERIC) {
             continue;
         }
 
         match (kind, types.ents[reference].kind) {
-            (ty::Kind::Param(index), _) => {
+            (TyKind::Param(index), _) => {
                 // we use `base_of_low` because we want to compare parameter
                 // backing bounds correctly
 
@@ -119,11 +123,11 @@ pub fn infer_parameters(
                     params[index as usize] = reference;
                 }
             }
-            (ty::Kind::Ptr(ty, depth), ty::Kind::Ptr(ref_ty, ref_depth)) if depth == ref_depth => {
+            (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth)) if depth == ref_depth => {
                 frontier.push((ref_ty, ty));
             }
             (a, b) if a == b => {}
-            _ => diagnostics.push(Error::GenericTypeMismatch {
+            _ => diagnostics.push(TyError::GenericTypeMismatch {
                 found: reference,
                 expected: parametrized,
                 loc: span,
@@ -134,12 +138,12 @@ pub fn infer_parameters(
     Ok(())
 }
 
-/// parse type parses and ast representation of a type into `ty::Ent`, saves it into `types` ins case new
+/// parse type parses and ast representation of a type into `Ent`, saves it into `types` ins case new
 /// instance was created and returns the id to the type.
 pub fn parse_type(
     ty: Ast,
     sources: &Sources,
-    ast: &ast::Data,
+    ast: &AstData,
     scope: &Scope,
     types: &mut Types,
     diagnostics: &mut Diagnostics,
@@ -147,7 +151,7 @@ pub fn parse_type(
     let res = parse_type_optional(ty, sources, ast, scope, types, diagnostics)?;
     if res.is_reserved_value() {
         let span = ast.nodes[ty].span;
-        diagnostics.push(Error::ExpectedConcreteType { loc: span });
+        diagnostics.push(TyError::ExpectedConcreteType { loc: span });
         return Err(());
     }
     Ok(res)
@@ -171,14 +175,14 @@ macro_rules! parse_type {
 pub fn parse_type_optional(
     ty: Ast,
     sources: &Sources,
-    ast: &ast::Data,
+    ast: &AstData,
     scope: &Scope,
     types: &mut Types,
     diagnostics: &mut Diagnostics,
 ) -> errors::Result<Ty> {
-    let ast::Ent { kind, span, .. } = ast.nodes[ty];
+    let ast::AstEnt { kind, span, .. } = ast.nodes[ty];
     match kind {
-        ast::Kind::Ident => {
+        ast::AstKind::Ident => {
             let str = sources.display(span);
 
             if str == "_" {
@@ -187,12 +191,12 @@ pub fn parse_type_optional(
 
             scope.get(diagnostics, str, span)
         }
-        ast::Kind::Instantiation => {
+        ast::AstKind::Instantiation => {
             parse_instance_type(ty, sources, ast, scope, types, diagnostics)
         }
-        ast::Kind::Pointer => parse_ptr_type(ty, sources, ast, scope, types, diagnostics),
+        ast::AstKind::Pointer => parse_ptr_type(ty, sources, ast, scope, types, diagnostics),
         _ => {
-            diagnostics.push(Error::InvalidTypeExpression { loc: span });
+            diagnostics.push(TyError::InvalidTypeExpression { loc: span });
             return Err(());
         }
     }
@@ -202,7 +206,7 @@ pub fn parse_type_optional(
 pub fn parse_instance_type(
     ty: Ast,
     sources: &Sources,
-    ast: &ast::Data,
+    ast: &AstData,
     scope: &Scope,
     types: &mut Types,
     diagnostics: &mut Diagnostics,
@@ -216,7 +220,7 @@ pub fn parse_instance_type(
     for &param in &children[1..] {
         let param = parse_type(param, sources, ast, scope, types, diagnostics)?;
         id = id + types.ents[param].id;
-        generic |= types.ents[param].flags.contains(ty::Flags::GENERIC);
+        generic |= types.ents[param].flags.contains(TyFlags::GENERIC);
         types.args.push_one(param);
     }
 
@@ -228,11 +232,11 @@ pub fn parse_instance_type(
     let params = types.args.close_frame();
 
     let result = {
-        let ent = ty::Ent {
+        let ent = TyEnt {
             id,
             name: ast.nodes[ty].span,
-            kind: ty::Kind::Instance(header, params),
-            flags: ty::Flags::GENERIC & generic,
+            kind: TyKind::Instance(header, params),
+            flags: TyFlags::GENERIC & generic,
         };
         types.ents.push(ent)
     };
@@ -246,7 +250,7 @@ pub fn parse_instance_type(
 pub fn parse_ptr_type(
     ty: Ast,
     sources: &Sources,
-    ast: &ast::Data,
+    ast: &AstData,
     scope: &Scope,
     types: &mut Types,
     diagnostics: &mut Diagnostics,
@@ -261,7 +265,7 @@ pub fn parse_ptr_type(
 
 /// creates a pointer of `ty`, already instantiated entities will be reused.
 pub fn pointer_of(ty: Ty, types: &mut Types) -> Ty {
-    let ty::Ent {
+    let TyEnt {
         kind,
         id,
         name,
@@ -274,16 +278,16 @@ pub fn pointer_of(ty: Ty, types: &mut Types) -> Ty {
         return already;
     }
 
-    let depth = if let ty::Kind::Ptr(.., depth) = kind {
+    let depth = if let TyKind::Ptr(.., depth) = kind {
         depth
     } else {
         0
     };
 
-    let ent = ty::Ent {
+    let ent = TyEnt {
         id,
         name,
-        kind: ty::Kind::Ptr(ty, depth + 1),
+        kind: TyKind::Ptr(ty, depth + 1),
         flags,
     };
     let ptr = types.ents.push(ent);
@@ -299,7 +303,7 @@ pub fn parse_composite_bound(
     asts: &[Ast],
     span: Span,
     sources: &Sources,
-    ast: &ast::Data,
+    ast: &AstData,
     scope: &Scope,
     types: &mut Types,
     diagnostics: &mut Diagnostics,
@@ -315,7 +319,7 @@ pub fn parse_composite_bound(
     let duplicates = types.args.top().windows(2).any(|w| w[0] == w[1]);
 
     if duplicates {
-        diagnostics.push(Error::DuplicateBound { loc: span });
+        diagnostics.push(TyError::DuplicateBound { loc: span });
     }
 
     let id = ID::new("<bound_combo>")
@@ -333,7 +337,7 @@ pub fn parse_composite_bound(
 
     // make bound combo implement all contained bounds
     for &ty in types.args.top() {
-        let ty::Kind::Bound(funcs) = types.ents[ty].kind else {
+        let TyKind::Bound(funcs) = types.ents[ty].kind else {
             unreachable!();
         };
         let bound = types.ents[ty].id;
@@ -352,11 +356,11 @@ pub fn parse_composite_bound(
 
     let combo = {
         let bounds = types.args.close_frame();
-        let ent = ty::Ent {
+        let ent = TyEnt {
             id,
             name: span,
-            kind: ty::Kind::BoundCombo(bounds),
-            flags: ty::Flags::GENERIC,
+            kind: TyKind::BoundCombo(bounds),
+            flags: TyFlags::GENERIC,
         };
         types.ents.push(ent)
     };
@@ -376,8 +380,8 @@ pub fn implements(
     // bound can be pain Bound or BoundCombo
     let a = &[bound];
     let bounds = match types.ents[bound].kind {
-        ty::Kind::Bound(..) => a,
-        ty::Kind::BoundCombo(combo) => types.args.get(combo),
+        TyKind::Bound(..) => a,
+        TyKind::BoundCombo(combo) => types.args.get(combo),
         _ => unreachable!("{:?}", types.ents[bound].kind),
     };
 
@@ -389,7 +393,7 @@ pub fn implements(
         let bound_id = types.ents[bound].id;
         let id = ID::bound_impl(bound_id, input_id);
         if types.bound_cons.get(id).is_none() {
-            diagnostics.push(Error::MissingBound {
+            diagnostics.push(TyError::MissingBound {
                 input,
                 bound,
                 loc: span,
@@ -422,7 +426,7 @@ pub fn create_builtin_items(
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
-    target: &mut Vec<modules::Item>,
+    target: &mut Vec<module::ModuleItem>,
 ) {
     let comparison_operators = "== != < > <= >=";
     let math_operators = "+ - * / %";
@@ -432,7 +436,7 @@ pub fn create_builtin_items(
 
     for ty in types.builtin.all() {
         let ent = &types.ents[ty];
-        target.push(modules::Item::new(ent.id, ty, ent.name));
+        target.push(module::ModuleItem::new(ent.id, ty, ent.name));
     }
 
     for op in integer_binary_operators.split(' ') {
@@ -488,7 +492,7 @@ fn create_func(
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
-    dest: &mut Vec<modules::Item>,
+    dest: &mut Vec<module::ModuleItem>,
 ) {
     let span = builtin_source.make_span(sources, name);
     let sig = Sig {
@@ -497,14 +501,14 @@ fn create_func(
         ..Default::default()
     };
     let func = {
-        let ent = func::Ent {
+        let ent = TFuncEnt {
             sig,
             name: span,
-            kind: func::Kind::Builtin,
+            kind: TFuncKind::Builtin,
             ..Default::default()
         };
         funcs.push(ent)
     };
-    let item = modules::Item::new(id, func, span);
+    let item = module::ModuleItem::new(id, func, span);
     dest.push(item);
 }

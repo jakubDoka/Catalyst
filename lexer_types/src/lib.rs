@@ -4,7 +4,6 @@ use std::{
 };
 
 use storage::*;
-use token::Kind;
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 
@@ -344,16 +343,16 @@ impl ReservedValue for Span {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Token {
-    kind: Kind,
+    kind: TokenKind,
     span: Span,
 }
 
 impl Token {
-    pub fn new(kind: Kind, span: Span) -> Token {
+    pub fn new(kind: TokenKind, span: Span) -> Token {
         Self { kind, span }
     }
 
-    pub fn kind(&self) -> Kind {
+    pub fn kind(&self) -> TokenKind {
         self.kind
     }
 
@@ -366,67 +365,65 @@ impl Token {
     }
 }
 
-pub mod token {
-    macro_rules! gen_kind {
-        ($($name:ident$(($ty:ident))? = $repr:literal,)*) => {
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            pub enum Kind {
-                $($name$(($ty))?),*
-            }
-    
-            impl Kind {
-                pub fn as_str(&self) -> &'static str {
-                    #[allow(unused)]
-                    match self {
-                        $(Self::$name$(($ty))? => $repr,)*
-                    }
+macro_rules! gen_kind {
+    ($($name:ident$(($ty:ident))? = $repr:literal,)*) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum TokenKind {
+            $($name$(($ty))?),*
+        }
+
+        impl TokenKind {
+            pub fn as_str(&self) -> &'static str {
+                #[allow(unused)]
+                match self {
+                    $(Self::$name$(($ty))? => $repr,)*
                 }
             }
-        };
-    }
-    
-    gen_kind!(
-        Fn = "'fn'",
-        Return = "'return'",
-        Use = "'use'",
-        Extern = "'extern'",
-        If = "'if'",
-        Else = "'else'",
-        Loop = "'loop'",
-        Break = "'break'",
-        Let = "'let'",
-        Struct = "'struct'",
-        Bound = "'bound'",
-        Mut = "'mut'",
-        Impl = "'impl'",
-        As = "'as'",
-        Ident = "<ident>",
-        Operator = "<operator>",
-        Int(i16) = "<int>",
-        String = "<string>",
-        Bool(bool) = "<bool>",
-        Char = "<char>",
-        LeftCurly = "'{'",
-        RightCurly = "'}'",
-        LeftParen = "'('",
-        RightParen = "')'",
-        LeftBracket = "'['",
-        RightBracket = "']'",
-        Comma = "','",
-        Colon = "':'",
-        Dot = "'.'",
-        RightArrow = "'->'",
-        DoubleColon = "'::'",
-        Hash = "'#'",
-        NewLine = "'\\n' | ';'",
-        Eof = "<eof>",
-        None = "<none>",
-    );
-    
-    impl Default for Kind {
-        fn default() -> Self {
-            Kind::None
         }
+    };
+}
+
+gen_kind!(
+    Fn = "'fn'",
+    Return = "'return'",
+    Use = "'use'",
+    Extern = "'extern'",
+    If = "'if'",
+    Else = "'else'",
+    Loop = "'loop'",
+    Break = "'break'",
+    Let = "'let'",
+    Struct = "'struct'",
+    Bound = "'bound'",
+    Mut = "'mut'",
+    Impl = "'impl'",
+    As = "'as'",
+    Ident = "<ident>",
+    Operator = "<operator>",
+    Int(i16) = "<int>",
+    String = "<string>",
+    Bool(bool) = "<bool>",
+    Char = "<char>",
+    LeftCurly = "'{'",
+    RightCurly = "'}'",
+    LeftParen = "'('",
+    RightParen = "')'",
+    LeftBracket = "'['",
+    RightBracket = "']'",
+    Comma = "','",
+    Colon = "':'",
+    Dot = "'.'",
+    RightArrow = "'->'",
+    DoubleColon = "'::'",
+    Hash = "'#'",
+    NewLine = "'\\n' | ';'",
+    Eof = "<eof>",
+    None = "<none>",
+);
+
+impl Default for TokenKind {
+    fn default() -> Self {
+        TokenKind::None
     }
 }
 

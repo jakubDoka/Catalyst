@@ -1,28 +1,29 @@
 use lexer_types::*;
+use ast::*;
 
-pub enum Error {
+pub enum AstError {
     ExpectedAssign {
-        got: token::Kind,
+        got: TokenKind,
         loc: Span,
     },
     UnexpectedToken {
-        got: token::Kind,
-        expected: Vec<token::Kind>,
+        got: TokenKind,
+        expected: Vec<TokenKind>,
         loc: Span,
     },
 }
 
-impl Error {
+impl AstError {
     pub fn display(&self, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
         match self {
-            Error::ExpectedAssign { got, loc } => {
+            AstError::ExpectedAssign { got, loc } => {
                 loc.loc_to(sources, to)?;
                 loc.underline_error(sources, to, &|to| {
                     write!(to, "expected '=' but got {}", got.as_str())
                 })?;
             }
-            Error::UnexpectedToken { got, expected, loc } => {
+            AstError::UnexpectedToken { got, expected, loc } => {
                 loc.loc_to(sources, to)?;
                 loc.underline_error(sources, to, &|to| {
                     write!(to, "expected ")?;
@@ -44,12 +45,12 @@ impl Error {
 }
 
 pub struct FileDisplay<'a> {
-    file: &'a ast::Data,
+    file: &'a AstData,
     source: &'a str,
 }
 
 impl<'a> FileDisplay<'a> {
-    pub fn new(file: &'a ast::Data, source: &'a str) -> Self {
+    pub fn new(file: &'a AstData, source: &'a str) -> Self {
         Self { file, source }
     }
 }

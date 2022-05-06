@@ -1,23 +1,23 @@
 use storage::*;
 use lexer_types::*;
 
-use crate::{ty::{self, *}, tir::*};
+use crate::*;
 
 use std::fmt::Write;
 
-pub type Funcs = PrimaryMap<Func, Ent>;
+pub type Funcs = PrimaryMap<Func, TFuncEnt>;
 
 #[derive(Debug, Copy, Clone, Default)]
-pub struct Ent {
+pub struct TFuncEnt {
     pub sig: Sig,
     pub name: Span,
-    pub kind: Kind,
+    pub kind: TFuncKind,
     pub body: Tir,
     pub args: TirList,
-    pub flags: Flags,
+    pub flags: TFuncFlags,
 }
 
-impl Ent {
+impl TFuncEnt {
     pub fn new() -> Self {
         Self::default()
     }
@@ -38,7 +38,7 @@ impl Ent {
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u32 {
+    pub struct TFuncFlags: u32 {
         const ENTRY = 1 << 0;
         const GENERIC = 1 << 1;
         const INLINE = 1 << 2;
@@ -46,10 +46,10 @@ bitflags! {
     }
 }
 
-impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(TFuncFlags);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Kind {
+pub enum TFuncKind {
     Local,
     External,
     // (bound, relative index)
@@ -59,9 +59,9 @@ pub enum Kind {
     Builtin,
 }
 
-impl Default for Kind {
+impl Default for TFuncKind {
     fn default() -> Self {
-        Kind::Local
+        TFuncKind::Local
     }
 }
 
@@ -96,12 +96,12 @@ impl std::fmt::Display for SignatureDisplay<'_> {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", ty::Display::new(self.types, self.sources, ty))?;
+            write!(f, "{}", TyDisplay::new(self.types, self.sources, ty))?;
         }
         write!(
             f,
             ") -> {}",
-            ty::Display::new(self.types, self.sources, self.sig.ret)
+            TyDisplay::new(self.types, self.sources, self.sig.ret)
         )?;
         Ok(())
     }

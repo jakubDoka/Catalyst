@@ -1,22 +1,22 @@
-use module_types::modules::Modules;
+use module_types::module::Modules;
 
-use crate::{Error, *, collector::Context};
+use crate::{TyError, *, scope::ScopeContext};
 
-pub struct FuncBuilder<'a> {
+pub struct TirBuilder<'a> {
     pub func: Func,
     pub funcs: &'a mut Funcs,
-    pub ctx: &'a mut Context,
-    pub body: &'a mut tir::Data,
+    pub ctx: &'a mut ScopeContext,
+    pub body: &'a mut tir::TirData,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
     pub temp: &'a mut FramedStack<Tir>,
     pub sources: &'a Sources,
-    pub ast: &'a ast::Data,
+    pub ast: &'a AstData,
     pub modules: &'a mut Modules,
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
-impl<'a> FuncBuilder<'a> {
+impl<'a> TirBuilder<'a> {
     pub fn verify_bound_impls(&mut self) -> errors::Result {
         // we have to collect all functions first and the check if all bound
         // functions are implemented, its done here
@@ -30,7 +30,7 @@ impl<'a> FuncBuilder<'a> {
                 // handle use expressions
                 if !body.is_reserved_value() {
                     for &ast in self.ast.children(body) {
-                        if self.ast.nodes[ast].kind != ast::Kind::UseBoundFunc {
+                        if self.ast.nodes[ast].kind != ast::AstKind::UseBoundFunc {
                             continue;
                         }
 
@@ -55,7 +55,7 @@ impl<'a> FuncBuilder<'a> {
                         };
 
                         {
-                            let item = modules::Item::new(id, func, span);
+                            let item = module::ModuleItem::new(id, func, span);
                             drop(self.scope.insert(
                                 self.diagnostics,
                                 span.source(),
@@ -71,7 +71,7 @@ impl<'a> FuncBuilder<'a> {
 
                 // check if all functions exist and match the signature
                 let funcs = {
-                    let ty::Kind::Bound(funcs) = self.types.ents[bound].kind else {
+                    let TyKind::Bound(funcs) = self.types.ents[bound].kind else {
                         unreachable!();
                     };
 
@@ -94,7 +94,7 @@ impl<'a> FuncBuilder<'a> {
                             .or_else(|| self.scope.weak_get::<Func>(sugar_id));
 
                         let Some(other) = maybe_other else {
-                            self.diagnostics.push(Error::MissingBoundImplFunc {
+                            self.diagnostics.push(TyError::MissingBoundImplFunc {
                                 func: ent.name,
                                 loc: impl_span,
                             });
@@ -120,7 +120,7 @@ impl<'a> FuncBuilder<'a> {
                     .bound_cons
                     .insert(
                         id,
-                        ty::BoundImpl {
+                        BoundImpl {
                             span: self.ast.nodes[impl_block].span,
                             funcs,
                         }
@@ -140,7 +140,7 @@ impl<'a> FuncBuilder<'a> {
         let b_param_len = self.types.args.len(b.params);
 
         if a_param_len != b_param_len - 1 {
-            self.diagnostics.push(Error::BoundImplFuncParamCount {
+            self.diagnostics.push(TyError::BoundImplFuncParamCount {
                 impl_func: self.funcs[impl_func].name,
                 bound_func: self.funcs[bound_func].name,
                 expected: b_param_len,
@@ -186,7 +186,7 @@ impl<'a> FuncBuilder<'a> {
     }
 
     pub fn build(&mut self) -> errors::Result {
-        let func::Ent {
+        let TFuncEnt {
             flags,
             kind,
             sig: Sig {
@@ -203,16 +203,16 @@ impl<'a> FuncBuilder<'a> {
         let &body_ast = header.last().unwrap();
 
         if body_ast.is_reserved_value() {
-            if flags.contains(func::Flags::EXTERNAL) {
-                self.funcs[self.func].kind = func::Kind::External;
+            if flags.contains(TFuncFlags::EXTERNAL) {
+                self.funcs[self.func].kind = TFuncKind::External;
             }
             return Ok(());
         }
 
         self.scope.mark_frame();
-        if let func::Kind::Owned(ty) = kind {
+        if let TFuncKind::Owned(ty) = kind {
             let span = self.ast.nodes[ast].span;
-            self.scope.push_item("Self", scope::Item::new(ty, span));
+            self.scope.push_item("Self", ScopeItem::new(ty, span));
         }
 
         if !generics.is_reserved_value() {
@@ -223,14 +223,14 @@ impl<'a> FuncBuilder<'a> {
                 let name = self.ast.children(item)[0];
                 let span = self.ast.nodes[name].span;
                 let str = self.sources.display(span);
-                self.scope.push_item(str, scope::Item::new(param, span));
+                self.scope.push_item(str, ScopeItem::new(param, span));
 
-                let ty::Kind::BoundCombo(bounds) = self.types.ents[bound_combo].kind else {
+                let TyKind::BoundCombo(bounds) = self.types.ents[bound_combo].kind else {
                     unreachable!();
                 };
 
                 for &bound in self.types.args.get(bounds) {
-                    let ty::Kind::Bound(funcs) = self.types.ents[bound].kind else {
+                    let TyKind::Bound(funcs) = self.types.ents[bound].kind else {
                         unreachable!();
                     };
 
@@ -242,7 +242,7 @@ impl<'a> FuncBuilder<'a> {
                             let bound = self.types.ents[bound_combo].id;
                             ID::owned_func(bound, id)
                         };
-                        self.scope.push_item(id, scope::Item::new(func, name));
+                        self.scope.push_item(id, ScopeItem::new(func, name));
                     }
                 }
             }
@@ -262,8 +262,8 @@ impl<'a> FuncBuilder<'a> {
                 let span = self.ast.nodes[name].span;
 
                 let arg = {
-                    let kind = tir::Kind::Argument(i as u32);
-                    let ent = tir::Ent::new(kind, ty, span);
+                    let kind = tir::TirKind::Argument(i as u32);
+                    let ent = tir::TirEnt::new(kind, ty, span);
                     self.body.ents.push(ent)
                 };
 
@@ -272,7 +272,7 @@ impl<'a> FuncBuilder<'a> {
                         let str = self.sources.display(span);
                         ID::new(str)
                     };
-                    let item = scope::Item::new(arg, span);
+                    let item = ScopeItem::new(arg, span);
                     self.scope.push_item(id, item);
                 }
 
@@ -289,11 +289,11 @@ impl<'a> FuncBuilder<'a> {
         self.ctx.used_types.clear();
         self.ctx.used_types_set.clear();
 
-        if !self.body.ents[root].flags.contains(tir::Flags::TERMINATING)
+        if !self.body.ents[root].flags.contains(tir::TirFlags::TERMINATING)
             && ret != self.types.builtin.nothing
         {
             let because = Some(self.ast.nodes[ret_ast].span);
-            self.expect_tir_ty(root, ret, |_, got, loc| Error::ReturnTypeMismatch {
+            self.expect_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
                 because,
                 expected: ret,
                 got,
@@ -320,7 +320,7 @@ impl<'a> FuncBuilder<'a> {
             };
             self.temp.push(expr);
             final_expr = Some(expr);
-            terminating |= self.body.ents[expr].flags.contains(tir::Flags::TERMINATING);
+            terminating |= self.body.ents[expr].flags.contains(tir::TirFlags::TERMINATING);
             if terminating {
                 break; // TODO: emit warning
             }
@@ -336,9 +336,9 @@ impl<'a> FuncBuilder<'a> {
             let slice = self.temp.top_frame();
             let items = self.body.cons.push(slice);
 
-            let kind = tir::Kind::Block(items);
-            let flags = tir::Flags::TERMINATING & terminating;
-            let ent = tir::Ent::with_flags(kind, ty, flags, span);
+            let kind = tir::TirKind::Block(items);
+            let flags = tir::TirFlags::TERMINATING & terminating;
+            let ent = tir::TirEnt::with_flags(kind, ty, flags, span);
             self.body.ents.push(ent)
         };
 
@@ -349,24 +349,24 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn build_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
-        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
+        let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
         let expr = match kind {
-            ast::Kind::Unary => self.build_unary(ast)?,
-            ast::Kind::Binary => self.build_binary(ast)?,
-            ast::Kind::Ident => self.build_ident(ast)?,
-            ast::Kind::If => self.build_if(ast)?,
-            ast::Kind::Return => self.build_return(ast)?,
-            ast::Kind::Int(width) => self.build_int(ast, width)?,
-            ast::Kind::Bool(value) => self.build_bool(ast, value)?,
-            ast::Kind::Char => self.build_char(ast)?,
-            ast::Kind::Variable(mutable) => self.build_variable(mutable, ast)?,
-            ast::Kind::Constructor => self.build_constructor(ast)?,
-            ast::Kind::DotExpr => self.build_dot_expr(ast)?,
-            ast::Kind::Call => self.build_call(ast)?,
-            ast::Kind::Block => self.build_block(ast)?,
-            ast::Kind::Loop => self.build_loop(ast)?,
-            ast::Kind::Break => self.build_break(ast)?,
-            ast::Kind::Deref => self.build_deref(ast)?,
+            ast::AstKind::Unary => self.build_unary(ast)?,
+            ast::AstKind::Binary => self.build_binary(ast)?,
+            ast::AstKind::Ident => self.build_ident(ast)?,
+            ast::AstKind::If => self.build_if(ast)?,
+            ast::AstKind::Return => self.build_return(ast)?,
+            ast::AstKind::Int(width) => self.build_int(ast, width)?,
+            ast::AstKind::Bool(value) => self.build_bool(ast, value)?,
+            ast::AstKind::Char => self.build_char(ast)?,
+            ast::AstKind::Variable(mutable) => self.build_variable(mutable, ast)?,
+            ast::AstKind::Constructor => self.build_constructor(ast)?,
+            ast::AstKind::DotExpr => self.build_dot_expr(ast)?,
+            ast::AstKind::Call => self.build_call(ast)?,
+            ast::AstKind::Block => self.build_block(ast)?,
+            ast::AstKind::Loop => self.build_loop(ast)?,
+            ast::AstKind::Break => self.build_break(ast)?,
+            ast::AstKind::Deref => self.build_deref(ast)?,
             _ => todo!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
@@ -381,8 +381,8 @@ impl<'a> FuncBuilder<'a> {
         let target = self.build_expr(expr)?;
         let ty = self.body.ents[target].ty;
 
-        if !matches!(self.types.ents[ty].kind, ty::Kind::Ptr(..)) {
-            self.diagnostics.push(Error::NonPointerDereference {
+        if !matches!(self.types.ents[ty].kind, TyKind::Ptr(..)) {
+            self.diagnostics.push(TyError::NonPointerDereference {
                 loc: self.ast.nodes[ast].span,
                 ty,
             });
@@ -394,7 +394,7 @@ impl<'a> FuncBuilder<'a> {
 
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let ent = tir::Ent::new(tir::Kind::CharLit, self.types.builtin.char, span);
+        let ent = tir::TirEnt::new(tir::TirKind::CharLit, self.types.builtin.char, span);
         Ok(self.body.ents.push(ent))
     }
 
@@ -423,8 +423,8 @@ impl<'a> FuncBuilder<'a> {
             let ty = self.funcs[func].sig.ret;
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&[expr]);
-            let kind = tir::Kind::Call(operand_ty.into(), func, args);
-            let ent = tir::Ent::new(kind, ty, span);
+            let kind = tir::TirKind::Call(operand_ty.into(), func, args);
+            let ent = tir::TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -446,25 +446,25 @@ impl<'a> FuncBuilder<'a> {
         let loop_expr = self.scope.get::<Tir>(self.diagnostics, "<loop>", span)?;
 
         {
-            let tir::Kind::LoopInProgress(ret, infinite) = &mut self.body.ents[loop_expr].kind else {
+            let tir::TirKind::LoopInProgress(ret, infinite) = &mut self.body.ents[loop_expr].kind else {
                 unreachable!();
             };
 
             *infinite = false;
 
             if let Some(ret) = ret.expand() {
-                let tir::Ent {
+                let tir::TirEnt {
                     span: ret_span, ty, ..
                 } = self.body.ents[ret];
                 if let Some(value) = value {
-                    self.expect_tir_ty(value, ty, |_, got, loc| Error::BreakValueTypeMismatch {
+                    self.expect_tir_ty(value, ty, |_, got, loc| TyError::BreakValueTypeMismatch {
                         because: ret_span,
                         expected: ty,
                         got,
                         loc,
                     })?;
                 } else {
-                    self.diagnostics.push(Error::MissingBreakValue {
+                    self.diagnostics.push(TyError::MissingBreakValue {
                         because: ret_span,
                         expected: ty,
                         loc: span,
@@ -477,11 +477,11 @@ impl<'a> FuncBuilder<'a> {
         }
 
         let result = {
-            let kind = tir::Kind::Break(loop_expr, value.into());
-            let ent = tir::Ent::with_flags(
+            let kind = tir::TirKind::Break(loop_expr, value.into());
+            let ent = tir::TirEnt::with_flags(
                 kind,
                 self.types.builtin.nothing,
-                tir::Flags::TERMINATING,
+                tir::TirFlags::TERMINATING,
                 span,
             );
             self.body.ents.push(ent)
@@ -497,31 +497,31 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let loop_slot = {
-            let kind = tir::Kind::LoopInProgress(None.into(), true);
-            let ent = tir::Ent::new(kind, self.types.builtin.nothing, span);
+            let kind = tir::TirKind::LoopInProgress(None.into(), true);
+            let ent = tir::TirEnt::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
         // break and continue will propagate side effects so we save the lookup
 
         self.scope
-            .push_item("<loop>", scope::Item::new(loop_slot, span));
+            .push_item("<loop>", ScopeItem::new(loop_slot, span));
 
         let block = self.build_block(body_ast)?;
 
         self.scope.pop_item();
 
         {
-            let tir::Kind::LoopInProgress(ret, infinite) = self.body.ents[loop_slot].kind else {
+            let tir::TirKind::LoopInProgress(ret, infinite) = self.body.ents[loop_slot].kind else {
                 unreachable!();
             };
             let ty = ret
                 .map(|ret| self.body.ents[ret].ty)
                 .unwrap_or(self.types.builtin.nothing);
-            let flags = tir::Flags::TERMINATING & infinite;
-            let kind = tir::Kind::Loop(block);
+            let flags = tir::TirFlags::TERMINATING & infinite;
+            let kind = tir::TirKind::Loop(block);
             let span = span;
-            self.body.ents[loop_slot] = tir::Ent::with_flags(kind, ty, flags, span);
+            self.body.ents[loop_slot] = tir::TirEnt::with_flags(kind, ty, flags, span);
         }
 
         Ok(loop_slot)
@@ -533,7 +533,7 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let (id, fn_span, mut obj, caller, instantiation) =
-            if self.ast.nodes[caller].kind == ast::Kind::DotExpr {
+            if self.ast.nodes[caller].kind == ast::AstKind::DotExpr {
                 let &[expr, name] = self.ast.children(caller) else {
                     unreachable!();
                 };
@@ -545,7 +545,7 @@ impl<'a> FuncBuilder<'a> {
                 };
 
                 let (ident, instantiation) = {
-                    if ast::Kind::Instantiation == self.ast.nodes[name].kind {
+                    if ast::AstKind::Instantiation == self.ast.nodes[name].kind {
                         (self.ast.children(name)[0], Some(name))
                     } else {
                         (name, None)
@@ -559,7 +559,7 @@ impl<'a> FuncBuilder<'a> {
                 (name_id, span, Some(expr), Some(ty), instantiation)
             } else {
                 let (ident, instantiation) = {
-                    if ast::Kind::Instantiation == self.ast.nodes[caller].kind {
+                    if ast::AstKind::Instantiation == self.ast.nodes[caller].kind {
                         (self.ast.children(caller)[0], Some(caller))
                     } else {
                         (caller, None)
@@ -575,7 +575,7 @@ impl<'a> FuncBuilder<'a> {
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
-        let func::Ent { sig, flags, .. } = self.funcs[func];
+        let TFuncEnt { sig, flags, .. } = self.funcs[func];
 
         let arg_tys = self.types.args.get(sig.args).to_vec(); // TODO: avoid allocation
 
@@ -606,7 +606,7 @@ impl<'a> FuncBuilder<'a> {
             let args_len = args.len();
             if arg_tys.len() != args_len {
                 let loc = self.ast.nodes[ast].span;
-                self.diagnostics.push(Error::FunctionParamMismatch {
+                self.diagnostics.push(TyError::FunctionParamMismatch {
                     because,
                     expected: arg_tys.len(),
                     got: args_len,
@@ -615,12 +615,12 @@ impl<'a> FuncBuilder<'a> {
                 return Err(());
             }
 
-            if !flags.contains(func::Flags::GENERIC) {
+            if !flags.contains(TFuncFlags::GENERIC) {
                 // here we type check all arguments and then check for errors
                 args.iter()
                     .zip(arg_tys)
                     .map(|(&arg, ty)| {
-                        self.expect_tir_ty(arg, ty, |_, got, loc| Error::CallArgTypeMismatch {
+                        self.expect_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
                             because,
                             expected: ty,
                             got,
@@ -653,7 +653,7 @@ impl<'a> FuncBuilder<'a> {
                 args.iter()
                     .zip(arg_tys)
                     .map(|(&arg, arg_ty)| {
-                        let tir::Ent { ty, span, .. } = self.body.ents[arg];
+                        let tir::TirEnt { ty, span, .. } = self.body.ents[arg];
                         infer_parameters(
                             ty,
                             arg_ty,
@@ -679,7 +679,7 @@ impl<'a> FuncBuilder<'a> {
                     // OK if no cycles performed
                     .fold(Ok(()), |_, param| {
                         let span = self.ast.nodes[ast].span;
-                        self.diagnostics.push(Error::UnknownGenericParam {
+                        self.diagnostics.push(TyError::UnknownGenericParam {
                             func: self.funcs[func].name,
                             param,
                             loc: span,
@@ -689,7 +689,7 @@ impl<'a> FuncBuilder<'a> {
 
                 let generic = param_slots
                     .iter()
-                    .any(|&params| self.types.ents[params].flags.contains(ty::Flags::GENERIC));
+                    .any(|&params| self.types.ents[params].flags.contains(TyFlags::GENERIC));
 
                 let ret = instantiate(sig.ret, &param_slots, self.types)?;
 
@@ -701,17 +701,17 @@ impl<'a> FuncBuilder<'a> {
                     let func = {
                         let i_params = self.types.args.push(&param_slots);
 
-                        // println!("====== {} {:?}", ty::Display::new(self.types, self.sources, ret), self.types.ents[ret]);
+                        // println!("====== {} {:?}", Display::new(self.types, self.sources, ret), self.types.ents[ret]);
 
                         let sig = Sig {
                             params: i_params,
                             ret,
                             ..sig
                         };
-                        let ent = func::Ent {
+                        let ent = TFuncEnt {
                             sig,
-                            kind: func::Kind::Instance(func),
-                            flags: self.funcs[func].flags & !func::Flags::GENERIC,
+                            kind: TFuncKind::Instance(func),
+                            flags: self.funcs[func].flags & !TFuncFlags::GENERIC,
                             ..self.funcs[func]
                         };
                         self.funcs.push(ent)
@@ -725,8 +725,8 @@ impl<'a> FuncBuilder<'a> {
         let result = {
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&args);
-            let kind = tir::Kind::Call(caller.into(), func, args);
-            let ent = tir::Ent::new(kind, ret, span);
+            let kind = tir::TirKind::Call(caller.into(), func, args);
+            let ent = tir::TirEnt::new(kind, ret, span);
             self.body.ents.push(ent)
         };
 
@@ -756,7 +756,7 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn take_ptr(&mut self, target: Tir) -> Tir {
-        let tir::Ent {
+        let tir::TirEnt {
             ty,
             span,
             flags,
@@ -764,24 +764,24 @@ impl<'a> FuncBuilder<'a> {
             ..
         } = &mut self.body.ents[target];
         let (span, ty) = (*span, *ty);
-        if let &mut tir::Kind::Access(target) = kind {
-            self.body.ents[target].flags.insert(tir::Flags::SPILLED);
+        if let &mut tir::TirKind::Access(target) = kind {
+            self.body.ents[target].flags.insert(tir::TirFlags::SPILLED);
         } else {
-            flags.insert(tir::Flags::SPILLED);
+            flags.insert(tir::TirFlags::SPILLED);
         }
 
-        let kind = tir::Kind::TakePtr(target);
+        let kind = tir::TirKind::TakePtr(target);
         let ptr_ty = pointer_of(ty, self.types);
-        let deref = tir::Ent::new(kind, ptr_ty, span);
+        let deref = tir::TirEnt::new(kind, ptr_ty, span);
         self.body.ents.push(deref)
     }
 
     fn deref_ptr(&mut self, target: Tir) -> Tir {
         let span = self.body.ents[target].span;
-        let kind = tir::Kind::DerefPointer(target);
+        let kind = tir::TirKind::DerefPointer(target);
         let deref_ty = self.types.deref_ptr(self.body.ents[target].ty);
         self.ctx.use_type(deref_ty, self.types);
-        let deref = tir::Ent::new(kind, deref_ty, span);
+        let deref = tir::TirEnt::new(kind, deref_ty, span);
         self.body.ents.push(deref)
     }
 
@@ -848,7 +848,7 @@ impl<'a> FuncBuilder<'a> {
                 Ok((ID::owned_func(ty_id, name), Some((ty, span))))
             }
             _ => {
-                self.diagnostics.push(Error::InvalidPath {
+                self.diagnostics.push(TyError::InvalidPath {
                     loc: self.ast.nodes[ast].span,
                 });
                 Err(())
@@ -882,8 +882,8 @@ impl<'a> FuncBuilder<'a> {
 
         let result = {
             self.ctx.use_type(field_ty, self.types);
-            let kind = tir::Kind::FieldAccess(header, field_id);
-            let ent = tir::Ent::new(kind, field_ty, span);
+            let kind = tir::TirKind::FieldAccess(header, field_id);
+            let ent = tir::TirEnt::new(kind, field_ty, span);
             self.body.ents.push(ent)
         };
 
@@ -893,8 +893,8 @@ impl<'a> FuncBuilder<'a> {
     fn build_bool(&mut self, ast: Ast, value: bool) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
         let ty = self.types.builtin.bool;
-        let kind = tir::Kind::BoolLit(value);
-        let ent = tir::Ent::new(kind, ty, span);
+        let kind = tir::TirKind::BoolLit(value);
+        let ent = tir::TirEnt::new(kind, ty, span);
         let result = self.body.ents.push(ent);
         Ok(result)
     }
@@ -919,8 +919,8 @@ impl<'a> FuncBuilder<'a> {
         let span = self.ast.nodes[body].span;
         let ty_id = self.types.ents[ty].id;
 
-        let ty::Kind::Struct(fields) = self.types.ents[ty].kind else {
-            self.diagnostics.push(Error::ExpectedStruct {
+        let TyKind::Struct(fields) = self.types.ents[ty].kind else {
+            self.diagnostics.push(TyError::ExpectedStruct {
                 got: ty,
                 loc: span,
             });
@@ -943,12 +943,12 @@ impl<'a> FuncBuilder<'a> {
                 continue;
             };
 
-            let ty::SFieldEnt {
+            let SFieldEnt {
                 span: hint, index, ..
             } = self.types.sfields[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
-                ast::Kind::InlineConstructor => self.build_constructor_low(field_ty, expr),
+                ast::AstKind::InlineConstructor => self.build_constructor_low(field_ty, expr),
                 _ => self.build_expr(expr),
             }) else {
                 continue;
@@ -956,7 +956,7 @@ impl<'a> FuncBuilder<'a> {
 
             // we ignore this to report more errors
             drop(self.expect_tir_ty(value, field_ty, |_, got, loc| {
-                Error::ConstructorFieldTypeMismatch {
+                TyError::ConstructorFieldTypeMismatch {
                     because: hint,
                     expected: field_ty,
                     got,
@@ -975,7 +975,7 @@ impl<'a> FuncBuilder<'a> {
                 .map(|i| self.types.sfields.get(fields)[i].span)
                 .collect::<Vec<_>>();
 
-            self.diagnostics.push(Error::ConstructorMissingFields {
+            self.diagnostics.push(TyError::ConstructorMissingFields {
                 on: ty,
                 missing,
                 loc: span,
@@ -987,8 +987,8 @@ impl<'a> FuncBuilder<'a> {
         let result = {
             let span = self.ast.nodes[body].span;
             let fields = self.body.cons.push(&initial_values);
-            let kind = tir::Kind::Constructor(fields);
-            let ent = tir::Ent::new(kind, ty, span);
+            let kind = tir::TirKind::Constructor(fields);
+            let ent = tir::TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1010,16 +1010,16 @@ impl<'a> FuncBuilder<'a> {
         let value = self.build_expr(value)?;
         self.body.ents[value]
             .flags
-            .insert(tir::Flags::ASSIGNABLE & mutable);
+            .insert(tir::TirFlags::ASSIGNABLE & mutable);
 
         {
-            let item = scope::Item::new(value, span);
+            let item = ScopeItem::new(value, span);
             self.scope.push_item(id, item);
         }
 
         let result = {
-            let kind = tir::Kind::Variable(value);
-            let ent = tir::Ent::new(kind, self.types.builtin.nothing, span);
+            let kind = tir::TirKind::Variable(value);
+            let ent = tir::TirEnt::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
@@ -1028,7 +1028,7 @@ impl<'a> FuncBuilder<'a> {
 
     fn build_int(&mut self, ast: Ast, width: i16) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let kind = tir::Kind::IntLit(width);
+        let kind = tir::TirKind::IntLit(width);
         let ty = {
             let name = match width {
                 8 => "i8",
@@ -1041,7 +1041,7 @@ impl<'a> FuncBuilder<'a> {
             self.scope.get::<Ty>(self.diagnostics, name, span).unwrap()
         };
 
-        let ent = tir::Ent::new(kind, ty, span);
+        let ent = tir::TirEnt::new(kind, ty, span);
         Ok(self.body.ents.push(ent))
     }
 
@@ -1055,7 +1055,7 @@ impl<'a> FuncBuilder<'a> {
 
         let value = if value.is_reserved_value() {
             self.expect_ty(self.types.builtin.nothing, ret, |s| {
-                Error::UnexpectedReturnValue {
+                TyError::UnexpectedReturnValue {
                     because: s.funcs[s.func].name,
                     loc: span,
                 }
@@ -1068,7 +1068,7 @@ impl<'a> FuncBuilder<'a> {
                     unreachable!();
                 };
                 let ret_span = (!ret_ast.is_reserved_value()).then(|| s.ast.nodes[ret_ast].span);
-                Error::ReturnTypeMismatch {
+                TyError::ReturnTypeMismatch {
                     because: ret_span,
                     expected: ret,
                     got,
@@ -1079,11 +1079,11 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let result = {
-            let kind = tir::Kind::Return(value.into());
-            let ent = tir::Ent::with_flags(
+            let kind = tir::TirKind::Return(value.into());
+            let ent = tir::TirEnt::with_flags(
                 kind,
                 self.types.builtin.nothing,
-                tir::Flags::TERMINATING,
+                tir::TirFlags::TERMINATING,
                 span,
             );
             self.body.ents.push(ent)
@@ -1101,7 +1101,7 @@ impl<'a> FuncBuilder<'a> {
         let cond = self.build_expr(cond)?;
         drop(
             self.expect_tir_ty(cond, self.types.builtin.bool, |_, got, loc| {
-                Error::IfConditionTypeMismatch { got, loc }
+                TyError::IfConditionTypeMismatch { got, loc }
             }),
         );
 
@@ -1131,14 +1131,14 @@ impl<'a> FuncBuilder<'a> {
             let then_flags = ents[then].flags;
             let otherwise_flags = otherwise
                 .map(|otherwise| ents[otherwise].flags)
-                .unwrap_or(tir::Flags::empty());
+                .unwrap_or(tir::TirFlags::empty());
 
-            (then_flags & otherwise_flags) & tir::Flags::TERMINATING
+            (then_flags & otherwise_flags) & tir::TirFlags::TERMINATING
         };
 
         let result = {
-            let kind = tir::Kind::If(cond, then, otherwise.into());
-            let ent = tir::Ent::with_flags(kind, ty, flags, span);
+            let kind = tir::TirKind::If(cond, then, otherwise.into());
+            let ent = tir::TirEnt::with_flags(kind, ty, flags, span);
             self.body.ents.push(ent)
         };
 
@@ -1154,7 +1154,7 @@ impl<'a> FuncBuilder<'a> {
         // this allows better error messages
         let result = {
             let mut copy = self.body.ents[value];
-            copy.kind = tir::Kind::Access(value);
+            copy.kind = tir::TirKind::Access(value);
             copy.span = span;
             self.body.ents.push(copy)
         };
@@ -1194,7 +1194,7 @@ impl<'a> FuncBuilder<'a> {
         };
 
         let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, op_span) else {
-            self.diagnostics.push(Error::BinaryOperatorNotFound {
+            self.diagnostics.push(TyError::BinaryOperatorNotFound {
                 left_ty: self.body.ents[left].ty,
                 right_ty: self.body.ents[right].ty,
                 loc: op_span,
@@ -1209,7 +1209,7 @@ impl<'a> FuncBuilder<'a> {
 
             let arg_count = args.len();
             if arg_count != 2 {
-                self.diagnostics.push(Error::OperatorArgCountMismatch {
+                self.diagnostics.push(TyError::OperatorArgCountMismatch {
                     because: func_ent.name,
                     expected: 2,
                     got: arg_count,
@@ -1219,7 +1219,7 @@ impl<'a> FuncBuilder<'a> {
             }
 
             let expected = args[1];
-            self.expect_tir_ty(right, expected, |_, got, loc| Error::BinaryTypeMismatch {
+            self.expect_tir_ty(right, expected, |_, got, loc| TyError::BinaryTypeMismatch {
                 expected,
                 got,
                 loc,
@@ -1229,8 +1229,8 @@ impl<'a> FuncBuilder<'a> {
         let tir = {
             let ty = self.funcs[func].sig.ret;
             let args = self.body.cons.push(&[left, right]);
-            let kind = tir::Kind::Call(left_ty.into(), func, args);
-            let ent = tir::Ent::new(kind, ty, span);
+            let kind = tir::TirKind::Call(left_ty.into(), func, args);
+            let ent = tir::TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1238,26 +1238,26 @@ impl<'a> FuncBuilder<'a> {
     }
 
     fn build_assign(&mut self, left: Tir, right: Tir, span: Span) -> errors::Result<Tir> {
-        let tir::Ent {
+        let tir::TirEnt {
             ty,
             flags,
             span: left_span,
             kind,
         } = self.body.ents[left];
 
-        if !flags.contains(tir::Flags::ASSIGNABLE) {
-            let because = if let tir::Kind::Access(here) = kind {
+        if !flags.contains(tir::TirFlags::ASSIGNABLE) {
+            let because = if let tir::TirKind::Access(here) = kind {
                 Some(self.body.ents[here].span)
             } else {
                 None
             };
-            self.diagnostics.push(Error::AssignToNonAssignable {
+            self.diagnostics.push(TyError::AssignToNonAssignable {
                 because,
                 loc: left_span,
             });
         }
 
-        self.expect_tir_ty(right, ty, |_, got, loc| Error::AssignTypeMismatch {
+        self.expect_tir_ty(right, ty, |_, got, loc| TyError::AssignTypeMismatch {
             because: left_span,
             expected: ty,
             got,
@@ -1265,8 +1265,8 @@ impl<'a> FuncBuilder<'a> {
         })?;
 
         let result = {
-            let kind = tir::Kind::Assign(left, right);
-            let ent = tir::Ent::new(kind, ty, span);
+            let kind = tir::TirKind::Assign(left, right);
+            let ent = tir::TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1279,14 +1279,14 @@ impl<'a> FuncBuilder<'a> {
             .get(id)
             .map(|f| {
                 let ty = self.types.sfields[f.field].ty;
-                if let ty::Kind::Instance(_, params) = self.types.ents[on].kind {
+                if let TyKind::Instance(_, params) = self.types.ents[on].kind {
                     (f.field, self.types.ensure_no_param(ty, params))
                 } else {
                     (f.field, ty)
                 }
             })
             .ok_or_else(|| {
-                let candidates = if let ty::Kind::Struct(fields) = self.types.ents[on].kind {
+                let candidates = if let TyKind::Struct(fields) = self.types.ents[on].kind {
                     self.types
                         .sfields
                         .get(fields)
@@ -1297,7 +1297,7 @@ impl<'a> FuncBuilder<'a> {
                     Vec::new()
                 };
 
-                self.diagnostics.push(Error::UnknownField {
+                self.diagnostics.push(TyError::UnknownField {
                     candidates,
                     on,
                     loc,
@@ -1309,9 +1309,9 @@ impl<'a> FuncBuilder<'a> {
         &mut self,
         right: Tir,
         ty: Ty,
-        err_fact: impl Fn(&mut Self, Ty, Span) -> Error,
+        err_fact: impl Fn(&mut Self, Ty, Span) -> TyError,
     ) -> errors::Result {
-        let tir::Ent { ty: got, span, .. } = self.body.ents[right];
+        let tir::TirEnt { ty: got, span, .. } = self.body.ents[right];
         self.expect_ty(ty, got, |s| err_fact(s, got, span))
     }
 
@@ -1319,7 +1319,7 @@ impl<'a> FuncBuilder<'a> {
         &mut self,
         ty: Ty,
         got: Ty,
-        err_fact: impl Fn(&mut Self) -> Error,
+        err_fact: impl Fn(&mut Self) -> TyError,
     ) -> errors::Result {
         if ty != got {
             let error = err_fact(self);
@@ -1339,8 +1339,8 @@ impl<'a> FuncBuilder<'a> {
     }
 }
 
-impl AstIDExt for FuncBuilder<'_> {
-    fn state(&self) -> (&ast::Data, &Sources) {
+impl AstIDExt for TirBuilder<'_> {
+    fn state(&self) -> (&AstData, &Sources) {
         (self.ast, self.sources)
     }
 }

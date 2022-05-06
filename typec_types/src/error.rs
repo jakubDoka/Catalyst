@@ -1,7 +1,7 @@
 use lexer_types::*;
-use crate::ty::*;
+use crate::*;
 
-pub enum Error {
+pub enum TyError {
     InvalidTypeExpression {
         loc: Span,
     },

@@ -8,7 +8,7 @@ use storage::*;
 use typec_types::*;
 
 
-use crate::{func, Size};
+use crate::*;
 
 impl<E: EntityRef, N: LinkedNode<E>> LinkedList<E, N> for PrimaryMap<E, N> {}
 
@@ -218,14 +218,14 @@ impl StackEnt {
 
 gen_entity!(StackSlot);
 
-pub struct Display<'a> {
+pub struct MirDisplay<'a> {
     sources: &'a Sources,
-    func: &'a func::Func,
-    types: &'a ty::Types,
+    func: &'a FuncCtx,
+    types: &'a Types,
 }
 
-impl<'a> Display<'a> {
-    pub fn new(sources: &'a Sources, func: &'a func::Func, types: &'a ty::Types) -> Self {
+impl<'a> MirDisplay<'a> {
+    pub fn new(sources: &'a Sources, func: &'a FuncCtx, types: &'a Types) -> Self {
         Self {
             sources,
             func,
@@ -238,12 +238,12 @@ impl<'a> Display<'a> {
             "{}:{}>{}",
             value,
             self.func.values[value].offset.arch64,
-            ty::Display::new(self.types, self.sources, self.func.values[value].ty),
+            TyDisplay::new(self.types, self.sources, self.func.values[value].ty),
         )
     }
 }
 
-impl std::fmt::Display for Display<'_> {
+impl std::fmt::Display for MirDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} {{", self.func.sig)?;
 

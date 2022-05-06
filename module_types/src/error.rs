@@ -4,7 +4,7 @@ use std::any::TypeId;
 use std::path::PathBuf;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum ModuleError {
     ScopeCollision {
         new: Span,
         existing: Span,

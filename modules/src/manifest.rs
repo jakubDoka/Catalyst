@@ -2,12 +2,12 @@ use lexer_types::*;
 use ast::*;
 
 pub struct Manifest<'a> {
-    ast_data: &'a ast::Data,
+    ast_data: &'a AstData,
     sources: &'a Sources,
 }
 
 impl<'a> Manifest<'a> {
-    pub fn new(ast_data: &'a ast::Data, sources: &'a Sources) -> Self {
+    pub fn new(ast_data: &'a AstData, sources: &'a Sources) -> Self {
         Manifest { ast_data, sources }
     }
 

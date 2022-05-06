@@ -9,14 +9,22 @@ use cranelift_entity::EntitySet;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+
 use gen::*;
 use instance::*;
-use lexer::*;
 use modules::*;
+use modules::module::ModuleImports;
 use parser::*;
+use lexer_types::*;
+use module_types::*;
+use instance_types::*;
+use storage::*;
+use typec_types::*;
+use typec::*;
+use ast::*;
+
 use std::str::FromStr;
 use std::{collections::VecDeque, fmt::Write, path::Path};
-use typec::*;
 
 /// compiles the catalyst source code, taking command like args as input,
 /// complete compilation only works on windows with msvc and you have to invoke
@@ -36,7 +44,7 @@ pub fn compile() {
     let mut builtin_source = BuiltinSource::new(&mut sources);
 
     // parser
-    let mut ast = ast::Data::new();
+    let mut ast = AstData::new();
     let mut ast_temp = FramedStack::new();
 
     // modules
@@ -53,7 +61,7 @@ pub fn compile() {
         let mut map = ItemLexicon::new();
 
         map.register::<Source>("module");
-        map.register::<typec::Ty>("type");
+        map.register::<Ty>("type");
         map.register::<Func>("function");
         map.register::<Tir>("tir");
 
@@ -63,7 +71,7 @@ pub fn compile() {
     let module_order = {
         let mut module_frontier = VecDeque::new();
 
-        let unit_order = unit::Loader {
+        let unit_order = unit::UnitBuilder {
             sources: &mut sources,
             units: &mut units,
             ctx: &mut unit_load_ctx,
@@ -76,7 +84,7 @@ pub fn compile() {
 
         for unit in unit_order {
             let Ok(local_module_order) =
-                module::Loader {
+                ModuleBuilder {
                     sources: &mut sources,
                     modules: &mut modules,
                     units: &mut units,
@@ -117,8 +125,8 @@ pub fn compile() {
 
     // typec
     let mut t_graph = GenericGraph::new();
-    let mut t_types = typec::Types::new(&mut t_graph, &mut sources, &mut builtin_source);
-    let mut t_funcs = typec::Funcs::new();
+    let mut t_types = Types::new(&mut t_graph, &mut sources, &mut builtin_source);
+    let mut t_funcs = Funcs::new();
 
     let total_type_check;
 
@@ -135,7 +143,7 @@ pub fn compile() {
         );
 
         let mut t_temp = FramedStack::new();
-        let mut c_ctx = collector::Context::new();
+        let mut c_ctx = ScopeContext::new();
 
         let total_type_check_now = std::time::Instant::now();
 
@@ -164,7 +172,7 @@ pub fn compile() {
                             &mut diagnostics,
                             source,
                             nick,
-                            scope::Item::new(dep, import.nick),
+                            ScopeItem::new(dep, import.nick),
                         )
                         .unwrap();
                     for item in modules[dep].items.iter() {
@@ -186,7 +194,7 @@ pub fn compile() {
             //println!("{}", ast::FileDisplay::new(&ast, &sources[source].content));
 
             drop(
-                Collector {
+                ScopeBuilder {
                     scope: &mut scope,
                     funcs: &mut t_funcs,
                     types: &mut t_types,
@@ -209,7 +217,7 @@ pub fn compile() {
 
             for ty in ty_buffer.drain(..) {
                 drop(
-                    typec::ty::Builder {
+                    TyBuilder {
                         scope: &mut scope,
                         types: &mut t_types,
                         sources: &sources,
@@ -225,7 +233,7 @@ pub fn compile() {
             }
 
             drop(
-                typec::func::Builder {
+                TirBuilder {
                     scope: &mut scope,
                     types: &mut t_types,
                     sources: &sources,
@@ -237,7 +245,7 @@ pub fn compile() {
                     diagnostics: &mut diagnostics,
 
                     // does not matter
-                    body: &mut typec::tir::Data::default(),
+                    body: &mut TirData::default(),
                     func: Default::default(),
                 }
                 .verify_bound_impls(),
@@ -251,7 +259,7 @@ pub fn compile() {
             );
 
             for func in func_buffer.drain(..) {
-                if (typec::func::Builder {
+                if (TirBuilder {
                     scope: &mut scope,
                     types: &mut t_types,
                     sources: &sources,
@@ -289,19 +297,19 @@ pub fn compile() {
         let mut errors = String::new();
 
         diagnostics
-            .iter::<parser::Error>()
+            .iter::<AstError>()
             .map(|errs| errs.for_each(|err| err.display(&sources, &mut errors).unwrap()));
 
-        diagnostics.iter::<modules::Error>().map(|errs| {
+        diagnostics.iter::<ModuleError>().map(|errs| {
             errs.for_each(|err| {
-                err.display(&sources, &scope_item_lexicon, &units, &mut errors)
+                modules::error::display(err, &sources, &scope_item_lexicon, &units, &mut errors)
                     .unwrap()
             })
         });
 
         diagnostics
-            .iter::<typec::Error>()
-            .map(|errs| errs.for_each(|err| err.display(&sources, &t_types, &mut errors).unwrap()));
+            .iter::<TyError>()
+            .map(|errs| errs.for_each(|err| typec::error::display(err, &sources, &t_types, &mut errors).unwrap()));
 
         errors
     };
@@ -321,12 +329,12 @@ pub fn compile() {
     let mut module = ObjectModule::new(builder);
 
     // instance
-    let mut function = instance::func::Func::new();
-    let mut types = instance::types::Types::new();
+    let mut function = FuncCtx::new();
+    let mut types = Reprs::new();
     let ptr_ty = module.isa().pointer_type();
     let system_call_convention = module.isa().default_call_conv();
 
-    instance::types::Translator {
+    instance::repr::ReprBuilder {
         t_types: &t_types,
         t_graph: &t_graph,
         sources: &sources,
@@ -348,11 +356,11 @@ pub fn compile() {
                 continue;
             };
 
-            if ent.flags.contains(typec::func::Flags::GENERIC) {
+            if ent.flags.contains(TFuncFlags::GENERIC) {
                 continue;
             }
 
-            let popper = if let typec::func::Kind::Instance(_) = ent.kind {
+            let popper = if let TFuncKind::Instance(_) = ent.kind {
                 let popper = t_types.push_params(ent.sig.params, false);
                 for (&param, &real_param) in t_types
                     .active_params(&popper)
@@ -367,7 +375,7 @@ pub fn compile() {
             };
 
             name_buffer.clear();
-            if ent.flags.contains(typec::func::Flags::ENTRY) {
+            if ent.flags.contains(TFuncFlags::ENTRY) {
                 name_buffer.push_str("main");
                 if seen_entry {
                     todo!("emit error since multiple entries in executable cannot exist")
@@ -379,14 +387,14 @@ pub fn compile() {
                 write!(name_buffer, "{}", id.0).unwrap();
             }
 
-            let returns_struct = instance::func::Translator::translate_signature(
+            let returns_struct = instance::MirBuilder::translate_signature(
                 &ent.sig,
                 &mut ctx.func.signature,
                 &types,
                 &t_types,
                 &sources,
                 system_call_convention,
-                ent.flags.contains(typec::func::Flags::ENTRY),
+                ent.flags.contains(TFuncFlags::ENTRY),
             )
             .unwrap();
 
@@ -426,11 +434,11 @@ pub fn compile() {
                 continue;
             }
 
-            if ent.flags.contains(typec::func::Flags::GENERIC) {
+            if ent.flags.contains(TFuncFlags::GENERIC) {
                 continue;
             }
 
-            let (func, popper) = if let typec::func::Kind::Instance(func) = ent.kind {
+            let (func, popper) = if let TFuncKind::Instance(func) = ent.kind {
                 // dbg!(t_types.ents[Ty(9)]);
                 let popper = t_types.push_params(ent.sig.params, false);
                 // println!("{:?}", popper);
@@ -451,7 +459,7 @@ pub fn compile() {
             let now = std::time::Instant::now();
             tir_mapping.clear();
             function.clear();
-            instance::func::Translator {
+            MirBuilder {
                 system_call_convention,
                 func_id: func,
                 types: &types,
@@ -474,7 +482,7 @@ pub fn compile() {
             ctx.clear();
             mir_to_ir_lookup.clear();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_builder_ctx);
-            Generator {
+            CirBuilder {
                 module: &mut module,
                 function_lookup: &mut func_lookup,
                 builder: &mut builder,

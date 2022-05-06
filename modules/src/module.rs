@@ -1,10 +1,11 @@
 use std::{collections::VecDeque, path::PathBuf};
 
+use ast::*;
 use lexer_types::*;
-use module_types::{*, error::Error};
-use crate::*;
+use module_types::{*, error::ModuleError};
 use parser::*;
 use storage::*;
+use crate::unit::*;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -14,7 +15,7 @@ pub const MANIFEST_LOCAL_PATH: &'static str = "project.mfm";
 pub const GITHUB_DOMAIN: &'static str = "github.com";
 pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
 
-pub struct Loader<'a> {
+pub struct ModuleBuilder<'a> {
     pub sources: &'a mut Sources,
     pub modules: &'a mut Modules,
     pub units: &'a mut Units,
@@ -24,7 +25,7 @@ pub struct Loader<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
-impl<'a> Loader<'a> {
+impl<'a> ModuleBuilder<'a> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
         self.ctx.clear();
         let base_line = self.sources.len() as u32;
@@ -33,12 +34,12 @@ impl<'a> Loader<'a> {
             let unit_ent = &self.units[unit];
             let path = unit_ent.get_absolute_source_path().map_err(|trace| {
                 self.diagnostics
-                    .push(Error::RootModuleNotFound { unit, trace });
+                    .push(ModuleError::RootModuleNotFound { unit, trace });
             })?;
 
             let id = path.as_path().into();
             let module = self.sources.push(Default::default());
-            self.modules[module] = modules::Ent::new(id);
+            self.modules[module] = module::ModuleEnt::new(id);
             self.map.insert(id, module);
             self.frontier.push_back((path, Span::default(), module));
         }
@@ -47,7 +48,7 @@ impl<'a> Loader<'a> {
             {
                 {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
-                        self.diagnostics.push(Error::ModuleLoadFail {
+                        self.diagnostics.push(ModuleError::ModuleLoadFail {
                             path: path.clone(),
                             trace: err,
                             loc: span,
@@ -96,7 +97,7 @@ impl<'a> Loader<'a> {
 
                     let id = {
                         let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
-                            self.diagnostics.push(Error::ModuleNotFound {
+                            self.diagnostics.push(ModuleError::ModuleNotFound {
                                 trace: err,
                                 path: self.ctx.buffer.clone(),
                                 loc: path_span,
@@ -112,7 +113,7 @@ impl<'a> Loader<'a> {
                         } else {
                             let module = Source::new(self.sources.len() + counter);
                             counter += 1;
-                            self.modules[module] = modules::Ent::new(id);
+                            self.modules[module] = module::ModuleEnt::new(id);
                             self.map.insert(id, module);
                             self.frontier.push_back((path, path_span, module));
                             module
@@ -138,7 +139,7 @@ impl<'a> Loader<'a> {
             .detect_cycles(Source(0), Some(&mut ordering))
             .map_err(|mut err| {
                 err.iter_mut().for_each(|id| id.0 += base_line);
-                self.diagnostics.push(Error::ModuleCycle { cycle: err });
+                self.diagnostics.push(ModuleError::ModuleCycle { cycle: err });
             })?;
 
         ordering.iter_mut().for_each(|id| id.0 += base_line);
@@ -148,18 +149,18 @@ impl<'a> Loader<'a> {
 }
 
 pub struct ModuleImports<'a> {
-    ast_data: &'a ast::Data,
+    ast_data: &'a AstData,
     sources: &'a Sources,
 }
 
 impl<'a> ModuleImports<'a> {
-    pub fn new(ast_data: &'a ast::Data, sources: &'a Sources) -> Self {
+    pub fn new(ast_data: &'a AstData, sources: &'a Sources) -> Self {
         ModuleImports { ast_data, sources }
     }
 
     pub fn imports(&self) -> Option<impl Iterator<Item = ModuleImport> + 'a> {
         self.ast_data.elements().next().map(|(_, e)| {
-            assert!(e.kind != ast::Kind::Import);
+            assert!(e.kind != ast::AstKind::Import);
             self.ast_data.conns.get(e.children).iter().map(|&c| {
                 let &[nick, path] = self.ast_data.children(c) else {
                     unreachable!();

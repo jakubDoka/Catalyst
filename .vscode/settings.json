@@ -17,6 +17,7 @@
         "insts",
         "putchar",
         "repr",
+        "Reprs",
         "rfind",
         "sfield",
         "sfields",
