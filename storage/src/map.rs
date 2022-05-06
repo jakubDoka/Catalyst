@@ -85,6 +85,10 @@ impl<T: Default + Clone> Map<T> {
         Some(ret)
     }
 
+    pub fn insert_unique(&mut self, key: impl Into<ID>, value: T) {
+        assert!(self.insert_by_id(key.into(), value).is_none());
+    }
+
     pub fn insert(&mut self, key: impl Into<ID>, t: T) -> Option<T> {
         self.insert_by_id(key.into(), t)
     }

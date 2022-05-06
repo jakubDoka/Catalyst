@@ -278,7 +278,7 @@ pub fn compile() {
                     continue;
                 };
 
-                //println!("{}", typec::tir::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
+                //println!("{}", typec::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
             }
 
             // println!("typecheck {}", scope.collision_rate());

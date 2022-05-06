@@ -16,7 +16,7 @@ pub struct MirBuilder<'a> {
     pub t_types: &'a Types,
     pub t_funcs: &'a Funcs,
     pub func: &'a mut FuncCtx,
-    pub body: &'a tir::TirData,
+    pub body: &'a TirData,
     pub return_dest: Option<Value>,
     pub has_sret: &'a EntitySet<Func>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
@@ -74,7 +74,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_block(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirKind::Block(stmts) = self.body.ents[tir].kind else {
+        let TirKind::Block(stmts) = self.body.ents[tir].kind else {
             unreachable!()
         };
 
@@ -101,27 +101,27 @@ impl MirBuilder<'_> {
             return Ok(Some(value));
         }
 
-        let tir::TirEnt { kind, ty, span, .. } = self.body.ents[tir];
+        let TirEnt { kind, ty, span, .. } = self.body.ents[tir];
         let value = match kind {
-            tir::TirKind::Return(value) => self.translate_return(value.expand())?,
-            tir::TirKind::Call(..) => self.translate_call(tir, dest)?,
-            tir::TirKind::If(..) => self.translate_if(tir, dest)?,
-            tir::TirKind::Variable(value) => self.translate_variable(value)?,
-            tir::TirKind::Constructor(..) => self.translate_constructor(tir, dest)?,
-            tir::TirKind::FieldAccess(value, field) => {
+            TirKind::Return(value) => self.translate_return(value.expand())?,
+            TirKind::Call(..) => self.translate_call(tir, dest)?,
+            TirKind::If(..) => self.translate_if(tir, dest)?,
+            TirKind::Variable(value) => self.translate_variable(value)?,
+            TirKind::Constructor(..) => self.translate_constructor(tir, dest)?,
+            TirKind::FieldAccess(value, field) => {
                 self.translate_field_access(value, field, dest)?
             }
-            tir::TirKind::Block(..) => self.translate_block(tir, dest)?,
-            tir::TirKind::Loop(..) => self.translate_loop(tir, dest)?,
-            tir::TirKind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
-            tir::TirKind::Assign(a, b) => self.translate_assign(a, b)?,
-            tir::TirKind::Access(value) => self.translate_expr(value, dest)?,
-            tir::TirKind::IntLit(..) => self.translate_int_lit(ty, span, dest)?,
-            tir::TirKind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
-            tir::TirKind::CharLit => self.translate_char_lit(ty, span, dest)?,
-            tir::TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
-            tir::TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
-            _ => todo!("Unhandled tir::Kind::{:?}", kind),
+            TirKind::Block(..) => self.translate_block(tir, dest)?,
+            TirKind::Loop(..) => self.translate_loop(tir, dest)?,
+            TirKind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
+            TirKind::Assign(a, b) => self.translate_assign(a, b)?,
+            TirKind::Access(value) => self.translate_expr(value, dest)?,
+            TirKind::IntLit(..) => self.translate_int_lit(ty, span, dest)?,
+            TirKind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
+            TirKind::CharLit => self.translate_char_lit(ty, span, dest)?,
+            TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
+            TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
+            _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
         self.tir_mapping[tir] = value.into();
@@ -130,7 +130,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::TakePtr(value), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::TakePtr(value), .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
@@ -158,7 +158,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::DerefPointer(value), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::DerefPointer(value), .. } = self.body.ents[tir] else {
             unreachable!()
         };
 
@@ -256,7 +256,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_loop(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::Loop(body), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Loop(body), .. } = self.body.ents[tir] else {
             unreachable!()
         };
 
@@ -371,7 +371,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::Constructor(data), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Constructor(data), .. } = self.body.ents[tir] else {
             unreachable!()
         };
 
@@ -433,7 +433,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_variable(&mut self, tir: Tir) -> errors::Result<Option<Value>> {
-        let assignable = self.body.ents[tir].flags.contains(tir::TirFlags::ASSIGNABLE);
+        let assignable = self.body.ents[tir].flags.contains(TirFlags::ASSIGNABLE);
         let on_stack = self.on_stack(tir);
 
         let dest = if on_stack {
@@ -483,7 +483,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_if(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::If(cond, then, otherwise), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::If(cond, then, otherwise), .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
@@ -548,7 +548,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let tir::TirEnt { ty, kind: tir::TirKind::Call(caller, func, args), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Call(caller, func, args), .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
@@ -642,9 +642,9 @@ impl MirBuilder<'_> {
     }
 
     fn on_stack(&self, tir: Tir) -> bool {
-        let tir::TirEnt { ty, flags, .. } = self.body.ents[tir];
+        let TirEnt { ty, flags, .. } = self.body.ents[tir];
         self.types.ents[ty].flags.contains(repr::ReprFlags::ON_STACK)
-            || flags.contains(tir::TirFlags::SPILLED)
+            || flags.contains(TirFlags::SPILLED)
     }
 
     fn translate_return(&mut self, value: Option<Tir>) -> errors::Result<Option<Value>> {
@@ -665,7 +665,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_value(&mut self, tir: Tir) -> Option<Value> {
-        let tir::TirEnt { ty, .. } = self.body.ents[tir];
+        let TirEnt { ty, .. } = self.body.ents[tir];
         if ty == self.t_types.builtin.nothing {
             return None;
         }

@@ -12,6 +12,7 @@
         "ents",
         "fastcall",
         "funcs",
+        "Hasher",
         "iconst",
         "impls",
         "insts",

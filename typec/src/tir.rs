@@ -6,7 +6,7 @@ pub struct TirBuilder<'a> {
     pub func: Func,
     pub funcs: &'a mut Funcs,
     pub ctx: &'a mut ScopeContext,
-    pub body: &'a mut tir::TirData,
+    pub body: &'a mut TirData,
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
     pub temp: &'a mut FramedStack<Tir>,
@@ -262,8 +262,8 @@ impl<'a> TirBuilder<'a> {
                 let span = self.ast.nodes[name].span;
 
                 let arg = {
-                    let kind = tir::TirKind::Argument(i as u32);
-                    let ent = tir::TirEnt::new(kind, ty, span);
+                    let kind = TirKind::Argument(i as u32);
+                    let ent = TirEnt::new(kind, ty, span);
                     self.body.ents.push(ent)
                 };
 
@@ -289,7 +289,7 @@ impl<'a> TirBuilder<'a> {
         self.ctx.used_types.clear();
         self.ctx.used_types_set.clear();
 
-        if !self.body.ents[root].flags.contains(tir::TirFlags::TERMINATING)
+        if !self.body.ents[root].flags.contains(TirFlags::TERMINATING)
             && ret != self.types.builtin.nothing
         {
             let because = Some(self.ast.nodes[ret_ast].span);
@@ -320,7 +320,7 @@ impl<'a> TirBuilder<'a> {
             };
             self.temp.push(expr);
             final_expr = Some(expr);
-            terminating |= self.body.ents[expr].flags.contains(tir::TirFlags::TERMINATING);
+            terminating |= self.body.ents[expr].flags.contains(TirFlags::TERMINATING);
             if terminating {
                 break; // TODO: emit warning
             }
@@ -336,9 +336,9 @@ impl<'a> TirBuilder<'a> {
             let slice = self.temp.top_frame();
             let items = self.body.cons.push(slice);
 
-            let kind = tir::TirKind::Block(items);
-            let flags = tir::TirFlags::TERMINATING & terminating;
-            let ent = tir::TirEnt::with_flags(kind, ty, flags, span);
+            let kind = TirKind::Block(items);
+            let flags = TirFlags::TERMINATING & terminating;
+            let ent = TirEnt::with_flags(kind, ty, flags, span);
             self.body.ents.push(ent)
         };
 
@@ -394,7 +394,7 @@ impl<'a> TirBuilder<'a> {
 
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let ent = tir::TirEnt::new(tir::TirKind::CharLit, self.types.builtin.char, span);
+        let ent = TirEnt::new(TirKind::CharLit, self.types.builtin.char, span);
         Ok(self.body.ents.push(ent))
     }
 
@@ -423,8 +423,8 @@ impl<'a> TirBuilder<'a> {
             let ty = self.funcs[func].sig.ret;
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&[expr]);
-            let kind = tir::TirKind::Call(operand_ty.into(), func, args);
-            let ent = tir::TirEnt::new(kind, ty, span);
+            let kind = TirKind::Call(operand_ty.into(), func, args);
+            let ent = TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -446,14 +446,14 @@ impl<'a> TirBuilder<'a> {
         let loop_expr = self.scope.get::<Tir>(self.diagnostics, "<loop>", span)?;
 
         {
-            let tir::TirKind::LoopInProgress(ret, infinite) = &mut self.body.ents[loop_expr].kind else {
+            let TirKind::LoopInProgress(ret, infinite) = &mut self.body.ents[loop_expr].kind else {
                 unreachable!();
             };
 
             *infinite = false;
 
             if let Some(ret) = ret.expand() {
-                let tir::TirEnt {
+                let TirEnt {
                     span: ret_span, ty, ..
                 } = self.body.ents[ret];
                 if let Some(value) = value {
@@ -477,11 +477,11 @@ impl<'a> TirBuilder<'a> {
         }
 
         let result = {
-            let kind = tir::TirKind::Break(loop_expr, value.into());
-            let ent = tir::TirEnt::with_flags(
+            let kind = TirKind::Break(loop_expr, value.into());
+            let ent = TirEnt::with_flags(
                 kind,
                 self.types.builtin.nothing,
-                tir::TirFlags::TERMINATING,
+                TirFlags::TERMINATING,
                 span,
             );
             self.body.ents.push(ent)
@@ -497,8 +497,8 @@ impl<'a> TirBuilder<'a> {
         };
 
         let loop_slot = {
-            let kind = tir::TirKind::LoopInProgress(None.into(), true);
-            let ent = tir::TirEnt::new(kind, self.types.builtin.nothing, span);
+            let kind = TirKind::LoopInProgress(None.into(), true);
+            let ent = TirEnt::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
@@ -512,16 +512,16 @@ impl<'a> TirBuilder<'a> {
         self.scope.pop_item();
 
         {
-            let tir::TirKind::LoopInProgress(ret, infinite) = self.body.ents[loop_slot].kind else {
+            let TirKind::LoopInProgress(ret, infinite) = self.body.ents[loop_slot].kind else {
                 unreachable!();
             };
             let ty = ret
                 .map(|ret| self.body.ents[ret].ty)
                 .unwrap_or(self.types.builtin.nothing);
-            let flags = tir::TirFlags::TERMINATING & infinite;
-            let kind = tir::TirKind::Loop(block);
+            let flags = TirFlags::TERMINATING & infinite;
+            let kind = TirKind::Loop(block);
             let span = span;
-            self.body.ents[loop_slot] = tir::TirEnt::with_flags(kind, ty, flags, span);
+            self.body.ents[loop_slot] = TirEnt::with_flags(kind, ty, flags, span);
         }
 
         Ok(loop_slot)
@@ -653,7 +653,7 @@ impl<'a> TirBuilder<'a> {
                 args.iter()
                     .zip(arg_tys)
                     .map(|(&arg, arg_ty)| {
-                        let tir::TirEnt { ty, span, .. } = self.body.ents[arg];
+                        let TirEnt { ty, span, .. } = self.body.ents[arg];
                         infer_parameters(
                             ty,
                             arg_ty,
@@ -725,8 +725,8 @@ impl<'a> TirBuilder<'a> {
         let result = {
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&args);
-            let kind = tir::TirKind::Call(caller.into(), func, args);
-            let ent = tir::TirEnt::new(kind, ret, span);
+            let kind = TirKind::Call(caller.into(), func, args);
+            let ent = TirEnt::new(kind, ret, span);
             self.body.ents.push(ent)
         };
 
@@ -756,7 +756,7 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn take_ptr(&mut self, target: Tir) -> Tir {
-        let tir::TirEnt {
+        let TirEnt {
             ty,
             span,
             flags,
@@ -764,24 +764,24 @@ impl<'a> TirBuilder<'a> {
             ..
         } = &mut self.body.ents[target];
         let (span, ty) = (*span, *ty);
-        if let &mut tir::TirKind::Access(target) = kind {
-            self.body.ents[target].flags.insert(tir::TirFlags::SPILLED);
+        if let &mut TirKind::Access(target) = kind {
+            self.body.ents[target].flags.insert(TirFlags::SPILLED);
         } else {
-            flags.insert(tir::TirFlags::SPILLED);
+            flags.insert(TirFlags::SPILLED);
         }
 
-        let kind = tir::TirKind::TakePtr(target);
+        let kind = TirKind::TakePtr(target);
         let ptr_ty = pointer_of(ty, self.types);
-        let deref = tir::TirEnt::new(kind, ptr_ty, span);
+        let deref = TirEnt::new(kind, ptr_ty, span);
         self.body.ents.push(deref)
     }
 
     fn deref_ptr(&mut self, target: Tir) -> Tir {
         let span = self.body.ents[target].span;
-        let kind = tir::TirKind::DerefPointer(target);
+        let kind = TirKind::DerefPointer(target);
         let deref_ty = self.types.deref_ptr(self.body.ents[target].ty);
         self.ctx.use_type(deref_ty, self.types);
-        let deref = tir::TirEnt::new(kind, deref_ty, span);
+        let deref = TirEnt::new(kind, deref_ty, span);
         self.body.ents.push(deref)
     }
 
@@ -882,8 +882,8 @@ impl<'a> TirBuilder<'a> {
 
         let result = {
             self.ctx.use_type(field_ty, self.types);
-            let kind = tir::TirKind::FieldAccess(header, field_id);
-            let ent = tir::TirEnt::new(kind, field_ty, span);
+            let kind = TirKind::FieldAccess(header, field_id);
+            let ent = TirEnt::new(kind, field_ty, span);
             self.body.ents.push(ent)
         };
 
@@ -893,8 +893,8 @@ impl<'a> TirBuilder<'a> {
     fn build_bool(&mut self, ast: Ast, value: bool) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
         let ty = self.types.builtin.bool;
-        let kind = tir::TirKind::BoolLit(value);
-        let ent = tir::TirEnt::new(kind, ty, span);
+        let kind = TirKind::BoolLit(value);
+        let ent = TirEnt::new(kind, ty, span);
         let result = self.body.ents.push(ent);
         Ok(result)
     }
@@ -987,8 +987,8 @@ impl<'a> TirBuilder<'a> {
         let result = {
             let span = self.ast.nodes[body].span;
             let fields = self.body.cons.push(&initial_values);
-            let kind = tir::TirKind::Constructor(fields);
-            let ent = tir::TirEnt::new(kind, ty, span);
+            let kind = TirKind::Constructor(fields);
+            let ent = TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1010,7 +1010,7 @@ impl<'a> TirBuilder<'a> {
         let value = self.build_expr(value)?;
         self.body.ents[value]
             .flags
-            .insert(tir::TirFlags::ASSIGNABLE & mutable);
+            .insert(TirFlags::ASSIGNABLE & mutable);
 
         {
             let item = ScopeItem::new(value, span);
@@ -1018,8 +1018,8 @@ impl<'a> TirBuilder<'a> {
         }
 
         let result = {
-            let kind = tir::TirKind::Variable(value);
-            let ent = tir::TirEnt::new(kind, self.types.builtin.nothing, span);
+            let kind = TirKind::Variable(value);
+            let ent = TirEnt::new(kind, self.types.builtin.nothing, span);
             self.body.ents.push(ent)
         };
 
@@ -1028,7 +1028,7 @@ impl<'a> TirBuilder<'a> {
 
     fn build_int(&mut self, ast: Ast, width: i16) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let kind = tir::TirKind::IntLit(width);
+        let kind = TirKind::IntLit(width);
         let ty = {
             let name = match width {
                 8 => "i8",
@@ -1041,7 +1041,7 @@ impl<'a> TirBuilder<'a> {
             self.scope.get::<Ty>(self.diagnostics, name, span).unwrap()
         };
 
-        let ent = tir::TirEnt::new(kind, ty, span);
+        let ent = TirEnt::new(kind, ty, span);
         Ok(self.body.ents.push(ent))
     }
 
@@ -1079,11 +1079,11 @@ impl<'a> TirBuilder<'a> {
         };
 
         let result = {
-            let kind = tir::TirKind::Return(value.into());
-            let ent = tir::TirEnt::with_flags(
+            let kind = TirKind::Return(value.into());
+            let ent = TirEnt::with_flags(
                 kind,
                 self.types.builtin.nothing,
-                tir::TirFlags::TERMINATING,
+                TirFlags::TERMINATING,
                 span,
             );
             self.body.ents.push(ent)
@@ -1131,14 +1131,14 @@ impl<'a> TirBuilder<'a> {
             let then_flags = ents[then].flags;
             let otherwise_flags = otherwise
                 .map(|otherwise| ents[otherwise].flags)
-                .unwrap_or(tir::TirFlags::empty());
+                .unwrap_or(TirFlags::empty());
 
-            (then_flags & otherwise_flags) & tir::TirFlags::TERMINATING
+            (then_flags & otherwise_flags) & TirFlags::TERMINATING
         };
 
         let result = {
-            let kind = tir::TirKind::If(cond, then, otherwise.into());
-            let ent = tir::TirEnt::with_flags(kind, ty, flags, span);
+            let kind = TirKind::If(cond, then, otherwise.into());
+            let ent = TirEnt::with_flags(kind, ty, flags, span);
             self.body.ents.push(ent)
         };
 
@@ -1154,7 +1154,7 @@ impl<'a> TirBuilder<'a> {
         // this allows better error messages
         let result = {
             let mut copy = self.body.ents[value];
-            copy.kind = tir::TirKind::Access(value);
+            copy.kind = TirKind::Access(value);
             copy.span = span;
             self.body.ents.push(copy)
         };
@@ -1229,8 +1229,8 @@ impl<'a> TirBuilder<'a> {
         let tir = {
             let ty = self.funcs[func].sig.ret;
             let args = self.body.cons.push(&[left, right]);
-            let kind = tir::TirKind::Call(left_ty.into(), func, args);
-            let ent = tir::TirEnt::new(kind, ty, span);
+            let kind = TirKind::Call(left_ty.into(), func, args);
+            let ent = TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1238,15 +1238,15 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn build_assign(&mut self, left: Tir, right: Tir, span: Span) -> errors::Result<Tir> {
-        let tir::TirEnt {
+        let TirEnt {
             ty,
             flags,
             span: left_span,
             kind,
         } = self.body.ents[left];
 
-        if !flags.contains(tir::TirFlags::ASSIGNABLE) {
-            let because = if let tir::TirKind::Access(here) = kind {
+        if !flags.contains(TirFlags::ASSIGNABLE) {
+            let because = if let TirKind::Access(here) = kind {
                 Some(self.body.ents[here].span)
             } else {
                 None
@@ -1265,8 +1265,8 @@ impl<'a> TirBuilder<'a> {
         })?;
 
         let result = {
-            let kind = tir::TirKind::Assign(left, right);
-            let ent = tir::TirEnt::new(kind, ty, span);
+            let kind = TirKind::Assign(left, right);
+            let ent = TirEnt::new(kind, ty, span);
             self.body.ents.push(ent)
         };
 
@@ -1311,7 +1311,7 @@ impl<'a> TirBuilder<'a> {
         ty: Ty,
         err_fact: impl Fn(&mut Self, Ty, Span) -> TyError,
     ) -> errors::Result {
-        let tir::TirEnt { ty: got, span, .. } = self.body.ents[right];
+        let TirEnt { ty: got, span, .. } = self.body.ents[right];
         self.expect_ty(ty, got, |s| err_fact(s, got, span))
     }
 
