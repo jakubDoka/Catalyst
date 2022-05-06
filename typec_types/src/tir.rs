@@ -1,10 +1,7 @@
-use cranelift_entity::{
-    packed_option::{PackedOption, ReservedValue},
-    EntitySet, PrimaryMap,
-};
-
-use crate::*;
-use lexer::*;
+use storage::*;
+use lexer_types::*;
+use crate::ty::{self, *};
+use crate::func::*;
 
 #[derive(Clone)]
 pub struct Data {
@@ -88,10 +85,10 @@ impl Default for Kind {
     }
 }
 
-lexer::gen_entity!(Tir);
-lexer::gen_entity!(TirList);
+gen_entity!(Tir);
+gen_entity!(TirList);
 
-bitflags::bitflags! {
+bitflags! {
     #[derive(Default)]
     pub struct Flags: u32 {
         /// Can we assign to this expression?
@@ -101,21 +98,6 @@ bitflags::bitflags! {
         /// This expression will always reside stack
         const SPILLED = 1 << 2;
     }
-}
-
-#[macro_export]
-macro_rules! impl_bool_bit_and {
-    ($flags:ty) => {
-        impl std::ops::BitAnd<bool> for $flags {
-            type Output = Self;
-
-            fn bitand(self, rhs: bool) -> Self {
-                Self {
-                    bits: self.bits & (!rhs as u32).wrapping_add(u32::MAX),
-                }
-            }
-        }
-    };
 }
 
 impl_bool_bit_and!(Flags);

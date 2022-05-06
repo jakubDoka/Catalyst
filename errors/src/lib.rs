@@ -6,8 +6,6 @@ use std::{
     collections::HashMap,
 };
 
-use ansi_term::Color;
-
 /// Shorthand for common result type
 pub type Result<T = ()> = std::result::Result<T, ()>;
 
@@ -39,37 +37,4 @@ impl Diagnostics {
     pub fn clear(&mut self) {
         self.errors.clear();
     }
-}
-
-/// Scope struct for commonly used colors
-pub struct Palette;
-
-impl Palette {
-    pub fn info() -> Color {
-        Color::RGB(138, 226, 255)
-    }
-
-    pub fn error() -> Color {
-        Color::RGB(255, 92, 92)
-    }
-
-    pub fn warning() -> Color {
-        Color::RGB(255, 255, 138)
-    }
-
-    pub fn success() -> Color {
-        Color::RGB(0, 204, 0)
-    }
-}
-
-#[macro_export]
-macro_rules! write_styled {
-    ($target:expr, $style:expr, $str:literal, $($args:expr),*) => {
-        {
-            let style: ansi_term::Style = $style.into();
-            write!($target, "{}", style.prefix()).unwrap();
-            write!($target, $str, $($args),*).unwrap();
-            write!($target, "{}", style.suffix()).unwrap();
-        }
-    };
 }

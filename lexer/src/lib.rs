@@ -3,63 +3,8 @@
 #![feature(int_log)]
 #![feature(bool_to_option)]
 
-pub extern crate cranelift_entity;
-
-pub mod map;
-pub mod source_info;
-pub mod stack;
-pub mod token;
-
+pub(self) use lexer_types::*;
 use std::str::Chars;
-
-pub use map::*;
-pub use source_info::*;
-pub use stack::*;
-pub use token::*;
-
-#[macro_export]
-macro_rules! gen_entity {
-    ($($name:ident)*) => {
-        $(
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            pub struct $name(pub u32);
-
-            $crate::cranelift_entity::entity_impl!($name);
-
-            impl Default for $name {
-                fn default() -> Self {
-                    $crate::cranelift_entity::packed_option::ReservedValue::reserved_value()
-                }
-            }
-
-
-            impl std::fmt::Display for $name {
-                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    write!(f, "{}{}", stringify!($name).chars().next().unwrap().to_lowercase(), self.0)
-                }
-            }
-
-            impl $crate::map::IDFilter for $name {}
-        )*
-    };
-}
-
-use cranelift_entity::{packed_option::ReservedValue, EntityList, EntityRef, ListPool};
-
-pub trait ListPoolExt<T: EntityRef + ReservedValue> {
-    fn list(&mut self, slice: &[T]) -> EntityList<T>;
-    fn get(&self, list: EntityList<T>) -> &[T];
-}
-
-impl<T: EntityRef + ReservedValue> ListPoolExt<T> for ListPool<T> {
-    fn list(&mut self, slice: &[T]) -> EntityList<T> {
-        EntityList::from_slice(slice, self)
-    }
-
-    fn get(&self, list: EntityList<T>) -> &[T] {
-        list.as_slice(self)
-    }
-}
 
 pub struct Lexer<'a> {
     chars: Chars<'a>,
@@ -222,34 +167,6 @@ impl<'a> Lexer<'a> {
     pub fn source_content(&self) -> &str {
         self.str
     }
-}
-
-pub fn int_value(sources: &Sources, span: Span) -> u64 {
-    let mut chars = sources.display(span).chars();
-    let mut value = 0;
-    while let Some(c @ '0'..='9') = chars.next() {
-        value = value * 10 + (c as u64 - '0' as u64);
-    }
-
-    match chars.next() {
-        None => return value,
-        _ => todo!("unhandled int literal {:?}", sources.display(span)),
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CharError {
-    ExtraCharacters,
-    NoCharacter,
-}
-
-pub fn char_value(sources: &Sources, span: Span) -> Result<char, CharError> {
-    let mut chars = sources.display(span.strip_sides()).chars();
-    let char = chars.next().ok_or(CharError::NoCharacter)?;
-    if chars.next().is_some() {
-        return Err(CharError::ExtraCharacters);
-    }
-    Ok(char)
 }
 
 impl IsOperator for char {

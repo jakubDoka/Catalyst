@@ -3,9 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
-
-use crate::{Map, ID};
+use storage::*;
+use token::Kind;
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 
@@ -192,11 +191,12 @@ impl Span {
         self.source
     }
 
+    #[inline(never)]
     pub fn log(&self, sources: &Sources) -> String {
         let mut string = String::new();
         self.loc_to(sources, &mut string).unwrap();
         self.underline_to(
-            ansi_term::Color::Red.normal(),
+            ansi_consts::ERR,
             '^',
             sources,
             &mut string,
@@ -206,9 +206,42 @@ impl Span {
         string
     }
 
+    #[inline(never)]
+    pub fn underline_error(
+        &self, 
+        sources: &Sources, 
+        to: &mut String, 
+        message: &dyn Fn(&mut String) -> std::fmt::Result,
+    ) -> std::fmt::Result {
+        self.underline_to(
+            ansi_consts::ERR,
+            '^',
+            sources,
+            to,
+            message,
+        )
+    }
+
+    #[inline(never)]
+    pub fn underline_info(
+        &self,
+        sources: &Sources,
+        to: &mut String,
+        message: &dyn Fn(&mut String) -> std::fmt::Result,
+    ) -> std::fmt::Result {
+        self.underline_to(
+            ansi_consts::INFO,
+            '~',
+            sources,
+            to,
+            message,
+        )
+    }
+
+    #[inline(never)]
     pub fn underline_to(
         &self,
-        color: ansi_term::Style,
+        color: &str,
         underline_char: char,
         sources: &Sources,
         to: &mut String,
@@ -219,7 +252,7 @@ impl Span {
             return writeln!(to, "undefined span");
         }
 
-        let (prefix, suffix) = (color.prefix(), color.suffix());
+        let (prefix, suffix) = (color, ansi_consts::END);
 
         // called immediately for `?` use
         let source = &sources[self.source].content;
@@ -308,3 +341,92 @@ impl ReservedValue for Span {
         self.source.is_reserved_value()
     }
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Token {
+    kind: Kind,
+    span: Span,
+}
+
+impl Token {
+    pub fn new(kind: Kind, span: Span) -> Token {
+        Self { kind, span }
+    }
+
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.span.range()
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
+pub mod token {
+    macro_rules! gen_kind {
+        ($($name:ident$(($ty:ident))? = $repr:literal,)*) => {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum Kind {
+                $($name$(($ty))?),*
+            }
+    
+            impl Kind {
+                pub fn as_str(&self) -> &'static str {
+                    #[allow(unused)]
+                    match self {
+                        $(Self::$name$(($ty))? => $repr,)*
+                    }
+                }
+            }
+        };
+    }
+    
+    gen_kind!(
+        Fn = "'fn'",
+        Return = "'return'",
+        Use = "'use'",
+        Extern = "'extern'",
+        If = "'if'",
+        Else = "'else'",
+        Loop = "'loop'",
+        Break = "'break'",
+        Let = "'let'",
+        Struct = "'struct'",
+        Bound = "'bound'",
+        Mut = "'mut'",
+        Impl = "'impl'",
+        As = "'as'",
+        Ident = "<ident>",
+        Operator = "<operator>",
+        Int(i16) = "<int>",
+        String = "<string>",
+        Bool(bool) = "<bool>",
+        Char = "<char>",
+        LeftCurly = "'{'",
+        RightCurly = "'}'",
+        LeftParen = "'('",
+        RightParen = "')'",
+        LeftBracket = "'['",
+        RightBracket = "']'",
+        Comma = "','",
+        Colon = "':'",
+        Dot = "'.'",
+        RightArrow = "'->'",
+        DoubleColon = "'::'",
+        Hash = "'#'",
+        NewLine = "'\\n' | ';'",
+        Eof = "<eof>",
+        None = "<none>",
+    );
+    
+    impl Default for Kind {
+        fn default() -> Self {
+            Kind::None
+        }
+    }
+}
+

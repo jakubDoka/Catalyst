@@ -15,11 +15,17 @@ path="src/main.rs"
 
 [workspace]
 members = [
+    "storage",
     "lexer",
+    "lexer_types",
     "parser",
+    "ast",
     "typec",
+    "typec_types",
     "modules",
+    "module_types",
     "instance",
+    "instance_types",
     "gen",
     "cli",
     "errors",

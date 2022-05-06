@@ -1,14 +1,8 @@
-use std::fmt::Write;
+use module_types::modules::Modules;
 
-use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
+use crate::{Error, *, collector::Context};
 
-use crate::{Error, *};
-use lexer::*;
-use parser::*;
-
-pub type Funcs = PrimaryMap<Func, Ent>;
-
-pub struct Builder<'a> {
+pub struct FuncBuilder<'a> {
     pub func: Func,
     pub funcs: &'a mut Funcs,
     pub ctx: &'a mut Context,
@@ -22,7 +16,7 @@ pub struct Builder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
-impl<'a> Builder<'a> {
+impl<'a> FuncBuilder<'a> {
     pub fn verify_bound_impls(&mut self) -> errors::Result {
         // we have to collect all functions first and the check if all bound
         // functions are implemented, its done here
@@ -57,7 +51,7 @@ impl<'a> Builder<'a> {
                             let func = self.id_of(ident);
                             let bound = self.types.ents[bound].id;
                             let implementor = self.types.ents[implementor].id;
-                            Collector::bound_impl_owned_func_id(bound, implementor, func)
+                            ID::bound_impl_owned_func(bound, implementor, func)
                         };
 
                         {
@@ -89,9 +83,9 @@ impl<'a> Builder<'a> {
                         let (sugar_id, certain_id) = {
                             let func = self.sources.id(ent.name);
                             let ty = self.types.ents[implementor].id;
-                            let sugar_id = Self::owned_func_id(ty, func);
+                            let sugar_id = ID::owned_func(ty, func);
                             let bound = self.types.ents[bound].id;
-                            let certain_id = Collector::bound_impl_owned_func_id(bound, ty, func);
+                            let certain_id = ID::bound_impl_owned_func(bound, ty, func);
                             (sugar_id, certain_id)
                         };
 
@@ -118,7 +112,7 @@ impl<'a> Builder<'a> {
                 let id = {
                     let implementor = self.types.ents[implementor].id;
                     let bound = self.types.ents[bound].id;
-                    Collector::bound_impl_id(bound, implementor)
+                    ID::bound_impl(bound, implementor)
                 };
 
                 assert!(self
@@ -166,7 +160,7 @@ impl<'a> Builder<'a> {
                 let children = self.ast.children(self.ctx.func_ast[impl_func]);
                 let has_ret = (a.ret != self.types.builtin.nothing) as usize;
                 &children
-                    [Parser::FUNCTION_ARG_START..children.len() - Parser::FUNCTION_RET + has_ret]
+                    [ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
 
             let a = a_args.into_iter().chain(std::iter::once(a.ret));
@@ -192,7 +186,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build(&mut self) -> errors::Result {
-        let Ent {
+        let func::Ent {
             flags,
             kind,
             sig: Sig {
@@ -246,7 +240,7 @@ impl<'a> Builder<'a> {
                         let id = {
                             let id = self.sources.id(name);
                             let bound = self.types.ents[bound_combo].id;
-                            Self::owned_func_id(bound, id)
+                            ID::owned_func(bound, id)
                         };
                         self.scope.push_item(id, scope::Item::new(func, name));
                     }
@@ -256,7 +250,7 @@ impl<'a> Builder<'a> {
 
         let args = {
             let ast_args =
-                &header[Parser::FUNCTION_ARG_START..header.len() - Parser::FUNCTION_ARG_END];
+                &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
             let args = self.types.args.get(args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
@@ -419,7 +413,7 @@ impl<'a> Builder<'a> {
 
                 let op = self.sources.id(span);
 
-                Self::unary_id(ty, op)
+                ID::unary(ty, op)
             };
 
             self.scope.get::<Func>(self.diagnostics, id, span)?
@@ -435,10 +429,6 @@ impl<'a> Builder<'a> {
         };
 
         Ok(result)
-    }
-
-    pub fn unary_id(ty: ID, op: ID) -> ID {
-        ID::new("<unary>") + ty + op
     }
 
     fn build_break(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -585,7 +575,7 @@ impl<'a> Builder<'a> {
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
-        let Ent { sig, flags, .. } = self.funcs[func];
+        let func::Ent { sig, flags, .. } = self.funcs[func];
 
         let arg_tys = self.types.args.get(sig.args).to_vec(); // TODO: avoid allocation
 
@@ -625,7 +615,7 @@ impl<'a> Builder<'a> {
                 return Err(());
             }
 
-            if !flags.contains(Flags::GENERIC) {
+            if !flags.contains(func::Flags::GENERIC) {
                 // here we type check all arguments and then check for errors
                 args.iter()
                     .zip(arg_tys)
@@ -718,9 +708,9 @@ impl<'a> Builder<'a> {
                             ret,
                             ..sig
                         };
-                        let ent = Ent {
+                        let ent = func::Ent {
                             sig,
-                            kind: Kind::Instance(func),
+                            kind: func::Kind::Instance(func),
                             flags: self.funcs[func].flags & !func::Flags::GENERIC,
                             ..self.funcs[func]
                         };
@@ -826,7 +816,7 @@ impl<'a> Builder<'a> {
                 let id = {
                     let name = self.id_of(item);
                     let ty = self.base_id_of(ty);
-                    Self::owned_func_id(ty, name)
+                    ID::owned_func(ty, name)
                 };
 
                 Ok((id + module_id, Some((ty, span))))
@@ -845,7 +835,7 @@ impl<'a> Builder<'a> {
                     } else {
                         let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
                         (
-                            Self::owned_func_id(self.base_id_of(ty), item_id),
+                            ID::owned_func(self.base_id_of(ty), item_id),
                             Some((ty, span)),
                         )
                     },
@@ -855,7 +845,7 @@ impl<'a> Builder<'a> {
             (&[], Some((ty, span))) => {
                 let name = self.id_of(ast);
                 let ty_id = self.base_id_of(ty);
-                Ok((Self::owned_func_id(ty_id, name), Some((ty, span))))
+                Ok((ID::owned_func(ty_id, name), Some((ty, span))))
             }
             _ => {
                 self.diagnostics.push(Error::InvalidPath {
@@ -881,7 +871,7 @@ impl<'a> Builder<'a> {
             let id = {
                 let ty_id = self.types.ents[base_ty].id;
                 let str = self.sources.display(span);
-                ty::Builder::field_id(ty_id, ID::new(str))
+                ID::field(ty_id, ID::new(str))
             };
             self.find_field(base_ty, id, span)?
         };
@@ -946,7 +936,7 @@ impl<'a> Builder<'a> {
             let span = self.ast.nodes[name].span;
             let id = {
                 let id = self.sources.id(span);
-                ty::Builder::field_id(ty_id, id)
+                ID::field(ty_id, id)
             };
 
             let Ok((field, field_ty)) = self.find_field(ty, id, span) else {
@@ -1200,7 +1190,7 @@ impl<'a> Builder<'a> {
 
             let left_id = self.base_id_of(left_ty);
 
-            Self::binary_id(left_id, op_id)
+            ID::binary(left_id, op_id)
         };
 
         let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, op_span) else {
@@ -1340,14 +1330,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn binary_id(left: ID, op: ID) -> ID {
-        ID::new("<binary>") + left + op
-    }
-
-    pub fn owned_func_id(ty: ID, name: ID) -> ID {
-        ty + name
-    }
-
     fn base_id_of(&self, ty: Ty) -> ID {
         if self.func.is_reserved_value() {
             return self.types.base_id_of(ty, TyList::reserved_value());
@@ -1357,111 +1339,8 @@ impl<'a> Builder<'a> {
     }
 }
 
-impl AstIDExt for Builder<'_> {
-    fn state(&self) -> (&Data, &Sources) {
+impl AstIDExt for FuncBuilder<'_> {
+    fn state(&self) -> (&ast::Data, &Sources) {
         (self.ast, self.sources)
     }
 }
-
-#[derive(Debug, Copy, Clone, Default)]
-pub struct Ent {
-    pub sig: Sig,
-    pub name: Span,
-    pub kind: Kind,
-    pub body: Tir,
-    pub args: TirList,
-    pub flags: Flags,
-}
-
-impl Ent {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get_link_name(&self, types: &Types, sources: &Sources, buffer: &mut String) {
-        buffer.write_str(sources.display(self.name)).unwrap();
-        if !self.sig.params.is_reserved_value() {
-            buffer.write_char('[').unwrap();
-            for &ty in types.args.get(self.sig.params) {
-                ty.display(types, sources, buffer).unwrap();
-                buffer.write_char(',').unwrap();
-            }
-            buffer.pop().unwrap();
-            buffer.write_char(']').unwrap();
-        }
-    }
-}
-
-bitflags::bitflags! {
-    #[derive(Default)]
-    pub struct Flags: u32 {
-        const ENTRY = 1 << 0;
-        const GENERIC = 1 << 1;
-        const INLINE = 1 << 2;
-        const EXTERNAL = 1 << 3;
-    }
-}
-
-crate::impl_bool_bit_and!(Flags);
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Kind {
-    Local,
-    External,
-    // (bound, relative index)
-    Bound(Ty, u32),
-    Owned(Ty),
-    Instance(Func),
-    Builtin,
-}
-
-impl Default for Kind {
-    fn default() -> Self {
-        Kind::Local
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Sig {
-    pub params: TyList,
-    pub call_conv: Span,
-    pub args: TyList,
-    pub ret: Ty,
-}
-
-pub struct SignatureDisplay<'a> {
-    pub sig: &'a Sig,
-    pub sources: &'a Sources,
-    pub types: &'a Types,
-}
-
-impl<'a> SignatureDisplay<'a> {
-    pub fn new(sig: &'a Sig, sources: &'a Sources, types: &'a Types) -> Self {
-        SignatureDisplay {
-            sig,
-            types,
-            sources,
-        }
-    }
-}
-
-impl std::fmt::Display for SignatureDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for (i, &ty) in self.types.args.get(self.sig.args).iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", ty::Display::new(self.types, self.sources, ty))?;
-        }
-        write!(
-            f,
-            ") -> {}",
-            ty::Display::new(self.types, self.sources, self.sig.ret)
-        )?;
-        Ok(())
-    }
-}
-
-lexer::gen_entity!(Func);
-lexer::gen_entity!(FuncList);

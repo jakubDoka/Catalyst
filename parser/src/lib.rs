@@ -1,23 +1,11 @@
 #![feature(generic_associated_types)]
-
-use cranelift_entity::packed_option::ReservedValue;
-
 pub use crate::error::*;
-pub use ast::*;
+use storage::*;
 use lexer::*;
+use lexer_types::*;
+use ast::*;
 
-pub mod ast;
 pub mod error;
-
-pub trait AstIDExt {
-    fn state(&self) -> (&Data, &Sources);
-
-    fn id_of(&self, node: Ast) -> ID {
-        let (ast, sources) = self.state();
-        let span = ast.nodes[node].span;
-        sources.id(span)
-    }
-}
 
 pub struct Parser<'a> {
     next: Token,
@@ -30,10 +18,6 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub const FUNCTION_ARG_START: usize = 3;
-    pub const FUNCTION_ARG_END: usize = 2;
-    pub const FUNCTION_RET: usize = 2;
-
     pub fn parse_imports(
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,

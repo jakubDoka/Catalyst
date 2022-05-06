@@ -317,6 +317,38 @@ impl ID {
         Self::from_bytes(data.as_bytes())
     }
 
+    pub fn raw_field(ty: Self, field: u64) -> Self {
+        ty + Self(field)
+    }
+
+    pub fn bound_impl(bound: Self, implementor: Self) -> Self {
+        Self::new("<impl>") + bound + implementor
+    }
+
+    pub fn pointer(ty: Self) -> Self {
+        Self::new("*") + ty
+    }
+
+    pub fn field(ty: Self, name: Self) -> Self {
+        ty + name
+    }
+
+    pub fn bound_impl_owned_func(bound: Self, implementor: Self, func: Self) -> Self {
+        implementor + Self::owned_func(bound, func)
+    }
+
+    pub fn binary(left: Self, op: Self) -> Self {
+        Self::new("<binary>") + left + op
+    }
+
+    pub fn owned_func(ty: Self, name: Self) -> Self {
+        ty + name
+    }
+
+    pub fn unary(ty: Self, op: Self) -> Self {
+        Self::new("<unary>") + ty + op
+    }
+
     pub fn from_path(path: &Path) -> Self {
         Self::from_bytes(unsafe { std::mem::transmute(path) })
     }

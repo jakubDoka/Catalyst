@@ -2,6 +2,7 @@
     "cSpell.words": [
         "bitflags",
         "canonicalize",
+        "consts",
         "conv",
         "Cranelift",
         "dealloc",
@@ -22,6 +23,7 @@
         "sret",
         "struct",
         "structs",
+        "tfunc",
         "typec"
     ]
 }

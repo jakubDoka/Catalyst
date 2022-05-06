@@ -1,133 +1,8 @@
-use crate::{Error, *};
-use cranelift_entity::{
-    packed_option::{PackedOption, ReservedValue},
-    PrimaryMap,
-};
-use errors::Diagnostics;
-use lexer::*;
-use modules::*;
-use parser::*;
+use module_types::tree::GenericGraph;
+use storage::*;
+use lexer_types::*;
 
-pub struct Builder<'a> {
-    pub scope: &'a mut Scope,
-    pub types: &'a mut Types,
-    pub sources: &'a Sources,
-    pub ast: &'a ast::Data,
-    pub ctx: &'a mut Context,
-    pub graph: &'a mut GenericGraph,
-    pub modules: &'a mut Modules,
-    pub ty: Ty,
-    pub diagnostics: &'a mut errors::Diagnostics,
-}
-
-impl<'a> Builder<'a> {
-    pub fn build(&mut self) -> errors::Result {
-        let Ent { id, .. } = self.types.ents[self.ty];
-        let ast = self.ctx.type_ast[self.ty];
-        if ast.is_reserved_value() {
-            return Ok(());
-        }
-        let ast::Ent { kind, span, .. } = self.ast.nodes[ast];
-
-        match kind {
-            ast::Kind::Struct => self.build_struct(id, ast)?,
-            ast::Kind::Bound => self.build_bound(id, ast)?,
-            _ => todo!(
-                "Unhandled type decl {:?}: {}",
-                kind,
-                self.sources.display(span)
-            ),
-        }
-
-        Ok(())
-    }
-
-    pub fn build_bound(&mut self, _id: ID, _ast: Ast) -> errors::Result {
-        Ok(())
-    }
-
-    pub fn build_struct(&mut self, id: ID, ast: Ast) -> errors::Result {
-        let &[generics, .., body] = self.ast.children(ast) else {
-            unreachable!();
-        };
-
-        self.scope.mark_frame();
-
-        if !generics.is_reserved_value() {
-            for (&ident, &param) in self
-                .ast
-                .children(generics)
-                .iter()
-                .zip(self.types.ty_params())
-            {
-                let span = self.ast.nodes[ident].span;
-                let id = self.sources.id(span);
-                self.scope.push_item(id, scope::Item::new(param, span))
-            }
-        }
-
-        // fields are inserted into centralized hash map for faster lookup
-        // and memory efficiency, though we still need field ordering when
-        // calculating offsets
-        let fields = {
-            for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
-                let &[name, field_ty_ast] = self.ast.children(field_ast) else {
-                    unreachable!();
-                };
-                let field_ty = parse_type!(self, field_ty_ast)?;
-
-                let span = self.ast.nodes[name].span;
-
-                let id = {
-                    let name = self.sources.id(span);
-                    Self::field_id(id, name)
-                };
-
-                let field = {
-                    let field = SFieldEnt {
-                        span,
-                        ty: field_ty,
-                        index: i as u32,
-                    };
-                    self.types.sfields.push_one(field)
-                };
-
-                assert!(self
-                    .types
-                    .sfield_lookup
-                    .insert(id, SFieldRef::new(field))
-                    .map(|f| f.next.is_some())
-                    .unwrap_or(true));
-
-                let field_ty = if let Kind::Instance(header, ..) = self.types.ents[field_ty].kind {
-                    header
-                } else {
-                    field_ty
-                };
-
-                self.graph.add_edge(field_ty.as_u32());
-            }
-            self.types.sfields.close_frame()
-        };
-
-        self.types.ents[self.ty].kind = Kind::Struct(fields);
-        self.graph.close_node();
-
-        self.scope.pop_frame();
-
-        Ok(())
-    }
-
-    pub fn field_id(ty: ID, name: ID) -> ID {
-        ty + name
-    }
-}
-
-impl AstIDExt for Builder<'_> {
-    fn state(&self) -> (&Data, &Sources) {
-        (self.ast, self.sources)
-    }
-}
+use crate::func::*;
 
 pub struct Types {
     pub ents: PrimaryMap<Ty, Ent>,
@@ -178,41 +53,6 @@ impl Types {
             Kind::Ptr(.., depth) => depth,
             _ => 0,
         }
-    }
-
-    pub fn implements(
-        &self,
-        input: Ty,
-        bound: Ty,
-        diagnostics: &mut Diagnostics,
-        span: Span,
-    ) -> errors::Result {
-        // bound can be pain Bound or BoundCombo
-        let a = &[bound];
-        let bounds = match self.ents[bound].kind {
-            Kind::Bound(..) => a,
-            Kind::BoundCombo(combo) => self.args.get(combo),
-            _ => unreachable!("{:?}", self.ents[bound].kind),
-        };
-
-        let input_id = self.ents[input].id;
-
-        let mut result = Ok(());
-
-        for &bound in bounds {
-            let bound_id = self.ents[bound].id;
-            let id = Collector::bound_impl_id(bound_id, input_id);
-            if self.bound_cons.get(id).is_none() {
-                diagnostics.push(Error::MissingBound {
-                    input,
-                    bound,
-                    loc: span,
-                });
-                result = Err(());
-            }
-        }
-
-        result
     }
 
     pub fn base_id_of(&self, ty: Ty, params: TyList) -> ID {
@@ -269,7 +109,7 @@ impl Types {
                     id: ID::new("<param>") + ID(i as u64),
                     kind: Kind::Param((i % (Self::MAX_PARAMS / 2)) as u32),
                     name: builtin_source.make_span(sources, "param"),
-                    flags: ty::Flags::GENERIC,
+                    flags: Flags::GENERIC,
                     ..Default::default()
                 };
                 self.ents.push(ent)
@@ -319,10 +159,6 @@ impl Types {
 
     pub fn ty_params(&self) -> &[Ty] {
         &self.params[Self::MAX_PARAMS / 2..]
-    }
-
-    pub fn param_id(index: usize, ty: ID) -> ID {
-        ID::new("<param>") + ID(index as u64) + ty
     }
 
     pub fn ptr_base_of(&self, mut ty: Ty) -> Ty {
@@ -407,15 +243,15 @@ impl BuiltinTable {
 }
 
 gen_builtin_table!(
-    nothing: ty::Kind::Nothing,
-    any: ty::Kind::Bound(FuncList::default()),
-    bool: ty::Kind::Bool,
-    char: ty::Kind::Int(32),
-    int: ty::Kind::Int(-1),
-    i8: ty::Kind::Int(8),
-    i16: ty::Kind::Int(16),
-    i32: ty::Kind::Int(32),
-    i64: ty::Kind::Int(64),
+    nothing: Kind::Nothing,
+    any: Kind::Bound(FuncList::default()),
+    bool: Kind::Bool,
+    char: Kind::Int(32),
+    int: Kind::Int(-1),
+    i8: Kind::Int(8),
+    i16: Kind::Int(16),
+    i32: Kind::Int(32),
+    i64: Kind::Int(64),
 );
 
 impl BuiltinTable {
@@ -490,7 +326,7 @@ pub struct Ent {
     pub flags: Flags,
 }
 
-bitflags::bitflags! {
+bitflags! {
     #[derive(Default)]
     pub struct Flags: u32 {
         const GENERIC = 1 << 0;
@@ -514,7 +350,7 @@ impl Flags {
     }
 }
 
-crate::impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(Flags);
 
 pub struct Display<'a> {
     types: &'a Types,
@@ -559,10 +395,10 @@ impl Default for Kind {
     }
 }
 
-lexer::gen_entity!(Ty);
-lexer::gen_entity!(TyList);
-lexer::gen_entity!(SField);
-lexer::gen_entity!(SFieldList);
+gen_entity!(Ty);
+gen_entity!(TyList);
+gen_entity!(SField);
+gen_entity!(SFieldList);
 
 impl Ty {
     pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {

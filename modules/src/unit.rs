@@ -1,14 +1,15 @@
-use cranelift_entity::PrimaryMap;
+use module_types::tree::GenericGraph;
+use module_types::units::Units;
 use std::path::Path;
 use std::process::Command;
 use std::{collections::VecDeque, path::PathBuf};
 
-use crate::error::Error;
+use module_types::{*, error::Error};
+use lexer_types::*;
+use ast::*;
+use storage::*;
 use crate::*;
-use lexer::*;
 use parser::*;
-
-pub type Units = PrimaryMap<Unit, Ent>;
 
 pub struct Loader<'a> {
     pub sources: &'a mut Sources,
@@ -28,7 +29,7 @@ impl<'a> Loader<'a> {
             });
         })?;
 
-        let slot = self.units.push(unit::Ent::new());
+        let slot = self.units.push(units::Ent::new());
         self.ctx.map.insert(root.as_path(), slot);
 
         self.ctx.frontier.push_back((root, None, slot));
@@ -63,7 +64,7 @@ impl<'a> Loader<'a> {
                 );
             }
 
-            let manifest = Manifest::new(&self.ctx.ast, &self.sources);
+            let manifest = Manifest::new(&self.ctx.ast, self.sources);
 
             if let Some(dependency) = manifest.dependencies() {
                 for ManifestDepInfo {
@@ -107,7 +108,7 @@ impl<'a> Loader<'a> {
                     let id = if let Some(&id) = self.ctx.map.get(path.as_path()) {
                         id
                     } else {
-                        let id = self.units.push(unit::Ent::new());
+                        let id = self.units.push(units::Ent::new());
                         self.ctx.map.insert(path.as_path(), id);
                         self.ctx.frontier.push_back((path, Some(path_span), id));
                         id
@@ -174,27 +175,6 @@ impl<'a> Loader<'a> {
         Ok(())
     }
 }
-
-#[derive(Debug, Default)]
-pub struct Ent {
-    pub local_source_path: PathBuf,
-    pub root_path: PathBuf,
-    pub source: Source,
-}
-
-impl Ent {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get_absolute_source_path(&self) -> std::io::Result<PathBuf> {
-        self.root_path
-            .join(self.local_source_path.as_path())
-            .canonicalize()
-    }
-}
-
-lexer::gen_entity!(Unit);
 
 pub struct LoaderContext {
     pub mf_root: PathBuf,

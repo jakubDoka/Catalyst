@@ -1,25 +1,25 @@
-use std::panic;
-
 use cranelift_codegen::{
     ir::{self, Type},
     packed_option::ReservedValue,
 };
-use lexer::*;
-use modules::*;
-use typec::*;
 
-use crate::{Result, *};
+use instance_types::*;
+use module_types::*;
+use storage::*;
+use lexer_types::*;
+use typec_types::*;
+use crate::*;
 
 pub struct Translator<'a> {
-    pub t_types: &'a typec::Types,
+    pub t_types: &'a ty::Types,
     pub t_graph: &'a GenericGraph,
     pub sources: &'a Sources,
-    pub types: &'a mut Types,
+    pub types: &'a mut instance_types::Types,
     pub ptr_ty: Type,
 }
 
 impl<'a> Translator<'a> {
-    pub fn translate(&mut self) -> Result {
+    pub fn translate(&mut self) -> errors::Result {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.t_types.ents.len());
             self.t_graph.total_ordering(&mut vec).unwrap();
@@ -52,32 +52,12 @@ impl<'a> Translator<'a> {
         };
         (repr, false)
     }
-
-    pub fn field_id(ty: ID, field: u64) -> ID {
-        ty + ID(field)
-    }
-}
-
-pub fn resolve_type(target: Ty, t_types: &mut typec::Types, types: &mut Types, ptr_ty: Type) -> Ty {
-    let mut new_ty_dump = vec![];
-    let result = typec::late_instantiate(target, t_types, &mut new_ty_dump);
-    for ty in new_ty_dump {
-        resolve_type_repr(ty, t_types, types, ptr_ty, false);
-    }
-    result
-}
-
-#[macro_export]
-macro_rules! resolve_type {
-    ($self:expr, $target:expr) => {
-        resolve_type($target, $self.t_types, $self.types, $self.ptr_ty)
-    };
 }
 
 pub fn resolve_type_repr(
     id: Ty,
-    t_types: &typec::Types,
-    types: &mut Types,
+    t_types: &ty::Types,
+    types: &mut types::Types,
     ptr_ty: Type,
     skip_generic: bool,
 ) {
@@ -107,7 +87,7 @@ pub fn resolve_type_repr(
 
     let bytes = repr.bytes() as i32;
     let size = Size::new(bytes, bytes);
-    types.ents[id] = Ent {
+    types.ents[id] = types::Ent {
         repr,
         size,
         flags: Flags::COPYABLE,
@@ -125,7 +105,7 @@ macro_rules! resolve_type_repr {
 pub fn resolve_struct_repr(
     ty: Ty,
     fields: SFieldList,
-    t_types: &typec::Types,
+    t_types: &ty::Types,
     types: &mut Types,
     ptr_ty: Type,
 ) {
@@ -145,7 +125,7 @@ pub fn resolve_struct_repr(
         copyable &= ent.flags.contains(Flags::COPYABLE);
 
         let field = Field { offset: size };
-        let id = Translator::field_id(ty_id, i as u64);
+        let id = ID::raw_field(ty_id, i as u64);
         assert!(types.fields.insert(id, field).is_none(), "{id:?}");
 
         size = size + ent.size;
@@ -164,54 +144,3 @@ pub fn resolve_struct_repr(
         align,
     };
 }
-
-pub struct Types {
-    pub fields: Map<Field>,
-    pub ents: SecondaryMap<Ty, Ent>,
-}
-
-impl Types {
-    pub fn new() -> Self {
-        Types {
-            fields: Map::new(),
-            ents: SecondaryMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Ent {
-    pub repr: Type,
-    pub size: Size,
-    pub align: Size,
-    pub flags: Flags,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Field {
-    pub offset: Size,
-}
-
-impl ReservedValue for Field {
-    fn reserved_value() -> Self {
-        Self {
-            offset: Size::new(i32::MAX, i32::MAX),
-        }
-    }
-
-    fn is_reserved_value(&self) -> bool {
-        self.offset == Size::new(i32::MAX, i32::MAX)
-    }
-}
-
-bitflags::bitflags! {
-    #[derive(Default)]
-    pub struct Flags: u32 {
-        /// This type cannot fit into register.
-        const ON_STACK = 1 << 0;
-        /// This type can be safely copied.
-        const COPYABLE = 1 << 1;
-    }
-}
-
-typec::impl_bool_bit_and!(Flags);

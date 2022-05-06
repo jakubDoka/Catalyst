@@ -1,17 +1,11 @@
 [package]
-name = "modules"
+name = "module_types"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ansi_term = "0.12.1"
-cranelift-entity = "0.82.1"
-lexer = { path = "../lexer" }
-parser = { path = "../parser" }
-errors = { path = "../errors" }
 storage = { path = "../storage" }
 lexer_types = { path = "../lexer_types" }
-ast = { path = "../ast" }
-module_types = { path = "../module_types" }
+errors = { path = "../errors" }

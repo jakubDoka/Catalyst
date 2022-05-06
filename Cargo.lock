@@ -18,6 +18,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
 
 [[package]]
+name = "ast"
+version = "0.1.0"
+dependencies = [
+ "lexer_types",
+ "storage",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -173,9 +181,6 @@ dependencies = [
 [[package]]
 name = "errors"
 version = "0.1.0"
-dependencies = [
- "ansi_term",
-]
 
 [[package]]
 name = "gen"
@@ -221,13 +226,27 @@ dependencies = [
 name = "instance"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "ast",
  "cranelift-codegen",
- "cranelift-entity",
- "lexer",
- "modules",
- "parser",
- "typec",
+ "errors",
+ "instance_types",
+ "lexer_types",
+ "module_types",
+ "storage",
+ "typec_types",
+]
+
+[[package]]
+name = "instance_types"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "cranelift-codegen",
+ "errors",
+ "lexer_types",
+ "module_types",
+ "storage",
+ "typec_types",
 ]
 
 [[package]]
@@ -235,8 +254,15 @@ name = "lexer"
 version = "0.1.0"
 dependencies = [
  "ansi_term",
- "cranelift-entity",
  "errors",
+ "lexer_types",
+]
+
+[[package]]
+name = "lexer_types"
+version = "0.1.0"
+dependencies = [
+ "storage",
 ]
 
 [[package]]
@@ -261,14 +287,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
+name = "module_types"
+version = "0.1.0"
+dependencies = [
+ "errors",
+ "lexer_types",
+ "storage",
+]
+
+[[package]]
 name = "modules"
 version = "0.1.0"
 dependencies = [
  "ansi_term",
+ "ast",
  "cranelift-entity",
  "errors",
  "lexer",
+ "lexer_types",
+ "module_types",
  "parser",
+ "storage",
 ]
 
 [[package]]
@@ -286,9 +325,12 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
+ "ast",
  "cranelift-entity",
  "errors",
  "lexer",
+ "lexer_types",
+ "storage",
 ]
 
 [[package]]
@@ -315,6 +357,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 
 [[package]]
+name = "storage"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "cranelift-entity",
+]
+
+[[package]]
 name = "target-lexicon"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -324,13 +374,23 @@ checksum = "d7fa7e55043acb85fca6b3c01485a2eeb6b69c5d21002e273c79e465f43b7ac1"
 name = "typec"
 version = "0.1.0"
 dependencies = [
- "ansi_term",
- "bitflags",
- "cranelift-entity",
+ "ast",
  "errors",
- "lexer",
- "modules",
- "parser",
+ "lexer_types",
+ "module_types",
+ "storage",
+ "typec_types",
+]
+
+[[package]]
+name = "typec_types"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "errors",
+ "lexer_types",
+ "module_types",
+ "storage",
 ]
 
 [[package]]

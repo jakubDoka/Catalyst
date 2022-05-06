@@ -1,9 +1,10 @@
-use cranelift_entity::{packed_option::ReservedValue, EntitySet};
 
-use crate::{Error, *};
-use lexer::*;
-use modules::*;
-use parser::*;
+use module_types::{scope::{Scope, self}, modules::{Modules, self}};
+use lexer_types::*;
+use storage::*;
+use typec_types::*;
+use crate::*;
+use ast::*;
 
 pub struct Collector<'a> {
     pub scope: &'a mut Scope,
@@ -97,7 +98,7 @@ impl<'a> Collector<'a> {
             let id = {
                 let dest_id = self.types.ents[dest].id;
                 let bound_id = self.types.ents[ty].id;
-                Self::bound_impl_id(bound_id, dest_id)
+                ID::bound_impl(bound_id, dest_id)
             };
 
             if let Some(collision) = self.types.bound_cons.insert(id, BoundImpl::new(span)) {
@@ -186,7 +187,7 @@ impl<'a> Collector<'a> {
 
         // bound implements it self
         {
-            let id = Self::bound_impl_id(id, id);
+            let id = ID::bound_impl(id, id);
             assert!(self
                 .types
                 .bound_cons
@@ -198,7 +199,7 @@ impl<'a> Collector<'a> {
         self.ctx.type_ast[slot] = ast;
 
         {
-            let item = module::Item::new(scope_id, slot, name);
+            let item = modules::Item::new(scope_id, slot, name);
             drop(
                 self.scope
                     .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
@@ -230,7 +231,7 @@ impl<'a> Collector<'a> {
         self.ctx.type_ast[ty] = ast;
 
         {
-            let item = module::Item::new(scope_id, ty, span);
+            let item = modules::Item::new(scope_id, ty, span);
             drop(
                 self.scope
                     .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
@@ -296,7 +297,7 @@ impl<'a> Collector<'a> {
 
             let args = {
                 for &ast in
-                    &children[Parser::FUNCTION_ARG_START..children.len() - Parser::FUNCTION_ARG_END]
+                    &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END]
                 {
                     let children = self.ast.children(ast);
                     let amount = children.len() - 1;
@@ -344,10 +345,10 @@ impl<'a> Collector<'a> {
             if let func::Kind::Owned(owner) | func::Kind::Bound(owner, ..) = self.funcs[func].kind {
                 if let Some(bound) = bound {
                     let implementor = self.types.ents[owner].id;
-                    Self::bound_impl_owned_func_id(bound, implementor, id)
+                    ID::bound_impl_owned_func(bound, implementor, id)
                 } else {
                     let owner = self.types.ents[owner].id;
-                    func::Builder::owned_func_id(owner, id)
+                    ID::owned_func(owner, id)
                 }
             } else {
                 id
@@ -383,7 +384,7 @@ impl<'a> Collector<'a> {
         }
 
         {
-            let module_item = module::Item::new(scope_id, func, current_span);
+            let module_item = modules::Item::new(scope_id, func, current_span);
             drop(self.scope.insert(
                 self.diagnostics,
                 current_span.source(),
@@ -403,14 +404,6 @@ impl<'a> Collector<'a> {
             .rev()
             .map(|&tag| self.ast.nodes[tag].span)
             .find(|&span| self.sources.display(span)[1..].trim() == name)
-    }
-
-    pub fn bound_impl_id(bound: ID, implementor: ID) -> ID {
-        ID::new("<impl>") + bound + implementor
-    }
-
-    pub fn bound_impl_owned_func_id(bound: ID, implementor: ID, func: ID) -> ID {
-        implementor + func::Builder::owned_func_id(bound, func)
     }
 }
 
@@ -447,7 +440,7 @@ impl Context {
 }
 
 impl AstIDExt for Collector<'_> {
-    fn state(&self) -> (&Data, &Sources) {
+    fn state(&self) -> (&ast::Data, &Sources) {
         (self.ast, self.sources)
     }
 }

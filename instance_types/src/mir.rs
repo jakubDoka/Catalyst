@@ -2,8 +2,11 @@ use std::{marker::PhantomData, ops::IndexMut};
 
 use cranelift_codegen::{ir::Type, packed_option::PackedOption};
 use cranelift_entity::{EntityRef, PrimaryMap};
-use lexer::Sources;
-use typec::{ty, Ty};
+
+use lexer_types::*;
+use storage::*;
+use typec_types::*;
+
 
 use crate::{func, Size};
 
@@ -104,7 +107,7 @@ pub struct BlockEnt {
 }
 
 crate::impl_linked_node!(inout Block, BlockEnt);
-lexer::gen_entity!(Block);
+gen_entity!(Block);
 
 #[derive(Debug)]
 pub struct InstEnt {
@@ -143,7 +146,7 @@ pub enum InstKind {
     Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
-    Call(typec::Func, ValueList),
+    Call(typec_types::Func, ValueList),
     IntLit(u64),
     BoolLit(bool),
     Return,
@@ -156,7 +159,7 @@ impl InstKind {
 }
 
 crate::impl_linked_node!(inout Inst, InstEnt);
-lexer::gen_entity!(Inst);
+gen_entity!(Inst);
 
 #[derive(Debug, Clone, Copy)]
 pub struct ValueEnt {
@@ -183,10 +186,10 @@ impl ValueEnt {
     }
 }
 
-lexer::gen_entity!(Value);
-lexer::gen_entity!(ValueList);
+gen_entity!(Value);
+gen_entity!(ValueList);
 
-bitflags::bitflags! {
+bitflags! {
     #[derive(Default)]
     pub struct Flags: u32 {
         /// The value is a pointer.
@@ -198,7 +201,7 @@ bitflags::bitflags! {
     }
 }
 
-typec::impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(Flags);
 
 #[derive(Debug, Clone, Copy)]
 pub struct StackEnt {
@@ -213,16 +216,16 @@ impl StackEnt {
     }
 }
 
-lexer::gen_entity!(StackSlot);
+gen_entity!(StackSlot);
 
 pub struct Display<'a> {
     sources: &'a Sources,
     func: &'a func::Func,
-    types: &'a typec::Types,
+    types: &'a ty::Types,
 }
 
 impl<'a> Display<'a> {
-    pub fn new(sources: &'a Sources, func: &'a func::Func, types: &'a typec::Types) -> Self {
+    pub fn new(sources: &'a Sources, func: &'a func::Func, types: &'a ty::Types) -> Self {
         Self {
             sources,
             func,

@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.3.2"
-cranelift-entity = "0.82.1"
 cranelift-codegen = "0.82.1"
-lexer = { path = "../lexer" }
-parser = { path = "../parser" }
-modules = { path = "../modules" }
-typec = { path = "../typec" }
+lexer_types = { path = "../lexer_types" }
+ast = { path = "../ast" }
+module_types = { path = "../module_types" }
+typec_types = { path = "../typec_types" }
+storage = { path = "../storage" }
+errors = { path = "../errors" }
+instance_types = { path = "../instance_types" }

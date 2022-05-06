@@ -6,21 +6,15 @@
 
 pub mod collector;
 pub mod error;
-pub mod func;
-pub mod tir;
-pub mod ty;
+pub mod func_builder;
+pub mod ty_builder;
 
-pub use collector::*;
-use cranelift_entity::packed_option::ReservedValue;
-pub use error::Error;
-use errors::Diagnostics;
-pub use func::*;
-pub use tir::*;
-pub use ty::*;
-
-use lexer::*;
-use modules::*;
-use parser::*;
+use errors::*;
+use lexer_types::*;
+use storage::*;
+use module_types::{*, scope::Scope};
+use typec_types::{*, Error};
+use ast::*;
 
 pub trait TyDump {
     fn add(&mut self, ty: Ty);
@@ -121,7 +115,7 @@ pub fn infer_parameters(
                     }
                 } else {
                     let base_ref = types.base_of(parametrized, home_params);
-                    drop(types.implements(base_ref, parametrized, diagnostics, span));
+                    drop(implements(types, base_ref, parametrized, diagnostics, span));
                     params[index as usize] = reference;
                 }
             }
@@ -274,7 +268,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types) -> Ty {
         flags,
         ..
     } = types.ents[ty];
-    let id = pointer_id(id);
+    let id = ID::pointer(id);
 
     if let Some(&already) = types.instances.get(id) {
         return already;
@@ -343,7 +337,7 @@ pub fn parse_composite_bound(
             unreachable!();
         };
         let bound = types.ents[ty].id;
-        let id = Collector::bound_impl_id(bound, id);
+        let id = ID::bound_impl(bound, id);
         assert!(types
             .bound_cons
             .insert(
@@ -372,6 +366,41 @@ pub fn parse_composite_bound(
     Ok(combo)
 }
 
+pub fn implements(
+    types: &Types,
+    input: Ty,
+    bound: Ty,
+    diagnostics: &mut Diagnostics,
+    span: Span,
+) -> errors::Result {
+    // bound can be pain Bound or BoundCombo
+    let a = &[bound];
+    let bounds = match types.ents[bound].kind {
+        ty::Kind::Bound(..) => a,
+        ty::Kind::BoundCombo(combo) => types.args.get(combo),
+        _ => unreachable!("{:?}", types.ents[bound].kind),
+    };
+
+    let input_id = types.ents[input].id;
+
+    let mut result = Ok(());
+
+    for &bound in bounds {
+        let bound_id = types.ents[bound].id;
+        let id = ID::bound_impl(bound_id, input_id);
+        if types.bound_cons.get(id).is_none() {
+            diagnostics.push(Error::MissingBound {
+                input,
+                bound,
+                loc: span,
+            });
+            result = Err(());
+        }
+    }
+
+    result
+}
+
 #[macro_export]
 macro_rules! parse_composite_bound {
     ($self:expr, $asts:expr, $span:expr) => {
@@ -387,18 +416,13 @@ macro_rules! parse_composite_bound {
     };
 }
 
-/// computes id of a pointer to `ty`
-fn pointer_id(ty: ID) -> ID {
-    ID::new("*") + ty
-}
-
 /// instantiates all builtin items like types, operators and functions.
 pub fn create_builtin_items(
     types: &mut Types,
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
-    target: &mut Vec<module::Item>,
+    target: &mut Vec<modules::Item>,
 ) {
     let comparison_operators = "== != < > <= >=";
     let math_operators = "+ - * / %";
@@ -415,7 +439,7 @@ pub fn create_builtin_items(
         for ty in types.builtin.integers() {
             let id = {
                 let id = types.ents[ty].id;
-                func::Builder::binary_id(id, ID::new(op))
+                ID::binary(id, ID::new(op))
             };
             let ret = (comparison_operators.contains(op))
                 .then_some(types.builtin.bool)
@@ -438,7 +462,7 @@ pub fn create_builtin_items(
         for ty in types.builtin.integers() {
             let id = {
                 let id = types.ents[ty].id;
-                func::Builder::unary_id(id, ID::new(op))
+                ID::unary(id, ID::new(op))
             };
             create_func(
                 op,
@@ -464,7 +488,7 @@ fn create_func(
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
-    dest: &mut Vec<module::Item>,
+    dest: &mut Vec<modules::Item>,
 ) {
     let span = builtin_source.make_span(sources, name);
     let sig = Sig {
@@ -481,6 +505,6 @@ fn create_func(
         };
         funcs.push(ent)
     };
-    let item = module::Item::new(id, func, span);
+    let item = modules::Item::new(id, func, span);
     dest.push(item);
 }

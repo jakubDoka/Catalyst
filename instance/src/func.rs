@@ -1,33 +1,32 @@
 use std::str::FromStr;
 
 use cranelift_codegen::ir::Type;
-use cranelift_codegen::packed_option::ReservedValue;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 use cranelift_entity::{EntitySet, PrimaryMap};
 
-use crate::*;
-use crate::{Result, Types};
-use lexer::*;
-use typec::{func, *};
+use lexer_types::*;
+use instance_types::*;
+use storage::*;
+use typec_types::{*, func as tfunc};
 
 pub struct Translator<'a> {
-    pub func_id: typec::Func,
+    pub func_id: typec_types::Func,
     pub system_call_convention: CallConv,
-    pub types: &'a Types,
+    pub types: &'a instance_types::Types,
     pub ptr_ty: Type,
-    pub t_types: &'a typec::Types,
-    pub t_funcs: &'a typec::Funcs,
+    pub t_types: &'a typec_types::Types,
+    pub t_funcs: &'a typec_types::Funcs,
     pub func: &'a mut Func,
     pub body: &'a tir::Data,
     pub return_dest: Option<Value>,
-    pub has_sret: &'a EntitySet<typec::Func>,
+    pub has_sret: &'a EntitySet<typec_types::Func>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
 }
 
 impl Translator<'_> {
-    pub fn translate_func(&mut self) -> Result {
-        let func::Ent {
+    pub fn translate_func(&mut self) -> errors::Result {
+        let tfunc::Ent {
             sig,
             body,
             args,
@@ -42,7 +41,7 @@ impl Translator<'_> {
             self.t_types,
             self.sources,
             self.system_call_convention,
-            flags.contains(typec::func::Flags::ENTRY),
+            flags.contains(typec_types::func::Flags::ENTRY),
         )?;
 
         let entry_point = self.func.create_block();
@@ -75,7 +74,7 @@ impl Translator<'_> {
         Ok(())
     }
 
-    fn translate_block(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_block(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Kind::Block(stmts) = self.body.ents[tir].kind else {
             unreachable!()
         };
@@ -98,7 +97,7 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_expr(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_expr(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         if let Some(value) = self.tir_mapping[tir].expand() {
             return Ok(Some(value));
         }
@@ -131,7 +130,7 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::TakePtr(value), .. } = self.body.ents[tir] else {
             unreachable!();
         };
@@ -159,7 +158,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::DerefPointer(value), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -190,8 +189,8 @@ impl Translator<'_> {
         ty: Ty,
         span: Span,
         dest: Option<Value>,
-    ) -> Result<Option<Value>> {
-        let literal = lexer::char_value(self.sources, span).unwrap() as u64;
+    ) -> errors::Result<Option<Value>> {
+        let literal = char_value(self.sources, span).unwrap() as u64;
 
         let value = self.value_from_ty(ty);
 
@@ -210,7 +209,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_assign(&mut self, a: Tir, b: Tir) -> Result<Option<Value>> {
+    fn translate_assign(&mut self, a: Tir, b: Tir) -> errors::Result<Option<Value>> {
         let a = self.translate_expr(a, None)?.unwrap();
         let b = self.translate_expr(b, Some(a))?.unwrap();
 
@@ -231,7 +230,7 @@ impl Translator<'_> {
         &mut self,
         loop_header_marker: Tir,
         value: PackedOption<Tir>,
-    ) -> Result<Option<Value>> {
+    ) -> errors::Result<Option<Value>> {
         let &Loop { exit, dest, .. } = self
             .func
             .loops
@@ -257,7 +256,7 @@ impl Translator<'_> {
         Ok(None)
     }
 
-    fn translate_loop(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_loop(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::Loop(body), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -309,7 +308,7 @@ impl Translator<'_> {
         tir_header: Tir,
         field: SField,
         dest: Option<Value>,
-    ) -> Result<Option<Value>> {
+    ) -> errors::Result<Option<Value>> {
         let ty = self.body.ents[tir_header].ty;
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
@@ -318,8 +317,8 @@ impl Translator<'_> {
                 .t_types
                 .base_of(ty, self.t_funcs[self.func_id].sig.params);
             let ty_id = self.t_types.ents[ty].id;
-            let typec::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
-            (types::Translator::field_id(ty_id, index as u64), ty)
+            let typec_types::SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
+            (ID::raw_field(ty_id, index as u64), ty)
         };
 
         let Some(&types::Field { offset }) = self.types.fields.get(field_id) else {
@@ -354,7 +353,7 @@ impl Translator<'_> {
         ty: Ty,
         literal_value: bool,
         dest: Option<Value>,
-    ) -> Result<Option<Value>> {
+    ) -> errors::Result<Option<Value>> {
         let value = self.value_from_ty(ty);
 
         {
@@ -372,7 +371,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::Constructor(data), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -392,7 +391,7 @@ impl Translator<'_> {
         let ty_id = self.t_types.ents[ty].id;
 
         for (i, &data) in data_view.iter().enumerate() {
-            let id = types::Translator::field_id(ty_id, i as u64);
+            let id = ID::raw_field(ty_id, i as u64);
             let Some(&types::Field { offset }) = self.types.fields.get(id) else {
                 unreachable!()
             };
@@ -434,7 +433,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_variable(&mut self, tir: Tir) -> Result<Option<Value>> {
+    fn translate_variable(&mut self, tir: Tir) -> errors::Result<Option<Value>> {
         let assignable = self.body.ents[tir].flags.contains(tir::Flags::ASSIGNABLE);
         let on_stack = self.on_stack(tir);
 
@@ -464,8 +463,8 @@ impl Translator<'_> {
         ty: Ty,
         span: Span,
         dest: Option<Value>,
-    ) -> Result<Option<Value>> {
-        let literal_value = lexer::int_value(self.sources, span);
+    ) -> errors::Result<Option<Value>> {
+        let literal_value = int_value(self.sources, span);
 
         let value = self.value_from_ty(ty);
 
@@ -484,7 +483,7 @@ impl Translator<'_> {
         Ok(Some(value))
     }
 
-    fn translate_if(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_if(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::If(cond, then, otherwise), .. } = self.body.ents[tir] else {
             unreachable!();
         };
@@ -549,16 +548,16 @@ impl Translator<'_> {
         Ok(value)
     }
 
-    fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> Result<Option<Value>> {
+    fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
         let tir::Ent { ty, kind: tir::Kind::Call(caller, func, args), .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
-        let func = if let func::Kind::Bound(bound, index) = self.t_funcs[func].kind {
+        let func = if let tfunc::Kind::Bound(bound, index) = self.t_funcs[func].kind {
             let id = {
                 let bound = self.t_types.ents[bound].id;
                 let implementor = self.t_types.ents[caller.unwrap()].id;
-                typec::Collector::bound_impl_id(bound, implementor)
+                ID::bound_impl(bound, implementor)
             };
 
             let funcs = self.t_types.bound_cons.get(id).unwrap().funcs;
@@ -649,7 +648,7 @@ impl Translator<'_> {
             || flags.contains(tir::Flags::SPILLED)
     }
 
-    fn translate_return(&mut self, value: Option<Tir>) -> Result<Option<Value>> {
+    fn translate_return(&mut self, value: Option<Tir>) -> errors::Result<Option<Value>> {
         let value = if let Some(value) = value {
             let dest = self.return_dest;
             self.translate_expr(value, dest)?
@@ -688,14 +687,14 @@ impl Translator<'_> {
     /// translates a `source` into the `target` and returns true if
     /// signature has struct return type
     pub fn translate_signature(
-        source: &typec::Sig,
+        source: &typec_types::Sig,
         target: &mut ir::Signature,
-        types: &Types,
-        t_types: &typec::Types,
+        types: &crate::Types,
+        t_types: &typec_types::Types,
         sources: &Sources,
         system_call_convention: CallConv,
         is_entry: bool,
-    ) -> Result<bool> {
+    ) -> errors::Result<bool> {
         let call_conv = if is_entry {
             system_call_convention
         } else if source.call_conv.is_reserved_value() {
@@ -738,106 +737,30 @@ impl Translator<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct Loop {
-    _enter: Block,
-    exit: Block,
-    marker: Tir,
-    dest: Option<Value>,
+pub fn int_value(sources: &Sources, span: Span) -> u64 {
+    let mut chars = sources.display(span).chars();
+    let mut value = 0;
+    while let Some(c @ '0'..='9') = chars.next() {
+        value = value * 10 + (c as u64 - '0' as u64);
+    }
+
+    match chars.next() {
+        None => return value,
+        _ => todo!("unhandled int literal {:?}", sources.display(span)),
+    }
 }
 
-#[derive(Debug)]
-pub struct Func {
-    pub name: Span,
-    pub sig: ir::Signature,
-
-    pub values: PrimaryMap<Value, ValueEnt>,
-    pub value_slices: StackMap<ValueList, Value>,
-    pub blocks: PrimaryMap<Block, BlockEnt>,
-    pub insts: PrimaryMap<Inst, InstEnt>,
-    pub stacks: PrimaryMap<StackSlot, StackEnt>,
-
-    pub current: PackedOption<Block>,
-    pub start: PackedOption<Block>,
-    pub end: PackedOption<Block>,
-    pub loops: Vec<Loop>,
+#[derive(Debug, Clone, Copy)]
+pub enum CharError {
+    ExtraCharacters,
+    NoCharacter,
 }
 
-impl Func {
-    pub fn new() -> Self {
-        Func {
-            name: Span::default(),
-            sig: ir::Signature::new(CallConv::Fast),
-            values: PrimaryMap::new(),
-            value_slices: StackMap::new(),
-            blocks: PrimaryMap::new(),
-            insts: PrimaryMap::new(),
-            stacks: PrimaryMap::new(),
-            current: Default::default(),
-            start: Default::default(),
-            end: Default::default(),
-            loops: Default::default(),
-        }
+pub fn char_value(sources: &Sources, span: Span) -> std::result::errors::Result<char, CharError> {
+    let mut chars = sources.display(span.strip_sides()).chars();
+    let char = chars.next().ok_or(CharError::NoCharacter)?;
+    if chars.next().is_some() {
+        return Err(CharError::ExtraCharacters);
     }
-
-    pub fn create_block(&mut self) -> Block {
-        let block = self.blocks.push(Default::default());
-        if let Some(end) = self.end.expand() {
-            self.blocks[end].next = block.into();
-            self.blocks[block].prev = end.into();
-        } else {
-            self.start = block.into();
-        }
-        self.end = block.into();
-        block
-    }
-
-    pub fn add_inst(&mut self, inst: InstEnt) -> Inst {
-        assert!(!self.is_terminated());
-        let block = &mut self.blocks[self.current.unwrap()];
-        let inst = self.insts.push(inst);
-        if let Some(end) = block.end.expand() {
-            self.insts[end].next = inst.into();
-            self.insts[inst].prev = end.into();
-        } else {
-            block.start = inst.into();
-        }
-        block.end = inst.into();
-        inst
-    }
-
-    pub fn blocks(&self) -> impl Iterator<Item = (Block, &BlockEnt)> + '_ {
-        self.blocks.linked_iter(self.start.expand())
-    }
-
-    pub fn block_params(&self, block: Block) -> impl Iterator<Item = (Value, &ValueEnt)> + '_ {
-        self.value_slices
-            .get(self.blocks[block].params)
-            .iter()
-            .map(|&value| (value, &self.values[value]))
-    }
-
-    pub fn clear(&mut self) {
-        self.sig.clear(CallConv::Fast);
-        self.values.clear();
-        self.value_slices.clear();
-        self.blocks.clear();
-        self.insts.clear();
-        self.stacks.clear();
-        self.start.take();
-        self.end.take();
-    }
-
-    pub fn is_terminated(&self) -> bool {
-        self.current.expand().map_or(false, |current| {
-            self.blocks[current]
-                .end
-                .expand()
-                .map_or(false, |end| self.insts[end].kind.is_terminating())
-        })
-    }
-
-    pub fn select_block(&mut self, block: Block) {
-        self.current = block.into();
-    }
+    Ok(char)
 }

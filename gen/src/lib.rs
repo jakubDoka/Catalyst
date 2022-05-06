@@ -9,8 +9,6 @@ use cranelift_entity::{EntityRef, EntitySet};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Linkage, Module};
 use instance::*;
-use lexer::*;
-use typec::{ty, Func};
 
 pub struct Generator<'a> {
     pub module: &'a mut dyn Module,

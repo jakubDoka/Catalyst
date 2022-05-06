@@ -1,5 +1,45 @@
-use cranelift_entity::{packed_option::ReservedValue, *};
-use lexer::*;
+use storage::*;
+use lexer_types::*;
+
+pub const FUNCTION_ARG_START: usize = 3;
+pub const FUNCTION_ARG_END: usize = 2;
+pub const FUNCTION_RET: usize = 2;
+
+pub trait AstIDExt {
+    fn state(&self) -> (&Data, &Sources);
+
+    fn id_of(&self, node: Ast) -> ID {
+        let (ast, sources) = self.state();
+        let span = ast.nodes[node].span;
+        sources.id(span)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Ent {
+    pub kind: Kind,
+    pub children: AstList,
+    pub span: Span,
+}
+
+impl Ent {
+    pub fn new(kind: Kind, children: AstList, span: Span) -> Self {
+        Ent {
+            kind,
+            children,
+            span,
+        }
+    }
+
+    pub fn childless(kind: Kind, span: Span) -> Self {
+        Ent {
+            kind,
+            children: Default::default(),
+            span,
+        }
+    }
+}
+
 
 pub struct Data {
     pub nodes: PrimaryMap<Ast, Ent>,
@@ -113,48 +153,6 @@ impl std::fmt::Debug for Data {
     }
 }
 
-pub struct FileDisplay<'a> {
-    file: &'a Data,
-    source: &'a str,
-}
-
-impl<'a> FileDisplay<'a> {
-    pub fn new(file: &'a Data, source: &'a str) -> Self {
-        Self { file, source }
-    }
-}
-
-impl std::fmt::Display for FileDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.file.fmt(f, Some(self.source))
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct Ent {
-    pub kind: Kind,
-    pub children: AstList,
-    pub span: Span,
-}
-
-impl Ent {
-    pub fn new(kind: Kind, children: AstList, span: Span) -> Self {
-        Ent {
-            kind,
-            children,
-            span,
-        }
-    }
-
-    pub fn childless(kind: Kind, span: Span) -> Self {
-        Ent {
-            kind,
-            children: Default::default(),
-            span,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     UseBoundFunc,
@@ -202,5 +200,7 @@ pub enum Kind {
     None,
 }
 
-lexer::gen_entity!(Ast);
-lexer::gen_entity!(AstList);
+
+
+gen_entity!(Ast);
+gen_entity!(AstList);

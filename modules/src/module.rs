@@ -1,14 +1,10 @@
 use std::{collections::VecDeque, path::PathBuf};
 
-use cranelift_entity::packed_option::ReservedValue;
-use cranelift_entity::EntityRef;
-
-use crate::error::Error;
+use lexer_types::*;
+use module_types::{*, error::Error};
 use crate::*;
-use lexer::*;
 use parser::*;
-
-pub type Modules = SecondaryMap<Source, Ent>;
+use storage::*;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -42,7 +38,7 @@ impl<'a> Loader<'a> {
 
             let id = path.as_path().into();
             let module = self.sources.push(Default::default());
-            self.modules[module] = Ent::new(id);
+            self.modules[module] = modules::Ent::new(id);
             self.map.insert(id, module);
             self.frontier.push_back((path, Span::default(), module));
         }
@@ -116,7 +112,7 @@ impl<'a> Loader<'a> {
                         } else {
                             let module = Source::new(self.sources.len() + counter);
                             counter += 1;
-                            self.modules[module] = Ent::new(id);
+                            self.modules[module] = modules::Ent::new(id);
                             self.map.insert(id, module);
                             self.frontier.push_back((path, path_span, module));
                             module
@@ -148,45 +144,6 @@ impl<'a> Loader<'a> {
         ordering.iter_mut().for_each(|id| id.0 += base_line);
 
         Ok(ordering)
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Ent {
-    pub id: ID,
-    pub items: Vec<Item>,
-}
-
-impl Ent {
-    pub fn new(id: ID) -> Self {
-        Self {
-            id,
-            items: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Item {
-    pub id: ID,
-    pub kind: scope::Pointer,
-    pub span: Span,
-}
-
-impl Item {
-    pub fn new(id: ID, kind: impl EntityRef + 'static, span: Span) -> Self {
-        Self {
-            id,
-            kind: scope::Pointer::write(kind),
-            span,
-        }
-    }
-
-    pub fn to_scope_item(&self) -> scope::Item {
-        scope::Item {
-            span: self.span,
-            pointer: self.kind,
-        }
     }
 }
 
