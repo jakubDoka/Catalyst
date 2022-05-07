@@ -4,6 +4,7 @@ pub mod map;
 pub mod stack_map;
 pub mod framed_stack;
 pub mod ansi_consts;
+pub mod tree;
 
 pub use framed_stack::*;
 pub use stack_map::*;
@@ -11,6 +12,7 @@ pub use map::{*, SecondaryMap};
 pub use ansi_consts::*;
 pub use cranelift_entity::{*, packed_option::*};
 pub use bitflags::*;
+pub use tree::*;
 
 pub extern crate cranelift_entity;
 

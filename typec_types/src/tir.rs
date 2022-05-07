@@ -103,15 +103,21 @@ impl_bool_bit_and!(TirFlags);
 
 pub struct TirDisplay<'a> {
     pub types: &'a Types,
+    pub ty_lists: &'a TyLists,
+    pub sfields: &'a SFields,
     pub sources: &'a Sources,
     pub data: &'a TirData,
     pub root: Tir,
 }
 
 impl<'a> TirDisplay<'a> {
-    pub fn new(types: &'a Types, sources: &'a Sources, data: &'a TirData, root: Tir) -> Self {
+
+    #[inline(never)]
+    pub fn new(types: &'a Types, ty_lists: &'a TyLists, sfields: &'a SFields, sources: &'a Sources, data: &'a TirData, root: Tir) -> Self {
         Self {
             types,
+            ty_lists,
+            sfields,
             sources,
             data,
             root,
@@ -144,7 +150,7 @@ impl<'a> TirDisplay<'a> {
             write!(
                 f,
                 "{root}: {} = ",
-                TyDisplay::new(self.types, self.sources, self.data.ents[root].ty)
+                ty_display!(self, self.data.ents[root].ty)
             )?;
         }
         displayed.insert(root);
@@ -161,7 +167,7 @@ impl<'a> TirDisplay<'a> {
             }
             TirKind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
-                write!(f, ".{}", self.types.sfields[id].index)?;
+                write!(f, ".{}", self.sfields[id].index)?;
             }
             TirKind::Constructor(fields) => {
                 writeln!(f, "::{{")?;
@@ -214,7 +220,7 @@ impl<'a> TirDisplay<'a> {
                     write!(
                         f,
                         "{}::",
-                        TyDisplay::new(self.types, self.sources, caller)
+                        ty_display!(self, caller)
                     )?;
                 }
                 write!(f, "{func}(")?;

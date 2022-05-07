@@ -11,9 +11,15 @@ use typec_types::*;
 pub struct MirBuilder<'a> {
     pub func_id: Func,
     pub system_call_convention: CallConv,
-    pub types: &'a Reprs,
+    pub reprs: &'a Reprs,
     pub ptr_ty: Type,
-    pub t_types: &'a Types,
+    pub types: &'a Types,
+    pub ty_lists: &'a TyLists,
+    pub func_lists: &'a TFuncLists,
+    pub sfields: &'a SFields,
+    pub bound_impls: &'a BoundImpls,
+    pub repr_fields: &'a ReprFields,
+    pub builtin_types: &'a BuiltinTable,
     pub t_funcs: &'a Funcs,
     pub func: &'a mut FuncCtx,
     pub body: &'a TirData,
@@ -36,8 +42,9 @@ impl MirBuilder<'_> {
         let has_sret = Self::translate_signature(
             &sig,
             &mut self.func.sig,
+            self.reprs,
             self.types,
-            self.t_types,
+            self.ty_lists,
             self.sources,
             self.system_call_convention,
             flags.contains(TFuncFlags::ENTRY),
@@ -63,7 +70,7 @@ impl MirBuilder<'_> {
         let value = self.translate_block(body, self.return_dest)?;
 
         if !self.func.is_terminated() {
-            if sig.ret == self.t_types.builtin.nothing {
+            if sig.ret == self.builtin_types.nothing {
                 self.func.add_inst(InstEnt::new(InstKind::Return, None));
             } else {
                 self.func.add_inst(InstEnt::new(InstKind::Return, value));
@@ -312,15 +319,12 @@ impl MirBuilder<'_> {
         let header = self.translate_expr(tir_header, None)?.unwrap();
 
         let (field_id, field_ty) = {
-            let ty = self
-                .t_types
-                .base_of(ty, self.t_funcs[self.func_id].sig.params);
-            let ty_id = self.t_types.ents[ty].id;
-            let SFieldEnt { index, ty, .. } = self.t_types.sfields[field];
+            let ty_id = self.types[ty].id;
+            let SFieldEnt { index, ty, .. } = self.sfields[field];
             (ID::raw_field(ty_id, index as u64), ty)
         };
 
-        let Some(&repr::ReprField { offset }) = self.types.fields.get(field_id) else {
+        let Some(&repr::ReprField { offset }) = self.repr_fields.get(field_id) else {
             unreachable!()
         };
 
@@ -387,11 +391,11 @@ impl MirBuilder<'_> {
         }
 
         let data_view = self.body.cons.get(data);
-        let ty_id = self.t_types.ents[ty].id;
+        let ty_id = self.types[ty].id;
 
         for (i, &data) in data_view.iter().enumerate() {
             let id = ID::raw_field(ty_id, i as u64);
-            let Some(&repr::ReprField { offset }) = self.types.fields.get(id) else {
+            let Some(&repr::ReprField { offset }) = self.repr_fields.get(id) else {
                 unreachable!()
             };
 
@@ -554,13 +558,13 @@ impl MirBuilder<'_> {
 
         let func = if let TFuncKind::Bound(bound, index) = self.t_funcs[func].kind {
             let id = {
-                let bound = self.t_types.ents[bound].id;
-                let implementor = self.t_types.ents[caller.unwrap()].id;
+                let bound = self.types[bound].id;
+                let implementor = self.types[caller.unwrap()].id;
                 ID::bound_impl(bound, implementor)
             };
 
-            let funcs = self.t_types.bound_cons.get(id).unwrap().funcs;
-            self.t_types.funcs.get(funcs)[index as usize]
+            let funcs = self.bound_impls.get(id).unwrap().funcs;
+            self.func_lists.get(funcs)[index as usize]
         } else {
             func
         };
@@ -615,12 +619,12 @@ impl MirBuilder<'_> {
     }
 
     fn unwrap_dest_low(&mut self, ret: Ty, on_stack: bool, dest: Option<Value>) -> Option<Value> {
-        let has_ret = ret != self.t_types.builtin.nothing;
+        let has_ret = ret != self.builtin_types.nothing;
         (dest.is_none() && has_ret).then(|| {
             if on_stack {
                 // stack needs to be allocated to pass valid pointer
                 let stack = {
-                    let size = self.types.ents[ret].size;
+                    let size = self.reprs[ret].size;
                     let ent = StackEnt::new(size, self.ptr_ty);
                     self.func.stacks.push(ent)
                 };
@@ -643,7 +647,7 @@ impl MirBuilder<'_> {
 
     fn on_stack(&self, tir: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.body.ents[tir];
-        self.types.ents[ty].flags.contains(repr::ReprFlags::ON_STACK)
+        self.reprs[ty].flags.contains(repr::ReprFlags::ON_STACK)
             || flags.contains(TirFlags::SPILLED)
     }
 
@@ -666,7 +670,7 @@ impl MirBuilder<'_> {
 
     fn translate_value(&mut self, tir: Tir) -> Option<Value> {
         let TirEnt { ty, .. } = self.body.ents[tir];
-        if ty == self.t_types.builtin.nothing {
+        if ty == self.builtin_types.nothing {
             return None;
         }
         let value = self.value_from_ty(ty);
@@ -688,8 +692,9 @@ impl MirBuilder<'_> {
     pub fn translate_signature(
         source: &Sig,
         target: &mut ir::Signature,
-        types: &Reprs,
-        t_types: &Types,
+        reprs: &Reprs,
+        types: &Types,
+        ty_lists: &TyLists,
         sources: &Sources,
         system_call_convention: CallConv,
         is_entry: bool,
@@ -711,8 +716,8 @@ impl MirBuilder<'_> {
         target.clear(call_conv);
 
         let mut result = false;
-        if TyKind::Nothing != t_types.ents[source.ret].kind {
-            let repr::ReprEnt { repr, flags, .. } = types.ents[source.ret];
+        if TyKind::Nothing != types[source.ret].kind {
+            let repr::ReprEnt { repr, flags, .. } = reprs[source.ret];
             if flags.contains(repr::ReprFlags::ON_STACK) {
                 let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);
                 target.params.push(ret);
@@ -724,11 +729,10 @@ impl MirBuilder<'_> {
         }
 
         target.params.extend(
-            t_types
-                .args
+            ty_lists
                 .get(source.args)
                 .iter()
-                .map(|&ty| types.ents[ty].repr)
+                .map(|&ty| reprs[ty].repr)
                 .map(|repr| ir::AbiParam::new(repr)),
         );
 

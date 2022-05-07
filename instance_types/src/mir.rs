@@ -222,12 +222,14 @@ pub struct MirDisplay<'a> {
     sources: &'a Sources,
     func: &'a FuncCtx,
     types: &'a Types,
+    ty_lists: &'a TyLists,
 }
 
 impl<'a> MirDisplay<'a> {
-    pub fn new(sources: &'a Sources, func: &'a FuncCtx, types: &'a Types) -> Self {
+    pub fn new(sources: &'a Sources, ty_lists: &'a TyLists, func: &'a FuncCtx, types: &'a Types) -> Self {
         Self {
             sources,
+            ty_lists,
             func,
             types,
         }
@@ -238,7 +240,7 @@ impl<'a> MirDisplay<'a> {
             "{}:{}>{}",
             value,
             self.func.values[value].offset.arch64,
-            TyDisplay::new(self.types, self.sources, self.func.values[value].ty),
+            ty_display!(self, self.func.values[value].ty),
         )
     }
 }

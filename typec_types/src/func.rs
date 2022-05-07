@@ -22,12 +22,12 @@ impl TFuncEnt {
         Self::default()
     }
 
-    pub fn get_link_name(&self, types: &Types, sources: &Sources, buffer: &mut String) {
+    pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {
         buffer.write_str(sources.display(self.name)).unwrap();
         if !self.sig.params.is_reserved_value() {
             buffer.write_char('[').unwrap();
-            for &ty in types.args.get(self.sig.params) {
-                ty.display(types, sources, buffer).unwrap();
+            for &ty in ty_lists.get(self.sig.params) {
+                ty.display(types, ty_lists, sources, buffer).unwrap();
                 buffer.write_char(',').unwrap();
             }
             buffer.pop().unwrap();
@@ -76,14 +76,16 @@ pub struct Sig {
 pub struct SignatureDisplay<'a> {
     pub sig: &'a Sig,
     pub sources: &'a Sources,
+    pub ty_lists: &'a TyLists,
     pub types: &'a Types,
 }
 
 impl<'a> SignatureDisplay<'a> {
-    pub fn new(sig: &'a Sig, sources: &'a Sources, types: &'a Types) -> Self {
+    pub fn new(sources: &'a Sources, ty_lists: &'a TyLists, types: &'a Types, sig: &'a Sig) -> Self {
         SignatureDisplay {
             sig,
             types,
+            ty_lists,
             sources,
         }
     }
@@ -92,16 +94,16 @@ impl<'a> SignatureDisplay<'a> {
 impl std::fmt::Display for SignatureDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(")?;
-        for (i, &ty) in self.types.args.get(self.sig.args).iter().enumerate() {
+        for (i, &ty) in self.ty_lists.get(self.sig.args).iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", TyDisplay::new(self.types, self.sources, ty))?;
+            write!(f, "{}", ty_display!(self, ty))?;
         }
         write!(
             f,
             ") -> {}",
-            TyDisplay::new(self.types, self.sources, self.sig.ret)
+            ty_display!(self, self.sig.ret),
         )?;
         Ok(())
     }

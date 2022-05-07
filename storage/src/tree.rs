@@ -1,4 +1,4 @@
-use storage::*;
+use crate::*;
 use std::fmt::Debug;
 
 pub trait TreeStorage<I: EntityRef + 'static + Debug>

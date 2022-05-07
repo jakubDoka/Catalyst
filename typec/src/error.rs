@@ -2,15 +2,26 @@ use crate::*;
 
 use typec_types::*;
 
-pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut String) -> std::fmt::Result {
+struct TyErrorDisplay<'a> {
+    sources: &'a Sources,
+    types: &'a Types,
+    ty_lists: &'a TyLists,
+}
+
+pub fn display(error: &TyError, sources: &Sources, types: &Types, ty_lists: &TyLists, to: &mut String) -> std::fmt::Result {
     use std::fmt::Write;
+    
+    let state = TyErrorDisplay {
+        sources,
+        types,
+        ty_lists,
+    };
+    
     match error {
-        TyError::NonPointerDereference { loc, ty } => {
+        &TyError::NonPointerDereference { loc, ty } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "'")?;
-                ty.display(types, sources, to)?;
-                write!(to, "' cannot be dereferenced")
+                write!(to, "'{}' cannot be dereferenced", ty_display!(state, ty))
             })?;
             writeln!(to, "|> types that can be dereferenced: &<type> *<type>")?;
         }
@@ -35,17 +46,13 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
             })?;
             writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
         }
-        TyError::MissingBound { loc, input, bound } => {
+        &TyError::MissingBound { loc, input, bound } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "type '")?;
-                input.display(types, sources, to)?;
-                write!(to, "' does not implement bound '")?;
-                bound.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "type '{}' does not implement bound '{}'", ty_display!(state, input), ty_display!(state, bound))
             })?;
         }
-        TyError::ReturnTypeMismatch {
+        &TyError::ReturnTypeMismatch {
             because,
             expected,
             got,
@@ -53,11 +60,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "expected '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "' but got '")?;
-                got.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "expected '{}' but got '{}'", ty_display!(state, expected), ty_display!(state, got))
             })?;
 
             if let Some(because) = because {
@@ -100,7 +103,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
             writeln!(to, "|> use '_' instead of type for known parameters")?;
             writeln!(to, "|> omit tali parameters that are known")?;
         }
-        TyError::BreakValueTypeMismatch {
+        &TyError::BreakValueTypeMismatch {
             because,
             expected,
             got,
@@ -108,19 +111,18 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "'")?;
-                got.display(types, sources, to)?;
-                write!(to, "' is not consistent with")
+                write!(to, "'{}' is not consistent with", ty_display!(state, got))
             })?;
 
             because.loc_to(sources, to)?;
             because.underline_error(sources, to, &|to| {
-                write!(to, "'")?;
-                expected.display(types, sources, to)?;
-                write!(to, "' return value of this break")
+                // write!(to, "'")?;
+                // expected.display(types, sources, to)?;
+                // write!(to, "' return value of this break")
+                write!(to, "'{}' return value of this break", ty_display!(state, expected))
             })?;
         }
-        TyError::MissingBreakValue {
+        &TyError::MissingBreakValue {
             because,
             expected,
             loc,
@@ -132,9 +134,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
 
             because.loc_to(sources, to)?;
             because.underline_info(sources, to, &|to| {
-                write!(to, "because of '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "' return value in previous break")
+                write!(to, "because of '{}' return value in previous break", ty_display!(state, expected))
             })?;
         }
         &TyError::MissingBoundImplFunc { func, loc } => {
@@ -173,7 +173,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 write!(to, "because of this definition")
             })?;
         }
-        TyError::CallArgTypeMismatch {
+        &TyError::CallArgTypeMismatch {
             because,
             expected,
             got,
@@ -181,11 +181,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "expected '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "' as a function argument but got '")?;
-                got.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "expected '{}' as a function argument but got '{}'", ty_display!(state, expected), ty_display!(state, got))
             })?;
 
             because.loc_to(sources, to)?;
@@ -200,9 +196,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "unknown field on type '")?;
-                on.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "unknown field on type '{}'", on)
             })?;
 
             if candidates.is_empty() {
@@ -215,15 +209,13 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 writeln!(to)?;
             }
         }
-        TyError::ExpectedStruct { got, loc } => {
+        &TyError::ExpectedStruct { got, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "expected struct type but got '")?;
-                got.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "expected struct type but got '{}'", ty_display!(state, got))
             })?;
         }
-        TyError::ConstructorFieldTypeMismatch {
+        &TyError::ConstructorFieldTypeMismatch {
             because,
             expected,
             got,
@@ -231,24 +223,18 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "got '")?;
-                got.display(types, sources, to)?;
-                write!(to, "' which does not match")
+                write!(to, "expected '{}' which does not match", ty_display!(state, got))
             })?;
 
             because.loc_to(sources, to)?;
             because.underline_info(sources, to, &|to| {
-                write!(to, "this field of type '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "this field of type '{}'", ty_display!(state, expected))
             })?;
         }
         TyError::ConstructorMissingFields { on, missing, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "missing fields in constructor of '")?;
-                on.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "missing fields in constructor of '{}'", ty_display!(state, *on))
             })?;
 
             write!(to, "|> missing fields:",)?;
@@ -272,12 +258,10 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 "|> you can add a return type with ') -> <type> {{' syntax"
             )?;
         }
-        TyError::IfConditionTypeMismatch { got, loc } => {
+        &TyError::IfConditionTypeMismatch { got, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "expected 'bool' type but got '")?;
-                got.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "expected 'bool' type but got '{}'", ty_display!(state, got))
             })?;
             writeln!(to, "|> if can only take 'bool' as condition\n")?;
         }
@@ -299,7 +283,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 )?;
             }
         }
-        TyError::AssignTypeMismatch {
+        &TyError::AssignTypeMismatch {
             because,
             expected,
             got,
@@ -307,15 +291,11 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "cannot assign '")?;
-                got.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "cannot assign '{}'", ty_display!(state, got))
             })?;
 
             because.underline_error(sources, to, &|to| {
-                write!(to, "because this is '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "because this is '{}'", ty_display!(state, expected))
             })?;
         }
         &TyError::BinaryOperatorNotFound {
@@ -327,9 +307,9 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 to,
                 ansi_consts::ERR,
                 "|> Binary operator '{}' {} '{}' does not exist.",
-                TyDisplay::new(types, sources, left_ty),
+                ty_display!(state, left_ty),
                 sources.display(loc),
-                TyDisplay::new(types, sources, right_ty)
+                ty_display!(state, right_ty),
             )?;
         }
         TyError::InvalidPath { loc } => {
@@ -354,19 +334,16 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, to: &mut Strin
                 write!(to, "expected concrete type")
             })?;
         }
-        TyError::GenericTypeMismatch {
+        &TyError::GenericTypeMismatch {
             expected,
             found,
             loc,
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "expected type '")?;
-                expected.display(types, sources, to)?;
-                write!(to, "' but got '")?;
-                found.display(types, sources, to)?;
-                write!(to, "'")
+                write!(to, "expected type '{}' but got '{}'", ty_display!(state, expected), ty_display!(state, found))
             })?;
+
         }
         #[allow(unused)]
         TyError::OperatorArgCountMismatch {

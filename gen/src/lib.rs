@@ -21,8 +21,9 @@ pub struct CirBuilder<'a> {
     pub stack_slot_lookup: &'a mut SecondaryMap<mir::StackSlot, PackedOption<ir::StackSlot>>,
     pub variable_set: &'a mut EntitySet<Variable>,
     pub t_funcs: &'a Funcs,
-    pub types: &'a Reprs,
-    pub t_types: &'a Types,
+    pub reprs: &'a Reprs,
+    pub types: &'a Types,
+    pub ty_lists: &'a TyLists,
     pub source: &'a FuncCtx,
     pub sources: &'a Sources,
 }
@@ -61,7 +62,7 @@ impl<'a> CirBuilder<'a> {
         self.builder.switch_to_block(block);
 
         for (value, ent) in self.source.block_params(id) {
-            let repr = self.types.ents[ent.ty].repr;
+            let repr = self.reprs[ent.ty].repr;
             let ir_value = self.builder.append_block_param(block, repr);
             self.value_lookup[value] = ir_value.into();
         }
@@ -96,7 +97,7 @@ impl<'a> CirBuilder<'a> {
                         .get(args)
                         .iter()
                         .map(|&value| {
-                            //dbg!(self.source.values[value].ty, self.t_types.ents[self.source.values[value].ty], self.types.ents[self.source.values[value].ty].repr);
+                            // dbg!(self.source.values[value].ty, self.reprs[self.source.values[value].ty], self.reprs[self.source.values[value].ty].repr);
                             self.use_value(value)
                         })
                         .collect();
@@ -180,14 +181,14 @@ impl<'a> CirBuilder<'a> {
 
                 let (size, dest_align) = {
                     let target_ty = self.source.values[target].ty;
-                    let size = self.types.ents[target_ty].size;
-                    let align = self.types.ents[target_ty].align;
+                    let size = self.reprs[target_ty].size;
+                    let align = self.reprs[target_ty].align;
                     (self.unwrap_size(size), self.unwrap_size(align))
                 };
 
                 let src_align = {
                     let value_ty = self.source.values[value].ty;
-                    let align = self.types.ents[value_ty].align;
+                    let align = self.reprs[value_ty].align;
                     self.unwrap_size(align)
                 };
 
@@ -264,7 +265,7 @@ impl<'a> CirBuilder<'a> {
 
     fn repr_of(&self, value: mir::Value) -> ir::types::Type {
         let ty = self.source.values[value].ty;
-        self.types.ents[ty].repr
+        self.reprs[ty].repr
     }
 
     fn generate_native_call(
@@ -500,7 +501,7 @@ impl<'a> CirBuilder<'a> {
         let mir::ValueEnt {
             ty, flags, offset, ..
         } = self.source.values[value];
-        let repr = self.types.ents[ty].repr;
+        let repr = self.reprs[ty].repr;
         let variable = Variable::new(value.index());
         let value =
             if flags.contains(mir::Flags::ASSIGNABLE) && self.variable_set.contains(variable) {
@@ -513,7 +514,7 @@ impl<'a> CirBuilder<'a> {
 
         if flags.contains(mir::Flags::POINTER) {
             let loader_repr = repr.as_int();
-            if self.types.ents[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
+            if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
                 value
             } else {
                 let value = self

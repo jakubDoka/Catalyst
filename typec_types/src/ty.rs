@@ -1,177 +1,99 @@
-use module_types::tree::GenericGraph;
+use _core::ops::IndexMut;
 use storage::*;
 use lexer_types::*;
 
 use crate::*;
 
-pub struct Types {
-    pub ents: PrimaryMap<Ty, TyEnt>,
-    pub funcs: StackMap<FuncList, Func>,
-    pub args: StackMap<TyList, Ty>,
-    pub sfield_lookup: Map<SFieldRef>,
-    pub sfields: StackMap<SFieldList, SFieldEnt, SField>,
-    pub builtin: BuiltinTable,
-    pub bound_cons: Map<BoundImpl>,
-    pub instances: Map<Ty>,
-    params: Vec<Ty>,
+pub type Types = PrimaryMap<Ty, TyEnt>;
+pub type TFuncLists = StackMap<FuncList, Func>;
+pub type SFieldLookup = Map<SFieldRef>;
+pub type SFields = StackMap<SFieldList, SFieldEnt, SField>;
+pub type BoundImpls = Map<BoundImpl>;
+pub type Instances = Map<Ty>;
+
+pub struct TyLists {
+    lists: StackMap<TyList, Ty>,
+    stack: FramedStack<Ty>,
 }
 
-impl Types {
-    pub const MAX_PARAMS: usize = 32;
-
-    pub fn new(
-        graph: &mut GenericGraph,
-        sources: &mut Sources,
-        builtin_source: &mut BuiltinSource,
-    ) -> Self {
-        let mut tys = Types {
-            funcs: StackMap::new(),
-            ents: PrimaryMap::new(),
-            args: StackMap::new(),
-            sfield_lookup: Map::new(),
-            sfields: StackMap::new(),
-            builtin: BuiltinTable::new(),
-            bound_cons: Map::new(),
-            params: Vec::new(),
-            instances: Map::new(),
-        };
-
-        tys.init(graph, sources, builtin_source);
-
-        tys
-    }
-
-    pub fn deref_ptr(&self, ty: Ty) -> Ty {
-        match self.ents[ty].kind {
-            TyKind::Ptr(ty, ..) => ty,
-            _ => unreachable!(),
+impl TyLists {
+    pub fn new() -> Self {
+        Self {
+            lists: StackMap::new(),
+            stack: FramedStack::new(),
         }
     }
 
-    pub fn ptr_depth_of(&self, ty: Ty) -> u32 {
-        match self.ents[ty].kind {
-            TyKind::Ptr(.., depth) => depth,
+    pub fn len(&self, list: TyList) -> usize {
+        self.lists.len(list)
+    }
+
+    pub fn get(&self, list: TyList) -> &[Ty] {
+        self.lists.get(list)
+    }
+
+    pub fn push(&mut self, slice: &[Ty]) -> TyList {
+        self.lists.push(slice)
+    }
+
+    pub fn mark_frame(&mut self) {
+        self.stack.mark_frame();
+    }
+
+    pub fn push_one(&mut self, ty: Ty) {
+        self.stack.push(ty);
+    }
+
+    pub fn top(&self) -> &[Ty] {
+        self.stack.top_frame()
+    }
+
+    pub fn top_mut(&mut self) -> &mut [Ty] {
+        self.stack.top_frame_mut()
+    }
+
+    pub fn pop_frame(&mut self) -> TyList {
+        let list = self.lists.push(self.stack.top_frame());
+        self.stack.pop_frame();
+        list
+    }
+
+    pub fn discard(&mut self) {
+        self.stack.pop_frame();
+    }
+}
+
+impl TypeBase for Types {}
+
+pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn base_id_of(&self, ty: Ty) -> ID {
+        self[self.base_of(ty)].id
+    }
+    
+    fn base_of(&self, mut ty: Ty) -> Ty {
+        while let TyKind::Ptr(base, _) = self[ty].kind {
+            ty = base;
+        }
+
+        ty
+    }
+
+    fn depth_of(&self, ty: Ty) -> usize {
+        match self[ty].kind {
+            TyKind::Ptr(_, depth) => depth as usize,
             _ => 0,
         }
     }
 
-    pub fn base_id_of(&self, ty: Ty, params: TyList) -> ID {
-        self.ents[self.base_of(ty, params)].id
-    }
-
-    pub fn base_of(&self, ty: Ty, params: TyList) -> Ty {
-        self.base_of_low(ty, params).0
-    }
-
-    pub fn ensure_no_param(&self, ty: Ty, params: TyList) -> Ty {
-        match self.ents[ty].kind {
-            TyKind::Param(index) => self.args.get(params)[index as usize],
-            _ => ty,
-        }
-    }
-
-    pub fn base_of_low(&self, mut ty: Ty, params: TyList) -> (Ty, ID) {
-        let mut id = ID(0);
-        loop {
-            let TyEnt { kind, .. } = self.ents[ty];
-            match kind {
-                TyKind::Ptr(inner, ..) => {
-                    id = id + ID::new("*");
-                    ty = inner;
-                }
-                TyKind::Param(index) => {
-                    return (self.args.get(params)[index as usize], id);
-                }
-                TyKind::BoundCombo(..)
-                | TyKind::Instance(..)
-                | TyKind::Bound(..)
-                | TyKind::Struct(..)
-                | TyKind::Int(..)
-                | TyKind::Bool
-                | TyKind::Nothing
-                | TyKind::Unresolved => return (ty, id),
-            }
-        }
-    }
-
-    fn init(
-        &mut self,
-        graph: &mut GenericGraph,
-        sources: &mut Sources,
-        builtin_source: &mut BuiltinSource,
-    ) {
-        self.init_builtin_table(graph, sources, builtin_source);
-
-        self.params.reserve(Self::MAX_PARAMS);
-        for i in 0..Self::MAX_PARAMS {
-            let ty = {
-                let ent = TyEnt {
-                    id: ID::new("<param>") + ID(i as u64),
-                    kind: TyKind::Param((i % (Self::MAX_PARAMS / 2)) as u32),
-                    name: builtin_source.make_span(sources, "param"),
-                    flags: TyFlags::GENERIC,
-                    ..Default::default()
-                };
-                self.ents.push(ent)
-            };
-            self.params.push(ty);
-            graph.close_node();
-        }
-    }
-
-    pub fn active_params(&self, popper: &InstanceMarker) -> &[Ty] {
-        &popper
-            .is_ty
-            .then_some(&self.params[Self::MAX_PARAMS / 2..])
-            .unwrap_or(self.params.as_slice())[..popper.len]
-    }
-
-    pub fn push_params(&mut self, params: TyList, ty_params: bool) -> InstanceMarker {
-        let params = self.args.get(params);
-        assert!(params.len() <= Self::MAX_PARAMS / 2);
-        let used = ty_params
-            .then_some(&self.params[Self::MAX_PARAMS / 2..])
-            .unwrap_or(self.params.as_slice());
-        for (&ty, &param) in params.iter().zip(used) {
-            self.ents[param] = self.ents[ty];
-        }
-
-        return InstanceMarker {
-            len: params.len(),
-            is_ty: ty_params,
-        };
-    }
-
-    pub fn pop_params(&mut self, popper: InstanceMarker) {
-        let params = popper
-            .is_ty
-            .then_some(&self.params[Self::MAX_PARAMS / 2..])
-            .unwrap_or(self.params.as_slice());
-        for (i, &param) in params[..popper.len].iter().enumerate() {
-            self.ents[param] = self.ents[self.params[self.params.len() - 1]];
-            self.ents[param].kind = TyKind::Param(i as u32);
-        }
-    }
-
-    pub fn fn_params(&self) -> &[Ty] {
-        &self.params[..Self::MAX_PARAMS / 2]
-    }
-
-    pub fn ty_params(&self) -> &[Ty] {
-        &self.params[Self::MAX_PARAMS / 2..]
-    }
-
-    pub fn ptr_base_of(&self, mut ty: Ty) -> Ty {
-        loop {
-            match self.ents[ty].kind {
-                TyKind::Ptr(base, ..) => ty = base,
-                _ => return ty,
-            }
+    fn deref(&self, ty: Ty) -> Ty {
+        match self[ty].kind {
+            TyKind::Ptr(base, _) => base,
+            _ => unreachable!(),
         }
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct BoundImpl {
     pub span: Span,
     pub funcs: FuncList,
@@ -209,13 +131,18 @@ macro_rules! gen_builtin_table {
         }
 
         impl BuiltinTable {
-            pub fn all(&self) -> [Ty; 9] {
+            pub fn all(&self) -> [Ty; 10] {
                 [$(self.$name),*]
             }
         }
 
-        impl Types {
-            pub fn init_builtin_table(&mut self, graph: &mut GenericGraph, sources: &mut Sources, builtin_source: &mut BuiltinSource) {
+        impl BuiltinTable {
+            pub fn new(
+                graph: &mut GenericGraph, 
+                sources: &mut Sources, 
+                builtin_source: &mut BuiltinSource,
+                types: &mut Types,
+            ) -> Self {
                 $(
                     let ent = TyEnt {
                         id: ID::new(stringify!($name)),
@@ -223,10 +150,15 @@ macro_rules! gen_builtin_table {
                         kind: $repr,
                         flags: TyFlags::GENERIC & matches!($repr, TyKind::Bound(..)),
                     };
-                    let ty = self.ents.push(ent);
+                    let $name = types.push(ent);
                     graph.close_node();
-                    self.builtin.$name = ty;
                 )*
+
+                Self {
+                    $(
+                        $name,
+                    )*
+                }
             }
         }
     };
@@ -244,6 +176,7 @@ impl BuiltinTable {
 
 gen_builtin_table!(
     nothing: TyKind::Nothing,
+    empty_bound_combo: TyKind::Param(0, TyList::default(), None.into()),
     any: TyKind::Bound(FuncList::default()),
     bool: TyKind::Bool,
     char: TyKind::Int(32),
@@ -253,18 +186,6 @@ gen_builtin_table!(
     i32: TyKind::Int(32),
     i64: TyKind::Int(64),
 );
-
-impl BuiltinTable {
-    pub fn new() -> Self {
-        BuiltinTable::default()
-    }
-}
-
-#[derive(Debug)]
-pub struct InstanceMarker {
-    is_ty: bool,
-    len: usize,
-}
 
 #[derive(Clone, Copy, Default)]
 pub struct SFieldRef {
@@ -353,28 +274,40 @@ impl TyFlags {
 impl_bool_bit_and!(TyFlags);
 
 pub struct TyDisplay<'a> {
-    types: &'a Types,
-    sources: &'a Sources,
-    ty: Ty,
+    pub types: &'a Types,
+    pub ty_lists: &'a TyLists,
+    pub sources: &'a Sources,
+    pub ty: Ty,
 }
 
 impl<'a> TyDisplay<'a> {
-    pub fn new(types: &'a Types, sources: &'a Sources, ty: Ty) -> Self {
-        Self { types, ty, sources }
+    #[inline(never)]
+    pub fn new(
+        types: &'a Types,
+        ty_lists: &'a TyLists,
+        sources: &'a Sources,
+        ty: Ty,
+    ) -> Self {
+        TyDisplay {
+            types,
+            ty_lists,
+            sources,
+            ty,
+        }
     }
 }
 
 impl std::fmt::Display for TyDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut str = String::new();
-        self.ty.display(self.types, self.sources, &mut str)?;
+        self.ty.display(self.types, self.ty_lists, self.sources, &mut str)?;
         write!(f, "{str}")
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TyKind {
-    BoundCombo(TyList),
+    Param(u8, TyList, PackedOption<Ty>),
     Bound(FuncList),
     Struct(SFieldList),
     /// (base, params)
@@ -382,8 +315,6 @@ pub enum TyKind {
     /// (inner, depth)
     Ptr(Ty, u32),
     Int(i16),
-    /// (index)
-    Param(u32),
     Bool,
     Nothing,
     Unresolved,
@@ -401,39 +332,36 @@ gen_entity!(SField);
 gen_entity!(SFieldList);
 
 impl Ty {
-    pub fn display(self, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
+    pub fn display(self, types: &Types, ty_lists: &TyLists, sources: &Sources, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
-        match types.ents[self].kind {
+        match types[self].kind {
             TyKind::Struct(..) | TyKind::Bound(..) | TyKind::Int(..) | TyKind::Nothing | TyKind::Bool => {
-                let name = types.ents[self].name;
+                let name = types[self].name;
                 write!(to, "{}", sources.display(name))?;
             }
             TyKind::Instance(base, params) => {
-                let base = types.ents[base].name;
+                let base = types[base].name;
                 write!(to, "{}", sources.display(base))?;
                 write!(to, "[")?;
-                for (i, param) in types.args.get(params).iter().enumerate() {
+                for (i, param) in ty_lists.get(params).iter().enumerate() {
                     if i != 0 {
                         write!(to, ", ")?;
                     }
-                    param.display(types, sources, to)?;
+                    param.display(types, ty_lists, sources, to)?;
                 }
                 write!(to, "]")?;
             }
-            TyKind::Param(index) => {
-                write!(to, "param{}", index)?;
-            }
-            TyKind::BoundCombo(list) => {
-                for (i, ty) in types.args.get(list).iter().enumerate() {
+            TyKind::Param(_, list, ..) => {
+                for (i, ty) in ty_lists.get(list).iter().enumerate() {
                     if i != 0 {
                         write!(to, " + ")?;
                     }
-                    ty.display(types, sources, to)?;
+                    ty.display(types, ty_lists, sources, to)?;
                 }
             }
             TyKind::Ptr(ty, ..) => {
                 write!(to, "*")?;
-                ty.display(types, sources, to)?;
+                ty.display(types, ty_lists, sources, to)?;
             }
             TyKind::Unresolved => write!(to, "unresolved")?,
         }

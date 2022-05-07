@@ -34,6 +34,10 @@ impl<T> FramedStack<T> {
         &self.data[self.frames.last().unwrap().clone() as usize..]
     }
 
+    pub fn top_frame_mut(&mut self) -> &mut [T] {
+        &mut self.data[self.frames.last().unwrap().clone() as usize..]
+    }
+
     pub fn pop(&mut self) -> T {
         self.data.pop().unwrap()
     }

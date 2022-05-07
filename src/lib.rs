@@ -12,6 +12,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use gen::*;
 use instance::*;
+use instance::repr::ReprInstancing;
 use modules::*;
 use modules::module::ModuleImports;
 use parser::*;
@@ -19,6 +20,7 @@ use lexer_types::*;
 use module_types::*;
 use instance_types::*;
 use storage::*;
+use typec::tir::BoundVerifier;
 use typec_types::*;
 use typec::*;
 use ast::*;
@@ -124,9 +126,16 @@ pub fn compile() {
     };
 
     // typec
-    let mut t_graph = GenericGraph::new();
-    let mut t_types = Types::new(&mut t_graph, &mut sources, &mut builtin_source);
+    let mut graph = GenericGraph::new();
+    let mut types = Types::new();
+    let builtin_types = BuiltinTable::new(&mut graph, &mut sources, &mut builtin_source, &mut types);
     let mut t_funcs = Funcs::new();
+    let mut ty_lists = TyLists::new();
+    let mut instances = Instances::new();
+    let mut sfields = SFields::new();
+    let mut sfield_lookup = SFieldLookup::new();
+    let mut tfunc_lists = TFuncLists::new();
+    let mut bound_impls = BoundImpls::new();
 
     let total_type_check;
 
@@ -135,10 +144,12 @@ pub fn compile() {
     {
         let b_source = builtin_source.source;
         typec::create_builtin_items(
-            &mut t_types,
-            &mut t_funcs,
-            &mut sources,
-            &mut builtin_source,
+            &mut types, 
+            &mut ty_lists, 
+            &builtin_types, 
+            &mut t_funcs, 
+            &mut sources, 
+            &mut builtin_source, 
             &mut modules[b_source].items,
         );
 
@@ -197,13 +208,20 @@ pub fn compile() {
                 ScopeBuilder {
                     scope: &mut scope,
                     funcs: &mut t_funcs,
-                    types: &mut t_types,
+                    types: &mut types,
                     modules: &mut modules,
                     sources: &sources,
                     ast: &ast,
                     module: source,
                     ctx: &mut c_ctx,
                     diagnostics: &mut diagnostics,
+                    ty_lists: &mut ty_lists,
+                    sfields: &mut sfields,
+                    sfield_lookup: &mut sfield_lookup,
+                    builtin_types: &builtin_types,
+                    tfunc_lists: &mut tfunc_lists,
+                    instances: &mut instances,
+                    bound_impls: &mut bound_impls,
                 }
                 .collect_items(ast.elements()),
             );
@@ -219,13 +237,19 @@ pub fn compile() {
                 drop(
                     TyBuilder {
                         scope: &mut scope,
-                        types: &mut t_types,
+                        types: &mut types,
                         sources: &sources,
                         ast: &ast,
                         ctx: &mut c_ctx,
-                        graph: &mut t_graph,
+                        graph: &mut graph,
                         modules: &mut modules,
                         diagnostics: &mut diagnostics,
+                        ty_lists: &mut ty_lists,
+                        sfields: &mut sfields,
+                        sfield_lookup: &mut sfield_lookup,
+                        builtin_types: &builtin_types,
+                        instances: &mut instances,
+                        bound_impls: &mut bound_impls,
                         ty,
                     }
                     .build(),
@@ -233,20 +257,19 @@ pub fn compile() {
             }
 
             drop(
-                TirBuilder {
+                BoundVerifier {
                     scope: &mut scope,
-                    types: &mut t_types,
+                    types: &mut types,
                     sources: &sources,
                     ast: &ast,
                     funcs: &mut t_funcs,
                     ctx: &mut c_ctx,
-                    temp: &mut t_temp,
                     modules: &mut modules,
                     diagnostics: &mut diagnostics,
-
-                    // does not matter
-                    body: &mut TirData::default(),
-                    func: Default::default(),
+                    ty_lists: &mut ty_lists,
+                    builtin_types: &builtin_types,
+                    func_lists: &mut tfunc_lists,
+                    bound_impls: &mut bound_impls,
                 }
                 .verify_bound_impls(),
             );
@@ -261,7 +284,7 @@ pub fn compile() {
             for func in func_buffer.drain(..) {
                 if (TirBuilder {
                     scope: &mut scope,
-                    types: &mut t_types,
+                    types: &mut types,
                     sources: &sources,
                     ast: &ast,
                     func,
@@ -271,6 +294,13 @@ pub fn compile() {
                     temp: &mut t_temp,
                     modules: &mut modules,
                     diagnostics: &mut diagnostics,
+                    func_lists: &mut tfunc_lists,
+                    ty_lists: &mut ty_lists,
+                    instances: &mut instances,
+                    sfields: &mut sfields,
+                    sfield_lookup: &mut sfield_lookup,
+                    builtin_types: &builtin_types,
+                    bound_impls: &mut bound_impls,
                 }
                 .build()
                 .is_err())
@@ -289,8 +319,8 @@ pub fn compile() {
         total_type_check = total_type_check_now.elapsed();
     }
 
-    for _ in t_graph.len()..t_types.ents.len() {
-        t_graph.close_node();
+    for _ in graph.len()..types.len() {
+        graph.close_node();
     }
 
     let errors = {
@@ -309,7 +339,7 @@ pub fn compile() {
 
         diagnostics
             .iter::<TyError>()
-            .map(|errs| errs.for_each(|err| typec::error::display(err, &sources, &t_types, &mut errors).unwrap()));
+            .map(|errs| errs.for_each(|err| typec::error::display(err, &sources, &types, &ty_lists, &mut errors).unwrap()));
 
         errors
     };
@@ -330,23 +360,28 @@ pub fn compile() {
 
     // instance
     let mut function = FuncCtx::new();
-    let mut types = Reprs::new();
+    let mut reprs = Reprs::new();
+    let mut repr_fields = ReprFields::new();
     let ptr_ty = module.isa().pointer_type();
     let system_call_convention = module.isa().default_call_conv();
 
     instance::repr::ReprBuilder {
-        t_types: &t_types,
-        t_graph: &t_graph,
+        types: &types,
+        repr_fields: &mut repr_fields,
         sources: &sources,
-        types: &mut types,
+        reprs: &mut reprs,
+        sfields: &sfields,
         ptr_ty,
+        instances: &instances,
+        ty_lists: &ty_lists,
     }
-    .translate()
+    .translate(&graph)
     .unwrap();
 
     let mut func_lookup = SecondaryMap::new();
     let mut has_sret = EntitySet::new();
     let mut seen_entry = false;
+    let mut replace_cache = ReplaceCache::new();
 
     /* declare function headers */
     {
@@ -360,19 +395,22 @@ pub fn compile() {
                 continue;
             }
 
-            let popper = if let TFuncKind::Instance(_) = ent.kind {
-                let popper = t_types.push_params(ent.sig.params, false);
-                for (&param, &real_param) in t_types
-                    .active_params(&popper)
-                    .iter()
-                    .zip(t_types.args.get(ent.sig.params))
-                {
-                    types.ents[param] = types.ents[real_param];
-                }
-                Some(popper)
-            } else {
-                None
-            };
+            if let TFuncKind::Instance(func) = ent.kind {
+                ReprInstancing {
+                    types: &mut types,
+                    ty_lists: &mut ty_lists,
+                    instances: &mut instances,
+                    sfields: &sfields,
+                    sources: &sources,
+                    repr_fields: &mut repr_fields,
+                    reprs: &mut reprs,
+                    ptr_ty,
+                }.load_generic_types(
+                    ent.sig.params, 
+                    bodies[func].used_types, 
+                    &mut replace_cache
+                );
+            }
 
             name_buffer.clear();
             if ent.flags.contains(TFuncFlags::ENTRY) {
@@ -390,13 +428,17 @@ pub fn compile() {
             let returns_struct = instance::MirBuilder::translate_signature(
                 &ent.sig,
                 &mut ctx.func.signature,
+                &reprs,
                 &types,
-                &t_types,
+                &ty_lists,
                 &sources,
                 system_call_convention,
                 ent.flags.contains(TFuncFlags::ENTRY),
             )
             .unwrap();
+
+            // println!("{}", sources.display(ent.name));
+            // println!("{:?}", ctx.func.signature);
 
             if returns_struct {
                 has_sret.insert(id);
@@ -408,7 +450,7 @@ pub fn compile() {
 
             ctx.func.signature.clear(CallConv::Fast);
 
-            popper.map(|p| t_types.pop_params(p));
+            replace_cache.replace(&mut types, &mut reprs);
 
             func_lookup[id] = func.into();
         }
@@ -438,22 +480,24 @@ pub fn compile() {
                 continue;
             }
 
-            let (func, popper) = if let TFuncKind::Instance(func) = ent.kind {
-                // dbg!(t_types.ents[Ty(9)]);
-                let popper = t_types.push_params(ent.sig.params, false);
-                // println!("{:?}", popper);
-                for (&param, &real_param) in t_types
-                    .active_params(&popper)
-                    .iter()
-                    .zip(t_types.args.get(ent.sig.params))
-                {
-                    // println!(",,,, {:?} {:?}", param, real_param);
-                    types.ents[param] = types.ents[real_param];
-                }
-                // dbg!(t_types.ents[Ty(9)]);
-                (func, Some(popper))
+            let func = if let TFuncKind::Instance(func) = ent.kind {
+                ReprInstancing {
+                    types: &mut types,
+                    ty_lists: &mut ty_lists,
+                    instances: &mut instances,
+                    sfields: &sfields,
+                    sources: &sources,
+                    repr_fields: &mut repr_fields,
+                    reprs: &mut reprs,
+                    ptr_ty,
+                }.load_generic_types(
+                    ent.sig.params, 
+                    bodies[func].used_types, 
+                    &mut replace_cache
+                );
+                func
             } else {
-                (id, None)
+                id
             };
 
             let now = std::time::Instant::now();
@@ -462,8 +506,8 @@ pub fn compile() {
             MirBuilder {
                 system_call_convention,
                 func_id: func,
+                reprs: &reprs,
                 types: &types,
-                t_types: &t_types,
                 t_funcs: &t_funcs,
                 func: &mut function,
                 tir_mapping: &mut tir_mapping,
@@ -472,6 +516,12 @@ pub fn compile() {
                 return_dest: None,
                 has_sret: &has_sret,
                 sources: &sources,
+                ty_lists: &ty_lists,
+                func_lists: &tfunc_lists,
+                sfields: &sfields,
+                bound_impls: &bound_impls,
+                repr_fields: &repr_fields,
+                builtin_types: &builtin_types,
             }
             .translate_func()
             .unwrap();
@@ -492,15 +542,15 @@ pub fn compile() {
                 block_lookup: &mut ir_block_lookup,
                 stack_slot_lookup: &mut stack_slot_lookup,
                 t_funcs: &t_funcs,
-                types: &types,
+                reprs: &reprs,
                 variable_set: &mut variable_set,
-                t_types: &t_types,
+                types: &types,
+                ty_lists: &ty_lists,
             }
             .generate();
             total_generation += now.elapsed();
 
-            popper.map(|p| t_types.pop_params(p));
-
+            replace_cache.replace(&mut types, &mut reprs);
             // println!("{}", sources.display(ent.name));
             // println!("{}", ctx.func.display());
 

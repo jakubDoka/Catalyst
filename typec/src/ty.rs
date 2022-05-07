@@ -1,6 +1,6 @@
 use ast::Ast;
 use lexer_types::*;
-use module_types::{*, scope::Scope, tree::GenericGraph, module::Modules};
+use module_types::*;
 use typec_types::*;
 use storage::*;
 
@@ -10,6 +10,12 @@ use crate::*;
 pub struct TyBuilder<'a> {
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
+    pub ty_lists: &'a mut TyLists,
+    pub sfields: &'a mut SFields,
+    pub sfield_lookup: &'a mut SFieldLookup,
+    pub builtin_types: &'a BuiltinTable,
+    pub instances: &'a mut Instances,
+    pub bound_impls: &'a mut BoundImpls,
     pub sources: &'a Sources,
     pub ast: &'a AstData,
     pub ctx: &'a mut ScopeContext,
@@ -21,7 +27,7 @@ pub struct TyBuilder<'a> {
 
 impl<'a> TyBuilder<'a> {
     pub fn build(&mut self) -> errors::Result {
-        let TyEnt { id, .. } = self.types.ents[self.ty];
+        let TyEnt { id, .. } = self.types[self.ty];
         let ast = self.ctx.type_ast[self.ty];
         if ast.is_reserved_value() {
             return Ok(());
@@ -52,64 +58,11 @@ impl<'a> TyBuilder<'a> {
 
         self.scope.mark_frame();
 
-        if !generics.is_reserved_value() {
-            for (&ident, &param) in self
-                .ast
-                .children(generics)
-                .iter()
-                .zip(self.types.ty_params())
-            {
-                let span = self.ast.nodes[ident].span;
-                let id = self.sources.id(span);
-                self.scope.push_item(id, ScopeItem::new(param, span))
-            }
-        }
-
-        // fields are inserted into centralized hash map for faster lookup
-        // and memory efficiency, though we still need field ordering when
-        // calculating offsets
-        let fields = {
-            for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
-                let &[name, field_ty_ast] = self.ast.children(field_ast) else {
-                    unreachable!();
-                };
-                let field_ty = parse_type!(self, field_ty_ast)?;
-
-                let span = self.ast.nodes[name].span;
-
-                let id = {
-                    let name = self.sources.id(span);
-                    ID::field(id, name)
-                };
-
-                let field = {
-                    let field = SFieldEnt {
-                        span,
-                        ty: field_ty,
-                        index: i as u32,
-                    };
-                    self.types.sfields.push_one(field)
-                };
-
-                assert!(self
-                    .types
-                    .sfield_lookup
-                    .insert(id, SFieldRef::new(field))
-                    .map(|f| f.next.is_some())
-                    .unwrap_or(true));
-
-                let field_ty = if let TyKind::Instance(header, ..) = self.types.ents[field_ty].kind {
-                    header
-                } else {
-                    field_ty
-                };
-
-                self.graph.add_edge(field_ty.as_u32());
-            }
-            self.types.sfields.close_frame()
-        };
-
-        self.types.ents[self.ty].kind = TyKind::Struct(fields);
+        self.build_generics(generics);
+        
+        let fields = self.build_fields(id, body);
+        self.types[self.ty].kind = TyKind::Struct(fields);
+        
         self.graph.close_node();
 
         self.scope.pop_frame();
@@ -117,11 +70,89 @@ impl<'a> TyBuilder<'a> {
         Ok(())
     }
 
-   
+    pub fn build_fields(&mut self, id: ID, body: Ast) -> SFieldList {
+        for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
+            let &[name, field_ty_ast] = self.ast.children(field_ast) else {
+                unreachable!();
+            };
+            
+            let Ok(field_ty) = ty_parser!(self).parse_type(field_ty_ast) else {
+                continue;
+            };
+
+            let span = self.ast.nodes[name].span;
+
+            let id = {
+                let name = self.sources.id(span);
+                ID::field(id, name)
+            };
+
+            let field = {
+                let field = SFieldEnt {
+                    span,
+                    ty: field_ty,
+                    index: i as u32,
+                };
+                self.sfields.push_one(field)
+            };
+
+            assert!(self
+                .sfield_lookup
+                .insert(id, SFieldRef::new(field))
+                .map(|f| f.next.is_some())
+                .unwrap_or(true));
+
+            let field_ty = if let TyKind::Instance(header, ..) = self.types[field_ty].kind {
+                header
+            } else {
+                field_ty
+            };
+
+            self.graph.add_edge(field_ty.as_u32());
+        }
+        self.sfields.close_frame()
+    }
+
+    pub fn build_generics(&mut self, generics: Ast) {
+        if generics.is_reserved_value() {
+            return;
+        }
+        
+        let generics = self.ast.children(generics);
+        
+        // type params have no associated bound
+        // so we can use the empty one
+        {
+            let mut current = self.builtin_types.empty_bound_combo;
+            for &ident in generics {
+                let span = self.ast.nodes[ident].span;
+                let id = self.sources.id(span);
+                self.scope.push_item(id, ScopeItem::new(current, span));
+                current = get_param(current, self.types);
+            }
+        }
+    }
 }
 
-impl AstIDExt for TyBuilder<'_> {
-    fn state(&self) -> (&AstData, &Sources) {
-        (self.ast, self.sources)
+pub fn get_param(ty: Ty, types: &mut Types) -> Ty {
+    let next_ty = types.next_key();
+    let TyKind::Param(index, .., next) = &mut types[ty].kind else {
+        unreachable!();
+    };
+    let index = *index as u8;
+
+    if let Some(next) = next.expand() {
+        return next;
     }
+
+    *next = next_ty.into();
+
+    let mut copy = types[ty];
+    // this is only useful for parameters on types
+    // but it bring minimal overhead
+    let TyKind::Param(other_index, ..) = &mut copy.kind else {
+        unreachable!();
+    };
+    *other_index = index + 1;
+    types.push(copy)
 }

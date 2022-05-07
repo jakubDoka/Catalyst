@@ -5,14 +5,9 @@ pub const FUNCTION_ARG_START: usize = 3;
 pub const FUNCTION_ARG_END: usize = 2;
 pub const FUNCTION_RET: usize = 2;
 
-pub trait AstIDExt {
-    fn state(&self) -> (&AstData, &Sources);
-
-    fn id_of(&self, node: Ast) -> ID {
-        let (ast, sources) = self.state();
-        let span = ast.nodes[node].span;
-        sources.id(span)
-    }
+pub fn id_of(ast: Ast, data: &AstData, sources: &Sources) -> ID {
+    let AstEnt { span, .. } = data.nodes[ast];
+    sources.id(span)
 }
 
 #[derive(Clone, Copy)]

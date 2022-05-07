@@ -4,19 +4,34 @@ use cranelift_codegen::ir::Type;
 use typec_types::*;
 use crate::*;
 
-pub struct Reprs {
-    pub fields: Map<ReprField>,
-    pub ents: SecondaryMap<Ty, ReprEnt>,
+pub struct ReplaceCache {
+    data: Vec<(Ty, TyEnt)>,
 }
 
-impl Reprs {
+impl ReplaceCache {
     pub fn new() -> Self {
-        Reprs {
-            fields: Map::new(),
-            ents: SecondaryMap::new(),
+        Self {
+            data: Vec::new(),
+        }
+    }
+
+    pub fn save(&mut self, from: Ty, to: Ty, types: &mut Types, reprs: &mut Reprs) {
+        let to_ent = types[to];
+        types[to] = types[from];
+        reprs[to] = reprs[from];
+        self.data.push((to, to_ent));
+    }
+
+    pub fn replace(&mut self, types: &mut Types, reprs: &mut Reprs) {
+        for (id, ent) in self.data.drain(..) {
+            types[id] = ent;
+            reprs[id] = Default::default();
         }
     }
 }
+
+pub type Reprs = SecondaryMap<Ty, ReprEnt>;
+pub type ReprFields = Map<ReprField>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprEnt {
