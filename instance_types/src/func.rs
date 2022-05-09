@@ -12,13 +12,12 @@ pub struct Loop {
     pub dest: Option<Value>,
 }
 
-#[derive(Debug)]
 pub struct FuncCtx {
     pub name: Span,
     pub sig: ir::Signature,
 
     pub values: PrimaryMap<Value, ValueEnt>,
-    pub value_slices: StackMap<ValueList, Value>,
+    pub value_slices: FramedStackMap<ValueList, Value>,
     pub blocks: PrimaryMap<Block, BlockEnt>,
     pub insts: PrimaryMap<Inst, InstEnt>,
     pub stacks: PrimaryMap<StackSlot, StackEnt>,
@@ -35,7 +34,7 @@ impl FuncCtx {
             name: Span::default(),
             sig: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),
-            value_slices: StackMap::new(),
+            value_slices: FramedStackMap::new(),
             blocks: PrimaryMap::new(),
             insts: PrimaryMap::new(),
             stacks: PrimaryMap::new(),

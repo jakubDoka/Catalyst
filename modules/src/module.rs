@@ -160,7 +160,7 @@ impl<'a> ModuleImports<'a> {
 
     pub fn imports(&self) -> Option<impl Iterator<Item = ModuleImport> + 'a> {
         self.ast_data.elements().next().map(|(_, e)| {
-            assert!(e.kind != ast::AstKind::Import);
+            assert!(e.kind != AstKind::Import);
             self.ast_data.conns.get(e.children).iter().map(|&c| {
                 let &[nick, path] = self.ast_data.children(c) else {
                     unreachable!();

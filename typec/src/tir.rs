@@ -7,7 +7,7 @@ pub struct BoundVerifier<'a> {
     pub ast: &'a AstData,
     pub types: &'a Types,
     pub ty_lists: &'a mut TyLists,
-    pub builtin_types: &'a BuiltinTable,
+    pub builtin_types: &'a BuiltinTypes,
     pub modules: &'a mut Modules,
     pub scope: &'a mut Scope,
     pub diagnostics: &'a mut errors::Diagnostics,
@@ -31,7 +31,7 @@ impl<'a> BoundVerifier<'a> {
                 // handle use expressions
                 if !body.is_reserved_value() {
                     for &ast in self.ast.children(body) {
-                        if self.ast.nodes[ast].kind != ast::AstKind::UseBoundFunc {
+                        if self.ast.nodes[ast].kind != AstKind::UseBoundFunc {
                             continue;
                         }
 
@@ -192,7 +192,7 @@ pub struct TirBuilder<'a> {
     pub instances: &'a mut Instances,
     pub sfields: &'a mut SFields,
     pub sfield_lookup: &'a mut SFieldLookup,
-    pub builtin_types: &'a BuiltinTable,
+    pub builtin_types: &'a BuiltinTypes,
     pub bound_impls: &'a mut BoundImpls,
     pub ctx: &'a mut ScopeContext,
     pub body: &'a mut TirData,
@@ -206,7 +206,6 @@ pub struct TirBuilder<'a> {
 }
 
 impl<'a> TirBuilder<'a> {
-
     pub fn build(&mut self) -> errors::Result {
         let TFuncEnt {
             flags,
@@ -216,6 +215,8 @@ impl<'a> TirBuilder<'a> {
             },
             ..
         } = self.funcs[self.func];
+
+        //println!("{}", self.funcs[self.func].name.log(self.sources));
 
         let ast = self.ctx.func_ast[self.func];
         let header = self.ast.children(ast);
@@ -340,9 +341,17 @@ impl<'a> TirBuilder<'a> {
         self.temp.mark_frame();
         self.scope.mark_frame();
 
+        
+
         let mut final_expr = None;
         let mut terminating = false;
         for &stmt in self.ast.children(ast) {
+            if stmt.is_reserved_value() {
+                println!("{}", self.ast.nodes[ast].span.log(self.sources));
+                let mut str = String::new();
+                self.ast.fmt(&mut str, None).unwrap();
+                println!("{}", str);
+            }
             let Ok(expr) = self.build_expr(stmt) else {
                 continue; // Recover here
             };
@@ -379,22 +388,23 @@ impl<'a> TirBuilder<'a> {
     fn build_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
         let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
         let expr = match kind {
-            ast::AstKind::Unary => self.build_unary(ast)?,
-            ast::AstKind::Binary => self.build_binary(ast)?,
-            ast::AstKind::Ident => self.build_ident(ast)?,
-            ast::AstKind::If => self.build_if(ast)?,
-            ast::AstKind::Return => self.build_return(ast)?,
-            ast::AstKind::Int(width) => self.build_int(ast, width)?,
-            ast::AstKind::Bool(value) => self.build_bool(ast, value)?,
-            ast::AstKind::Char => self.build_char(ast)?,
-            ast::AstKind::Variable(mutable) => self.build_variable(mutable, ast)?,
-            ast::AstKind::Constructor => self.build_constructor(ast)?,
-            ast::AstKind::DotExpr => self.build_dot_expr(ast)?,
-            ast::AstKind::Call => self.build_call(ast)?,
-            ast::AstKind::Block => self.build_block(ast)?,
-            ast::AstKind::Loop => self.build_loop(ast)?,
-            ast::AstKind::Break => self.build_break(ast)?,
-            ast::AstKind::Deref => self.build_deref(ast)?,
+            AstKind::Unary => self.build_unary(ast)?,
+            AstKind::Binary => self.build_binary(ast)?,
+            AstKind::Ident => self.build_ident(ast)?,
+            AstKind::If => self.build_if(ast)?,
+            AstKind::Return => self.build_return(ast)?,
+            AstKind::Int(width) => self.build_int(ast, width)?,
+            AstKind::Bool(value) => self.build_bool(ast, value)?,
+            AstKind::Char => self.build_char(ast)?,
+            AstKind::Variable(mutable) => self.build_variable(mutable, ast)?,
+            AstKind::Constructor => self.build_constructor(ast)?,
+            AstKind::DotExpr => self.build_dot_expr(ast)?,
+            AstKind::Call => self.build_call(ast)?,
+            AstKind::Block => self.build_block(ast)?,
+            AstKind::Loop => self.build_loop(ast)?,
+            AstKind::Break => self.build_break(ast)?,
+            AstKind::Deref => self.build_deref(ast)?,
+            AstKind::BitCast => self.build_bit_cast(ast)?,
             _ => todo!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
@@ -402,6 +412,24 @@ impl<'a> TirBuilder<'a> {
             ),
         };
         Ok(expr)
+    }
+
+    fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let span = self.ast.nodes[ast].span;
+        let &[expr, ty] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let expr = self.build_expr(expr);
+        let ty = ty_parser!(self).parse_type(ty);
+        
+        let (expr, ty) = (expr?, ty?); // recovery
+
+        self.ctx.use_type(ty, self.types);
+        
+        let kind = TirKind::BitCast(expr);
+        let ent = TirEnt::new(kind, ty, span);
+        Ok(self.body.ents.push(ent))
     }
 
     fn build_deref(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -561,7 +589,7 @@ impl<'a> TirBuilder<'a> {
         };
 
         let (id, fn_span, mut obj, caller, instantiation) =
-            if self.ast.nodes[caller].kind == ast::AstKind::DotExpr {
+            if self.ast.nodes[caller].kind == AstKind::DotExpr {
                 let &[expr, name] = self.ast.children(caller) else {
                     unreachable!();
                 };
@@ -569,11 +597,11 @@ impl<'a> TirBuilder<'a> {
                 let expr = self.build_expr(expr)?;
                 let ty = {
                     let ty = self.body.ents[expr].ty;
-                    self.types.base_of(ty)
+                    self.types.caller_of(ty)
                 };
 
                 let (ident, instantiation) = {
-                    if ast::AstKind::Instantiation == self.ast.nodes[name].kind {
+                    if AstKind::Instantiation == self.ast.nodes[name].kind {
                         (self.ast.children(name)[0], Some(name))
                     } else {
                         (name, None)
@@ -587,7 +615,7 @@ impl<'a> TirBuilder<'a> {
                 (name_id, span, Some(expr), Some(ty), instantiation)
             } else {
                 let (ident, instantiation) = {
-                    if ast::AstKind::Instantiation == self.ast.nodes[caller].kind {
+                    if AstKind::Instantiation == self.ast.nodes[caller].kind {
                         (self.ast.children(caller)[0], Some(caller))
                     } else {
                         (caller, None)
@@ -609,9 +637,7 @@ impl<'a> TirBuilder<'a> {
 
         // handle auto ref or deref
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
-            if let Ok(corrected) = self.ptr_correct(*obj, expected) {
-                *obj = corrected;
-            }
+            *obj = self.ptr_correct(*obj, expected);
         }
 
         // we first collect results, its in a way of recovery
@@ -678,7 +704,6 @@ impl<'a> TirBuilder<'a> {
                     }
                 }
 
-
                 args.iter()
                     .zip(arg_tys)
                     .map(|(&arg, arg_ty)| {
@@ -720,7 +745,7 @@ impl<'a> TirBuilder<'a> {
                     .iter()
                     .any(|&params| self.types[params].flags.contains(TyFlags::GENERIC));
 
-                let ret = instantiate(sig.ret, &param_slots, self.types, self.instances)?;
+                let ret = ty_parser!(self).instantiate(sig.ret, &param_slots);
 
                 // println!(",,,,,{}", ty_display!(self, ret));
 
@@ -764,7 +789,7 @@ impl<'a> TirBuilder<'a> {
         Ok(result)
     }
 
-    fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> errors::Result<Tir> {
+    fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> Tir {
         let ty = self.body.ents[target].ty;
 
         let target_depth = self.types.depth_of(ty);
@@ -778,12 +803,7 @@ impl<'a> TirBuilder<'a> {
             target = self.take_ptr(target);
         }
 
-        let ty = self.body.ents[target].ty;
-        if ty != expected {
-            return Err(());
-        }
-
-        Ok(target)
+        target
     }
 
     fn take_ptr(&mut self, target: Tir) -> Tir {
@@ -829,11 +849,7 @@ impl<'a> TirBuilder<'a> {
 
         let span = self.ast.nodes[field].span;
         let (field_id, field_ty) = {
-            let id = {
-                let ty_id = self.types[base_ty].id;
-                let str = self.sources.display(span);
-                ID::field(ty_id, ID::new(str))
-            };
+            let id = self.sources.id(span);
             self.find_field(base_ty, id, span)?
         };
 
@@ -875,10 +891,8 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn build_constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
-        self.ctx.use_type(ty, self.types);
-
         let span = self.ast.nodes[body].span;
-        let ty_id = self.types[ty].id;
+        let TyEnt { flags, .. } = self.types[ty];
 
         let TyKind::Struct(fields) = self.types[ty].kind else {
             self.diagnostics.push(TyError::ExpectedStruct {
@@ -888,6 +902,7 @@ impl<'a> TirBuilder<'a> {
             return Err(());
         };
 
+        let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
         let mut initial_values = vec![Tir::reserved_value(); self.sfields.get(fields).len()]; // TODO: don't allocate
         for &field in self.ast.children(body) {
             let &[name, expr] = self.ast.children(field) else {
@@ -895,10 +910,7 @@ impl<'a> TirBuilder<'a> {
             };
 
             let span = self.ast.nodes[name].span;
-            let id = {
-                let id = self.sources.id(span);
-                ID::field(ty_id, id)
-            };
+            let id = self.sources.id(span);
 
             let Ok((field, field_ty)) = self.find_field(ty, id, span) else {
                 continue;
@@ -909,21 +921,35 @@ impl<'a> TirBuilder<'a> {
             } = self.sfields[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
-                ast::AstKind::InlineConstructor => self.build_constructor_low(field_ty, expr),
+                AstKind::InlineConstructor => self.build_constructor_low(field_ty, expr),
                 _ => self.build_expr(expr),
             }) else {
                 continue;
             };
 
-            // we ignore this to report more errors
-            drop(self.expect_tir_ty(value, field_ty, |_, got, loc| {
-                TyError::ConstructorFieldTypeMismatch {
-                    because: hint,
-                    expected: field_ty,
-                    got,
-                    loc,
-                }
-            }));
+            if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
+                let TirEnt { ty, span, .. } = self.body.ents[value];
+                drop(infer_parameters(
+                    ty, 
+                    field_ty, 
+                    &mut param_slots, 
+                    span,
+                    self.types, 
+                    self.ty_lists, 
+                    self.bound_impls, 
+                    self.diagnostics,
+                ));
+            } else {
+                // we ignore this to report more errors
+                drop(self.expect_tir_ty(value, field_ty, |_, got, loc| {
+                    TyError::ConstructorFieldTypeMismatch {
+                        because: hint,
+                        expected: field_ty,
+                        got,
+                        loc,
+                    }
+                }));
+            }
 
             initial_values[index as usize] = value;
         }
@@ -936,17 +962,45 @@ impl<'a> TirBuilder<'a> {
                 .map(|i| self.sfields.get(fields)[i].span)
                 .collect::<Vec<_>>();
 
-            self.diagnostics.push(TyError::ConstructorMissingFields {
+                self.diagnostics.push(TyError::ConstructorMissingFields {
                 on: ty,
                 missing,
                 loc: span,
             });
-
+            
             return Err(());
         }
 
+        let span = self.ast.nodes[body].span;
+
+        let ty = if param_slots.len() > 0 {
+            param_slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
+                // OK if no cycles performed
+                .fold(Ok(()), |_, param| {
+                    self.diagnostics.push(TyError::UnknownGenericTypeParam {
+                        ty: self.types[ty].name,
+                        param,
+                        loc: span,
+                    });
+                    Err(())
+                })?;
+            
+            self.ty_lists.mark_frame();
+            for param in param_slots {
+                self.ty_lists.push_one(param);
+            }
+
+            ty_parser!(self).parse_instance_type_low(ty, span)
+        } else {
+            ty
+        };
+
+        self.ctx.use_type(ty, self.types);
+
         let result = {
-            let span = self.ast.nodes[body].span;
             let fields = self.body.cons.push(&initial_values);
             let kind = TirKind::Constructor(fields);
             let ent = TirEnt::new(kind, ty, span);
@@ -1235,14 +1289,25 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(SField, Ty)> {
+        let id = {
+            let on = if let TyKind::Instance(base, ..) = self.types[on].kind {
+                base
+            } else {
+                on
+            };
+            let ty_id = self.types[on].id;
+            ID::field(ty_id, id)
+        };
+
         self
             .sfield_lookup
             .get(id)
             .map(|f| {
                 let ty = self.sfields[f.field].ty;
-                if let TyKind::Instance(_, params) = self.types[on].kind 
-                    && let TyKind::Param(i, ..) = self.types[ty].kind {
-                    (f.field, self.ty_lists.get(params)[i as usize])
+                if let TyKind::Instance(_, params) = self.types[on].kind {
+                    let params = self.ty_lists.get(params).to_vec();
+                    let ty = ty_parser!(self).instantiate(ty, &params);
+                    (f.field, ty)
                 } else {
                     (f.field, ty)
                 }

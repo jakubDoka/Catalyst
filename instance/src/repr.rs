@@ -180,8 +180,12 @@ impl<'a> ReprBuilder<'a> {
         params: TyList,
     ) {
         let ty = &self.types[id];
+        // println!("processing {}", ty_display!(self, id));
         let repr = match ty.kind {
-            _ if ty.flags.contains(TyFlags::GENERIC) => ir::types::INVALID,
+            _ if ty.flags.contains(TyFlags::GENERIC) => {
+                // println!("ignored {}", ty_display!(self, id));
+                ir::types::INVALID
+            },
             TyKind::Int(base) => match base {
                 64 => ir::types::I64,
                 32 => ir::types::I32,
@@ -196,7 +200,13 @@ impl<'a> ReprBuilder<'a> {
             }
             TyKind::Ptr(..) => self.ptr_ty,
             TyKind::Instance(base, params) => {
-                self.resolve_type_repr_low(base, params);
+                let TyEnt { kind, .. } = self.types[base];
+                match kind {
+                    TyKind::Struct(fields) => {
+                        self.resolve_struct_repr(id, params, fields);
+                    }
+                    _ => todo!("{kind:?}"),
+                }
                 return;
             }
             TyKind::Nothing
@@ -206,12 +216,12 @@ impl<'a> ReprBuilder<'a> {
         };
     
         let bytes = repr.bytes() as i32;
-        let size = Size::new(bytes, bytes);
+        let size = Offset::new(bytes, bytes);
         self.reprs[id] = ReprEnt {
             repr,
             size,
             flags: ReprFlags::COPYABLE,
-            align: size.min(Size::PTR),
+            align: size.min(Offset::PTR),
         };
     }
 
@@ -254,10 +264,10 @@ impl<'a> ReprBuilder<'a> {
     
         let align = fields
             .iter()
-            .map(|field| self.reprs[field.ty].align)
-            .fold(Size::ZERO, |acc, align| acc.max(align).min(Size::PTR));
+            .map(|field| self.reprs[self.true_type(field.ty, params)].align)
+            .fold(Offset::ZERO, |acc, align| acc.max(align).min(Offset::PTR));
     
-        let mut size = Size::ZERO;
+        let mut size = Offset::ZERO;
         let mut copyable = true;
         for (i, &field) in fields.iter().enumerate() {
             let field_ty = self.true_type(field.ty, params);
@@ -286,7 +296,7 @@ impl<'a> ReprBuilder<'a> {
         };
     }
 
-    pub fn smallest_repr_for(size: Size, ptr_ty: Type) -> (Type, bool) {
+    pub fn smallest_repr_for(size: Offset, ptr_ty: Type) -> (Type, bool) {
         let size = size.arch(ptr_ty.bytes() == 4);
         if size > ptr_ty.bytes() as i32 {
             return (ptr_ty, true);

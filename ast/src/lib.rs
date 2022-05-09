@@ -55,16 +55,19 @@ impl AstData {
         self.elements.push(node);
     }
 
+    #[inline]
     pub fn alloc(&mut self, kind: AstKind, conns: &[Ast], span: Span) -> Ast {
         let list = self.conns.push(conns);
         let ent = AstEnt::new(kind, list, span);
         self.alloc_ent(ent)
     }
 
+    #[inline]
     pub fn alloc_sonless(&mut self, ident: AstKind, span: Span) -> Ast {
         self.alloc_ent(AstEnt::childless(ident, span))
     }
 
+    #[inline]
     pub fn alloc_ent(&mut self, ent: AstEnt) -> Ast {
         self.nodes.push(ent)
     }
@@ -150,6 +153,8 @@ impl std::fmt::Debug for AstData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    BitCast,
+    Error,
     UseBoundFunc,
     Deref,
     Pointer,

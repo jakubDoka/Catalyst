@@ -62,16 +62,26 @@ fn main() -> int {
         return 11
     }
 
-    
-
     if foo::[Goo]() + foo::[Goo]() != 20 {
         return 12
     }
 
+    if Loo::{ field: Loo::{ field: 90; yes: false }.as_ptr(); yes: true }.field.field != 90 {
+        return 13
+    }
+
+    let vec = Vec::new::[int]()
+    
     putchar('h')
     exit(-34)
 
     0
+}
+
+impl Loo {
+    fn [T] as_ptr(s: *Loo[T]) -> *Loo[T] {
+        s
+    }
 }
 
 struct PtrTest {

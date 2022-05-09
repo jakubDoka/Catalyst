@@ -2,6 +2,7 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 #![feature(bool_to_option)]
+#![feature(if_let_guard)]
 
 pub mod error;
 pub mod func;

@@ -17,6 +17,12 @@ impl TirData {
             used_types: TyList::reserved_value(),
         }
     }
+
+    pub fn clear(&mut self) {
+        self.ents.clear();
+        self.cons.clear();
+        self.used_types = TyList::reserved_value();
+    }
 }
 
 impl Default for TirData {
@@ -50,7 +56,7 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
-    Type,
+    BitCast(Tir),
     DerefPointer(Tir),
     TakePtr(Tir),
     Variable(Tir),
@@ -157,13 +163,17 @@ impl<'a> TirDisplay<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
+            TirKind::BitCast(tir) => {
+                write!(f, "bit_cast ")?;
+                self.fmt(tir, f, displayed, level, false)?;
+            }
             TirKind::TakePtr(tir) => {
                 write!(f, "take_pointer ")?;
-                self.fmt(tir, f, displayed, level + 1, true)?;
+                self.fmt(tir, f, displayed, level, false)?;
             }
             TirKind::DerefPointer(tir) => {
                 write!(f, "deref_pointer ")?;
-                self.fmt(tir, f, displayed, level + 1, true)?;
+                self.fmt(tir, f, displayed, level, false)?;
             }
             TirKind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
@@ -211,9 +221,6 @@ impl<'a> TirDisplay<'a> {
             }
             TirKind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
-            }
-            TirKind::Type => {
-                write!(f, "<type>")?;
             }
             TirKind::Call(caller, func, args) => {
                 if let Some(caller) = caller.expand() {

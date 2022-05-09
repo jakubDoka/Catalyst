@@ -33,30 +33,6 @@ macro_rules! ident_hasher {
     };
 }
 
-pub fn instantiate(
-    target: Ty,
-    params: &[Ty],
-    types: &mut Types,
-    instances: &mut Instances,
-) -> errors::Result<Ty> {
-    let TyEnt { kind, flags, .. } = types[target];
-
-    if !flags.contains(TyFlags::GENERIC) {
-        return Ok(target);
-    }
-
-    let result = match kind {
-        TyKind::Param(i, ..) => params[i as usize],
-        TyKind::Ptr(ty, ..) => {
-            let ty = instantiate(ty, params, types, instances)?;
-            pointer_of(ty, types, instances)
-        }
-        _ => todo!(),
-    };
-
-    Ok(result)
-}
-
 pub fn infer_parameters(
     reference: Ty,
     parametrized: Ty,
@@ -97,6 +73,13 @@ pub fn infer_parameters(
             (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth)) if depth == ref_depth => {
                 frontier.push((ref_ty, ty));
             }
+            (TyKind::Instance(base, params), TyKind::Instance(ref_base, ref_params)) if base == ref_base => {
+                let params = ty_lists.get(params);
+                let ref_params = ty_lists.get(ref_params);                
+                for (&ref_param, &param) in ref_params.iter().zip(params) {
+                    frontier.push((ref_param, param));
+                }
+            }
             (a, b) if a == b => {}
             _ => diagnostics.push(TyError::GenericTypeMismatch {
                 found: reference,
@@ -113,11 +96,13 @@ pub struct TypeParser<'a> {
     types: &'a mut Types,
     ast: &'a AstData,
     diagnostics: &'a mut Diagnostics,
+    sfields: &'a SFields,
     scope: &'a mut Scope,
     ty_lists: &'a mut TyLists,
     instances: &'a mut Instances,
     sources: &'a Sources,
     bound_impls: &'a mut BoundImpls,
+    builtin_types: &'a BuiltinTypes,
 }
 
 #[macro_export]
@@ -127,11 +112,13 @@ macro_rules! ty_parser {
             $self.types,
             $self.ast,
             $self.diagnostics,
+            $self.sfields,
             $self.scope,
             $self.ty_lists,
             $self.instances,
             $self.sources,
             $self.bound_impls,
+            $self.builtin_types,
         )
     };
 }
@@ -141,22 +128,84 @@ impl<'a> TypeParser<'a> {
         types: &'a mut Types,
         ast: &'a AstData,
         diagnostics: &'a mut Diagnostics,
+        sfields: &'a SFields,
         scope: &'a mut Scope,
         ty_lists: &'a mut TyLists,
         instances: &'a mut Instances,
         sources: &'a Sources,
         bound_impls: &'a mut BoundImpls,
+        builtin_types: &'a BuiltinTypes,
     ) -> Self {
         Self {
             types,
             ast,
             diagnostics,
+            sfields,
             scope,
             ty_lists,
             instances,
             sources,
             bound_impls,
+            builtin_types,
         }
+    }
+
+    
+    pub fn instantiate(
+        &mut self,
+        target: Ty,
+        params: &[Ty],
+    ) -> Ty {
+        let TyEnt { kind, flags, name, .. } = self.types[target];
+
+        // println!("instantiate: {}", ty_display!(self, target));
+        // for &param in params {
+            // println!(" param: {}", ty_display!(self, param));
+        // }
+
+        if !flags.contains(TyFlags::GENERIC) {
+            return target;
+        }
+
+        let result = match kind {
+            TyKind::Param(i, ..) => params[i as usize],
+            TyKind::Ptr(ty, ..) => {
+                let ty = self.instantiate(ty, params);
+                pointer_of(ty, self.types, self.instances)
+            }
+            TyKind::Instance(base, i_params) => {
+                self.ty_lists.mark_frame();
+                for param in self.ty_lists.get(i_params).to_vec() { // TODO: optimize if needed
+                    let ty = self.instantiate(param, params);
+                    self.ty_lists.push_one(ty);
+                }
+
+                let result = self.parse_instance_type_low(base, name);
+
+                let TyEnt { kind, flags, .. } = self.types[result];
+                if !flags.contains(TyFlags::GENERIC) {
+                    let TyKind::Instance(base, params) = kind else {
+                        unreachable!();
+                    };
+
+                    let kind = self.types[base].kind;
+                    match kind {
+                        TyKind::Struct(sfields) => {
+                            let params = self.ty_lists.get(params).to_vec(); // TODO: optimize if needed
+                            for field in self.sfields.get(sfields) {
+                                self.instantiate(field.ty, &params);
+                            }
+                        }
+                        kind => todo!("{kind:?}"),
+                    }
+                }
+
+                result
+            }
+            _ => todo!(),
+        };
+
+        result
     }
 
     pub fn parse_type(
@@ -179,9 +228,9 @@ impl<'a> TypeParser<'a> {
     ) -> errors::Result<Ty> {
         let ast::AstEnt { kind, span, .. } = self.ast.nodes[ty];
         match kind {
-            ast::AstKind::Ident => self.parse_ident_type(span),
-            ast::AstKind::Instantiation => self.parse_instance_type(ty),
-            ast::AstKind::Pointer => self.parse_ptr_type(ty),
+            AstKind::Ident => self.parse_ident_type(span),
+            AstKind::Instantiation => self.parse_instance_type(ty),
+            AstKind::Pointer => self.parse_ptr_type(ty),
             _ => {
                 self.diagnostics.push(TyError::InvalidTypeExpression { loc: span });
                 return Err(());
@@ -199,29 +248,39 @@ impl<'a> TypeParser<'a> {
         self.scope.get(self.diagnostics, str, span)
     }
     
-    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], if instance already exists, it is reused.
-    pub fn parse_instance_type(
-        &mut self,
-        ty: Ast,
-    ) -> errors::Result<Ty> {
+    
+    fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let children = self.ast.children(ty);
         let header = self.parse_type(children[0])?;
-    
-        let mut id = ID::new("<instance>") + self.types[header].id;
-        let mut generic = false;
     
         self.ty_lists.mark_frame();
 
         for &param in &children[1..] {
             let param = self.parse_type(param)?;
+            self.ty_lists.push_one(param);
+        }
+
+        Ok(self.parse_instance_type_low(header, self.ast.nodes[ty].span))
+    }
+
+    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], if instance already exists, it is reused.
+    pub fn parse_instance_type_low(
+        &mut self,
+        header: Ty,
+        span: Span,
+    ) -> Ty {
+    
+        let mut id = ID::new("<instance>") + self.types[header].id;
+        let mut generic = false;
+    
+        for &param in self.ty_lists.top() {
             id = id + self.types[param].id;
             generic |= self.types[param].flags.contains(TyFlags::GENERIC);
-            self.ty_lists.push_one(param);
         }
     
         if let Some(&already) = self.instances.get(id) {
             self.ty_lists.discard();
-            return Ok(already);
+            return already;
         }
     
         let params = self.ty_lists.pop_frame();
@@ -229,7 +288,7 @@ impl<'a> TypeParser<'a> {
         let result = {
             let ent = TyEnt {
                 id,
-                name: self.ast.nodes[ty].span,
+                name: span,
                 kind: TyKind::Instance(header, params),
                 flags: TyFlags::GENERIC & generic,
             };
@@ -238,7 +297,7 @@ impl<'a> TypeParser<'a> {
     
         self.instances.insert_unique(id, result);
     
-        Ok(result)
+        result
     }
     
     pub fn parse_ptr_type(
@@ -278,13 +337,15 @@ impl<'a> TypeParser<'a> {
         if duplicates {
             self.diagnostics.push(TyError::DuplicateBound { loc: span });
         }
+
+        let base_id = self.types[self.builtin_types.any].id;
     
         let id = self
             .ty_lists
             .top()
             .iter()
             .map(|&ty| self.types[ty].id)
-            .fold(ID::new("<bound_combo>"), |acc, id| acc + id);
+            .fold(base_id, |acc, id| acc + id);
     
         if let Some(&already) = self.instances.get(id) {
             self.ty_lists.discard();
@@ -403,7 +464,7 @@ pub fn implements(
 pub fn create_builtin_items(
     types: &mut Types,
     ty_lists: &mut TyLists,
-    builtin: &BuiltinTable,
+    builtin: &BuiltinTypes,
     funcs: &mut Funcs,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,

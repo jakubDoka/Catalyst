@@ -15,7 +15,7 @@ pub struct ScopeBuilder<'a> {
     pub ty_lists: &'a mut TyLists,
     pub sfields: &'a mut SFields,
     pub sfield_lookup: &'a mut SFieldLookup,
-    pub builtin_types: &'a BuiltinTable,
+    pub builtin_types: &'a BuiltinTypes,
     pub tfunc_lists: &'a mut TFuncLists,
     pub instances: &'a mut Instances,
     pub bound_impls: &'a mut BoundImpls,
@@ -33,15 +33,15 @@ impl<'a> ScopeBuilder<'a> {
         elements: impl Iterator<Item = (Ast, &'f ast::AstEnt)> + Clone,
     ) -> errors::Result {
         for (ast, &ast::AstEnt { kind, span, .. }) in elements.clone() {
-            if kind == ast::AstKind::Tag {
+            if kind == AstKind::Tag {
                 self.ctx.tags.push(ast);
                 continue;
             }
 
             match kind {
-                ast::AstKind::Function(..) | ast::AstKind::Impl => (),
-                ast::AstKind::Struct => drop(self.collect_struct(ast)),
-                ast::AstKind::Bound => drop(self.collect_bound(ast)), // for now
+                AstKind::Function(..) | AstKind::Impl => (),
+                AstKind::Struct => drop(self.collect_struct(ast)),
+                AstKind::Bound => drop(self.collect_bound(ast)), // for now
                 _ => (todo!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
 
@@ -49,15 +49,15 @@ impl<'a> ScopeBuilder<'a> {
         }
 
         for (ast, &ast::AstEnt { kind, span, .. }) in elements {
-            if kind == ast::AstKind::Tag {
+            if kind == AstKind::Tag {
                 self.ctx.tags.push(ast);
                 continue;
             }
 
             match kind {
-                ast::AstKind::Function(..) => drop(self.collect_function(None, None, ast)),
-                ast::AstKind::Impl => drop(self.collect_impl(ast)),
-                ast::AstKind::Struct | ast::AstKind::Bound => (),
+                AstKind::Function(..) => drop(self.collect_function(None, None, ast)),
+                AstKind::Impl => drop(self.collect_impl(ast)),
+                AstKind::Struct | AstKind::Bound => (),
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
 
@@ -124,7 +124,7 @@ impl<'a> ScopeBuilder<'a> {
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast.children(body) {
-                    if let ast::AstKind::UseBoundFunc = self.ast.nodes[func].kind {
+                    if !matches!(self.ast.nodes[func].kind, AstKind::Function(..)) {
                         continue;
                     }
 
@@ -227,11 +227,17 @@ impl<'a> ScopeBuilder<'a> {
         let span = self.ast.nodes[name].span;
         let scope_id = self.sources.id(span);
         let id = self.modules[self.module].id + scope_id;
+        let flags = if generics.is_reserved_value() {
+            TyFlags::empty()
+        } else {
+            TyFlags::GENERIC.add_param_count(self.ast.children(generics).len())
+        };
+
         let ent = TyEnt {
             id,
             kind: TyKind::Unresolved,
             name: span,
-            flags: TyFlags::GENERIC & !generics.is_reserved_value(),
+            flags,
         };
         let ty = self.types.push(ent);
         self.ctx.type_ast[ty] = ast;
@@ -255,7 +261,7 @@ impl<'a> ScopeBuilder<'a> {
         ast: Ast,
     ) -> errors::Result<Func> {
         let children = self.ast.children(ast);
-        let ast::AstEnt { span: current_span, kind: ast::AstKind::Function(external), .. } = self.ast.nodes[ast] else {
+        let ast::AstEnt { span: current_span, kind: AstKind::Function(external), .. } = self.ast.nodes[ast] else {
             unreachable!();
         };
         let &[generics, call_conv, name, .., return_type, _body] = children else {

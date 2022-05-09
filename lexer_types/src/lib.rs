@@ -312,6 +312,7 @@ impl Span {
         Ok(())
     }
 
+    #[inline(never)]
     pub fn loc_to(&self, sources: &Sources, to: &mut impl std::fmt::Write) -> std::fmt::Result {
         if self.is_reserved_value() {
             return writeln!(to, "undefined span");
@@ -332,10 +333,12 @@ impl Span {
 }
 
 impl ReservedValue for Span {
+    #[inline]
     fn reserved_value() -> Self {
         Span::default()
     }
 
+    #[inline]
     fn is_reserved_value(&self) -> bool {
         self.source.is_reserved_value()
     }
@@ -348,18 +351,22 @@ pub struct Token {
 }
 
 impl Token {
+    #[inline]
     pub fn new(kind: TokenKind, span: Span) -> Token {
         Self { kind, span }
     }
 
+    #[inline]
     pub fn kind(&self) -> TokenKind {
         self.kind
     }
 
+    #[inline]
     pub fn range(&self) -> Range<usize> {
         self.span.range()
     }
 
+    #[inline]
     pub fn span(&self) -> Span {
         self.span
     }

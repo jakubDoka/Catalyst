@@ -13,7 +13,7 @@ pub struct TyBuilder<'a> {
     pub ty_lists: &'a mut TyLists,
     pub sfields: &'a mut SFields,
     pub sfield_lookup: &'a mut SFieldLookup,
-    pub builtin_types: &'a BuiltinTable,
+    pub builtin_types: &'a BuiltinTypes,
     pub instances: &'a mut Instances,
     pub bound_impls: &'a mut BoundImpls,
     pub sources: &'a Sources,
@@ -35,8 +35,8 @@ impl<'a> TyBuilder<'a> {
         let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
         match kind {
-            ast::AstKind::Struct => self.build_struct(id, ast)?,
-            ast::AstKind::Bound => self.build_bound(id, ast)?,
+            AstKind::Struct => self.build_struct(id, ast)?,
+            AstKind::Bound => self.build_bound(id, ast)?,
             _ => todo!(
                 "Unhandled type decl {:?}: {}",
                 kind,
@@ -123,7 +123,7 @@ impl<'a> TyBuilder<'a> {
         // type params have no associated bound
         // so we can use the empty one
         {
-            let mut current = self.builtin_types.empty_bound_combo;
+            let mut current = self.builtin_types.ty_any;
             for &ident in generics {
                 let span = self.ast.nodes[ident].span;
                 let id = self.sources.id(span);

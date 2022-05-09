@@ -2,6 +2,64 @@ use std::{marker::PhantomData, ops::Index};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
+use crate::FramedStack;
+
+pub struct FramedStackMap<E: EntityRef, T> {
+    lists: StackMap<E, T>,
+    stack: FramedStack<T>,
+}
+
+impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
+    pub fn new() -> Self {
+        Self {
+            lists: StackMap::new(),
+            stack: FramedStack::new(),
+        }
+    }
+
+    pub fn len(&self, list: E) -> usize {
+        self.lists.len(list)
+    }
+
+    pub fn get(&self, list: E) -> &[T] {
+        self.lists.get(list)
+    }
+
+    pub fn push(&mut self, slice: &[T]) -> E {
+        self.lists.push(slice)
+    }
+
+    pub fn mark_frame(&mut self) {
+        self.stack.mark_frame();
+    }
+
+    pub fn push_one(&mut self, ty: T) {
+        self.stack.push(ty);
+    }
+
+    pub fn top(&self) -> &[T] {
+        self.stack.top_frame()
+    }
+
+    pub fn top_mut(&mut self) -> &mut [T] {
+        self.stack.top_frame_mut()
+    }
+
+    pub fn pop_frame(&mut self) -> E {
+        let list = self.lists.push(self.stack.top_frame());
+        self.stack.pop_frame();
+        list
+    }
+
+    pub fn discard(&mut self) {
+        self.stack.pop_frame();
+    }
+
+    pub fn clear(&mut self) {
+        self.lists.clear();
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StackMap<E: EntityRef, T, S: EntityRef = Unused> {
     data: Vec<T>,
@@ -27,6 +85,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         self.close_frame()
     }
 
+    #[inline]
     pub fn get(&self, id: E) -> &[T] {
         match (
             self.indices.get(id.index()),

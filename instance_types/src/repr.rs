@@ -2,7 +2,6 @@
 use storage::*;
 use cranelift_codegen::ir::Type;
 use typec_types::*;
-use crate::*;
 
 pub struct ReplaceCache {
     data: Vec<(Ty, TyEnt)>,
@@ -36,25 +35,25 @@ pub type ReprFields = Map<ReprField>;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprEnt {
     pub repr: Type,
-    pub size: Size,
-    pub align: Size,
+    pub size: Offset,
+    pub align: Offset,
     pub flags: ReprFlags,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprField {
-    pub offset: Size,
+    pub offset: Offset,
 }
 
 impl ReservedValue for ReprField {
     fn reserved_value() -> Self {
         Self {
-            offset: Size::new(i32::MAX, i32::MAX),
+            offset: Offset::new(i32::MAX, i32::MAX),
         }
     }
 
     fn is_reserved_value(&self) -> bool {
-        self.offset == Size::new(i32::MAX, i32::MAX)
+        self.offset == Offset::new(i32::MAX, i32::MAX)
     }
 }
 

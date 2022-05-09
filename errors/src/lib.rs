@@ -34,6 +34,10 @@ impl Diagnostics {
             .map(|storage| storage.downcast_ref::<Vec<T>>().unwrap().iter())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
     pub fn clear(&mut self) {
         self.errors.clear();
     }

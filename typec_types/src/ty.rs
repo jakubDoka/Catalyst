@@ -4,6 +4,7 @@ use lexer_types::*;
 
 use crate::*;
 
+pub type TyLists = FramedStackMap<TyList, Ty>;
 pub type Types = PrimaryMap<Ty, TyEnt>;
 pub type TFuncLists = StackMap<FuncList, Func>;
 pub type SFieldLookup = Map<SFieldRef>;
@@ -11,61 +12,23 @@ pub type SFields = StackMap<SFieldList, SFieldEnt, SField>;
 pub type BoundImpls = Map<BoundImpl>;
 pub type Instances = Map<Ty>;
 
-pub struct TyLists {
-    lists: StackMap<TyList, Ty>,
-    stack: FramedStack<Ty>,
-}
-
-impl TyLists {
-    pub fn new() -> Self {
-        Self {
-            lists: StackMap::new(),
-            stack: FramedStack::new(),
-        }
-    }
-
-    pub fn len(&self, list: TyList) -> usize {
-        self.lists.len(list)
-    }
-
-    pub fn get(&self, list: TyList) -> &[Ty] {
-        self.lists.get(list)
-    }
-
-    pub fn push(&mut self, slice: &[Ty]) -> TyList {
-        self.lists.push(slice)
-    }
-
-    pub fn mark_frame(&mut self) {
-        self.stack.mark_frame();
-    }
-
-    pub fn push_one(&mut self, ty: Ty) {
-        self.stack.push(ty);
-    }
-
-    pub fn top(&self) -> &[Ty] {
-        self.stack.top_frame()
-    }
-
-    pub fn top_mut(&mut self) -> &mut [Ty] {
-        self.stack.top_frame_mut()
-    }
-
-    pub fn pop_frame(&mut self) -> TyList {
-        let list = self.lists.push(self.stack.top_frame());
-        self.stack.pop_frame();
-        list
-    }
-
-    pub fn discard(&mut self) {
-        self.stack.pop_frame();
-    }
-}
-
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn caller_id_of(&self, ty: Ty) -> ID {
+        self[self.caller_of(ty)].id
+    }
+
+    fn caller_of(&self, mut ty: Ty) -> Ty {
+        loop {
+            match self[ty].kind {
+                TyKind::Ptr(base, ..) => ty = base,
+                TyKind::Instance(base, ..) => return base,
+                _ => return ty,
+            }
+        }
+    }
+    
     fn base_id_of(&self, ty: Ty) -> ID {
         self[self.base_of(ty)].id
     }
@@ -122,21 +85,21 @@ impl ReservedValue for BoundImpl {
 }
 
 macro_rules! gen_builtin_table {
-    ($($name:ident: $repr:expr,)*) => {
+    ($($name:ident: ($repr:expr, $size:expr),)*) => {
         #[derive(Default)]
-        pub struct BuiltinTable {
+        pub struct BuiltinTypes {
             $(
                 pub $name: Ty,
             )*
         }
 
-        impl BuiltinTable {
+        impl BuiltinTypes {
             pub fn all(&self) -> [Ty; 10] {
                 [$(self.$name),*]
             }
         }
 
-        impl BuiltinTable {
+        impl BuiltinTypes {
             pub fn new(
                 graph: &mut GenericGraph, 
                 sources: &mut Sources, 
@@ -148,7 +111,7 @@ macro_rules! gen_builtin_table {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
-                        flags: TyFlags::GENERIC & matches!($repr, TyKind::Bound(..)),
+                        flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..))),
                     };
                     let $name = types.push(ent);
                     graph.close_node();
@@ -164,7 +127,7 @@ macro_rules! gen_builtin_table {
     };
 }
 
-impl BuiltinTable {
+impl BuiltinTypes {
     pub fn signed_integers(&self) -> [Ty; 5] {
         [self.i8, self.i16, self.i32, self.i64, self.int]
     }
@@ -175,16 +138,16 @@ impl BuiltinTable {
 }
 
 gen_builtin_table!(
-    nothing: TyKind::Nothing,
-    empty_bound_combo: TyKind::Param(0, TyList::default(), None.into()),
-    any: TyKind::Bound(FuncList::default()),
-    bool: TyKind::Bool,
-    char: TyKind::Int(32),
-    int: TyKind::Int(-1),
-    i8: TyKind::Int(8),
-    i16: TyKind::Int(16),
-    i32: TyKind::Int(32),
-    i64: TyKind::Int(64),
+    nothing: (TyKind::Nothing, Offset::ZERO),
+    ty_any: (TyKind::Param(0, TyList::default(), None.into()), Offset::ZERO),
+    any: (TyKind::Param(0, TyList::default(), None.into()), Offset::ZERO),
+    bool: (TyKind::Bool, Offset::new(1, 1)),
+    char: (TyKind::Int(32), Offset::new(4, 4)),
+    int: (TyKind::Int(-1), Offset::PTR),
+    i8: (TyKind::Int(8), Offset::new(1, 1)),
+    i16: (TyKind::Int(16), Offset::new(2, 2)),
+    i32: (TyKind::Int(32), Offset::new(4, 4)),
+    i64: (TyKind::Int(64), Offset::new(8, 8)),
 );
 
 #[derive(Clone, Copy, Default)]
@@ -261,9 +224,10 @@ impl TyFlags {
     pub const PARAM_SHIFT: u32 = Self::FLAGS_WIDTH - Self::PARAMS_WIDTH;
     pub const CLEAR_PARAMS_MASK: u32 = (1 << Self::PARAM_SHIFT) - 1;
 
-    pub fn set_param_count(&mut self, count: usize) {
+    pub fn add_param_count(mut self, count: usize) -> Self {
         self.bits &= Self::CLEAR_PARAMS_MASK;
         self.bits |= (count as u32) << Self::PARAM_SHIFT;
+        self
     }
 
     pub fn param_count(&self) -> usize {
@@ -352,6 +316,10 @@ impl Ty {
                 write!(to, "]")?;
             }
             TyKind::Param(_, list, ..) => {
+                if ty_lists.get(list).is_empty() {
+                    write!(to, "any")?;
+                }
+
                 for (i, ty) in ty_lists.get(list).iter().enumerate() {
                     if i != 0 {
                         write!(to, " + ")?;

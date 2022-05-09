@@ -78,7 +78,14 @@ impl<'a> CirBuilder<'a> {
 
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
-            mir::InstKind::Call(func, args) => {
+            InstKind::BitCast(value) => {
+                let ir_value = self.use_value(value);
+                let target_value = inst.value.unwrap();
+                let repr = self.repr_of(target_value);
+                let ir_value = self.builder.ins().bitcast(repr, ir_value);
+                self.value_lookup[target_value] = ir_value.into();
+            }
+            InstKind::Call(func, args) => {
                 if self.t_funcs[func].kind == TFuncKind::Builtin {
                     self.generate_native_call(func, args, inst.value);
                     return;
@@ -108,21 +115,21 @@ impl<'a> CirBuilder<'a> {
                 if let Some(value) = inst.value.expand() {
                     if !self.source.values[value]
                         .flags
-                        .contains(mir::Flags::POINTER)
+                        .contains(mir::MirFlags::POINTER)
                     {
                         let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
                         self.value_lookup[inst.value.unwrap()] = ret.into();
                     }
                 }
             }
-            mir::InstKind::IntLit(literal) => {
+            InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 // println!("{:?} {}", repr, literal);
                 let ir_value = self.builder.ins().iconst(repr, literal as i64);
                 self.value_lookup[value] = ir_value.into();
             }
-            mir::InstKind::Return => {
+            InstKind::Return => {
                 if let Some(value) = inst.value.expand() {
                     let ir_value = self.use_value(value);
                     self.builder.ins().return_(&[ir_value]);
@@ -130,12 +137,12 @@ impl<'a> CirBuilder<'a> {
                     self.builder.ins().return_(&[]);
                 }
             }
-            mir::InstKind::JumpIfFalse(block) => {
+            InstKind::JumpIfFalse(block) => {
                 let block = self.block_lookup[block].unwrap();
                 let value = self.use_value(inst.value.unwrap());
                 self.builder.ins().brz(value, block, &[]);
             }
-            mir::InstKind::Jump(block) => {
+            InstKind::Jump(block) => {
                 let block = self.block_lookup[block].unwrap();
                 if let Some(value) = inst.value.expand() {
                     let value = self.use_value(value);
@@ -144,17 +151,17 @@ impl<'a> CirBuilder<'a> {
                     self.builder.ins().jump(block, &[]);
                 }
             }
-            mir::InstKind::BoolLit(literal) => {
+            InstKind::BoolLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let ir_value = self.builder.ins().bconst(repr, literal);
                 self.value_lookup[value] = ir_value.into();
             }
-            mir::InstKind::Variable => {
+            InstKind::Variable => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let flags = self.source.values[value].flags;
-                if flags.contains(mir::Flags::ASSIGNABLE) {
+                if flags.contains(mir::MirFlags::ASSIGNABLE) {
                     let variable = Variable::new(value.index());
                     self.variable_set.insert(variable);
                     self.builder.declare_var(variable, repr);
@@ -165,7 +172,7 @@ impl<'a> CirBuilder<'a> {
             InstKind::DerefPointer(value)
                 if self.source.values[value]
                     .flags
-                    .contains(mir::Flags::POINTER) =>
+                    .contains(mir::MirFlags::POINTER) =>
             {
                 let value = self.use_value(value);
                 self.value_lookup[inst.value.unwrap()] = value.into();
@@ -195,10 +202,10 @@ impl<'a> CirBuilder<'a> {
                 match (
                     self.source.values[value]
                         .flags
-                        .contains(mir::Flags::POINTER),
+                        .contains(mir::MirFlags::POINTER),
                     self.source.values[target]
                         .flags
-                        .contains(mir::Flags::POINTER),
+                        .contains(mir::MirFlags::POINTER),
                 ) {
                     (true, true) => {
                         let target_ir = self.use_value_as_pointer(target);
@@ -259,7 +266,7 @@ impl<'a> CirBuilder<'a> {
         }
     }
 
-    fn unwrap_size(&self, size: Size) -> i32 {
+    fn unwrap_size(&self, size: Offset) -> i32 {
         size.arch(self.module.isa().pointer_bytes() == 4)
     }
 
@@ -373,7 +380,7 @@ impl<'a> CirBuilder<'a> {
             &[left, right] => {
                 let signed = !self.source.values[left]
                     .flags
-                    .contains(mir::Flags::UNSIGNED);
+                    .contains(mir::MirFlags::UNSIGNED);
                 let left = self.use_value(left);
                 let right = self.use_value(right);
 
@@ -404,7 +411,7 @@ impl<'a> CirBuilder<'a> {
 
         let signed = !self.source.values[left]
             .flags
-            .contains(mir::Flags::UNSIGNED);
+            .contains(mir::MirFlags::UNSIGNED);
 
         let left = self.use_value(left);
         let right = self.use_value(right);
@@ -447,7 +454,7 @@ impl<'a> CirBuilder<'a> {
     fn assign_value(&mut self, target: mir::Value, value: ir::Value) {
         let mir::ValueEnt { flags, offset, .. } = self.source.values[target];
         let offset = self.unwrap_size(offset);
-        if flags.contains(mir::Flags::ASSIGNABLE) {
+        if flags.contains(mir::MirFlags::ASSIGNABLE) {
             let variable = Variable::new(target.index());
             let target_ir = self.builder.use_var(variable);
             let value = self.set_bit_field(target_ir, value, offset);
@@ -476,7 +483,9 @@ impl<'a> CirBuilder<'a> {
             value = self.builder.ins().bint(ir::types::I8, value);
         }
 
-        value = self.builder.ins().uextend(target_ty, value);
+        if self.builder.func.dfg.value_type(value) != target_ty {
+            value = self.builder.ins().uextend(target_ty, value);
+        }
 
         let mask = {
             let value_bits = value_ty.as_int().bits();
@@ -504,16 +513,16 @@ impl<'a> CirBuilder<'a> {
         let repr = self.reprs[ty].repr;
         let variable = Variable::new(value.index());
         let value =
-            if flags.contains(mir::Flags::ASSIGNABLE) && self.variable_set.contains(variable) {
+            if flags.contains(mir::MirFlags::ASSIGNABLE) && self.variable_set.contains(variable) {
                 self.builder.use_var(variable)
             } else {
                 self.value_lookup[value].unwrap()
             };
 
         let offset = self.unwrap_size(offset);
-
-        if flags.contains(mir::Flags::POINTER) {
+        if flags.contains(mir::MirFlags::POINTER) {
             let loader_repr = repr.as_int();
+
             if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
                 value
             } else {

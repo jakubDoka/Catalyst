@@ -3,6 +3,7 @@ use std::str::FromStr;
 use cranelift_codegen::ir::Type;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 
+use errors::*;
 use lexer_types::*;
 use instance_types::*;
 use storage::*;
@@ -19,7 +20,7 @@ pub struct MirBuilder<'a> {
     pub sfields: &'a SFields,
     pub bound_impls: &'a BoundImpls,
     pub repr_fields: &'a ReprFields,
-    pub builtin_types: &'a BuiltinTable,
+    pub builtin_types: &'a BuiltinTypes,
     pub t_funcs: &'a Funcs,
     pub func: &'a mut FuncCtx,
     pub body: &'a TirData,
@@ -27,6 +28,7 @@ pub struct MirBuilder<'a> {
     pub has_sret: &'a EntitySet<Func>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
+    pub diagnostics: &'a mut Diagnostics,
 }
 
 impl MirBuilder<'_> {
@@ -52,8 +54,10 @@ impl MirBuilder<'_> {
 
         let entry_point = self.func.create_block();
         {
+            self.func.value_slices.mark_frame();
+            
             if has_sret {
-                let value = self.flagged_value_from_ty(sig.ret, mir::Flags::POINTER);
+                let value = self.flagged_value_from_ty(sig.ret, mir::MirFlags::POINTER);
                 self.return_dest = Some(value);
                 self.func.value_slices.push_one(value);
             }
@@ -63,7 +67,7 @@ impl MirBuilder<'_> {
                 self.func.value_slices.push_one(value);
             }
 
-            self.func.blocks[entry_point].params = self.func.value_slices.close_frame();
+            self.func.blocks[entry_point].params = self.func.value_slices.pop_frame();
         }
         self.func.select_block(entry_point);
 
@@ -115,9 +119,7 @@ impl MirBuilder<'_> {
             TirKind::If(..) => self.translate_if(tir, dest)?,
             TirKind::Variable(value) => self.translate_variable(value)?,
             TirKind::Constructor(..) => self.translate_constructor(tir, dest)?,
-            TirKind::FieldAccess(value, field) => {
-                self.translate_field_access(value, field, dest)?
-            }
+            TirKind::FieldAccess(..) => self.translate_field_access(tir, dest)?,
             TirKind::Block(..) => self.translate_block(tir, dest)?,
             TirKind::Loop(..) => self.translate_loop(tir, dest)?,
             TirKind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
@@ -128,12 +130,58 @@ impl MirBuilder<'_> {
             TirKind::CharLit => self.translate_char_lit(ty, span, dest)?,
             TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
             TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
+            TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
             _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
         self.tir_mapping[tir] = value.into();
 
         Ok(value)
+    }
+
+    fn translate_bit_cast(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
+        let TirEnt { kind: TirKind::BitCast(expr), ty, span, .. } = self.body.ents[tir] else {
+            unreachable!()
+        };
+
+        let expr_ty = self.body.ents[expr].ty;
+
+        if self.reprs[expr_ty].size != self.reprs[ty].size {
+            let instantiated_from = if self.t_funcs[self.func_id].flags.contains(TFuncFlags::GENERIC) {
+                Some(self.t_funcs[self.func_id].name)
+            } else {
+                None
+            };
+            
+            self.diagnostics.push(InstError::InvalidBitCast { 
+                loc: span, 
+                instantiated_from, 
+                from: format!("{}", ty_display!(self, expr_ty)),
+                from_size: self.reprs[expr_ty].size.arch64 as usize, 
+                to: format!("{}", ty_display!(self, ty)),
+                to_size: self.reprs[ty].size.arch64 as usize, 
+            });
+        }
+
+        if let Some(dest) = dest && self.func.values[dest].flags.contains(MirFlags::POINTER) {
+            return self.translate_expr(expr, dest.into());
+        }
+
+        let value = self.translate_expr(expr, None)?;
+
+        let result = self.value_from_ty(ty);
+
+        let kind = InstKind::BitCast(value.unwrap());
+        let inst = InstEnt::new(kind, result.into());
+        self.func.add_inst(inst);
+
+        if let Some(dest) = dest {
+            let kind = InstKind::Assign(result);
+            let inst = InstEnt::new(kind, dest.into());
+            self.func.add_inst(inst);
+        }
+
+        Ok(Some(result))
     }
 
     fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
@@ -148,7 +196,7 @@ impl MirBuilder<'_> {
         let value = self.value_from_ty(ty);
 
         {
-            let kind = mir::InstKind::TakePointer(mir_value);
+            let kind = InstKind::TakePointer(mir_value);
             let inst = InstEnt::new(kind, value.into());
             self.func.add_inst(inst);
         }
@@ -171,10 +219,10 @@ impl MirBuilder<'_> {
 
         let mir_value = self.translate_expr(value, dest)?.unwrap();
 
-        let value = self.flagged_value_from_ty(ty, mir::Flags::POINTER);
+        let value = self.flagged_value_from_ty(ty, mir::MirFlags::POINTER);
 
         {
-            let kind = mir::InstKind::DerefPointer(mir_value);
+            let kind = InstKind::DerefPointer(mir_value);
             let inst = InstEnt::new(kind, value.into());
             self.func.add_inst(inst);
         }
@@ -311,28 +359,30 @@ impl MirBuilder<'_> {
 
     fn translate_field_access(
         &mut self,
-        tir_header: Tir,
-        field: SField,
+        tir: Tir,
         dest: Option<Value>,
     ) -> errors::Result<Option<Value>> {
-        let ty = self.body.ents[tir_header].ty;
-        let header = self.translate_expr(tir_header, None)?.unwrap();
+        let TirEnt { ty, kind: TirKind::FieldAccess(base, field), .. } = self.body.ents[tir] else {
+            unreachable!()
+        };
+        let header = self.translate_expr(base, None)?.unwrap();
 
-        let (field_id, field_ty) = {
-            let ty_id = self.types[ty].id;
-            let SFieldEnt { index, ty, .. } = self.sfields[field];
-            (ID::raw_field(ty_id, index as u64), ty)
+        let field_id = {
+            let header_ty = self.body.ents[base].ty;
+            let ty_id = self.types[header_ty].id;
+            let SFieldEnt { index, .. } = self.sfields[field];
+            ID::raw_field(ty_id, index as u64)
         };
 
         let Some(&repr::ReprField { offset }) = self.repr_fields.get(field_id) else {
             unreachable!()
         };
 
-        let is_pointer = self.func.values[header].flags.contains(mir::Flags::POINTER);
+        let is_pointer = self.func.values[header].flags.contains(mir::MirFlags::POINTER);
 
         let value = {
             let offset = self.func.values[header].offset + offset;
-            let ent = ValueEnt::new(field_ty, offset, mir::Flags::POINTER & is_pointer);
+            let ent = ValueEnt::new(ty, offset, mir::MirFlags::POINTER & is_pointer);
             self.func.values.push(ent)
         };
 
@@ -456,7 +506,7 @@ impl MirBuilder<'_> {
 
         self.func.values[value.unwrap()]
             .flags
-            .insert(mir::Flags::ASSIGNABLE & assignable);
+            .insert(mir::MirFlags::ASSIGNABLE & assignable);
 
         Ok(None)
     }
@@ -496,6 +546,7 @@ impl MirBuilder<'_> {
         let on_stack = self.on_stack(tir);
         let value = self.unwrap_dest_low(ty, on_stack, dest);
         let block_dest = on_stack.then_some(value.or(dest)).flatten();
+        let no_value = ty == self.builtin_types.nothing;
 
         let then_block = self.func.create_block();
         let otherwise_block = otherwise.is_some().then(|| self.func.create_block());
@@ -517,7 +568,7 @@ impl MirBuilder<'_> {
             self.func.select_block(then_block);
             let value = {
                 let value = self.translate_block(then, block_dest)?;
-                (!on_stack).then_some(value).flatten()
+                (!on_stack && !no_value).then_some(value).flatten()
             };
 
             if !self.func.is_terminated() {
@@ -531,7 +582,7 @@ impl MirBuilder<'_> {
             self.func.select_block(block);
             let value = {
                 let value = self.translate_block(otherwise.unwrap(), block_dest)?;
-                (!on_stack).then_some(value).flatten()
+                (!on_stack && !no_value).then_some(value).flatten()
             };
 
             if !self.func.is_terminated() {
@@ -572,23 +623,23 @@ impl MirBuilder<'_> {
         let on_stack = self.on_stack(tir);
         let has_sret = self.has_sret.contains(func);
 
-        let dest = on_stack.then_some(dest).flatten();
-        let value = self.unwrap_dest_low(ty, on_stack, dest).or(dest);
+        let filtered_dest = on_stack.then_some(dest).flatten();
+        let value = self.unwrap_dest_low(ty, on_stack, filtered_dest).or(filtered_dest);
 
         let args = {
             let args_view = self.body.cons.get(args);
 
-            let mut args =
-                Vec::with_capacity(args_view.len() + caller.is_some() as usize + has_sret as usize);
+            self.func.value_slices.mark_frame();
 
             if has_sret {
-                args.push(value.unwrap());
+                self.func.value_slices.push_one(value.unwrap());
             }
 
             for &arg in args_view {
-                args.push(self.translate_expr(arg, None)?.unwrap());
+                let value = self.translate_expr(arg, None)?.unwrap();
+                self.func.value_slices.push_one(value);
             }
-            self.func.value_slices.push(&args)
+            self.func.value_slices.pop_frame()
         };
 
         if on_stack && !has_sret {
@@ -607,6 +658,12 @@ impl MirBuilder<'_> {
             let kind = InstKind::Call(func, args);
             let inst = InstEnt::new(kind, value);
             self.func.add_inst(inst);
+
+            if let Some(dest) = dest {
+                let kind = InstKind::Assign(value.unwrap());
+                let ent = InstEnt::new(kind, dest.into());
+                self.func.add_inst(ent);
+            }
         }
 
         Ok(value)
@@ -629,7 +686,7 @@ impl MirBuilder<'_> {
                     self.func.stacks.push(ent)
                 };
 
-                let value = self.flagged_value_from_ty(ret, mir::Flags::POINTER);
+                let value = self.flagged_value_from_ty(ret, mir::MirFlags::POINTER);
 
                 {
                     let kind = InstKind::StackAddr(stack);
@@ -682,7 +739,7 @@ impl MirBuilder<'_> {
         self.flagged_value_from_ty(ty, Default::default())
     }
 
-    fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::Flags) -> Value {
+    fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::MirFlags) -> Value {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
     }

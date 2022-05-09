@@ -41,10 +41,6 @@ impl Scope {
         }
     }
 
-    pub fn collision_rate(&self) -> f64 {
-        self.map.collision_rate()
-    }
-
     pub fn weak_get<T: 'static + EntityRef>(&self, id: impl Into<ID>) -> Option<T> {
         self.map
             .get(id)

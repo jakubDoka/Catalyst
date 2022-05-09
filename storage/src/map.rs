@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     ops::{Deref, DerefMut, Index, IndexMut},
-    path::Path,
+    path::Path, collections::HashMap, hash::{Hasher, Hash, BuildHasher},
 };
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
@@ -51,266 +51,66 @@ impl<K: EntityRef, V: Default + Clone> DerefMut for SecondaryMap<K, V> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
+pub struct SimpleHasher {
+    state: u64,
+}
+
+impl Hasher for SimpleHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.state
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut data = [0u8; 8];
+        data.copy_from_slice(bytes);
+        self.state = u64::from_le_bytes(data);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct BH;
+
+impl BuildHasher for BH {
+    type Hasher = SimpleHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        SimpleHasher { state: 0 }
+    }
+} 
+
+#[derive(Debug, Clone)]
 pub struct Map<T> {
-    lookup: Vec<MapStorageNode>,
-    storage: MapStorage<T>,
+    inner: HashMap<ID, T, BH>,
 }
 
-impl<T: Default + Clone> Map<T> {
+impl<T> Map<T> {
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            lookup: vec![MapStorageNode::reserved_value(); Self::best_size(capacity)],
-            storage: MapStorage::with_capacity(capacity),
+        Map {
+            inner: HashMap::with_hasher(BH),
         }
     }
 
-    pub fn remove(&mut self, key: impl Into<ID>) -> Option<T> {
-        self.remove_by_id(key.into())
+    pub fn insert(&mut self, id: impl Into<ID>, value: T) -> Option<T> {
+        self.inner.insert(id.into(), value)
     }
 
-    pub fn remove_by_id(&mut self, id: ID) -> Option<T> {
-        let index = self.index_of(id);
-        let node = self.lookup[index];
-        let current = self.storage.get_mut(node);
-        let local_index = current.iter().position(|(o_id, _)| *o_id == id)?;
-        let new_len = current.len() - 1;
-        current.swap(local_index, new_len);
-        let ret = std::mem::take(&mut current[new_len].1);
-        self.lookup[index] = self.storage.resize(node, new_len);
-        Some(ret)
+    pub fn insert_unique(&mut self, id: impl Into<ID>, value: T) {
+        assert!(self.insert(id, value).is_none());
     }
 
-    pub fn insert_unique(&mut self, key: impl Into<ID>, value: T) where T: Debug {
-        let shadow = self.insert_by_id(key.into(), value);
-        assert!(shadow.is_none(), "{:?}", shadow);
+    pub fn remove(&mut self, id: impl Into<ID>) -> Option<T> {
+        self.inner.remove(&id.into())
     }
 
-    pub fn insert(&mut self, key: impl Into<ID>, t: T) -> Option<T> {
-        self.insert_by_id(key.into(), t)
-    }
-
-    pub fn insert_by_id(&mut self, id: ID, t: T) -> Option<T> {
-        let index = self.index_of(id);
-        let node = self.lookup[index];
-        let current = self.storage.get_mut(node);
-        if let Some((_, duplicate)) = current.iter_mut().find(|(o_id, _)| *o_id == id) {
-            return Some(std::mem::replace(duplicate, t));
-        }
-
-        let new_len = current.len() + 1;
-        let new_node = self.storage.resize(node, new_len);
-        *self.storage.get_mut(new_node).last_mut().unwrap() = (id, t);
-        self.lookup[index] = new_node;
-
-        if self.storage.len() > self.lookup.len() / 2 {
-            self.expand();
-        }
-
-        None
-    }
-
-    #[cold]
-    fn expand(&mut self) {
-        let mut new = Self::with_capacity(self.storage.len() * 2);
-
-        for &node in self.lookup.iter().filter(|n| !n.is_reserved_value()) {
-            self.storage.get_mut(node).iter_mut().for_each(|node| {
-                let (id, node) = std::mem::take(node);
-                new.insert_by_id(id, node);
-            });
-        }
-
-        *self = new;
-    }
-
-    pub fn get(&self, key: impl Into<ID>) -> Option<&T> {
-        self.get_by_id(key.into())
-    }
-
-    pub fn get_by_id(&self, id: ID) -> Option<&T> {
-        let index = self.index_of(id);
-        let current = self.storage.get(self.lookup[index]);
-
-        current
-            .iter()
-            .find_map(|(o_id, value)| (*o_id == id).then(|| value))
+    pub fn get(&self, id: impl Into<ID>) -> Option<&T> {
+        self.inner.get(&id.into())
     }
 
     pub fn clear(&mut self) {
-        self.lookup
-            .iter_mut()
-            .for_each(|x| *x = MapStorageNode::reserved_value());
-        self.storage.clear();
-    }
-
-    fn index_of(&self, ident: ID) -> usize {
-        ident.0 as usize & (self.lookup.len() - 1)
-    }
-
-    fn best_size(current: usize) -> usize {
-        current.next_power_of_two()
-    }
-
-    pub fn collision_rate(&self) -> f64 {
-        let mut collisions = 0;
-        let mut total = 0;
-        for &node in self.lookup.iter().filter(|n| !n.is_reserved_value()) {
-            let current = self.storage.get(node);
-            let len = current.len();
-            collisions += len - 1;
-            total += len;
-        }
-
-        collisions as f64 / total as f64
-    }
-}
-
-impl<T> Default for Map<T> {
-    fn default() -> Self {
-        Self {
-            lookup: vec![MapStorageNode::reserved_value()],
-            storage: MapStorage::new(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct MapStorage<T> {
-    data: Vec<(ID, T)>,
-    free: Vec<u32>,
-}
-
-impl<T> MapStorage<T> {
-    pub fn new() -> Self {
-        Self {
-            data: Vec::new(),
-            free: Vec::new(),
-        }
-    }
-}
-
-impl<T: Default + Clone> MapStorage<T> {
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn get(&self, node: MapStorageNode) -> &[(ID, T)] {
-        if node.is_reserved_value() {
-            return &[];
-        }
-        &self.data[node.start as usize..node.end as usize]
-    }
-
-    pub fn get_mut(&mut self, node: MapStorageNode) -> &mut [(ID, T)] {
-        if node.is_reserved_value() {
-            return &mut [];
-        }
-        &mut self.data[node.start as usize..node.end as usize]
-    }
-
-    pub fn alloc(&mut self, size: usize) -> MapStorageNode {
-        if size == 0 {
-            return MapStorageNode::reserved_value();
-        }
-
-        let free_slot = self
-            .free
-            .get(size - 1)
-            .and_then(|&x| (x != u32::MAX).then_some(x));
-
-        if let Some(free_slot) = free_slot {
-            self.free[size - 1] = MapStorageNode::from_id(self.data[free_slot as usize].0).end;
-            MapStorageNode {
-                start: free_slot,
-                end: free_slot + size as u32,
-            }
-        } else {
-            let start = self.data.len();
-            let end = start + size;
-            self.data.resize(end, Default::default());
-            MapStorageNode {
-                start: start as u32,
-                end: end as u32,
-            }
-        }
-    }
-
-    pub fn resize(&mut self, node: MapStorageNode, new_len: usize) -> MapStorageNode {
-        let new = self.alloc(new_len);
-
-        for (i, j) in
-            (node.start as usize..node.end as usize).zip(new.start as usize..new.end as usize)
-        {
-            self.data[j] = std::mem::take(&mut self.data[i]);
-        }
-
-        self.dealloc(node);
-
-        new
-    }
-
-    pub fn dealloc(&mut self, node: MapStorageNode) {
-        if node.is_reserved_value() {
-            return;
-        }
-
-        let size = (node.end - node.start) as usize - 1;
-        self.free.resize(self.free.len().max(size + 1), u32::MAX);
-        self.data[node.start as usize].0 = MapStorageNode {
-            start: u32::MAX,
-            end: self.free[size],
-        }
-        .to_id();
-        self.free[size] = node.start;
-    }
-
-    fn with_capacity(capacity: usize) -> MapStorage<T> {
-        MapStorage {
-            data: Vec::with_capacity(capacity),
-            free: vec![],
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-        self.free.clear();
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct MapStorageNode {
-    start: u32,
-    end: u32,
-}
-
-impl ReservedValue for MapStorageNode {
-    fn reserved_value() -> Self {
-        Self {
-            start: u32::MAX,
-            end: u32::MAX,
-        }
-    }
-
-    fn is_reserved_value(&self) -> bool {
-        self.start == u32::MAX
-    }
-}
-
-impl MapStorageNode {
-    pub fn to_id(&self) -> ID {
-        ID(self.start as u64 | ((self.end as u64) << 32))
-    }
-
-    pub fn from_id(id: ID) -> Self {
-        Self {
-            start: id.0 as u32,
-            end: (id.0 >> 32) as u32,
-        }
+        self.inner.clear()
     }
 }
 
@@ -364,6 +164,12 @@ impl ID {
                 .wrapping_add(acc << 8)
                 .wrapping_sub(b as u64)
         }))
+    }
+}
+
+impl Hash for ID {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write(&self.0.to_le_bytes());
     }
 }
 
@@ -484,8 +290,6 @@ mod test {
             for i in iter.clone() {
                 assert_eq!(map.remove(i), Some(i));
             }
-
-            println!("{}", map.storage.len());
         }
 
         panic!();

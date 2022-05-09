@@ -66,7 +66,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, ty_lists: &TyL
             if let Some(because) = because {
                 because.loc_to(sources, to)?;
                 because.underline_info(sources, to, &|to| {
-                    write!(to, "because of this return typ declaration")
+                    write!(to, "because of this return type declaration")
                 })?;
             }
         }
@@ -196,7 +196,7 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, ty_lists: &TyL
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                write!(to, "unknown field on type '{}'", on)
+                write!(to, "unknown field on type '{}'", ty_display!(state, *on))
             })?;
 
             if candidates.is_empty() {
@@ -343,7 +343,25 @@ pub fn display(error: &TyError, sources: &Sources, types: &Types, ty_lists: &TyL
             loc.underline_error(sources, to, &|to| {
                 write!(to, "expected type '{}' but got '{}'", ty_display!(state, expected), ty_display!(state, found))
             })?;
+            writeln!(to, "|> this happened during generic type inference")?;
+        }
+        TyError::UnknownGenericTypeParam { ty, loc, param } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "unknown generic type parameter {}", param)
+            })?;
 
+            ty.loc_to(sources, to)?;
+            ty.underline_info(sources, to, &|to| {
+                write!(to, "demanded by this type")
+            })?;
+
+            writeln!(
+                to,
+                "|> specify parameters explicitly: <type_name>::[<ty>, ..]"
+            )?;
+            writeln!(to, "|> use '_' instead of type for known parameters")?;
+            writeln!(to, "|> omit tali parameters that are known")?;
         }
         #[allow(unused)]
         TyError::OperatorArgCountMismatch {

@@ -3,7 +3,7 @@
 
 use cli::CmdInput;
 use cranelift_codegen::isa::CallConv;
-use cranelift_codegen::settings::Flags;
+use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::Context;
 use cranelift_entity::EntitySet;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -108,7 +108,8 @@ pub fn compile() {
     };
 
     let (isa, triple) = {
-        let setting_builder = cranelift_codegen::settings::builder();
+        let mut setting_builder = cranelift_codegen::settings::builder();
+        // setting_builder.set("enable_verifier", "false").unwrap();
         let flags = Flags::new(setting_builder);
 
         let target_triple = input.field("target").map_or_else(
@@ -128,7 +129,7 @@ pub fn compile() {
     // typec
     let mut graph = GenericGraph::new();
     let mut types = Types::new();
-    let builtin_types = BuiltinTable::new(&mut graph, &mut sources, &mut builtin_source, &mut types);
+    let builtin_types = BuiltinTypes::new(&mut graph, &mut sources, &mut builtin_source, &mut types);
     let mut t_funcs = Funcs::new();
     let mut ty_lists = TyLists::new();
     let mut instances = Instances::new();
@@ -155,6 +156,7 @@ pub fn compile() {
 
         let mut t_temp = FramedStack::new();
         let mut c_ctx = ScopeContext::new();
+        let mut body = TirData::new();
 
         let total_type_check_now = std::time::Instant::now();
 
@@ -282,6 +284,7 @@ pub fn compile() {
             );
 
             for func in func_buffer.drain(..) {
+                body.clear();
                 if (TirBuilder {
                     scope: &mut scope,
                     types: &mut types,
@@ -290,7 +293,7 @@ pub fn compile() {
                     func,
                     funcs: &mut t_funcs,
                     ctx: &mut c_ctx,
-                    body: &mut bodies[func],
+                    body: &mut body,
                     temp: &mut t_temp,
                     modules: &mut modules,
                     diagnostics: &mut diagnostics,
@@ -308,7 +311,8 @@ pub fn compile() {
                     continue;
                 };
 
-                //println!("{}", typec::Display::new(&t_types, &sources, &bodies[func], t_funcs[func].body));
+                bodies[func] = body.clone();
+                // println!("{}", TirDisplay::new(&types, &ty_lists, &sfields, &sources, &bodies[func], t_funcs[func].body));
             }
 
             // println!("typecheck {}", scope.collision_rate());
@@ -323,7 +327,7 @@ pub fn compile() {
         graph.close_node();
     }
 
-    let errors = {
+    if !diagnostics.is_empty() {
         let mut errors = String::new();
 
         diagnostics
@@ -341,13 +345,9 @@ pub fn compile() {
             .iter::<TyError>()
             .map(|errs| errs.for_each(|err| typec::error::display(err, &sources, &types, &ty_lists, &mut errors).unwrap()));
 
-        errors
-    };
-
-    if !errors.is_empty() {
         println!("{errors}");
         return;
-    }
+    };
 
     // cranelift
     let mut func_builder_ctx = FunctionBuilderContext::new();
@@ -522,12 +522,17 @@ pub fn compile() {
                 bound_impls: &bound_impls,
                 repr_fields: &repr_fields,
                 builtin_types: &builtin_types,
+                diagnostics: &mut diagnostics,
             }
             .translate_func()
             .unwrap();
             total_translation += now.elapsed();
 
-            // println!("{}", mir::Display::new(&sources, &function, &t_types));
+            if !diagnostics.is_empty() {
+                continue;
+            }
+
+            // println!("{}", MirDisplay::new(&sources, &ty_lists, &function, &types));
             let now = std::time::Instant::now();
             ctx.clear();
             mir_to_ir_lookup.clear();
@@ -553,7 +558,7 @@ pub fn compile() {
             replace_cache.replace(&mut types, &mut reprs);
             // println!("{}", sources.display(ent.name));
             // println!("{}", ctx.func.display());
-
+            
             let id = func_lookup[id].unwrap();
             let now = std::time::Instant::now();
             module.define_function(id, &mut ctx).unwrap();
@@ -564,6 +569,17 @@ pub fn compile() {
             ir_block_lookup.clear();
             variable_set.clear();
         }
+    }
+
+    if !diagnostics.is_empty() {
+        let mut errors = String::new();
+
+        diagnostics.iter::<InstError>()
+            .unwrap()
+            .for_each(|err| drop(instance::error::display(&err, &types, &ty_lists, &sources, &mut errors)));
+        
+        println!("{errors}");
+        return;
     }
 
     let binary = module.finish().emit().unwrap();
@@ -602,4 +618,12 @@ pub fn compile() {
     println!("translating mir to cir: {:?}", total_generation);
     println!("translating cir to bite code: {:?}", total_definition);
     println!("compilation time: {:?}", total);
+}
+
+#[test]
+fn test_parse() {
+    let vec = Vec::<i8>::with_capacity(1024);
+    let vec2 = vec.clone();
+
+    assert_eq!(vec.capacity(), vec2.capacity());
 }

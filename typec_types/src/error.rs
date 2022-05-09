@@ -2,6 +2,11 @@ use lexer_types::*;
 use crate::*;
 
 pub enum TyError {
+    UnknownGenericTypeParam {
+        ty: Span,
+        loc: Span,
+        param: usize,
+    },
     InvalidTypeExpression {
         loc: Span,
     },

@@ -138,6 +138,7 @@ impl InstEnt {
 
 #[derive(Debug)]
 pub enum InstKind {
+    BitCast(Value),
     DerefPointer(Value),
     TakePointer(Value),
     Offset(Value),
@@ -164,25 +165,25 @@ gen_entity!(Inst);
 #[derive(Debug, Clone, Copy)]
 pub struct ValueEnt {
     pub ty: Ty,
-    pub offset: Size,
-    pub flags: Flags,
+    pub offset: Offset,
+    pub flags: MirFlags,
 }
 
 impl ValueEnt {
-    pub fn new(ty: Ty, offset: Size, flags: Flags) -> ValueEnt {
+    pub fn new(ty: Ty, offset: Offset, flags: MirFlags) -> ValueEnt {
         ValueEnt { ty, offset, flags }
     }
 
     pub fn repr(ty: Ty) -> Self {
-        Self::new(ty, Size::ZERO, Flags::default())
+        Self::new(ty, Offset::ZERO, MirFlags::default())
     }
 
-    pub fn offset(ty: Ty, offset: Size) -> Self {
-        Self::new(ty, offset, Flags::default())
+    pub fn offset(ty: Ty, offset: Offset) -> Self {
+        Self::new(ty, offset, MirFlags::default())
     }
 
-    pub fn flags(ty: Ty, flags: Flags) -> Self {
-        Self::new(ty, Size::ZERO, flags)
+    pub fn flags(ty: Ty, flags: MirFlags) -> Self {
+        Self::new(ty, Offset::ZERO, flags)
     }
 }
 
@@ -191,7 +192,7 @@ gen_entity!(ValueList);
 
 bitflags! {
     #[derive(Default)]
-    pub struct Flags: u32 {
+    pub struct MirFlags: u32 {
         /// The value is a pointer.
         const POINTER = 1 << 0;
         /// The value can be assigned to
@@ -201,7 +202,7 @@ bitflags! {
     }
 }
 
-impl_bool_bit_and!(Flags);
+impl_bool_bit_and!(MirFlags);
 
 #[derive(Debug, Clone, Copy)]
 pub struct StackEnt {
@@ -209,7 +210,7 @@ pub struct StackEnt {
 }
 
 impl StackEnt {
-    pub fn new(size: Size, ptr_ty: Type) -> Self {
+    pub fn new(size: Offset, ptr_ty: Type) -> Self {
         Self {
             size: size.arch(ptr_ty.bytes() == 4) as u32,
         }
@@ -269,6 +270,11 @@ impl std::fmt::Display for MirDisplay<'_> {
 
             for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
+                    InstKind::BitCast(value) => {
+                        writeln!(f, "    {} = bitcast {}",
+                        self.value_to_string(inst.value.unwrap()),
+                        value)?;
+                    }
                     InstKind::TakePointer(target) => {
                         writeln!(
                             f,

@@ -5,6 +5,7 @@ fn [T] move_in_and_out(arg: T) -> T {
 
 struct [T] Loo {
     field: T
+    yes: bool
 }
 
 struct Goo {
@@ -52,3 +53,21 @@ bound Spec {
 }
 
 fn "default" putchar(char: char) -> char extern
+
+fn "default" malloc(size: int) -> *i8 extern
+
+struct [T] Vec {
+    data: *T
+    len: int
+    cap: int
+}
+
+impl Vec {
+    fn [T] new() -> Self[T] {
+        Self::{
+            data: 0 as *T
+            len: 0
+            cap: 0
+        }
+    }
+}
