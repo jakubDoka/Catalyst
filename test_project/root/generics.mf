@@ -30,7 +30,7 @@ impl Spec as Goo {
     use something as try
 
     fn and_this() {
-        putchar('y')
+        putchar('u')
     }
 }
 

@@ -25,7 +25,6 @@ pub struct MirBuilder<'a> {
     pub func: &'a mut FuncCtx,
     pub body: &'a TirData,
     pub return_dest: Option<Value>,
-    pub has_sret: &'a EntitySet<Func>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
     pub diagnostics: &'a mut Diagnostics,
@@ -621,7 +620,10 @@ impl MirBuilder<'_> {
         };
 
         let on_stack = self.on_stack(tir);
-        let has_sret = self.has_sret.contains(func);
+        let has_sret = {
+            let func = &self.t_funcs[func];
+            self.reprs[func.sig.ret].flags.contains(ReprFlags::ON_STACK)
+        };
 
         let filtered_dest = on_stack.then_some(dest).flatten();
         let value = self.unwrap_dest_low(ty, on_stack, filtered_dest).or(filtered_dest);

@@ -11,7 +11,7 @@ pub use ty::{
     SField, SFieldEnt, SFieldList, SFieldRef, TyDisplay, TyLists, SFields, 
     SFieldLookup, TypeBase, Instances, BoundImpls, TFuncLists, FuncInstances,
 };
-pub use func::{Func, TFuncEnt, TFuncFlags, TFuncKind, FuncList, Funcs, Sig, ToCompile, FuncRef};
+pub use func::{Func, TFuncEnt, TFuncFlags, TFuncKind, FuncList, Funcs, Sig, ToCompile};
 pub use tir::{Tir, TirList, TirKind, TirFlags, TirData, TirEnt, TirDisplay};
 pub use error::TyError;
 pub use size::{Offset, Layout};

@@ -33,7 +33,7 @@ members = [
 ]
 
 [profile.release]
-debug = true
+#debug = true
 
 [dependencies]
 cranelift-codegen = "0.82.1"

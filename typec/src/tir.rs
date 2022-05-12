@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use incr::Incr;
 use module_types::module::Modules;
 use typec_types::func::ToCompile;
@@ -287,10 +289,8 @@ impl<'a> TirBuilder<'a> {
         self.ctx.used_types.clear();
         self.ctx.used_types_set.clear();
 
-        if !self.body.ents[root].flags.contains(TirFlags::TERMINATING)
-            && ret != self.builtin_types.nothing
-        {
-            let because = Some(self.ast.nodes[ret_ast].span);
+        if !self.body.ents[root].flags.contains(TirFlags::TERMINATING) && ret != self.builtin_types.nothing {
+            let because = ret_ast.is_reserved_value().not().then(|| self.ast.nodes[ret_ast].span);
             self.expect_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
                 because,
                 expected: ret,
@@ -782,7 +782,7 @@ impl<'a> TirBuilder<'a> {
                                 ..func_ent
                             };
                             let func = self.funcs.push(ent);
-                            self.to_compile.push(FuncRef::Func(func));
+                            self.to_compile.push(func);
                             self.func_instances.insert(id, func);
                             func
                         }
@@ -1296,7 +1296,7 @@ impl<'a> TirBuilder<'a> {
 
         let result = {
             let kind = TirKind::Assign(left, right);
-            let ent = TirEnt::new(kind, ty, span);
+            let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
             self.body.ents.push(ent)
         };
 

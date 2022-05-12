@@ -27,7 +27,7 @@ file.write(f"""
 
     fn gathering() -> int {{
         let mut sum = 0;
-        {";".join((f"sum += great::[S{i}]()") for i in range(AMOUNT))}
+        {";".join((f"sum += great::[S{i}]()") for i in range(0, AMOUNT, 100))}
         sum
     }}
 """.replace(";" , "\n"))

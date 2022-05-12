@@ -112,7 +112,45 @@ impl BuildHasher for BH {
     fn build_hasher(&self) -> Self::Hasher {
         SimpleHasher { state: 0 }
     }
-} 
+}
+
+pub struct Set {
+    map: Map<()>,
+}
+
+impl Set {
+    pub fn new() -> Self {
+        Set {
+            map: Map::new(),
+        }
+    }
+
+    pub fn with_capacity(len: usize) -> Self {
+        Set {
+            map: Map::with_capacity(len),
+        }
+    }
+
+    pub fn insert(&mut self, key: impl Into<ID>) {
+        self.map.insert(key, ());
+    }
+
+    pub fn remove(&mut self, key: impl Into<ID>) {
+        self.map.remove(key);
+    }
+
+    pub fn contains(&self, key: impl Into<ID>) -> bool {
+        self.map.contains_key(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = ID> + '_ {
+        self.map.iter().map(|(k, _)| k)
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Map<T> {
@@ -162,6 +200,14 @@ impl<T> Map<T> {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (ID, &mut T)> {
         self.inner.iter_mut().map(|(&k, v)| (k, v))
+    }
+
+    fn contains_key(&self, key: impl Into<ID>) -> bool {
+        self.inner.contains_key(&key.into())
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
     }
 }
 

@@ -13,7 +13,7 @@ pub mod bit_serde;
 
 pub use framed_stack::FramedStack;
 pub use stack_map::{StackMap, FramedStackMap};
-pub use map::{Map, ID, SecondaryMap};
+pub use map::{Map, ID, SecondaryMap, Set};
 pub use ansi_consts::{ERR, WARNING, INFO, SUCCESS, END};
 pub use cranelift_entity::{PrimaryMap, EntityRef, EntitySet, packed_option::{ReservedValue, PackedOption}};
 pub use bitflags::bitflags;

@@ -88,6 +88,10 @@ impl SourceEnt {
     pub fn line_mapping(&self) -> &LineMapping {
         &self.mapping
     }
+
+    pub fn line_count(&self) -> usize {
+        self.mapping.line_count()
+    }
 }
 
 #[derive(Default)]
@@ -113,6 +117,10 @@ impl LineMapping {
         match self.new_lines.binary_search(&(pos as u32)) {
             Ok(i) | Err(i) => (i - 1, pos - self.new_lines[i - 1] as usize),
         }
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.new_lines.len() - 1
     }
 }
 
@@ -274,6 +282,8 @@ impl Span {
             writeln!(to, "|{suffix}")?;
             return Ok(());
         }
+
+        
 
         let (min, max) = span.split('\n').skip(1).fold(
             (

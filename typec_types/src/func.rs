@@ -4,14 +4,8 @@ use lexer_types::*;
 
 use crate::*;
 
-pub type ToCompile = Vec<FuncRef>;
+pub type ToCompile = Vec<Func>;
 pub type Funcs = PrimaryMap<Func, TFuncEnt>;
-
-#[derive(Clone, Copy)]
-pub enum FuncRef {
-    Func(Func),
-    ID(ID, PackedOption<Func>),
-}
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct TFuncEnt {

@@ -401,40 +401,17 @@ pub fn compile() {
     .unwrap();
 
     let mut func_lookup = SecondaryMap::new();
-    let mut has_sret = EntitySet::new();
     let mut replace_cache = ReplaceCache::new();
     let mut entry_id = None;
-    let mut declared = Map::new();
-
+    let mut incremental_decls = Vec::with_capacity(t_funcs.len());
+    let mut name_buffer = String::new();
+    
     /* declare function headers */
     {
-        let mut name_buffer = String::new();
-        let mut i = 0;
-        while i < to_compile.len() {
+        for &func in &to_compile {
             name_buffer.clear();
-
-            let id = to_compile[i];
-            i += 1;
-            let id = match id {
-                FuncRef::Func(id) => id,
-                FuncRef::ID(id, func_id) => {
-                    declared.insert(id, ());
-                    let func_incr_data = incr.functions.get(id).unwrap();
-                    name_buffer.clear();
-                    id.to_ident(&mut name_buffer);
-                    let func = module.declare_function(&name_buffer, Linkage::Export, &func_incr_data.signature).unwrap();
-                    if let Some(func_id) = func_id.expand() {
-                        func_lookup[func_id] = PackedOption::from(func);
-                    }
-                    to_compile.extend(func_incr_data
-                        .dependencies()
-                        .filter(|&id| declared.insert(id, ()).is_none())
-                        .map(|id| FuncRef::ID(id, None.into()))
-                    );
-                    continue;
-                },
-            };
-            let ent = &t_funcs[id];
+            
+            let ent = &t_funcs[func];
 
             let Some(linkage) = gen::func_linkage(ent.kind) else {
                 continue;
@@ -447,8 +424,8 @@ pub fn compile() {
                 entry_id = Some(ent.id);
             }
 
-            if incr.functions.get(ent.id).is_some() && declared.get(ent.id).is_none() {
-                to_compile.push(FuncRef::ID(ent.id, id.into()));
+            if incr.functions.get(ent.id).is_some() {
+                incremental_decls.push((ent.id, Some(func)));
                 continue;
             }
 
@@ -477,7 +454,7 @@ pub fn compile() {
                 ent.id.to_ident(&mut name_buffer);
             }
 
-            let returns_struct = instance::MirBuilder::translate_signature(
+            instance::MirBuilder::translate_signature(
                 &ent.sig,
                 &mut ctx.func.signature,
                 &reprs,
@@ -492,21 +469,42 @@ pub fn compile() {
             // println!("{}", sources.display(ent.name));
             // println!("{:?}", ctx.func.signature);
 
-            if returns_struct {
-                has_sret.insert(id);
-            }
-
-            let func = module
+            let func_id = module
                 .declare_function(&name_buffer, linkage, &ctx.func.signature)
                 .unwrap();
-
-            declared.insert(ent.id, ());
 
             ctx.func.signature.clear(CallConv::Fast);
 
             replace_cache.replace(&mut types, &mut reprs);
 
-            func_lookup[id] = PackedOption::from(func);
+            func_lookup[func] = PackedOption::from(func_id);
+        }
+
+        let mut i = 0;
+        while i < incremental_decls.len() {
+            let (id, func) = incremental_decls[i];
+            i += 1;
+            
+            let Some(incr_func) = incr.functions.get(id) else {
+                unreachable!();
+            };
+
+            name_buffer.clear();
+            id.to_ident(&mut name_buffer);
+
+            let Ok(func_id) = module.declare_function(&name_buffer, Linkage::Export, &incr_func.signature) else {
+                unreachable!();
+            };
+
+            if let Some(func) = func {
+                func_lookup[func] = PackedOption::from(func_id);
+            }
+
+            incremental_decls.extend(
+                incr_func
+                    .dependencies()
+                    .map(|dep| (dep, None))
+            );
         }
     }
 
@@ -521,37 +519,9 @@ pub fn compile() {
         let mut name_buffer = String::new();
         let mut defined = Map::new();
 
-        while let Some(id) = to_compile.pop() {
-            let id = match id {
-                FuncRef::Func(id) => id,
-                FuncRef::ID(id, _) => {
-                    if defined.insert(id, ()).is_some() {
-                        continue;
-                    }
-                    
-                    let func_incr_data = incr.functions.get(id).unwrap();
-                    
-                    name_buffer.clear();
-                    id.to_ident(&mut name_buffer);
+        while let Some(func) = to_compile.pop() {
 
-                    let Some(FuncOrDataId::Func(func_id)) = module.get_name(&name_buffer) else {
-                        unreachable!()
-                    };
-
-                    reloc_temp.clear();
-                    reloc_temp.extend(func_incr_data.reloc_records
-                        .iter()
-                        .map(|r| r.to_mach_reloc(&mut name_buffer, &module))
-                    );
-
-                    module.define_function_bytes(func_id, &func_incr_data.bytes, &reloc_temp).unwrap();
-
-                    continue;
-                },
-            };
-            
-            
-            let ent = &t_funcs[id];
+            let ent = &t_funcs[func];
 
             if gen::func_linkage(ent.kind)
                 .map(|l| l == Linkage::Import)
@@ -571,7 +541,7 @@ pub fn compile() {
                     .map(|r| r.to_mach_reloc(&mut name_buffer, &module))
                 );
 
-                module.define_function_bytes(func_lookup[id].unwrap(), &func_incr_data.bytes, &reloc_temp).unwrap();
+                module.define_function_bytes(func_lookup[func].unwrap(), &func_incr_data.bytes, &reloc_temp).unwrap();
 
                 continue;
             }
@@ -593,7 +563,7 @@ pub fn compile() {
                 );
                 func
             } else {
-                id
+                func
             };
 
             tir_mapping.clear();
@@ -609,7 +579,6 @@ pub fn compile() {
                 body: &bodies[func],
                 ptr_ty,
                 return_dest: None,
-                has_sret: &has_sret,
                 sources: &sources,
                 ty_lists: &ty_lists,
                 func_lists: &tfunc_lists,
@@ -648,10 +617,10 @@ pub fn compile() {
             .generate();
 
             replace_cache.replace(&mut types, &mut reprs);
-            println!("{}", sources.display(ent.name));
-            println!("{}", ctx.func.display());
+            // println!("{}", sources.display(ent.name));
+            // println!("{}", ctx.func.display());
             
-            let id = func_lookup[id].unwrap();
+            let id = func_lookup[func].unwrap();
 
             let mut mem = vec![];
             ctx.compile_and_emit(module.isa(), &mut mem).unwrap();
@@ -730,6 +699,7 @@ pub fn compile() {
 
     println!("parsing and generating tir: {:?}", total_type_check);
     println!("compilation time: {:?}", total);
+    println!("lines of code: {:?}", sources.values().map(|s| s.mapping.line_count()).sum::<usize>());
 }
 
 #[test]

@@ -34,6 +34,7 @@ impl Incr {
     }
 
     pub fn reduce(&mut self, module_map: &Map<Source>, modules: &Modules, module_order: &[Source]) {
+        let mut dirty = EntitySet::new();
         for (k, v) in self.modules.iter_mut() {
             let Some(&source) = module_map.get(k) else {
                 Self::wipe(v, &mut self.functions);
@@ -42,26 +43,32 @@ impl Incr {
 
             let module = &modules[source];
             let Ok(Ok(modified)) = std::fs::metadata(&module.path).map(|m| m.modified()) else {
+                dirty.insert(source);
                 Self::wipe(v, &mut self.functions);
                 continue;
             };
 
             if v.modified != modified {
+                dirty.insert(source);
                 v.modified = modified;
                 Self::wipe(v, &mut self.functions);
             }
         }
 
         // propagate wipes trough dependant modules
-        let mut dirty = EntitySet::new();
         for &module_id in module_order {
             if dirty.contains(module_id) {
                 continue;
             }
 
             let module = &modules[module_id];
-            if let Some(incr_module) = self.modules.get_mut(module.id) && module.dependency.iter().any(|&dep| dirty.contains(dep)) {
+            let Some(incr_module) = self.modules.get_mut(module.id) else {
+                unreachable!();
+            };
+            
+            if module.dependency.iter().any(|&dep| dirty.contains(dep)) {
                 dirty.insert(module_id);
+                println!("{}", module.path.display());
                 Self::wipe(incr_module, &mut self.functions)
             }
         }

@@ -349,7 +349,7 @@ impl<'a> ScopeBuilder<'a> {
         if sig.params.is_reserved_value() {
             let mod_id = self.modules[self.module].id;
             self.incr.modules.get_mut(mod_id).unwrap().owned_functions.insert(id, ());
-            self.to_compile.push(FuncRef::Func(func));
+            self.to_compile.push(func);
         }
 
         {
