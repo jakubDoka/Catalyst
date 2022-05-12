@@ -207,7 +207,7 @@ impl ID {
     pub fn from_ident(ident: &str) -> Self {
         let mut current = 0u64;
         let radix = 36;
-        for c in ident.chars() {
+        for c in ident.chars().rev() {
             current *= radix;
             current += c.to_digit(radix as u32).unwrap() as u64;
         }

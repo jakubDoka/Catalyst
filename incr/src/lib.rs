@@ -3,7 +3,7 @@
 
 use std::{time::SystemTime, path::Path};
 use cranelift_codegen::{binemit::{CodeOffset, Reloc}, ir::{SourceLoc, Signature}, MachReloc, isa::CallConv};
-use cranelift_module::{Module, FuncId, FuncOrDataId};
+use cranelift_module::{Module, FuncId, FuncOrDataId, Linkage};
 use storage::*;
 // use typec_types::*;
 use lexer_types::*;
@@ -166,29 +166,45 @@ pub struct IncrRelocRecord {
     pub srcloc: SourceLoc,
     pub kind: Reloc,
     pub name: ID,
+    pub literal_name: String,
     pub addend: i64,
 }
 
 impl IncrRelocRecord {
     pub fn from_mach_reloc(reloc: &MachReloc, module: &impl Module) -> Self {        
+        let decl = module
+            .declarations()
+            .get_function_decl(FuncId::from_name(&reloc.name));
+    
+        let literal_name = if decl.linkage == Linkage::Import {
+            decl.name.clone()
+        } else {
+            String::new()
+        };
+
+        let name = if literal_name.is_empty() {
+            ID::from_ident(&decl.name)
+        } else {
+            ID::new(&literal_name)
+        };
+
         Self {
             offset: reloc.offset,
             srcloc: reloc.srcloc,
             kind: reloc.kind,
-            name: ID::from_ident(
-                module
-                    .declarations()
-                    .get_function_decl(FuncId::from_name(&reloc.name))
-                    .name
-                    .as_str()
-            ),
+            name,
+            literal_name,
             addend: reloc.addend,
         }
     }
 
     pub fn to_mach_reloc(&self, buffer: &mut String, module: &impl Module) -> MachReloc {
         buffer.clear();
-        self.name.to_ident(buffer);
+        if self.literal_name.is_empty() {
+            self.name.to_ident(buffer);
+        } else {
+            buffer.push_str(&self.literal_name);
+        }
         
         let Some(FuncOrDataId::Func(func_id)) = module.get_name(&buffer) else {
             unreachable!()
@@ -210,6 +226,7 @@ impl BitSerde for IncrRelocRecord {
         self.srcloc.write(buffer);
         self.kind.write(buffer);
         self.name.write(buffer);
+        self.literal_name.write(buffer);
         self.addend.write(buffer);
     }
 
@@ -219,6 +236,7 @@ impl BitSerde for IncrRelocRecord {
             srcloc: SourceLoc::read(cursor, buffer)?,
             kind: Reloc::read(cursor, buffer)?,
             name: ID::read(cursor, buffer)?,
+            literal_name: String::read(cursor, buffer)?,
             addend: i64::read(cursor, buffer)?,
         })
     }

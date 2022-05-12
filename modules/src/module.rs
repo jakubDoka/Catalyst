@@ -49,6 +49,7 @@ impl<'a> ModuleBuilder<'a> {
         while let Some((path, span, slot)) = self.frontier.pop_front() {
             let id: ID = path.as_path().into();
             if self.incr.modules.get(id).is_none() {
+                println!("{}", path.display());
                 let modified = std::fs::metadata(&path).map(|m| m.modified())
                     .flatten()
                     .unwrap_or(SystemTime::UNIX_EPOCH);

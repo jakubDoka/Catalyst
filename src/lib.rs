@@ -1,5 +1,7 @@
 #![feature(result_option_inspect)]
 #![feature(let_else)]
+#![feature(bool_to_option)]
+#![feature(let_chains)]
 
 use cli::CmdInput;
 use cranelift_codegen::isa::CallConv;
@@ -44,6 +46,7 @@ pub fn compile() {
 
     let incr_data_path = path.join("incr.bin");
     let mut incr = Incr::load("1.0", &incr_data_path).unwrap_or_default();
+    incr.version = "1.0".to_string();
 
     // lexer
     let mut sources = Sources::new();
@@ -108,6 +111,10 @@ pub fn compile() {
         }
 
         module_order.reverse();
+
+        for (i, &id) in module_order.iter().enumerate() {
+            modules[id].ordering = i;
+        }            
 
         module_order
     };
@@ -397,6 +404,7 @@ pub fn compile() {
     let mut has_sret = EntitySet::new();
     let mut replace_cache = ReplaceCache::new();
     let mut entry_id = None;
+    let mut declared = Map::new();
 
     /* declare function headers */
     {
@@ -409,24 +417,40 @@ pub fn compile() {
             i += 1;
             let id = match id {
                 FuncRef::Func(id) => id,
-                FuncRef::ID(id) => {
+                FuncRef::ID(id, func_id) => {
+                    declared.insert(id, ());
                     let func_incr_data = incr.functions.get(id).unwrap();
+                    name_buffer.clear();
                     id.to_ident(&mut name_buffer);
-                    module.declare_function(&name_buffer, Linkage::Export, &func_incr_data.signature).unwrap();
-                    to_compile.extend(func_incr_data.dependencies().map(FuncRef::ID));
+                    let func = module.declare_function(&name_buffer, Linkage::Export, &func_incr_data.signature).unwrap();
+                    if let Some(func_id) = func_id.expand() {
+                        func_lookup[func_id] = PackedOption::from(func);
+                    }
+                    to_compile.extend(func_incr_data
+                        .dependencies()
+                        .filter(|&id| declared.insert(id, ()).is_none())
+                        .map(|id| FuncRef::ID(id, None.into()))
+                    );
                     continue;
                 },
             };
             let ent = &t_funcs[id];
 
-            if incr.functions.get(ent.id).is_some() {
-                to_compile.push(FuncRef::ID(ent.id));
-                continue;
-            }
-
             let Some(linkage) = gen::func_linkage(ent.kind) else {
                 continue;
             };
+
+            if ent.flags.contains(TFuncFlags::ENTRY) {
+                if entry_id.is_some() {
+                    todo!("multiple entry functions");
+                }
+                entry_id = Some(ent.id);
+            }
+
+            if incr.functions.get(ent.id).is_some() && declared.get(ent.id).is_none() {
+                to_compile.push(FuncRef::ID(ent.id, id.into()));
+                continue;
+            }
 
             if let TFuncKind::Instance(func) = ent.kind {
                 ReprInstancing {
@@ -446,13 +470,8 @@ pub fn compile() {
             }
 
             name_buffer.clear();
-            if ent.flags.contains(TFuncFlags::ENTRY) {
-                name_buffer.push_str("main");
-                if entry_id.is_some() {
-                    todo!("emit error since multiple entries in executable cannot exist")
-                }
-                entry_id = Some(ent.id);
-            } else if linkage == Linkage::Import {
+            
+            if linkage == Linkage::Import {
                 name_buffer.push_str(sources.display(ent.name));
             } else {
                 ent.id.to_ident(&mut name_buffer);
@@ -481,6 +500,8 @@ pub fn compile() {
                 .declare_function(&name_buffer, linkage, &ctx.func.signature)
                 .unwrap();
 
+            declared.insert(ent.id, ());
+
             ctx.func.signature.clear(CallConv::Fast);
 
             replace_cache.replace(&mut types, &mut reprs);
@@ -488,10 +509,6 @@ pub fn compile() {
             func_lookup[id] = PackedOption::from(func);
         }
     }
-
-    let mut total_definition = std::time::Duration::new(0, 0);
-    let mut total_translation = std::time::Duration::new(0, 0);
-    let mut total_generation = std::time::Duration::new(0, 0);
 
     /* define */
     {
@@ -502,11 +519,16 @@ pub fn compile() {
         let mut tir_mapping = SecondaryMap::new();
         let mut reloc_temp = vec![];
         let mut name_buffer = String::new();
+        let mut defined = Map::new();
 
         while let Some(id) = to_compile.pop() {
             let id = match id {
                 FuncRef::Func(id) => id,
-                FuncRef::ID(id) => {
+                FuncRef::ID(id, _) => {
+                    if defined.insert(id, ()).is_some() {
+                        continue;
+                    }
+                    
                     let func_incr_data = incr.functions.get(id).unwrap();
                     
                     name_buffer.clear();
@@ -531,7 +553,18 @@ pub fn compile() {
             
             let ent = &t_funcs[id];
 
+            if gen::func_linkage(ent.kind)
+                .map(|l| l == Linkage::Import)
+                .unwrap_or(true)
+            {
+                continue;
+            }
+
             if let Some(func_incr_data) = incr.functions.get(ent.id) {
+                if defined.insert(ent.id, ()).is_some() {
+                    continue;
+                }
+
                 reloc_temp.clear();
                 reloc_temp.extend(func_incr_data.reloc_records
                     .iter()
@@ -540,13 +573,6 @@ pub fn compile() {
 
                 module.define_function_bytes(func_lookup[id].unwrap(), &func_incr_data.bytes, &reloc_temp).unwrap();
 
-                continue;
-            }
-
-            if gen::func_linkage(ent.kind)
-                .map(|l| l == Linkage::Import)
-                .unwrap_or(true)
-            {
                 continue;
             }
 
@@ -570,7 +596,6 @@ pub fn compile() {
                 id
             };
 
-            let now = std::time::Instant::now();
             tir_mapping.clear();
             function.clear();
             MirBuilder {
@@ -596,14 +621,12 @@ pub fn compile() {
             }
             .translate_func()
             .unwrap();
-            total_translation += now.elapsed();
 
             if !diagnostics.is_empty() {
                 continue;
             }
 
             // println!("{}", MirDisplay::new(&sources, &ty_lists, &function, &types));
-            let now = std::time::Instant::now();
             ctx.clear();
             mir_to_ir_lookup.clear();
             let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_builder_ctx);
@@ -623,31 +646,32 @@ pub fn compile() {
                 ty_lists: &ty_lists,
             }
             .generate();
-            total_generation += now.elapsed();
 
             replace_cache.replace(&mut types, &mut reprs);
-            // println!("{}", sources.display(ent.name));
-            // println!("{}", ctx.func.display());
+            println!("{}", sources.display(ent.name));
+            println!("{}", ctx.func.display());
             
             let id = func_lookup[id].unwrap();
-            let now = std::time::Instant::now();
 
             let mut mem = vec![];
             ctx.compile_and_emit(module.isa(), &mut mem).unwrap();
             let reloc_records = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs(); 
             module.define_function_bytes(id, &mem, reloc_records).unwrap();
             
-            let incr_func_data = IncrFuncData {
-                signature: ctx.func.signature.clone(),
-                bytes: mem,
-                reloc_records: reloc_records
-                    .iter()
-                    .map(|r| IncrRelocRecord::from_mach_reloc(r, &module))
-                    .collect(),
-            };
-            incr.functions.insert(ent.id, incr_func_data);
+            {
+                let incr_func_data = IncrFuncData {
+                    signature: ctx.func.signature.clone(),
+                    bytes: mem,
+                    reloc_records: reloc_records
+                        .iter()
+                        .map(|r| IncrRelocRecord::from_mach_reloc(r, &module))
+                        .collect(),
+                };
+                incr.functions.insert(ent.id, incr_func_data);
 
-            total_definition += now.elapsed();
+                let home = ent.home_module_id(&ty_lists, &modules, &types);
+                incr.modules.get_mut(home).unwrap().owned_functions.insert(ent.id, ());
+            }
 
             stack_slot_lookup.clear();
             mir_to_ir_lookup.clear();
@@ -667,12 +691,17 @@ pub fn compile() {
         return;
     }
 
+    incr.save(&incr_data_path).unwrap();
+
     let binary = module.finish().emit().unwrap();
     std::fs::write("catalyst.o", &binary).unwrap();
 
     if input.enabled("no-link") {
         return;
     }
+
+    let mut entry = "/entry:".to_string();
+    entry_id.unwrap().to_ident(&mut &mut entry);
 
     // let status = cc::windows_registry::find(&triple.to_string(), "link.exe")
     //     .unwrap()
@@ -687,7 +716,8 @@ pub fn compile() {
         .unwrap()
         .arg("catalyst.o")
         .arg("ucrt.lib")
-        .arg("/entry:main")
+        .arg("/subsystem:console")
+        .arg(entry)
         .status()
         .unwrap();
 
@@ -699,9 +729,6 @@ pub fn compile() {
     let total = total_now.elapsed();
 
     println!("parsing and generating tir: {:?}", total_type_check);
-    println!("translating tir to mir: {:?}", total_translation);
-    println!("translating mir to cir: {:?}", total_generation);
-    println!("translating cir to bite code: {:?}", total_definition);
     println!("compilation time: {:?}", total);
 }
 

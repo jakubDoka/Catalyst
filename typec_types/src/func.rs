@@ -1,3 +1,4 @@
+use module_types::*;
 use storage::*;
 use lexer_types::*;
 
@@ -9,7 +10,7 @@ pub type Funcs = PrimaryMap<Func, TFuncEnt>;
 #[derive(Clone, Copy)]
 pub enum FuncRef {
     Func(Func),
-    ID(ID),
+    ID(ID, PackedOption<Func>),
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -26,6 +27,24 @@ pub struct TFuncEnt {
 impl TFuncEnt {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn home_module_id(&self, ty_lists: &TyLists, modules: &Modules, types: &Types) -> ID {
+        let home_module = self.home_module(ty_lists, modules, types);
+        modules[home_module].id
+    }
+
+    pub fn home_module(&self, ty_lists: &TyLists, modules: &Modules, types: &Types) -> Source {
+        let def_loc = self.name.source();
+        
+        ty_lists.get(self.sig.params).iter().fold(def_loc, |acc, &ty| {
+            let other = types[ty].name.source();
+            if modules[other].ordering > modules[acc].ordering {
+                other
+            } else {
+                acc
+            }
+        })
     }
 
     // pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {

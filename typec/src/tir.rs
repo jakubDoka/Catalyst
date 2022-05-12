@@ -782,7 +782,6 @@ impl<'a> TirBuilder<'a> {
                                 ..func_ent
                             };
                             let func = self.funcs.push(ent);
-
                             self.to_compile.push(FuncRef::Func(func));
                             self.func_instances.insert(id, func);
                             func

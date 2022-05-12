@@ -340,7 +340,11 @@ impl<'a> ScopeBuilder<'a> {
             }
         };
         
-        let id = self.modules[self.module].id + scope_id;
+        let id = if external { 
+            scope_id
+        } else { 
+            self.modules[self.module].id + scope_id
+        };
 
         if sig.params.is_reserved_value() {
             let mod_id = self.modules[self.module].id;

@@ -9,6 +9,7 @@ pub type Modules = SecondaryMap<Source, ModuleEnt>;
 #[derive(Debug, Clone, Default)]
 pub struct ModuleEnt {
     pub id: ID,
+    pub ordering: usize,
     pub path: PathBuf,
     pub dependency: Vec<Source>,
     pub items: Vec<ModuleItem>,
@@ -18,6 +19,7 @@ impl ModuleEnt {
     pub fn new(id: ID, path: &Path) -> Self {
         Self {
             id,
+            ordering: usize::MAX,
             path: path.to_path_buf(),
             dependency: Vec::new(),
             items: Vec::new(),

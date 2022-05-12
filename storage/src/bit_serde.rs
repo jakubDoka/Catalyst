@@ -73,7 +73,7 @@ impl<T: BitSafe + Sized + Copy> BitSerde for T {
     fn write(&self, buffer: &mut Vec<u8>) {
         let size = std::mem::size_of::<Self>();
         
-        if buffer.capacity() < buffer.len() {
+        if buffer.capacity() < buffer.len() + size {
             buffer.reserve(size);
         }
         
