@@ -7,10 +7,11 @@ use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::Context;
 use cranelift_entity::EntitySet;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{Linkage, Module};
+use cranelift_module::{Linkage, Module, FuncOrDataId};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use gen::*;
+use incr::{Incr, IncrFuncData, IncrRelocRecord};
 use instance::*;
 use instance::repr::ReprInstancing;
 use modules::*;
@@ -26,7 +27,7 @@ use typec::*;
 use ast::*;
 
 use std::str::FromStr;
-use std::{collections::VecDeque, fmt::Write, path::Path};
+use std::{collections::VecDeque, path::Path};
 
 /// compiles the catalyst source code, taking command like args as input,
 /// complete compilation only works on windows with msvc and you have to invoke
@@ -40,6 +41,9 @@ pub fn compile() {
     assert!(&input.args()[0] == "c");
 
     let path = Path::new(&input.args()[1]);
+
+    let incr_data_path = path.join("incr.bin");
+    let mut incr = Incr::load("1.0", &incr_data_path).unwrap_or_default();
 
     // lexer
     let mut sources = Sources::new();
@@ -94,6 +98,7 @@ pub fn compile() {
                     ctx: &mut unit_load_ctx,
                     map: &mut module_map,
                     diagnostics: &mut diagnostics,
+                    incr: &mut incr,
                 }
                 .load_unit_modules(unit) else {
                     continue;
@@ -107,9 +112,12 @@ pub fn compile() {
         module_order
     };
 
+    incr.reduce(&module_map, &modules, &module_order);
+
     let (isa, triple) = {
         let mut setting_builder = cranelift_codegen::settings::builder();
         // setting_builder.set("enable_verifier", "false").unwrap();
+        setting_builder.set("enable_verifier", "true").unwrap();
         let flags = Flags::new(setting_builder);
 
         let target_triple = input.field("target").map_or_else(
@@ -133,10 +141,12 @@ pub fn compile() {
     let mut t_funcs = Funcs::new();
     let mut ty_lists = TyLists::new();
     let mut instances = Instances::new();
+    let mut func_instances = FuncInstances::new();
     let mut sfields = SFields::new();
     let mut sfield_lookup = SFieldLookup::new();
     let mut tfunc_lists = TFuncLists::new();
     let mut bound_impls = BoundImpls::new();
+    let mut to_compile = ToCompile::new();
 
     let total_type_check;
 
@@ -224,6 +234,8 @@ pub fn compile() {
                     tfunc_lists: &mut tfunc_lists,
                     instances: &mut instances,
                     bound_impls: &mut bound_impls,
+                    to_compile: &mut to_compile,
+                    incr: &mut incr,
                 }
                 .collect_items(ast.elements()),
             );
@@ -291,6 +303,7 @@ pub fn compile() {
                     sources: &sources,
                     ast: &ast,
                     func,
+                    to_compile: &mut to_compile,
                     funcs: &mut t_funcs,
                     ctx: &mut c_ctx,
                     body: &mut body,
@@ -298,12 +311,14 @@ pub fn compile() {
                     modules: &mut modules,
                     diagnostics: &mut diagnostics,
                     func_lists: &mut tfunc_lists,
+                    func_instances: &mut func_instances,
                     ty_lists: &mut ty_lists,
                     instances: &mut instances,
                     sfields: &mut sfields,
                     sfield_lookup: &mut sfield_lookup,
                     builtin_types: &builtin_types,
                     bound_impls: &mut bound_impls,
+                    incr: &mut incr,
                 }
                 .build()
                 .is_err())
@@ -380,20 +395,38 @@ pub fn compile() {
 
     let mut func_lookup = SecondaryMap::new();
     let mut has_sret = EntitySet::new();
-    let mut seen_entry = false;
     let mut replace_cache = ReplaceCache::new();
+    let mut entry_id = None;
 
     /* declare function headers */
     {
-        let mut name_buffer = String::with_capacity(1024);
-        for (id, ent) in t_funcs.iter() {
+        let mut name_buffer = String::new();
+        let mut i = 0;
+        while i < to_compile.len() {
+            name_buffer.clear();
+
+            let id = to_compile[i];
+            i += 1;
+            let id = match id {
+                FuncRef::Func(id) => id,
+                FuncRef::ID(id) => {
+                    let func_incr_data = incr.functions.get(id).unwrap();
+                    id.to_ident(&mut name_buffer);
+                    module.declare_function(&name_buffer, Linkage::Export, &func_incr_data.signature).unwrap();
+                    to_compile.extend(func_incr_data.dependencies().map(FuncRef::ID));
+                    continue;
+                },
+            };
+            let ent = &t_funcs[id];
+
+            if incr.functions.get(ent.id).is_some() {
+                to_compile.push(FuncRef::ID(ent.id));
+                continue;
+            }
+
             let Some(linkage) = gen::func_linkage(ent.kind) else {
                 continue;
             };
-
-            if ent.flags.contains(TFuncFlags::GENERIC) {
-                continue;
-            }
 
             if let TFuncKind::Instance(func) = ent.kind {
                 ReprInstancing {
@@ -415,14 +448,14 @@ pub fn compile() {
             name_buffer.clear();
             if ent.flags.contains(TFuncFlags::ENTRY) {
                 name_buffer.push_str("main");
-                if seen_entry {
+                if entry_id.is_some() {
                     todo!("emit error since multiple entries in executable cannot exist")
                 }
-                seen_entry = true;
+                entry_id = Some(ent.id);
             } else if linkage == Linkage::Import {
                 name_buffer.push_str(sources.display(ent.name));
             } else {
-                write!(name_buffer, "{}", id.0).unwrap();
+                ent.id.to_ident(&mut name_buffer);
             }
 
             let returns_struct = instance::MirBuilder::translate_signature(
@@ -452,7 +485,7 @@ pub fn compile() {
 
             replace_cache.replace(&mut types, &mut reprs);
 
-            func_lookup[id] = func.into();
+            func_lookup[id] = PackedOption::from(func);
         }
     }
 
@@ -467,16 +500,53 @@ pub fn compile() {
         let mut mir_to_ir_lookup = SecondaryMap::new();
         let mut ir_block_lookup = SecondaryMap::new();
         let mut tir_mapping = SecondaryMap::new();
+        let mut reloc_temp = vec![];
+        let mut name_buffer = String::new();
 
-        for (id, ent) in t_funcs.iter() {
+        while let Some(id) = to_compile.pop() {
+            let id = match id {
+                FuncRef::Func(id) => id,
+                FuncRef::ID(id) => {
+                    let func_incr_data = incr.functions.get(id).unwrap();
+                    
+                    name_buffer.clear();
+                    id.to_ident(&mut name_buffer);
+
+                    let Some(FuncOrDataId::Func(func_id)) = module.get_name(&name_buffer) else {
+                        unreachable!()
+                    };
+
+                    reloc_temp.clear();
+                    reloc_temp.extend(func_incr_data.reloc_records
+                        .iter()
+                        .map(|r| r.to_mach_reloc(&mut name_buffer, &module))
+                    );
+
+                    module.define_function_bytes(func_id, &func_incr_data.bytes, &reloc_temp).unwrap();
+
+                    continue;
+                },
+            };
+            
+            
+            let ent = &t_funcs[id];
+
+            if let Some(func_incr_data) = incr.functions.get(ent.id) {
+                reloc_temp.clear();
+                reloc_temp.extend(func_incr_data.reloc_records
+                    .iter()
+                    .map(|r| r.to_mach_reloc(&mut name_buffer, &module))
+                );
+
+                module.define_function_bytes(func_lookup[id].unwrap(), &func_incr_data.bytes, &reloc_temp).unwrap();
+
+                continue;
+            }
+
             if gen::func_linkage(ent.kind)
                 .map(|l| l == Linkage::Import)
                 .unwrap_or(true)
             {
-                continue;
-            }
-
-            if ent.flags.contains(TFuncFlags::GENERIC) {
                 continue;
             }
 
@@ -561,7 +631,22 @@ pub fn compile() {
             
             let id = func_lookup[id].unwrap();
             let now = std::time::Instant::now();
-            module.define_function(id, &mut ctx).unwrap();
+
+            let mut mem = vec![];
+            ctx.compile_and_emit(module.isa(), &mut mem).unwrap();
+            let reloc_records = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs(); 
+            module.define_function_bytes(id, &mem, reloc_records).unwrap();
+            
+            let incr_func_data = IncrFuncData {
+                signature: ctx.func.signature.clone(),
+                bytes: mem,
+                reloc_records: reloc_records
+                    .iter()
+                    .map(|r| IncrRelocRecord::from_mach_reloc(r, &module))
+                    .collect(),
+            };
+            incr.functions.insert(ent.id, incr_func_data);
+
             total_definition += now.elapsed();
 
             stack_slot_lookup.clear();

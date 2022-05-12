@@ -27,6 +27,7 @@ members = [
     "instance",
     "instance_types",
     "gen",
+    "incr",
     "cli",
     "errors",
 ]
@@ -57,3 +58,4 @@ instance_types = { path = "instance_types" }
 gen = { path = "gen" }
 cli = { path = "cli" }
 storage = { path = "storage" }
+incr = { path = "incr" }

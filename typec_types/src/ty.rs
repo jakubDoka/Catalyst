@@ -1,4 +1,5 @@
-use _core::ops::IndexMut;
+use std::ops::IndexMut;
+
 use storage::*;
 use lexer_types::*;
 
@@ -11,6 +12,7 @@ pub type SFieldLookup = Map<SFieldRef>;
 pub type SFields = StackMap<SFieldList, SFieldEnt, SField>;
 pub type BoundImpls = Map<BoundImpl>;
 pub type Instances = Map<Ty>;
+pub type FuncInstances = Map<Func>;
 
 impl TypeBase for Types {}
 

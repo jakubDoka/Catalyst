@@ -1,6 +1,7 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{collections::VecDeque, path::PathBuf, time::SystemTime};
 
 use ast::*;
+use incr::{Incr, IncrModule};
 use lexer_types::*;
 use module_types::{*, error::ModuleError};
 use parser::*;
@@ -23,6 +24,7 @@ pub struct ModuleBuilder<'a> {
     pub ctx: &'a mut LoaderContext,
     pub map: &'a mut Map<Source>,
     pub diagnostics: &'a mut errors::Diagnostics,
+    pub incr: &'a mut Incr,
 }
 
 impl<'a> ModuleBuilder<'a> {
@@ -39,12 +41,24 @@ impl<'a> ModuleBuilder<'a> {
 
             let id = path.as_path().into();
             let module = self.sources.push(Default::default());
-            self.modules[module] = module::ModuleEnt::new(id);
+            self.modules[module] = module::ModuleEnt::new(id, path.as_path());
             self.map.insert(id, module);
             self.frontier.push_back((path, Span::default(), module));
         }
 
         while let Some((path, span, slot)) = self.frontier.pop_front() {
+            let id: ID = path.as_path().into();
+            if self.incr.modules.get(id).is_none() {
+                let modified = std::fs::metadata(&path).map(|m| m.modified())
+                    .flatten()
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                let incr_module = IncrModule {
+                    modified,
+                    owned_functions: Map::new(),
+                };
+                self.incr.modules.insert(id, incr_module);
+            }
+            
             {
                 {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
@@ -113,16 +127,18 @@ impl<'a> ModuleBuilder<'a> {
                         } else {
                             let module = Source::new(self.sources.len() + counter);
                             counter += 1;
-                            self.modules[module] = module::ModuleEnt::new(id);
+                            self.modules[module] = module::ModuleEnt::new(id, path.as_path());
                             self.map.insert(id, module);
                             self.frontier.push_back((path, path_span, module));
                             module
                         }
                     };
 
+                    self.modules[slot].dependency.push(id);
+
                     self.map.insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
-                        self.ctx.graph.add_edge(id.0 - base_line);
+                        self.ctx.cycle_graph.add_edge(id.0 - base_line);
                     }
                 }
             }
@@ -130,12 +146,12 @@ impl<'a> ModuleBuilder<'a> {
                 self.sources.push(Default::default());
             }
 
-            self.ctx.graph.close_node();
+            self.ctx.cycle_graph.close_node();
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Source>::len(&self.ctx.graph));
+        let mut ordering = Vec::with_capacity(TreeStorage::<Source>::len(&self.ctx.cycle_graph));
         self.ctx
-            .graph
+            .cycle_graph
             .detect_cycles(Source(0), Some(&mut ordering))
             .map_err(|mut err| {
                 err.iter_mut().for_each(|id| id.0 += base_line);

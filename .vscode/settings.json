@@ -17,6 +17,8 @@
         "impls",
         "insts",
         "putchar",
+        "Reloc",
+        "relocs",
         "repr",
         "Reprs",
         "rfind",
@@ -26,6 +28,7 @@
         "struct",
         "structs",
         "tfunc",
-        "typec"
+        "typec",
+        "Uninit"
     ]
 }

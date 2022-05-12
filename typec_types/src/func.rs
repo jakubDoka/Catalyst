@@ -3,13 +3,19 @@ use lexer_types::*;
 
 use crate::*;
 
-use std::fmt::Write;
-
+pub type ToCompile = Vec<FuncRef>;
 pub type Funcs = PrimaryMap<Func, TFuncEnt>;
+
+#[derive(Clone, Copy)]
+pub enum FuncRef {
+    Func(Func),
+    ID(ID),
+}
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct TFuncEnt {
     pub sig: Sig,
+    pub id: ID,
     pub name: Span,
     pub kind: TFuncKind,
     pub body: Tir,
@@ -22,18 +28,18 @@ impl TFuncEnt {
         Self::default()
     }
 
-    pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {
-        buffer.write_str(sources.display(self.name)).unwrap();
-        if !self.sig.params.is_reserved_value() {
-            buffer.write_char('[').unwrap();
-            for &ty in ty_lists.get(self.sig.params) {
-                ty.display(types, ty_lists, sources, buffer).unwrap();
-                buffer.write_char(',').unwrap();
-            }
-            buffer.pop().unwrap();
-            buffer.write_char(']').unwrap();
-        }
-    }
+    // pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {
+    //     buffer.write_str(sources.display(self.name)).unwrap();
+    //     if !self.sig.params.is_reserved_value() {
+    //         buffer.write_char('[').unwrap();
+    //         for &ty in ty_lists.get(self.sig.params) {
+    //             ty.display(types, ty_lists, sources, buffer).unwrap();
+    //             buffer.write_char(',').unwrap();
+    //         }
+    //         buffer.pop().unwrap();
+    //         buffer.write_char(']').unwrap();
+    //     }
+    // }
 }
 
 bitflags! {
@@ -43,6 +49,7 @@ bitflags! {
         const GENERIC = 1 << 1;
         const INLINE = 1 << 2;
         const EXTERNAL = 1 << 3;
+        const STRUCT_RET = 1 << 4;
     }
 }
 

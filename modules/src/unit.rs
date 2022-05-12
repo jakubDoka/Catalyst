@@ -115,7 +115,7 @@ impl<'a> UnitBuilder<'a> {
                     };
 
                     self.ctx.map.insert((self.sources.display(name), slot), id);
-                    self.ctx.graph.add_edge(id.0);
+                    self.ctx.cycle_graph.add_edge(id.0);
                 }
             }
 
@@ -126,12 +126,12 @@ impl<'a> UnitBuilder<'a> {
             self.units[slot].local_source_path = PathBuf::from(root_path_str);
             self.units[slot].root_path = path;
 
-            self.ctx.graph.close_node();
+            self.ctx.cycle_graph.close_node();
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.graph));
+        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.cycle_graph));
         self.ctx
-            .graph
+            .cycle_graph
             .detect_cycles(slot, Some(&mut ordering))
             .map_err(|err| self.diagnostics.push(ModuleError::UnitCycle { cycle: err }))?;
 
@@ -178,7 +178,7 @@ impl<'a> UnitBuilder<'a> {
 
 pub struct LoaderContext {
     pub mf_root: PathBuf,
-    pub graph: GenericGraph,
+    pub cycle_graph: GenericGraph,
     pub buffer: PathBuf,
     pub frontier: VecDeque<(PathBuf, Option<Span>, Unit)>,
     pub map: Map<Unit>,
@@ -193,7 +193,7 @@ impl LoaderContext {
                 std::env::var(RESOURCE_ROOT_VAR)
                     .unwrap_or_else(|_| DEFAULT_RESOURCE_ROOT_VAR.to_string()),
             ),
-            graph: GenericGraph::new(),
+            cycle_graph: GenericGraph::new(),
             buffer: PathBuf::new(),
             frontier: VecDeque::new(),
             map: Map::new(),
@@ -203,7 +203,7 @@ impl LoaderContext {
     }
 
     pub fn clear(&mut self) {
-        self.graph.clear();
+        self.cycle_graph.clear();
         self.frontier.clear();
         self.map.clear();
         self.ast.clear();

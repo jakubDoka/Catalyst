@@ -1,6 +1,7 @@
 
 use std::vec;
 
+use incr::Incr;
 use module_types::{scope::{Scope, self}, module::{Modules, self}};
 use lexer_types::*;
 use storage::*;
@@ -25,6 +26,8 @@ pub struct ScopeBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
     pub ctx: &'a mut ScopeContext,
     pub module: Source,
+    pub to_compile: &'a mut ToCompile,
+    pub incr: &'a mut Incr,
 }
 
 impl<'a> ScopeBuilder<'a> {
@@ -336,6 +339,14 @@ impl<'a> ScopeBuilder<'a> {
                 id
             }
         };
+        
+        let id = self.modules[self.module].id + scope_id;
+
+        if sig.params.is_reserved_value() {
+            let mod_id = self.modules[self.module].id;
+            self.incr.modules.get_mut(mod_id).unwrap().owned_functions.insert(id, ());
+            self.to_compile.push(FuncRef::Func(func));
+        }
 
         {
             let is_entry = self.find_simple_tag("entry");
@@ -357,6 +368,7 @@ impl<'a> ScopeBuilder<'a> {
 
             let ent = TFuncEnt {
                 sig,
+                id,
                 name: self.ast.nodes[name].span,
                 flags,
                 ..self.funcs[func]

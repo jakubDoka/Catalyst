@@ -1,4 +1,6 @@
+use incr::Incr;
 use module_types::module::Modules;
+use typec_types::func::ToCompile;
 
 use crate::{TyError, *, scope::ScopeContext};
 
@@ -190,6 +192,7 @@ pub struct TirBuilder<'a> {
     pub func_lists: &'a TFuncLists,
     pub ty_lists: &'a mut TyLists,
     pub instances: &'a mut Instances,
+    pub func_instances: &'a mut FuncInstances,
     pub sfields: &'a mut SFields,
     pub sfield_lookup: &'a mut SFieldLookup,
     pub builtin_types: &'a BuiltinTypes,
@@ -202,7 +205,9 @@ pub struct TirBuilder<'a> {
     pub sources: &'a Sources,
     pub ast: &'a AstData,
     pub modules: &'a mut Modules,
+    pub to_compile: &'a mut ToCompile,
     pub diagnostics: &'a mut errors::Diagnostics,
+    pub incr: &'a mut Incr,
 }
 
 impl<'a> TirBuilder<'a> {
@@ -764,13 +769,24 @@ impl<'a> TirBuilder<'a> {
                             ret,
                             ..sig
                         };
-                        let ent = TFuncEnt {
-                            sig,
-                            kind: TFuncKind::Instance(func),
-                            flags: self.funcs[func].flags & !TFuncFlags::GENERIC,
-                            ..self.funcs[func]
-                        };
-                        self.funcs.push(ent)
+                        let func_ent = self.funcs[func];
+                        let id = param_slots.iter().fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
+                        if let Some(&func) = self.func_instances.get(id) {
+                            func
+                        } else {
+                            let ent = TFuncEnt {
+                                sig,
+                                id,
+                                kind: TFuncKind::Instance(func),
+                                flags: func_ent.flags & !TFuncFlags::GENERIC,
+                                ..func_ent
+                            };
+                            let func = self.funcs.push(ent);
+
+                            self.to_compile.push(FuncRef::Func(func));
+                            self.func_instances.insert(id, func);
+                            func
+                        }
                     };
 
                     (ret, func)

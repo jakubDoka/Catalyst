@@ -6,6 +6,8 @@ use std::{
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
+use crate::BitSerde;
+
 pub struct SecondaryMap<K: EntityRef, V: Default + Clone> {
     inner: cranelift_entity::SecondaryMap<K, V>,
 }
@@ -14,6 +16,12 @@ impl<K: EntityRef, V: Default + Clone> SecondaryMap<K, V> {
     pub fn new() -> Self {
         SecondaryMap {
             inner: cranelift_entity::SecondaryMap::new(),
+        }
+    }
+
+    pub fn with_capacity(len: usize) -> Self {
+        SecondaryMap {
+            inner: cranelift_entity::SecondaryMap::with_capacity(len),
         }
     }
 }
@@ -51,6 +59,31 @@ impl<K: EntityRef, V: Default + Clone> DerefMut for SecondaryMap<K, V> {
     }
 }
 
+impl<K: EntityRef, V: Default + Clone + BitSerde + PartialEq + Eq> BitSerde for SecondaryMap<K, V> {
+    fn write(&self, buffer: &mut Vec<u8>) {
+        let default = V::default();
+        self.inner.values().filter(|&i| i != &default).count().write(buffer);
+        for (k, item) in self.inner.iter() {
+            if item != &default {
+                k.index().write(buffer);
+                item.write(buffer);
+            }
+        }
+    }
+
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
+        let len = usize::read(cursor, buffer)?;
+
+        let mut map = SecondaryMap::with_capacity(len);
+        for _ in 0..len {
+            let key = usize::read(cursor, buffer)?;
+            let item = V::read(cursor, buffer)?;
+            map[K::new(key)] = item;
+        }
+        Some(map)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SimpleHasher {
     state: u64,
@@ -81,7 +114,7 @@ impl BuildHasher for BH {
     }
 } 
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Map<T> {
     inner: HashMap<ID, T, BH>,
 }
@@ -90,6 +123,12 @@ impl<T> Map<T> {
     pub fn new() -> Self {
         Map {
             inner: HashMap::with_hasher(BH),
+        }
+    }
+
+    pub fn with_capacity(len: usize) -> Self {
+        Map {
+            inner: HashMap::with_capacity_and_hasher(len, BH),
         }
     }
 
@@ -109,8 +148,46 @@ impl<T> Map<T> {
         self.inner.get(&id.into())
     }
 
+    pub fn get_mut(&mut self, id: impl Into<ID>) -> Option<&mut T> {
+        self.inner.get_mut(&id.into())
+    }
+
     pub fn clear(&mut self) {
         self.inner.clear()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ID, &T)> {
+        self.inner.iter().map(|(&k, v)| (k, v))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (ID, &mut T)> {
+        self.inner.iter_mut().map(|(&k, v)| (k, v))
+    }
+}
+
+impl<T: BitSerde> BitSerde for Map<T> {
+    fn write(&self, buffer: &mut Vec<u8>) {
+        self.inner.len().write(buffer);
+        for (k, v) in self.inner.iter() {
+            k.write(buffer);
+            v.write(buffer);
+        }
+    }
+
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
+        let len = usize::read(cursor, buffer)?;
+        if len * (std::mem::size_of::<ID>() + std::mem::size_of::<T>()) > buffer.len() {
+            return None;
+        }
+
+        let mut map = Map::with_capacity(len);
+        for _ in 0..len {
+            let key = ID::read(cursor, buffer)?;
+            let value = T::read(cursor, buffer)?;
+            map.insert_unique(key, value);
+        }
+
+        Some(map)
     }
 }
 
@@ -118,6 +195,25 @@ impl<T> Map<T> {
 pub struct ID(pub u64);
 
 impl ID {
+    pub fn to_ident(&self, buffer: &mut String) {
+        let mut current = self.0;
+        let radix = 36;
+        while current > 0 {
+            buffer.push(char::from_digit((current % radix) as u32, radix as u32).unwrap());
+            current /= radix;
+        }
+    }
+
+    pub fn from_ident(ident: &str) -> Self {
+        let mut current = 0u64;
+        let radix = 36;
+        for c in ident.chars() {
+            current *= radix;
+            current += c.to_digit(radix as u32).unwrap() as u64;
+        }
+        ID(current)
+    }
+
     pub fn new(data: &str) -> Self {
         Self::from_bytes(data.as_bytes())
     }

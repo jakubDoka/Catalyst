@@ -1,3 +1,5 @@
+use std::path::{PathBuf, Path};
+
 use storage::*;
 use lexer_types::*;
 use crate::scope;
@@ -7,13 +9,17 @@ pub type Modules = SecondaryMap<Source, ModuleEnt>;
 #[derive(Debug, Clone, Default)]
 pub struct ModuleEnt {
     pub id: ID,
+    pub path: PathBuf,
+    pub dependency: Vec<Source>,
     pub items: Vec<ModuleItem>,
 }
 
 impl ModuleEnt {
-    pub fn new(id: ID) -> Self {
+    pub fn new(id: ID, path: &Path) -> Self {
         Self {
             id,
+            path: path.to_path_buf(),
+            dependency: Vec::new(),
             items: Vec::new(),
         }
     }

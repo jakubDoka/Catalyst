@@ -1,18 +1,25 @@
 #![feature(bool_to_option)]
+#![feature(auto_traits)]
+#![feature(negative_impls)]
 
 pub mod map;
 pub mod stack_map;
 pub mod framed_stack;
 pub mod ansi_consts;
 pub mod tree;
+pub mod pool_map;
+pub mod sparse_map;
+pub mod bit_serde;
 
-pub use framed_stack::*;
-pub use stack_map::*;
-pub use map::{*, SecondaryMap};
-pub use ansi_consts::*;
-pub use cranelift_entity::{*, packed_option::*};
-pub use bitflags::*;
+pub use framed_stack::FramedStack;
+pub use stack_map::{StackMap, FramedStackMap};
+pub use map::{Map, ID, SecondaryMap};
+pub use ansi_consts::{ERR, WARNING, INFO, SUCCESS, END};
+pub use cranelift_entity::{PrimaryMap, EntityRef, EntitySet, packed_option::{ReservedValue, PackedOption}};
+pub use bitflags::bitflags;
 pub use tree::*;
+pub use pool_map::PoolMap;
+pub use bit_serde::BitSerde;
 
 pub extern crate cranelift_entity;
 

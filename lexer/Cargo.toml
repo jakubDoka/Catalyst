@@ -8,4 +8,3 @@ edition = "2021"
 [dependencies]
 lexer_types = { path = "../lexer_types" }
 errors = { path = "../errors" }
-ansi_term = "0.12.1"

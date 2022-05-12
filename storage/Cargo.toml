@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 cranelift-entity = "0.82.1"
+cranelift-codegen = "0.82.1"
 bitflags = "1.3.2"

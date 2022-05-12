@@ -1,5 +1,6 @@
-use crate::*;
 use std::fmt::Debug;
+
+use cranelift_entity::EntityRef;
 
 pub trait TreeStorage<I: EntityRef + 'static + Debug>
 where
@@ -117,6 +118,41 @@ impl GenericGraph {
 
     pub fn len(&self) -> usize {
         self.hints.len() - 1
+    }
+
+    pub fn children(&self, id: usize) -> &[u32] {
+        let start = self.hints[id] as usize;
+        let end = self.hints[id + 1] as usize;
+        &self.edges[start..end]
+    }
+
+    pub fn inverted(&self) -> Self {
+        let mut previous_edges = Vec::with_capacity(self.edges.len());
+        
+        for i in 0..self.len() {
+            for &j in self.children(i) {
+                previous_edges.push((j, i as u32));
+            }
+        }
+
+        previous_edges.sort();
+
+        let mut edges = Vec::with_capacity(previous_edges.len());
+        let mut hints = vec![0];
+        let mut last = 0;
+        for (i, &(to, from)) in previous_edges.iter().enumerate() {
+            edges.push(from);
+            
+            while to != last {
+                hints.push(i as u32);
+                last += 1;
+            }
+        }
+
+        Self {
+            hints,
+            edges,
+        }
     }
 }
 

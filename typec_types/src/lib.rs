@@ -9,9 +9,9 @@ pub mod size;
 pub use ty::{
     BuiltinTypes, Ty, TyEnt, TyFlags, TyKind, TyList, Types, BoundImpl, 
     SField, SFieldEnt, SFieldList, SFieldRef, TyDisplay, TyLists, SFields, 
-    SFieldLookup, TypeBase, Instances, BoundImpls, TFuncLists,
+    SFieldLookup, TypeBase, Instances, BoundImpls, TFuncLists, FuncInstances,
 };
-pub use func::{Func, TFuncEnt, TFuncFlags, TFuncKind, FuncList, Funcs, Sig};
+pub use func::{Func, TFuncEnt, TFuncFlags, TFuncKind, FuncList, Funcs, Sig, ToCompile, FuncRef};
 pub use tir::{Tir, TirList, TirKind, TirFlags, TirData, TirEnt, TirDisplay};
 pub use error::TyError;
 pub use size::{Offset, Layout};
