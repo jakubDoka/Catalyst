@@ -25,26 +25,83 @@ pub struct TyBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
+#[macro_export]
+macro_rules! ty_builder {
+    ($self:expr, $ty:expr) => {
+        TyBuilder::new(
+            &mut $self.scope,
+            &mut $self.types,
+            &mut $self.ty_lists,
+            &mut $self.sfields,
+            &mut $self.sfield_lookup,
+            &$self.builtin_types,
+            &mut $self.instances,
+            &mut $self.bound_impls,
+            &$self.sources,
+            &$self.ast,
+            &mut $self.scope_context,
+            &mut $self.ty_graph,
+            &mut $self.modules,
+            $ty,
+            &mut $self.diagnostics,
+        )
+    };
+}
+
 impl<'a> TyBuilder<'a> {
-    pub fn build(&mut self) -> errors::Result {
+    pub fn new(
+        scope: &'a mut Scope,
+        types: &'a mut Types,
+        ty_lists: &'a mut TyLists,
+        sfields: &'a mut SFields,
+        sfield_lookup: &'a mut SFieldLookup,
+        builtin_types: &'a BuiltinTypes,
+        instances: &'a mut Instances,
+        bound_impls: &'a mut BoundImpls,
+        sources: &'a Sources,
+        ast: &'a AstData,
+        ctx: &'a mut ScopeContext,
+        graph: &'a mut GenericGraph,
+        modules: &'a mut Modules,
+        ty: Ty,
+        diagnostics: &'a mut errors::Diagnostics,
+    ) -> Self {
+        Self {
+            scope,
+            types,
+            ty_lists,
+            sfields,
+            sfield_lookup,
+            builtin_types,
+            instances,
+            bound_impls,
+            sources,
+            ast,
+            ctx,
+            graph,
+            modules,
+            ty,
+            diagnostics,
+        }
+    }
+
+    pub fn build(&mut self) {
         let TyEnt { id, .. } = self.types[self.ty];
         let ast = self.ctx.type_ast[self.ty];
         if ast.is_reserved_value() {
-            return Ok(());
+            return;
         }
         let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
         match kind {
-            AstKind::Struct => self.build_struct(id, ast)?,
-            AstKind::Bound => self.build_bound(id, ast)?,
+            AstKind::Struct => drop(self.build_struct(id, ast)),
+            AstKind::Bound => drop(self.build_bound(id, ast)),
             _ => todo!(
                 "Unhandled type decl {:?}: {}",
                 kind,
                 self.sources.display(span)
             ),
         }
-
-        Ok(())
     }
 
     pub fn build_bound(&mut self, _id: ID, _ast: Ast) -> errors::Result {

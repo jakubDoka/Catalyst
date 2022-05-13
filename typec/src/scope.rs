@@ -32,11 +32,79 @@ pub struct ScopeBuilder<'a> {
     pub incr: &'a mut Incr,
 }
 
+#[macro_export]
+macro_rules! scope_builder {
+    ($self:expr, $module:expr) => {
+        ScopeBuilder::new(
+            &mut $self.scope,
+            &mut $self.funcs,
+            &mut $self.types,
+            &mut $self.ty_lists,
+            &mut $self.sfields,
+            &mut $self.sfield_lookup,
+            &$self.builtin_types,
+            &mut $self.tfunc_lists,
+            &mut $self.instances,
+            &mut $self.bound_impls,
+            &mut $self.modules,
+            &$self.sources,
+            &$self.ast,
+            &mut $self.diagnostics,
+            &mut $self.scope_context,
+            $module,
+            &mut $self.to_compile,
+            &mut $self.incr,
+        )
+    };
+}
+
 impl<'a> ScopeBuilder<'a> {
+    pub fn new(
+        scope: &'a mut Scope,
+        funcs: &'a mut Funcs,
+        types: &'a mut Types,
+        ty_lists: &'a mut TyLists,
+        sfields: &'a mut SFields,
+        sfield_lookup: &'a mut SFieldLookup,
+        builtin_types: &'a BuiltinTypes,
+        tfunc_lists: &'a mut TFuncLists,
+        instances: &'a mut Instances,
+        bound_impls: &'a mut BoundImpls,
+        modules: &'a mut Modules,
+        sources: &'a Sources,
+        ast: &'a AstData,
+        diagnostics: &'a mut errors::Diagnostics,
+        ctx: &'a mut ScopeContext,
+        module: Source,
+        to_compile: &'a mut ToCompile,
+        incr: &'a mut Incr,
+    ) -> Self {
+        Self {
+            scope,
+            funcs,
+            types,
+            ty_lists,
+            sfields,
+            sfield_lookup,
+            builtin_types,
+            tfunc_lists,
+            instances,
+            bound_impls,
+            modules,
+            sources,
+            ast,
+            diagnostics,
+            ctx,
+            module,
+            to_compile,
+            incr,
+        }
+    }
+
     pub fn collect_items<'f>(
         &mut self,
         elements: impl Iterator<Item = (Ast, &'f ast::AstEnt)> + Clone,
-    ) -> errors::Result {
+    ) {
         for (ast, &ast::AstEnt { kind, span, .. }) in elements.clone() {
             if kind == AstKind::Tag {
                 self.ctx.tags.push(ast);
@@ -96,8 +164,6 @@ impl<'a> ScopeBuilder<'a> {
 
             self.scope.pop_frame();
         }
-
-        Ok(())
     }
 
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {

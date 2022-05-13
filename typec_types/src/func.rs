@@ -78,7 +78,7 @@ pub enum TFuncKind {
     // (bound, relative index)
     Bound(Ty, u32),
     Owned(Ty),
-    Instance(Func),
+    Instance(Func, TyList),
     Builtin,
 }
 

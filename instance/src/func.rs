@@ -1,8 +1,9 @@
 use std::str::FromStr;
 
-use cranelift_codegen::ir::Type;
+use cranelift_codegen::ir::{Type, Signature};
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 
+use cranelift_module::{Module, FuncId};
 use errors::*;
 use instance_types::*;
 use lexer_types::*;
@@ -21,13 +22,16 @@ pub struct MirBuilder<'a> {
     pub bound_impls: &'a BoundImpls,
     pub repr_fields: &'a ReprFields,
     pub builtin_types: &'a BuiltinTypes,
-    pub t_funcs: &'a Funcs,
+    pub funcs: &'a mut Funcs,
     pub func: &'a mut FuncCtx,
     pub body: &'a TirData,
     pub return_dest: Option<Value>,
     pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
     pub diagnostics: &'a mut Diagnostics,
+    pub func_instances: &'a mut FuncInstances,
+    pub module: &'a mut dyn Module,
+    pub func_lookup: &'a mut SecondaryMap<Func, PackedOption<FuncId>>,
 }
 
 impl MirBuilder<'_> {
@@ -38,9 +42,9 @@ impl MirBuilder<'_> {
             args,
             flags,
             ..
-        } = self.t_funcs[self.func_id];
+        } = self.funcs[self.func_id];
 
-        let has_sret = Self::translate_signature(
+        translate_signature(
             &sig,
             &mut self.func.sig,
             self.reprs,
@@ -49,11 +53,16 @@ impl MirBuilder<'_> {
             self.sources,
             self.system_call_convention,
             flags.contains(TFuncFlags::ENTRY),
-        )?;
+        );
 
         let entry_point = self.func.create_block();
         {
             self.func.value_slices.mark_frame();
+
+            let has_sret = {
+                let ret = sig.ret;
+                self.reprs[ret].flags.contains(ReprFlags::ON_STACK)
+            };
 
             if has_sret {
                 let value = self.flagged_value_from_ty(sig.ret, mir::MirFlags::POINTER);
@@ -150,11 +159,11 @@ impl MirBuilder<'_> {
         let expr_ty = self.body.ents[expr].ty;
 
         if self.reprs[expr_ty].size != self.reprs[ty].size {
-            let instantiated_from = if self.t_funcs[self.func_id]
+            let instantiated_from = if self.funcs[self.func_id]
                 .flags
                 .contains(TFuncFlags::GENERIC)
             {
-                Some(self.t_funcs[self.func_id].name)
+                Some(self.funcs[self.func_id].name)
             } else {
                 None
             };
@@ -623,11 +632,21 @@ impl MirBuilder<'_> {
     }
 
     fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let TirEnt { ty, kind: TirKind::Call(caller, func, args), .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Call(params, mut func, args), flags, span, .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
-        let func = if let TFuncKind::Bound(bound, index) = self.t_funcs[func].kind {
+        let (caller, param_slice) = {
+            let params = self.ty_lists.get(params);
+            let has_caller = flags.contains(TirFlags::WITH_CALLER);
+            let caller_offset = has_caller as usize;
+            (has_caller.then(|| params[0]), &params[caller_offset..])
+        };
+
+        let func_ent = self.funcs[func];
+
+        // dispatch bound call
+        if let TFuncKind::Bound(bound, index) = func_ent.kind {
             let id = {
                 let bound = self.types[bound].id;
                 let implementor = self.types[caller.unwrap()].id;
@@ -635,14 +654,55 @@ impl MirBuilder<'_> {
             };
 
             let funcs = self.bound_impls.get(id).unwrap().funcs;
-            self.func_lists.get(funcs)[index as usize]
-        } else {
-            func
-        };
+            func = self.func_lists.get(funcs)[index as usize]
+        }
 
+        // instantiate generic function
+        if flags.contains(TirFlags::GENERIC) {
+            let id = param_slice.iter().fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
+
+            func = if let Some(&instance) = self.func_instances.get(id) {
+                instance
+            } else {
+                let instance = TFuncEnt {
+                    id,
+                    name: span,
+                    kind: TFuncKind::Instance(func, params),
+                    flags: func_ent.flags & !TFuncFlags::GENERIC,
+                    ..func_ent
+                };
+                let instance = self.funcs.push(instance);
+                self.func_instances.insert(id, instance);
+                
+                let call_conv = if func_ent.sig.call_conv.is_reserved_value() {
+                    ""
+                } else {
+                    self.sources.display(func_ent.sig.call_conv)
+                };
+
+                let mut signature = Signature::new(CallConv::Fast);
+                translate_signature_low(
+                    call_conv, 
+                    self.body.cons
+                        .get(args)
+                        .iter()
+                        .map(|&arg| self.body.ents[arg].ty),
+                    ty, 
+                    &mut signature, 
+                    self.reprs,
+                    self.types, 
+                    self.system_call_convention, 
+                    false,
+                );
+
+                instance
+            };
+        }
+        
+        
         let on_stack = self.on_stack(tir);
         let has_sret = {
-            let func = &self.t_funcs[func];
+            let func = &self.funcs[func];
             self.reprs[func.sig.ret].flags.contains(ReprFlags::ON_STACK)
         };
 
@@ -767,59 +827,81 @@ impl MirBuilder<'_> {
     fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::MirFlags) -> Value {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
-    }
+    }   
+}
 
-    /// translates a `source` into the `target` and returns true if
-    /// signature has struct return type
-    pub fn translate_signature(
-        source: &Sig,
-        target: &mut ir::Signature,
-        reprs: &Reprs,
-        types: &Types,
-        ty_lists: &TyLists,
-        sources: &Sources,
-        system_call_convention: CallConv,
-        is_entry: bool,
-    ) -> errors::Result<bool> {
-        let call_conv = if is_entry {
+pub fn translate_signature(
+    source: &Sig,
+    target: &mut ir::Signature,
+    reprs: &Reprs,
+    types: &Types,
+    ty_lists: &TyLists,
+    sources: &Sources,
+    system_call_convention: CallConv,
+    is_entry: bool,
+) {
+    let call_conv = if source.call_conv.is_reserved_value() {
+        ""
+    } else {
+        sources.display(source.call_conv)
+    };
+
+    translate_signature_low(
+        call_conv, 
+        ty_lists
+            .get(source.args)
+            .iter()
+            .copied(), 
+        source.ret, 
+        target, 
+        reprs, 
+        types, 
+        system_call_convention, 
+        is_entry
+    )
+}
+
+pub fn translate_signature_low(
+    call_conv: &str,
+    args: impl Iterator<Item = Ty>,
+    ret: Ty,
+    target: &mut ir::Signature,
+    reprs: &Reprs,
+    types: &Types,
+    system_call_convention: CallConv,
+    is_entry: bool,
+) {
+    let call_conv = if is_entry {
+        system_call_convention
+    } else if call_conv.is_empty() {
+        CallConv::Fast
+    } else {
+        if call_conv == "default" {
             system_call_convention
-        } else if source.call_conv.is_reserved_value() {
-            CallConv::Fast
         } else {
-            let str = sources.display(source.call_conv.strip_sides());
-            if str == "default" {
-                system_call_convention
-            } else {
-                let cc = CallConv::from_str(str);
-                // TODO: error handling
-                cc.unwrap_or(CallConv::Fast)
-            }
-        };
-        target.clear(call_conv);
-
-        let mut result = false;
-        if TyKind::Nothing != types[source.ret].kind {
-            let repr::ReprEnt { repr, flags, .. } = reprs[source.ret];
-            if flags.contains(repr::ReprFlags::ON_STACK) {
-                let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);
-                target.params.push(ret);
-                result = true;
-                target.returns.push(ret);
-            } else {
-                target.returns.push(ir::AbiParam::new(repr));
-            }
+            let cc = CallConv::from_str(call_conv);
+            // TODO: error handling
+            cc.unwrap_or(CallConv::Fast)
         }
+    };
+    target.clear(call_conv);
 
-        target.params.extend(
-            ty_lists
-                .get(source.args)
-                .iter()
-                .map(|&ty| reprs[ty].repr)
-                .map(|repr| ir::AbiParam::new(repr)),
-        );
-
-        Ok(result)
+    if TyKind::Nothing != types[ret].kind {
+        let repr::ReprEnt { repr, flags, .. } = reprs[ret];
+        if flags.contains(repr::ReprFlags::ON_STACK) {
+            let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);
+            target.params.push(ret);
+            target.returns.push(ret);
+        } else {
+            target.returns.push(ir::AbiParam::new(repr));
+        }
     }
+
+    target.params.extend(
+        args
+            .map(|ty| reprs[ty].repr)
+            .map(|repr| ir::AbiParam::new(repr)),
+    );
 }
 
 pub fn int_value(sources: &Sources, span: Span) -> u64 {

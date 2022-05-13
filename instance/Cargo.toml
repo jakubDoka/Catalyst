@@ -7,6 +7,9 @@ edition = "2021"
 
 [dependencies]
 cranelift-codegen = "0.82.1"
+cranelift-module = "0.82.1"
+
+
 lexer_types = { path = "../lexer_types" }
 ast = { path = "../ast" }
 module_types = { path = "../module_types" }

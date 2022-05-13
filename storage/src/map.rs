@@ -135,12 +135,12 @@ impl Set {
         }
     }
 
-    pub fn insert(&mut self, key: impl Into<ID>) {
-        self.map.insert(key, ());
+    pub fn insert(&mut self, key: impl Into<ID>) -> bool {
+        self.map.insert(key, ()).is_none()
     }
 
-    pub fn remove(&mut self, key: impl Into<ID>) {
-        self.map.remove(key);
+    pub fn remove(&mut self, key: impl Into<ID>) -> bool {
+        self.map.remove(key).is_some()
     }
 
     pub fn contains(&self, key: impl Into<ID>) -> bool {

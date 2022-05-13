@@ -18,7 +18,33 @@ pub struct UnitBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
 }
 
+#[macro_export]
+macro_rules! unit_builder {
+    ($self:expr) => {
+        UnitBuilder::new(
+            &mut $self.sources,
+            &mut $self.units,
+            &mut $self.loader_context,
+            &mut $self.diagnostics,
+        )
+    };
+}
+
 impl<'a> UnitBuilder<'a> {
+    pub fn new(
+        sources: &'a mut Sources,
+        units: &'a mut Units,
+        ctx: &'a mut LoaderContext,
+        diagnostics: &'a mut errors::Diagnostics,
+    ) -> Self {
+        Self {
+            sources,
+            units,
+            ctx,
+            diagnostics,
+        }
+    }
+    
     pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
         self.ctx.clear();
 
@@ -32,9 +58,9 @@ impl<'a> UnitBuilder<'a> {
         let slot = self.units.push(units::UnitEnt::new());
         self.ctx.map.insert(root.as_path(), slot);
 
-        self.ctx.frontier.push_back((root, None, slot));
+        self.ctx.unit_frontier.push_back((root, None, slot));
 
-        while let Some((path, span, slot)) = self.ctx.frontier.pop_front() {
+        while let Some((path, span, slot)) = self.ctx.unit_frontier.pop_front() {
             self.ctx.buffer.clear();
             self.ctx.buffer.push(&path);
             self.ctx.buffer.push(MANIFEST_LOCAL_PATH);
@@ -110,7 +136,7 @@ impl<'a> UnitBuilder<'a> {
                     } else {
                         let id = self.units.push(units::UnitEnt::new());
                         self.ctx.map.insert(path.as_path(), id);
-                        self.ctx.frontier.push_back((path, Some(path_span), id));
+                        self.ctx.unit_frontier.push_back((path, Some(path_span), id));
                         id
                     };
 
@@ -180,10 +206,12 @@ pub struct LoaderContext {
     pub mf_root: PathBuf,
     pub cycle_graph: GenericGraph,
     pub buffer: PathBuf,
-    pub frontier: VecDeque<(PathBuf, Option<Span>, Unit)>,
+    pub unit_frontier: VecDeque<(PathBuf, Option<Span>, Unit)>,
+    pub module_frontier: VecDeque<(PathBuf, Span, Source)>,
     pub map: Map<Unit>,
     pub ast: AstData,
     pub ast_temp: FramedStack<Ast>,
+
 }
 
 impl LoaderContext {
@@ -195,7 +223,8 @@ impl LoaderContext {
             ),
             cycle_graph: GenericGraph::new(),
             buffer: PathBuf::new(),
-            frontier: VecDeque::new(),
+            unit_frontier: VecDeque::new(),
+            module_frontier: VecDeque::new(),
             map: Map::new(),
             ast: AstData::new(),
             ast_temp: FramedStack::new(),
@@ -204,7 +233,7 @@ impl LoaderContext {
 
     pub fn clear(&mut self) {
         self.cycle_graph.clear();
-        self.frontier.clear();
+        self.unit_frontier.clear();
         self.map.clear();
         self.ast.clear();
     }

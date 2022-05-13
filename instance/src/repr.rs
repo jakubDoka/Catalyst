@@ -154,7 +154,7 @@ impl<'a> ReprBuilder<'a> {
         }
     }
 
-    pub fn translate(&mut self, graph: &GenericGraph) -> errors::Result {
+    pub fn translate(&mut self, graph: &GenericGraph) {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.types.len());
             graph.total_ordering(&mut vec).unwrap();
@@ -165,8 +165,6 @@ impl<'a> ReprBuilder<'a> {
         for id in order {
             self.resolve_type_repr(id);
         }
-
-        Ok(())
     }
 
     pub fn resolve_type_repr(&mut self, id: Ty) {

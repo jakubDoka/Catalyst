@@ -2,6 +2,8 @@ use crate::*;
 use lexer_types::*;
 use storage::*;
 
+pub type FuncBodies = SecondaryMap<Func, TirData>; 
+
 #[derive(Clone)]
 pub struct TirData {
     pub ents: PrimaryMap<Tir, TirEnt>,

@@ -14,15 +14,19 @@ pub use repr::ReprBuilder;
 #[macro_export]
 macro_rules! repr_builder {
     ($self:expr) => {
+        repr_builder!($self, $self.ptr_ty)
+    };
+
+    ($self:expr, $ptr_ty:expr) => {
         ReprBuilder::new(
-            $self.types,
-            $self.sources,
-            $self.sfields,
-            $self.instances,
-            $self.ty_lists,
-            $self.repr_fields,
-            $self.reprs,
-            $self.ptr_ty,
+            &$self.types,
+            &$self.sources,
+            &$self.sfields,
+            &$self.instances,
+            &$self.ty_lists,
+            &mut $self.repr_fields,
+            &mut $self.reprs,
+            $ptr_ty,
         )
     };
 }

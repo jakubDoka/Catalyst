@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, time::SystemTime};
+use std::{time::SystemTime};
 
 use crate::unit::*;
 use ast::*;
@@ -20,14 +20,48 @@ pub struct ModuleBuilder<'a> {
     pub sources: &'a mut Sources,
     pub modules: &'a mut Modules,
     pub units: &'a mut Units,
-    pub frontier: &'a mut VecDeque<(PathBuf, Span, Source)>,
     pub ctx: &'a mut LoaderContext,
-    pub map: &'a mut Map<Source>,
+    pub module_map: &'a mut Map<Source>,
     pub diagnostics: &'a mut errors::Diagnostics,
     pub incr: &'a mut Incr,
 }
 
+#[macro_export]
+macro_rules! module_builder {
+    ($self:expr) => {
+        ModuleBuilder::new(
+            &mut $self.sources,
+            &mut $self.modules,
+            &mut $self.units,
+            &mut $self.loader_context,
+            &mut $self.module_map,
+            &mut $self.diagnostics,
+            &mut $self.incr,
+        )
+    };
+}
+
 impl<'a> ModuleBuilder<'a> {
+    pub fn new(
+        sources: &'a mut Sources,
+        modules: &'a mut Modules,
+        units: &'a mut Units,
+        ctx: &'a mut LoaderContext,
+        map: &'a mut Map<Source>,
+        diagnostics: &'a mut errors::Diagnostics,
+        incr: &'a mut Incr,
+    ) -> Self {
+        Self {
+            sources,
+            modules,
+            units,
+            ctx,
+            module_map: map,
+            diagnostics,
+            incr,
+        }
+    }
+
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
         self.ctx.clear();
         let base_line = self.sources.len() as u32;
@@ -42,11 +76,11 @@ impl<'a> ModuleBuilder<'a> {
             let id = path.as_path().into();
             let module = self.sources.push(Default::default());
             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
-            self.map.insert(id, module);
-            self.frontier.push_back((path, Span::default(), module));
+            self.module_map.insert(id, module);
+            self.ctx.module_frontier.push_back((path, Span::default(), module));
         }
 
-        while let Some((path, span, slot)) = self.frontier.pop_front() {
+        while let Some((path, span, slot)) = self.ctx.module_frontier.pop_front() {
             let id: ID = path.as_path().into();
             if self.incr.modules.get(id).is_none() {
                 println!("{}", path.display());
@@ -124,21 +158,21 @@ impl<'a> ModuleBuilder<'a> {
 
                         let id = path.as_path().into();
 
-                        if let Some(&id) = self.map.get(id) {
+                        if let Some(&id) = self.module_map.get(id) {
                             id
                         } else {
                             let module = Source::new(self.sources.len() + counter);
                             counter += 1;
                             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
-                            self.map.insert(id, module);
-                            self.frontier.push_back((path, path_span, module));
+                            self.module_map.insert(id, module);
+                            self.ctx.module_frontier.push_back((path, path_span, module));
                             module
                         }
                     };
 
                     self.modules[slot].dependency.push(id);
 
-                    self.map.insert((self.sources.display(nick), slot), id);
+                    self.module_map.insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
                         self.ctx.cycle_graph.add_edge(id.0 - base_line);
                     }

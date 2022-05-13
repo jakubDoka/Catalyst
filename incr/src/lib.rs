@@ -22,7 +22,13 @@ pub struct Incr {
 }
 
 impl Incr {
-    pub fn load(version: &str, path: &Path) -> Option<Self> {
+    pub fn load(version: String, path: &Path) -> Self {
+        let mut s = Self::try_load(&version, path).unwrap_or_default();
+        s.version = version;
+        s
+    }
+
+    pub fn try_load(version: &str, path: &Path) -> Option<Self> {
         let mut cursor = 0;
         let content = std::fs::read(path).ok()?;
         let s = Self::read(&mut cursor, &content)?;
@@ -136,6 +142,8 @@ impl BitSerde for IncrModule {
 #[derive(Clone, PartialEq, Eq)]
 pub struct IncrFuncData {
     pub signature: Signature,
+    pub temp_id: Option<FuncId>,
+    pub defined: bool,
     pub bytes: Vec<u8>,
     pub reloc_records: Vec<IncrRelocRecord>,
 }
@@ -149,7 +157,9 @@ impl IncrFuncData {
 impl Default for IncrFuncData {
     fn default() -> Self {
         Self {
+            temp_id: None,
             signature: Signature::new(CallConv::Fast),
+            defined: false,
             bytes: Vec::new(),
             reloc_records: Vec::new(),
         }
@@ -166,6 +176,8 @@ impl BitSerde for IncrFuncData {
     fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
         Some(Self {
             signature: Signature::read(cursor, buffer)?,
+            temp_id: None,
+            defined: false,
             bytes: Vec::read(cursor, buffer)?,
             reloc_records: Vec::read(cursor, buffer)?,
         })

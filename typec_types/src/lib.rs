@@ -9,7 +9,7 @@ pub mod ty;
 pub use error::TyError;
 pub use func::{Func, FuncList, Funcs, Sig, TFuncEnt, TFuncFlags, TFuncKind, ToCompile};
 pub use size::{Layout, Offset};
-pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList};
+pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, FuncBodies};
 pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, FuncInstances, Instances, SField, SFieldEnt, SFieldList,
     SFieldLookup, SFieldRef, SFields, TFuncLists, Ty, TyDisplay, TyEnt, TyFlags, TyKind, TyList,

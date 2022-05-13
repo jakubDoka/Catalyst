@@ -1,3 +1,3 @@
 fn main() {
-    catalyst_lib::compile()
+    catalyst_lib::Compiler::compile()
 }
