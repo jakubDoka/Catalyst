@@ -1,6 +1,5 @@
-
-use storage::*;
 use cranelift_codegen::ir::Type;
+use storage::*;
 use typec_types::*;
 
 pub struct ReplaceCache {
@@ -9,9 +8,7 @@ pub struct ReplaceCache {
 
 impl ReplaceCache {
     pub fn new() -> Self {
-        Self {
-            data: Vec::new(),
-        }
+        Self { data: Vec::new() }
     }
 
     pub fn save(&mut self, from: Ty, to: Ty, types: &mut Types, reprs: &mut Reprs) {

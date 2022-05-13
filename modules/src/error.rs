@@ -1,7 +1,6 @@
-use storage::*;
 use lexer_types::*;
 use module_types::{error::ModuleError, scope::ItemLexicon, units::Units};
-
+use storage::*;
 
 pub fn display(
     error: &ModuleError,
@@ -17,9 +16,7 @@ pub fn display(
             new.underline_error(sources, to, &|to| {
                 write!(to, "item with this identifier already exists")
             })?;
-            existing.underline_info(sources, to, &|to| {
-                write!(to, "identifier is used here")
-            })?;
+            existing.underline_info(sources, to, &|to| write!(to, "identifier is used here"))?;
         }
         ModuleError::AmbiguousScopeItem { loc, suggestions } => {
             loc.loc_to(sources, to)?;
@@ -80,17 +77,13 @@ pub fn display(
         }
         ModuleError::ModuleLoadFail { path, trace, loc } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(to, "module could not be loaded",)
-            })?;
+            loc.underline_error(sources, to, &|to| write!(to, "module could not be loaded",))?;
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
         ModuleError::ModuleNotFound { trace, path, loc } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(to, "module not found",)
-            })?;
+            loc.underline_error(sources, to, &|to| write!(to, "module not found",))?;
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
@@ -113,20 +106,14 @@ pub fn display(
                     write!(to, "manifest of this import could not be loaded",)
                 })?;
             } else {
-                write_colored!(
-                    to,
-                    ansi_consts::ERR,
-                    "|> root manifest could not be loaded",
-                )?;
+                write_colored!(to, ansi_consts::ERR, "|> root manifest could not be loaded",)?;
             }
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
         ModuleError::UnitNotFound { path, trace, loc } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(to, "unit not found",)
-            })?;
+            loc.underline_error(sources, to, &|to| write!(to, "unit not found",))?;
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
@@ -163,7 +150,10 @@ pub fn display(
                 )
             })?;
             writeln!(to, "|> check if you did not make a typo inside the link")?;
-            writeln!(to, "|> syntax for git links is 'github.com/<user>/<repo>[@tag]' ([...] is optional)")?;
+            writeln!(
+                to,
+                "|> syntax for git links is 'github.com/<user>/<repo>[@tag]' ([...] is optional)"
+            )?;
         }
     }
 
@@ -171,4 +161,3 @@ pub fn display(
 
     Ok(())
 }
-

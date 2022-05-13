@@ -1,8 +1,8 @@
 #![feature(generic_associated_types)]
-use storage::*;
+use ast::*;
 use lexer::*;
 use lexer_types::*;
-use ast::*;
+use storage::*;
 
 pub mod error;
 
@@ -273,7 +273,7 @@ impl<'a> Parser<'a> {
                 let err = self.data.alloc_sonless(AstKind::Error, self.current.span());
                 self.advance();
                 err
-            },
+            }
         }
     }
 
@@ -654,10 +654,9 @@ impl<'a> Parser<'a> {
         let result = match self.current.kind() {
             TokenKind::Return => self.return_expr(),
             TokenKind::Ident => self.ident_expr(),
-            TokenKind::Int(_)
-            | TokenKind::String
-            | TokenKind::Bool(_)
-            | TokenKind::Char => self.literal_expr(),
+            TokenKind::Int(_) | TokenKind::String | TokenKind::Bool(_) | TokenKind::Char => {
+                self.literal_expr()
+            }
             TokenKind::If => self.if_expr(),
             TokenKind::LeftCurly => self.block(),
             TokenKind::Let => self.variable_expr(),
@@ -939,8 +938,7 @@ impl<'a> Parser<'a> {
         }
 
         // handle constructor
-        if self.current.kind() == TokenKind::DoubleColon
-            && self.next.kind() == TokenKind::LeftCurly
+        if self.current.kind() == TokenKind::DoubleColon && self.next.kind() == TokenKind::LeftCurly
         {
             self.stack.mark_frame();
             self.stack.push(result);
@@ -1032,9 +1030,7 @@ impl<'a> Parser<'a> {
 
     fn ident(&mut self) -> Ast {
         self.expect(TokenKind::Ident);
-        let res = self
-            .data
-            .alloc_sonless(AstKind::Ident, self.current.span());
+        let res = self.data.alloc_sonless(AstKind::Ident, self.current.span());
         self.advance();
         res
     }

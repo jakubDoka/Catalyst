@@ -1,7 +1,9 @@
 use std::{
+    collections::HashMap,
     fmt::Debug,
+    hash::{BuildHasher, Hash, Hasher},
     ops::{Deref, DerefMut, Index, IndexMut},
-    path::Path, collections::HashMap, hash::{Hasher, Hash, BuildHasher},
+    path::Path,
 };
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
@@ -62,7 +64,11 @@ impl<K: EntityRef, V: Default + Clone> DerefMut for SecondaryMap<K, V> {
 impl<K: EntityRef, V: Default + Clone + BitSerde + PartialEq + Eq> BitSerde for SecondaryMap<K, V> {
     fn write(&self, buffer: &mut Vec<u8>) {
         let default = V::default();
-        self.inner.values().filter(|&i| i != &default).count().write(buffer);
+        self.inner
+            .values()
+            .filter(|&i| i != &default)
+            .count()
+            .write(buffer);
         for (k, item) in self.inner.iter() {
             if item != &default {
                 k.index().write(buffer);
@@ -120,9 +126,7 @@ pub struct Set {
 
 impl Set {
     pub fn new() -> Self {
-        Set {
-            map: Map::new(),
-        }
+        Set { map: Map::new() }
     }
 
     pub fn with_capacity(len: usize) -> Self {

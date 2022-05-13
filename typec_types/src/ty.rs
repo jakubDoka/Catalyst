@@ -1,7 +1,7 @@
 use std::ops::IndexMut;
 
-use storage::*;
 use lexer_types::*;
+use storage::*;
 
 use crate::*;
 
@@ -30,11 +30,11 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
             }
         }
     }
-    
+
     fn base_id_of(&self, ty: Ty) -> ID {
         self[self.base_of(ty)].id
     }
-    
+
     fn base_of(&self, mut ty: Ty) -> Ty {
         while let TyKind::Ptr(base, _) = self[ty].kind {
             ty = base;
@@ -103,8 +103,8 @@ macro_rules! gen_builtin_table {
 
         impl BuiltinTypes {
             pub fn new(
-                graph: &mut GenericGraph, 
-                sources: &mut Sources, 
+                graph: &mut GenericGraph,
+                sources: &mut Sources,
                 builtin_source: &mut BuiltinSource,
                 types: &mut Types,
             ) -> Self {
@@ -248,12 +248,7 @@ pub struct TyDisplay<'a> {
 
 impl<'a> TyDisplay<'a> {
     #[inline(never)]
-    pub fn new(
-        types: &'a Types,
-        ty_lists: &'a TyLists,
-        sources: &'a Sources,
-        ty: Ty,
-    ) -> Self {
+    pub fn new(types: &'a Types, ty_lists: &'a TyLists, sources: &'a Sources, ty: Ty) -> Self {
         TyDisplay {
             types,
             ty_lists,
@@ -266,7 +261,8 @@ impl<'a> TyDisplay<'a> {
 impl std::fmt::Display for TyDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut str = String::new();
-        self.ty.display(self.types, self.ty_lists, self.sources, &mut str)?;
+        self.ty
+            .display(self.types, self.ty_lists, self.sources, &mut str)?;
         write!(f, "{str}")
     }
 }
@@ -298,10 +294,20 @@ gen_entity!(SField);
 gen_entity!(SFieldList);
 
 impl Ty {
-    pub fn display(self, types: &Types, ty_lists: &TyLists, sources: &Sources, to: &mut String) -> std::fmt::Result {
+    pub fn display(
+        self,
+        types: &Types,
+        ty_lists: &TyLists,
+        sources: &Sources,
+        to: &mut String,
+    ) -> std::fmt::Result {
         use std::fmt::Write;
         match types[self].kind {
-            TyKind::Struct(..) | TyKind::Bound(..) | TyKind::Int(..) | TyKind::Nothing | TyKind::Bool => {
+            TyKind::Struct(..)
+            | TyKind::Bound(..)
+            | TyKind::Int(..)
+            | TyKind::Nothing
+            | TyKind::Bool => {
                 let name = types[self].name;
                 write!(to, "{}", sources.display(name))?;
             }

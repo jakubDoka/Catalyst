@@ -1,4 +1,3 @@
-
 pub const ERR: &str = "\x1B[38;5;1m\x1B[1m";
 pub const SUCCESS: &str = "\x1B[38;5;2m\x1B[1m";
 pub const WARNING: &str = "\x1B[38;5;3m\x1B[1m";
@@ -20,4 +19,3 @@ fn test() {
     println!("{}info{}", INFO, END);
     println!("{}success{}", SUCCESS, END);
 }
-    

@@ -1,8 +1,8 @@
+use crate::mir::*;
+use cranelift_codegen::{ir, isa::CallConv};
+use lexer_types::*;
 use storage::*;
 use typec_types::*;
-use crate::mir::*;
-use lexer_types::*;
-use cranelift_codegen::{ir, isa::CallConv};
 
 #[derive(Debug)]
 pub struct Loop {

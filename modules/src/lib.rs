@@ -10,6 +10,6 @@ pub mod module;
 pub mod unit;
 
 pub use module::ModuleBuilder;
-pub use unit::{UnitBuilder, LoaderContext};
+pub use unit::{LoaderContext, UnitBuilder};
 
 //

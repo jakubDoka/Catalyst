@@ -1,5 +1,5 @@
-use lexer_types::*;
 use crate::*;
+use lexer_types::*;
 
 pub enum TyError {
     UnknownGenericTypeParam {

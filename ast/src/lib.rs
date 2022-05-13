@@ -1,5 +1,5 @@
-use storage::*;
 use lexer_types::*;
+use storage::*;
 
 pub const FUNCTION_ARG_START: usize = 3;
 pub const FUNCTION_ARG_END: usize = 2;
@@ -34,7 +34,6 @@ impl AstEnt {
         }
     }
 }
-
 
 pub struct AstData {
     pub nodes: PrimaryMap<Ast, AstEnt>,
@@ -199,8 +198,6 @@ pub enum AstKind {
     Bool(bool),
     None,
 }
-
-
 
 gen_entity!(Ast);
 gen_entity!(AstList);

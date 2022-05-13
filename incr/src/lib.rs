@@ -1,9 +1,14 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 
-use std::{time::SystemTime, path::Path};
-use cranelift_codegen::{binemit::{CodeOffset, Reloc}, ir::{SourceLoc, Signature}, MachReloc, isa::CallConv};
-use cranelift_module::{Module, FuncId, FuncOrDataId, Linkage};
+use cranelift_codegen::{
+    binemit::{CodeOffset, Reloc},
+    ir::{Signature, SourceLoc},
+    isa::CallConv,
+    MachReloc,
+};
+use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module};
+use std::{path::Path, time::SystemTime};
 use storage::*;
 // use typec_types::*;
 use lexer_types::*;
@@ -65,7 +70,7 @@ impl Incr {
             let Some(incr_module) = self.modules.get_mut(module.id) else {
                 unreachable!();
             };
-            
+
             if module.dependency.iter().any(|&dep| dirty.contains(dep)) {
                 dirty.insert(module_id);
                 println!("{}", module.path.display());
@@ -178,11 +183,11 @@ pub struct IncrRelocRecord {
 }
 
 impl IncrRelocRecord {
-    pub fn from_mach_reloc(reloc: &MachReloc, module: &impl Module) -> Self {        
+    pub fn from_mach_reloc(reloc: &MachReloc, module: &impl Module) -> Self {
         let decl = module
             .declarations()
             .get_function_decl(FuncId::from_name(&reloc.name));
-    
+
         let literal_name = if decl.linkage == Linkage::Import {
             decl.name.clone()
         } else {
@@ -212,7 +217,7 @@ impl IncrRelocRecord {
         } else {
             buffer.push_str(&self.literal_name);
         }
-        
+
         let Some(FuncOrDataId::Func(func_id)) = module.get_name(&buffer) else {
             unreachable!()
         };
@@ -248,4 +253,3 @@ impl BitSerde for IncrRelocRecord {
         })
     }
 }
-

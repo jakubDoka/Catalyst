@@ -1,13 +1,15 @@
-
 use std::vec;
 
+use crate::{ty::get_param, *};
+use ast::*;
 use incr::Incr;
-use module_types::{scope::{Scope, self}, module::{Modules, self}};
 use lexer_types::*;
+use module_types::{
+    module::{self, Modules},
+    scope::{self, Scope},
+};
 use storage::*;
 use typec_types::*;
-use crate::{*, ty::get_param};
-use ast::*;
 
 pub struct ScopeBuilder<'a> {
     pub scope: &'a mut Scope,
@@ -84,7 +86,8 @@ impl<'a> ScopeBuilder<'a> {
                         self.scope.pop_item();
                     }
                     let span = self.types[bound].name;
-                    self.scope.push_item("Self", scope::ScopeItem::new(bound, span));
+                    self.scope
+                        .push_item("Self", scope::ScopeItem::new(bound, span));
                     prev = Some(bound);
                 }
 
@@ -123,7 +126,8 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                self.scope.push_item("Self", scope::ScopeItem::new(dest, span));
+                self.scope
+                    .push_item("Self", scope::ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast.children(body) {
@@ -148,7 +152,8 @@ impl<'a> ScopeBuilder<'a> {
             self.ctx.bounds_to_verify.push((dest, ty, ast));
         } else if !body.is_reserved_value() {
             self.scope.mark_frame();
-            self.scope.push_item("Self", scope::ScopeItem::new(ty, span));
+            self.scope
+                .push_item("Self", scope::ScopeItem::new(ty, span));
 
             for &func in self.ast.children(body) {
                 let reserved = {
@@ -339,16 +344,21 @@ impl<'a> ScopeBuilder<'a> {
                 id
             }
         };
-        
-        let id = if external { 
+
+        let id = if external {
             scope_id
-        } else { 
+        } else {
             self.modules[self.module].id + scope_id
         };
 
         if sig.params.is_reserved_value() {
             let mod_id = self.modules[self.module].id;
-            self.incr.modules.get_mut(mod_id).unwrap().owned_functions.insert(id, ());
+            self.incr
+                .modules
+                .get_mut(mod_id)
+                .unwrap()
+                .owned_functions
+                .insert(id, ());
             self.to_compile.push(func);
         }
 
@@ -396,22 +406,21 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     pub fn handle_generics(&mut self, generics: Ast, prepared: Option<Func>) -> TyList {
-        
         let mut used = EntitySet::new();
         let mut used_list = vec![];
 
         self.ty_lists.mark_frame();
 
-        if !generics.is_reserved_value() {    
+        if !generics.is_reserved_value() {
             for &ast in self.ast.children(generics).iter() {
                 let children = self.ast.children(ast);
                 let name = children[0];
                 let span = self.ast.nodes[name].span;
-                
+
                 let bound = ty_parser!(self).parse_composite_bound(&children[1..], span);
                 let bound = if !used.insert(bound) {
                     // we allocate copy of the bound, this is important
-                    // because we will need same bounds with distinct state 
+                    // because we will need same bounds with distinct state
                     // in next stages
                     let next_bound = get_param(bound, self.types);
                     let id = self.types[bound].id;
@@ -421,12 +430,13 @@ impl<'a> ScopeBuilder<'a> {
                     used_list.push(bound);
                     bound
                 };
-                
+
                 let str = self.sources.display(span);
-                self.scope.push_item(str, scope::ScopeItem::new(bound, span));
+                self.scope
+                    .push_item(str, scope::ScopeItem::new(bound, span));
                 self.ty_lists.push_one(bound);
             }
-        }   
+        }
 
         if let Some(func) = prepared
             && let TFuncKind::Bound(owner, ..) = self.funcs[func].kind
@@ -434,14 +444,14 @@ impl<'a> ScopeBuilder<'a> {
             self.ty_lists.mark_frame();
             self.ty_lists.push_one(owner);
             let span = self.types[owner].name;
-            
+
             let bound = ty_parser!(self).parse_composite_bound_low(span);
             let bound = if used.contains(bound) {
                 get_param(bound, self.types)
             } else {
                 bound
             };
-            
+
             self.scope.push_item("Self", scope::ScopeItem::new(bound, span));
             self.ty_lists.push_one(bound);
         }
@@ -451,7 +461,7 @@ impl<'a> ScopeBuilder<'a> {
             assert!(self.instances.insert(id, bound).is_some());
         }
 
-        self.ty_lists.pop_frame()       
+        self.ty_lists.pop_frame()
     }
 
     pub fn find_simple_tag(&self, name: &str) -> Option<Span> {

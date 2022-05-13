@@ -7,7 +7,6 @@ use lexer_types::*;
 use storage::*;
 use typec_types::*;
 
-
 use crate::*;
 
 impl<E: EntityRef, N: LinkedNode<E>> LinkedList<E, N> for PrimaryMap<E, N> {}
@@ -227,7 +226,12 @@ pub struct MirDisplay<'a> {
 }
 
 impl<'a> MirDisplay<'a> {
-    pub fn new(sources: &'a Sources, ty_lists: &'a TyLists, func: &'a FuncCtx, types: &'a Types) -> Self {
+    pub fn new(
+        sources: &'a Sources,
+        ty_lists: &'a TyLists,
+        func: &'a FuncCtx,
+        types: &'a Types,
+    ) -> Self {
         Self {
             sources,
             ty_lists,
@@ -271,9 +275,12 @@ impl std::fmt::Display for MirDisplay<'_> {
             for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
                     InstKind::BitCast(value) => {
-                        writeln!(f, "    {} = bitcast {}",
-                        self.value_to_string(inst.value.unwrap()),
-                        value)?;
+                        writeln!(
+                            f,
+                            "    {} = bitcast {}",
+                            self.value_to_string(inst.value.unwrap()),
+                            value
+                        )?;
                     }
                     InstKind::TakePointer(target) => {
                         writeln!(

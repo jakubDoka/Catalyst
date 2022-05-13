@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use cranelift_entity::{EntityRef, packed_option::ReservedValue, PrimaryMap};
+use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
 
 use crate::BitSerde;
 
@@ -13,7 +13,7 @@ impl<K: EntityRef, V: ReservedValue> PoolMap<K, V> {
     pub fn new() -> Self {
         Self::with_capacity(0)
     }
-    
+
     fn with_capacity(len: usize) -> Self {
         Self {
             data: PrimaryMap::with_capacity(len),
@@ -65,20 +65,22 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
                 true.write(buffer);
                 item.write(buffer);
             }
-        }       
+        }
     }
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
         let len = usize::read(cursor, buffer)?;
         let free_len = usize::read(cursor, buffer)?;
-        
-        if len * std::mem::size_of::<bool>() + (len - free_len) * std::mem::size_of::<T>() > buffer.len() {
+
+        if len * std::mem::size_of::<bool>() + (len - free_len) * std::mem::size_of::<T>()
+            > buffer.len()
+        {
             return None;
         }
 
         let mut map = PoolMap::with_capacity(len);
         map.free.reserve(free_len);
-        
+
         for _ in 0..len {
             let is_reserved = bool::read(cursor, buffer)?;
             if is_reserved {

@@ -1,6 +1,6 @@
+use lexer_types::*;
 use module_types::*;
 use storage::*;
-use lexer_types::*;
 
 use crate::*;
 
@@ -30,15 +30,18 @@ impl TFuncEnt {
 
     pub fn home_module(&self, ty_lists: &TyLists, modules: &Modules, types: &Types) -> Source {
         let def_loc = self.name.source();
-        
-        ty_lists.get(self.sig.params).iter().fold(def_loc, |acc, &ty| {
-            let other = types[ty].name.source();
-            if modules[other].ordering > modules[acc].ordering {
-                other
-            } else {
-                acc
-            }
-        })
+
+        ty_lists
+            .get(self.sig.params)
+            .iter()
+            .fold(def_loc, |acc, &ty| {
+                let other = types[ty].name.source();
+                if modules[other].ordering > modules[acc].ordering {
+                    other
+                } else {
+                    acc
+                }
+            })
     }
 
     // pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {
@@ -101,7 +104,12 @@ pub struct SignatureDisplay<'a> {
 }
 
 impl<'a> SignatureDisplay<'a> {
-    pub fn new(sources: &'a Sources, ty_lists: &'a TyLists, types: &'a Types, sig: &'a Sig) -> Self {
+    pub fn new(
+        sources: &'a Sources,
+        ty_lists: &'a TyLists,
+        types: &'a Types,
+        sig: &'a Sig,
+    ) -> Self {
         SignatureDisplay {
             sig,
             types,
@@ -120,11 +128,7 @@ impl std::fmt::Display for SignatureDisplay<'_> {
             }
             write!(f, "{}", ty_display!(self, ty))?;
         }
-        write!(
-            f,
-            ") -> {}",
-            ty_display!(self, self.sig.ret),
-        )?;
+        write!(f, ") -> {}", ty_display!(self, self.sig.ret),)?;
         Ok(())
     }
 }

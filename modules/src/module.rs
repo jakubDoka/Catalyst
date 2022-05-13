@@ -1,12 +1,12 @@
 use std::{collections::VecDeque, path::PathBuf, time::SystemTime};
 
+use crate::unit::*;
 use ast::*;
 use incr::{Incr, IncrModule};
 use lexer_types::*;
-use module_types::{*, error::ModuleError};
+use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;
-use crate::unit::*;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -50,7 +50,8 @@ impl<'a> ModuleBuilder<'a> {
             let id: ID = path.as_path().into();
             if self.incr.modules.get(id).is_none() {
                 println!("{}", path.display());
-                let modified = std::fs::metadata(&path).map(|m| m.modified())
+                let modified = std::fs::metadata(&path)
+                    .map(|m| m.modified())
                     .flatten()
                     .unwrap_or(SystemTime::UNIX_EPOCH);
                 let incr_module = IncrModule {
@@ -59,7 +60,7 @@ impl<'a> ModuleBuilder<'a> {
                 };
                 self.incr.modules.insert(id, incr_module);
             }
-            
+
             {
                 {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
@@ -156,7 +157,8 @@ impl<'a> ModuleBuilder<'a> {
             .detect_cycles(Source(0), Some(&mut ordering))
             .map_err(|mut err| {
                 err.iter_mut().for_each(|id| id.0 += base_line);
-                self.diagnostics.push(ModuleError::ModuleCycle { cycle: err });
+                self.diagnostics
+                    .push(ModuleError::ModuleCycle { cycle: err });
             })?;
 
         ordering.iter_mut().for_each(|id| id.0 += base_line);

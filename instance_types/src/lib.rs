@@ -1,13 +1,12 @@
-
-pub mod mir;
-pub mod func;
-pub mod repr;
 pub mod error;
+pub mod func;
+pub mod mir;
+pub mod repr;
 
-pub use mir::{
-    Block, BlockEnt, Value, ValueEnt, ValueList, Inst, InstEnt, InstKind, MirDisplay, 
-    StackEnt, StackSlot, LinkedList, LinkedNode, MutLinkNode, MirFlags,
-};
-pub use func::{FuncCtx, Loop};
-pub use repr::{Reprs, ReprFields, ReprEnt, ReprField, ReprFlags, ReplaceCache};
 pub use error::InstError;
+pub use func::{FuncCtx, Loop};
+pub use mir::{
+    Block, BlockEnt, Inst, InstEnt, InstKind, LinkedList, LinkedNode, MirDisplay, MirFlags,
+    MutLinkNode, StackEnt, StackSlot, Value, ValueEnt, ValueList,
+};
+pub use repr::{ReplaceCache, ReprEnt, ReprField, ReprFields, ReprFlags, Reprs};

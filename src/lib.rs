@@ -5,28 +5,28 @@
 
 use cli::CmdInput;
 use cranelift_codegen::isa::CallConv;
-use cranelift_codegen::settings::{Flags, Configurable};
+use cranelift_codegen::settings::{Configurable, Flags};
 use cranelift_codegen::Context;
 use cranelift_entity::EntitySet;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{Linkage, Module, FuncOrDataId};
+use cranelift_module::{FuncOrDataId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
+use ast::*;
 use gen::*;
 use incr::{Incr, IncrFuncData, IncrRelocRecord};
-use instance::*;
 use instance::repr::ReprInstancing;
-use modules::*;
-use modules::module::ModuleImports;
-use parser::*;
+use instance::*;
+use instance_types::*;
 use lexer_types::*;
 use module_types::*;
-use instance_types::*;
+use modules::module::ModuleImports;
+use modules::*;
+use parser::*;
 use storage::*;
 use typec::tir::BoundVerifier;
-use typec_types::*;
 use typec::*;
-use ast::*;
+use typec_types::*;
 
 use std::str::FromStr;
 use std::{collections::VecDeque, path::Path};
@@ -114,7 +114,7 @@ pub fn compile() {
 
         for (i, &id) in module_order.iter().enumerate() {
             modules[id].ordering = i;
-        }            
+        }
 
         module_order
     };
@@ -144,7 +144,8 @@ pub fn compile() {
     // typec
     let mut graph = GenericGraph::new();
     let mut types = Types::new();
-    let builtin_types = BuiltinTypes::new(&mut graph, &mut sources, &mut builtin_source, &mut types);
+    let builtin_types =
+        BuiltinTypes::new(&mut graph, &mut sources, &mut builtin_source, &mut types);
     let mut t_funcs = Funcs::new();
     let mut ty_lists = TyLists::new();
     let mut instances = Instances::new();
@@ -162,12 +163,12 @@ pub fn compile() {
     {
         let b_source = builtin_source.source;
         typec::create_builtin_items(
-            &mut types, 
-            &mut ty_lists, 
-            &builtin_types, 
-            &mut t_funcs, 
-            &mut sources, 
-            &mut builtin_source, 
+            &mut types,
+            &mut ty_lists,
+            &builtin_types,
+            &mut t_funcs,
+            &mut sources,
+            &mut builtin_source,
             &mut modules[b_source].items,
         );
 
@@ -363,9 +364,11 @@ pub fn compile() {
             })
         });
 
-        diagnostics
-            .iter::<TyError>()
-            .map(|errs| errs.for_each(|err| typec::error::display(err, &sources, &types, &ty_lists, &mut errors).unwrap()));
+        diagnostics.iter::<TyError>().map(|errs| {
+            errs.for_each(|err| {
+                typec::error::display(err, &sources, &types, &ty_lists, &mut errors).unwrap()
+            })
+        });
 
         println!("{errors}");
         return;
@@ -405,12 +408,12 @@ pub fn compile() {
     let mut entry_id = None;
     let mut incremental_decls = Vec::with_capacity(t_funcs.len());
     let mut name_buffer = String::new();
-    
+
     /* declare function headers */
     {
         for &func in &to_compile {
             name_buffer.clear();
-            
+
             let ent = &t_funcs[func];
 
             let Some(linkage) = gen::func_linkage(ent.kind) else {
@@ -439,15 +442,16 @@ pub fn compile() {
                     repr_fields: &mut repr_fields,
                     reprs: &mut reprs,
                     ptr_ty,
-                }.load_generic_types(
-                    ent.sig.params, 
-                    bodies[func].used_types, 
-                    &mut replace_cache
+                }
+                .load_generic_types(
+                    ent.sig.params,
+                    bodies[func].used_types,
+                    &mut replace_cache,
                 );
             }
 
             name_buffer.clear();
-            
+
             if linkage == Linkage::Import {
                 name_buffer.push_str(sources.display(ent.name));
             } else {
@@ -484,7 +488,7 @@ pub fn compile() {
         while i < incremental_decls.len() {
             let (id, func) = incremental_decls[i];
             i += 1;
-            
+
             let Some(incr_func) = incr.functions.get(id) else {
                 unreachable!();
             };
@@ -500,11 +504,7 @@ pub fn compile() {
                 func_lookup[func] = PackedOption::from(func_id);
             }
 
-            incremental_decls.extend(
-                incr_func
-                    .dependencies()
-                    .map(|dep| (dep, None))
-            );
+            incremental_decls.extend(incr_func.dependencies().map(|dep| (dep, None)));
         }
     }
 
@@ -520,7 +520,6 @@ pub fn compile() {
         let mut defined = Map::new();
 
         while let Some(func) = to_compile.pop() {
-
             let ent = &t_funcs[func];
 
             if gen::func_linkage(ent.kind)
@@ -536,12 +535,20 @@ pub fn compile() {
                 }
 
                 reloc_temp.clear();
-                reloc_temp.extend(func_incr_data.reloc_records
-                    .iter()
-                    .map(|r| r.to_mach_reloc(&mut name_buffer, &module))
+                reloc_temp.extend(
+                    func_incr_data
+                        .reloc_records
+                        .iter()
+                        .map(|r| r.to_mach_reloc(&mut name_buffer, &module)),
                 );
 
-                module.define_function_bytes(func_lookup[func].unwrap(), &func_incr_data.bytes, &reloc_temp).unwrap();
+                module
+                    .define_function_bytes(
+                        func_lookup[func].unwrap(),
+                        &func_incr_data.bytes,
+                        &reloc_temp,
+                    )
+                    .unwrap();
 
                 continue;
             }
@@ -556,10 +563,11 @@ pub fn compile() {
                     repr_fields: &mut repr_fields,
                     reprs: &mut reprs,
                     ptr_ty,
-                }.load_generic_types(
-                    ent.sig.params, 
-                    bodies[func].used_types, 
-                    &mut replace_cache
+                }
+                .load_generic_types(
+                    ent.sig.params,
+                    bodies[func].used_types,
+                    &mut replace_cache,
                 );
                 func
             } else {
@@ -619,14 +627,16 @@ pub fn compile() {
             replace_cache.replace(&mut types, &mut reprs);
             // println!("{}", sources.display(ent.name));
             // println!("{}", ctx.func.display());
-            
+
             let id = func_lookup[func].unwrap();
 
             let mut mem = vec![];
             ctx.compile_and_emit(module.isa(), &mut mem).unwrap();
-            let reloc_records = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs(); 
-            module.define_function_bytes(id, &mem, reloc_records).unwrap();
-            
+            let reloc_records = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs();
+            module
+                .define_function_bytes(id, &mem, reloc_records)
+                .unwrap();
+
             {
                 let incr_func_data = IncrFuncData {
                     signature: ctx.func.signature.clone(),
@@ -639,7 +649,11 @@ pub fn compile() {
                 incr.functions.insert(ent.id, incr_func_data);
 
                 let home = ent.home_module_id(&ty_lists, &modules, &types);
-                incr.modules.get_mut(home).unwrap().owned_functions.insert(ent.id, ());
+                incr.modules
+                    .get_mut(home)
+                    .unwrap()
+                    .owned_functions
+                    .insert(ent.id, ());
             }
 
             stack_slot_lookup.clear();
@@ -652,10 +666,16 @@ pub fn compile() {
     if !diagnostics.is_empty() {
         let mut errors = String::new();
 
-        diagnostics.iter::<InstError>()
-            .unwrap()
-            .for_each(|err| drop(instance::error::display(&err, &types, &ty_lists, &sources, &mut errors)));
-        
+        diagnostics.iter::<InstError>().unwrap().for_each(|err| {
+            drop(instance::error::display(
+                &err,
+                &types,
+                &ty_lists,
+                &sources,
+                &mut errors,
+            ))
+        });
+
         println!("{errors}");
         return;
     }
@@ -699,7 +719,13 @@ pub fn compile() {
 
     println!("parsing and generating tir: {:?}", total_type_check);
     println!("compilation time: {:?}", total);
-    println!("lines of code: {:?}", sources.values().map(|s| s.mapping.line_count()).sum::<usize>());
+    println!(
+        "lines of code: {:?}",
+        sources
+            .values()
+            .map(|s| s.mapping.line_count())
+            .sum::<usize>()
+    );
 }
 
 #[test]

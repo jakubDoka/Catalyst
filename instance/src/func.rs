@@ -4,8 +4,8 @@ use cranelift_codegen::ir::Type;
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 
 use errors::*;
-use lexer_types::*;
 use instance_types::*;
+use lexer_types::*;
 use storage::*;
 use typec_types::*;
 
@@ -54,7 +54,7 @@ impl MirBuilder<'_> {
         let entry_point = self.func.create_block();
         {
             self.func.value_slices.mark_frame();
-            
+
             if has_sret {
                 let value = self.flagged_value_from_ty(sig.ret, mir::MirFlags::POINTER);
                 self.return_dest = Some(value);
@@ -138,7 +138,11 @@ impl MirBuilder<'_> {
         Ok(value)
     }
 
-    fn translate_bit_cast(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
+    fn translate_bit_cast(
+        &mut self,
+        tir: Tir,
+        dest: Option<Value>,
+    ) -> errors::Result<Option<Value>> {
         let TirEnt { kind: TirKind::BitCast(expr), ty, span, .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -146,19 +150,22 @@ impl MirBuilder<'_> {
         let expr_ty = self.body.ents[expr].ty;
 
         if self.reprs[expr_ty].size != self.reprs[ty].size {
-            let instantiated_from = if self.t_funcs[self.func_id].flags.contains(TFuncFlags::GENERIC) {
+            let instantiated_from = if self.t_funcs[self.func_id]
+                .flags
+                .contains(TFuncFlags::GENERIC)
+            {
                 Some(self.t_funcs[self.func_id].name)
             } else {
                 None
             };
-            
-            self.diagnostics.push(InstError::InvalidBitCast { 
-                loc: span, 
-                instantiated_from, 
+
+            self.diagnostics.push(InstError::InvalidBitCast {
+                loc: span,
+                instantiated_from,
                 from: format!("{}", ty_display!(self, expr_ty)),
-                from_size: self.reprs[expr_ty].size.arch64 as usize, 
+                from_size: self.reprs[expr_ty].size.arch64 as usize,
                 to: format!("{}", ty_display!(self, ty)),
-                to_size: self.reprs[ty].size.arch64 as usize, 
+                to_size: self.reprs[ty].size.arch64 as usize,
             });
         }
 
@@ -183,7 +190,11 @@ impl MirBuilder<'_> {
         Ok(Some(result))
     }
 
-    fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
+    fn translate_take_pointer(
+        &mut self,
+        tir: Tir,
+        dest: Option<Value>,
+    ) -> errors::Result<Option<Value>> {
         let TirEnt { ty, kind: TirKind::TakePtr(value), .. } = self.body.ents[tir] else {
             unreachable!();
         };
@@ -211,7 +222,11 @@ impl MirBuilder<'_> {
         Ok(Some(value))
     }
 
-    fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
+    fn translate_deref_pointer(
+        &mut self,
+        tir: Tir,
+        dest: Option<Value>,
+    ) -> errors::Result<Option<Value>> {
         let TirEnt { ty, kind: TirKind::DerefPointer(value), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -377,7 +392,9 @@ impl MirBuilder<'_> {
             unreachable!()
         };
 
-        let is_pointer = self.func.values[header].flags.contains(mir::MirFlags::POINTER);
+        let is_pointer = self.func.values[header]
+            .flags
+            .contains(mir::MirFlags::POINTER);
 
         let value = {
             let offset = self.func.values[header].offset + offset;
@@ -423,7 +440,11 @@ impl MirBuilder<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
+    fn translate_constructor(
+        &mut self,
+        tir: Tir,
+        dest: Option<Value>,
+    ) -> errors::Result<Option<Value>> {
         let TirEnt { ty, kind: TirKind::Constructor(data), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -626,7 +647,9 @@ impl MirBuilder<'_> {
         };
 
         let filtered_dest = on_stack.then_some(dest).flatten();
-        let value = self.unwrap_dest_low(ty, on_stack, filtered_dest).or(filtered_dest);
+        let value = self
+            .unwrap_dest_low(ty, on_stack, filtered_dest)
+            .or(filtered_dest);
 
         let args = {
             let args_view = self.body.cons.get(args);

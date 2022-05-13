@@ -202,31 +202,19 @@ impl Span {
     pub fn log(&self, sources: &Sources) -> String {
         let mut string = String::new();
         self.loc_to(sources, &mut string).unwrap();
-        self.underline_to(
-            ansi_consts::ERR,
-            '^',
-            sources,
-            &mut string,
-            &|_| Ok(()),
-        )
-        .unwrap();
+        self.underline_to(ansi_consts::ERR, '^', sources, &mut string, &|_| Ok(()))
+            .unwrap();
         string
     }
 
     #[inline(never)]
     pub fn underline_error(
-        &self, 
-        sources: &Sources, 
-        to: &mut String, 
+        &self,
+        sources: &Sources,
+        to: &mut String,
         message: &dyn Fn(&mut String) -> std::fmt::Result,
     ) -> std::fmt::Result {
-        self.underline_to(
-            ansi_consts::ERR,
-            '^',
-            sources,
-            to,
-            message,
-        )
+        self.underline_to(ansi_consts::ERR, '^', sources, to, message)
     }
 
     #[inline(never)]
@@ -236,13 +224,7 @@ impl Span {
         to: &mut String,
         message: &dyn Fn(&mut String) -> std::fmt::Result,
     ) -> std::fmt::Result {
-        self.underline_to(
-            ansi_consts::INFO,
-            '~',
-            sources,
-            to,
-            message,
-        )
+        self.underline_to(ansi_consts::INFO, '~', sources, to, message)
     }
 
     #[inline(never)]
@@ -282,8 +264,6 @@ impl Span {
             writeln!(to, "|{suffix}")?;
             return Ok(());
         }
-
-        
 
         let (min, max) = span.split('\n').skip(1).fold(
             (
@@ -443,4 +423,3 @@ impl Default for TokenKind {
         TokenKind::None
     }
 }
-

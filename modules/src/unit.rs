@@ -3,13 +3,13 @@ use std::path::Path;
 use std::process::Command;
 use std::{collections::VecDeque, path::PathBuf};
 
-use module_types::{*, error::ModuleError};
-use lexer_types::*;
-use ast::*;
-use storage::*;
-use parser::*;
 use crate::manifest::*;
 use crate::module::*;
+use ast::*;
+use lexer_types::*;
+use module_types::{error::ModuleError, *};
+use parser::*;
+use storage::*;
 
 pub struct UnitBuilder<'a> {
     pub sources: &'a mut Sources,

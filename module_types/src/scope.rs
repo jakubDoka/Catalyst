@@ -1,8 +1,8 @@
-use std::{collections::HashMap, any::TypeId};
+use std::{any::TypeId, collections::HashMap};
 
-use storage::*;
-use lexer_types::*;
 use crate::error::*;
+use lexer_types::*;
+use storage::*;
 
 pub struct ItemLexicon {
     map: HashMap<TypeId, &'static str>,

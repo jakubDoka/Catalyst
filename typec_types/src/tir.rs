@@ -1,6 +1,6 @@
-use storage::*;
-use lexer_types::*;
 use crate::*;
+use lexer_types::*;
+use storage::*;
 
 #[derive(Clone)]
 pub struct TirData {
@@ -71,7 +71,7 @@ pub enum TirKind {
     Block(TirList),
     Return(PackedOption<Tir>),
     Argument(u32),
-    Call(PackedOption<Ty>, Func, TirList),
+    Call(TyList, Func, TirList),
     IntLit(i16),
     BoolLit(bool),
     CharLit,
@@ -96,12 +96,11 @@ gen_entity!(TirList);
 bitflags! {
     #[derive(Default)]
     pub struct TirFlags: u32 {
-        /// Can we assign to this expression?
         const ASSIGNABLE = 1 << 0;
-        /// This expression terminates execution.
         const TERMINATING = 1 << 1;
-        /// This expression will always reside stack
         const SPILLED = 1 << 2;
+        const GENERIC = 1 << 3;
+        const WITH_CALLER = 1 << 4;
     }
 }
 
@@ -117,9 +116,15 @@ pub struct TirDisplay<'a> {
 }
 
 impl<'a> TirDisplay<'a> {
-
     #[inline(never)]
-    pub fn new(types: &'a Types, ty_lists: &'a TyLists, sfields: &'a SFields, sources: &'a Sources, data: &'a TirData, root: Tir) -> Self {
+    pub fn new(
+        types: &'a Types,
+        ty_lists: &'a TyLists,
+        sfields: &'a SFields,
+        sources: &'a Sources,
+        data: &'a TirData,
+        root: Tir,
+    ) -> Self {
         Self {
             types,
             ty_lists,
@@ -222,22 +227,34 @@ impl<'a> TirDisplay<'a> {
             TirKind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
             }
-            TirKind::Call(caller, func, args) => {
-                if let Some(caller) = caller.expand() {
-                    write!(
-                        f,
-                        "{}::",
-                        ty_display!(self, caller)
-                    )?;
+            TirKind::Call(params, func, args) => {
+                let has_caller = ent.flags.contains(TirFlags::WITH_CALLER);
+                let params = self.ty_lists.get(params);
+                if has_caller {
+                    let caller = params[0];
+                    write!(f, "{}::", ty_display!(self, caller))?;
                 }
-                write!(f, "{func}(")?;
+
+                write!(f, "{func}")?;
+
+                if params.len() > has_caller as usize {
+                    write!(f, "::[")?;
+                    for (i, &param) in params.iter().skip(has_caller as usize).enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", ty_display!(self, param))?;
+                    }
+                    write!(f, "]")?;
+                }
+
+                write!(f, "(")?;
                 for (i, &arg) in self.data.cons.get(args).iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
                     self.fmt(arg, f, displayed, level, false)?;
                 }
-
                 write!(f, ")")?;
             }
             TirKind::IntLit(..) | TirKind::CharLit | TirKind::BoolLit(_) => {

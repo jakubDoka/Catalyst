@@ -36,7 +36,7 @@ impl BitSerde for String {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
         let len = usize::read(cursor, buffer)?;
-        
+
         if len > buffer.len() {
             return None;
         }
@@ -72,15 +72,14 @@ impl<T: BitSerde> BitSerde for Vec<T> {
 impl<T: BitSafe + Sized + Copy> BitSerde for T {
     fn write(&self, buffer: &mut Vec<u8>) {
         let size = std::mem::size_of::<Self>();
-        
+
         if buffer.capacity() < buffer.len() + size {
             buffer.reserve(size);
         }
-        
+
         unsafe {
             std::ptr::write(
-                buffer.as_mut_ptr()
-                    .offset(buffer.len() as isize) as *mut Self, 
+                buffer.as_mut_ptr().offset(buffer.len() as isize) as *mut Self,
                 *self,
             );
             buffer.set_len(buffer.len() + size);
@@ -89,18 +88,14 @@ impl<T: BitSafe + Sized + Copy> BitSerde for T {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
         let size = std::mem::size_of::<Self>();
-        
+
         if *cursor + size > buffer.len() {
             return None;
         }
-        
-        let result = unsafe {
-            std::ptr::read(
-                buffer.as_ptr()
-                    .offset(*cursor as isize) as *const Self,
-            )
-        };
+
+        let result =
+            unsafe { std::ptr::read(buffer.as_ptr().offset(*cursor as isize) as *const Self) };
         *cursor += size;
-        Some(result)        
+        Some(result)
     }
 }

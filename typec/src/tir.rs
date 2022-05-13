@@ -4,7 +4,7 @@ use incr::Incr;
 use module_types::module::Modules;
 use typec_types::func::ToCompile;
 
-use crate::{TyError, *, scope::ScopeContext};
+use crate::{scope::ScopeContext, TyError, *};
 
 pub struct BoundVerifier<'a> {
     pub ctx: &'a mut ScopeContext,
@@ -119,7 +119,7 @@ impl<'a> BoundVerifier<'a> {
                     let bound = self.types[bound].id;
                     ID::bound_impl(bound, implementor)
                 };
-                
+
                 let bound = BoundImpl {
                     span: self.ast.nodes[impl_block].span,
                     funcs,
@@ -161,8 +161,7 @@ impl<'a> BoundVerifier<'a> {
             let ast_params = {
                 let children = self.ast.children(self.ctx.func_ast[impl_func]);
                 let has_ret = (a.ret != self.builtin_types.nothing) as usize;
-                &children
-                    [ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
+                &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
 
             let a = a_args.iter().chain(std::iter::once(&a.ret));
@@ -248,8 +247,7 @@ impl<'a> TirBuilder<'a> {
         self.build_generics(params, generics);
 
         let args = {
-            let ast_args =
-                &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
+            let ast_args = &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
             let args = self.ty_lists.get(args);
             let mut tir_args = Vec::with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
@@ -289,8 +287,13 @@ impl<'a> TirBuilder<'a> {
         self.ctx.used_types.clear();
         self.ctx.used_types_set.clear();
 
-        if !self.body.ents[root].flags.contains(TirFlags::TERMINATING) && ret != self.builtin_types.nothing {
-            let because = ret_ast.is_reserved_value().not().then(|| self.ast.nodes[ret_ast].span);
+        if !self.body.ents[root].flags.contains(TirFlags::TERMINATING)
+            && ret != self.builtin_types.nothing
+        {
+            let because = ret_ast
+                .is_reserved_value()
+                .not()
+                .then(|| self.ast.nodes[ret_ast].span);
             self.expect_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
                 because,
                 expected: ret,
@@ -345,8 +348,6 @@ impl<'a> TirBuilder<'a> {
 
         self.temp.mark_frame();
         self.scope.mark_frame();
-
-        
 
         let mut final_expr = None;
         let mut terminating = false;
@@ -427,11 +428,11 @@ impl<'a> TirBuilder<'a> {
 
         let expr = self.build_expr(expr);
         let ty = ty_parser!(self).parse_type(ty);
-        
+
         let (expr, ty) = (expr?, ty?); // recovery
 
         self.ctx.use_type(ty, self.types);
-        
+
         let kind = TirKind::BitCast(expr);
         let ent = TirEnt::new(kind, ty, span);
         Ok(self.body.ents.push(ent))
@@ -484,8 +485,9 @@ impl<'a> TirBuilder<'a> {
             let ty = self.funcs[func].sig.ret;
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&[expr]);
-            let kind = TirKind::Call(operand_ty.into(), func, args);
-            let ent = TirEnt::new(kind, ty, span);
+            let params = self.ty_lists.push(&[operand_ty]);
+            let kind = TirKind::Call(params, func, args);
+            let ent = TirEnt::with_flags(kind, ty, TirFlags::WITH_CALLER, span);
             self.body.ents.push(ent)
         };
 
@@ -660,8 +662,12 @@ impl<'a> TirBuilder<'a> {
             vec
         };
 
-        let (ret, func) = {
-            let because = self.funcs[func].name;
+        let caller_offset = caller.is_some() as usize;
+        let generic = flags.contains(TFuncFlags::GENERIC);
+
+        let because = self.funcs[func].name;
+        // check arg count
+        {
             let args_len = args.len();
             if arg_tys.len() != args_len {
                 let loc = self.ast.nodes[ast].span;
@@ -673,131 +679,97 @@ impl<'a> TirBuilder<'a> {
                 });
                 return Err(());
             }
+        }
 
-            if !flags.contains(TFuncFlags::GENERIC) {
-                // here we type check all arguments and then check for errors
-                args.iter()
-                    .zip(arg_tys)
-                    .map(|(&arg, ty)| {
-                        self.expect_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
-                            because,
-                            expected: ty,
-                            got,
-                            loc,
-                        })
+        let (ret, func, params) = if !generic {
+            // here we type check all arguments and then check for errors
+            args.iter()
+                .zip(arg_tys)
+                .map(|(&arg, ty)| {
+                    self.expect_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
+                        because,
+                        expected: ty,
+                        got,
+                        loc,
                     })
-                    .fold(Ok(()), |acc, err| acc.and(err))?;
+                })
+                .fold(Ok(()), |acc, err| acc.and(err))?;
 
-                (sig.ret, func)
-            } else {
-                let params = self.ty_lists.get(sig.params);
-                
-                prepare_params(params, self.types);
-                
-                let mut param_slots = vec![Ty::default(); params.len()];
+            (sig.ret, func, TyList::reserved_value())
+        } else {
+            let params = self.ty_lists.get(sig.params);
 
-                if let Some(instantiation) = instantiation {
-                    if params.len() > self.ast.children(instantiation).len() - 1 {
-                        todo!("this is an error");
-                    }
+            prepare_params(params, self.types);
 
-                    for (i, &param) in self.ast.children(instantiation)[1..].iter().enumerate() {
-                        let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
-                            continue;
-                        };
-                        param_slots[i] = ty;
-                    }
+            let mut param_vec = vec![Ty::default(); params.len() + caller_offset];
+            if let Some(caller) = caller {
+                param_vec[0] = caller;
+            }
+            let param_slots = &mut param_vec[caller_offset..];
+
+            if let Some(instantiation) = instantiation {
+                if params.len() > self.ast.children(instantiation).len() - 1 {
+                    todo!("this is an error");
                 }
 
-                args.iter()
-                    .zip(arg_tys)
-                    .map(|(&arg, arg_ty)| {
-                        let TirEnt { ty, span, .. } = self.body.ents[arg];
-                        infer_parameters(
-                            ty,
-                            arg_ty,
-                            &mut param_slots,
-                            span,
-                            self.types,
-                            self.ty_lists,
-                            self.bound_impls,
-                            self.diagnostics,
-                        )
-                    })
-                    // fold prevents allocation
-                    .fold(Ok(()), |acc, err| acc.and(err))?;
-
-                if let (None, Some(ty), Some(param)) = (obj, caller, param_slots.last_mut()) && param.is_reserved_value() {
-                    *param = ty;
-                }
-
-                param_slots
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
-                    // OK if no cycles performed
-                    .fold(Ok(()), |_, param| {
-                        let span = self.ast.nodes[ast].span;
-                        self.diagnostics.push(TyError::UnknownGenericParam {
-                            func: self.funcs[func].name,
-                            param,
-                            loc: span,
-                        });
-                        Err(())
-                    })?;
-
-                let generic = param_slots
-                    .iter()
-                    .any(|&params| self.types[params].flags.contains(TyFlags::GENERIC));
-
-                let ret = ty_parser!(self).instantiate(sig.ret, &param_slots);
-
-                // println!(",,,,,{}", ty_display!(self, ret));
-
-                self.ctx.use_type(ret, self.types);
-
-                if generic {
-                    (ret, func)
-                } else {
-                    let func = {
-                        let i_params = self.ty_lists.push(&param_slots);
-
-                        // println!("====== {} {:?}", Display::new(self.types, self.sources, ret), self.types[ret]);
-
-                        let sig = Sig {
-                            params: i_params,
-                            ret,
-                            ..sig
-                        };
-                        let func_ent = self.funcs[func];
-                        let id = param_slots.iter().fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
-                        if let Some(&func) = self.func_instances.get(id) {
-                            func
-                        } else {
-                            let ent = TFuncEnt {
-                                sig,
-                                id,
-                                kind: TFuncKind::Instance(func),
-                                flags: func_ent.flags & !TFuncFlags::GENERIC,
-                                ..func_ent
-                            };
-                            let func = self.funcs.push(ent);
-                            self.to_compile.push(func);
-                            self.func_instances.insert(id, func);
-                            func
-                        }
+                for (i, &param) in self.ast.children(instantiation)[1..].iter().enumerate() {
+                    let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
+                        continue;
                     };
-
-                    (ret, func)
+                    param_slots[i] = ty;
                 }
             }
+
+            args.iter()
+                .zip(arg_tys)
+                .map(|(&arg, arg_ty)| {
+                    let TirEnt { ty, span, .. } = self.body.ents[arg];
+                    infer_parameters(
+                        ty,
+                        arg_ty,
+                        param_slots,
+                        span,
+                        self.types,
+                        self.ty_lists,
+                        self.bound_impls,
+                        self.diagnostics,
+                    )
+                })
+                // fold prevents allocation
+                .fold(Ok(()), |acc, err| acc.and(err))?;
+
+            if let (None, Some(ty), Some(param)) = (obj, caller, param_slots.last_mut()) && param.is_reserved_value() {
+                *param = ty;
+            }
+
+            param_slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
+                // OK if no cycles performed
+                .fold(Ok(()), |_, param| {
+                    let span = self.ast.nodes[ast].span;
+                    self.diagnostics.push(TyError::UnknownGenericParam {
+                        func: self.funcs[func].name,
+                        param,
+                        loc: span,
+                    });
+                    Err(())
+                })?;
+
+            let ret = ty_parser!(self).instantiate(sig.ret, param_slots);
+
+            self.ctx.use_type(ret, self.types);
+
+            (ret, func, self.ty_lists.push(&param_vec))
         };
 
         let result = {
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&args);
-            let kind = TirKind::Call(caller.into(), func, args);
-            let ent = TirEnt::new(kind, ret, span);
+            let kind = TirKind::Call(params, func, args);
+            let flags = TirFlags::WITH_CALLER & caller.is_some() | TirFlags::GENERIC & generic;
+            let ent = TirEnt::with_flags(kind, ret, flags, span);
             self.body.ents.push(ent)
         };
 
@@ -945,13 +917,13 @@ impl<'a> TirBuilder<'a> {
             if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
                 let TirEnt { ty, span, .. } = self.body.ents[value];
                 drop(infer_parameters(
-                    ty, 
-                    field_ty, 
-                    &mut param_slots, 
+                    ty,
+                    field_ty,
+                    &mut param_slots,
                     span,
-                    self.types, 
-                    self.ty_lists, 
-                    self.bound_impls, 
+                    self.types,
+                    self.ty_lists,
+                    self.bound_impls,
                     self.diagnostics,
                 ));
             } else {
@@ -977,12 +949,12 @@ impl<'a> TirBuilder<'a> {
                 .map(|i| self.sfields.get(fields)[i].span)
                 .collect::<Vec<_>>();
 
-                self.diagnostics.push(TyError::ConstructorMissingFields {
+            self.diagnostics.push(TyError::ConstructorMissingFields {
                 on: ty,
                 missing,
                 loc: span,
             });
-            
+
             return Err(());
         }
 
@@ -1002,7 +974,7 @@ impl<'a> TirBuilder<'a> {
                     });
                     Err(())
                 })?;
-            
+
             self.ty_lists.mark_frame();
             for param in param_slots {
                 self.ty_lists.push_one(param);
@@ -1259,8 +1231,9 @@ impl<'a> TirBuilder<'a> {
         let tir = {
             let ty = self.funcs[func].sig.ret;
             let args = self.body.cons.push(&[left, right]);
-            let kind = TirKind::Call(left_ty.into(), func, args);
-            let ent = TirEnt::new(kind, ty, span);
+            let caller = self.ty_lists.push(&[left_ty]);
+            let kind = TirKind::Call(caller, func, args);
+            let ent = TirEnt::with_flags(kind, ty, TirFlags::WITH_CALLER, span);
             self.body.ents.push(ent)
         };
 
@@ -1314,8 +1287,7 @@ impl<'a> TirBuilder<'a> {
             ID::field(ty_id, id)
         };
 
-        self
-            .sfield_lookup
+        self.sfield_lookup
             .get(id)
             .map(|f| {
                 let ty = self.sfields[f.field].ty;
@@ -1329,8 +1301,7 @@ impl<'a> TirBuilder<'a> {
             })
             .ok_or_else(|| {
                 let candidates = if let TyKind::Struct(fields) = self.types[on].kind {
-                    self
-                        .sfields
+                    self.sfields
                         .get(fields)
                         .iter()
                         .map(|sfref| sfref.span)
@@ -1401,7 +1372,7 @@ impl<'a> IdentHasher<'a> {
     fn ident_id(&mut self, ast: Ast, owner: Option<(Ty, Span)>) -> errors::Result<ID> {
         self.ident_id_low(ast, owner).map(|(id, _)| id)
     }
-    
+
     fn ident_id_low(
         &mut self,
         ast: Ast,
@@ -1413,11 +1384,11 @@ impl<'a> IdentHasher<'a> {
                 let module_id = {
                     let span = self.ast.nodes[module].span;
                     let id = self.sources.id(span);
-    
+
                     let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
                     ID::from(source)
                 };
-    
+
                 let (ty, span) = if let Some(owner) = owner {
                     owner
                 } else {
@@ -1425,21 +1396,21 @@ impl<'a> IdentHasher<'a> {
                     let id = self.sources.id(span);
                     (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
                 };
-    
+
                 let id = {
                     let name = ast::id_of(item, self.ast, self.sources);
                     let ty = self.types.base_id_of(ty);
                     ID::owned_func(ty, name)
                 };
-    
+
                 Ok((id + module_id, Some((ty, span))))
             }
             (&[module_or_type, item], None) => {
                 let item_id = ast::id_of(item, self.ast, self.sources);
-    
+
                 let span = self.ast.nodes[module_or_type].span;
                 let id = self.sources.id(span);
-    
+
                 Ok(
                     if let Some(source) =
                         self.scope.may_get::<Source>(self.diagnostics, id, span)?
@@ -1467,5 +1438,5 @@ impl<'a> IdentHasher<'a> {
                 Err(())
             }
         }
-    }    
+    }
 }

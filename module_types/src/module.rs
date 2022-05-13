@@ -1,8 +1,8 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
-use storage::*;
-use lexer_types::*;
 use crate::scope;
+use lexer_types::*;
+use storage::*;
 
 pub type Modules = SecondaryMap<Source, ModuleEnt>;
 

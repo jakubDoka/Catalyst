@@ -8,9 +8,9 @@ use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::{FuncId, Linkage, Module};
 use instance_types::*;
+use lexer_types::*;
 use storage::*;
 use typec_types::*;
-use lexer_types::*;
 
 pub struct CirBuilder<'a> {
     pub module: &'a mut dyn Module,

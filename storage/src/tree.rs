@@ -128,7 +128,7 @@ impl GenericGraph {
 
     pub fn inverted(&self) -> Self {
         let mut previous_edges = Vec::with_capacity(self.edges.len());
-        
+
         for i in 0..self.len() {
             for &j in self.children(i) {
                 previous_edges.push((j, i as u32));
@@ -142,17 +142,14 @@ impl GenericGraph {
         let mut last = 0;
         for (i, &(to, from)) in previous_edges.iter().enumerate() {
             edges.push(from);
-            
+
             while to != last {
                 hints.push(i as u32);
                 last += 1;
             }
         }
 
-        Self {
-            hints,
-            edges,
-        }
+        Self { hints, edges }
     }
 }
 

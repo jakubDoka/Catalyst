@@ -1,8 +1,8 @@
 use ast::Ast;
 use lexer_types::*;
 use module_types::*;
-use typec_types::*;
 use storage::*;
+use typec_types::*;
 
 use crate::scope::ScopeContext;
 use crate::*;
@@ -59,10 +59,10 @@ impl<'a> TyBuilder<'a> {
         self.scope.mark_frame();
 
         self.build_generics(generics);
-        
+
         let fields = self.build_fields(id, body);
         self.types[self.ty].kind = TyKind::Struct(fields);
-        
+
         self.graph.close_node();
 
         self.scope.pop_frame();
@@ -75,7 +75,7 @@ impl<'a> TyBuilder<'a> {
             let &[name, field_ty_ast] = self.ast.children(field_ast) else {
                 unreachable!();
             };
-            
+
             let Ok(field_ty) = ty_parser!(self).parse_type(field_ty_ast) else {
                 continue;
             };
@@ -117,9 +117,9 @@ impl<'a> TyBuilder<'a> {
         if generics.is_reserved_value() {
             return;
         }
-        
+
         let generics = self.ast.children(generics);
-        
+
         // type params have no associated bound
         // so we can use the empty one
         {

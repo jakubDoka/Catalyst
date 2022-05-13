@@ -1,5 +1,5 @@
-use lexer_types::*;
 use ast::*;
+use lexer_types::*;
 
 pub struct Manifest<'a> {
     ast_data: &'a AstData,
