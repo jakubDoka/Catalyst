@@ -454,6 +454,7 @@ pub fn create_builtin_items(
     ty_lists: &mut TyLists,
     builtin: &BuiltinTypes,
     funcs: &mut Funcs,
+    func_meta: &mut FuncMeta,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
     target: &mut Vec<module::ModuleItem>,
@@ -485,6 +486,7 @@ pub fn create_builtin_items(
                 id,
                 ty_lists,
                 funcs,
+                func_meta,
                 sources,
                 builtin_source,
                 target,
@@ -505,6 +507,7 @@ pub fn create_builtin_items(
                 id,
                 ty_lists,
                 funcs,
+                func_meta,
                 sources,
                 builtin_source,
                 target,
@@ -520,6 +523,7 @@ fn create_func(
     id: ID,
     ty_lists: &mut TyLists,
     funcs: &mut Funcs,
+    func_meta: &mut FuncMeta,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
     dest: &mut Vec<module::ModuleItem>,
@@ -531,14 +535,20 @@ fn create_func(
         ..Default::default()
     };
     let func = {
-        let ent = TFuncEnt {
-            sig,
-            name: span,
-            kind: TFuncKind::Builtin,
+        let ent = FuncEnt {
+            id,
             ..Default::default()
         };
-        funcs.push(ent)
+        funcs.ents.push(ent)
     };
+
+    func_meta[func] = FuncMetaData {
+        sig,
+        name: span,
+        kind: FuncKind::Builtin,
+        ..Default::default()
+    };
+
     let item = module::ModuleItem::new(id, func, span);
     dest.push(item);
 }

@@ -77,8 +77,16 @@ impl<K: EntityRef, V: Default + Clone + BitSerde + PartialEq + Eq> BitSerde for 
         }
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
+
+        if len + (std::mem::size_of::<usize>() + std::mem::size_of::<V>()) > buffer.len() {
+            return Err(format!(
+                "SecondaryMap::read: buffer too small: {} < {}",
+                buffer.len(),
+                len + (std::mem::size_of::<usize>() * 2)
+            ));
+        }
 
         let mut map = SecondaryMap::with_capacity(len);
         for _ in 0..len {
@@ -86,7 +94,7 @@ impl<K: EntityRef, V: Default + Clone + BitSerde + PartialEq + Eq> BitSerde for 
             let item = V::read(cursor, buffer)?;
             map[K::new(key)] = item;
         }
-        Some(map)
+        Ok(map)
     }
 }
 
@@ -224,10 +232,14 @@ impl<T: BitSerde> BitSerde for Map<T> {
         }
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
-        if len * (std::mem::size_of::<ID>() + std::mem::size_of::<T>()) > buffer.len() {
-            return None;
+        if len * (std::mem::size_of::<ID>() + std::mem::size_of::<T>()) > buffer.len() + std::mem::align_of::<T>() * len {
+            return Err(format!(
+                "Map::read: buffer too small: {} < {}", 
+                buffer.len() + std::mem::align_of::<T>() * len, 
+                len * (std::mem::size_of::<ID>() + std::mem::size_of::<T>())
+            ));
         }
 
         let mut map = Map::with_capacity(len);
@@ -237,7 +249,7 @@ impl<T: BitSerde> BitSerde for Map<T> {
             map.insert_unique(key, value);
         }
 
-        Some(map)
+        Ok(map)
     }
 }
 

@@ -68,14 +68,21 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
         }
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
         let free_len = usize::read(cursor, buffer)?;
 
         if len * std::mem::size_of::<bool>() + (len - free_len) * std::mem::size_of::<T>()
             > buffer.len()
         {
-            return None;
+            return Err(format!(
+                "PoolMap length {} * {} + {} * {} exceeds buffer length {}",
+                len,
+                std::mem::size_of::<bool>(), 
+                len - free_len,
+                std::mem::size_of::<T>(),
+                buffer.len()
+            ));
         }
 
         let mut map = PoolMap::with_capacity(len);
@@ -91,6 +98,6 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
             }
         }
 
-        Some(map)
+        Ok(map)
     }
 }

@@ -23,16 +23,38 @@ pub struct Incr {
 
 impl Incr {
     pub fn load(version: String, path: &Path) -> Self {
-        let mut s = Self::try_load(&version, path).unwrap_or_default();
+        let s = Self::try_load(&version, path);
+        if s.is_none() {
+            println!("{INFO}info:{END} discarding incremental data");
+        }
+        let mut s = s.unwrap_or_default();
         s.version = version;
         s
     }
 
     pub fn try_load(version: &str, path: &Path) -> Option<Self> {
         let mut cursor = 0;
-        let content = std::fs::read(path).ok()?;
-        let s = Self::read(&mut cursor, &content)?;
+        let content = match std::fs::read(path) {
+            Ok(c) => c,
+            Err(err) => {
+                println!("{WARNING}warning:{END} failed to read incremental data");
+                println!("{INFO}trace:{END} {}", err);
+                println!("{INFO}path searched:{END} {}", path.display());
+                return Some(Self::default());
+            },
+        };
+        
+        let s = match Self::read(&mut cursor, &content) {
+            Ok(s) => s,
+            Err(err) => {
+                println!("{WARNING}warning:{END} incremental data is corrupted");
+                println!("{INFO}trace:{END} {}", err);
+                return None;
+            }
+        };
+
         if s.version != version {
+            println!("{WARNING}warning:{END} incremental data is incompatible with current version");
             return None;
         }
         Some(s)
@@ -100,8 +122,8 @@ impl BitSerde for Incr {
         self.functions.write(buffer);
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
-        Some(Self {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
             version: String::read(cursor, buffer)?,
             modules: Map::read(cursor, buffer)?,
             functions: Map::read(cursor, buffer)?,
@@ -130,8 +152,8 @@ impl BitSerde for IncrModule {
         self.owned_functions.write(buffer);
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
-        Some(Self {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
             modified: SystemTime::read(cursor, buffer)?,
             owned_functions: Map::read(cursor, buffer)?,
         })
@@ -172,8 +194,8 @@ impl BitSerde for IncrFuncData {
         self.reloc_records.write(buffer);
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
-        Some(Self {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
             signature: Signature::read(cursor, buffer)?,
             temp_id: None,
             defined: false,
@@ -192,51 +214,6 @@ pub struct IncrRelocRecord {
     pub addend: i64,
 }
 
-impl IncrRelocRecord {
-    pub fn from_mach_reloc(reloc: &MachReloc, module: &impl Module) -> Self {
-        let decl = module
-            .declarations()
-            .get_function_decl(FuncId::from_name(&reloc.name));
-
-        let literal_name = if decl.linkage == Linkage::Import {
-            decl.name.clone()
-        } else {
-            String::new()
-        };
-
-        let name = if literal_name.is_empty() {
-            ID::from_ident(&decl.name)
-        } else {
-            ID::new(&literal_name)
-        };
-
-        Self {
-            offset: reloc.offset,
-            srcloc: reloc.srcloc,
-            kind: reloc.kind,
-            name,
-            addend: reloc.addend,
-        }
-    }
-
-    pub fn to_mach_reloc(&self, buffer: &mut String, module: &impl Module) -> MachReloc {
-        buffer.clear();
-        self.name.to_ident(buffer);
-
-        let Some(FuncOrDataId::Func(func_id)) = module.get_name(&buffer) else {
-            unreachable!()
-        };
-
-        MachReloc {
-            offset: self.offset,
-            srcloc: self.srcloc,
-            kind: self.kind,
-            name: func_id.into(),
-            addend: self.addend,
-        }
-    }
-}
-
 impl BitSerde for IncrRelocRecord {
     fn write(&self, buffer: &mut Vec<u8>) {
         self.offset.write(buffer);
@@ -246,8 +223,8 @@ impl BitSerde for IncrRelocRecord {
         self.addend.write(buffer);
     }
 
-    fn read(cursor: &mut usize, buffer: &[u8]) -> Option<Self> {
-        Some(Self {
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
             offset: CodeOffset::read(cursor, buffer)?,
             srcloc: SourceLoc::read(cursor, buffer)?,
             kind: Reloc::read(cursor, buffer)?,

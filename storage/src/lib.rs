@@ -11,7 +11,7 @@ pub mod sparse_map;
 pub mod stack_map;
 pub mod tree;
 
-pub use ansi_consts::{END, ERR, INFO, SUCCESS, WARNING};
+pub use ansi_consts::{END, ERR, INFO, SUCCESS, WARNING, WEAK};
 pub use bit_serde::BitSerde;
 pub use bitflags::bitflags;
 pub use cranelift_entity::{
@@ -23,6 +23,7 @@ pub use map::{Map, SecondaryMap, Set, ID};
 pub use pool_map::PoolMap;
 pub use stack_map::{FramedStackMap, StackMap};
 pub use tree::*;
+pub use sparse_map::SparseMap;
 
 pub extern crate cranelift_entity;
 

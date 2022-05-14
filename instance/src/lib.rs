@@ -9,7 +9,7 @@ pub mod func;
 pub mod repr;
 
 pub use func::MirBuilder;
-pub use repr::ReprBuilder;
+pub use repr::{ReprBuilder, ReprInstancing};
 
 #[macro_export]
 macro_rules! repr_builder {

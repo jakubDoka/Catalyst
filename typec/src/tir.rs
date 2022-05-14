@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use incr::Incr;
 use module_types::module::Modules;
-use typec_types::func::ToCompile;
 
 use crate::{scope::ScopeContext, TyError, *};
 
@@ -19,6 +18,7 @@ pub struct BoundVerifier<'a> {
     pub func_lists: &'a mut TFuncLists,
     pub bound_impls: &'a mut BoundImpls,
     pub sources: &'a Sources,
+    pub func_meta: &'a FuncMeta,
 }
 
 #[macro_export]
@@ -34,9 +34,10 @@ macro_rules! bound_verifier {
             &mut $self.scope,
             &mut $self.diagnostics,
             &mut $self.funcs,
-            &mut $self.tfunc_lists,
+            &mut $self.func_lists,
             &mut $self.bound_impls,
             &$self.sources,
+            &$self.func_meta,
         )
     };
 }
@@ -55,6 +56,7 @@ impl<'a> BoundVerifier<'a> {
         func_lists: &'a mut TFuncLists,
         bound_impls: &'a mut BoundImpls,
         sources: &'a Sources,
+        func_meta: &'a FuncMeta,
     ) -> Self {
         Self {
             ctx,
@@ -69,6 +71,7 @@ impl<'a> BoundVerifier<'a> {
             func_lists,
             bound_impls,
             sources,
+            func_meta,
         }
     }
 
@@ -132,7 +135,7 @@ impl<'a> BoundVerifier<'a> {
                 // TODO: don't allocate if it impacts performance
                 let mut vec = self.func_lists.get(funcs).to_vec();
                 for func in &mut vec {
-                    let ent = &self.funcs[*func];
+                    let ent = &self.func_meta[*func];
 
                     let (sugar_id, certain_id) = {
                         let func = self.sources.id(ent.name);
@@ -179,18 +182,18 @@ impl<'a> BoundVerifier<'a> {
     }
 
     pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
-        let a = self.funcs[impl_func].sig;
-        let b = self.funcs[bound_func].sig;
+        let a = self.func_meta[impl_func].sig;
+        let b = self.func_meta[bound_func].sig;
 
         let a_param_len = self.ty_lists.len(a.params);
         let b_param_len = self.ty_lists.len(b.params);
 
-        // println!("{}", self.funcs[bound_func].name.log(self.sources));
+        // println!("{}", self.func_meta[bound_func].name.log(self.sources));
 
         if a_param_len != b_param_len - 1 {
             self.diagnostics.push(TyError::BoundImplFuncParamCount {
-                impl_func: self.funcs[impl_func].name,
-                bound_func: self.funcs[bound_func].name,
+                impl_func: self.func_meta[impl_func].name,
+                bound_func: self.func_meta[bound_func].name,
                 expected: b_param_len,
                 found: a_param_len,
             });
@@ -235,11 +238,10 @@ impl<'a> BoundVerifier<'a> {
 
 pub struct TirBuilder<'a> {
     pub func: Func,
-    pub funcs: &'a mut Funcs,
+    pub funcs: &'a Funcs,
     pub func_lists: &'a TFuncLists,
     pub ty_lists: &'a mut TyLists,
     pub instances: &'a mut Instances,
-    pub func_instances: &'a mut FuncInstances,
     pub sfields: &'a mut SFields,
     pub sfield_lookup: &'a mut SFieldLookup,
     pub builtin_types: &'a BuiltinTypes,
@@ -252,9 +254,9 @@ pub struct TirBuilder<'a> {
     pub sources: &'a Sources,
     pub ast: &'a AstData,
     pub modules: &'a mut Modules,
-    pub to_compile: &'a mut ToCompile,
     pub diagnostics: &'a mut errors::Diagnostics,
     pub incr: &'a mut Incr,
+    pub func_meta: &'a mut FuncMeta,
 }
 
 #[macro_export]
@@ -263,10 +265,9 @@ macro_rules! tir_builder {
         TirBuilder::new(
             $func,
             &mut $self.funcs,
-            &mut $self.tfunc_lists,
+            &mut $self.func_lists,
             &mut $self.ty_lists,
             &mut $self.instances,
-            &mut $self.func_instances,
             &mut $self.sfields,
             &mut $self.sfield_lookup,
             &$self.builtin_types,
@@ -279,9 +280,9 @@ macro_rules! tir_builder {
             &$self.sources,
             &$self.ast,
             &mut $self.modules,
-            &mut $self.to_compile,
             &mut $self.diagnostics,
             &mut $self.incr,
+            &mut $self.func_meta,
         )
     };
 }
@@ -289,11 +290,10 @@ macro_rules! tir_builder {
 impl<'a> TirBuilder<'a> {
     pub fn new(
         func: Func,
-        funcs: &'a mut Funcs,
+        funcs: &'a Funcs,
         func_lists: &'a TFuncLists,
         ty_lists: &'a mut TyLists,
         instances: &'a mut Instances,
-        func_instances: &'a mut FuncInstances,
         sfields: &'a mut SFields,
         sfield_lookup: &'a mut SFieldLookup,
         builtin_types: &'a BuiltinTypes,
@@ -306,9 +306,9 @@ impl<'a> TirBuilder<'a> {
         sources: &'a Sources,
         ast: &'a AstData,
         modules: &'a mut Modules,
-        to_compile: &'a mut ToCompile,
         diagnostics: &'a mut errors::Diagnostics,
         incr: &'a mut Incr,
+        func_meta: &'a mut FuncMeta,
     ) -> Self {
         TirBuilder {
             func,
@@ -316,7 +316,6 @@ impl<'a> TirBuilder<'a> {
             func_lists,
             ty_lists,
             instances,
-            func_instances,
             sfields,
             sfield_lookup,
             builtin_types,
@@ -329,23 +328,23 @@ impl<'a> TirBuilder<'a> {
             sources,
             ast,
             modules,
-            to_compile,
             diagnostics,
             incr,
+            func_meta,
         }
     }
 
     pub fn build(&mut self) -> errors::Result {
-        let TFuncEnt {
-            flags,
+        let FuncMetaData {
             kind,
             sig: Sig {
                 ret, params, args, ..
             },
             ..
-        } = self.funcs[self.func];
+        } = self.func_meta[self.func];
+        let flags = self.funcs.ents[self.func].flags;
 
-        //println!("{}", self.funcs[self.func].name.log(self.sources));
+        //println!("{}", self.func_meta[self.func].name.log(self.sources));
 
         let ast = self.ctx.func_ast[self.func];
         let header = self.ast.children(ast);
@@ -355,14 +354,14 @@ impl<'a> TirBuilder<'a> {
         let &body_ast = header.last().unwrap();
 
         if body_ast.is_reserved_value() {
-            if flags.contains(TFuncFlags::EXTERNAL) {
-                self.funcs[self.func].kind = TFuncKind::External;
+            if flags.contains(FuncFlags::EXTERNAL) {
+                self.func_meta[self.func].kind = FuncKind::External;
             }
             return Ok(());
         }
 
         self.scope.mark_frame();
-        if let TFuncKind::Owned(ty) = kind {
+        if let FuncKind::Owned(ty) = kind {
             let span = self.ast.nodes[ast].span;
             self.scope.push_item("Self", ScopeItem::new(ty, span));
         }
@@ -403,8 +402,8 @@ impl<'a> TirBuilder<'a> {
         };
 
         let root = self.build_block(body_ast)?;
-        self.funcs[self.func].body = root;
-        self.funcs[self.func].args = args;
+        self.func_meta[self.func].body = root;
+        self.func_meta[self.func].args = args;
 
         self.body.used_types = self.ty_lists.push(&self.ctx.used_types);
         self.ctx.used_types.clear();
@@ -454,7 +453,7 @@ impl<'a> TirBuilder<'a> {
 
                 // TODO: can caching ids make less cache misses?
                 for &func in self.func_lists.get(funcs) {
-                    let name = self.funcs[func].name;
+                    let name = self.func_meta[func].name;
                     let id = {
                         let id = self.sources.id(name);
                         let bound = self.types[bound_combo].id;
@@ -605,7 +604,7 @@ impl<'a> TirBuilder<'a> {
         };
 
         let result = {
-            let ty = self.funcs[func].sig.ret;
+            let ty = self.func_meta[func].sig.ret;
             let span = self.ast.nodes[ast].span;
             let args = self.body.cons.push(&[expr]);
             let params = self.ty_lists.push(&[operand_ty]);
@@ -761,7 +760,8 @@ impl<'a> TirBuilder<'a> {
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
-        let TFuncEnt { sig, flags, .. } = self.funcs[func];
+        let sig = self.func_meta[func].sig;
+        let flags = self.funcs.ents[func].flags;
 
         let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
 
@@ -786,9 +786,9 @@ impl<'a> TirBuilder<'a> {
         };
 
         let caller_offset = caller.is_some() as usize;
-        let generic = flags.contains(TFuncFlags::GENERIC);
+        let generic = flags.contains(FuncFlags::GENERIC);
 
-        let because = self.funcs[func].name;
+        let because = self.func_meta[func].name;
         // check arg count
         {
             let args_len = args.len();
@@ -818,7 +818,13 @@ impl<'a> TirBuilder<'a> {
                 })
                 .fold(Ok(()), |acc, err| acc.and(err))?;
 
-            (sig.ret, func, TyList::reserved_value())
+            let params = if let Some(caller) = caller {
+                self.ty_lists.push(&[caller])
+            } else {
+                TyList::reserved_value()
+            };
+
+            (sig.ret, func, params)
         } else {
             let params = self.ty_lists.get(sig.params);
 
@@ -873,7 +879,7 @@ impl<'a> TirBuilder<'a> {
                 .fold(Ok(()), |_, param| {
                     let span = self.ast.nodes[ast].span;
                     self.diagnostics.push(TyError::UnknownGenericParam {
-                        func: self.funcs[func].name,
+                        func: self.func_meta[func].name,
                         param,
                         loc: span,
                     });
@@ -1176,12 +1182,12 @@ impl<'a> TirBuilder<'a> {
             unreachable!()
         };
 
-        let ret = self.funcs[self.func].sig.ret;
+        let ret = self.func_meta[self.func].sig.ret;
 
         let value = if value.is_reserved_value() {
             self.expect_ty(self.builtin_types.nothing, ret, |s| {
                 TyError::UnexpectedReturnValue {
-                    because: s.funcs[s.func].name,
+                    because: s.func_meta[s.func].name,
                     loc: span,
                 }
             })?;
@@ -1329,7 +1335,7 @@ impl<'a> TirBuilder<'a> {
 
         /* sanity check */
         {
-            let func_ent = &self.funcs[func];
+            let func_ent = &self.func_meta[func];
             let args = self.ty_lists.get(func_ent.sig.args);
 
             let arg_count = args.len();
@@ -1352,7 +1358,7 @@ impl<'a> TirBuilder<'a> {
         }
 
         let tir = {
-            let ty = self.funcs[func].sig.ret;
+            let ty = self.func_meta[func].sig.ret;
             let args = self.body.cons.push(&[left, right]);
             let caller = self.ty_lists.push(&[left_ty]);
             let kind = TirKind::Call(caller, func, args);

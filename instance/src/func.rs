@@ -1,8 +1,8 @@
-use std::str::FromStr;
 
-use cranelift_codegen::entity::SparseMap;
-use cranelift_codegen::ir::{Type, Signature, FuncRef};
-use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
+
+
+use cranelift_codegen::ir::{Type};
+use cranelift_codegen::{isa::CallConv, packed_option::PackedOption};
 
 use errors::*;
 use instance_types::*;
@@ -19,6 +19,10 @@ impl MirBuilderContext {
         Self {
             tir_mapping: SecondaryMap::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.tir_mapping.clear();
     }
 }
 
@@ -41,18 +45,21 @@ pub struct MirBuilder<'a> {
     pub return_dest: Option<Value>,
     pub sources: &'a Sources,
     pub diagnostics: &'a mut Diagnostics,
-    pub func_instances: &'a mut FuncInstances,
     pub ctx: &'a mut MirBuilderContext,
+    pub func_meta: &'a FuncMeta,
 }
 
 impl MirBuilder<'_> {
     pub fn translate_func(&mut self) -> errors::Result {
-        let TFuncEnt {
+        self.ctx.clear();
+        self.func.clear();
+        
+        let FuncMetaData {
             sig,
             body,
             args,
             ..
-        } = self.funcs[self.func_id];
+        } = self.func_meta[self.func_id];
 
         let entry_point = self.func.create_block();
         {
@@ -158,18 +165,9 @@ impl MirBuilder<'_> {
         let expr_ty = self.body.ents[expr].ty;
 
         if self.reprs[expr_ty].size != self.reprs[ty].size {
-            let instantiated_from = if self.funcs[self.func_id]
-                .flags
-                .contains(TFuncFlags::GENERIC)
-            {
-                Some(self.funcs[self.func_id].name)
-            } else {
-                None
-            };
-
             self.diagnostics.push(InstError::InvalidBitCast {
                 loc: span,
-                instantiated_from,
+                instantiated_from: None,
                 from: format!("{}", ty_display!(self, expr_ty)),
                 from_size: self.reprs[expr_ty].size.arch64 as usize,
                 to: format!("{}", ty_display!(self, ty)),
@@ -631,7 +629,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        let TirEnt { ty, kind: TirKind::Call(params, mut func, args), flags, span, .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Call(params, mut func, args), flags, .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
@@ -642,10 +640,8 @@ impl MirBuilder<'_> {
             (has_caller.then(|| params[0]), &params[caller_offset..])
         };
 
-        let func_ent = self.funcs[func];
-
         // dispatch bound call
-        if let TFuncKind::Bound(bound, index) = func_ent.kind {
+        if let FuncKind::Bound(bound, index) = self.func_meta[func].kind {
             let id = {
                 let bound = self.types[bound].id;
                 let implementor = self.types[caller.unwrap()].id;
@@ -656,31 +652,29 @@ impl MirBuilder<'_> {
             func = self.func_lists.get(funcs)[index as usize]
         }
 
+        let func_ent = self.funcs.ents[func];
+
         // instantiate generic function
         if flags.contains(TirFlags::GENERIC) {
             let id = param_slice.iter().fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
 
-            func = if let Some(&instance) = self.func_instances.get(id) {
+            func = if let Some(&instance) = self.funcs.instances.get(id) {
                 instance
             } else {
-                let instance = TFuncEnt {
+                let instance = FuncEnt {
                     id,
-                    name: span,
-                    kind: TFuncKind::Instance(func, params),
-                    flags: func_ent.flags & !TFuncFlags::GENERIC,
-                    ..func_ent
+                    parent: func.into(),
+                    flags: func_ent.flags & !FuncFlags::GENERIC,
                 };
-                let instance = self.funcs.push(instance);
-                self.func_instances.insert(id, instance);
+                let instance = self.funcs.ents.push(instance);
+                self.funcs.instances.insert(id, instance);
+                self.funcs.to_compile.push((instance, params));
                 instance
             };
         }       
         
         let on_stack = self.on_stack(tir);
-        let has_sret = {
-            let func = &self.funcs[func];
-            self.reprs[func.sig.ret].flags.contains(ReprFlags::ON_STACK)
-        };
+        let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
 
         let filtered_dest = on_stack.then_some(dest).flatten();
         let value = self

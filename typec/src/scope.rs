@@ -29,7 +29,7 @@ pub struct ScopeBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
     pub ctx: &'a mut ScopeContext,
     pub module: Source,
-    pub to_compile: &'a mut ToCompile,
+    pub func_meta: &'a mut FuncMeta,
     pub incr: &'a mut Incr,
 }
 
@@ -44,7 +44,7 @@ macro_rules! scope_builder {
             &mut $self.sfields,
             &mut $self.sfield_lookup,
             &$self.builtin_types,
-            &mut $self.tfunc_lists,
+            &mut $self.func_lists,
             &mut $self.instances,
             &mut $self.bound_impls,
             &mut $self.modules,
@@ -53,7 +53,7 @@ macro_rules! scope_builder {
             &mut $self.diagnostics,
             &mut $self.scope_context,
             $module,
-            &mut $self.to_compile,
+            &mut $self.func_meta,
             &mut $self.incr,
         )
     };
@@ -77,7 +77,7 @@ impl<'a> ScopeBuilder<'a> {
         diagnostics: &'a mut errors::Diagnostics,
         ctx: &'a mut ScopeContext,
         module: Source,
-        to_compile: &'a mut ToCompile,
+        func_meta: &'a mut FuncMeta,
         incr: &'a mut Incr,
     ) -> Self {
         Self {
@@ -97,7 +97,7 @@ impl<'a> ScopeBuilder<'a> {
             diagnostics,
             ctx,
             module,
-            to_compile,
+            func_meta,
             incr,
         }
     }
@@ -146,7 +146,7 @@ impl<'a> ScopeBuilder<'a> {
             let mut prev = None;
             while let Some(func) = self.ctx.bound_funcs.pop() {
                 let ast = self.ctx.func_ast[func];
-                let TFuncKind::Bound(bound, ..) = self.funcs[func].kind else {
+                let FuncKind::Bound(bound, ..) = self.func_meta[func].kind else {
                     unreachable!();
                 };
 
@@ -202,12 +202,10 @@ impl<'a> ScopeBuilder<'a> {
                         continue;
                     }
 
-                    let reserved = {
-                        let ent = TFuncEnt {
-                            kind: TFuncKind::Owned(dest),
-                            ..Default::default()
-                        };
-                        self.funcs.push(ent)
+                    let reserved = self.funcs.ents.push(FuncEnt::default());
+                    self.func_meta[reserved] = FuncMetaData {
+                        kind: FuncKind::Owned(dest),
+                        ..Default::default()
                     };
                     let id = self.types[ty].id;
                     self.collect_function(Some(reserved), Some(id), func)?;
@@ -223,12 +221,10 @@ impl<'a> ScopeBuilder<'a> {
                 .push_item("Self", scope::ScopeItem::new(ty, span));
 
             for &func in self.ast.children(body) {
-                let reserved = {
-                    let ent = TFuncEnt {
-                        kind: TFuncKind::Owned(ty),
-                        ..Default::default()
-                    };
-                    self.funcs.push(ent)
+                let reserved = self.funcs.ents.push(FuncEnt::default());
+                self.func_meta[reserved] = FuncMetaData {
+                    kind: FuncKind::Owned(ty),
+                    ..Default::default()
                 };
                 self.collect_function(Some(reserved), None, func)?;
             }
@@ -258,13 +254,14 @@ impl<'a> ScopeBuilder<'a> {
 
         let funcs = {
             for (i, &func) in self.ast.children(body).iter().enumerate() {
-                let func_id = self.funcs.push(TFuncEnt {
-                    kind: TFuncKind::Bound(slot, i as u32),
+                let reserved = self.funcs.ents.push(FuncEnt::default());
+                self.func_meta[reserved] = FuncMetaData {
+                    kind: FuncKind::Bound(slot, i as u32),
                     ..Default::default()
-                });
-                self.ctx.func_ast[func_id] = func;
-                self.ctx.bound_funcs.push(func_id);
-                self.tfunc_lists.push_one(func_id);
+                };
+                self.ctx.func_ast[reserved] = func;
+                self.ctx.bound_funcs.push(reserved);
+                self.tfunc_lists.push_one(reserved);
             }
             self.tfunc_lists.close_frame()
         };
@@ -347,7 +344,7 @@ impl<'a> ScopeBuilder<'a> {
         let call_conv = if call_conv.is_reserved_value() {
             Some(CallConv::Fast)
         } else {
-            let span = self.ast.nodes[call_conv].span;
+            let span = self.ast.nodes[call_conv].span.strip_sides();
             let str = self.sources.display(span);
             if str == "default" {
                 None
@@ -393,20 +390,19 @@ impl<'a> ScopeBuilder<'a> {
             self.scope.pop_frame();
 
             Sig {
-                call_conv,
                 params,
                 args,
                 ret,
             }
         };
 
-        let func = prepared.unwrap_or_else(|| self.funcs.push(Default::default()));
+        let func = prepared.unwrap_or_else(|| self.funcs.ents.push(Default::default()));
 
         let scope_id = {
             let span = self.ast.nodes[name].span;
             let str = self.sources.display(span);
             let id = ID::new(str);
-            if let TFuncKind::Owned(owner) | TFuncKind::Bound(owner, ..) = self.funcs[func].kind {
+            if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) = self.func_meta[func].kind {
                 if let Some(bound) = bound {
                     let implementor = self.types[owner].id;
                     ID::bound_impl_owned_func(bound, implementor, id)
@@ -425,7 +421,9 @@ impl<'a> ScopeBuilder<'a> {
             self.modules[self.module].id + scope_id
         };
 
-        if sig.params.is_reserved_value() {
+        assert!(self.funcs.instances.insert(id, func).is_none());
+
+        if sig.params.is_reserved_value() && !external {
             let mod_id = self.modules[self.module].id;
             self.incr
                 .modules
@@ -433,20 +431,23 @@ impl<'a> ScopeBuilder<'a> {
                 .unwrap()
                 .owned_functions
                 .insert(id, ());
-            self.to_compile.push(func);
+            self.funcs.to_compile.push((func, TyList::reserved_value()));
+        } else if external {
+            self.funcs.to_link.push(func);
         }
 
         {
             let is_entry = self.find_simple_tag("entry");
             let is_inline = self.find_simple_tag("inline");
             let flags = {
-                (TFuncFlags::EXTERNAL & external)
-                    | (TFuncFlags::INLINE & is_inline.is_some())
-                    | (TFuncFlags::ENTRY & is_entry.is_some())
-                    | (TFuncFlags::GENERIC & !sig.params.is_reserved_value())
+                (FuncFlags::EXTERNAL & external)
+                    | (FuncFlags::INLINE & is_inline.is_some())
+                    | (FuncFlags::ENTRY & is_entry.is_some())
+                    | (FuncFlags::GENERIC & !sig.params.is_reserved_value())
+                    | call_conv
             };
 
-            if flags.contains(TFuncFlags::ENTRY | TFuncFlags::GENERIC) {
+            if flags.contains(FuncFlags::ENTRY | FuncFlags::GENERIC) {
                 self.diagnostics.push(TyError::GenericEntry {
                     tag: is_entry.unwrap(),
                     generics: self.ast.nodes[generics].span,
@@ -454,14 +455,20 @@ impl<'a> ScopeBuilder<'a> {
                 })
             }
 
-            let ent = TFuncEnt {
-                sig,
+            let ent = FuncEnt {
                 id,
-                name: self.ast.nodes[name].span,
                 flags,
-                ..self.funcs[func]
+                parent: None.into(),
             };
-            self.funcs[func] = ent;
+            self.funcs.ents[func] = ent;
+
+            let meta = FuncMetaData {
+                sig,
+                name: self.ast.nodes[name].span,
+                ..self.func_meta[func]
+            };
+            self.func_meta[func] = meta;
+
             self.ctx.func_ast[func] = ast;
         }
 
@@ -513,7 +520,7 @@ impl<'a> ScopeBuilder<'a> {
         }
 
         if let Some(func) = prepared
-            && let TFuncKind::Bound(owner, ..) = self.funcs[func].kind
+            && let FuncKind::Bound(owner, ..) = self.func_meta[func].kind
         {
             self.ty_lists.mark_frame();
             self.ty_lists.push_one(owner);

@@ -5,21 +5,43 @@ use storage::*;
 
 use crate::*;
 
-pub type ToCompile = Vec<Func>;
-pub type Funcs = PrimaryMap<Func, TFuncEnt>;
+pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 
-#[derive(Debug, Copy, Clone, Default)]
-pub struct TFuncEnt {
-    pub sig: Sig,
-    pub id: ID,
-    pub name: Span,
-    pub kind: TFuncKind,
-    pub body: Tir,
-    pub args: TirList,
-    pub flags: TFuncFlags,
+pub struct Funcs {
+    pub ents: PrimaryMap<Func, FuncEnt>,
+    pub instances: Map<Func>,
+    pub to_compile: Vec<(Func, TyList)>,
+    pub to_link: Vec<Func>,
 }
 
-impl TFuncEnt {
+impl Funcs {
+    pub fn new() -> Self {
+        Self {
+            ents: PrimaryMap::new(),
+            instances: Map::new(),
+            to_compile: Vec::new(),
+            to_link: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct FuncEnt {
+    pub id: ID,
+    pub parent: PackedOption<Func>,
+    pub flags: FuncFlags,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct FuncMetaData {
+    pub sig: Sig,
+    pub name: Span,
+    pub kind: FuncKind,
+    pub body: Tir,
+    pub args: TirList,
+}
+
+impl FuncMetaData {
     pub fn new() -> Self {
         Self::default()
     }
@@ -44,24 +66,11 @@ impl TFuncEnt {
                 }
             })
     }
-
-    // pub fn get_link_name(&self, types: &Types, ty_lists: &TyLists, sources: &Sources, buffer: &mut String) {
-    //     buffer.write_str(sources.display(self.name)).unwrap();
-    //     if !self.sig.params.is_reserved_value() {
-    //         buffer.write_char('[').unwrap();
-    //         for &ty in ty_lists.get(self.sig.params) {
-    //             ty.display(types, ty_lists, sources, buffer).unwrap();
-    //             buffer.write_char(',').unwrap();
-    //         }
-    //         buffer.pop().unwrap();
-    //         buffer.write_char(']').unwrap();
-    //     }
-    // }
 }
 
 bitflags! {
     #[derive(Default)]
-    pub struct TFuncFlags: u32 {
+    pub struct FuncFlags: u32 {
         const ENTRY = 1 << 0;
         const GENERIC = 1 << 1;
         const INLINE = 1 << 2;
@@ -70,29 +79,69 @@ bitflags! {
     }
 }
 
-impl_bool_bit_and!(TFuncFlags);
+impl FuncFlags {
+    const CALL_CONV_OFFSET: u32 = 32 - 8;
+    const CALL_CONV_MASK: u32 = 0xFF << Self::CALL_CONV_OFFSET;
+    
+    pub fn set_call_conv(&mut self, cc: Option<CallConv>) {
+        let Some(cc) = cc else {
+            self.bits &= !Self::CALL_CONV_MASK;
+            self.bits &= !(1 << (Self::CALL_CONV_OFFSET - 1));
+            return;
+        };
+
+        let bytes = unsafe {
+            std::mem::transmute::<_, u8>(cc)
+        } as u32;
+
+        self.bits &= !Self::CALL_CONV_MASK;
+        self.bits |= bytes << Self::CALL_CONV_OFFSET;
+        self.bits |= 1 << (Self::CALL_CONV_OFFSET - 1);
+    }
+
+    pub fn call_conv(&self) -> Option<CallConv> {
+        if self.bits & (1 << (Self::CALL_CONV_OFFSET - 1)) == 0 {
+            return None;
+        }
+
+        let bytes = (self.bits & Self::CALL_CONV_MASK) >> Self::CALL_CONV_OFFSET;
+        unsafe {
+            Some(std::mem::transmute::<_, CallConv>(bytes as u8))
+        }
+    }
+}
+
+impl std::ops::BitOr<Option<CallConv>> for FuncFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Option<CallConv>) -> Self {
+        let mut result = self;
+        result.set_call_conv(rhs);
+        result
+    }
+}
+
+impl_bool_bit_and!(FuncFlags);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TFuncKind {
+pub enum FuncKind {
     Local,
     External,
     // (bound, relative index)
     Bound(Ty, u32),
     Owned(Ty),
-    Instance(Func, TyList),
     Builtin,
 }
 
-impl Default for TFuncKind {
+impl Default for FuncKind {
     fn default() -> Self {
-        TFuncKind::Local
+        FuncKind::Local
     }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Sig {
     pub params: TyList,
-    pub call_conv: Option<CallConv>,
     pub args: TyList,
     pub ret: Ty,
 }

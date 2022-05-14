@@ -18,6 +18,10 @@ impl<K: EntityRef, V> SparseMap<K, V> {
     pub fn remove(&mut self, key: K) -> Option<V> {
         self.inner.remove(key).map(|s| s.1)
     }
+
+    pub fn get(&self, key: K) -> Option<&V> {
+        self.inner.get(key).map(|s| &s.1)
+    }
 }
 
 pub struct SparseWrapper<K: EntityRef, V>(K, V);

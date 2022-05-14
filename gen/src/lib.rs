@@ -2,18 +2,20 @@
 #![feature(toowned_clone_into)]
 #![feature(let_else)]
 
-use std::sync::Arc;
+
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, MemFlags, Signature, StackSlotData, FuncRef, ExtFuncData, ExternalName};
 use cranelift_codegen::isa::{TargetIsa, CallConv};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
-use cranelift_module::{FuncId, Linkage, Module};
+use cranelift_module::Linkage;
 use instance_types::*;
 use lexer_types::*;
 use storage::*;
 use typec_types::*;
+
+pub type Signatures = SparseMap<Func, Signature>; 
 
 pub struct CirBuilderContext {
     tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
@@ -56,16 +58,21 @@ pub struct CirBuilder<'a> {
     pub isa: &'a dyn TargetIsa,
     pub builder: &'a mut FunctionBuilder<'a>,
     pub ctx: &'a mut CirBuilderContext,
-    pub t_funcs: &'a Funcs,
+    pub signatures: &'a mut Signatures,
+    pub funcs: &'a Funcs,
     pub reprs: &'a Reprs,
     pub types: &'a Types,
+    pub builtin_types: &'a BuiltinTypes,
     pub ty_lists: &'a TyLists,
     pub source: &'a FuncCtx,
     pub sources: &'a Sources,
+    pub func_meta: &'a FuncMeta,
 }
 
 impl<'a> CirBuilder<'a> {
     pub fn generate(&mut self) {
+        self.ctx.clear();
+
         for (id, stack) in self.source.stacks.iter() {
             let slot = StackSlotData::new(ir::StackSlotKind::ExplicitSlot, stack.size);
             let slot = self.builder.create_stack_slot(slot);
@@ -114,7 +121,7 @@ impl<'a> CirBuilder<'a> {
                 self.ctx.value_lookup[target_value] = ir_value.into();
             }
             InstKind::Call(func, args) => {
-                if self.t_funcs[func].kind == TFuncKind::Builtin {
+                if self.func_meta[func].kind == FuncKind::Builtin {
                     self.generate_native_call(func, args, inst.value);
                     return;
                 }
@@ -126,7 +133,6 @@ impl<'a> CirBuilder<'a> {
                         .get(args)
                         .iter()
                         .map(|&value| {
-                            // dbg!(self.source.values[value].ty, self.reprs[self.source.values[value].ty], self.reprs[self.source.values[value].ty].repr);
                             self.use_value(value)
                         })
                         .collect();
@@ -135,26 +141,33 @@ impl<'a> CirBuilder<'a> {
                         func_ref
                     } else {
                         let signature = {
-                            let ret = self.source.values[inst.value.unwrap()].ty;
-                            let call_conv = self.t_funcs[func].sig.call_conv;
-                            let signature = translate_signature(
-                                call_conv,
-                                self.source.value_slices
-                                    .get(args)
-                                    .iter()
-                                    .map(|&value| self.source.values[value].ty), 
-                                ret, 
-                                self.reprs, 
-                                self.types, 
-                                self.isa.default_call_conv(), 
-                            );
+                            let ret = inst.value.map(|val| self.source.values[val].ty).unwrap_or(self.builtin_types.nothing);
+                            let call_conv = self.funcs.ents[func].flags.call_conv();
+                            let signature = if let Some(sig) = self.signatures.get(func) {
+                                sig.clone()
+                            } else {
+                                let sig = translate_signature(
+                                    call_conv,
+                                    self.source.value_slices
+                                        .get(args)
+                                        .iter()
+                                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
+                                        .map(|&value| self.source.values[value].ty),
+                                    ret,
+                                    self.reprs, 
+                                    self.types, 
+                                    self.isa.default_call_conv(),
+                                );
+                                self.signatures.insert(func, sig.clone());
+                                sig
+                            };
                             self.builder.func.import_signature(signature)
                         };
 
                         let ext_func_data = ExtFuncData {
                             name: ExternalName::user(0, func.as_u32()),
                             signature,
-                            colocated: !self.t_funcs[func].flags.contains(TFuncFlags::EXTERNAL),
+                            colocated: !self.funcs.ents[func].flags.contains(FuncFlags::EXTERNAL),
                         };
                         let func_ref = self.builder.func.import_function(ext_func_data);
                         self.ctx.used_func_lookup[func] = func_ref.into();
@@ -335,7 +348,7 @@ impl<'a> CirBuilder<'a> {
         args: ValueList,
         result: PackedOption<mir::Value>,
     ) {
-        let name = self.t_funcs[func].name;
+        let name = self.func_meta[func].name;
         let str = self.sources.display(name);
 
         match str {
@@ -644,10 +657,10 @@ pub fn translate_signature(
 }
 
 /// returns none if function should not even be linked
-pub fn func_linkage(kind: TFuncKind) -> Option<Linkage> {
-    use TFuncKind::*;
+pub fn func_linkage(kind: FuncKind) -> Option<Linkage> {
+    use FuncKind::*;
     Some(match kind {
-        Local | Owned(..) | Instance(..) => Linkage::Export,
+        Local | Owned(..) => Linkage::Export,
         Builtin | Bound(..) => return None,
         External => Linkage::Import,
     })

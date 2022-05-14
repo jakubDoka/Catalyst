@@ -1,4 +1,5 @@
 #![feature(bool_to_option)]
+#![feature(let_else)]
 
 pub mod error;
 pub mod func;
@@ -7,11 +8,11 @@ pub mod tir;
 pub mod ty;
 
 pub use error::TyError;
-pub use func::{Func, FuncList, Funcs, Sig, TFuncEnt, TFuncFlags, TFuncKind, ToCompile};
+pub use func::{Func, FuncList, Funcs, Sig, FuncMetaData, FuncFlags, FuncKind, FuncMeta, FuncEnt};
 pub use size::{Layout, Offset};
 pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, FuncBodies};
 pub use ty::{
-    BoundImpl, BoundImpls, BuiltinTypes, FuncInstances, Instances, SField, SFieldEnt, SFieldList,
+    BoundImpl, BoundImpls, BuiltinTypes, Instances, SField, SFieldEnt, SFieldList,
     SFieldLookup, SFieldRef, SFields, TFuncLists, Ty, TyDisplay, TyEnt, TyFlags, TyKind, TyList,
     TyLists, TypeBase, Types,
 };
