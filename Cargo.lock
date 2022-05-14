@@ -49,6 +49,7 @@ dependencies = [
  "lexer_types",
  "module_types",
  "modules",
+ "num_cpus",
  "parser",
  "storage",
  "target-lexicon",
@@ -208,6 +209,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
 
 [[package]]
+name = "hermit-abi"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "incr"
 version = "0.1.0"
 dependencies = [
@@ -319,6 +329,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19e64526ebdee182341572e50e9ad03965aa510cd94427a4549448f285e957a1"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "object"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,6 +404,7 @@ name = "typec"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "cranelift-codegen",
  "errors",
  "incr",
  "lexer_types",
@@ -397,6 +418,7 @@ name = "typec_types"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "cranelift-codegen",
  "errors",
  "lexer_types",
  "module_types",

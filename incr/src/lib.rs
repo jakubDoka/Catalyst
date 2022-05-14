@@ -79,7 +79,6 @@ impl Incr {
 
             if module.dependency.iter().any(|&dep| dirty.contains(dep)) {
                 dirty.insert(module_id);
-                println!("{}", module.path.display());
                 Self::wipe(incr_module, &mut self.functions)
             }
         }
@@ -190,7 +189,6 @@ pub struct IncrRelocRecord {
     pub srcloc: SourceLoc,
     pub kind: Reloc,
     pub name: ID,
-    pub literal_name: String,
     pub addend: i64,
 }
 
@@ -217,18 +215,13 @@ impl IncrRelocRecord {
             srcloc: reloc.srcloc,
             kind: reloc.kind,
             name,
-            literal_name,
             addend: reloc.addend,
         }
     }
 
     pub fn to_mach_reloc(&self, buffer: &mut String, module: &impl Module) -> MachReloc {
         buffer.clear();
-        if self.literal_name.is_empty() {
-            self.name.to_ident(buffer);
-        } else {
-            buffer.push_str(&self.literal_name);
-        }
+        self.name.to_ident(buffer);
 
         let Some(FuncOrDataId::Func(func_id)) = module.get_name(&buffer) else {
             unreachable!()
@@ -250,7 +243,6 @@ impl BitSerde for IncrRelocRecord {
         self.srcloc.write(buffer);
         self.kind.write(buffer);
         self.name.write(buffer);
-        self.literal_name.write(buffer);
         self.addend.write(buffer);
     }
 
@@ -260,7 +252,6 @@ impl BitSerde for IncrRelocRecord {
             srcloc: SourceLoc::read(cursor, buffer)?,
             kind: Reloc::read(cursor, buffer)?,
             name: ID::read(cursor, buffer)?,
-            literal_name: String::read(cursor, buffer)?,
             addend: i64::read(cursor, buffer)?,
         })
     }

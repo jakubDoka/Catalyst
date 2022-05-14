@@ -1,5 +1,6 @@
 use crate::*;
 
+use cranelift_codegen::isa::CallConv;
 use typec_types::*;
 
 struct TyErrorDisplay<'a> {
@@ -58,6 +59,30 @@ pub fn display(
                     ty_display!(state, bound)
                 )
             })?;
+        }
+        TyError::InvalidCallConv { loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "invalid calling convention")
+            })?;
+            writeln!(to, "|> valid calling conventions:")?;
+            for cc in [
+                // BRUH
+                CallConv::Fast,
+                CallConv::Cold,
+                CallConv::SystemV,
+                CallConv::WindowsFastcall,
+                CallConv::AppleAarch64,
+                CallConv::BaldrdashSystemV,
+                CallConv::BaldrdashWindows,
+                CallConv::Baldrdash2020,
+                CallConv::Probestack,
+                CallConv::WasmtimeSystemV,
+                CallConv::WasmtimeFastcall,
+                CallConv::WasmtimeAppleAarch64,
+            ] {
+                writeln!(to, "|\t{}", cc)?;
+            }
         }
         &TyError::ReturnTypeMismatch {
             because,

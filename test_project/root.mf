@@ -79,7 +79,7 @@ fn main() -> int {
 
     a += 1
 
-    //0
+    0
 }
 
 impl Loo {

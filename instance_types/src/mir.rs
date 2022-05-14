@@ -252,7 +252,7 @@ impl<'a> MirDisplay<'a> {
 
 impl std::fmt::Display for MirDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} {{", self.func.sig)?;
+        writeln!(f, "(signature) {{")?;
 
         for (i, stack) in self.func.stacks.iter() {
             writeln!(f, "  {} = stack({})", i, stack.size)?;

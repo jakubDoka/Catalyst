@@ -3,20 +3,21 @@
 #![feature(bool_to_option)]
 #![feature(let_chains)]
 #![feature(result_flattening)]
+#![feature(scoped_threads)]
 
 use cli::CmdInput;
-use cranelift_codegen::isa::CallConv;
+
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::Context;
-use cranelift_entity::EntitySet;
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{Linkage, Module, FuncOrDataId};
+
+use cranelift_frontend::{FunctionBuilderContext};
+use cranelift_module::{Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use errors::Diagnostics;
 use incr::Incr;
 use instance::*;
-use instance::repr::ReprInstancing;
+
 use modules::*;
 use modules::module::ModuleImports;
 use parser::*;
@@ -30,11 +31,11 @@ use typec_types::*;
 use typec::*;
 use ast::*;
 
-use std::ops::Sub;
+
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::{Instant, Duration, SystemTime};
-use std::{collections::VecDeque, path::Path};
+use std::time::{Instant, SystemTime};
+use std::{path::Path};
 
 macro_rules! exit {
     ($expr:expr) => {
@@ -255,9 +256,9 @@ impl Compiler {
             unreachable!();
         };
 
-        let unit_order = unit_builder!(self)
-            .load_units(&path)
-            .unwrap_or_default();
+        let Ok(unit_order) = unit_builder!(self).load_units(&path) else {
+            return;
+        };
 
         let mut module_order = vec![];
 
@@ -392,8 +393,24 @@ impl Compiler {
         repr_builder!(self, ptr_ty).translate(&self.ty_graph);
     }
 
-    fn generate(self) {
-        self.incr.save(&self.incr_path).unwrap();
+    fn generate(&mut self) {
+        
+
+        // std::thread::scope(|s| {
+        //     for _ in 0..4 {
+        //         s.spawn(|| {
+                    
+        //         });
+        //     }
+        // });
+
+    }
+
+    fn link(self) {
+        {
+            time_report!("saving incremental data");
+            self.incr.save(&self.incr_path).unwrap();
+        }
 
         let binary = self.object_module.finish().emit().unwrap();
         std::fs::write("catalyst.o", &binary).unwrap();
@@ -403,7 +420,12 @@ impl Compiler {
         }
 
         let mut entry = "/entry:".to_string();
-        self.entry_id.unwrap().to_ident(&mut &mut entry);
+        let Some(entry_id) = self.entry_id else {
+            println!("{ERR}|> program is missing entry point{END}");
+            exit!();
+        };
+        
+        entry_id.to_ident(&mut &mut entry);
 
         let status = {
             time_report!("linking");
@@ -493,6 +515,8 @@ impl Compiler {
         s.build_repr();
 
         s.generate();
+
+        s.link();
     }
 }
 
@@ -509,7 +533,7 @@ const SUBCOMMANDS: &'static str = "c";
 
 impl Subcommand {
     pub fn new(input: &CmdInput) -> Self {
-        let Some(subcommand) = input.args().get(1) else {
+        let Some(subcommand) = input.args().get(0) else {
             println!("usage: catalyst {INFO}<sub>{END} ...");
             println!("options: {INFO}{SUBCOMMANDS}{END}");
             exit!();

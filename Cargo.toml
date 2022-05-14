@@ -43,6 +43,7 @@ cranelift-object = "0.82.1"
 cranelift-native = "0.82.1"
 target-lexicon = "0.12.3"
 cc = "1.0.73"
+num_cpus = "1.13.1"
 
 lexer = { path = "lexer" }
 lexer_types = { path = "lexer_types" }

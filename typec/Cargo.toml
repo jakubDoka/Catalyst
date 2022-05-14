@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+cranelift-codegen = "0.82.1"
+
 errors = { path = "../errors" }
 module_types = { path = "../module_types" }
 lexer_types = { path = "../lexer_types" }

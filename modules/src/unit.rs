@@ -71,6 +71,10 @@ impl<'a> UnitBuilder<'a> {
                     loc: span,
                 })
             }) else {
+                self.ctx.cycle_graph.close_node();
+                if self.ctx.unit_frontier.is_empty() {
+                    return Err(());
+                }
                 continue;
             };
 

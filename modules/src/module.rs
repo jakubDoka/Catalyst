@@ -83,7 +83,6 @@ impl<'a> ModuleBuilder<'a> {
         while let Some((path, span, slot)) = self.ctx.module_frontier.pop_front() {
             let id: ID = path.as_path().into();
             if self.incr.modules.get(id).is_none() {
-                println!("{}", path.display());
                 let modified = std::fs::metadata(&path)
                     .map(|m| m.modified())
                     .flatten()

@@ -1,20 +1,33 @@
 use std::str::FromStr;
 
-use cranelift_codegen::ir::{Type, Signature};
+use cranelift_codegen::entity::SparseMap;
+use cranelift_codegen::ir::{Type, Signature, FuncRef};
 use cranelift_codegen::{ir, isa::CallConv, packed_option::PackedOption};
 
-use cranelift_module::{Module, FuncId};
 use errors::*;
 use instance_types::*;
 use lexer_types::*;
 use storage::*;
 use typec_types::*;
 
+pub struct MirBuilderContext {
+    tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
+}
+
+impl MirBuilderContext {
+    pub fn new() -> Self {
+        Self {
+            tir_mapping: SecondaryMap::new(),
+        }
+    }
+}
+
 pub struct MirBuilder<'a> {
     pub func_id: Func,
-    pub system_call_convention: CallConv,
-    pub reprs: &'a Reprs,
     pub ptr_ty: Type,
+    pub system_call_convention: CallConv,
+    
+    pub reprs: &'a Reprs,
     pub types: &'a Types,
     pub ty_lists: &'a TyLists,
     pub func_lists: &'a TFuncLists,
@@ -26,12 +39,10 @@ pub struct MirBuilder<'a> {
     pub func: &'a mut FuncCtx,
     pub body: &'a TirData,
     pub return_dest: Option<Value>,
-    pub tir_mapping: &'a mut SecondaryMap<Tir, PackedOption<Value>>,
     pub sources: &'a Sources,
     pub diagnostics: &'a mut Diagnostics,
     pub func_instances: &'a mut FuncInstances,
-    pub module: &'a mut dyn Module,
-    pub func_lookup: &'a mut SecondaryMap<Func, PackedOption<FuncId>>,
+    pub ctx: &'a mut MirBuilderContext,
 }
 
 impl MirBuilder<'_> {
@@ -40,20 +51,8 @@ impl MirBuilder<'_> {
             sig,
             body,
             args,
-            flags,
             ..
         } = self.funcs[self.func_id];
-
-        translate_signature(
-            &sig,
-            &mut self.func.sig,
-            self.reprs,
-            self.types,
-            self.ty_lists,
-            self.sources,
-            self.system_call_convention,
-            flags.contains(TFuncFlags::ENTRY),
-        );
 
         let entry_point = self.func.create_block();
         {
@@ -116,7 +115,7 @@ impl MirBuilder<'_> {
     }
 
     fn translate_expr(&mut self, tir: Tir, dest: Option<Value>) -> errors::Result<Option<Value>> {
-        if let Some(value) = self.tir_mapping[tir].expand() {
+        if let Some(value) = self.ctx.tir_mapping[tir].expand() {
             return Ok(Some(value));
         }
 
@@ -142,7 +141,7 @@ impl MirBuilder<'_> {
             _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
-        self.tir_mapping[tir] = value.into();
+        self.ctx.tir_mapping[tir] = value.into();
 
         Ok(value)
     }
@@ -226,7 +225,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        self.tir_mapping[tir] = value.into();
+        self.ctx.tir_mapping[tir] = value.into();
 
         Ok(Some(value))
     }
@@ -256,7 +255,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        self.tir_mapping[tir] = value.into();
+        self.ctx.tir_mapping[tir] = value.into();
 
         Ok(Some(value))
     }
@@ -673,32 +672,9 @@ impl MirBuilder<'_> {
                 };
                 let instance = self.funcs.push(instance);
                 self.func_instances.insert(id, instance);
-                
-                let call_conv = if func_ent.sig.call_conv.is_reserved_value() {
-                    ""
-                } else {
-                    self.sources.display(func_ent.sig.call_conv)
-                };
-
-                let mut signature = Signature::new(CallConv::Fast);
-                translate_signature_low(
-                    call_conv, 
-                    self.body.cons
-                        .get(args)
-                        .iter()
-                        .map(|&arg| self.body.ents[arg].ty),
-                    ty, 
-                    &mut signature, 
-                    self.reprs,
-                    self.types, 
-                    self.system_call_convention, 
-                    false,
-                );
-
                 instance
             };
-        }
-        
+        }       
         
         let on_stack = self.on_stack(tir);
         let has_sret = {
@@ -816,7 +792,7 @@ impl MirBuilder<'_> {
             return None;
         }
         let value = self.value_from_ty(ty);
-        self.tir_mapping[tir] = value.into();
+        self.ctx.tir_mapping[tir] = value.into();
         Some(value)
     }
 
@@ -828,80 +804,6 @@ impl MirBuilder<'_> {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
     }   
-}
-
-pub fn translate_signature(
-    source: &Sig,
-    target: &mut ir::Signature,
-    reprs: &Reprs,
-    types: &Types,
-    ty_lists: &TyLists,
-    sources: &Sources,
-    system_call_convention: CallConv,
-    is_entry: bool,
-) {
-    let call_conv = if source.call_conv.is_reserved_value() {
-        ""
-    } else {
-        sources.display(source.call_conv)
-    };
-
-    translate_signature_low(
-        call_conv, 
-        ty_lists
-            .get(source.args)
-            .iter()
-            .copied(), 
-        source.ret, 
-        target, 
-        reprs, 
-        types, 
-        system_call_convention, 
-        is_entry
-    )
-}
-
-pub fn translate_signature_low(
-    call_conv: &str,
-    args: impl Iterator<Item = Ty>,
-    ret: Ty,
-    target: &mut ir::Signature,
-    reprs: &Reprs,
-    types: &Types,
-    system_call_convention: CallConv,
-    is_entry: bool,
-) {
-    let call_conv = if is_entry {
-        system_call_convention
-    } else if call_conv.is_empty() {
-        CallConv::Fast
-    } else {
-        if call_conv == "default" {
-            system_call_convention
-        } else {
-            let cc = CallConv::from_str(call_conv);
-            // TODO: error handling
-            cc.unwrap_or(CallConv::Fast)
-        }
-    };
-    target.clear(call_conv);
-
-    if TyKind::Nothing != types[ret].kind {
-        let repr::ReprEnt { repr, flags, .. } = reprs[ret];
-        if flags.contains(repr::ReprFlags::ON_STACK) {
-            let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);
-            target.params.push(ret);
-            target.returns.push(ret);
-        } else {
-            target.returns.push(ir::AbiParam::new(repr));
-        }
-    }
-
-    target.params.extend(
-        args
-            .map(|ty| reprs[ty].repr)
-            .map(|repr| ir::AbiParam::new(repr)),
-    );
 }
 
 pub fn int_value(sources: &Sources, span: Span) -> u64 {

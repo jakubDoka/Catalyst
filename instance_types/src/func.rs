@@ -13,9 +13,6 @@ pub struct Loop {
 }
 
 pub struct FuncCtx {
-    pub name: Span,
-    pub sig: ir::Signature,
-
     pub values: PrimaryMap<Value, ValueEnt>,
     pub value_slices: FramedStackMap<ValueList, Value>,
     pub blocks: PrimaryMap<Block, BlockEnt>,
@@ -31,8 +28,6 @@ pub struct FuncCtx {
 impl FuncCtx {
     pub fn new() -> Self {
         FuncCtx {
-            name: Span::default(),
-            sig: ir::Signature::new(CallConv::Fast),
             values: PrimaryMap::new(),
             value_slices: FramedStackMap::new(),
             blocks: PrimaryMap::new(),
@@ -83,7 +78,6 @@ impl FuncCtx {
     }
 
     pub fn clear(&mut self) {
-        self.sig.clear(CallConv::Fast);
         self.values.clear();
         self.value_slices.clear();
         self.blocks.clear();

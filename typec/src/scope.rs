@@ -1,7 +1,8 @@
-use std::vec;
+use std::{vec, str::FromStr};
 
 use crate::{ty::get_param, *};
 use ast::*;
+use cranelift_codegen::isa::CallConv;
 use incr::Incr;
 use lexer_types::*;
 use module_types::{
@@ -338,8 +339,23 @@ impl<'a> ScopeBuilder<'a> {
         let ast::AstEnt { span: current_span, kind: AstKind::Function(external), .. } = self.ast.nodes[ast] else {
             unreachable!();
         };
+
         let &[generics, call_conv, name, .., return_type, _body] = children else {
             unreachable!();
+        };
+
+        let call_conv = if call_conv.is_reserved_value() {
+            Some(CallConv::Fast)
+        } else {
+            let span = self.ast.nodes[call_conv].span;
+            let str = self.sources.display(span);
+            if str == "default" {
+                None
+            } else {
+                CallConv::from_str(str)
+                    .map_err(|_| self.diagnostics.push(TyError::InvalidCallConv { loc: span }))
+                    .ok()
+            }
         };
 
         let sig = {
@@ -375,14 +391,6 @@ impl<'a> ScopeBuilder<'a> {
             };
 
             self.scope.pop_frame();
-
-            let call_conv = if call_conv.is_reserved_value() {
-                Span::default()
-            } else {
-                self.ast.nodes[call_conv].span
-            };
-
-            // println!("{:?}", self.ty_lists.get(params));
 
             Sig {
                 call_conv,

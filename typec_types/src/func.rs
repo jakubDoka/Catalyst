@@ -1,3 +1,4 @@
+use cranelift_codegen::isa::CallConv;
 use lexer_types::*;
 use module_types::*;
 use storage::*;
@@ -91,7 +92,7 @@ impl Default for TFuncKind {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Sig {
     pub params: TyList,
-    pub call_conv: Span,
+    pub call_conv: Option<CallConv>,
     pub args: TyList,
     pub ret: Ty,
 }

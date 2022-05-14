@@ -65,11 +65,11 @@ pub fn display(
         ModuleError::RootModuleNotFound { unit, trace } => {
             let unit = &units[*unit];
             let path = unit.root_path.clone();
-            let source_path = unit.get_absolute_source_path().unwrap();
+            let source_path = path.join(&unit.local_source_path);
             write_colored!(
                 to,
                 ansi_consts::ERR,
-                "|> root module not found for unit '{}'",
+                "|> root module not found for unit '{}'\n",
                 path.display()
             )?;
             writeln!(to, "|> path searched: {}", source_path.display())?;
@@ -95,7 +95,7 @@ pub fn display(
             writeln!(to, "|> meta-programing features rely on this restriction")?;
         }
         ModuleError::RootUnitNotFound { path, trace } => {
-            write_colored!(to, ansi_consts::ERR, "|> root of project not found",)?;
+            writeln!(to, "{ERR}|> root of project not found{END}")?;
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
         }
@@ -103,10 +103,10 @@ pub fn display(
             if let Some(loc) = loc {
                 loc.loc_to(sources, to)?;
                 loc.underline_error(sources, to, &|to| {
-                    write!(to, "manifest of this import could not be loaded",)
+                    write!(to, "manifest of this import could not be loaded")
                 })?;
             } else {
-                write_colored!(to, ansi_consts::ERR, "|> root manifest could not be loaded",)?;
+                writeln!(to, "{ERR}|> root manifest could not be loaded{END}")?;
             }
             writeln!(to, "|> path searched: {}", path.display())?;
             writeln!(to, "|> backtrace: {}", trace)?;
