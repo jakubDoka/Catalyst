@@ -171,8 +171,28 @@ impl Compiler {
 
         let (isa, triple) = {
             let mut setting_builder = cranelift_codegen::settings::builder();
-            // setting_builder.set("enable_verifier", "false").unwrap();
-            setting_builder.set("enable_verifier", "true").unwrap();
+
+            let verify = input
+                .enabled("no-verify")
+                .then_some("false")
+                .unwrap_or("true");
+            
+            setting_builder.set("enable_verifier", verify).unwrap();
+            
+            if let Some(opt_level) = input.field("o") {
+                let opt_level = match opt_level {
+                    "0" | "none" => "none",
+                    "1" | "speed" => "speed",
+                    "2" | "speed_and_size" => "speed_and_size",                 
+                    _ => {
+                        println!("{ERR}error:{END} unknown optimization level: {}", opt_level);
+                        println!("{INFO}info:{END} use one of: none(0), speed(1), speed_and_size(2)");
+                        exit!(1);
+                    }
+                };
+                setting_builder.set("opt_level", opt_level).unwrap();
+            }
+
             let flags = Flags::new(setting_builder);
     
             let target_triple = input.field("target").map_or_else(

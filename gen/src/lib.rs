@@ -653,8 +653,14 @@ pub fn translate_signature(
 
     sig.params.extend(
         args
-            .map(|ty| reprs[ty].repr)
-            .map(|repr| ir::AbiParam::new(repr)),
+            .map(|ty| {
+                let ReprEnt { repr, .. } = reprs[ty];
+                // if flags.contains(repr::ReprFlags::ON_STACK) {
+                //     ir::AbiParam::special(repr, ir::ArgumentPurpose::StructArgument(size.arch(false) as u32))
+                // } else {
+                // }
+                ir::AbiParam::new(repr)
+            })
     );
 
     sig
