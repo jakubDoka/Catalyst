@@ -5,9 +5,8 @@ use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{Signature, SourceLoc},
     isa::CallConv,
-    MachReloc,
 };
-use cranelift_module::{FuncId, FuncOrDataId, Linkage, Module};
+use cranelift_module::{FuncId};
 use std::{path::Path, time::SystemTime};
 use storage::*;
 // use typec_types::*;
