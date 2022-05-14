@@ -114,10 +114,14 @@ impl<'a> CirBuilder<'a> {
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
             InstKind::BitCast(value) => {
-                let ir_value = self.use_value(value);
                 let target_value = inst.value.unwrap();
                 let repr = self.repr_of(target_value);
-                let ir_value = self.builder.ins().bitcast(repr, ir_value);
+                
+                let mut ir_value = self.use_value(value);
+                if repr != self.builder.func.dfg.value_type(ir_value) {
+                    ir_value = self.builder.ins().bitcast(repr, ir_value);
+                }
+
                 self.ctx.value_lookup[target_value] = ir_value.into();
             }
             InstKind::Call(func, args) => {

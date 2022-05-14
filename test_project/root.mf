@@ -71,13 +71,15 @@ fn main() -> int {
     }
 
     let vec = Vec::new::[int]()
-    
+
+    let ptr = malloc(100)
+
+    if ptr as int == 0 {
+        return 15
+    }
+
     putchar('h')
     exit(-34)
-
-    let mut a = 0
-
-    a += 1
 
     0
 }

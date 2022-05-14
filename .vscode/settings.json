@@ -28,6 +28,7 @@
         "insts",
         "ishl",
         "isub",
+        "metaprogramming",
         "putchar",
         "Reloc",
         "relocs",
