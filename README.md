@@ -59,10 +59,8 @@ So the main features you can look out for are:
         - [ ] Ast
         - [ ] Tir
         - [ ] Mir
-        - [ ] Ir
-    - [ ] Pointers
-        - [ ] Mutable
-        - [ ] Immutable
+        - [ ] Cir
+    - [x] Pointers
     - [ ] References
         - [ ] Mutable
         - [ ] Immutable
@@ -70,13 +68,13 @@ So the main features you can look out for are:
         - [ ] Generics
         - [ ] Safe tagged unions
         - [x] Structs
-        - [ ] Bounds
+        - [x] Bounds
     - [ ] Visibility
         - [ ] Package Export
-        - [x] Package Public
+        - [ ] Package Public
         - [ ] File Private
 
 - [ ] Diagnostics
-    - [ ] Errors
+    - [x] Errors
     - [x] Recovery
     - [ ] Warnings
