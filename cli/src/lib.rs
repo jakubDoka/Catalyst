@@ -62,6 +62,7 @@ impl CmdInput {
 
             // collect the flags
             if arg.starts_with('-') {
+                arg.remove(0);
                 self.flags.insert(arg);
                 continue;
             }

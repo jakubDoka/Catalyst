@@ -21,6 +21,27 @@ So the main features you can look out for are:
 
 **Note:** `Catalyst` is a work in progress and features you've seen above are more planned than implemented.
 
+## Try out the ~~mess~~ Language
+
+Here are the setup commands to get you started:
+
+```
+    git clone --depth 1 https://github.com/jakubDoka/Catalyst
+    cd Catalyst
+    cargo run c --path test_project
+    catalyst
+```
+
+If you see `uuh` in command line and `%errorlevel% == -34`, you compiled, compiled, and ran successfully.
+
+### Troubleshooting
+
+I develop this language in windows and other platforms are not tested. Compiler also depends on LINK.exe (MSVC) but if you pass `-no-link` you will get the object file without linking. The object file expects to have access to some C standard library functions (`putchar`, `malloc`, `exit` ...). If you manage to statically link on Windows, let me know.
+
+## Contributing
+
+I welcome any contributions and I plan on making a guide. 
+
 ## TODO
 
 - [ ] Language constructs
