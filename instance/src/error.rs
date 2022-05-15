@@ -31,16 +31,16 @@ pub fn display(
             loc,
             instantiated_from,
             from,
-            from_size,
+            from_layout,
             to: to_ty,
-            to_size,
+            to_layout,
         } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(
                     to,
                     "invalid bit cast form '{}'({}) to '{}'({}) as size does not match",
-                    from, from_size, to_ty, to_size,
+                    from, from_layout, to_ty, to_layout,
                 )
             })?;
 

@@ -86,7 +86,7 @@ impl ReservedValue for BoundImpl {
 }
 
 macro_rules! gen_builtin_table {
-    ($($name:ident: ($repr:expr, $size:expr),)*) => {
+    ($($name:ident: $repr:expr,)*) => {
         #[derive(Default)]
         pub struct BuiltinTypes {
             $(
@@ -102,7 +102,6 @@ macro_rules! gen_builtin_table {
 
         impl BuiltinTypes {
             pub fn new(
-                graph: &mut GenericGraph,
                 sources: &mut Sources,
                 builtin_source: &mut BuiltinSource,
                 types: &mut Types,
@@ -115,7 +114,6 @@ macro_rules! gen_builtin_table {
                         flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..))),
                     };
                     let $name = types.push(ent);
-                    graph.close_node();
                 )*
 
                 Self {
@@ -139,16 +137,16 @@ impl BuiltinTypes {
 }
 
 gen_builtin_table!(
-    nothing: (TyKind::Nothing, Offset::ZERO),
-    ty_any: (TyKind::Param(0, TyList::default(), None.into()), Offset::ZERO),
-    any: (TyKind::Param(0, TyList::default(), None.into()), Offset::ZERO),
-    bool: (TyKind::Bool, Offset::new(1, 1)),
-    char: (TyKind::Int(32), Offset::new(4, 4)),
-    int: (TyKind::Int(-1), Offset::PTR),
-    i8: (TyKind::Int(8), Offset::new(1, 1)),
-    i16: (TyKind::Int(16), Offset::new(2, 2)),
-    i32: (TyKind::Int(32), Offset::new(4, 4)),
-    i64: (TyKind::Int(64), Offset::new(8, 8)),
+    nothing: TyKind::Nothing,
+    ty_any: TyKind::Param(0, TyList::default(), None.into()),
+    any: TyKind::Param(0, TyList::default(), None.into()),
+    bool: TyKind::Bool,
+    char: TyKind::Int(32),
+    int: TyKind::Int(-1),
+    i8: TyKind::Int(8),
+    i16: TyKind::Int(16),
+    i32: TyKind::Int(32),
+    i64: TyKind::Int(64),
 );
 
 #[derive(Clone, Copy, Default)]

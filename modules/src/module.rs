@@ -181,7 +181,7 @@ impl<'a> ModuleBuilder<'a> {
                 self.sources.push(Default::default());
             }
 
-            self.ctx.cycle_graph.close_node();
+            self.ctx.cycle_graph.close_node(0);
         }
 
         let mut ordering = Vec::with_capacity(TreeStorage::<Source>::len(&self.ctx.cycle_graph));

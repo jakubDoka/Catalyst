@@ -93,6 +93,7 @@ impl<T: EntityRef + 'static + Debug> TreeStorage<T> for GenericGraph {
 pub struct GenericGraph {
     pub hints: Vec<u32>,
     pub edges: Vec<u32>,
+    pub offset: u32,
 }
 
 impl GenericGraph {
@@ -100,20 +101,30 @@ impl GenericGraph {
         Self {
             hints: vec![0],
             edges: Vec::new(),
+            offset: 0,
         }
     }
 
-    pub fn close_node(&mut self) {
+    pub fn close_node(&mut self, node: u32) {
+        let node = (node - self.offset) as usize;
+        let &last = self.hints.last().unwrap();
+        while self.hints.len() <= node {
+            self.hints.push(last);
+        }
         self.hints.push(self.edges.len() as u32);
     }
 
     pub fn add_edge(&mut self, to: u32) {
-        self.edges.push(to);
+        if to < self.offset {
+            return;
+        }
+        self.edges.push(to - self.offset);
     }
 
     pub fn clear(&mut self) {
         self.hints.truncate(1);
         self.edges.clear();
+        self.offset = 0;
     }
 
     pub fn len(&self) -> usize {
@@ -149,7 +160,7 @@ impl GenericGraph {
             }
         }
 
-        Self { hints, edges }
+        Self { hints, edges, offset: self.offset }
     }
 }
 

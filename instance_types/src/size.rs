@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, Default, Debug)]
+use std::fmt::Display;
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Layout {
     pub arch32: u32,
     pub arch64: u32,
@@ -37,6 +39,12 @@ impl Layout {
             (self.arch32 >> Self::SIZE_WIDTH) as i32,
             (self.arch64 >> Self::SIZE_WIDTH) as i32,
         )
+    }
+}
+
+impl Display for Layout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(align{} size{})", self.align(), self.size())
     }
 }
 
@@ -82,6 +90,13 @@ impl Offset {
         }
     }
 }
+
+impl Display for Offset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.arch32, self.arch64)
+    }
+}
+
 
 macro_rules! impl_op {
     ($($name:ident-$method:ident($op:tt)),*) => {

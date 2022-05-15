@@ -9,16 +9,16 @@ pub mod func;
 pub mod repr;
 
 pub use func::MirBuilder;
-pub use repr::{ReprBuilder, ReprInstancing};
+pub use repr::{LayoutBuilder, ReprInstancing};
 
 #[macro_export]
-macro_rules! repr_builder {
+macro_rules! layout_builder {
     ($self:expr) => {
-        repr_builder!($self, $self.ptr_ty)
+        layout_builder!($self, $self.ptr_ty)
     };
 
     ($self:expr, $ptr_ty:expr) => {
-        ReprBuilder::new(
+        LayoutBuilder::new(
             &$self.types,
             &$self.sources,
             &$self.sfields,
@@ -26,7 +26,6 @@ macro_rules! repr_builder {
             &$self.ty_lists,
             &mut $self.repr_fields,
             &mut $self.reprs,
-            $ptr_ty,
         )
     };
 }

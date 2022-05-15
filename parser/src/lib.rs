@@ -1,4 +1,6 @@
 #![feature(generic_associated_types)]
+#![feature(let_else)]
+
 use ast::*;
 use lexer::*;
 use lexer_types::*;
@@ -34,7 +36,7 @@ impl<'a> Parser<'a> {
             temp,
             inter_state,
             Self::take_imports,
-        )
+        ).unwrap()
     }
 
     pub fn parse_manifest(
@@ -61,7 +63,7 @@ impl<'a> Parser<'a> {
         ast_file: &'a mut AstData,
         temp: &'a mut FramedStack<Ast>,
         inter_state: InterState,
-    ) -> InterState {
+    ) -> Option<InterState> {
         Self::parse_with(
             sources,
             diagnostics,
@@ -83,8 +85,10 @@ impl<'a> Parser<'a> {
             progress,
             source,
         }: InterState,
-        pfn: impl Fn(&mut Self),
-    ) -> InterState {
+        pfn: impl Fn(&mut Self) -> bool,
+    ) -> Option<InterState> {
+
+
         let source_str = &sources[source].content;
         let mut lexer = Lexer::new(progress, source_str, source);
         if current.kind() == TokenKind::None {
@@ -102,20 +106,24 @@ impl<'a> Parser<'a> {
             stack: temp,
         };
 
-        pfn(&mut s);
+        let unfinished = pfn(&mut s);
 
-        InterState {
+        if !unfinished {
+            return None;
+        }
+
+        Some(InterState {
             next: s.next,
             current: s.current,
             progress: s.lexer.progress(),
             source,
-        }
+        })
     }
 
-    fn take_imports(&mut self) {
+    fn take_imports(&mut self) -> bool {
         self.skip_new_lines();
         if self.current.kind() != TokenKind::Use {
-            return;
+            return true;
         }
 
         let span = self.current.span();
@@ -135,9 +143,11 @@ impl<'a> Parser<'a> {
         let imports = self.alloc(AstKind::Imports, span.join(end));
 
         self.data.push(imports);
+
+        true
     }
 
-    fn take_manifest(&mut self) {
+    fn take_manifest(&mut self) -> bool {
         self.stack.mark_frame();
 
         self.list(
@@ -152,16 +162,23 @@ impl<'a> Parser<'a> {
         }
 
         self.stack.pop_frame();
+
+        false
     }
 
-    fn take_chunk(&mut self) {
+    fn take_chunk(&mut self) -> bool {
         while self.current.kind() != TokenKind::Eof {
-            let item = self.item();
+            let Some(item) = self.item() else {
+                return true;
+            };
+
             if item.is_reserved_value() {
-                break;
+                break; 
             }
             self.data.push(item);
         }
+
+        false
     }
 
     fn import(&mut self) -> Ast {
@@ -183,8 +200,8 @@ impl<'a> Parser<'a> {
         self.alloc(AstKind::Import, span.join(end))
     }
 
-    fn item(&mut self) -> Ast {
-        loop {
+    fn item(&mut self) -> Option<Ast> {
+        Some(loop {
             match self.current.kind() {
                 TokenKind::Fn => break self.func(),
                 TokenKind::Struct => break self.sdecl(),
@@ -193,6 +210,10 @@ impl<'a> Parser<'a> {
                 TokenKind::Bound => break self.bound(),
                 TokenKind::Impl => break self.implementation(),
                 TokenKind::Hash => break self.tag(),
+                TokenKind::Break => {
+                    self.advance();
+                    return None;
+                },
                 _ => {
                     self.expect_many(&[
                         TokenKind::Fn,
@@ -202,11 +223,12 @@ impl<'a> Parser<'a> {
                         TokenKind::Bound,
                         TokenKind::Impl,
                         TokenKind::Hash,
+                        TokenKind::Break,
                     ]);
                     self.advance();
                 }
             }
-        }
+        })
     }
 
     fn tag(&mut self) -> Ast {

@@ -259,14 +259,14 @@ impl<'a> CirBuilder<'a> {
 
                 let (size, dest_align) = {
                     let target_ty = self.source.values[target].ty;
-                    let size = self.reprs[target_ty].size;
-                    let align = self.reprs[target_ty].align;
+                    let size = self.reprs[target_ty].layout.size();
+                    let align = self.reprs[target_ty].layout.align();
                     (self.unwrap_size(size), self.unwrap_size(align))
                 };
 
                 let src_align = {
                     let value_ty = self.source.values[value].ty;
-                    let align = self.reprs[value_ty].align;
+                    let align = self.reprs[value_ty].layout.align();
                     self.unwrap_size(align)
                 };
 

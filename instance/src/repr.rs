@@ -5,7 +5,7 @@ use lexer_types::*;
 use storage::*;
 use typec_types::*;
 
-use crate::repr_builder;
+use crate::layout_builder;
 
 pub struct ReprInstancing<'a> {
     pub types: &'a mut Types,
@@ -43,9 +43,11 @@ impl<'a> ReprInstancing<'a> {
         let result = self.expand_instances(params, ty, &mut new_instances);
 
         // the types are sorted by dependance (leafs first)
-        for instance in new_instances {
-            repr_builder!(self).resolve_type_repr(instance);
+        for &instance in &new_instances {
+            layout_builder!(self).build_size(instance);
         }
+
+        build_reprs(self.ptr_ty, self.reprs, new_instances.drain(..));
 
         result
     }
@@ -74,7 +76,7 @@ impl<'a> ReprInstancing<'a> {
 
                 let new_ty = self.types.push(pointer);
                 self.instances.insert_unique(ptr_id, new_ty);
-                new_instances.push(new_ty);
+                //new_instances.push(new_ty); // already know the size
                 new_ty
             }
             TyKind::Instance(base, i_params) => {
@@ -120,7 +122,7 @@ impl<'a> ReprInstancing<'a> {
     }
 }
 
-pub struct ReprBuilder<'a> {
+pub struct LayoutBuilder<'a> {
     pub types: &'a Types,
     pub sources: &'a Sources,
     pub sfields: &'a SFields,
@@ -128,10 +130,9 @@ pub struct ReprBuilder<'a> {
     pub ty_lists: &'a TyLists,
     pub repr_fields: &'a mut ReprFields,
     pub reprs: &'a mut Reprs,
-    pub ptr_ty: Type,
 }
 
-impl<'a> ReprBuilder<'a> {
+impl<'a> LayoutBuilder<'a> {
     pub fn new(
         types: &'a Types,
         sources: &'a Sources,
@@ -140,7 +141,6 @@ impl<'a> ReprBuilder<'a> {
         ty_lists: &'a TyLists,
         repr_fields: &'a mut ReprFields,
         reprs: &'a mut Reprs,
-        ptr_ty: Type,
     ) -> Self {
         Self {
             types,
@@ -150,48 +150,34 @@ impl<'a> ReprBuilder<'a> {
             ty_lists,
             repr_fields,
             reprs,
-            ptr_ty,
         }
     }
 
-    pub fn translate(&mut self, graph: &GenericGraph) {
+    pub fn build_layouts(&mut self, graph: &GenericGraph) {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.types.len());
             graph.total_ordering(&mut vec).unwrap();
+            vec.iter_mut().for_each(|ty| ty.0 += graph.offset);
             vec
         };
 
         self.reprs.resize(self.types.len());
         for id in order {
-            self.resolve_type_repr(id);
+            self.build_size(id);
         }
     }
 
-    pub fn resolve_type_repr(&mut self, id: Ty) {
-        self.resolve_type_repr_low(id, TyList::default());
+    pub fn build_size(&mut self, id: Ty) {
+        self.build_size_low(id, TyList::default());
     }
 
-    pub fn resolve_type_repr_low(&mut self, id: Ty, params: TyList) {
+    pub fn build_size_low(&mut self, id: Ty, params: TyList) {
         let ty = &self.types[id];
-        // println!("processing {}", ty_display!(self, id));
-        let repr = match ty.kind {
-            _ if ty.flags.contains(TyFlags::GENERIC) => {
-                // println!("ignored {}", ty_display!(self, id));
-                ir::types::INVALID
-            }
-            TyKind::Int(base) => match base {
-                64 => ir::types::I64,
-                32 => ir::types::I32,
-                16 => ir::types::I16,
-                8 => ir::types::I8,
-                _ => self.ptr_ty,
-            },
-            TyKind::Bool => ir::types::B1,
-            TyKind::Struct(fields) => {
-                self.resolve_struct_repr(id, params, fields);
-                return;
-            }
-            TyKind::Ptr(..) => self.ptr_ty,
+        if ty.flags.contains(TyFlags::GENERIC) {
+            return;
+        }
+        
+        match ty.kind {
             TyKind::Instance(base, params) => {
                 let TyEnt { kind, .. } = self.types[base];
                 match kind {
@@ -200,20 +186,15 @@ impl<'a> ReprBuilder<'a> {
                     }
                     _ => todo!("{kind:?}"),
                 }
-                return;
             }
-            TyKind::Nothing | TyKind::Bound(..) | TyKind::Param(..) | TyKind::Unresolved => {
-                ir::types::INVALID
+            TyKind::Struct(fields) => {
+                self.resolve_struct_repr(id, params, fields);
             }
-        };
-
-        let bytes = repr.bytes() as i32;
-        let size = Offset::new(bytes, bytes);
-        self.reprs[id] = ReprEnt {
-            repr,
-            size,
-            flags: ReprFlags::COPYABLE,
-            align: size.min(Offset::PTR),
+            TyKind::Ptr(..) => {
+                self.reprs[id].layout = Layout::PTR;
+                self.reprs[id].flags = ReprFlags::COPYABLE;
+            }
+            kind => todo!("{kind:?}"),
         };
     }
 
@@ -249,7 +230,7 @@ impl<'a> ReprBuilder<'a> {
 
         let align = fields
             .iter()
-            .map(|field| self.reprs[self.true_type(field.ty, params)].align)
+            .map(|field| self.reprs[self.true_type(field.ty, params)].layout.size())
             .fold(Offset::ZERO, |acc, align| acc.max(align).min(Offset::PTR));
 
         let mut size = Offset::ZERO;
@@ -264,36 +245,69 @@ impl<'a> ReprBuilder<'a> {
             let id = ID::raw_field(ty_id, i as u64);
             assert!(self.repr_fields.insert(id, field).is_none(), "{id:?}");
 
-            size = size + ent.size;
+            size = size + ent.layout.size();
             let padding = align - size % align;
             if padding != align {
                 size = size + padding;
             }
         }
 
-        let (repr, on_stack) = ReprBuilder::smallest_repr_for(size, self.ptr_ty);
-        let flags = (ReprFlags::COPYABLE & copyable) | (ReprFlags::ON_STACK & on_stack);
+        let flags = ReprFlags::COPYABLE & copyable;
         self.reprs[ty] = ReprEnt {
-            repr,
+            repr: ir::types::INVALID,
             flags,
-            size,
-            align,
+            layout: Layout::new(size, align),
         };
     }
 
-    pub fn smallest_repr_for(size: Offset, ptr_ty: Type) -> (Type, bool) {
-        let size = size.arch(ptr_ty.bytes() == 4);
-        if size > ptr_ty.bytes() as i32 {
-            return (ptr_ty, true);
-        }
-        let repr = match size {
-            0 => ir::types::INVALID,
-            1 => ir::types::I8,
-            2 => ir::types::I16,
-            3..=4 => ir::types::I32,
-            5..=8 => ir::types::I64,
-            _ => unreachable!(),
+}
+
+pub fn smallest_repr_for(size: Offset, ptr_ty: Type) -> (Type, bool) {
+    let size = size.arch(ptr_ty.bytes() == 4);
+    if size > ptr_ty.bytes() as i32 {
+        return (ptr_ty, true);
+    }
+    let repr = match size {
+        0 => ir::types::INVALID,
+        1 => ir::types::I8,
+        2 => ir::types::I16,
+        3..=4 => ir::types::I32,
+        5..=8 => ir::types::I64,
+        _ => unreachable!(),
+    };
+    (repr, false)
+}
+
+pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &BuiltinTypes) {
+    macro_rules! gen {
+        ($(($ty:ident, $repr:expr, $layout:expr),)*) => {
+            $(
+                reprs[builtin_types.$ty] = ReprEnt {
+                    layout: $layout,
+                    repr: $repr,
+                    flags: ReprFlags::COPYABLE,
+                };
+            )*
         };
-        (repr, false)
+    }
+
+    let hom = |i| Layout::new(Offset::new(i, i), Offset::new(i, i));
+    
+    gen!(
+        (bool, ir::types::B1, hom(1)),
+        (i8, ir::types::I8, hom(1)),
+        (i16, ir::types::I16, hom(2)),
+        (i32, ir::types::I32, hom(4)),
+        (i64, ir::types::I64, hom(8)),
+        (int, ptr_ty, Layout::PTR),
+        (char, ir::types::I32, hom(4)),
+    );
+}
+
+pub fn build_reprs(ptr_ty: Type, reprs: &mut Reprs, types: impl Iterator<Item = Ty>) {        
+    for ty in types {
+        let (repr, on_stack) = smallest_repr_for(reprs[ty].layout.size(), ptr_ty);
+        reprs[ty].repr = repr;
+        reprs[ty].flags.set(ReprFlags::ON_STACK, on_stack);
     }
 }

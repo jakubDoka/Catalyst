@@ -1,6 +1,7 @@
 use cranelift_codegen::ir::Type;
 use storage::*;
 use typec_types::*;
+use crate::*;
 
 pub struct ReplaceCache {
     data: Vec<(Ty, TyEnt)>,
@@ -32,8 +33,7 @@ pub type ReprFields = Map<ReprField>;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprEnt {
     pub repr: Type,
-    pub size: Offset,
-    pub align: Offset,
+    pub layout: Layout,
     pub flags: ReprFlags,
 }
 

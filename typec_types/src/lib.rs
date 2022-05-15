@@ -3,13 +3,11 @@
 
 pub mod error;
 pub mod func;
-pub mod size;
 pub mod tir;
 pub mod ty;
 
 pub use error::TyError;
 pub use func::{Func, FuncList, Funcs, Sig, FuncMetaData, FuncFlags, FuncKind, FuncMeta, FuncEnt};
-pub use size::{Layout, Offset};
 pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, FuncBodies};
 pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, Instances, SField, SFieldEnt, SFieldList,

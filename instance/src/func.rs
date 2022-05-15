@@ -164,14 +164,14 @@ impl MirBuilder<'_> {
 
         let expr_ty = self.body.ents[expr].ty;
 
-        if self.reprs[expr_ty].size != self.reprs[ty].size {
+        if self.reprs[expr_ty].layout != self.reprs[ty].layout {
             self.diagnostics.push(InstError::InvalidBitCast {
                 loc: span,
                 instantiated_from: None,
                 from: format!("{}", ty_display!(self, expr_ty)),
-                from_size: self.reprs[expr_ty].size.arch64 as usize,
+                from_layout: self.reprs[expr_ty].layout,
                 to: format!("{}", ty_display!(self, ty)),
-                to_size: self.reprs[ty].size.arch64 as usize,
+                to_layout: self.reprs[ty].layout,
             });
         }
 
@@ -736,7 +736,7 @@ impl MirBuilder<'_> {
             if on_stack {
                 // stack needs to be allocated to pass valid pointer
                 let stack = {
-                    let size = self.reprs[ret].size;
+                    let size = self.reprs[ret].layout.size();
                     let ent = StackEnt::new(size, self.ptr_ty);
                     self.func.stacks.push(ent)
                 };

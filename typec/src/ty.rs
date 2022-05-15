@@ -120,7 +120,7 @@ impl<'a> TyBuilder<'a> {
         let fields = self.build_fields(id, body);
         self.types[self.ty].kind = TyKind::Struct(fields);
 
-        self.graph.close_node();
+        self.graph.close_node(self.ty.0);
 
         self.scope.pop_frame();
 

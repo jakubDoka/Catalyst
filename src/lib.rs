@@ -20,6 +20,7 @@ use incr::{Incr, IncrFuncData, IncrRelocRecord};
 use instance::*;
 
 use instance::func::MirBuilderContext;
+use instance::repr::{build_builtin_reprs, build_reprs};
 use modules::*;
 use modules::module::ModuleImports;
 use parser::*;
@@ -144,10 +145,9 @@ impl Compiler {
             map
         };
 
-        let mut ty_graph = GenericGraph::new();
+        let ty_graph = GenericGraph::new();
         let mut types = Types::new();
         let builtin_types = BuiltinTypes::new(
-            &mut ty_graph, 
             &mut sources, 
             &mut builtin_source, 
             &mut types
@@ -155,7 +155,6 @@ impl Compiler {
         let mut ty_lists = TyLists::new();
         let mut funcs = Funcs::new();
         let mut func_meta = FuncMeta::new();
-
 
         let b_source = builtin_source.source;
         typec::create_builtin_items(
@@ -209,6 +208,9 @@ impl Compiler {
             )
         };
 
+        let mut reprs = Reprs::new();
+        build_builtin_reprs(isa.pointer_type(), &mut reprs, &builtin_types);
+
         let object_module = {
             let builder = ObjectBuilder::new(
                 isa, 
@@ -260,7 +262,7 @@ impl Compiler {
             entry_id: None,
             object_module,
             triple,
-            reprs: Reprs::new(),
+            reprs,
             repr_fields: ReprFields::new(),
             compile_results: SecondaryMap::new(),
             signatures: Signatures::new(),
@@ -329,24 +331,26 @@ impl Compiler {
         }
     }
 
-    fn build_types(&mut self, source: Source, ty_buffer: &mut Vec<Ty>) {
+    fn build_types(&mut self, stage: usize, source: Source, ty_buffer: &mut Vec<Ty>) {
         ty_buffer.extend(
             self.modules[source]
                 .items
                 .iter()
+                .skip(stage)
                 .filter_map(|item| item.kind.may_read::<Ty>()),
         );
 
         for ty in ty_buffer.drain(..) {
-            ty_builder!(self, ty).build();            
+            ty_builder!(self, ty).build();           
         }
     }
 
-    fn build_funcs(&mut self, source: Source, func_buffer: &mut Vec<Func>) {
+    fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
         func_buffer.extend(
             self.modules[source]
                 .items
                 .iter()
+                .skip(stage)
                 .filter_map(|item| item.kind.may_read::<Func>()),
         );
 
@@ -364,6 +368,17 @@ impl Compiler {
         }
     }
 
+    fn build_layouts(&mut self) {
+        if self.ty_graph.len() < self.types.len() - self.ty_graph.offset as usize {
+            self.ty_graph.close_node(self.types.len() as u32 - 1);
+        }
+
+        layout_builder!(self).build_layouts(&self.ty_graph);
+        let iter = (self.ty_graph.offset as usize..self.types.len()).map(|i| Ty(i as u32));
+        build_reprs(self.object_module.isa().pointer_type(), &mut self.reprs, iter);
+        self.ty_graph.clear();
+    }
+
     fn build_tir(&mut self) {
         time_report!("building of tir");
 
@@ -374,46 +389,47 @@ impl Compiler {
             self.load_builtin_scope_items(source);
 
             self.ast.clear();
-            
-            let inter_state = Parser::parse_imports(
+            let mut inter_state_opt = Some(Parser::parse_imports(
                 &self.sources,
                 &mut self.diagnostics, 
                 &mut self.ast, 
                 &mut self.ast_temp, 
                 source
-            );
+            ));
             
             self.build_scope(source);
 
-            self.ast.clear();
-            Parser::parse_code_chunk(
-                &self.sources,
-                &mut self.diagnostics,
-                &mut self.ast,
-                &mut self.ast_temp,
-                inter_state,
-            );
+            let mut stage = 0;
 
-            scope_builder!(self, source)
-                .collect_items(self.ast.elements());
+            while let Some(inter_state) = inter_state_opt { 
+                self.ast.clear();
+                inter_state_opt = Parser::parse_code_chunk(
+                    &self.sources,
+                    &mut self.diagnostics,
+                    &mut self.ast,
+                    &mut self.ast_temp,
+                    inter_state,
+                );
+            
+                // this is a nasty side effect used in `Self::build_types`
+                self.ty_graph.offset = self.types.len() as u32;
 
-            self.build_types(source, &mut ty_buffer);
+                scope_builder!(self, source)
+                    .collect_items(self.ast.elements());
 
-            bound_verifier!(self).verify();            
+                self.build_types(stage, source, &mut ty_buffer);
 
-            self.build_funcs(source, &mut func_buffer);
+                bound_verifier!(self).verify();            
+
+                self.build_funcs(stage, source, &mut func_buffer);
+
+                self.build_layouts();
+
+                stage = self.modules[source].items.len();
+            }
 
             self.scope.clear();
         }
-
-        for _ in self.ty_graph.len()..self.types.len() {
-            self.ty_graph.close_node();
-        }
-    }
-
-    fn build_repr(&mut self) {
-        let ptr_ty = self.object_module.isa().pointer_type();
-        repr_builder!(self, ptr_ty).translate(&self.ty_graph);
     }
 
     fn incr_data_to_compile_result(&self, incr_func_data: &IncrFuncData) -> CompileResult {
@@ -865,8 +881,6 @@ impl Compiler {
         s.build_tir();
         s.log_diagnostics();
         
-        s.build_repr();
-
         s.generate();
         s.log_diagnostics();
 

@@ -71,7 +71,7 @@ impl<'a> UnitBuilder<'a> {
                     loc: span,
                 })
             }) else {
-                self.ctx.cycle_graph.close_node();
+                self.ctx.cycle_graph.close_node(0);
                 if self.ctx.unit_frontier.is_empty() {
                     return Err(());
                 }
@@ -156,7 +156,7 @@ impl<'a> UnitBuilder<'a> {
             self.units[slot].local_source_path = PathBuf::from(root_path_str);
             self.units[slot].root_path = path;
 
-            self.ctx.cycle_graph.close_node();
+            self.ctx.cycle_graph.close_node(0);
         }
 
         let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.cycle_graph));
