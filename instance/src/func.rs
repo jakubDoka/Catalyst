@@ -201,27 +201,17 @@ impl MirBuilder<'_> {
         };
 
         if !on_stack && dest.is_none() {
-            let kind = InstKind::IntLit(0);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
+            self.int_lit_low(value, 0);
         }
 
         let enum_id = {
             let TyKind::Enum(ty, ..) = self.types[ty].kind else {
                 unreachable!();
             };
-            let value = self.value_from_ty(ty);
-            let kind = InstKind::IntLit(enum_id as u64);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-            value
+            self.int_lit(ty, enum_id as u64)
         };
 
-        {
-            let kind = InstKind::Assign(enum_id);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(enum_id, Some(value));
 
         let offset = {
             let enum_id = self.types[ty].id;
@@ -418,13 +408,7 @@ impl MirBuilder<'_> {
     ) -> ExprResult {
         let literal = char_value(self.sources, span).unwrap() as u64;
 
-        let value = self.value_from_ty(ty);
-
-        {
-            let kind = InstKind::IntLit(literal);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-        }
+        let value = self.int_lit(ty, literal);
 
         self.assign(value, dest);
 
@@ -587,9 +571,7 @@ impl MirBuilder<'_> {
         };
 
         if !on_stack && dest.is_none() {
-            let kind = InstKind::IntLit(0);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
+            self.int_lit_low(value, 0);
         }
 
         let data_view = self.body.cons.get(data);
@@ -646,13 +628,7 @@ impl MirBuilder<'_> {
     ) -> ExprResult {
         let literal_value = int_value(self.sources, span);
 
-        let value = self.value_from_ty(ty);
-
-        {
-            let kind = InstKind::IntLit(literal_value);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-        }
+        let value = self.int_lit(ty, literal_value);
 
         self.assign(value, dest);
 
@@ -665,13 +641,7 @@ impl MirBuilder<'_> {
         literal: u32,
         dest: Option<Value>,
     ) -> ExprResult {
-        let value = self.value_from_ty(ty);
-
-        {
-            let kind = InstKind::IntLit(literal as u64);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-        }
+        let value = self.int_lit(ty, literal as u64);
 
         self.assign(value, dest);
 
@@ -867,6 +837,18 @@ impl MirBuilder<'_> {
                 self.value_from_ty(ret)
             }
         })
+    }
+
+    fn int_lit(&mut self, ty: Ty, literal_value: u64) -> Value {
+        let value = self.value_from_ty(ty);
+        self.int_lit_low(value, literal_value);
+        value
+    }
+
+    fn int_lit_low(&mut self, value: Value, literal_value: u64) {
+        let kind = InstKind::IntLit(literal_value);
+        let ent = InstEnt::new(kind, value.into());
+        self.func.add_inst(ent);
     }
 
     fn offset(&mut self, value: Value, offset: Offset) -> Value {
