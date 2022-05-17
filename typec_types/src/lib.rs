@@ -5,15 +5,18 @@ pub mod error;
 pub mod func;
 pub mod tir;
 pub mod ty;
+pub mod jit;
+pub mod graph;
 
 pub use error::TyError;
 pub use func::{Func, FuncList, Funcs, Sig, FuncMetaData, FuncFlags, FuncKind, FuncMeta, FuncEnt};
 pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, FuncBodies};
 pub use ty::{
-    BoundImpl, BoundImpls, BuiltinTypes, Instances, SField, SFieldEnt, SFieldList,
-    SFieldLookup, SFieldRef, SFields, TFuncLists, Ty, TyDisplay, TyEnt, TyFlags, TyKind, TyList,
-    TyLists, TypeBase, Types,
+    BoundImpl, BoundImpls, BuiltinTypes, Instances, TyComp, TyCompEnt, TyCompList,
+    TyCompLookup, TyComps, TFuncLists, Ty, TyDisplay, TyEnt, TyFlags, TyKind, TyList,
+    TyLists, TypeBase, Types
 };
+pub use graph::Graph;
 
 #[macro_export]
 macro_rules! ty_display {
@@ -35,7 +38,7 @@ macro_rules! tir_display {
         $crate::tir::TirDisplay::new(
             $self.types,
             $self.ty_lists,
-            $self.sfields,
+            $self.ty_comps,
             $self.sources,
             $self.data,
             $tir,

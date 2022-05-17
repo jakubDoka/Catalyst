@@ -8,8 +8,8 @@ use crate::*;
 pub type TyLists = FramedStackMap<TyList, Ty>;
 pub type Types = PrimaryMap<Ty, TyEnt>;
 pub type TFuncLists = StackMap<FuncList, Func>;
-pub type SFieldLookup = Map<SFieldRef>;
-pub type SFields = StackMap<SFieldList, SFieldEnt, SField>;
+pub type TyCompLookup = Map<TyComp>;
+pub type TyComps = StackMap<TyCompList, TyCompEnt, TyComp>;
 pub type BoundImpls = Map<BoundImpl>;
 pub type Instances = Map<Ty>;
 
@@ -92,6 +92,7 @@ macro_rules! gen_builtin_table {
             $(
                 pub $name: Ty,
             )*
+            pub discriminant: Span,
         }
 
         impl BuiltinTypes {
@@ -111,7 +112,8 @@ macro_rules! gen_builtin_table {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
-                        flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..))),
+                        flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..)))
+                            | TyFlags::BUILTIN,
                     };
                     let $name = types.push(ent);
                 )*
@@ -120,6 +122,7 @@ macro_rules! gen_builtin_table {
                     $(
                         $name,
                     )*
+                    discriminant: builtin_source.make_span(sources, "discriminant"),
                 }
             }
         }
@@ -149,47 +152,16 @@ gen_builtin_table!(
     i64: TyKind::Int(64),
 );
 
-#[derive(Clone, Copy, Default)]
-pub struct SFieldRef {
-    pub field: SField,
-    pub ambiguous: bool,
-    pub next: PackedOption<ID>,
-}
-
-impl SFieldRef {
-    pub fn new(field: SField) -> Self {
-        SFieldRef {
-            field,
-            ambiguous: false,
-            next: None.into(),
-        }
-    }
-}
-
-impl ReservedValue for SFieldRef {
-    fn reserved_value() -> Self {
-        SFieldRef {
-            field: ReservedValue::reserved_value(),
-            ambiguous: false,
-            next: None.into(),
-        }
-    }
-
-    fn is_reserved_value(&self) -> bool {
-        self.field.is_reserved_value()
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
-pub struct SFieldEnt {
+pub struct TyCompEnt {
     pub ty: Ty,
     pub index: u32,
     pub span: Span,
 }
 
-impl ReservedValue for SFieldEnt {
+impl ReservedValue for TyCompEnt {
     fn reserved_value() -> Self {
-        SFieldEnt {
+        TyCompEnt {
             ty: Ty::reserved_value(),
             span: Span::reserved_value(),
             index: u32::MAX,
@@ -213,6 +185,7 @@ bitflags! {
     #[derive(Default)]
     pub struct TyFlags: u32 {
         const GENERIC = 1 << 0;
+        const BUILTIN = 1 << 1;
     }
 }
 
@@ -268,7 +241,9 @@ impl std::fmt::Display for TyDisplay<'_> {
 pub enum TyKind {
     Param(u8, TyList, PackedOption<Ty>),
     Bound(FuncList),
-    Struct(SFieldList),
+    Struct(TyCompList),
+    EnumVar(Ty, TyCompList),
+    Enum(TyCompList),
     /// (base, params)
     Instance(Ty, TyList),
     /// (inner, depth)
@@ -287,8 +262,8 @@ impl Default for TyKind {
 
 gen_entity!(Ty);
 gen_entity!(TyList);
-gen_entity!(SField);
-gen_entity!(SFieldList);
+gen_entity!(TyComp);
+gen_entity!(TyCompList);
 
 impl Ty {
     pub fn display(
@@ -303,10 +278,16 @@ impl Ty {
             TyKind::Struct(..)
             | TyKind::Bound(..)
             | TyKind::Int(..)
+            | TyKind::Enum(..)
             | TyKind::Nothing
             | TyKind::Bool => {
                 let name = types[self].name;
                 write!(to, "{}", sources.display(name))?;
+            }
+            TyKind::EnumVar(parent, ..) => {
+                let name = types[self].name;
+                parent.display(types, ty_lists, sources, to)?;
+                write!(to, "::{}", sources.display(name))?;
             }
             TyKind::Instance(base, params) => {
                 let base = types[base].name;

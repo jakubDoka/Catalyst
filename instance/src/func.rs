@@ -35,7 +35,7 @@ pub struct MirBuilder<'a> {
     pub types: &'a Types,
     pub ty_lists: &'a TyLists,
     pub func_lists: &'a TFuncLists,
-    pub sfields: &'a SFields,
+    pub ty_comps: &'a TyComps,
     pub bound_impls: &'a BoundImpls,
     pub repr_fields: &'a ReprFields,
     pub builtin_types: &'a BuiltinTypes,
@@ -390,7 +390,7 @@ impl MirBuilder<'_> {
         let field_id = {
             let header_ty = self.body.ents[base].ty;
             let ty_id = self.types[header_ty].id;
-            let SFieldEnt { index, .. } = self.sfields[field];
+            let TyCompEnt { index, .. } = self.ty_comps[field];
             ID::raw_field(ty_id, index as u64)
         };
 

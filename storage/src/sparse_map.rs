@@ -11,8 +11,8 @@ impl<K: EntityRef, V> SparseMap<K, V> {
         }
     }
 
-    pub fn insert(&mut self, key: K, value: V) {
-        self.inner.insert(SparseWrapper(key, value));
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.inner.insert(SparseWrapper(key, value)).map(|v| v.1)
     }
 
     pub fn remove(&mut self, key: K) -> Option<V> {
@@ -21,6 +21,18 @@ impl<K: EntityRef, V> SparseMap<K, V> {
 
     pub fn get(&self, key: K) -> Option<&V> {
         self.inner.get(key).map(|s| &s.1)
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = K> + '_ {
+        self.inner.values().map(|s| s.0)
     }
 }
 

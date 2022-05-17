@@ -14,7 +14,7 @@ pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
         &self[span.source].content[span.range()]
     }
 
-    fn id(&self, span: Span) -> ID {
+    fn id_of(&self, span: Span) -> ID {
         ID::new(self.display(span))
     }
 }
@@ -392,9 +392,11 @@ gen_kind!(
     Let = "'let'",
     Struct = "'struct'",
     Bound = "'bound'",
+    Enum = "'enum'",
     Mut = "'mut'",
     Impl = "'impl'",
     As = "'as'",
+    Match = "'match'",
     Ident = "<ident>",
     Operator = "<operator>",
     Int(i16) = "<int>",
@@ -411,6 +413,7 @@ gen_kind!(
     Colon = "':'",
     Dot = "'.'",
     RightArrow = "'->'",
+    ThickRightArrow = "'=>'",
     DoubleColon = "'::'",
     Hash = "'#'",
     NewLine = "'\\n' | ';'",

@@ -10,15 +10,15 @@ use module_types::{
     scope::{self, Scope},
 };
 use storage::*;
-use typec_types::*;
+use typec_types::{*, jit::{Macro, Stage}};
 
 pub struct ScopeBuilder<'a> {
     pub scope: &'a mut Scope,
     pub funcs: &'a mut Funcs,
     pub types: &'a mut Types,
     pub ty_lists: &'a mut TyLists,
-    pub sfields: &'a mut SFields,
-    pub sfield_lookup: &'a mut SFieldLookup,
+    pub ty_comps: &'a mut TyComps,
+    pub ty_comp_lookup: &'a mut TyCompLookup,
     pub builtin_types: &'a BuiltinTypes,
     pub tfunc_lists: &'a mut TFuncLists,
     pub instances: &'a mut Instances,
@@ -41,8 +41,8 @@ macro_rules! scope_builder {
             &mut $self.funcs,
             &mut $self.types,
             &mut $self.ty_lists,
-            &mut $self.sfields,
-            &mut $self.sfield_lookup,
+            &mut $self.ty_comps,
+            &mut $self.ty_comp_lookup,
             &$self.builtin_types,
             &mut $self.func_lists,
             &mut $self.instances,
@@ -65,8 +65,8 @@ impl<'a> ScopeBuilder<'a> {
         funcs: &'a mut Funcs,
         types: &'a mut Types,
         ty_lists: &'a mut TyLists,
-        sfields: &'a mut SFields,
-        sfield_lookup: &'a mut SFieldLookup,
+        ty_comps: &'a mut TyComps,
+        ty_comp_lookup: &'a mut TyCompLookup,
         builtin_types: &'a BuiltinTypes,
         tfunc_lists: &'a mut TFuncLists,
         instances: &'a mut Instances,
@@ -85,8 +85,8 @@ impl<'a> ScopeBuilder<'a> {
             funcs,
             types,
             ty_lists,
-            sfields,
-            sfield_lookup,
+            ty_comps,
+            ty_comp_lookup,
             builtin_types,
             tfunc_lists,
             instances,
@@ -115,7 +115,8 @@ impl<'a> ScopeBuilder<'a> {
             match kind {
                 AstKind::Function(..) | AstKind::Impl => (),
                 AstKind::Struct => drop(self.collect_struct(ast)),
-                AstKind::Bound => drop(self.collect_bound(ast)), // for now
+                AstKind::Bound => drop(self.collect_bound(ast)),
+                AstKind::Enum => drop(self.collect_struct(ast)), // there is no difference at this level
                 _ => (todo!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
 
@@ -131,7 +132,7 @@ impl<'a> ScopeBuilder<'a> {
             match kind {
                 AstKind::Function(..) => drop(self.collect_function(None, None, ast)),
                 AstKind::Impl => drop(self.collect_impl(ast)),
-                AstKind::Struct | AstKind::Bound => (),
+                AstKind::Struct | AstKind::Bound | AstKind::Enum => (),
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
 
@@ -242,7 +243,7 @@ impl<'a> ScopeBuilder<'a> {
         };
 
         let name = self.ast.nodes[name].span;
-        let scope_id = self.sources.id(name);
+        let scope_id = self.sources.id_of(name);
         let id = self.modules[self.module].id + scope_id;
 
         let slot = self.types.push(TyEnt {
@@ -290,14 +291,12 @@ impl<'a> ScopeBuilder<'a> {
 
     fn collect_struct(&mut self, ast: Ast) -> errors::Result {
         let source = self.ast.nodes[ast].span.source();
-        let &[generics, name, ..] = self.ast.children(ast) else {
+        let &[generics, name, _body] = self.ast.children(ast) else {
             unreachable!();
         };
 
-        // dbg!(generics, self.sources.display(self.ast.nodes[name].span));
-
         let span = self.ast.nodes[name].span;
-        let scope_id = self.sources.id(span);
+        let scope_id = self.sources.id_of(span);
         let id = self.modules[self.module].id + scope_id;
         let flags = if generics.is_reserved_value() {
             TyFlags::empty()
@@ -436,9 +435,14 @@ impl<'a> ScopeBuilder<'a> {
             self.funcs.to_link.push(func);
         }
 
+        if let Some(macro_tag) = self.parse_macro_tag() {
+            self.funcs.macros.push((func, macro_tag));
+        };
+
         {
             let is_entry = self.find_simple_tag("entry");
             let is_inline = self.find_simple_tag("inline");
+
             let flags = {
                 (FuncFlags::EXTERNAL & external)
                     | (FuncFlags::INLINE & is_inline.is_some())
@@ -449,7 +453,7 @@ impl<'a> ScopeBuilder<'a> {
 
             if flags.contains(FuncFlags::ENTRY | FuncFlags::GENERIC) {
                 self.diagnostics.push(TyError::GenericEntry {
-                    tag: is_entry.unwrap(),
+                    tag: self.ast.nodes[is_entry.unwrap()].span,
                     generics: self.ast.nodes[generics].span,
                     loc: self.ast.nodes[name].span,
                 })
@@ -545,13 +549,45 @@ impl<'a> ScopeBuilder<'a> {
         self.ty_lists.pop_frame()
     }
 
-    pub fn find_simple_tag(&self, name: &str) -> Option<Span> {
+    pub fn parse_macro_tag(&self) -> Option<Macro> {
+        let raw_tag = self.find_simple_tag("macro")?;
+
+        // TODO: emit error
+        assert!(self.ast.nodes[raw_tag].kind == AstKind::Call);
+
+        let &[_, from, to] = self.ast.children(raw_tag) else {
+            // TODO: emit error
+            unreachable!();
+        };
+        
+        let from = {
+            let span = self.ast.nodes[from].span;
+            let str = self.sources.display(span);
+            Stage::from_str(str).map_err(|_| todo!()).ok()?
+        };
+
+        let to = {
+            let span = self.ast.nodes[to].span;
+            let str = self.sources.display(span);
+            Stage::from_str(str).map_err(|_| todo!()).ok()?
+        };
+
+        // TODO: emit error
+        assert!(from.can_bridge_to(to));
+
+        Some(Macro { from, to })
+    }
+
+    pub fn find_simple_tag(&self, name: &str) -> Option<Ast> {
         self.ctx
             .tags
             .iter()
             .rev()
-            .map(|&tag| self.ast.nodes[tag].span)
-            .find(|&span| self.sources.display(span)[1..].trim() == name)
+            .find(|&&tag| 
+                self.sources.display(self.ast.nodes[tag].span)[1..]
+                    .trim().starts_with(name)
+            )
+            .copied()
     }
 }
 

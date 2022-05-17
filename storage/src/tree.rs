@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use cranelift_entity::EntityRef;
 
-pub trait TreeStorage<I: EntityRef + 'static + Debug>
+pub trait TreeStorage<I: EntityRef + 'static>
 where
     Self: Sized,
 {
@@ -13,7 +13,11 @@ where
     fn node_len(&self, id: I) -> usize;
 
     /// Return number of nodes in tree.
-    fn len(&self) -> usize;
+    fn max_node(&self) -> usize;
+
+    fn nodes(&self, dump: &mut Vec<I>) {
+        dump.extend((0..self.max_node()).map(|i| I::new(i)))
+    }
 
     fn detect_cycles(&self, root: I, ordering: Option<&mut Vec<I>>) -> Result<(), Vec<I>> {
         self.detect_cycles_with_resources(root, &mut CycleDetectResources::new(), ordering)
@@ -21,8 +25,11 @@ where
 
     fn total_ordering(&self, ordering: &mut Vec<I>) -> Result<(), Vec<I>> {
         let mut resources = CycleDetectResources::new();
-        (0..self.len())
-            .map(|i| self.detect_cycles_with_resources(I::new(i), &mut resources, Some(ordering)))
+        let mut nodes = vec![];
+        self.nodes(&mut nodes);
+        nodes
+            .into_iter()
+            .map(|i| self.detect_cycles_with_resources(i, &mut resources, Some(ordering)))
             .find(|r| r.is_err())
             .unwrap_or(Ok(()))
     }
@@ -38,7 +45,7 @@ where
         CycleDetectResources { stack, lookup }: &mut CycleDetectResources<I>,
         mut ordering: Option<&mut Vec<I>>,
     ) -> Result<(), Vec<I>> {
-        lookup.resize(self.len(), (false, false));
+        lookup.resize(self.max_node(), (false, false));
         stack.push((root, 0));
 
         while let Some(&(node, index)) = stack.last() {
@@ -84,7 +91,7 @@ impl<T: EntityRef + 'static + Debug> TreeStorage<T> for GenericGraph {
         (self.hints[id.index() + 1] - self.hints[id.index()]) as usize
     }
 
-    fn len(&self) -> usize {
+    fn max_node(&self) -> usize {
         self.hints.len() - 1
     }
 }

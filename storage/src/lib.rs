@@ -16,7 +16,7 @@ pub use bit_serde::BitSerde;
 pub use bitflags::bitflags;
 pub use cranelift_entity::{
     packed_option::{PackedOption, ReservedValue},
-    EntityRef, EntitySet, PrimaryMap,
+    EntityRef, EntitySet, PrimaryMap, ListPool, EntityList,
 };
 pub use framed_stack::FramedStack;
 pub use map::{Map, SecondaryMap, Set, ID};

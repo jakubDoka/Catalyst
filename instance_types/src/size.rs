@@ -40,6 +40,13 @@ impl Layout {
             (self.arch64 >> Self::SIZE_WIDTH) as i32,
         )
     }
+
+    pub fn max(self, other: Self) -> Self {
+        Self::new(
+            self.size().max(other.size()),
+            self.align().max(other.align()),
+        )
+    }
 }
 
 impl Display for Layout {

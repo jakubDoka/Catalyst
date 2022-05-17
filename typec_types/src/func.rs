@@ -3,7 +3,7 @@ use lexer_types::*;
 use module_types::*;
 use storage::*;
 
-use crate::*;
+use crate::{*, jit::Macro};
 
 pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 
@@ -12,6 +12,8 @@ pub struct Funcs {
     pub instances: Map<Func>,
     pub to_compile: Vec<(Func, TyList)>,
     pub to_link: Vec<Func>,
+    pub to_jit_compile: Vec<(Func, TyList)>,
+    pub macros: Vec<(Func, Macro)>,
 }
 
 impl Funcs {
@@ -21,6 +23,8 @@ impl Funcs {
             instances: Map::new(),
             to_compile: Vec::new(),
             to_link: Vec::new(),
+            to_jit_compile: Vec::new(),
+            macros: Vec::new(),
         }
     }
 }

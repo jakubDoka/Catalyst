@@ -116,6 +116,10 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn start_index_of(&self, id: E) -> Option<usize> {
+        self.indices.get(id.index()).map(|&i| i as usize)
+    }
+
     pub fn get_iter(&self, id: E) -> impl Iterator<Item = (S, &T)> + Clone {
         self.get(id)
             .iter()

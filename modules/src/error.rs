@@ -40,15 +40,23 @@ pub fn display(
         }
         &ModuleError::InvalidScopeItem {
             loc,
-            expected,
+            ref expected,
             found,
         } => {
+            let expected = expected
+                .iter()
+                .map(|&exp| 
+                    scope_item_lexicon.name_of(exp)    
+                )
+                .collect::<Vec<_>>()
+                .join(" | ");
+
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(
                     to,
                     "invalid scope item, expected {} but found {}",
-                    scope_item_lexicon.name_of(expected),
+                    expected,
                     scope_item_lexicon.name_of(found),
                 )
             })?;

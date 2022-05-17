@@ -159,7 +159,7 @@ impl<'a> UnitBuilder<'a> {
             self.ctx.cycle_graph.close_node(0);
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::len(&self.ctx.cycle_graph));
+        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::max_node(&self.ctx.cycle_graph));
         self.ctx
             .cycle_graph
             .detect_cycles(slot, Some(&mut ordering))

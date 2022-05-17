@@ -11,15 +11,15 @@ pub struct TyBuilder<'a> {
     pub scope: &'a mut Scope,
     pub types: &'a mut Types,
     pub ty_lists: &'a mut TyLists,
-    pub sfields: &'a mut SFields,
-    pub sfield_lookup: &'a mut SFieldLookup,
+    pub ty_comps: &'a mut TyComps,
+    pub ty_comp_lookup: &'a mut TyCompLookup,
     pub builtin_types: &'a BuiltinTypes,
     pub instances: &'a mut Instances,
     pub bound_impls: &'a mut BoundImpls,
     pub sources: &'a Sources,
     pub ast: &'a AstData,
     pub ctx: &'a mut ScopeContext,
-    pub graph: &'a mut GenericGraph,
+    pub ty_graph: &'a mut Graph<Ty>,
     pub modules: &'a mut Modules,
     pub ty: Ty,
     pub diagnostics: &'a mut errors::Diagnostics,
@@ -32,8 +32,8 @@ macro_rules! ty_builder {
             &mut $self.scope,
             &mut $self.types,
             &mut $self.ty_lists,
-            &mut $self.sfields,
-            &mut $self.sfield_lookup,
+            &mut $self.ty_comps,
+            &mut $self.ty_comp_lookup,
             &$self.builtin_types,
             &mut $self.instances,
             &mut $self.bound_impls,
@@ -53,15 +53,15 @@ impl<'a> TyBuilder<'a> {
         scope: &'a mut Scope,
         types: &'a mut Types,
         ty_lists: &'a mut TyLists,
-        sfields: &'a mut SFields,
-        sfield_lookup: &'a mut SFieldLookup,
+        ty_comps: &'a mut TyComps,
+        ty_comp_lookup: &'a mut TyCompLookup,
         builtin_types: &'a BuiltinTypes,
         instances: &'a mut Instances,
         bound_impls: &'a mut BoundImpls,
         sources: &'a Sources,
         ast: &'a AstData,
         ctx: &'a mut ScopeContext,
-        graph: &'a mut GenericGraph,
+        graph: &'a mut Graph<Ty>,
         modules: &'a mut Modules,
         ty: Ty,
         diagnostics: &'a mut errors::Diagnostics,
@@ -70,15 +70,15 @@ impl<'a> TyBuilder<'a> {
             scope,
             types,
             ty_lists,
-            sfields,
-            sfield_lookup,
+            ty_comps,
+            ty_comp_lookup,
             builtin_types,
             instances,
             bound_impls,
             sources,
             ast,
             ctx,
-            graph,
+            ty_graph: graph,
             modules,
             ty,
             diagnostics,
@@ -93,9 +93,12 @@ impl<'a> TyBuilder<'a> {
         }
         let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
+        self.ty_graph.add_vertex(self.ty);
+
         match kind {
-            AstKind::Struct => drop(self.build_struct(id, ast)),
-            AstKind::Bound => drop(self.build_bound(id, ast)),
+            AstKind::Struct => self.build_struct(id, ast),
+            AstKind::Bound => self.build_bound(id, ast),
+            AstKind::Enum => self.build_enum(id, ast),
             _ => todo!(
                 "Unhandled type decl {:?}: {}",
                 kind,
@@ -104,11 +107,113 @@ impl<'a> TyBuilder<'a> {
         }
     }
 
-    pub fn build_bound(&mut self, _id: ID, _ast: Ast) -> errors::Result {
-        Ok(())
+    fn build_enum(&mut self, id: ID, ast: Ast) {
+        let &[generics, .., body] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        self.scope.mark_frame();
+
+        self.build_generics(generics);
+
+        let variants = self.build_variants(id, self.types[self.ty].flags, body);
+        self.types[self.ty].kind = TyKind::Enum(variants);
+
+        self.scope.pop_frame();
     }
 
-    pub fn build_struct(&mut self, id: ID, ast: Ast) -> errors::Result {
+    fn build_variants(&mut self, id: ID, flags: TyFlags, ast: Ast) -> TyCompList {
+        let discriminant_ty = match self.ast.children(ast).len() {
+            const { u16::MAX as usize }.. => panic!("Are you being serious?"),
+            256.. => self.builtin_types.i16,
+            1.. => self.builtin_types.i8,
+            0 => self.builtin_types.nothing,
+            _ => unreachable!(),
+        };
+
+        // we need to allocate as build_variant also pushes to ty_comps,
+        // if this becomes a bottleneck, we will store long lived vec in context
+        let mut variants = Vec::with_capacity(self.ast.children(ast).len());
+        for (i, &variant) in self.ast.children(ast).iter().enumerate() {
+            let &[name, body] = self.ast.children(variant) else {
+                unreachable!();
+            };
+            let name = self.ast.nodes[name].span;
+            let variant_id = ID::field(id, self.sources.id_of(name));
+            
+            let ty = self.build_variant(discriminant_ty, name, flags, variant_id, body);
+        
+            self.ty_graph.add_edge(self.ty, ty);
+
+            let ent = TyCompEnt {
+                ty,
+                index: i as u32,
+                span: self.ast.nodes[variant].span,
+            };
+
+            variants.push((ent, variant_id));
+        }
+
+        for (comp, variant_id) in variants {
+            let comp = self.ty_comps.push_one(comp);
+            self.ty_comp_lookup.insert(variant_id, comp);
+        }
+
+        self.ty_comps.close_frame()
+    }
+
+    fn build_variant(&mut self, discriminant_ty: Ty, name: Span, flags: TyFlags, id: ID, ast: Ast) -> Ty {
+        let dest = self.types.push(Default::default());
+        self.ty_graph.add_vertex(dest);
+        
+        let fields = {
+            let discriminant_id = ID::field(id, ID::new("discriminant"));
+            let ent = TyCompEnt {
+                ty: discriminant_ty,
+                index: 0,
+                span: self.builtin_types.discriminant,
+            };
+            let field = self.ty_comps.push_one(ent);
+            self.ty_comp_lookup.insert_unique(discriminant_id, field);
+
+            for (i, &field) in self.ast.children(ast).iter().enumerate() {
+                let &[name, ty] = self.ast.children(field) else {
+                    unreachable!();
+                };
+                let field_id = ID::field(id, ast::id_of(name, self.ast, self.sources));
+                
+                let Ok(ty) = ty_parser!(self).parse_type(ty) else {
+                    continue;
+                };
+
+                self.ty_graph.add_edge(dest, ty);
+
+                let ent = TyCompEnt {
+                    ty,
+                    index: i as u32 + 1,
+                    span: self.ast.nodes[name].span,
+                };
+                let field = self.ty_comps.push_one(ent);
+                self.ty_comp_lookup.insert_unique(field_id, field);
+            }
+            self.ty_comps.close_frame()
+        };
+
+        self.types[dest] = TyEnt {
+            id,
+            kind: TyKind::EnumVar(self.ty, fields),
+            name,
+            flags,
+        };
+
+        dest
+    }
+
+    fn build_bound(&mut self, _id: ID, _ast: Ast) {
+        // do absolutely nothing
+    }
+
+    fn build_struct(&mut self, id: ID, ast: Ast) {
         let &[generics, .., body] = self.ast.children(ast) else {
             unreachable!();
         };
@@ -120,14 +225,10 @@ impl<'a> TyBuilder<'a> {
         let fields = self.build_fields(id, body);
         self.types[self.ty].kind = TyKind::Struct(fields);
 
-        self.graph.close_node(self.ty.0);
-
         self.scope.pop_frame();
-
-        Ok(())
     }
 
-    pub fn build_fields(&mut self, id: ID, body: Ast) -> SFieldList {
+    fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
         for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
             let &[name, field_ty_ast] = self.ast.children(field_ast) else {
                 unreachable!();
@@ -137,40 +238,33 @@ impl<'a> TyBuilder<'a> {
                 continue;
             };
 
+            self.ty_graph.add_edge(self.ty, field_ty);
+
             let span = self.ast.nodes[name].span;
 
             let id = {
-                let name = self.sources.id(span);
+                let name = self.sources.id_of(span);
                 ID::field(id, name)
             };
 
             let field = {
-                let field = SFieldEnt {
+                let field = TyCompEnt {
                     span,
                     ty: field_ty,
                     index: i as u32,
                 };
-                self.sfields.push_one(field)
+                self.ty_comps.push_one(field)
             };
 
             assert!(self
-                .sfield_lookup
-                .insert(id, SFieldRef::new(field))
-                .map(|f| f.next.is_some())
-                .unwrap_or(true));
-
-            let field_ty = if let TyKind::Instance(header, ..) = self.types[field_ty].kind {
-                header
-            } else {
-                field_ty
-            };
-
-            self.graph.add_edge(field_ty.as_u32());
+                .ty_comp_lookup
+                .insert(id, field)
+                .is_none());
         }
-        self.sfields.close_frame()
+        self.ty_comps.close_frame()
     }
 
-    pub fn build_generics(&mut self, generics: Ast) {
+    fn build_generics(&mut self, generics: Ast) {
         if generics.is_reserved_value() {
             return;
         }
@@ -183,7 +277,7 @@ impl<'a> TyBuilder<'a> {
             let mut current = self.builtin_types.ty_any;
             for &ident in generics {
                 let span = self.ast.nodes[ident].span;
-                let id = self.sources.id(span);
+                let id = self.sources.id_of(span);
                 self.scope.push_item(id, ScopeItem::new(current, span));
                 current = get_param(current, self.types);
             }

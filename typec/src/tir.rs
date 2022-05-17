@@ -138,7 +138,7 @@ impl<'a> BoundVerifier<'a> {
                     let ent = &self.func_meta[*func];
 
                     let (sugar_id, certain_id) = {
-                        let func = self.sources.id(ent.name);
+                        let func = self.sources.id_of(ent.name);
                         let ty = self.types[implementor].id;
                         let sugar_id = ID::owned_func(ty, func);
                         let bound = self.types[bound].id;
@@ -242,8 +242,8 @@ pub struct TirBuilder<'a> {
     pub func_lists: &'a TFuncLists,
     pub ty_lists: &'a mut TyLists,
     pub instances: &'a mut Instances,
-    pub sfields: &'a mut SFields,
-    pub sfield_lookup: &'a mut SFieldLookup,
+    pub ty_comps: &'a mut TyComps,
+    pub ty_comp_lookup: &'a mut TyCompLookup,
     pub builtin_types: &'a BuiltinTypes,
     pub bound_impls: &'a mut BoundImpls,
     pub ctx: &'a mut ScopeContext,
@@ -268,8 +268,8 @@ macro_rules! tir_builder {
             &mut $self.func_lists,
             &mut $self.ty_lists,
             &mut $self.instances,
-            &mut $self.sfields,
-            &mut $self.sfield_lookup,
+            &mut $self.ty_comps,
+            &mut $self.ty_comp_lookup,
             &$self.builtin_types,
             &mut $self.bound_impls,
             &mut $self.scope_context,
@@ -294,8 +294,8 @@ impl<'a> TirBuilder<'a> {
         func_lists: &'a TFuncLists,
         ty_lists: &'a mut TyLists,
         instances: &'a mut Instances,
-        sfields: &'a mut SFields,
-        sfield_lookup: &'a mut SFieldLookup,
+        ty_comps: &'a mut TyComps,
+        ty_comp_lookup: &'a mut TyCompLookup,
         builtin_types: &'a BuiltinTypes,
         bound_impls: &'a mut BoundImpls,
         ctx: &'a mut ScopeContext,
@@ -316,8 +316,8 @@ impl<'a> TirBuilder<'a> {
             func_lists,
             ty_lists,
             instances,
-            sfields,
-            sfield_lookup,
+            ty_comps,
+            ty_comp_lookup,
             builtin_types,
             bound_impls,
             ctx,
@@ -416,7 +416,7 @@ impl<'a> TirBuilder<'a> {
                 .is_reserved_value()
                 .not()
                 .then(|| self.ast.nodes[ret_ast].span);
-            self.expect_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
+            self.infer_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
                 because,
                 expected: ret,
                 got,
@@ -455,7 +455,7 @@ impl<'a> TirBuilder<'a> {
                 for &func in self.func_lists.get(funcs) {
                     let name = self.func_meta[func].name;
                     let id = {
-                        let id = self.sources.id(name);
+                        let id = self.sources.id_of(name);
                         let bound = self.types[bound_combo].id;
                         ID::owned_func(bound, id)
                     };
@@ -533,6 +533,8 @@ impl<'a> TirBuilder<'a> {
             AstKind::Break => self.build_break(ast)?,
             AstKind::Deref => self.build_deref(ast)?,
             AstKind::BitCast => self.build_bit_cast(ast)?,
+            AstKind::Match => self.build_match(ast)?,
+            AstKind::Error => return Err(()),
             _ => todo!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
@@ -540,6 +542,228 @@ impl<'a> TirBuilder<'a> {
             ),
         };
         Ok(expr)
+    }
+
+    fn build_match(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let &[expr, body] = self.ast.children(ast) else {
+            unreachable!();
+        };
+
+        let expr = self.build_expr(expr)?;
+        
+        let mut ret_ty = None;
+        let mut terminating = true;
+        println!("{}", self.body.ents[expr].span.log(self.sources));
+        let arms = {
+            self.temp.mark_frame();
+            for &arm in self.ast.children(body) {
+                let &[pattern, body] = self.ast.children(arm) else {
+                    unreachable!();
+                };
+
+                self.scope.mark_frame();
+
+                let (pattern, expr) = (
+                    self.build_pattern(expr, pattern),
+                    self.build_expr(body),
+                );
+
+                self.scope.pop_frame();
+
+                let (Ok((refutable, pattern)), Ok(expr)) = (pattern, expr) else {
+                    continue; // Recover here
+                };
+
+                let TirEnt { ty, flags, .. } = self.body.ents[expr];
+
+                let tir = {
+                    let span = self.ast.nodes[arm].span;
+                    let kind = TirKind::MatchArm(pattern, expr);
+                    let ent = TirEnt::with_flags(kind, ty, TirFlags::REFUTABLE & refutable, span);
+                    self.body.ents.push(ent)
+                };
+                self.temp.push(tir);
+                
+                if !flags.contains(TirFlags::TERMINATING) {
+                    terminating = false;
+                    if let Some(ref mut ret_ty) = ret_ty {
+                        if ty != *ret_ty {
+                            println!("{} != {}", ty_display!(self, ty), ty_display!(self, *ret_ty));
+                            *ret_ty = self.builtin_types.nothing;
+                        }
+                    } else {
+                        ret_ty = Some(ty);
+                    }
+                }
+
+                if !refutable {
+                    break; // TODO: emit warning if this is not the last match arm
+                }
+            }
+            self.temp.save_and_pop_frame(&mut self.body.cons)
+        };
+
+        let ty = ret_ty.unwrap_or(self.builtin_types.nothing);
+        let span = self.ast.nodes[ast].span;
+        let kind = TirKind::Match(expr, arms);
+        let ent = TirEnt::with_flags(kind, ty, TirFlags::TERMINATING & terminating, span);
+        Ok(self.body.ents.push(ent))
+    }
+
+    fn build_pattern(&mut self, expr: Tir, ast: Ast) -> errors::Result<(bool, TirList)> {
+        self.temp.mark_frame();
+
+        let refutable = self.build_pattern_low(expr, ast); // recovery
+        let ops = self.temp.save_and_pop_frame(&mut self.body.cons);
+
+        Ok((refutable?, ops))
+    }
+
+    fn build_pattern_low(&mut self, expr: Tir, ast: Ast) -> errors::Result<bool> {
+        let AstEnt { kind, span, .. } = self.ast.nodes[ast];
+
+        let refutable = match kind {
+            AstKind::Ident => {
+                let span = self.ast.nodes[ast].span;
+                let id = self.sources.id_of(span);
+                
+                if id != ID::new("_") {
+                    let item = ScopeItem::new(expr, span);
+                    self.scope.push_item(id, item);
+                    self.temp.push(expr);
+                }
+
+                false
+            },
+            
+            AstKind::StructPattern => {
+                let &[path, body] = self.ast.children(ast) else {
+                    unreachable!();
+                };
+                
+                let (ty, mut refutable) = self.build_path_match(expr, path)?;
+    
+                for &field in self.ast.children(body) {
+                    let &[name, mut pattern] = self.ast.children(field) else {
+                        unreachable!("{}", self.sources.display(span));
+                    };
+    
+                    // shorthand case
+                    if pattern.is_reserved_value() {
+                        pattern = name;
+                    }
+    
+                    let span = self.ast.nodes[name].span;
+                    let id = self.sources.id_of(span);
+
+                    let Ok((field_id, field_ty)) = self.find_field(ty, id, span) else {
+                        continue;
+                    };
+
+                    let field_access = {
+                        let kind = TirKind::FieldAccess(expr, field_id);
+                        let ent = TirEnt::new(kind, field_ty, span);
+                        self.body.ents.push(ent)
+                    };
+                    
+                    let Ok(current_refutable) = self.build_pattern_low(field_access, pattern) else {
+                        continue; // recover here
+                    };
+
+                    refutable |= current_refutable;
+                }
+    
+                refutable
+            },
+            AstKind::TupleStructPattern => {
+                let &[path, body] = self.ast.children(ast) else {
+                    unreachable!();
+                };
+                
+                let (ty, mut refutable) = self.build_path_match(expr, path)?;
+    
+                let is_enum = matches!(self.types[ty].kind, TyKind::EnumVar(..));
+
+                for (i, &field) in self.ast.children(body).iter().enumerate() {
+                    let i = i + is_enum as usize;
+                    let span = self.ast.nodes[field].span;
+                    let Ok((field_id, field_ty)) = self.get_field(ty, i, span) else {
+                        continue;
+                    };
+
+                    let field_access = {
+                        let kind = TirKind::FieldAccess(expr, field_id);
+                        let ent = TirEnt::new(kind, field_ty, span);
+                        self.body.ents.push(ent)
+                    };
+                    
+                    let Ok(current_refutable) = self.build_pattern_low(field_access, field) else {
+                        continue; // recover here
+                    };
+
+                    refutable |= current_refutable;
+                }
+    
+                refutable
+            },
+            AstKind::Path => self.build_path_match(expr, ast).map(|(_, refutable)| refutable)?,
+            AstKind::Char | AstKind::Int(..) | AstKind::Bool(..) => {
+                let char_tir = self.build_expr(ast)?;
+
+                let span = self.ast.nodes[ast].span;
+                let kind = TirKind::PatternMatch(expr, char_tir);
+                let ent = TirEnt::new(kind, self.builtin_types.bool, span);
+                let tir = self.body.ents.push(ent);
+                self.temp.push(tir);
+
+                true
+            },
+            _ => todo!(
+                "Unhandled pattern ast {:?}: {}",
+                kind,
+                self.sources.display(span)
+            ),
+        };
+
+        Ok(refutable)
+    }
+
+    fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Ty, bool)> {
+        let expr_ty = self.body.ents[expr].ty;
+        let (id, maybe_owner) = ident_hasher!(self).ident_id_low(ast, None)?;
+
+        if let Some((ty, span)) = maybe_owner {
+            if let TyKind::Enum(..) = self.types[ty].kind {
+                let Some(&variant) = self.ty_comp_lookup.get(id) else {
+                    todo!("{}", span.log(self.sources));                            
+                };
+                let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
+
+                // expression is known to be this variant
+                if expr_ty == variant {
+                    return Ok((variant, false));
+                }
+
+                self.infer_ty(ty, expr_ty, |_s| todo!())?;
+
+                let kind = TirKind::VariantMatch(index, expr);
+                let ent = TirEnt::new(kind, ty, span);
+                let tir = self.body.ents.push(ent);
+                self.temp.push(tir);
+                
+                Ok((variant, true))
+            } else {
+                todo!();
+            }
+        } else {
+            let span = self.ast.nodes[ast].span;
+            let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
+            if let TyKind::Struct(..) = self.types[ty].kind {
+                return Ok((ty, false));
+            } else {
+                todo!();
+            }
+        }
     }
 
     fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -595,7 +819,7 @@ impl<'a> TirBuilder<'a> {
             let id = {
                 let ty = self.types.base_id_of(operand_ty);
 
-                let op = self.sources.id(span);
+                let op = self.sources.id_of(span);
 
                 ID::unary(ty, op)
             };
@@ -642,7 +866,7 @@ impl<'a> TirBuilder<'a> {
                     span: ret_span, ty, ..
                 } = self.body.ents[ret];
                 if let Some(value) = value {
-                    self.expect_tir_ty(value, ty, |_, got, loc| TyError::BreakValueTypeMismatch {
+                    self.infer_tir_ty(value, ty, |_, got, loc| TyError::BreakValueTypeMismatch {
                         because: ret_span,
                         expected: ty,
                         got,
@@ -809,7 +1033,7 @@ impl<'a> TirBuilder<'a> {
             args.iter()
                 .zip(arg_tys)
                 .map(|(&arg, ty)| {
-                    self.expect_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
+                    self.infer_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
                         because,
                         expected: ty,
                         got,
@@ -965,7 +1189,7 @@ impl<'a> TirBuilder<'a> {
 
         let span = self.ast.nodes[field].span;
         let (field_id, field_ty) = {
-            let id = self.sources.id(span);
+            let id = self.sources.id_of(span);
             self.find_field(base_ty, id, span)?
         };
 
@@ -998,46 +1222,72 @@ impl<'a> TirBuilder<'a> {
         };
 
         let span = self.ast.nodes[name].span;
-        let ty = {
-            let id = ident_hasher!(self).ident_id(name, None)?;
-            self.scope.get::<Ty>(self.diagnostics, id, span)?
+        let (ty, index) = {
+            let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
+            if let Some(_) = owner { // enum variant
+                let Some(&variant) = self.ty_comp_lookup.get(id) else {
+                    todo!();
+                };
+                (self.ty_comps[variant].ty, self.ty_comps[variant].index)
+            } else {
+                (self.scope.get::<Ty>(self.diagnostics, id, span)?, u32::MAX)
+            }
         };
 
-        self.build_constructor_low(ty, body)
+        self.build_constructor_low(ty, index, body)
     }
 
-    fn build_constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
-        let span = self.ast.nodes[body].span;
+    fn build_constructor_low(&mut self, ty: Ty, index: u32, body: Ast) -> errors::Result<Tir> {
+        let AstEnt { span, kind, .. } = self.ast.nodes[body];
         let TyEnt { flags, .. } = self.types[ty];
 
-        let TyKind::Struct(fields) = self.types[ty].kind else {
+        let (TyKind::Struct(fields) | TyKind::EnumVar(.., fields)) = self.types[ty].kind else {
             self.diagnostics.push(TyError::ExpectedStruct {
                 got: ty,
                 loc: span,
             });
             return Err(());
         };
+        
+        let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
 
+        let is_enum_var = index != u32::MAX;
+        if is_enum_var {
+            let kind = TirKind::EnumFlag(index);
+            let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
+            initial_values[0] = self.body.ents.push(ent);
+        }
+
+        // TODO: maybe avoid allocation
         let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
-        let mut initial_values = vec![Tir::reserved_value(); self.sfields.get(fields).len()]; // TODO: don't allocate
-        for &field in self.ast.children(body) {
-            let &[name, expr] = self.ast.children(field) else {
-                unreachable!();
+        for (i, &field) in self.ast.children(body).iter().enumerate() {
+            let i = i + is_enum_var as usize;
+            let (expr, (field, field_ty)) = if kind == AstKind::ConstructorBody {
+                let &[name, expr] = self.ast.children(field) else {
+                    unreachable!();
+                };
+    
+                let span = self.ast.nodes[name].span;
+                let id = self.sources.id_of(span);
+    
+                let Ok(res) = self.find_field(ty, id, span) else {
+                    continue;
+                };
+                (expr, res)
+            } else {
+                let span = self.ast.nodes[field].span;
+                let Ok(res) = self.get_field(ty, i, span) else {
+                    continue;
+                };
+                (field, res)
             };
 
-            let span = self.ast.nodes[name].span;
-            let id = self.sources.id(span);
-
-            let Ok((field, field_ty)) = self.find_field(ty, id, span) else {
-                continue;
-            };
-
-            let SFieldEnt {
+            let TyCompEnt {
                 span: hint, index, ..
-            } = self.sfields[field];
+            } = self.ty_comps[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
-                AstKind::InlineConstructor => self.build_constructor_low(field_ty, expr),
+                AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.build_constructor_low(field_ty, u32::MAX, expr),
                 _ => self.build_expr(expr),
             }) else {
                 continue;
@@ -1057,7 +1307,7 @@ impl<'a> TirBuilder<'a> {
                 ));
             } else {
                 // we ignore this to report more errors
-                drop(self.expect_tir_ty(value, field_ty, |_, got, loc| {
+                drop(self.infer_tir_ty(value, field_ty, |_, got, loc| {
                     TyError::ConstructorFieldTypeMismatch {
                         because: hint,
                         expected: field_ty,
@@ -1075,7 +1325,7 @@ impl<'a> TirBuilder<'a> {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, &value)| (value == Tir::reserved_value()).then_some(index))
-                .map(|i| self.sfields.get(fields)[i].span)
+                .map(|i| self.ty_comps.get(fields)[i].span)
                 .collect::<Vec<_>>();
 
             self.diagnostics.push(TyError::ConstructorMissingFields {
@@ -1185,7 +1435,7 @@ impl<'a> TirBuilder<'a> {
         let ret = self.func_meta[self.func].sig.ret;
 
         let value = if value.is_reserved_value() {
-            self.expect_ty(self.builtin_types.nothing, ret, |s| {
+            self.infer_ty(self.builtin_types.nothing, ret, |s| {
                 TyError::UnexpectedReturnValue {
                     because: s.func_meta[s.func].name,
                     loc: span,
@@ -1194,7 +1444,7 @@ impl<'a> TirBuilder<'a> {
             None
         } else {
             let value = self.build_expr(value)?;
-            self.expect_tir_ty(value, ret, |s, got, loc| {
+            self.infer_tir_ty(value, ret, |s, got, loc| {
                 let &[.., ret_ast, _] = s.ast.children(s.ctx.func_ast[s.func]) else {
                     unreachable!();
                 };
@@ -1231,7 +1481,7 @@ impl<'a> TirBuilder<'a> {
 
         let cond = self.build_expr(cond)?;
         drop(
-            self.expect_tir_ty(cond, self.builtin_types.bool, |_, got, loc| {
+            self.infer_tir_ty(cond, self.builtin_types.bool, |_, got, loc| {
                 TyError::IfConditionTypeMismatch { got, loc }
             }),
         );
@@ -1278,7 +1528,7 @@ impl<'a> TirBuilder<'a> {
 
     fn build_ident(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let id = self.sources.id(span);
+        let id = self.sources.id_of(span);
 
         let value = self.scope.get::<Tir>(self.diagnostics, id, span)?;
 
@@ -1350,7 +1600,7 @@ impl<'a> TirBuilder<'a> {
             }
 
             let expected = args[1];
-            self.expect_tir_ty(right, expected, |_, got, loc| TyError::BinaryTypeMismatch {
+            self.infer_tir_ty(right, expected, |_, got, loc| TyError::BinaryTypeMismatch {
                 expected,
                 got,
                 loc,
@@ -1389,7 +1639,7 @@ impl<'a> TirBuilder<'a> {
             });
         }
 
-        self.expect_tir_ty(right, ty, |_, got, loc| TyError::AssignTypeMismatch {
+        self.infer_tir_ty(right, ty, |_, got, loc| TyError::AssignTypeMismatch {
             because: left_span,
             expected: ty,
             got,
@@ -1405,7 +1655,32 @@ impl<'a> TirBuilder<'a> {
         Ok(result)
     }
 
-    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(SField, Ty)> {
+    fn get_field(&mut self, on: Ty, index: usize, _span: Span) -> errors::Result<(TyComp, Ty)> {
+        let base = if let TyKind::Instance(base, ..) = self.types[on].kind {
+            base
+        } else {
+            on
+        };
+
+        let (TyKind::Struct(fields) | TyKind::EnumVar(.., fields)) = self.types[base].kind else {
+            todo!();
+        };
+
+        let Some(field) = self.ty_comps.get(fields).get(index) else {
+            todo!();
+        };
+
+        let ty = if let TyKind::Instance(.., params) = self.types[on].kind {
+            let params = self.ty_lists.get(params).to_vec();
+            ty_parser!(self).instantiate(field.ty, &params)
+        } else {
+            field.ty
+        };
+
+        Ok((TyComp::new(self.ty_comps.start_index_of(fields).unwrap() + index), ty))
+    }
+
+    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(TyComp, Ty)> {
         let id = {
             let on = if let TyKind::Instance(base, ..) = self.types[on].kind {
                 base
@@ -1416,21 +1691,21 @@ impl<'a> TirBuilder<'a> {
             ID::field(ty_id, id)
         };
 
-        self.sfield_lookup
+        self.ty_comp_lookup
             .get(id)
-            .map(|f| {
-                let ty = self.sfields[f.field].ty;
+            .map(|&f| {
+                let ty = self.ty_comps[f].ty;
                 if let TyKind::Instance(_, params) = self.types[on].kind {
                     let params = self.ty_lists.get(params).to_vec();
                     let ty = ty_parser!(self).instantiate(ty, &params);
-                    (f.field, ty)
+                    (f, ty)
                 } else {
-                    (f.field, ty)
+                    (f, ty)
                 }
             })
             .ok_or_else(|| {
                 let candidates = if let TyKind::Struct(fields) = self.types[on].kind {
-                    self.sfields
+                    self.ty_comps
                         .get(fields)
                         .iter()
                         .map(|sfref| sfref.span)
@@ -1447,125 +1722,33 @@ impl<'a> TirBuilder<'a> {
             })
     }
 
-    fn expect_tir_ty(
+    fn infer_tir_ty(
         &mut self,
         right: Tir,
         ty: Ty,
         err_fact: impl Fn(&mut Self, Ty, Span) -> TyError,
     ) -> errors::Result {
         let TirEnt { ty: got, span, .. } = self.body.ents[right];
-        self.expect_ty(ty, got, |s| err_fact(s, got, span))
+        self.body.ents[right].ty = ty;
+        self.infer_ty(ty, got, |s| err_fact(s, got, span))
     }
 
-    fn expect_ty(
+    fn infer_ty(
         &mut self,
         ty: Ty,
-        got: Ty,
+        mut got: Ty,
         err_fact: impl Fn(&mut Self) -> TyError,
     ) -> errors::Result {
+        if let TyKind::EnumVar(base, ..) = self.types[got].kind {
+            got = base;
+        }
+
         if ty != got {
             let error = err_fact(self);
             self.diagnostics.push(error);
             Err(())
         } else {
             Ok(())
-        }
-    }
-}
-
-pub struct IdentHasher<'a> {
-    pub sources: &'a Sources,
-    pub ast: &'a AstData,
-    pub scope: &'a Scope,
-    pub diagnostics: &'a mut Diagnostics,
-    pub types: &'a Types,
-}
-
-impl<'a> IdentHasher<'a> {
-    pub fn new(
-        sources: &'a Sources,
-        ast: &'a AstData,
-        scope: &'a Scope,
-        diagnostics: &'a mut Diagnostics,
-        types: &'a Types,
-    ) -> Self {
-        Self {
-            sources,
-            ast,
-            scope,
-            diagnostics,
-            types,
-        }
-    }
-
-    fn ident_id(&mut self, ast: Ast, owner: Option<(Ty, Span)>) -> errors::Result<ID> {
-        self.ident_id_low(ast, owner).map(|(id, _)| id)
-    }
-
-    fn ident_id_low(
-        &mut self,
-        ast: Ast,
-        owner: Option<(Ty, Span)>,
-    ) -> errors::Result<(ID, Option<(Ty, Span)>)> {
-        let children = self.ast.children(ast);
-        match (children, owner) {
-            (&[module, _, item], None) | (&[module, item], Some(_)) => {
-                let module_id = {
-                    let span = self.ast.nodes[module].span;
-                    let id = self.sources.id(span);
-
-                    let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
-                    ID::from(source)
-                };
-
-                let (ty, span) = if let Some(owner) = owner {
-                    owner
-                } else {
-                    let span = self.ast.nodes[item].span;
-                    let id = self.sources.id(span);
-                    (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
-                };
-
-                let id = {
-                    let name = ast::id_of(item, self.ast, self.sources);
-                    let ty = self.types.base_id_of(ty);
-                    ID::owned_func(ty, name)
-                };
-
-                Ok((id + module_id, Some((ty, span))))
-            }
-            (&[module_or_type, item], None) => {
-                let item_id = ast::id_of(item, self.ast, self.sources);
-
-                let span = self.ast.nodes[module_or_type].span;
-                let id = self.sources.id(span);
-
-                Ok(
-                    if let Some(source) =
-                        self.scope.may_get::<Source>(self.diagnostics, id, span)?
-                    {
-                        (item_id + ID::from(source), None)
-                    } else {
-                        let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-                        (
-                            ID::owned_func(self.types.base_id_of(ty), item_id),
-                            Some((ty, span)),
-                        )
-                    },
-                )
-            }
-            (&[], None) => return Ok((ast::id_of(ast, self.ast, self.sources), None)),
-            (&[], Some((ty, span))) => {
-                let name = ast::id_of(ast, self.ast, self.sources);
-                let ty_id = self.types.base_id_of(ty);
-                Ok((ID::owned_func(ty_id, name), Some((ty, span))))
-            }
-            _ => {
-                self.diagnostics.push(TyError::InvalidPath {
-                    loc: self.ast.nodes[ast].span,
-                });
-                Err(())
-            }
         }
     }
 }

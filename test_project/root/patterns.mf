@@ -1,0 +1,32 @@
+
+enum Enum {
+    Something
+    Structural {
+        integer: int
+    }
+}
+
+impl Enum {
+    fn new_structural() -> Self {
+        Self::Structural::{ integer: 0 }
+    }
+
+    fn new_structural_as_tuple() -> Self {
+        Self::Structural::(0)
+    }
+
+    fn is_something(s: Self) -> bool {
+        match s {
+            Self::Something => true
+            _ => false
+        }
+    }
+
+    fn integer(s: Self) -> int {
+        match s {
+            Self::Structural::(integer) => integer
+            Self::Structural::{ integer } => integer
+            Self::Something => -1
+        }
+    }
+}

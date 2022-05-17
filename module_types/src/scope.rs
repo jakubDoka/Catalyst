@@ -41,6 +41,10 @@ impl Scope {
         }
     }
 
+    pub fn weak_get_raw(&self, id: impl Into<ID>) -> Option<ScopeItem> {
+        self.map.get(id).cloned()
+    }
+
     pub fn weak_get<T: 'static + EntityRef>(&self, id: impl Into<ID>) -> Option<T> {
         self.map
             .get(id)
@@ -75,7 +79,7 @@ impl Scope {
         let Some(data) = self.may_get_by_id(diagnostics, id, span)? else {
             diagnostics.push(ModuleError::InvalidScopeItem {
                 loc: span,
-                expected: TypeId::of::<T>(),
+                expected: vec![TypeId::of::<T>()],
                 found: self.map.get(id).unwrap().pointer.id,
             });
             return Err(());
@@ -260,7 +264,7 @@ impl ReservedValue for ScopeItem {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ScopePointer {
-    id: TypeId,
+    pub id: TypeId,
     data: usize,
 }
 

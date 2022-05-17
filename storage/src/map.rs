@@ -312,6 +312,10 @@ impl ID {
         Self::new("<unary>") + ty + op
     }
 
+    pub fn enum_variant(ty: Self, var: Self) -> Self {
+        ty + var
+    }
+
     pub fn from_path(path: &Path) -> Self {
         Self::from_bytes(unsafe { std::mem::transmute(path) })
     }

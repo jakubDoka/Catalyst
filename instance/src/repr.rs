@@ -11,7 +11,7 @@ pub struct ReprInstancing<'a> {
     pub types: &'a mut Types,
     pub ty_lists: &'a mut TyLists,
     pub instances: &'a mut Instances,
-    pub sfields: &'a SFields,
+    pub ty_comps: &'a TyComps,
     pub sources: &'a Sources,
     pub repr_fields: &'a mut ReprFields,
     pub reprs: &'a mut Reprs,
@@ -98,7 +98,7 @@ impl<'a> ReprInstancing<'a> {
 
                 match self.types[base].kind {
                     TyKind::Struct(fields) => {
-                        for &field in self.sfields.get(fields) {
+                        for &field in self.ty_comps.get(fields) {
                             self.expand_instances(new_i_params, field.ty, new_instances);
                         }
                     }
@@ -125,7 +125,7 @@ impl<'a> ReprInstancing<'a> {
 pub struct LayoutBuilder<'a> {
     pub types: &'a Types,
     pub sources: &'a Sources,
-    pub sfields: &'a SFields,
+    pub ty_comps: &'a TyComps,
     pub instances: &'a Instances,
     pub ty_lists: &'a TyLists,
     pub repr_fields: &'a mut ReprFields,
@@ -136,7 +136,7 @@ impl<'a> LayoutBuilder<'a> {
     pub fn new(
         types: &'a Types,
         sources: &'a Sources,
-        sfields: &'a SFields,
+        ty_comps: &'a TyComps,
         instances: &'a Instances,
         ty_lists: &'a TyLists,
         repr_fields: &'a mut ReprFields,
@@ -145,7 +145,7 @@ impl<'a> LayoutBuilder<'a> {
         Self {
             types,
             sources,
-            sfields,
+            ty_comps,
             instances,
             ty_lists,
             repr_fields,
@@ -153,11 +153,10 @@ impl<'a> LayoutBuilder<'a> {
         }
     }
 
-    pub fn build_layouts(&mut self, graph: &GenericGraph) {
+    pub fn build_layouts(&mut self, graph: &Graph<Ty>) {
         let order = {
             let mut vec: Vec<Ty> = Vec::with_capacity(self.types.len());
             graph.total_ordering(&mut vec).unwrap();
-            vec.iter_mut().for_each(|ty| ty.0 += graph.offset);
             vec
         };
 
@@ -173,7 +172,7 @@ impl<'a> LayoutBuilder<'a> {
 
     pub fn build_size_low(&mut self, id: Ty, params: TyList) {
         let ty = &self.types[id];
-        if ty.flags.contains(TyFlags::GENERIC) {
+        if ty.flags.contains(TyFlags::GENERIC) || ty.flags.contains(TyFlags::BUILTIN) {
             return;
         }
         
@@ -187,12 +186,15 @@ impl<'a> LayoutBuilder<'a> {
                     _ => todo!("{kind:?}"),
                 }
             }
-            TyKind::Struct(fields) => {
+            TyKind::Struct(fields) | TyKind::EnumVar(.., fields) => {
                 self.resolve_struct_repr(id, params, fields);
             }
             TyKind::Ptr(..) => {
                 self.reprs[id].layout = Layout::PTR;
                 self.reprs[id].flags = ReprFlags::COPYABLE;
+            }
+            TyKind::Enum(variants) => {
+                self.resolve_enum_repr(id, params, variants);
             }
             kind => todo!("{kind:?}"),
         };
@@ -224,8 +226,32 @@ impl<'a> LayoutBuilder<'a> {
         }
     }
 
-    pub fn resolve_struct_repr(&mut self, ty: Ty, params: TyList, fields: SFieldList) {
-        let fields = self.sfields.get(fields);
+    pub fn resolve_enum_repr(&mut self, ty: Ty, _params: TyList, fields: TyCompList) {
+        let (layout, copyable) = self.ty_comps
+            .get(fields)
+            .iter()
+            .map(|field| (
+                self.reprs[field.ty].layout, 
+                self.reprs[field.ty].flags.contains(ReprFlags::COPYABLE)
+            )).fold(
+            (Layout::ZERO, true),
+            |(acc_layout, acc_copyable), (layout, copyable)| 
+                (layout.max(acc_layout), copyable & acc_copyable),
+        );
+
+        for field in self.ty_comps.get(fields) {
+            self.reprs[field.ty].layout = layout;
+        }
+
+        self.reprs[ty] = ReprEnt {
+            repr: ir::types::INVALID,
+            layout,
+            flags: ReprFlags::COPYABLE & copyable,
+        };
+    }
+
+    pub fn resolve_struct_repr(&mut self, ty: Ty, params: TyList, fields: TyCompList) {
+        let fields = self.ty_comps.get(fields);
         let ty_id = self.types[ty].id;
 
         let align = fields

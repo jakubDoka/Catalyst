@@ -3,15 +3,19 @@
 #![feature(let_chains)]
 #![feature(bool_to_option)]
 #![feature(if_let_guard)]
+#![feature(inline_const_pat)]
+#![allow(incomplete_features)]
 
 pub mod error;
 pub mod scope;
 pub mod tir;
 pub mod ty;
+pub mod ident_hasher;
 
 pub use scope::{ScopeBuilder, ScopeContext};
 pub use tir::TirBuilder;
 pub use ty::TyBuilder;
+pub use ident_hasher::IdentHasher;
 
 use ast::*;
 use errors::*;
@@ -106,7 +110,7 @@ pub struct TypeParser<'a> {
     types: &'a mut Types,
     ast: &'a AstData,
     diagnostics: &'a mut Diagnostics,
-    sfields: &'a SFields,
+    ty_comps: &'a TyComps,
     scope: &'a mut Scope,
     ty_lists: &'a mut TyLists,
     instances: &'a mut Instances,
@@ -122,7 +126,7 @@ macro_rules! ty_parser {
             $self.types,
             $self.ast,
             $self.diagnostics,
-            $self.sfields,
+            $self.ty_comps,
             $self.scope,
             $self.ty_lists,
             $self.instances,
@@ -138,7 +142,7 @@ impl<'a> TypeParser<'a> {
         types: &'a mut Types,
         ast: &'a AstData,
         diagnostics: &'a mut Diagnostics,
-        sfields: &'a SFields,
+        ty_comps: &'a TyComps,
         scope: &'a mut Scope,
         ty_lists: &'a mut TyLists,
         instances: &'a mut Instances,
@@ -150,7 +154,7 @@ impl<'a> TypeParser<'a> {
             types,
             ast,
             diagnostics,
-            sfields,
+            ty_comps,
             scope,
             ty_lists,
             instances,
@@ -198,9 +202,9 @@ impl<'a> TypeParser<'a> {
 
                     let kind = self.types[base].kind;
                     match kind {
-                        TyKind::Struct(sfields) => {
+                        TyKind::Struct(ty_comps) => {
                             let params = self.ty_lists.get(params).to_vec(); // TODO: optimize if needed
-                            for field in self.sfields.get(sfields) {
+                            for field in self.ty_comps.get(ty_comps) {
                                 self.instantiate(field.ty, &params);
                             }
                         }

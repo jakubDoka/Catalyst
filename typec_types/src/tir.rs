@@ -58,6 +58,11 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
+    EnumFlag(u32),
+    VariantMatch(u32, Tir),
+    PatternMatch(Tir, Tir),
+    MatchArm(TirList, Tir),
+    Match(Tir, TirList),
     BitCast(Tir),
     DerefPointer(Tir),
     TakePtr(Tir),
@@ -67,7 +72,7 @@ pub enum TirKind {
     Break(Tir, PackedOption<Tir>),
     Loop(Tir),
     LoopInProgress(PackedOption<Tir>, bool),
-    FieldAccess(Tir, SField),
+    FieldAccess(Tir, TyComp),
     Constructor(TirList),
     If(Tir, Tir, PackedOption<Tir>),
     Block(TirList),
@@ -103,6 +108,7 @@ bitflags! {
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
         const WITH_CALLER = 1 << 4;
+        const REFUTABLE = 1 << 5;
     }
 }
 
@@ -111,7 +117,7 @@ impl_bool_bit_and!(TirFlags);
 pub struct TirDisplay<'a> {
     pub types: &'a Types,
     pub ty_lists: &'a TyLists,
-    pub sfields: &'a SFields,
+    pub ty_comps: &'a TyComps,
     pub sources: &'a Sources,
     pub data: &'a TirData,
     pub root: Tir,
@@ -122,7 +128,7 @@ impl<'a> TirDisplay<'a> {
     pub fn new(
         types: &'a Types,
         ty_lists: &'a TyLists,
-        sfields: &'a SFields,
+        ty_comps: &'a TyComps,
         sources: &'a Sources,
         data: &'a TirData,
         root: Tir,
@@ -130,7 +136,7 @@ impl<'a> TirDisplay<'a> {
         Self {
             types,
             ty_lists,
-            sfields,
+            ty_comps,
             sources,
             data,
             root,
@@ -184,7 +190,7 @@ impl<'a> TirDisplay<'a> {
             }
             TirKind::FieldAccess(expr, id) => {
                 self.fmt(expr, f, displayed, level, false)?;
-                write!(f, ".{}", self.sfields[id].index)?;
+                write!(f, ".{}", self.ty_comps[id].index)?;
             }
             TirKind::Constructor(fields) => {
                 writeln!(f, "::{{")?;
@@ -287,6 +293,7 @@ impl<'a> TirDisplay<'a> {
                 self.fmt(value, f, displayed, level, false)?;
             }
             TirKind::Invalid | TirKind::LoopInProgress(..) => unreachable!(),
+            kind => todo!("{kind:?}"),
         }
 
         if ident {

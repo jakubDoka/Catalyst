@@ -8,10 +8,12 @@
 use cli::CmdInput;
 
 use cranelift_codegen::ir::{Type, ExternalName};
+use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
 
 use cranelift_frontend::{FunctionBuilderContext, FunctionBuilder};
+use cranelift_jit::{JITModule, JITBuilder};
 use cranelift_module::{Module, Linkage};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
@@ -64,6 +66,8 @@ pub struct Compiler {
 
     // incremental data
     incr: Incr,
+    jit_incr: Incr,
+    jit_incr_path: PathBuf,
     incr_path: PathBuf,
 
     // source data
@@ -87,14 +91,14 @@ pub struct Compiler {
     item_lexicon: ItemLexicon,
 
     // typec
-    ty_graph: GenericGraph,
+    ty_graph: typec_types::Graph<Ty>,
     types: Types,
     builtin_types: BuiltinTypes,
     funcs: Funcs,
     ty_lists: TyLists,
     instances: Instances,
-    sfields: SFields,
-    sfield_lookup: SFieldLookup,
+    ty_comps: TyComps,
+    ty_comp_lookup: TyCompLookup,
     func_lists: TFuncLists,
     bound_impls: BoundImpls,
     func_bodies: FuncBodies,
@@ -102,6 +106,11 @@ pub struct Compiler {
     scope_context: ScopeContext,
     tir_temp_body: TirData,
     func_meta: FuncMeta,
+
+    // jit
+    jit_module: JITModule,
+    host_isa: Box<dyn TargetIsa>,
+    jit_compile_results: SparseMap<Func, CompileResult>,
 
     // generation
     entry_id: Option<ID>,
@@ -124,10 +133,17 @@ impl Compiler {
         let modified_time = get_exe_modification_time();
         let root_path = subcommand.root_path().unwrap();
         let incr_path = root_path.join("incr.bin");
-        let incr = if let Some(modified_time) = modified_time {
-            Incr::load(format!("{modified_time:?}"), &incr_path)
+        let jit_incr_path = root_path.join("jit_incr.bin");
+        let (incr, jit_incr) = if let Some(modified_time) = modified_time {
+            (
+                Incr::load(format!("{modified_time:?}"), &incr_path),
+                Incr::load(format!("{modified_time:?}"), &jit_incr_path),
+            )
         } else {
-            Incr::default()
+            (
+                Incr::default(),
+                Incr::default(),
+            )
         };
         
         let mut sources = Sources::new();
@@ -145,7 +161,6 @@ impl Compiler {
             map
         };
 
-        let ty_graph = GenericGraph::new();
         let mut types = Types::new();
         let builtin_types = BuiltinTypes::new(
             &mut sources, 
@@ -168,6 +183,90 @@ impl Compiler {
             &mut modules[b_source].items,
         );
 
+        let (jit_module, host_isa) = Self::init_jit_module(&input);
+
+        let mut reprs = Reprs::new();
+        build_builtin_reprs(host_isa.pointer_type(), &mut reprs, &builtin_types);
+
+        let (object_module, triple) = Self::init_object_module(&input);
+
+        Self {            
+            subcommand: Subcommand::new(&input),
+            input,
+
+            incr,
+            jit_incr,
+            jit_incr_path,
+            incr_path,
+
+            sources,
+            builtin_source,
+
+            ast: AstData::new(),
+            ast_temp: FramedStack::new(),
+            
+            scope: Scope::new(),
+            module_map: Map::new(),
+            loader_context: LoaderContext::new(),
+            modules,
+            units: Units::new(),
+            module_order: Vec::new(),
+            
+            diagnostics: Diagnostics::new(),
+            item_lexicon,
+            
+            ty_graph: typec_types::Graph::new(),
+            types,
+            builtin_types,
+            funcs,
+            ty_lists,
+            instances: Instances::new(),
+            ty_comps: TyComps::new(),
+            ty_comp_lookup: TyCompLookup::new(),
+            func_lists: TFuncLists::new(),
+            bound_impls: BoundImpls::new(),
+            func_bodies: FuncBodies::new(),
+            tir_temp: FramedStack::new(),
+            tir_temp_body: TirData::new(),
+            scope_context: ScopeContext::new(),
+            func_meta,
+
+            jit_module,
+            jit_compile_results: SparseMap::new(),
+            host_isa,
+                        
+            entry_id: None,
+            object_module,
+            triple,
+            reprs,
+            repr_fields: ReprFields::new(),
+            compile_results: SecondaryMap::new(),
+            signatures: Signatures::new(),
+        }
+    }
+
+    fn init_jit_module(_input: &CmdInput) -> (JITModule, Box<dyn TargetIsa>) {
+        let isa = {
+            let setting_builder = cranelift_codegen::settings::builder();
+
+            let flags = Flags::new(setting_builder);
+    
+            let target_triple = target_lexicon::Triple::host();
+    
+            cranelift_codegen::isa::lookup(target_triple)
+                .unwrap()
+                .finish(flags)
+                .unwrap()
+        };
+
+        let builder = JITBuilder::new(
+            cranelift_module::default_libcall_names()
+        ).unwrap();
+
+        (JITModule::new(builder), isa)
+    }
+
+    fn init_object_module(input: &CmdInput) -> (ObjectModule, Triple) {
         let (isa, triple) = {
             let mut setting_builder = cranelift_codegen::settings::builder();
 
@@ -208,8 +307,7 @@ impl Compiler {
             )
         };
 
-        let mut reprs = Reprs::new();
-        build_builtin_reprs(isa.pointer_type(), &mut reprs, &builtin_types);
+       
 
         let object_module = {
             let builder = ObjectBuilder::new(
@@ -220,53 +318,7 @@ impl Compiler {
             ObjectModule::new(builder)
         };
 
-        Self {            
-            subcommand: Subcommand::new(&input),
-            input,
-
-            incr,
-            incr_path,
-
-            sources,
-            builtin_source,
-
-            ast: AstData::new(),
-            ast_temp: FramedStack::new(),
-            
-            scope: Scope::new(),
-            module_map: Map::new(),
-            loader_context: LoaderContext::new(),
-            modules,
-            units: Units::new(),
-            module_order: Vec::new(),
-            
-            diagnostics: Diagnostics::new(),
-            item_lexicon,
-            
-            ty_graph,
-            types,
-            builtin_types,
-            funcs,
-            ty_lists,
-            instances: Instances::new(),
-            sfields: SFields::new(),
-            sfield_lookup: SFieldLookup::new(),
-            func_lists: TFuncLists::new(),
-            bound_impls: BoundImpls::new(),
-            func_bodies: FuncBodies::new(),
-            tir_temp: FramedStack::new(),
-            tir_temp_body: TirData::new(),
-            scope_context: ScopeContext::new(),
-            func_meta,
-                        
-            entry_id: None,
-            object_module,
-            triple,
-            reprs,
-            repr_fields: ReprFields::new(),
-            compile_results: SecondaryMap::new(),
-            signatures: Signatures::new(),
-        }
+        (object_module, triple)
     }
 
     fn load_modules(&mut self) {
@@ -368,13 +420,9 @@ impl Compiler {
         }
     }
 
-    fn build_layouts(&mut self) {
-        if self.ty_graph.len() < self.types.len() - self.ty_graph.offset as usize {
-            self.ty_graph.close_node(self.types.len() as u32 - 1);
-        }
-
+    fn build_layouts(&mut self, bottom: usize) {
         layout_builder!(self).build_layouts(&self.ty_graph);
-        let iter = (self.ty_graph.offset as usize..self.types.len()).map(|i| Ty(i as u32));
+        let iter = (bottom..self.types.len()).map(|i| Ty::new(i));
         build_reprs(self.object_module.isa().pointer_type(), &mut self.reprs, iter);
         self.ty_graph.clear();
     }
@@ -409,10 +457,9 @@ impl Compiler {
                     &mut self.ast,
                     &mut self.ast_temp,
                     inter_state,
-                );
-            
-                // this is a nasty side effect used in `Self::build_types`
-                self.ty_graph.offset = self.types.len() as u32;
+                );            
+
+                let bottom = self.types.len();
 
                 scope_builder!(self, source)
                     .collect_items(self.ast.elements());
@@ -423,7 +470,7 @@ impl Compiler {
 
                 self.build_funcs(stage, source, &mut func_buffer);
 
-                self.build_layouts();
+                self.build_layouts(bottom);
 
                 stage = self.modules[source].items.len();
             }
@@ -523,7 +570,7 @@ impl Compiler {
             types: &mut self.types,
             ty_lists: &mut self.ty_lists,
             instances: &mut self.instances,
-            sfields: &self.sfields,
+            ty_comps: &self.ty_comps,
             sources: &self.sources,
             repr_fields: &mut self.repr_fields,
             reprs: &mut self.reprs,
@@ -565,7 +612,7 @@ impl Compiler {
                 &self.reprs, 
                 &self.types, 
                 system_call_convention
-            ))
+            ));
         }
 
         let mut i = 0;
@@ -598,7 +645,7 @@ impl Compiler {
 
                 types: &mut self.types,
                 ty_lists: &mut self.ty_lists,
-                sfields: &self.sfields,
+                ty_comps: &self.ty_comps,
                 sources: &self.sources,
                 repr_fields: &self.repr_fields,
                 reprs: &self.reprs,
@@ -658,6 +705,51 @@ impl Compiler {
         self.signatures = signatures;
     }
 
+    fn collect_used_funcs(&mut self) -> (Vec<Func>, Vec<Func>) {
+        time_report!("dead code elimination");
+
+        let mut seen = EntitySet::with_capacity(self.funcs.ents.len());
+        let mut frontier = Vec::with_capacity(self.funcs.to_compile.len());
+
+        if let Some(entry_id) = self.entry_id {
+            let &entry_func = self.funcs.instances.get(entry_id).unwrap();
+            frontier.push(entry_func)
+        }
+        
+        let mut i = 0;
+        while let Some(&func) = frontier.get(i) {
+            for reloc in &self.compile_results[func].relocs {
+                let ExternalName::User { namespace, index } = reloc.name else {
+                    unreachable!();
+                };
+
+                assert!(namespace == 0);
+
+                let func = Func(index);
+
+                if !seen.insert(func) {
+                    continue;
+                }
+                
+                frontier.push(func);
+            }
+
+            i += 1;
+        }
+
+        let mut to_link = Vec::with_capacity(frontier.len());
+
+        frontier.retain(|&f| {
+            if self.funcs.ents[f].flags.contains(FuncFlags::EXTERNAL) {
+                to_link.push(f);
+                return false;
+            }
+            true
+        });
+
+        (frontier, to_link)
+    }
+
     fn build_object(&mut self) {
         time_report!("building object file");
 
@@ -665,7 +757,9 @@ impl Compiler {
         func_lookup.resize(self.funcs.ents.len());
         let system_call_conv = self.object_module.isa().default_call_conv();
 
-        for &func in &self.funcs.to_link {
+        let (to_compile, to_link) = self.collect_used_funcs();
+
+        for func in to_link {
             let call_conv = self.funcs.ents[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
             let name = self.sources.display(self.func_meta[func].name);
@@ -686,7 +780,7 @@ impl Compiler {
         }
 
         let mut name = String::new();
-        for &(func, _) in &self.funcs.to_compile {
+        for &func in &to_compile {
             {
                 let id = self.funcs.ents[func].id;
                 name.clear();
@@ -700,7 +794,7 @@ impl Compiler {
         }
 
         let mut reloc_temp = vec![];
-        for &(func, _) in &self.funcs.to_compile {
+        for func in to_compile {
             let compile_result = &self.compile_results[func];
             reloc_temp.clear();
             reloc_temp.extend(compile_result.relocs.iter().cloned().map(|mut r| {
@@ -883,12 +977,12 @@ impl Compiler {
         
         s.generate();
         s.log_diagnostics();
-
+        
         
         s.build_object();
         
         s.save_incr_data();
-        
+
         s.link();
     }
 }

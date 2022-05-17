@@ -72,6 +72,7 @@ impl<'a> Lexer<'a> {
 
                     match self.view(start) {
                         "->" => TokenKind::RightArrow,
+                        "=>" => TokenKind::ThickRightArrow,
                         ":" => TokenKind::Colon,
                         "::" => TokenKind::DoubleColon,
                         "/*" => {
@@ -122,9 +123,11 @@ impl<'a> Lexer<'a> {
                         "break" => TokenKind::Break,
                         "struct" => TokenKind::Struct,
                         "bound" => TokenKind::Bound,
+                        "enum" => TokenKind::Enum,
                         "mut" => TokenKind::Mut,
                         "impl" => TokenKind::Impl,
                         "as" => TokenKind::As,
+                        "match" => TokenKind::Match,
                         _ => TokenKind::Ident,
                     }
                 }

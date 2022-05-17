@@ -15,7 +15,7 @@ pub enum ModuleError {
     },
     InvalidScopeItem {
         loc: Span,
-        expected: TypeId,
+        expected: Vec<TypeId>,
         found: TypeId,
     },
     ScopeItemNotFound {

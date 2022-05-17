@@ -1,6 +1,7 @@
 use {
     "root/structs"
     "root/generics"
+    "root/patterns"
 }
 
 #entry

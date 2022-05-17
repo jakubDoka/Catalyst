@@ -7,7 +7,7 @@ pub const FUNCTION_RET: usize = 2;
 
 pub fn id_of(ast: Ast, data: &AstData, sources: &Sources) -> ID {
     let AstEnt { span, .. } = data.nodes[ast];
-    sources.id(span)
+    sources.id_of(span)
 }
 
 #[derive(Clone, Copy)]
@@ -152,6 +152,17 @@ impl std::fmt::Debug for AstData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    TupleConstructorBody,
+    StructPatternField,
+    StructPattern,
+    TupleStructBody,
+    TupleStructPattern,
+    Match,
+    MatchArm,
+    MatchBody,
+    StructEnumVariant,
+    EnumVariants,
+    Enum,
     BitCast,
     Error,
     UseBoundFunc,
@@ -183,7 +194,6 @@ pub enum AstKind {
     Binary,
     Index,
     Call,
-    InlineConstructor,
     Return,
     Import,
     Imports,

@@ -21,7 +21,7 @@ macro_rules! layout_builder {
         LayoutBuilder::new(
             &$self.types,
             &$self.sources,
-            &$self.sfields,
+            &$self.ty_comps,
             &$self.instances,
             &$self.ty_lists,
             &mut $self.repr_fields,

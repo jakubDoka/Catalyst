@@ -204,12 +204,13 @@ impl<'a> Parser<'a> {
         Some(loop {
             match self.current.kind() {
                 TokenKind::Fn => break self.func(),
-                TokenKind::Struct => break self.sdecl(),
+                TokenKind::Struct => break self.struct_decl(),
                 TokenKind::NewLine => self.advance(),
                 TokenKind::Eof => break Ast::reserved_value(),
                 TokenKind::Bound => break self.bound(),
                 TokenKind::Impl => break self.implementation(),
                 TokenKind::Hash => break self.tag(),
+                TokenKind::Enum => break self.enum_decl(),
                 TokenKind::Break => {
                     self.advance();
                     return None;
@@ -223,12 +224,48 @@ impl<'a> Parser<'a> {
                         TokenKind::Bound,
                         TokenKind::Impl,
                         TokenKind::Hash,
+                        TokenKind::Enum,
                         TokenKind::Break,
                     ]);
                     self.advance();
                 }
             }
         })
+    }
+
+    fn enum_decl(&mut self) -> Ast {
+        let span = self.current.span();
+        
+        self.advance();
+        self.stack.mark_frame();
+
+        // generics will be handled later but we reserve them now
+        self.stack.push_default(); 
+
+        let ident = self.ident();
+        self.stack.push(ident);
+
+        let end = if self.current.kind() == TokenKind::LeftCurly {
+            self.stack.mark_frame();
+            let end = self.list(
+                TokenKind::LeftCurly,
+                TokenKind::NewLine,
+                TokenKind::RightCurly,
+                Self::enum_variant,
+            );
+            let variants = self.alloc(AstKind::EnumVariants, end);
+            self.stack.push(variants);
+            end
+        } else {
+            self.stack.push_default();
+            Span::default()
+        };
+
+        self.alloc(AstKind::Enum, span.join(end))
+    }
+
+    fn enum_variant(&mut self) -> Ast {
+        self.struct_decl_low(true)
     }
 
     fn tag(&mut self) -> Ast {
@@ -342,14 +379,19 @@ impl<'a> Parser<'a> {
         self.alloc(AstKind::Bound, span.join(end))
     }
 
-    fn sdecl(&mut self) -> Ast {
-        let span = self.current.span();
-        self.advance();
+    fn struct_decl(&mut self) -> Ast {
+        self.struct_decl_low(false)
+    }
 
+    fn struct_decl_low(&mut self, in_enum: bool) -> Ast {
         self.stack.mark_frame();
-
-        let generics = self.generics(false);
-        self.stack.push(generics);
+        let span = self.current.span();
+        
+        if !in_enum {
+            self.advance();
+            let generics = self.generics(false);
+            self.stack.push(generics);
+        }
 
         let name = self.ident();
         self.stack.push(name);
@@ -686,6 +728,7 @@ impl<'a> Parser<'a> {
             TokenKind::Break => self.break_expr(),
             TokenKind::Operator => self.unary(),
             TokenKind::LeftParen => self.paren_expr(),
+            TokenKind::Match => self.match_expr(),
             _ => {
                 self.expect_many(&[
                     TokenKind::Return,
@@ -701,12 +744,149 @@ impl<'a> Parser<'a> {
                     TokenKind::Break,
                     TokenKind::Operator,
                     TokenKind::LeftParen,
+                    TokenKind::Match,
                 ]);
                 return self.data.alloc_sonless(AstKind::Error, span);
             }
         };
 
         self.handle_tail_expr(span, result)
+    }
+
+    fn match_expr(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        self.stack.mark_frame();
+
+        let expr = self.expr();
+        self.stack.push(expr);
+
+        self.expect(TokenKind::LeftCurly);
+
+        let end = {
+            self.stack.mark_frame();
+    
+            let end = self.list(
+                TokenKind::LeftCurly,
+                TokenKind::NewLine,
+                TokenKind::RightCurly,
+                Self::match_arm,
+            );
+
+            let body = self.alloc(AstKind::MatchBody, end);
+            self.stack.push(body);
+
+            end
+        };
+
+        self.alloc(AstKind::Match, span.join(end))
+    }
+
+    fn match_arm(&mut self) -> Ast {
+        let span = self.current.span();
+        self.stack.mark_frame();
+
+        let pattern = self.pattern();
+        self.stack.push(pattern);
+
+        self.expect(TokenKind::ThickRightArrow);
+        self.advance();
+
+        let expr = self.expr();
+        self.stack.push(expr);
+        let end = self.data.nodes[expr].span;
+
+        self.alloc(AstKind::MatchArm, span.join(end))
+    }
+
+    fn pattern(&mut self) -> Ast {
+        let span = self.current.span();
+        match self.current.kind() {
+            TokenKind::Ident => self.ident_pattern(),
+            TokenKind::Int(_)
+            | TokenKind::String
+            | TokenKind::Bool(_)
+            | TokenKind::Char => self.literal_expr(),
+            _ => {
+                self.advance();
+                self.expect_many(&[
+                    TokenKind::Ident,
+                    TokenKind::Int(-1),
+                    TokenKind::String,
+                    TokenKind::Bool(false),
+                    TokenKind::Char,
+                ]);
+                self.data.alloc_sonless(AstKind::Error, span)
+            }
+        }
+    }
+
+    fn ident_pattern(&mut self) -> Ast {
+        let path = self.path();
+        let span = self.data.nodes[path].span;
+        
+        if self.current.kind() == TokenKind::DoubleColon { 
+            if self.next.kind() == TokenKind::LeftCurly {
+                self.advance();
+                self.stack.mark_frame();
+                self.stack.push(path);
+                
+                self.stack.mark_frame();
+                let end = self.list(
+                    TokenKind::LeftCurly,
+                    TokenKind::Comma,
+                    TokenKind::RightCurly,
+                    Self::pattern_field,
+                );
+
+                let body = self.alloc(AstKind::StructBody, end);
+                self.stack.push(body);
+
+                return self.alloc(AstKind::StructPattern, span.join(end));
+            }
+
+            if self.next.kind() == TokenKind::LeftParen {
+                self.advance();
+                self.stack.mark_frame();
+                self.stack.push(path);
+                
+                self.stack.mark_frame();
+                let end = self.list(
+                    TokenKind::LeftParen,
+                    TokenKind::Comma,
+                    TokenKind::RightParen,
+                    Self::pattern,
+                );
+    
+                let body = self.alloc(AstKind::TupleStructBody, end);
+                self.stack.push(body);
+    
+                return self.alloc(AstKind::TupleStructPattern, span.join(end));
+            }
+        }
+
+        path
+    }
+
+    fn pattern_field(&mut self) -> Ast {
+        let span = self.current.span();
+        self.stack.mark_frame();
+
+        let name = self.ident();
+        self.stack.push(name);
+
+        let end = if self.current.kind() == TokenKind::Colon {
+            self.advance();
+            let pattern = self.pattern();
+            self.stack.push(pattern);
+            self.data.nodes[pattern].span
+        } else {
+            self.stack.push_default();
+            span
+        };
+
+        self.alloc(AstKind::StructPatternField, span.join(end))
     }
 
     fn handle_tail_expr(&mut self, span: Span, mut result: Ast) -> Ast {
@@ -725,12 +905,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     // can be the tuple field
                     self.expect_many(&[TokenKind::Ident, TokenKind::Int(-1)]);
-                    let field = {
-                        let span = self.current.span();
-                        self.advance();
-                        let ent = AstEnt::childless(AstKind::Ident, span);
-                        self.data.nodes.push(ent)
-                    };
+                    let field = self.path();
                     self.stack.push(field);
                     self.alloc(AstKind::DotExpr, span)
                 }
@@ -915,30 +1090,8 @@ impl<'a> Parser<'a> {
     }
 
     fn ident_expr(&mut self) -> Ast {
-        let mut span = self.current.span();
-        let mut result = self.ident();
-
-        /* handle possible path */
-        {
-            self.stack.mark_frame();
-            self.stack.push(result);
-            while self.current.kind() == TokenKind::DoubleColon
-                && self.next.kind() == TokenKind::Ident
-            {
-                self.advance();
-                span = span.join(self.current.span());
-                let ident = self.ident();
-                self.stack.push(ident);
-            }
-
-            // we simplify one segment path into ident, this happens when
-            // while loop does not run at all
-            if self.stack.top_frame().len() == 1 {
-                self.stack.pop_frame();
-            } else {
-                result = self.alloc(AstKind::Path, span);
-            }
-        }
+        let mut result = self.path();
+        let span = self.data.nodes[result].span;
 
         // handle instantiation
         if self.current.kind() == TokenKind::DoubleColon
@@ -960,24 +1113,69 @@ impl<'a> Parser<'a> {
         }
 
         // handle constructor
-        if self.current.kind() == TokenKind::DoubleColon && self.next.kind() == TokenKind::LeftCurly
+        if self.current.kind() == TokenKind::DoubleColon {
+            if self.next.kind() == TokenKind::LeftCurly {
+                self.advance();
+                self.stack.mark_frame();
+                self.stack.push(result);
+
+
+                self.stack.mark_frame();
+                let end = self.list(
+                    TokenKind::LeftCurly,
+                    TokenKind::NewLine,
+                    TokenKind::RightCurly,
+                    Self::constructor_field,
+                );
+                let body = self.alloc(AstKind::ConstructorBody, end);
+                self.stack.push(body);
+
+                return self.alloc(AstKind::Constructor, span.join(end));
+            }
+            
+            if self.next.kind() == TokenKind::LeftParen {
+                self.advance();
+                self.stack.mark_frame();
+                self.stack.push(result);
+
+                self.stack.mark_frame();
+                let end = self.list(
+                    TokenKind::LeftParen,
+                    TokenKind::Comma,
+                    TokenKind::RightParen,
+                    Self::expr,
+                );
+                let body = self.alloc(AstKind::TupleConstructorBody, end);
+                self.stack.push(body);
+
+                return self.alloc(AstKind::Constructor, span.join(end));
+            }
+        }
+
+        result
+    }
+
+    fn path(&mut self) -> Ast {
+        let mut span = self.current.span();
+        let mut result = self.ident();
+
+        self.stack.mark_frame();
+        self.stack.push(result);
+        while self.current.kind() == TokenKind::DoubleColon
+            && self.next.kind() == TokenKind::Ident
         {
-            self.stack.mark_frame();
-            self.stack.push(result);
-
             self.advance();
+            span = span.join(self.current.span());
+            let ident = self.ident();
+            self.stack.push(ident);
+        }
 
-            self.stack.mark_frame();
-            let end = self.list(
-                TokenKind::LeftCurly,
-                TokenKind::NewLine,
-                TokenKind::RightCurly,
-                Self::constructor_field,
-            );
-            let body = self.alloc(AstKind::ConstructorBody, end);
-            self.stack.push(body);
-
-            return self.alloc(AstKind::Constructor, span.join(end));
+        // we simplify one segment path into ident, this happens when
+        // while loop does not run at all
+        if self.stack.top_frame().len() == 1 {
+            self.stack.pop_frame();
+        } else {
+            result = self.alloc(AstKind::Path, span);
         }
 
         result
@@ -1015,7 +1213,7 @@ impl<'a> Parser<'a> {
                 TokenKind::RightCurly,
                 Self::constructor_field,
             );
-            let expr = self.alloc(AstKind::InlineConstructor, end);
+            let expr = self.alloc(AstKind::ConstructorBody, end);
             (expr, end)
         } else {
             // normal expr after colon
