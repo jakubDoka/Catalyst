@@ -280,10 +280,6 @@ impl ID {
         Self::from_bytes(data.as_bytes())
     }
 
-    pub fn raw_field(ty: Self, field: u64) -> Self {
-        ty + Self(field)
-    }
-
     pub fn bound_impl(bound: Self, implementor: Self) -> Self {
         Self::new("<impl>") + bound + implementor
     }

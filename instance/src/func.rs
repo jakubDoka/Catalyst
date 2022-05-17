@@ -164,15 +164,8 @@ impl MirBuilder<'_> {
         let TirEnt { ty, kind: TirKind::EnumValueRead(enum_ty, target), .. } = self.body.ents[tir] else {
             unreachable!()
         };
-
-        let offset = {
-            let enum_id = self.types[enum_ty].id;
-            let id = ID::raw_field(enum_id, 0);
-            self.repr_fields.get(id).unwrap().offset
-        };
-
+        let offset = self.field_offset_by_index(enum_ty, 0);
         let header = self.translate_expr(target, None)?.unwrap();
-
         self.access_offset(ty, header, offset, dest)
     }
 
@@ -213,12 +206,7 @@ impl MirBuilder<'_> {
 
         self.assign(enum_id, Some(value));
 
-        let offset = {
-            let enum_id = self.types[ty].id;
-            let id = ID::raw_field(enum_id, 0);
-            self.repr_fields.get(id).unwrap().offset
-        };
-
+        let offset = self.field_offset_by_index(ty, 0);
         let ty = self.body.ents[enum_value].ty;
         let inner_value = self.offset_low(value, offset, Some(ty));
 
@@ -515,17 +503,8 @@ impl MirBuilder<'_> {
         };
         let header = self.translate_expr(base, None)?.unwrap();
 
-        let field_id = {
-            let header_ty = self.body.ents[base].ty;
-            let ty_id = self.types[header_ty].id;
-            let TyCompEnt { index, .. } = self.ty_comps[field];
-            ID::raw_field(ty_id, index as u64)
-        };
-
-        let Some(&repr::ReprField { offset }) = self.repr_fields.get(field_id) else {
-            unreachable!()
-        };
-
+        let offset = self.field_offset(header, field);
+        
         self.access_offset(ty, header, offset, dest)
     }
 
@@ -575,18 +554,10 @@ impl MirBuilder<'_> {
         }
 
         let data_view = self.body.cons.get(data);
-        let ty_id = self.types[ty].id;
-
         for (i, &data) in data_view.iter().enumerate() {
-            let id = ID::raw_field(ty_id, i as u64);
-            let Some(&repr::ReprField { offset }) = self.repr_fields.get(id) else {
-                unreachable!()
-            };
-
+            let offset = self.field_offset_by_index(ty, i);
             let dest = self.offset(value, offset);
-
             self.translate_expr(data, Some(dest))?;
-
             if !on_stack {
                 value = self.offset(dest, Offset::ZERO - offset);
             }
@@ -849,6 +820,21 @@ impl MirBuilder<'_> {
         let kind = InstKind::IntLit(literal_value);
         let ent = InstEnt::new(kind, value.into());
         self.func.add_inst(ent);
+    }
+
+    fn field_offset(&self, header: Value, field: TyComp) -> Offset {
+        let header_ty = self.func.values[header].ty;
+        self.field_offset_low(header_ty, field)
+    }
+
+    fn field_offset_low(&self, header_ty: Ty, field: TyComp) -> Offset {
+        let TyCompEnt { index, .. } = self.ty_comps[field];
+        self.field_offset_by_index(header_ty, index as usize)
+    }
+
+    fn field_offset_by_index(&self, header_ty: Ty, index: usize) -> Offset {
+        let fields = self.reprs[header_ty].fields;
+        self.repr_fields.get(fields)[index as usize].offset
     }
 
     fn offset(&mut self, value: Value, offset: Offset) -> Value {

@@ -250,19 +250,18 @@ impl<'a> LayoutBuilder<'a> {
         };
 
         self.reprs[ty].layout = layout;
-        let id = ID::raw_field(self.types[ty].id, 0);
-        self.repr_fields.insert(id, ReprField { offset });
+        let fields = self.repr_fields.push(&[ReprField { offset }]);
 
         self.reprs[ty] = ReprEnt {
             repr: ir::types::INVALID,
             layout,
+            fields,
             flags: ReprFlags::COPYABLE & copyable,
         };
     }
 
     pub fn resolve_struct_repr(&mut self, ty: Ty, params: TyList, fields: TyCompList) {
         let fields = self.ty_comps.get(fields);
-        let ty_id = self.types[ty].id;
 
         let align = fields
             .iter()
@@ -271,15 +270,14 @@ impl<'a> LayoutBuilder<'a> {
 
         let mut size = Offset::ZERO;
         let mut copyable = true;
-        for (i, &field) in fields.iter().enumerate() {
+        for &field in fields.iter() {
             let field_ty = self.true_type(field.ty, params);
             let ent = &self.reprs[field_ty];
 
             copyable &= ent.flags.contains(ReprFlags::COPYABLE);
 
             let field = ReprField { offset: size };
-            let id = ID::raw_field(ty_id, i as u64);
-            assert!(self.repr_fields.insert(id, field).is_none(), "{id:?}");
+            self.repr_fields.push_one(field);
 
             size = size + ent.layout.size();
             let padding = align - size % align;
@@ -287,11 +285,13 @@ impl<'a> LayoutBuilder<'a> {
                 size = size + padding;
             }
         }
+        let fields = self.repr_fields.close_frame();
 
         let flags = ReprFlags::COPYABLE & copyable;
         self.reprs[ty] = ReprEnt {
             repr: ir::types::INVALID,
             flags,
+            fields,
             layout: Layout::new(size, align),
         };
     }
@@ -321,6 +321,7 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
                 reprs[builtin_types.$ty] = ReprEnt {
                     layout: $layout,
                     repr: $repr,
+                    fields: Default::default(),
                     flags: ReprFlags::COPYABLE,
                 };
             )*

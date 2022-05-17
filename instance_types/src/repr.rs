@@ -28,11 +28,12 @@ impl ReplaceCache {
 }
 
 pub type Reprs = SecondaryMap<Ty, ReprEnt>;
-pub type ReprFields = Map<ReprField>;
+pub type ReprFields = StackMap<ReprFieldList, ReprField>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprEnt {
     pub repr: Type,
+    pub fields: ReprFieldList,
     pub layout: Layout,
     pub flags: ReprFlags,
 }
@@ -65,3 +66,5 @@ bitflags! {
 }
 
 impl_bool_bit_and!(ReprFlags);
+
+gen_entity!(ReprFieldList);
