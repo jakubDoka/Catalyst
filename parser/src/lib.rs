@@ -265,7 +265,23 @@ impl<'a> Parser<'a> {
     }
 
     fn enum_variant(&mut self) -> Ast {
-        self.struct_decl_low(true)
+        let span = self.current.span();
+        self.stack.mark_frame();
+
+        let ident = self.ident();
+        self.stack.push(ident);
+
+        let end = if self.current.kind() == TokenKind::Colon {
+            self.advance();
+            let expr = self.type_expr();
+            self.stack.push(expr);
+            self.data.nodes[expr].span
+        } else {
+            self.stack.push(ident);
+            span
+        };
+
+        self.alloc(AstKind::EnumVariant, span.join(end))
     }
 
     fn tag(&mut self) -> Ast {
@@ -380,18 +396,12 @@ impl<'a> Parser<'a> {
     }
 
     fn struct_decl(&mut self) -> Ast {
-        self.struct_decl_low(false)
-    }
-
-    fn struct_decl_low(&mut self, in_enum: bool) -> Ast {
         self.stack.mark_frame();
         let span = self.current.span();
         
-        if !in_enum {
-            self.advance();
-            let generics = self.generics(false);
-            self.stack.push(generics);
-        }
+        self.advance();
+        let generics = self.generics(false);
+        self.stack.push(generics);
 
         let name = self.ident();
         self.stack.push(name);

@@ -116,13 +116,13 @@ impl<'a> TyBuilder<'a> {
 
         self.build_generics(generics);
 
-        let (discriminant_ty, variants) = self.build_variants(id, self.types[self.ty].flags, body);
-        self.types[self.ty].kind = TyKind::Enum(discriminant_ty ,variants);
+        let (discriminant_ty, variants) = self.build_variants(id, body);
+        self.types[self.ty].kind = TyKind::Enum(discriminant_ty, variants);
 
         self.scope.pop_frame();
     }
 
-    fn build_variants(&mut self, id: ID, flags: TyFlags, ast: Ast) -> (Ty, TyCompList) {
+    fn build_variants(&mut self, id: ID, ast: Ast) -> (Ty, TyCompList) {
         let discriminant_ty = match self.ast.children(ast).len() {
             const { u16::MAX as usize }.. => panic!("Are you being serious?"),
             256.. => self.builtin_types.i16,
@@ -135,19 +135,22 @@ impl<'a> TyBuilder<'a> {
         // if this becomes a bottleneck, we will store long lived vec in context
         let mut variants = Vec::with_capacity(self.ast.children(ast).len());
         for (i, &variant) in self.ast.children(ast).iter().enumerate() {
-            let &[name, body] = self.ast.children(variant) else {
+            let index = i as u32 + 1; 
+            let &[name, ty_expr] = self.ast.children(variant) else {
                 unreachable!();
             };
             let name = self.ast.nodes[name].span;
             let variant_id = ID::field(id, self.sources.id_of(name));
-            
-            let ty = self.build_variant(discriminant_ty, name, flags, variant_id, body);
         
+            let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
+                continue
+            };
+
             self.ty_graph.add_edge(self.ty, ty);
 
             let ent = TyCompEnt {
                 ty,
-                index: i as u32,
+                index,
                 span: self.ast.nodes[variant].span,
             };
 
@@ -160,53 +163,6 @@ impl<'a> TyBuilder<'a> {
         }
 
         (discriminant_ty, self.ty_comps.close_frame())
-    }
-
-    fn build_variant(&mut self, discriminant_ty: Ty, name: Span, flags: TyFlags, id: ID, ast: Ast) -> Ty {
-        let dest = self.types.push(Default::default());
-        self.ty_graph.add_vertex(dest);
-        
-        let fields = {
-            let discriminant_id = ID::field(id, ID::new("discriminant"));
-            let ent = TyCompEnt {
-                ty: discriminant_ty,
-                index: 0,
-                span: self.builtin_types.discriminant,
-            };
-            let field = self.ty_comps.push_one(ent);
-            self.ty_comp_lookup.insert_unique(discriminant_id, field);
-
-            for (i, &field) in self.ast.children(ast).iter().enumerate() {
-                let &[name, ty] = self.ast.children(field) else {
-                    unreachable!();
-                };
-                let field_id = ID::field(id, ast::id_of(name, self.ast, self.sources));
-                
-                let Ok(ty) = ty_parser!(self).parse_type(ty) else {
-                    continue;
-                };
-
-                self.ty_graph.add_edge(dest, ty);
-
-                let ent = TyCompEnt {
-                    ty,
-                    index: i as u32 + 1,
-                    span: self.ast.nodes[name].span,
-                };
-                let field = self.ty_comps.push_one(ent);
-                self.ty_comp_lookup.insert_unique(field_id, field);
-            }
-            self.ty_comps.close_frame()
-        };
-
-        self.types[dest] = TyEnt {
-            id,
-            kind: TyKind::EnumVar(self.ty, fields),
-            name,
-            flags,
-        };
-
-        dest
     }
 
     fn build_bound(&mut self, _id: ID, _ast: Ast) {

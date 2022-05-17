@@ -24,8 +24,7 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
         loop {
             match self[ty].kind {
                 TyKind::Ptr(base, ..) => ty = base,
-                TyKind::Instance(base, ..)
-                | TyKind::EnumVar(base, ..) => return base,
+                TyKind::Instance(base, ..) => return base,
                 _ => return ty,
             }
         }
@@ -243,7 +242,6 @@ pub enum TyKind {
     Param(u8, TyList, PackedOption<Ty>),
     Bound(FuncList),
     Struct(TyCompList),
-    EnumVar(Ty, TyCompList),
     Enum(Ty, TyCompList),
     /// (base, params)
     Instance(Ty, TyList),
@@ -284,11 +282,6 @@ impl Ty {
             | TyKind::Bool => {
                 let name = types[self].name;
                 write!(to, "{}", sources.display(name))?;
-            }
-            TyKind::EnumVar(parent, ..) => {
-                let name = types[self].name;
-                parent.display(types, ty_lists, sources, to)?;
-                write!(to, "::{}", sources.display(name))?;
             }
             TyKind::Instance(base, params) => {
                 let base = types[base].name;

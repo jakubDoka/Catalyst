@@ -466,12 +466,19 @@ impl Compiler {
                     inter_state,
                 );            
 
+                self.log_diagnostics();
+
                 let bottom = self.types.len();
 
                 scope_builder!(self, source)
                     .collect_items(self.ast.elements());
 
+                self.log_diagnostics();
+                
+
                 self.build_types(stage, source, &mut ty_buffer);
+
+                self.log_diagnostics();
 
                 bound_verifier!(self).verify();            
 
@@ -702,6 +709,7 @@ impl Compiler {
                 func_meta: &self.func_meta,
             }.generate();
 
+            println!("{}", self.sources.display(self.func_meta[parent].name));
             println!("{}", ctx.func.display());
 
             let mut bytes = vec![];

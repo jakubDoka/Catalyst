@@ -84,6 +84,7 @@ fn main() -> int {
     }
 
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
+        return Enum::Structural::{ integer: 6 }.integer()
         return 17
     }
 

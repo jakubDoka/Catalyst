@@ -1,10 +1,14 @@
 
 enum Enum {
     Something
-    Structural {
-        integer: int
-    }
+    Structural
 }
+
+struct Structural {
+    integer: int
+}
+
+struct Something
 
 impl Enum {
     fn new_structural() -> Self {
@@ -17,15 +21,15 @@ impl Enum {
 
     fn is_something(s: Self) -> bool {
         match s {
-            Self::Something => true
+            Something => true
             _ => false
         }
     }
 
     fn integer(s: Self) -> int {
         match s {
-            Self::Structural::(integer) => integer
-            Self::Structural::{ integer } => integer
+            Structural::(integer) => integer
+            Structural::{ integer } => integer
             _ => -1
         }
     }

@@ -676,10 +676,7 @@ impl<'a> TirBuilder<'a> {
                 let (expr, mut refutable) = self.build_path_match(expr, path)?;
                 let ty = self.body.ents[expr].ty;
     
-                let is_enum = matches!(self.types[ty].kind, TyKind::EnumVar(..));
-
                 for (i, &field) in self.ast.children(body).iter().enumerate() {
-                    let i = i + is_enum as usize;
                     let span = self.ast.nodes[field].span;
                     let Ok((field_id, field_ty)) = self.get_field(ty, i, span) else {
                         continue;
@@ -719,56 +716,40 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Tir, bool)> {
-        let expr_ty = self.body.ents[expr].ty;
-        let (id, maybe_owner) = ident_hasher!(self).ident_id_low(ast, None)?;
+        let TirEnt { ty: expr_ty, .. } = self.body.ents[expr];
+        let id = ident_hasher!(self).ident_id(ast, None)?;
+        let span = self.ast.nodes[ast].span;
 
-        if let Some((ty, span)) = maybe_owner {
-            if let TyKind::Enum(discriminant_ty, ..) = self.types[ty].kind {
-                let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                    todo!("{}", span.log(self.sources));                            
-                };
-                let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
+        if let TyEnt { kind: TyKind::Enum(discriminant_ty, ..), id: enum_id, .. } = self.types[expr_ty] {
+            let id = ID::field(enum_id, id);
+            let Some(&variant) = self.ty_comp_lookup.get(id) else {
+                todo!("{}", span.log(self.sources));                        
+            };
+            let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
 
-                // expression is known to be this variant
-                if expr_ty == variant {
-                    return Ok((expr, false));
-                }
+            let flag = {
+                let kind = TirKind::EnumFlag(index);
+                let ent = TirEnt::new(kind, discriminant_ty, span);
+                self.body.ents.push(ent)
+            };
 
-                self.infer_ty(ty, expr_ty, |_s| todo!())?;
+            let dyn_flag = {
+                let kind = TirKind::EnumFlagRead(expr);
+                let ent = TirEnt::new(kind, discriminant_ty, span);
+                self.body.ents.push(ent)
+            };
 
-                let flag = {
-                    let kind = TirKind::EnumFlag(index);
-                    let ent = TirEnt::new(kind, discriminant_ty, span);
-                    self.body.ents.push(ent)
-                };
+            self.build_pattern_comparison(flag, dyn_flag)?;
 
-                let casted = {
-                    let kind = TirKind::BitCast(expr);
-                    let ent = TirEnt::new(kind, variant, span);
-                    self.body.ents.push(ent)
-                };
-
-                let expr = {
-                    let (field, _) = self.get_field(variant, 0, span)?;
-                    let kind = TirKind::FieldAccess(casted, field);
-                    let ent = TirEnt::new(kind, discriminant_ty, span);
-                    self.body.ents.push(ent)
-                };
-
-                self.build_pattern_comparison(flag, expr)?;
-                
-                Ok((casted, true))
-            } else {
-                todo!("type level constant or function");
-            }
+            let value = {
+                let kind = TirKind::EnumValueRead(expr_ty, expr);
+                let ent = TirEnt::new(kind, variant, span);
+                self.body.ents.push(ent)
+            };
+            
+            Ok((value, true))
         } else {
-            let span = self.ast.nodes[ast].span;
-            let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-            if let TyKind::Struct(..) = self.types[ty].kind {
-                return Ok((expr, false));
-            } else {
-                todo!("probably constant");
-            }
+            Ok((expr, false))
         }
     }
 
@@ -1246,26 +1227,28 @@ impl<'a> TirBuilder<'a> {
         };
 
         let span = self.ast.nodes[name].span;
-        let (ty, index) = {
-            let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
-            if let Some(_) = owner { // enum variant
-                let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                    todo!();
-                };
-                (self.ty_comps[variant].ty, self.ty_comps[variant].index)
-            } else {
-                (self.scope.get::<Ty>(self.diagnostics, id, span)?, u32::MAX)
-            }
-        };
+        let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
+        if let Some((enum_ty, span)) = owner {
+            let Some(&variant) = self.ty_comp_lookup.get(id) else {
+                todo!();
+            };
+            let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
+            let tir = self.build_constructor_low(ty, body)?;
 
-        self.build_constructor_low(ty, index, body)
+            let kind = TirKind::EnumConstructor(index, tir);
+            let ent = TirEnt::new(kind, enum_ty, span);
+            Ok(self.body.ents.push(ent))
+        } else {
+            let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
+            self.build_constructor_low(ty, body)
+        }
     }
 
-    fn build_constructor_low(&mut self, ty: Ty, index: u32, body: Ast) -> errors::Result<Tir> {
+    fn build_constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
         let AstEnt { span, kind, .. } = self.ast.nodes[body];
         let TyEnt { flags, .. } = self.types[ty];
 
-        let (TyKind::Struct(fields) | TyKind::EnumVar(.., fields)) = self.types[ty].kind else {
+        let TyKind::Struct(fields) = self.types[ty].kind else {
             self.diagnostics.push(TyError::ExpectedStruct {
                 got: ty,
                 loc: span,
@@ -1275,17 +1258,9 @@ impl<'a> TirBuilder<'a> {
         
         let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
 
-        let is_enum_var = index != u32::MAX;
-        if let TyKind::EnumVar(ty, ..) = self.types[ty].kind {
-            let kind = TirKind::EnumFlag(index);
-            let ent = TirEnt::new(kind, ty, span);
-            initial_values[0] = self.body.ents.push(ent);
-        }
-
         // TODO: maybe avoid allocation
         let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
         for (i, &field) in self.ast.children(body).iter().enumerate() {
-            let i = i + is_enum_var as usize;
             let (expr, (field, field_ty)) = if kind == AstKind::ConstructorBody {
                 let &[name, expr] = self.ast.children(field) else {
                     unreachable!();
@@ -1311,7 +1286,7 @@ impl<'a> TirBuilder<'a> {
             } = self.ty_comps[field];
 
             let Ok(value) = (match self.ast.nodes[expr].kind {
-                AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.build_constructor_low(field_ty, u32::MAX, expr),
+                AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.build_constructor_low(field_ty, expr),
                 _ => self.build_expr(expr),
             }) else {
                 continue;
@@ -1686,8 +1661,8 @@ impl<'a> TirBuilder<'a> {
             on
         };
 
-        let (TyKind::Struct(fields) | TyKind::EnumVar(.., fields)) = self.types[base].kind else {
-            todo!();
+        let TyKind::Struct(fields) = self.types[base].kind else {
+            todo!("{:?}", self.types[base].kind);
         };
 
         let Some(field) = self.ty_comps.get(fields).get(index) else {
@@ -1759,13 +1734,9 @@ impl<'a> TirBuilder<'a> {
     fn infer_ty(
         &mut self,
         ty: Ty,
-        mut got: Ty,
+        got: Ty,
         err_fact: impl Fn(&mut Self) -> TyError,
     ) -> errors::Result {
-        if let TyKind::EnumVar(base, ..) = self.types[got].kind {
-            got = base;
-        }
-
         if ty != got {
             let error = err_fact(self);
             self.diagnostics.push(error);

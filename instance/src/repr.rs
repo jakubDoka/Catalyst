@@ -187,15 +187,15 @@ impl<'a> LayoutBuilder<'a> {
                     _ => todo!("{kind:?}"),
                 }
             }
-            TyKind::Struct(fields) | TyKind::EnumVar(.., fields) => {
+            TyKind::Struct(fields) => {
                 self.resolve_struct_repr(id, params, fields);
             }
             TyKind::Ptr(..) => {
                 self.reprs[id].layout = Layout::PTR;
                 self.reprs[id].flags = ReprFlags::COPYABLE;
             }
-            TyKind::Enum(.., variants) => {
-                self.resolve_enum_repr(id, params, variants);
+            TyKind::Enum(ty, variants) => {
+                self.resolve_enum_repr(id, ty, params, variants);
             }
             kind => todo!("{kind:?}"),
         };
@@ -227,7 +227,7 @@ impl<'a> LayoutBuilder<'a> {
         }
     }
 
-    pub fn resolve_enum_repr(&mut self, ty: Ty, _params: TyList, fields: TyCompList) {
+    pub fn resolve_enum_repr(&mut self, ty: Ty, discriminant_ty: Ty, _params: TyList, fields: TyCompList) {
         let (layout, copyable) = self.ty_comps
             .get(fields)
             .iter()
@@ -240,9 +240,18 @@ impl<'a> LayoutBuilder<'a> {
                 (layout.max(acc_layout), copyable & acc_copyable),
         );
 
-        for field in self.ty_comps.get(fields) {
-            self.reprs[field.ty].layout = layout;
-        }
+        let (offset, layout) = {
+            let discriminant_layout = self.reprs[discriminant_ty].layout;
+            let size = layout.size();
+            let align = layout.align().max(discriminant_layout.align());
+            let offset = discriminant_layout.size().max(align);
+            let layout = Layout::new(size + offset, align);
+            (offset, layout)
+        };
+
+        self.reprs[ty].layout = layout;
+        let id = ID::raw_field(self.types[ty].id, 0);
+        self.repr_fields.insert(id, ReprField { offset });
 
         self.reprs[ty] = ReprEnt {
             repr: ir::types::INVALID,

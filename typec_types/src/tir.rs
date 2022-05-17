@@ -59,6 +59,9 @@ impl TirEnt {
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
     EnumFlag(u32),
+    EnumFlagRead(Tir),
+    EnumValueRead(Ty, Tir),
+    EnumConstructor(u32, Tir),
     MatchArm(TirList, Tir),
     Match(Tir, TirList),
     BitCast(Tir),

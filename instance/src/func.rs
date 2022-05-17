@@ -149,12 +149,113 @@ impl MirBuilder<'_> {
             TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
             TirKind::EnumFlag(value) => self.translate_enum_flag(ty, value, dest)?,
             TirKind::Match(..) => self.translate_match(tir, dest)?,
+            TirKind::EnumConstructor(..) => self.translate_enum_constructor(tir, dest)?,
+            TirKind::EnumFlagRead(..) => self.translate_enum_flag_read(tir, dest)?,
+            TirKind::EnumValueRead(..) => self.translate_enum_value_read(tir, dest)?,
             _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
         self.ctx.tir_mapping[tir] = value.into();
 
         Ok(value)
+    }
+
+    fn translate_enum_value_read(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
+        let TirEnt { ty, kind: TirKind::EnumValueRead(enum_ty, target), .. } = self.body.ents[tir] else {
+            unreachable!()
+        };
+
+        let offset = {
+            let enum_id = self.types[enum_ty].id;
+            let id = ID::raw_field(enum_id, 0);
+            self.repr_fields.get(id).unwrap().offset
+        };
+
+        let header = self.translate_expr(target, None)?.unwrap();
+
+        self.access_offset(ty, header, offset, dest)
+    }
+
+    fn translate_enum_flag_read(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
+        let TirEnt { ty, kind: TirKind::EnumFlagRead(target), .. } = self.body.ents[tir] else {
+            unreachable!()
+        };
+
+        let target = self.translate_expr(target, None)?.unwrap();
+        
+
+
+        let value = {
+            let mut value = self.func.values[target];
+            value.ty = ty;
+            self.func.values.push(value)
+        };
+
+        {
+            let kind = InstKind::Offset(target);
+            let inst = InstEnt::new(kind, value.into());
+            self.func.add_inst(inst);
+        }
+
+        self.assign(value, dest);
+
+        Ok(Some(value))
+    }
+
+    fn translate_enum_constructor(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
+        let TirEnt { ty, kind: TirKind::EnumConstructor(enum_id, enum_value), .. } = self.body.ents[tir] else {
+            unreachable!()
+        };
+
+        let on_stack = self.on_stack(tir);
+        let Some(value) = self.unwrap_dest_low(ty, on_stack, dest).or(dest) else {
+            unreachable!();
+        };
+
+        if !on_stack && dest.is_none() {
+            let kind = InstKind::IntLit(0);
+            let ent = InstEnt::new(kind, value.into());
+            self.func.add_inst(ent);
+        }
+
+        let enum_id = {
+            let TyKind::Enum(ty, ..) = self.types[ty].kind else {
+                unreachable!();
+            };
+            let value = self.value_from_ty(ty);
+            let kind = InstKind::IntLit(enum_id as u64);
+            let ent = InstEnt::new(kind, value.into());
+            self.func.add_inst(ent);
+            value
+        };
+
+        {
+            let kind = InstKind::Assign(enum_id);
+            let ent = InstEnt::new(kind, value.into());
+            self.func.add_inst(ent);
+        }
+
+        let offset = {
+            let enum_id = self.types[ty].id;
+            let id = ID::raw_field(enum_id, 0);
+            self.repr_fields.get(id).unwrap().offset
+        };
+
+        let inner_value = {
+            let ty = self.body.ents[enum_value].ty;
+            let mut new_value = self.func.values[value];
+            new_value.offset = new_value.offset + offset;
+            new_value.ty = ty;
+            let new_value = self.func.values.push(new_value);
+            let kind = InstKind::Offset(value);
+            let ent = InstEnt::new(kind, new_value.into());
+            self.func.add_inst(ent);
+            new_value
+        };
+
+        self.translate_expr(enum_value, Some(inner_value))?;
+
+        Ok(Some(value))
     }
 
     fn translate_match(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
@@ -271,11 +372,7 @@ impl MirBuilder<'_> {
         let inst = InstEnt::new(kind, result.into());
         self.func.add_inst(inst);
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(result);
-            let inst = InstEnt::new(kind, dest.into());
-            self.func.add_inst(inst);
-        }
+        self.assign(result, dest);
 
         Ok(Some(result))
     }
@@ -301,11 +398,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(inst);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         self.ctx.tir_mapping[tir] = value.into();
 
@@ -331,11 +424,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(inst);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         self.ctx.tir_mapping[tir] = value.into();
 
@@ -358,11 +447,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         Ok(Some(value))
     }
@@ -375,11 +460,7 @@ impl MirBuilder<'_> {
             return Ok(None);
         }
 
-        {
-            let kind = InstKind::Assign(b);
-            let ent = InstEnt::new(kind, a.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(b, Some(a));
 
         Ok(None)
     }
@@ -482,13 +563,17 @@ impl MirBuilder<'_> {
             unreachable!()
         };
 
+        self.access_offset(ty, header, offset, dest)
+    }
+
+    fn access_offset(&mut self, dest_ty: Ty, header: Value, offset: Offset, dest: Option<Value>) -> ExprResult {
         let is_pointer = self.func.values[header]
             .flags
             .contains(mir::MirFlags::POINTER);
 
         let value = {
             let offset = self.func.values[header].offset + offset;
-            let ent = ValueEnt::new(ty, offset, mir::MirFlags::POINTER & is_pointer);
+            let ent = ValueEnt::new(dest_ty, offset, mir::MirFlags::POINTER & is_pointer);
             self.func.values.push(ent)
         };
 
@@ -498,11 +583,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         Ok(Some(value))
     }
@@ -526,6 +607,7 @@ impl MirBuilder<'_> {
             let ent = InstEnt::new(kind, dest.into());
             self.func.add_inst(ent);
         }
+        self.assign(value, dest);
 
         Ok(Some(value))
     }
@@ -552,7 +634,6 @@ impl MirBuilder<'_> {
 
         let data_view = self.body.cons.get(data);
         let ty_id = self.types[ty].id;
-
 
         for (i, &data) in data_view.iter().enumerate() {
             let id = ID::raw_field(ty_id, i as u64);
@@ -638,11 +719,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         Ok(Some(value))
     }
@@ -661,11 +738,7 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
+        self.assign(value, dest);
 
         Ok(Some(value))
     }
@@ -814,18 +887,14 @@ impl MirBuilder<'_> {
                 value
             };
 
-            let kind = InstKind::Assign(temp);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
+            self.assign(temp, value);
         } else {
             let kind = InstKind::Call(func, args);
             let inst = InstEnt::new(kind, value);
             self.func.add_inst(inst);
 
-            if let Some(dest) = dest {
-                let kind = InstKind::Assign(value.unwrap());
-                let ent = InstEnt::new(kind, dest.into());
-                self.func.add_inst(ent);
+            if let Some(value) = value {
+                self.assign(value, dest);
             }
         }
 
@@ -863,6 +932,14 @@ impl MirBuilder<'_> {
                 self.value_from_ty(ret)
             }
         })
+    }
+
+    fn assign(&mut self, value: Value, dest: Option<Value>) {
+        if let Some(dest) = dest {
+            let kind = InstKind::Assign(value);
+            let ent = InstEnt::new(kind, dest.into());
+            self.func.add_inst(ent);
+        }
     }
 
     fn on_stack(&self, tir: Tir) -> bool {

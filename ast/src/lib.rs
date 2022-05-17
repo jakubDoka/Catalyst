@@ -160,7 +160,7 @@ pub enum AstKind {
     Match,
     MatchArm,
     MatchBody,
-    StructEnumVariant,
+    EnumVariant,
     EnumVariants,
     Enum,
     BitCast,
