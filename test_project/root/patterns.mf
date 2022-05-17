@@ -26,7 +26,7 @@ impl Enum {
         match s {
             Self::Structural::(integer) => integer
             Self::Structural::{ integer } => integer
-            Self::Something => -1
+            _ => -1
         }
     }
 }

@@ -79,6 +79,14 @@ fn main() -> int {
         return 15
     }
 
+    if Enum::Something::{}.is_something() {} else {
+        return 16
+    }
+
+    if Enum::Structural::{ integer: 6 }.integer() != 6 {
+        return 17
+    }
+
     putchar('h')
     exit(-34)
 

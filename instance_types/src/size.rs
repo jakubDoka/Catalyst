@@ -21,9 +21,9 @@ impl Layout {
     pub const fn new(size: Offset, align: Offset) -> Self {
         Self {
             arch32: (size.arch32 as u32 & Self::SIZE_MASK)
-                | ((align.arch32 as u32) << Self::SIZE_WIDTH),
+                | (((align.arch32 - 1) as u32) << Self::SIZE_WIDTH),
             arch64: (size.arch64 as u32 & Self::SIZE_MASK)
-                | ((align.arch64 as u32) << Self::SIZE_WIDTH),
+                | (((align.arch64 - 1) as u32) << Self::SIZE_WIDTH),
         }
     }
 
@@ -36,8 +36,8 @@ impl Layout {
 
     pub fn align(&self) -> Offset {
         Offset::new(
-            (self.arch32 >> Self::SIZE_WIDTH) as i32,
-            (self.arch64 >> Self::SIZE_WIDTH) as i32,
+            ((self.arch32 >> Self::SIZE_WIDTH) + 1) as i32,
+            ((self.arch64 >> Self::SIZE_WIDTH) + 1) as i32,
         )
     }
 

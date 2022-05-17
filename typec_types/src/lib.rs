@@ -21,7 +21,7 @@ pub use graph::Graph;
 #[macro_export]
 macro_rules! ty_display {
     ($self:expr, $ty:expr) => {
-        TyDisplay::new($self.types, $self.ty_lists, $self.sources, $ty)
+        TyDisplay::new(&$self.types, &$self.ty_lists, &$self.sources, $ty)
     };
 }
 

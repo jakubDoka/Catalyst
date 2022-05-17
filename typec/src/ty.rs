@@ -116,13 +116,13 @@ impl<'a> TyBuilder<'a> {
 
         self.build_generics(generics);
 
-        let variants = self.build_variants(id, self.types[self.ty].flags, body);
-        self.types[self.ty].kind = TyKind::Enum(variants);
+        let (discriminant_ty, variants) = self.build_variants(id, self.types[self.ty].flags, body);
+        self.types[self.ty].kind = TyKind::Enum(discriminant_ty ,variants);
 
         self.scope.pop_frame();
     }
 
-    fn build_variants(&mut self, id: ID, flags: TyFlags, ast: Ast) -> TyCompList {
+    fn build_variants(&mut self, id: ID, flags: TyFlags, ast: Ast) -> (Ty, TyCompList) {
         let discriminant_ty = match self.ast.children(ast).len() {
             const { u16::MAX as usize }.. => panic!("Are you being serious?"),
             256.. => self.builtin_types.i16,
@@ -159,7 +159,7 @@ impl<'a> TyBuilder<'a> {
             self.ty_comp_lookup.insert(variant_id, comp);
         }
 
-        self.ty_comps.close_frame()
+        (discriminant_ty, self.ty_comps.close_frame())
     }
 
     fn build_variant(&mut self, discriminant_ty: Ty, name: Span, flags: TyFlags, id: ID, ast: Ast) -> Ty {

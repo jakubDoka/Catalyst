@@ -59,8 +59,6 @@ impl TirEnt {
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
     EnumFlag(u32),
-    VariantMatch(u32, Tir),
-    PatternMatch(Tir, Tir),
     MatchArm(TirList, Tir),
     Match(Tir, TirList),
     BitCast(Tir),
@@ -109,6 +107,7 @@ bitflags! {
         const GENERIC = 1 << 3;
         const WITH_CALLER = 1 << 4;
         const REFUTABLE = 1 << 5;
+        const PATTERN_MATCH = 1 << 6;
     }
 }
 

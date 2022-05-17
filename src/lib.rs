@@ -7,7 +7,7 @@
 
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{Type, ExternalName};
+use cranelift_codegen::ir::{Type, ExternalName, self};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
@@ -421,8 +421,15 @@ impl Compiler {
     }
 
     fn build_layouts(&mut self, bottom: usize) {
+        let iter = (bottom..self.types.len()).map(|i| {
+            let ty = Ty::new(i);
+            ty
+        });
+        for ty in iter.clone() {
+            println!("=={}", ty);
+            self.ty_graph.add_vertex(ty);
+        }
         layout_builder!(self).build_layouts(&self.ty_graph);
-        let iter = (bottom..self.types.len()).map(|i| Ty::new(i));
         build_reprs(self.object_module.isa().pointer_type(), &mut self.reprs, iter);
         self.ty_graph.clear();
     }
@@ -587,6 +594,14 @@ impl Compiler {
     fn generate(&mut self) {
         time_report!("generating");
 
+        for (ty, &repr) in self.reprs.iter() {
+            if repr.repr == ir::types::INVALID {
+                println!("{:?} {:?} {}", ty, self.types[ty].flags, ty_display!(self, ty));
+            }
+        }
+
+        println!("{}", self.types.len());
+
         let mut ctx = Context::new();
         let mut builder_ctx = FunctionBuilderContext::new(); 
         let mut replace_cache = ReplaceCache::new();
@@ -660,9 +675,12 @@ impl Compiler {
                 func_meta: &self.func_meta,
             }.translate_func();
 
+            
             if result.is_err() {
                 continue;
             }
+            
+            println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
 
             ctx.func.signature = signatures.get(id).unwrap().clone();
 
@@ -683,6 +701,8 @@ impl Compiler {
                 sources: &self.sources,
                 func_meta: &self.func_meta,
             }.generate();
+
+            println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
             ctx.compile_and_emit(self.object_module.isa(), &mut bytes)

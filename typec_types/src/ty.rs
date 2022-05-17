@@ -24,7 +24,8 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
         loop {
             match self[ty].kind {
                 TyKind::Ptr(base, ..) => ty = base,
-                TyKind::Instance(base, ..) => return base,
+                TyKind::Instance(base, ..)
+                | TyKind::EnumVar(base, ..) => return base,
                 _ => return ty,
             }
         }
@@ -243,7 +244,7 @@ pub enum TyKind {
     Bound(FuncList),
     Struct(TyCompList),
     EnumVar(Ty, TyCompList),
-    Enum(TyCompList),
+    Enum(Ty, TyCompList),
     /// (base, params)
     Instance(Ty, TyList),
     /// (inner, depth)

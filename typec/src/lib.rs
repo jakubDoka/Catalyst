@@ -409,7 +409,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types, instances: &mut Instances) -> Ty {
         id,
         name,
         kind: TyKind::Ptr(ty, depth + 1),
-        flags,
+        flags: flags & !TyFlags::BUILTIN,
     };
     let ptr = types.push(ent);
 

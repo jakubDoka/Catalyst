@@ -137,6 +137,7 @@ impl InstEnt {
 
 #[derive(Debug)]
 pub enum InstKind {
+    PatternCheck(ValueList),
     BitCast(Value),
     DerefPointer(Value),
     TakePointer(Value),
@@ -274,6 +275,19 @@ impl std::fmt::Display for MirDisplay<'_> {
 
             for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
+                    InstKind::PatternCheck(list) => {
+                        writeln!(
+                            f,
+                            "    {} = pattern_check({})",
+                            self.value_to_string(inst.value.unwrap()),
+                            self.func.value_slices
+                                .get(list)
+                                .iter()
+                                .map(|&v| format!("{v}"))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        )?;
+                    }
                     InstKind::BitCast(value) => {
                         writeln!(
                             f,

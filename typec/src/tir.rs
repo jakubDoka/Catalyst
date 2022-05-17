@@ -474,12 +474,6 @@ impl<'a> TirBuilder<'a> {
         let mut final_expr = None;
         let mut terminating = false;
         for &stmt in self.ast.children(ast) {
-            if stmt.is_reserved_value() {
-                println!("{}", self.ast.nodes[ast].span.log(self.sources));
-                let mut str = String::new();
-                self.ast.fmt(&mut str, None).unwrap();
-                println!("{}", str);
-            }
             let Ok(expr) = self.build_expr(stmt) else {
                 continue; // Recover here
             };
@@ -553,7 +547,6 @@ impl<'a> TirBuilder<'a> {
         
         let mut ret_ty = None;
         let mut terminating = true;
-        println!("{}", self.body.ents[expr].span.log(self.sources));
         let arms = {
             self.temp.mark_frame();
             for &arm in self.ast.children(body) {
@@ -588,7 +581,6 @@ impl<'a> TirBuilder<'a> {
                     terminating = false;
                     if let Some(ref mut ret_ty) = ret_ty {
                         if ty != *ret_ty {
-                            println!("{} != {}", ty_display!(self, ty), ty_display!(self, *ret_ty));
                             *ret_ty = self.builtin_types.nothing;
                         }
                     } else {
@@ -641,8 +633,9 @@ impl<'a> TirBuilder<'a> {
                     unreachable!();
                 };
                 
-                let (ty, mut refutable) = self.build_path_match(expr, path)?;
-    
+                let (expr, mut refutable) = self.build_path_match(expr, path)?;
+                let ty = self.body.ents[expr].ty;
+
                 for &field in self.ast.children(body) {
                     let &[name, mut pattern] = self.ast.children(field) else {
                         unreachable!("{}", self.sources.display(span));
@@ -680,7 +673,8 @@ impl<'a> TirBuilder<'a> {
                     unreachable!();
                 };
                 
-                let (ty, mut refutable) = self.build_path_match(expr, path)?;
+                let (expr, mut refutable) = self.build_path_match(expr, path)?;
+                let ty = self.body.ents[expr].ty;
     
                 let is_enum = matches!(self.types[ty].kind, TyKind::EnumVar(..));
 
@@ -708,13 +702,9 @@ impl<'a> TirBuilder<'a> {
             },
             AstKind::Path => self.build_path_match(expr, ast).map(|(_, refutable)| refutable)?,
             AstKind::Char | AstKind::Int(..) | AstKind::Bool(..) => {
-                let char_tir = self.build_expr(ast)?;
+                let lit_tir = self.build_expr(ast)?;
 
-                let span = self.ast.nodes[ast].span;
-                let kind = TirKind::PatternMatch(expr, char_tir);
-                let ent = TirEnt::new(kind, self.builtin_types.bool, span);
-                let tir = self.body.ents.push(ent);
-                self.temp.push(tir);
+                self.build_pattern_comparison(lit_tir, expr)?;
 
                 true
             },
@@ -728,12 +718,12 @@ impl<'a> TirBuilder<'a> {
         Ok(refutable)
     }
 
-    fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Ty, bool)> {
+    fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Tir, bool)> {
         let expr_ty = self.body.ents[expr].ty;
         let (id, maybe_owner) = ident_hasher!(self).ident_id_low(ast, None)?;
 
         if let Some((ty, span)) = maybe_owner {
-            if let TyKind::Enum(..) = self.types[ty].kind {
+            if let TyKind::Enum(discriminant_ty, ..) = self.types[ty].kind {
                 let Some(&variant) = self.ty_comp_lookup.get(id) else {
                     todo!("{}", span.log(self.sources));                            
                 };
@@ -741,29 +731,63 @@ impl<'a> TirBuilder<'a> {
 
                 // expression is known to be this variant
                 if expr_ty == variant {
-                    return Ok((variant, false));
+                    return Ok((expr, false));
                 }
 
                 self.infer_ty(ty, expr_ty, |_s| todo!())?;
 
-                let kind = TirKind::VariantMatch(index, expr);
-                let ent = TirEnt::new(kind, ty, span);
-                let tir = self.body.ents.push(ent);
-                self.temp.push(tir);
+                let flag = {
+                    let kind = TirKind::EnumFlag(index);
+                    let ent = TirEnt::new(kind, discriminant_ty, span);
+                    self.body.ents.push(ent)
+                };
+
+                let casted = {
+                    let kind = TirKind::BitCast(expr);
+                    let ent = TirEnt::new(kind, variant, span);
+                    self.body.ents.push(ent)
+                };
+
+                let expr = {
+                    let (field, _) = self.get_field(variant, 0, span)?;
+                    let kind = TirKind::FieldAccess(casted, field);
+                    let ent = TirEnt::new(kind, discriminant_ty, span);
+                    self.body.ents.push(ent)
+                };
+
+                self.build_pattern_comparison(flag, expr)?;
                 
-                Ok((variant, true))
+                Ok((casted, true))
             } else {
-                todo!();
+                todo!("type level constant or function");
             }
         } else {
             let span = self.ast.nodes[ast].span;
             let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
             if let TyKind::Struct(..) = self.types[ty].kind {
-                return Ok((ty, false));
+                return Ok((expr, false));
             } else {
-                todo!();
+                todo!("probably constant");
             }
         }
+    }
+
+    fn build_pattern_comparison(&mut self, constant: Tir, expr: Tir) -> errors::Result {
+        let TirEnt { span, ty, .. } = self.body.ents[constant];
+        let id = {
+            let span_id = ID::new("==");
+            let ty_id = self.types[ty].id;
+            ID::binary(ty_id, span_id)
+        };
+        let comparator_func = self.scope.get::<Func>(self.diagnostics, id, span)?;
+        
+        let args = self.body.cons.push(&[expr, constant]);
+        let kind = TirKind::Call(TyList::reserved_value(), comparator_func, args);
+        let ent = TirEnt::with_flags(kind, self.builtin_types.bool, TirFlags::PATTERN_MATCH, span);
+        let tir = self.body.ents.push(ent);
+        self.temp.push(tir);
+
+        Ok(())
     }
 
     fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -1252,9 +1276,9 @@ impl<'a> TirBuilder<'a> {
         let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
 
         let is_enum_var = index != u32::MAX;
-        if is_enum_var {
+        if let TyKind::EnumVar(ty, ..) = self.types[ty].kind {
             let kind = TirKind::EnumFlag(index);
-            let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
+            let ent = TirEnt::new(kind, ty, span);
             initial_values[0] = self.body.ents.push(ent);
         }
 
@@ -1729,7 +1753,6 @@ impl<'a> TirBuilder<'a> {
         err_fact: impl Fn(&mut Self, Ty, Span) -> TyError,
     ) -> errors::Result {
         let TirEnt { ty: got, span, .. } = self.body.ents[right];
-        self.body.ents[right].ty = ty;
         self.infer_ty(ty, got, |s| err_fact(s, got, span))
     }
 

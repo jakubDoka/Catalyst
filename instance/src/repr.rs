@@ -162,6 +162,7 @@ impl<'a> LayoutBuilder<'a> {
 
         self.reprs.resize(self.types.len());
         for id in order {
+            println!("0000 {id}");
             self.build_size(id);
         }
     }
@@ -193,7 +194,7 @@ impl<'a> LayoutBuilder<'a> {
                 self.reprs[id].layout = Layout::PTR;
                 self.reprs[id].flags = ReprFlags::COPYABLE;
             }
-            TyKind::Enum(variants) => {
+            TyKind::Enum(.., variants) => {
                 self.resolve_enum_repr(id, params, variants);
             }
             kind => todo!("{kind:?}"),
