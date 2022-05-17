@@ -182,20 +182,8 @@ impl MirBuilder<'_> {
         };
 
         let target = self.translate_expr(target, None)?.unwrap();
-        
 
-
-        let value = {
-            let mut value = self.func.values[target];
-            value.ty = ty;
-            self.func.values.push(value)
-        };
-
-        {
-            let kind = InstKind::Offset(target);
-            let inst = InstEnt::new(kind, value.into());
-            self.func.add_inst(inst);
-        }
+        let value = self.offset_low(target, Offset::ZERO, Some(ty));
 
         self.assign(value, dest);
 
@@ -241,17 +229,8 @@ impl MirBuilder<'_> {
             self.repr_fields.get(id).unwrap().offset
         };
 
-        let inner_value = {
-            let ty = self.body.ents[enum_value].ty;
-            let mut new_value = self.func.values[value];
-            new_value.offset = new_value.offset + offset;
-            new_value.ty = ty;
-            let new_value = self.func.values.push(new_value);
-            let kind = InstKind::Offset(value);
-            let ent = InstEnt::new(kind, new_value.into());
-            self.func.add_inst(ent);
-            new_value
-        };
+        let ty = self.body.ents[enum_value].ty;
+        let inner_value = self.offset_low(value, offset, Some(ty));
 
         self.translate_expr(enum_value, Some(inner_value))?;
 
@@ -567,21 +546,7 @@ impl MirBuilder<'_> {
     }
 
     fn access_offset(&mut self, dest_ty: Ty, header: Value, offset: Offset, dest: Option<Value>) -> ExprResult {
-        let is_pointer = self.func.values[header]
-            .flags
-            .contains(mir::MirFlags::POINTER);
-
-        let value = {
-            let offset = self.func.values[header].offset + offset;
-            let ent = ValueEnt::new(dest_ty, offset, mir::MirFlags::POINTER & is_pointer);
-            self.func.values.push(ent)
-        };
-
-        {
-            let kind = InstKind::Offset(header);
-            let ent = InstEnt::new(kind, value.into());
-            self.func.add_inst(ent);
-        }
+        let value = self.offset_low(header, offset, Some(dest_ty));
 
         self.assign(value, dest);
 
@@ -602,11 +567,6 @@ impl MirBuilder<'_> {
             self.func.add_inst(ent);
         }
 
-        if let Some(dest) = dest {
-            let kind = InstKind::Assign(value);
-            let ent = InstEnt::new(kind, dest.into());
-            self.func.add_inst(ent);
-        }
         self.assign(value, dest);
 
         Ok(Some(value))
@@ -641,37 +601,12 @@ impl MirBuilder<'_> {
                 unreachable!()
             };
 
-            let dest = {
-                let of_value = {
-                    let mut value = self.func.values[value];
-                    value.offset = value.offset + offset;
-                    self.func.values.push(value)
-                };
-
-                {
-                    let kind = InstKind::Offset(value);
-                    let ent = InstEnt::new(kind, of_value.into());
-                    self.func.add_inst(ent);
-                }
-
-                of_value
-            };
+            let dest = self.offset(value, offset);
 
             self.translate_expr(data, Some(dest))?;
 
             if !on_stack {
-                let new_value = {
-                    let value = self.func.values[value];
-                    self.func.values.push(value)
-                };
-
-                {
-                    let kind = InstKind::Offset(dest);
-                    let ent = InstEnt::new(kind, new_value.into());
-                    self.func.add_inst(ent);
-                }
-
-                value = new_value;
+                value = self.offset(dest, Offset::ZERO - offset);
             }
         }
 
@@ -932,6 +867,29 @@ impl MirBuilder<'_> {
                 self.value_from_ty(ret)
             }
         })
+    }
+
+    fn offset(&mut self, value: Value, offset: Offset) -> Value {
+        self.offset_low(value, offset, None)
+    }
+
+    fn offset_low(&mut self, value: Value, offset: Offset, ty: Option<Ty>) -> Value {
+        let of_value = {
+            let mut value = self.func.values[value];
+            value.offset = value.offset + offset;
+            if let Some(ty) = ty {
+                value.ty = ty;
+            }
+            self.func.values.push(value)
+        };
+
+        {
+            let kind = InstKind::Offset(value);
+            let ent = InstEnt::new(kind, of_value.into());
+            self.func.add_inst(ent);
+        }
+
+        of_value
     }
 
     fn assign(&mut self, value: Value, dest: Option<Value>) {
