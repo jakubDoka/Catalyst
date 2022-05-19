@@ -214,12 +214,16 @@ impl<T> Map<T> {
         self.inner.iter_mut().map(|(&k, v)| (k, v))
     }
 
-    fn contains_key(&self, key: impl Into<ID>) -> bool {
+    pub fn contains_key(&self, key: impl Into<ID>) -> bool {
         self.inner.contains_key(&key.into())
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = (ID, T)> + '_ {
+        self.inner.drain()
     }
 }
 

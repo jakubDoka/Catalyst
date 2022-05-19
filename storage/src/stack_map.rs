@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Index};
+use std::{marker::PhantomData, ops::{Index, IndexMut}};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
@@ -76,6 +76,14 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn alloc(&mut self, size: usize, init: T) -> E where T: Clone {
+        let index = self.indices.len();
+        self.indices.push(index as u32);
+        self.indices.push((index + size) as u32);
+        self.data.resize(index + size, init);
+        E::new(index)
+    }
+
     pub fn push(&mut self, value: &[T]) -> E
     where
         T: Clone,
@@ -93,6 +101,16 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         ) {
             (Some(start), Some(end)) => &self.data[*start as usize..*end as usize],
             _ => &[],
+        }
+    }
+
+    pub fn slice_keys(&self, id: E) -> impl Iterator<Item = S> {
+        match (
+            self.indices.get(id.index()),
+            self.indices.get(id.index() + 1),
+        ) {
+            (Some(&start), Some(&end)) => (start as usize..end as usize).map(S::new),
+            _ => (0..0).map(S::new),
         }
     }
 
@@ -165,13 +183,29 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         self.data.clear();
         self.indices.truncate(1);
     }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = (E, T)> + '_ {
+        self.indices.clear();
+        self.data.drain(..).enumerate().map(move |(i, v)| {
+            let id = E::new(i);
+            (id, v)
+        })
+    }
 }
+
+
 
 impl<E: EntityRef, T, S: EntityRef> Index<S> for StackMap<E, T, S> {
     type Output = T;
 
     fn index(&self, id: S) -> &Self::Output {
         &self.data[id.index()]
+    }
+}
+
+impl<E: EntityRef, T, S: EntityRef> IndexMut<S> for StackMap<E, T, S> {
+    fn index_mut(&mut self, id: S) -> &mut Self::Output {
+        &mut self.data[id.index()]
     }
 }
 

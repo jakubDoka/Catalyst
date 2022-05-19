@@ -2,239 +2,9 @@ use std::ops::Not;
 
 use incr::Incr;
 use module_types::module::Modules;
+use typec_types::exhaust::PatternNode;
 
 use crate::{scope::ScopeContext, TyError, *};
-
-pub struct BoundVerifier<'a> {
-    pub ctx: &'a mut ScopeContext,
-    pub ast: &'a AstData,
-    pub types: &'a Types,
-    pub ty_lists: &'a mut TyLists,
-    pub builtin_types: &'a BuiltinTypes,
-    pub modules: &'a mut Modules,
-    pub scope: &'a mut Scope,
-    pub diagnostics: &'a mut errors::Diagnostics,
-    pub funcs: &'a mut Funcs,
-    pub func_lists: &'a mut TFuncLists,
-    pub bound_impls: &'a mut BoundImpls,
-    pub sources: &'a Sources,
-    pub func_meta: &'a FuncMeta,
-}
-
-#[macro_export]
-macro_rules! bound_verifier {
-    ($self:expr) => {
-        BoundVerifier::new(
-            &mut $self.scope_context,
-            &$self.ast,
-            &$self.types,
-            &mut $self.ty_lists,
-            &$self.builtin_types,
-            &mut $self.modules,
-            &mut $self.scope,
-            &mut $self.diagnostics,
-            &mut $self.funcs,
-            &mut $self.func_lists,
-            &mut $self.bound_impls,
-            &$self.sources,
-            &$self.func_meta,
-        )
-    };
-}
-
-impl<'a> BoundVerifier<'a> {
-    pub fn new(
-        ctx: &'a mut ScopeContext,
-        ast: &'a AstData,
-        types: &'a Types,
-        ty_lists: &'a mut TyLists,
-        builtin_types: &'a BuiltinTypes,
-        modules: &'a mut Modules,
-        scope: &'a mut Scope,
-        diagnostics: &'a mut errors::Diagnostics,
-        funcs: &'a mut Funcs,
-        func_lists: &'a mut TFuncLists,
-        bound_impls: &'a mut BoundImpls,
-        sources: &'a Sources,
-        func_meta: &'a FuncMeta,
-    ) -> Self {
-        Self {
-            ctx,
-            ast,
-            types,
-            ty_lists,
-            builtin_types,
-            modules,
-            scope,
-            diagnostics,
-            funcs,
-            func_lists,
-            bound_impls,
-            sources,
-            func_meta,
-        }
-    }
-
-    pub fn verify(&mut self) {
-        // we have to collect all functions first and the check if all bound
-        // functions are implemented, its done here
-        while let Some((implementor, bound, impl_block)) = self.ctx.bounds_to_verify.pop() {
-            let &[.., implementor_ast, body] = self.ast.children(impl_block) else {
-                unreachable!();
-            };
-            let implementor_span = self.ast.nodes[implementor_ast].span;
-
-            // handle use expressions
-            if !body.is_reserved_value() {
-                for &ast in self.ast.children(body) {
-                    if self.ast.nodes[ast].kind != AstKind::UseBoundFunc {
-                        continue;
-                    }
-
-                    let &[func, ident] = self.ast.children(ast) else {
-                        unreachable!();
-                    };
-
-                    let Ok(id) = ident_hasher!(self).ident_id(func, Some((implementor, implementor_span))) else {
-                        continue;
-                    };
-
-                    let span = self.ast.nodes[func].span;
-                    let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, span) else {
-                        continue;
-                    };
-
-                    let id = {
-                        let func = ast::id_of(ident, self.ast, self.sources);
-                        let bound = self.types[bound].id;
-                        let implementor = self.types[implementor].id;
-                        ID::bound_impl_owned_func(bound, implementor, func)
-                    };
-
-                    {
-                        let item = module::ModuleItem::new(id, func, span);
-                        drop(self.scope.insert(
-                            self.diagnostics,
-                            span.source(),
-                            id,
-                            item.to_scope_item(),
-                        ));
-                        self.modules[span.source()].items.push(item);
-                    }
-                }
-            }
-
-            let impl_span = self.ast.nodes[impl_block].span;
-
-            // check if all functions exist and match the signature
-            let funcs = {
-                let TyKind::Bound(funcs) = self.types[bound].kind else {
-                    unreachable!();
-                };
-
-                // TODO: don't allocate if it impacts performance
-                let mut vec = self.func_lists.get(funcs).to_vec();
-                for func in &mut vec {
-                    let ent = &self.func_meta[*func];
-
-                    let (sugar_id, certain_id) = {
-                        let func = self.sources.id_of(ent.name);
-                        let ty = self.types[implementor].id;
-                        let sugar_id = ID::owned_func(ty, func);
-                        let bound = self.types[bound].id;
-                        let certain_id = ID::bound_impl_owned_func(bound, ty, func);
-                        (sugar_id, certain_id)
-                    };
-
-                    let maybe_other = None // looks better
-                        .or_else(|| self.scope.weak_get::<Func>(certain_id))
-                        .or_else(|| self.scope.weak_get::<Func>(sugar_id));
-
-                    let Some(other) = maybe_other else {
-                        self.diagnostics.push(TyError::MissingBoundImplFunc {
-                            func: ent.name,
-                            loc: impl_span,
-                        });
-                        continue;
-                    };
-
-                    drop(self.compare_signatures(*func, other));
-
-                    *func = other;
-                }
-
-                self.func_lists.push(&vec)
-            };
-
-            let id = {
-                let implementor = self.types[implementor].id;
-                let bound = self.types[bound].id;
-                ID::bound_impl(bound, implementor)
-            };
-
-            let bound = BoundImpl {
-                span: self.ast.nodes[impl_block].span,
-                funcs,
-            };
-
-            assert!(self.bound_impls.insert(id, bound).is_some());
-        }
-    }
-
-    pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
-        let a = self.func_meta[impl_func].sig;
-        let b = self.func_meta[bound_func].sig;
-
-        let a_param_len = self.ty_lists.len(a.params);
-        let b_param_len = self.ty_lists.len(b.params);
-
-        // println!("{}", self.func_meta[bound_func].name.log(self.sources));
-
-        if a_param_len != b_param_len - 1 {
-            self.diagnostics.push(TyError::BoundImplFuncParamCount {
-                impl_func: self.func_meta[impl_func].name,
-                bound_func: self.func_meta[bound_func].name,
-                expected: b_param_len,
-                found: a_param_len,
-            });
-            return Err(());
-        }
-
-        // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
-        let mut params = vec![Ty::reserved_value(); b_param_len];
-
-        let iter = {
-            // TODO: same here
-            let a_args = self.ty_lists.get(a.args);
-            let b_args = self.ty_lists.get(b.args);
-            let ast_params = {
-                let children = self.ast.children(self.ctx.func_ast[impl_func]);
-                let has_ret = (a.ret != self.builtin_types.nothing) as usize;
-                &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
-            };
-
-            let a = a_args.iter().chain(std::iter::once(&a.ret));
-            let b = b_args.iter().chain(std::iter::once(&b.ret));
-            a.zip(b).zip(ast_params)
-        };
-
-        for ((&referenced, &parametrized), &ast) in iter {
-            let span = self.ast.nodes[ast].span;
-            drop(infer_parameters(
-                referenced,
-                parametrized,
-                &mut params,
-                span,
-                self.types,
-                self.ty_lists,
-                self.bound_impls,
-                self.diagnostics,
-            ));
-        }
-
-        Ok(())
-    }
-}
 
 pub struct TirBuilder<'a> {
     pub func: Func,
@@ -257,6 +27,7 @@ pub struct TirBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
     pub incr: &'a mut Incr,
     pub func_meta: &'a mut FuncMeta,
+    pub exhaust_map: &'a mut ExhaustMap,
 }
 
 #[macro_export]
@@ -283,6 +54,7 @@ macro_rules! tir_builder {
             &mut $self.diagnostics,
             &mut $self.incr,
             &mut $self.func_meta,
+            &mut $self.exhaust_map,
         )
     };
 }
@@ -309,6 +81,7 @@ impl<'a> TirBuilder<'a> {
         diagnostics: &'a mut errors::Diagnostics,
         incr: &'a mut Incr,
         func_meta: &'a mut FuncMeta,
+        exhaust_map: &'a mut ExhaustMap,
     ) -> Self {
         TirBuilder {
             func,
@@ -331,6 +104,7 @@ impl<'a> TirBuilder<'a> {
             diagnostics,
             incr,
             func_meta,
+            exhaust_map,
         }
     }
 
@@ -543,8 +317,16 @@ impl<'a> TirBuilder<'a> {
             unreachable!();
         };
 
-        let expr = self.build_expr(expr)?;
         
+        let expr = self.build_expr(expr)?;
+        let expr_ty = self.body.ents[expr].ty;
+
+        let Some((pattern_length, pattern_range)) = self.types.pattern_info(expr_ty, self.ty_lists, self.ty_comps) else {
+            todo!("Cannot match on this");
+        };
+
+        let pattern_root = self.exhaust_map.declare_root(pattern_length, pattern_range);
+
         let mut ret_ty = None;
         let mut terminating = true;
         let arms = {
@@ -557,7 +339,7 @@ impl<'a> TirBuilder<'a> {
                 self.scope.mark_frame();
 
                 let (pattern, expr) = (
-                    self.build_pattern(expr, pattern),
+                    self.build_pattern(pattern_root, expr, pattern),
                     self.build_expr(body),
                 );
 
@@ -595,6 +377,11 @@ impl<'a> TirBuilder<'a> {
             self.temp.save_and_pop_frame(&mut self.body.cons)
         };
 
+        let missing = self.exhaust_map.missing();
+        if !missing.is_empty() {
+            todo!("{:?}", missing);
+        }
+
         let ty = ret_ty.unwrap_or(self.builtin_types.nothing);
         let span = self.ast.nodes[ast].span;
         let kind = TirKind::Match(expr, arms);
@@ -602,16 +389,16 @@ impl<'a> TirBuilder<'a> {
         Ok(self.body.ents.push(ent))
     }
 
-    fn build_pattern(&mut self, expr: Tir, ast: Ast) -> errors::Result<(bool, TirList)> {
+    fn build_pattern(&mut self, node: PatternNode, expr: Tir, ast: Ast) -> errors::Result<(bool, TirList)> {
         self.temp.mark_frame();
 
-        let refutable = self.build_pattern_low(expr, ast); // recovery
+        let refutable = self.build_pattern_low(node, expr, ast); // recovery
         let ops = self.temp.save_and_pop_frame(&mut self.body.cons);
 
         Ok((refutable?, ops))
     }
 
-    fn build_pattern_low(&mut self, expr: Tir, ast: Ast) -> errors::Result<bool> {
+    fn build_pattern_low(&mut self, node: PatternNode, expr: Tir, ast: Ast) -> errors::Result<bool> {
         let AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
         let refutable = match kind {
@@ -636,7 +423,7 @@ impl<'a> TirBuilder<'a> {
                 let (expr, mut refutable) = self.build_path_match(expr, path)?;
                 let ty = self.body.ents[expr].ty;
 
-                for &field in self.ast.children(body) {
+                for (&field, pattern_id) in self.ast.children(body).iter().zip(self.exhaust_map.children(node)) {
                     let &[name, mut pattern] = self.ast.children(field) else {
                         unreachable!("{}", self.sources.display(span));
                     };
@@ -659,7 +446,7 @@ impl<'a> TirBuilder<'a> {
                         self.body.ents.push(ent)
                     };
                     
-                    let Ok(current_refutable) = self.build_pattern_low(field_access, pattern) else {
+                    let Ok(current_refutable) = self.build_pattern_low(pattern_id, field_access, pattern) else {
                         continue; // recover here
                     };
 
@@ -676,7 +463,7 @@ impl<'a> TirBuilder<'a> {
                 let (expr, mut refutable) = self.build_path_match(expr, path)?;
                 let ty = self.body.ents[expr].ty;
     
-                for (i, &field) in self.ast.children(body).iter().enumerate() {
+                for ((i, &field), pattern_id) in self.ast.children(body).iter().enumerate().zip(self.exhaust_map.children(node)) {
                     let span = self.ast.nodes[field].span;
                     let Ok((field_id, field_ty)) = self.get_field(ty, i, span) else {
                         continue;
@@ -687,8 +474,8 @@ impl<'a> TirBuilder<'a> {
                         let ent = TirEnt::new(kind, field_ty, span);
                         self.body.ents.push(ent)
                     };
-                    
-                    let Ok(current_refutable) = self.build_pattern_low(field_access, field) else {
+
+                    let Ok(current_refutable) = self.build_pattern_low(pattern_id, field_access, field) else {
                         continue; // recover here
                     };
 
@@ -700,9 +487,7 @@ impl<'a> TirBuilder<'a> {
             AstKind::Path => self.build_path_match(expr, ast).map(|(_, refutable)| refutable)?,
             AstKind::Char | AstKind::Int(..) | AstKind::Bool(..) => {
                 let lit_tir = self.build_expr(ast)?;
-
                 self.build_pattern_comparison(lit_tir, expr)?;
-
                 true
             },
             _ => todo!(
@@ -752,6 +537,10 @@ impl<'a> TirBuilder<'a> {
             Ok((expr, false))
         }
     }
+
+    fn exhaust_pattern(&mut self, node: PatternNode, ty: Ty) -> bool {
+        todo!();
+    } 
 
     fn build_pattern_comparison(&mut self, constant: Tir, expr: Tir) -> errors::Result {
         let TirEnt { span, ty, .. } = self.body.ents[constant];
@@ -806,8 +595,9 @@ impl<'a> TirBuilder<'a> {
     }
 
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let literal_value = char_value(self.sources, self.ast.nodes[ast].span).unwrap();
         let span = self.ast.nodes[ast].span;
-        let ent = TirEnt::new(TirKind::CharLit, self.builtin_types.char, span);
+        let ent = TirEnt::new(TirKind::CharLit(literal_value), self.builtin_types.char, span);
         Ok(self.body.ents.push(ent))
     }
 
@@ -1408,7 +1198,8 @@ impl<'a> TirBuilder<'a> {
 
     fn build_int(&mut self, ast: Ast, width: i16) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
-        let kind = TirKind::IntLit(width);
+        let literal_value = int_value(self.sources, span);
+        let kind = TirKind::IntLit(literal_value);
         let ty = {
             let name = match width {
                 8 => "i8",
@@ -1707,7 +1498,7 @@ impl<'a> TirBuilder<'a> {
                     self.ty_comps
                         .get(fields)
                         .iter()
-                        .map(|sfref| sfref.span)
+                        .map(|field| field.span)
                         .collect()
                 } else {
                     Vec::new()

@@ -650,7 +650,7 @@ pub fn translate_signature(
 ) -> Signature {
     let mut sig = Signature::new(call_conv.unwrap_or(system_call_convention));
 
-    if TyKind::Nothing != types[ret].kind {
+    if TyKind::Struct(TyCompList::default()) != types[ret].kind {
         let repr::ReprEnt { repr, flags, .. } = reprs[ret];
         if flags.contains(repr::ReprFlags::ON_STACK) {
             let ret = ir::AbiParam::special(repr, ir::ArgumentPurpose::StructReturn);

@@ -1,5 +1,7 @@
 #![feature(bool_to_option)]
 #![feature(let_else)]
+#![feature(result_into_ok_or_err)]
+#![feature(let_chains)]
 
 pub mod error;
 pub mod func;
@@ -7,6 +9,7 @@ pub mod tir;
 pub mod ty;
 pub mod jit;
 pub mod graph;
+pub mod exhaust;
 
 pub use error::TyError;
 pub use func::{Func, FuncList, Funcs, Sig, FuncMetaData, FuncFlags, FuncKind, FuncMeta, FuncEnt};
@@ -17,6 +20,7 @@ pub use ty::{
     TyLists, TypeBase, Types
 };
 pub use graph::Graph;
+pub use exhaust::{Exhaust, ExhaustMap, PatternNode};
 
 #[macro_export]
 macro_rules! ty_display {

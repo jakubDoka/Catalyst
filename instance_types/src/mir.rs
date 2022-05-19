@@ -148,7 +148,7 @@ pub enum InstKind {
     JumpIfFalse(Block),
     Jump(Block),
     Call(typec_types::Func, ValueList),
-    IntLit(u64),
+    IntLit(i64),
     BoolLit(bool),
     Return,
 }

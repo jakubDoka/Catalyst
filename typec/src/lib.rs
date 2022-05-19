@@ -5,17 +5,20 @@
 #![feature(if_let_guard)]
 #![feature(inline_const_pat)]
 #![allow(incomplete_features)]
+#![feature(atomic_mut_ptr)]
 
 pub mod error;
 pub mod scope;
 pub mod tir;
 pub mod ty;
 pub mod ident_hasher;
+pub mod bound_verifier;
 
 pub use scope::{ScopeBuilder, ScopeContext};
 pub use tir::TirBuilder;
 pub use ty::TyBuilder;
 pub use ident_hasher::IdentHasher;
+pub use bound_verifier::BoundVerifier;
 
 use ast::*;
 use errors::*;
@@ -555,4 +558,32 @@ fn create_func(
 
     let item = module::ModuleItem::new(id, func, span);
     dest.push(item);
+}
+
+pub fn int_value(sources: &Sources, span: Span) -> i64 {
+    let mut chars = sources.display(span).chars();
+    let mut value = 0;
+    while let Some(c @ '0'..='9') = chars.next() {
+        value = value * 10 + (c as i64 - '0' as i64);
+    }
+
+    match chars.next() {
+        None => return value,
+        _ => todo!("unhandled int literal {:?}", sources.display(span)),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CharError {
+    ExtraCharacters,
+    NoCharacter,
+}
+
+pub fn char_value(sources: &Sources, span: Span) -> std::result::Result<char, CharError> {
+    let mut chars = sources.display(span.strip_sides()).chars();
+    let char = chars.next().ok_or(CharError::NoCharacter)?;
+    if chars.next().is_some() {
+        return Err(CharError::ExtraCharacters);
+    }
+    Ok(char)
 }

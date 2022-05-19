@@ -128,7 +128,7 @@ impl MirBuilder<'_> {
             return Ok(Some(value));
         }
 
-        let TirEnt { kind, ty, span, .. } = self.body.ents[tir];
+        let TirEnt { kind, ty, .. } = self.body.ents[tir];
         let value = match kind {
             TirKind::Return(value) => self.translate_return(value.expand())?,
             TirKind::Call(..) => self.translate_call(tir, dest)?,
@@ -141,9 +141,9 @@ impl MirBuilder<'_> {
             TirKind::Break(loop_header, value) => self.translate_break(loop_header, value)?,
             TirKind::Assign(a, b) => self.translate_assign(a, b)?,
             TirKind::Access(value) => self.translate_expr(value, dest)?,
-            TirKind::IntLit(..) => self.translate_int_lit(ty, span, dest)?,
+            TirKind::IntLit(value) => self.translate_int_lit(ty, value, dest)?,
             TirKind::BoolLit(value) => self.translate_bool_lit(ty, value, dest)?,
-            TirKind::CharLit => self.translate_char_lit(ty, span, dest)?,
+            TirKind::CharLit(value) => self.translate_char_lit(ty, value, dest)?,
             TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
             TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
             TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
@@ -201,7 +201,7 @@ impl MirBuilder<'_> {
             let TyKind::Enum(ty, ..) = self.types[ty].kind else {
                 unreachable!();
             };
-            self.int_lit(ty, enum_id as u64)
+            self.int_lit(ty, enum_id as i64)
         };
 
         self.assign(enum_id, Some(value));
@@ -391,12 +391,10 @@ impl MirBuilder<'_> {
     fn translate_char_lit(
         &mut self,
         ty: Ty,
-        span: Span,
+        literal_value: char,
         dest: Option<Value>,
     ) -> ExprResult {
-        let literal = char_value(self.sources, span).unwrap() as u64;
-
-        let value = self.int_lit(ty, literal);
+        let value = self.int_lit(ty, literal_value as i64);
 
         self.assign(value, dest);
 
@@ -594,11 +592,9 @@ impl MirBuilder<'_> {
     fn translate_int_lit(
         &mut self,
         ty: Ty,
-        span: Span,
+        literal_value: i64,
         dest: Option<Value>,
     ) -> ExprResult {
-        let literal_value = int_value(self.sources, span);
-
         let value = self.int_lit(ty, literal_value);
 
         self.assign(value, dest);
@@ -612,7 +608,7 @@ impl MirBuilder<'_> {
         literal: u32,
         dest: Option<Value>,
     ) -> ExprResult {
-        let value = self.int_lit(ty, literal as u64);
+        let value = self.int_lit(ty, literal as i64);
 
         self.assign(value, dest);
 
@@ -810,13 +806,13 @@ impl MirBuilder<'_> {
         })
     }
 
-    fn int_lit(&mut self, ty: Ty, literal_value: u64) -> Value {
+    fn int_lit(&mut self, ty: Ty, literal_value: i64) -> Value {
         let value = self.value_from_ty(ty);
         self.int_lit_low(value, literal_value);
         value
     }
 
-    fn int_lit_low(&mut self, value: Value, literal_value: u64) {
+    fn int_lit_low(&mut self, value: Value, literal_value: i64) {
         let kind = InstKind::IntLit(literal_value);
         let ent = InstEnt::new(kind, value.into());
         self.func.add_inst(ent);
@@ -910,32 +906,4 @@ impl MirBuilder<'_> {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
     }   
-}
-
-pub fn int_value(sources: &Sources, span: Span) -> u64 {
-    let mut chars = sources.display(span).chars();
-    let mut value = 0;
-    while let Some(c @ '0'..='9') = chars.next() {
-        value = value * 10 + (c as u64 - '0' as u64);
-    }
-
-    match chars.next() {
-        None => return value,
-        _ => todo!("unhandled int literal {:?}", sources.display(span)),
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CharError {
-    ExtraCharacters,
-    NoCharacter,
-}
-
-pub fn char_value(sources: &Sources, span: Span) -> std::result::Result<char, CharError> {
-    let mut chars = sources.display(span.strip_sides()).chars();
-    let char = chars.next().ok_or(CharError::NoCharacter)?;
-    if chars.next().is_some() {
-        return Err(CharError::ExtraCharacters);
-    }
-    Ok(char)
 }

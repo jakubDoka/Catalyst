@@ -1,4 +1,4 @@
-use std::ops::IndexMut;
+use std::ops::{IndexMut, Range};
 
 use lexer_types::*;
 use storage::*;
@@ -16,6 +16,21 @@ pub type Instances = Map<Ty>;
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn pattern_info(&self, ty: Ty, ty_lists: &TyLists, ty_comps: &TyComps) -> Option<(usize, Range<i128>)> {
+        Some(match self[ty].kind {
+            TyKind::Int(-1) => (0, i128::MIN..i128::MAX),
+            TyKind::Int(base) => (0, -1 << base..1 << base),
+            TyKind::Bound(_)
+            | TyKind::Param(..) => return None,
+            TyKind::Struct(fields) => (ty_comps.len(fields), 0..0),
+            TyKind::Enum(.., variants) => (ty_comps.len(variants), 0..ty_comps.len(variants) as i128),
+            TyKind::Instance(base, ..) => return self.pattern_info(base, ty_lists, ty_comps),
+            TyKind::Ptr(..) => (1, 0..0),
+            TyKind::Bool => (0, 0..1),
+            TyKind::Unresolved => unreachable!(),           
+        })
+    }
+    
     fn caller_id_of(&self, ty: Ty) -> ID {
         self[self.caller_of(ty)].id
     }
@@ -140,7 +155,7 @@ impl BuiltinTypes {
 }
 
 gen_builtin_table!(
-    nothing: TyKind::Nothing,
+    nothing: TyKind::Struct(TyCompList::default()),
     ty_any: TyKind::Param(0, TyList::default(), None.into()),
     any: TyKind::Param(0, TyList::default(), None.into()),
     bool: TyKind::Bool,
@@ -249,7 +264,6 @@ pub enum TyKind {
     Ptr(Ty, u32),
     Int(i16),
     Bool,
-    Nothing,
     Unresolved,
 }
 
@@ -278,7 +292,6 @@ impl Ty {
             | TyKind::Bound(..)
             | TyKind::Int(..)
             | TyKind::Enum(..)
-            | TyKind::Nothing
             | TyKind::Bool => {
                 let name = types[self].name;
                 write!(to, "{}", sources.display(name))?;

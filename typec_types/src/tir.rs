@@ -80,9 +80,9 @@ pub enum TirKind {
     Return(PackedOption<Tir>),
     Argument(u32),
     Call(TyList, Func, TirList),
-    IntLit(i16),
+    IntLit(i64),
     BoolLit(bool),
-    CharLit,
+    CharLit(char),
     Invalid,
 }
 
@@ -267,7 +267,7 @@ impl<'a> TirDisplay<'a> {
                 }
                 write!(f, ")")?;
             }
-            TirKind::IntLit(..) | TirKind::CharLit | TirKind::BoolLit(_) => {
+            TirKind::IntLit(..) | TirKind::CharLit(..) | TirKind::BoolLit(..) => {
                 write!(f, "{}", self.sources.display(ent.span))?;
             }
             TirKind::Loop(block) => {

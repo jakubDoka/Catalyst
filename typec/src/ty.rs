@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, AtomicIsize, Ordering};
+
 use ast::Ast;
 use lexer_types::*;
 use module_types::*;

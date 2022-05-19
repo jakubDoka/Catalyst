@@ -31,7 +31,6 @@ use module_types::*;
 use instance_types::*;
 use storage::*;
 use target_lexicon::Triple;
-use typec::tir::BoundVerifier;
 use typec_types::*;
 use typec::*;
 use ast::*;
@@ -106,6 +105,7 @@ pub struct Compiler {
     scope_context: ScopeContext,
     tir_temp_body: TirData,
     func_meta: FuncMeta,
+    exhaust_map: ExhaustMap,
 
     // jit
     jit_module: JITModule,
@@ -230,6 +230,7 @@ impl Compiler {
             tir_temp_body: TirData::new(),
             scope_context: ScopeContext::new(),
             func_meta,
+            exhaust_map: ExhaustMap::new(),
 
             jit_module,
             jit_compile_results: SparseMap::new(),
