@@ -1,4 +1,4 @@
-use crate::ranges::{IntRange, IntBorder};
+use crate::ranges::{IntBorder, IntRange};
 
 #[derive(Clone)]
 pub struct RangeSplitter {
@@ -17,23 +17,23 @@ impl RangeSplitter {
     pub fn split(&mut self, range: IntRange, ranges: impl Iterator<Item = IntRange> + Clone) {
         self.range = range;
         let (start, end) = self.range.into_borders();
-        
+
         let ranges = ranges
             .filter_map(|r| r.intersect(&self.range))
             .map(|r| r.into_borders())
             .flat_map(|(start, end)| [start, end].into_iter());
-        
+
         self.indices.clear();
-        
+
         self.indices.push(start);
         self.indices.extend(ranges);
         self.indices.push(end);
-        
+
         self.indices.sort_unstable();
         self.indices.dedup();
     }
 
-    /// Range start ens end must be contained within the RangeSplitter. 
+    /// Range start ens end must be contained within the RangeSplitter.
     /// This means range mush have been split before.
     pub fn segments_of(&self, range: IntRange) -> impl Iterator<Item = IntRange> + '_ {
         assert!(self.range.bias == range.bias);
@@ -53,6 +53,4 @@ impl RangeSplitter {
 }
 
 #[cfg(test)]
-mod test {
-
-}
+mod test {}

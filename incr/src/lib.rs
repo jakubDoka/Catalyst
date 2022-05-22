@@ -10,7 +10,7 @@ use cranelift_module::{FuncId};
 use std::{path::Path, time::SystemTime};
 use storage::*;
 // use typec_types::*;
-use lexer_types::*;
+use lexer::*;
 use module_types::*;
 
 #[derive(Default)]

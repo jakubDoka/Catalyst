@@ -1,6 +1,6 @@
 use ast::*;
 use errors::*;
-use lexer_types::*;
+use lexer::*;
 use module_types::*;
 use typec_types::*;
 use storage::*;

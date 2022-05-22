@@ -1,9 +1,90 @@
-use std::{
-    ops::{IndexMut, Range, RangeBounds},
-    path::{Path, PathBuf},
-};
+use std::{ops::{IndexMut, RangeBounds, Range}, path::{PathBuf, Path}};
 
+use logos::*;
 use storage::*;
+
+macro_rules! gen_kind {
+    ($($name:ident = $repr:literal,)*) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
+        pub enum TokenKind {
+            #[error]
+            Error,
+            
+            
+            #[regex(r"[ \r\t]+", skip)]
+            Space,
+
+            #[regex(r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)", skip)]
+            Comment,
+
+            $(
+                #[regex($repr)]
+                $name,
+            )*
+            
+            None,
+            Eof,
+        }
+
+        impl TokenKind {
+            pub fn as_str(&self) -> &'static str {
+                match self {
+                    $(Self::$name => concat!("'", $repr, "'"),)*
+                    Self::Error => "<error>",
+                    Self::None => "<none>",
+                    Self::Space => "<space>",
+                    Self::Eof => "<eof>",
+                    Self::Comment => "<comment>",
+                }
+            }
+        }
+
+        impl Default for TokenKind {
+            fn default() -> Self {
+                TokenKind::None
+            }
+        }
+    };
+}
+
+gen_kind!(
+    Fn = "fn",
+    Return = "return",
+    Use = "use",
+    Extern = "extern",
+    If = "if",
+    Else = "else",
+    Loop = "loop",
+    Break = "break",
+    Let = "let",
+    Struct = "struct",
+    Bound = "bound",
+    Enum = "enum",
+    Mut = "mut",
+    Impl = "impl",
+    As = "as",
+    Match = "match",
+    Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
+    Operator = "[+\\-*/%<>=&|!^]+",
+    Int = "[0-9]+(i(8|16|32|64)?)?",
+    String = r#""(\\"|[^"])*""#,
+    Bool = "(true|false)",
+    Char = r"'(\\'|[^'])*'",
+    LeftCurly = "\\{",
+    RightCurly = "\\}",
+    LeftParen = "\\(",
+    RightParen = "\\)",
+    LeftBracket = "\\[",
+    RightBracket = "\\]",
+    Comma = ",",
+    Colon = ":",
+    Dot = "\\.",
+    RightArrow = "->",
+    ThickRightArrow = "=>",
+    DoubleColon = "::",
+    Hash = "#",
+    NewLine = "(\\n|;)",
+);
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 
@@ -59,7 +140,7 @@ impl BuiltinSource {
     }
 }
 
-crate::gen_entity!(Source);
+gen_entity!(Source);
 
 #[derive(Default)]
 pub struct SourceEnt {
@@ -336,8 +417,8 @@ impl ReservedValue for Span {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Token {
-    kind: TokenKind,
-    span: Span,
+    pub kind: TokenKind,
+    pub span: Span,
 }
 
 impl Token {
@@ -359,70 +440,5 @@ impl Token {
     #[inline]
     pub fn span(&self) -> Span {
         self.span
-    }
-}
-
-macro_rules! gen_kind {
-    ($($name:ident$(($ty:ident))? = $repr:literal,)*) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum TokenKind {
-            $($name$(($ty))?),*
-        }
-
-        impl TokenKind {
-            pub fn as_str(&self) -> &'static str {
-                #[allow(unused)]
-                match self {
-                    $(Self::$name$(($ty))? => $repr,)*
-                }
-            }
-        }
-    };
-}
-
-gen_kind!(
-    Fn = "'fn'",
-    Return = "'return'",
-    Use = "'use'",
-    Extern = "'extern'",
-    If = "'if'",
-    Else = "'else'",
-    Loop = "'loop'",
-    Break = "'break'",
-    Let = "'let'",
-    Struct = "'struct'",
-    Bound = "'bound'",
-    Enum = "'enum'",
-    Mut = "'mut'",
-    Impl = "'impl'",
-    As = "'as'",
-    Match = "'match'",
-    Ident = "<ident>",
-    Operator = "<operator>",
-    Int(i16) = "<int>",
-    String = "<string>",
-    Bool(bool) = "<bool>",
-    Char = "<char>",
-    LeftCurly = "'{'",
-    RightCurly = "'}'",
-    LeftParen = "'('",
-    RightParen = "')'",
-    LeftBracket = "'['",
-    RightBracket = "']'",
-    Comma = "','",
-    Colon = "':'",
-    Dot = "'.'",
-    RightArrow = "'->'",
-    ThickRightArrow = "'=>'",
-    DoubleColon = "'::'",
-    Hash = "'#'",
-    NewLine = "'\\n' | ';'",
-    Eof = "<eof>",
-    None = "<none>",
-);
-
-impl Default for TokenKind {
-    fn default() -> Self {
-        TokenKind::None
     }
 }

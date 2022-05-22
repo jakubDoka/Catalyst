@@ -41,7 +41,7 @@ macro_rules! impl_analyzable_range_for_int {
                 }
 
                 fn decode(encoded: u128) -> Self {
-                    encoded.wrapping_sub(Self::MIN as u128) as Self 
+                    encoded.wrapping_sub(Self::MIN as u128) as Self
                 }
             }
         )*
@@ -90,7 +90,7 @@ impl IntRange {
 
     pub fn intersect(&self, other: &Self) -> Option<Self> {
         assert!(self.bias == other.bias);
-        
+
         let start = self.start.max(other.start);
         let end = self.end.min(other.end);
 
@@ -106,13 +106,20 @@ impl IntRange {
     }
 
     pub fn into_borders(self) -> (IntBorder, IntBorder) {
-        (IntBorder::JustBefore(self.start), IntBorder::JustBefore(self.end).next())
+        (
+            IntBorder::JustBefore(self.start),
+            IntBorder::JustBefore(self.end).next(),
+        )
     }
 
     pub fn from_borders(start: IntBorder, end: IntBorder, bias: u128) -> IntRange {
         match (start, end) {
-            (IntBorder::JustBefore(start), IntBorder::JustBefore(end)) => Self::new(start..=end - 1, bias),
-            (IntBorder::JustBefore(start), IntBorder::AfterMax) => Self::new(start..=u128::max_value(), bias),
+            (IntBorder::JustBefore(start), IntBorder::JustBefore(end)) => {
+                Self::new(start..=end - 1, bias)
+            }
+            (IntBorder::JustBefore(start), IntBorder::AfterMax) => {
+                Self::new(start..=u128::max_value(), bias)
+            }
             _ => unreachable!(),
         }
     }
@@ -143,7 +150,11 @@ impl IntRange {
     pub fn coverage(&self, coverage: &RangeInclusive<i32>) -> IntRange {
         let start = coverage.start().encode();
         let end = coverage.end().encode();
-        Self { start, end, bias: self.bias }
+        Self {
+            start,
+            end,
+            bias: self.bias,
+        }
     }
 }
 

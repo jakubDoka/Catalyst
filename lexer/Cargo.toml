@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lexer_types = { path = "../lexer_types" }
+storage = { path = "../storage" }
 errors = { path = "../errors" }
+logos = "0.12.0"

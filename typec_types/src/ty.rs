@@ -1,6 +1,6 @@
-use std::ops::{IndexMut, Range};
+use std::ops::IndexMut;
 
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 use crate::*;
@@ -16,21 +16,6 @@ pub type Instances = Map<Ty>;
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
-    fn pattern_info(&self, ty: Ty, ty_lists: &TyLists, ty_comps: &TyComps) -> Option<(usize, Range<i128>)> {
-        Some(match self[ty].kind {
-            TyKind::Int(-1) => (0, i128::MIN..i128::MAX),
-            TyKind::Int(base) => (0, -1 << base..1 << base),
-            TyKind::Bound(_)
-            | TyKind::Param(..) => return None,
-            TyKind::Struct(fields) => (ty_comps.len(fields), 0..0),
-            TyKind::Enum(.., variants) => (ty_comps.len(variants), 0..ty_comps.len(variants) as i128),
-            TyKind::Instance(base, ..) => return self.pattern_info(base, ty_lists, ty_comps),
-            TyKind::Ptr(..) => (1, 0..0),
-            TyKind::Bool => (0, 0..1),
-            TyKind::Unresolved => unreachable!(),           
-        })
-    }
-    
     fn caller_id_of(&self, ty: Ty) -> ID {
         self[self.caller_of(ty)].id
     }

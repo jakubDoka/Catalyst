@@ -22,7 +22,7 @@ pub use bound_verifier::BoundVerifier;
 
 use ast::*;
 use errors::*;
-use lexer_types::*;
+use lexer::*;
 use module_types::{scope::Scope, *};
 use storage::*;
 use typec_types::{TyError, *};

@@ -4,15 +4,15 @@ version = 3
 
 [[package]]
 name = "anyhow"
-version = "1.0.56"
+version = "1.0.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
+checksum = "08f9b8508dccb7687a1d6c4ce66b2b0ecef467c94667de27d8d7fe1f8d2a9cdc"
 
 [[package]]
 name = "ast"
 version = "0.1.0"
 dependencies = [
- "lexer_types",
+ "lexer",
  "storage",
 ]
 
@@ -21,6 +21,12 @@ name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
+
+[[package]]
+name = "beef"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bed554bd50246729a1ec158d08aa3235d1b69d94ad120ebe187e28894787e736"
 
 [[package]]
 name = "bitflags"
@@ -47,7 +53,6 @@ dependencies = [
  "instance",
  "instance_types",
  "lexer",
- "lexer_types",
  "module_types",
  "modules",
  "num_cpus",
@@ -76,18 +81,18 @@ version = "0.1.0"
 
 [[package]]
 name = "cranelift-bforest"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16922317bd7dd104d509a373887822caa0242fc1def00de66abb538db221db4"
+checksum = "38faa2a16616c8e78a18d37b4726b98bfd2de192f2fdc8a39ddf568a408a0f75"
 dependencies = [
  "cranelift-entity",
 ]
 
 [[package]]
 name = "cranelift-codegen"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b80bf40380256307b68a3dcbe1b91cac92a533e212b5b635abc3e4525781a0a"
+checksum = "26f192472a3ba23860afd07d2b0217dc628f21fcc72617aa1336d98e1671f33b"
 dependencies = [
  "cranelift-bforest",
  "cranelift-codegen-meta",
@@ -102,30 +107,30 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-meta"
-version = "0.82.2"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0f0172d25539fcc64f581d3dce0df00e2065b00e1c750e18832d2cf1e0d27e0"
+checksum = "0f32ddb89e9b89d3d9b36a5b7d7ea3261c98235a76ac95ba46826b8ec40b1a24"
 dependencies = [
  "cranelift-codegen-shared",
 ]
 
 [[package]]
 name = "cranelift-codegen-shared"
-version = "0.82.2"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f6cc5717ae2ea849e5c819eb70c95792c2843294d9503700ac55d8d159e2160"
+checksum = "01fd0d9f288cc1b42d9333b7a776b17e278fc888c28e6a0f09b5573d45a150bc"
 
 [[package]]
 name = "cranelift-entity"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66bc82ef522c1f643baf7d4d40b7c52643ee4549d8960b0e6a047daacb83f897"
+checksum = "9e3bfe172b83167604601faf9dc60453e0d0a93415b57a9c4d1a7ae6849185cf"
 
 [[package]]
 name = "cranelift-frontend"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cc35e4251864b17515845ba47447bca88fec9ca1a4186b19fe42526e36140e8"
+checksum = "a006e3e32d80ce0e4ba7f1f9ddf66066d052a8c884a110b91d05404d6ce26dce"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -135,9 +140,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-jit"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93c66d594ad3bfe4e58b1fbd8d17877a7c6564a5f2d6f78cbbf4b0182af1927f"
+checksum = "f0bd9239060722c31e6e6b5ee2151730ff2dadb0398e9d72b279b7f1a4b3a46f"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -153,9 +158,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-module"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf356697c40232aa09e1e3fb8a350ee894e849ccecc4eac56ff0570a4575c325"
+checksum = "4e57a745f05ad2cd1b8209d8d785553cf68bdb1512b3c4d9d93a52ff0fd9871b"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -163,9 +168,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-native"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b882b2251c9845d509d92aebfdb6c8bb3b3b48e207ac951f21fbd20cfe7f90b3"
+checksum = "501241b0cdf903412ec9075385ac9f2b1eb18a89044d1538e97fab603231f70c"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -174,9 +179,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-object"
-version = "0.82.1"
+version = "0.82.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d3f1a88e654e567d2591169239ed157ab290811a729a6468f53999c01001263"
+checksum = "bcc634e81885b42d877878636e6f51c38623b1672f1592373e1443fbebc32b1c"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -200,6 +205,12 @@ name = "errors"
 version = "0.1.0"
 
 [[package]]
+name = "fnv"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
 name = "gen"
 version = "0.1.0"
 dependencies = [
@@ -207,7 +218,7 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-module",
  "instance_types",
- "lexer_types",
+ "lexer",
  "storage",
  "typec_types",
 ]
@@ -243,7 +254,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-module",
  "cranelift-object",
- "lexer_types",
+ "lexer",
  "module_types",
  "storage",
  "typec_types",
@@ -268,7 +279,7 @@ dependencies = [
  "cranelift-module",
  "errors",
  "instance_types",
- "lexer_types",
+ "lexer",
  "module_types",
  "storage",
  "typec_types",
@@ -281,7 +292,7 @@ dependencies = [
  "ast",
  "cranelift-codegen",
  "errors",
- "lexer_types",
+ "lexer",
  "module_types",
  "storage",
  "typec_types",
@@ -292,29 +303,47 @@ name = "lexer"
 version = "0.1.0"
 dependencies = [
  "errors",
- "lexer_types",
-]
-
-[[package]]
-name = "lexer_types"
-version = "0.1.0"
-dependencies = [
+ "logos",
  "storage",
 ]
 
 [[package]]
 name = "libc"
-version = "0.2.121"
+version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efaa7b300f3b5fe8eb6bf21ce3895e1751d9665086af2d64b42f19701015ff4f"
+checksum = "349d5a591cd28b49e1d1037471617a32ddcda5731b99419008085f72d5a53836"
 
 [[package]]
 name = "log"
-version = "0.4.16"
+version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
+checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "logos"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "427e2abca5be13136da9afdbf874e6b34ad9001dd70f2b103b083a85daa7b345"
+dependencies = [
+ "logos-derive",
+]
+
+[[package]]
+name = "logos-derive"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56a7d287fd2ac3f75b11f19a1c8a874a7d55744bd91f7a1b3e7cf87d4343c36d"
+dependencies = [
+ "beef",
+ "fnv",
+ "proc-macro2",
+ "quote",
+ "regex-syntax",
+ "syn",
+ "utf8-ranges",
 ]
 
 [[package]]
@@ -327,17 +356,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "matching"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "storage",
+ "typec_types",
+]
+
+[[package]]
 name = "memchr"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "module_types"
 version = "0.1.0"
 dependencies = [
  "errors",
- "lexer_types",
+ "lexer",
  "storage",
 ]
 
@@ -350,7 +388,6 @@ dependencies = [
  "errors",
  "incr",
  "lexer",
- "lexer_types",
  "module_types",
  "parser",
  "storage",
@@ -385,8 +422,25 @@ dependencies = [
  "cranelift-entity",
  "errors",
  "lexer",
- "lexer_types",
  "storage",
+]
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c54b25569025b7fc9651de43004ae593a75ad88543b17178aa5e1b9c4f15f56f"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1feb54ed693b93a84e14094943b84b7c4eae204c512b7ccb95ab0c66d278ad1"
+dependencies = [
+ "proc-macro2",
 ]
 
 [[package]]
@@ -399,6 +453,12 @@ dependencies = [
  "rustc-hash",
  "smallvec",
 ]
+
+[[package]]
+name = "regex-syntax"
+version = "0.6.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49b3de9ec5dc0a3417da371aab17d729997c15010e7fd24ff707773a33bddb64"
 
 [[package]]
 name = "region"
@@ -434,6 +494,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "1.0.95"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbaf6116ab8924f39d52792136fb74fd60a80194cf1b1c6ffa6453eef1c3f942"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "target-lexicon"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -447,7 +518,7 @@ dependencies = [
  "cranelift-codegen",
  "errors",
  "incr",
- "lexer_types",
+ "lexer",
  "module_types",
  "storage",
  "typec_types",
@@ -460,10 +531,22 @@ dependencies = [
  "ast",
  "cranelift-codegen",
  "errors",
- "lexer_types",
+ "lexer",
  "module_types",
  "storage",
 ]
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d22af068fba1eb5edcb4aea19d382b2a3deb4c8f9d475c589b6ada9e0fd493ee"
+
+[[package]]
+name = "utf8-ranges"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcfc827f90e53a02eaef5e535ee14266c1d569214c6aa70133a624d8a3164ba"
 
 [[package]]
 name = "winapi"

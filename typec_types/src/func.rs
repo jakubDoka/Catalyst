@@ -1,5 +1,5 @@
 use cranelift_codegen::isa::CallConv;
-use lexer_types::*;
+use lexer::*;
 use module_types::*;
 use storage::*;
 

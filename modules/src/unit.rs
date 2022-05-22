@@ -6,7 +6,7 @@ use std::{collections::VecDeque, path::PathBuf};
 use crate::manifest::*;
 use crate::module::*;
 use ast::*;
-use lexer_types::*;
+use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;

@@ -1,5 +1,5 @@
 use ast::*;
-use lexer_types::*;
+use lexer::*;
 
 pub enum AstError {
     ExpectedAssign {

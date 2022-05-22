@@ -1,7 +1,7 @@
 use std::{any::TypeId, collections::HashMap};
 
 use crate::error::*;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 pub struct ItemLexicon {

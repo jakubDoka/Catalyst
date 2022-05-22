@@ -11,7 +11,6 @@ lexer = { path = "../lexer" }
 parser = { path = "../parser" }
 errors = { path = "../errors" }
 storage = { path = "../storage" }
-lexer_types = { path = "../lexer_types" }
 ast = { path = "../ast" }
 module_types = { path = "../module_types" }
 incr = { path = "../incr" }

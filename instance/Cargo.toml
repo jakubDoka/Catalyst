@@ -10,7 +10,7 @@ cranelift-codegen = "0.82.1"
 cranelift-module = "0.82.1"
 
 
-lexer_types = { path = "../lexer_types" }
+lexer = { path = "../lexer" }
 ast = { path = "../ast" }
 module_types = { path = "../module_types" }
 typec_types = { path = "../typec_types" }

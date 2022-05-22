@@ -3,7 +3,7 @@ use std::{marker::PhantomData, ops::IndexMut};
 use cranelift_codegen::{ir::Type, packed_option::PackedOption};
 use cranelift_entity::{EntityRef, PrimaryMap};
 
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 use typec_types::*;
 

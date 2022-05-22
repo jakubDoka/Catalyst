@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use incr::Incr;
 use module_types::module::Modules;
-use typec_types::exhaust::PatternNode;
 
 use crate::{scope::ScopeContext, TyError, *};
 
@@ -27,7 +26,6 @@ pub struct TirBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
     pub incr: &'a mut Incr,
     pub func_meta: &'a mut FuncMeta,
-    pub exhaust_map: &'a mut ExhaustMap,
 }
 
 #[macro_export]
@@ -54,7 +52,6 @@ macro_rules! tir_builder {
             &mut $self.diagnostics,
             &mut $self.incr,
             &mut $self.func_meta,
-            &mut $self.exhaust_map,
         )
     };
 }
@@ -81,7 +78,6 @@ impl<'a> TirBuilder<'a> {
         diagnostics: &'a mut errors::Diagnostics,
         incr: &'a mut Incr,
         func_meta: &'a mut FuncMeta,
-        exhaust_map: &'a mut ExhaustMap,
     ) -> Self {
         TirBuilder {
             func,
@@ -104,7 +100,6 @@ impl<'a> TirBuilder<'a> {
             diagnostics,
             incr,
             func_meta,
-            exhaust_map,
         }
     }
 
@@ -289,8 +284,8 @@ impl<'a> TirBuilder<'a> {
             AstKind::Ident => self.build_ident(ast)?,
             AstKind::If => self.build_if(ast)?,
             AstKind::Return => self.build_return(ast)?,
-            AstKind::Int(width) => self.build_int(ast, width)?,
-            AstKind::Bool(value) => self.build_bool(ast, value)?,
+            AstKind::Int => self.build_int(ast)?,
+            AstKind::Bool => self.build_bool(ast)?,
             AstKind::Char => self.build_char(ast)?,
             AstKind::Variable(mutable) => self.build_variable(mutable, ast)?,
             AstKind::Constructor => self.build_constructor(ast)?,
@@ -316,19 +311,13 @@ impl<'a> TirBuilder<'a> {
         let &[expr, body] = self.ast.children(ast) else {
             unreachable!();
         };
-
         
         let expr = self.build_expr(expr)?;
-        let expr_ty = self.body.ents[expr].ty;
-
-        let Some((pattern_length, pattern_range)) = self.types.pattern_info(expr_ty, self.ty_lists, self.ty_comps) else {
-            todo!("Cannot match on this");
-        };
-
-        let pattern_root = self.exhaust_map.declare_root(pattern_length, pattern_range);
 
         let mut ret_ty = None;
         let mut terminating = true;
+        let mut bindings = Vec::new();
+
         let arms = {
             self.temp.mark_frame();
             for &arm in self.ast.children(body) {
@@ -336,25 +325,47 @@ impl<'a> TirBuilder<'a> {
                     unreachable!();
                 };
 
+                
                 self.scope.mark_frame();
+                let Ok(pattern) = self.build_pattern(expr, pattern, &mut bindings) else {
+                    continue;
+                };
+                
+                let block = {
+                    self.temp.mark_frame();
+    
+                    for binding in bindings.drain(..) {
+                        let binding = {
+                            let kind = TirKind::Variable(binding);
+                            let ty = self.builtin_types.nothing;
+                            let span = self.body.ents[expr].span;
+                            let ent = TirEnt::new(kind, ty, span);
+                            self.body.ents.push(ent)
+                        };
+                        self.temp.push(binding);
+                    }
+    
+                    let Ok(expr) = self.build_expr(body) else {
+                        continue;
+                    };
+                    self.temp.push(expr);
 
-                let (pattern, expr) = (
-                    self.build_pattern(pattern_root, expr, pattern),
-                    self.build_expr(body),
-                );
+                    self.scope.pop_frame();
 
-                self.scope.pop_frame();
-
-                let (Ok((refutable, pattern)), Ok(expr)) = (pattern, expr) else {
-                    continue; // Recover here
+                    let statements = self.temp.save_and_pop_frame(&mut self.body.cons);
+                    let kind = TirKind::Block(statements);
+                    let ty = self.body.ents[expr].ty;
+                    let span = self.body.ents[expr].span;
+                    let ent = TirEnt::new(kind, ty, span);
+                    self.body.ents.push(ent)
                 };
 
-                let TirEnt { ty, flags, .. } = self.body.ents[expr];
+                let TirEnt { ty, flags, .. } = self.body.ents[block];
 
                 let tir = {
                     let span = self.ast.nodes[arm].span;
                     let kind = TirKind::MatchArm(pattern, expr);
-                    let ent = TirEnt::with_flags(kind, ty, TirFlags::REFUTABLE & refutable, span);
+                    let ent = TirEnt::new(kind, ty, span);
                     self.body.ents.push(ent)
                 };
                 self.temp.push(tir);
@@ -369,18 +380,9 @@ impl<'a> TirBuilder<'a> {
                         ret_ty = Some(ty);
                     }
                 }
-
-                if !refutable {
-                    break; // TODO: emit warning if this is not the last match arm
-                }
             }
             self.temp.save_and_pop_frame(&mut self.body.cons)
         };
-
-        let missing = self.exhaust_map.missing();
-        if !missing.is_empty() {
-            todo!("{:?}", missing);
-        }
 
         let ty = ret_ty.unwrap_or(self.builtin_types.nothing);
         let span = self.ast.nodes[ast].span;
@@ -389,118 +391,104 @@ impl<'a> TirBuilder<'a> {
         Ok(self.body.ents.push(ent))
     }
 
-    fn build_pattern(&mut self, node: PatternNode, expr: Tir, ast: Ast) -> errors::Result<(bool, TirList)> {
-        self.temp.mark_frame();
-
-        let refutable = self.build_pattern_low(node, expr, ast); // recovery
-        let ops = self.temp.save_and_pop_frame(&mut self.body.cons);
-
-        Ok((refutable?, ops))
-    }
-
-    fn build_pattern_low(&mut self, node: PatternNode, expr: Tir, ast: Ast) -> errors::Result<bool> {
+    fn build_pattern(&mut self, expr: Tir, ast: Ast, bindings: &mut Vec<Tir>) -> errors::Result<Tir> {
         let AstEnt { kind, span, .. } = self.ast.nodes[ast];
 
-        let refutable = match kind {
+        Ok(match kind {
             AstKind::Ident => {
                 let span = self.ast.nodes[ast].span;
                 let id = self.sources.id_of(span);
-                
+
                 if id != ID::new("_") {
                     let item = ScopeItem::new(expr, span);
                     self.scope.push_item(id, item);
-                    self.temp.push(expr);
+                    bindings.push(expr);
                 }
 
-                false
+                Tir::reserved_value()
             },
-            
-            AstKind::StructPattern => {
+            AstKind::TupleStructPattern | AstKind::StructPattern => {
                 let &[path, body] = self.ast.children(ast) else {
                     unreachable!();
                 };
                 
-                let (expr, mut refutable) = self.build_path_match(expr, path)?;
-                let ty = self.body.ents[expr].ty;
-
-                for (&field, pattern_id) in self.ast.children(body).iter().zip(self.exhaust_map.children(node)) {
-                    let &[name, mut pattern] = self.ast.children(field) else {
-                        unreachable!("{}", self.sources.display(span));
-                    };
+                let (low_expr, enum_flag) = self.build_path_match(expr, path)?;
+                let ty = self.body.ents[low_expr].ty;
     
-                    // shorthand case
-                    if pattern.is_reserved_value() {
-                        pattern = name;
-                    }
+                self.temp.mark_frame();
+                self.temp.pre_push(self.ast.children(body).len());
+                for (i, &field) in self.ast.children(body).iter().enumerate() {
+                    let ((field_id, field_ty), field, i) = if kind == AstKind::TupleStructPattern {
+                        let span = self.ast.nodes[field].span;
+                        let Ok(res) = self.get_field(ty, i, span) else {
+                            continue;
+                        };
+                        (res, field, i)
+                    } else {
+                        let &[name, mut pattern] = self.ast.children(field) else {
+                            unreachable!("{}", self.sources.display(span));
+                        };
+        
+                        // shorthand case
+                        if pattern.is_reserved_value() {
+                            pattern = name;
+                        }
+        
+                        let span = self.ast.nodes[name].span;
+                        let id = self.sources.id_of(span);
     
-                    let span = self.ast.nodes[name].span;
-                    let id = self.sources.id_of(span);
+                        let Ok(res) = self.find_field(ty, id, span) else {
+                            continue;
+                        };
 
-                    let Ok((field_id, field_ty)) = self.find_field(ty, id, span) else {
-                        continue;
+                        let i = self.ty_comps[res.0].index;
+
+                        (res, pattern, i as usize)
                     };
 
                     let field_access = {
-                        let kind = TirKind::FieldAccess(expr, field_id);
+                        let kind = TirKind::FieldAccess(low_expr, field_id);
                         let ent = TirEnt::new(kind, field_ty, span);
                         self.body.ents.push(ent)
                     };
-                    
-                    let Ok(current_refutable) = self.build_pattern_low(pattern_id, field_access, pattern) else {
+
+                    let Ok(field) = self.build_pattern(field_access, field, bindings) else {
                         continue; // recover here
                     };
 
-                    refutable |= current_refutable;
+                    self.temp.set(i, field);
                 }
-    
-                refutable
-            },
-            AstKind::TupleStructPattern => {
-                let &[path, body] = self.ast.children(ast) else {
-                    unreachable!();
+
+                let constructor = {
+                    let fields = self.temp.save_and_pop_frame(&mut self.body.cons);
+                    let kind = TirKind::Constructor(fields);
+                    let ty = self.body.ents[low_expr].ty;
+                    let ent = TirEnt::new(kind, ty, span);
+                    self.body.ents.push(ent)
                 };
-                
-                let (expr, mut refutable) = self.build_path_match(expr, path)?;
-                let ty = self.body.ents[expr].ty;
-    
-                for ((i, &field), pattern_id) in self.ast.children(body).iter().enumerate().zip(self.exhaust_map.children(node)) {
-                    let span = self.ast.nodes[field].span;
-                    let Ok((field_id, field_ty)) = self.get_field(ty, i, span) else {
-                        continue;
-                    };
 
-                    let field_access = {
-                        let kind = TirKind::FieldAccess(expr, field_id);
-                        let ent = TirEnt::new(kind, field_ty, span);
-                        self.body.ents.push(ent)
-                    };
-
-                    let Ok(current_refutable) = self.build_pattern_low(pattern_id, field_access, field) else {
-                        continue; // recover here
-                    };
-
-                    refutable |= current_refutable;
+                if let Some(flag) = enum_flag {
+                    let fields = self.body.cons.push(&[flag, constructor]);
+                    let kind = TirKind::Constructor(fields);
+                    let ty = self.body.ents[expr].ty;
+                    let ent = TirEnt::new(kind, ty, span);
+                    self.body.ents.push(ent)
+                } else {
+                    constructor
                 }
-    
-                refutable
             },
-            AstKind::Path => self.build_path_match(expr, ast).map(|(_, refutable)| refutable)?,
-            AstKind::Char | AstKind::Int(..) | AstKind::Bool(..) => {
-                let lit_tir = self.build_expr(ast)?;
-                self.build_pattern_comparison(lit_tir, expr)?;
-                true
+            AstKind::Char | AstKind::Int | AstKind::Bool => {
+                self.build_expr(ast)?
             },
             _ => todo!(
                 "Unhandled pattern ast {:?}: {}",
                 kind,
                 self.sources.display(span)
             ),
-        };
-
-        Ok(refutable)
+        })
     }
 
-    fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Tir, bool)> {
+    fn build_path_match(&mut self, expr: Tir, ast: Ast) -> errors::Result<(Tir, Option<Tir>)> {
         let TirEnt { ty: expr_ty, .. } = self.body.ents[expr];
         let id = ident_hasher!(self).ident_id(ast, None)?;
         let span = self.ast.nodes[ast].span;
@@ -512,52 +500,19 @@ impl<'a> TirBuilder<'a> {
             };
             let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
 
-            let flag = {
-                let kind = TirKind::EnumFlag(index);
-                let ent = TirEnt::new(kind, discriminant_ty, span);
-                self.body.ents.push(ent)
-            };
-
-            let dyn_flag = {
-                let kind = TirKind::EnumFlagRead(expr);
-                let ent = TirEnt::new(kind, discriminant_ty, span);
-                self.body.ents.push(ent)
-            };
-
-            self.build_pattern_comparison(flag, dyn_flag)?;
+            let flag = self.int_lit(index as i64 - 1, discriminant_ty);
 
             let value = {
-                let kind = TirKind::EnumValueRead(expr_ty, expr);
+                let (field, _) = self.get_field(expr_ty, 1, span)?;
+                let kind = TirKind::FieldAccess(expr, field);
                 let ent = TirEnt::new(kind, variant, span);
                 self.body.ents.push(ent)
             };
             
-            Ok((value, true))
+            Ok((value, Some(flag)))
         } else {
-            Ok((expr, false))
+            Ok((expr, None))
         }
-    }
-
-    fn exhaust_pattern(&mut self, node: PatternNode, ty: Ty) -> bool {
-        todo!();
-    } 
-
-    fn build_pattern_comparison(&mut self, constant: Tir, expr: Tir) -> errors::Result {
-        let TirEnt { span, ty, .. } = self.body.ents[constant];
-        let id = {
-            let span_id = ID::new("==");
-            let ty_id = self.types[ty].id;
-            ID::binary(ty_id, span_id)
-        };
-        let comparator_func = self.scope.get::<Func>(self.diagnostics, id, span)?;
-        
-        let args = self.body.cons.push(&[expr, constant]);
-        let kind = TirKind::Call(TyList::reserved_value(), comparator_func, args);
-        let ent = TirEnt::with_flags(kind, self.builtin_types.bool, TirFlags::PATTERN_MATCH, span);
-        let tir = self.body.ents.push(ent);
-        self.temp.push(tir);
-
-        Ok(())
     }
 
     fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -1002,9 +957,13 @@ impl<'a> TirBuilder<'a> {
         Ok(result)
     }
 
-    fn build_bool(&mut self, ast: Ast, value: bool) -> errors::Result<Tir> {
+    fn build_bool(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
         let ty = self.builtin_types.bool;
+        let value = {
+            let str = self.sources.display(span);
+            str == "true"
+        };
         let kind = TirKind::BoolLit(value);
         let ent = TirEnt::new(kind, ty, span);
         let result = self.body.ents.push(ent);
@@ -1023,10 +982,16 @@ impl<'a> TirBuilder<'a> {
                 todo!();
             };
             let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
-            let tir = self.build_constructor_low(ty, body)?;
+            let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
+                unreachable!();
+            };
+            let value = self.build_constructor_low(ty, body)?;
+            let flag = self.int_lit(index as i64 - 1, discriminant);
 
-            let kind = TirKind::EnumConstructor(index, tir);
+            let args = self.body.cons.push(&[flag, value]);
+            let kind = TirKind::Constructor(args);
             let ent = TirEnt::new(kind, enum_ty, span);
+
             Ok(self.body.ents.push(ent))
         } else {
             let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
@@ -1196,20 +1161,23 @@ impl<'a> TirBuilder<'a> {
         Ok(result)
     }
 
-    fn build_int(&mut self, ast: Ast, width: i16) -> errors::Result<Tir> {
+    fn build_int(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
         let literal_value = int_value(self.sources, span);
         let kind = TirKind::IntLit(literal_value);
         let ty = {
-            let name = match width {
-                8 => "i8",
-                16 => "i16",
-                32 => "i32",
-                64 => "i64",
-                _ => "int",
-            };
-
-            self.scope.get::<Ty>(self.diagnostics, name, span).unwrap()
+            let str = self.sources.display(span);
+            if str.ends_with("i8") {
+                self.builtin_types.i8
+            } else if str.ends_with("i16") {
+                self.builtin_types.i16
+            } else if str.ends_with("i32") {
+                self.builtin_types.i32
+            } else if str.ends_with("i64") {
+                self.builtin_types.i64
+            } else {
+                self.builtin_types.int
+            }
         };
 
         let ent = TirEnt::new(kind, ty, span);
@@ -1452,7 +1420,7 @@ impl<'a> TirBuilder<'a> {
             on
         };
 
-        let TyKind::Struct(fields) = self.types[base].kind else {
+        let (TyKind::Struct(fields) | TyKind::Enum(.., fields)) = self.types[base].kind else {
             todo!("{:?}", self.types[base].kind);
         };
 
@@ -1535,5 +1503,11 @@ impl<'a> TirBuilder<'a> {
         } else {
             Ok(())
         }
+    }
+
+    fn int_lit(&mut self, value: i64, ty: Ty) -> Tir {
+        let kind = TirKind::IntLit(value);
+        let ent = TirEnt::new(kind, ty, self.builtin_types.discriminant);
+        self.body.ents.push(ent)
     }
 }

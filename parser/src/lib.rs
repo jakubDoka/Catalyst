@@ -3,7 +3,6 @@
 
 use ast::*;
 use lexer::*;
-use lexer_types::*;
 use storage::*;
 
 pub mod error;
@@ -90,7 +89,7 @@ impl<'a> Parser<'a> {
 
 
         let source_str = &sources[source].content;
-        let mut lexer = Lexer::new(progress, source_str, source);
+        let mut lexer = Lexer::new(progress, source, source_str);
         if current.kind() == TokenKind::None {
             current = lexer.next_token();
             next = lexer.next_token();
@@ -576,7 +575,7 @@ impl<'a> Parser<'a> {
             self.stack.push(ty);
             end = self.data.nodes[ty].span;
 
-            while self.lexer.display(self.current.span()) == "+" {
+            while self.sources.display(self.current.span()) == "+" {
                 self.advance();
                 self.skip_new_lines();
                 let ty = self.type_expr();
@@ -590,7 +589,7 @@ impl<'a> Parser<'a> {
 
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
-            TokenKind::Operator => match self.lexer.display(self.current.span()) {
+            TokenKind::Operator => match self.sources.display(self.current.span()) {
                 "*" => self.type_pointer_expr(),
                 _ => todo!(
                     "unhandled token as type expr:\n{}",
@@ -620,9 +619,9 @@ impl<'a> Parser<'a> {
     fn literal_expr(&mut self) -> Ast {
         let span = self.current.span();
         let kind = match self.current.kind() {
-            TokenKind::Int(i) => AstKind::Int(i),
+            TokenKind::Int => AstKind::Int,
             TokenKind::String => AstKind::String,
-            TokenKind::Bool(value) => AstKind::Bool(value),
+            TokenKind::Bool => AstKind::Bool,
             TokenKind::Char => AstKind::Char,
             _ => {
                 let span = self.current.span();
@@ -654,7 +653,7 @@ impl<'a> Parser<'a> {
         if self.current.kind() == TokenKind::Operator {
             let precedence = {
                 let span = self.current.span();
-                let str = self.lexer.display(span);
+                let str = self.sources.display(span);
                 Self::precedence(str)
             };
             self.composite_expr(prev, precedence)
@@ -672,7 +671,7 @@ impl<'a> Parser<'a> {
 
             let precedence = {
                 let span = self.current.span();
-                let str = self.lexer.display(span);
+                let str = self.sources.display(span);
                 Self::precedence(str)
             };
 
@@ -728,7 +727,7 @@ impl<'a> Parser<'a> {
         let result = match self.current.kind() {
             TokenKind::Return => self.return_expr(),
             TokenKind::Ident => self.ident_expr(),
-            TokenKind::Int(_) | TokenKind::String | TokenKind::Bool(_) | TokenKind::Char => {
+            TokenKind::Int | TokenKind::String | TokenKind::Bool | TokenKind::Char => {
                 self.literal_expr()
             }
             TokenKind::If => self.if_expr(),
@@ -743,9 +742,9 @@ impl<'a> Parser<'a> {
                 self.expect_many(&[
                     TokenKind::Return,
                     TokenKind::Ident,
-                    TokenKind::Int(-1),
+                    TokenKind::Int,
                     TokenKind::String,
-                    TokenKind::Bool(false),
+                    TokenKind::Bool,
                     TokenKind::Char,
                     TokenKind::If,
                     TokenKind::LeftCurly,
@@ -814,17 +813,17 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         match self.current.kind() {
             TokenKind::Ident => self.ident_pattern(),
-            TokenKind::Int(_)
+            TokenKind::Int
             | TokenKind::String
-            | TokenKind::Bool(_)
+            | TokenKind::Bool
             | TokenKind::Char => self.literal_expr(),
             _ => {
                 self.advance();
                 self.expect_many(&[
                     TokenKind::Ident,
-                    TokenKind::Int(-1),
+                    TokenKind::Int,
                     TokenKind::String,
-                    TokenKind::Bool(false),
+                    TokenKind::Bool,
                     TokenKind::Char,
                 ]);
                 self.data.alloc_sonless(AstKind::Error, span)
@@ -914,7 +913,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Dot => {
                     self.advance();
                     // can be the tuple field
-                    self.expect_many(&[TokenKind::Ident, TokenKind::Int(-1)]);
+                    self.expect_many(&[TokenKind::Ident, TokenKind::Int]);
                     let field = self.path();
                     self.stack.push(field);
                     self.alloc(AstKind::DotExpr, span)
@@ -967,7 +966,7 @@ impl<'a> Parser<'a> {
     fn unary(&mut self) -> Ast {
         let span = self.current.span();
 
-        match self.lexer.display(span) {
+        match self.sources.display(span) {
             "*" => return self.deref(),
             _ => (),
         }
@@ -1047,7 +1046,7 @@ impl<'a> Parser<'a> {
 
         {
             let span = self.current.span();
-            let str = self.lexer.display(span);
+            let str = self.sources.display(span);
             if str != "=" {
                 self.diagnostics.push(AstError::ExpectedAssign {
                     got: self.current.kind(),

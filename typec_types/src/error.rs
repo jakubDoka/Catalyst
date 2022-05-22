@@ -1,5 +1,5 @@
 use crate::*;
-use lexer_types::*;
+use lexer::*;
 
 pub enum TyError {
     InvalidCallConv {

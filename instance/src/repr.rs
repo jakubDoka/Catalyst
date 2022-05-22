@@ -1,7 +1,7 @@
 use cranelift_codegen::ir::{self, Type};
 
 use instance_types::*;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 use typec_types::*;
 
@@ -162,7 +162,6 @@ impl<'a> LayoutBuilder<'a> {
 
         self.reprs.resize(self.types.len());
         for id in order {
-            println!("0000 {id}");
             self.build_size(id);
         }
     }

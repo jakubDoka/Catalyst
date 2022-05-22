@@ -3,19 +3,18 @@
 #![feature(bool_to_option)]
 #![feature(let_chains)]
 
-pub mod range_splitter;
 pub mod range_joiner;
+pub mod range_splitter;
 pub mod ranges;
 
+pub use range_joiner::RangeJoiner;
 pub use range_splitter::RangeSplitter;
 use ranges::AnalyzableRange;
 pub use ranges::IntRange;
-pub use range_joiner::RangeJoiner;
 
 use std::{collections::HashMap, fmt::Debug};
 
 use storage::*;
-
 
 pub struct PatternGraph {
     nodes: PrimaryMap<PatternNode, PatternNodeEnt>,
@@ -42,7 +41,7 @@ impl PatternGraph {
 
     pub fn solve(&mut self, root: PatternNode) -> Result<(), ErrorGraph> {
         self.existing.clear();
-        
+
         if let Some(error) = self.solve_recurse(root) {
             return Err(error);
         }
@@ -50,7 +49,7 @@ impl PatternGraph {
         Ok(())
     }
 
-    fn solve_recurse(&mut self, root: PatternNode) -> Option<ErrorGraph> {        
+    fn solve_recurse(&mut self, root: PatternNode) -> Option<ErrorGraph> {
         let root_ent = self.nodes[root];
 
         let mut errors = vec![];
@@ -69,7 +68,9 @@ impl PatternGraph {
             });
         }
 
-        let iter = root_ent.children.as_slice(&self.slices)
+        let iter = root_ent
+            .children
+            .as_slice(&self.slices)
             .iter()
             .map(|&child| self.nodes[child].coverage);
         self.splitter.split(root_ent.range, iter);
@@ -94,7 +95,8 @@ impl PatternGraph {
                     ..child_ent
                 };
                 let new_child = self.nodes.push(new_child_ent);
-                self.existing.insert((root.as_u32(), sub_coverage), new_child);
+                self.existing
+                    .insert((root.as_u32(), sub_coverage), new_child);
                 self.temp.push(new_child);
             }
         }
@@ -112,7 +114,7 @@ impl PatternGraph {
 
             for &child in child_ent.children.as_slice(&self.slices) {
                 let usefulness = if self.joiner.exhausted() {
-                    Usefulness::Useless                    
+                    Usefulness::Useless
                 } else {
                     let child_ent = self.nodes[child];
                     self.joiner.exhaust(child_ent.coverage);
@@ -139,7 +141,7 @@ impl PatternGraph {
         if errors.is_empty() {
             return None;
         }
-        
+
         Some(ErrorGraph {
             children: errors,
             missing: vec![],
@@ -148,28 +150,53 @@ impl PatternGraph {
 
     pub fn create_root(&mut self, range: IntRange) -> PatternNode {
         self.clear();
-        self.create_node(PatternBranch::reserved_value(), None, IntRange::new(0..=0, 0), range)
+        self.create_node(
+            PatternBranch::reserved_value(),
+            None,
+            IntRange::new(0..=0, 0),
+            range,
+        )
     }
 
-    pub fn push<I: EntityRef>(&mut self, parent: PatternNode, branch: PatternBranch, id: I, coverage: IntRange, range: IntRange) -> (PatternNode, bool) {
+    pub fn push<I: EntityRef>(
+        &mut self,
+        parent: PatternNode,
+        branch: PatternBranch,
+        id: I,
+        coverage: IntRange,
+        range: IntRange,
+        end: bool,
+    ) -> PatternNode {
         let id = PatternNode::new(id.index());
         if let Some(&node) = self.existing.get(&(parent.as_u32(), coverage)) {
             self.nodes[node].data_binds.push(id, &mut self.slices);
-            return (node, false);
+            if end {
+                self.branches[branch].nodes[id] = Usefulness::Useless;
+            }
+            return node;
         }
-        
+
         let node = self.create_node(branch, Some(id), coverage, range);
         self.existing.insert((parent.as_u32(), coverage), node);
         self.nodes[parent].children.push(node, &mut self.slices);
-        (node, true)
+        node
     }
 
-    fn create_node(&mut self, branch: PatternBranch, self_id: Option<PatternNode>, coverage: IntRange, range: IntRange) -> PatternNode {
+    fn create_node(
+        &mut self,
+        branch: PatternBranch,
+        self_id: Option<PatternNode>,
+        coverage: IntRange,
+        range: IntRange,
+    ) -> PatternNode {
         self.nodes.push(PatternNodeEnt {
             coverage,
             range,
             branch,
-            data_binds: EntityList::from_slice(&[self_id.unwrap_or(self.nodes.next_key())], &mut self.slices),
+            data_binds: EntityList::from_slice(
+                &[self_id.unwrap_or(self.nodes.next_key())],
+                &mut self.slices,
+            ),
             ..Default::default()
         })
     }
@@ -184,7 +211,12 @@ impl PatternGraph {
 
     pub fn log<T: AnalyzableRange + Debug>(&self, root: PatternNode, offset: usize) {
         let root_ent = self.nodes[root];
-        println!("{}{}{:?}", "  ".repeat(offset), root, root_ent.coverage.decode::<T>());
+        println!(
+            "{}{}{:?}",
+            "  ".repeat(offset),
+            root,
+            root_ent.coverage.decode::<T>()
+        );
         for i in 0..root_ent.children.len(&self.slices) {
             let child = root_ent.children.get(i, &self.slices).unwrap();
             if child == root {
@@ -197,7 +229,7 @@ impl PatternGraph {
 
     pub fn create_branch(&mut self) -> PatternBranch {
         // should probably reuse instead of recreating
-        self.branches.push(PatternBranchEnt::new()) 
+        self.branches.push(PatternBranchEnt::new())
     }
 }
 
@@ -255,30 +287,34 @@ mod test {
 
     #[test]
     fn base_test_case() {
-        run_test(0..=255, &[
-            &[0..=10, 10..=11],
-            &[0..=2, 0..=9],
-            &[0..=2, 12..=255],
-            &[3..=10, 41..=255],
-            &[11..=255, 41..=255],
-            &[3..=255, 0..=40],
-        ]);
+        run_test(
+            0..=255,
+            &[
+                &[0..=10, 10..=11],
+                &[0..=2, 0..=9],
+                &[0..=2, 12..=255],
+                &[3..=10, 41..=255],
+                &[11..=255, 41..=255],
+                &[3..=255, 0..=40],
+            ],
+        );
     }
 
     #[test]
     fn one_exhaust() {
-        run_test(0..=255, &[
-            &[0..=255, 0..=255],
-        ]);
+        run_test(0..=255, &[&[0..=255, 0..=255]]);
     }
 
     #[test]
     fn long_pattern() {
-        run_test(0..=255, &[
-            &[0..=255, 0..=255, 0..=1],
-            &[0..=255, 0..=1, 2..=255],
-            &[0..=255, 0..=255, 2..=255],
-        ]);
+        run_test(
+            0..=255,
+            &[
+                &[0..=255, 0..=255, 0..=1],
+                &[0..=255, 0..=1, 2..=255],
+                &[0..=255, 0..=255, 2..=255],
+            ],
+        );
     }
 
     fn run_test(range: RangeInclusive<i32>, dataset: &[&[RangeInclusive<i32>]]) {
@@ -289,16 +325,17 @@ mod test {
             let mut parent = root;
             let branch = graph.create_branch();
             for (i, coverage) in ranges.iter().enumerate() {
-                let (child, _) = graph.push(
+                let child = graph.push(
                     parent,
                     branch,
                     PatternNode(i as u32),
                     range.coverage(coverage),
-                    range, 
+                    range,
+                    i == ranges.len() - 1,
                 );
                 parent = child;
             }
         }
-        graph.solve(root).unwrap();        
+        graph.solve(root).unwrap();
     }
 }

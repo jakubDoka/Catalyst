@@ -13,4 +13,4 @@ cranelift-module = "0.82.1"
 instance_types = { path = "../instance_types" }
 storage = { path = "../storage" }
 typec_types = { path = "../typec_types" }
-lexer_types = { path = "../lexer_types" }
+lexer = { path = "../lexer" }

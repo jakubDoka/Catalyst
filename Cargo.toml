@@ -17,7 +17,6 @@ path="src/main.rs"
 members = [
     "storage",
     "lexer",
-    "lexer_types",
     "parser",
     "ast",
     "typec",
@@ -30,10 +29,11 @@ members = [
     "incr",
     "cli",
     "errors",
+    "matching",
 ]
 
 [profile.release]
-#debug = true
+debug = true
 
 [dependencies]
 cranelift-codegen = "0.82.1"
@@ -47,7 +47,6 @@ cc = "1.0.73"
 num_cpus = "1.13.1"
 
 lexer = { path = "lexer" }
-lexer_types = { path = "lexer_types" }
 errors = { path = "errors" }
 parser = { path = "parser" }
 ast = { path = "ast" }

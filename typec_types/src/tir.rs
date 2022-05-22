@@ -1,5 +1,5 @@
 use crate::*;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 pub type FuncBodies = SecondaryMap<Func, TirData>; 
@@ -58,11 +58,7 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
-    EnumFlag(u32),
-    EnumFlagRead(Tir),
-    EnumValueRead(Ty, Tir),
-    EnumConstructor(u32, Tir),
-    MatchArm(TirList, Tir),
+    MatchArm(Tir, Tir),
     Match(Tir, TirList),
     BitCast(Tir),
     DerefPointer(Tir),
@@ -109,8 +105,6 @@ bitflags! {
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
         const WITH_CALLER = 1 << 4;
-        const REFUTABLE = 1 << 5;
-        const PATTERN_MATCH = 1 << 6;
     }
 }
 

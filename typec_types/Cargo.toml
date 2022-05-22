@@ -9,7 +9,7 @@ edition = "2021"
 cranelift-codegen = "0.82.1"
 
 storage = { path = "../storage" }
-lexer_types = { path = "../lexer_types" }
+lexer = { path = "../lexer" }
 ast = { path = "../ast" }
 module_types = { path = "../module_types" }
 errors = { path = "../errors" }

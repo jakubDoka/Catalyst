@@ -1,7 +1,5 @@
-use std::sync::atomic::{AtomicUsize, AtomicIsize, Ordering};
-
 use ast::Ast;
-use lexer_types::*;
+use lexer::*;
 use module_types::*;
 use storage::*;
 use typec_types::*;
@@ -135,7 +133,14 @@ impl<'a> TyBuilder<'a> {
 
         // we need to allocate as build_variant also pushes to ty_comps,
         // if this becomes a bottleneck, we will store long lived vec in context
-        let mut variants = Vec::with_capacity(self.ast.children(ast).len());
+        let mut variants = Vec::with_capacity(self.ast.children(ast).len() + 1);
+        let ent = TyCompEnt {
+            ty: discriminant_ty,
+            index: 0,
+            span: self.builtin_types.discriminant,
+        };
+        variants.push((ent, self.sources.id_of(self.builtin_types.discriminant)));
+        
         for (i, &variant) in self.ast.children(ast).iter().enumerate() {
             let index = i as u32 + 1; 
             let &[name, ty_expr] = self.ast.children(variant) else {

@@ -3,7 +3,7 @@ use std::{time::SystemTime};
 use crate::unit::*;
 use ast::*;
 use incr::{Incr, IncrModule};
-use lexer_types::*;
+use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;

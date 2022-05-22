@@ -1,4 +1,4 @@
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 pub const FUNCTION_ARG_START: usize = 3;
@@ -204,8 +204,8 @@ pub enum AstKind {
     FunctionArgument,
     String,
     Ident,
-    Int(i16),
-    Bool(bool),
+    Int,
+    Bool,
     None,
 }
 

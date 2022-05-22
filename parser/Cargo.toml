@@ -10,5 +10,4 @@ cranelift-entity = "0.82.1"
 storage = { path = "../storage" }
 ast = { path = "../ast" }
 lexer = { path = "../lexer" }
-lexer_types = { path = "../lexer_types" }
 errors = { path = "../errors" }

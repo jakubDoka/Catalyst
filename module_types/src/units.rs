@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 pub type Units = PrimaryMap<Unit, UnitEnt>;

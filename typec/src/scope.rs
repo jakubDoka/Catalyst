@@ -4,7 +4,7 @@ use crate::{ty::get_param, *};
 use ast::*;
 use cranelift_codegen::isa::CallConv;
 use incr::Incr;
-use lexer_types::*;
+use lexer::*;
 use module_types::{
     module::{self, Modules},
     scope::{self, Scope},

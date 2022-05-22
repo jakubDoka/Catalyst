@@ -21,12 +21,12 @@ use errors::Diagnostics;
 use incr::{Incr, IncrFuncData, IncrRelocRecord};
 use instance::*;
 
-use instance::func::MirBuilderContext;
+use instance::func::{MirBuilderContext, PatternStacks};
 use instance::repr::{build_builtin_reprs, build_reprs};
 use modules::*;
 use modules::module::ModuleImports;
 use parser::*;
-use lexer_types::*;
+use lexer::*;
 use module_types::*;
 use instance_types::*;
 use storage::*;
@@ -105,7 +105,6 @@ pub struct Compiler {
     scope_context: ScopeContext,
     tir_temp_body: TirData,
     func_meta: FuncMeta,
-    exhaust_map: ExhaustMap,
 
     // jit
     jit_module: JITModule,
@@ -230,7 +229,6 @@ impl Compiler {
             tir_temp_body: TirData::new(),
             scope_context: ScopeContext::new(),
             func_meta,
-            exhaust_map: ExhaustMap::new(),
 
             jit_module,
             jit_compile_results: SparseMap::new(),
@@ -427,7 +425,6 @@ impl Compiler {
             ty
         });
         for ty in iter.clone() {
-            println!("=={}", ty);
             self.ty_graph.add_vertex(ty);
         }
         layout_builder!(self).build_layouts(&self.ty_graph);
@@ -602,14 +599,7 @@ impl Compiler {
     fn generate(&mut self) {
         time_report!("generating");
 
-        for (ty, &repr) in self.reprs.iter() {
-            if repr.repr == ir::types::INVALID {
-                println!("{:?} {:?} {}", ty, self.types[ty].flags, ty_display!(self, ty));
-            }
-        }
-
-        println!("{}", self.types.len());
-
+        let mut pattern_stacks = PatternStacks::new();
         let mut ctx = Context::new();
         let mut builder_ctx = FunctionBuilderContext::new(); 
         let mut replace_cache = ReplaceCache::new();
@@ -681,14 +671,14 @@ impl Compiler {
                 diagnostics: &mut self.diagnostics,
                 ctx: &mut mir_builder_ctx,
                 func_meta: &self.func_meta,
+                pattern_stacks: &mut pattern_stacks,
             }.translate_func();
-
             
             if result.is_err() {
                 continue;
             }
             
-            println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
+            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
 
             ctx.func.signature = signatures.get(id).unwrap().clone();
 
@@ -710,8 +700,8 @@ impl Compiler {
                 func_meta: &self.func_meta,
             }.generate();
 
-            println!("{}", self.sources.display(self.func_meta[parent].name));
-            println!("{}", ctx.func.display());
+            // println!("{}", self.sources.display(self.func_meta[parent].name));
+            // println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
             ctx.compile_and_emit(self.object_module.isa(), &mut bytes)

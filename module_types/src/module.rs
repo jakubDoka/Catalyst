@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::scope;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 
 pub type Modules = SecondaryMap<Source, ModuleEnt>;

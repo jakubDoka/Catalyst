@@ -11,7 +11,7 @@ use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::Linkage;
 use instance_types::*;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 use typec_types::*;
 

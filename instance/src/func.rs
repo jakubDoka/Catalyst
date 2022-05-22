@@ -6,11 +6,13 @@ use cranelift_codegen::{isa::CallConv, packed_option::PackedOption};
 
 use errors::*;
 use instance_types::*;
-use lexer_types::*;
+use lexer::*;
 use storage::*;
 use typec_types::*;
 
 pub type ExprResult = errors::Result<Option<Value>>;
+pub type PatternStacks = Vec<Vec<Tir>>;
+
 
 pub struct MirBuilderContext {
     tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
@@ -49,6 +51,7 @@ pub struct MirBuilder<'a> {
     pub diagnostics: &'a mut Diagnostics,
     pub ctx: &'a mut MirBuilderContext,
     pub func_meta: &'a FuncMeta,
+    pub pattern_stacks: &'a mut  PatternStacks,
 }
 
 impl MirBuilder<'_> {
@@ -147,11 +150,7 @@ impl MirBuilder<'_> {
             TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
             TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
             TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
-            TirKind::EnumFlag(value) => self.translate_enum_flag(ty, value, dest)?,
             TirKind::Match(..) => self.translate_match(tir, dest)?,
-            TirKind::EnumConstructor(..) => self.translate_enum_constructor(tir, dest)?,
-            TirKind::EnumFlagRead(..) => self.translate_enum_flag_read(tir, dest)?,
-            TirKind::EnumValueRead(..) => self.translate_enum_value_read(tir, dest)?,
             _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
@@ -160,138 +159,51 @@ impl MirBuilder<'_> {
         Ok(value)
     }
 
-    fn translate_enum_value_read(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::EnumValueRead(enum_ty, target), .. } = self.body.ents[tir] else {
-            unreachable!()
-        };
-        let offset = self.field_offset_by_index(enum_ty, 0);
-        let header = self.translate_expr(target, None)?.unwrap();
-        self.access_offset(ty, header, offset, dest)
-    }
-
-    fn translate_enum_flag_read(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::EnumFlagRead(target), .. } = self.body.ents[tir] else {
-            unreachable!()
-        };
-
-        let target = self.translate_expr(target, None)?.unwrap();
-
-        let value = self.offset_low(target, Offset::ZERO, Some(ty));
-
-        self.assign(value, dest);
-
-        Ok(Some(value))
-    }
-
-    fn translate_enum_constructor(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::EnumConstructor(enum_id, enum_value), .. } = self.body.ents[tir] else {
-            unreachable!()
-        };
-
-        let on_stack = self.on_stack(tir);
-        let Some(value) = self.unwrap_dest_low(ty, on_stack, dest).or(dest) else {
-            unreachable!();
-        };
-
-        if !on_stack && dest.is_none() {
-            self.int_lit_low(value, 0);
-        }
-
-        let enum_id = {
-            let TyKind::Enum(ty, ..) = self.types[ty].kind else {
-                unreachable!();
-            };
-            self.int_lit(ty, enum_id as i64)
-        };
-
-        self.assign(enum_id, Some(value));
-
-        let offset = self.field_offset_by_index(ty, 0);
-        let ty = self.body.ents[enum_value].ty;
-        let inner_value = self.offset_low(value, offset, Some(ty));
-
-        self.translate_expr(enum_value, Some(inner_value))?;
-
-        Ok(Some(value))
-    }
-
     fn translate_match(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::Match(value, arms), flags, .. } = self.body.ents[tir] else {
+        let TirEnt { kind: TirKind::Match(expr, branches), ty, .. } = self.body.ents[tir] else {
             unreachable!()
         };
 
-        let _expr = self.translate_expr(value, None)?;        
-        
-        let on_stack = self.on_stack(tir);
-        let no_value = ty == self.builtin_types.nothing;
-        let terminated = flags.contains(TirFlags::TERMINATING);
+        let branch_view = self.body.cons.get(branches);
+        let mut reachability = vec![PatternReachability::Reachable; branch_view.len()];
+        {
+            self.pattern_stacks.clear();
+            self.pattern_stacks.extend(
+                branch_view.iter().map(|&branch| vec![branch])
+            );
 
-        let mut current_block = self.func.create_block();
-        let mut next_block = self.func.create_block();
+            loop {
+                self.pattern_stacks.retain(|item| !item.is_empty());
 
-        let last_block = (!terminated).then(|| self.func.create_block()); 
+                // expand top
+                for stack in self.pattern_stacks.iter_mut() {
+                    let Some(top) = stack.pop() else {
+                        continue;
+                    };
 
-        for &arm in self.body.cons.get(arms) {
-            let TirEnt { kind: TirKind::MatchArm(pat, body), .. } = self.body.ents[arm] else {
-                unreachable!()
-            };
-            
-            let checks = {
-                self.func.value_slices.mark_frame();
-                for &elem in self.body.cons.get(pat) {
-                    if self.body.ents[elem].flags.contains(TirFlags::PATTERN_MATCH) {
-                        let value = self.translate_expr(elem, None)?.unwrap();
-                        self.func.value_slices.push_one(value);
+                    if top.is_reserved_value() {
+                        todo!();
+                    }
+
+                    match self.body.ents[top].kind {
+                        TirKind::Constructor(fields) => {
+                            stack.extend(self.body.cons.get(fields).iter().rev().cloned());
+                        },
+                        TirKind::IntLit(_) => todo!(),
+                        TirKind::BoolLit(_) => todo!(),
+                        TirKind::CharLit(_) => todo!(),
+                        TirKind::DerefPointer(_) => todo!(),
+                        kind => todo!("Unhandled {:?}", kind),
                     }
                 }
-                self.func.value_slices.pop_frame()
-            };
 
-            let value = self.value_from_ty(self.builtin_types.bool);
-
-            if !checks.is_reserved_value() {
-                self.func.add_inst(InstEnt::new(InstKind::PatternCheck(checks), value.into()));
-                self.func.add_inst(InstEnt::new(InstKind::JumpIfFalse(next_block), value.into()));
-            }
-            self.func.add_inst(InstEnt::new(InstKind::Jump(current_block), None));
-            self.func.select_block(current_block);
-
-            for &elem in self.body.cons.get(pat) {
-                if !self.body.ents[elem].flags.contains(TirFlags::PATTERN_MATCH) {
-                    self.translate_expr(elem, None)?;
+                if self.pattern_stacks.is_empty() {
+                    break;
                 }
-            }
-            
-            let value = self.translate_expr(body, dest)?;
-
-            if !self.func.is_terminated() {
-                let value = (!on_stack && !no_value).then_some(value).flatten();
-                self.func.add_inst(InstEnt::new(InstKind::Jump(last_block.unwrap()), value));
-            }
-
-            if !checks.is_reserved_value() {
-                self.func.select_block(next_block);
-                current_block = self.func.create_block();
-                next_block = self.func.create_block();
             }
         }
 
-        let Some(last_block) = last_block else {
-            return Ok(None);
-        };
-
-        let (params, value) = if no_value || on_stack {
-            (ValueList::reserved_value(), None)
-        } else {
-            let value = self.value_from_ty(ty);
-            (self.func.value_slices.push(&[value]), Some(value))
-        };
-
-        self.func.blocks[last_block].params = params;
-
-        self.func.select_block(last_block);
-
-        Ok(value)
+        todo!();
     }
     
     fn translate_bit_cast(
@@ -552,12 +464,26 @@ impl MirBuilder<'_> {
         }
 
         let data_view = self.body.cons.get(data);
-        for (i, &data) in data_view.iter().enumerate() {
-            let offset = self.field_offset_by_index(ty, i);
-            let dest = self.offset(value, offset);
-            self.translate_expr(data, Some(dest))?;
-            if !on_stack {
-                value = self.offset(dest, Offset::ZERO - offset);
+        if let TyKind::Enum(..) = self.types[ty].kind {
+            let &[flag, constructor] = data_view else {
+                unreachable!()
+            };
+
+            self.translate_expr(flag, Some(value))?;
+
+            let offset = self.repr_fields.get(self.reprs[ty].fields)[0].offset;
+
+            let value = self.offset(value, offset);
+
+            self.translate_expr(constructor, Some(value))?;
+        } else {
+            for (i, &data) in data_view.iter().enumerate() {
+                let offset = self.field_offset_by_index(ty, i);
+                let dest = self.offset(value, offset);
+                self.translate_expr(data, Some(dest))?;
+                if !on_stack {
+                    value = self.offset(dest, Offset::ZERO - offset);
+                }
             }
         }
 
@@ -596,19 +522,6 @@ impl MirBuilder<'_> {
         dest: Option<Value>,
     ) -> ExprResult {
         let value = self.int_lit(ty, literal_value);
-
-        self.assign(value, dest);
-
-        Ok(Some(value))
-    }
-
-    fn translate_enum_flag(
-        &mut self,
-        ty: Ty,
-        literal: u32,
-        dest: Option<Value>,
-    ) -> ExprResult {
-        let value = self.int_lit(ty, literal as i64);
 
         self.assign(value, dest);
 

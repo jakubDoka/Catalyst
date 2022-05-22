@@ -15,8 +15,16 @@ impl<T> FramedStack<T> {
         }
     }
 
+    pub fn set(&mut self, index: usize, value: T) {
+        self.data[*self.frames.last().unwrap() as usize + index] = value;
+    }
+
     pub fn push(&mut self, value: T) {
         self.data.push(value);
+    }
+
+    pub fn pre_push(&mut self, amount: usize) where T: Default + Clone {
+        self.data.resize(self.data.len() + amount, T::default());
     }
 
     pub fn push_default(&mut self)

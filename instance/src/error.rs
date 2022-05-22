@@ -1,5 +1,5 @@
 use instance_types::*;
-use lexer_types::*;
+use lexer::*;
 use storage::ReservedValue;
 use typec_types::*;
 

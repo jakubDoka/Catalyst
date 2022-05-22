@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../storage" }
-lexer_types = { path = "../lexer_types" }
+lexer = { path = "../lexer" }
 errors = { path = "../errors" }
