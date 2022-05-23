@@ -19,11 +19,11 @@ impl RangeJoiner {
         self.range = range;
     }
 
-    pub fn exhaust(&mut self, range: IntRange) {
+    pub fn exhaust(&mut self, range: IntRange) -> bool {
         let (start, end) = (range.start, range.end);
 
         if self.exhausted() {
-            return;
+            return false;
         }
 
         let start_space = self
@@ -36,7 +36,7 @@ impl RangeJoiner {
             .into_ok_or_err();
 
         if start_space > end_space {
-            return;
+            return false;
         }
 
         self.indices.drain(start_space..end_space);
@@ -49,6 +49,9 @@ impl RangeJoiner {
             }
             (None, Some(e)) => {
                 if e.start <= end + 1 {
+                    if e.start == start {
+                        return false;
+                    }
                     e.start = start;
                 } else {
                     self.indices.insert(0, range);
@@ -56,6 +59,9 @@ impl RangeJoiner {
             }
             (Some(e), None) => {
                 if e.end >= start - 1 {
+                    if e.end == end {
+                        return false;
+                    }
                     e.end = end;
                 } else {
                     self.indices.push(range);
@@ -66,14 +72,22 @@ impl RangeJoiner {
                     p.end = a.end;
                     self.indices.remove(start_space);
                 } else if a.start <= end + 1 {
+                    if a.start == start {
+                        return false;
+                    }
                     a.start = start;
                 } else if p.end >= start - 1 {
+                    if a.end == end {
+                        return false;
+                    }
                     p.end = end;
                 } else {
                     self.indices.insert(start_space, range);
                 }
             }
         }
+
+        true
     }
 
     pub fn exhausted(&self) -> bool {

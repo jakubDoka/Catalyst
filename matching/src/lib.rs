@@ -24,7 +24,31 @@ pub struct PatternGraph {
     splitter: RangeSplitter,
     joiner: RangeJoiner,
     temp: Vec<PatternNode>,
-    usefulness: PrimaryMap<Usefulness, UsefulnessEnt>,
+    usefulness: SecondaryMap<Usefulness, UsefulnessEnt>,
+}
+
+macro_rules! mark_usefulness {
+    ($self:expr, $root:expr) => {
+        $self.joiner.prepare_for($self.nodes[$root].range);
+        for &child in $self.nodes[$root].children.as_slice(&$self.slices) {
+            let child_ent = $self.nodes[child];
+            let usefulness = if $self.joiner.exhaust(child_ent.coverage) {
+                if $self.joiner.exhausted() {
+                    UsefulnessEnt::LastUseful
+                } else {
+                    UsefulnessEnt::Useful
+                }
+            } else {
+                UsefulnessEnt::Useless
+            };
+            for &data_bind in child_ent.data_binds.as_slice(&$self.usefulness_slices) {
+                if $self.usefulness[data_bind] == UsefulnessEnt::ObviouslyUseless {
+                    continue;
+                }
+                $self.usefulness[data_bind] = usefulness;
+            }
+        }
+    };
 }
 
 impl PatternGraph {
@@ -37,7 +61,7 @@ impl PatternGraph {
             splitter: RangeSplitter::new(),
             joiner: RangeJoiner::new(),
             temp: Vec::new(),
-            usefulness: PrimaryMap::new(),
+            usefulness: SecondaryMap::new(),
         }
     }
 
@@ -48,23 +72,7 @@ impl PatternGraph {
             return Err(error);
         }
 
-        self.joiner.prepare_for(self.nodes[root].range);
-        for &child in self.nodes[root].children.as_slice(&self.slices) {
-            let child_ent = self.nodes[child];
-            let usefulness = if self.joiner.exhausted() {
-                UsefulnessEnt::Useless
-            } else {
-                self.joiner.exhaust(child_ent.coverage);
-                if self.joiner.exhausted() {
-                    UsefulnessEnt::LastUseful
-                } else {
-                    UsefulnessEnt::Useful
-                }
-            };
-            for &data_bind in child_ent.data_binds.as_slice(&self.usefulness_slices) {
-                self.usefulness[data_bind] = usefulness;
-            }
-        }
+        mark_usefulness!(self, root);
 
         Ok(())
     }
@@ -136,22 +144,7 @@ impl PatternGraph {
                 continue;
             }
 
-            for &child in child_ent.children.as_slice(&self.slices) {
-                let child_ent = self.nodes[child];
-                let usefulness = if self.joiner.exhausted() {
-                    UsefulnessEnt::Useless
-                } else {
-                    self.joiner.exhaust(child_ent.coverage);
-                    if self.joiner.exhausted() {
-                        UsefulnessEnt::LastUseful
-                    } else {
-                        UsefulnessEnt::Useful
-                    }
-                };
-                for &data_bind in child_ent.data_binds.as_slice(&self.usefulness_slices) {
-                    self.usefulness[data_bind] = usefulness;
-                }
-            }
+            mark_usefulness!(self, child);
 
             if !self.joiner.exhausted() {
                 errors.resize(i, Default::default());
@@ -184,25 +177,26 @@ impl PatternGraph {
     pub fn push(
         &mut self,
         parent: PatternNode,
+        id: impl EntityRef,
         coverage: IntRange,
         range: IntRange,
         end: bool,
-    ) -> (PatternNode, Usefulness) {
-        let id = self.usefulness.push(UsefulnessEnt::None);
+    ) -> PatternNode {
+        let id = Usefulness::new(id.index());
         if let Some(&node) = self.nodes[parent].children.as_slice(&self.slices).last()
             && self.nodes[node].coverage == coverage {
             
             self.nodes[node].data_binds.push(id, &mut self.usefulness_slices);
             if end {
-                self.usefulness[id] = UsefulnessEnt::Useless;
+                self.usefulness[id] = UsefulnessEnt::ObviouslyUseless;
             }
-            return (node, id);
+            return node;
         }
 
         let node = self.create_node(id, coverage, range);
         self.existing.insert((parent.as_u32(), coverage), node);
         self.nodes[parent].children.push(node, &mut self.slices);
-        (node, id)
+        node
     }
 
     fn create_node(
@@ -270,6 +264,7 @@ pub enum UsefulnessEnt {
     Useful,
     LastUseful,
     Useless,
+    ObviouslyUseless,
     None,
 }
 
@@ -286,7 +281,9 @@ gen_entity!(Usefulness);
 mod test {
     use std::ops::RangeInclusive;
 
-    use crate::{IntRange, UsefulnessEnt::{*, self}};
+    use storage::EntityRef;
+
+    use crate::{IntRange, UsefulnessEnt::{*, self}, Usefulness};
 
     use super::PatternGraph;
 
@@ -335,31 +332,80 @@ mod test {
         );
     }
 
+    #[test]
+    fn test_useless() {
+        run_test(
+            0..=255,
+            &[
+                &[0..=255, 0..=255, 0..=255],
+                &[0..=255, 0..=1, 2..=255],
+            ],
+            &[
+                &[LastUseful, LastUseful, LastUseful],
+                &[LastUseful, Useful, Useless],
+            ],
+        );
+
+        run_test(
+            0..=255,
+            &[
+                &[0..=255, 0..=255, 0..=255],
+                &[0..=255, 0..=255, 0..=255],
+            ],
+            &[
+                &[LastUseful, LastUseful, LastUseful],
+                &[LastUseful, LastUseful, ObviouslyUseless],
+            ],
+        );
+
+        run_test(
+            0..=255,
+            &[
+                &[0..=4, 10..=11],
+                &[2..=6, 10..=11],
+                &[0..=6, 10..=11],
+                &[0..=255, 0..=255],
+            ],
+            &[
+                &[Useful, Useful],
+                &[Useful, Useful],
+                &[Useful, Useless],
+                &[LastUseful, LastUseful],
+            ],
+        );
+
+        
+    }
+
     fn run_test(range: RangeInclusive<i32>, dataset: &[&[RangeInclusive<i32>]], resulting_usefulness: &[&[UsefulnessEnt]]) {
         let mut graph = PatternGraph::new();
         let range = IntRange::new_bounds(&range);
         let root = graph.create_root(range);
-        let mut ids = vec![];
-        for &ranges in dataset {
+        for (i, &ranges) in dataset.iter().enumerate() {
             let mut parent = root;
-            for (i, coverage) in ranges.iter().enumerate() {
-                let (child, usefulness) = graph.push(
+            for (j, coverage) in ranges.iter().enumerate() {
+                let child = graph.push(
                     parent,
+                    Usefulness::new(i * ranges.len() + j),
                     range.coverage(coverage),
                     range,
-                    i == ranges.len() - 1,
+                    j == ranges.len() - 1,
                 );
                 parent = child;
-                ids.push(usefulness);
             }
         }
+
+        // graph.log::<i32>(root, 0);
+
         graph.solve(root).unwrap();
-        ids.reverse();
+        
+        // graph.log::<i32>(root, 0);
+        
         for (i, &ranges) in dataset.iter().enumerate() {
             for j in 0..ranges.len() {
-                let usefulness = ids.pop().unwrap();
+                let usefulness = Usefulness::new(i * ranges.len() + j);
                 let ent = graph.usefulness[usefulness];
-                assert_eq!(resulting_usefulness[i][j], ent);
+                assert_eq!(resulting_usefulness[i][j], ent, "i={}, j={}", i, j);
             }
         }
     }
