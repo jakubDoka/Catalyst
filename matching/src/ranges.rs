@@ -89,7 +89,7 @@ impl IntRange {
     }
 
     pub fn intersect(&self, other: &Self) -> Option<Self> {
-        assert!(self.bias == other.bias);
+        assert_eq!(self.bias, other.bias);
 
         let start = self.start.max(other.start);
         let end = self.end.min(other.end);

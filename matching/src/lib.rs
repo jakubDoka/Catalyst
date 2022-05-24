@@ -16,25 +16,26 @@ use std::{collections::HashMap, fmt::Debug, vec};
 use storage::*;
 
 pub struct PatternGraph {
-    ranges: Vec<IntRange>,
     cons: StackMap<NodeList, PatternNode>,
     nodes: PrimaryMap<PatternNode, NodeEnt>,
     root: PatternNode,
 
     joiner: RangeJoiner,
     splitter: RangeSplitter,
-    range_lookup: HashMap<IntRange, PatternNode>,
+    range_lookup: HashMap<(IntRange, u32), PatternNode>,
     temp: Vec<PatternNode>,
     branch_counter: usize,
 }
 
 impl PatternGraph {
     pub fn new() -> Self {
+        let mut nodes = PrimaryMap::new();
+        let root = nodes.push(Default::default());
+
         Self {
-            ranges: Vec::new(),
             cons: StackMap::new(),
-            nodes: PrimaryMap::new(),
-            root: PatternNode::reserved_value(),
+            nodes,
+            root,
 
             joiner: RangeJoiner::new(),
             splitter: RangeSplitter::new(),
@@ -47,19 +48,21 @@ impl PatternGraph {
     pub fn get_reachability<'a>(
         &'a mut self,
         branch: usize,
-        nodes: impl IntoIterator<Item = IntRange> + 'a,
+        nodes: impl IntoIterator<Item = (IntRange, u32)> + 'a,
     ) -> impl Iterator<Item = (Reachability, PatternNode)> + 'a {
         let mut current = self.root;
         nodes
             .into_iter()
-            .map(move |range| {
+            .map(move |(range, id)| {
                 let children = self.nodes[current].children;   
                 let children = self.cons.get(children);
 
-                let child = children.binary_search_by_key(
-                    &range.end, 
-                    |&child| self.nodes[child].coverage.end,
-                ).unwrap();
+                let child = children.iter()
+                    .position(|&child| 
+                        self.nodes[child].coverage.end == range.end && 
+                        self.nodes[child].id == id
+                    )
+                    .unwrap();
 
                 current = children[child];
 
@@ -83,7 +86,7 @@ impl PatternGraph {
         self.range_lookup.clear();
         self.temp.clear();
         self.splitter.split(
-            self.ranges[node_ent.depth as usize],
+            node_ent.range,
             self.cons
                 .get(node_ent.children)
                 .iter()
@@ -94,7 +97,7 @@ impl PatternGraph {
             let child = self.cons.get(node_ent.children)[i];
             let child_ent = self.nodes[child];
             for segment in self.splitter.segments_of(child_ent.coverage) {
-                if let Some(&node) = self.range_lookup.get(&segment) {
+                if let Some(&node) = self.range_lookup.get(&(segment, child_ent.id)) {
                     self.nodes[node].children = self
                         .cons
                         .join(self.nodes[node].children, self.nodes[child].children);
@@ -106,7 +109,7 @@ impl PatternGraph {
                     ..child_ent
                 };
                 let node = self.nodes.push(ent);
-                self.range_lookup.insert(segment, node);
+                self.range_lookup.insert((segment, child_ent.id), node);
                 self.temp.push(node);
             }
         }
@@ -123,8 +126,7 @@ impl PatternGraph {
             }
         }
 
-        self.joiner
-            .prepare_for(self.ranges[node_ent.depth as usize]);
+        self.joiner.prepare_for(node_ent.range);
 
         for &child in self.cons.get(self.nodes[node].children).iter() {
             self.joiner.exhaust(self.nodes[child].coverage);
@@ -143,26 +145,19 @@ impl PatternGraph {
         Err(MissingPatterns { missing, children })
     }
 
-    pub fn set_ranges(&mut self, ranges: impl IntoIterator<Item = IntRange>) {
-        assert!(self.ranges.is_empty());
-        self.ranges.extend(ranges.into_iter());
-        self.root = self.nodes.push(NodeEnt::default());
-    }
-
     pub fn set_branch_count(&mut self, branch_count: usize) {
-        self.nodes.reserve(branch_count + self.ranges.len());
         self.nodes[self.root].children = self.cons.alloc(branch_count, PatternNode::reserved_value());
     }
 
-    pub fn add_branch(&mut self, nodes: impl IntoIterator<Item = IntRange>) {
-        assert!(!self.ranges.is_empty());
+    pub fn add_branch(&mut self, nodes: impl IntoIterator<Item = (IntRange, IntRange, u32)>) {
+        assert!(!self.root.is_reserved_value());
         let branch = self.branch_counter as u32;
         let mut current = self.root;
-        let mut depth = 0;
-        for coverage in nodes.into_iter() {
+        for (coverage, range, id) in nodes.into_iter() {
+            self.nodes[current].range = range;
             let ent = NodeEnt {
                 coverage,
-                depth,
+                id,
                 branch,
                 ..Default::default()
             };
@@ -173,25 +168,35 @@ impl PatternGraph {
                 self.nodes[current].children = self.cons.push(&[node]);
             }
             current = node;
-            depth += 1;
         }
-        assert_eq!(self.ranges.len(), depth as usize);
         self.branch_counter += 1;
     }
 
     pub fn clear(&mut self) {
-        self.ranges.clear();
         self.cons.clear();
         self.nodes.clear();
-        self.root = PatternNode::reserved_value();
+        self.nodes.push(Default::default());
         self.branch_counter = 0;
+    }
+
+    pub fn log(&self) {
+        self.log_recursive(self.root, 0);
+    }
+
+    fn log_recursive(&self, node: PatternNode, depth: usize) {
+        let ent = self.nodes[node];
+        println!("{}{:?}{}", " ".repeat(depth), ent.coverage.decode::<i32>(), ent.branch);
+        for child in self.cons.get(ent.children) {
+            self.log_recursive(*child, depth + 1);
+        }
     }
 }
 
 #[derive(Clone, Copy, Default)]
 struct NodeEnt {
+    range: IntRange,
     coverage: IntRange,
-    depth: u32,
+    id: u32,
     branch: u32,
     children: NodeList,
 }
@@ -214,7 +219,7 @@ pub struct MissingPatterns {
 
 #[cfg(test)]
 mod test {
-    use std::{ops::RangeInclusive, iter::repeat};
+    use std::ops::RangeInclusive;
 
     use super::{*, Reachability::*};
 
@@ -223,40 +228,106 @@ mod test {
         run_test(
             0..=255,
             [
-                [0..=20, 0..=20],
-                [0..=50, 0..=50],
-                [0..=255, 0..=255],
-                [30..=255, 30..=255],
+                &[(0..=20, 0), (0..=20, 0)],
+                &[(0..=50, 0), (0..=50, 0)],
+                &[(0..=255, 0), (0..=255, 0)],
+                &[(30..=255, 0), (30..=255, 0)],
             ],
             [
-                [Reachable, Reachable],
-                [Reachable, Reachable],
-                [ReachableUnchecked, ReachableUnchecked],
-                [Unreachable, Unreachable],
-            ]
+                &[Reachable, Reachable],
+                &[Reachable, Reachable],
+                &[ReachableUnchecked, ReachableUnchecked],
+                &[Unreachable, Unreachable],
+            ],
+        );
+
+        run_test(
+            0..=255,
+            [
+                &[(0..=0, 0)],
+                &[(1..=1, 0)],
+                &[(2..=2, 0)],
+                &[(0..=2, 0)],
+                &[(0..=255, 0)],
+            ],
+            [
+                &[Reachable],
+                &[Reachable],
+                &[Reachable],
+                &[Unreachable],
+                &[ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..=255,
+            [
+                &[(0..=6, 0), (0..=5, 0)],
+                &[(4..=10, 0), (5..=10, 0)],
+                &[(5..=5, 0), (0..=10, 0)],
+                &[(0..=255, 0), (0..=255, 0)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[Reachable, Reachable],
+                &[Unreachable, Unreachable],
+                &[ReachableUnchecked, ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..=255,
+            [
+                &[(0..=1, 0), (0..=255, 1)],
+                &[(2..=255, 0), (0..=255, 2), (0..=4, 0)],
+                &[(2..=255, 0), (0..=255, 2), (5..=255, 0)],
+            ],
+            [
+                &[Reachable, ReachableUnchecked],
+                &[ReachableUnchecked, ReachableUnchecked, Reachable],
+                &[Unreachable, Unreachable, ReachableUnchecked],
+            ],
         );
     }
 
-    fn run_test<const W: usize, const H: usize>(
+    #[test]
+    fn unreachable_by_combination() {
+        run_test(
+            0..=255,
+            [
+                &[(0..=4, 0), (10..=11, 0)],
+                &[(2..=6, 0), (10..=11, 0)],
+                &[(0..=6, 0), (10..=11, 0)],
+                &[(0..=255, 0), (0..=255, 0)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[Reachable, Reachable],
+                &[Unreachable, Unreachable],
+                &[ReachableUnchecked, ReachableUnchecked],
+            ],
+        );
+    }
+
+    fn run_test<const H: usize>(
         range: RangeInclusive<i32>, 
-        branches: [[RangeInclusive<i32>; W]; H],
-        reachability: [[Reachability; W]; H],
+        branches: [&[(RangeInclusive<i32>, u32)]; H],
+        reachability: [&[Reachability]; H],
     ) {
         let mut tree = PatternGraph::new();
         let range = IntRange::new_bounds(&range);
 
-        tree.set_ranges(repeat(range).take(W));
         tree.set_branch_count(branches.len());
 
         for branch in branches.clone() {
-            tree.add_branch(branch.iter().map(|coverage| range.coverage(&coverage)));
+            tree.add_branch(branch.iter().map(|(coverage, id)| (range.coverage(&coverage), range, *id)));
         }
 
         tree.solve().unwrap();
 
         for (i, (reach, branch)) in reachability.into_iter().zip(branches).enumerate() {
-            let iter = tree.get_reachability(i, branch.iter().map(|coverage| range.coverage(&coverage)));
-            for (j, (a, b)) in iter.zip(reach).enumerate() {
+            let iter = tree.get_reachability(i, branch.iter().map(|(coverage, id)| (range.coverage(&coverage), *id)));
+            for (j, (a, &b)) in iter.zip(reach).enumerate() {
                 assert_eq!(a.0, b, "branch {} at {}", i, j);
             }
         }
