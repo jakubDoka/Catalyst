@@ -46,7 +46,7 @@ macro_rules! impl_bool_bit_and {
 macro_rules! gen_entity {
     ($($name:ident)*) => {
         $(
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
             pub struct $name(pub u32);
 
             $crate::cranelift_entity::entity_impl!($name);

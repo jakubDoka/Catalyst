@@ -76,12 +76,30 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn deep_clone(&mut self, id: E) -> E 
+    where 
+        T: Clone,
+        E: ReservedValue, 
+    {
+        let from = unsafe { std::mem::transmute::<_, &[T]>(self.get(id)) };
+        self.data.reserve(from.len()); // SAFETY: push will not reallocate
+        self.push(from) 
+    }
+
     pub fn alloc(&mut self, size: usize, init: T) -> E where T: Clone {
         let index = self.indices.len();
         self.indices.push(index as u32);
         self.indices.push((index + size) as u32);
         self.data.resize(index + size, init);
         E::new(index)
+    }
+
+    pub fn push_iter(&mut self, iter: impl IntoIterator<Item = T>) -> E
+    where
+        E: ReservedValue,
+    {
+        self.data.extend(iter);
+        self.close_frame()
     }
 
     pub fn push(&mut self, value: &[T]) -> E
@@ -102,6 +120,32 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
             (Some(start), Some(end)) => &self.data[*start as usize..*end as usize],
             _ => &[],
         }
+    }
+
+    pub fn join(&mut self, a: E, b: E) -> E
+    where
+        E: ReservedValue,
+        T: Clone,
+    {
+        let (a_s, b_s) = unsafe {
+            std::mem::transmute::<_, (&[T], &[T])>(
+                (self.get(a), self.get(b)),
+            )
+        };
+        
+        if a_s.is_empty() {
+            return b;
+        }
+        
+        if b_s.is_empty() {
+            return a;
+        }
+
+        self.data.reserve(a_s.len() + b_s.len()); // SAFETY: push will not reallocate
+        self.data.extend_from_slice(a_s);
+        self.data.extend_from_slice(b_s);
+        
+        self.close_frame()
     }
 
     pub fn slice_keys(&self, id: E) -> impl Iterator<Item = S> {

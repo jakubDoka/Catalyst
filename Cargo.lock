@@ -359,9 +359,7 @@ dependencies = [
 name = "matching"
 version = "0.1.0"
 dependencies = [
- "ast",
  "storage",
- "typec_types",
 ]
 
 [[package]]

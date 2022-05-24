@@ -9,13 +9,261 @@ pub mod ranges;
 
 pub use range_joiner::RangeJoiner;
 pub use range_splitter::RangeSplitter;
-use ranges::AnalyzableRange;
-pub use ranges::IntRange;
+pub use ranges::{IntRange, AnalyzableRange};
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, vec};
 
 use storage::*;
 
+pub struct PatternGraph {
+    ranges: Vec<IntRange>,
+    cons: StackMap<NodeList, PatternNode>,
+    nodes: PrimaryMap<PatternNode, NodeEnt>,
+    root: PatternNode,
+
+    joiner: RangeJoiner,
+    splitter: RangeSplitter,
+    range_lookup: HashMap<IntRange, PatternNode>,
+    temp: Vec<PatternNode>,
+    branch_counter: usize,
+}
+
+impl PatternGraph {
+    pub fn new() -> Self {
+        Self {
+            ranges: Vec::new(),
+            cons: StackMap::new(),
+            nodes: PrimaryMap::new(),
+            root: PatternNode::reserved_value(),
+
+            joiner: RangeJoiner::new(),
+            splitter: RangeSplitter::new(),
+            range_lookup: HashMap::new(),
+            temp: Vec::new(),
+            branch_counter: 0,
+        }
+    }
+
+    pub fn get_reachability<'a>(
+        &'a mut self,
+        branch: usize,
+        nodes: impl IntoIterator<Item = IntRange> + 'a,
+    ) -> impl Iterator<Item = (Reachability, PatternNode)> + 'a {
+        let mut current = self.root;
+        nodes
+            .into_iter()
+            .map(move |range| {
+                let children = self.nodes[current].children;   
+                let children = self.cons.get(children);
+
+                let child = children.binary_search_by_key(
+                    &range.end, 
+                    |&child| self.nodes[child].coverage.end,
+                ).unwrap();
+
+                current = children[child];
+
+                if self.nodes[current].branch as usize != branch {
+                    (Reachability::Unreachable, current)
+                } else if child == children.len() - 1 {
+                    (Reachability::ReachableUnchecked, current)
+                } else {
+                    (Reachability::Reachable, current)
+                }
+            })
+    }
+
+    pub fn solve(&mut self) -> Result<(), MissingPatterns> {
+        self.split_ranges(self.root)
+    }
+
+    pub fn split_ranges(&mut self, node: PatternNode) -> Result<(), MissingPatterns> {
+        let node_ent = self.nodes[node];
+
+        self.range_lookup.clear();
+        self.temp.clear();
+        self.splitter.split(
+            self.ranges[node_ent.depth as usize],
+            self.cons
+                .get(node_ent.children)
+                .iter()
+                .map(|&child| self.nodes[child].coverage),
+        );
+
+        for i in 0..self.cons.len(node_ent.children) {
+            let child = self.cons.get(node_ent.children)[i];
+            let child_ent = self.nodes[child];
+            for segment in self.splitter.segments_of(child_ent.coverage) {
+                if let Some(&node) = self.range_lookup.get(&segment) {
+                    self.nodes[node].children = self
+                        .cons
+                        .join(self.nodes[node].children, self.nodes[child].children);
+                    continue;
+                }
+
+                let ent = NodeEnt {
+                    coverage: segment,
+                    ..child_ent
+                };
+                let node = self.nodes.push(ent);
+                self.range_lookup.insert(segment, node);
+                self.temp.push(node);
+            }
+        }
+
+        self.nodes[node].children = self.cons.push(&self.temp);
+
+        let mut children = vec![];
+
+        for i in 0..self.temp.len() {
+            let child = self.cons.get(self.nodes[node].children)[i];
+            if let Err(missing) = self.split_ranges(child) {
+                children.resize(i, Default::default());
+                children.push(missing);
+            }
+        }
+
+        self.joiner
+            .prepare_for(self.ranges[node_ent.depth as usize]);
+
+        for &child in self.cons.get(self.nodes[node].children).iter() {
+            self.joiner.exhaust(self.nodes[child].coverage);
+        }
+
+        let missing = if self.cons.len(self.nodes[node].children) == 0 {
+            vec![]
+        } else {
+            self.joiner.missing()
+        };
+
+        if children.is_empty() && missing.is_empty() {
+            return Ok(());
+        }
+
+        Err(MissingPatterns { missing, children })
+    }
+
+    pub fn set_ranges(&mut self, ranges: impl IntoIterator<Item = IntRange>) {
+        assert!(self.ranges.is_empty());
+        self.ranges.extend(ranges.into_iter());
+        self.root = self.nodes.push(NodeEnt::default());
+    }
+
+    pub fn set_branch_count(&mut self, branch_count: usize) {
+        self.nodes.reserve(branch_count + self.ranges.len());
+        self.nodes[self.root].children = self.cons.alloc(branch_count, PatternNode::reserved_value());
+    }
+
+    pub fn add_branch(&mut self, nodes: impl IntoIterator<Item = IntRange>) {
+        assert!(!self.ranges.is_empty());
+        let branch = self.branch_counter as u32;
+        let mut current = self.root;
+        let mut depth = 0;
+        for coverage in nodes.into_iter() {
+            let ent = NodeEnt {
+                coverage,
+                depth,
+                branch,
+                ..Default::default()
+            };
+            let node = self.nodes.push(ent);
+            if current == self.root {
+                self.cons.get_mut(self.nodes[current].children)[branch as usize] = node;
+            } else {
+                self.nodes[current].children = self.cons.push(&[node]);
+            }
+            current = node;
+            depth += 1;
+        }
+        assert_eq!(self.ranges.len(), depth as usize);
+        self.branch_counter += 1;
+    }
+
+    pub fn clear(&mut self) {
+        self.ranges.clear();
+        self.cons.clear();
+        self.nodes.clear();
+        self.root = PatternNode::reserved_value();
+        self.branch_counter = 0;
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct NodeEnt {
+    coverage: IntRange,
+    depth: u32,
+    branch: u32,
+    children: NodeList,
+}
+
+gen_entity!(NodeList);
+gen_entity!(PatternNode);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reachability {
+    Reachable,
+    ReachableUnchecked,
+    Unreachable,
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct MissingPatterns {
+    pub missing: Vec<IntRange>,
+    pub children: Vec<MissingPatterns>,
+}
+
+#[cfg(test)]
+mod test {
+    use std::{ops::RangeInclusive, iter::repeat};
+
+    use super::{*, Reachability::*};
+
+    #[test]
+    fn base_case() {
+        run_test(
+            0..=255,
+            [
+                [0..=20, 0..=20],
+                [0..=50, 0..=50],
+                [0..=255, 0..=255],
+                [30..=255, 30..=255],
+            ],
+            [
+                [Reachable, Reachable],
+                [Reachable, Reachable],
+                [ReachableUnchecked, ReachableUnchecked],
+                [Unreachable, Unreachable],
+            ]
+        );
+    }
+
+    fn run_test<const W: usize, const H: usize>(
+        range: RangeInclusive<i32>, 
+        branches: [[RangeInclusive<i32>; W]; H],
+        reachability: [[Reachability; W]; H],
+    ) {
+        let mut tree = PatternGraph::new();
+        let range = IntRange::new_bounds(&range);
+
+        tree.set_ranges(repeat(range).take(W));
+        tree.set_branch_count(branches.len());
+
+        for branch in branches.clone() {
+            tree.add_branch(branch.iter().map(|coverage| range.coverage(&coverage)));
+        }
+
+        tree.solve().unwrap();
+
+        for (i, (reach, branch)) in reachability.into_iter().zip(branches).enumerate() {
+            let iter = tree.get_reachability(i, branch.iter().map(|coverage| range.coverage(&coverage)));
+            for (j, (a, b)) in iter.zip(reach).enumerate() {
+                assert_eq!(a.0, b, "branch {} at {}", i, j);
+            }
+        }
+    } 
+}
+
+/*
 pub struct PatternGraph {
     nodes: PrimaryMap<PatternNode, PatternNodeEnt>,
     slices: ListPool<PatternNode>,
@@ -185,7 +433,7 @@ impl PatternGraph {
         let id = Usefulness::new(id.index());
         if let Some(&node) = self.nodes[parent].children.as_slice(&self.slices).last()
             && self.nodes[node].coverage == coverage {
-            
+
             self.nodes[node].data_binds.push(id, &mut self.usefulness_slices);
             if end {
                 self.usefulness[id] = UsefulnessEnt::ObviouslyUseless;
@@ -374,7 +622,7 @@ mod test {
             ],
         );
 
-        
+
     }
 
     fn run_test(range: RangeInclusive<i32>, dataset: &[&[RangeInclusive<i32>]], resulting_usefulness: &[&[UsefulnessEnt]]) {
@@ -398,9 +646,9 @@ mod test {
         // graph.log::<i32>(root, 0);
 
         graph.solve(root).unwrap();
-        
+
         // graph.log::<i32>(root, 0);
-        
+
         for (i, &ranges) in dataset.iter().enumerate() {
             for j in 0..ranges.len() {
                 let usefulness = Usefulness::new(i * ranges.len() + j);
@@ -410,3 +658,4 @@ mod test {
         }
     }
 }
+*/
