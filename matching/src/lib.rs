@@ -15,6 +15,7 @@ use std::{collections::HashMap, fmt::Debug, vec};
 
 use storage::*;
 
+#[derive(Clone)]
 pub struct PatternGraph {
     cons: StackMap<NodeList, PatternNode>,
     nodes: PrimaryMap<PatternNode, NodeEnt>,
@@ -22,7 +23,7 @@ pub struct PatternGraph {
 
     joiner: RangeJoiner,
     splitter: RangeSplitter,
-    range_lookup: HashMap<(IntRange, u32), PatternNode>,
+    range_lookup: HashMap<IntRange, PatternNode>,
     temp: Vec<PatternNode>,
     branch_counter: usize,
 }
@@ -48,21 +49,25 @@ impl PatternGraph {
     pub fn get_reachability<'a>(
         &'a mut self,
         branch: usize,
-        nodes: impl IntoIterator<Item = (IntRange, u32)> + 'a,
+        nodes: impl IntoIterator<Item = IntRange> + 'a,
     ) -> impl Iterator<Item = (Reachability, PatternNode)> + 'a {
         let mut current = self.root;
         nodes
             .into_iter()
-            .map(move |(range, id)| {
+            .map(move |range| {
+                self.joiner.prepare_for(range);
+                
                 let children = self.nodes[current].children;   
                 let children = self.cons.get(children);
 
                 let child = children.iter()
-                    .position(|&child| 
-                        self.nodes[child].coverage.end == range.end && 
-                        self.nodes[child].id == id
-                    )
-                    .unwrap();
+                    .position(|&child| {
+                        self.joiner.exhaust(self.nodes[child].coverage);
+                        self.joiner.exhausted()
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("{:?}", self.joiner.missing());
+                    });
 
                 current = children[child];
 
@@ -95,12 +100,32 @@ impl PatternGraph {
 
         for i in 0..self.cons.len(node_ent.children) {
             let child = self.cons.get(node_ent.children)[i];
-            let child_ent = self.nodes[child];
+            let mut child_ent = self.nodes[child];
+            let wildcard = child_ent.coverage.is_wildcard();
+            let mut wildcard_clone = None;
             for segment in self.splitter.segments_of(child_ent.coverage) {
-                if let Some(&node) = self.range_lookup.get(&(segment, child_ent.id)) {
-                    self.nodes[node].children = self
-                        .cons
-                        .join(self.nodes[node].children, self.nodes[child].children);
+                if let Some(&node) = self.range_lookup.get(&segment) {
+                    if wildcard
+                        && let Some(&first) = self.cons.get(self.nodes[node].children).first() 
+                        && self.nodes[first].depth > child_ent.depth
+                    {
+                        let clone = wildcard_clone.unwrap_or_else(|| { 
+                            let clone = self.nodes.push(NodeEnt { 
+                                depth: child_ent.depth + 1, 
+                                range: self.nodes[first].range, 
+                                ..child_ent 
+                            });
+                            child_ent.children = self.cons.push(&[clone]);
+                            wildcard_clone = Some(clone);
+                            clone
+                        });
+
+                        self.cons.push_to(&mut self.nodes[node].children, clone);
+                    } else {
+                        self.nodes[node].children = self
+                            .cons
+                            .join(self.nodes[node].children, self.nodes[child].children);
+                    }
                     continue;
                 }
 
@@ -109,7 +134,7 @@ impl PatternGraph {
                     ..child_ent
                 };
                 let node = self.nodes.push(ent);
-                self.range_lookup.insert((segment, child_ent.id), node);
+                self.range_lookup.insert(segment, node);
                 self.temp.push(node);
             }
         }
@@ -153,11 +178,11 @@ impl PatternGraph {
         assert!(!self.root.is_reserved_value());
         let branch = self.branch_counter as u32;
         let mut current = self.root;
-        for (coverage, range, id) in nodes.into_iter() {
+        for (coverage, range, depth) in nodes.into_iter() {
             self.nodes[current].range = range;
             let ent = NodeEnt {
                 coverage,
-                id,
+                depth,
                 branch,
                 ..Default::default()
             };
@@ -185,7 +210,7 @@ impl PatternGraph {
 
     fn log_recursive(&self, node: PatternNode, depth: usize) {
         let ent = self.nodes[node];
-        println!("{}{:?}{}", " ".repeat(depth), ent.coverage.decode::<i32>(), ent.branch);
+        println!("{}{:?} {} {}", " ".repeat(depth), ent.coverage.decode::<i32>(), ent.branch, ent.depth);
         for child in self.cons.get(ent.children) {
             self.log_recursive(*child, depth + 1);
         }
@@ -196,7 +221,7 @@ impl PatternGraph {
 struct NodeEnt {
     range: IntRange,
     coverage: IntRange,
-    id: u32,
+    depth: u32,
     branch: u32,
     children: NodeList,
 }
@@ -278,16 +303,23 @@ mod test {
         run_test(
             0..=255,
             [
-                &[(0..=1, 0), (0..=255, 1)],
-                &[(2..=255, 0), (0..=255, 2), (0..=4, 0)],
-                &[(2..=255, 0), (0..=255, 2), (5..=255, 0)],
+                &[(0..=0, 1), (0..=1, 2), (0..=1, 1)],
+                &[(1..=1, 1), (2..=2, 1)],
+                &[(0..=255, 1), (3..=255, 1)],
+                &[(0..=255, 1), (0..=2, 1)],
             ],
             [
-                &[Reachable, ReachableUnchecked],
+                &[Reachable, Reachable, Reachable],
+                &[Reachable, Unreachable],
                 &[ReachableUnchecked, ReachableUnchecked, Reachable],
                 &[Unreachable, Unreachable, ReachableUnchecked],
             ],
         );
+
+        match (Some(1), 0u8) {
+            (Some(_), _) => unreachable!(),
+            (None, _) => unreachable!(),
+        }
     }
 
     #[test]
@@ -323,12 +355,21 @@ mod test {
             tree.add_branch(branch.iter().map(|(coverage, id)| (range.coverage(&coverage), range, *id)));
         }
 
-        tree.solve().unwrap();
+        tree.solve().map_err(|e| {
+            tree.log();
+            e
+        }).unwrap();
+
+        let for_logging = tree.clone();
 
         for (i, (reach, branch)) in reachability.into_iter().zip(branches).enumerate() {
-            let iter = tree.get_reachability(i, branch.iter().map(|(coverage, id)| (range.coverage(&coverage), *id)));
+            let iter = tree.get_reachability(i, branch.iter().map(|(coverage, _)| range.coverage(&coverage)));
             for (j, (a, &b)) in iter.zip(reach).enumerate() {
-                assert_eq!(a.0, b, "branch {} at {}", i, j);
+                if a.0 != b {
+                    for_logging.log();
+                    assert_eq!(a.0, b, "branch {} at {}", i, j);
+                    return;
+                }
             }
         }
     } 

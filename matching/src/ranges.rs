@@ -156,6 +156,10 @@ impl IntRange {
             bias: self.bias,
         }
     }
+
+    pub fn is_wildcard(&self) -> bool {
+        self.end - self.start == self.bias
+    }
 }
 
 #[cfg(test)]

@@ -20,6 +20,10 @@ impl RangeJoiner {
     }
 
     pub fn exhaust(&mut self, range: IntRange) -> bool {
+        let Some(range) = range.intersect(&self.range) else {
+            return false;
+        };
+        
         let (start, end) = (range.start, range.end);
 
         if self.exhausted() {
