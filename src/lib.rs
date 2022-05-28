@@ -65,8 +65,8 @@ pub struct Compiler {
 
     // incremental data
     incr: Incr,
-    jit_incr: Incr,
-    jit_incr_path: PathBuf,
+    _jit_incr: Incr,
+    _jit_incr_path: PathBuf,
     incr_path: PathBuf,
 
     // source data
@@ -108,9 +108,9 @@ pub struct Compiler {
     pattern_graph: PatternGraph<Tir, PatternMeta>, 
 
     // jit
-    jit_module: JITModule,
-    host_isa: Box<dyn TargetIsa>,
-    jit_compile_results: SparseMap<Func, CompileResult>,
+    _jit_module: JITModule,
+    _host_isa: Box<dyn TargetIsa>,
+    _jit_compile_results: SparseMap<Func, CompileResult>,
 
     // generation
     entry_id: Option<ID>,
@@ -195,8 +195,8 @@ impl Compiler {
             input,
 
             incr,
-            jit_incr,
-            jit_incr_path,
+            _jit_incr: jit_incr,
+            _jit_incr_path: jit_incr_path,
             incr_path,
 
             sources,
@@ -232,9 +232,9 @@ impl Compiler {
             func_meta,
             pattern_graph: PatternGraph::new(),
 
-            jit_module,
-            jit_compile_results: SparseMap::new(),
-            host_isa,
+            _jit_module: jit_module,
+            _jit_compile_results: SparseMap::new(),
+            _host_isa: host_isa,
                         
             entry_id: None,
             object_module,

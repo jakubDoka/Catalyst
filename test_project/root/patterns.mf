@@ -1,14 +1,12 @@
 
 enum Enum {
-    Something
+    Something: nothing
     Structural
 }
 
 struct Structural {
     integer: int
 }
-
-struct Something
 
 impl Enum {
     fn new_structural() -> Self {
