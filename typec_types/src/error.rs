@@ -2,6 +2,9 @@ use crate::*;
 use lexer::*;
 
 pub enum TyError {
+    InfinitelySizedType {
+        cycle: Vec<Ty>,
+    },
     InvalidCallConv {
         loc: Span,
     },

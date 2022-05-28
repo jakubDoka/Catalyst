@@ -36,6 +36,7 @@
         "libcall",
         "malloc",
         "metaprogramming",
+        "MSVC",
         "putchar",
         "Reloc",
         "relocs",

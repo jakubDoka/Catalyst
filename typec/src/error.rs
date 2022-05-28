@@ -60,6 +60,14 @@ pub fn display(
                 )
             })?;
         }
+        TyError::InfinitelySizedType { cycle } => {
+            writeln!(to, "{ERR}|> infinitely sized type detected:{END}")?;
+            for &ty in cycle {
+                writeln!(to, "\t{}", ty_display!(state, ty))?;
+            }
+            writeln!(to, "|> Cycle can be broken by referencing any segment of the cycle indirectly.")?;
+            writeln!(to, "|> Structure is depending indirectly if its hidden behind fixed sized interface like a pointer.")?;
+        },
         TyError::InvalidCallConv { loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {

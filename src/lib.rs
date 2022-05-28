@@ -7,7 +7,7 @@
 
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{Type, ExternalName, self};
+use cranelift_codegen::ir::{Type, ExternalName};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
@@ -42,6 +42,7 @@ use std::str::FromStr;
 use std::time::{Instant, SystemTime};
 use std::{path::Path};
 
+/// shorthand for exiting the process
 macro_rules! exit {
     ($expr:expr) => {
         std::process::exit($expr);
@@ -52,12 +53,20 @@ macro_rules! exit {
     };
 }
 
+/// utility for simple scoped benchmarking
 macro_rules! time_report {
     ($message:expr) => {
         let _report = TimeReport::new($message);
     };
 }
 
+/// Main extremely big object containing all needed state for compilation. Currently, the
+/// allocations are accumulated and memory is basically getting freed only at the end of 
+/// the program. Compilation is also single threaded. This should change in the future, mainly 
+/// for codegen faze which takes most of the time.
+/// 
+/// TODO: This could get fixed with dependency analysis, that would eliminate useless objects.
+/// Question is whether we would compile programs at such scale this would matter.
 pub struct Compiler {
     // cmd
     input: CmdInput,
@@ -105,11 +114,11 @@ pub struct Compiler {
     scope_context: ScopeContext,
     tir_temp_body: TirData,
     func_meta: FuncMeta,
-    pattern_graph: PatternGraph<Tir, PatternMeta>, 
+    pattern_graph: PatternGraph<Tir, PatternMeta>,
 
     // jit
     _jit_module: JITModule,
-    _host_isa: Box<dyn TargetIsa>,
+    host_isa: Box<dyn TargetIsa>,
     _jit_compile_results: SparseMap<Func, CompileResult>,
 
     // generation
@@ -120,9 +129,12 @@ pub struct Compiler {
     repr_fields: ReprFields,
     compile_results: SecondaryMap<Func, CompileResult>,
     signatures: Signatures,
+    ty_order: Vec<Ty>,
 }
 
 impl Compiler {
+
+    /// Creates an compiler instance. For some reason this process is surprisingly slow.
     fn new() -> Self {
         time_report!("initialization of compiler");
 
@@ -234,7 +246,7 @@ impl Compiler {
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
-            _host_isa: host_isa,
+            host_isa,
                         
             entry_id: None,
             object_module,
@@ -243,9 +255,11 @@ impl Compiler {
             repr_fields: ReprFields::new(),
             compile_results: SecondaryMap::new(),
             signatures: Signatures::new(),
+            ty_order: Vec::new(),
         }
     }
 
+    /// All customization of these components should be handled here.
     fn init_jit_module(_input: &CmdInput) -> (JITModule, Box<dyn TargetIsa>) {
         let isa = {
             let setting_builder = cranelift_codegen::settings::builder();
@@ -267,6 +281,7 @@ impl Compiler {
         (JITModule::new(builder), isa)
     }
 
+    /// All target configuration is performed here.
     fn init_object_module(input: &CmdInput) -> (ObjectModule, Triple) {
         let (isa, triple) = {
             let mut setting_builder = cranelift_codegen::settings::builder();
@@ -322,6 +337,11 @@ impl Compiler {
         (object_module, triple)
     }
 
+    /// All source code is loaded into memory here.
+    /// 
+    /// TODO: Try to use streams instead of `read_to_string`, Files 
+    /// could get loaded while parsing, though performance improvement 
+    /// is questionable.
     fn load_modules(&mut self) {
         time_report!("loading of modules");
 
@@ -352,6 +372,7 @@ impl Compiler {
         self.module_order = module_order;
     }
 
+    /// every module imports set of builtin constructs, work is done here
     fn load_builtin_scope_items(&mut self, source: Source) {
         for item in self.modules[self.builtin_source.source].items.iter() {
             self.scope
@@ -360,6 +381,9 @@ impl Compiler {
         }
     }
 
+    /// The module imports are read from temporary ast and minimal data is preserved.
+    /// 
+    /// TODO: Could there be an option to optimize this?
     fn build_scope(&mut self, source: Source) {
         self.scope.dependencies.clear();
         if let Some(imports) = ModuleImports::new(&self.ast, &self.sources).imports() {
@@ -384,6 +408,8 @@ impl Compiler {
         }
     }
 
+    /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
+    /// before and after this function.
     fn build_types(&mut self, stage: usize, source: Source, ty_buffer: &mut Vec<Ty>) {
         ty_buffer.extend(
             self.modules[source]
@@ -398,6 +424,8 @@ impl Compiler {
         }
     }
 
+    /// Similar to `Self::build_types` but for functions. This action depends on types 
+    /// so it has to be called after.
     fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
         func_buffer.extend(
             self.modules[source]
@@ -429,19 +457,36 @@ impl Compiler {
         }
     }
 
+    /// Compute the type layouts. This is only used for incremental 
+    /// computation while jit-compiling macros.
     fn build_layouts(&mut self, bottom: usize) {
         let iter = (bottom..self.types.len()).map(|i| {
             let ty = Ty::new(i);
             ty
         });
+        
         for ty in iter.clone() {
             self.ty_graph.add_vertex(ty);
         }
-        layout_builder!(self).build_layouts(&self.ty_graph);
-        build_reprs(self.object_module.isa().pointer_type(), &mut self.reprs, iter);
+
+        let check_point = self.ty_order.len();
+        if let Err(cycle) = self.ty_graph.total_ordering(&mut self.ty_order) {
+            self.diagnostics.push(TyError::InfinitelySizedType {
+                cycle, 
+            });
+        }
+
+        layout_builder!(self).build_layouts(&self.ty_order[check_point..]);
+        build_reprs(self.host_isa.pointer_type(), &mut self.reprs, iter);
         self.ty_graph.clear();
     }
 
+    /// Probably the slowest stage in frontend. Building Tir means 
+    /// type-checking all imported source code. Parsing is also included
+    /// so that ast does not have to be accumulated for all files. Types are 
+    /// checked one ta the time but Tir is accumulated. Tir is also generic 
+    /// and instances are not materialized here but rather the Tir has notion 
+    /// of generic calls.
     fn build_tir(&mut self) {
         time_report!("building of tir");
 
@@ -501,6 +546,10 @@ impl Compiler {
         }
     }
 
+    /// Incr data needs to be converted into a form understood be compiler components. The hashes
+    /// are dispatched into entities uniquely allocated by compiler. Point is that the compiler
+    /// can allocate function entities differently but ID should never change fi source file haven't been 
+    /// changed.
     fn incr_data_to_compile_result(&self, incr_func_data: &IncrFuncData) -> CompileResult {
         let bytes = incr_func_data.bytes.clone();
         let relocs = incr_func_data.reloc_records
@@ -523,6 +572,8 @@ impl Compiler {
         }
     }
 
+    /// here we try to skip the function compilation by retrieving it from incremental data.
+    /// This includes loading all dependant functions as well.
     fn skip_incrementally(
         &mut self, 
         func: Func, 
@@ -576,6 +627,8 @@ impl Compiler {
         true
     }
 
+    /// function swaps all generic types for concrete types, preparing the 
+    /// lowering fo functions in specific type context.
     fn load_generic_params(
         &mut self, 
         id: Func, 
@@ -606,6 +659,12 @@ impl Compiler {
         parent
     }
 
+    /// Function takes tir and translates it into bite code. It uses type swapping to 
+    /// instantiate functions from generic templates. Types still need to be instantiated 
+    /// and allocated.
+    /// 
+    /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
+    /// Though this may require cloning type context.
     fn generate(&mut self) {
         time_report!("generating");
 
@@ -710,8 +769,8 @@ impl Compiler {
                 func_meta: &self.func_meta,
             }.generate();
 
-            println!("{}", self.sources.display(self.func_meta[parent].name));
-            println!("{}", ctx.func.display());
+            // println!("{}", self.sources.display(self.func_meta[parent].name));
+            // println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
             ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
@@ -734,6 +793,10 @@ impl Compiler {
         self.signatures = signatures;
     }
 
+    /// Only reachable functions are being included in final executable. 
+    /// Which functions are used is determined here. First vec contains 
+    /// functions that have local byte-code, second contains imports that 
+    /// should only be imported.
     fn collect_used_funcs(&mut self) -> (Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
 
@@ -779,6 +842,7 @@ impl Compiler {
         (frontier, to_link)
     }
 
+    /// Object file is being created here. Only reachable functions are included.
     fn build_object(&mut self) {
         time_report!("building object file");
 
@@ -853,6 +917,8 @@ impl Compiler {
         }
     }
 
+    /// All compiled functions are saved. That means their byte-code 
+    /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
 
@@ -902,6 +968,9 @@ impl Compiler {
         self.incr.save(&self.incr_path).unwrap();
     }
 
+    /// Linking is last and destructing stage of compilation.
+    /// It also takes a tall as external linker needs to be booted.
+    /// Currently, only MSVC linker is supported.
     fn link(self) {
         time_report!("linking");
 
@@ -935,6 +1004,8 @@ impl Compiler {
         assert!(output.status.success(), "{:?}", output.status);
     }
 
+    /// Function iterates trough all possible diagnostic options, 
+    /// logs them and if errors are encountered, exits.
     fn log_diagnostics(&self) {
         if self.diagnostics.is_empty() {
             return;
@@ -991,6 +1062,8 @@ impl Compiler {
         exit!();
     }
 
+    /// All stages glued together perform compilation. Calling this is preferable, but
+    /// stages of compilation may be exposed as public API.
     pub fn compile() {
         time_report!("compilation");
 
@@ -1016,6 +1089,9 @@ impl Compiler {
     }
 }
 
+/// We need to know if compiler is sync with incremental data. 
+/// This si simplest most optimal solution that plays well with 
+/// development cycle. 
 fn get_exe_modification_time() -> Option<SystemTime> {
     std::fs::metadata(&std::env::current_exe().ok()?)
         .map(|m| m.modified())
@@ -1023,6 +1099,8 @@ fn get_exe_modification_time() -> Option<SystemTime> {
         .ok()
 }
 
+/// Sub command handles parsing of command line arguments
+/// for all subcommands.
 pub enum Subcommand {
     Compile(PathBuf),
     None,
@@ -1031,6 +1109,7 @@ pub enum Subcommand {
 const SUBCOMMANDS: &'static str = "c";
 
 impl Subcommand {
+    /// Builds a subcommand based of command line input.
     pub fn new(input: &CmdInput) -> Self {
         let Some(subcommand) = input.args().get(0) else {
             println!("usage: catalyst {INFO}<sub>{END} ...");
@@ -1040,7 +1119,7 @@ impl Subcommand {
 
         match subcommand.as_str() {
             "c" => {
-                let path = input.field("path").unwrap_or(".");
+                let path = input.args().get(1).map(String::as_str).unwrap_or(".");
                 return Self::Compile(PathBuf::from(path));
             }
             sub => {
@@ -1051,6 +1130,7 @@ impl Subcommand {
         }
     }
 
+    /// Returns a path to the input project.
     fn root_path(&self) -> Option<&Path> {
         match self {
             Self::Compile(path) => Some(path),
@@ -1058,6 +1138,7 @@ impl Subcommand {
         }
     }
 }
+
 
 pub struct TimeReport {
     start: Instant,

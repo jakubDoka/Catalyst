@@ -153,15 +153,9 @@ impl<'a> LayoutBuilder<'a> {
         }
     }
 
-    pub fn build_layouts(&mut self, graph: &Graph<Ty>) {
-        let order = {
-            let mut vec: Vec<Ty> = Vec::with_capacity(self.types.len());
-            graph.total_ordering(&mut vec).unwrap();
-            vec
-        };
-
+    pub fn build_layouts(&mut self, order: &[Ty]) {
         self.reprs.resize(self.types.len());
-        for id in order {
+        for &id in order {
             self.build_size(id);
         }
     }
