@@ -15,7 +15,7 @@ pub mod ident_hasher;
 pub mod bound_verifier;
 
 pub use scope::{ScopeBuilder, ScopeContext};
-pub use tir::TirBuilder;
+pub use tir::{TirBuilder, PatternMeta};
 pub use ty::TyBuilder;
 pub use ident_hasher::IdentHasher;
 pub use bound_verifier::BoundVerifier;

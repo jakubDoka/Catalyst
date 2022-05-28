@@ -1,7 +1,8 @@
 use std::ops::Not;
 
-use incr::Incr;
-use module_types::module::Modules;
+use incr::*;
+use module_types::*;
+use matching::*;
 
 use crate::{scope::ScopeContext, TyError, *};
 
@@ -26,6 +27,7 @@ pub struct TirBuilder<'a> {
     pub diagnostics: &'a mut errors::Diagnostics,
     pub incr: &'a mut Incr,
     pub func_meta: &'a mut FuncMeta,
+    pub pattern_graph: &'a mut PatternGraph<Tir, PatternMeta>,
 }
 
 #[macro_export]
@@ -52,6 +54,7 @@ macro_rules! tir_builder {
             &mut $self.diagnostics,
             &mut $self.incr,
             &mut $self.func_meta,
+            &mut $self.pattern_graph,
         )
     };
 }
@@ -78,6 +81,7 @@ impl<'a> TirBuilder<'a> {
         diagnostics: &'a mut errors::Diagnostics,
         incr: &'a mut Incr,
         func_meta: &'a mut FuncMeta,
+        pattern_graph: &'a mut PatternGraph<Tir, PatternMeta>,
     ) -> Self {
         TirBuilder {
             func,
@@ -100,6 +104,7 @@ impl<'a> TirBuilder<'a> {
             diagnostics,
             incr,
             func_meta,
+            pattern_graph,
         }
     }
 
@@ -314,6 +319,307 @@ impl<'a> TirBuilder<'a> {
         
         let expr = self.build_expr(expr)?;
 
+        self.pattern_graph.clear();
+
+        // load match arms
+        let mut temp = vec![];
+        for &arm in self.ast.children(body) {
+            let &[pat, body] = self.ast.children(arm) else {
+                unreachable!();
+            };
+
+            drop(self.build_pattern(pat, expr, &mut temp, 1));
+
+            let block = {
+                let inner_block = {
+                    self.scope.mark_frame();
+                    self.temp.mark_frame();
+    
+                    for node in &temp {
+                        if let (PatternMeta::Var(name), Some(value)) = (node.value, node.meta.expand()) {
+                            let id = self.sources.id_of(name);
+                            let item = ScopeItem::new(value, name);
+                            self.scope.push_item(id, item);
+    
+                            self.temp.push({
+                                let kind = TirKind::Variable(value);
+                                let ty = self.builtin_types.nothing;
+                                let ent = TirEnt::new(kind, ty, name);
+                                self.body.ents.push(ent)
+                            })
+                        }
+                    }
+    
+                    let expr = self.build_expr(body)?;
+                    self.temp.push(expr);
+                    
+                    self.scope.pop_frame();
+
+                    self.body.ents.push({
+                        let content = self.temp.save_and_pop_frame(&mut self.body.cons);
+                        let kind = TirKind::Block(content);
+                        TirEnt {
+                            kind,
+                            ..self.body.ents[expr]
+                        }
+                    })
+                };
+
+                self.body.ents.push({
+                    let kind = TirKind::MatchBlock(inner_block);
+                    let ty = self.builtin_types.nothing;
+                    let span = self.ast.nodes[body].span;
+                    TirEnt::new(kind, ty, span)
+                })
+            };
+
+            temp.push(PatternLevelData {
+                meta: block.into(),
+                ..Default::default()
+            });
+
+            self.pattern_graph.add_branch(temp.drain(..));
+        }
+
+        self.pattern_graph.build_graph();
+
+        self.build_match_branching()
+    }
+
+    fn build_match_branching(&mut self) -> errors::Result<Tir> {
+        todo!()
+    }
+
+    fn build_pattern(&mut self, ast: Ast, expr: Tir, branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>, depth: u32) -> errors::Result {
+        let AstEnt { kind, span, .. } = self.ast.nodes[ast]; 
+        match kind {
+            AstKind::StructPattern | AstKind::TupleStructPattern => {
+                let is_tuple = kind == AstKind::TupleStructPattern;
+                let &[path, body] = self.ast.children(ast) else {
+                    unreachable!();
+                };
+                
+                let low_expr = self.build_path_match(expr, path, branch, depth)?;
+                let ty = self.body.ents[low_expr].ty;
+    
+                
+                let TyKind::Struct(fields) = self.types[ty].kind else {
+                    unreachable!();
+                };
+                  
+                let mut last_i = 0;
+                for (i, &field) in self.ast.children(body).iter().enumerate() {
+                    let ((field_id, field_ty), field, i) = if is_tuple {
+                        let span = self.ast.nodes[field].span;
+                        let Ok(res) = self.get_field(ty, i, span) else {
+                            continue;
+                        };
+                        (res, field, i)
+                    } else {
+                        let &[name, mut pattern] = self.ast.children(field) else {
+                            unreachable!("{}", self.sources.display(span));
+                        };
+        
+                        // shorthand case
+                        if pattern.is_reserved_value() {
+                            pattern = name;
+                        }
+        
+                        let span = self.ast.nodes[name].span;
+                        let id = self.sources.id_of(span);
+    
+                        let Ok(res) = self.find_field(ty, id, span) else {
+                            continue;
+                        };
+
+                        let i = self.ty_comps[res.0].index;
+
+                        (res, pattern, i as usize)
+                    };
+
+                    let field_access = {
+                        let kind = TirKind::FieldAccess(low_expr, field_id);
+                        let ent = TirEnt::new(kind, field_ty, span);
+                        self.body.ents.push(ent)
+                    };
+
+                    // push skipped fields
+                    for filed in &self.ty_comps.get(fields)[last_i..i] {
+                        let range = self.ty_range(filed.ty);
+                        let data = PatternLevelData {
+                            range,
+                            coverage: range,
+                            depth,
+                            
+                            ..Default::default()
+                        };
+                        branch.push(data);
+                    }
+                    last_i = i;
+
+                    drop(self.build_pattern(field, field_access, branch, depth + 1));
+                }
+
+                for filed in &self.ty_comps.get(fields)[last_i..] {
+                    let range = self.ty_range(filed.ty);
+                    let data = PatternLevelData {
+                        range,
+                        coverage: range,
+                        depth,
+                        
+                        ..Default::default()
+                    };
+                    branch.push(data);
+                }
+            },
+            
+            AstKind::Path => drop(self.build_path_match(expr, ast, branch, depth)?),
+            
+            AstKind::Ident => {
+                let id = self.sources.id_of(span);
+                let range = self.ty_range(self.body.ents[expr].ty); 
+                let (meta, value) = if id == ID::new("_") {
+                    (None.into(), PatternMeta::Default)
+                } else {
+                    (Some(expr).into(), PatternMeta::Var(span))
+                };
+                let data = PatternLevelData {
+                    meta,
+                    range,
+                    coverage: range,
+                    depth,
+                    value,
+                };
+                branch.push(data);
+            },
+            
+            AstKind::Int |
+            AstKind::Bool |
+            AstKind::Char => {
+                let tir = self.build_expr(ast)?;
+                let ty = self.body.ents[expr].ty;
+                self.infer_tir_ty(tir, ty, |_, _, _| todo!())?;
+                
+                // get comparator for given types
+                // let func = {
+                //     let id = {
+                //         let ty_id = self.types[ty].id;
+                //         let op_id = ID::new("==");
+                //         ID::binary(ty_id, op_id)
+                //     };
+                //     self.scope.get::<Func>(self.diagnostics, id, span)?
+                // };
+
+                // let comparison = {
+                //     let args = self.body.cons.push(&[expr, tir]);
+                //     let kind = TirKind::Call(TyList::default(), func, args);
+                //     let ty = self.builtin_types.bool;
+                //     let ent = TirEnt::new(kind, ty, span);
+                //     self.body.ents.push(ent)
+                // };
+
+                let data = {
+                    let coverage = match self.body.ents[tir].kind {
+                        TirKind::IntLit(value) => PatternRange::new(value..value),
+                        TirKind::BoolLit(value) => PatternRange::new(value..value),
+                        TirKind::CharLit(value) => PatternRange::new(value..value),
+                        _ => unreachable!(),
+                    };
+                    let range = self.ty_range(ty);
+                    PatternLevelData {
+                        coverage,
+                        range,
+                        depth,
+                        meta: Some(tir).into(),
+                        value: PatternMeta::Cmp(expr)
+                    }
+                };
+
+                branch.push(data);
+            },
+
+            kind => todo!("{kind:?}"),
+        }
+
+        Ok(())
+    }
+
+    fn build_path_match(&mut self, expr: Tir, ast: Ast, branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>, depth: u32) -> errors::Result<Tir> {
+        let TirEnt { ty: expr_ty, .. } = self.body.ents[expr];
+        let id = ident_hasher!(self).ident_id(ast, None)?;
+        let span = self.ast.nodes[ast].span;
+
+        if let TyEnt { kind: TyKind::Enum(discriminant_ty, ..), id: enum_id, .. } = self.types[expr_ty] {
+            let id = ID::field(enum_id, id);
+            let Some(&variant) = self.ty_comp_lookup.get(id) else {
+                todo!("{}", span.log(self.sources));                        
+            };
+            let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
+
+            {
+                let lit_value = index as i64 - 1;
+                let flag = self.int_lit(lit_value, discriminant_ty);
+    
+                let flag_field = {
+                    let (field, _) = self.get_field(expr_ty, 0, span)?;
+                    let kind = TirKind::FieldAccess(expr, field);
+                    let ent = TirEnt::new(kind, variant, span);
+                    self.body.ents.push(ent)
+                };
+
+                let data = PatternLevelData {
+                    meta: Some(flag).into(),
+                    coverage: PatternRange::new(lit_value..lit_value),
+                    depth: 0,
+                    range: self.ty_range(discriminant_ty),
+                    value: PatternMeta::Cmp(flag_field),
+                };
+
+                branch.push(data);
+            }
+
+            let value = {
+                let (field, _) = self.get_field(expr_ty, 1, span)?;
+                let kind = TirKind::FieldAccess(expr, field);
+                let ent = TirEnt::new(kind, variant, span);
+                self.body.ents.push(ent)
+            };
+            
+            Ok(value)
+        } else {
+            let data = PatternLevelData {
+                depth,
+                ..Default::default()   
+            };
+
+            branch.push(data);
+
+            Ok(expr)
+        }
+    }
+
+    fn ty_range(&self, ty: Ty) -> PatternRange {
+        match self.types[ty].kind {
+            TyKind::Int(value) => match value {
+                8 => PatternRange::new(i8::MIN..i8::MAX),
+                16 => PatternRange::new(i16::MIN..i16::MAX),
+                32 => PatternRange::new(i32::MIN..i32::MAX),
+                64 => PatternRange::new(i64::MIN..i64::MAX),
+                _ => PatternRange::new(isize::MIN..isize::MAX),
+            },
+            TyKind::Bool => PatternRange::new(0..1),
+            _ => unreachable!(),
+        }
+    }
+
+    /*
+    fn build_match(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let &[expr, body] = self.ast.children(ast) else {
+            unreachable!();
+        };
+        
+        let expr = self.build_expr(expr)?;
+
         let mut ret_ty = None;
         let mut terminating = true;
         let mut bindings = Vec::new();
@@ -514,6 +820,7 @@ impl<'a> TirBuilder<'a> {
             Ok((expr, None))
         }
     }
+    */
 
     fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast.nodes[ast].span;
@@ -1509,5 +1816,18 @@ impl<'a> TirBuilder<'a> {
         let kind = TirKind::IntLit(value);
         let ent = TirEnt::new(kind, ty, self.builtin_types.discriminant);
         self.body.ents.push(ent)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum PatternMeta {
+    Cmp(Tir),
+    Var(Span),
+    Default,
+}
+
+impl Default for PatternMeta {
+    fn default() -> Self {
+        PatternMeta::Default
     }
 }

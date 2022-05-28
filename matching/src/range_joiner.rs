@@ -1,29 +1,29 @@
-use crate::ranges::IntRange;
+use crate::ranges::PatternRange;
 
 #[derive(Clone)]
 pub struct RangeJoiner {
-    range: IntRange,
-    indices: Vec<IntRange>,
+    range: PatternRange,
+    indices: Vec<PatternRange>,
 }
 
 impl RangeJoiner {
     pub fn new() -> Self {
         Self {
-            range: IntRange::new(0..=0, 0),
+            range: PatternRange::new(0..0),
             indices: Vec::new(),
         }
     }
 
-    pub fn prepare_for(&mut self, range: IntRange) {
+    pub fn prepare_for(&mut self, range: PatternRange) {
         self.indices.clear();
         self.range = range;
     }
 
-    pub fn exhaust(&mut self, range: IntRange) -> bool {
+    pub fn add_range(&mut self, range: PatternRange) -> bool {
         let Some(range) = range.intersect(&self.range) else {
             return false;
         };
-        
+
         let (start, end) = (range.start, range.end);
 
         if self.exhausted() {
@@ -95,16 +95,16 @@ impl RangeJoiner {
     }
 
     pub fn exhausted(&self) -> bool {
-        (self.indices.len() == 1 && self.indices[0] == self.range) || self.range.bias == 0
+        (self.indices.len() == 1 && self.indices[0] == self.range) || self.range.start == self.range.end
     }
 
-    pub fn missing(&self) -> Vec<IntRange> {
+    pub fn missing(&self) -> Vec<PatternRange> {
         let mut missing = Vec::new();
         self.missing_to(&mut missing);
         missing
     }
 
-    pub fn missing_to(&self, buffer: &mut Vec<IntRange>) {
+    pub fn missing_to(&self, buffer: &mut Vec<PatternRange>) {
         if self.exhausted() {
             return;
         }
@@ -116,23 +116,21 @@ impl RangeJoiner {
 
         let edge = self.indices.first().unwrap();
         if self.range.start != edge.start {
-            buffer.push(IntRange::new(
-                self.range.start..=edge.start - 1,
-                self.range.bias,
+            buffer.push(PatternRange::new(
+                self.range.start..edge.start - 1,
             ));
         }
 
         buffer.extend(
             self.indices
                 .windows(2)
-                .map(|w| IntRange::new(w[0].end + 1..=w[1].start - 1, self.range.bias)),
+                .map(|w| PatternRange::new(w[0].end + 1..w[1].start - 1)),
         );
 
         let edge = self.indices.last().unwrap();
         if self.range.end != edge.end {
-            buffer.push(IntRange::new(
-                edge.end + 1..=self.range.end,
-                self.range.bias,
+            buffer.push(PatternRange::new(
+                edge.end + 1..self.range.end,
             ));
         }
     }

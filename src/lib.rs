@@ -23,19 +23,19 @@ use instance::*;
 
 use instance::func::{MirBuilderContext, PatternStacks};
 use instance::repr::{build_builtin_reprs, build_reprs};
+use target_lexicon::Triple;
+
 use modules::*;
-use modules::module::ModuleImports;
 use parser::*;
 use lexer::*;
 use module_types::*;
 use instance_types::*;
 use storage::*;
-use target_lexicon::Triple;
 use typec_types::*;
 use typec::*;
 use ast::*;
 use gen::*;
-
+use matching::*;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -105,6 +105,7 @@ pub struct Compiler {
     scope_context: ScopeContext,
     tir_temp_body: TirData,
     func_meta: FuncMeta,
+    pattern_graph: PatternGraph<Tir, PatternMeta>, 
 
     // jit
     jit_module: JITModule,
@@ -229,6 +230,7 @@ impl Compiler {
             tir_temp_body: TirData::new(),
             scope_context: ScopeContext::new(),
             func_meta,
+            pattern_graph: PatternGraph::new(),
 
             jit_module,
             jit_compile_results: SparseMap::new(),

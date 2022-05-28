@@ -58,8 +58,7 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
-    MatchArm(Tir, Tir),
-    Match(Tir, TirList),
+    MatchBlock(Tir),
     BitCast(Tir),
     DerefPointer(Tir),
     TakePtr(Tir),

@@ -1,6 +1,7 @@
 use std::{ops::{IndexMut, RangeBounds, Range}, path::{PathBuf, Path}};
 
-use logos::*;
+use logos::Logos;
+
 use storage::*;
 
 macro_rules! gen_kind {
@@ -11,10 +12,10 @@ macro_rules! gen_kind {
             Error,
             
             
-            #[regex(r"[ \r\t]+", skip)]
+            #[regex(r"[ \r\t]+", logos::skip)]
             Space,
 
-            #[regex(r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)", skip)]
+            #[regex(r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)", logos::skip)]
             Comment,
 
             $(

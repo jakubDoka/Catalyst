@@ -60,3 +60,4 @@ gen = { path = "gen" }
 cli = { path = "cli" }
 storage = { path = "storage" }
 incr = { path = "incr" }
+matching = { path = "matching" }

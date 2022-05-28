@@ -15,3 +15,4 @@ ast = { path = "../ast" }
 typec_types = { path = "../typec_types" }
 storage = { path = "../storage" }
 incr = { path = "../incr" }
+matching = { path = "../matching" }

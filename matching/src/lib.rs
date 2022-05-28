@@ -2,20 +2,841 @@
 #![feature(let_else)]
 #![feature(bool_to_option)]
 #![feature(let_chains)]
+#![feature(result_option_inspect)]
 
 pub mod range_joiner;
 pub mod range_splitter;
 pub mod ranges;
 
+use std::{collections::{HashMap, VecDeque}, fmt::Debug};
+
 pub use range_joiner::RangeJoiner;
 pub use range_splitter::RangeSplitter;
-pub use ranges::{IntRange, AnalyzableRange};
-
-use std::{collections::HashMap, fmt::Debug, vec};
+pub use ranges::{PatternRange, RangeSerde};
 
 use storage::*;
 
-#[derive(Clone)]
+pub struct PatternGraph<E: EntityRef + Default + ReservedValue, K: Default + Clone> {
+    column_ranges: Vec<PatternRange>,
+    nodes: PrimaryMap<PatternNode, PatternNodeEnt<E>>,
+    slices: StackMap<PatternNodeList, PatternNode>,
+    branches: StackMap<Branch, PatternLevelData<E, K>>,
+    meta_data: SecondaryMap<E, PatternMetaData<K>>,
+    redirects: ListPool<E>,
+}
+
+impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E, K> {
+    const ROOT_NODE: PatternNode = PatternNode(0);
+
+    pub fn new() -> Self {
+        Self {
+            column_ranges: Vec::new(),
+            nodes: PrimaryMap::new(),
+            slices: StackMap::new(),
+            branches: StackMap::new(),
+            meta_data: SecondaryMap::new(),
+            redirects: ListPool::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.column_ranges.clear();
+        self.nodes.clear();
+        self.slices.clear();
+        self.branches.clear();
+        self.meta_data.clear();
+        self.redirects.clear();
+    }
+
+    pub fn meta_data_of(&self, entity: E) -> &PatternMetaData<K> {
+        &self.meta_data[entity]
+    }
+
+    pub fn add_branch(&mut self, branch_nodes: impl IntoIterator<Item = PatternLevelData<E, K>>) -> Branch {
+        self.branches.push_iter(branch_nodes)
+    }
+
+    pub fn build_graph(&mut self) {
+        self.normalize_branches();
+        
+        let mut roots = VecDeque::new();
+        roots.push_back(Self::ROOT_NODE);
+        let mut temp = vec![];
+        let mut lookup = HashMap::new();
+        let mut exhaustive = true;
+        let mut range_splitter = RangeSplitter::new();
+
+        for &column in self.column_ranges.iter() {
+            while let Some(root) = roots.pop_front() {
+                let root_ent = self.nodes[root];
+
+                range_splitter.split(
+                    column,
+                    self.slices.get(root_ent.children)
+                        .iter()
+                        .map(|&child| self.nodes[child].coverage)
+                );
+
+                lookup.clear();
+                temp.clear();
+                for i in 0..self.slices.len_of(root_ent.children) {
+                    let child = self.slices.get(root_ent.children)[i];
+                    let child_ent = self.nodes[child];
+                    for segment in range_splitter.segments_of(child_ent.coverage) {
+                        if let Some(&node) = lookup.get(&segment) {
+                            self.nodes[node].children = self.slices.join(self.nodes[node].children, child_ent.children);
+                            continue;
+                        }
+
+                        let ent = PatternNodeEnt {
+                            coverage: segment,
+                            ..child_ent
+                        };
+                        let node = self.nodes.push(ent);
+                        lookup.insert(segment, node);
+                        roots.push_back(node);
+                        temp.push(node);
+                    }
+                }
+
+                let Some(&last) = temp.last() else {
+                    continue;
+                };
+
+                for meta in temp.iter().filter_map(|&node| self.nodes[node].meta.expand()) {
+                    self.meta_data[meta].reachability.upgrade(Reachability::Reachable);
+                }
+
+                if let Some(meta) = self.nodes[last].meta.expand() {
+                    self.meta_data[meta].reachability.upgrade(Reachability::ReachableUnchecked);
+                } 
+
+                let new_children = self.slices.push(&temp);
+                self.nodes[root].children = new_children;
+                
+                temp.sort_unstable_by_key(|&node| self.nodes[node].coverage.end);
+                exhaustive &= is_exhaustive(
+                    column, 
+                    temp
+                        .iter()
+                        .map(|&node| self.nodes[node].coverage),
+                );
+            }
+        }
+
+        assert!(exhaustive)
+    }
+
+    fn normalize_branches(&mut self) {
+        let mut temp = vec![];
+        let mut progress = vec![0; self.branches.len()];
+
+        loop {
+            let max = self.branches
+                .values()
+                .enumerate()
+                .filter_map(|(i, value)| value.get(progress[i]))
+                .max_by_key(|value| value.depth)
+                .unwrap();
+            
+            self.column_ranges.push(max.range);
+            
+            for (i, branch) in self.branches.values().enumerate() {
+                let Some(value) = branch.get(progress[i]) else {
+                    temp.push((max.range, branch.last().unwrap().meta));
+                    continue;
+                };
+                if value.depth == max.depth {
+                    temp.push((value.coverage, value.meta));
+                    progress[i] += 1;
+                } else {
+                    temp.push((max.range, value.meta));
+                }
+            }
+
+            // check if all progresses are at the end
+            let should_stop = self.branches
+                .values()
+                .enumerate()
+                .all(|(i, value)| value.len() == progress[i]);
+
+            if should_stop {
+                break;
+            }
+        }
+
+        let root_children = self.slices.alloc(self.branches.len(), PatternNode::reserved_value());
+        let root_node = self.nodes.push(PatternNodeEnt {
+            children: root_children,
+            ..PatternNodeEnt::default()
+        });
+        assert!(root_node == Self::ROOT_NODE);
+
+        // Materialize branches to graph.
+        for i in 0..self.branches.len() {
+            let mut root = PatternNode::reserved_value();
+            for (coverage, meta) in temp.iter().skip(i).step_by(self.branches.len()).copied().rev() {
+                let children = if root.is_reserved_value() {
+                    PatternNodeList::reserved_value()
+                } else {
+                    self.slices.push(&[root])
+                };
+                let node = self.nodes.push(PatternNodeEnt {
+                    coverage,
+                    children,
+                    meta
+                });
+                root = node;
+            }
+            self.slices.get_mut(root_children)[i] = root;
+        }
+    }
+
+    pub fn log(&self) where E: Debug {
+        self.log_recursive(Self::ROOT_NODE, 0);
+    }
+
+    fn log_recursive(&self, node: PatternNode, depth: usize) where E: Debug {
+        let ent = self.nodes[node];
+        
+        let meta = ent.meta.map(|meta| self.meta_data[meta].reachability);
+     
+        println!("{} {:?} {:?} {:?}", " ".repeat(depth), ent.coverage.decode::<i32>(), meta, ent.meta);
+
+        for &child in self.slices.get(ent.children) {
+            self.log_recursive(child, depth + 1);
+        }
+    }
+}
+
+fn is_exhaustive(range: PatternRange, ascending_disjoint_sub_ranges: impl IntoIterator<Item = PatternRange>) -> bool {
+    let mut sub_ranges = ascending_disjoint_sub_ranges.into_iter();
+
+    let Some(first) = sub_ranges.next() else {
+        return true;
+    };
+
+    if first.start != range.start {
+        return false;
+    }
+
+    let mut prev = first;
+    for range in sub_ranges {
+        if prev.end + 1 != range.start {
+            return false;
+        }
+        prev = range;
+    }
+
+    prev.end == range.end
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct PatternLevelData<E: EntityRef + Default + ReservedValue, K: Default + Clone> {
+    pub coverage: PatternRange,
+    pub range: PatternRange,
+    pub depth: u32,
+    pub meta: PackedOption<E>,
+    pub value: K,
+}
+
+#[derive(Clone, Copy, Default)]
+struct PatternNodeEnt<E: EntityRef + ReservedValue> {
+    children: PatternNodeList,
+    coverage: PatternRange,
+    meta: PackedOption<E>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct PatternMetaData<K: Default + Clone> {
+    pub reachability: Reachability,
+    pub value: K,
+}
+
+
+impl Reachability {
+    fn upgrade(&mut self, other: Reachability) {
+        *self = other;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Reachability {
+    Unreachable,
+    Reachable,
+    ReachableUnchecked,
+}
+
+impl Default for Reachability {
+    fn default() -> Self {
+        Reachability::Unreachable
+    }
+}
+
+gen_entity!(Branch);
+gen_entity!(PatternNode);
+gen_entity!(PatternNodeList);
+
+#[cfg(test)]
+mod test {
+    use std::ops::Range;
+
+    use super::*;
+    use super::Reachability::*;
+
+    #[test]
+    fn base_case() {
+        run_test(
+            0..1,
+            [
+                &[(0..1, 0)],
+            ],
+            [
+                &[ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..1,
+            [
+                &[(0..0, 0), (0..1, 1)],
+                &[(1..1, 0)],
+            ],
+            [
+                &[Reachable, ReachableUnchecked],
+                &[ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..1,
+            [
+                &[(0..0, 0), (0..0, 1)],
+                &[(0..0, 0), (0..1, 1)],
+                &[(1..1, 0)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[Unreachable, ReachableUnchecked],
+                &[ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..1,
+            [
+                &[(0..0, 0), (0..0, 1)],
+                &[(0..1, 0), (1..1, 1)],
+                &[(0..1, 0)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[ReachableUnchecked, Reachable],
+                &[ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..3,
+            [
+                &[(0..2, 0), (0..2, 0)],
+                &[(2..3, 0), (3..3, 0)],
+                &[(2..2, 0), (0..3, 0)],
+                &[(0..3, 0), (0..3, 0)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[ReachableUnchecked, Reachable],
+                &[Unreachable, Unreachable],
+                &[Unreachable, ReachableUnchecked],
+            ],
+        );
+
+        run_test(
+            0..3,
+            [
+                &[(0..0, 0), (0..3, 1), (0..3, 0)],
+                &[(1..2, 0), (0..2, 0)],
+                &[(1..2, 0), (0..3, 0)],
+                &[(3..3, 0), (0..3, 1), (0..3, 0)],
+            ],
+            [
+                &[Reachable, ReachableUnchecked, ReachableUnchecked],
+                &[Reachable, Reachable],
+                &[Unreachable, ReachableUnchecked],
+                &[ReachableUnchecked, ReachableUnchecked, ReachableUnchecked],
+            ],
+        );
+    }
+
+    gen_entity!(TestEntity);
+
+    fn run_test<const H: usize>(
+        range: Range<i32>, 
+        branches: [&[(Range<i32>, u32)]; H],
+        reachability: [&[Reachability]; H],
+    ) {
+        let mut tree = PatternGraph::new();
+        let range = PatternRange::new(range);
+
+        let mut node_counter = 0;
+
+        for branch in branches.clone() {
+            tree.add_branch(branch.iter().map(|(coverage, id)| PatternLevelData {
+                coverage: PatternRange::new(coverage.clone()),
+                range: range.clone(),
+                depth: *id,
+                meta: { 
+                    node_counter += 1;
+                    Some(TestEntity::new(node_counter - 1)).into()
+                },
+                value: (),
+            }));
+        }
+
+        tree.build_graph();
+
+        let mut node_counter = 0;
+
+        let mut failed = false;
+        for (_i, reach) in reachability.into_iter().enumerate() {
+            for (_j, &reach) in reach.iter().enumerate() {
+                let id = TestEntity::new(node_counter);
+                let got = tree.meta_data[id].reachability;
+                if got != reach {
+                    print!("{:?} ", got);
+                    failed = true;
+                } else {
+                    print!("OK ");
+                }
+                node_counter += 1;
+            }
+            println!();
+        }
+        println!();
+        
+        if failed {
+        }
+        tree.log();
+
+        assert!(!failed);
+    } 
+}
+
+/*
+pub struct PatternGraphBuilder<'a> {
+    graph: &'a mut PatternGraph,
+}
+
+impl<'a> PatternGraphBuilder<'a> {
+    pub fn new(graph: &'a mut PatternGraph) -> Self {
+        graph.clear();
+        Self { graph }
+    }
+
+    pub fn create_node(&mut self, kind: PatternNodeKind) -> PatternNode {
+        self.graph.nodes.push(PatternNodeEnt { 
+            kind, 
+            ..Default::default()
+        })
+    }
+
+    pub fn create_range(&mut self, range: Range<impl RangeSerde>) -> PatternRange {
+        
+        self.graph.range_storage.insert(PatternRangeEnt::new(range))
+    }
+
+    pub fn create_list(&mut self, slice: &[PatternNode]) -> PatternNodeList {
+        self.graph.slices.push(slice)
+    }
+}
+
+pub struct PatternGraph {
+    nodes: PrimaryMap<PatternNode, PatternNodeEnt>,
+    slices: StackMap<PatternNodeList, PatternNode>,
+
+    range_storage: RangeStorage,
+    range_joiner: RangeJoiner,
+    range_splitter: RangeSplitter,
+    range_lookup: HashMap<PatternRangeEnt, PatternNode>,
+}
+
+impl PatternGraph {
+    pub fn new() -> Self {
+        Self {
+            nodes: PrimaryMap::new(),
+            slices: StackMap::new(),
+
+            range_storage: RangeStorage::new(),
+            range_joiner: RangeJoiner::new(),
+            range_splitter: RangeSplitter::new(),
+            range_lookup: HashMap::new(),
+        }
+    }
+
+    pub fn solve(&mut self, root: PatternNode) {
+        let PatternNodeKind::Or(options) = self.nodes[root].kind else {
+            panic!("Or node must be an Or node");
+        };
+
+        let Some(&first) = self.slices.get(options).first() else {
+            panic!("Or must have at least one option");
+        };
+        
+        match self.nodes[first].kind {
+            PatternNodeKind::And(root, ..) => {
+                let root = Self::root_of(root, &self.nodes);
+
+                let PatternNodeKind::Range(.., range) = self.nodes[root].kind else {
+                    unreachable!();
+                };
+
+                self.range_splitter.split(
+                    self.range_storage[range],
+                    self.slices
+                        .get(options)
+                        .iter()
+                        .map(|&node| self.range_storage[Self::coverage_of(node, &self.nodes)]),
+                );
+
+                self.range_lookup.clear();
+                for i in 0..self.slices.len(options) {
+                    let child = self.slices.get(options)[i];
+                    let coverage = self.range_storage[Self::coverage_of(child, &self.nodes)];
+                    for segment in self.range_splitter.segments_of(coverage) {
+                        if let Some(&node) = self.range_lookup.get(&segment) {
+                            Self::join(node, child, &mut self.nodes, &mut self.slices);
+                            continue;
+                        }
+                    }
+                }
+            },
+
+            PatternNodeKind::Or(..) => panic!("Or node cannot directly contain Or nodes"),
+
+            PatternNodeKind::Range(.., ty) => {
+                self.range_joiner.prepare_for(self.range_storage[ty]);
+
+                for &node in self.slices.get(options).iter() {
+                    if let PatternNodeKind::Wildcard = self.nodes[node].kind {
+                        self.nodes[node].reachability = Reachability::ReachableUnchecked;
+                        return;
+                    }
+
+                    let PatternNodeKind::Range(range, ..) = self.nodes[node].kind else {
+                        unreachable!();
+                    };
+
+                    self.range_joiner.add_range(self.range_storage[range]);
+                    if self.range_joiner.exhausted() {
+                        self.nodes[node].reachability = Reachability::ReachableUnchecked;
+                        return;
+                    }
+
+                    self.nodes[node].reachability = Reachability::Reachable;
+                }
+
+                todo!("Range is not fully covered: {:?}", self.range_joiner.missing());
+            },
+            
+            PatternNodeKind::Wildcard => {
+                // we only need to set reachability of firs wildcard, 
+                // nodes are by default unreachable
+                self.nodes[first].reachability = Reachability::ReachableUnchecked;
+            },
+        }
+    }
+
+    fn join(
+        mut target: PatternNode,
+        mut source: PatternNode,
+        nodes: &mut PrimaryMap<PatternNode, PatternNodeEnt>,
+        slices: &mut StackMap<PatternNodeList, PatternNode>,
+    ) {
+
+        /*
+            And(
+                0,
+                And(
+                    1,
+                    1,
+                ),
+            )
+            And(
+                0, // must be same
+                And(
+                    1,
+                    2,
+                ),
+            )
+
+            And(
+                0,
+                Or(
+                    And(
+                        1,
+                        1,
+                    ),
+                    And(
+                        1,
+                        2,
+                    ),
+                ),
+            )
+
+            And(
+                0,                
+                    And(
+                        1,
+                        Or(1, 2),
+                    ),
+                ),
+            )
+        */ 
+
+        loop {
+            todo!()
+        }
+    }
+
+    fn coverage_of(
+        mut node: PatternNode,
+        nodes: &PrimaryMap<PatternNode, PatternNodeEnt>,
+    ) -> PatternRange {
+        node = Self::root_of(node, nodes);
+        
+        let PatternNodeKind::Range(range, ..) = nodes[node].kind else {
+            unreachable!();
+        };
+
+        range
+    }
+
+    fn root_of(
+        mut node: PatternNode,
+        nodes: &PrimaryMap<PatternNode, PatternNodeEnt>,
+    ) -> PatternNode {
+        while let PatternNodeKind::And(root, ..) = nodes[node].kind {
+            node = root;
+        }
+
+        node
+    }
+
+    pub fn reachability(&self, node: PatternNode) -> Reachability {
+        self.nodes[node].reachability
+    }
+    
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.slices.clear();
+
+        self.range_storage.clear();
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct PatternNodeEnt {
+    reachability: Reachability,
+    kind: PatternNodeKind,
+}
+
+#[derive(Clone, Copy)]
+pub enum PatternNodeKind {
+    And(PatternNode, PatternNode),
+    Or(PatternNodeList),
+    Range(PatternRange, PatternRange),
+    Wildcard,
+}
+
+impl Default for PatternNodeKind {
+    fn default() -> Self {
+        PatternNodeKind::Wildcard
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reachability {
+    Reachable,
+    ReachableUnchecked,
+    Unreachable,
+}
+
+impl Default for Reachability {
+    fn default() -> Self {
+        Reachability::Unreachable
+    }
+}
+
+gen_entity!(PatternRange);
+gen_entity!(PatternNode);
+gen_entity!(PatternNodeList);
+
+struct RangeStorage {
+    lookup: HashMap<u64, PatternRange>,
+    ranges: PrimaryMap<PatternRange, PatternRangeEnt>,
+}
+
+impl RangeStorage {
+    pub fn new() -> Self {
+        Self {
+            lookup: HashMap::new(),
+            ranges: PrimaryMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, range: PatternRangeEnt) -> PatternRange {
+        let hash = {
+            let mut hasher = DefaultHasher::new();
+            range.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        *self.lookup.entry(hash).or_insert_with(|| {
+            self.ranges.push(range)
+        })
+    }
+
+    pub fn clear(&mut self) {
+        self.lookup.clear();
+        self.ranges.clear();
+    }
+}
+
+impl Index<PatternRange> for RangeStorage {
+    type Output = PatternRangeEnt;
+
+    fn index(&self, id: PatternRange) -> &Self::Output {
+        &self.ranges[id]
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! build_pattern_graph {
+        ($target:expr, $(types [ $($range_name:ident: $range_value:expr),* $(,)? ] ,)? root $body:tt) => {
+            {
+                let mut builder = PatternGraphBuilder::new(&mut $target);
+                
+                $($(
+                    let __rng: Range<i32> = $range_value;
+                    let $range_name = builder.create_range(__rng);
+                )*)?
+                
+                build_pattern_graph!(builder, or $body)
+            }
+        };
+    
+        (build_list $builder:expr, [ $($name:ident $($inner:tt)?)* ]) => {
+            {
+                #[allow(unused_mut)]
+                let mut nodes = vec![];
+                $(
+                    nodes.push(build_pattern_graph!($builder, $name $($inner)?));
+                )*
+                $builder.create_list(nodes.as_slice())
+            }
+        };
+        
+        ($builder:expr, or $body:tt) => {
+            {
+                let nodes = build_pattern_graph!(build_list $builder, $body);
+                $builder.create_node(PatternNodeKind::Or(nodes))
+            }
+        };
+    
+        ($builder:expr, tuple [ $($body:tt)* ]) => {
+            build_pattern_graph!(recur_and $builder, $($body)*)
+        };
+
+        (recur_and $builder:expr, $name:ident $body:tt $($other:tt)+) => {
+            {
+                let next = build_pattern_graph!(recur_and $builder, $($other)+);    
+                let current = build_pattern_graph!($builder, $name $body);
+                $builder.create_node(PatternNodeKind::And(current, next)) 
+            }
+        };
+        
+        (recur_and $builder:expr, $name:ident $body:tt) => {
+            build_pattern_graph!($builder, $name $body)
+        };
+
+        ($builder:expr, enum [ id $id:literal ty $ty:ident $($body:tt)* ]) => {
+            {
+                let nodes = build_pattern_graph!(build_list $builder, [ range [$id..$id, $ty] $($body)* ]);
+                $builder.create_node(PatternNodeKind::Enum(nodes))
+            }
+        };
+    
+        ($builder:expr, range [$range:expr, $ty:ident]) => {
+            {
+                let range: Range<i32> = $range;
+                let range = $builder.create_range(range);                
+                $builder.create_node(PatternNodeKind::Range(range, $ty))
+            }
+        };
+    
+        ($builder:expr, wildcard[]) => {
+            {
+                $builder.create_node(PatternNodeKind::Wildcard)
+            }
+        };
+    }    
+
+    #[test]
+    fn test_range_and_wildcard() {
+        let mut graph = PatternGraph::new();
+        let root = build_pattern_graph!(
+            graph, 
+            types [ 
+                i8: 0..255,
+            ], 
+            root [
+                // tuple [ 
+                    range [0..2, i8]
+                    range [0..2, i8]
+                // ]    
+                // tuple [ 
+                    wildcard[]
+                    wildcard[]
+                // ]
+            ]
+        );
+
+        graph.solve(root);
+    }
+
+    #[test]
+    fn test_tuple() {
+        let mut graph = PatternGraph::new();
+        let root = build_pattern_graph!(
+            graph, 
+            types [ 
+                i8: 0..255,
+            ], 
+            root [
+                tuple [ 
+                    range [0..2, i8]
+                    range [0..2, i8]
+                ]    
+                tuple [ 
+                    wildcard[]
+                    wildcard[]
+                ]
+            ]
+        );
+
+        graph.solve(root);
+    }
+}
+*/
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/*#[derive(Clone)]
 pub struct PatternGraph {
     cons: StackMap<NodeList, PatternNode>,
     nodes: PrimaryMap<PatternNode, NodeEnt>,
@@ -303,23 +1124,30 @@ mod test {
         run_test(
             0..=255,
             [
-                &[(0..=0, 1), (0..=1, 2), (0..=1, 1)],
-                &[(1..=1, 1), (2..=2, 1)],
-                &[(0..=255, 1), (3..=255, 1)],
-                &[(0..=255, 1), (0..=2, 1)],
+                &[(0..=0, 1), (0..=255, 2), (0..=0, 1)],
+                &[(1..=255, 1), (0..=255, 1)],
+                &[(0..=0, 1), (0..=255, 2), (1..=255, 1)],
             ],
             [
-                &[Reachable, Reachable, Reachable],
-                &[Reachable, Unreachable],
-                &[ReachableUnchecked, ReachableUnchecked, Reachable],
+                &[Reachable, ReachableUnchecked, Reachable],
+                &[ReachableUnchecked, ReachableUnchecked],
                 &[Unreachable, Unreachable, ReachableUnchecked],
             ],
         );
 
-        match (Some(1), 0u8) {
-            (Some(_), _) => unreachable!(),
-            (None, _) => unreachable!(),
-        }
+        run_test(
+            0..=255,
+            [
+                &[(0..=0, 1), (0..=0, 1)],
+                &[(1..=255, 1), (0..=255, 1)],
+                &[(0..=255, 1), (0..=255, 1)],
+            ],
+            [
+                &[Reachable, Reachable],
+                &[ReachableUnchecked, ReachableUnchecked],
+                &[Unreachable, Unreachable],
+            ],
+        );
     }
 
     #[test]
@@ -373,7 +1201,9 @@ mod test {
             }
         }
     } 
-}
+}*/
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*
 pub struct PatternGraph {

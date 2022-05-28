@@ -1,33 +1,33 @@
-use std::ops::RangeInclusive;
+use std::ops::{RangeInclusive, Range};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum IntBorder {
+pub enum Border {
     JustBefore(u128),
     AfterMax,
 }
 
-impl IntBorder {
-    pub fn next(self) -> IntBorder {
+impl Border {
+    pub fn next(self) -> Border {
         match self {
-            IntBorder::JustBefore(value) if value != u128::MAX => IntBorder::JustBefore(value + 1),
-            _ => IntBorder::AfterMax,
+            Border::JustBefore(value) if value != u128::MAX => Border::JustBefore(value + 1),
+            _ => Border::AfterMax,
         }
     }
 
-    pub fn prev(self) -> IntBorder {
+    pub fn prev(self) -> Border {
         match self {
-            IntBorder::JustBefore(value) => IntBorder::JustBefore(value - 1),
-            IntBorder::AfterMax => IntBorder::JustBefore(u128::max_value() - 1),
+            Border::JustBefore(value) => Border::JustBefore(value - 1),
+            Border::AfterMax => Border::JustBefore(u128::max_value() - 1),
         }
     }
 }
 
-pub trait AnalyzableRange {
+pub trait RangeSerde {
     fn encode(&self) -> u128;
     fn decode(encoded: u128) -> Self;
 }
 
-pub fn convert_range(range: RangeInclusive<impl AnalyzableRange>) -> RangeInclusive<u128> {
+pub fn convert_range(range: RangeInclusive<impl RangeSerde>) -> RangeInclusive<u128> {
     let (start, end) = range.into_inner();
     start.encode()..=end.encode()
 }
@@ -35,7 +35,7 @@ pub fn convert_range(range: RangeInclusive<impl AnalyzableRange>) -> RangeInclus
 macro_rules! impl_analyzable_range_for_int {
     ($($t:ty),*) => {
         $(
-            impl AnalyzableRange for $t {
+            impl RangeSerde for $t {
                 fn encode(&self) -> u128 {
                     (*self as u128).wrapping_sub(Self::MIN as u128)
                 }
@@ -53,7 +53,7 @@ impl_analyzable_range_for_int!(i8, i16, i32, i64, i128, isize);
 macro_rules! impl_analyzable_range_for_uint {
     ($($t:ty),*) => {
         $(
-            impl AnalyzableRange for $t {
+            impl RangeSerde for $t {
                 fn encode(&self) -> u128 {
                     *self as u128
                 }
@@ -68,28 +68,45 @@ macro_rules! impl_analyzable_range_for_uint {
 
 impl_analyzable_range_for_uint!(u8, u16, u32, u64, u128, usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct IntRange {
-    pub start: u128,
-    pub end: u128,
-    pub bias: u128,
+impl RangeSerde for bool {
+    fn encode(&self) -> u128 {
+        *self as u128
+    }
+
+    fn decode(encoded: u128) -> Self {
+        encoded != 0
+    }
 }
 
-impl IntRange {
-    pub fn new(range: RangeInclusive<impl AnalyzableRange>, bias: u128) -> Self {
+impl RangeSerde for char {
+    fn encode(&self) -> u128 {
+        *self as u128
+    }
+
+    fn decode(encoded: u128) -> Self {
+        char::from_u32(encoded as u32).unwrap()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct PatternRange {
+    pub start: u128,
+    pub end: u128,
+}
+
+impl PatternRange {
+    pub fn new(range: Range<impl RangeSerde>) -> Self {
         Self {
-            start: range.start().encode(),
-            end: range.end().encode(),
-            bias,
+            start: range.start.encode(),
+            end: range.end.encode(),
         }
     }
 
-    pub fn decode<T: AnalyzableRange>(&self) -> (T, T) {
+    pub fn decode<T: RangeSerde>(&self) -> (T, T) {
         (T::decode(self.start), T::decode(self.end))
     }
 
     pub fn intersect(&self, other: &Self) -> Option<Self> {
-        assert_eq!(self.bias, other.bias);
 
         let start = self.start.max(other.start);
         let end = self.end.min(other.end);
@@ -98,67 +115,52 @@ impl IntRange {
             Some(Self {
                 start,
                 end,
-                bias: self.bias,
             })
         } else {
             None
         }
     }
 
-    pub fn into_borders(self) -> (IntBorder, IntBorder) {
+    pub fn into_borders(self) -> (Border, Border) {
         (
-            IntBorder::JustBefore(self.start),
-            IntBorder::JustBefore(self.end).next(),
+            Border::JustBefore(self.start),
+            Border::JustBefore(self.end).next(),
         )
     }
 
-    pub fn from_borders(start: IntBorder, end: IntBorder, bias: u128) -> IntRange {
+    pub fn from_borders(start: Border, end: Border) -> PatternRange {
         match (start, end) {
-            (IntBorder::JustBefore(start), IntBorder::JustBefore(end)) => {
-                Self::new(start..=end - 1, bias)
+            (Border::JustBefore(start), Border::JustBefore(end)) => {
+                Self::new(start..end - 1)
             }
-            (IntBorder::JustBefore(start), IntBorder::AfterMax) => {
-                Self::new(start..=u128::max_value(), bias)
+            (Border::JustBefore(start), Border::AfterMax) => {
+                Self::new(start..u128::max_value())
             }
             _ => unreachable!(),
         }
     }
 
-    pub fn start(&self) -> IntBorder {
-        IntBorder::JustBefore(self.start)
+    pub fn start(&self) -> Border {
+        Border::JustBefore(self.start)
     }
 
-    pub fn end(&self) -> IntBorder {
-        IntBorder::JustBefore(self.end).next()
+    pub fn end(&self) -> Border {
+        Border::JustBefore(self.end).next()
     }
 
-    pub fn set_start(&mut self, start: IntBorder) {
-        *self = Self::from_borders(start, self.end(), self.bias);
+    pub fn set_start(&mut self, start: Border) {
+        *self = Self::from_borders(start, self.end());
     }
 
-    pub fn set_end(&mut self, end: IntBorder) {
-        *self = Self::from_borders(self.start(), end, self.bias);
+    pub fn set_end(&mut self, end: Border) {
+        *self = Self::from_borders(self.start(), end);
     }
 
-    pub fn new_bounds(range: &RangeInclusive<i32>) -> IntRange {
-        let start = range.start().encode();
-        let end = range.end().encode();
-        let bias = end - start;
-        Self { start, end, bias }
-    }
-
-    pub fn coverage(&self, coverage: &RangeInclusive<i32>) -> IntRange {
-        let start = coverage.start().encode();
-        let end = coverage.end().encode();
-        Self {
-            start,
-            end,
-            bias: self.bias,
+    pub fn placeholder() -> Self {
+        Self { 
+            start: u128::MIN, 
+            end: u128::MAX, 
         }
-    }
-
-    pub fn is_wildcard(&self) -> bool {
-        self.end - self.start == self.bias
     }
 }
 

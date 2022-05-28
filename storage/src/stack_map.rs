@@ -18,7 +18,7 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
     }
 
     pub fn len(&self, list: E) -> usize {
-        self.lists.len(list)
+        self.lists.len_of(list)
     }
 
     pub fn get(&self, list: E) -> &[T] {
@@ -81,8 +81,8 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         T: Clone,
         E: ReservedValue, 
     {
+        self.data.reserve(self.len_of(id)); // SAFETY: push will not reallocate
         let from = unsafe { std::mem::transmute::<_, &[T]>(self.get(id)) };
-        self.data.reserve(from.len()); // SAFETY: push will not reallocate
         self.push(from) 
     }
 
@@ -122,11 +122,33 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.indices.len() - 1
+    } 
+
+    pub fn push_to(&mut self, to: &mut E, elem: T)
+    where
+        E: ReservedValue,
+        T: Clone,
+    {
+        self.data.reserve(self.len_of(*to) + 1); // SAFETY: push will not reallocate
+        
+        let slice = unsafe {
+            std::mem::transmute::<_, &[T]>(self.get(*to))
+        };
+
+        self.data.extend_from_slice(slice);
+        self.push_one(elem);
+        *to = self.close_frame();
+    }
+
     pub fn join(&mut self, a: E, b: E) -> E
     where
         E: ReservedValue,
         T: Clone,
     {
+        self.data.reserve(self.len_of(a) + self.len_of(b)); // SAFETY: push will not reallocate
+        
         let (a_s, b_s) = unsafe {
             std::mem::transmute::<_, (&[T], &[T])>(
                 (self.get(a), self.get(b)),
@@ -141,7 +163,6 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
             return a;
         }
 
-        self.data.reserve(a_s.len() + b_s.len()); // SAFETY: push will not reallocate
         self.data.extend_from_slice(a_s);
         self.data.extend_from_slice(b_s);
         
@@ -158,7 +179,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
-    pub fn len(&self, id: E) -> usize {
+    pub fn len_of(&self, id: E) -> usize {
         match (
             self.indices.get(id.index()),
             self.indices.get(id.index() + 1),
@@ -234,6 +255,10 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
             let id = E::new(i);
             (id, v)
         })
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &[T]> + Clone {
+        self.indices.windows(2).map(|window| &self.data[window[0] as usize..window[1] as usize])
     }
 }
 

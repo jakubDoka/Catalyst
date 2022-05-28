@@ -150,60 +150,12 @@ impl MirBuilder<'_> {
             TirKind::TakePtr(..) => self.translate_take_pointer(tir, dest)?,
             TirKind::DerefPointer(..) => self.translate_deref_pointer(tir, dest)?,
             TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
-            TirKind::Match(..) => self.translate_match(tir, dest)?,
             _ => todo!("Unhandled Kind::{:?}", kind),
         };
 
         self.ctx.tir_mapping[tir] = value.into();
 
         Ok(value)
-    }
-
-    fn translate_match(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { kind: TirKind::Match(expr, branches), ty, .. } = self.body.ents[tir] else {
-            unreachable!()
-        };
-
-        let branch_view = self.body.cons.get(branches);
-        let mut reachability = vec![PatternReachability::Reachable; branch_view.len()];
-        {
-            self.pattern_stacks.clear();
-            self.pattern_stacks.extend(
-                branch_view.iter().map(|&branch| vec![branch])
-            );
-
-            loop {
-                self.pattern_stacks.retain(|item| !item.is_empty());
-
-                // expand top
-                for stack in self.pattern_stacks.iter_mut() {
-                    let Some(top) = stack.pop() else {
-                        continue;
-                    };
-
-                    if top.is_reserved_value() {
-                        todo!();
-                    }
-
-                    match self.body.ents[top].kind {
-                        TirKind::Constructor(fields) => {
-                            stack.extend(self.body.cons.get(fields).iter().rev().cloned());
-                        },
-                        TirKind::IntLit(_) => todo!(),
-                        TirKind::BoolLit(_) => todo!(),
-                        TirKind::CharLit(_) => todo!(),
-                        TirKind::DerefPointer(_) => todo!(),
-                        kind => todo!("Unhandled {:?}", kind),
-                    }
-                }
-
-                if self.pattern_stacks.is_empty() {
-                    break;
-                }
-            }
-        }
-
-        todo!();
     }
     
     fn translate_bit_cast(
