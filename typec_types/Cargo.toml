@@ -13,3 +13,4 @@ lexer = { path = "../lexer" }
 ast = { path = "../ast" }
 module_types = { path = "../module_types" }
 errors = { path = "../errors" }
+matching = { path = "../matching" }

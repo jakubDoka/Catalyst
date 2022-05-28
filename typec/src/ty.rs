@@ -125,8 +125,8 @@ impl<'a> TyBuilder<'a> {
     fn build_variants(&mut self, id: ID, ast: Ast) -> (Ty, TyCompList) {
         let discriminant_ty = match self.ast.children(ast).len() {
             const { u16::MAX as usize }.. => panic!("Are you being serious?"),
-            256.. => self.builtin_types.i16,
-            1.. => self.builtin_types.i8,
+            256.. => self.builtin_types.u16,
+            1.. => self.builtin_types.u8,
             0 => self.builtin_types.nothing,
             _ => unreachable!(),
         };

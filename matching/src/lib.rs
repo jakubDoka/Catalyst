@@ -8,7 +8,7 @@ pub mod range_joiner;
 pub mod range_splitter;
 pub mod ranges;
 
-use std::{collections::{HashMap, VecDeque}, fmt::Debug};
+use std::{collections::{HashMap, VecDeque, hash_map::DefaultHasher}, fmt::Debug, hash::{Hash, Hasher}};
 
 pub use range_joiner::RangeJoiner;
 pub use range_splitter::RangeSplitter;
@@ -48,6 +48,18 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
         self.redirects.clear();
     }
 
+    pub fn root(&self) -> PatternNode {
+        Self::ROOT_NODE
+    }
+
+    pub fn node(&self, node: PatternNode) -> PatternNodeEnt<E> {
+        self.nodes[node]
+    }
+
+    pub fn slice(&self, slice: PatternNodeList) -> &[PatternNode] {
+        self.slices.get(slice)
+    }
+
     pub fn meta_data_of(&self, entity: E) -> &PatternMetaData<K> {
         &self.meta_data[entity]
     }
@@ -58,7 +70,7 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
 
     pub fn build_graph(&mut self) {
         self.normalize_branches();
-        
+
         let mut roots = VecDeque::new();
         roots.push_back(Self::ROOT_NODE);
         let mut temp = vec![];
@@ -78,7 +90,7 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
                 );
 
                 lookup.clear();
-                temp.clear();
+                let check_point = temp.len();
                 for i in 0..self.slices.len_of(root_ent.children) {
                     let child = self.slices.get(root_ent.children)[i];
                     let child_ent = self.nodes[child];
@@ -94,22 +106,21 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
                         };
                         let node = self.nodes.push(ent);
                         lookup.insert(segment, node);
-                        roots.push_back(node);
                         temp.push(node);
                     }
                 }
+
+                let temp = &mut temp[check_point..];
 
                 let Some(&last) = temp.last() else {
                     continue;
                 };
 
-                for meta in temp.iter().filter_map(|&node| self.nodes[node].meta.expand()) {
+                for meta in temp.iter().map(|&node| self.nodes[node].meta) {
                     self.meta_data[meta].reachability.upgrade(Reachability::Reachable);
                 }
 
-                if let Some(meta) = self.nodes[last].meta.expand() {
-                    self.meta_data[meta].reachability.upgrade(Reachability::ReachableUnchecked);
-                } 
+                self.meta_data[self.nodes[last].meta].reachability.upgrade(Reachability::ReachableUnchecked);
 
                 let new_children = self.slices.push(&temp);
                 self.nodes[root].children = new_children;
@@ -122,9 +133,52 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
                         .map(|&node| self.nodes[node].coverage),
                 );
             }
+
+            roots.extend(temp.drain(..));
         }
 
-        assert!(exhaustive)
+        assert!(exhaustive);
+
+        let mut temp = vec![];
+
+        self.eliminate_duplicates(Self::ROOT_NODE, &mut temp);
+    }
+
+    fn eliminate_duplicates(&mut self, root: PatternNode, stack: &mut Vec<PatternNode>) -> u64 {
+        let node = self.nodes[root];
+        
+        let Some(&first) = self.slices.get(node.children).first() else {
+            return node.meta.index() as u64;
+        };
+
+        let check_point = stack.len();
+        let mut hasher = DefaultHasher::new();
+        let mut prev_hash = self.eliminate_duplicates(first, stack);
+        let mut prev = first;
+        prev_hash.hash(&mut hasher);
+            
+        stack.push(first);
+        for i in 1..self.slices.len_of(node.children) {
+            let child = self.slices.get(node.children)[i];
+            let next_hash = self.eliminate_duplicates(child, stack);
+            if prev_hash == next_hash {
+                self.nodes[prev].coverage.end = self.nodes[child].coverage.end;
+                continue;
+            }
+            
+            stack.push(child);
+            next_hash.hash(&mut hasher);
+            prev_hash = next_hash;
+            prev = child;
+        }
+
+        self.nodes[root].children = self.slices.push_iter(stack.drain(check_point..));
+
+        for &child in self.slices.get(self.nodes[root].children) {
+            self.nodes[child].coverage.hash(&mut hasher);
+        }
+
+        hasher.finish()
     }
 
     fn normalize_branches(&mut self) {
@@ -192,16 +246,16 @@ impl<E: EntityRef + Default + ReservedValue, K: Default + Clone> PatternGraph<E,
         }
     }
 
-    pub fn log(&self) where E: Debug {
+    pub fn log(&self) {
         self.log_recursive(Self::ROOT_NODE, 0);
     }
 
-    fn log_recursive(&self, node: PatternNode, depth: usize) where E: Debug {
+    pub fn log_recursive(&self, node: PatternNode, depth: usize) {
         let ent = self.nodes[node];
         
-        let meta = ent.meta.map(|meta| self.meta_data[meta].reachability);
+        let meta = self.meta_data[ent.meta].reachability;
      
-        println!("{} {:?} {:?} {:?}", " ".repeat(depth), ent.coverage.decode::<i32>(), meta, ent.meta);
+        println!("{} {:?} {:?} {:?}", " ".repeat(depth), ent.coverage.decode::<usize>(), meta, ent.meta.index());
 
         for &child in self.slices.get(ent.children) {
             self.log_recursive(child, depth + 1);
@@ -236,15 +290,15 @@ pub struct PatternLevelData<E: EntityRef + Default + ReservedValue, K: Default +
     pub coverage: PatternRange,
     pub range: PatternRange,
     pub depth: u32,
-    pub meta: PackedOption<E>,
+    pub meta: E,
     pub value: K,
 }
 
 #[derive(Clone, Copy, Default)]
-struct PatternNodeEnt<E: EntityRef + ReservedValue> {
-    children: PatternNodeList,
-    coverage: PatternRange,
-    meta: PackedOption<E>,
+pub struct PatternNodeEnt<E: EntityRef + ReservedValue> {
+    pub children: PatternNodeList,
+    pub coverage: PatternRange,
+    pub meta: E,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -369,6 +423,25 @@ mod test {
         );
     }
 
+    #[test]
+    fn test_unconditional_distribution() {
+        run_test(
+            0..3,
+            [
+                &[(0..3, 0), (0..1, 0)],
+                &[(1..3, 0), (0..3, 0)],
+                &[(2..2, 0), (3..3, 0)],
+                &[(0..3, 0), (0..3, 0)],
+            ], 
+            [
+                &[ReachableUnchecked, Reachable],
+                &[Unreachable, ReachableUnchecked],
+                &[Unreachable, Unreachable],
+                &[Unreachable, ReachableUnchecked],
+            ],
+        );
+    }
+
     gen_entity!(TestEntity);
 
     fn run_test<const H: usize>(
@@ -388,7 +461,7 @@ mod test {
                 depth: *id,
                 meta: { 
                     node_counter += 1;
-                    Some(TestEntity::new(node_counter - 1)).into()
+                    TestEntity::new(node_counter - 1)
                 },
                 value: (),
             }));

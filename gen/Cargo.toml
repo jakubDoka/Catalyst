@@ -14,3 +14,4 @@ instance_types = { path = "../instance_types" }
 storage = { path = "../storage" }
 typec_types = { path = "../typec_types" }
 lexer = { path = "../lexer" }
+matching = { path = "../matching" }

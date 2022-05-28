@@ -58,6 +58,7 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
+    Match(Tir, Tir),
     MatchBlock(Tir),
     BitCast(Tir),
     DerefPointer(Tir),
@@ -75,7 +76,7 @@ pub enum TirKind {
     Return(PackedOption<Tir>),
     Argument(u32),
     Call(TyList, Func, TirList),
-    IntLit(i64),
+    IntLit(u128),
     BoolLit(bool),
     CharLit(char),
     Invalid,
@@ -287,8 +288,22 @@ impl<'a> TirDisplay<'a> {
             TirKind::Access(value) => {
                 self.fmt(value, f, displayed, level, false)?;
             }
+            TirKind::Match(expr, branches) => {
+                write!(f, "match ")?;
+                self.fmt(expr, f, displayed, level, false)?;
+                writeln!(f, " {{")?;
+                self.fmt(branches, f, displayed, level + 1, true)?;
+                for _ in 0..level {
+                    write!(f, "  ")?;
+                }
+                write!(f, "}}")?;
+            }
+            TirKind::MatchBlock(block) => {
+                write!(f, "match_block ")?;
+                self.fmt(block, f, displayed, level, false)?;
+            }
             TirKind::Invalid | TirKind::LoopInProgress(..) => unreachable!(),
-            kind => todo!("{kind:?}"),
+            // kind => todo!("{kind:?}"),
         }
 
         if ident {

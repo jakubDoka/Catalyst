@@ -21,14 +21,14 @@ impl Enum {
 
     fn is_something(s: Self) -> bool {
         match s {
-            Something => true
+            Something::() => true
             _ => false
         }
     }
 
     fn integer(s: Self) -> int {
         match s {
-            Structural::(integer) => integer
+            Structural::(0) => 0
             Structural::{ integer } => integer
             _ => -1
         }

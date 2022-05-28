@@ -14,6 +14,7 @@ use instance_types::*;
 use lexer::*;
 use storage::*;
 use typec_types::*;
+use matching::*;
 
 pub type Signatures = SparseMap<Func, Signature>; 
 
@@ -204,8 +205,12 @@ impl<'a> CirBuilder<'a> {
             InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
-                // println!("{:?} {}", repr, literal);
-                let ir_value = self.builder.ins().iconst(repr, literal as i64);
+                let literal = if self.types[self.source.values[value].ty].flags.contains(TyFlags::SIGNED) {
+                    i64::decode(literal)
+                } else {
+                    u64::decode(literal) as i64
+                };
+                let ir_value = self.builder.ins().iconst(repr, literal);
                 self.ctx.value_lookup[value] = ir_value.into();
             }
             InstKind::Return => {

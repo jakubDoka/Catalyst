@@ -220,6 +220,7 @@ dependencies = [
  "cranelift-module",
  "instance_types",
  "lexer",
+ "matching",
  "storage",
  "typec_types",
 ]
@@ -532,6 +533,7 @@ dependencies = [
  "cranelift-codegen",
  "errors",
  "lexer",
+ "matching",
  "module_types",
  "storage",
 ]

@@ -37,11 +37,11 @@ macro_rules! impl_analyzable_range_for_int {
         $(
             impl RangeSerde for $t {
                 fn encode(&self) -> u128 {
-                    (*self as u128).wrapping_sub(Self::MIN as u128)
+                    (*self as u128).wrapping_sub(i128::MIN as u128)
                 }
 
                 fn decode(encoded: u128) -> Self {
-                    encoded.wrapping_sub(Self::MIN as u128) as Self
+                    encoded.wrapping_sub(i128::MIN as u128) as Self
                 }
             }
         )*
@@ -95,6 +95,10 @@ pub struct PatternRange {
 }
 
 impl PatternRange {
+    pub fn is_one(&self) -> bool {
+        self.start == self.end
+    }
+    
     pub fn new(range: Range<impl RangeSerde>) -> Self {
         Self {
             start: range.start.encode(),
@@ -171,7 +175,7 @@ mod test {
     #[test]
     fn test_encode_decode() {
         for i in i8::MIN..=i8::MAX {
-            assert_eq!(i, i8::decode(i.encode()));
+            assert_eq!(i as i64, i64::decode(i.encode()));
         }
     }
 }

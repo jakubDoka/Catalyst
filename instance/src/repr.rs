@@ -249,7 +249,7 @@ impl<'a> LayoutBuilder<'a> {
         };
 
         self.reprs[ty].layout = layout;
-        let fields = self.repr_fields.push(&[ReprField { offset }]);
+        let fields = self.repr_fields.push(&[ReprField { offset: Offset::ZERO }, ReprField { offset }]);
 
         self.reprs[ty] = ReprEnt {
             repr: ir::types::INVALID,
@@ -336,6 +336,11 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
         (i32, ir::types::I32, hom(4)),
         (i64, ir::types::I64, hom(8)),
         (int, ptr_ty, Layout::PTR),
+        (u8, ir::types::I8, hom(1)),
+        (u16, ir::types::I16, hom(2)),
+        (u32, ir::types::I32, hom(4)),
+        (u64, ir::types::I64, hom(8)),
+        (uint, ptr_ty, Layout::PTR),
         (char, ir::types::I32, hom(4)),
     );
 }

@@ -417,6 +417,14 @@ impl Compiler {
             if tir_builder!(self, func).build().is_err() {
                 continue;
             };
+            // println!("{}", TirDisplay::new(
+            //     &self.types, 
+            //     &self.ty_lists, 
+            //     &self.ty_comps, 
+            //     &self.sources, 
+            //     &self.tir_temp_body, 
+            //     self.func_meta[func].body,
+            // ));
             self.func_bodies[func] = self.tir_temp_body.clone();
         }
     }
@@ -702,8 +710,8 @@ impl Compiler {
                 func_meta: &self.func_meta,
             }.generate();
 
-            // println!("{}", self.sources.display(self.func_meta[parent].name));
-            // println!("{}", ctx.func.display());
+            println!("{}", self.sources.display(self.func_meta[parent].name));
+            println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
             ctx.compile_and_emit(self.object_module.isa(), &mut bytes)

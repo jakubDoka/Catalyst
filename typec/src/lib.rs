@@ -560,11 +560,15 @@ fn create_func(
     dest.push(item);
 }
 
-pub fn int_value(sources: &Sources, span: Span) -> i64 {
+pub fn int_value(sources: &Sources, span: Span, signed: bool) -> u128 {
     let mut chars = sources.display(span).chars();
     let mut value = 0;
     while let Some(c @ '0'..='9') = chars.next() {
-        value = value * 10 + (c as i64 - '0' as i64);
+        value = value * 10 + (c as u128 - '0' as u128);
+    }
+
+    if signed {
+        value = value.wrapping_sub(i128::MIN as u128);
     }
 
     match chars.next() {

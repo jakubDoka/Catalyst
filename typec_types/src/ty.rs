@@ -1,6 +1,7 @@
 use std::ops::IndexMut;
 
 use lexer::*;
+use matching::PatternRange;
 use storage::*;
 
 use crate::*;
@@ -16,6 +17,35 @@ pub type Instances = Map<Ty>;
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn range_of(&self, ty: Ty, ty_comps: &TyComps) -> PatternRange {
+        match self[ty].kind {
+            TyKind::Instance(..)
+            | TyKind::Struct(..) => PatternRange::default(),
+            
+            TyKind::Enum(.., variants) => PatternRange::new(0..ty_comps.len_of(variants) - 1),
+            TyKind::Ptr(..) => PatternRange::new(0..usize::MAX),
+            TyKind::Int(base) => match base {
+                8 => PatternRange::new(i8::MIN..i8::MAX),
+                16 => PatternRange::new(i16::MIN..i16::MAX),
+                32 => PatternRange::new(i32::MIN..i32::MAX),
+                64 => PatternRange::new(i64::MIN..i64::MAX),
+                _ => PatternRange::new(isize::MIN..isize::MAX),
+            },
+            TyKind::Uint(base) => match base {
+                8 => PatternRange::new(u8::MIN..u8::MAX),
+                16 => PatternRange::new(u16::MIN..u16::MAX),
+                32 => PatternRange::new(u32::MIN..u32::MAX),
+                64 => PatternRange::new(u64::MIN..u64::MAX),
+                _ => PatternRange::new(usize::MIN..usize::MAX),
+            },
+            TyKind::Bool => PatternRange::new(false..true),
+            
+            TyKind::Unresolved 
+            | TyKind::Bound(_)
+            | TyKind::Param(..) => todo!(),
+        }
+    }
+
     fn caller_id_of(&self, ty: Ty) -> ID {
         self[self.caller_of(ty)].id
     }
@@ -96,7 +126,7 @@ macro_rules! gen_builtin_table {
         }
 
         impl BuiltinTypes {
-            pub fn all(&self) -> [Ty; 10] {
+            pub fn all(&self) -> [Ty; 15] {
                 [$(self.$name),*]
             }
         }
@@ -113,7 +143,8 @@ macro_rules! gen_builtin_table {
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: $repr,
                         flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..)))
-                            | TyFlags::BUILTIN,
+                            | TyFlags::BUILTIN
+                            | (TyFlags::SIGNED & matches!($repr, TyKind::Int(..))),
                     };
                     let $name = types.push(ent);
                 )*
@@ -134,8 +165,8 @@ impl BuiltinTypes {
         [self.i8, self.i16, self.i32, self.i64, self.int]
     }
 
-    pub fn integers(&self) -> [Ty; 5] {
-        [self.i8, self.i16, self.i32, self.i64, self.int]
+    pub fn integers(&self) -> [Ty; 10] {
+        [self.i8, self.i16, self.i32, self.i64, self.int, self.u8, self.u16, self.u32, self.u64, self.uint]
     }
 }
 
@@ -150,6 +181,11 @@ gen_builtin_table!(
     i16: TyKind::Int(16),
     i32: TyKind::Int(32),
     i64: TyKind::Int(64),
+    uint: TyKind::Uint(-1),
+    u8: TyKind::Uint(8),
+    u16: TyKind::Uint(16),
+    u32: TyKind::Uint(32),
+    u64: TyKind::Uint(64),
 );
 
 #[derive(Debug, Clone, Copy)]
@@ -186,6 +222,7 @@ bitflags! {
     pub struct TyFlags: u32 {
         const GENERIC = 1 << 0;
         const BUILTIN = 1 << 1;
+        const SIGNED = 1 << 2;
     }
 }
 
@@ -248,6 +285,7 @@ pub enum TyKind {
     /// (inner, depth)
     Ptr(Ty, u32),
     Int(i16),
+    Uint(i16),
     Bool,
     Unresolved,
 }
@@ -276,6 +314,7 @@ impl Ty {
             TyKind::Struct(..)
             | TyKind::Bound(..)
             | TyKind::Int(..)
+            | TyKind::Uint(..)
             | TyKind::Enum(..)
             | TyKind::Bool => {
                 let name = types[self].name;
