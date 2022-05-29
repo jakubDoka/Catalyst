@@ -167,7 +167,11 @@ impl GenericGraph {
             }
         }
 
-        Self { hints, edges, offset: self.offset }
+        Self {
+            hints,
+            edges,
+            offset: self.offset,
+        }
     }
 }
 

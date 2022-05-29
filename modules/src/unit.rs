@@ -44,7 +44,7 @@ impl<'a> UnitBuilder<'a> {
             diagnostics,
         }
     }
-    
+
     pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
         self.ctx.clear();
 
@@ -140,7 +140,9 @@ impl<'a> UnitBuilder<'a> {
                     } else {
                         let id = self.units.push(units::UnitEnt::new());
                         self.ctx.map.insert(path.as_path(), id);
-                        self.ctx.unit_frontier.push_back((path, Some(path_span), id));
+                        self.ctx
+                            .unit_frontier
+                            .push_back((path, Some(path_span), id));
                         id
                     };
 
@@ -215,7 +217,6 @@ pub struct LoaderContext {
     pub map: Map<Unit>,
     pub ast: AstData,
     pub ast_temp: FramedStack<Ast>,
-
 }
 
 impl LoaderContext {

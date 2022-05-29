@@ -78,7 +78,7 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
             return Err(format!(
                 "PoolMap length {} * {} + {} * {} exceeds buffer length {}",
                 len,
-                std::mem::size_of::<bool>(), 
+                std::mem::size_of::<bool>(),
                 len - free_len,
                 std::mem::size_of::<T>(),
                 buffer.len()

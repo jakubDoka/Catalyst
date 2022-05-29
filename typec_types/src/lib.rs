@@ -5,20 +5,19 @@
 
 pub mod error;
 pub mod func;
+pub mod graph;
+pub mod jit;
 pub mod tir;
 pub mod ty;
-pub mod jit;
-pub mod graph;
 
 pub use error::TyError;
-pub use func::{Func, FuncList, Funcs, Sig, FuncMetaData, FuncFlags, FuncKind, FuncMeta, FuncEnt};
-pub use tir::{Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, FuncBodies};
-pub use ty::{
-    BoundImpl, BoundImpls, BuiltinTypes, Instances, TyComp, TyCompEnt, TyCompList,
-    TyCompLookup, TyComps, TFuncLists, Ty, TyDisplay, TyEnt, TyFlags, TyKind, TyList,
-    TyLists, TypeBase, Types
-};
+pub use func::{Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, FuncMetaData, Funcs, Sig};
 pub use graph::Graph;
+pub use tir::{FuncBodies, Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList};
+pub use ty::{
+    BoundImpl, BoundImpls, BuiltinTypes, Instances, TFuncLists, Ty, TyComp, TyCompEnt, TyCompList,
+    TyCompLookup, TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
+};
 
 #[macro_export]
 macro_rules! ty_display {

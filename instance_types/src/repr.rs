@@ -1,7 +1,7 @@
+use crate::*;
 use cranelift_codegen::ir::Type;
 use storage::*;
 use typec_types::*;
-use crate::*;
 
 pub struct ReplaceCache {
     data: Vec<(Ty, TyEnt)>,

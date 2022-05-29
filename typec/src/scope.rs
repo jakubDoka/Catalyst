@@ -1,4 +1,4 @@
-use std::{vec, str::FromStr};
+use std::{str::FromStr, vec};
 
 use crate::{ty::get_param, *};
 use ast::*;
@@ -10,7 +10,10 @@ use module_types::{
     scope::{self, Scope},
 };
 use storage::*;
-use typec_types::{*, jit::{Macro, Stage}};
+use typec_types::{
+    jit::{Macro, Stage},
+    *,
+};
 
 pub struct ScopeBuilder<'a> {
     pub scope: &'a mut Scope,
@@ -349,7 +352,10 @@ impl<'a> ScopeBuilder<'a> {
                 None
             } else {
                 CallConv::from_str(str)
-                    .map_err(|_| self.diagnostics.push(TyError::InvalidCallConv { loc: span }))
+                    .map_err(|_| {
+                        self.diagnostics
+                            .push(TyError::InvalidCallConv { loc: span })
+                    })
                     .ok()
             }
         };
@@ -388,11 +394,7 @@ impl<'a> ScopeBuilder<'a> {
 
             self.scope.pop_frame();
 
-            Sig {
-                params,
-                args,
-                ret,
-            }
+            Sig { params, args, ret }
         };
 
         let func = prepared.unwrap_or_else(|| self.funcs.ents.push(Default::default()));
@@ -559,7 +561,7 @@ impl<'a> ScopeBuilder<'a> {
             // TODO: emit error
             unreachable!();
         };
-        
+
         let from = {
             let span = self.ast.nodes[from].span;
             let str = self.sources.display(span);
@@ -583,10 +585,11 @@ impl<'a> ScopeBuilder<'a> {
             .tags
             .iter()
             .rev()
-            .find(|&&tag| 
+            .find(|&&tag| {
                 self.sources.display(self.ast.nodes[tag].span)[1..]
-                    .trim().starts_with(name)
-            )
+                    .trim()
+                    .starts_with(name)
+            })
             .copied()
     }
 }

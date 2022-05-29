@@ -1,4 +1,4 @@
-use std::ops::{RangeInclusive, Range};
+use std::ops::{Range, RangeInclusive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Border {
@@ -98,7 +98,7 @@ impl PatternRange {
     pub fn is_one(&self) -> bool {
         self.start == self.end
     }
-    
+
     pub fn new(range: Range<impl RangeSerde>) -> Self {
         Self {
             start: range.start.encode(),
@@ -111,15 +111,11 @@ impl PatternRange {
     }
 
     pub fn intersect(&self, other: &Self) -> Option<Self> {
-
         let start = self.start.max(other.start);
         let end = self.end.min(other.end);
 
         if start <= end {
-            Some(Self {
-                start,
-                end,
-            })
+            Some(Self { start, end })
         } else {
             None
         }
@@ -134,12 +130,8 @@ impl PatternRange {
 
     pub fn from_borders(start: Border, end: Border) -> PatternRange {
         match (start, end) {
-            (Border::JustBefore(start), Border::JustBefore(end)) => {
-                Self::new(start..end - 1)
-            }
-            (Border::JustBefore(start), Border::AfterMax) => {
-                Self::new(start..u128::max_value())
-            }
+            (Border::JustBefore(start), Border::JustBefore(end)) => Self::new(start..end - 1),
+            (Border::JustBefore(start), Border::AfterMax) => Self::new(start..u128::max_value()),
             _ => unreachable!(),
         }
     }
@@ -161,9 +153,9 @@ impl PatternRange {
     }
 
     pub fn placeholder() -> Self {
-        Self { 
-            start: u128::MIN, 
-            end: u128::MAX, 
+        Self {
+            start: u128::MIN,
+            end: u128::MAX,
         }
     }
 }

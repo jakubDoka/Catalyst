@@ -45,9 +45,7 @@ pub fn display(
         } => {
             let expected = expected
                 .iter()
-                .map(|&exp| 
-                    scope_item_lexicon.name_of(exp)    
-                )
+                .map(|&exp| scope_item_lexicon.name_of(exp))
                 .collect::<Vec<_>>()
                 .join(" | ");
 

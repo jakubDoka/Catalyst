@@ -104,7 +104,6 @@ impl Display for Offset {
     }
 }
 
-
 macro_rules! impl_op {
     ($($name:ident-$method:ident($op:tt)),*) => {
         $(

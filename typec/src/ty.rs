@@ -99,7 +99,7 @@ impl<'a> TyBuilder<'a> {
             AstKind::Struct => self.build_struct(id, ast),
             AstKind::Bound => self.build_bound(id, ast),
             AstKind::Enum => self.build_enum(id, ast),
-            _ => todo!(
+            _ => unimplemented!(
                 "Unhandled type decl {:?}: {}",
                 kind,
                 self.sources.display(span)
@@ -140,15 +140,15 @@ impl<'a> TyBuilder<'a> {
             span: self.builtin_types.discriminant,
         };
         variants.push((ent, self.sources.id_of(self.builtin_types.discriminant)));
-        
+
         for (i, &variant) in self.ast.children(ast).iter().enumerate() {
-            let index = i as u32 + 1; 
+            let index = i as u32 + 1;
             let &[name, ty_expr] = self.ast.children(variant) else {
                 unreachable!();
             };
             let name = self.ast.nodes[name].span;
             let variant_id = ID::field(id, self.sources.id_of(name));
-        
+
             let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
                 continue
             };
@@ -158,7 +158,7 @@ impl<'a> TyBuilder<'a> {
             let ent = TyCompEnt {
                 ty,
                 index,
-                span: self.ast.nodes[variant].span,
+                span: name,
             };
 
             variants.push((ent, variant_id));
@@ -219,10 +219,7 @@ impl<'a> TyBuilder<'a> {
                 self.ty_comps.push_one(field)
             };
 
-            assert!(self
-                .ty_comp_lookup
-                .insert(id, field)
-                .is_none());
+            assert!(self.ty_comp_lookup.insert(id, field).is_none());
         }
         self.ty_comps.close_frame()
     }

@@ -6,7 +6,7 @@ use cranelift_codegen::{
     ir::{Signature, SourceLoc},
     isa::CallConv,
 };
-use cranelift_module::{FuncId};
+use cranelift_module::FuncId;
 use std::{path::Path, time::SystemTime};
 use storage::*;
 // use typec_types::*;
@@ -40,9 +40,9 @@ impl Incr {
                 println!("{INFO}trace:{END} {}", err);
                 println!("{INFO}path searched:{END} {}", path.display());
                 return Some(Self::default());
-            },
+            }
         };
-        
+
         let s = match Self::read(&mut cursor, &content) {
             Ok(s) => s,
             Err(err) => {
@@ -53,7 +53,9 @@ impl Incr {
         };
 
         if s.version != version {
-            println!("{WARNING}warning:{END} incremental data is incompatible with current version");
+            println!(
+                "{WARNING}warning:{END} incremental data is incompatible with current version"
+            );
             return None;
         }
         Some(s)

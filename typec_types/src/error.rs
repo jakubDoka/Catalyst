@@ -2,6 +2,28 @@ use crate::*;
 use lexer::*;
 
 pub enum TyError {
+    UnregisteredFieldIndex {
+        index: usize,
+        max: usize,
+        loc: Span,
+        on: Ty,
+    },
+    InstantiationParamCountMismatch {
+        expected: usize,
+        got: usize,
+        because: Span,
+        loc: Span,
+    },
+    PatternTypeMismatch {
+        expected: Ty,
+        got: Ty,
+        loc: Span,
+        because: Span,
+    },
+    UnknownEnumVariant {
+        loc: Span,
+        on: Ty,
+    },
     InfinitelySizedType {
         cycle: Vec<Ty>,
     },

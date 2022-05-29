@@ -1,4 +1,7 @@
-use std::{marker::PhantomData, ops::{Index, IndexMut}};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
@@ -76,17 +79,20 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         }
     }
 
-    pub fn deep_clone(&mut self, id: E) -> E 
-    where 
+    pub fn deep_clone(&mut self, id: E) -> E
+    where
         T: Clone,
-        E: ReservedValue, 
+        E: ReservedValue,
     {
         self.data.reserve(self.len_of(id)); // SAFETY: push will not reallocate
         let from = unsafe { std::mem::transmute::<_, &[T]>(self.get(id)) };
-        self.push(from) 
+        self.push(from)
     }
 
-    pub fn alloc(&mut self, size: usize, init: T) -> E where T: Clone {
+    pub fn alloc(&mut self, size: usize, init: T) -> E
+    where
+        T: Clone,
+    {
         let index = self.indices.len();
         self.indices.push(index as u32);
         self.indices.push((index + size) as u32);
@@ -124,7 +130,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
 
     pub fn len(&self) -> usize {
         self.indices.len() - 1
-    } 
+    }
 
     pub fn push_to(&mut self, to: &mut E, elem: T)
     where
@@ -132,10 +138,8 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         T: Clone,
     {
         self.data.reserve(self.len_of(*to) + 1); // SAFETY: push will not reallocate
-        
-        let slice = unsafe {
-            std::mem::transmute::<_, &[T]>(self.get(*to))
-        };
+
+        let slice = unsafe { std::mem::transmute::<_, &[T]>(self.get(*to)) };
 
         self.data.extend_from_slice(slice);
         self.push_one(elem);
@@ -148,24 +152,21 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         T: Clone,
     {
         self.data.reserve(self.len_of(a) + self.len_of(b)); // SAFETY: push will not reallocate
-        
-        let (a_s, b_s) = unsafe {
-            std::mem::transmute::<_, (&[T], &[T])>(
-                (self.get(a), self.get(b)),
-            )
-        };
-        
+
+        let (a_s, b_s) =
+            unsafe { std::mem::transmute::<_, (&[T], &[T])>((self.get(a), self.get(b))) };
+
         if a_s.is_empty() {
             return b;
         }
-        
+
         if b_s.is_empty() {
             return a;
         }
 
         self.data.extend_from_slice(a_s);
         self.data.extend_from_slice(b_s);
-        
+
         self.close_frame()
     }
 
@@ -258,11 +259,11 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
     }
 
     pub fn values(&self) -> impl Iterator<Item = &[T]> + Clone {
-        self.indices.windows(2).map(|window| &self.data[window[0] as usize..window[1] as usize])
+        self.indices
+            .windows(2)
+            .map(|window| &self.data[window[0] as usize..window[1] as usize])
     }
 }
-
-
 
 impl<E: EntityRef, T, S: EntityRef> Index<S> for StackMap<E, T, S> {
     type Output = T;

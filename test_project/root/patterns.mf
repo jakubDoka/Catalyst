@@ -28,7 +28,7 @@ impl Enum {
         match s {
             Structural::(0) => 0
             Structural::{ integer } => integer
-            _ => -1
+            Something::() => 1
         }
     }
 }

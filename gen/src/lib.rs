@@ -2,21 +2,21 @@
 #![feature(toowned_clone_into)]
 #![feature(let_else)]
 
-
-
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{InstBuilder, MemFlags, Signature, StackSlotData, FuncRef, ExtFuncData, ExternalName};
-use cranelift_codegen::isa::{TargetIsa, CallConv};
+use cranelift_codegen::ir::{
+    ExtFuncData, ExternalName, FuncRef, InstBuilder, MemFlags, Signature, StackSlotData,
+};
+use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::Linkage;
 use instance_types::*;
 use lexer::*;
+use matching::*;
 use storage::*;
 use typec_types::*;
-use matching::*;
 
-pub type Signatures = SparseMap<Func, Signature>; 
+pub type Signatures = SparseMap<Func, Signature>;
 
 pub struct CirBuilderContext {
     tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
@@ -43,7 +43,7 @@ impl CirBuilderContext {
 
     pub fn clear(&mut self) {
         self.tir_mapping.clear();
-        
+
         for func in self.used_funcs.drain(..) {
             self.used_func_lookup[func] = PackedOption::default();
         }
@@ -125,12 +125,19 @@ impl<'a> CirBuilder<'a> {
             InstKind::BitCast(value) => {
                 let target_value = inst.value.unwrap();
                 let repr = self.repr_of(target_value);
-                
-                let mut ir_value = self.use_value(value);
-                if repr != self.builder.func.dfg.value_type(ir_value) {
-                    ir_value = self.builder.ins().bitcast(repr, ir_value);
-                }
 
+                let ir_value = if self.source.values[target_value]
+                    .flags
+                    .contains(MirFlags::POINTER)
+                {
+                    self.use_value_as_pointer(value)
+                } else {
+                    let mut ir_value = self.use_value(value);
+                    if repr != self.builder.func.dfg.value_type(ir_value) {
+                        ir_value = self.builder.ins().bitcast(repr, ir_value);
+                    }
+                    ir_value
+                };
                 self.ctx.value_lookup[target_value] = ir_value.into();
             }
             InstKind::Call(func, args) => {
@@ -145,30 +152,34 @@ impl<'a> CirBuilder<'a> {
                         .value_slices
                         .get(args)
                         .iter()
-                        .map(|&value| {
-                            self.use_value(value)
-                        })
+                        .map(|&value| self.use_value(value))
                         .collect();
-                    
-                    let func_ref = if let Some(func_ref) = self.ctx.used_func_lookup[func].expand() {
+
+                    let func_ref = if let Some(func_ref) = self.ctx.used_func_lookup[func].expand()
+                    {
                         func_ref
                     } else {
                         let signature = {
-                            let ret = inst.value.map(|val| self.source.values[val].ty).unwrap_or(self.builtin_types.nothing);
+                            let ret = inst
+                                .value
+                                .map(|val| self.source.values[val].ty)
+                                .unwrap_or(self.builtin_types.nothing);
                             let call_conv = self.funcs.ents[func].flags.call_conv();
                             let signature = if let Some(sig) = self.signatures.get(func) {
                                 sig.clone()
                             } else {
                                 let sig = translate_signature(
                                     call_conv,
-                                    self.source.value_slices
+                                    self.source
+                                        .value_slices
                                         .get(args)
                                         .iter()
-                                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
+                                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK)
+                                            as usize)
                                         .map(|&value| self.source.values[value].ty),
                                     ret,
-                                    self.reprs, 
-                                    self.types, 
+                                    self.reprs,
+                                    self.types,
                                     self.isa.default_call_conv(),
                                 );
                                 self.signatures.insert(func, sig.clone());
@@ -193,10 +204,7 @@ impl<'a> CirBuilder<'a> {
                 };
 
                 if let Some(value) = inst.value.expand() {
-                    if !self.source.values[value]
-                        .flags
-                        .contains(MirFlags::POINTER)
-                    {
+                    if !self.source.values[value].flags.contains(MirFlags::POINTER) {
                         let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
                         self.ctx.value_lookup[inst.value.unwrap()] = ret.into();
                     }
@@ -205,7 +213,10 @@ impl<'a> CirBuilder<'a> {
             InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
-                let literal = if self.types[self.source.values[value].ty].flags.contains(TyFlags::SIGNED) {
+                let literal = if self.types[self.source.values[value].ty]
+                    .flags
+                    .contains(TyFlags::SIGNED)
+                {
                     i64::decode(literal)
                 } else {
                     u64::decode(literal) as i64
@@ -254,9 +265,7 @@ impl<'a> CirBuilder<'a> {
                 }
             }
             InstKind::DerefPointer(value)
-                if self.source.values[value]
-                    .flags
-                    .contains(MirFlags::POINTER) =>
+                if self.source.values[value].flags.contains(MirFlags::POINTER) =>
             {
                 let value = self.use_value(value);
                 self.ctx.value_lookup[inst.value.unwrap()] = value.into();
@@ -264,7 +273,8 @@ impl<'a> CirBuilder<'a> {
             InstKind::Offset(value)
             | InstKind::TakePointer(value)
             | InstKind::DerefPointer(value) => {
-                self.ctx.value_lookup[inst.value.unwrap()] = self.ctx.value_lookup[value].unwrap().into();
+                self.ctx.value_lookup[inst.value.unwrap()] =
+                    self.ctx.value_lookup[value].unwrap().into();
                 // check
             }
             InstKind::Assign(value) => {
@@ -284,12 +294,8 @@ impl<'a> CirBuilder<'a> {
                 };
 
                 match (
-                    self.source.values[value]
-                        .flags
-                        .contains(MirFlags::POINTER),
-                    self.source.values[target]
-                        .flags
-                        .contains(MirFlags::POINTER),
+                    self.source.values[value].flags.contains(MirFlags::POINTER),
+                    self.source.values[target].flags.contains(MirFlags::POINTER),
                 ) {
                     (true, true) => {
                         let target_ir = self.use_value_as_pointer(target);
@@ -341,10 +347,10 @@ impl<'a> CirBuilder<'a> {
                     let offset = self.source.values[value].offset;
                     self.unwrap_size(offset)
                 };
-                let addr =
-                    self.builder
-                        .ins()
-                        .stack_addr(self.isa.pointer_type(), stack, 0);
+                let addr = self
+                    .builder
+                    .ins()
+                    .stack_addr(self.isa.pointer_type(), stack, 0);
                 self.ctx.value_lookup[value] = addr.into();
             }
         }
@@ -374,7 +380,7 @@ impl<'a> CirBuilder<'a> {
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
             "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
-            _ => todo!("Unhandled native function: {:?}", str),
+            _ => unimplemented!("Unhandled native function: {:?}", str),
         }
     }
 
@@ -394,7 +400,7 @@ impl<'a> CirBuilder<'a> {
                 let add = if ty.is_int() {
                     self.builder.ins().iadd(left, right)
                 } else {
-                    todo!("Unimplemented addition for {}", ty);
+                    unimplemented!("Unimplemented addition for {}", ty);
                 };
 
                 self.ctx.value_lookup[result.unwrap()] = add.into();
@@ -412,7 +418,7 @@ impl<'a> CirBuilder<'a> {
                 let neg = if ty.is_int() {
                     self.builder.ins().ineg(value)
                 } else {
-                    todo!("Unimplemented subtraction for {}", ty);
+                    unimplemented!("Unimplemented subtraction for {}", ty);
                 };
 
                 self.ctx.value_lookup[result.unwrap()] = neg.into();
@@ -428,7 +434,7 @@ impl<'a> CirBuilder<'a> {
                 let sub = if ty.is_int() {
                     self.builder.ins().isub(left, right)
                 } else {
-                    todo!("Unimplemented subtraction for {}", ty);
+                    unimplemented!("Unimplemented subtraction for {}", ty);
                 };
 
                 self.ctx.value_lookup[result.unwrap()] = sub.into();
@@ -450,7 +456,7 @@ impl<'a> CirBuilder<'a> {
                 let mul = if ty.is_int() {
                     self.builder.ins().imul(left, right)
                 } else {
-                    todo!("Unimplemented multiplication for {}", ty);
+                    unimplemented!("Unimplemented multiplication for {}", ty);
                 };
 
                 self.ctx.value_lookup[result.unwrap()] = mul.into();
@@ -462,9 +468,7 @@ impl<'a> CirBuilder<'a> {
     fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
         match self.source.value_slices.get(args) {
             &[left, right] => {
-                let signed = !self.source.values[left]
-                    .flags
-                    .contains(MirFlags::UNSIGNED);
+                let signed = !self.source.values[left].flags.contains(MirFlags::UNSIGNED);
                 let left = self.use_value(left);
                 let right = self.use_value(right);
 
@@ -479,7 +483,7 @@ impl<'a> CirBuilder<'a> {
                         self.builder.ins().udiv(left, right)
                     }
                 } else {
-                    todo!("Unimplemented division for {}", ty);
+                    unimplemented!("Unimplemented division for {}", ty);
                 };
 
                 self.ctx.value_lookup[result.unwrap()] = div.into();
@@ -493,15 +497,18 @@ impl<'a> CirBuilder<'a> {
             unreachable!();
         };
 
-        let signed = !self.source.values[left]
-            .flags
-            .contains(MirFlags::UNSIGNED);
+        let signed = !self.source.values[left].flags.contains(MirFlags::UNSIGNED);
 
         let left = self.use_value(left);
         let right = self.use_value(right);
 
         let ty = self.builder.func.dfg.value_type(left);
-        assert!(ty == self.builder.func.dfg.value_type(right), "{:?} != {:?}", ty, self.builder.func.dfg.value_type(right));
+        assert!(
+            ty == self.builder.func.dfg.value_type(right),
+            "{:?} != {:?}",
+            ty,
+            self.builder.func.dfg.value_type(right)
+        );
 
         let result = result.unwrap();
 
@@ -531,7 +538,7 @@ impl<'a> CirBuilder<'a> {
             let value = self.builder.ins().icmp(inst, left, right);
             self.ctx.value_lookup[result] = value.into();
         } else {
-            todo!("Unimplemented comparison for {}", ty);
+            unimplemented!("Unimplemented comparison for {}", ty);
         }
     }
 
@@ -666,17 +673,14 @@ pub fn translate_signature(
         }
     }
 
-    sig.params.extend(
-        args
-            .map(|ty| {
-                let ReprEnt { repr, .. } = reprs[ty];
-                // if flags.contains(repr::ReprFlags::ON_STACK) {
-                //     ir::AbiParam::special(repr, ir::ArgumentPurpose::StructArgument(size.arch(false) as u32))
-                // } else {
-                // }
-                ir::AbiParam::new(repr)
-            })
-    );
+    sig.params.extend(args.map(|ty| {
+        let ReprEnt { repr, .. } = reprs[ty];
+        // if flags.contains(repr::ReprFlags::ON_STACK) {
+        //     ir::AbiParam::special(repr, ir::ArgumentPurpose::StructArgument(size.arch(false) as u32))
+        // } else {
+        // }
+        ir::AbiParam::new(repr)
+    }));
 
     sig
 }

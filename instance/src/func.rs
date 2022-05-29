@@ -1,7 +1,4 @@
-
-
-
-use cranelift_codegen::ir::{Type};
+use cranelift_codegen::ir::Type;
 use cranelift_codegen::{isa::CallConv, packed_option::PackedOption};
 
 use errors::*;
@@ -12,7 +9,6 @@ use typec_types::*;
 
 pub type ExprResult = errors::Result<Option<Value>>;
 pub type PatternStacks = Vec<Vec<Tir>>;
-
 
 pub struct MirBuilderContext {
     tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
@@ -40,7 +36,7 @@ pub struct MirBuilder<'a> {
     pub func_id: Func,
     pub ptr_ty: Type,
     pub system_call_convention: CallConv,
-    
+
     pub reprs: &'a Reprs,
     pub types: &'a Types,
     pub ty_lists: &'a TyLists,
@@ -57,19 +53,16 @@ pub struct MirBuilder<'a> {
     pub diagnostics: &'a mut Diagnostics,
     pub ctx: &'a mut MirBuilderContext,
     pub func_meta: &'a FuncMeta,
-    pub pattern_stacks: &'a mut  PatternStacks,
+    pub pattern_stacks: &'a mut PatternStacks,
 }
 
 impl MirBuilder<'_> {
     pub fn translate_func(&mut self) -> errors::Result {
         self.ctx.clear();
         self.func.clear();
-        
+
         let FuncMetaData {
-            sig,
-            body,
-            args,
-            ..
+            sig, body, args, ..
         } = self.func_meta[self.func_id];
 
         let entry_point = self.func.create_block();
@@ -158,7 +151,7 @@ impl MirBuilder<'_> {
             TirKind::BitCast(..) => self.translate_bit_cast(tir, dest)?,
             TirKind::Match(..) => self.translate_match(tir, dest)?,
             TirKind::MatchBlock(..) => self.translate_match_block(tir, dest)?,
-            _ => todo!("Unhandled Kind::{:?}", kind),
+            _ => unimplemented!("Unhandled Kind::{:?}", kind),
         };
 
         self.ctx.tir_mapping[tir] = value.into();
@@ -172,9 +165,12 @@ impl MirBuilder<'_> {
         };
 
         if let Some(block) = self.ctx.match_block_mapping[inner_block].expand() {
-            self.func.add_inst(InstEnt::new(InstKind::Jump(block), None));
+            self.func
+                .add_inst(InstEnt::new(InstKind::Jump(block), None));
         } else {
-            let ret_block = self.ctx.match_block_stack
+            let ret_block = self
+                .ctx
+                .match_block_stack
                 .last()
                 .map(|block| block.expand())
                 .flatten();
@@ -182,13 +178,15 @@ impl MirBuilder<'_> {
             let block = self.func.create_block();
             self.ctx.match_block_mapping[inner_block] = block.into();
 
-            self.func.add_inst(InstEnt::new(InstKind::Jump(block), None));
+            self.func
+                .add_inst(InstEnt::new(InstKind::Jump(block), None));
 
             self.func.select_block(block);
             let value = self.translate_block(inner_block, dest)?;
             let value = (!self.on_stack(tir)).then_some(value).flatten();
             if let Some(ret_block) = ret_block {
-                self.func.add_inst(InstEnt::new(InstKind::Jump(ret_block), value));
+                self.func
+                    .add_inst(InstEnt::new(InstKind::Jump(ret_block), value));
             }
         }
 
@@ -204,8 +202,10 @@ impl MirBuilder<'_> {
         let value = self.unwrap_dest(tir, dest).or(dest);
 
         self.translate_expr(expr, None)?;
-        let terminating = self.body.ents[branches].flags.contains(TirFlags::TERMINATING);
-        let block = (!terminating).then(|| { 
+        let terminating = self.body.ents[branches]
+            .flags
+            .contains(TirFlags::TERMINATING);
+        let block = (!terminating).then(|| {
             let block = self.func.create_block();
             if let Some(value) = value && !on_stack {
                 self.func.blocks[block].params = self.func.value_slices.push(&[value]);
@@ -213,9 +213,9 @@ impl MirBuilder<'_> {
             block
         });
         self.ctx.match_block_stack.push(block.into());
-        
+
         drop(self.translate_expr(branches, dest));
-        
+
         self.ctx.match_block_stack.pop();
 
         if let Some(block) = block {
@@ -224,12 +224,8 @@ impl MirBuilder<'_> {
 
         Ok(value)
     }
-    
-    fn translate_bit_cast(
-        &mut self,
-        tir: Tir,
-        dest: Option<Value>,
-    ) -> ExprResult {
+
+    fn translate_bit_cast(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         let TirEnt { kind: TirKind::BitCast(expr), ty, span, .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -265,11 +261,7 @@ impl MirBuilder<'_> {
         Ok(Some(result))
     }
 
-    fn translate_take_pointer(
-        &mut self,
-        tir: Tir,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn translate_take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         let TirEnt { ty, kind: TirKind::TakePtr(value), .. } = self.body.ents[tir] else {
             unreachable!();
         };
@@ -293,11 +285,7 @@ impl MirBuilder<'_> {
         Ok(Some(value))
     }
 
-    fn translate_deref_pointer(
-        &mut self,
-        tir: Tir,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn translate_deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         let TirEnt { ty, kind: TirKind::DerefPointer(value), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -345,11 +333,7 @@ impl MirBuilder<'_> {
         Ok(None)
     }
 
-    fn translate_break(
-        &mut self,
-        loop_header_marker: Tir,
-        value: PackedOption<Tir>,
-    ) -> ExprResult {
+    fn translate_break(&mut self, loop_header_marker: Tir, value: PackedOption<Tir>) -> ExprResult {
         let &Loop { exit, dest, .. } = self
             .func
             .loops
@@ -422,22 +406,24 @@ impl MirBuilder<'_> {
         Ok(value)
     }
 
-    fn translate_field_access(
-        &mut self,
-        tir: Tir,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn translate_field_access(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         let TirEnt { ty, kind: TirKind::FieldAccess(base, field), .. } = self.body.ents[tir] else {
             unreachable!()
         };
         let header = self.translate_expr(base, None)?.unwrap();
 
         let offset = self.field_offset(header, field);
-        
+
         self.access_offset(ty, header, offset, dest)
     }
 
-    fn access_offset(&mut self, dest_ty: Ty, header: Value, offset: Offset, dest: Option<Value>) -> ExprResult {
+    fn access_offset(
+        &mut self,
+        dest_ty: Ty,
+        header: Value,
+        offset: Offset,
+        dest: Option<Value>,
+    ) -> ExprResult {
         let value = self.offset_low(header, offset, Some(dest_ty));
 
         self.assign(value, dest);
@@ -464,11 +450,7 @@ impl MirBuilder<'_> {
         Ok(Some(value))
     }
 
-    fn translate_constructor(
-        &mut self,
-        tir: Tir,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn translate_constructor(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         let TirEnt { ty, kind: TirKind::Constructor(data), .. } = self.body.ents[tir] else {
             unreachable!()
         };
@@ -563,14 +545,17 @@ impl MirBuilder<'_> {
         let otherwise_block = otherwise.is_some().then(|| self.func.create_block());
         let mut skip_block = None;
 
-        let mut get_skip_block = |s: &mut Self| skip_block.unwrap_or_else(|| {
-            let b = s.func.create_block();
-            skip_block = Some(b);
-            b
-        });
+        let mut get_skip_block = |s: &mut Self| {
+            skip_block.unwrap_or_else(|| {
+                let b = s.func.create_block();
+                skip_block = Some(b);
+                b
+            })
+        };
 
         {
-            let kind = InstKind::JumpIfFalse(otherwise_block.unwrap_or_else(|| get_skip_block(self)));
+            let kind =
+                InstKind::JumpIfFalse(otherwise_block.unwrap_or_else(|| get_skip_block(self)));
             let ent = InstEnt::new(kind, cond);
             self.func.add_inst(ent);
         }
@@ -651,7 +636,9 @@ impl MirBuilder<'_> {
 
         // instantiate generic function
         if flags.contains(TirFlags::GENERIC) {
-            let id = param_slice.iter().fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
+            let id = param_slice
+                .iter()
+                .fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
 
             func = if let Some(&instance) = self.funcs.instances.get(id) {
                 instance
@@ -666,8 +653,8 @@ impl MirBuilder<'_> {
                 self.funcs.to_compile.push((instance, params));
                 instance
             };
-        }       
-        
+        }
+
         let on_stack = self.on_stack(tir);
         let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
 
@@ -847,5 +834,5 @@ impl MirBuilder<'_> {
     fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::MirFlags) -> Value {
         let value = ValueEnt::flags(ty, flags);
         self.func.values.push(value)
-    }   
+    }
 }

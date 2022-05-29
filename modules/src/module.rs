@@ -1,4 +1,4 @@
-use std::{time::SystemTime};
+use std::time::SystemTime;
 
 use crate::unit::*;
 use ast::*;
@@ -77,7 +77,9 @@ impl<'a> ModuleBuilder<'a> {
             let module = self.sources.push(Default::default());
             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
             self.module_map.insert(id, module);
-            self.ctx.module_frontier.push_back((path, Span::default(), module));
+            self.ctx
+                .module_frontier
+                .push_back((path, Span::default(), module));
         }
 
         while let Some((path, span, slot)) = self.ctx.module_frontier.pop_front() {
@@ -164,14 +166,17 @@ impl<'a> ModuleBuilder<'a> {
                             counter += 1;
                             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
                             self.module_map.insert(id, module);
-                            self.ctx.module_frontier.push_back((path, path_span, module));
+                            self.ctx
+                                .module_frontier
+                                .push_back((path, path_span, module));
                             module
                         }
                     };
 
                     self.modules[slot].dependency.push(id);
 
-                    self.module_map.insert((self.sources.display(nick), slot), id);
+                    self.module_map
+                        .insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
                         self.ctx.cycle_graph.add_edge(id.0 - base_line);
                     }
@@ -184,7 +189,8 @@ impl<'a> ModuleBuilder<'a> {
             self.ctx.cycle_graph.close_node(0);
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Source>::max_node(&self.ctx.cycle_graph));
+        let mut ordering =
+            Vec::with_capacity(TreeStorage::<Source>::max_node(&self.ctx.cycle_graph));
         self.ctx
             .cycle_graph
             .detect_cycles(Source(0), Some(&mut ordering))

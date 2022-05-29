@@ -1,8 +1,8 @@
-use std::{ops::Not};
+use std::ops::Not;
 
 use incr::*;
-use module_types::*;
 use matching::*;
+use module_types::*;
 
 use crate::{scope::ScopeContext, TyError, *};
 
@@ -303,7 +303,7 @@ impl<'a> TirBuilder<'a> {
             AstKind::BitCast => self.build_bit_cast(ast)?,
             AstKind::Match => self.build_match(ast)?,
             AstKind::Error => return Err(()),
-            _ => todo!(
+            _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
                 self.sources.display(span)
@@ -316,8 +316,9 @@ impl<'a> TirBuilder<'a> {
         let &[expr, body] = self.ast.children(ast) else {
             unreachable!();
         };
-        
+
         let expr = self.build_expr(expr)?;
+        let span = self.ast.nodes[ast].span;
 
         self.pattern_graph.clear();
 
@@ -328,7 +329,7 @@ impl<'a> TirBuilder<'a> {
                 unreachable!();
             };
 
-            drop(self.build_pattern(pat, expr, &mut temp, 1));
+            drop(self.build_pattern(pat, expr, &mut temp, 1, span));
 
             // println!("{}", temp.iter()
             //     .map(|r| self.body.ents[r.meta].ty)
@@ -341,13 +342,13 @@ impl<'a> TirBuilder<'a> {
                 let inner_block = {
                     self.scope.mark_frame();
                     self.temp.mark_frame();
-    
+
                     for node in &temp {
                         if let PatternMeta::Var(name) = node.value {
                             let id = self.sources.id_of(name);
                             let item = ScopeItem::new(node.meta, name);
                             self.scope.push_item(id, item);
-    
+
                             self.temp.push({
                                 let kind = TirKind::Variable(node.meta);
                                 let ty = self.builtin_types.nothing;
@@ -356,10 +357,10 @@ impl<'a> TirBuilder<'a> {
                             })
                         }
                     }
-    
+
                     let expr = self.build_expr(body)?;
                     self.temp.push(expr);
-                    
+
                     self.scope.pop_frame();
 
                     self.body.ents.push({
@@ -388,7 +389,7 @@ impl<'a> TirBuilder<'a> {
             self.pattern_graph.add_branch(temp.drain(..));
         }
 
-        self.pattern_graph.build_graph();
+        self.pattern_graph.build_graph().unwrap();
 
         let branching = self.build_match_branching()?;
         Ok(self.body.ents.push({
@@ -411,9 +412,6 @@ impl<'a> TirBuilder<'a> {
         //     println!("{}", ty_display!(self, ty));
         // }
 
-        println!();
-        self.pattern_graph.log_recursive(root, 0);
-
         let Some(&last) = self.pattern_graph.slice(root_ent.children).last() else {
             return Ok(root_ent.meta);
         };
@@ -424,8 +422,10 @@ impl<'a> TirBuilder<'a> {
             let branch = self.pattern_graph.slice(root_ent.children)[i];
             let branch_ent = self.pattern_graph.node(branch);
             let expr = branch_ent.meta;
-            let TirEnt { ty, span, flags, .. } = self.body.ents[expr];
-            
+            let TirEnt {
+                ty, span, flags, ..
+            } = self.body.ents[expr];
+
             let comparison = if branch_ent.coverage.is_one() {
                 let func = {
                     let id = {
@@ -437,12 +437,12 @@ impl<'a> TirBuilder<'a> {
                 };
 
                 let int_lit = self.int_lit(branch_ent.coverage.start, ty);
-    
+
                 let args = self.body.cons.push(&[expr, int_lit]);
                 let kind = TirKind::Call(TyList::default(), func, args);
                 let ty = self.builtin_types.bool;
                 let ent = TirEnt::new(kind, ty, span);
-                self.body.ents.push(ent)                
+                self.body.ents.push(ent)
             } else {
                 todo!();
             };
@@ -463,26 +463,32 @@ impl<'a> TirBuilder<'a> {
             };
         }
 
-        Ok(base)   
+        Ok(base)
     }
 
-    fn build_pattern(&mut self, ast: Ast, expr: Tir, branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>, depth: u32) -> errors::Result {
-        let AstEnt { kind, span, .. } = self.ast.nodes[ast]; 
+    fn build_pattern(
+        &mut self,
+        ast: Ast,
+        expr: Tir,
+        branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>,
+        depth: u32,
+        base_expr_span: Span,
+    ) -> errors::Result {
+        let AstEnt { kind, span, .. } = self.ast.nodes[ast];
         match kind {
             AstKind::StructPattern | AstKind::TupleStructPattern => {
                 let is_tuple = kind == AstKind::TupleStructPattern;
                 let &[path, body] = self.ast.children(ast) else {
                     unreachable!();
                 };
-                
+
                 let low_expr = self.build_path_match(expr, path, branch, depth)?;
                 let ty = self.body.ents[low_expr].ty;
-    
-                
+
                 let TyKind::Struct(fields) = self.types[ty].kind else {
                     unreachable!();
                 };
-                  
+
                 let mut last_i = 0;
                 for (i, &field) in self.ast.children(body).iter().enumerate() {
                     let ((field_id, field_ty), field, i) = if is_tuple {
@@ -495,15 +501,15 @@ impl<'a> TirBuilder<'a> {
                         let &[name, mut pattern] = self.ast.children(field) else {
                             unreachable!("{}", self.sources.display(span));
                         };
-        
+
                         // shorthand case
                         if pattern.is_reserved_value() {
                             pattern = name;
                         }
-        
+
                         let span = self.ast.nodes[name].span;
                         let id = self.sources.id_of(span);
-    
+
                         let Ok(res) = self.find_field(ty, id, span) else {
                             continue;
                         };
@@ -526,14 +532,20 @@ impl<'a> TirBuilder<'a> {
                             range,
                             coverage: range,
                             depth,
-                            
+
                             ..Default::default()
                         };
                         branch.push(data);
                     }
                     last_i = i + 1;
 
-                    drop(self.build_pattern(field, field_access, branch, depth + 1));
+                    drop(self.build_pattern(
+                        field,
+                        field_access,
+                        branch,
+                        depth + 1,
+                        base_expr_span,
+                    ));
                 }
 
                 for filed in &self.ty_comps.get(fields)[last_i..] {
@@ -542,18 +554,18 @@ impl<'a> TirBuilder<'a> {
                         range,
                         coverage: range,
                         depth,
-                        
+
                         ..Default::default()
                     };
                     branch.push(data);
                 }
-            },
-            
+            }
+
             AstKind::Path => drop(self.build_path_match(expr, ast, branch, depth)?),
-            
+
             AstKind::Ident => {
                 let id = self.sources.id_of(span);
-                let range = self.types.range_of(self.body.ents[expr].ty, self.ty_comps); 
+                let range = self.types.range_of(self.body.ents[expr].ty, self.ty_comps);
                 let value = if id == ID::new("_") {
                     PatternMeta::Default
                 } else {
@@ -567,18 +579,24 @@ impl<'a> TirBuilder<'a> {
                     value,
                 };
                 branch.push(data);
-            },
-            
-            AstKind::Int |
-            AstKind::Bool |
-            AstKind::Char => {
+            }
+
+            AstKind::Int | AstKind::Bool | AstKind::Char => {
                 let tir = self.build_expr(ast)?;
                 let ty = self.body.ents[expr].ty;
-                self.infer_tir_ty(tir, ty, |_, _, _| todo!())?;
-                
+                self.infer_tir_ty(tir, ty, |_, got, loc| TyError::PatternTypeMismatch {
+                    loc,
+                    got,
+                    expected: ty,
+                    because: base_expr_span,
+                })?;
+
                 let data = {
                     let coverage = match self.body.ents[tir].kind {
-                        TirKind::IntLit(value) => PatternRange::new(value..value),
+                        TirKind::IntLit(value) => PatternRange {
+                            start: value,
+                            end: value,
+                        },
                         TirKind::BoolLit(value) => PatternRange::new(value..value),
                         TirKind::CharLit(value) => PatternRange::new(value..value),
                         _ => unreachable!(),
@@ -589,34 +607,51 @@ impl<'a> TirBuilder<'a> {
                         range,
                         depth,
                         meta: expr,
-                        value: PatternMeta::Cmp
+                        value: PatternMeta::Cmp,
                     }
                 };
 
                 branch.push(data);
-            },
+            }
 
-            kind => todo!("{kind:?}"),
+            kind => unimplemented!("{kind:?}"),
         }
 
         Ok(())
     }
 
-    fn build_path_match(&mut self, expr: Tir, ast: Ast, branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>, depth: u32) -> errors::Result<Tir> {
+    fn build_path_match(
+        &mut self,
+        expr: Tir,
+        ast: Ast,
+        branch: &mut Vec<PatternLevelData<Tir, PatternMeta>>,
+        depth: u32,
+    ) -> errors::Result<Tir> {
         let TirEnt { ty: expr_ty, .. } = self.body.ents[expr];
         let id = ident_hasher!(self).ident_id(ast, None)?;
         let span = self.ast.nodes[ast].span;
 
-        if let TyEnt { kind: TyKind::Enum(discriminant_ty, ..), id: enum_id, .. } = self.types[expr_ty] {
+        if let TyEnt {
+            kind: TyKind::Enum(discriminant_ty, ..),
+            id: enum_id,
+            ..
+        } = self.types[expr_ty]
+        {
             let id = ID::field(enum_id, id);
             let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                todo!("{}", span.log(self.sources));                   
+                self.diagnostics.push(TyError::UnknownEnumVariant {
+                    loc: span,
+                    on: expr_ty,
+                });
+                return Err(());
             };
-            let TyCompEnt { ty: variant, index, .. } = self.ty_comps[variant];
+            let TyCompEnt {
+                ty: variant, index, ..
+            } = self.ty_comps[variant];
 
             {
                 let lit_value = index - 1;
-    
+
                 let flag_field = {
                     let (field, _) = self.get_field(expr_ty, 0, span)?;
                     let kind = TirKind::FieldAccess(expr, field);
@@ -628,7 +663,7 @@ impl<'a> TirBuilder<'a> {
                     meta: flag_field,
                     coverage: PatternRange::new(lit_value..lit_value),
                     depth,
-                    range: self.types.range_of(discriminant_ty, self.ty_comps),
+                    range: self.types.range_of(expr_ty, self.ty_comps),
                     value: PatternMeta::Cmp,
                 };
 
@@ -641,12 +676,12 @@ impl<'a> TirBuilder<'a> {
                 let ent = TirEnt::new(kind, variant, span);
                 self.body.ents.push(ent)
             };
-            
+
             Ok(value)
         } else {
             let data = PatternLevelData {
                 depth,
-                ..Default::default()  
+                ..Default::default()
             };
 
             branch.push(data);
@@ -692,7 +727,11 @@ impl<'a> TirBuilder<'a> {
     fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
         let literal_value = char_value(self.sources, self.ast.nodes[ast].span).unwrap();
         let span = self.ast.nodes[ast].span;
-        let ent = TirEnt::new(TirKind::CharLit(literal_value), self.builtin_types.char, span);
+        let ent = TirEnt::new(
+            TirKind::CharLit(literal_value),
+            self.builtin_types.char,
+            span,
+        );
         Ok(self.body.ents.push(ent))
     }
 
@@ -952,14 +991,22 @@ impl<'a> TirBuilder<'a> {
 
             if let Some(instantiation) = instantiation {
                 if params.len() > self.ast.children(instantiation).len() - 1 {
-                    todo!("this is an error");
-                }
-
-                for (i, &param) in self.ast.children(instantiation)[1..].iter().enumerate() {
-                    let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
-                        continue;
-                    };
-                    param_slots[i] = ty;
+                    let loc = self.ast.nodes[instantiation].span;
+                    self.diagnostics
+                        .push(TyError::InstantiationParamCountMismatch {
+                            because,
+                            expected: params.len(),
+                            got: self.ast.children(instantiation).len() - 1,
+                            loc,
+                        });
+                    return Err(());
+                } else {
+                    for (i, &param) in self.ast.children(instantiation)[1..].iter().enumerate() {
+                        let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
+                            continue;
+                        };
+                        param_slots[i] = ty;
+                    }
                 }
             }
 
@@ -1119,7 +1166,11 @@ impl<'a> TirBuilder<'a> {
         let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
         if let Some((enum_ty, span)) = owner {
             let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                todo!();
+                self.diagnostics.push(TyError::UnknownEnumVariant {
+                    loc: span,
+                    on: enum_ty,
+                });
+                return Err(())
             };
             let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
             let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
@@ -1150,7 +1201,7 @@ impl<'a> TirBuilder<'a> {
             });
             return Err(());
         };
-        
+
         let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
 
         // TODO: maybe avoid allocation
@@ -1160,10 +1211,10 @@ impl<'a> TirBuilder<'a> {
                 let &[name, expr] = self.ast.children(field) else {
                     unreachable!();
                 };
-    
+
                 let span = self.ast.nodes[name].span;
                 let id = self.sources.id_of(span);
-    
+
                 let Ok(res) = self.find_field(ty, id, span) else {
                     continue;
                 };
@@ -1311,9 +1362,7 @@ impl<'a> TirBuilder<'a> {
                 self.builtin_types
                     .integers()
                     .into_iter()
-                    .find(|&ty| str.ends_with(
-                        self.sources.display(self.types[ty].name)
-                    ))
+                    .find(|&ty| str.ends_with(self.sources.display(self.types[ty].name)))
                     .unwrap_or(self.builtin_types.int)
             }
         };
@@ -1553,7 +1602,7 @@ impl<'a> TirBuilder<'a> {
         Ok(result)
     }
 
-    fn get_field(&mut self, on: Ty, index: usize, _span: Span) -> errors::Result<(TyComp, Ty)> {
+    fn get_field(&mut self, on: Ty, index: usize, span: Span) -> errors::Result<(TyComp, Ty)> {
         let base = if let TyKind::Instance(base, ..) = self.types[on].kind {
             base
         } else {
@@ -1561,11 +1610,17 @@ impl<'a> TirBuilder<'a> {
         };
 
         let (TyKind::Struct(fields) | TyKind::Enum(.., fields)) = self.types[base].kind else {
-            todo!("{:?}", self.types[base].kind);
+            unreachable!("{:?}", self.types[base].kind);
         };
 
         let Some(field) = self.ty_comps.get(fields).get(index) else {
-            todo!();
+            self.diagnostics.push(TyError::UnregisteredFieldIndex {
+                index,
+                max: self.ty_comps.get(fields).len(),
+                loc: span,
+                on,
+            });
+            return Err(());
         };
 
         let ty = if let TyKind::Instance(.., params) = self.types[on].kind {
@@ -1575,7 +1630,10 @@ impl<'a> TirBuilder<'a> {
             field.ty
         };
 
-        Ok((TyComp::new(self.ty_comps.start_index_of(fields).unwrap() + index), ty))
+        Ok((
+            TyComp::new(self.ty_comps.start_index_of(fields).unwrap() + index),
+            ty,
+        ))
     }
 
     fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(TyComp, Ty)> {

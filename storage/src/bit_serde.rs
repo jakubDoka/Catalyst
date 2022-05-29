@@ -38,7 +38,11 @@ impl BitSerde for String {
         let len = usize::read(cursor, buffer)?;
 
         if len > buffer.len() {
-            return Err(format!("String length {} exceeds buffer length {}", len, buffer.len()));
+            return Err(format!(
+                "String length {} exceeds buffer length {}",
+                len,
+                buffer.len()
+            ));
         }
 
         let slice = &buffer[*cursor..*cursor + len];

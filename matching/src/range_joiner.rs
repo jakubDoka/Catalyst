@@ -95,7 +95,8 @@ impl RangeJoiner {
     }
 
     pub fn exhausted(&self) -> bool {
-        (self.indices.len() == 1 && self.indices[0] == self.range) || self.range.start == self.range.end
+        (self.indices.len() == 1 && self.indices[0] == self.range)
+            || self.range.start == self.range.end
     }
 
     pub fn missing(&self) -> Vec<PatternRange> {
@@ -116,9 +117,7 @@ impl RangeJoiner {
 
         let edge = self.indices.first().unwrap();
         if self.range.start != edge.start {
-            buffer.push(PatternRange::new(
-                self.range.start..edge.start - 1,
-            ));
+            buffer.push(PatternRange::new(self.range.start..edge.start - 1));
         }
 
         buffer.extend(
@@ -129,9 +128,7 @@ impl RangeJoiner {
 
         let edge = self.indices.last().unwrap();
         if self.range.end != edge.end {
-            buffer.push(PatternRange::new(
-                edge.end + 1..self.range.end,
-            ));
+            buffer.push(PatternRange::new(edge.end + 1..self.range.end));
         }
     }
 }

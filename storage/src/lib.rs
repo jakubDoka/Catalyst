@@ -16,14 +16,14 @@ pub use bit_serde::BitSerde;
 pub use bitflags::bitflags;
 pub use cranelift_entity::{
     packed_option::{PackedOption, ReservedValue},
-    EntityRef, EntitySet, PrimaryMap, ListPool, EntityList,
+    EntityList, EntityRef, EntitySet, ListPool, PrimaryMap,
 };
 pub use framed_stack::FramedStack;
 pub use map::{Map, SecondaryMap, Set, ID};
 pub use pool_map::PoolMap;
+pub use sparse_map::SparseMap;
 pub use stack_map::{FramedStackMap, StackMap};
 pub use tree::*;
-pub use sparse_map::SparseMap;
 
 pub extern crate cranelift_entity;
 

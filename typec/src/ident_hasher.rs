@@ -2,8 +2,8 @@ use ast::*;
 use errors::*;
 use lexer::*;
 use module_types::*;
-use typec_types::*;
 use storage::*;
+use typec_types::*;
 
 pub struct IdentHasher<'a> {
     pub sources: &'a Sources,
@@ -79,10 +79,7 @@ impl<'a> IdentHasher<'a> {
                         (item_id + ID::from(source), None)
                     } else {
                         let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-                        (
-                            ID::owned_func(self.types[ty].id, item_id),
-                            Some((ty, span)),
-                        )
+                        (ID::owned_func(self.types[ty].id, item_id), Some((ty, span)))
                     },
                 )
             }

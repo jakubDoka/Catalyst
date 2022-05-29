@@ -3,7 +3,7 @@ use lexer::*;
 use module_types::*;
 use storage::*;
 
-use crate::{*, jit::Macro};
+use crate::{jit::Macro, *};
 
 pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 
@@ -86,7 +86,7 @@ bitflags! {
 impl FuncFlags {
     const CALL_CONV_OFFSET: u32 = 32 - 8;
     const CALL_CONV_MASK: u32 = 0xFF << Self::CALL_CONV_OFFSET;
-    
+
     pub fn set_call_conv(&mut self, cc: Option<CallConv>) {
         let Some(cc) = cc else {
             self.bits &= !Self::CALL_CONV_MASK;
@@ -94,9 +94,7 @@ impl FuncFlags {
             return;
         };
 
-        let bytes = unsafe {
-            std::mem::transmute::<_, u8>(cc)
-        } as u32;
+        let bytes = unsafe { std::mem::transmute::<_, u8>(cc) } as u32;
 
         self.bits &= !Self::CALL_CONV_MASK;
         self.bits |= bytes << Self::CALL_CONV_OFFSET;
@@ -109,9 +107,7 @@ impl FuncFlags {
         }
 
         let bytes = (self.bits & Self::CALL_CONV_MASK) >> Self::CALL_CONV_OFFSET;
-        unsafe {
-            Some(std::mem::transmute::<_, CallConv>(bytes as u8))
-        }
+        unsafe { Some(std::mem::transmute::<_, CallConv>(bytes as u8)) }
     }
 }
 

@@ -280,7 +280,8 @@ impl std::fmt::Display for MirDisplay<'_> {
                             f,
                             "    {} = pattern_check({})",
                             self.value_to_string(inst.value.unwrap()),
-                            self.func.value_slices
+                            self.func
+                                .value_slices
                                 .get(list)
                                 .iter()
                                 .map(|&v| format!("{v}"))

@@ -7,6 +7,7 @@ struct TyErrorDisplay<'a> {
     sources: &'a Sources,
     types: &'a Types,
     ty_lists: &'a TyLists,
+    ty_comps: &'a TyComps,
 }
 
 pub fn display(
@@ -14,6 +15,7 @@ pub fn display(
     sources: &Sources,
     types: &Types,
     ty_lists: &TyLists,
+    ty_comps: &TyComps,
     to: &mut String,
 ) -> std::fmt::Result {
     use std::fmt::Write;
@@ -22,6 +24,7 @@ pub fn display(
         sources,
         types,
         ty_lists,
+        ty_comps,
     };
 
     match error {
@@ -49,6 +52,26 @@ pub fn display(
             generics.underline_info(sources, to, &|to| write!(to, "or removing this"))?;
             writeln!(to, "|> If you still want the function to be generic, make a wrapper around concrete instance and mark it #entry")?;
         }
+        &TyError::InstantiationParamCountMismatch {
+            expected,
+            got,
+            because,
+            loc,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "generic function instantiation requires {} parameters, but {} were given",
+                    expected, got
+                )
+            })?;
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                write!(to, "limited by this function definition")
+            })?;
+            writeln!(to, "|> Extra parameters are forbidden.")?;
+        }
         &TyError::MissingBound { loc, input, bound } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
@@ -60,19 +83,78 @@ pub fn display(
                 )
             })?;
         }
+        &TyError::UnknownEnumVariant { loc, on } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "unknown enum variant on '{}'", ty_display!(state, on))
+            })?;
+
+            let TyKind::Enum(.., variants) = state.types[on].kind else {
+                unreachable!();
+            };
+
+            writeln!(to, "|> known variants:")?;
+            for variant in state.ty_comps.get(variants).iter().skip(1) {
+                writeln!(to, "|\t{}", state.sources.display(variant.span))?;
+            }
+        }
+        &TyError::UnregisteredFieldIndex {
+            index,
+            max,
+            loc,
+            on,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "unregistered field index {} on '{}'",
+                    index,
+                    ty_display!(state, on)
+                )
+            })?;
+            writeln!(
+                to,
+                "|> '{}' is known to have only {} fields",
+                max,
+                ty_display!(state, on)
+            )?;
+        }
+        &TyError::PatternTypeMismatch {
+            because,
+            expected,
+            got,
+            loc,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "expected '{}', got '{}' inside this pattern",
+                    ty_display!(state, expected),
+                    ty_display!(state, got)
+                )
+            })?;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                write!(to, "type was determined from expression here")
+            })?;
+        }
         TyError::InfinitelySizedType { cycle } => {
             writeln!(to, "{ERR}|> infinitely sized type detected:{END}")?;
             for &ty in cycle {
-                writeln!(to, "\t{}", ty_display!(state, ty))?;
+                writeln!(to, "|\t{}", ty_display!(state, ty))?;
             }
-            writeln!(to, "|> Cycle can be broken by referencing any segment of the cycle indirectly.")?;
+            writeln!(
+                to,
+                "|> Cycle can be broken by referencing any segment of the cycle indirectly."
+            )?;
             writeln!(to, "|> Structure is depending indirectly if its hidden behind fixed sized interface like a pointer.")?;
-        },
+        }
         TyError::InvalidCallConv { loc } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(to, "invalid calling convention")
-            })?;
+            loc.underline_error(sources, to, &|to| write!(to, "invalid calling convention"))?;
             writeln!(to, "|> valid calling conventions:")?;
             for cc in [
                 // BRUH
@@ -426,15 +508,31 @@ pub fn display(
             writeln!(to, "|> use '_' instead of type for known parameters")?;
             writeln!(to, "|> omit tali parameters that are known")?;
         }
-        #[allow(unused)]
-        TyError::OperatorArgCountMismatch {
+        &TyError::OperatorArgCountMismatch {
             because,
             expected,
             got,
             loc,
-        } => todo!(),
-        #[allow(unused)]
-        TyError::BinaryTypeMismatch { expected, got, loc } => todo!(),
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "expected {} arguments but got {}", expected, got)
+            })?;
+
+            because.underline_error(sources, to, &|to| write!(to, "because of this definition"))?;
+        }
+        &TyError::BinaryTypeMismatch { expected, got, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "expected '{}' but got '{}'",
+                    ty_display!(state, expected),
+                    ty_display!(state, got)
+                )
+            })?;
+            writeln!(to, "|> The type of second argument in binary expression is determined by the first one.")?;
+        }
     }
 
     writeln!(to)?;

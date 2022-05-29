@@ -19,10 +19,12 @@ impl TypeBase for Types {}
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
     fn range_of(&self, ty: Ty, ty_comps: &TyComps) -> PatternRange {
         match self[ty].kind {
-            TyKind::Instance(..)
-            | TyKind::Struct(..) => PatternRange::default(),
-            
-            TyKind::Enum(.., variants) => PatternRange::new(0..ty_comps.len_of(variants) - 1),
+            TyKind::Instance(..) | TyKind::Struct(..) => PatternRange::default(),
+
+            // enum has 1 extra field and since a..b is inclusive in this context
+            // we subtract another 1.
+            TyKind::Enum(.., variants) => PatternRange::new(0..ty_comps.len_of(variants) - 2),
+
             TyKind::Ptr(..) => PatternRange::new(0..usize::MAX),
             TyKind::Int(base) => match base {
                 8 => PatternRange::new(i8::MIN..i8::MAX),
@@ -39,10 +41,8 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
                 _ => PatternRange::new(usize::MIN..usize::MAX),
             },
             TyKind::Bool => PatternRange::new(false..true),
-            
-            TyKind::Unresolved 
-            | TyKind::Bound(_)
-            | TyKind::Param(..) => todo!(),
+
+            TyKind::Unresolved | TyKind::Bound(_) | TyKind::Param(..) => unreachable!(),
         }
     }
 
@@ -166,7 +166,10 @@ impl BuiltinTypes {
     }
 
     pub fn integers(&self) -> [Ty; 10] {
-        [self.i8, self.i16, self.i32, self.i64, self.int, self.u8, self.u16, self.u32, self.u64, self.uint]
+        [
+            self.i8, self.i16, self.i32, self.i64, self.int, self.u8, self.u16, self.u32, self.u64,
+            self.uint,
+        ]
     }
 }
 

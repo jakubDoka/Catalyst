@@ -102,7 +102,7 @@ impl<'a> ReprInstancing<'a> {
                             self.expand_instances(new_i_params, field.ty, new_instances);
                         }
                     }
-                    kind => todo!("{kind:?}"),
+                    kind => unimplemented!("{kind:?}"),
                 }
 
                 let instance = TyEnt {
@@ -117,7 +117,7 @@ impl<'a> ReprInstancing<'a> {
 
                 ty
             }
-            kind => todo!("{kind:?}"),
+            kind => unimplemented!("{kind:?}"),
         }
     }
 }
@@ -169,7 +169,7 @@ impl<'a> LayoutBuilder<'a> {
         if ty.flags.contains(TyFlags::GENERIC) || ty.flags.contains(TyFlags::BUILTIN) {
             return;
         }
-        
+
         match ty.kind {
             TyKind::Instance(base, params) => {
                 let TyEnt { kind, .. } = self.types[base];
@@ -177,7 +177,7 @@ impl<'a> LayoutBuilder<'a> {
                     TyKind::Struct(fields) => {
                         self.resolve_struct_repr(id, params, fields);
                     }
-                    _ => todo!("{kind:?}"),
+                    _ => unimplemented!("{kind:?}"),
                 }
             }
             TyKind::Struct(fields) => {
@@ -190,7 +190,7 @@ impl<'a> LayoutBuilder<'a> {
             TyKind::Enum(ty, variants) => {
                 self.resolve_enum_repr(id, ty, params, variants);
             }
-            kind => todo!("{kind:?}"),
+            kind => unimplemented!("{kind:?}"),
         };
     }
 
@@ -216,22 +216,33 @@ impl<'a> LayoutBuilder<'a> {
                 }
                 self.instances.get(id).unwrap().clone()
             }
-            kind => todo!("{kind:?}"),
+            kind => unimplemented!("{kind:?}"),
         }
     }
 
-    pub fn resolve_enum_repr(&mut self, ty: Ty, discriminant_ty: Ty, _params: TyList, fields: TyCompList) {
-        let (layout, copyable) = self.ty_comps
+    pub fn resolve_enum_repr(
+        &mut self,
+        ty: Ty,
+        discriminant_ty: Ty,
+        _params: TyList,
+        fields: TyCompList,
+    ) {
+        let (layout, copyable) = self
+            .ty_comps
             .get(fields)
             .iter()
-            .map(|field| (
-                self.reprs[field.ty].layout, 
-                self.reprs[field.ty].flags.contains(ReprFlags::COPYABLE)
-            )).fold(
-            (Layout::ZERO, true),
-            |(acc_layout, acc_copyable), (layout, copyable)| 
-                (layout.max(acc_layout), copyable & acc_copyable),
-        );
+            .map(|field| {
+                (
+                    self.reprs[field.ty].layout,
+                    self.reprs[field.ty].flags.contains(ReprFlags::COPYABLE),
+                )
+            })
+            .fold(
+                (Layout::ZERO, true),
+                |(acc_layout, acc_copyable), (layout, copyable)| {
+                    (layout.max(acc_layout), copyable & acc_copyable)
+                },
+            );
 
         let (offset, layout) = {
             let discriminant_layout = self.reprs[discriminant_ty].layout;
@@ -243,7 +254,12 @@ impl<'a> LayoutBuilder<'a> {
         };
 
         self.reprs[ty].layout = layout;
-        let fields = self.repr_fields.push(&[ReprField { offset: Offset::ZERO }, ReprField { offset }]);
+        let fields = self.repr_fields.push(&[
+            ReprField {
+                offset: Offset::ZERO,
+            },
+            ReprField { offset },
+        ]);
 
         self.reprs[ty] = ReprEnt {
             repr: ir::types::INVALID,
@@ -288,7 +304,6 @@ impl<'a> LayoutBuilder<'a> {
             layout: Layout::new(size, align),
         };
     }
-
 }
 
 pub fn smallest_repr_for(size: Offset, ptr_ty: Type) -> (Type, bool) {
@@ -322,7 +337,7 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
     }
 
     let hom = |i| Layout::new(Offset::new(i, i), Offset::new(i, i));
-    
+
     gen!(
         (bool, ir::types::B1, hom(1)),
         (i8, ir::types::I8, hom(1)),
@@ -339,7 +354,7 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
     );
 }
 
-pub fn build_reprs(ptr_ty: Type, reprs: &mut Reprs, types: impl Iterator<Item = Ty>) {        
+pub fn build_reprs(ptr_ty: Type, reprs: &mut Reprs, types: impl Iterator<Item = Ty>) {
     for ty in types {
         let (repr, on_stack) = smallest_repr_for(reprs[ty].layout.size(), ptr_ty);
         reprs[ty].repr = repr;

@@ -14,7 +14,11 @@ impl RangeSplitter {
         }
     }
 
-    pub fn split(&mut self, range: PatternRange, ranges: impl Iterator<Item = PatternRange> + Clone) {
+    pub fn split(
+        &mut self,
+        range: PatternRange,
+        ranges: impl Iterator<Item = PatternRange> + Clone,
+    ) {
         self.range = range;
         let (start, end) = self.range.into_borders();
 

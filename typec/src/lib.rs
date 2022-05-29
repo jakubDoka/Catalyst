@@ -7,18 +7,18 @@
 #![allow(incomplete_features)]
 #![feature(atomic_mut_ptr)]
 
+pub mod bound_verifier;
 pub mod error;
+pub mod ident_hasher;
 pub mod scope;
 pub mod tir;
 pub mod ty;
-pub mod ident_hasher;
-pub mod bound_verifier;
 
-pub use scope::{ScopeBuilder, ScopeContext};
-pub use tir::{TirBuilder, PatternMeta};
-pub use ty::TyBuilder;
-pub use ident_hasher::IdentHasher;
 pub use bound_verifier::BoundVerifier;
+pub use ident_hasher::IdentHasher;
+pub use scope::{ScopeBuilder, ScopeContext};
+pub use tir::{PatternMeta, TirBuilder};
+pub use ty::TyBuilder;
 
 use ast::*;
 use errors::*;
@@ -571,10 +571,7 @@ pub fn int_value(sources: &Sources, span: Span, signed: bool) -> u128 {
         value = value.wrapping_sub(i128::MIN as u128);
     }
 
-    match chars.next() {
-        None => return value,
-        _ => todo!("unhandled int literal {:?}", sources.display(span)),
-    }
+    value
 }
 
 #[derive(Debug, Clone, Copy)]

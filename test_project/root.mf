@@ -79,12 +79,16 @@ fn main() -> int {
         return 15
     }
 
+    putchar('a')
+
     if Enum::Something::{}.is_something() {} else {
         return 16
     }
 
+    putchar('b')
+
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
-        return Enum::Structural::{ integer: 6 }.integer()
+        putchar('f')
         return 17
     }
 

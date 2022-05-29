@@ -1,4 +1,7 @@
-use std::{ops::{IndexMut, RangeBounds, Range}, path::{PathBuf, Path}};
+use std::{
+    ops::{IndexMut, Range, RangeBounds},
+    path::{Path, PathBuf},
+};
 
 use logos::Logos;
 
@@ -10,8 +13,8 @@ macro_rules! gen_kind {
         pub enum TokenKind {
             #[error]
             Error,
-            
-            
+
+
             #[regex(r"[ \r\t]+", logos::skip)]
             Space,
 
@@ -22,7 +25,7 @@ macro_rules! gen_kind {
                 #[regex($repr)]
                 $name,
             )*
-            
+
             None,
             Eof,
         }
@@ -67,7 +70,7 @@ gen_kind!(
     Match = "match",
     Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
     Operator = "[+\\-*/%<>=&|!^]+",
-    Int = "[0-9]+(i(8|16|32|64)?)?",
+    Int = "[0-9]+((i|u)(8|16|32|64)?)?",
     String = r#""(\\"|[^"])*""#,
     Bool = "(true|false)",
     Char = r"'(\\'|[^'])*'",

@@ -23,7 +23,10 @@ impl<T> FramedStack<T> {
         self.data.push(value);
     }
 
-    pub fn pre_push(&mut self, amount: usize) where T: Default + Clone {
+    pub fn pre_push(&mut self, amount: usize)
+    where
+        T: Default + Clone,
+    {
         self.data.resize(self.data.len() + amount, T::default());
     }
 
