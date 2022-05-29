@@ -4,6 +4,13 @@ use {
     "root/patterns"
 }
 
+#macro(source, source)
+fn hello() {
+    putchar('g')
+    putchar('g')
+    -
+}
+
 #entry
 fn main() -> int {
     if other(1, 2, 3) != 7 {
@@ -17,8 +24,6 @@ fn main() -> int {
     if generics::bti(false) != 0 {
         return 3
     }
-
-
 
     if fib(5) != 8 {
         return 4

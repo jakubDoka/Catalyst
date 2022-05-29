@@ -8,7 +8,11 @@ use logos::Logos;
 use storage::*;
 
 macro_rules! gen_kind {
-    ($($name:ident = $repr:literal,)*) => {
+    ($($name:ident = $repr:literal $(= $display:literal)?,)*) => {
+        gen_kind!(low $($name = $repr $(=> $display)? => concat!("'", $repr, "'"),)*);
+    };
+
+    (low $($name:ident = $repr:literal => $display:expr $(=> $ignored:expr)?,)*) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
         pub enum TokenKind {
             #[error]
@@ -33,7 +37,7 @@ macro_rules! gen_kind {
         impl TokenKind {
             pub fn as_str(&self) -> &'static str {
                 match self {
-                    $(Self::$name => concat!("'", $repr, "'"),)*
+                    $(Self::$name => concat!($display),)*
                     Self::Error => "<error>",
                     Self::None => "<none>",
                     Self::Space => "<space>",
@@ -68,26 +72,26 @@ gen_kind!(
     Impl = "impl",
     As = "as",
     Match = "match",
-    Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
-    Operator = "[+\\-*/%<>=&|!^]+",
-    Int = "[0-9]+((i|u)(8|16|32|64)?)?",
-    String = r#""(\\"|[^"])*""#,
-    Bool = "(true|false)",
-    Char = r"'(\\'|[^'])*'",
-    LeftCurly = "\\{",
-    RightCurly = "\\}",
-    LeftParen = "\\(",
-    RightParen = "\\)",
-    LeftBracket = "\\[",
-    RightBracket = "\\]",
+    Ident = "[a-zA-Z_][a-zA-Z0-9_]*" = "<ident>",
+    Operator = "[+\\-*/%<>=&|!^]+" = "<operator>",
+    Int = "[0-9]+((i|u)(8|16|32|64)?)?" = "<int>",
+    String = r#""(\\"|[^"])*""# = "<string>",
+    Bool = "(true|false)" = "<bool>",
+    Char = r"'(\\'|[^'])*'" = "<char>",
+    LeftCurly = "\\{" = "'{'",
+    RightCurly = "\\}" = "'}'",
+    LeftParen = "\\(" = "'('",
+    RightParen = "\\)" = "')'",
+    LeftBracket = "\\[" = "'['",
+    RightBracket = "\\]" = "']'",
     Comma = ",",
     Colon = ":",
-    Dot = "\\.",
+    Dot = "\\." = "'.'",
     RightArrow = "->",
     ThickRightArrow = "=>",
     DoubleColon = "::",
     Hash = "#",
-    NewLine = "(\\n|;)",
+    NewLine = "(\\n|;)" = "'\\n' | ';'",
 );
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;

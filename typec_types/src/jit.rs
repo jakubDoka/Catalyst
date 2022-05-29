@@ -10,7 +10,7 @@ pub struct Macro {
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stage {
-    Source = 0,
+    Source,
     Tokenization,
     Parsing,
     Typec,

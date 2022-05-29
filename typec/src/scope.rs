@@ -120,7 +120,7 @@ impl<'a> ScopeBuilder<'a> {
                 AstKind::Struct => drop(self.collect_struct(ast)),
                 AstKind::Bound => drop(self.collect_bound(ast)),
                 AstKind::Enum => drop(self.collect_struct(ast)), // there is no difference at this level
-                _ => (todo!("Unhandled top-level item:\n{}", self.sources.display(span))),
+                _ => (unimplemented!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
 
             self.ctx.tags.clear();
@@ -553,9 +553,10 @@ impl<'a> ScopeBuilder<'a> {
 
     pub fn parse_macro_tag(&self) -> Option<Macro> {
         let raw_tag = self.find_simple_tag("macro")?;
+        let raw_tag = self.ast.children(raw_tag)[0]; 
 
         // TODO: emit error
-        assert!(self.ast.nodes[raw_tag].kind == AstKind::Call);
+        assert_eq!(self.ast.nodes[raw_tag].kind, AstKind::Call);
 
         let &[_, from, to] = self.ast.children(raw_tag) else {
             // TODO: emit error
