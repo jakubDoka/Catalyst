@@ -1,0 +1,46 @@
+file "src/state.rs" {
+    use "crate"
+
+    struct SourceLoader {
+        Subcommand
+        mut Units
+        mut Modules
+        mut Sources
+        mut LoaderContext
+        mut Diagnostics
+        mut ModuleMap
+    }
+
+    struct MainScopeBuilder {
+        mut Diagnostics
+        mut Scope
+        Modules
+        BuiltinSource
+        Sources
+        AstData
+        ModuleMap
+    }
+}
+
+file "modules/src/state.rs" {
+    use "crate"
+    use "module_types"
+    use "lexer"
+    use "errors"
+    
+    struct ModuleBuilder {
+        mut Sources
+        mut Modules
+        mut Units
+        mut LoaderContext
+        mut ModuleMap
+        mut Diagnostics
+    }
+
+    struct UnitBuilder {
+        mut Sources
+        mut Units
+        mut LoaderContext
+        mut Diagnostics
+    }
+}

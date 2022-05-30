@@ -17,7 +17,7 @@ pub struct TyBuilder<'a> {
     pub instances: &'a mut Instances,
     pub bound_impls: &'a mut BoundImpls,
     pub sources: &'a Sources,
-    pub ast: &'a AstData,
+    pub ast_data: &'a AstData,
     pub ctx: &'a mut ScopeContext,
     pub ty_graph: &'a mut Graph<Ty>,
     pub modules: &'a mut Modules,
@@ -38,7 +38,7 @@ macro_rules! ty_builder {
             &mut $self.instances,
             &mut $self.bound_impls,
             &$self.sources,
-            &$self.ast,
+            &$self.ast_data,
             &mut $self.scope_context,
             &mut $self.ty_graph,
             &mut $self.modules,
@@ -76,7 +76,7 @@ impl<'a> TyBuilder<'a> {
             instances,
             bound_impls,
             sources,
-            ast,
+            ast_data: ast,
             ctx,
             ty_graph: graph,
             modules,
@@ -91,7 +91,7 @@ impl<'a> TyBuilder<'a> {
         if ast.is_reserved_value() {
             return;
         }
-        let ast::AstEnt { kind, span, .. } = self.ast.nodes[ast];
+        let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ast];
 
         self.ty_graph.add_vertex(self.ty);
 
@@ -108,7 +108,7 @@ impl<'a> TyBuilder<'a> {
     }
 
     fn build_enum(&mut self, id: ID, ast: Ast) {
-        let &[generics, .., body] = self.ast.children(ast) else {
+        let &[generics, .., body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
@@ -123,7 +123,7 @@ impl<'a> TyBuilder<'a> {
     }
 
     fn build_variants(&mut self, id: ID, ast: Ast) -> (Ty, TyCompList) {
-        let discriminant_ty = match self.ast.children(ast).len() {
+        let discriminant_ty = match self.ast_data.children(ast).len() {
             const { u16::MAX as usize }.. => panic!("Are you being serious?"),
             256.. => self.builtin_types.u16,
             1.. => self.builtin_types.u8,
@@ -133,7 +133,7 @@ impl<'a> TyBuilder<'a> {
 
         // we need to allocate as build_variant also pushes to ty_comps,
         // if this becomes a bottleneck, we will store long lived vec in context
-        let mut variants = Vec::with_capacity(self.ast.children(ast).len() + 1);
+        let mut variants = Vec::with_capacity(self.ast_data.children(ast).len() + 1);
         let ent = TyCompEnt {
             ty: discriminant_ty,
             index: 0,
@@ -141,12 +141,12 @@ impl<'a> TyBuilder<'a> {
         };
         variants.push((ent, self.sources.id_of(self.builtin_types.discriminant)));
 
-        for (i, &variant) in self.ast.children(ast).iter().enumerate() {
+        for (i, &variant) in self.ast_data.children(ast).iter().enumerate() {
             let index = i as u32 + 1;
-            let &[name, ty_expr] = self.ast.children(variant) else {
+            let &[name, ty_expr] = self.ast_data.children(variant) else {
                 unreachable!();
             };
-            let name = self.ast.nodes[name].span;
+            let name = self.ast_data.nodes[name].span;
             let variant_id = ID::field(id, self.sources.id_of(name));
 
             let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
@@ -177,7 +177,7 @@ impl<'a> TyBuilder<'a> {
     }
 
     fn build_struct(&mut self, id: ID, ast: Ast) {
-        let &[generics, .., body] = self.ast.children(ast) else {
+        let &[generics, .., body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
@@ -192,8 +192,8 @@ impl<'a> TyBuilder<'a> {
     }
 
     fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
-        for (i, &field_ast) in self.ast.children(body).iter().enumerate() {
-            let &[name, field_ty_ast] = self.ast.children(field_ast) else {
+        for (i, &field_ast) in self.ast_data.children(body).iter().enumerate() {
+            let &[name, field_ty_ast] = self.ast_data.children(field_ast) else {
                 unreachable!();
             };
 
@@ -203,7 +203,7 @@ impl<'a> TyBuilder<'a> {
 
             self.ty_graph.add_edge(self.ty, field_ty);
 
-            let span = self.ast.nodes[name].span;
+            let span = self.ast_data.nodes[name].span;
 
             let id = {
                 let name = self.sources.id_of(span);
@@ -229,14 +229,14 @@ impl<'a> TyBuilder<'a> {
             return;
         }
 
-        let generics = self.ast.children(generics);
+        let generics = self.ast_data.children(generics);
 
         // type params have no associated bound
         // so we can use the empty one
         {
             let mut current = self.builtin_types.ty_any;
             for &ident in generics {
-                let span = self.ast.nodes[ident].span;
+                let span = self.ast_data.nodes[ident].span;
                 let id = self.sources.id_of(span);
                 self.scope.push_item(id, ScopeItem::new(current, span));
                 current = get_param(current, self.types);

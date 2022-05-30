@@ -10,26 +10,30 @@
 #![feature(result_flattening)]
 #![feature(scoped_threads)]
 
+pub mod state;
+pub mod source_loader;
+pub mod subcommand;
+pub mod scope_builder;
+
+pub use subcommand::Subcommand;
+pub use state::{SourceLoader, MainScopeBuilder};
+
 use cli::CmdInput;
 
 use cranelift_codegen::ir::{ExternalName, Type};
-use cranelift_codegen::isa::TargetIsa;
+use cranelift_codegen::isa::{TargetIsa, CallConv};
 use cranelift_codegen::settings::{Configurable, Flags};
 use cranelift_codegen::{Context, MachReloc};
-
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use errors::Diagnostics;
-use incr::{Incr, IncrFuncData, IncrRelocRecord};
-use instance::*;
-
-use instance::func::{MirBuilderContext, PatternStacks};
-use instance::repr::{build_builtin_reprs, build_reprs};
 use target_lexicon::Triple;
 
+use errors::*;
+use incr::*;
+use instance::*;
 use ast::*;
 use gen::*;
 use instance_types::*;
@@ -42,12 +46,12 @@ use storage::*;
 use typec::*;
 use typec_types::*;
 
-use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Instant, SystemTime};
 
 /// shorthand for exiting the process
+#[macro_export]
 macro_rules! exit {
     ($expr:expr) => {
         std::process::exit($expr);
@@ -59,9 +63,10 @@ macro_rules! exit {
 }
 
 /// utility for simple scoped benchmarking
+#[macro_export]
 macro_rules! time_report {
     ($message:expr) => {
-        let _report = TimeReport::new($message);
+        let _report = $crate::TimeReport::new($message);
     };
 }
 
@@ -88,12 +93,12 @@ pub struct Compiler {
     builtin_source: BuiltinSource,
 
     // ast
-    ast: AstData,
+    ast_data: AstData,
     ast_temp: FramedStack<Ast>,
 
     // modules
     scope: Scope,
-    module_map: Map<Source>,
+    module_map: ModuleMap,
     loader_context: LoaderContext,
     modules: Modules,
     units: Units,
@@ -120,6 +125,7 @@ pub struct Compiler {
     tir_temp_body: TirData,
     func_meta: FuncMeta,
     pattern_graph: PatternGraph<Tir, PatternMeta>,
+    to_compile: Vec<(Func, TyList)>,
 
     // jit
     _jit_module: JITModule,
@@ -211,7 +217,7 @@ impl Compiler {
             sources,
             builtin_source,
 
-            ast: AstData::new(),
+            ast_data: AstData::new(),
             ast_temp: FramedStack::new(),
 
             scope: Scope::new(),
@@ -240,6 +246,7 @@ impl Compiler {
             scope_context: ScopeContext::new(),
             func_meta,
             pattern_graph: PatternGraph::new(),
+            to_compile: Vec::new(),
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
@@ -337,73 +344,7 @@ impl Compiler {
     /// is questionable.
     fn load_modules(&mut self) {
         time_report!("loading of modules");
-
-        let Subcommand::Compile(path) = &self.subcommand else {
-            unreachable!();
-        };
-
-        let Ok(unit_order) = unit_builder!(self).load_units(&path) else {
-            return;
-        };
-
-        let mut module_order = vec![];
-
-        for unit in unit_order {
-            let Ok(local_module_order) = module_builder!(self).load_unit_modules(unit) else {
-                continue;
-            };
-
-            module_order.extend(local_module_order.into_iter().rev());
-        }
-
-        module_order.reverse();
-
-        for (i, &id) in module_order.iter().enumerate() {
-            self.modules[id].ordering = i;
-        }
-
-        self.module_order = module_order;
-    }
-
-    /// every module imports set of builtin constructs, work is done here
-    fn load_builtin_scope_items(&mut self, source: Source) {
-        for item in self.modules[self.builtin_source.source].items.iter() {
-            self.scope
-                .insert(&mut self.diagnostics, source, item.id, item.to_scope_item())
-                .unwrap();
-        }
-    }
-
-    /// The module imports are read from temporary ast and minimal data is preserved.
-    ///
-    /// TODO: Could there be an option to optimize this?
-    fn build_scope(&mut self, source: Source) {
-        self.scope.dependencies.clear();
-        if let Some(imports) = ModuleImports::new(&self.ast, &self.sources).imports() {
-            for import in imports {
-                let nick = self.sources.display(import.nick);
-                let Some(&dep) = self.module_map.get((nick, source)) else {
-                continue; // recovery, module might not exist due to previous recovery
-            };
-                self.scope
-                    .insert(
-                        &mut self.diagnostics,
-                        source,
-                        nick,
-                        ScopeItem::new(dep, import.nick),
-                    )
-                    .unwrap();
-                for item in self.modules[dep].items.iter() {
-                    drop(self.scope.insert(
-                        &mut self.diagnostics,
-                        source,
-                        item.id,
-                        item.to_scope_item(),
-                    ));
-                }
-                self.scope.dependencies.push((dep, import.nick));
-            }
-        }
+        self.module_order = source_loader!(self).load();
     }
 
     /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
@@ -487,32 +428,34 @@ impl Compiler {
     fn build_tir(&mut self) {
         time_report!("building of tir");
 
+        let mut _ctx = GenerationCtx::new(
+            self.host_isa.pointer_type(),
+            self.host_isa.default_call_conv(),
+        );
+
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];
 
         for source in self.module_order.clone() {
-            // it really does not matter
-            self.load_builtin_scope_items(source);
-
-            self.ast.clear();
+            self.ast_data.clear();
             let mut inter_state_opt = Some(Parser::parse_imports(
                 &self.sources,
                 &mut self.diagnostics,
-                &mut self.ast,
+                &mut self.ast_data,
                 &mut self.ast_temp,
                 source,
             ));
 
-            self.build_scope(source);
+            main_scope_builder!(self).build_scope(source);
 
             let mut stage = 0;
 
             while let Some(inter_state) = inter_state_opt {
-                self.ast.clear();
+                self.ast_data.clear();
                 inter_state_opt = Parser::parse_code_chunk(
                     &self.sources,
                     &mut self.diagnostics,
-                    &mut self.ast,
+                    &mut self.ast_data,
                     &mut self.ast_temp,
                     inter_state,
                 );
@@ -521,7 +464,7 @@ impl Compiler {
 
                 let bottom = self.types.len();
 
-                scope_builder!(self, source).collect_items(self.ast.elements());
+                scope_builder!(self, source).collect_items(self.ast_data.elements());
 
                 self.log_diagnostics();
 
@@ -665,34 +608,11 @@ impl Compiler {
         );
     }
 
-    /// Function takes tir and translates it into bite code. It uses type swapping to
-    /// instantiate functions from generic templates. Types still need to be instantiated
-    /// and allocated.
-    ///
-    /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
-    /// Though this may require cloning type context.
-    fn generate(&mut self) {
-        time_report!("generating");
-
-        self.compute_reprs_for_target();
-
-        let mut pattern_stacks = PatternStacks::new();
-        let mut ctx = Context::new();
-        let mut builder_ctx = FunctionBuilderContext::new();
-        let mut replace_cache = ReplaceCache::new();
-        let mut signatures = Signatures::new();
-        let mut func_ctx = FuncCtx::new();
-        let mut mir_builder_ctx = MirBuilderContext::new();
-        let mut cir_builder_ctx = CirBuilderContext::new();
-        let mut frontier = vec![];
-        let mut reused_incr_funcs = vec![];
-        let ptr_ty = self.object_module.isa().pointer_type();
-        let system_call_convention = self.object_module.isa().default_call_conv();
-
-        for &(func, _) in &self.funcs.to_compile {
+    fn generate_low(&mut self, ctx: &mut GenerationCtx) {
+        for &(func, _) in &ctx.to_compile {
             let call_conv = self.funcs.ents[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
-            signatures.insert(
+            ctx.signatures.insert(
                 func,
                 translate_signature(
                     call_conv,
@@ -700,15 +620,13 @@ impl Compiler {
                     sig.ret,
                     &self.reprs,
                     &self.types,
-                    system_call_convention,
+                    ctx.system_call_convention,
                 ),
             );
         }
 
         let mut i = 0;
-        while i < self.funcs.to_compile.len() {
-            let (id, params) = self.funcs.to_compile[i];
-
+        while let Some(&(id, params)) = ctx.to_compile.get(i) {
             i += 1;
 
             let func_ent = self.funcs.ents[id];
@@ -724,21 +642,21 @@ impl Compiler {
             if self.skip_incrementally(
                 id,
                 func_ent.id,
-                &mut frontier,
-                &mut reused_incr_funcs,
-                &mut signatures,
+                &mut ctx.frontier,
+                &mut ctx.reused_incr_funcs,
+                &mut ctx.signatures,
             ) {
                 continue;
             }
 
             let parent =
-                self.load_generic_params(id, params, func_ent.parent, ptr_ty, &mut replace_cache);
+                self.load_generic_params(id, params, func_ent.parent, ctx.ptr_ty, &mut ctx.replace_cache);
 
             let result = MirBuilder {
-                system_call_convention,
+                system_call_convention: ctx.system_call_convention,
                 return_dest: None,
                 func_id: parent,
-                ptr_ty,
+                ptr_ty: ctx.ptr_ty,
 
                 types: &mut self.types,
                 ty_lists: &mut self.ty_lists,
@@ -750,12 +668,12 @@ impl Compiler {
                 bound_impls: &self.bound_impls,
                 builtin_types: &self.builtin_types,
                 funcs: &mut self.funcs,
-                func: &mut func_ctx,
+                func: &mut ctx.func_ctx,
                 body: &self.func_bodies[parent],
                 diagnostics: &mut self.diagnostics,
-                ctx: &mut mir_builder_ctx,
+                ctx: &mut ctx.mir_builder_ctx,
                 func_meta: &self.func_meta,
-                pattern_stacks: &mut pattern_stacks,
+                to_compile: &mut ctx.to_compile,
             }
             .translate_func();
 
@@ -765,15 +683,15 @@ impl Compiler {
 
             // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
 
-            ctx.func.signature = signatures.get(id).unwrap().clone();
+            ctx.ctx.func.signature = ctx.signatures.get(id).unwrap().clone();
 
-            let builder = &mut FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
+            let builder = &mut FunctionBuilder::new(&mut ctx.ctx.func, &mut ctx.builder_ctx);
 
             CirBuilder {
                 builder,
-                ctx: &mut cir_builder_ctx,
-                signatures: &mut signatures,
-                source: &mut func_ctx,
+                ctx: &mut ctx.cir_builder_ctx,
+                signatures: &mut ctx.signatures,
+                source: &mut ctx.func_ctx,
 
                 isa: self.object_module.isa(),
                 funcs: &self.funcs,
@@ -790,9 +708,9 @@ impl Compiler {
             // println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
-            ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
+            ctx.ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
                 .unwrap();
-            let relocs = ctx
+            let relocs = ctx.ctx
                 .mach_compile_result
                 .as_ref()
                 .unwrap()
@@ -803,16 +721,38 @@ impl Compiler {
             let compile_result = CompileResult { bytes, relocs };
 
             self.compile_results[id] = compile_result;
-            ctx.clear();
+            ctx.ctx.clear();
         }
+    }
 
-        self.funcs.to_compile.extend(
-            reused_incr_funcs
+    /// Function takes tir and translates it into bite code. It uses type swapping to
+    /// instantiate functions from generic templates. Types still need to be instantiated
+    /// and allocated.
+    ///
+    /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
+    /// Though this may require cloning type context.
+    fn generate(&mut self) {
+        time_report!("generating");
+
+        self.compute_reprs_for_target();
+
+        let mut ctx = GenerationCtx::new(
+            self.object_module.isa().pointer_type(), 
+            self.object_module.isa().default_call_conv(),
+        );
+
+        ctx.to_compile = std::mem::take(&mut self.to_compile);
+
+        self.generate_low(&mut ctx);
+
+        ctx.to_compile.extend(
+            ctx.reused_incr_funcs
                 .into_iter()
                 .map(|id| (id, TyList::reserved_value())),
         );
 
-        self.signatures = signatures;
+        self.signatures = ctx.signatures;
+        self.to_compile = ctx.to_compile;
     }
 
     /// Only reachable functions are being included in final executable.
@@ -823,7 +763,7 @@ impl Compiler {
         time_report!("dead code elimination");
 
         let mut seen = EntitySet::with_capacity(self.funcs.ents.len());
-        let mut frontier = Vec::with_capacity(self.funcs.to_compile.len());
+        let mut frontier = Vec::with_capacity(self.to_compile.len());
 
         if let Some(entry_id) = self.entry_id {
             let &entry_func = self.funcs.instances.get(entry_id).unwrap();
@@ -950,7 +890,7 @@ impl Compiler {
         self.incr.functions.clear();
 
         let mut temp_relocs = vec![];
-        for &(func, _) in &self.funcs.to_compile {
+        for &(func, _) in &self.to_compile {
             let compile_result = std::mem::take(&mut self.compile_results[func]);
 
             temp_relocs.clear();
@@ -1056,14 +996,13 @@ impl Compiler {
         self.diagnostics.iter::<TyError>().map(|errs| {
             errs.for_each(|err| {
                 typec::error::display(
-                    err,
-                    &self.sources,
-                    &self.types,
-                    &self.ty_lists,
+                    err, 
+                    &self.sources, 
+                    &self.types, 
+                    &self.ty_lists, 
                     &self.ty_comps,
-                    &mut errors,
-                )
-                .unwrap()
+                    &mut errors
+                ).unwrap()
             })
         });
 
@@ -1120,42 +1059,37 @@ fn get_exe_modification_time() -> Option<SystemTime> {
         .ok()
 }
 
-/// Sub command handles parsing of command line arguments
-/// for all subcommands.
-pub enum Subcommand {
-    Compile(PathBuf),
-    None,
+pub struct GenerationCtx {
+    ctx: Context,
+    builder_ctx: FunctionBuilderContext,
+    replace_cache: ReplaceCache,
+    signatures: Signatures,
+    func_ctx: FuncCtx,
+    mir_builder_ctx: MirBuilderContext,
+    cir_builder_ctx: CirBuilderContext,
+    frontier: Vec<ID>,
+    reused_incr_funcs: Vec<Func>,
+    ptr_ty: Type,    
+    system_call_convention: CallConv,
+    to_compile: Vec<(Func, TyList)>,
 }
 
-const SUBCOMMANDS: &'static str = "c";
+impl GenerationCtx {
+    pub fn new(ptr_ty: Type, system_call_convention: CallConv) -> Self {
+        Self {
+            ctx: Context::new(),
+            builder_ctx: FunctionBuilderContext::new(),
+            replace_cache: ReplaceCache::new(),
+            signatures: Signatures::new(),
+            func_ctx: FuncCtx::new(),
+            mir_builder_ctx: MirBuilderContext::new(),
+            cir_builder_ctx: CirBuilderContext::new(),
+            frontier: Vec::new(),
+            reused_incr_funcs: Vec::new(),
+            to_compile: Vec::new(),
 
-impl Subcommand {
-    /// Builds a subcommand based of command line input.
-    pub fn new(input: &CmdInput) -> Self {
-        let Some(subcommand) = input.args().get(0) else {
-            println!("usage: catalyst {INFO}<sub>{END} ...");
-            println!("options: {INFO}{SUBCOMMANDS}{END}");
-            exit!();
-        };
-
-        match subcommand.as_str() {
-            "c" => {
-                let path = input.args().get(1).map(String::as_str).unwrap_or(".");
-                return Self::Compile(PathBuf::from(path));
-            }
-            sub => {
-                println!("invalid subcommand: {sub}");
-                println!("options: {INFO}{SUBCOMMANDS}{END}");
-                exit!();
-            }
-        }
-    }
-
-    /// Returns a path to the input project.
-    fn root_path(&self) -> Option<&Path> {
-        match self {
-            Self::Compile(path) => Some(path),
-            _ => None,
+            ptr_ty,
+            system_call_convention,
         }
     }
 }

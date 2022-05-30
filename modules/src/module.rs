@@ -1,12 +1,9 @@
-use std::time::SystemTime;
-
-use crate::unit::*;
 use ast::*;
-use incr::{Incr, IncrModule};
 use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;
+use crate::state::*;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -16,54 +13,11 @@ pub const MANIFEST_LOCAL_PATH: &'static str = "project.mfm";
 pub const GITHUB_DOMAIN: &'static str = "github.com";
 pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
 
-pub struct ModuleBuilder<'a> {
-    pub sources: &'a mut Sources,
-    pub modules: &'a mut Modules,
-    pub units: &'a mut Units,
-    pub ctx: &'a mut LoaderContext,
-    pub module_map: &'a mut Map<Source>,
-    pub diagnostics: &'a mut errors::Diagnostics,
-    pub incr: &'a mut Incr,
-}
 
-#[macro_export]
-macro_rules! module_builder {
-    ($self:expr) => {
-        ModuleBuilder::new(
-            &mut $self.sources,
-            &mut $self.modules,
-            &mut $self.units,
-            &mut $self.loader_context,
-            &mut $self.module_map,
-            &mut $self.diagnostics,
-            &mut $self.incr,
-        )
-    };
-}
 
-impl<'a> ModuleBuilder<'a> {
-    pub fn new(
-        sources: &'a mut Sources,
-        modules: &'a mut Modules,
-        units: &'a mut Units,
-        ctx: &'a mut LoaderContext,
-        map: &'a mut Map<Source>,
-        diagnostics: &'a mut errors::Diagnostics,
-        incr: &'a mut Incr,
-    ) -> Self {
-        Self {
-            sources,
-            modules,
-            units,
-            ctx,
-            module_map: map,
-            diagnostics,
-            incr,
-        }
-    }
-
+impl ModuleBuilder<'_> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
-        self.ctx.clear();
+        self.loader_context.clear();
         let base_line = self.sources.len() as u32;
 
         {
@@ -77,26 +31,13 @@ impl<'a> ModuleBuilder<'a> {
             let module = self.sources.push(Default::default());
             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
             self.module_map.insert(id, module);
-            self.ctx
+            self.loader_context
                 .module_frontier
                 .push_back((path, Span::default(), module));
         }
 
-        while let Some((path, span, slot)) = self.ctx.module_frontier.pop_front() {
-            let id: ID = path.as_path().into();
-            if self.incr.modules.get(id).is_none() {
-                let modified = std::fs::metadata(&path)
-                    .map(|m| m.modified())
-                    .flatten()
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-                let incr_module = IncrModule {
-                    modified,
-                    owned_functions: Map::new(),
-                };
-                self.incr.modules.insert(id, incr_module);
-            }
-
-            {
+        while let Some((path, span, slot)) = self.loader_context.module_frontier.pop_front() {
+             {
                 {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
                         self.diagnostics.push(ModuleError::ModuleLoadFail {
@@ -112,18 +53,18 @@ impl<'a> ModuleBuilder<'a> {
                     self.sources[slot] = source;
                 }
 
-                self.ctx.ast.clear();
+                self.loader_context.ast.clear();
                 Parser::parse_imports(
                     self.sources,
                     self.diagnostics,
-                    &mut self.ctx.ast,
-                    &mut self.ctx.ast_temp,
+                    &mut self.loader_context.ast,
+                    &mut self.loader_context.ast_temp,
                     slot,
                 );
             }
 
             let mut counter = 0;
-            if let Some(imports) = ModuleImports::new(&self.ctx.ast, &self.sources).imports() {
+            if let Some(imports) = ModuleImports::new(&self.loader_context.ast, &self.sources).imports() {
                 for ModuleImport {
                     nick,
                     name,
@@ -132,25 +73,25 @@ impl<'a> ModuleBuilder<'a> {
                 {
                     {
                         let unit = self
-                            .ctx
+                            .loader_context
                             .map
                             .get((self.sources.display(name), unit))
                             .copied()
                             .unwrap_or(unit);
 
-                        self.ctx.buffer.clear();
-                        self.ctx.buffer.push(&self.units[unit].root_path);
-                        self.ctx.buffer.push(&self.units[unit].local_source_path);
-                        self.ctx.buffer.set_extension("");
-                        self.ctx.buffer.push(self.sources.display(path_span));
-                        self.ctx.buffer.set_extension(SOURCE_FILE_EXTENSION);
+                        self.loader_context.buffer.clear();
+                        self.loader_context.buffer.push(&self.units[unit].root_path);
+                        self.loader_context.buffer.push(&self.units[unit].local_source_path);
+                        self.loader_context.buffer.set_extension("");
+                        self.loader_context.buffer.push(self.sources.display(path_span));
+                        self.loader_context.buffer.set_extension(SOURCE_FILE_EXTENSION);
                     }
 
                     let id = {
-                        let Ok(path) = self.ctx.buffer.canonicalize().map_err(|err| {
+                        let Ok(path) = self.loader_context.buffer.canonicalize().map_err(|err| {
                             self.diagnostics.push(ModuleError::ModuleNotFound {
                                 trace: err,
-                                path: self.ctx.buffer.clone(),
+                                path: self.loader_context.buffer.clone(),
                                 loc: path_span,
                             });
                         }) else {
@@ -166,7 +107,7 @@ impl<'a> ModuleBuilder<'a> {
                             counter += 1;
                             self.modules[module] = module::ModuleEnt::new(id, path.as_path());
                             self.module_map.insert(id, module);
-                            self.ctx
+                            self.loader_context
                                 .module_frontier
                                 .push_back((path, path_span, module));
                             module
@@ -178,7 +119,7 @@ impl<'a> ModuleBuilder<'a> {
                     self.module_map
                         .insert((self.sources.display(nick), slot), id);
                     if id.0 >= base_line {
-                        self.ctx.cycle_graph.add_edge(id.0 - base_line);
+                        self.loader_context.cycle_graph.add_edge(id.0 - base_line);
                     }
                 }
             }
@@ -186,12 +127,12 @@ impl<'a> ModuleBuilder<'a> {
                 self.sources.push(Default::default());
             }
 
-            self.ctx.cycle_graph.close_node(0);
+            self.loader_context.cycle_graph.close_node(0);
         }
 
         let mut ordering =
-            Vec::with_capacity(TreeStorage::<Source>::max_node(&self.ctx.cycle_graph));
-        self.ctx
+            Vec::with_capacity(TreeStorage::<Source>::max_node(&self.loader_context.cycle_graph));
+        self.loader_context
             .cycle_graph
             .detect_cycles(Source(0), Some(&mut ordering))
             .map_err(|mut err| {

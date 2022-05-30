@@ -28,12 +28,13 @@ pub struct ScopeBuilder<'a> {
     pub bound_impls: &'a mut BoundImpls,
     pub modules: &'a mut Modules,
     pub sources: &'a Sources,
-    pub ast: &'a AstData,
+    pub ast_data: &'a AstData,
     pub diagnostics: &'a mut errors::Diagnostics,
     pub ctx: &'a mut ScopeContext,
     pub module: Source,
     pub func_meta: &'a mut FuncMeta,
     pub incr: &'a mut Incr,
+    pub to_compile: &'a mut Vec<(Func, TyList)>,
 }
 
 #[macro_export]
@@ -52,12 +53,13 @@ macro_rules! scope_builder {
             &mut $self.bound_impls,
             &mut $self.modules,
             &$self.sources,
-            &$self.ast,
+            &$self.ast_data,
             &mut $self.diagnostics,
             &mut $self.scope_context,
             $module,
             &mut $self.func_meta,
             &mut $self.incr,
+            &mut $self.to_compile,
         )
     };
 }
@@ -82,6 +84,7 @@ impl<'a> ScopeBuilder<'a> {
         module: Source,
         func_meta: &'a mut FuncMeta,
         incr: &'a mut Incr,
+        to_compile: &'a mut Vec<(Func, TyList)>,
     ) -> Self {
         Self {
             scope,
@@ -96,12 +99,13 @@ impl<'a> ScopeBuilder<'a> {
             bound_impls,
             modules,
             sources,
-            ast,
+            ast_data: ast,
             diagnostics,
             ctx,
             module,
             func_meta,
             incr,
+            to_compile,
         }
     }
 
@@ -172,11 +176,11 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {
-        let &[ty, dest, body] = self.ast.children(ast) else {
+        let &[ty, dest, body] = self.ast_data.children(ast) else {
 			unreachable!();
 		};
 
-        let span = self.ast.nodes[ty].span;
+        let span = self.ast_data.nodes[ty].span;
         let ty = ty_parser!(self).parse_type(ty)?;
 
         if !dest.is_reserved_value() {
@@ -189,7 +193,7 @@ impl<'a> ScopeBuilder<'a> {
 
             if let Some(collision) = self.bound_impls.insert(id, BoundImpl::new(span)) {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {
-                    loc: self.ast.nodes[ast].span,
+                    loc: self.ast_data.nodes[ast].span,
                     because: collision.span,
                 });
                 return Err(());
@@ -201,8 +205,8 @@ impl<'a> ScopeBuilder<'a> {
                     .push_item("Self", scope::ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
-                for &func in self.ast.children(body) {
-                    if !matches!(self.ast.nodes[func].kind, AstKind::Function(..)) {
+                for &func in self.ast_data.children(body) {
+                    if !matches!(self.ast_data.nodes[func].kind, AstKind::Function(..)) {
                         continue;
                     }
 
@@ -224,7 +228,7 @@ impl<'a> ScopeBuilder<'a> {
             self.scope
                 .push_item("Self", scope::ScopeItem::new(ty, span));
 
-            for &func in self.ast.children(body) {
+            for &func in self.ast_data.children(body) {
                 let reserved = self.funcs.ents.push(FuncEnt::default());
                 self.func_meta[reserved] = FuncMetaData {
                     kind: FuncKind::Owned(ty),
@@ -240,12 +244,12 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_bound(&mut self, ast: Ast) -> errors::Result {
-        let source = self.ast.nodes[ast].span.source();
-        let &[name, body] = self.ast.children(ast) else {
+        let source = self.ast_data.nodes[ast].span.source();
+        let &[name, body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let name = self.ast.nodes[name].span;
+        let name = self.ast_data.nodes[name].span;
         let scope_id = self.sources.id_of(name);
         let id = self.modules[self.module].id + scope_id;
 
@@ -257,7 +261,7 @@ impl<'a> ScopeBuilder<'a> {
         });
 
         let funcs = {
-            for (i, &func) in self.ast.children(body).iter().enumerate() {
+            for (i, &func) in self.ast_data.children(body).iter().enumerate() {
                 let reserved = self.funcs.ents.push(FuncEnt::default());
                 self.func_meta[reserved] = FuncMetaData {
                     kind: FuncKind::Bound(slot, i as u32),
@@ -293,18 +297,18 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_struct(&mut self, ast: Ast) -> errors::Result {
-        let source = self.ast.nodes[ast].span.source();
-        let &[generics, name, _body] = self.ast.children(ast) else {
+        let source = self.ast_data.nodes[ast].span.source();
+        let &[generics, name, _body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let span = self.ast.nodes[name].span;
+        let span = self.ast_data.nodes[name].span;
         let scope_id = self.sources.id_of(span);
         let id = self.modules[self.module].id + scope_id;
         let flags = if generics.is_reserved_value() {
             TyFlags::empty()
         } else {
-            TyFlags::GENERIC.add_param_count(self.ast.children(generics).len())
+            TyFlags::GENERIC.add_param_count(self.ast_data.children(generics).len())
         };
 
         let ent = TyEnt {
@@ -334,8 +338,8 @@ impl<'a> ScopeBuilder<'a> {
         bound: Option<ID>,
         ast: Ast,
     ) -> errors::Result<Func> {
-        let children = self.ast.children(ast);
-        let ast::AstEnt { span: current_span, kind: AstKind::Function(external), .. } = self.ast.nodes[ast] else {
+        let children = self.ast_data.children(ast);
+        let ast::AstEnt { span: current_span, kind: AstKind::Function(external), .. } = self.ast_data.nodes[ast] else {
             unreachable!();
         };
 
@@ -346,7 +350,7 @@ impl<'a> ScopeBuilder<'a> {
         let call_conv = if call_conv.is_reserved_value() {
             Some(CallConv::Fast)
         } else {
-            let span = self.ast.nodes[call_conv].span.strip_sides();
+            let span = self.ast_data.nodes[call_conv].span.strip_sides();
             let str = self.sources.display(span);
             if str == "default" {
                 None
@@ -371,7 +375,7 @@ impl<'a> ScopeBuilder<'a> {
                 for &ast in
                     &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END]
                 {
-                    let children = self.ast.children(ast);
+                    let children = self.ast_data.children(ast);
                     let amount = children.len() - 1;
                     let ty = children[amount];
                     let Ok(ty) = ty_parser!(self).parse_type(ty) else {
@@ -400,7 +404,7 @@ impl<'a> ScopeBuilder<'a> {
         let func = prepared.unwrap_or_else(|| self.funcs.ents.push(Default::default()));
 
         let scope_id = {
-            let span = self.ast.nodes[name].span;
+            let span = self.ast_data.nodes[name].span;
             let str = self.sources.display(span);
             let id = ID::new(str);
             if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) = self.func_meta[func].kind {
@@ -432,7 +436,7 @@ impl<'a> ScopeBuilder<'a> {
                 .unwrap()
                 .owned_functions
                 .insert(id, ());
-            self.funcs.to_compile.push((func, TyList::reserved_value()));
+            self.to_compile.push((func, TyList::reserved_value()));
         } else if external {
             self.funcs.to_link.push(func);
         }
@@ -455,9 +459,9 @@ impl<'a> ScopeBuilder<'a> {
 
             if flags.contains(FuncFlags::ENTRY | FuncFlags::GENERIC) {
                 self.diagnostics.push(TyError::GenericEntry {
-                    tag: self.ast.nodes[is_entry.unwrap()].span,
-                    generics: self.ast.nodes[generics].span,
-                    loc: self.ast.nodes[name].span,
+                    tag: self.ast_data.nodes[is_entry.unwrap()].span,
+                    generics: self.ast_data.nodes[generics].span,
+                    loc: self.ast_data.nodes[name].span,
                 })
             }
 
@@ -470,7 +474,7 @@ impl<'a> ScopeBuilder<'a> {
 
             let meta = FuncMetaData {
                 sig,
-                name: self.ast.nodes[name].span,
+                name: self.ast_data.nodes[name].span,
                 ..self.func_meta[func]
             };
             self.func_meta[func] = meta;
@@ -499,10 +503,10 @@ impl<'a> ScopeBuilder<'a> {
         self.ty_lists.mark_frame();
 
         if !generics.is_reserved_value() {
-            for &ast in self.ast.children(generics).iter() {
-                let children = self.ast.children(ast);
+            for &ast in self.ast_data.children(generics).iter() {
+                let children = self.ast_data.children(ast);
                 let name = children[0];
-                let span = self.ast.nodes[name].span;
+                let span = self.ast_data.nodes[name].span;
 
                 let bound = ty_parser!(self).parse_composite_bound(&children[1..], span);
                 let bound = if !used.insert(bound) {
@@ -553,24 +557,24 @@ impl<'a> ScopeBuilder<'a> {
 
     pub fn parse_macro_tag(&self) -> Option<Macro> {
         let raw_tag = self.find_simple_tag("macro")?;
-        let raw_tag = self.ast.children(raw_tag)[0]; 
+        let raw_tag = self.ast_data.children(raw_tag)[0]; 
 
         // TODO: emit error
-        assert_eq!(self.ast.nodes[raw_tag].kind, AstKind::Call);
+        assert_eq!(self.ast_data.nodes[raw_tag].kind, AstKind::Call);
 
-        let &[_, from, to] = self.ast.children(raw_tag) else {
+        let &[_, from, to] = self.ast_data.children(raw_tag) else {
             // TODO: emit error
             unreachable!();
         };
 
         let from = {
-            let span = self.ast.nodes[from].span;
+            let span = self.ast_data.nodes[from].span;
             let str = self.sources.display(span);
             Stage::from_str(str).map_err(|_| todo!()).ok()?
         };
 
         let to = {
-            let span = self.ast.nodes[to].span;
+            let span = self.ast_data.nodes[to].span;
             let str = self.sources.display(span);
             Stage::from_str(str).map_err(|_| todo!()).ok()?
         };
@@ -587,7 +591,7 @@ impl<'a> ScopeBuilder<'a> {
             .iter()
             .rev()
             .find(|&&tag| {
-                self.sources.display(self.ast.nodes[tag].span)[1..]
+                self.sources.display(self.ast_data.nodes[tag].span)[1..]
                     .trim()
                     .starts_with(name)
             })

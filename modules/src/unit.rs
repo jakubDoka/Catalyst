@@ -1,4 +1,3 @@
-use module_types::units::Units;
 use std::path::Path;
 use std::process::Command;
 use std::{collections::VecDeque, path::PathBuf};
@@ -10,43 +9,11 @@ use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;
+use crate::state::*;
 
-pub struct UnitBuilder<'a> {
-    pub sources: &'a mut Sources,
-    pub units: &'a mut Units,
-    pub ctx: &'a mut LoaderContext,
-    pub diagnostics: &'a mut errors::Diagnostics,
-}
-
-#[macro_export]
-macro_rules! unit_builder {
-    ($self:expr) => {
-        UnitBuilder::new(
-            &mut $self.sources,
-            &mut $self.units,
-            &mut $self.loader_context,
-            &mut $self.diagnostics,
-        )
-    };
-}
-
-impl<'a> UnitBuilder<'a> {
-    pub fn new(
-        sources: &'a mut Sources,
-        units: &'a mut Units,
-        ctx: &'a mut LoaderContext,
-        diagnostics: &'a mut errors::Diagnostics,
-    ) -> Self {
-        Self {
-            sources,
-            units,
-            ctx,
-            diagnostics,
-        }
-    }
-
+impl UnitBuilder<'_> {
     pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
-        self.ctx.clear();
+        self.loader_context.clear();
 
         let root = root.canonicalize().map_err(|err| {
             self.diagnostics.push(ModuleError::RootUnitNotFound {
@@ -56,23 +23,23 @@ impl<'a> UnitBuilder<'a> {
         })?;
 
         let slot = self.units.push(units::UnitEnt::new());
-        self.ctx.map.insert(root.as_path(), slot);
+        self.loader_context.map.insert(root.as_path(), slot);
 
-        self.ctx.unit_frontier.push_back((root, None, slot));
+        self.loader_context.unit_frontier.push_back((root, None, slot));
 
-        while let Some((path, span, slot)) = self.ctx.unit_frontier.pop_front() {
-            self.ctx.buffer.clear();
-            self.ctx.buffer.push(&path);
-            self.ctx.buffer.push(MANIFEST_LOCAL_PATH);
-            let Ok(contents) = std::fs::read_to_string(&self.ctx.buffer).map_err(|err| {
+        while let Some((path, span, slot)) = self.loader_context.unit_frontier.pop_front() {
+            self.loader_context.buffer.clear();
+            self.loader_context.buffer.push(&path);
+            self.loader_context.buffer.push(MANIFEST_LOCAL_PATH);
+            let Ok(contents) = std::fs::read_to_string(&self.loader_context.buffer).map_err(|err| {
                 self.diagnostics.push(ModuleError::ManifestLoadFail {
                     path: path.clone(),
                     trace: err,
                     loc: span,
                 })
             }) else {
-                self.ctx.cycle_graph.close_node(0);
-                if self.ctx.unit_frontier.is_empty() {
+                self.loader_context.cycle_graph.close_node(0);
+                if self.loader_context.unit_frontier.is_empty() {
                     return Err(());
                 }
                 continue;
@@ -80,21 +47,21 @@ impl<'a> UnitBuilder<'a> {
 
             {
                 // all parsing components assume source code is registered in sources
-                let source = SourceEnt::new(self.ctx.buffer.clone(), contents);
+                let source = SourceEnt::new(self.loader_context.buffer.clone(), contents);
                 let source = self.sources.push(source);
                 self.units[slot].source = source;
 
-                self.ctx.ast.clear();
+                self.loader_context.ast.clear();
                 Parser::parse_manifest(
                     self.sources,
                     self.diagnostics,
-                    &mut self.ctx.ast,
-                    &mut self.ctx.ast_temp,
+                    &mut self.loader_context.ast,
+                    &mut self.loader_context.ast_temp,
                     source,
                 );
             }
 
-            let manifest = Manifest::new(&self.ctx.ast, self.sources);
+            let manifest = Manifest::new(&self.loader_context.ast, self.sources);
 
             if let Some(dependency) = manifest.dependencies() {
                 for ManifestDepInfo {
@@ -105,7 +72,7 @@ impl<'a> UnitBuilder<'a> {
                 {
                     let path_str = self.sources.display(path_span);
                     let path = if path_str.starts_with(GITHUB_DOMAIN) {
-                        let path = Path::join(&self.ctx.mf_root, path_str);
+                        let path = Path::join(&self.loader_context.mf_root, path_str);
                         if !path.exists() {
                             if self
                                 .download_git_repo(
@@ -135,19 +102,19 @@ impl<'a> UnitBuilder<'a> {
                         continue;
                     };
 
-                    let id = if let Some(&id) = self.ctx.map.get(path.as_path()) {
+                    let id = if let Some(&id) = self.loader_context.map.get(path.as_path()) {
                         id
                     } else {
                         let id = self.units.push(units::UnitEnt::new());
-                        self.ctx.map.insert(path.as_path(), id);
-                        self.ctx
+                        self.loader_context.map.insert(path.as_path(), id);
+                        self.loader_context
                             .unit_frontier
                             .push_back((path, Some(path_span), id));
                         id
                     };
 
-                    self.ctx.map.insert((self.sources.display(name), slot), id);
-                    self.ctx.cycle_graph.add_edge(id.0);
+                    self.loader_context.map.insert((self.sources.display(name), slot), id);
+                    self.loader_context.cycle_graph.add_edge(id.0);
                 }
             }
 
@@ -158,11 +125,11 @@ impl<'a> UnitBuilder<'a> {
             self.units[slot].local_source_path = PathBuf::from(root_path_str);
             self.units[slot].root_path = path;
 
-            self.ctx.cycle_graph.close_node(0);
+            self.loader_context.cycle_graph.close_node(0);
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::max_node(&self.ctx.cycle_graph));
-        self.ctx
+        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::max_node(&self.loader_context.cycle_graph));
+        self.loader_context
             .cycle_graph
             .detect_cycles(slot, Some(&mut ordering))
             .map_err(|err| self.diagnostics.push(ModuleError::UnitCycle { cycle: err }))?;

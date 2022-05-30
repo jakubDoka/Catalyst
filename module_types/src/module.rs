@@ -4,6 +4,7 @@ use crate::scope;
 use lexer::*;
 use storage::*;
 
+pub type ModuleMap = Map<Source>;
 pub type Modules = SecondaryMap<Source, ModuleEnt>;
 
 #[derive(Debug, Clone, Default)]

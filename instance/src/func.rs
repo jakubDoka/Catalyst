@@ -8,7 +8,6 @@ use storage::*;
 use typec_types::*;
 
 pub type ExprResult = errors::Result<Option<Value>>;
-pub type PatternStacks = Vec<Vec<Tir>>;
 
 pub struct MirBuilderContext {
     tir_mapping: SecondaryMap<Tir, PackedOption<Value>>,
@@ -53,10 +52,83 @@ pub struct MirBuilder<'a> {
     pub diagnostics: &'a mut Diagnostics,
     pub ctx: &'a mut MirBuilderContext,
     pub func_meta: &'a FuncMeta,
-    pub pattern_stacks: &'a mut PatternStacks,
+    pub to_compile: &'a mut Vec<(Func, TyList)>,
 }
 
-impl MirBuilder<'_> {
+#[macro_export]
+macro_rules! mir_builder {
+    ($self:expr, $func_id:expr, $ptr_ty:expr, $sys_cc:expr) => {
+        MirBuilder::new(
+            $func_id,
+            $ptr_ty,
+            $sys_cc,
+            &$self.reprs,
+            &$self.types,
+            &$self.ty_lists,
+            &$self.func_lists,
+            &$self.ty_comps,
+            &$self.bound_impls,
+            &$self.repr_fields,
+            &$self.builtin_types,
+            &mut $self.funcs,
+            &mut $self.func,
+            &$self.body,
+            $self.sources,
+            &mut $self.diagnostics,
+            &mut $self.ctx,
+            &$self.func_meta,
+            &mut $self.pattern_stacks,
+            &mut $self.to_compile,
+        )
+    };
+}
+
+impl<'a> MirBuilder<'a> {
+    pub fn new(
+        func_id: Func,
+        ptr_ty: Type,
+        system_call_convention: CallConv,
+        reprs: &'a Reprs,
+        types: &'a Types,
+        ty_lists: &'a TyLists,
+        func_lists: &'a TFuncLists,
+        ty_comps: &'a TyComps,
+        bound_impls: &'a BoundImpls,
+        repr_fields: &'a ReprFields,
+        builtin_types: &'a BuiltinTypes,
+        funcs: &'a mut Funcs,
+        func: &'a mut FuncCtx,
+        body: &'a TirData,
+        sources: &'a Sources,
+        diagnostics: &'a mut Diagnostics,
+        ctx: &'a mut MirBuilderContext,
+        func_meta: &'a FuncMeta,
+        to_compile: &'a mut Vec<(Func, TyList)>,
+    ) -> Self {
+        Self {
+            func_id,
+            ptr_ty,
+            system_call_convention,
+            reprs,
+            types,
+            ty_lists,
+            func_lists,
+            ty_comps,
+            bound_impls,
+            repr_fields,
+            builtin_types,
+            funcs,
+            func,
+            body,
+            return_dest: None,
+            sources,
+            diagnostics,
+            ctx,
+            func_meta,
+            to_compile,
+        }
+    }
+
     pub fn translate_func(&mut self) -> errors::Result {
         self.ctx.clear();
         self.func.clear();
@@ -650,7 +722,7 @@ impl MirBuilder<'_> {
                 };
                 let instance = self.funcs.ents.push(instance);
                 self.funcs.instances.insert(id, instance);
-                self.funcs.to_compile.push((instance, params));
+                self.to_compile.push((instance, params));
                 instance
             };
         }

@@ -84,7 +84,7 @@ impl File {
 
         let mut structs = Vec::new();
         let mut imports = Vec::new();
-        while lexer.peek().kind != TokKind::RBrace && lexer.peek().kind != TokKind::Eof {
+        while lexer.current().kind != TokKind::RBrace && lexer.current().kind != TokKind::Eof {
             match lexer.current().kind {
                 TokKind::Use => imports.push(Import::new(lexer)),
                 TokKind::Struct => structs.push(Struct::new(lexer)),
@@ -100,6 +100,8 @@ impl File {
 
 impl Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "//! This file is generated, do not edit!")?;
+        
         for import in &self.imports {
             writeln!(f, "{};", import)?;
         }
@@ -208,7 +210,7 @@ impl Struct {
         writeln!(f, "\t\t{}::new(", &self.name)?;
         for field in self.fields.iter().filter(|field| field.is_argument()) {
             write!(f, "\t\t\t")?;
-            field.write_type_prefix(f)?;
+            field.write_type_prefix(false, f)?;
             if field.owned || field.passed {
                 writeln!(f, "${}", &field.name)?;
             } else {
@@ -294,9 +296,12 @@ impl Field {
         }
     }
 
-    fn write_type_prefix(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn write_type_prefix(&self, def: bool, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if !self.owned {
             write!(f, "&")?;
+            if def {
+                write!(f, "'a ")?;
+            }
             if self.mutable {
                 write!(f, "mut ")?;
             }
@@ -305,7 +310,7 @@ impl Field {
     }
 
     fn write_type(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.write_type_prefix(f)?;
+        self.write_type_prefix(true, f)?;
         write!(f, "{}", self.ty)
     }
 

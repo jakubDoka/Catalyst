@@ -14,6 +14,10 @@ name="catalyst"
 path="src/main.rs"
 
 [workspace]
+exclude = [
+    "state",
+]
+
 members = [
     "storage",
     "lexer",

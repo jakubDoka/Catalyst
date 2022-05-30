@@ -4,7 +4,7 @@ use crate::{scope::ScopeContext, TyError, *};
 
 pub struct BoundVerifier<'a> {
     pub ctx: &'a mut ScopeContext,
-    pub ast: &'a AstData,
+    pub ast_data: &'a AstData,
     pub types: &'a Types,
     pub ty_lists: &'a mut TyLists,
     pub builtin_types: &'a BuiltinTypes,
@@ -23,7 +23,7 @@ macro_rules! bound_verifier {
     ($self:expr) => {
         BoundVerifier::new(
             &mut $self.scope_context,
-            &$self.ast,
+            &$self.ast_data,
             &$self.types,
             &mut $self.ty_lists,
             &$self.builtin_types,
@@ -57,7 +57,7 @@ impl<'a> BoundVerifier<'a> {
     ) -> Self {
         Self {
             ctx,
-            ast,
+            ast_data: ast,
             types,
             ty_lists,
             builtin_types,
@@ -76,19 +76,19 @@ impl<'a> BoundVerifier<'a> {
         // we have to collect all functions first and the check if all bound
         // functions are implemented, its done here
         while let Some((implementor, bound, impl_block)) = self.ctx.bounds_to_verify.pop() {
-            let &[.., implementor_ast, body] = self.ast.children(impl_block) else {
+            let &[.., implementor_ast, body] = self.ast_data.children(impl_block) else {
                 unreachable!();
             };
-            let implementor_span = self.ast.nodes[implementor_ast].span;
+            let implementor_span = self.ast_data.nodes[implementor_ast].span;
 
             // handle use expressions
             if !body.is_reserved_value() {
-                for &ast in self.ast.children(body) {
-                    if self.ast.nodes[ast].kind != AstKind::UseBoundFunc {
+                for &ast in self.ast_data.children(body) {
+                    if self.ast_data.nodes[ast].kind != AstKind::UseBoundFunc {
                         continue;
                     }
 
-                    let &[func, ident] = self.ast.children(ast) else {
+                    let &[func, ident] = self.ast_data.children(ast) else {
                         unreachable!();
                     };
 
@@ -96,13 +96,13 @@ impl<'a> BoundVerifier<'a> {
                         continue;
                     };
 
-                    let span = self.ast.nodes[func].span;
+                    let span = self.ast_data.nodes[func].span;
                     let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, span) else {
                         continue;
                     };
 
                     let id = {
-                        let func = ast::id_of(ident, self.ast, self.sources);
+                        let func = ast::id_of(ident, self.ast_data, self.sources);
                         let bound = self.types[bound].id;
                         let implementor = self.types[implementor].id;
                         ID::bound_impl_owned_func(bound, implementor, func)
@@ -121,7 +121,7 @@ impl<'a> BoundVerifier<'a> {
                 }
             }
 
-            let impl_span = self.ast.nodes[impl_block].span;
+            let impl_span = self.ast_data.nodes[impl_block].span;
 
             // check if all functions exist and match the signature
             let funcs = {
@@ -170,7 +170,7 @@ impl<'a> BoundVerifier<'a> {
             };
 
             let bound = BoundImpl {
-                span: self.ast.nodes[impl_block].span,
+                span: self.ast_data.nodes[impl_block].span,
                 funcs,
             };
 
@@ -205,7 +205,7 @@ impl<'a> BoundVerifier<'a> {
             let a_args = self.ty_lists.get(a.args);
             let b_args = self.ty_lists.get(b.args);
             let ast_params = {
-                let children = self.ast.children(self.ctx.func_ast[impl_func]);
+                let children = self.ast_data.children(self.ctx.func_ast[impl_func]);
                 let has_ret = (a.ret != self.builtin_types.nothing) as usize;
                 &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
@@ -216,7 +216,7 @@ impl<'a> BoundVerifier<'a> {
         };
 
         for ((&referenced, &parametrized), &ast) in iter {
-            let span = self.ast.nodes[ast].span;
+            let span = self.ast_data.nodes[ast].span;
             drop(infer_parameters(
                 referenced,
                 parametrized,

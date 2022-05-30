@@ -8,8 +8,9 @@ pub mod error;
 pub mod func;
 pub mod repr;
 
-pub use func::MirBuilder;
-pub use repr::{LayoutBuilder, ReprInstancing};
+pub use func::{MirBuilder, MirBuilderContext};
+pub use repr::{LayoutBuilder, ReprInstancing, build_builtin_reprs, build_reprs};
+
 
 #[macro_export]
 macro_rules! layout_builder {

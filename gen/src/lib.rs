@@ -70,7 +70,57 @@ pub struct CirBuilder<'a> {
     pub func_meta: &'a FuncMeta,
 }
 
+#[macro_export]
+macro_rules! cir_builder {
+    ($self:expr) => {
+        CirBuilder::new(
+            isa: &self.isa,
+            builder: &mut self.builder,
+            ctx: &mut self.ctx,
+            signatures: &mut self.signatures,
+            funcs: &self.funcs,
+            reprs: &self.reprs,
+            types: &self.types,
+            builtin_types: &self.builtin_types,
+            ty_lists: &self.ty_lists,
+            source: &self.source,
+            sources: &self.sources,
+            func_meta: &self.func_meta,
+        );
+    };
+}
+
 impl<'a> CirBuilder<'a> {
+    pub fn new(
+        isa: &'a dyn TargetIsa,
+        builder: &'a mut FunctionBuilder<'a>,
+        ctx: &'a mut CirBuilderContext,
+        signatures: &'a mut Signatures,
+        funcs: &'a Funcs,
+        reprs: &'a Reprs,
+        types: &'a Types,
+        builtin_types: &'a BuiltinTypes,
+        ty_lists: &'a TyLists,
+        source: &'a FuncCtx,
+        sources: &'a Sources,
+        func_meta: &'a FuncMeta,
+    ) -> Self {
+        Self {
+            isa,
+            builder,
+            ctx,
+            signatures,
+            funcs,
+            reprs,
+            types,
+            builtin_types,
+            ty_lists,
+            source,
+            sources,
+            func_meta,
+        }
+    }
+    
     pub fn generate(&mut self) {
         self.ctx.clear();
 

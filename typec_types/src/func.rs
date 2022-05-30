@@ -10,7 +10,7 @@ pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 pub struct Funcs {
     pub ents: PrimaryMap<Func, FuncEnt>,
     pub instances: Map<Func>,
-    pub to_compile: Vec<(Func, TyList)>,
+    
     pub to_link: Vec<Func>,
     pub to_jit_compile: Vec<(Func, TyList)>,
     pub macros: Vec<(Func, Macro)>,
@@ -21,7 +21,6 @@ impl Funcs {
         Self {
             ents: PrimaryMap::new(),
             instances: Map::new(),
-            to_compile: Vec::new(),
             to_link: Vec::new(),
             to_jit_compile: Vec::new(),
             macros: Vec::new(),

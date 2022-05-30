@@ -8,7 +8,6 @@ use {
 fn hello() {
     putchar('g')
     putchar('g')
-    -
 }
 
 #entry

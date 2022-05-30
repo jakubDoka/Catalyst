@@ -32,7 +32,7 @@ macro_rules! ident_hasher {
     ($self:expr) => {
         IdentHasher::new(
             $self.sources,
-            $self.ast,
+            $self.ast_data,
             $self.scope,
             $self.diagnostics,
             $self.types,
@@ -111,7 +111,7 @@ pub fn infer_parameters(
 
 pub struct TypeParser<'a> {
     types: &'a mut Types,
-    ast: &'a AstData,
+    ast_data: &'a AstData,
     diagnostics: &'a mut Diagnostics,
     ty_comps: &'a TyComps,
     scope: &'a mut Scope,
@@ -127,7 +127,7 @@ macro_rules! ty_parser {
     ($self:expr) => {
         TypeParser::new(
             $self.types,
-            $self.ast,
+            $self.ast_data,
             $self.diagnostics,
             $self.ty_comps,
             $self.scope,
@@ -155,7 +155,7 @@ impl<'a> TypeParser<'a> {
     ) -> Self {
         Self {
             types,
-            ast,
+            ast_data: ast,
             diagnostics,
             ty_comps,
             scope,
@@ -226,7 +226,7 @@ impl<'a> TypeParser<'a> {
     pub fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let res = self.parse_type_optional(ty)?;
         if res.is_reserved_value() {
-            let span = self.ast.nodes[ty].span;
+            let span = self.ast_data.nodes[ty].span;
             self.diagnostics
                 .push(TyError::ExpectedConcreteType { loc: span });
             return Err(());
@@ -236,7 +236,7 @@ impl<'a> TypeParser<'a> {
 
     /// parse a type just like `parse_type` but can return `Ty::reserved_value` in case the ty is '_'.
     pub fn parse_type_optional(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let ast::AstEnt { kind, span, .. } = self.ast.nodes[ty];
+        let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ty];
         match kind {
             AstKind::Ident => self.parse_ident_type(span),
             AstKind::Instantiation => self.parse_instance_type(ty),
@@ -260,7 +260,7 @@ impl<'a> TypeParser<'a> {
     }
 
     fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let children = self.ast.children(ty);
+        let children = self.ast_data.children(ty);
         let header = self.parse_type(children[0])?;
 
         self.ty_lists.mark_frame();
@@ -270,7 +270,7 @@ impl<'a> TypeParser<'a> {
             self.ty_lists.push_one(param);
         }
 
-        Ok(self.parse_instance_type_low(header, self.ast.nodes[ty].span))
+        Ok(self.parse_instance_type_low(header, self.ast_data.nodes[ty].span))
     }
 
     /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], if instance already exists, it is reused.
@@ -307,7 +307,7 @@ impl<'a> TypeParser<'a> {
 
     pub fn parse_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
         let inner_ty = {
-            let inner = self.ast.children(ty)[0];
+            let inner = self.ast_data.children(ty)[0];
             self.parse_type(inner)?
         };
 
