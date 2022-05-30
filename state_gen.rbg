@@ -1,24 +1,107 @@
 file "src/state.rs" {
     use "crate"
+    use "ast"
 
     struct SourceLoader {
-        Subcommand
         mut Units
         mut Modules
         mut Sources
         mut LoaderContext
         mut Diagnostics
         mut ModuleMap
+
+        Subcommand
     }
 
     struct MainScopeBuilder {
         mut Diagnostics
         mut Scope
+        
         Modules
         BuiltinSource
         Sources
         AstData
         ModuleMap
+    }
+
+    struct MainTirBuilder {
+        mut Diagnostics
+        mut Modules
+        mut Funcs
+        mut TirData
+        mut FuncBodies
+        mut Types
+        mut TyLists
+        mut TyComps
+        mut TyCompLookup
+        mut FuncLists
+        mut Instances
+        mut BoundImpls
+        mut ScopeContext
+        mut TyGraph
+        mut AstData
+        mut AstTemp
+        mut Scope
+        mut FuncMeta
+        mut ToCompile
+        mut TirStack
+        mut TirPatternGraph
+        mut TyOrder
+        mut Reprs
+        mut BuiltinSource
+        mut ReprFields
+        
+        host_isa: `Box<dyn TargetIsa>`
+        Sources
+        BuiltinTypes
+        ItemLexicon
+        Units
+        ModuleMap
+    }
+
+    struct Generator {
+        mut Diagnostics
+        mut Funcs
+        mut FuncMeta
+        mut TyLists
+        mut Reprs
+        mut Types
+        mut ReprFields
+        mut TyComps
+        mut FuncLists
+        mut BoundImpls
+        mut CompileResults
+        mut Instances
+        mut Context
+        mut MirBuilderContext
+        mut FuncCtx
+        mut ToCompile
+        mut CirBuilderContext
+        mut Signatures
+        mut GenerationContext
+        
+        passed mut IncrModules
+        passed mut IncrFuncs
+        passed isa: `dyn TargetIsa`
+
+        BuiltinTypes
+        Sources
+        FuncBodies
+    }
+
+    struct DeadCodeElim {
+        Funcs
+        CompileResults
+    }
+
+    struct Logger {
+        mut Diagnostics
+        TyLists
+        Types
+        Sources
+        TyComps
+        ItemLexicon
+        Units
     }
 }
 

@@ -39,6 +39,11 @@ impl<'a> ReprInstancing<'a> {
     }
 
     pub fn instantiate_repr(&mut self, params: TyList, ty: Ty) -> Ty {
+        println!("instantiate_repr: {}", ty_display!(self, ty));
+        for &param in self.ty_lists.get(params) {
+            println!("\twith: {}", ty_display!(self, param));
+        }
+        
         let mut new_instances = vec![]; // TODO: optimize if needed
         let result = self.expand_instances(params, ty, &mut new_instances);
 

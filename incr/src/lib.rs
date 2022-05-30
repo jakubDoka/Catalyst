@@ -13,11 +13,15 @@ use storage::*;
 use lexer::*;
 use module_types::*;
 
+pub type IncrFuncs = Map<IncrFunc>;
+pub type IncrModules = Map<IncrModule>;
+
 #[derive(Default)]
 pub struct Incr {
     pub version: String,
-    pub modules: Map<IncrModule>,
-    pub functions: Map<IncrFuncData>,
+    pub modules: IncrModules,
+    pub functions: IncrFuncs,
+    pub jit_functions: IncrFuncs,
 }
 
 impl Incr {
@@ -67,47 +71,49 @@ impl Incr {
         std::fs::write(path, contents)
     }
 
-    pub fn reduce(&mut self, module_map: &Map<Source>, modules: &Modules, module_order: &[Source]) {
+    /// we mark ans sweep garbage module and remove all related functions
+    pub fn reduce(&mut self, modules: &Modules, module_order: &[Source]) {
         let mut dirty = EntitySet::new();
-        for (k, v) in self.modules.iter_mut() {
-            let Some(&source) = module_map.get(k) else {
-                Self::wipe(v, &mut self.functions);
-                continue;
-            };
+        let mut new_modules = Map::with_capacity(self.modules.len());
+        
+        for &id in module_order {
+            let module = &modules[id];
 
-            let module = &modules[source];
             let Ok(Ok(modified)) = std::fs::metadata(&module.path).map(|m| m.modified()) else {
-                dirty.insert(source);
-                Self::wipe(v, &mut self.functions);
+                dirty.insert(id);
+                
+                if let Some(mut existing) = self.modules.remove(id) {
+                    Self::wipe(&mut existing, &mut self.functions);
+                    Self::wipe(&mut existing, &mut self.jit_functions);
+                    new_modules.insert(id, existing);
+                }
+
                 continue;
             };
 
-            if v.modified != modified {
-                dirty.insert(source);
-                v.modified = modified;
-                Self::wipe(v, &mut self.functions);
-            }
-        }
-
-        // propagate wipes trough dependant modules
-        for &module_id in module_order {
-            if dirty.contains(module_id) {
+            let Some(mut existing_module) = self.modules.remove(module.id) else {
+                let new_module = IncrModule {
+                    modified,
+                    owned_functions: Map::new(),
+                };
+                new_modules.insert(module.id, new_module);
                 continue;
-            }
-
-            let module = &modules[module_id];
-            let Some(incr_module) = self.modules.get_mut(module.id) else {
-                unreachable!();
             };
 
-            if module.dependency.iter().any(|&dep| dirty.contains(dep)) {
-                dirty.insert(module_id);
-                Self::wipe(incr_module, &mut self.functions)
+            if existing_module.modified != modified || module.dependency.iter().any(|&dep| dirty.contains(dep)) {
+                dirty.insert(id);
+                Self::wipe(&mut existing_module, &mut self.functions);
+                Self::wipe(&mut existing_module, &mut self.jit_functions);
+                existing_module.modified = modified;
             }
+
+            new_modules.insert(module.id, existing_module);
         }
+
+        self.modules = new_modules;
     }
 
-    pub fn wipe(module: &mut IncrModule, functions: &mut Map<IncrFuncData>) {
+    pub fn wipe(module: &mut IncrModule, functions: &mut IncrFuncs) {
         for (id, _) in module.owned_functions.iter() {
             functions.remove(id);
         }
@@ -121,6 +127,7 @@ impl BitSerde for Incr {
         self.version.write(buffer);
         self.modules.write(buffer);
         self.functions.write(buffer);
+        self.jit_functions.write(buffer);
     }
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
@@ -128,6 +135,7 @@ impl BitSerde for Incr {
             version: String::read(cursor, buffer)?,
             modules: Map::read(cursor, buffer)?,
             functions: Map::read(cursor, buffer)?,
+            jit_functions: Map::read(cursor, buffer)?,
         })
     }
 }
@@ -162,7 +170,7 @@ impl BitSerde for IncrModule {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct IncrFuncData {
+pub struct IncrFunc {
     pub signature: Signature,
     pub temp_id: Option<FuncId>,
     pub defined: bool,
@@ -170,13 +178,13 @@ pub struct IncrFuncData {
     pub reloc_records: Vec<IncrRelocRecord>,
 }
 
-impl IncrFuncData {
+impl IncrFunc {
     pub fn dependencies(&self) -> impl Iterator<Item = ID> + '_ {
         self.reloc_records.iter().map(|r| r.name)
     }
 }
 
-impl Default for IncrFuncData {
+impl Default for IncrFunc {
     fn default() -> Self {
         Self {
             temp_id: None,
@@ -188,7 +196,7 @@ impl Default for IncrFuncData {
     }
 }
 
-impl BitSerde for IncrFuncData {
+impl BitSerde for IncrFunc {
     fn write(&self, buffer: &mut Vec<u8>) {
         self.signature.write(buffer);
         self.bytes.write(buffer);

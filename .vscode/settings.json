@@ -18,6 +18,7 @@
         "dedup",
         "Deque",
         "Elif",
+        "elim",
         "ents",
         "evar",
         "evars",

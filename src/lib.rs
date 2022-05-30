@@ -14,9 +14,11 @@ pub mod state;
 pub mod source_loader;
 pub mod subcommand;
 pub mod scope_builder;
+pub mod generator;
 
+pub use generator::GenerationContext;
 pub use subcommand::Subcommand;
-pub use state::{SourceLoader, MainScopeBuilder};
+pub use state::{SourceLoader, MainScopeBuilder, Generator};
 
 use cli::CmdInput;
 
@@ -68,6 +70,9 @@ macro_rules! time_report {
         let _report = $crate::TimeReport::new($message);
     };
 }
+
+pub type TyOrder = Vec<Ty>;
+pub type CompileResults = SecondaryMap<Func, CompileResult>;
 
 /// Main extremely big object containing all needed state for compilation. Currently, the
 /// allocations are accumulated and memory is basically getting freed only at the end of
@@ -137,9 +142,9 @@ pub struct Compiler {
     triple: Triple,
     reprs: Reprs,
     repr_fields: ReprFields,
-    compile_results: SecondaryMap<Func, CompileResult>,
+    compile_results: CompileResults,
     signatures: Signatures,
-    ty_order: Vec<Ty>,
+    ty_order: TyOrder,
 }
 
 impl Compiler {
@@ -488,7 +493,7 @@ impl Compiler {
     /// are dispatched into entities uniquely allocated by compiler. Point is that the compiler
     /// can allocate function entities differently but ID should never change fi source file haven't been
     /// changed.
-    fn incr_data_to_compile_result(&self, incr_func_data: &IncrFuncData) -> CompileResult {
+    fn incr_data_to_compile_result(&self, incr_func_data: &IncrFunc) -> CompileResult {
         let bytes = incr_func_data.bytes.clone();
         let relocs = incr_func_data
             .reloc_records
@@ -915,7 +920,7 @@ impl Compiler {
 
             let signature = self.signatures.remove(func).unwrap();
 
-            let incr_func_data = IncrFuncData {
+            let incr_func_data = IncrFunc {
                 signature,
                 temp_id: None,
                 defined: false,
@@ -1032,7 +1037,7 @@ impl Compiler {
         s.load_modules();
         s.log_diagnostics();
 
-        s.incr.reduce(&s.module_map, &s.modules, &s.module_order);
+        s.incr.reduce(&s.modules, &s.module_order);
 
         s.build_tir();
         s.log_diagnostics();
@@ -1115,7 +1120,7 @@ impl Drop for TimeReport {
 }
 
 #[derive(Default, Clone)]
-struct CompileResult {
-    bytes: Vec<u8>,
-    relocs: Vec<MachReloc>,
+pub struct CompileResult {
+    pub bytes: Vec<u8>,
+    pub relocs: Vec<MachReloc>,
 }

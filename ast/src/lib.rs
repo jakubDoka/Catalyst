@@ -1,6 +1,8 @@
 use lexer::*;
 use storage::*;
 
+pub type AstTemp = FramedStack<Ast>;
+
 pub const FUNCTION_ARG_START: usize = 3;
 pub const FUNCTION_ARG_END: usize = 2;
 pub const FUNCTION_RET: usize = 2;
