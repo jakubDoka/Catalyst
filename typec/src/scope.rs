@@ -3,119 +3,22 @@ use std::{str::FromStr, vec};
 use crate::{ty::get_param, *};
 use ast::*;
 use cranelift_codegen::isa::CallConv;
-use incr::Incr;
 use lexer::*;
-use module_types::{
-    module::{self, Modules},
-    scope::{self, Scope},
-};
+use module_types::*;
 use storage::*;
 use typec_types::{
     jit::{Macro, Stage},
     *,
 };
 
-pub struct ScopeBuilder<'a> {
-    pub scope: &'a mut Scope,
-    pub funcs: &'a mut Funcs,
-    pub types: &'a mut Types,
-    pub ty_lists: &'a mut TyLists,
-    pub ty_comps: &'a mut TyComps,
-    pub ty_comp_lookup: &'a mut TyCompLookup,
-    pub builtin_types: &'a BuiltinTypes,
-    pub tfunc_lists: &'a mut TFuncLists,
-    pub instances: &'a mut Instances,
-    pub bound_impls: &'a mut BoundImpls,
-    pub modules: &'a mut Modules,
-    pub sources: &'a Sources,
-    pub ast_data: &'a AstData,
-    pub diagnostics: &'a mut errors::Diagnostics,
-    pub ctx: &'a mut ScopeContext,
-    pub module: Source,
-    pub func_meta: &'a mut FuncMeta,
-    pub incr: &'a mut Incr,
-    pub to_compile: &'a mut Vec<(Func, TyList)>,
-}
-
-#[macro_export]
-macro_rules! scope_builder {
-    ($self:expr, $module:expr) => {
-        ScopeBuilder::new(
-            &mut $self.scope,
-            &mut $self.funcs,
-            &mut $self.types,
-            &mut $self.ty_lists,
-            &mut $self.ty_comps,
-            &mut $self.ty_comp_lookup,
-            &$self.builtin_types,
-            &mut $self.func_lists,
-            &mut $self.instances,
-            &mut $self.bound_impls,
-            &mut $self.modules,
-            &$self.sources,
-            &$self.ast_data,
-            &mut $self.diagnostics,
-            &mut $self.scope_context,
-            $module,
-            &mut $self.func_meta,
-            &mut $self.incr,
-            &mut $self.to_compile,
-        )
-    };
-}
-
 impl<'a> ScopeBuilder<'a> {
-    pub fn new(
-        scope: &'a mut Scope,
-        funcs: &'a mut Funcs,
-        types: &'a mut Types,
-        ty_lists: &'a mut TyLists,
-        ty_comps: &'a mut TyComps,
-        ty_comp_lookup: &'a mut TyCompLookup,
-        builtin_types: &'a BuiltinTypes,
-        tfunc_lists: &'a mut TFuncLists,
-        instances: &'a mut Instances,
-        bound_impls: &'a mut BoundImpls,
-        modules: &'a mut Modules,
-        sources: &'a Sources,
-        ast: &'a AstData,
-        diagnostics: &'a mut errors::Diagnostics,
-        ctx: &'a mut ScopeContext,
-        module: Source,
-        func_meta: &'a mut FuncMeta,
-        incr: &'a mut Incr,
-        to_compile: &'a mut Vec<(Func, TyList)>,
-    ) -> Self {
-        Self {
-            scope,
-            funcs,
-            types,
-            ty_lists,
-            ty_comps,
-            ty_comp_lookup,
-            builtin_types,
-            tfunc_lists,
-            instances,
-            bound_impls,
-            modules,
-            sources,
-            ast_data: ast,
-            diagnostics,
-            ctx,
-            module,
-            func_meta,
-            incr,
-            to_compile,
-        }
-    }
-
     pub fn collect_items<'f>(
         &mut self,
         elements: impl Iterator<Item = (Ast, &'f ast::AstEnt)> + Clone,
     ) {
         for (ast, &ast::AstEnt { kind, span, .. }) in elements.clone() {
             if kind == AstKind::Tag {
-                self.ctx.tags.push(ast);
+                self.scope_context.tags.push(ast);
                 continue;
             }
 
@@ -127,12 +30,12 @@ impl<'a> ScopeBuilder<'a> {
                 _ => (unimplemented!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
 
-            self.ctx.tags.clear();
+            self.scope_context.tags.clear();
         }
 
         for (ast, &ast::AstEnt { kind, span, .. }) in elements {
             if kind == AstKind::Tag {
-                self.ctx.tags.push(ast);
+                self.scope_context.tags.push(ast);
                 continue;
             }
 
@@ -143,7 +46,7 @@ impl<'a> ScopeBuilder<'a> {
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
             }
 
-            self.ctx.tags.clear();
+            self.scope_context.tags.clear();
         }
 
         // due to the unique nested structure of bounds, (being types and also functions),
@@ -152,8 +55,8 @@ impl<'a> ScopeBuilder<'a> {
             self.scope.mark_frame();
 
             let mut prev = None;
-            while let Some(func) = self.ctx.bound_funcs.pop() {
-                let ast = self.ctx.func_ast[func];
+            while let Some(func) = self.scope_context.bound_funcs.pop() {
+                let ast = self.scope_context.func_ast[func];
                 let FuncKind::Bound(bound, ..) = self.func_meta[func].kind else {
                     unreachable!();
                 };
@@ -164,7 +67,7 @@ impl<'a> ScopeBuilder<'a> {
                     }
                     let span = self.types[bound].name;
                     self.scope
-                        .push_item("Self", scope::ScopeItem::new(bound, span));
+                        .push_item("Self", ScopeItem::new(bound, span));
                     prev = Some(bound);
                 }
 
@@ -202,7 +105,7 @@ impl<'a> ScopeBuilder<'a> {
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
                 self.scope
-                    .push_item("Self", scope::ScopeItem::new(dest, span));
+                    .push_item("Self", ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {
@@ -222,11 +125,11 @@ impl<'a> ScopeBuilder<'a> {
                 self.scope.pop_frame();
             }
 
-            self.ctx.bounds_to_verify.push((dest, ty, ast));
+            self.scope_context.bounds_to_verify.push((dest, ty, ast));
         } else if !body.is_reserved_value() {
             self.scope.mark_frame();
             self.scope
-                .push_item("Self", scope::ScopeItem::new(ty, span));
+                .push_item("Self", ScopeItem::new(ty, span));
 
             for &func in self.ast_data.children(body) {
                 let reserved = self.funcs.ents.push(FuncEnt::default());
@@ -251,7 +154,7 @@ impl<'a> ScopeBuilder<'a> {
 
         let name = self.ast_data.nodes[name].span;
         let scope_id = self.sources.id_of(name);
-        let id = self.modules[self.module].id + scope_id;
+        let id = self.modules[self.source].id + scope_id;
 
         let slot = self.types.push(TyEnt {
             id,
@@ -267,11 +170,11 @@ impl<'a> ScopeBuilder<'a> {
                     kind: FuncKind::Bound(slot, i as u32),
                     ..Default::default()
                 };
-                self.ctx.func_ast[reserved] = func;
-                self.ctx.bound_funcs.push(reserved);
-                self.tfunc_lists.push_one(reserved);
+                self.scope_context.func_ast[reserved] = func;
+                self.scope_context.bound_funcs.push(reserved);
+                self.func_lists.push_one(reserved);
             }
-            self.tfunc_lists.close_frame()
+            self.func_lists.close_frame()
         };
 
         // bound implements it self
@@ -282,7 +185,7 @@ impl<'a> ScopeBuilder<'a> {
         }
 
         self.types[slot].kind = TyKind::Bound(funcs);
-        self.ctx.type_ast[slot] = ast;
+        self.scope_context.type_ast[slot] = ast;
 
         {
             let item = module::ModuleItem::new(scope_id, slot, name);
@@ -290,7 +193,7 @@ impl<'a> ScopeBuilder<'a> {
                 self.scope
                     .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
             );
-            self.modules[self.module].items.push(item);
+            self.modules[self.source].items.push(item);
         }
 
         Ok(())
@@ -304,7 +207,7 @@ impl<'a> ScopeBuilder<'a> {
 
         let span = self.ast_data.nodes[name].span;
         let scope_id = self.sources.id_of(span);
-        let id = self.modules[self.module].id + scope_id;
+        let id = self.modules[self.source].id + scope_id;
         let flags = if generics.is_reserved_value() {
             TyFlags::empty()
         } else {
@@ -318,7 +221,7 @@ impl<'a> ScopeBuilder<'a> {
             flags,
         };
         let ty = self.types.push(ent);
-        self.ctx.type_ast[ty] = ast;
+        self.scope_context.type_ast[ty] = ast;
 
         {
             let item = module::ModuleItem::new(scope_id, ty, span);
@@ -326,7 +229,7 @@ impl<'a> ScopeBuilder<'a> {
                 self.scope
                     .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
             );
-            self.modules[self.module].items.push(item);
+            self.modules[self.source].items.push(item);
         }
 
         Ok(())
@@ -423,19 +326,12 @@ impl<'a> ScopeBuilder<'a> {
         let id = if external {
             scope_id
         } else {
-            self.modules[self.module].id + scope_id
+            self.modules[self.source].id + scope_id
         };
 
         assert!(self.funcs.instances.insert(id, func).is_none());
 
         if sig.params.is_reserved_value() && !external {
-            let mod_id = self.modules[self.module].id;
-            self.incr
-                .modules
-                .get_mut(mod_id)
-                .unwrap()
-                .owned_functions
-                .insert(id, ());
             self.to_compile.push((func, TyList::reserved_value()));
         } else if external {
             self.funcs.to_link.push(func);
@@ -479,7 +375,7 @@ impl<'a> ScopeBuilder<'a> {
             };
             self.func_meta[func] = meta;
 
-            self.ctx.func_ast[func] = ast;
+            self.scope_context.func_ast[func] = ast;
         }
 
         {
@@ -490,7 +386,7 @@ impl<'a> ScopeBuilder<'a> {
                 scope_id,
                 module_item.to_scope_item(),
             ));
-            self.modules[self.module].items.push(module_item);
+            self.modules[self.source].items.push(module_item);
         }
 
         Ok(func)
@@ -524,7 +420,7 @@ impl<'a> ScopeBuilder<'a> {
 
                 let str = self.sources.display(span);
                 self.scope
-                    .push_item(str, scope::ScopeItem::new(bound, span));
+                    .push_item(str, ScopeItem::new(bound, span));
                 self.ty_lists.push_one(bound);
             }
         }
@@ -543,7 +439,7 @@ impl<'a> ScopeBuilder<'a> {
                 bound
             };
 
-            self.scope.push_item("Self", scope::ScopeItem::new(bound, span));
+            self.scope.push_item("Self", ScopeItem::new(bound, span));
             self.ty_lists.push_one(bound);
         }
 
@@ -586,7 +482,7 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     pub fn find_simple_tag(&self, name: &str) -> Option<Ast> {
-        self.ctx
+        self.scope_context
             .tags
             .iter()
             .rev()

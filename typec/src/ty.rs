@@ -4,90 +4,12 @@ use module_types::*;
 use storage::*;
 use typec_types::*;
 
-use crate::scope::ScopeContext;
 use crate::*;
 
-pub struct TyBuilder<'a> {
-    pub scope: &'a mut Scope,
-    pub types: &'a mut Types,
-    pub ty_lists: &'a mut TyLists,
-    pub ty_comps: &'a mut TyComps,
-    pub ty_comp_lookup: &'a mut TyCompLookup,
-    pub builtin_types: &'a BuiltinTypes,
-    pub instances: &'a mut Instances,
-    pub bound_impls: &'a mut BoundImpls,
-    pub sources: &'a Sources,
-    pub ast_data: &'a AstData,
-    pub ctx: &'a mut ScopeContext,
-    pub ty_graph: &'a mut Graph<Ty>,
-    pub modules: &'a mut Modules,
-    pub ty: Ty,
-    pub diagnostics: &'a mut errors::Diagnostics,
-}
-
-#[macro_export]
-macro_rules! ty_builder {
-    ($self:expr, $ty:expr) => {
-        TyBuilder::new(
-            &mut $self.scope,
-            &mut $self.types,
-            &mut $self.ty_lists,
-            &mut $self.ty_comps,
-            &mut $self.ty_comp_lookup,
-            &$self.builtin_types,
-            &mut $self.instances,
-            &mut $self.bound_impls,
-            &$self.sources,
-            &$self.ast_data,
-            &mut $self.scope_context,
-            &mut $self.ty_graph,
-            &mut $self.modules,
-            $ty,
-            &mut $self.diagnostics,
-        )
-    };
-}
-
-impl<'a> TyBuilder<'a> {
-    pub fn new(
-        scope: &'a mut Scope,
-        types: &'a mut Types,
-        ty_lists: &'a mut TyLists,
-        ty_comps: &'a mut TyComps,
-        ty_comp_lookup: &'a mut TyCompLookup,
-        builtin_types: &'a BuiltinTypes,
-        instances: &'a mut Instances,
-        bound_impls: &'a mut BoundImpls,
-        sources: &'a Sources,
-        ast: &'a AstData,
-        ctx: &'a mut ScopeContext,
-        graph: &'a mut Graph<Ty>,
-        modules: &'a mut Modules,
-        ty: Ty,
-        diagnostics: &'a mut errors::Diagnostics,
-    ) -> Self {
-        Self {
-            scope,
-            types,
-            ty_lists,
-            ty_comps,
-            ty_comp_lookup,
-            builtin_types,
-            instances,
-            bound_impls,
-            sources,
-            ast_data: ast,
-            ctx,
-            ty_graph: graph,
-            modules,
-            ty,
-            diagnostics,
-        }
-    }
-
+impl TyBuilder<'_> {
     pub fn build(&mut self) {
         let TyEnt { id, .. } = self.types[self.ty];
-        let ast = self.ctx.type_ast[self.ty];
+        let ast = self.scope_context.type_ast[self.ty];
         if ast.is_reserved_value() {
             return;
         }

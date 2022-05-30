@@ -7,6 +7,7 @@
 #![allow(incomplete_features)]
 #![feature(atomic_mut_ptr)]
 
+pub mod state;
 pub mod bound_verifier;
 pub mod error;
 pub mod ident_hasher;
@@ -14,31 +15,15 @@ pub mod scope;
 pub mod tir;
 pub mod ty;
 
-pub use bound_verifier::BoundVerifier;
-pub use ident_hasher::IdentHasher;
-pub use scope::{ScopeBuilder, ScopeContext};
-pub use tir::{PatternMeta, TirBuilder};
-pub use ty::TyBuilder;
+pub use state::{TyBuilder, TyParser, TirBuilder, ScopeBuilder, BoundVerifier, IdentHasher};
+pub use scope::ScopeContext;
 
 use ast::*;
 use errors::*;
 use lexer::*;
-use module_types::{scope::Scope, *};
+use module_types::*;
 use storage::*;
 use typec_types::{TyError, *};
-
-#[macro_export]
-macro_rules! ident_hasher {
-    ($self:expr) => {
-        IdentHasher::new(
-            $self.sources,
-            $self.ast_data,
-            $self.scope,
-            $self.diagnostics,
-            $self.types,
-        )
-    };
-}
 
 pub fn infer_parameters(
     reference: Ty,
@@ -109,64 +94,8 @@ pub fn infer_parameters(
     Ok(())
 }
 
-pub struct TypeParser<'a> {
-    types: &'a mut Types,
-    ast_data: &'a AstData,
-    diagnostics: &'a mut Diagnostics,
-    ty_comps: &'a TyComps,
-    scope: &'a mut Scope,
-    ty_lists: &'a mut TyLists,
-    instances: &'a mut Instances,
-    sources: &'a Sources,
-    bound_impls: &'a mut BoundImpls,
-    builtin_types: &'a BuiltinTypes,
-}
 
-#[macro_export]
-macro_rules! ty_parser {
-    ($self:expr) => {
-        TypeParser::new(
-            $self.types,
-            $self.ast_data,
-            $self.diagnostics,
-            $self.ty_comps,
-            $self.scope,
-            $self.ty_lists,
-            $self.instances,
-            $self.sources,
-            $self.bound_impls,
-            $self.builtin_types,
-        )
-    };
-}
-
-impl<'a> TypeParser<'a> {
-    pub fn new(
-        types: &'a mut Types,
-        ast: &'a AstData,
-        diagnostics: &'a mut Diagnostics,
-        ty_comps: &'a TyComps,
-        scope: &'a mut Scope,
-        ty_lists: &'a mut TyLists,
-        instances: &'a mut Instances,
-        sources: &'a Sources,
-        bound_impls: &'a mut BoundImpls,
-        builtin_types: &'a BuiltinTypes,
-    ) -> Self {
-        Self {
-            types,
-            ast_data: ast,
-            diagnostics,
-            ty_comps,
-            scope,
-            ty_lists,
-            instances,
-            sources,
-            bound_impls,
-            builtin_types,
-        }
-    }
-
+impl TyParser<'_> {
     pub fn instantiate(&mut self, target: Ty, params: &[Ty]) -> Ty {
         let TyEnt {
             kind, flags, name, ..

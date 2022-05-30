@@ -5,6 +5,7 @@ use storage::*;
 
 use crate::{jit::Macro, *};
 
+pub type ToCompile = Vec<(Func, TyList)>;
 pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 
 pub struct Funcs {

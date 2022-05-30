@@ -38,7 +38,6 @@ use ast::*;
 use gen::*;
 use instance_types::*;
 use lexer::*;
-use matching::*;
 use module_types::*;
 use modules::*;
 use parser::*;
@@ -117,15 +116,15 @@ pub struct Compiler {
     instances: Instances,
     ty_comps: TyComps,
     ty_comp_lookup: TyCompLookup,
-    func_lists: TFuncLists,
+    func_lists: FuncLists,
     bound_impls: BoundImpls,
     func_bodies: FuncBodies,
-    tir_temp: FramedStack<Tir>,
+    tir_stack: TirStack,
     scope_context: ScopeContext,
-    tir_temp_body: TirData,
+    tir_data: TirData,
     func_meta: FuncMeta,
-    pattern_graph: PatternGraph<Tir, PatternMeta>,
-    to_compile: Vec<(Func, TyList)>,
+    tir_pattern_graph: TirPatternGraph,
+    to_compile: ToCompile,
 
     // jit
     _jit_module: JITModule,
@@ -238,14 +237,14 @@ impl Compiler {
             instances: Instances::new(),
             ty_comps: TyComps::new(),
             ty_comp_lookup: TyCompLookup::new(),
-            func_lists: TFuncLists::new(),
+            func_lists: FuncLists::new(),
             bound_impls: BoundImpls::new(),
             func_bodies: FuncBodies::new(),
-            tir_temp: FramedStack::new(),
-            tir_temp_body: TirData::new(),
+            tir_stack: FramedStack::new(),
+            tir_data: TirData::new(),
             scope_context: ScopeContext::new(),
             func_meta,
-            pattern_graph: PatternGraph::new(),
+            tir_pattern_graph: TirPatternGraph::new(),
             to_compile: Vec::new(),
 
             _jit_module: jit_module,
@@ -380,7 +379,7 @@ impl Compiler {
                 continue;
             }
 
-            self.tir_temp_body.clear();
+            self.tir_data.clear();
             if tir_builder!(self, func).build().is_err() {
                 continue;
             };
@@ -392,7 +391,7 @@ impl Compiler {
             //     &self.tir_temp_body,
             //     self.func_meta[func].body,
             // ));
-            self.func_bodies[func] = self.tir_temp_body.clone();
+            self.func_bodies[func] = self.tir_data.clone();
         }
     }
 

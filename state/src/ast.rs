@@ -172,8 +172,7 @@ impl Struct {
         lexer.skip_newlines();
         while lexer.current().kind != TokKind::RBrace && lexer.current().kind != TokKind::Eof {
             fields.push(Field::new(lexer));
-            lexer.expect(TokKind::Newline);
-            lexer.advance();
+            lexer.skip_newlines();
         }
         lexer.advance();
         fields
@@ -212,7 +211,7 @@ impl Struct {
             write!(f, "\t\t\t")?;
             field.write_type_prefix(false, f)?;
             if field.owned || field.passed {
-                writeln!(f, "${}", &field.name)?;
+                writeln!(f, "${},", &field.name)?;
             } else {
                 writeln!(f, "$self.{},", pascal_to_snake(&field.name))?;
             }

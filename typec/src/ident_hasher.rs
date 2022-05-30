@@ -1,35 +1,10 @@
 use ast::*;
-use errors::*;
 use lexer::*;
-use module_types::*;
 use storage::*;
 use typec_types::*;
-
-pub struct IdentHasher<'a> {
-    pub sources: &'a Sources,
-    pub ast: &'a AstData,
-    pub scope: &'a Scope,
-    pub diagnostics: &'a mut Diagnostics,
-    pub types: &'a Types,
-}
+use crate::IdentHasher;
 
 impl<'a> IdentHasher<'a> {
-    pub fn new(
-        sources: &'a Sources,
-        ast: &'a AstData,
-        scope: &'a Scope,
-        diagnostics: &'a mut Diagnostics,
-        types: &'a Types,
-    ) -> Self {
-        Self {
-            sources,
-            ast,
-            scope,
-            diagnostics,
-            types,
-        }
-    }
-
     pub fn ident_id(&mut self, ast: Ast, owner: Option<(Ty, Span)>) -> errors::Result<ID> {
         self.ident_id_low(ast, owner).map(|(id, _)| id)
     }
@@ -39,11 +14,11 @@ impl<'a> IdentHasher<'a> {
         ast: Ast,
         owner: Option<(Ty, Span)>,
     ) -> errors::Result<(ID, Option<(Ty, Span)>)> {
-        let children = self.ast.children(ast);
+        let children = self.ast_data.children(ast);
         match (children, owner) {
             (&[module, _, item], None) | (&[module, item], Some(_)) => {
                 let module_id = {
-                    let span = self.ast.nodes[module].span;
+                    let span = self.ast_data.nodes[module].span;
                     let id = self.sources.id_of(span);
 
                     let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
@@ -53,13 +28,13 @@ impl<'a> IdentHasher<'a> {
                 let (ty, span) = if let Some(owner) = owner {
                     owner
                 } else {
-                    let span = self.ast.nodes[item].span;
+                    let span = self.ast_data.nodes[item].span;
                     let id = self.sources.id_of(span);
                     (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
                 };
 
                 let id = {
-                    let name = ast::id_of(item, self.ast, self.sources);
+                    let name = ast::id_of(item, self.ast_data, self.sources);
                     let ty = self.types.base_id_of(ty);
                     ID::owned_func(ty, name)
                 };
@@ -67,9 +42,9 @@ impl<'a> IdentHasher<'a> {
                 Ok((id + module_id, Some((ty, span))))
             }
             (&[module_or_type, item], None) => {
-                let item_id = ast::id_of(item, self.ast, self.sources);
+                let item_id = ast::id_of(item, self.ast_data, self.sources);
 
-                let span = self.ast.nodes[module_or_type].span;
+                let span = self.ast_data.nodes[module_or_type].span;
                 let id = self.sources.id_of(span);
 
                 Ok(
@@ -83,15 +58,15 @@ impl<'a> IdentHasher<'a> {
                     },
                 )
             }
-            (&[], None) => return Ok((ast::id_of(ast, self.ast, self.sources), None)),
+            (&[], None) => return Ok((ast::id_of(ast, self.ast_data, self.sources), None)),
             (&[], Some((ty, span))) => {
-                let name = ast::id_of(ast, self.ast, self.sources);
+                let name = ast::id_of(ast, self.ast_data, self.sources);
                 let ty_id = self.types.base_id_of(ty);
                 Ok((ID::owned_func(ty_id, name), Some((ty, span))))
             }
             _ => {
                 self.diagnostics.push(TyError::InvalidPath {
-                    loc: self.ast.nodes[ast].span,
+                    loc: self.ast_data.nodes[ast].span,
                 });
                 Err(())
             }

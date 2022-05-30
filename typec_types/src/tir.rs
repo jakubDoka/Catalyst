@@ -1,8 +1,25 @@
 use crate::*;
 use lexer::*;
+use matching::PatternGraph;
 use storage::*;
 
+pub type TirStack = FramedStack<Tir>;
+pub type TirPatternGraph = PatternGraph<Tir, TirPatternMeta>;
 pub type FuncBodies = SecondaryMap<Func, TirData>;
+
+#[derive(Clone, Copy)]
+pub enum TirPatternMeta {
+    Cmp,
+    Var(Span),
+    Default,
+}
+
+impl Default for TirPatternMeta {
+    fn default() -> Self {
+        TirPatternMeta::Default
+    }
+}
+
 
 #[derive(Clone)]
 pub struct TirData {

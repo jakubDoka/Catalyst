@@ -44,3 +44,120 @@ file "modules/src/state.rs" {
         mut Diagnostics
     }
 }
+
+file "typec/src/state.rs" {
+    use "module_types"
+    use "typec_types"
+    use "lexer"
+    use "errors"
+    use "ast"
+    use "crate::scope"
+
+    struct BoundVerifier {
+        mut ScopeContext
+        mut TyLists
+        mut Modules
+        mut Scope
+        mut Diagnostics
+        mut Funcs
+        mut FuncLists
+        mut BoundImpls
+        
+        AstData
+        Types
+        BuiltinTypes
+        Sources
+        FuncMeta
+    }
+
+    struct IdentHasher {
+        mut Diagnostics
+        
+        Sources
+        AstData
+        Scope
+        Types
+    }
+
+    struct TyParser {
+        mut Types
+        mut Diagnostics
+        mut Scope
+        mut TyLists
+        mut Instances
+        mut BoundImpls
+        
+        AstData
+        TyComps
+        Sources
+        BuiltinTypes
+    }
+
+    struct ScopeBuilder {
+        owned Source
+        
+        mut Scope
+        mut Funcs
+        mut Types
+        mut TyLists
+        mut TyComps
+        mut TyCompLookup
+        mut FuncLists
+        mut Instances
+        mut BoundImpls
+        mut Modules
+        mut Diagnostics
+        mut ScopeContext
+        mut FuncMeta
+        mut ToCompile
+        
+        BuiltinTypes
+        Sources
+        AstData
+    }
+
+    struct TirBuilder {
+        owned Func
+        
+        mut TyLists
+        mut Instances
+        mut TyComps
+        mut TyCompLookup
+        mut BoundImpls
+        mut ScopeContext
+        mut TirData
+        mut Scope
+        mut Types
+        mut TirStack
+        mut Modules
+        mut Diagnostics
+        mut FuncMeta
+        mut TirPatternGraph
+        
+        Funcs
+        FuncLists
+        BuiltinTypes
+        Sources
+        AstData
+    }
+
+    struct TyBuilder {
+        owned Ty
+        
+        mut Scope
+        mut Types
+        mut TyLists
+        mut TyComps
+        mut TyCompLookup
+        mut Instances
+        mut BoundImpls
+        mut ScopeContext
+        mut TyGraph
+        mut Modules
+        mut Diagnostics
+        
+        BuiltinTypes
+        Sources
+        AstData
+    }
+}

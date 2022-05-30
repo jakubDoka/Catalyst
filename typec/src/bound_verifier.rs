@@ -1,81 +1,11 @@
-use module_types::module::Modules;
 
-use crate::{scope::ScopeContext, TyError, *};
+use crate::{TyError, *};
 
-pub struct BoundVerifier<'a> {
-    pub ctx: &'a mut ScopeContext,
-    pub ast_data: &'a AstData,
-    pub types: &'a Types,
-    pub ty_lists: &'a mut TyLists,
-    pub builtin_types: &'a BuiltinTypes,
-    pub modules: &'a mut Modules,
-    pub scope: &'a mut Scope,
-    pub diagnostics: &'a mut errors::Diagnostics,
-    pub funcs: &'a mut Funcs,
-    pub func_lists: &'a mut TFuncLists,
-    pub bound_impls: &'a mut BoundImpls,
-    pub sources: &'a Sources,
-    pub func_meta: &'a FuncMeta,
-}
-
-#[macro_export]
-macro_rules! bound_verifier {
-    ($self:expr) => {
-        BoundVerifier::new(
-            &mut $self.scope_context,
-            &$self.ast_data,
-            &$self.types,
-            &mut $self.ty_lists,
-            &$self.builtin_types,
-            &mut $self.modules,
-            &mut $self.scope,
-            &mut $self.diagnostics,
-            &mut $self.funcs,
-            &mut $self.func_lists,
-            &mut $self.bound_impls,
-            &$self.sources,
-            &$self.func_meta,
-        )
-    };
-}
-
-impl<'a> BoundVerifier<'a> {
-    pub fn new(
-        ctx: &'a mut ScopeContext,
-        ast: &'a AstData,
-        types: &'a Types,
-        ty_lists: &'a mut TyLists,
-        builtin_types: &'a BuiltinTypes,
-        modules: &'a mut Modules,
-        scope: &'a mut Scope,
-        diagnostics: &'a mut errors::Diagnostics,
-        funcs: &'a mut Funcs,
-        func_lists: &'a mut TFuncLists,
-        bound_impls: &'a mut BoundImpls,
-        sources: &'a Sources,
-        func_meta: &'a FuncMeta,
-    ) -> Self {
-        Self {
-            ctx,
-            ast_data: ast,
-            types,
-            ty_lists,
-            builtin_types,
-            modules,
-            scope,
-            diagnostics,
-            funcs,
-            func_lists,
-            bound_impls,
-            sources,
-            func_meta,
-        }
-    }
-
+impl BoundVerifier<'_> {
     pub fn verify(&mut self) {
         // we have to collect all functions first and the check if all bound
         // functions are implemented, its done here
-        while let Some((implementor, bound, impl_block)) = self.ctx.bounds_to_verify.pop() {
+        while let Some((implementor, bound, impl_block)) = self.scope_context.bounds_to_verify.pop() {
             let &[.., implementor_ast, body] = self.ast_data.children(impl_block) else {
                 unreachable!();
             };
@@ -205,7 +135,7 @@ impl<'a> BoundVerifier<'a> {
             let a_args = self.ty_lists.get(a.args);
             let b_args = self.ty_lists.get(b.args);
             let ast_params = {
-                let children = self.ast_data.children(self.ctx.func_ast[impl_func]);
+                let children = self.ast_data.children(self.scope_context.func_ast[impl_func]);
                 let has_ret = (a.ret != self.builtin_types.nothing) as usize;
                 &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };

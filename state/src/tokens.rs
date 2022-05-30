@@ -23,7 +23,7 @@ impl<'a> Lexer<'a> {
         self.current.clone()
     }
 
-    pub fn peek(&self) -> Tok {
+    pub fn _peek(&self) -> Tok {
         self.next.clone()
     }
 

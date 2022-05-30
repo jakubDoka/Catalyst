@@ -6,9 +6,10 @@ use storage::*;
 
 use crate::*;
 
+pub type TyGraph = Graph<Ty>;
 pub type TyLists = FramedStackMap<TyList, Ty>;
 pub type Types = PrimaryMap<Ty, TyEnt>;
-pub type TFuncLists = StackMap<FuncList, Func>;
+pub type FuncLists = StackMap<FuncList, Func>;
 pub type TyCompLookup = Map<TyComp>;
 pub type TyComps = StackMap<TyCompList, TyCompEnt, TyComp>;
 pub type BoundImpls = Map<BoundImpl>;
