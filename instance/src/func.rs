@@ -681,16 +681,11 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn translate_call(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::Call(params, mut func, args), flags, .. } = self.body.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::Call(caller, params, mut func, args), flags, .. } = self.body.ents[tir] else {
             unreachable!();
         };
 
-        let (caller, param_slice) = {
-            let params = self.ty_lists.get(params);
-            let has_caller = flags.contains(TirFlags::WITH_CALLER);
-            let caller_offset = has_caller as usize;
-            (has_caller.then(|| params[0]), &params[caller_offset..])
-        };
+        let param_slice = self.ty_lists.get(params);
 
         // dispatch bound call
         if let FuncKind::Bound(bound, index) = self.func_meta[func].kind {

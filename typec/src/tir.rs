@@ -337,7 +337,7 @@ impl TirBuilder<'_> {
                 let int_lit = self.int_lit(branch_ent.coverage.start, ty);
 
                 let args = self.tir_data.cons.push(&[expr, int_lit]);
-                let kind = TirKind::Call(TyList::default(), func, args);
+                let kind = TirKind::Call(ty.into(), TyList::reserved_value(), func, args);
                 let ty = self.builtin_types.bool;
                 let ent = TirEnt::new(kind, ty, span);
                 self.tir_data.ents.push(ent)
@@ -658,9 +658,8 @@ impl TirBuilder<'_> {
             let ty = self.func_meta[func].sig.ret;
             let span = self.ast_data.nodes[ast].span;
             let args = self.tir_data.cons.push(&[expr]);
-            let params = self.ty_lists.push(&[operand_ty]);
-            let kind = TirKind::Call(params, func, args);
-            let ent = TirEnt::with_flags(kind, ty, TirFlags::WITH_CALLER, span);
+            let kind = TirKind::Call(operand_ty.into(), TyList::reserved_value(), func, args);
+            let ent = TirEnt::new(kind, ty, span);
             self.tir_data.ents.push(ent)
         };
 
@@ -836,7 +835,6 @@ impl TirBuilder<'_> {
             vec
         };
 
-        let caller_offset = caller.is_some() as usize;
         let generic = flags.contains(FuncFlags::GENERIC);
 
         let because = self.func_meta[func].name;
@@ -868,24 +866,14 @@ impl TirBuilder<'_> {
                     })
                 })
                 .fold(Ok(()), |acc, err| acc.and(err))?;
-
-            let params = if let Some(caller) = caller {
-                self.ty_lists.push(&[caller])
-            } else {
-                TyList::reserved_value()
-            };
-
-            (sig.ret, func, params)
+            
+            (sig.ret, func, TyList::reserved_value())
         } else {
             let params = self.ty_lists.get(sig.params);
 
             prepare_params(params, self.types);
 
-            let mut param_vec = vec![Ty::default(); params.len() + caller_offset];
-            if let Some(caller) = caller {
-                param_vec[0] = caller;
-            }
-            let param_slots = &mut param_vec[caller_offset..];
+            let mut param_slots = vec![Ty::default(); params.len()];
 
             if let Some(instantiation) = instantiation {
                 if params.len() > self.ast_data.children(instantiation).len() - 1 {
@@ -915,7 +903,7 @@ impl TirBuilder<'_> {
                     infer_parameters(
                         ty,
                         arg_ty,
-                        param_slots,
+                        &mut param_slots,
                         span,
                         self.types,
                         self.ty_lists,
@@ -945,18 +933,18 @@ impl TirBuilder<'_> {
                     Err(())
                 })?;
 
-            let ret = ty_parser!(self).instantiate(sig.ret, param_slots);
+            let ret = ty_parser!(self).instantiate(sig.ret, &mut param_slots);
 
             self.scope_context.use_type(ret, self.types);
 
-            (ret, func, self.ty_lists.push(&param_vec))
+            (ret, func, self.ty_lists.push(&param_slots))
         };
 
         let result = {
             let span = self.ast_data.nodes[ast].span;
             let args = self.tir_data.cons.push(&args);
-            let kind = TirKind::Call(params, func, args);
-            let flags = TirFlags::WITH_CALLER & caller.is_some() | TirFlags::GENERIC & generic;
+            let kind = TirKind::Call(caller.into(), params, func, args);
+            let flags = TirFlags::GENERIC & generic;
             let ent = TirEnt::with_flags(kind, ret, flags, span);
             self.tir_data.ents.push(ent)
         };
@@ -1455,9 +1443,8 @@ impl TirBuilder<'_> {
         let tir = {
             let ty = self.func_meta[func].sig.ret;
             let args = self.tir_data.cons.push(&[left, right]);
-            let caller = self.ty_lists.push(&[left_ty]);
-            let kind = TirKind::Call(caller, func, args);
-            let ent = TirEnt::with_flags(kind, ty, TirFlags::WITH_CALLER, span);
+            let kind = TirKind::Call(left_ty.into(), TyList::reserved_value(), func, args);
+            let ent = TirEnt::new(kind, ty, span);
             self.tir_data.ents.push(ent)
         };
 

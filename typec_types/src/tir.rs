@@ -92,7 +92,7 @@ pub enum TirKind {
     Block(TirList),
     Return(PackedOption<Tir>),
     Argument(u32),
-    Call(TyList, Func, TirList),
+    Call(PackedOption<Ty>, TyList, Func, TirList),
     IntLit(u128),
     BoolLit(bool),
     CharLit(char),
@@ -121,7 +121,6 @@ bitflags! {
         const TERMINATING = 1 << 1;
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
-        const WITH_CALLER = 1 << 4;
     }
 }
 
@@ -248,26 +247,23 @@ impl<'a> TirDisplay<'a> {
             TirKind::Argument(id) => {
                 write!(f, "parameter {}", id)?;
             }
-            TirKind::Call(params, func, args) => {
-                let has_caller = ent.flags.contains(TirFlags::WITH_CALLER);
-                let params = self.ty_lists.get(params);
-                if has_caller {
-                    let caller = params[0];
+            TirKind::Call(caller, params, func, args) => {
+                if let Some(caller) = caller.expand() {
                     write!(f, "{}::", ty_display!(self, caller))?;
                 }
 
+                let params = self.ty_lists.get(params);
+
                 write!(f, "{func}")?;
 
-                if params.len() > has_caller as usize {
-                    write!(f, "::[")?;
-                    for (i, &param) in params.iter().skip(has_caller as usize).enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        write!(f, "{}", ty_display!(self, param))?;
+                write!(f, "::[")?;
+                for (i, &param) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
                     }
-                    write!(f, "]")?;
+                    write!(f, "{}", ty_display!(self, param))?;
                 }
+                write!(f, "]")?;
 
                 write!(f, "(")?;
                 for (i, &arg) in self.data.cons.get(args).iter().enumerate() {

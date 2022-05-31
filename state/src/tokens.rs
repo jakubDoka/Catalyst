@@ -110,7 +110,7 @@ pub enum TokKind {
 
     #[regex("`[^`]*`")]
     EscapedIdent,
-    #[regex("[a-zA-Z][a-zA-Z0-9_]*")]
+    #[regex("[a-zA-Z]\\w*")]
     Ident,
     
     #[regex("\\{")]

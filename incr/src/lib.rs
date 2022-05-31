@@ -105,6 +105,7 @@ impl Incr {
                 Self::wipe(&mut existing_module, &mut self.functions);
                 Self::wipe(&mut existing_module, &mut self.jit_functions);
                 existing_module.modified = modified;
+                println!("gogaksdas;lkd;lakds;")
             }
 
             new_modules.insert(module.id, existing_module);

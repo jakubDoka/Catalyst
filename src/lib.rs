@@ -1,8 +1,3 @@
-//! File glues up all components of the projects
-//! and performs the compilation. Code is then
-//! called from `main.rs`. Whole process is encapsulated
-//! in [`Compiler::compile`] method.
-
 #![feature(result_option_inspect)]
 #![feature(let_else)]
 #![feature(bool_to_option)]
@@ -10,49 +5,44 @@
 #![feature(result_flattening)]
 #![feature(scoped_threads)]
 
-pub mod state;
-pub mod source_loader;
-pub mod subcommand;
-pub mod scope_builder;
-pub mod generator;
-
-pub use generator::GenerationContext;
-pub use subcommand::Subcommand;
-pub use state::{SourceLoader, MainScopeBuilder, Generator};
-
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{ExternalName, Type};
-use cranelift_codegen::isa::{TargetIsa, CallConv};
-use cranelift_codegen::settings::{Configurable, Flags};
+use cranelift_codegen::ir::{Type, ExternalName};
+use cranelift_codegen::isa::TargetIsa;
+use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Linkage, Module};
+
+use cranelift_frontend::{FunctionBuilderContext, FunctionBuilder};
+use cranelift_jit::{JITModule, JITBuilder};
+use cranelift_module::{Module, Linkage};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
+use errors::Diagnostics;
+use incr::{Incr, IncrFunc, IncrRelocRecord};
+use instance::*;
+
+use instance::func::{MirBuilderContext};
+use instance::repr::{build_builtin_reprs, build_reprs};
 use target_lexicon::Triple;
 
-use errors::*;
-use incr::*;
-use instance::*;
-use ast::*;
-use gen::*;
-use instance_types::*;
-use lexer::*;
-use module_types::*;
 use modules::*;
 use parser::*;
+use lexer::*;
+use module_types::*;
+use instance_types::*;
 use storage::*;
-use typec::*;
 use typec_types::*;
+use typec::*;
+use ast::*;
+use gen::*;
+use matching::*;
 
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Instant, SystemTime};
+use std::{path::Path};
 
 /// shorthand for exiting the process
-#[macro_export]
 macro_rules! exit {
     ($expr:expr) => {
         std::process::exit($expr);
@@ -64,21 +54,17 @@ macro_rules! exit {
 }
 
 /// utility for simple scoped benchmarking
-#[macro_export]
 macro_rules! time_report {
     ($message:expr) => {
-        let _report = $crate::TimeReport::new($message);
+        let _report = TimeReport::new($message);
     };
 }
 
-pub type TyOrder = Vec<Ty>;
-pub type CompileResults = SecondaryMap<Func, CompileResult>;
-
 /// Main extremely big object containing all needed state for compilation. Currently, the
-/// allocations are accumulated and memory is basically getting freed only at the end of
-/// the program. Compilation is also single threaded. This should change in the future, mainly
+/// allocations are accumulated and memory is basically getting freed only at the end of 
+/// the program. Compilation is also single threaded. This should change in the future, mainly 
 /// for codegen faze which takes most of the time.
-///
+/// 
 /// TODO: This could get fixed with dependency analysis, that would eliminate useless objects.
 /// Question is whether we would compile programs at such scale this would matter.
 pub struct Compiler {
@@ -102,7 +88,7 @@ pub struct Compiler {
 
     // modules
     scope: Scope,
-    module_map: ModuleMap,
+    module_map: Map<Source>,
     loader_context: LoaderContext,
     modules: Modules,
     units: Units,
@@ -142,12 +128,13 @@ pub struct Compiler {
     triple: Triple,
     reprs: Reprs,
     repr_fields: ReprFields,
-    compile_results: CompileResults,
+    compile_results: SecondaryMap<Func, CompileResult>,
     signatures: Signatures,
-    ty_order: TyOrder,
+    ty_order: Vec<Ty>,
 }
 
 impl Compiler {
+
     /// Creates an compiler instance. For some reason this process is surprisingly slow.
     fn new() -> Self {
         time_report!("initialization of compiler");
@@ -155,7 +142,7 @@ impl Compiler {
         let input = CmdInput::new();
 
         let subcommand = Subcommand::new(&input);
-
+        
         let modified_time = get_exe_modification_time();
         let root_path = subcommand.root_path().unwrap();
         let incr_path = root_path.join("incr.bin");
@@ -166,39 +153,46 @@ impl Compiler {
                 Incr::load(format!("{modified_time:?}"), &jit_incr_path),
             )
         } else {
-            (Incr::default(), Incr::default())
+            (
+                Incr::default(),
+                Incr::default(),
+            )
         };
-
+        
         let mut sources = Sources::new();
         let mut builtin_source = BuiltinSource::new(&mut sources);
-
+        
         let mut modules = Modules::new();
         let item_lexicon = {
             let mut map = ItemLexicon::new();
-
+    
             map.register::<Source>("module");
             map.register::<Ty>("type");
             map.register::<Func>("function");
             map.register::<Tir>("tir");
-
+    
             map
         };
 
         let mut types = Types::new();
-        let builtin_types = BuiltinTypes::new(&mut sources, &mut builtin_source, &mut types);
+        let builtin_types = BuiltinTypes::new(
+            &mut sources, 
+            &mut builtin_source, 
+            &mut types
+        );
         let mut ty_lists = TyLists::new();
         let mut funcs = Funcs::new();
         let mut func_meta = FuncMeta::new();
 
         let b_source = builtin_source.source;
         typec::create_builtin_items(
-            &mut types,
-            &mut ty_lists,
-            &builtin_types,
-            &mut funcs,
+            &mut types, 
+            &mut ty_lists, 
+            &builtin_types, 
+            &mut funcs, 
             &mut func_meta,
-            &mut sources,
-            &mut builtin_source,
+            &mut sources, 
+            &mut builtin_source, 
             &mut modules[b_source].items,
         );
 
@@ -209,7 +203,7 @@ impl Compiler {
 
         let (object_module, triple) = Self::init_object_module(&input);
 
-        Self {
+        Self {            
             subcommand: Subcommand::new(&input),
             input,
 
@@ -223,17 +217,17 @@ impl Compiler {
 
             ast_data: AstData::new(),
             ast_temp: FramedStack::new(),
-
+            
             scope: Scope::new(),
             module_map: Map::new(),
             loader_context: LoaderContext::new(),
             modules,
             units: Units::new(),
             module_order: Vec::new(),
-
+            
             diagnostics: Diagnostics::new(),
             item_lexicon,
-
+            
             ty_graph: typec_types::Graph::new(),
             types,
             builtin_types,
@@ -249,13 +243,13 @@ impl Compiler {
             tir_data: TirData::new(),
             scope_context: ScopeContext::new(),
             func_meta,
-            tir_pattern_graph: TirPatternGraph::new(),
-            to_compile: Vec::new(),
+            tir_pattern_graph: PatternGraph::new(),
+            to_compile: ToCompile::new(),
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
             host_isa,
-
+                        
             entry_id: None,
             object_module,
             triple,
@@ -273,16 +267,18 @@ impl Compiler {
             let setting_builder = cranelift_codegen::settings::builder();
 
             let flags = Flags::new(setting_builder);
-
+    
             let target_triple = target_lexicon::Triple::host();
-
+    
             cranelift_codegen::isa::lookup(target_triple)
                 .unwrap()
                 .finish(flags)
                 .unwrap()
         };
 
-        let builder = JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
+        let builder = JITBuilder::new(
+            cranelift_module::default_libcall_names()
+        ).unwrap();
 
         (JITModule::new(builder), isa)
     }
@@ -296,19 +292,17 @@ impl Compiler {
                 .enabled("no-verify")
                 .then_some("false")
                 .unwrap_or("true");
-
+            
             setting_builder.set("enable_verifier", verify).unwrap();
-
+            
             if let Some(opt_level) = input.field("o") {
                 let opt_level = match opt_level {
                     "0" | "none" => "none",
                     "1" | "speed" => "speed",
-                    "2" | "speed_and_size" => "speed_and_size",
+                    "2" | "speed_and_size" => "speed_and_size",                 
                     _ => {
                         println!("{ERR}error:{END} unknown optimization level: {}", opt_level);
-                        println!(
-                            "{INFO}info:{END} use one of: none(0), speed(1), speed_and_size(2)"
-                        );
+                        println!("{INFO}info:{END} use one of: none(0), speed(1), speed_and_size(2)");
                         exit!(1);
                     }
                 };
@@ -316,12 +310,12 @@ impl Compiler {
             }
 
             let flags = Flags::new(setting_builder);
-
+    
             let target_triple = input.field("target").map_or_else(
                 || target_lexicon::Triple::host(),
                 |target| target_lexicon::triple!(target),
             );
-
+    
             (
                 cranelift_codegen::isa::lookup(target_triple.clone())
                     .unwrap()
@@ -331,10 +325,14 @@ impl Compiler {
             )
         };
 
+       
+
         let object_module = {
-            let builder =
-                ObjectBuilder::new(isa, "catalyst", cranelift_module::default_libcall_names())
-                    .unwrap();
+            let builder = ObjectBuilder::new(
+                isa, 
+                "catalyst", 
+                cranelift_module::default_libcall_names()
+            ).unwrap();
             ObjectModule::new(builder)
         };
 
@@ -342,13 +340,74 @@ impl Compiler {
     }
 
     /// All source code is loaded into memory here.
-    ///
-    /// TODO: Try to use streams instead of `read_to_string`, Files
-    /// could get loaded while parsing, though performance improvement
+    /// 
+    /// TODO: Try to use streams instead of `read_to_string`, Files 
+    /// could get loaded while parsing, though performance improvement 
     /// is questionable.
     fn load_modules(&mut self) {
         time_report!("loading of modules");
-        self.module_order = source_loader!(self).load();
+
+        let Subcommand::Compile(path) = &self.subcommand else {
+            unreachable!();
+        };
+
+        let Ok(unit_order) = unit_builder!(self).load_units(&path) else {
+            return;
+        };
+
+        let mut module_order = vec![];
+
+        for unit in unit_order {
+            let Ok(local_module_order) = module_builder!(self).load_unit_modules(unit) else {
+                continue;
+            };
+
+            module_order.extend(local_module_order.into_iter().rev());
+        }
+
+        module_order.reverse();
+
+        for (i, &id) in module_order.iter().enumerate() {
+            self.modules[id].ordering = i;
+        }            
+
+        self.module_order = module_order;
+    }
+
+    /// every module imports set of builtin constructs, work is done here
+    fn load_builtin_scope_items(&mut self, source: Source) {
+        for item in self.modules[self.builtin_source.source].items.iter() {
+            self.scope
+                .insert(&mut self.diagnostics, source, item.id, item.to_scope_item())
+                .unwrap();
+        }
+    }
+
+    /// The module imports are read from temporary ast and minimal data is preserved.
+    /// 
+    /// TODO: Could there be an option to optimize this?
+    fn build_scope(&mut self, source: Source) {
+        self.scope.dependencies.clear();
+        if let Some(imports) = ModuleImports::new(&self.ast_data, &self.sources).imports() {
+            for import in imports {
+                let nick = self.sources.display(import.nick);
+                let Some(&dep) = self.module_map.get((nick, source)) else {
+                continue; // recovery, module might not exist due to previous recovery
+            };
+                self.scope
+                    .insert(
+                        &mut self.diagnostics,
+                        source,
+                        nick,
+                        ScopeItem::new(dep, import.nick),
+                    )
+                    .unwrap();
+                for item in self.modules[dep].items.iter() {
+                    drop(self.scope.insert(&mut self.diagnostics, source, item.id, item.to_scope_item()));
+                }
+                self.scope.dependencies.push((dep, import.nick));
+            }
+        }
     }
 
     /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
@@ -363,11 +422,11 @@ impl Compiler {
         );
 
         for ty in ty_buffer.drain(..) {
-            ty_builder!(self, ty).build();
+            ty_builder!(self, ty).build();           
         }
     }
 
-    /// Similar to `Self::build_types` but for functions. This action depends on types
+    /// Similar to `Self::build_types` but for functions. This action depends on types 
     /// so it has to be called after.
     fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
         func_buffer.extend(
@@ -389,33 +448,34 @@ impl Compiler {
                 continue;
             };
             // println!("{}", TirDisplay::new(
-            //     &self.types,
-            //     &self.ty_lists,
-            //     &self.ty_comps,
-            //     &self.sources,
-            //     &self.tir_temp_body,
+            //     &self.types, 
+            //     &self.ty_lists, 
+            //     &self.ty_comps, 
+            //     &self.sources, 
+            //     &self.tir_temp_body, 
             //     self.func_meta[func].body,
             // ));
             self.func_bodies[func] = self.tir_data.clone();
         }
     }
 
-    /// Compute the type layouts. This is only used for incremental
+    /// Compute the type layouts. This is only used for incremental 
     /// computation while jit-compiling macros.
     fn build_layouts(&mut self, bottom: usize) {
         let iter = (bottom..self.types.len()).map(|i| {
             let ty = Ty::new(i);
             ty
         });
-
+        
         for ty in iter.clone() {
             self.ty_graph.add_vertex(ty);
         }
 
         let check_point = self.ty_order.len();
         if let Err(cycle) = self.ty_graph.total_ordering(&mut self.ty_order) {
-            self.diagnostics
-                .push(TyError::InfinitelySizedType { cycle });
+            self.diagnostics.push(TyError::InfinitelySizedType {
+                cycle, 
+            });
         }
 
         layout_builder!(self).build_layouts(&self.ty_order[check_point..]);
@@ -423,38 +483,35 @@ impl Compiler {
         self.ty_graph.clear();
     }
 
-    /// Probably the slowest stage in frontend. Building Tir means
+    /// Probably the slowest stage in frontend. Building Tir means 
     /// type-checking all imported source code. Parsing is also included
-    /// so that ast does not have to be accumulated for all files. Types are
-    /// checked one ta the time but Tir is accumulated. Tir is also generic
-    /// and instances are not materialized here but rather the Tir has notion
+    /// so that ast does not have to be accumulated for all files. Types are 
+    /// checked one ta the time but Tir is accumulated. Tir is also generic 
+    /// and instances are not materialized here but rather the Tir has notion 
     /// of generic calls.
     fn build_tir(&mut self) {
         time_report!("building of tir");
 
-        let mut _ctx = GenerationCtx::new(
-            self.host_isa.pointer_type(),
-            self.host_isa.default_call_conv(),
-        );
-
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];
 
-        for source in self.module_order.clone() {
+        for source in self.module_order.clone() { // it really does not matter
+            self.load_builtin_scope_items(source);
+
             self.ast_data.clear();
             let mut inter_state_opt = Some(Parser::parse_imports(
                 &self.sources,
-                &mut self.diagnostics,
-                &mut self.ast_data,
-                &mut self.ast_temp,
-                source,
+                &mut self.diagnostics, 
+                &mut self.ast_data, 
+                &mut self.ast_temp, 
+                source
             ));
-
-            main_scope_builder!(self).build_scope(source);
+            
+            self.build_scope(source);
 
             let mut stage = 0;
 
-            while let Some(inter_state) = inter_state_opt {
+            while let Some(inter_state) = inter_state_opt { 
                 self.ast_data.clear();
                 inter_state_opt = Parser::parse_code_chunk(
                     &self.sources,
@@ -462,21 +519,23 @@ impl Compiler {
                     &mut self.ast_data,
                     &mut self.ast_temp,
                     inter_state,
-                );
+                );            
 
                 self.log_diagnostics();
 
                 let bottom = self.types.len();
 
-                scope_builder!(self, source).collect_items(self.ast_data.elements());
+                scope_builder!(self, source)
+                    .collect_items(self.ast_data.elements());
 
                 self.log_diagnostics();
+                
 
                 self.build_types(stage, source, &mut ty_buffer);
 
                 self.log_diagnostics();
 
-                bound_verifier!(self).verify();
+                bound_verifier!(self).verify();            
 
                 self.build_funcs(stage, source, &mut func_buffer);
 
@@ -491,15 +550,14 @@ impl Compiler {
 
     /// Incr data needs to be converted into a form understood be compiler components. The hashes
     /// are dispatched into entities uniquely allocated by compiler. Point is that the compiler
-    /// can allocate function entities differently but ID should never change fi source file haven't been
+    /// can allocate function entities differently but ID should never change fi source file haven't been 
     /// changed.
     fn incr_data_to_compile_result(&self, incr_func_data: &IncrFunc) -> CompileResult {
         let bytes = incr_func_data.bytes.clone();
-        let relocs = incr_func_data
-            .reloc_records
+        let relocs = incr_func_data.reloc_records
             .iter()
             .map(|rec| {
-                let func = self.funcs.instances.get(rec.name).unwrap().clone();
+                let func = self.funcs.instances.get(rec.name).unwrap().clone(); 
                 MachReloc {
                     offset: rec.offset,
                     srcloc: rec.srcloc,
@@ -509,17 +567,20 @@ impl Compiler {
                 }
             })
             .collect();
-
-        CompileResult { bytes, relocs }
+        
+        CompileResult {
+            bytes,
+            relocs,
+        }
     }
 
     /// here we try to skip the function compilation by retrieving it from incremental data.
     /// This includes loading all dependant functions as well.
     fn skip_incrementally(
-        &mut self,
-        func: Func,
-        id: ID,
-        frontier: &mut Vec<ID>,
+        &mut self, 
+        func: Func, 
+        id: ID, 
+        frontier: &mut Vec<ID>, 
         reused_incr_funcs: &mut Vec<Func>,
         signatures: &mut Signatures,
     ) -> bool {
@@ -528,7 +589,7 @@ impl Compiler {
         };
 
         let start = reused_incr_funcs.len();
-
+        
         frontier.extend(incr_func_data.dependencies());
 
         while let Some(id) = frontier.pop() {
@@ -568,20 +629,20 @@ impl Compiler {
         true
     }
 
-    /// function swaps all generic types for concrete types, preparing the
+    /// function swaps all generic types for concrete types, preparing the 
     /// lowering fo functions in specific type context.
     fn load_generic_params(
-        &mut self,
-        id: Func,
-        params: TyList,
-        parent: PackedOption<Func>,
-        ptr_ty: Type,
-        replace_cache: &mut ReplaceCache,
+        &mut self, 
+        id: Func, 
+        params: TyList, 
+        parent: PackedOption<Func>, 
+        ptr_ty: Type, 
+        replace_cache: &mut ReplaceCache
     ) -> Func {
         let Some(parent) = parent.expand() else {
             return id;
         };
-
+        
         ReprInstancing {
             types: &mut self.types,
             ty_lists: &mut self.ty_lists,
@@ -591,48 +652,58 @@ impl Compiler {
             repr_fields: &mut self.repr_fields,
             reprs: &mut self.reprs,
             ptr_ty,
-        }
-        .load_generic_types(params, self.func_bodies[parent].used_types, replace_cache);
+        }.load_generic_types(
+            params, 
+            self.func_bodies[parent].used_types, 
+            replace_cache,
+        );
 
         parent
     }
 
-    /// While we were generating tir, we computed sizes and reprs for host machine.
-    /// Now we have to recompute everything for target machine.
-    fn compute_reprs_for_target(&mut self) {
-        build_reprs(
-            self.object_module.isa().pointer_type(),
-            &mut self.reprs,
-            self.ty_order.iter().cloned(),
-        );
-        build_builtin_reprs(
-            self.object_module.isa().pointer_type(),
-            &mut self.reprs,
-            &self.builtin_types,
-        );
-    }
+    /// Function takes tir and translates it into bite code. It uses type swapping to 
+    /// instantiate functions from generic templates. Types still need to be instantiated 
+    /// and allocated.
+    /// 
+    /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
+    /// Though this may require cloning type context.
+    fn generate(&mut self) {
+        time_report!("generating");
 
-    fn generate_low(&mut self, ctx: &mut GenerationCtx) {
-        for &(func, _) in &ctx.to_compile {
+        let mut ctx = Context::new();
+        let mut builder_ctx = FunctionBuilderContext::new(); 
+        let mut replace_cache = ReplaceCache::new();
+        let mut signatures = Signatures::new();
+        let mut func_ctx = FuncCtx::new();
+        let mut mir_builder_ctx = MirBuilderContext::new();
+        let mut cir_builder_ctx = CirBuilderContext::new();
+        let mut frontier = vec![];
+        let mut reused_incr_funcs = vec![];
+        let ptr_ty = self.object_module.isa().pointer_type();
+        let system_call_convention = self.object_module.isa().default_call_conv();
+
+        for &(func, _) in &self.to_compile {
             let call_conv = self.funcs.ents[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
-            ctx.signatures.insert(
-                func,
-                translate_signature(
-                    call_conv,
-                    self.ty_lists.get(sig.args).iter().copied(),
-                    sig.ret,
-                    &self.reprs,
-                    &self.types,
-                    ctx.system_call_convention,
-                ),
-            );
+            signatures.insert(func, translate_signature(
+                call_conv, 
+                self.ty_lists
+                    .get(sig.args)
+                    .iter()
+                    .copied(),
+                sig.ret, 
+                &self.reprs, 
+                &self.types, 
+                system_call_convention
+            ));
         }
 
         let mut i = 0;
-        while let Some(&(id, params)) = ctx.to_compile.get(i) {
+        while i < self.to_compile.len() {
+            let (id, params) = self.to_compile[i];
+            
             i += 1;
-
+            
             let func_ent = self.funcs.ents[id];
 
             if func_ent.flags.contains(FuncFlags::ENTRY) {
@@ -643,24 +714,17 @@ impl Compiler {
                 self.entry_id = Some(func_ent.id);
             }
 
-            if self.skip_incrementally(
-                id,
-                func_ent.id,
-                &mut ctx.frontier,
-                &mut ctx.reused_incr_funcs,
-                &mut ctx.signatures,
-            ) {
+            if self.skip_incrementally(id, func_ent.id, &mut frontier, &mut reused_incr_funcs, &mut signatures) {
                 continue;
             }
 
-            let parent =
-                self.load_generic_params(id, params, func_ent.parent, ctx.ptr_ty, &mut ctx.replace_cache);
-
+            let parent = self.load_generic_params(id, params, func_ent.parent, ptr_ty, &mut replace_cache);
+            
             let result = MirBuilder {
-                system_call_convention: ctx.system_call_convention,
+                system_call_convention,
                 return_dest: None,
                 func_id: parent,
-                ptr_ty: ctx.ptr_ty,
+                ptr_ty,
 
                 types: &mut self.types,
                 ty_lists: &mut self.ty_lists,
@@ -672,31 +736,30 @@ impl Compiler {
                 bound_impls: &self.bound_impls,
                 builtin_types: &self.builtin_types,
                 funcs: &mut self.funcs,
-                func: &mut ctx.func_ctx,
+                func: &mut func_ctx,
                 body: &self.func_bodies[parent],
                 diagnostics: &mut self.diagnostics,
-                ctx: &mut ctx.mir_builder_ctx,
+                ctx: &mut mir_builder_ctx,
                 func_meta: &self.func_meta,
-                to_compile: &mut ctx.to_compile,
-            }
-            .translate_func();
-
+                to_compile: &mut self.to_compile,
+            }.translate_func();
+            
             if result.is_err() {
                 continue;
             }
-
+            
             // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
 
-            ctx.ctx.func.signature = ctx.signatures.get(id).unwrap().clone();
+            ctx.func.signature = signatures.get(id).unwrap().clone();
 
-            let builder = &mut FunctionBuilder::new(&mut ctx.ctx.func, &mut ctx.builder_ctx);
+            let builder = &mut FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
 
             CirBuilder {
                 builder,
-                ctx: &mut ctx.cir_builder_ctx,
-                signatures: &mut ctx.signatures,
-                source: &mut ctx.func_ctx,
-
+                ctx: &mut cir_builder_ctx,
+                signatures: &mut signatures,
+                source: &mut func_ctx,
+                
                 isa: self.object_module.isa(),
                 funcs: &self.funcs,
                 reprs: &self.reprs,
@@ -705,63 +768,37 @@ impl Compiler {
                 ty_lists: &self.ty_lists,
                 sources: &self.sources,
                 func_meta: &self.func_meta,
-            }
-            .generate();
+            }.generate();
 
             // println!("{}", self.sources.display(self.func_meta[parent].name));
             // println!("{}", ctx.func.display());
 
             let mut bytes = vec![];
-            ctx.ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
+            ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
                 .unwrap();
-            let relocs = ctx.ctx
-                .mach_compile_result
-                .as_ref()
-                .unwrap()
-                .buffer
-                .relocs()
-                .to_vec();
+            let relocs = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs().to_vec();
 
-            let compile_result = CompileResult { bytes, relocs };
+            let compile_result = CompileResult {
+                bytes,
+                relocs,
+            };
 
             self.compile_results[id] = compile_result;
-            ctx.ctx.clear();
+            ctx.clear();
+
+            replace_cache.replace(&mut self.types, &mut self.reprs)
         }
-    }
 
-    /// Function takes tir and translates it into bite code. It uses type swapping to
-    /// instantiate functions from generic templates. Types still need to be instantiated
-    /// and allocated.
-    ///
-    /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
-    /// Though this may require cloning type context.
-    fn generate(&mut self) {
-        time_report!("generating");
-
-        self.compute_reprs_for_target();
-
-        let mut ctx = GenerationCtx::new(
-            self.object_module.isa().pointer_type(), 
-            self.object_module.isa().default_call_conv(),
+        self.to_compile.extend(
+            reused_incr_funcs.into_iter().map(|id| (id, TyList::reserved_value()))
         );
 
-        ctx.to_compile = std::mem::take(&mut self.to_compile);
-
-        self.generate_low(&mut ctx);
-
-        ctx.to_compile.extend(
-            ctx.reused_incr_funcs
-                .into_iter()
-                .map(|id| (id, TyList::reserved_value())),
-        );
-
-        self.signatures = ctx.signatures;
-        self.to_compile = ctx.to_compile;
+        self.signatures = signatures;
     }
 
-    /// Only reachable functions are being included in final executable.
-    /// Which functions are used is determined here. First vec contains
-    /// functions that have local byte-code, second contains imports that
+    /// Only reachable functions are being included in final executable. 
+    /// Which functions are used is determined here. First vec contains 
+    /// functions that have local byte-code, second contains imports that 
     /// should only be imported.
     fn collect_used_funcs(&mut self) -> (Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
@@ -773,7 +810,7 @@ impl Compiler {
             let &entry_func = self.funcs.instances.get(entry_id).unwrap();
             frontier.push(entry_func)
         }
-
+        
         let mut i = 0;
         while let Some(&func) = frontier.get(i) {
             for reloc in &self.compile_results[func].relocs {
@@ -788,7 +825,7 @@ impl Compiler {
                 if !seen.insert(func) {
                     continue;
                 }
-
+                
                 frontier.push(func);
             }
 
@@ -823,16 +860,17 @@ impl Compiler {
             let sig = self.func_meta[func].sig;
             let name = self.sources.display(self.func_meta[func].name);
             let signature = translate_signature(
-                call_conv,
-                self.ty_lists.get(sig.args).iter().copied(),
-                sig.ret,
-                &self.reprs,
-                &self.types,
+                call_conv, 
+                self.ty_lists
+                    .get(sig.args)
+                    .iter()
+                    .copied(), 
+                sig.ret, 
+                &self.reprs, 
+                &self.types, 
                 system_call_conv,
             );
-            let func_id = self
-                .object_module
-                .declare_function(name, Linkage::Import, &signature)
+            let func_id = self.object_module.declare_function(name, Linkage::Import, &signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
         }
@@ -846,9 +884,7 @@ impl Compiler {
             }
             let signature = self.signatures.get(func).unwrap();
             let linkage = Linkage::Export;
-            let func_id = self
-                .object_module
-                .declare_function(&name, linkage, signature)
+            let func_id = self.object_module.declare_function(&name, linkage, signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
         }
@@ -864,7 +900,7 @@ impl Compiler {
                 } = r.name else {
                     unreachable!();
                 };
-
+                
                 assert!(namespace == 0);
 
                 let func_id = func_lookup[Func(index)].unwrap();
@@ -876,47 +912,47 @@ impl Compiler {
                 r
             }));
 
-            self.object_module
-                .define_function_bytes(
-                    func_lookup[func].unwrap(),
-                    &compile_result.bytes,
-                    &reloc_temp,
-                )
-                .unwrap();
+            self.object_module.define_function_bytes(
+                func_lookup[func].unwrap(), 
+                &compile_result.bytes, 
+                &reloc_temp
+            ).unwrap();
         }
     }
 
-    /// All compiled functions are saved. That means their byte-code
+    /// All compiled functions are saved. That means their byte-code 
     /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
 
         self.incr.functions.clear();
-
+        
         let mut temp_relocs = vec![];
         for &(func, _) in &self.to_compile {
             let compile_result = std::mem::take(&mut self.compile_results[func]);
 
             temp_relocs.clear();
-            temp_relocs.extend(compile_result.relocs.iter().map(|r| {
-                let ExternalName::User {
+            temp_relocs.extend(
+                compile_result.relocs.iter().map(|r| {
+                    let ExternalName::User {
                         namespace,
                         index,
                     } = r.name else {
                         unreachable!();
                     };
 
-                assert!(namespace == 0);
+                    assert!(namespace == 0);
 
-                let name = self.funcs.ents[Func(index)].id;
-                IncrRelocRecord {
-                    offset: r.offset,
-                    srcloc: r.srcloc,
-                    kind: r.kind,
-                    name,
-                    addend: r.addend,
-                }
-            }));
+                    let name = self.funcs.ents[Func(index)].id;
+                    IncrRelocRecord {
+                        offset: r.offset,
+                        srcloc: r.srcloc,
+                        kind: r.kind,
+                        name,
+                        addend: r.addend,
+                    }
+                })
+            );
 
             let signature = self.signatures.remove(func).unwrap();
 
@@ -953,7 +989,7 @@ impl Compiler {
             println!("{ERR}|> program is missing entry point{END}");
             exit!();
         };
-
+        
         entry_id.to_ident(&mut &mut entry);
 
         let output = cc::windows_registry::find(&self.triple.to_string(), "link.exe")
@@ -971,57 +1007,60 @@ impl Compiler {
         assert!(output.status.success(), "{:?}", output.status);
     }
 
-    /// Function iterates trough all possible diagnostic options,
+    /// Function iterates trough all possible diagnostic options, 
     /// logs them and if errors are encountered, exits.
     fn log_diagnostics(&self) {
         if self.diagnostics.is_empty() {
             return;
         }
-
+        
         let mut errors = String::new();
 
         self.diagnostics
             .iter::<AstError>()
-            .map(|errs| errs.for_each(|err| err.display(&self.sources, &mut errors).unwrap()));
+            .map(|errs| errs.for_each(|err| 
+                err.display(
+                    &self.sources, 
+                    &mut errors
+                ).unwrap()
+            ));
 
-        self.diagnostics.iter::<ModuleError>().map(|errs| {
-            errs.for_each(|err| {
+        self.diagnostics
+            .iter::<ModuleError>()
+            .map(|errs| errs.for_each(|err|
                 modules::error::display(
-                    err,
-                    &self.sources,
-                    &self.item_lexicon,
-                    &self.units,
-                    &mut errors,
-                )
-                .unwrap()
-            })
-        });
+                    err, 
+                    &self.sources, 
+                    &self.item_lexicon, 
+                    &self.units, 
+                    &mut errors
+                ).unwrap()
+            ));
 
-        self.diagnostics.iter::<TyError>().map(|errs| {
-            errs.for_each(|err| {
+        self.diagnostics
+            .iter::<TyError>()
+            .map(|errs| errs.for_each(|err| 
                 typec::error::display(
                     err, 
                     &self.sources, 
                     &self.types, 
-                    &self.ty_lists, 
-                    &self.ty_comps,
+                    &self.ty_lists,
+                    &self.ty_comps, 
                     &mut errors
                 ).unwrap()
-            })
-        });
+            ));
 
-        self.diagnostics.iter::<InstError>().map(|errs| {
-            errs.for_each(|err| {
+        self.diagnostics
+            .iter::<InstError>()
+            .map(|errs| errs.for_each(|err| 
                 instance::error::display(
-                    &err,
-                    &self.types,
-                    &self.ty_lists,
-                    &self.sources,
-                    &mut errors,
-                )
-                .unwrap()
-            })
-        });
+                    &err, 
+                    &self.types, 
+                    &self.ty_lists, 
+                    &self.sources, 
+                    &mut errors
+                ).unwrap()
+            ));
 
         println!("{errors}");
         exit!();
@@ -1038,24 +1077,25 @@ impl Compiler {
         s.log_diagnostics();
 
         s.incr.reduce(&s.modules, &s.module_order);
-
+        
         s.build_tir();
         s.log_diagnostics();
-
+        
         s.generate();
         s.log_diagnostics();
-
+        
+        
         s.build_object();
-
+        
         s.save_incr_data();
 
         s.link();
     }
 }
 
-/// We need to know if compiler is sync with incremental data.
-/// This si simplest most optimal solution that plays well with
-/// development cycle.
+/// We need to know if compiler is sync with incremental data. 
+/// This si simplest most optimal solution that plays well with 
+/// development cycle. 
 fn get_exe_modification_time() -> Option<SystemTime> {
     std::fs::metadata(&std::env::current_exe().ok()?)
         .map(|m| m.modified())
@@ -1063,40 +1103,46 @@ fn get_exe_modification_time() -> Option<SystemTime> {
         .ok()
 }
 
-pub struct GenerationCtx {
-    ctx: Context,
-    builder_ctx: FunctionBuilderContext,
-    replace_cache: ReplaceCache,
-    signatures: Signatures,
-    func_ctx: FuncCtx,
-    mir_builder_ctx: MirBuilderContext,
-    cir_builder_ctx: CirBuilderContext,
-    frontier: Vec<ID>,
-    reused_incr_funcs: Vec<Func>,
-    ptr_ty: Type,    
-    system_call_convention: CallConv,
-    to_compile: Vec<(Func, TyList)>,
+/// Sub command handles parsing of command line arguments
+/// for all subcommands.
+pub enum Subcommand {
+    Compile(PathBuf),
+    None,
 }
 
-impl GenerationCtx {
-    pub fn new(ptr_ty: Type, system_call_convention: CallConv) -> Self {
-        Self {
-            ctx: Context::new(),
-            builder_ctx: FunctionBuilderContext::new(),
-            replace_cache: ReplaceCache::new(),
-            signatures: Signatures::new(),
-            func_ctx: FuncCtx::new(),
-            mir_builder_ctx: MirBuilderContext::new(),
-            cir_builder_ctx: CirBuilderContext::new(),
-            frontier: Vec::new(),
-            reused_incr_funcs: Vec::new(),
-            to_compile: Vec::new(),
+const SUBCOMMANDS: &'static str = "c";
 
-            ptr_ty,
-            system_call_convention,
+impl Subcommand {
+    /// Builds a subcommand based of command line input.
+    pub fn new(input: &CmdInput) -> Self {
+        let Some(subcommand) = input.args().get(0) else {
+            println!("usage: catalyst {INFO}<sub>{END} ...");
+            println!("options: {INFO}{SUBCOMMANDS}{END}");
+            exit!();
+        };
+
+        match subcommand.as_str() {
+            "c" => {
+                let path = input.args().get(1).map(String::as_str).unwrap_or(".");
+                return Self::Compile(PathBuf::from(path));
+            }
+            sub => {
+                println!("invalid subcommand: {sub}");
+                println!("options: {INFO}{SUBCOMMANDS}{END}");
+                exit!();
+            }
+        }
+    }
+
+    /// Returns a path to the input project.
+    fn root_path(&self) -> Option<&Path> {
+        match self {
+            Self::Compile(path) => Some(path),
+            _ => None,
         }
     }
 }
+
 
 pub struct TimeReport {
     start: Instant,
@@ -1120,7 +1166,7 @@ impl Drop for TimeReport {
 }
 
 #[derive(Default, Clone)]
-pub struct CompileResult {
-    pub bytes: Vec<u8>,
-    pub relocs: Vec<MachReloc>,
+struct CompileResult {
+    bytes: Vec<u8>,
+    relocs: Vec<MachReloc>,
 }
