@@ -1,4 +1,4 @@
-use cranelift_codegen::{ir::{Signature, types::INVALID}, isa::CallConv};
+use cranelift_codegen::{ir::Signature, isa::CallConv};
 
 use crate::*;
 
@@ -8,7 +8,7 @@ impl Generator<'_> {
         let sys_cc = self.isa.default_call_conv();
 
         for &(func, _) in self.to_compile.iter() {
-            let call_conv = self.funcs.ents[func].flags.call_conv();
+            let call_conv = self.funcs[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
             self.signatures.insert(
                 func,
@@ -26,7 +26,7 @@ impl Generator<'_> {
         let mut entry_id = None;
         while let Some((id, params)) = self.to_compile.pop() {
 
-            let func_ent = self.funcs.ents[id];
+            let func_ent = self.funcs[id];
 
             if func_ent.flags.contains(FuncFlags::ENTRY) {
                 if entry_id.is_some() {
@@ -47,71 +47,35 @@ impl Generator<'_> {
                 ptr_ty, 
             );
 
-            let result = MirBuilder {
-                system_call_convention: sys_cc,
-                return_dest: None,
-                func_id: parent,
-                ptr_ty,
-                body: &self.func_bodies[parent],
-
-                types: &mut self.types,
-                ty_lists: &mut self.ty_lists,
-                ty_comps: &self.ty_comps,
-                sources: &self.sources,
-                repr_fields: &self.repr_fields,
-                reprs: &self.reprs,
-                func_lists: &self.func_lists,
-                bound_impls: &self.bound_impls,
-                builtin_types: &self.builtin_types,
-                funcs: &mut self.funcs,
-                func: &mut self.func_ctx,
-                diagnostics: &mut self.diagnostics,
-                ctx: &mut self.mir_builder_context,
-                func_meta: &self.func_meta,
-                to_compile: &mut self.to_compile,
-            }
-            .translate_func();
+            let result = mir_builder!(self, parent, ptr_ty, sys_cc, self.func_bodies[parent])
+                .translate_func();
 
             if result.is_err() {
                 continue;
             }
 
-            println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
+            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 
-            let builder = &mut FunctionBuilder::new(
+            let builder = FunctionBuilder::new(
                 &mut self.context.func, 
-                &mut self.generation_context.builder_context);
+                &mut self.generation_context.builder_context
+            );
 
-            CirBuilder {
-                builder,
-                ctx: &mut self.cir_builder_context,
-                signatures: &mut self.signatures,
-                source: &mut self.func_ctx,
 
-                isa: self.isa,
-                funcs: &self.funcs,
-                reprs: &self.reprs,
-                types: &self.types,
-                builtin_types: &self.builtin_types,
-                ty_lists: &self.ty_lists,
-                sources: &self.sources,
-                func_meta: &self.func_meta,
-            }
-            .generate();
-
+            cir_builder!(self, builder, *self.isa).generate();
             
-            for (id, repr) in self.reprs.iter() {
-                if repr.repr == INVALID {
-                    println!("{}", ty_display!(self, id));
-                }
-            }
+            // for (id, repr) in self.reprs.iter() {
+            //     if repr.repr == INVALID {
+            //         println!("{}", ty_display!(self, id));
+            //     }
+            // }
             
             self.generation_context.replace_cache.replace(self.types, self.reprs);
 
-            println!("{}", self.sources.display(self.func_meta[parent].name));
-            println!("{}", self.context.func.display());
+            // println!("{}", self.sources.display(self.func_meta[parent].name));
+            // println!("{}", self.context.func.display());
 
 
             let mut bytes = vec![];
@@ -149,7 +113,7 @@ impl Generator<'_> {
 
             assert!(namespace == 0);
 
-            let name = self.funcs.ents[Func(index)].id;
+            let name = self.funcs[Func(index)].id;
             IncrRelocRecord {
                 offset: r.offset,
                 srcloc: r.srcloc,
@@ -211,9 +175,10 @@ impl Generator<'_> {
 
         self.generation_context.frontier.extend(incr_func_data.dependencies());
 
+        let mut used_incr_funcs = vec![];
         while let Some(id) = self.generation_context.frontier.pop() {
-            if let Some(shadow) = self.funcs.instances.insert(id, self.funcs.ents.next_key()) {
-                self.funcs.instances.insert(id, shadow).unwrap();
+            if let Some(shadow) = self.func_instances.insert(id, self.funcs.next_key()) {
+                self.func_instances.insert(id, shadow).unwrap();
                 continue;
             }
 
@@ -222,18 +187,25 @@ impl Generator<'_> {
                 ..Default::default()
             };
 
-            let func = self.funcs.ents.push(func_ent);
+
+            let func = self.funcs.push(func_ent);
             self.generation_context.reused_incr_funcs.push(func);
             let Some(incr_func_data) = self.incr_funcs.get(id) else {
                 unreachable!();
             };
+
+            used_incr_funcs.push(func);
             
-            self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
+            
             self.signatures.insert(func, incr_func_data.signature.clone());
             self.generation_context.frontier.extend(incr_func_data.dependencies());
         }
-
+        
         self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
+        
+        for func in used_incr_funcs {
+            self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
+        }
 
         true
     }
@@ -244,7 +216,7 @@ impl Generator<'_> {
             .reloc_records
             .iter()
             .map(|rec| {
-                let func = self.funcs.instances.get(rec.name).unwrap().clone();
+                let func = self.func_instances.get(rec.name).unwrap().clone();
                 MachReloc {
                     offset: rec.offset,
                     srcloc: rec.srcloc,

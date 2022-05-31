@@ -11,26 +11,28 @@ fn hello() {
 
 #entry
 fn main() -> int {
+    
+    
     if other(1, 2, 3) != 7 {
         return 1
     }
-
+    
     if structs::bti(true) != 1 {
         return 2
     }
-
+    
     if generics::bti(false) != 0 {
         return 3
     }
-
+    
     if fib(5) != 8 {
         return 4
     }
-
+    
     if iter_fib(5) != 8 {
         return 5
     }
-
+    
     {
         let mut i = 1
         let mut b = 0
@@ -43,53 +45,59 @@ fn main() -> int {
             return 6
         }
     }
-
+    
     if structure_test() != 0 {
         return structure_test()
         return 7
     }
-
+    
     if init_something().a != 0 {
         return 8
     }
-
+    
     if move_in_and_out(0) != 0 {
         return 9
     }
-
+    
+    
     if Goo::new().field() != 10 {
         return 10
     }
-
+    
     // stress test
     if (*PtrTest::{ a: false; b: false; c: true }.as_ptr()).c {} else {
         return 11
     }
 
+    putchar('k')
+
+    return 1
+    
     if foo::[Goo]() + foo::[Goo]() != 20 {
         return 12
     }
-
+    
+    
     if Loo::{ field: Loo::{ field: 90; yes: false }.as_ptr(); yes: true }.as_ptr().field.field != 90 {
         return 13
-    }    
-
+    }
+    
     let vec = Vec::new::[int]()
-
+    
     let ptr = malloc(100)
-
+    
     if ptr as int == 0 {
         return 15
     }
-
+    
     putchar('a')
-
+    
     if Enum::Something::{}.is_something() {} else {
         return 16
     }
-
+    
     putchar('b')
-
+    
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
         putchar('f')
         return 17
@@ -97,7 +105,7 @@ fn main() -> int {
 
     putchar('h')
     exit(-34)
-
+    
     0
 }
 
@@ -130,6 +138,7 @@ fn fib(x: int) -> int {
         fib(x - 1) + fib(x - 2)
     }
 }
+
 
 fn iter_fib(x: int) -> int {
     let mut i = 1

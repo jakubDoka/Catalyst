@@ -14,7 +14,7 @@ impl TirBuilder<'_> {
             },
             ..
         } = self.func_meta[self.func];
-        let flags = self.funcs.ents[self.func].flags;
+        let flags = self.funcs[self.func].flags;
 
         //println!("{}", self.func_meta[self.func].name.log(self.sources));
 
@@ -811,7 +811,7 @@ impl TirBuilder<'_> {
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
         let sig = self.func_meta[func].sig;
-        let flags = self.funcs.ents[func].flags;
+        let flags = self.funcs[func].flags;
 
         let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
 

@@ -113,7 +113,7 @@ impl<'a> ScopeBuilder<'a> {
                         continue;
                     }
 
-                    let reserved = self.funcs.ents.push(FuncEnt::default());
+                    let reserved = self.funcs.push(FuncEnt::default());
                     self.func_meta[reserved] = FuncMetaData {
                         kind: FuncKind::Owned(dest),
                         ..Default::default()
@@ -132,7 +132,7 @@ impl<'a> ScopeBuilder<'a> {
                 .push_item("Self", ScopeItem::new(ty, span));
 
             for &func in self.ast_data.children(body) {
-                let reserved = self.funcs.ents.push(FuncEnt::default());
+                let reserved = self.funcs.push(FuncEnt::default());
                 self.func_meta[reserved] = FuncMetaData {
                     kind: FuncKind::Owned(ty),
                     ..Default::default()
@@ -165,7 +165,7 @@ impl<'a> ScopeBuilder<'a> {
 
         let funcs = {
             for (i, &func) in self.ast_data.children(body).iter().enumerate() {
-                let reserved = self.funcs.ents.push(FuncEnt::default());
+                let reserved = self.funcs.push(FuncEnt::default());
                 self.func_meta[reserved] = FuncMetaData {
                     kind: FuncKind::Bound(slot, i as u32),
                     ..Default::default()
@@ -304,7 +304,7 @@ impl<'a> ScopeBuilder<'a> {
             Sig { params, args, ret }
         };
 
-        let func = prepared.unwrap_or_else(|| self.funcs.ents.push(Default::default()));
+        let func = prepared.unwrap_or_else(|| self.funcs.push(Default::default()));
 
         let scope_id = {
             let span = self.ast_data.nodes[name].span;
@@ -329,16 +329,16 @@ impl<'a> ScopeBuilder<'a> {
             self.modules[self.source].id + scope_id
         };
 
-        assert!(self.funcs.instances.insert(id, func).is_none());
+        assert!(self.func_instances.insert(id, func).is_none());
 
         if sig.params.is_reserved_value() && !external {
             self.to_compile.push((func, TyList::reserved_value()));
         } else if external {
-            self.funcs.to_link.push(func);
+            self.to_link.push(func);
         }
 
         if let Some(macro_tag) = self.parse_macro_tag() {
-            self.funcs.macros.push((func, macro_tag));
+            self.macros.push((func, macro_tag));
         };
 
         {
@@ -366,7 +366,7 @@ impl<'a> ScopeBuilder<'a> {
                 flags,
                 parent: None.into(),
             };
-            self.funcs.ents[func] = ent;
+            self.funcs[func] = ent;
 
             let meta = FuncMetaData {
                 sig,

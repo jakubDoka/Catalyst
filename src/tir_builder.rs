@@ -31,7 +31,7 @@ impl MainTirBuilder<'_> {
         for func in func_buffer.drain(..) {
             // TODO: This can save some time but its unclear 
             // how to determinate this
-            // let id = self.funcs.ents[func].id;
+            // let id = self.funcs[func].id;
             // if self.incr.functions.get(id).is_some() {
             //     continue;
             // }
@@ -82,7 +82,6 @@ impl MainTirBuilder<'_> {
     /// and instances are not materialized here but rather the Tir has notion
     /// of generic calls.
     pub fn build(&mut self, module_order: &[Source]) {
-        time_report!("building of tir");
 
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];

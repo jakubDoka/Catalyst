@@ -475,7 +475,7 @@ fn create_func(
             id,
             ..Default::default()
         };
-        funcs.ents.push(ent)
+        funcs.push(ent)
     };
 
     func_meta[func] = FuncMetaData {

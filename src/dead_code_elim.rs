@@ -31,7 +31,7 @@ impl DeadCodeElim<'_> {
 
 
         compiled.retain(|&f| {
-            if self.funcs.ents[f].flags.contains(FuncFlags::EXTERNAL) {
+            if self.funcs[f].flags.contains(FuncFlags::EXTERNAL) {
                 linked.push(f);
                 return false;
             }
