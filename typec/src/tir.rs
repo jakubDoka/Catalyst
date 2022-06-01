@@ -1,5 +1,6 @@
 use std::ops::Not;
 
+use cranelift_codegen::isa::CallConv;
 use matching::*;
 use module_types::*;
 
@@ -18,7 +19,7 @@ impl TirBuilder<'_> {
         let func_ent = FuncEnt {
             id: ID::new("<global>") + self.globals[self.global].id,
             parent: None.into(),
-            flags: FuncFlags::ANONYMOUS,
+            flags: FuncFlags::ANONYMOUS | Some(CallConv::Fast),
         };
         let func = self.funcs.push(func_ent);
 
