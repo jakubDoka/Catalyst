@@ -14,8 +14,12 @@ pub mod ident_hasher;
 pub mod scope;
 pub mod tir;
 pub mod ty;
+pub mod global;
 
-pub use state::{TyBuilder, TyParser, TirBuilder, ScopeBuilder, BoundVerifier, IdentHasher};
+pub use state::{
+    TyBuilder, TyParser, TirBuilder, ScopeBuilder, BoundVerifier, IdentHasher,
+    GlobalBuilder,
+};
 pub use scope::ScopeContext;
 
 use ast::*;
@@ -475,7 +479,7 @@ fn create_func(
             id,
             ..Default::default()
         };
-        funcs.ents.push(ent)
+        funcs.push(ent)
     };
 
     func_meta[func] = FuncMetaData {

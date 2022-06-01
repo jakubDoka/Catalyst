@@ -218,6 +218,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
  "cranelift-module",
+ "incr",
  "instance_types",
  "lexer",
  "matching",

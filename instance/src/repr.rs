@@ -1,22 +1,9 @@
 use cranelift_codegen::ir::{self, Type};
 
 use instance_types::*;
-use lexer::*;
 use storage::*;
 use typec_types::*;
-
-use crate::layout_builder;
-
-pub struct ReprInstancing<'a> {
-    pub types: &'a mut Types,
-    pub ty_lists: &'a mut TyLists,
-    pub instances: &'a mut Instances,
-    pub ty_comps: &'a TyComps,
-    pub sources: &'a Sources,
-    pub repr_fields: &'a mut ReprFields,
-    pub reprs: &'a mut Reprs,
-    pub ptr_ty: Type,
-}
+use crate::*;
 
 impl<'a> ReprInstancing<'a> {
     pub fn load_generic_types(
@@ -122,37 +109,7 @@ impl<'a> ReprInstancing<'a> {
     }
 }
 
-pub struct LayoutBuilder<'a> {
-    pub types: &'a Types,
-    pub sources: &'a Sources,
-    pub ty_comps: &'a TyComps,
-    pub instances: &'a Instances,
-    pub ty_lists: &'a TyLists,
-    pub repr_fields: &'a mut ReprFields,
-    pub reprs: &'a mut Reprs,
-}
-
 impl<'a> LayoutBuilder<'a> {
-    pub fn new(
-        types: &'a Types,
-        sources: &'a Sources,
-        ty_comps: &'a TyComps,
-        instances: &'a Instances,
-        ty_lists: &'a TyLists,
-        repr_fields: &'a mut ReprFields,
-        reprs: &'a mut Reprs,
-    ) -> Self {
-        Self {
-            types,
-            sources,
-            ty_comps,
-            instances,
-            ty_lists,
-            repr_fields,
-            reprs,
-        }
-    }
-
     pub fn build_layouts(&mut self, order: &[Ty]) {
         self.reprs.resize(self.types.len());
         for &id in order {

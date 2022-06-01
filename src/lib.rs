@@ -5,21 +5,35 @@
 #![feature(result_flattening)]
 #![feature(scoped_threads)]
 
+pub mod state;
+pub mod dead_code_elim;
+pub mod generator;
+pub mod logger;
+pub mod scope_builder;
+pub mod source_loader;
+pub mod subcommand;
+pub mod tir_builder;
+
+pub use state::{DeadCodeElim, MainTirBuilder, Generator, Logger, MainScopeBuilder, SourceLoader};
+pub use subcommand::Subcommand;
+pub use generator::GenerationContext;
+
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{Type, ExternalName};
+use cranelift_codegen::ir::{Type, ExternalName, Signature};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
 
 use cranelift_frontend::{FunctionBuilderContext, FunctionBuilder};
 use cranelift_jit::{JITModule, JITBuilder};
-use cranelift_module::{Module, Linkage};
+use cranelift_module::{Module, Linkage, DataContext};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use errors::Diagnostics;
-use incr::{Incr, IncrFunc, IncrRelocRecord};
+use incr::Incr;
 use instance::*;
+use incr::*;
 
 use instance::func::{MirBuilderContext};
 use instance::repr::{build_builtin_reprs, build_reprs};
@@ -40,9 +54,14 @@ use matching::*;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Instant, SystemTime};
-use std::{path::Path};
+
+pub const CATALYST_ENTRY: &str = "__catalyst_entry__";
+
+pub type TyOrder = Vec<Ty>;
+pub type CompileResults = SecondaryMap<Func, CompileResult>;
 
 /// shorthand for exiting the process
+#[macro_export]
 macro_rules! exit {
     ($expr:expr) => {
         std::process::exit($expr);
@@ -99,7 +118,7 @@ pub struct Compiler {
     item_lexicon: ItemLexicon,
 
     // typec
-    ty_graph: typec_types::Graph<Ty>,
+    ty_graph: TyGraph,
     types: Types,
     builtin_types: BuiltinTypes,
     funcs: Funcs,
@@ -116,6 +135,14 @@ pub struct Compiler {
     func_meta: FuncMeta,
     tir_pattern_graph: TirPatternGraph,
     to_compile: ToCompile,
+    func_instances: FuncInstances,
+    to_link: ToLink,
+    macros: Macros,
+
+    // globals
+    globals: Globals,
+    _global_data: GlobalData,
+    global_map: GlobalMap,
 
     // jit
     _jit_module: JITModule,
@@ -123,14 +150,19 @@ pub struct Compiler {
     _jit_compile_results: SparseMap<Func, CompileResult>,
 
     // generation
-    entry_id: Option<ID>,
     object_module: ObjectModule,
     triple: Triple,
     reprs: Reprs,
     repr_fields: ReprFields,
     compile_results: SecondaryMap<Func, CompileResult>,
     signatures: Signatures,
-    ty_order: Vec<Ty>,
+    ty_order: TyOrder,
+    mir_builder_context: MirBuilderContext,
+    cir_builder_context: CirBuilderContext,
+    context: Context,
+    func_ctx: FuncCtx,
+    generation_context: GenerationContext,
+    initializers: Initializers,
 }
 
 impl Compiler {
@@ -170,7 +202,8 @@ impl Compiler {
             map.register::<Ty>("type");
             map.register::<Func>("function");
             map.register::<Tir>("tir");
-    
+            map.register::<Global>("global");
+
             map
         };
 
@@ -228,7 +261,7 @@ impl Compiler {
             diagnostics: Diagnostics::new(),
             item_lexicon,
             
-            ty_graph: typec_types::Graph::new(),
+            ty_graph: TyGraph::new(),
             types,
             builtin_types,
             funcs,
@@ -245,12 +278,18 @@ impl Compiler {
             func_meta,
             tir_pattern_graph: PatternGraph::new(),
             to_compile: ToCompile::new(),
+            func_instances: FuncInstances::new(),
+            to_link: ToLink::new(),
+            macros: Macros::new(),
+
+            globals: Globals::new(),
+            _global_data: GlobalData::new(),
+            global_map: GlobalMap::new(),
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
             host_isa,
                         
-            entry_id: None,
             object_module,
             triple,
             reprs,
@@ -258,6 +297,12 @@ impl Compiler {
             compile_results: SecondaryMap::new(),
             signatures: Signatures::new(),
             ty_order: Vec::new(),
+            mir_builder_context: MirBuilderContext::new(),
+            cir_builder_context: CirBuilderContext::new(),
+            context: Context::new(),
+            func_ctx: FuncCtx::new(),
+            generation_context: GenerationContext::new(),
+            initializers: Initializers::new(),
         }
     }
 
@@ -325,8 +370,6 @@ impl Compiler {
             )
         };
 
-       
-
         let object_module = {
             let builder = ObjectBuilder::new(
                 isa, 
@@ -374,115 +417,6 @@ impl Compiler {
         self.module_order = module_order;
     }
 
-    /// every module imports set of builtin constructs, work is done here
-    fn load_builtin_scope_items(&mut self, source: Source) {
-        for item in self.modules[self.builtin_source.source].items.iter() {
-            self.scope
-                .insert(&mut self.diagnostics, source, item.id, item.to_scope_item())
-                .unwrap();
-        }
-    }
-
-    /// The module imports are read from temporary ast and minimal data is preserved.
-    /// 
-    /// TODO: Could there be an option to optimize this?
-    fn build_scope(&mut self, source: Source) {
-        self.scope.dependencies.clear();
-        if let Some(imports) = ModuleImports::new(&self.ast_data, &self.sources).imports() {
-            for import in imports {
-                let nick = self.sources.display(import.nick);
-                let Some(&dep) = self.module_map.get((nick, source)) else {
-                continue; // recovery, module might not exist due to previous recovery
-            };
-                self.scope
-                    .insert(
-                        &mut self.diagnostics,
-                        source,
-                        nick,
-                        ScopeItem::new(dep, import.nick),
-                    )
-                    .unwrap();
-                for item in self.modules[dep].items.iter() {
-                    drop(self.scope.insert(&mut self.diagnostics, source, item.id, item.to_scope_item()));
-                }
-                self.scope.dependencies.push((dep, import.nick));
-            }
-        }
-    }
-
-    /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
-    /// before and after this function.
-    fn build_types(&mut self, stage: usize, source: Source, ty_buffer: &mut Vec<Ty>) {
-        ty_buffer.extend(
-            self.modules[source]
-                .items
-                .iter()
-                .skip(stage)
-                .filter_map(|item| item.kind.may_read::<Ty>()),
-        );
-
-        for ty in ty_buffer.drain(..) {
-            ty_builder!(self, ty).build();           
-        }
-    }
-
-    /// Similar to `Self::build_types` but for functions. This action depends on types 
-    /// so it has to be called after.
-    fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
-        func_buffer.extend(
-            self.modules[source]
-                .items
-                .iter()
-                .skip(stage)
-                .filter_map(|item| item.kind.may_read::<Func>()),
-        );
-
-        for func in func_buffer.drain(..) {
-            let id = self.funcs.ents[func].id;
-            if self.incr.functions.get(id).is_some() {
-                continue;
-            }
-
-            self.tir_data.clear();
-            if tir_builder!(self, func).build().is_err() {
-                continue;
-            };
-            // println!("{}", TirDisplay::new(
-            //     &self.types, 
-            //     &self.ty_lists, 
-            //     &self.ty_comps, 
-            //     &self.sources, 
-            //     &self.tir_temp_body, 
-            //     self.func_meta[func].body,
-            // ));
-            self.func_bodies[func] = self.tir_data.clone();
-        }
-    }
-
-    /// Compute the type layouts. This is only used for incremental 
-    /// computation while jit-compiling macros.
-    fn build_layouts(&mut self, bottom: usize) {
-        let iter = (bottom..self.types.len()).map(|i| {
-            let ty = Ty::new(i);
-            ty
-        });
-        
-        for ty in iter.clone() {
-            self.ty_graph.add_vertex(ty);
-        }
-
-        let check_point = self.ty_order.len();
-        if let Err(cycle) = self.ty_graph.total_ordering(&mut self.ty_order) {
-            self.diagnostics.push(TyError::InfinitelySizedType {
-                cycle, 
-            });
-        }
-
-        layout_builder!(self).build_layouts(&self.ty_order[check_point..]);
-        build_reprs(self.host_isa.pointer_type(), &mut self.reprs, iter);
-        self.ty_graph.clear();
-    }
-
     /// Probably the slowest stage in frontend. Building Tir means 
     /// type-checking all imported source code. Parsing is also included
     /// so that ast does not have to be accumulated for all files. Types are 
@@ -491,174 +425,7 @@ impl Compiler {
     /// of generic calls.
     fn build_tir(&mut self) {
         time_report!("building of tir");
-
-        let mut func_buffer = vec![];
-        let mut ty_buffer = vec![];
-
-        for source in self.module_order.clone() { // it really does not matter
-            self.load_builtin_scope_items(source);
-
-            self.ast_data.clear();
-            let mut inter_state_opt = Some(Parser::parse_imports(
-                &self.sources,
-                &mut self.diagnostics, 
-                &mut self.ast_data, 
-                &mut self.ast_temp, 
-                source
-            ));
-            
-            self.build_scope(source);
-
-            let mut stage = 0;
-
-            while let Some(inter_state) = inter_state_opt { 
-                self.ast_data.clear();
-                inter_state_opt = Parser::parse_code_chunk(
-                    &self.sources,
-                    &mut self.diagnostics,
-                    &mut self.ast_data,
-                    &mut self.ast_temp,
-                    inter_state,
-                );            
-
-                self.log_diagnostics();
-
-                let bottom = self.types.len();
-
-                scope_builder!(self, source)
-                    .collect_items(self.ast_data.elements());
-
-                self.log_diagnostics();
-                
-
-                self.build_types(stage, source, &mut ty_buffer);
-
-                self.log_diagnostics();
-
-                bound_verifier!(self).verify();            
-
-                self.build_funcs(stage, source, &mut func_buffer);
-
-                self.build_layouts(bottom);
-
-                stage = self.modules[source].items.len();
-            }
-
-            self.scope.clear();
-        }
-    }
-
-    /// Incr data needs to be converted into a form understood be compiler components. The hashes
-    /// are dispatched into entities uniquely allocated by compiler. Point is that the compiler
-    /// can allocate function entities differently but ID should never change fi source file haven't been 
-    /// changed.
-    fn incr_data_to_compile_result(&self, incr_func_data: &IncrFunc) -> CompileResult {
-        let bytes = incr_func_data.bytes.clone();
-        let relocs = incr_func_data.reloc_records
-            .iter()
-            .map(|rec| {
-                let func = self.funcs.instances.get(rec.name).unwrap().clone(); 
-                MachReloc {
-                    offset: rec.offset,
-                    srcloc: rec.srcloc,
-                    kind: rec.kind,
-                    name: ExternalName::user(0, func.as_u32()),
-                    addend: rec.addend,
-                }
-            })
-            .collect();
-        
-        CompileResult {
-            bytes,
-            relocs,
-        }
-    }
-
-    /// here we try to skip the function compilation by retrieving it from incremental data.
-    /// This includes loading all dependant functions as well.
-    fn skip_incrementally(
-        &mut self, 
-        func: Func, 
-        id: ID, 
-        frontier: &mut Vec<ID>, 
-        reused_incr_funcs: &mut Vec<Func>,
-        signatures: &mut Signatures,
-    ) -> bool {
-        let Some(incr_func_data) = self.incr.functions.get(id) else {
-            return false;
-        };
-
-        let start = reused_incr_funcs.len();
-        
-        frontier.extend(incr_func_data.dependencies());
-
-        while let Some(id) = frontier.pop() {
-            if let Some(shadow) = self.funcs.instances.insert(id, self.funcs.ents.next_key()) {
-                self.funcs.instances.insert(id, shadow).unwrap();
-                continue;
-            }
-
-            let func_ent = FuncEnt {
-                id,
-                ..Default::default()
-            };
-
-            let func = self.funcs.ents.push(func_ent);
-            reused_incr_funcs.push(func);
-
-            let Some(incr_func_data) = self.incr.functions.get(id) else {
-                unreachable!();
-            };
-
-            signatures.insert(func, incr_func_data.signature.clone());
-
-            frontier.extend(incr_func_data.dependencies());
-        }
-
-        self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
-
-        for &func in &reused_incr_funcs[start..] {
-            let id = self.funcs.ents[func].id;
-            let Some(incr_func_data) = self.incr.functions.get(id) else {
-                unreachable!();
-            };
-
-            self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
-        }
-
-        true
-    }
-
-    /// function swaps all generic types for concrete types, preparing the 
-    /// lowering fo functions in specific type context.
-    fn load_generic_params(
-        &mut self, 
-        id: Func, 
-        params: TyList, 
-        parent: PackedOption<Func>, 
-        ptr_ty: Type, 
-        replace_cache: &mut ReplaceCache
-    ) -> Func {
-        let Some(parent) = parent.expand() else {
-            return id;
-        };
-        
-        ReprInstancing {
-            types: &mut self.types,
-            ty_lists: &mut self.ty_lists,
-            instances: &mut self.instances,
-            ty_comps: &self.ty_comps,
-            sources: &self.sources,
-            repr_fields: &mut self.repr_fields,
-            reprs: &mut self.reprs,
-            ptr_ty,
-        }.load_generic_types(
-            params, 
-            self.func_bodies[parent].used_types, 
-            replace_cache,
-        );
-
-        parent
+        main_tir_builder!(self).build(&self.module_order);
     }
 
     /// Function takes tir and translates it into bite code. It uses type swapping to 
@@ -669,147 +436,25 @@ impl Compiler {
     /// Though this may require cloning type context.
     fn generate(&mut self) {
         time_report!("generating");
-
-        let mut ctx = Context::new();
-        let mut builder_ctx = FunctionBuilderContext::new(); 
-        let mut replace_cache = ReplaceCache::new();
-        let mut signatures = Signatures::new();
-        let mut func_ctx = FuncCtx::new();
-        let mut mir_builder_ctx = MirBuilderContext::new();
-        let mut cir_builder_ctx = CirBuilderContext::new();
-        let mut frontier = vec![];
-        let mut reused_incr_funcs = vec![];
-        let ptr_ty = self.object_module.isa().pointer_type();
-        let system_call_convention = self.object_module.isa().default_call_conv();
-
-        for &(func, _) in &self.to_compile {
-            let call_conv = self.funcs.ents[func].flags.call_conv();
-            let sig = self.func_meta[func].sig;
-            signatures.insert(func, translate_signature(
-                call_conv, 
-                self.ty_lists
-                    .get(sig.args)
-                    .iter()
-                    .copied(),
-                sig.ret, 
-                &self.reprs, 
-                &self.types, 
-                system_call_convention
-            ));
-        }
-
-        let mut i = 0;
-        while i < self.to_compile.len() {
-            let (id, params) = self.to_compile[i];
-            
-            i += 1;
-            
-            let func_ent = self.funcs.ents[id];
-
-            if func_ent.flags.contains(FuncFlags::ENTRY) {
-                if self.entry_id.is_some() {
-                    println!("multiple entry points");
-                    exit!();
-                }
-                self.entry_id = Some(func_ent.id);
-            }
-
-            if self.skip_incrementally(id, func_ent.id, &mut frontier, &mut reused_incr_funcs, &mut signatures) {
-                continue;
-            }
-
-            let parent = self.load_generic_params(id, params, func_ent.parent, ptr_ty, &mut replace_cache);
-            
-            let result = MirBuilder {
-                system_call_convention,
-                return_dest: None,
-                func_id: parent,
-                ptr_ty,
-
-                types: &mut self.types,
-                ty_lists: &mut self.ty_lists,
-                ty_comps: &self.ty_comps,
-                sources: &self.sources,
-                repr_fields: &self.repr_fields,
-                reprs: &self.reprs,
-                func_lists: &self.func_lists,
-                bound_impls: &self.bound_impls,
-                builtin_types: &self.builtin_types,
-                funcs: &mut self.funcs,
-                func: &mut func_ctx,
-                body: &self.func_bodies[parent],
-                diagnostics: &mut self.diagnostics,
-                ctx: &mut mir_builder_ctx,
-                func_meta: &self.func_meta,
-                to_compile: &mut self.to_compile,
-            }.translate_func();
-            
-            if result.is_err() {
-                continue;
-            }
-            
-            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &func_ctx, &self.types));
-
-            ctx.func.signature = signatures.get(id).unwrap().clone();
-
-            let builder = &mut FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
-
-            CirBuilder {
-                builder,
-                ctx: &mut cir_builder_ctx,
-                signatures: &mut signatures,
-                source: &mut func_ctx,
-                
-                isa: self.object_module.isa(),
-                funcs: &self.funcs,
-                reprs: &self.reprs,
-                types: &self.types,
-                builtin_types: &self.builtin_types,
-                ty_lists: &self.ty_lists,
-                sources: &self.sources,
-                func_meta: &self.func_meta,
-            }.generate();
-
-            // println!("{}", self.sources.display(self.func_meta[parent].name));
-            // println!("{}", ctx.func.display());
-
-            let mut bytes = vec![];
-            ctx.compile_and_emit(self.object_module.isa(), &mut bytes)
-                .unwrap();
-            let relocs = ctx.mach_compile_result.as_ref().unwrap().buffer.relocs().to_vec();
-
-            let compile_result = CompileResult {
-                bytes,
-                relocs,
-            };
-
-            self.compile_results[id] = compile_result;
-            ctx.clear();
-
-            replace_cache.replace(&mut self.types, &mut self.reprs)
-        }
-
-        self.to_compile.extend(
-            reused_incr_funcs.into_iter().map(|id| (id, TyList::reserved_value()))
-        );
-
-        self.signatures = signatures;
+        generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa()).generate();
     }
 
     /// Only reachable functions are being included in final executable. 
     /// Which functions are used is determined here. First vec contains 
     /// functions that have local byte-code, second contains imports that 
     /// should only be imported.
-    fn collect_used_funcs(&mut self) -> (Vec<Func>, Vec<Func>) {
+    fn collect_used_funcs(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
 
-        let mut seen = EntitySet::with_capacity(self.funcs.ents.len());
+        let mut seen_funcs = EntitySet::with_capacity(self.funcs.len());
+        let mut seen_globals = EntitySet::with_capacity(self.globals.len());
         let mut frontier = Vec::with_capacity(self.to_compile.len());
+        let mut globals = Vec::with_capacity(self.globals.len());
 
-        if let Some(entry_id) = self.entry_id {
-            let &entry_func = self.funcs.instances.get(entry_id).unwrap();
-            frontier.push(entry_func)
-        }
+        frontier.extend(self.initializers.iter().map(|(id, _)| id));
+
+        // explanted after while loop 
+        self.initializers.reverse();
         
         let mut i = 0;
         while let Some(&func) = frontier.get(i) {
@@ -818,31 +463,51 @@ impl Compiler {
                     unreachable!();
                 };
 
-                assert!(namespace == 0);
-
-                let func = Func(index);
-
-                if !seen.insert(func) {
-                    continue;
+                match namespace {
+                    FUNC_NAMESPACE => {
+                        let func = Func(index);
+        
+                        if !seen_funcs.insert(func) {
+                            continue;
+                        }
+                        
+                        frontier.push(func);
+                    }
+                    DATA_NAMESPACE => {
+                        let global = Global(index);
+        
+                        if !seen_globals.insert(global) {
+                            continue;
+                        }
+                        
+                        globals.push(global);
+                        frontier.push(self.globals[global].init);
+                        self.initializers.push((self.globals[global].init, Some(global).into()));
+                    }
+                    _ => unreachable!()
                 }
-                
-                frontier.push(func);
             }
 
             i += 1;
         }
 
+        // firs we reverse the initializers and then we push global initializers
+        // and then vi reverse again. This ensures ordering where all globals are 
+        // initialized be before entrypoint functions and entrypoint functions are
+        // also preserve the correct order.
+        self.initializers.reverse();
+
         let mut to_link = Vec::with_capacity(frontier.len());
 
         frontier.retain(|&f| {
-            if self.funcs.ents[f].flags.contains(FuncFlags::EXTERNAL) {
+            if self.funcs[f].flags.contains(FuncFlags::EXTERNAL) {
                 to_link.push(f);
                 return false;
             }
             true
         });
 
-        (frontier, to_link)
+        (globals, frontier, to_link)
     }
 
     /// Object file is being created here. Only reachable functions are included.
@@ -850,13 +515,41 @@ impl Compiler {
         time_report!("building object file");
 
         let mut func_lookup = SecondaryMap::new();
-        func_lookup.resize(self.funcs.ents.len());
+        let mut global_lookup = SecondaryMap::new();
+        let mut data_ctx = DataContext::new();
+        func_lookup.resize(self.funcs.len());
+        global_lookup.resize(self.globals.len());
         let system_call_conv = self.object_module.isa().default_call_conv();
 
-        let (to_compile, to_link) = self.collect_used_funcs();
+        let (globals, mut to_compile, to_link) = self.collect_used_funcs();
+        let mut name = String::new();
+
+        for global in globals {
+            let global_ent = self.globals[global];
+            {
+                let id = global_ent.id;
+                name.clear();
+                id.to_ident(&mut name);
+            }
+            let global_ref = self.object_module
+                .declare_data(&name, Linkage::Export, true, false)
+                .unwrap();
+            global_lookup[global] = PackedOption::from(global_ref);
+            
+            if let Some(_data) = global_ent.bytes.expand() {
+                todo!();
+            } else {
+                let arch32 = self.object_module.isa().pointer_bytes() == 4;
+                let size = self.reprs[global_ent.ty].layout.size().arch(arch32);
+                data_ctx.define_zeroinit(size as usize);
+            }
+            
+            self.object_module.define_data(global_ref, &data_ctx).unwrap();
+            data_ctx.clear();
+        }
 
         for func in to_link {
-            let call_conv = self.funcs.ents[func].flags.call_conv();
+            let call_conv = self.funcs[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
             let name = self.sources.display(self.func_meta[func].name);
             let signature = translate_signature(
@@ -875,10 +568,9 @@ impl Compiler {
             func_lookup[func] = PackedOption::from(func_id);
         }
 
-        let mut name = String::new();
         for &func in &to_compile {
             {
-                let id = self.funcs.ents[func].id;
+                let id = self.funcs[func].id;
                 name.clear();
                 id.to_ident(&mut name);
             }
@@ -887,6 +579,72 @@ impl Compiler {
             let func_id = self.object_module.declare_function(&name, linkage, signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
+        }
+
+        // declare entrypoint
+        {
+            let entry_point = self.object_module.declare_function(
+                CATALYST_ENTRY, 
+                Linkage::Export, 
+                &Signature::new(self.object_module.isa().default_call_conv()),
+            ).unwrap();
+
+            let func = self.funcs.push(Default::default());
+
+            func_lookup[func] = PackedOption::from(entry_point);
+
+            {
+                self.func_ctx.clear();
+    
+                let entry = self.func_ctx.create_block();
+                self.func_ctx.select_block(entry);
+    
+                for &(func, global) in self.initializers.iter() {
+                    if let Some(global) = global.expand() {
+                        let ty = self.globals[global].ty;
+                        let access = {
+                            let value = self.func_ctx.values.push(ValueEnt::flags(ty, MirFlags::POINTER));
+                            let kind = InstKind::GlobalAccess(global);
+                            let ent = InstEnt::new(kind, value.into());
+                            self.func_ctx.add_inst(ent);
+                            value
+                        };
+                        
+                        let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);        
+                        if has_sret {
+                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let args = self.func_ctx.value_slices.push(&[access]);
+                            let kind = InstKind::Call(func, args);
+                            let ent = InstEnt::new(kind, return_value.into());
+                            self.func_ctx.add_inst(ent);
+                        } else {
+                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let kind = InstKind::Call(func, ValueList::reserved_value());
+                            let ent = InstEnt::new(kind, return_value.into());
+                            self.func_ctx.add_inst(ent);
+                            {
+                                let kind = InstKind::Assign(return_value);
+                                let ent = InstEnt::new(kind, access.into());
+                                self.func_ctx.add_inst(ent);
+                            }
+                        }
+                    } else {
+                        let return_value = self.func_ctx.values.push(ValueEnt::repr(self.builtin_types.int));
+                        let kind = InstKind::Call(func, ValueList::reserved_value());
+                        let ent = InstEnt::new(kind, return_value.into());
+                        self.func_ctx.add_inst(ent);    
+                    }
+                }
+    
+                self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
+            }
+
+            self.context.func.signature = Signature::new(self.object_module.isa().default_call_conv());
+
+            generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa())
+                .build_cir_and_emit(func, func, false);
+            
+            to_compile.push(func);
         }
 
         let mut reloc_temp = vec![];
@@ -901,11 +659,17 @@ impl Compiler {
                     unreachable!();
                 };
                 
-                assert!(namespace == 0);
+                let id = match namespace {
+                    FUNC_NAMESPACE => {
+                        func_lookup[Func(index)].unwrap().as_u32()
+                    }
+                    DATA_NAMESPACE => {
+                        global_lookup[Global(index)].unwrap().as_u32()
+                    }
+                    _ => unreachable!()
+                };
 
-                let func_id = func_lookup[Func(index)].unwrap();
-
-                let name = ExternalName::user(0, func_id.as_u32());
+                let name = ExternalName::user(namespace, id);
 
                 r.name = name;
 
@@ -917,57 +681,13 @@ impl Compiler {
                 &compile_result.bytes, 
                 &reloc_temp
             ).unwrap();
-        }
+        }        
     }
 
     /// All compiled functions are saved. That means their byte-code 
     /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
-
-        self.incr.functions.clear();
-        
-        let mut temp_relocs = vec![];
-        for &(func, _) in &self.to_compile {
-            let compile_result = std::mem::take(&mut self.compile_results[func]);
-
-            temp_relocs.clear();
-            temp_relocs.extend(
-                compile_result.relocs.iter().map(|r| {
-                    let ExternalName::User {
-                        namespace,
-                        index,
-                    } = r.name else {
-                        unreachable!();
-                    };
-
-                    assert!(namespace == 0);
-
-                    let name = self.funcs.ents[Func(index)].id;
-                    IncrRelocRecord {
-                        offset: r.offset,
-                        srcloc: r.srcloc,
-                        kind: r.kind,
-                        name,
-                        addend: r.addend,
-                    }
-                })
-            );
-
-            let signature = self.signatures.remove(func).unwrap();
-
-            let incr_func_data = IncrFunc {
-                signature,
-                temp_id: None,
-                defined: false,
-                bytes: compile_result.bytes,
-                reloc_records: temp_relocs.clone(),
-            };
-
-            let id = self.funcs.ents[func].id;
-            self.incr.functions.insert(id, incr_func_data);
-        }
-
         self.incr.save(&self.incr_path).unwrap();
     }
 
@@ -984,13 +704,7 @@ impl Compiler {
             return;
         }
 
-        let mut entry = "/entry:".to_string();
-        let Some(entry_id) = self.entry_id else {
-            println!("{ERR}|> program is missing entry point{END}");
-            exit!();
-        };
-        
-        entry_id.to_ident(&mut &mut entry);
+        let entry = format!("/entry:{CATALYST_ENTRY}");        
 
         let output = cc::windows_registry::find(&self.triple.to_string(), "link.exe")
             .unwrap()
@@ -1004,7 +718,13 @@ impl Compiler {
         // linking
         std::fs::remove_file("catalyst.o").unwrap();
 
-        assert!(output.status.success(), "{:?}", output.status);
+        assert!(
+            output.status.success(), 
+            "{:?}\nstdout: {}\nstderr: {}", 
+            output.status, 
+            String::from_utf8(output.stdout).unwrap(), 
+            String::from_utf8(output.stderr).unwrap(),
+        );
     }
 
     /// Function iterates trough all possible diagnostic options, 
@@ -1093,6 +813,12 @@ impl Compiler {
     }
 }
 
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// We need to know if compiler is sync with incremental data. 
 /// This si simplest most optimal solution that plays well with 
 /// development cycle. 
@@ -1102,47 +828,6 @@ fn get_exe_modification_time() -> Option<SystemTime> {
         .flatten()
         .ok()
 }
-
-/// Sub command handles parsing of command line arguments
-/// for all subcommands.
-pub enum Subcommand {
-    Compile(PathBuf),
-    None,
-}
-
-const SUBCOMMANDS: &'static str = "c";
-
-impl Subcommand {
-    /// Builds a subcommand based of command line input.
-    pub fn new(input: &CmdInput) -> Self {
-        let Some(subcommand) = input.args().get(0) else {
-            println!("usage: catalyst {INFO}<sub>{END} ...");
-            println!("options: {INFO}{SUBCOMMANDS}{END}");
-            exit!();
-        };
-
-        match subcommand.as_str() {
-            "c" => {
-                let path = input.args().get(1).map(String::as_str).unwrap_or(".");
-                return Self::Compile(PathBuf::from(path));
-            }
-            sub => {
-                println!("invalid subcommand: {sub}");
-                println!("options: {INFO}{SUBCOMMANDS}{END}");
-                exit!();
-            }
-        }
-    }
-
-    /// Returns a path to the input project.
-    fn root_path(&self) -> Option<&Path> {
-        match self {
-            Self::Compile(path) => Some(path),
-            _ => None,
-        }
-    }
-}
-
 
 pub struct TimeReport {
     start: Instant,
@@ -1166,7 +851,7 @@ impl Drop for TimeReport {
 }
 
 #[derive(Default, Clone)]
-struct CompileResult {
-    bytes: Vec<u8>,
-    relocs: Vec<MachReloc>,
+pub struct CompileResult {
+    pub bytes: Vec<u8>,
+    pub relocs: Vec<MachReloc>,
 }

@@ -1,6 +1,7 @@
 //! This file is generated, do not edit!
 use crate::*;
 use ast::*;
+use incr::*;
 
 pub struct SourceLoader<'a> {
 	pub units: &'a mut Units,
@@ -122,6 +123,12 @@ pub struct MainTirBuilder<'a> {
 	pub reprs: &'a mut Reprs,
 	pub builtin_source: &'a mut BuiltinSource,
 	pub repr_fields: &'a mut ReprFields,
+	pub func_instances: &'a mut FuncInstances,
+	pub to_link: &'a mut ToLink,
+	pub macros: &'a mut Macros,
+	pub globals: &'a mut Globals,
+	pub global_map: &'a mut GlobalMap,
+	pub initializers: &'a mut Initializers,
 	pub host_isa: &'a Box<dyn TargetIsa>,
 	pub sources: &'a Sources,
 	pub builtin_types: &'a BuiltinTypes,
@@ -157,6 +164,12 @@ impl<'a> MainTirBuilder<'a> {
 		reprs: &'a mut Reprs,
 		builtin_source: &'a mut BuiltinSource,
 		repr_fields: &'a mut ReprFields,
+		func_instances: &'a mut FuncInstances,
+		to_link: &'a mut ToLink,
+		macros: &'a mut Macros,
+		globals: &'a mut Globals,
+		global_map: &'a mut GlobalMap,
+		initializers: &'a mut Initializers,
 		host_isa: &'a Box<dyn TargetIsa>,
 		sources: &'a Sources,
 		builtin_types: &'a BuiltinTypes,
@@ -190,6 +203,12 @@ impl<'a> MainTirBuilder<'a> {
 			reprs,
 			builtin_source,
 			repr_fields,
+			func_instances,
+			to_link,
+			macros,
+			globals,
+			global_map,
+			initializers,
 			host_isa,
 			sources,
 			builtin_types,
@@ -229,6 +248,12 @@ macro_rules! main_tir_builder {
 			&mut $self.reprs,
 			&mut $self.builtin_source,
 			&mut $self.repr_fields,
+			&mut $self.func_instances,
+			&mut $self.to_link,
+			&mut $self.macros,
+			&mut $self.globals,
+			&mut $self.global_map,
+			&mut $self.initializers,
 			&$self.host_isa,
 			&$self.sources,
 			&$self.builtin_types,
@@ -259,12 +284,16 @@ pub struct Generator<'a> {
 	pub cir_builder_context: &'a mut CirBuilderContext,
 	pub signatures: &'a mut Signatures,
 	pub generation_context: &'a mut GenerationContext,
+	pub func_instances: &'a mut FuncInstances,
+	pub global_map: &'a mut GlobalMap,
 	pub incr_modules: &'a mut IncrModules,
 	pub incr_funcs: &'a mut IncrFuncs,
 	pub isa: &'a dyn TargetIsa,
+	pub globals: &'a Globals,
 	pub builtin_types: &'a BuiltinTypes,
 	pub sources: &'a Sources,
 	pub func_bodies: &'a FuncBodies,
+	pub modules: &'a Modules,
 }
 
 impl<'a> Generator<'a> {
@@ -288,12 +317,16 @@ impl<'a> Generator<'a> {
 		cir_builder_context: &'a mut CirBuilderContext,
 		signatures: &'a mut Signatures,
 		generation_context: &'a mut GenerationContext,
+		func_instances: &'a mut FuncInstances,
+		global_map: &'a mut GlobalMap,
 		incr_modules: &'a mut IncrModules,
 		incr_funcs: &'a mut IncrFuncs,
 		isa: &'a dyn TargetIsa,
+		globals: &'a Globals,
 		builtin_types: &'a BuiltinTypes,
 		sources: &'a Sources,
 		func_bodies: &'a FuncBodies,
+		modules: &'a Modules,
 	) -> Self {
 		Self {
 			diagnostics,
@@ -315,12 +348,16 @@ impl<'a> Generator<'a> {
 			cir_builder_context,
 			signatures,
 			generation_context,
+			func_instances,
+			global_map,
 			incr_modules,
 			incr_funcs,
 			isa,
+			globals,
 			builtin_types,
 			sources,
 			func_bodies,
+			modules,
 		}
 	}
 }
@@ -348,12 +385,16 @@ macro_rules! generator {
 			&mut $self.cir_builder_context,
 			&mut $self.signatures,
 			&mut $self.generation_context,
+			&mut $self.func_instances,
+			&mut $self.global_map,
 			&mut $incr_modules,
 			&mut $incr_funcs,
 			&$isa,
+			&$self.globals,
 			&$self.builtin_types,
 			&$self.sources,
 			&$self.func_bodies,
+			&$self.modules,
 		)
 	};
 }

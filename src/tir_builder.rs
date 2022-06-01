@@ -29,15 +29,13 @@ impl MainTirBuilder<'_> {
         );
 
         for func in func_buffer.drain(..) {
-            // TODO: This can save some time but its unclear 
-            // how to determinate this
-            // let id = self.funcs.ents[func].id;
+            // let id = self.funcs[func].id;
             // if self.incr.functions.get(id).is_some() {
             //     continue;
             // }
 
             self.tir_data.clear();
-            if tir_builder!(self, func).build().is_err() {
+            if tir_builder!(self).build_func(func).is_err() {
                 continue;
             };
             // println!("{}", TirDisplay::new(
@@ -75,6 +73,27 @@ impl MainTirBuilder<'_> {
         self.ty_graph.clear();
     }
 
+    pub fn build_globals(&mut self, stage: usize, source: Source, global_buffer: &mut Vec<Global>) {
+        global_buffer.extend(
+            self.modules[source]
+                .items
+                .iter()
+                .skip(stage)
+                .filter_map(|item| item.kind.may_read::<Global>()),
+        );
+
+        for global in global_buffer.drain(..) {
+            self.tir_data.clear();
+            let Ok(init) = tir_builder!(self).build_global(global) else {
+                continue;
+            };
+            self.func_bodies[init] = self.tir_data.clone();
+            self.to_compile.push((init, TyList::reserved_value()));
+            self.global_map.insert(self.globals[global].id, global);
+            // self.initializers.push(init); // this is performed during dead code elimination
+        }
+    }
+
     /// Probably the slowest stage in frontend. Building Tir means
     /// type-checking all imported source code. Parsing is also included
     /// so that ast does not have to be accumulated for all files. Types are
@@ -82,10 +101,9 @@ impl MainTirBuilder<'_> {
     /// and instances are not materialized here but rather the Tir has notion
     /// of generic calls.
     pub fn build(&mut self, module_order: &[Source]) {
-        time_report!("building of tir");
-
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];
+        let mut global_buffer = vec![];
 
         for &source in module_order {
             self.ast_data.clear();
@@ -124,6 +142,8 @@ impl MainTirBuilder<'_> {
                 logger!(self).log();
 
                 bound_verifier!(self).verify();
+
+                self.build_globals(stage, source, &mut global_buffer);
 
                 self.build_funcs(stage, source, &mut func_buffer);
 

@@ -5,29 +5,13 @@ use storage::*;
 
 use crate::{jit::Macro, *};
 
+pub type Initializers = Vec<(Func, PackedOption<Global>)>;
 pub type ToCompile = Vec<(Func, TyList)>;
 pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
-
-pub struct Funcs {
-    pub ents: PrimaryMap<Func, FuncEnt>,
-    pub instances: Map<Func>,
-    
-    pub to_link: Vec<Func>,
-    pub to_jit_compile: Vec<(Func, TyList)>,
-    pub macros: Vec<(Func, Macro)>,
-}
-
-impl Funcs {
-    pub fn new() -> Self {
-        Self {
-            ents: PrimaryMap::new(),
-            instances: Map::new(),
-            to_link: Vec::new(),
-            to_jit_compile: Vec::new(),
-            macros: Vec::new(),
-        }
-    }
-}
+pub type Funcs = PrimaryMap<Func, FuncEnt>;
+pub type FuncInstances = Map<Func>;
+pub type ToLink = Vec<Func>;
+pub type Macros = Vec<(Func, Macro)>;
 
 #[derive(Clone, Copy, Default)]
 pub struct FuncEnt {
@@ -80,6 +64,7 @@ bitflags! {
         const INLINE = 1 << 2;
         const EXTERNAL = 1 << 3;
         const STRUCT_RET = 1 << 4;
+        const ANONYMOUS = 1 << 5;
     }
 }
 

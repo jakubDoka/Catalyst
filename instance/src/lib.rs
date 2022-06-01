@@ -4,29 +4,11 @@
 #![feature(bool_to_option)]
 #![feature(if_let_guard)]
 
+pub mod state;
 pub mod error;
 pub mod func;
 pub mod repr;
 
-pub use func::{MirBuilder, MirBuilderContext};
-pub use repr::{LayoutBuilder, ReprInstancing, build_builtin_reprs, build_reprs};
-
-
-#[macro_export]
-macro_rules! layout_builder {
-    ($self:expr) => {
-        layout_builder!($self, $self.ptr_ty)
-    };
-
-    ($self:expr, $ptr_ty:expr) => {
-        LayoutBuilder::new(
-            &$self.types,
-            &$self.sources,
-            &$self.ty_comps,
-            &$self.instances,
-            &$self.ty_lists,
-            &mut $self.repr_fields,
-            &mut $self.reprs,
-        )
-    };
-}
+pub use state::{MirBuilder, LayoutBuilder, ReprInstancing};
+pub use func::{MirBuilderContext};
+pub use repr::{build_builtin_reprs, build_reprs};

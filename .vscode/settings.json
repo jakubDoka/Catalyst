@@ -58,6 +58,7 @@
         "udiv",
         "uextend",
         "Uninit",
-        "ushr"
+        "ushr",
+        "zeroinit"
     ]
 }

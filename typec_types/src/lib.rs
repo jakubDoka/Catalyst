@@ -9,15 +9,25 @@ pub mod graph;
 pub mod jit;
 pub mod tir;
 pub mod ty;
+pub mod global;
 
 pub use error::TyError;
-pub use func::{Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, FuncMetaData, Funcs, Sig, ToCompile};
+pub use func::{
+    Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, FuncMetaData, Funcs, Sig, ToCompile,
+    ToLink, Macros, FuncInstances, Initializers,
+};
 pub use graph::Graph;
-pub use tir::{FuncBodies, Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirStack, TirPatternMeta};
+pub use tir::{
+    FuncBodies, Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, 
+    TirStack, TirPatternMeta,
+};
 pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, Instances, FuncLists, Ty, TyComp, TyCompEnt, TyCompList,
     TyCompLookup, TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
     TyGraph,
+};
+pub use global::{
+    Global, GlobalEnt, Globals, GlobalData, GlobalBytes, GlobalMap
 };
 
 #[macro_export]

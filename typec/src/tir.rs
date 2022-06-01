@@ -1,12 +1,44 @@
 use std::ops::Not;
 
+use cranelift_codegen::isa::CallConv;
 use matching::*;
 use module_types::*;
 
 use crate::{TyError, *};
 
 impl TirBuilder<'_> {
-    pub fn build(&mut self) -> errors::Result {
+    pub fn build_global(&mut self, global: Global) -> errors::Result<Func> {
+        self.global = global;
+
+        let ast = self.scope_context.global_ast[self.global];
+        let body = self.build_expr(ast)?;
+        let ret = self.tir_data.ents[body].ty;
+
+        self.globals[self.global].ty = ret;
+
+        let func_ent = FuncEnt {
+            id: ID::new("<global>") + self.globals[self.global].id,
+            parent: None.into(),
+            flags: FuncFlags::ANONYMOUS | Some(CallConv::Fast),
+        };
+        let func = self.funcs.push(func_ent);
+
+        self.globals[self.global].init = func;
+
+        let func_meta = FuncMetaData {
+            sig: Sig { ret, ..Default::default() },
+            name: self.globals[global].name,
+            body,
+
+            ..Default::default()
+        };
+        self.func_meta[func] = func_meta;
+
+        Ok(func)
+    }
+
+    pub fn build_func(&mut self, func: Func) -> errors::Result {
+        self.func = func;
         let FuncMetaData {
             kind,
             sig: Sig {
@@ -14,7 +46,7 @@ impl TirBuilder<'_> {
             },
             ..
         } = self.func_meta[self.func];
-        let flags = self.funcs.ents[self.func].flags;
+        let flags = self.funcs[self.func].flags;
 
         //println!("{}", self.func_meta[self.func].name.log(self.sources));
 
@@ -811,7 +843,7 @@ impl TirBuilder<'_> {
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
         let sig = self.func_meta[func].sig;
-        let flags = self.funcs.ents[func].flags;
+        let flags = self.funcs[func].flags;
 
         let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
 
@@ -1363,15 +1395,27 @@ impl TirBuilder<'_> {
         let span = self.ast_data.nodes[ast].span;
         let id = self.sources.id_of(span);
 
-        let value = self.scope.get::<Tir>(self.diagnostics, id, span)?;
+        let Some(value) = self.scope.weak_get_raw(id) else {
+            self.diagnostics.push(ModuleError::ScopeItemNotFound {
+                loc: span,
+            });
+            return Err(());
+        };
 
-        // this allows better error messages
-        let result = {
-            let mut copy = self.tir_data.ents[value];
-            copy.kind = TirKind::Access(value);
+        let result = if let Some(local) = value.pointer.may_read::<Tir>() {
+            let mut copy = self.tir_data.ents[local];
+            copy.kind = TirKind::Access(local);
             copy.span = span;
             self.tir_data.ents.push(copy)
+        } else if let Some(global) = value.pointer.may_read::<Global>() {
+            let kind = TirKind::GlobalAccess(global);
+            let GlobalEnt { ty, mutable, .. } = self.globals[global];
+            let ent = TirEnt::with_flags(kind, ty, TirFlags::ASSIGNABLE & mutable, span);
+            self.tir_data.ents.push(ent)
+        } else {
+            todo!("emit error");
         };
+
 
         Ok(result)
     }

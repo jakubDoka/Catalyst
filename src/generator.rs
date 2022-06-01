@@ -1,14 +1,15 @@
-use cranelift_codegen::{ir::{Signature, types::INVALID}, isa::CallConv};
+use cranelift_codegen::{ir::Signature, isa::CallConv};
 
 use crate::*;
+use incr::*;
 
 impl Generator<'_> {
-    pub fn generate(&mut self) -> Option<ID> {
+    pub fn generate(&mut self) {
         let ptr_ty = self.isa.pointer_type();
         let sys_cc = self.isa.default_call_conv();
 
         for &(func, _) in self.to_compile.iter() {
-            let call_conv = self.funcs.ents[func].flags.call_conv();
+            let call_conv = self.funcs[func].flags.call_conv();
             let sig = self.func_meta[func].sig;
             self.signatures.insert(
                 func,
@@ -23,18 +24,8 @@ impl Generator<'_> {
             );
         }
 
-        let mut entry_id = None;
         while let Some((id, params)) = self.to_compile.pop() {
-
-            let func_ent = self.funcs.ents[id];
-
-            if func_ent.flags.contains(FuncFlags::ENTRY) {
-                if entry_id.is_some() {
-                    println!("multiple entry points");
-                    exit!();
-                }
-                entry_id = Some(func_ent.id);
-            }
+            let func_ent = self.funcs[id];
 
             if self.skip_incrementally(id, func_ent.id) {
                 continue;
@@ -47,98 +38,57 @@ impl Generator<'_> {
                 ptr_ty, 
             );
 
-            let result = MirBuilder {
-                system_call_convention: sys_cc,
-                return_dest: None,
-                func_id: parent,
-                ptr_ty,
-                body: &self.func_bodies[parent],
-
-                types: &mut self.types,
-                ty_lists: &mut self.ty_lists,
-                ty_comps: &self.ty_comps,
-                sources: &self.sources,
-                repr_fields: &self.repr_fields,
-                reprs: &self.reprs,
-                func_lists: &self.func_lists,
-                bound_impls: &self.bound_impls,
-                builtin_types: &self.builtin_types,
-                funcs: &mut self.funcs,
-                func: &mut self.func_ctx,
-                diagnostics: &mut self.diagnostics,
-                ctx: &mut self.mir_builder_context,
-                func_meta: &self.func_meta,
-                to_compile: &mut self.to_compile,
-            }
-            .translate_func();
+            let result = mir_builder!(self, parent, ptr_ty, sys_cc, self.func_bodies[parent])
+                .func();
 
             if result.is_err() {
                 continue;
             }
-
-            println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
-
+            
+            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));    
+            
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 
-            let builder = &mut FunctionBuilder::new(
-                &mut self.context.func, 
-                &mut self.generation_context.builder_context);
-
-            CirBuilder {
-                builder,
-                ctx: &mut self.cir_builder_context,
-                signatures: &mut self.signatures,
-                source: &mut self.func_ctx,
-
-                isa: self.isa,
-                funcs: &self.funcs,
-                reprs: &self.reprs,
-                types: &self.types,
-                builtin_types: &self.builtin_types,
-                ty_lists: &self.ty_lists,
-                sources: &self.sources,
-                func_meta: &self.func_meta,
-            }
-            .generate();
-
-            
-            for (id, repr) in self.reprs.iter() {
-                if repr.repr == INVALID {
-                    println!("{}", ty_display!(self, id));
-                }
-            }
-            
-            self.generation_context.replace_cache.replace(self.types, self.reprs);
-
-            println!("{}", self.sources.display(self.func_meta[parent].name));
-            println!("{}", self.context.func.display());
-
-
-            let mut bytes = vec![];
-            self.context.compile_and_emit(self.isa, &mut bytes)
-                .unwrap();
-            let relocs = self.context
-                .mach_compile_result
-                .as_ref()
-                .unwrap()
-                .buffer
-                .relocs()
-                .to_vec();
-
-            let compile_result = CompileResult { bytes, relocs };
-
-            let signature = std::mem::replace(&mut self.context.func.signature, Signature::new(CallConv::Fast));
-
-            self.save_compile_result(func_ent.id, signature, &compile_result);
-
-            self.compile_results[id] = compile_result;
-            self.context.clear();
+            self.build_cir_and_emit(id, parent, true);
         }
+    }
+    
+    pub fn build_cir_and_emit(&mut self, id: Func, parent: Func, save: bool) {
+        let builder = FunctionBuilder::new(
+            &mut self.context.func, 
+            &mut self.generation_context.builder_context
+        );
+
+        cir_builder!(self, builder, *self.isa).generate();
         
-        entry_id
+        // println!("{}", self.context.func.display());
+
+        self.generation_context.replace_cache.replace(self.types, self.reprs);
+
+        let mut bytes = vec![];
+        self.context.compile_and_emit(self.isa, &mut bytes)
+            .unwrap();
+        let relocs = self.context
+            .mach_compile_result
+            .as_ref()
+            .unwrap()
+            .buffer
+            .relocs()
+            .to_vec();
+
+        let compile_result = CompileResult { bytes, relocs };
+
+        let signature = std::mem::replace(&mut self.context.func.signature, Signature::new(CallConv::Fast));
+
+        if save {
+            self.save_compile_result(parent, self.funcs[id].id, signature, &compile_result);
+        }
+
+        self.compile_results[id] = compile_result;
+        self.context.clear();
     }
 
-    fn save_compile_result(&mut self, id: ID, signature: Signature, compile_result: &CompileResult) {        
+    fn save_compile_result(&mut self, parent: Func, func_id: ID, signature: Signature, compile_result: &CompileResult) {        
         let reloc_records = compile_result.relocs.iter().map(|r| {
             let ExternalName::User {
                 namespace,
@@ -147,14 +97,18 @@ impl Generator<'_> {
                 unreachable!();
             };
 
-            assert!(namespace == 0);
-
-            let name = self.funcs.ents[Func(index)].id;
+            let name = match namespace {
+                FUNC_NAMESPACE => self.funcs[Func(index)].id,
+                DATA_NAMESPACE => self.globals[Global(index)].id,
+                _ => unreachable!(),
+            };
+            
             IncrRelocRecord {
                 offset: r.offset,
                 srcloc: r.srcloc,
                 kind: r.kind,
                 name,
+                namespace,
                 addend: r.addend,
             }
         }).collect::<Vec<_>>();
@@ -167,7 +121,13 @@ impl Generator<'_> {
             reloc_records,
         };
 
-        self.incr_funcs.insert(id, incr_func_data);
+        let source = self.func_meta[parent].name.source();
+        let module_id = self.modules[source].id;
+
+        self.incr_modules.get_mut(module_id)
+            .unwrap().owned_funcs.insert(func_id, ());
+
+        self.incr_funcs.insert(func_id, incr_func_data);
     }
 
     fn load_generic_params(
@@ -209,11 +169,12 @@ impl Generator<'_> {
             return false;
         };
 
-        self.generation_context.frontier.extend(incr_func_data.dependencies());
+        self.generation_context.frontier.extend(incr_func_data.function_dependencies());
 
+        let mut used_incr_funcs = vec![];
         while let Some(id) = self.generation_context.frontier.pop() {
-            if let Some(shadow) = self.funcs.instances.insert(id, self.funcs.ents.next_key()) {
-                self.funcs.instances.insert(id, shadow).unwrap();
+            if let Some(shadow) = self.func_instances.insert(id, self.funcs.next_key()) {
+                self.func_instances.insert(id, shadow).unwrap();
                 continue;
             }
 
@@ -222,18 +183,24 @@ impl Generator<'_> {
                 ..Default::default()
             };
 
-            let func = self.funcs.ents.push(func_ent);
-            self.generation_context.reused_incr_funcs.push(func);
-            let Some(incr_func_data) = self.incr_funcs.get(id) else {
-                unreachable!();
-            };
-            
-            self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
-            self.signatures.insert(func, incr_func_data.signature.clone());
-            self.generation_context.frontier.extend(incr_func_data.dependencies());
-        }
 
+            let func = self.funcs.push(func_ent);
+            self.generation_context.reused_incr_funcs.push(func);
+            let incr_func_data = self.incr_funcs.get(id).unwrap();
+
+            used_incr_funcs.push(func);
+            
+            self.signatures.insert(func, incr_func_data.signature.clone());
+            self.generation_context.frontier.extend(incr_func_data.function_dependencies());
+        }
+        
         self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
+        
+        for func in used_incr_funcs {
+            let id = self.funcs[func].id;
+            let incr_func_data = self.incr_funcs.get(id).unwrap();
+            self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
+        }
 
         true
     }
@@ -244,12 +211,16 @@ impl Generator<'_> {
             .reloc_records
             .iter()
             .map(|rec| {
-                let func = self.funcs.instances.get(rec.name).unwrap().clone();
+                let id = match rec.namespace {
+                    FUNC_NAMESPACE => self.func_instances.get(rec.name).unwrap().clone().as_u32(),
+                    DATA_NAMESPACE => self.global_map.get(rec.name).unwrap().clone().as_u32(),
+                    _ => unreachable!(),
+                };
                 MachReloc {
                     offset: rec.offset,
                     srcloc: rec.srcloc,
                     kind: rec.kind,
-                    name: ExternalName::user(0, func.as_u32()),
+                    name: ExternalName::user(rec.namespace, id),
                     addend: rec.addend,
                 }
             })

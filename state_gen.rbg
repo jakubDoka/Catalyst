@@ -1,6 +1,7 @@
 file "src/state.rs" {
     use "crate"
     use "ast"
+    use "incr"
 
     struct SourceLoader {
         mut Units
@@ -50,7 +51,13 @@ file "src/state.rs" {
         mut Reprs
         mut BuiltinSource
         mut ReprFields
-        
+        mut FuncInstances
+        mut ToLink
+        mut Macros
+        mut Globals
+        mut GlobalMap
+        mut Initializers
+
         host_isa: `Box<dyn TargetIsa>`
         Sources
         BuiltinTypes
@@ -79,14 +86,18 @@ file "src/state.rs" {
         mut CirBuilderContext
         mut Signatures
         mut GenerationContext
+        mut FuncInstances
+        mut GlobalMap
         
         passed mut IncrModules
         passed mut IncrFuncs
         passed isa: `dyn TargetIsa`
 
+        Globals
         BuiltinTypes
         Sources
         FuncBodies
+        Modules
     }
 
     struct DeadCodeElim {
@@ -135,6 +146,7 @@ file "typec/src/state.rs" {
     use "errors"
     use "ast"
     use "crate::scope"
+    use "storage"
 
     struct BoundVerifier {
         mut ScopeContext
@@ -193,14 +205,20 @@ file "typec/src/state.rs" {
         mut ScopeContext
         mut FuncMeta
         mut ToCompile
-        
+        mut FuncInstances
+        mut Macros
+        mut ToLink
+        mut Globals
+        mut Initializers
+
         BuiltinTypes
         Sources
         AstData
     }
 
     struct TirBuilder {
-        owned Func
+        owned Func = "Func::reserved_value()"
+        owned Global = "Global::reserved_value()"
         
         mut TyLists
         mut Instances
@@ -216,8 +234,9 @@ file "typec/src/state.rs" {
         mut Diagnostics
         mut FuncMeta
         mut TirPatternGraph
+        mut Globals
+        mut Funcs
         
-        Funcs
         FuncLists
         BuiltinTypes
         Sources
@@ -242,5 +261,95 @@ file "typec/src/state.rs" {
         BuiltinTypes
         Sources
         AstData
+    }
+
+    struct GlobalBuilder {
+        mut Diagnostics
+    }
+}
+
+file "instance/src/state.rs" {
+    use "crate"
+    use "typec_types"
+    use "lexer"
+    use "instance_types"
+    use "errors"
+    use "cranelift_codegen::ir"
+    use "cranelift_codegen::isa"
+    
+    struct MirBuilder {
+        owned Func
+        owned ptr_ty: Type
+        owned system_call_convention: CallConv
+        
+        passed TirData
+
+        mut Funcs
+        mut FuncCtx
+        mut Diagnostics
+        mut MirBuilderContext
+        mut ToCompile
+        mut FuncInstances
+        
+        Reprs
+        Types
+        TyLists
+        FuncLists
+        TyComps
+        BoundImpls
+        ReprFields
+        BuiltinTypes
+        Sources
+        FuncMeta
+        
+        owned return_dest: `Option<mir::Value>` = "None"
+    }
+
+    struct ReprInstancing {
+        mut Types
+        mut TyLists
+        mut Instances
+        mut ReprFields
+        mut Reprs
+        
+        Sources
+        TyComps
+        
+        owned ptr_ty: Type
+    }
+
+    struct LayoutBuilder {
+        mut ReprFields
+        mut Reprs
+        
+        Types
+        Sources
+        TyComps
+        Instances
+        TyLists
+    }
+}
+
+file "gen/src/state.rs" {
+    use "crate"
+    use "typec_types"
+    use "instance_types"
+
+    struct CirBuilder {
+        owned builder: `FunctionBuilder<'a>`
+        
+        mut CirBuilderContext
+        mut Signatures
+        
+        passed isa: `dyn TargetIsa`
+        
+        Funcs
+        Reprs
+        Types
+        BuiltinTypes
+        TyLists
+        FuncCtx
+        Sources
+        FuncMeta
     }
 }
