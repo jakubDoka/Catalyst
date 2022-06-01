@@ -27,7 +27,7 @@ use cranelift_codegen::{Context, MachReloc};
 
 use cranelift_frontend::{FunctionBuilderContext, FunctionBuilder};
 use cranelift_jit::{JITModule, JITBuilder};
-use cranelift_module::{Module, Linkage};
+use cranelift_module::{Module, Linkage, DataContext};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use errors::Diagnostics;
@@ -115,7 +115,7 @@ pub struct Compiler {
     item_lexicon: ItemLexicon,
 
     // typec
-    ty_graph: typec_types::Graph<Ty>,
+    ty_graph: TyGraph,
     types: Types,
     builtin_types: BuiltinTypes,
     funcs: Funcs,
@@ -135,6 +135,10 @@ pub struct Compiler {
     func_instances: FuncInstances,
     to_link: ToLink,
     macros: Macros,
+
+    // globals
+    globals: Globals,
+    _global_data: GlobalData,
 
     // jit
     _jit_module: JITModule,
@@ -194,7 +198,8 @@ impl Compiler {
             map.register::<Ty>("type");
             map.register::<Func>("function");
             map.register::<Tir>("tir");
-    
+            map.register::<Global>("global");
+
             map
         };
 
@@ -252,7 +257,7 @@ impl Compiler {
             diagnostics: Diagnostics::new(),
             item_lexicon,
             
-            ty_graph: typec_types::Graph::new(),
+            ty_graph: TyGraph::new(),
             types,
             builtin_types,
             funcs,
@@ -272,6 +277,9 @@ impl Compiler {
             func_instances: FuncInstances::new(),
             to_link: ToLink::new(),
             macros: Macros::new(),
+
+            globals: Globals::new(),
+            _global_data: GlobalData::new(),
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
@@ -430,11 +438,13 @@ impl Compiler {
     /// Which functions are used is determined here. First vec contains 
     /// functions that have local byte-code, second contains imports that 
     /// should only be imported.
-    fn collect_used_funcs(&mut self) -> (Vec<Func>, Vec<Func>) {
+    fn collect_used_funcs(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
 
-        let mut seen = EntitySet::with_capacity(self.funcs.len());
+        let mut seen_funcs = EntitySet::with_capacity(self.funcs.len());
+        let mut seen_globals = EntitySet::with_capacity(self.globals.len());
         let mut frontier = Vec::with_capacity(self.to_compile.len());
+        let mut globals = Vec::with_capacity(self.globals.len());
 
         if let Some(entry_id) = self.entry_id {
             let &entry_func = self.func_instances.get(entry_id).unwrap();
@@ -448,15 +458,27 @@ impl Compiler {
                     unreachable!();
                 };
 
-                assert!(namespace == 0);
-
-                let func = Func(index);
-
-                if !seen.insert(func) {
-                    continue;
+                match namespace {
+                    FUNC_NAMESPACE => {
+                        let func = Func(index);
+        
+                        if !seen_funcs.insert(func) {
+                            continue;
+                        }
+                        
+                        frontier.push(func);
+                    }
+                    DATA_NAMESPACE => {
+                        let global = Global(index);
+        
+                        if !seen_globals.insert(global) {
+                            continue;
+                        }
+                        
+                        globals.push(global);
+                    }
+                    _ => unreachable!()
                 }
-                
-                frontier.push(func);
             }
 
             i += 1;
@@ -472,7 +494,7 @@ impl Compiler {
             true
         });
 
-        (frontier, to_link)
+        (globals, frontier, to_link)
     }
 
     /// Object file is being created here. Only reachable functions are included.
@@ -480,10 +502,37 @@ impl Compiler {
         time_report!("building object file");
 
         let mut func_lookup = SecondaryMap::new();
+        let mut global_lookup = SecondaryMap::new();
+        let mut data_ctx = DataContext::new();
         func_lookup.resize(self.funcs.len());
+        global_lookup.resize(self.globals.len());
         let system_call_conv = self.object_module.isa().default_call_conv();
 
-        let (to_compile, to_link) = self.collect_used_funcs();
+        let (globals, to_compile, to_link) = self.collect_used_funcs();
+        let mut name = String::new();
+
+        for global in globals {
+            let global_ent = self.globals[global];
+            {
+                let id = global_ent.id;
+                name.clear();
+                id.to_ident(&mut name);
+            }
+            let global_ref = self.object_module
+                .declare_data(&name, Linkage::Export, global_ent.mutable, false).unwrap();
+            global_lookup[global] = PackedOption::from(global_ref);
+            
+            if let Some(_data) = global_ent.bytes.expand() {
+                todo!();
+            } else {
+                let arch32 = self.object_module.isa().pointer_bytes() == 4;
+                let size = self.reprs[global_ent.ty].layout.size().arch(arch32);
+                data_ctx.define_zeroinit(size as usize);
+            }
+            
+            self.object_module.define_data(global_ref, &data_ctx).unwrap();
+            data_ctx.clear();
+        }
 
         for func in to_link {
             let call_conv = self.funcs[func].flags.call_conv();
@@ -500,12 +549,12 @@ impl Compiler {
                 &self.types, 
                 system_call_conv,
             );
+            println!("{} {}", name, signature);
             let func_id = self.object_module.declare_function(name, Linkage::Import, &signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
         }
 
-        let mut name = String::new();
         for &func in &to_compile {
             {
                 let id = self.funcs[func].id;
@@ -531,11 +580,17 @@ impl Compiler {
                     unreachable!();
                 };
                 
-                assert!(namespace == 0);
+                let id = match namespace {
+                    FUNC_NAMESPACE => {
+                        func_lookup[Func(index)].unwrap().as_u32()
+                    }
+                    DATA_NAMESPACE => {
+                        global_lookup[Global(index)].unwrap().as_u32()
+                    }
+                    _ => unreachable!()
+                };
 
-                let func_id = func_lookup[Func(index)].unwrap();
-
-                let name = ExternalName::user(0, func_id.as_u32());
+                let name = ExternalName::user(namespace, id);
 
                 r.name = name;
 
@@ -554,50 +609,6 @@ impl Compiler {
     /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
-
-        // self.incr.functions.clear();
-        
-        // let mut temp_relocs = vec![];
-        // for &(func, _) in &self.to_compile {
-        //     let compile_result = std::mem::take(&mut self.compile_results[func]);
-
-        //     temp_relocs.clear();
-        //     temp_relocs.extend(
-        //         compile_result.relocs.iter().map(|r| {
-        //             let ExternalName::User {
-        //                 namespace,
-        //                 index,
-        //             } = r.name else {
-        //                 unreachable!();
-        //             };
-
-        //             assert!(namespace == 0);
-
-        //             let name = self.funcs[Func(index)].id;
-        //             IncrRelocRecord {
-        //                 offset: r.offset,
-        //                 srcloc: r.srcloc,
-        //                 kind: r.kind,
-        //                 name,
-        //                 addend: r.addend,
-        //             }
-        //         })
-        //     );
-
-        //     let signature = self.signatures.remove(func).unwrap();
-
-        //     let incr_func_data = IncrFunc {
-        //         signature,
-        //         temp_id: None,
-        //         defined: false,
-        //         bytes: compile_result.bytes,
-        //         reloc_records: temp_relocs.clone(),
-        //     };
-
-        //     let id = self.funcs[func].id;
-        //     self.incr.functions.insert(id, incr_func_data);
-        // }
-
         self.incr.save(&self.incr_path).unwrap();
     }
 
@@ -634,7 +645,13 @@ impl Compiler {
         // linking
         std::fs::remove_file("catalyst.o").unwrap();
 
-        assert!(output.status.success(), "{:?}", output.status);
+        assert!(
+            output.status.success(), 
+            "{:?}\nstdout: {}\nstderr: {}", 
+            output.status, 
+            String::from_utf8(output.stdout).unwrap(), 
+            String::from_utf8(output.stderr).unwrap(),
+        );
     }
 
     /// Function iterates trough all possible diagnostic options, 

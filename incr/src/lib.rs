@@ -94,7 +94,7 @@ impl Incr {
             let Some(mut existing_module) = self.modules.remove(module.id) else {
                 let new_module = IncrModule {
                     modified,
-                    owned_functions: Map::new(),
+                    owned_funcs: Map::new(),
                 };
                 new_modules.insert(module.id, new_module);
                 continue;
@@ -114,11 +114,11 @@ impl Incr {
     }
 
     pub fn wipe(module: &mut IncrModule, functions: &mut IncrFuncs) {
-        for (id, _) in module.owned_functions.iter() {
+        for (id, _) in module.owned_funcs.iter() {
             functions.remove(id);
         }
 
-        module.owned_functions.clear();
+        module.owned_funcs.clear();
     }
 }
 
@@ -143,14 +143,14 @@ impl BitSerde for Incr {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncrModule {
     pub modified: SystemTime,
-    pub owned_functions: Map<()>,
+    pub owned_funcs: Map<()>,
 }
 
 impl Default for IncrModule {
     fn default() -> Self {
         Self {
             modified: SystemTime::UNIX_EPOCH,
-            owned_functions: Map::new(),
+            owned_funcs: Map::new(),
         }
     }
 }
@@ -158,13 +158,13 @@ impl Default for IncrModule {
 impl BitSerde for IncrModule {
     fn write(&self, buffer: &mut Vec<u8>) {
         self.modified.write(buffer);
-        self.owned_functions.write(buffer);
+        self.owned_funcs.write(buffer);
     }
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         Ok(Self {
             modified: SystemTime::read(cursor, buffer)?,
-            owned_functions: Map::read(cursor, buffer)?,
+            owned_funcs: Map::read(cursor, buffer)?,
         })
     }
 }
@@ -220,6 +220,7 @@ pub struct IncrRelocRecord {
     pub srcloc: SourceLoc,
     pub kind: Reloc,
     pub name: ID,
+    pub namespace: u32,
     pub addend: i64,
 }
 
@@ -229,6 +230,7 @@ impl BitSerde for IncrRelocRecord {
         self.srcloc.write(buffer);
         self.kind.write(buffer);
         self.name.write(buffer);
+        self.namespace.write(buffer);
         self.addend.write(buffer);
     }
 
@@ -238,6 +240,7 @@ impl BitSerde for IncrRelocRecord {
             srcloc: SourceLoc::read(cursor, buffer)?,
             kind: Reloc::read(cursor, buffer)?,
             name: ID::read(cursor, buffer)?,
+            namespace: u32::read(cursor, buffer)?,
             addend: i64::read(cursor, buffer)?,
         })
     }

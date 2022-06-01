@@ -6,7 +6,38 @@ use module_types::*;
 use crate::{TyError, *};
 
 impl TirBuilder<'_> {
-    pub fn build(&mut self) -> errors::Result {
+    pub fn build_global(&mut self, global: Global) -> errors::Result<Func> {
+        self.global = global;
+
+        let ast = self.scope_context.global_ast[self.global];
+        let body = self.build_expr(ast)?;
+        let ret = self.tir_data.ents[body].ty;
+
+        self.globals[self.global].ty = ret;
+
+        let func_ent = FuncEnt {
+            id: ID(0),
+            parent: None.into(),
+            flags: FuncFlags::ANONYMOUS,
+        };
+        let func = self.funcs.push(func_ent);
+
+        self.globals[self.global].init = func;
+
+        let func_meta = FuncMetaData {
+            sig: Sig { ret, ..Default::default() },
+            name: self.globals[global].name,
+            body,
+
+            ..Default::default()
+        };
+        self.func_meta[func] = func_meta;
+
+        Ok(func)
+    }
+
+    pub fn build_func(&mut self, func: Func) -> errors::Result {
+        self.func = func;
         let FuncMetaData {
             kind,
             sig: Sig {
@@ -1363,15 +1394,27 @@ impl TirBuilder<'_> {
         let span = self.ast_data.nodes[ast].span;
         let id = self.sources.id_of(span);
 
-        let value = self.scope.get::<Tir>(self.diagnostics, id, span)?;
+        let Some(value) = self.scope.weak_get_raw(id) else {
+            self.diagnostics.push(ModuleError::ScopeItemNotFound {
+                loc: span,
+            });
+            return Err(());
+        };
 
-        // this allows better error messages
-        let result = {
-            let mut copy = self.tir_data.ents[value];
-            copy.kind = TirKind::Access(value);
+        let result = if let Some(local) = value.pointer.may_read::<Tir>() {
+            let mut copy = self.tir_data.ents[local];
+            copy.kind = TirKind::Access(local);
             copy.span = span;
             self.tir_data.ents.push(copy)
+        } else if let Some(global) = value.pointer.may_read::<Global>() {
+            let kind = TirKind::GlobalAccess(global);
+            let ty = self.globals[global].ty;
+            let ent = TirEnt::new(kind, ty, span);
+            self.tir_data.ents.push(ent)
+        } else {
+            todo!("emit error");
         };
+
 
         Ok(result)
     }

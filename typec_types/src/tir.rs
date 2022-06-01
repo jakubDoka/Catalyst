@@ -81,6 +81,7 @@ pub enum TirKind {
     DerefPointer(Tir),
     TakePtr(Tir),
     Variable(Tir),
+    GlobalAccess(Global),
     Access(Tir),
     Assign(Tir, Tir),
     Break(Tir, PackedOption<Tir>),
@@ -188,6 +189,9 @@ impl<'a> TirDisplay<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
+            TirKind::GlobalAccess(global) => {
+                write!(f, "global {}", global)?;
+            }
             TirKind::BitCast(tir) => {
                 write!(f, "bit_cast ")?;
                 self.fmt(tir, f, displayed, level, false)?;

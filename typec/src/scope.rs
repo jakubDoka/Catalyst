@@ -23,7 +23,7 @@ impl<'a> ScopeBuilder<'a> {
             }
 
             match kind {
-                AstKind::Function(..) | AstKind::Impl => (),
+                AstKind::Function(..) | AstKind::Impl | AstKind::Variable(..) => (),
                 AstKind::Struct => drop(self.collect_struct(ast)),
                 AstKind::Bound => drop(self.collect_bound(ast)),
                 AstKind::Enum => drop(self.collect_struct(ast)), // there is no difference at this level
@@ -40,6 +40,7 @@ impl<'a> ScopeBuilder<'a> {
             }
 
             match kind {
+                AstKind::Variable(..) => drop(self.collect_global(ast)),
                 AstKind::Function(..) => drop(self.collect_function(None, None, ast)),
                 AstKind::Impl => drop(self.collect_impl(ast)),
                 AstKind::Struct | AstKind::Bound | AstKind::Enum => (),
@@ -74,8 +75,36 @@ impl<'a> ScopeBuilder<'a> {
                 drop(self.collect_function(Some(func), None, ast));
             }
 
+
             self.scope.pop_frame();
         }
+    }
+
+    fn collect_global(&mut self, ast: Ast) {
+        let AstEnt { kind, .. } = self.ast_data.nodes[ast];
+        let mutable = kind == AstKind::Variable(true);
+        
+        let &[name, value] = self.ast_data.children(ast) else {
+            unreachable!();
+        };
+        let span = self.ast_data.nodes[name].span;
+        let scope_id = self.sources.id_of(span);
+        let id = self.modules[self.source].id + scope_id;
+
+        let global_ent = GlobalEnt {
+            id,
+            name: span, 
+            mutable,
+            
+            ..Default::default()
+        };
+        let global = self.globals.push(global_ent);
+
+        self.scope_context.global_ast[global] = value;
+        
+        let item = ModuleItem::new(scope_id, global, span);
+        drop(self.scope.insert(self.diagnostics, self.source, scope_id, item.to_scope_item()));
+        self.modules[self.source].items.push(item);
     }
 
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {
@@ -502,6 +531,7 @@ pub struct ScopeContext {
     pub bounds_to_verify: Vec<(Ty, Ty, Ast)>,
     pub type_ast: SecondaryMap<Ty, Ast>,
     pub func_ast: SecondaryMap<Func, Ast>,
+    pub global_ast: SecondaryMap<Global, Ast>,
     pub used_types: Vec<Ty>,
     pub used_types_set: EntitySet<Ty>,
 }
@@ -514,6 +544,7 @@ impl ScopeContext {
             bounds_to_verify: Vec::new(),
             type_ast: SecondaryMap::new(),
             func_ast: SecondaryMap::new(),
+            global_ast: SecondaryMap::new(),
             used_types: Vec::new(),
             used_types_set: EntitySet::new(),
         }

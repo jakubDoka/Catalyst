@@ -48,7 +48,7 @@ impl Generator<'_> {
             );
 
             let result = mir_builder!(self, parent, ptr_ty, sys_cc, self.func_bodies[parent])
-                .translate_func();
+                .func();
 
             if result.is_err() {
                 continue;
@@ -74,10 +74,6 @@ impl Generator<'_> {
             
             self.generation_context.replace_cache.replace(self.types, self.reprs);
 
-            // println!("{}", self.sources.display(self.func_meta[parent].name));
-            // println!("{}", self.context.func.display());
-
-
             let mut bytes = vec![];
             self.context.compile_and_emit(self.isa, &mut bytes)
                 .unwrap();
@@ -93,7 +89,7 @@ impl Generator<'_> {
 
             let signature = std::mem::replace(&mut self.context.func.signature, Signature::new(CallConv::Fast));
 
-            self.save_compile_result(func_ent.id, signature, &compile_result);
+            self.save_compile_result(parent, func_ent.id, signature, &compile_result);
 
             self.compile_results[id] = compile_result;
             self.context.clear();
@@ -102,7 +98,7 @@ impl Generator<'_> {
         entry_id
     }
 
-    fn save_compile_result(&mut self, id: ID, signature: Signature, compile_result: &CompileResult) {        
+    fn save_compile_result(&mut self, parent: Func, func_id: ID, signature: Signature, compile_result: &CompileResult) {        
         let reloc_records = compile_result.relocs.iter().map(|r| {
             let ExternalName::User {
                 namespace,
@@ -111,14 +107,18 @@ impl Generator<'_> {
                 unreachable!();
             };
 
-            assert!(namespace == 0);
-
-            let name = self.funcs[Func(index)].id;
+            let name = match namespace {
+                FUNC_NAMESPACE => self.funcs[Func(index)].id,
+                DATA_NAMESPACE => self.globals[Global(index)].id,
+                _ => unreachable!(),
+            };
+            
             IncrRelocRecord {
                 offset: r.offset,
                 srcloc: r.srcloc,
                 kind: r.kind,
                 name,
+                namespace,
                 addend: r.addend,
             }
         }).collect::<Vec<_>>();
@@ -131,7 +131,13 @@ impl Generator<'_> {
             reloc_records,
         };
 
-        self.incr_funcs.insert(id, incr_func_data);
+        let source = self.func_meta[parent].name.source();
+        let module_id = self.modules[source].id;
+
+        self.incr_modules.get_mut(module_id)
+            .unwrap().owned_funcs.insert(func_id, ());
+
+        self.incr_funcs.insert(func_id, incr_func_data);
     }
 
     fn load_generic_params(
@@ -190,12 +196,9 @@ impl Generator<'_> {
 
             let func = self.funcs.push(func_ent);
             self.generation_context.reused_incr_funcs.push(func);
-            let Some(incr_func_data) = self.incr_funcs.get(id) else {
-                unreachable!();
-            };
+            let incr_func_data = self.incr_funcs.get(id).unwrap();
 
             used_incr_funcs.push(func);
-            
             
             self.signatures.insert(func, incr_func_data.signature.clone());
             self.generation_context.frontier.extend(incr_func_data.dependencies());
@@ -204,6 +207,8 @@ impl Generator<'_> {
         self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
         
         for func in used_incr_funcs {
+            let id = self.funcs[func].id;
+            let incr_func_data = self.incr_funcs.get(id).unwrap();
             self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
         }
 
@@ -216,12 +221,16 @@ impl Generator<'_> {
             .reloc_records
             .iter()
             .map(|rec| {
-                let func = self.func_instances.get(rec.name).unwrap().clone();
+                let id = match rec.namespace {
+                    FUNC_NAMESPACE => self.func_instances.get(rec.name).unwrap().clone().as_u32(),
+                    DATA_NAMESPACE => todo!(),
+                    _ => unreachable!(),
+                };
                 MachReloc {
                     offset: rec.offset,
                     srcloc: rec.srcloc,
                     kind: rec.kind,
-                    name: ExternalName::user(0, func.as_u32()),
+                    name: ExternalName::user(rec.namespace, id),
                     addend: rec.addend,
                 }
             })

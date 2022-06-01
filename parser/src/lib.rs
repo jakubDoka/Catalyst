@@ -201,6 +201,7 @@ impl<'a> Parser<'a> {
     fn item(&mut self) -> Option<Ast> {
         Some(loop {
             match self.current.kind() {
+                TokenKind::Let => break self.variable(),
                 TokenKind::Fn => break self.func(),
                 TokenKind::Struct => break self.struct_decl(),
                 TokenKind::NewLine => self.advance(),
@@ -731,7 +732,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::If => self.if_expr(),
             TokenKind::LeftCurly => self.block(),
-            TokenKind::Let => self.variable_expr(),
+            TokenKind::Let => self.variable(),
             TokenKind::Loop => self.loop_expr(),
             TokenKind::Break => self.break_expr(),
             TokenKind::Operator => self.unary(),
@@ -1028,7 +1029,7 @@ impl<'a> Parser<'a> {
         self.alloc(AstKind::Loop, span.join(end))
     }
 
-    fn variable_expr(&mut self) -> Ast {
+    fn variable(&mut self) -> Ast {
         let span = self.current.span();
         self.advance();
 

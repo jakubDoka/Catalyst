@@ -9,13 +9,14 @@ fn hello() {
     putchar('g')
 }
 
+let CONSTANT = 1
+
 #entry
 fn main() -> int {
-    
-    
     if other(1, 2, 3) != 7 {
         return 1
     }
+
     
     if structs::bti(true) != 1 {
         return 2
@@ -24,6 +25,7 @@ fn main() -> int {
     if generics::bti(false) != 0 {
         return 3
     }
+
     
     if fib(5) != 8 {
         return 4
@@ -32,6 +34,7 @@ fn main() -> int {
     if iter_fib(5) != 8 {
         return 5
     }
+    
     
     {
         let mut i = 1
@@ -46,6 +49,7 @@ fn main() -> int {
         }
     }
     
+    
     if structure_test() != 0 {
         return structure_test()
         return 7
@@ -57,8 +61,7 @@ fn main() -> int {
     
     if move_in_and_out(0) != 0 {
         return 9
-    }
-    
+    }    
     
     if Goo::new().field() != 10 {
         return 10
@@ -69,15 +72,10 @@ fn main() -> int {
         return 11
     }
 
-    putchar('k')
-
-    return 1
-    
     if foo::[Goo]() + foo::[Goo]() != 20 {
         return 12
     }
-    
-    
+
     if Loo::{ field: Loo::{ field: 90; yes: false }.as_ptr(); yes: true }.as_ptr().field.field != 90 {
         return 13
     }
@@ -89,18 +87,18 @@ fn main() -> int {
     if ptr as int == 0 {
         return 15
     }
-    
-    putchar('a')
-    
+        
     if Enum::Something::{}.is_something() {} else {
         return 16
     }
-    
-    putchar('b')
-    
+        
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
-        putchar('f')
         return 17
+    }
+
+    
+    if CONSTANT != 1 {
+        return 18
     }
 
     putchar('h')

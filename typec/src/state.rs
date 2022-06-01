@@ -5,6 +5,7 @@ use lexer::*;
 use errors::*;
 use ast::*;
 use crate::scope::*;
+use storage::*;
 
 pub struct BoundVerifier<'a> {
 	pub scope_context: &'a mut ScopeContext,
@@ -194,6 +195,7 @@ pub struct ScopeBuilder<'a> {
 	pub func_instances: &'a mut FuncInstances,
 	pub macros: &'a mut Macros,
 	pub to_link: &'a mut ToLink,
+	pub globals: &'a mut Globals,
 	pub builtin_types: &'a BuiltinTypes,
 	pub sources: &'a Sources,
 	pub ast_data: &'a AstData,
@@ -219,6 +221,7 @@ impl<'a> ScopeBuilder<'a> {
 		func_instances: &'a mut FuncInstances,
 		macros: &'a mut Macros,
 		to_link: &'a mut ToLink,
+		globals: &'a mut Globals,
 		builtin_types: &'a BuiltinTypes,
 		sources: &'a Sources,
 		ast_data: &'a AstData,
@@ -242,6 +245,7 @@ impl<'a> ScopeBuilder<'a> {
 			func_instances,
 			macros,
 			to_link,
+			globals,
 			builtin_types,
 			sources,
 			ast_data,
@@ -271,6 +275,7 @@ macro_rules! scope_builder {
 			&mut $self.func_instances,
 			&mut $self.macros,
 			&mut $self.to_link,
+			&mut $self.globals,
 			&$self.builtin_types,
 			&$self.sources,
 			&$self.ast_data,
@@ -280,6 +285,7 @@ macro_rules! scope_builder {
 
 pub struct TirBuilder<'a> {
 	pub func: Func,
+	pub global: Global,
 	pub ty_lists: &'a mut TyLists,
 	pub instances: &'a mut Instances,
 	pub ty_comps: &'a mut TyComps,
@@ -294,7 +300,8 @@ pub struct TirBuilder<'a> {
 	pub diagnostics: &'a mut Diagnostics,
 	pub func_meta: &'a mut FuncMeta,
 	pub tir_pattern_graph: &'a mut TirPatternGraph,
-	pub funcs: &'a Funcs,
+	pub globals: &'a mut Globals,
+	pub funcs: &'a mut Funcs,
 	pub func_lists: &'a FuncLists,
 	pub builtin_types: &'a BuiltinTypes,
 	pub sources: &'a Sources,
@@ -303,7 +310,6 @@ pub struct TirBuilder<'a> {
 
 impl<'a> TirBuilder<'a> {
 	pub fn new(
-		func: Func,
 		ty_lists: &'a mut TyLists,
 		instances: &'a mut Instances,
 		ty_comps: &'a mut TyComps,
@@ -318,14 +324,16 @@ impl<'a> TirBuilder<'a> {
 		diagnostics: &'a mut Diagnostics,
 		func_meta: &'a mut FuncMeta,
 		tir_pattern_graph: &'a mut TirPatternGraph,
-		funcs: &'a Funcs,
+		globals: &'a mut Globals,
+		funcs: &'a mut Funcs,
 		func_lists: &'a FuncLists,
 		builtin_types: &'a BuiltinTypes,
 		sources: &'a Sources,
 		ast_data: &'a AstData,
 	) -> Self {
 		Self {
-			func,
+			func: Func::reserved_value(),
+			global: Global::reserved_value(),
 			ty_lists,
 			instances,
 			ty_comps,
@@ -340,6 +348,7 @@ impl<'a> TirBuilder<'a> {
 			diagnostics,
 			func_meta,
 			tir_pattern_graph,
+			globals,
 			funcs,
 			func_lists,
 			builtin_types,
@@ -351,9 +360,8 @@ impl<'a> TirBuilder<'a> {
 
 #[macro_export]
 macro_rules! tir_builder {
-	($self:expr, $func:expr) => {
+	($self:expr) => {
 		TirBuilder::new(
-			$func,
 			&mut $self.ty_lists,
 			&mut $self.instances,
 			&mut $self.ty_comps,
@@ -368,7 +376,8 @@ macro_rules! tir_builder {
 			&mut $self.diagnostics,
 			&mut $self.func_meta,
 			&mut $self.tir_pattern_graph,
-			&$self.funcs,
+			&mut $self.globals,
+			&mut $self.funcs,
 			&$self.func_lists,
 			&$self.builtin_types,
 			&$self.sources,
@@ -452,6 +461,29 @@ macro_rules! ty_builder {
 			&$self.builtin_types,
 			&$self.sources,
 			&$self.ast_data,
+		)
+	};
+}
+
+pub struct GlobalBuilder<'a> {
+	pub diagnostics: &'a mut Diagnostics,
+}
+
+impl<'a> GlobalBuilder<'a> {
+	pub fn new(
+		diagnostics: &'a mut Diagnostics,
+	) -> Self {
+		Self {
+			diagnostics,
+		}
+	}
+}
+
+#[macro_export]
+macro_rules! global_builder {
+	($self:expr) => {
+		GlobalBuilder::new(
+			&mut $self.diagnostics,
 		)
 	};
 }

@@ -126,6 +126,7 @@ pub struct MainTirBuilder<'a> {
 	pub func_instances: &'a mut FuncInstances,
 	pub to_link: &'a mut ToLink,
 	pub macros: &'a mut Macros,
+	pub globals: &'a mut Globals,
 	pub host_isa: &'a Box<dyn TargetIsa>,
 	pub sources: &'a Sources,
 	pub builtin_types: &'a BuiltinTypes,
@@ -164,6 +165,7 @@ impl<'a> MainTirBuilder<'a> {
 		func_instances: &'a mut FuncInstances,
 		to_link: &'a mut ToLink,
 		macros: &'a mut Macros,
+		globals: &'a mut Globals,
 		host_isa: &'a Box<dyn TargetIsa>,
 		sources: &'a Sources,
 		builtin_types: &'a BuiltinTypes,
@@ -200,6 +202,7 @@ impl<'a> MainTirBuilder<'a> {
 			func_instances,
 			to_link,
 			macros,
+			globals,
 			host_isa,
 			sources,
 			builtin_types,
@@ -242,6 +245,7 @@ macro_rules! main_tir_builder {
 			&mut $self.func_instances,
 			&mut $self.to_link,
 			&mut $self.macros,
+			&mut $self.globals,
 			&$self.host_isa,
 			&$self.sources,
 			&$self.builtin_types,
@@ -276,9 +280,11 @@ pub struct Generator<'a> {
 	pub incr_modules: &'a mut IncrModules,
 	pub incr_funcs: &'a mut IncrFuncs,
 	pub isa: &'a dyn TargetIsa,
+	pub globals: &'a Globals,
 	pub builtin_types: &'a BuiltinTypes,
 	pub sources: &'a Sources,
 	pub func_bodies: &'a FuncBodies,
+	pub modules: &'a Modules,
 }
 
 impl<'a> Generator<'a> {
@@ -306,9 +312,11 @@ impl<'a> Generator<'a> {
 		incr_modules: &'a mut IncrModules,
 		incr_funcs: &'a mut IncrFuncs,
 		isa: &'a dyn TargetIsa,
+		globals: &'a Globals,
 		builtin_types: &'a BuiltinTypes,
 		sources: &'a Sources,
 		func_bodies: &'a FuncBodies,
+		modules: &'a Modules,
 	) -> Self {
 		Self {
 			diagnostics,
@@ -334,9 +342,11 @@ impl<'a> Generator<'a> {
 			incr_modules,
 			incr_funcs,
 			isa,
+			globals,
 			builtin_types,
 			sources,
 			func_bodies,
+			modules,
 		}
 	}
 }
@@ -368,9 +378,11 @@ macro_rules! generator {
 			&mut $incr_modules,
 			&mut $incr_funcs,
 			&$isa,
+			&$self.globals,
 			&$self.builtin_types,
 			&$self.sources,
 			&$self.func_bodies,
+			&$self.modules,
 		)
 	};
 }

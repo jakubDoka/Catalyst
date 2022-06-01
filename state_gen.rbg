@@ -54,6 +54,7 @@ file "src/state.rs" {
         mut FuncInstances
         mut ToLink
         mut Macros
+        mut Globals
 
         host_isa: `Box<dyn TargetIsa>`
         Sources
@@ -89,9 +90,11 @@ file "src/state.rs" {
         passed mut IncrFuncs
         passed isa: `dyn TargetIsa`
 
+        Globals
         BuiltinTypes
         Sources
         FuncBodies
+        Modules
     }
 
     struct DeadCodeElim {
@@ -140,6 +143,7 @@ file "typec/src/state.rs" {
     use "errors"
     use "ast"
     use "crate::scope"
+    use "storage"
 
     struct BoundVerifier {
         mut ScopeContext
@@ -201,6 +205,7 @@ file "typec/src/state.rs" {
         mut FuncInstances
         mut Macros
         mut ToLink
+        mut Globals
         
         BuiltinTypes
         Sources
@@ -208,7 +213,8 @@ file "typec/src/state.rs" {
     }
 
     struct TirBuilder {
-        owned Func
+        owned Func = "Func::reserved_value()"
+        owned Global = "Global::reserved_value()"
         
         mut TyLists
         mut Instances
@@ -224,8 +230,9 @@ file "typec/src/state.rs" {
         mut Diagnostics
         mut FuncMeta
         mut TirPatternGraph
+        mut Globals
+        mut Funcs
         
-        Funcs
         FuncLists
         BuiltinTypes
         Sources
@@ -250,6 +257,10 @@ file "typec/src/state.rs" {
         BuiltinTypes
         Sources
         AstData
+    }
+
+    struct GlobalBuilder {
+        mut Diagnostics
     }
 }
 

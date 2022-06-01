@@ -4,21 +4,27 @@
 
 pub mod state;
 
+use cranelift_codegen::ir::immediates::Imm64;
 pub use state::CirBuilder;
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
-    ExtFuncData, ExternalName, FuncRef, InstBuilder, MemFlags, Signature, StackSlotData,
+    ExtFuncData, ExternalName, FuncRef, InstBuilder, MemFlags, Signature, 
+    StackSlotData, GlobalValueData,
 };
 use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::Linkage;
+
 use instance_types::*;
 use lexer::*;
 use matching::*;
 use storage::*;
 use typec_types::*;
+
+pub const FUNC_NAMESPACE: u32 = 0;
+pub const DATA_NAMESPACE: u32 = 1;
 
 pub type Signatures = SparseMap<Func, Signature>;
 
@@ -30,6 +36,7 @@ pub struct CirBuilderContext {
     block_lookup: SecondaryMap<mir::Block, PackedOption<ir::Block>>,
     stack_slot_lookup: SecondaryMap<mir::StackSlot, PackedOption<ir::StackSlot>>,
     variable_set: EntitySet<Variable>,
+    used_data_lookup: SecondaryMap<Global, PackedOption<ir::GlobalValue>>,
 }
 
 impl CirBuilderContext {
@@ -42,6 +49,7 @@ impl CirBuilderContext {
             block_lookup: SecondaryMap::new(),
             stack_slot_lookup: SecondaryMap::new(),
             variable_set: EntitySet::new(),
+            used_data_lookup: SecondaryMap::new(),
         }
     }
 
@@ -56,6 +64,7 @@ impl CirBuilderContext {
         self.block_lookup.clear();
         self.stack_slot_lookup.clear();
         self.variable_set.clear();
+        self.used_data_lookup.clear();
     }
 }
 
@@ -103,13 +112,29 @@ impl CirBuilder<'_> {
 
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
-            InstKind::PatternCheck(values) => {
-                let mut result = self.builder.ins().bconst(ir::types::B1, true);
-                for &elem in self.func_ctx.value_slices.get(values) {
-                    let value = self.cir_builder_context.value_lookup[elem].unwrap();
-                    result = self.builder.ins().band(value, result);
-                }
-                self.cir_builder_context.value_lookup[inst.value.unwrap()] = result.into();
+            InstKind::GlobalAccess(global) => {
+                let global_value = if let Some(gv) = self.cir_builder_context.used_data_lookup[global].expand() {
+                    gv
+                } else {
+                    // apparently this is how cranelift does it in JITModule and module
+                    let ext_func_data = GlobalValueData::Symbol {
+                        name: ExternalName::User { 
+                            namespace: DATA_NAMESPACE, 
+                            index: global.as_u32(), 
+                        },
+                        offset: Imm64::new(0),  
+                        colocated: false,
+                        tls: false,
+                    };
+                    let func_ref = self.builder.func.create_global_value(ext_func_data);
+                    self.cir_builder_context.used_data_lookup[global] = func_ref.into();
+                    func_ref
+                };
+
+                let target_value = inst.value.unwrap();
+                let repr = self.repr_of(target_value);
+                let value = self.builder.ins().global_value(repr, global_value);
+                self.cir_builder_context.value_lookup[target_value] = value.into();
             }
             InstKind::BitCast(value) => {
                 let target_value = inst.value.unwrap();
@@ -178,7 +203,7 @@ impl CirBuilder<'_> {
                         };
 
                         let ext_func_data = ExtFuncData {
-                            name: ExternalName::user(0, func.as_u32()),
+                            name: ExternalName::user(FUNC_NAMESPACE, func.as_u32()),
                             signature,
                             colocated: !self.funcs[func].flags.contains(FuncFlags::EXTERNAL),
                         };
@@ -537,16 +562,33 @@ impl CirBuilder<'_> {
         if flags.contains(MirFlags::ASSIGNABLE) {
             let variable = Variable::new(target.index());
             let target_ir = self.builder.use_var(variable);
-            let value = self.set_bit_field(target_ir, value, offset);
+            let value = self.set_bit_field_low(target_ir, value, offset);
             self.builder.def_var(variable, value);
         } else {
-            let target_ir = self.use_value(target);
-            let value = self.set_bit_field(target_ir, value, offset);
+            let value = self.set_bit_field(target, value, offset);
             self.cir_builder_context.value_lookup[target] = value.into();
         }
     }
 
     fn set_bit_field(
+        &mut self,
+        target: Value,
+        value: ir::Value,
+        offset: i32,
+    ) -> ir::Value {
+        let target_ty = self.repr_of(target);
+        let value_ty = self.builder.func.dfg.value_type(value);
+
+        if target_ty == value_ty {
+            return value;
+        }
+
+        let target = self.use_value(target);
+
+        self.set_bit_field_low(target, value, offset)
+    }
+
+    fn set_bit_field_low(
         &mut self,
         mut target: ir::Value,
         mut value: ir::Value,
