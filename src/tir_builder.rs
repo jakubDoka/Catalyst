@@ -88,6 +88,9 @@ impl MainTirBuilder<'_> {
                 continue;
             };
             self.func_bodies[init] = self.tir_data.clone();
+            self.to_compile.push((init, TyList::reserved_value()));
+            self.global_map.insert(self.globals[global].id, global);
+            // self.initializers.push(init); // this is performed during dead code elimination
         }
     }
 

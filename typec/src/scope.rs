@@ -382,6 +382,10 @@ impl<'a> ScopeBuilder<'a> {
                     | call_conv
             };
 
+            if is_entry.is_some() {
+                self.initializers.push((func, None.into()));
+            }
+
             if flags.contains(FuncFlags::ENTRY | FuncFlags::GENERIC) {
                 self.diagnostics.push(TyError::GenericEntry {
                     tag: self.ast_data.nodes[is_entry.unwrap()].span,

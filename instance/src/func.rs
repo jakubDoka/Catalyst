@@ -62,7 +62,7 @@ impl<'a> MirBuilder<'a> {
         }
         self.func_ctx.select_block(entry_point);
 
-        let value = self.block(body, self.return_dest)?;
+        let value = self.expr(body, self.return_dest)?;
 
         if !self.func_ctx.is_terminated() {
             if sig.ret == self.builtin_types.nothing {

@@ -22,9 +22,7 @@ use lexer::*;
 use matching::*;
 use storage::*;
 use typec_types::*;
-
-pub const FUNC_NAMESPACE: u32 = 0;
-pub const DATA_NAMESPACE: u32 = 1;
+use incr::*;
 
 pub type Signatures = SparseMap<Func, Signature>;
 

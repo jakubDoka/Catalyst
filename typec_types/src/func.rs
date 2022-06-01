@@ -5,6 +5,7 @@ use storage::*;
 
 use crate::{jit::Macro, *};
 
+pub type Initializers = Vec<(Func, PackedOption<Global>)>;
 pub type ToCompile = Vec<(Func, TyList)>;
 pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
 pub type Funcs = PrimaryMap<Func, FuncEnt>;

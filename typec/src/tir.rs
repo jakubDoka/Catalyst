@@ -16,7 +16,7 @@ impl TirBuilder<'_> {
         self.globals[self.global].ty = ret;
 
         let func_ent = FuncEnt {
-            id: ID(0),
+            id: ID::new("<global>") + self.globals[self.global].id,
             parent: None.into(),
             flags: FuncFlags::ANONYMOUS,
         };
@@ -1408,8 +1408,8 @@ impl TirBuilder<'_> {
             self.tir_data.ents.push(copy)
         } else if let Some(global) = value.pointer.may_read::<Global>() {
             let kind = TirKind::GlobalAccess(global);
-            let ty = self.globals[global].ty;
-            let ent = TirEnt::new(kind, ty, span);
+            let GlobalEnt { ty, mutable, .. } = self.globals[global];
+            let ent = TirEnt::with_flags(kind, ty, TirFlags::ASSIGNABLE & mutable, span);
             self.tir_data.ents.push(ent)
         } else {
             todo!("emit error");

@@ -55,6 +55,8 @@ file "src/state.rs" {
         mut ToLink
         mut Macros
         mut Globals
+        mut GlobalMap
+        mut Initializers
 
         host_isa: `Box<dyn TargetIsa>`
         Sources
@@ -85,6 +87,7 @@ file "src/state.rs" {
         mut Signatures
         mut GenerationContext
         mut FuncInstances
+        mut GlobalMap
         
         passed mut IncrModules
         passed mut IncrFuncs
@@ -206,7 +209,8 @@ file "typec/src/state.rs" {
         mut Macros
         mut ToLink
         mut Globals
-        
+        mut Initializers
+
         BuiltinTypes
         Sources
         AstData

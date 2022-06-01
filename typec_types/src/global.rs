@@ -2,6 +2,7 @@ use crate::*;
 use lexer::*;
 use storage::*;
 
+pub type GlobalMap = Map<Global>;
 pub type GlobalData = StackMap<GlobalBytes, u8>;
 pub type Globals = PrimaryMap<Global, GlobalEnt>;
 

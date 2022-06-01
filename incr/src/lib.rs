@@ -1,6 +1,8 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 
+#![feature(bool_to_option)]
+
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{Signature, SourceLoc},
@@ -15,6 +17,9 @@ use module_types::*;
 
 pub type IncrFuncs = Map<IncrFunc>;
 pub type IncrModules = Map<IncrModule>;
+
+pub const FUNC_NAMESPACE: u32 = 0;
+pub const DATA_NAMESPACE: u32 = 1;
 
 #[derive(Default)]
 pub struct Incr {
@@ -179,8 +184,8 @@ pub struct IncrFunc {
 }
 
 impl IncrFunc {
-    pub fn dependencies(&self) -> impl Iterator<Item = ID> + '_ {
-        self.reloc_records.iter().map(|r| r.name)
+    pub fn function_dependencies(&self) -> impl Iterator<Item = ID> + '_ {
+        self.reloc_records.iter().filter_map(|r| (r.namespace == FUNC_NAMESPACE).then_some(r.name))
     }
 }
 

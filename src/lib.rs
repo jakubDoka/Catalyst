@@ -20,7 +20,7 @@ pub use generator::GenerationContext;
 
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{Type, ExternalName};
+use cranelift_codegen::ir::{Type, ExternalName, Signature};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{Flags, Configurable};
 use cranelift_codegen::{Context, MachReloc};
@@ -31,8 +31,9 @@ use cranelift_module::{Module, Linkage, DataContext};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use errors::Diagnostics;
-use incr::{Incr, IncrFunc, IncrRelocRecord};
+use incr::Incr;
 use instance::*;
+use incr::*;
 
 use instance::func::{MirBuilderContext};
 use instance::repr::{build_builtin_reprs, build_reprs};
@@ -53,6 +54,8 @@ use matching::*;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Instant, SystemTime};
+
+pub const CATALYST_ENTRY: &str = "__catalyst_entry__";
 
 pub type TyOrder = Vec<Ty>;
 pub type CompileResults = SecondaryMap<Func, CompileResult>;
@@ -139,6 +142,7 @@ pub struct Compiler {
     // globals
     globals: Globals,
     _global_data: GlobalData,
+    global_map: GlobalMap,
 
     // jit
     _jit_module: JITModule,
@@ -146,7 +150,6 @@ pub struct Compiler {
     _jit_compile_results: SparseMap<Func, CompileResult>,
 
     // generation
-    entry_id: Option<ID>,
     object_module: ObjectModule,
     triple: Triple,
     reprs: Reprs,
@@ -159,6 +162,7 @@ pub struct Compiler {
     context: Context,
     func_ctx: FuncCtx,
     generation_context: GenerationContext,
+    initializers: Initializers,
 }
 
 impl Compiler {
@@ -280,12 +284,12 @@ impl Compiler {
 
             globals: Globals::new(),
             _global_data: GlobalData::new(),
+            global_map: GlobalMap::new(),
 
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
             host_isa,
                         
-            entry_id: None,
             object_module,
             triple,
             reprs,
@@ -298,6 +302,7 @@ impl Compiler {
             context: Context::new(),
             func_ctx: FuncCtx::new(),
             generation_context: GenerationContext::new(),
+            initializers: Initializers::new(),
         }
     }
 
@@ -431,7 +436,7 @@ impl Compiler {
     /// Though this may require cloning type context.
     fn generate(&mut self) {
         time_report!("generating");
-        self.entry_id = generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa()).generate();
+        generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa()).generate();
     }
 
     /// Only reachable functions are being included in final executable. 
@@ -446,10 +451,10 @@ impl Compiler {
         let mut frontier = Vec::with_capacity(self.to_compile.len());
         let mut globals = Vec::with_capacity(self.globals.len());
 
-        if let Some(entry_id) = self.entry_id {
-            let &entry_func = self.func_instances.get(entry_id).unwrap();
-            frontier.push(entry_func)
-        }
+        frontier.extend(self.initializers.iter().map(|(id, _)| id));
+
+        // explanted after while loop 
+        self.initializers.reverse();
         
         let mut i = 0;
         while let Some(&func) = frontier.get(i) {
@@ -476,6 +481,8 @@ impl Compiler {
                         }
                         
                         globals.push(global);
+                        frontier.push(self.globals[global].init);
+                        self.initializers.push((self.globals[global].init, Some(global).into()));
                     }
                     _ => unreachable!()
                 }
@@ -483,6 +490,12 @@ impl Compiler {
 
             i += 1;
         }
+
+        // firs we reverse the initializers and then we push global initializers
+        // and then vi reverse again. This ensures ordering where all globals are 
+        // initialized be before entrypoint functions and entrypoint functions are
+        // also preserve the correct order.
+        self.initializers.reverse();
 
         let mut to_link = Vec::with_capacity(frontier.len());
 
@@ -508,7 +521,7 @@ impl Compiler {
         global_lookup.resize(self.globals.len());
         let system_call_conv = self.object_module.isa().default_call_conv();
 
-        let (globals, to_compile, to_link) = self.collect_used_funcs();
+        let (globals, mut to_compile, to_link) = self.collect_used_funcs();
         let mut name = String::new();
 
         for global in globals {
@@ -519,7 +532,8 @@ impl Compiler {
                 id.to_ident(&mut name);
             }
             let global_ref = self.object_module
-                .declare_data(&name, Linkage::Export, global_ent.mutable, false).unwrap();
+                .declare_data(&name, Linkage::Export, true, false)
+                .unwrap();
             global_lookup[global] = PackedOption::from(global_ref);
             
             if let Some(_data) = global_ent.bytes.expand() {
@@ -549,7 +563,6 @@ impl Compiler {
                 &self.types, 
                 system_call_conv,
             );
-            println!("{} {}", name, signature);
             let func_id = self.object_module.declare_function(name, Linkage::Import, &signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
@@ -566,6 +579,72 @@ impl Compiler {
             let func_id = self.object_module.declare_function(&name, linkage, signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
+        }
+
+        // declare entrypoint
+        {
+            let entry_point = self.object_module.declare_function(
+                CATALYST_ENTRY, 
+                Linkage::Export, 
+                &Signature::new(self.object_module.isa().default_call_conv()),
+            ).unwrap();
+
+            let func = self.funcs.push(Default::default());
+
+            func_lookup[func] = PackedOption::from(entry_point);
+
+            {
+                self.func_ctx.clear();
+    
+                let entry = self.func_ctx.create_block();
+                self.func_ctx.select_block(entry);
+    
+                for &(func, global) in self.initializers.iter() {
+                    if let Some(global) = global.expand() {
+                        let ty = self.globals[global].ty;
+                        let access = {
+                            let value = self.func_ctx.values.push(ValueEnt::flags(ty, MirFlags::POINTER));
+                            let kind = InstKind::GlobalAccess(global);
+                            let ent = InstEnt::new(kind, value.into());
+                            self.func_ctx.add_inst(ent);
+                            value
+                        };
+                        
+                        let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);        
+                        if has_sret {
+                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let args = self.func_ctx.value_slices.push(&[access]);
+                            let kind = InstKind::Call(func, args);
+                            let ent = InstEnt::new(kind, return_value.into());
+                            self.func_ctx.add_inst(ent);
+                        } else {
+                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let kind = InstKind::Call(func, ValueList::reserved_value());
+                            let ent = InstEnt::new(kind, return_value.into());
+                            self.func_ctx.add_inst(ent);
+                            {
+                                let kind = InstKind::Assign(return_value);
+                                let ent = InstEnt::new(kind, access.into());
+                                self.func_ctx.add_inst(ent);
+                            }
+                        }
+                    } else {
+                        let return_value = self.func_ctx.values.push(ValueEnt::repr(self.builtin_types.int));
+                        let kind = InstKind::Call(func, ValueList::reserved_value());
+                        let ent = InstEnt::new(kind, return_value.into());
+                        self.func_ctx.add_inst(ent);    
+                    }
+                }
+    
+                self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
+            }
+
+            self.context.func.signature = Signature::new(self.object_module.isa().default_call_conv());
+
+            generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa())
+                .build_cir_and_emit(func, func, false);
+            
+            to_compile.push(func);
         }
 
         let mut reloc_temp = vec![];
@@ -602,7 +681,7 @@ impl Compiler {
                 &compile_result.bytes, 
                 &reloc_temp
             ).unwrap();
-        }
+        }        
     }
 
     /// All compiled functions are saved. That means their byte-code 
@@ -625,13 +704,7 @@ impl Compiler {
             return;
         }
 
-        let mut entry = "/entry:".to_string();
-        let Some(entry_id) = self.entry_id else {
-            println!("{ERR}|> program is missing entry point{END}");
-            exit!();
-        };
-        
-        entry_id.to_ident(&mut &mut entry);
+        let entry = format!("/entry:{CATALYST_ENTRY}");        
 
         let output = cc::windows_registry::find(&self.triple.to_string(), "link.exe")
             .unwrap()

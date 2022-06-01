@@ -10,6 +10,7 @@ fn hello() {
 }
 
 let CONSTANT = 1
+let STRUCT_CONSTANT = init_something() 
 
 #entry
 fn main() -> int {
@@ -96,14 +97,17 @@ fn main() -> int {
         return 17
     }
 
-    
     if CONSTANT != 1 {
         return 18
     }
 
+    if STRUCT_CONSTANT.a != 0 {
+        return 19
+    }
+
     putchar('h')
-    exit(-34)
-    
+    exit(-34)    
+
     0
 }
 

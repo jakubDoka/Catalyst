@@ -14,7 +14,7 @@ pub mod global;
 pub use error::TyError;
 pub use func::{
     Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, FuncMetaData, Funcs, Sig, ToCompile,
-    ToLink, Macros, FuncInstances,
+    ToLink, Macros, FuncInstances, Initializers,
 };
 pub use graph::Graph;
 pub use tir::{
@@ -27,7 +27,7 @@ pub use ty::{
     TyGraph,
 };
 pub use global::{
-    Global, GlobalEnt, Globals, GlobalData, GlobalBytes,
+    Global, GlobalEnt, Globals, GlobalData, GlobalBytes, GlobalMap
 };
 
 #[macro_export]
