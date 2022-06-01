@@ -7,11 +7,11 @@ use module_types::*;
 use crate::{TyError, *};
 
 impl TirBuilder<'_> {
-    pub fn build_global(&mut self, global: Global) -> errors::Result<Func> {
+    pub fn global(&mut self, global: Global) -> errors::Result<Func> {
         self.global = global;
 
         let ast = self.scope_context.global_ast[self.global];
-        let body = self.build_expr(ast)?;
+        let body = self.expr(ast)?;
         let ret = self.tir_data.ents[body].ty;
 
         self.globals[self.global].ty = ret;
@@ -37,7 +37,7 @@ impl TirBuilder<'_> {
         Ok(func)
     }
 
-    pub fn build_func(&mut self, func: Func) -> errors::Result {
+    pub fn func(&mut self, func: Func) -> errors::Result {
         self.func = func;
         let FuncMetaData {
             kind,
@@ -70,7 +70,7 @@ impl TirBuilder<'_> {
             self.scope.push_item("Self", ScopeItem::new(ty, span));
         }
 
-        self.build_generics(params, generics);
+        self.generics(params, generics);
 
         let args = {
             let ast_args = &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
@@ -105,7 +105,7 @@ impl TirBuilder<'_> {
             self.tir_data.cons.push(&tir_args)
         };
 
-        let root = self.build_block(body_ast)?;
+        let root = self.block(body_ast)?;
         self.func_meta[self.func].body = root;
         self.func_meta[self.func].args = args;
 
@@ -133,7 +133,7 @@ impl TirBuilder<'_> {
         Ok(())
     }
 
-    fn build_generics(&mut self, params: TyList, generics: Ast) {
+    fn generics(&mut self, params: TyList, generics: Ast) {
         if generics.is_reserved_value() {
             return;
         }
@@ -169,7 +169,7 @@ impl TirBuilder<'_> {
         }
     }
 
-    fn build_block(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn block(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
 
         self.tir_stack.mark_frame();
@@ -178,7 +178,7 @@ impl TirBuilder<'_> {
         let mut final_expr = None;
         let mut terminating = false;
         for &stmt in self.ast_data.children(ast) {
-            let Ok(expr) = self.build_expr(stmt) else {
+            let Ok(expr) = self.expr(stmt) else {
                 continue; // Recover here
             };
             self.tir_stack.push(expr);
@@ -211,27 +211,27 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn expr(&mut self, ast: Ast) -> errors::Result<Tir> {
         let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ast];
         let expr = match kind {
-            AstKind::Unary => self.build_unary(ast)?,
-            AstKind::Binary => self.build_binary(ast)?,
-            AstKind::Ident => self.build_ident(ast)?,
-            AstKind::If => self.build_if(ast)?,
-            AstKind::Return => self.build_return(ast)?,
-            AstKind::Int => self.build_int(ast)?,
-            AstKind::Bool => self.build_bool(ast)?,
-            AstKind::Char => self.build_char(ast)?,
-            AstKind::Variable(mutable) => self.build_variable(mutable, ast)?,
-            AstKind::Constructor => self.build_constructor(ast)?,
-            AstKind::DotExpr => self.build_dot_expr(ast)?,
-            AstKind::Call => self.build_call(ast)?,
-            AstKind::Block => self.build_block(ast)?,
-            AstKind::Loop => self.build_loop(ast)?,
-            AstKind::Break => self.build_break(ast)?,
-            AstKind::Deref => self.build_deref(ast)?,
-            AstKind::BitCast => self.build_bit_cast(ast)?,
-            AstKind::Match => self.build_match(ast)?,
+            AstKind::Unary => self.unary(ast)?,
+            AstKind::Binary => self.binary(ast)?,
+            AstKind::Ident => self.ident(ast)?,
+            AstKind::If => self.r#if(ast)?,
+            AstKind::Return => self.r#return(ast)?,
+            AstKind::Int => self.int(ast)?,
+            AstKind::Bool => self.bool(ast)?,
+            AstKind::Char => self.char(ast)?,
+            AstKind::Variable(mutable) => self.variable(mutable, ast)?,
+            AstKind::Constructor => self.constructor(ast)?,
+            AstKind::DotExpr => self.dot_expr(ast)?,
+            AstKind::Call => self.call(ast)?,
+            AstKind::Block => self.block(ast)?,
+            AstKind::Loop => self.r#loop(ast)?,
+            AstKind::Break => self.r#break(ast)?,
+            AstKind::Deref => self.deref(ast)?,
+            AstKind::BitCast => self.bit_cast(ast)?,
+            AstKind::Match => self.r#match(ast)?,
             AstKind::Error => return Err(()),
             _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
@@ -242,12 +242,12 @@ impl TirBuilder<'_> {
         Ok(expr)
     }
 
-    fn build_match(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#match(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[expr, body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let expr = self.build_expr(expr)?;
+        let expr = self.expr(expr)?;
         let span = self.ast_data.nodes[ast].span;
 
         self.tir_pattern_graph.clear();
@@ -259,7 +259,7 @@ impl TirBuilder<'_> {
                 unreachable!();
             };
 
-            drop(self.build_pattern(pat, expr, &mut temp, 1, span));
+            drop(self.pattern(pat, expr, &mut temp, 1, span));
 
             // println!("{}", temp.iter()
             //     .map(|r| self.tir_data.ents[r.meta].ty)
@@ -288,7 +288,7 @@ impl TirBuilder<'_> {
                         }
                     }
 
-                    let expr = self.build_expr(body)?;
+                    let expr = self.expr(body)?;
                     self.tir_stack.push(expr);
 
                     self.scope.pop_frame();
@@ -321,7 +321,7 @@ impl TirBuilder<'_> {
 
         self.tir_pattern_graph.build_graph().unwrap();
 
-        let branching = self.build_match_branching()?;
+        let branching = self.match_branching()?;
         Ok(self.tir_data.ents.push({
             let kind = TirKind::Match(expr, branching);
             let ty = self.tir_data.ents[branching].ty;
@@ -330,11 +330,11 @@ impl TirBuilder<'_> {
         }))
     }
 
-    fn build_match_branching(&mut self) -> errors::Result<Tir> {
-        self.build_match_branching_recursive(self.tir_pattern_graph.root())
+    fn match_branching(&mut self) -> errors::Result<Tir> {
+        self.match_branching_recursive(self.tir_pattern_graph.root())
     }
 
-    fn build_match_branching_recursive(&mut self, root: PatternNode) -> errors::Result<Tir> {
+    fn match_branching_recursive(&mut self, root: PatternNode) -> errors::Result<Tir> {
         let root_ent = self.tir_pattern_graph.node(root);
 
         // if !root_ent.meta.is_reserved_value() {
@@ -346,7 +346,7 @@ impl TirBuilder<'_> {
             return Ok(root_ent.meta);
         };
 
-        let mut base = self.build_match_branching_recursive(last)?;
+        let mut base = self.match_branching_recursive(last)?;
 
         for i in (0..self.tir_pattern_graph.slice(root_ent.children).len() - 1).rev() {
             let branch = self.tir_pattern_graph.slice(root_ent.children)[i];
@@ -378,7 +378,7 @@ impl TirBuilder<'_> {
             };
 
             base = {
-                let expr = self.build_match_branching_recursive(branch)?;
+                let expr = self.match_branching_recursive(branch)?;
                 let flags = self.tir_data.ents[base].flags & flags;
                 let kind = TirKind::If(comparison, expr, base.into());
                 let expr_ty = self.tir_data.ents[expr].ty;
@@ -396,7 +396,7 @@ impl TirBuilder<'_> {
         Ok(base)
     }
 
-    fn build_pattern(
+    fn pattern(
         &mut self,
         ast: Ast,
         expr: Tir,
@@ -412,7 +412,7 @@ impl TirBuilder<'_> {
                     unreachable!();
                 };
 
-                let low_expr = self.build_path_match(expr, path, branch, depth)?;
+                let low_expr = self.path_match(expr, path, branch, depth)?;
                 let ty = self.tir_data.ents[low_expr].ty;
 
                 let TyKind::Struct(fields) = self.types[ty].kind else {
@@ -469,7 +469,7 @@ impl TirBuilder<'_> {
                     }
                     last_i = i + 1;
 
-                    drop(self.build_pattern(
+                    drop(self.pattern(
                         field,
                         field_access,
                         branch,
@@ -491,7 +491,7 @@ impl TirBuilder<'_> {
                 }
             }
 
-            AstKind::Path => drop(self.build_path_match(expr, ast, branch, depth)?),
+            AstKind::Path => drop(self.path_match(expr, ast, branch, depth)?),
 
             AstKind::Ident => {
                 let id = self.sources.id_of(span);
@@ -512,7 +512,7 @@ impl TirBuilder<'_> {
             }
 
             AstKind::Int | AstKind::Bool | AstKind::Char => {
-                let tir = self.build_expr(ast)?;
+                let tir = self.expr(ast)?;
                 let ty = self.tir_data.ents[expr].ty;
                 self.infer_tir_ty(tir, ty, |_, got, loc| TyError::PatternTypeMismatch {
                     loc,
@@ -550,7 +550,7 @@ impl TirBuilder<'_> {
         Ok(())
     }
 
-    fn build_path_match(
+    fn path_match(
         &mut self,
         expr: Tir,
         ast: Ast,
@@ -620,13 +620,13 @@ impl TirBuilder<'_> {
         }
     }
 
-    fn build_bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[expr, ty] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let expr = self.build_expr(expr);
+        let expr = self.expr(expr);
         let ty = ty_parser!(self).parse_type(ty);
 
         let (expr, ty) = (expr?, ty?); // recovery
@@ -638,9 +638,9 @@ impl TirBuilder<'_> {
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn build_deref(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn deref(&mut self, ast: Ast) -> errors::Result<Tir> {
         let expr = self.ast_data.children(ast)[0];
-        let target = self.build_expr(expr)?;
+        let target = self.expr(expr)?;
         let ty = self.tir_data.ents[target].ty;
 
         if !matches!(self.types[ty].kind, TyKind::Ptr(..)) {
@@ -654,7 +654,7 @@ impl TirBuilder<'_> {
         Ok(self.deref_ptr(target))
     }
 
-    fn build_char(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn char(&mut self, ast: Ast) -> errors::Result<Tir> {
         let literal_value = char_value(self.sources, self.ast_data.nodes[ast].span).unwrap();
         let span = self.ast_data.nodes[ast].span;
         let ent = TirEnt::new(
@@ -665,12 +665,12 @@ impl TirBuilder<'_> {
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn build_unary(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn unary(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[op, expr] = self.ast_data.children(ast) else {
             unreachable!()
         };
 
-        let expr = self.build_expr(expr)?;
+        let expr = self.expr(expr)?;
         let operand_ty = self.tir_data.ents[expr].ty;
 
         let func = {
@@ -698,7 +698,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_break(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#break(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[value] = self.ast_data.children(ast) else {
             unreachable!();
@@ -707,7 +707,7 @@ impl TirBuilder<'_> {
         let value = if value.is_reserved_value() {
             None
         } else {
-            Some(self.build_expr(value)?)
+            Some(self.expr(value)?)
         };
 
         let loop_expr = self.scope.get::<Tir>(self.diagnostics, "<loop>", span)?;
@@ -757,7 +757,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_loop(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#loop(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[body_ast] = self.ast_data.children(ast) else {
             unreachable!();
@@ -774,7 +774,7 @@ impl TirBuilder<'_> {
         self.scope
             .push_item("<loop>", ScopeItem::new(loop_slot, span));
 
-        let block = self.build_block(body_ast)?;
+        let block = self.block(body_ast)?;
 
         self.scope.pop_item();
 
@@ -794,7 +794,7 @@ impl TirBuilder<'_> {
         Ok(loop_slot)
     }
 
-    fn build_call(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn call(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[caller, ..] = self.ast_data.children(ast) else {
             unreachable!();
         };
@@ -805,7 +805,7 @@ impl TirBuilder<'_> {
                     unreachable!();
                 };
 
-                let expr = self.build_expr(expr)?;
+                let expr = self.expr(expr)?;
                 let ty = {
                     let ty = self.tir_data.ents[expr].ty;
                     self.types.caller_of(ty)
@@ -862,7 +862,7 @@ impl TirBuilder<'_> {
             self.ast_data.children(ast)[1..]
                 .iter()
                 .fold(Ok(()), |acc, &arg| {
-                    self.build_expr(arg).map(|arg| vec.push(arg)).and(acc)
+                    self.expr(arg).map(|arg| vec.push(arg)).and(acc)
                 })?;
             vec
         };
@@ -1032,12 +1032,12 @@ impl TirBuilder<'_> {
         self.tir_data.ents.push(deref)
     }
 
-    fn build_dot_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn dot_expr(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[header, field] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let mut header = self.build_expr(header)?;
+        let mut header = self.expr(header)?;
 
         let ty = self.tir_data.ents[header].ty;
         let base_ty = self.types.base_of(ty);
@@ -1062,7 +1062,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_bool(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn bool(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let ty = self.builtin_types.bool;
         let value = {
@@ -1075,7 +1075,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_constructor(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn constructor(&mut self, ast: Ast) -> errors::Result<Tir> {
         let &[name, body] = self.ast_data.children(ast) else {
             unreachable!("{:?}", self.ast_data.children(ast));
         };
@@ -1094,7 +1094,7 @@ impl TirBuilder<'_> {
             let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
                 unreachable!();
             };
-            let value = self.build_constructor_low(ty, body)?;
+            let value = self.constructor_low(ty, body)?;
             let flag = self.int_lit(index as u128 - 1, discriminant);
 
             let args = self.tir_data.cons.push(&[flag, value]);
@@ -1104,11 +1104,11 @@ impl TirBuilder<'_> {
             Ok(self.tir_data.ents.push(ent))
         } else {
             let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
-            self.build_constructor_low(ty, body)
+            self.constructor_low(ty, body)
         }
     }
 
-    fn build_constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
+    fn constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
         let AstEnt { span, kind, .. } = self.ast_data.nodes[body];
         let TyEnt { flags, .. } = self.types[ty];
 
@@ -1150,8 +1150,8 @@ impl TirBuilder<'_> {
             } = self.ty_comps[field];
 
             let Ok(value) = (match self.ast_data.nodes[expr].kind {
-                AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.build_constructor_low(field_ty, expr),
-                _ => self.build_expr(expr),
+                AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.constructor_low(field_ty, expr),
+                _ => self.expr(expr),
             }) else {
                 continue;
             };
@@ -1239,7 +1239,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_variable(&mut self, mutable: bool, ast: Ast) -> errors::Result<Tir> {
+    fn variable(&mut self, mutable: bool, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[name, value] = self.ast_data.children(ast) else {
             unreachable!();
@@ -1251,7 +1251,7 @@ impl TirBuilder<'_> {
             ID::new(str)
         };
 
-        let value = self.build_expr(value)?;
+        let value = self.expr(value)?;
         self.tir_data.ents[value]
             .flags
             .insert(TirFlags::ASSIGNABLE & mutable);
@@ -1270,7 +1270,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_int(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn int(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let ty = {
             let str = self.sources.display(span);
@@ -1291,7 +1291,7 @@ impl TirBuilder<'_> {
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn build_return(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#return(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[value] = self.ast_data.children(ast) else {
             unreachable!()
@@ -1308,7 +1308,7 @@ impl TirBuilder<'_> {
             })?;
             None
         } else {
-            let value = self.build_expr(value)?;
+            let value = self.expr(value)?;
             self.infer_tir_ty(value, ret, |s, got, loc| {
                 let &[.., ret_ast, _] = s.ast_data.children(s.scope_context.func_ast[s.func]) else {
                     unreachable!();
@@ -1338,24 +1338,24 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_if(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#if(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[cond, then, otherwise] = self.ast_data.children(ast) else {
             unreachable!()
         };
 
-        let cond = self.build_expr(cond)?;
+        let cond = self.expr(cond)?;
         drop(
             self.infer_tir_ty(cond, self.builtin_types.bool, |_, got, loc| {
                 TyError::IfConditionTypeMismatch { got, loc }
             }),
         );
 
-        let then = self.build_block(then);
+        let then = self.block(then);
         let otherwise = if otherwise.is_reserved_value() {
             None
         } else {
-            Some(self.build_block(otherwise)?)
+            Some(self.block(otherwise)?)
         };
         let then = then?;
 
@@ -1391,7 +1391,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_ident(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn ident(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let id = self.sources.id_of(span);
 
@@ -1420,7 +1420,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn build_binary(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn binary(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[left, op, right] = self.ast_data.children(ast) else {
             unreachable!()
@@ -1428,8 +1428,8 @@ impl TirBuilder<'_> {
 
         // we walk the ast even if something fails for better error diagnostics
         let (left, right) = {
-            let left = self.build_expr(left);
-            let right = self.build_expr(right);
+            let left = self.expr(left);
+            let right = self.expr(right);
             (left?, right?)
         };
 
@@ -1440,7 +1440,7 @@ impl TirBuilder<'_> {
             let op_id = {
                 let str = self.sources.display(op_span);
                 if str == "=" {
-                    return self.build_assign(left, right, span);
+                    return self.assign(left, right, span);
                 }
 
                 ID::new(str)
@@ -1495,7 +1495,7 @@ impl TirBuilder<'_> {
         Ok(tir)
     }
 
-    fn build_assign(&mut self, left: Tir, right: Tir, span: Span) -> errors::Result<Tir> {
+    fn assign(&mut self, left: Tir, right: Tir, span: Span) -> errors::Result<Tir> {
         let TirEnt {
             ty,
             flags,

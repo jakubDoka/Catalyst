@@ -142,7 +142,8 @@ impl<'a> MirBuilder<'a> {
             unreachable!();
         };
         
-        let dest = self.unwrap_dest(tir, dest).or(dest);
+        let on_stack = self.on_stack(tir);
+        let dest = self.unwrap_dest_low(ty, on_stack, dest).or(dest);
 
         let value = self.flagged_value_from_ty(ty, MirFlags::POINTER);
 
@@ -152,9 +153,12 @@ impl<'a> MirBuilder<'a> {
             self.func_ctx.add_inst(ent);
         }
 
-        self.gen_assign(value, dest);
-
-        Ok(dest)
+        if on_stack {
+            self.gen_assign(value, dest);
+            Ok(dest)
+        } else {
+            Ok(Some(value))
+        }
     }
 
     fn match_block(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {

@@ -35,7 +35,7 @@ impl MainTirBuilder<'_> {
             // }
 
             self.tir_data.clear();
-            if tir_builder!(self).build_func(func).is_err() {
+            if tir_builder!(self).func(func).is_err() {
                 continue;
             };
             // println!("{}", TirDisplay::new(
@@ -84,7 +84,7 @@ impl MainTirBuilder<'_> {
 
         for global in global_buffer.drain(..) {
             self.tir_data.clear();
-            let Ok(init) = tir_builder!(self).build_global(global) else {
+            let Ok(init) = tir_builder!(self).global(global) else {
                 continue;
             };
             self.func_bodies[init] = self.tir_data.clone();

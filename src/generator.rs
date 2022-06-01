@@ -59,8 +59,12 @@ impl Generator<'_> {
             &mut self.generation_context.builder_context
         );
 
+
         cir_builder!(self, builder, *self.isa).generate();
         
+        // if !self.func_meta[parent].name.is_reserved_value() {
+        //     println!("{}", self.sources. display(self.func_meta[parent].name));
+        // }
         // println!("{}", self.context.func.display());
 
         self.generation_context.replace_cache.replace(self.types, self.reprs);

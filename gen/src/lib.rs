@@ -130,6 +130,7 @@ impl CirBuilder<'_> {
 
                 let target_value = inst.value.unwrap();
                 let repr = self.repr_of(target_value);
+                assert!(self.func_ctx.values[target_value].flags.contains(MirFlags::POINTER));
                 let value = self.builder.ins().global_value(repr, global_value);
                 self.cir_builder_context.value_lookup[target_value] = value.into();
             }

@@ -10,7 +10,8 @@ fn hello() {
 }
 
 let CONSTANT = 1
-let STRUCT_CONSTANT = init_something() 
+let STRUCT_CONSTANT = init_something()
+let mut dangerous_int = 0
 
 #entry
 fn main() -> int {
@@ -103,6 +104,11 @@ fn main() -> int {
 
     if STRUCT_CONSTANT.a != 0 {
         return 19
+    }
+
+    dangerous_int += 1
+    if dangerous_int != 1 {
+        return 20 + dangerous_int
     }
 
     putchar('h')
