@@ -1,6 +1,6 @@
 #![feature(result_option_inspect)]
 #![feature(let_else)]
-#![feature(bool_to_option)]
+
 #![feature(let_chains)]
 #![feature(result_flattening)]
 #![feature(scoped_threads)]

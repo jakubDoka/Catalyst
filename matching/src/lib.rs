@@ -1,6 +1,6 @@
 #![feature(result_into_ok_or_err)]
 #![feature(let_else)]
-#![feature(bool_to_option)]
+
 #![feature(let_chains)]
 #![feature(result_option_inspect)]
 

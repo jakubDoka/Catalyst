@@ -1,7 +1,7 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 
-#![feature(bool_to_option)]
+
 
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},

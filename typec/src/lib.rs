@@ -1,7 +1,7 @@
 #![feature(let_else)]
 #![feature(explicit_generic_args_with_impl_trait)]
 #![feature(let_chains)]
-#![feature(bool_to_option)]
+
 #![feature(if_let_guard)]
 #![feature(inline_const_pat)]
 #![allow(incomplete_features)]

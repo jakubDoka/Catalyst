@@ -1,4 +1,4 @@
-#![feature(bool_to_option)]
+
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 

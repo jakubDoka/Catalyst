@@ -1,7 +1,7 @@
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(int_log)]
-#![feature(bool_to_option)]
+
 #![feature(let_else)]
 
 pub mod types;
