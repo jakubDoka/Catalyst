@@ -6,7 +6,10 @@
 
 pub mod types;
 
-pub use types::{BuiltinSource, Source, SourceEnt, Sources, SourcesExt, Span, Token, TokenKind};
+pub use types::{
+    BuiltinSource, Source, SourceEnt, Sources, SourcesExt, 
+    Span, Token, TokenKind, EQUAL_SIGN_PRECEDENCE,
+};
 
 pub struct Lexer<'a> {
     offset: usize,

@@ -117,11 +117,21 @@ fn main() -> int {
         return 22
     }
 
+    let fn_ptr = fn_ptr_test
+
+    if fn_ptr(1, 1) != 2 {
+        return 23
+    }
+
     putchar(40.u32() as char)
     putchar('h')
     exit(-34)    
 
     0
+}
+
+fn fn_ptr_test(a: int, b: int) -> int {
+    a + b
 }
 
 impl Loo {

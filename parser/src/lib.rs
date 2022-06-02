@@ -9,6 +9,8 @@ pub mod error;
 
 pub use error::AstError;
 
+
+
 pub struct Parser<'a> {
     next: Token,
     current: Token,
@@ -589,7 +591,7 @@ impl<'a> Parser<'a> {
 
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
-            TokenKind::Operator => match self.sources.display(self.current.span()) {
+            TokenKind::Operator(..) => match self.sources.display(self.current.span()) {
                 "*" => self.type_pointer_expr(),
                 _ => unimplemented!(
                     "unhandled token as type expr:\n{}",
@@ -650,42 +652,36 @@ impl<'a> Parser<'a> {
 
     fn expr(&mut self) -> Ast {
         let prev = self.simple_expr();
-        if self.current.kind() == TokenKind::Operator {
-            let precedence = {
-                let span = self.current.span();
-                let str = self.sources.display(span);
-                Self::precedence(str)
-            };
+        if let TokenKind::Operator(precedence) = self.current.kind() {
             self.composite_expr(prev, precedence)
         } else {
             prev
         }
     }
 
-    fn composite_expr(&mut self, mut prev: Ast, prev_precedence: usize) -> Ast {
-        while self.current.kind() == TokenKind::Operator {
+    fn composite_expr(&mut self, mut prev: Ast, prev_precedence: u8) -> Ast {
+        while let TokenKind::Operator(..) = self.current.kind() {
             let op_span = self.current.span();
             self.advance();
 
             let mut expr = self.simple_expr();
 
-            let precedence = {
-                let span = self.current.span();
-                let str = self.sources.display(span);
-                Self::precedence(str)
+            let precedence = match self.current.kind() {
+                TokenKind::Operator(precedence) => precedence,
+                _ => u8::MAX,
             };
 
             if precedence < prev_precedence {
                 expr = self.composite_expr(expr, precedence);
             }
-
+            
             let span = {
                 let start = self.data.nodes[prev].span;
                 let end = self.data.nodes[expr].span;
                 start.join(end)
             };
-
-            let op = if prev_precedence == Self::EQUAL_SIGN_PRECEDENCE && op_span.len() > 1 {
+            
+            let op = if prev_precedence == EQUAL_SIGN_PRECEDENCE && op_span.len() > 1 {
                 // transforms `a += b` into `a = a + b` for any operator ending with `=` except `==` and `!=`
                 let op = {
                     let span = op_span.slice(..op_span.len() - 1);
@@ -735,7 +731,7 @@ impl<'a> Parser<'a> {
             TokenKind::Let => self.variable(),
             TokenKind::Loop => self.loop_expr(),
             TokenKind::Break => self.break_expr(),
-            TokenKind::Operator => self.unary(),
+            TokenKind::Operator(..) => self.unary(),
             TokenKind::LeftParen => self.paren_expr(),
             TokenKind::Match => self.match_expr(),
             _ => {
@@ -751,7 +747,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Let,
                     TokenKind::Loop,
                     TokenKind::Break,
-                    TokenKind::Operator,
+                    TokenKind::Operator(0),
                     TokenKind::LeftParen,
                     TokenKind::Match,
                 ]);
@@ -1331,32 +1327,6 @@ impl<'a> Parser<'a> {
 
     fn pop_frame(&mut self) -> AstList {
         self.stack.save_and_pop_frame(&mut self.data.conns)
-    }
-
-    pub const EQUAL_SIGN_PRECEDENCE: usize = 14;
-
-    pub const INFINITE_PRECEDENCE: usize = usize::MAX;
-
-    fn precedence(op: &str) -> usize {
-        match op {
-            "*" | "/" | "%" => 3,
-            "+" | "-" => 4,
-            "<<" | ">>" => 5,
-            "<" | ">" | "<=" | ">=" => 6,
-            "==" | "!=" => 7,
-            "&" => 8,
-            "^" => 9,
-            "|" => 10,
-            "&&" => 11,
-            "||" => 12,
-            _ => {
-                if op.ends_with('=') {
-                    Self::EQUAL_SIGN_PRECEDENCE
-                } else {
-                    Self::INFINITE_PRECEDENCE
-                }
-            }
-        }
     }
 
     fn expect_many(&mut self, expected: &[TokenKind]) {

@@ -309,6 +309,46 @@ impl TyParser<'_> {
 
         combo
     }
+
+    pub fn func_pointer_of(&mut self, sig: Sig) -> Ty {
+        let id = self.id_of_sig(sig);
+
+        if let Some(&already) = self.instances.get(id) {
+            return already;
+        }
+
+        let ty_ent = TyEnt {
+            id,
+            name: Span::new(self.types[sig.ret].name.source(), 0, 0),
+            kind: TyKind::FuncPtr(sig),
+            flags: TyFlags::GENERIC & !sig.params.is_reserved_value(),
+        };
+        let ty = self.types.push(ty_ent);
+        self.instances.insert_unique(id, ty);
+
+        ty
+    }
+
+    pub fn id_of_sig(&self, sig: Sig) -> ID {
+        let mut id = ID::new("<func_pointer>");
+            
+        for &param in self.ty_lists.get(sig.params) {
+            let param = self.types[param].id;
+            id = id + param;
+        }
+
+        id = id + ID::new("<args>");
+
+        for &arg in self.ty_lists.get(sig.args) {
+            let arg = self.types[arg].id;
+            id = id + arg;
+        }
+
+        id = id + ID::new("<ret>");
+
+        let ret = self.types[sig.ret].id;
+        id + ret
+    }
 }
 
 pub fn prepare_params(params: &[Ty], types: &mut Types) {

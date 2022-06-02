@@ -26,7 +26,7 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
             // we subtract another 1.
             TyKind::Enum(.., variants) => PatternRange::new(0..ty_comps.len_of(variants) - 2),
 
-            TyKind::Ptr(..) => PatternRange::new(0..usize::MAX),
+            TyKind::Ptr(..) | TyKind::FuncPtr(..) => PatternRange::new(0..usize::MAX),
             TyKind::Int(base) => match base {
                 8 => PatternRange::new(i8::MIN..i8::MAX),
                 16 => PatternRange::new(i16::MIN..i16::MAX),
@@ -285,7 +285,7 @@ impl std::fmt::Display for TyDisplay<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TyKind {
     Param(u8, TyList, PackedOption<Ty>),
     Bound(FuncList),
@@ -295,6 +295,7 @@ pub enum TyKind {
     Instance(Ty, TyList),
     /// (inner, depth)
     Ptr(Ty, u32),
+    FuncPtr(Sig),
     Int(i16),
     Uint(i16),
     Bool,
@@ -358,6 +359,32 @@ impl Ty {
             TyKind::Ptr(ty, ..) => {
                 write!(to, "*")?;
                 ty.display(types, ty_lists, sources, to)?;
+            }
+            TyKind::FuncPtr(sig) => {
+                write!(to, "fn ")?;
+
+                if let Some((first, other)) = ty_lists.get(sig.params).split_first() {
+                    write!(to, "[")?;
+                    first.display(types, ty_lists, sources, to)?;
+                    for param in other {
+                        write!(to, ", ")?;
+                        param.display(types, ty_lists, sources, to)?;
+                    }
+                    write!(to, "] ")?;
+                }
+
+                write!(to, "(")?;
+                if let Some((first, other)) = ty_lists.get(sig.args).split_first() {
+                    first.display(types, ty_lists, sources, to)?;
+                    for result in other {
+                        write!(to, ", ")?;
+                        result.display(types, ty_lists, sources, to)?;
+                    }
+                };
+                write!(to, ")")?;
+
+                write!(to, " -> ")?;
+                sig.ret.display(types, ty_lists, sources, to)?;
             }
             TyKind::Unresolved => write!(to, "unresolved")?,
         }

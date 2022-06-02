@@ -124,7 +124,7 @@ impl Default for FuncKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Sig {
     pub params: TyList,
     pub args: TyList,

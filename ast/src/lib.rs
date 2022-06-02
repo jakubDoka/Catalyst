@@ -1,4 +1,4 @@
-use lexer::*;
+pub(self) use lexer::*;
 use storage::*;
 
 pub type AstTemp = FramedStack<Ast>;

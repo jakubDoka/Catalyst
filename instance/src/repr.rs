@@ -140,7 +140,7 @@ impl<'a> LayoutBuilder<'a> {
             TyKind::Struct(fields) => {
                 self.resolve_struct_repr(id, params, fields);
             }
-            TyKind::Ptr(..) => {
+            TyKind::Ptr(..) | TyKind::FuncPtr(..) => {
                 self.reprs[id].layout = Layout::PTR;
                 self.reprs[id].flags = ReprFlags::COPYABLE;
             }

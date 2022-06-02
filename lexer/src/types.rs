@@ -3,96 +3,178 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
+
 use logos::Logos;
 
 use storage::*;
 
 macro_rules! gen_kind {
-    ($($name:ident = $repr:literal $(= $display:literal)?,)*) => {
-        gen_kind!(low $($name = $repr $(=> $display)? => concat!("'", $repr, "'"),)*);
-    };
+    (
+        keywords {
+            $($keyword:ident = $keyword_repr:literal,)*
+        }
 
-    (low $($name:ident = $repr:literal => $display:expr $(=> $ignored:expr)?,)*) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Logos)]
+        punktation {
+            $($punktation:ident = $punktation_repr:literal,)*
+        }
+
+        literal {
+            $($literal:ident = $literal_regex:literal,)*
+        }
+
+        skipped {
+            $($skipped:ident = $skipped_regex:literal,)*
+        }
+
+        operators {
+            $(($($op_lit:literal)+) = $op_precendense:expr,)*
+        }
+    ) => {
+        #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
         pub enum TokenKind {
-            #[error]
-            Error,
-
-
-            #[regex(r"[ \r\t]+", logos::skip)]
-            Space,
-
-            #[regex(r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)", logos::skip)]
-            Comment,
-
             $(
-                #[regex($repr)]
-                $name,
+                #[token($keyword_repr)]   
+                $keyword,
             )*
 
-            None,
+            $(
+                #[token($punktation_repr)]
+                $punktation,
+            )*
+
+            $(
+                #[regex($literal_regex)]
+                $literal,
+            )*
+
+            $(
+                #[regex($skipped_regex, logos::skip)]
+                $skipped,
+            )*
+
+            $(
+                $(
+                    #[token($op_lit, |_| $op_precendense)]
+                )+
+            )*
+            Operator(u8),
+
+            #[regex(r"(\n|;)")]
+            NewLine,
+            
+            #[error]
+            Error,
             Eof,
+            None,
         }
 
         impl TokenKind {
-            pub fn as_str(&self) -> &'static str {
+            pub fn as_str(self) -> &'static str {
                 match self {
-                    $(Self::$name => concat!($display),)*
-                    Self::Error => "<error>",
-                    Self::None => "<none>",
-                    Self::Space => "<space>",
-                    Self::Eof => "<eof>",
-                    Self::Comment => "<comment>",
-                }
-            }
-        }
+                    $(
+                        TokenKind::$keyword => concat!("'", $keyword_repr, "'"),
+                    )*
+                    
+                    $(
+                        TokenKind::$punktation => concat!("'", $punktation_repr, "'"),
+                    )*
+                    
+                    $(
+                        TokenKind::$literal => stringify!($literal),
+                    )*
 
-        impl Default for TokenKind {
-            fn default() -> Self {
-                TokenKind::None
+                    $(
+                        TokenKind::$skipped => stringify!($skipped),
+                    )*
+
+                    TokenKind::Operator(..) => "Operator",
+                    TokenKind::NewLine => "'\\n' | ';'",
+                    TokenKind::Error => "<error>",
+                    TokenKind::Eof => "<eof>",
+                    TokenKind::None => "<none>",
+                }
             }
         }
     };
 }
 
 gen_kind!(
-    Fn = "fn",
-    Return = "return",
-    Use = "use",
-    Extern = "extern",
-    If = "if",
-    Else = "else",
-    Loop = "loop",
-    Break = "break",
-    Let = "let",
-    Struct = "struct",
-    Bound = "bound",
-    Enum = "enum",
-    Mut = "mut",
-    Impl = "impl",
-    As = "as",
-    Match = "match",
-    Ident = "[a-zA-Z_]\\w*" = "<ident>",
-    Operator = "[+\\-*/%<>=&|!^]+" = "<operator>",
-    Int = "\\d+((i|u)(8|16|32|64)?)?" = "<int>",
-    String = r#""(\\"|[^"])*""# = "<string>",
-    Bool = "(true|false)" = "<bool>",
-    Char = r"'(\\'|[^'])*'" = "<char>",
-    LeftCurly = "\\{" = "'{'",
-    RightCurly = "\\}" = "'}'",
-    LeftParen = "\\(" = "'('",
-    RightParen = "\\)" = "')'",
-    LeftBracket = "\\[" = "'['",
-    RightBracket = "\\]" = "']'",
-    Comma = ",",
-    Colon = ":",
-    Dot = "\\." = "'.'",
-    RightArrow = "->",
-    ThickRightArrow = "=>",
-    DoubleColon = "::",
-    Hash = "#",
-    NewLine = "(\\n|;)" = "'\\n' | ';'",
+    keywords {
+        Fn = "fn",
+        Return = "return",
+        Use = "use",
+        Extern = "extern",
+        If = "if",
+        Else = "else",
+        Loop = "loop",
+        Break = "break",
+        Let = "let",
+        Struct = "struct",
+        Bound = "bound",
+        Enum = "enum",
+        Mut = "mut",
+        Impl = "impl",
+        As = "as",
+        Match = "match",
+    }
+
+    punktation {
+        LeftCurly = "{",
+        RightCurly = "}",
+        LeftParen = "(",
+        RightParen = ")",
+        LeftBracket = "[",
+        RightBracket = "]",
+        Comma = ",",
+        Colon = ":",
+        Dot = ".",
+        RightArrow = "->",
+        ThickRightArrow = "=>",
+        DoubleColon = "::",
+        Hash = "#",
+    }
+
+    literal {
+        Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
+        Int = "[0-9]+((i|u)(8|16|32|64)?)?",
+        String = r#""(\\"|[^"])*""#,
+        Bool = "(true|false)",
+        Char = r"'(\\'|[^'])*'",
+    }
+
+    skipped {
+        Space = r"[ \r\t]+",    
+        Comment = r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)",
+    }
+
+    operators {
+        ("*" "/" "%") = 3,
+        ("+" "-") = 4,
+        ("<<" ">>") = 5,
+        ("<" ">" "<=" ">=") = 6,
+        ("==" "!=") = 7,
+        ("&") = 8,
+        ("^") = 9,
+        ("|") = 10,
+        ("&&") = 11,
+        ("||") = 12,
+        (
+            "=" "+=" 
+            "-=" "*=" 
+            "/=" "%=" 
+            "<<=" ">>=" 
+            "&=" "^=" 
+            "|="
+        ) = EQUAL_SIGN_PRECEDENCE,
+    }
 );
+
+impl Default for TokenKind {
+    fn default() -> Self {
+        TokenKind::None
+    }
+}
 
 pub type Sources = PrimaryMap<Source, SourceEnt>;
 

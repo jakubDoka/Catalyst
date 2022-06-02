@@ -75,6 +75,7 @@ impl TirEnt {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TirKind {
+    FuncPtr(Func),
     Match(Tir, Tir),
     MatchBlock(Tir),
     BitCast(Tir),
@@ -189,6 +190,9 @@ impl<'a> TirDisplay<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
+            TirKind::FuncPtr(func) => {
+                write!(f, "func_ptr {func}")?;
+            }
             TirKind::GlobalAccess(global) => {
                 write!(f, "global {}", global)?;
             }
