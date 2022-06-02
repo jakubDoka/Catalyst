@@ -399,6 +399,27 @@ pub fn create_builtin_items(
     builtin_source: &mut BuiltinSource,
     target: &mut Vec<module::ModuleItem>,
 ) {
+    for from in builtin.numbers() {
+        for to in builtin.numbers() {
+            let name = types[to].name;
+            let id = {
+                let ty = types[from].id;
+                let name = sources.id_of(name);
+                ID::owned_func(ty, name)
+            };
+            create_func(
+                name, 
+                &[from], 
+                to, 
+                id, 
+                ty_lists, 
+                funcs, 
+                func_meta, 
+                target,
+            );
+        }
+    }
+
     let comparison_operators = "== != < > <= >=";
     let math_operators = "+ - * / %";
     let integer_binary_operators = format!("{} {}", comparison_operators, math_operators);
@@ -420,15 +441,13 @@ pub fn create_builtin_items(
                 .then_some(builtin.bool)
                 .unwrap_or(ty);
             create_func(
-                op,
+                builtin_source.make_span(sources, op),
                 &[ty, ty],
                 ret,
                 id,
                 ty_lists,
                 funcs,
                 func_meta,
-                sources,
-                builtin_source,
                 target,
             );
         }
@@ -441,15 +460,13 @@ pub fn create_builtin_items(
                 ID::unary(id, ID::new(op))
             };
             create_func(
-                op,
+                builtin_source.make_span(sources, op),
                 &[ty],
                 ty,
                 id,
                 ty_lists,
                 funcs,
                 func_meta,
-                sources,
-                builtin_source,
                 target,
             );
         }
@@ -457,18 +474,15 @@ pub fn create_builtin_items(
 }
 
 fn create_func(
-    name: &str,
+    span: Span,
     args: &[Ty],
     ret: Ty,
     id: ID,
     ty_lists: &mut TyLists,
     funcs: &mut Funcs,
     func_meta: &mut FuncMeta,
-    sources: &mut Sources,
-    builtin_source: &mut BuiltinSource,
-    dest: &mut Vec<module::ModuleItem>,
+    target: &mut Vec<module::ModuleItem>,
 ) {
-    let span = builtin_source.make_span(sources, name);
     let sig = Sig {
         args: ty_lists.push(args),
         ret,
@@ -490,7 +504,7 @@ fn create_func(
     };
 
     let item = module::ModuleItem::new(id, func, span);
-    dest.push(item);
+    target.push(item);
 }
 
 pub fn int_value(sources: &Sources, span: Span, signed: bool) -> u128 {

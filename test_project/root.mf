@@ -18,7 +18,6 @@ fn main() -> int {
     if other(1, 2, 3) != 7 {
         return 1
     }
-
     
     if structs::bti(true) != 1 {
         return 2
@@ -69,7 +68,6 @@ fn main() -> int {
         return 10
     }
     
-    // stress test
     if (*PtrTest::{ a: false; b: false; c: true }.as_ptr()).c {} else {
         return 11
     }
@@ -111,6 +109,15 @@ fn main() -> int {
         return 20 + dangerous_int
     }
 
+    if (-1).i8().uint() != 0u - 1u {
+        return 21
+    }
+
+    if (-1).u8() != 255u8 {
+        return 22
+    }
+
+    putchar(40.u32() as char)
     putchar('h')
     exit(-34)    
 
@@ -146,7 +153,6 @@ fn fib(x: int) -> int {
         fib(x - 1) + fib(x - 2)
     }
 }
-
 
 fn iter_fib(x: int) -> int {
     let mut i = 1

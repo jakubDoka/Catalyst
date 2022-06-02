@@ -28,7 +28,7 @@ Here are the setup commands to get you started:
 ```
     git clone --depth 1 https://github.com/jakubDoka/Catalyst
     cd Catalyst
-    cargo run c --path test_project
+    cargo run c test_project
     catalyst
 ```
 
@@ -65,7 +65,7 @@ I welcome any contributions and I plan on making a guide.
                 - [x] Unary
                 - [ ] Call
                     - [x] Procedural
-                    - [ ] Object-Oriented
+                    - [x] Object-Oriented
                 - [ ] Constants
                     - [x] Boolean
                     - [ ] Folding

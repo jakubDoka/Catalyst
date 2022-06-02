@@ -3,6 +3,8 @@
 
 pub mod state;
 
+use std::cmp::Ordering;
+
 use cranelift_codegen::ir::immediates::Imm64;
 pub use state::CirBuilder;
 
@@ -392,8 +394,41 @@ impl CirBuilder<'_> {
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
             "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
+            "u8" | "u16" | "u32" | "u64" | "uint" |
+            "i8" | "i16" | "i32" | "i64" | "iint" => self.generate_native_int_conv(args, result),
             _ => unimplemented!("Unhandled native function: {:?}", str),
         }
+    }
+
+    fn generate_native_int_conv(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        let &[value] = self.func_ctx.value_slices.get(args) else {
+            unreachable!();
+        };
+        
+        let value_ir = self.use_value(value);
+        let result = result.unwrap();
+
+        let value_repr = self.repr_of(value);
+        let result_repr = self.repr_of(result);
+        
+        let result_ir = if result_repr.is_int() {
+            let value_bytes = value_repr.bytes();
+            let result_bytes = result_repr.bytes();
+            let signed = {
+                let ty = self.func_ctx.values[value].ty;
+                self.types[ty].flags.contains(TyFlags::SIGNED)
+            };
+            match value_bytes.cmp(&result_bytes) {
+                Ordering::Less if signed => self.builder.ins().sextend(result_repr, value_ir),
+                Ordering::Less => self.builder.ins().uextend(result_repr, value_ir),
+                Ordering::Greater => self.builder.ins().ireduce(result_repr, value_ir),
+                Ordering::Equal => value_ir,
+            }
+        } else {
+            todo!()
+        };
+
+        self.cir_builder_context.value_lookup[result] = result_ir.into();
     }
 
     fn generate_native_add(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
