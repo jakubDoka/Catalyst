@@ -93,8 +93,6 @@ pub struct Compiler {
 
     // incremental data
     incr: Incr,
-    _jit_incr: Incr,
-    _jit_incr_path: PathBuf,
     incr_path: PathBuf,
 
     // source data
@@ -176,17 +174,10 @@ impl Compiler {
         let modified_time = get_exe_modification_time();
         let root_path = subcommand.root_path().unwrap();
         let incr_path = root_path.join("incr.bin");
-        let jit_incr_path = root_path.join("jit_incr.bin");
-        let (incr, jit_incr) = if let Some(modified_time) = modified_time {
-            (
-                Incr::load(format!("{modified_time:?}"), &incr_path),
-                Incr::load(format!("{modified_time:?}"), &jit_incr_path),
-            )
+        let incr = if let Some(modified_time) = modified_time {
+            Incr::load(format!("{modified_time:?}"), &incr_path)
         } else {
-            (
-                Incr::default(),
-                Incr::default(),
-            )
+            Incr::default()
         };
         
         let mut sources = Sources::new();
@@ -237,8 +228,6 @@ impl Compiler {
             input,
 
             incr,
-            _jit_incr: jit_incr,
-            _jit_incr_path: jit_incr_path,
             incr_path,
 
             sources,

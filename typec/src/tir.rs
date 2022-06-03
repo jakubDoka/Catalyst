@@ -38,8 +38,9 @@ impl TirBuilder<'_> {
         self.func = func;
         let FuncMeta {
             kind,
+            params,
             sig: Sig {
-                ret, params, args, ..
+                ret, args, ..
             },
             ..
         } = self.funcs[self.func.meta()];
@@ -838,7 +839,7 @@ impl TirBuilder<'_> {
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
-        let sig = self.funcs[func.meta()].sig;
+        let FuncMeta { sig, params, .. } = self.funcs[func.meta()];
         let flags = self.funcs[func].flags;
 
         let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
@@ -897,7 +898,7 @@ impl TirBuilder<'_> {
             
             (sig.ret, func, TyList::reserved_value())
         } else {
-            let params = self.ty_lists.get(sig.params);
+            let params = self.ty_lists.get(params);
 
             prepare_params(params, self.types);
 
@@ -1468,7 +1469,8 @@ impl TirBuilder<'_> {
             let kind = TirKind::FuncPtr(func);
             let ty = {
                 let sig = self.funcs[func.meta()].sig;
-                ty_parser!(self).func_pointer_of(sig)
+                let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
+                ty_parser!(self).func_pointer_of(sig, generic)
             };
             self.scope_context.use_type(ty, self.types);
             TirEnt::new(kind, ty, span)

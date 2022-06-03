@@ -22,6 +22,7 @@ pub struct FuncEnt {
 
 #[derive(Clone, Default)]
 pub struct FuncMeta {
+    pub params: TyList,
     pub sig: Sig,
     pub name: Span,
     pub kind: FuncKind,
@@ -44,7 +45,7 @@ impl FuncMeta {
         let def_loc = self.name.source();
 
         ty_lists
-            .get(self.sig.params)
+            .get(self.params)
             .iter()
             .fold(def_loc, |acc, &ty| {
                 let other = types[ty].name.source();
@@ -127,7 +128,6 @@ impl Default for FuncKind {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Sig {
-    pub params: TyList,
     pub args: TyList,
     pub ret: Ty,
 }

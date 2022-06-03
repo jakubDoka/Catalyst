@@ -109,11 +109,11 @@ impl BoundVerifier<'_> {
     }
 
     pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
-        let a = self.funcs[impl_func.meta()].sig;
-        let b = self.funcs[bound_func.meta()].sig;
+        let FuncMeta { params: a_params, sig: a, .. } = self.funcs[impl_func.meta()];
+        let FuncMeta { params: b_params, sig: b, .. } = self.funcs[bound_func.meta()];
 
-        let a_param_len = self.ty_lists.len(a.params);
-        let b_param_len = self.ty_lists.len(b.params);
+        let a_param_len = self.ty_lists.len(a_params);
+        let b_param_len = self.ty_lists.len(b_params);
 
         // println!("{}", self.func_meta[bound_func].name.log(self.sources));
 

@@ -363,16 +363,6 @@ impl Ty {
             TyKind::FuncPtr(sig) => {
                 write!(to, "fn ")?;
 
-                if let Some((first, other)) = ty_lists.get(sig.params).split_first() {
-                    write!(to, "[")?;
-                    first.display(types, ty_lists, sources, to)?;
-                    for param in other {
-                        write!(to, ", ")?;
-                        param.display(types, ty_lists, sources, to)?;
-                    }
-                    write!(to, "] ")?;
-                }
-
                 write!(to, "(")?;
                 if let Some((first, other)) = ty_lists.get(sig.args).split_first() {
                     first.display(types, ty_lists, sources, to)?;

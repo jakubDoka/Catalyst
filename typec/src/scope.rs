@@ -293,11 +293,11 @@ impl<'a> ScopeBuilder<'a> {
             }
         };
 
+        self.scope.mark_frame();
+        
+        let params = self.handle_generics(generics, prepared);
+        
         let sig = {
-            self.scope.mark_frame();
-
-            let params = self.handle_generics(generics, prepared);
-
             let args = {
                 self.ty_lists.mark_frame();
 
@@ -325,10 +325,11 @@ impl<'a> ScopeBuilder<'a> {
                 ty_parser!(self).parse_type(return_type)?
             };
 
-            self.scope.pop_frame();
-
-            Sig { params, args, ret }
+            
+            Sig { args, ret }
         };
+        
+        self.scope.pop_frame();
 
         let func = prepared.unwrap_or_else(|| self.funcs.push(Default::default(), Default::default()));
 
@@ -357,7 +358,7 @@ impl<'a> ScopeBuilder<'a> {
 
         assert!(self.func_instances.insert(id, func).is_none());
 
-        if sig.params.is_reserved_value() && !external {
+        if params.is_reserved_value() && !external {
             self.to_compile.push((func, TyList::reserved_value()));
         } else if external {
             self.to_link.push(func);
@@ -375,7 +376,7 @@ impl<'a> ScopeBuilder<'a> {
                 (FuncFlags::EXTERNAL & external)
                     | (FuncFlags::INLINE & is_inline.is_some())
                     | (FuncFlags::ENTRY & is_entry.is_some())
-                    | (FuncFlags::GENERIC & !sig.params.is_reserved_value())
+                    | (FuncFlags::GENERIC & !params.is_reserved_value())
                     | call_conv
             };
 
@@ -397,8 +398,10 @@ impl<'a> ScopeBuilder<'a> {
             };
             self.funcs[func] = ent;
 
-            self.funcs[func.meta()].name = self.ast_data.nodes[name].span;
-            self.funcs[func.meta()].sig = sig;
+            let meta = &mut self.funcs[func.meta()];
+            meta.name = self.ast_data.nodes[name].span;
+            meta.sig = sig;
+            meta.params = params;
 
             self.scope_context.func_ast[func] = ast;
         }
