@@ -213,33 +213,32 @@ impl TirBuilder<'_> {
 
     fn expr(&mut self, ast: Ast) -> errors::Result<Tir> {
         let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ast];
-        let expr = match kind {
-            AstKind::Unary => self.unary(ast)?,
-            AstKind::Binary => self.binary(ast)?,
-            AstKind::Ident => self.ident(ast)?,
-            AstKind::If => self.r#if(ast)?,
-            AstKind::Return => self.r#return(ast)?,
-            AstKind::Int => self.int(ast)?,
-            AstKind::Bool => self.bool(ast)?,
-            AstKind::Char => self.char(ast)?,
-            AstKind::Variable(mutable) => self.variable(mutable, ast)?,
-            AstKind::Constructor => self.constructor(ast)?,
-            AstKind::DotExpr => self.dot_expr(ast)?,
-            AstKind::Call => self.call(ast)?,
-            AstKind::Block => self.block(ast)?,
-            AstKind::Loop => self.r#loop(ast)?,
-            AstKind::Break => self.r#break(ast)?,
-            AstKind::Deref => self.deref(ast)?,
-            AstKind::BitCast => self.bit_cast(ast)?,
-            AstKind::Match => self.r#match(ast)?,
-            AstKind::Error => return Err(()),
+        match kind {
+            AstKind::Unary => self.unary(ast),
+            AstKind::Binary => self.binary(ast),
+            AstKind::Ident | AstKind::Path => self.symbol(ast),
+            AstKind::If => self.r#if(ast),
+            AstKind::Return => self.r#return(ast),
+            AstKind::Int => self.int(ast),
+            AstKind::Bool => self.bool(ast),
+            AstKind::Char => self.char(ast),
+            AstKind::Variable(mutable) => self.variable(mutable, ast),
+            AstKind::Constructor => self.constructor(ast),
+            AstKind::DotExpr => self.dot_expr(ast),
+            AstKind::Call => self.call(ast),
+            AstKind::Block => self.block(ast),
+            AstKind::Loop => self.r#loop(ast),
+            AstKind::Break => self.r#break(ast),
+            AstKind::Deref => self.deref(ast),
+            AstKind::BitCast => self.bit_cast(ast),
+            AstKind::Match => self.r#match(ast),
+            AstKind::Error => Err(()),
             _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
                 kind,
                 self.sources.display(span)
             ),
-        };
-        Ok(expr)
+        }
     }
 
     fn r#match(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -984,6 +983,60 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
+    fn _resolve_caller(&mut self, caller: Ast) -> errors::Result<CallerData> {
+        if self.ast_data.nodes[caller].kind == AstKind::DotExpr {
+            let &[expr, name] = self.ast_data.children(caller) else {
+                unreachable!();
+            };
+
+            let expr = self.expr(expr)?;
+            let ty = {
+                let ty = self.tir_data.ents[expr].ty;
+                self.types.caller_of(ty)
+            };
+
+            let (ident, instantiation) = {
+                if AstKind::Instantiation == self.ast_data.nodes[name].kind {
+                    (self.ast_data.children(name)[0], Some(name))
+                } else {
+                    (name, None)
+                }
+            };
+
+            let span = self.tir_data.ents[expr].span;
+            let name_id = ident_hasher!(self).ident_id(ident, Some((ty, span)))?;
+
+            let span = self.ast_data.nodes[name].span;
+
+            Ok(CallerData {
+                id: name_id, 
+                fn_span: span, 
+                obj: Some(expr), 
+                caller: Some(ty), 
+                instantiation,
+            })
+        } else {
+            let (ident, instantiation) = {
+                if AstKind::Instantiation == self.ast_data.nodes[caller].kind {
+                    (self.ast_data.children(caller)[0], Some(caller))
+                } else {
+                    (caller, None)
+                }
+            };
+
+            let (name_id, owner) = ident_hasher!(self).ident_id_low(ident, None)?;
+
+            let span = self.ast_data.nodes[caller].span;
+            Ok(CallerData {
+                id: name_id, 
+                fn_span: span, 
+                obj: None, 
+                caller: owner.map(|(ty, _)| ty), 
+                instantiation,
+            })
+        }
+    } 
+
     fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> Tir {
         let ty = self.tir_data.ents[target].ty;
 
@@ -1391,10 +1444,13 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn ident(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn symbol(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
-        let id = self.sources.id_of(span);
+        let id = ident_hasher!(self).ident_id(ast, None)?;
+        self.symbol_low(id, span)
+    }
 
+    fn symbol_low(&mut self, id: ID, span: Span) -> errors::Result<Tir> {
         let Some(value) = self.scope.weak_get_raw(id) else {
             self.diagnostics.push(ModuleError::ScopeItemNotFound {
                 loc: span,
@@ -1402,20 +1458,28 @@ impl TirBuilder<'_> {
             return Err(());
         };
 
-        let result = if let Some(local) = value.pointer.may_read::<Tir>() {
+        let ent = if let Some(local) = value.pointer.may_read::<Tir>() {
             let mut copy = self.tir_data.ents[local];
             copy.kind = TirKind::Access(local);
             copy.span = span;
-            self.tir_data.ents.push(copy)
+            copy
         } else if let Some(global) = value.pointer.may_read::<Global>() {
             let kind = TirKind::GlobalAccess(global);
             let GlobalEnt { ty, mutable, .. } = self.globals[global];
-            let ent = TirEnt::with_flags(kind, ty, TirFlags::ASSIGNABLE & mutable, span);
-            self.tir_data.ents.push(ent)
+            TirEnt::with_flags(kind, ty, TirFlags::ASSIGNABLE & mutable, span)
+        } else if let Some(func) = value.pointer.may_read::<Func>() {
+            let kind = TirKind::FuncPtr(func);
+            let ty = {
+                let sig = self.func_meta[func].sig;
+                ty_parser!(self).func_pointer_of(sig)
+            };
+            self.scope_context.use_type(ty, self.types);
+            TirEnt::new(kind, ty, span)
         } else {
             todo!("emit error");
         };
-
+        
+        let result = self.tir_data.ents.push(ent);
 
         Ok(result)
     }
@@ -1637,4 +1701,12 @@ impl TirBuilder<'_> {
         let ent = TirEnt::new(kind, ty, self.builtin_types.discriminant);
         self.tir_data.ents.push(ent)
     }
+}
+
+struct CallerData {
+    id: ID,
+    fn_span: Span,
+    obj: Option<Tir>,
+    caller: Option<Ty>, 
+    instantiation: Option<Ast>,
 }

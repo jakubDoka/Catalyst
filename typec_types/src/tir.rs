@@ -95,6 +95,7 @@ pub enum TirKind {
     Return(PackedOption<Tir>),
     Argument(u32),
     Call(PackedOption<Ty>, TyList, Func, TirList),
+    IndirectCall(Tir, TyList, TirList),
     IntLit(u128),
     BoolLit(bool),
     CharLit(char),
@@ -190,6 +191,28 @@ impl<'a> TirDisplay<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
+            TirKind::IndirectCall(ptr, params, args) => {
+                write!(f, "indirect_call ")?;
+
+                if let Some((&first, others)) = self.ty_lists.get(params).split_first() {
+                    write!(f, "[{}", ty_display!(self, first))?;
+                    for &ty in others {
+                        write!(f, ", {}", ty_display!(self, ty))?;
+                    }
+                    write!(f, "] ")?;
+                }
+
+                self.fmt(ptr, f, displayed, level, false)?;
+                write!(f, "(")?;
+                if let Some((&first, others)) = self.data.cons.get(args).split_first() {
+                    self.fmt(first, f, displayed, level, false)?;
+                    for &ty in others {
+                        write!(f, ", ")?;
+                        self.fmt(ty, f, displayed, level, false)?;
+                    }
+                }
+                write!(f, ")")?;
+            }
             TirKind::FuncPtr(func) => {
                 write!(f, "func_ptr {func}")?;
             }
