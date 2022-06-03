@@ -155,7 +155,7 @@ impl CirBuilder<'_> {
                 self.cir_builder_context.value_lookup[target_value] = ir_value.into();
             }
             InstKind::Call(func, args) => {
-                if self.func_meta[func].kind == FuncKind::Builtin {
+                if self.funcs[func.meta()].kind == FuncKind::Builtin {
                     self.generate_native_call(func, args, inst.value);
                     return;
                 }
@@ -385,7 +385,7 @@ impl CirBuilder<'_> {
         args: ValueList,
         result: PackedOption<mir::Value>,
     ) {
-        let name = self.func_meta[func].name;
+        let name = self.funcs[func.meta()].name;
         let str = self.sources.display(name);
 
         match str {

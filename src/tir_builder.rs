@@ -46,7 +46,7 @@ impl MainTirBuilder<'_> {
             //     &self.tir_temp_body,
             //     self.func_meta[func].body,
             // ));
-            self.func_bodies[func] = self.tir_data.clone();
+            self.funcs[func.meta()].tir_data = self.tir_data.clone();
         }
     }
 
@@ -87,7 +87,7 @@ impl MainTirBuilder<'_> {
             let Ok(init) = tir_builder!(self).global(global) else {
                 continue;
             };
-            self.func_bodies[init] = self.tir_data.clone();
+            self.funcs[init.meta()].tir_data = self.tir_data.clone();
             self.to_compile.push((init, TyList::reserved_value()));
             self.global_map.insert(self.globals[global].id, global);
             // self.initializers.push(init); // this is performed during dead code elimination
@@ -98,7 +98,7 @@ impl MainTirBuilder<'_> {
     /// type-checking all imported source code. Parsing is also included
     /// so that ast does not have to be accumulated for all files. Types are
     /// checked one ta the time but Tir is accumulated. Tir is also generic
-    /// and instances are not materialized here but rather the Tir has notion
+    /// and ty_instances are not materialized here but rather the Tir has notion
     /// of generic calls.
     pub fn build(&mut self, module_order: &[Source]) {
         let mut func_buffer = vec![];

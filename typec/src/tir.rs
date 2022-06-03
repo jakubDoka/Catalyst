@@ -18,34 +18,31 @@ impl TirBuilder<'_> {
 
         let func_ent = FuncEnt {
             id: ID::new("<global>") + self.globals[self.global].id,
-            parent: None.into(),
             flags: FuncFlags::ANONYMOUS | Some(CallConv::Fast),
         };
-        let func = self.funcs.push(func_ent);
-
-        self.globals[self.global].init = func;
-
-        let func_meta = FuncMetaData {
+        let func_meta = FuncMeta {
             sig: Sig { ret, ..Default::default() },
             name: self.globals[global].name,
             body,
 
             ..Default::default()
         };
-        self.func_meta[func] = func_meta;
+        let func = self.funcs.push(func_ent, func_meta);
+
+        self.globals[self.global].init = func;
 
         Ok(func)
     }
 
     pub fn func(&mut self, func: Func) -> errors::Result {
         self.func = func;
-        let FuncMetaData {
+        let FuncMeta {
             kind,
             sig: Sig {
                 ret, params, args, ..
             },
             ..
-        } = self.func_meta[self.func];
+        } = self.funcs[self.func.meta()];
         let flags = self.funcs[self.func].flags;
 
         //println!("{}", self.func_meta[self.func].name.log(self.sources));
@@ -59,7 +56,7 @@ impl TirBuilder<'_> {
 
         if body_ast.is_reserved_value() {
             if flags.contains(FuncFlags::EXTERNAL) {
-                self.func_meta[self.func].kind = FuncKind::External;
+                self.funcs[self.func.meta()].kind = FuncKind::External;
             }
             return Ok(());
         }
@@ -106,8 +103,8 @@ impl TirBuilder<'_> {
         };
 
         let root = self.block(body_ast)?;
-        self.func_meta[self.func].body = root;
-        self.func_meta[self.func].args = args;
+        self.funcs[self.func.meta()].body = root;
+        self.funcs[self.func.meta()].args = args;
 
         self.tir_data.used_types = self.ty_lists.push(&self.scope_context.used_types);
         self.scope_context.used_types.clear();
@@ -157,7 +154,7 @@ impl TirBuilder<'_> {
 
                 // TODO: can caching ids make less cache misses?
                 for &func in self.func_lists.get(funcs) {
-                    let name = self.func_meta[func].name;
+                    let name = self.funcs[func.meta()].name;
                     let id = {
                         let id = self.sources.id_of(name);
                         let bound = self.types[bound_combo].id;
@@ -686,7 +683,7 @@ impl TirBuilder<'_> {
         };
 
         let result = {
-            let ty = self.func_meta[func].sig.ret;
+            let ty = self.funcs[func.meta()].sig.ret;
             let span = self.ast_data.nodes[ast].span;
             let args = self.tir_data.cons.push(&[expr]);
             let kind = TirKind::Call(operand_ty.into(), TyList::reserved_value(), func, args);
@@ -841,7 +838,7 @@ impl TirBuilder<'_> {
         // TODO: Handle function pointer as field
         let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
 
-        let sig = self.func_meta[func].sig;
+        let sig = self.funcs[func.meta()].sig;
         let flags = self.funcs[func].flags;
 
         let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
@@ -868,7 +865,7 @@ impl TirBuilder<'_> {
 
         let generic = flags.contains(FuncFlags::GENERIC);
 
-        let because = self.func_meta[func].name;
+        let because = self.funcs[func.meta()].name;
         // check arg count
         {
             let args_len = args.len();
@@ -957,7 +954,7 @@ impl TirBuilder<'_> {
                 .fold(Ok(()), |_, param| {
                     let span = self.ast_data.nodes[ast].span;
                     self.diagnostics.push(TyError::UnknownGenericParam {
-                        func: self.func_meta[func].name,
+                        func: self.funcs[func.meta()].name,
                         param,
                         loc: span,
                     });
@@ -983,7 +980,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn _resolve_caller(&mut self, caller: Ast) -> errors::Result<CallerData> {
+    fn _resolve_caller(&mut self, caller: Ast) -> errors::Result<_CallerData> {
         if self.ast_data.nodes[caller].kind == AstKind::DotExpr {
             let &[expr, name] = self.ast_data.children(caller) else {
                 unreachable!();
@@ -1008,7 +1005,7 @@ impl TirBuilder<'_> {
 
             let span = self.ast_data.nodes[name].span;
 
-            Ok(CallerData {
+            Ok(_CallerData {
                 id: name_id, 
                 fn_span: span, 
                 obj: Some(expr), 
@@ -1027,7 +1024,7 @@ impl TirBuilder<'_> {
             let (name_id, owner) = ident_hasher!(self).ident_id_low(ident, None)?;
 
             let span = self.ast_data.nodes[caller].span;
-            Ok(CallerData {
+            Ok(_CallerData {
                 id: name_id, 
                 fn_span: span, 
                 obj: None, 
@@ -1070,7 +1067,7 @@ impl TirBuilder<'_> {
         }
 
         let kind = TirKind::TakePtr(target);
-        let ptr_ty = pointer_of(ty, self.types, self.instances);
+        let ptr_ty = pointer_of(ty, self.types, self.ty_instances);
         self.scope_context.use_type(ptr_ty, self.types);
         let deref = TirEnt::new(kind, ptr_ty, span);
         self.tir_data.ents.push(deref)
@@ -1350,12 +1347,12 @@ impl TirBuilder<'_> {
             unreachable!()
         };
 
-        let ret = self.func_meta[self.func].sig.ret;
+        let ret = self.funcs[self.func.meta()].sig.ret;
 
         let value = if value.is_reserved_value() {
             self.infer_ty(self.builtin_types.nothing, ret, |s| {
                 TyError::UnexpectedReturnValue {
-                    because: s.func_meta[s.func].name,
+                    because: s.funcs[s.func.meta()].name,
                     loc: span,
                 }
             })?;
@@ -1470,7 +1467,7 @@ impl TirBuilder<'_> {
         } else if let Some(func) = value.pointer.may_read::<Func>() {
             let kind = TirKind::FuncPtr(func);
             let ty = {
-                let sig = self.func_meta[func].sig;
+                let sig = self.funcs[func.meta()].sig;
                 ty_parser!(self).func_pointer_of(sig)
             };
             self.scope_context.use_type(ty, self.types);
@@ -1526,7 +1523,7 @@ impl TirBuilder<'_> {
 
         /* sanity check */
         {
-            let func_ent = &self.func_meta[func];
+            let func_ent = &self.funcs[func.meta()];
             let args = self.ty_lists.get(func_ent.sig.args);
 
             let arg_count = args.len();
@@ -1549,7 +1546,7 @@ impl TirBuilder<'_> {
         }
 
         let tir = {
-            let ty = self.func_meta[func].sig.ret;
+            let ty = self.funcs[func.meta()].sig.ret;
             let args = self.tir_data.cons.push(&[left, right]);
             let kind = TirKind::Call(left_ty.into(), TyList::reserved_value(), func, args);
             let ent = TirEnt::new(kind, ty, span);
@@ -1703,7 +1700,7 @@ impl TirBuilder<'_> {
     }
 }
 
-struct CallerData {
+struct _CallerData {
     id: ID,
     fn_span: Span,
     obj: Option<Tir>,

@@ -7,29 +7,30 @@ use crate::{jit::Macro, *};
 
 pub type Initializers = Vec<(Func, PackedOption<Global>)>;
 pub type ToCompile = Vec<(Func, TyList)>;
-pub type FuncMeta = SecondaryMap<Func, FuncMetaData>;
-pub type Funcs = PrimaryMap<Func, FuncEnt>;
+pub type Funcs = storage::MetaMap<Func, FuncEnt, FuncMeta>;
 pub type FuncInstances = Map<Func>;
 pub type ToLink = Vec<Func>;
 pub type Macros = Vec<(Func, Macro)>;
 
+impl HasMeta for Func {}
+
 #[derive(Clone, Copy, Default)]
 pub struct FuncEnt {
     pub id: ID,
-    pub parent: PackedOption<Func>,
     pub flags: FuncFlags,
 }
 
-#[derive(Debug, Copy, Clone, Default)]
-pub struct FuncMetaData {
+#[derive(Clone, Default)]
+pub struct FuncMeta {
     pub sig: Sig,
     pub name: Span,
     pub kind: FuncKind,
     pub body: Tir,
     pub args: TirList,
+    pub tir_data: TirData,
 }
 
-impl FuncMetaData {
+impl FuncMeta {
     pub fn new() -> Self {
         Self::default()
     }

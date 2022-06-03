@@ -13,7 +13,7 @@ pub type FuncLists = StackMap<FuncList, Func>;
 pub type TyCompLookup = Map<TyComp>;
 pub type TyComps = StackMap<TyCompList, TyCompEnt, TyComp>;
 pub type BoundImpls = Map<BoundImpl>;
-pub type Instances = Map<Ty>;
+pub type TyInstances = Map<Ty>;
 
 impl TypeBase for Types {}
 

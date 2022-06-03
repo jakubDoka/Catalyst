@@ -10,7 +10,7 @@ impl Generator<'_> {
 
         for &(func, _) in self.to_compile.iter() {
             let call_conv = self.funcs[func].flags.call_conv();
-            let sig = self.func_meta[func].sig;
+            let sig = self.funcs[func.meta()].sig;
             self.signatures.insert(
                 func,
                 translate_signature(
@@ -31,15 +31,17 @@ impl Generator<'_> {
                 continue;
             }
 
-            let parent = self.load_generic_params(
+            self.load_generic_params(
                 id, 
-                params, 
-                func_ent.parent, 
+                params,
                 ptr_ty, 
             );
 
-            let result = mir_builder!(self, parent, ptr_ty, sys_cc, self.func_bodies[parent])
+            let tir = std::mem::take(&mut self.funcs[id.meta()].tir_data);
+            let result = mir_builder!(self, id, ptr_ty, sys_cc, tir)
                 .func();
+
+            self.funcs[id.meta()].tir_data = tir;
 
             if result.is_err() {
                 continue;
@@ -49,11 +51,11 @@ impl Generator<'_> {
             
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 
-            self.build_cir_and_emit(id, parent, true);
+            self.build_cir_and_emit(id, true);
         }
     }
     
-    pub fn build_cir_and_emit(&mut self, id: Func, parent: Func, save: bool) {
+    pub fn build_cir_and_emit(&mut self, id: Func, save: bool) {
         let builder = FunctionBuilder::new(
             &mut self.context.func, 
             &mut self.generation_context.builder_context
@@ -85,14 +87,14 @@ impl Generator<'_> {
         let signature = std::mem::replace(&mut self.context.func.signature, Signature::new(CallConv::Fast));
 
         if save {
-            self.save_compile_result(parent, self.funcs[id].id, signature, &compile_result);
+            self.save_compile_result(id, signature, &compile_result);
         }
 
         self.compile_results[id] = compile_result;
         self.context.clear();
     }
 
-    fn save_compile_result(&mut self, parent: Func, func_id: ID, signature: Signature, compile_result: &CompileResult) {        
+    fn save_compile_result(&mut self, func: Func, signature: Signature, compile_result: &CompileResult) {        
         let reloc_records = compile_result.relocs.iter().map(|r| {
             let ExternalName::User {
                 namespace,
@@ -125,8 +127,9 @@ impl Generator<'_> {
             reloc_records,
         };
 
-        let source = self.func_meta[parent].name.source();
+        let source = self.funcs[func.meta()].name.source();
         let module_id = self.modules[source].id;
+        let func_id = self.funcs[func].id;
 
         self.incr_modules.get_mut(module_id)
             .unwrap().owned_funcs.insert(func_id, ());
@@ -138,17 +141,13 @@ impl Generator<'_> {
         &mut self,
         id: Func,
         params: TyList,
-        parent: PackedOption<Func>,
         ptr_ty: Type,
-    ) -> Func {
-        let Some(parent) = parent.expand() else {
-            return id;
-        };
+    ) {
 
         ReprInstancing {
             types: &mut self.types,
             ty_lists: &mut self.ty_lists,
-            instances: &mut self.instances,
+            ty_instances: &mut self.ty_instances,
             ty_comps: &self.ty_comps,
             sources: &self.sources,
             repr_fields: &mut self.repr_fields,
@@ -157,11 +156,9 @@ impl Generator<'_> {
         }
         .load_generic_types(
             params, 
-            self.func_bodies[parent].used_types, 
+            self.funcs[id.meta()].tir_data.used_types, 
             &mut self.generation_context.replace_cache
         );
-
-        parent
     }
 
     pub fn skip_incrementally(
@@ -188,7 +185,7 @@ impl Generator<'_> {
             };
 
 
-            let func = self.funcs.push(func_ent);
+            let func = self.funcs.push_instance(func_ent, Func::reserved_value());
             self.generation_context.reused_incr_funcs.push(func);
             let incr_func_data = self.incr_funcs.get(id).unwrap();
 

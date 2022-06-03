@@ -123,16 +123,14 @@ pub struct Compiler {
     builtin_types: BuiltinTypes,
     funcs: Funcs,
     ty_lists: TyLists,
-    instances: Instances,
+    ty_instances: TyInstances,
     ty_comps: TyComps,
     ty_comp_lookup: TyCompLookup,
     func_lists: FuncLists,
     bound_impls: BoundImpls,
-    func_bodies: FuncBodies,
     tir_stack: TirStack,
     scope_context: ScopeContext,
     tir_data: TirData,
-    func_meta: FuncMeta,
     tir_pattern_graph: TirPatternGraph,
     to_compile: ToCompile,
     func_instances: FuncInstances,
@@ -215,7 +213,6 @@ impl Compiler {
         );
         let mut ty_lists = TyLists::new();
         let mut funcs = Funcs::new();
-        let mut func_meta = FuncMeta::new();
 
         let b_source = builtin_source.source;
         typec::create_builtin_items(
@@ -223,7 +220,6 @@ impl Compiler {
             &mut ty_lists, 
             &builtin_types, 
             &mut funcs, 
-            &mut func_meta,
             &mut sources, 
             &mut builtin_source, 
             &mut modules[b_source].items,
@@ -266,16 +262,14 @@ impl Compiler {
             builtin_types,
             funcs,
             ty_lists,
-            instances: Instances::new(),
+            ty_instances: TyInstances::new(),
             ty_comps: TyComps::new(),
             ty_comp_lookup: TyCompLookup::new(),
             func_lists: FuncLists::new(),
             bound_impls: BoundImpls::new(),
-            func_bodies: FuncBodies::new(),
             tir_stack: FramedStack::new(),
             tir_data: TirData::new(),
             scope_context: ScopeContext::new(),
-            func_meta,
             tir_pattern_graph: PatternGraph::new(),
             to_compile: ToCompile::new(),
             func_instances: FuncInstances::new(),
@@ -421,7 +415,7 @@ impl Compiler {
     /// type-checking all imported source code. Parsing is also included
     /// so that ast does not have to be accumulated for all files. Types are 
     /// checked one ta the time but Tir is accumulated. Tir is also generic 
-    /// and instances are not materialized here but rather the Tir has notion 
+    /// and ty_instances are not materialized here but rather the Tir has notion 
     /// of generic calls.
     fn build_tir(&mut self) {
         time_report!("building of tir");
@@ -550,8 +544,8 @@ impl Compiler {
 
         for func in to_link {
             let call_conv = self.funcs[func].flags.call_conv();
-            let sig = self.func_meta[func].sig;
-            let name = self.sources.display(self.func_meta[func].name);
+            let sig = self.funcs[func.meta()].sig;
+            let name = self.sources.display(self.funcs[func.meta()].name);
             let signature = translate_signature(
                 call_conv, 
                 self.ty_lists
@@ -589,7 +583,7 @@ impl Compiler {
                 &Signature::new(self.object_module.isa().default_call_conv()),
             ).unwrap();
 
-            let func = self.funcs.push(Default::default());
+            let func = self.funcs.push(Default::default(), Default::default());
 
             func_lookup[func] = PackedOption::from(entry_point);
 
@@ -642,7 +636,7 @@ impl Compiler {
             self.context.func.signature = Signature::new(self.object_module.isa().default_call_conv());
 
             generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa())
-                .build_cir_and_emit(func, func, false);
+                .build_cir_and_emit(func, false);
             
             to_compile.push(func);
         }

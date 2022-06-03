@@ -10,6 +10,7 @@ pub mod pool_map;
 pub mod sparse_map;
 pub mod stack_map;
 pub mod tree;
+pub mod instances;
 
 pub use ansi_consts::{END, ERR, INFO, SUCCESS, WARNING, WEAK};
 pub use bit_serde::BitSerde;
@@ -23,7 +24,8 @@ pub use map::{Map, SecondaryMap, Set, ID};
 pub use pool_map::PoolMap;
 pub use sparse_map::SparseMap;
 pub use stack_map::{FramedStackMap, StackMap};
-pub use tree::*;
+pub use tree::{TreeStorage, GenericGraph, CycleDetectResources};
+pub use instances::{MetaMap, MetaRef, HasMeta};
 
 pub extern crate cranelift_entity;
 

@@ -30,20 +30,18 @@ file "src/state.rs" {
         mut Modules
         mut Funcs
         mut TirData
-        mut FuncBodies
         mut Types
         mut TyLists
         mut TyComps
         mut TyCompLookup
         mut FuncLists
-        mut Instances
+        mut TyInstances
         mut BoundImpls
         mut ScopeContext
         mut TyGraph
         mut AstData
         mut AstTemp
         mut Scope
-        mut FuncMeta
         mut ToCompile
         mut TirStack
         mut TirPatternGraph
@@ -69,7 +67,6 @@ file "src/state.rs" {
     struct Generator {
         mut Diagnostics
         mut Funcs
-        mut FuncMeta
         mut TyLists
         mut Reprs
         mut Types
@@ -78,7 +75,7 @@ file "src/state.rs" {
         mut FuncLists
         mut BoundImpls
         mut CompileResults
-        mut Instances
+        mut TyInstances
         mut Context
         mut MirBuilderContext
         mut FuncCtx
@@ -96,7 +93,6 @@ file "src/state.rs" {
         Globals
         BuiltinTypes
         Sources
-        FuncBodies
         Modules
     }
 
@@ -162,7 +158,6 @@ file "typec/src/state.rs" {
         Types
         BuiltinTypes
         Sources
-        FuncMeta
     }
 
     struct IdentHasher {
@@ -179,7 +174,7 @@ file "typec/src/state.rs" {
         mut Diagnostics
         mut Scope
         mut TyLists
-        mut Instances
+        mut TyInstances
         mut BoundImpls
         
         AstData
@@ -198,12 +193,11 @@ file "typec/src/state.rs" {
         mut TyComps
         mut TyCompLookup
         mut FuncLists
-        mut Instances
+        mut TyInstances
         mut BoundImpls
         mut Modules
         mut Diagnostics
         mut ScopeContext
-        mut FuncMeta
         mut ToCompile
         mut FuncInstances
         mut Macros
@@ -221,7 +215,7 @@ file "typec/src/state.rs" {
         owned Global = "Global::reserved_value()"
         
         mut TyLists
-        mut Instances
+        mut TyInstances
         mut TyComps
         mut TyCompLookup
         mut BoundImpls
@@ -232,7 +226,6 @@ file "typec/src/state.rs" {
         mut TirStack
         mut Modules
         mut Diagnostics
-        mut FuncMeta
         mut TirPatternGraph
         mut Globals
         mut Funcs
@@ -251,7 +244,7 @@ file "typec/src/state.rs" {
         mut TyLists
         mut TyComps
         mut TyCompLookup
-        mut Instances
+        mut TyInstances
         mut BoundImpls
         mut ScopeContext
         mut TyGraph
@@ -300,7 +293,6 @@ file "instance/src/state.rs" {
         ReprFields
         BuiltinTypes
         Sources
-        FuncMeta
         
         owned return_dest: `Option<mir::Value>` = "None"
     }
@@ -308,7 +300,7 @@ file "instance/src/state.rs" {
     struct ReprInstancing {
         mut Types
         mut TyLists
-        mut Instances
+        mut TyInstances
         mut ReprFields
         mut Reprs
         
@@ -325,7 +317,7 @@ file "instance/src/state.rs" {
         Types
         Sources
         TyComps
-        Instances
+        TyInstances
         TyLists
     }
 }
@@ -350,6 +342,5 @@ file "gen/src/state.rs" {
         TyLists
         FuncCtx
         Sources
-        FuncMeta
     }
 }

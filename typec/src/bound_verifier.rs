@@ -62,7 +62,7 @@ impl BoundVerifier<'_> {
                 // TODO: don't allocate if it impacts performance
                 let mut vec = self.func_lists.get(funcs).to_vec();
                 for func in &mut vec {
-                    let ent = &self.func_meta[*func];
+                    let ent = &self.funcs[func.meta()];
 
                     let (sugar_id, certain_id) = {
                         let func = self.sources.id_of(ent.name);
@@ -109,8 +109,8 @@ impl BoundVerifier<'_> {
     }
 
     pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
-        let a = self.func_meta[impl_func].sig;
-        let b = self.func_meta[bound_func].sig;
+        let a = self.funcs[impl_func.meta()].sig;
+        let b = self.funcs[bound_func.meta()].sig;
 
         let a_param_len = self.ty_lists.len(a.params);
         let b_param_len = self.ty_lists.len(b.params);
@@ -119,8 +119,8 @@ impl BoundVerifier<'_> {
 
         if a_param_len != b_param_len - 1 {
             self.diagnostics.push(TyError::BoundImplFuncParamCount {
-                impl_func: self.func_meta[impl_func].name,
-                bound_func: self.func_meta[bound_func].name,
+                impl_func: self.funcs[impl_func.meta()].name,
+                bound_func: self.funcs[bound_func.meta()].name,
                 expected: b_param_len,
                 found: a_param_len,
             });

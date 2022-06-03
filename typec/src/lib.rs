@@ -118,7 +118,7 @@ impl TyParser<'_> {
             TyKind::Param(i, ..) => params[i as usize],
             TyKind::Ptr(ty, ..) => {
                 let ty = self.instantiate(ty, params);
-                pointer_of(ty, self.types, self.instances)
+                pointer_of(ty, self.types, self.ty_instances)
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
@@ -216,7 +216,7 @@ impl TyParser<'_> {
             generic |= self.types[param].flags.contains(TyFlags::GENERIC);
         }
 
-        if let Some(&already) = self.instances.get(id) {
+        if let Some(&already) = self.ty_instances.get(id) {
             self.ty_lists.discard();
             return already;
         }
@@ -233,7 +233,7 @@ impl TyParser<'_> {
             self.types.push(ent)
         };
 
-        self.instances.insert_unique(id, result);
+        self.ty_instances.insert_unique(id, result);
 
         result
     }
@@ -244,7 +244,7 @@ impl TyParser<'_> {
             self.parse_type(inner)?
         };
 
-        Ok(pointer_of(inner_ty, self.types, self.instances))
+        Ok(pointer_of(inner_ty, self.types, self.ty_instances))
     }
 
     pub fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> Ty {
@@ -275,7 +275,7 @@ impl TyParser<'_> {
             .map(|&ty| self.types[ty].id)
             .fold(base_id, |acc, id| acc + id);
 
-        if let Some(&already) = self.instances.get(id) {
+        if let Some(&already) = self.ty_instances.get(id) {
             self.ty_lists.discard();
             return already;
         }
@@ -305,7 +305,7 @@ impl TyParser<'_> {
             self.types.push(ent)
         };
 
-        self.instances.insert_unique(id, combo);
+        self.ty_instances.insert_unique(id, combo);
 
         combo
     }
@@ -313,7 +313,7 @@ impl TyParser<'_> {
     pub fn func_pointer_of(&mut self, sig: Sig) -> Ty {
         let id = self.id_of_sig(sig);
 
-        if let Some(&already) = self.instances.get(id) {
+        if let Some(&already) = self.ty_instances.get(id) {
             return already;
         }
 
@@ -324,7 +324,7 @@ impl TyParser<'_> {
             flags: TyFlags::GENERIC & !sig.params.is_reserved_value(),
         };
         let ty = self.types.push(ty_ent);
-        self.instances.insert_unique(id, ty);
+        self.ty_instances.insert_unique(id, ty);
 
         ty
     }
@@ -361,7 +361,7 @@ pub fn prepare_params(params: &[Ty], types: &mut Types) {
 }
 
 /// creates a pointer of `ty`, already instantiated entities will be reused.
-pub fn pointer_of(ty: Ty, types: &mut Types, instances: &mut Instances) -> Ty {
+pub fn pointer_of(ty: Ty, types: &mut Types, ty_instances: &mut TyInstances) -> Ty {
     let TyEnt {
         kind,
         id,
@@ -371,7 +371,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types, instances: &mut Instances) -> Ty {
     } = types[ty];
     let id = ID::pointer(id);
 
-    if let Some(&already) = instances.get(id) {
+    if let Some(&already) = ty_instances.get(id) {
         return already;
     }
 
@@ -389,7 +389,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types, instances: &mut Instances) -> Ty {
     };
     let ptr = types.push(ent);
 
-    assert!(instances.insert(id, ptr).is_none());
+    assert!(ty_instances.insert(id, ptr).is_none());
 
     ptr
 }
@@ -434,7 +434,6 @@ pub fn create_builtin_items(
     ty_lists: &mut TyLists,
     builtin: &BuiltinTypes,
     funcs: &mut Funcs,
-    func_meta: &mut FuncMeta,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
     target: &mut Vec<module::ModuleItem>,
@@ -454,7 +453,6 @@ pub fn create_builtin_items(
                 id, 
                 ty_lists, 
                 funcs, 
-                func_meta, 
                 target,
             );
         }
@@ -487,7 +485,6 @@ pub fn create_builtin_items(
                 id,
                 ty_lists,
                 funcs,
-                func_meta,
                 target,
             );
         }
@@ -506,7 +503,6 @@ pub fn create_builtin_items(
                 id,
                 ty_lists,
                 funcs,
-                func_meta,
                 target,
             );
         }
@@ -520,7 +516,6 @@ fn create_func(
     id: ID,
     ty_lists: &mut TyLists,
     funcs: &mut Funcs,
-    func_meta: &mut FuncMeta,
     target: &mut Vec<module::ModuleItem>,
 ) {
     let sig = Sig {
@@ -533,14 +528,13 @@ fn create_func(
             id,
             ..Default::default()
         };
-        funcs.push(ent)
-    };
-
-    func_meta[func] = FuncMetaData {
-        sig,
-        name: span,
-        kind: FuncKind::Builtin,
-        ..Default::default()
+        let meta = FuncMeta {
+            sig,
+            name: span,
+            kind: FuncKind::Builtin,
+            ..Default::default()
+        };
+        funcs.push(ent, meta)
     };
 
     let item = module::ModuleItem::new(id, func, span);

@@ -15,7 +15,6 @@ pub struct CirBuilder<'a> {
 	pub ty_lists: &'a TyLists,
 	pub func_ctx: &'a FuncCtx,
 	pub sources: &'a Sources,
-	pub func_meta: &'a FuncMeta,
 }
 
 impl<'a> CirBuilder<'a> {
@@ -31,7 +30,6 @@ impl<'a> CirBuilder<'a> {
 		ty_lists: &'a TyLists,
 		func_ctx: &'a FuncCtx,
 		sources: &'a Sources,
-		func_meta: &'a FuncMeta,
 	) -> Self {
 		Self {
 			builder,
@@ -45,7 +43,6 @@ impl<'a> CirBuilder<'a> {
 			ty_lists,
 			func_ctx,
 			sources,
-			func_meta,
 		}
 	}
 }
@@ -65,7 +62,6 @@ macro_rules! cir_builder {
 			&$self.ty_lists,
 			&$self.func_ctx,
 			&$self.sources,
-			&$self.func_meta,
 		)
 	};
 }

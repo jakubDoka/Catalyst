@@ -5,7 +5,6 @@ use storage::*;
 
 pub type TirStack = FramedStack<Tir>;
 pub type TirPatternGraph = PatternGraph<Tir, TirPatternMeta>;
-pub type FuncBodies = SecondaryMap<Func, TirData>;
 
 #[derive(Clone, Copy)]
 pub enum TirPatternMeta {

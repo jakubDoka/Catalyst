@@ -51,7 +51,7 @@ impl<'a> ReprInstancing<'a> {
                 let ins_base = self.expand_instances(params, base, new_instances);
                 let ptr_id = ID::pointer(self.types[ins_base].id);
 
-                if let Some(&already) = self.instances.get(ptr_id) {
+                if let Some(&already) = self.ty_instances.get(ptr_id) {
                     return already;
                 }
 
@@ -62,7 +62,7 @@ impl<'a> ReprInstancing<'a> {
                 };
 
                 let new_ty = self.types.push(pointer);
-                self.instances.insert_unique(ptr_id, new_ty);
+                self.ty_instances.insert_unique(ptr_id, new_ty);
                 //new_instances.push(new_ty); // already know the size
                 new_ty
             }
@@ -76,7 +76,7 @@ impl<'a> ReprInstancing<'a> {
                     self.ty_lists.push_one(param);
                 }
 
-                if let Some(&already) = self.instances.get(id) {
+                if let Some(&already) = self.ty_instances.get(id) {
                     self.ty_lists.discard();
                     return already;
                 }
@@ -99,7 +99,7 @@ impl<'a> ReprInstancing<'a> {
                     ..self.types[ty]
                 };
                 let ty = self.types.push(instance);
-                self.instances.insert_unique(id, ty);
+                self.ty_instances.insert_unique(id, ty);
                 new_instances.push(ty);
 
                 ty
@@ -163,7 +163,7 @@ impl<'a> LayoutBuilder<'a> {
             TyKind::Ptr(base, _) => {
                 let base = self.true_type(base, params);
                 let ptr_id = ID::pointer(self.types[base].id);
-                self.instances.get(ptr_id).unwrap().clone()
+                self.ty_instances.get(ptr_id).unwrap().clone()
             }
             TyKind::Instance(base, params) => {
                 let mut id = ID::new("<instance>") + self.types[base].id;
@@ -171,7 +171,7 @@ impl<'a> LayoutBuilder<'a> {
                     let param = self.true_type(param, params);
                     id = id + self.types[param].id;
                 }
-                self.instances.get(id).unwrap().clone()
+                self.ty_instances.get(id).unwrap().clone()
             }
             kind => unimplemented!("{kind:?}"),
         }

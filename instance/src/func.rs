@@ -34,9 +34,9 @@ impl<'a> MirBuilder<'a> {
         self.mir_builder_context.clear();
         self.func_ctx.clear();
 
-        let FuncMetaData {
+        let FuncMeta {
             sig, body, args, ..
-        } = self.func_meta[self.func];
+        } = self.funcs[self.func.meta()];
 
         let entry_point = self.func_ctx.create_block();
         {
@@ -618,7 +618,7 @@ impl<'a> MirBuilder<'a> {
         let param_slice = self.ty_lists.get(params);
 
         // dispatch bound call
-        if let FuncKind::Bound(bound, index) = self.func_meta[func].kind {
+        if let FuncKind::Bound(bound, index) = self.funcs[func.meta()].kind {
             let id = {
                 let bound = self.types[bound].id;
                 let implementor = self.types[caller.unwrap()].id;
@@ -642,10 +642,9 @@ impl<'a> MirBuilder<'a> {
             } else {
                 let instance = FuncEnt {
                     id,
-                    parent: func.into(),
                     flags: func_ent.flags & !FuncFlags::GENERIC,
                 };
-                let instance = self.funcs.push(instance);
+                let instance = self.funcs.push_instance(instance, func);
                 self.func_instances.insert(id, instance);
                 self.to_compile.push((instance, params));
                 instance

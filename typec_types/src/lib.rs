@@ -13,16 +13,16 @@ pub mod global;
 
 pub use error::TyError;
 pub use func::{
-    Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, FuncMetaData, Funcs, Sig, ToCompile,
+    Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, Funcs, Sig, ToCompile,
     ToLink, Macros, FuncInstances, Initializers,
 };
 pub use graph::Graph;
 pub use tir::{
-    FuncBodies, Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, 
+    Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, 
     TirStack, TirPatternMeta,
 };
 pub use ty::{
-    BoundImpl, BoundImpls, BuiltinTypes, Instances, FuncLists, Ty, TyComp, TyCompEnt, TyCompList,
+    BoundImpl, BoundImpls, BuiltinTypes, TyInstances, FuncLists, Ty, TyComp, TyCompEnt, TyCompList,
     TyCompLookup, TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
     TyGraph,
 };

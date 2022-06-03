@@ -27,7 +27,6 @@ pub struct MirBuilder<'a> {
 	pub repr_fields: &'a ReprFields,
 	pub builtin_types: &'a BuiltinTypes,
 	pub sources: &'a Sources,
-	pub func_meta: &'a FuncMeta,
 	pub return_dest: Option<mir::Value>,
 }
 
@@ -52,7 +51,6 @@ impl<'a> MirBuilder<'a> {
 		repr_fields: &'a ReprFields,
 		builtin_types: &'a BuiltinTypes,
 		sources: &'a Sources,
-		func_meta: &'a FuncMeta,
 	) -> Self {
 		Self {
 			func,
@@ -74,7 +72,6 @@ impl<'a> MirBuilder<'a> {
 			repr_fields,
 			builtin_types,
 			sources,
-			func_meta,
 			return_dest: None,
 		}
 	}
@@ -103,7 +100,6 @@ macro_rules! mir_builder {
 			&$self.repr_fields,
 			&$self.builtin_types,
 			&$self.sources,
-			&$self.func_meta,
 		)
 	};
 }
@@ -111,7 +107,7 @@ macro_rules! mir_builder {
 pub struct ReprInstancing<'a> {
 	pub types: &'a mut Types,
 	pub ty_lists: &'a mut TyLists,
-	pub instances: &'a mut Instances,
+	pub ty_instances: &'a mut TyInstances,
 	pub repr_fields: &'a mut ReprFields,
 	pub reprs: &'a mut Reprs,
 	pub sources: &'a Sources,
@@ -123,7 +119,7 @@ impl<'a> ReprInstancing<'a> {
 	pub fn new(
 		types: &'a mut Types,
 		ty_lists: &'a mut TyLists,
-		instances: &'a mut Instances,
+		ty_instances: &'a mut TyInstances,
 		repr_fields: &'a mut ReprFields,
 		reprs: &'a mut Reprs,
 		sources: &'a Sources,
@@ -133,7 +129,7 @@ impl<'a> ReprInstancing<'a> {
 		Self {
 			types,
 			ty_lists,
-			instances,
+			ty_instances,
 			repr_fields,
 			reprs,
 			sources,
@@ -149,7 +145,7 @@ macro_rules! repr_instancing {
 		ReprInstancing::new(
 			&mut $self.types,
 			&mut $self.ty_lists,
-			&mut $self.instances,
+			&mut $self.ty_instances,
 			&mut $self.repr_fields,
 			&mut $self.reprs,
 			&$self.sources,
@@ -165,7 +161,7 @@ pub struct LayoutBuilder<'a> {
 	pub types: &'a Types,
 	pub sources: &'a Sources,
 	pub ty_comps: &'a TyComps,
-	pub instances: &'a Instances,
+	pub ty_instances: &'a TyInstances,
 	pub ty_lists: &'a TyLists,
 }
 
@@ -176,7 +172,7 @@ impl<'a> LayoutBuilder<'a> {
 		types: &'a Types,
 		sources: &'a Sources,
 		ty_comps: &'a TyComps,
-		instances: &'a Instances,
+		ty_instances: &'a TyInstances,
 		ty_lists: &'a TyLists,
 	) -> Self {
 		Self {
@@ -185,7 +181,7 @@ impl<'a> LayoutBuilder<'a> {
 			types,
 			sources,
 			ty_comps,
-			instances,
+			ty_instances,
 			ty_lists,
 		}
 	}
@@ -200,7 +196,7 @@ macro_rules! layout_builder {
 			&$self.types,
 			&$self.sources,
 			&$self.ty_comps,
-			&$self.instances,
+			&$self.ty_instances,
 			&$self.ty_lists,
 		)
 	};
