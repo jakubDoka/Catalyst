@@ -1,27 +1,14 @@
-use std::{any::TypeId, collections::HashMap};
+use std::any::TypeId;
 
 use crate::error::*;
 use lexer::*;
 use storage::*;
 
-pub struct ItemLexicon {
-    map: HashMap<TypeId, &'static str>,
-}
-
-impl ItemLexicon {
-    pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
-    }
-
-    pub fn register<T: 'static>(&mut self, name: &'static str) {
-        self.map.insert(TypeId::of::<T>(), name);
-    }
-
-    pub fn name_of(&self, item: TypeId) -> &str {
-        self.map.get(&item).unwrap()
-    }
+#[derive(Debug, Clone)]
+pub enum ScopeFindError {
+    NotFound,
+    InvalidType(TypeId),
+    Collision(Vec<Span>),
 }
 
 pub struct Scope {
@@ -41,91 +28,46 @@ impl Scope {
         }
     }
 
-    pub fn weak_get_raw(&self, id: impl Into<ID>) -> Option<ScopeItem> {
-        self.map.get(id).cloned()
+    pub fn get_concrete<T: EntityRef + 'static>(&self, id: impl Into<ID>) -> Result<T, ScopeFindError> {
+        self.get_concrete_by_id(id.into())
     }
 
-    pub fn weak_get<T: 'static + EntityRef>(&self, id: impl Into<ID>) -> Option<T> {
+    pub fn get_concrete_by_id<T: EntityRef + 'static>(&self, id: impl Into<ID>) -> Result<T, ScopeFindError> {
+        let id = id.into();
+        self
+            .get_by_id(id)
+            .and_then(|item| item.pointer
+                .may_read::<T>()
+                .ok_or(ScopeFindError::InvalidType(item.pointer.id)),
+            )
+    }
+
+    pub fn get(&self, id: impl Into<ID>) -> Result<ScopeItem, ScopeFindError> {
+        self.get_by_id(id.into())
+    }
+    
+    pub fn get_by_id(&self, id: ID) -> Result<ScopeItem, ScopeFindError> {
         self.map
             .get(id)
-            .map(|item| item.pointer.may_read())
-            .flatten()
+            .cloned()
+            .ok_or(ScopeFindError::NotFound)
+            .and_then(|item| item.pointer
+                .may_read::<ScopeCollision>()
+                .is_none()
+                .then_some(item)
+                .ok_or_else(|| ScopeFindError::Collision(self.suggestions(id.into())))            
+            )
     }
-
-    pub fn get<T: 'static + EntityRef>(
-        &self,
-        diagnostics: &mut errors::Diagnostics,
-        id: impl Into<ID>,
-        span: Span,
-    ) -> errors::Result<T> {
-        self.get_by_id(diagnostics, id.into(), span)
+        
+    pub fn suggestions(&self, id: ID) -> Vec<Span> {
+        self
+            .dependencies
+            .iter()
+            .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
+            .collect::<Vec<_>>()
+    
     }
-
-    pub fn may_get<T: 'static + EntityRef>(
-        &self,
-        diagnostics: &mut errors::Diagnostics,
-        id: impl Into<ID>,
-        span: Span,
-    ) -> errors::Result<Option<T>> {
-        self.may_get_by_id(diagnostics, id.into(), span)
-    }
-
-    pub fn get_by_id<T: 'static + EntityRef>(
-        &self,
-        diagnostics: &mut errors::Diagnostics,
-        id: ID,
-        span: Span,
-    ) -> errors::Result<T> {
-        let Some(data) = self.may_get_by_id(diagnostics, id, span)? else {
-            diagnostics.push(ModuleError::InvalidScopeItem {
-                loc: span,
-                expected: vec![TypeId::of::<T>()],
-                found: self.map.get(id).unwrap().pointer.id,
-            });
-            return Err(());
-        };
-
-        Ok(data)
-    }
-
-    pub fn may_get_by_id<T: 'static + EntityRef>(
-        &self,
-        diagnostics: &mut errors::Diagnostics,
-        id: ID,
-        span: Span,
-    ) -> errors::Result<Option<T>> {
-        let Some(item) = self.map.get(id) else {
-            diagnostics.push(ModuleError::ScopeItemNotFound {
-                loc: span,
-            });
-            return Err(());
-        };
-
-        if item.pointer.is_of::<ScopeCollision>() {
-            let suggestions = self
-                .dependencies
-                .iter()
-                .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
-                .collect::<Vec<_>>();
-
-            diagnostics.push(ModuleError::AmbiguousScopeItem {
-                loc: span,
-                suggestions,
-            });
-
-            return Err(());
-        }
-
-        Ok(item.pointer.may_read::<T>())
-    }
-
-    pub fn push_frame(&mut self, frame: impl Iterator<Item = (impl Into<ID>, ScopeItem)>) {
-        self.mark_frame();
-        for (id, item) in frame {
-            self.push_item(id, item);
-        }
-    }
-
+    
     pub fn mark_frame(&mut self) {
         self.frames.push(self.stack.len());
     }
@@ -139,7 +81,7 @@ impl Scope {
     pub fn pop_item(&mut self) {
         assert!(
             *self.frames.last().unwrap() <= self.stack.len(),
-            "{:?} < {}",
+            "{:?} <= {}",
             self.frames.last(),
             self.stack.len()
         );

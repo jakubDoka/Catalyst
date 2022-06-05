@@ -1,6 +1,5 @@
 use crate::units::*;
 use lexer::*;
-use std::any::TypeId;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -8,18 +7,6 @@ pub enum ModuleError {
     ScopeCollision {
         new: Span,
         existing: Span,
-    },
-    AmbiguousScopeItem {
-        loc: Span,
-        suggestions: Vec<Span>,
-    },
-    InvalidScopeItem {
-        loc: Span,
-        expected: Vec<TypeId>,
-        found: TypeId,
-    },
-    ScopeItemNotFound {
-        loc: Span,
     },
     RootModuleNotFound {
         unit: Unit,

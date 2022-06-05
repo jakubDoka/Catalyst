@@ -1,11 +1,10 @@
 use lexer::*;
-use module_types::{error::ModuleError, scope::ItemLexicon, units::Units};
+use module_types::{error::ModuleError, units::Units};
 use storage::*;
 
 pub fn display(
     error: &ModuleError,
     sources: &Sources,
-    scope_item_lexicon: &ItemLexicon,
     units: &Units,
     to: &mut String,
 ) -> std::fmt::Result {
@@ -17,56 +16,6 @@ pub fn display(
                 write!(to, "item with this identifier already exists")
             })?;
             existing.underline_info(sources, to, &|to| write!(to, "identifier is used here"))?;
-        }
-        ModuleError::AmbiguousScopeItem { loc, suggestions } => {
-            loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(
-                    to,
-                    "ambiguous scope item, multiple items with this identifier are imported"
-                )
-            })?;
-            writeln!(to, "|> specify the module with syntax '<module>::<ident>'")?;
-            write!(to, "|> possible options:")?;
-            for &suggestion in suggestions {
-                write!(
-                    to,
-                    " {}::{}",
-                    sources.display(suggestion),
-                    sources.display(*loc)
-                )?;
-            }
-            writeln!(to)?;
-        }
-        &ModuleError::InvalidScopeItem {
-            loc,
-            ref expected,
-            found,
-        } => {
-            let expected = expected
-                .iter()
-                .map(|&exp| scope_item_lexicon.name_of(exp))
-                .collect::<Vec<_>>()
-                .join(" | ");
-
-            loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(
-                    to,
-                    "invalid scope item, expected {} but found {}",
-                    expected,
-                    scope_item_lexicon.name_of(found),
-                )
-            })?;
-        }
-        ModuleError::ScopeItemNotFound { loc } => {
-            loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(
-                    to,
-                    "scope item not found, will find a way to suggest... one day",
-                )
-            })?;
         }
         ModuleError::RootModuleNotFound { unit, trace } => {
             let unit = &units[*unit];

@@ -130,7 +130,6 @@ pub struct MainTirBuilder<'a> {
 	pub host_isa: &'a Box<dyn TargetIsa>,
 	pub sources: &'a Sources,
 	pub builtin_types: &'a BuiltinTypes,
-	pub item_lexicon: &'a ItemLexicon,
 	pub units: &'a Units,
 	pub module_map: &'a ModuleMap,
 }
@@ -169,7 +168,6 @@ impl<'a> MainTirBuilder<'a> {
 		host_isa: &'a Box<dyn TargetIsa>,
 		sources: &'a Sources,
 		builtin_types: &'a BuiltinTypes,
-		item_lexicon: &'a ItemLexicon,
 		units: &'a Units,
 		module_map: &'a ModuleMap,
 	) -> Self {
@@ -206,7 +204,6 @@ impl<'a> MainTirBuilder<'a> {
 			host_isa,
 			sources,
 			builtin_types,
-			item_lexicon,
 			units,
 			module_map,
 		}
@@ -249,7 +246,6 @@ macro_rules! main_tir_builder {
 			&$self.host_isa,
 			&$self.sources,
 			&$self.builtin_types,
-			&$self.item_lexicon,
 			&$self.units,
 			&$self.module_map,
 		)
@@ -411,23 +407,21 @@ macro_rules! dead_code_elim {
 }
 
 pub struct Logger<'a> {
-	pub diagnostics: &'a mut Diagnostics,
+	pub diagnostics: &'a Diagnostics,
 	pub ty_lists: &'a TyLists,
 	pub types: &'a Types,
 	pub sources: &'a Sources,
 	pub ty_comps: &'a TyComps,
-	pub item_lexicon: &'a ItemLexicon,
 	pub units: &'a Units,
 }
 
 impl<'a> Logger<'a> {
 	pub fn new(
-		diagnostics: &'a mut Diagnostics,
+		diagnostics: &'a Diagnostics,
 		ty_lists: &'a TyLists,
 		types: &'a Types,
 		sources: &'a Sources,
 		ty_comps: &'a TyComps,
-		item_lexicon: &'a ItemLexicon,
 		units: &'a Units,
 	) -> Self {
 		Self {
@@ -436,7 +430,6 @@ impl<'a> Logger<'a> {
 			types,
 			sources,
 			ty_comps,
-			item_lexicon,
 			units,
 		}
 	}
@@ -446,12 +439,11 @@ impl<'a> Logger<'a> {
 macro_rules! logger {
 	($self:expr) => {
 		Logger::new(
-			&mut $self.diagnostics,
+			&$self.diagnostics,
 			&$self.ty_lists,
 			&$self.types,
 			&$self.sources,
 			&$self.ty_comps,
-			&$self.item_lexicon,
 			&$self.units,
 		)
 	};

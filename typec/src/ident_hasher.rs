@@ -21,8 +21,10 @@ impl<'a> IdentHasher<'a> {
                     let span = self.ast_data.nodes[module].span;
                     let id = self.sources.id_of(span);
 
-                    let source = self.scope.get::<Source>(self.diagnostics, id, span)?;
-                    ID::from(source)
+                    match self.scope.get_concrete::<Source>(id) {
+                        Ok(source) => ID::from(source),
+                        Err(err) => todo!("{err:?}"),
+                    }                    
                 };
 
                 let (ty, span) = if let Some(owner) = owner {
@@ -30,7 +32,13 @@ impl<'a> IdentHasher<'a> {
                 } else {
                     let span = self.ast_data.nodes[item].span;
                     let id = self.sources.id_of(span);
-                    (self.scope.get::<Ty>(self.diagnostics, id, span)?, span)
+                    (
+                        match self.scope.get_concrete::<Ty>(id) {
+                            Ok(ty) => ty,
+                            Err(err) => todo!("{err:?}"),
+                        },
+                        span
+                    )
                 };
 
                 let id = {
@@ -47,15 +55,19 @@ impl<'a> IdentHasher<'a> {
                 let span = self.ast_data.nodes[module_or_type].span;
                 let id = self.sources.id_of(span);
 
+                let item = self.scope.get(id);
+                let Ok(item) = item else {
+                    todo!("{item:?}");
+                };
+
                 Ok(
-                    if let Some(source) =
-                        self.scope.may_get::<Source>(self.diagnostics, id, span)?
-                    {
+                    if let Some(source) = item.pointer.may_read::<Source>() {
                         (item_id + ID::from(source), None)
-                    } else {
-                        let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
+                    } else if let Some(ty) = item.pointer.may_read::<Ty>() {
                         (ID::owned_func(self.types[ty].id, item_id), Some((ty, span)))
-                    },
+                    } else {
+                        todo!("{item:?}");
+                    }
                 )
             }
             (&[], None) => return Ok((ast::id_of(ast, self.ast_data, self.sources), None)),

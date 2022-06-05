@@ -13,6 +13,8 @@ let CONSTANT = 1
 let STRUCT_CONSTANT = init_something()
 let mut dangerous_int = 0
 
+break
+
 #entry
 fn main() -> int {
     if other(1, 2, 3) != 7 {

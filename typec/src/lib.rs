@@ -189,7 +189,10 @@ impl TyParser<'_> {
             return Ok(Ty::reserved_value());
         }
 
-        self.scope.get(self.diagnostics, str, span)
+        match self.scope.get_concrete::<Ty>(str) {
+            Ok(ty) => Ok(ty),
+            Err(err) => todo!("{err:?}"),
+        }
     }
 
     fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {

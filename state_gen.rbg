@@ -59,7 +59,6 @@ file "src/state.rs" {
         host_isa: `Box<dyn TargetIsa>`
         Sources
         BuiltinTypes
-        ItemLexicon
         Units
         ModuleMap
     }
@@ -102,12 +101,11 @@ file "src/state.rs" {
     }
 
     struct Logger {
-        mut Diagnostics
+        Diagnostics
         TyLists
         Types
         Sources
         TyComps
-        ItemLexicon
         Units
     }
 }

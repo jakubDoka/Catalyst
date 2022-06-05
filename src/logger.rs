@@ -19,7 +19,6 @@ impl Logger<'_> {
                 modules::error::display(
                     err,
                     &self.sources,
-                    &self.item_lexicon,
                     &self.units,
                     &mut errors,
                 )

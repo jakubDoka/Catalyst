@@ -113,7 +113,6 @@ pub struct Compiler {
 
     // diagnostics
     diagnostics: Diagnostics,
-    item_lexicon: ItemLexicon,
 
     // typec
     ty_graph: TyGraph,
@@ -184,18 +183,6 @@ impl Compiler {
         let mut builtin_source = BuiltinSource::new(&mut sources);
         
         let mut modules = Modules::new();
-        let item_lexicon = {
-            let mut map = ItemLexicon::new();
-    
-            map.register::<Source>("module");
-            map.register::<Ty>("type");
-            map.register::<Func>("function");
-            map.register::<Tir>("tir");
-            map.register::<Global>("global");
-
-            map
-        };
-
         let mut types = Types::new();
         let builtin_types = BuiltinTypes::new(
             &mut sources, 
@@ -244,7 +231,6 @@ impl Compiler {
             module_order: Vec::new(),
             
             diagnostics: Diagnostics::new(),
-            item_lexicon,
             
             ty_graph: TyGraph::new(),
             types,
@@ -713,60 +699,7 @@ impl Compiler {
     /// Function iterates trough all possible diagnostic options, 
     /// logs them and if errors are encountered, exits.
     fn log_diagnostics(&self) {
-        if self.diagnostics.is_empty() {
-            return;
-        }
-        
-        let mut errors = String::new();
-
-        self.diagnostics
-            .iter::<AstError>()
-            .map(|errs| errs.for_each(|err| 
-                err.display(
-                    &self.sources, 
-                    &mut errors
-                ).unwrap()
-            ));
-
-        self.diagnostics
-            .iter::<ModuleError>()
-            .map(|errs| errs.for_each(|err|
-                modules::error::display(
-                    err, 
-                    &self.sources, 
-                    &self.item_lexicon, 
-                    &self.units, 
-                    &mut errors
-                ).unwrap()
-            ));
-
-        self.diagnostics
-            .iter::<TyError>()
-            .map(|errs| errs.for_each(|err| 
-                typec::error::display(
-                    err, 
-                    &self.sources, 
-                    &self.types, 
-                    &self.ty_lists,
-                    &self.ty_comps, 
-                    &mut errors
-                ).unwrap()
-            ));
-
-        self.diagnostics
-            .iter::<InstError>()
-            .map(|errs| errs.for_each(|err| 
-                instance::error::display(
-                    &err, 
-                    &self.types, 
-                    &self.ty_lists, 
-                    &self.sources, 
-                    &mut errors
-                ).unwrap()
-            ));
-
-        println!("{errors}");
-        exit!();
+        logger!(self).log();
     }
 
     /// All stages glued together perform compilation. Calling this is preferable, but

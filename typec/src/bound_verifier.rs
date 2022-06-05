@@ -1,4 +1,6 @@
 
+use module_types::scope::ScopeFindError;
+
 use crate::{TyError, *};
 
 impl BoundVerifier<'_> {
@@ -27,8 +29,9 @@ impl BoundVerifier<'_> {
                     };
 
                     let span = self.ast_data.nodes[func].span;
-                    let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, span) else {
-                        continue;
+                    let func = self.scope.get_concrete::<Func>(id);
+                    let Ok(func) = func else {
+                        todo!("{func:?}");
                     };
 
                     let id = {
@@ -51,7 +54,7 @@ impl BoundVerifier<'_> {
                 }
             }
 
-            let impl_span = self.ast_data.nodes[impl_block].span;
+            // let impl_span = self.ast_data.nodes[impl_block].span;
 
             // check if all functions exist and match the signature
             let funcs = {
@@ -73,16 +76,12 @@ impl BoundVerifier<'_> {
                         (sugar_id, certain_id)
                     };
 
-                    let maybe_other = None // looks better
-                        .or_else(|| self.scope.weak_get::<Func>(certain_id))
-                        .or_else(|| self.scope.weak_get::<Func>(sugar_id));
+                    let maybe_other = Err(ScopeFindError::NotFound) // looks better
+                        .or_else(|_| self.scope.get_concrete::<Func>(certain_id))
+                        .or_else(|_| self.scope.get_concrete::<Func>(sugar_id));
 
-                    let Some(other) = maybe_other else {
-                        self.diagnostics.push(TyError::MissingBoundImplFunc {
-                            func: ent.name,
-                            loc: impl_span,
-                        });
-                        continue;
+                    let Ok(other) = maybe_other else {
+                        todo!("{maybe_other:?}");
                     };
 
                     drop(self.compare_signatures(*func, other));

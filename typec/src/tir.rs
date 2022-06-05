@@ -360,7 +360,7 @@ impl TirBuilder<'_> {
                         let op_id = ID::new("==");
                         ID::binary(ty_id, op_id)
                     };
-                    self.scope.get::<Func>(self.diagnostics, id, span).unwrap()
+                    self.scope.get_concrete::<Func>(id).unwrap()
                 };
 
                 let int_lit = self.int_lit(branch_ent.coverage.start, ty);
@@ -680,7 +680,10 @@ impl TirBuilder<'_> {
                 ID::unary(ty, op)
             };
 
-            self.scope.get::<Func>(self.diagnostics, id, span)?
+            match self.scope.get_concrete::<Func>(id) {
+                Ok(func) => func,
+                Err(err) => todo!("{err:?}"),
+            }
         };
 
         let result = {
@@ -707,7 +710,10 @@ impl TirBuilder<'_> {
             Some(self.expr(value)?)
         };
 
-        let loop_expr = self.scope.get::<Tir>(self.diagnostics, "<loop>", span)?;
+        let loop_expr = self.scope.get_concrete::<Tir>("<loop>");
+        let Ok(loop_expr) = loop_expr else {
+            todo!("{loop_expr:?}");
+        };
 
         {
             let TirKind::LoopInProgress(ret, infinite) = &mut self.tir_data.ents[loop_expr].kind else {
@@ -796,7 +802,7 @@ impl TirBuilder<'_> {
             unreachable!();
         };
 
-        let (id, fn_span, mut obj, caller, instantiation) =
+        let (id, _fn_span, mut obj, caller, instantiation) =
             if self.ast_data.nodes[caller].kind == AstKind::DotExpr {
                 let &[expr, name] = self.ast_data.children(caller) else {
                     unreachable!();
@@ -837,7 +843,10 @@ impl TirBuilder<'_> {
             };
 
         // TODO: Handle function pointer as field
-        let func = self.scope.get::<Func>(self.diagnostics, id, fn_span)?;
+        let func = self.scope.get_concrete::<Func>(id);
+        let Ok(func) = func else {
+            todo!("{func:?}");
+        };
 
         let FuncMeta { sig, params, .. } = self.funcs[func.meta()];
         let flags = self.funcs[func].flags;
@@ -1131,7 +1140,7 @@ impl TirBuilder<'_> {
             unreachable!("{:?}", self.ast_data.children(ast));
         };
 
-        let span = self.ast_data.nodes[name].span;
+        // let span = self.ast_data.nodes[name].span;
         let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
         if let Some((enum_ty, span)) = owner {
             let Some(&variant) = self.ty_comp_lookup.get(id) else {
@@ -1154,7 +1163,10 @@ impl TirBuilder<'_> {
 
             Ok(self.tir_data.ents.push(ent))
         } else {
-            let ty = self.scope.get::<Ty>(self.diagnostics, id, span)?;
+            let ty = self.scope.get_concrete::<Ty>(id);
+            let Ok(ty) = ty else {
+                todo!("{ty:?}");
+            };
             self.constructor_low(ty, body)
         }
     }
@@ -1449,11 +1461,9 @@ impl TirBuilder<'_> {
     }
 
     fn symbol_low(&mut self, id: ID, span: Span) -> errors::Result<Tir> {
-        let Some(value) = self.scope.weak_get_raw(id) else {
-            self.diagnostics.push(ModuleError::ScopeItemNotFound {
-                loc: span,
-            });
-            return Err(());
+        let value = self.scope.get(id);
+        let Ok(value) = value else {
+            todo!("{value:?}");
         };
 
         let ent = if let Some(local) = value.pointer.may_read::<Tir>() {
@@ -1514,13 +1524,9 @@ impl TirBuilder<'_> {
             ID::binary(left_id, op_id)
         };
 
-        let Ok(func) = self.scope.get::<Func>(self.diagnostics, id, op_span) else {
-            self.diagnostics.push(TyError::BinaryOperatorNotFound {
-                left_ty: self.tir_data.ents[left].ty,
-                right_ty: self.tir_data.ents[right].ty,
-                loc: op_span,
-            });
-            return Err(());
+        let func = self.scope.get_concrete::<Func>(id);
+        let Ok(func) = func else {
+            todo!("{func:?}")
         };
 
         /* sanity check */
