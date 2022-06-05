@@ -23,7 +23,7 @@ pub use tir::{
 };
 pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, TyInstances, FuncLists, Ty, TyComp, TyCompEnt, TyCompList,
-    TyCompLookup, TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
+    TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
     TyGraph,
 };
 pub use global::{

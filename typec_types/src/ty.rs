@@ -10,7 +10,7 @@ pub type TyGraph = Graph<Ty>;
 pub type TyLists = FramedStackMap<TyList, Ty>;
 pub type Types = PrimaryMap<Ty, TyEnt>;
 pub type FuncLists = StackMap<FuncList, Func>;
-pub type TyCompLookup = Map<TyComp>;
+// pub type TyCompLookup = Map<TyComp>;
 pub type TyComps = StackMap<TyCompList, TyCompEnt, TyComp>;
 pub type BoundImpls = Map<BoundImpl>;
 pub type TyInstances = Map<Ty>;
@@ -203,14 +203,14 @@ gen_builtin_table!(
 pub struct TyCompEnt {
     pub ty: Ty,
     pub index: u32,
-    pub span: Span,
+    pub name: Span,
 }
 
 impl ReservedValue for TyCompEnt {
     fn reserved_value() -> Self {
         TyCompEnt {
             ty: Ty::reserved_value(),
-            span: Span::reserved_value(),
+            name: Span::reserved_value(),
             index: u32::MAX,
         }
     }

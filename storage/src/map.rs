@@ -294,28 +294,20 @@ impl ID {
         Self::new("*") + ty
     }
 
-    pub fn field(ty: Self, name: Self) -> Self {
+    pub fn owned(ty: Self, name: Self) -> Self {
         ty + name
     }
 
-    pub fn bound_impl_owned_func(bound: Self, implementor: Self, func: Self) -> Self {
-        implementor + Self::owned_func(bound, func)
+    pub fn bound_impl_func(bound: Self, implementor: Self, func: Self) -> Self {
+        implementor + Self::owned(bound, func)
     }
 
     pub fn binary(left: Self, op: Self) -> Self {
         Self::new("<binary>") + left + op
     }
 
-    pub fn owned_func(ty: Self, name: Self) -> Self {
-        ty + name
-    }
-
     pub fn unary(ty: Self, op: Self) -> Self {
         Self::new("<unary>") + ty + op
-    }
-
-    pub fn enum_variant(ty: Self, var: Self) -> Self {
-        ty + var
     }
 
     pub fn from_path(path: &Path) -> Self {

@@ -9,18 +9,18 @@ struct [T] Loo {
 }
 
 struct Goo {
-    field: int
+    afield: int
 }
 
 impl Goo {
     fn new() -> Self {
         Self::{
-            field: 10
+            afield: 10
         }
     }
 
     fn field(s: *Self) -> int {
-        s.field
+        s.afield
     }
 
     fn something() {}

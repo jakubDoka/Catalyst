@@ -33,7 +33,6 @@ file "src/state.rs" {
         mut Types
         mut TyLists
         mut TyComps
-        mut TyCompLookup
         mut FuncLists
         mut TyInstances
         mut BoundImpls
@@ -189,7 +188,6 @@ file "typec/src/state.rs" {
         mut Types
         mut TyLists
         mut TyComps
-        mut TyCompLookup
         mut FuncLists
         mut TyInstances
         mut BoundImpls
@@ -215,7 +213,6 @@ file "typec/src/state.rs" {
         mut TyLists
         mut TyInstances
         mut TyComps
-        mut TyCompLookup
         mut BoundImpls
         mut ScopeContext
         mut TirData
@@ -241,7 +238,6 @@ file "typec/src/state.rs" {
         mut Types
         mut TyLists
         mut TyComps
-        mut TyCompLookup
         mut TyInstances
         mut BoundImpls
         mut ScopeContext

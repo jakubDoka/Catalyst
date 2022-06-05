@@ -340,10 +340,10 @@ impl<'a> ScopeBuilder<'a> {
             if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) = self.funcs[func.meta()].kind {
                 if let Some(bound) = bound {
                     let implementor = self.types[owner].id;
-                    ID::bound_impl_owned_func(bound, implementor, id)
+                    ID::bound_impl_func(bound, implementor, id)
                 } else {
                     let owner = self.types[owner].id;
-                    ID::owned_func(owner, id)
+                    ID::owned(owner, id)
                 }
             } else {
                 id

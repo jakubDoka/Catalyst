@@ -44,7 +44,7 @@ impl<'a> IdentHasher<'a> {
                 let id = {
                     let name = ast::id_of(item, self.ast_data, self.sources);
                     let ty = self.types.base_id_of(ty);
-                    ID::owned_func(ty, name)
+                    ID::owned(ty, name)
                 };
 
                 Ok((id + module_id, Some((ty, span))))
@@ -64,7 +64,7 @@ impl<'a> IdentHasher<'a> {
                     if let Some(source) = item.pointer.may_read::<Source>() {
                         (item_id + ID::from(source), None)
                     } else if let Some(ty) = item.pointer.may_read::<Ty>() {
-                        (ID::owned_func(self.types[ty].id, item_id), Some((ty, span)))
+                        (ID::owned(self.types[ty].id, item_id), Some((ty, span)))
                     } else {
                         todo!("{item:?}");
                     }
@@ -74,7 +74,7 @@ impl<'a> IdentHasher<'a> {
             (&[], Some((ty, span))) => {
                 let name = ast::id_of(ast, self.ast_data, self.sources);
                 let ty_id = self.types.base_id_of(ty);
-                Ok((ID::owned_func(ty_id, name), Some((ty, span))))
+                Ok((ID::owned(ty_id, name), Some((ty, span))))
             }
             _ => {
                 self.diagnostics.push(TyError::InvalidPath {

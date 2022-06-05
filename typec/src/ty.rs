@@ -59,9 +59,9 @@ impl TyBuilder<'_> {
         let ent = TyCompEnt {
             ty: discriminant_ty,
             index: 0,
-            span: self.builtin_types.discriminant,
+            name: self.builtin_types.discriminant,
         };
-        variants.push((ent, self.sources.id_of(self.builtin_types.discriminant)));
+        variants.push(ent);
 
         for (i, &variant) in self.ast_data.children(ast).iter().enumerate() {
             let index = i as u32 + 1;
@@ -69,8 +69,7 @@ impl TyBuilder<'_> {
                 unreachable!();
             };
             let name = self.ast_data.nodes[name].span;
-            let variant_id = ID::field(id, self.sources.id_of(name));
-
+            
             let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
                 continue
             };
@@ -80,15 +79,18 @@ impl TyBuilder<'_> {
             let ent = TyCompEnt {
                 ty,
                 index,
-                span: name,
+                name,
             };
 
-            variants.push((ent, variant_id));
+            variants.push(ent);
         }
-
-        for (comp, variant_id) in variants {
-            let comp = self.ty_comps.push_one(comp);
-            self.ty_comp_lookup.insert(variant_id, comp);
+        
+        for comp in variants {
+            let id = ID::owned(id, self.sources.id_of(comp.name));
+            let comp_id = self.ty_comps.push_one(comp);
+            let module_item = ModuleItem::new(id, comp_id, comp.name);
+            drop(self.scope.insert(self.diagnostics, comp.name.source(), id, module_item.to_scope_item()));
+            self.modules[comp.name.source()].items.push(module_item);
         }
 
         (discriminant_ty, self.ty_comps.close_frame())
@@ -129,19 +131,21 @@ impl TyBuilder<'_> {
 
             let id = {
                 let name = self.sources.id_of(span);
-                ID::field(id, name)
+                ID::owned(id, name)
             };
 
             let field = {
                 let field = TyCompEnt {
-                    span,
+                    name: span,
                     ty: field_ty,
                     index: i as u32,
                 };
                 self.ty_comps.push_one(field)
             };
 
-            assert!(self.ty_comp_lookup.insert(id, field).is_none());
+            let module_item = ModuleItem::new(id, field, span);
+            drop(self.scope.insert(self.diagnostics, span.source(), id, module_item.to_scope_item()));
+            self.modules[span.source()].items.push(module_item);
         }
         self.ty_comps.close_frame()
     }

@@ -95,7 +95,7 @@ pub fn display(
 
             writeln!(to, "|> known variants:")?;
             for variant in state.ty_comps.get(variants).iter().skip(1) {
-                writeln!(to, "|\t{}", state.sources.display(variant.span))?;
+                writeln!(to, "|\t{}", state.sources.display(variant.name))?;
             }
         }
         &TyError::UnregisteredFieldIndex {

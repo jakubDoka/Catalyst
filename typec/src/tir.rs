@@ -159,7 +159,7 @@ impl TirBuilder<'_> {
                     let id = {
                         let id = self.sources.id_of(name);
                         let bound = self.types[bound_combo].id;
-                        ID::owned_func(bound, id)
+                        ID::owned(bound, id)
                     };
                     self.scope.push_item(id, ScopeItem::new(func, name));
                 }
@@ -564,13 +564,10 @@ impl TirBuilder<'_> {
             ..
         } = self.types[expr_ty]
         {
-            let id = ID::field(enum_id, id);
-            let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                self.diagnostics.push(TyError::UnknownEnumVariant {
-                    loc: span,
-                    on: expr_ty,
-                });
-                return Err(());
+            let id = ID::owned(enum_id, id);
+            let variant = self.scope.get_concrete::<TyComp>(id);
+            let Ok(variant) = variant else {
+                todo!("{variant:?}");
             };
             let TyCompEnt {
                 ty: variant, index, ..
@@ -1143,12 +1140,9 @@ impl TirBuilder<'_> {
         // let span = self.ast_data.nodes[name].span;
         let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
         if let Some((enum_ty, span)) = owner {
-            let Some(&variant) = self.ty_comp_lookup.get(id) else {
-                self.diagnostics.push(TyError::UnknownEnumVariant {
-                    loc: span,
-                    on: enum_ty,
-                });
-                return Err(())
+            let variant = self.scope.get_concrete::<TyComp>(id);
+            let Ok(variant) = variant else {
+                todo!("{variant:?}");
             };
             let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
             let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
@@ -1209,7 +1203,7 @@ impl TirBuilder<'_> {
             };
 
             let TyCompEnt {
-                span: hint, index, ..
+                name: hint, index, ..
             } = self.ty_comps[field];
 
             let Ok(value) = (match self.ast_data.nodes[expr].kind {
@@ -1251,7 +1245,7 @@ impl TirBuilder<'_> {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, &value)| (value == Tir::reserved_value()).then_some(index))
-                .map(|i| self.ty_comps.get(fields)[i].span)
+                .map(|i| self.ty_comps.get(fields)[i].name)
                 .collect::<Vec<_>>();
 
             self.diagnostics.push(TyError::ConstructorMissingFields {
@@ -1634,7 +1628,7 @@ impl TirBuilder<'_> {
         ))
     }
 
-    fn find_field(&mut self, on: Ty, id: ID, loc: Span) -> errors::Result<(TyComp, Ty)> {
+    fn find_field(&mut self, on: Ty, id: ID, _loc: Span) -> errors::Result<(TyComp, Ty)> {
         let id = {
             let on = if let TyKind::Instance(base, ..) = self.types[on].kind {
                 base
@@ -1642,38 +1636,24 @@ impl TirBuilder<'_> {
                 on
             };
             let ty_id = self.types[on].id;
-            ID::field(ty_id, id)
+            ID::owned(ty_id, id)
         };
 
-        self.ty_comp_lookup
-            .get(id)
-            .map(|&f| {
-                let ty = self.ty_comps[f].ty;
-                if let TyKind::Instance(_, params) = self.types[on].kind {
-                    let params = self.ty_lists.get(params).to_vec();
-                    let ty = ty_parser!(self).instantiate(ty, &params);
-                    (f, ty)
-                } else {
-                    (f, ty)
-                }
-            })
-            .ok_or_else(|| {
-                let candidates = if let TyKind::Struct(fields) = self.types[on].kind {
-                    self.ty_comps
-                        .get(fields)
-                        .iter()
-                        .map(|field| field.span)
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+        let field = self.scope.get_concrete::<TyComp>(id);
+        let Ok(field) = field else {
+            todo!("{field:?}");
+        };
+        
+        let ty = self.ty_comps[field].ty;
+        let ty = if let TyKind::Instance(_, params) = self.types[on].kind {
+            let params = self.ty_lists.get(params).to_vec();
+            let ty = ty_parser!(self).instantiate(ty, &params);
+            ty
+        } else {
+            ty
+        };
 
-                self.diagnostics.push(TyError::UnknownField {
-                    candidates,
-                    on,
-                    loc,
-                });
-            })
+        Ok((field, ty))
     }
 
     fn infer_tir_ty(

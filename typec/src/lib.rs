@@ -442,7 +442,7 @@ pub fn create_builtin_items(
             let id = {
                 let ty = types[from].id;
                 let name = sources.id_of(name);
-                ID::owned_func(ty, name)
+                ID::owned(ty, name)
             };
             create_func(
                 name, 

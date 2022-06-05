@@ -38,7 +38,7 @@ impl BoundVerifier<'_> {
                         let func = ast::id_of(ident, self.ast_data, self.sources);
                         let bound = self.types[bound].id;
                         let implementor = self.types[implementor].id;
-                        ID::bound_impl_owned_func(bound, implementor, func)
+                        ID::bound_impl_func(bound, implementor, func)
                     };
 
                     {
@@ -70,9 +70,9 @@ impl BoundVerifier<'_> {
                     let (sugar_id, certain_id) = {
                         let func = self.sources.id_of(ent.name);
                         let ty = self.types[implementor].id;
-                        let sugar_id = ID::owned_func(ty, func);
+                        let sugar_id = ID::owned(ty, func);
                         let bound = self.types[bound].id;
-                        let certain_id = ID::bound_impl_owned_func(bound, ty, func);
+                        let certain_id = ID::bound_impl_func(bound, ty, func);
                         (sugar_id, certain_id)
                     };
 
