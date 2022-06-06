@@ -10,20 +10,20 @@ pub use state::CirBuilder;
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
-    ExtFuncData, ExternalName, FuncRef, InstBuilder, MemFlags, Signature, 
-    StackSlotData, GlobalValueData,
+    ExtFuncData, ExternalName, FuncRef, GlobalValueData, InstBuilder, MemFlags, Signature,
+    StackSlotData,
 };
 use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_codegen::{ir, packed_option::PackedOption};
 use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_module::Linkage;
 
+use incr::*;
 use instance_types::*;
 use lexer::*;
 use matching::*;
 use storage::*;
 use typec_types::*;
-use incr::*;
 
 pub type Signatures = SparseMap<Func, Signature>;
 
@@ -111,28 +111,95 @@ impl CirBuilder<'_> {
 
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
-            InstKind::GlobalAccess(global) => {
-                let global_value = if let Some(gv) = self.cir_builder_context.used_data_lookup[global].expand() {
-                    gv
-                } else {
-                    // apparently this is how cranelift does it in JITModule and module
-                    let ext_func_data = GlobalValueData::Symbol {
-                        name: ExternalName::User { 
-                            namespace: DATA_NAMESPACE, 
-                            index: global.as_u32(), 
-                        },
-                        offset: Imm64::new(0),  
-                        colocated: false,
-                        tls: false,
-                    };
-                    let func_ref = self.builder.func.create_global_value(ext_func_data);
-                    self.cir_builder_context.used_data_lookup[global] = func_ref.into();
-                    func_ref
+            InstKind::IndirectCall(func, mir_args) => {
+                let TyKind::FuncPtr(Sig { cc, .. }) = self.types[self.func_ctx.values[func].ty].kind else {
+                    unreachable!();
                 };
+                
+                let ir_inst = {
+                    let value_args: Vec<_> = self
+                        .func_ctx
+                        .value_slices
+                        .get(mir_args)
+                        .iter()
+                        .map(|&value| self.use_value(value))
+                        .collect();
+
+                    let ret = inst
+                        .value
+                        .map(|val| self.func_ctx.values[val].ty)
+                        .unwrap_or(self.builtin_types.nothing);
+
+                    let args_iter = self.func_ctx
+                        .value_slices
+                        .get(mir_args)
+                        .iter()
+                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
+                        .map(|&value| self.func_ctx.values[value].ty);
+
+                    let func_sig = translate_signature(
+                        cc, 
+                        args_iter, 
+                        ret, 
+                        self.reprs, 
+                        self.types, 
+                        self.isa.default_call_conv(),
+                    );
+                    let sig_ref = self.builder.func.import_signature(func_sig);
+                    let func = self.use_value(func);
+                    self.builder.ins().call_indirect(sig_ref, func, &value_args)
+                };
+
+                if let Some(value) = inst.value.expand() {
+                    if !self.func_ctx.values[value]
+                        .flags
+                        .contains(MirFlags::POINTER)
+                    {
+                        let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
+                        self.cir_builder_context.value_lookup[inst.value.unwrap()] = ret.into();
+                    }
+                }
+            }
+            InstKind::FuncPtr(func) => {
+                let value = inst.value.unwrap();
+
+                let TyKind::FuncPtr(Sig { args, ret, .. }) = self.types[self.func_ctx.values[value].ty].kind else {
+                    unreachable!();
+                };
+
+                let args_iter = self.ty_lists.get(args).iter().cloned();
+                let func_ref = self.func_ref_of(func, args_iter, ret);
+                let ir_value = self.builder.ins().func_addr(
+                    self.reprs[ret].repr,
+                    func_ref,
+                );
+                self.cir_builder_context.value_lookup[value] = ir_value.into();
+            }
+            InstKind::GlobalAccess(global) => {
+                let global_value =
+                    if let Some(gv) = self.cir_builder_context.used_data_lookup[global].expand() {
+                        gv
+                    } else {
+                        // apparently this is how cranelift does it in JITModule and module
+                        let ext_func_data = GlobalValueData::Symbol {
+                            name: ExternalName::User {
+                                namespace: DATA_NAMESPACE,
+                                index: global.as_u32(),
+                            },
+                            offset: Imm64::new(0),
+                            colocated: false,
+                            tls: false,
+                        };
+                        let func_ref = self.builder.func.create_global_value(ext_func_data);
+                        self.cir_builder_context.used_data_lookup[global] = func_ref.into();
+                        func_ref
+                    };
 
                 let target_value = inst.value.unwrap();
                 let repr = self.repr_of(target_value);
-                assert!(self.func_ctx.values[target_value].flags.contains(MirFlags::POINTER));
+                assert!(self.func_ctx.values[target_value]
+                    .flags
+                    .contains(MirFlags::POINTER));
                 let value = self.builder.ins().global_value(repr, global_value);
                 self.cir_builder_context.value_lookup[target_value] = value.into();
             }
@@ -169,56 +236,28 @@ impl CirBuilder<'_> {
                         .map(|&value| self.use_value(value))
                         .collect();
 
-                    let func_ref = if let Some(func_ref) = self.cir_builder_context.used_func_lookup[func].expand()
-                    {
-                        func_ref
-                    } else {
-                        let signature = {
-                            let ret = inst
-                                .value
-                                .map(|val| self.func_ctx.values[val].ty)
-                                .unwrap_or(self.builtin_types.nothing);
-                            let call_conv = self.funcs[func].flags.call_conv();
-                            let signature = if let Some(sig) = self.signatures.get(func) {
-                                sig.clone()
-                            } else {
-                                let sig = translate_signature(
-                                    call_conv,
-                                    self.func_ctx
-                                        .value_slices
-                                        .get(args)
-                                        .iter()
-                                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK)
-                                            as usize)
-                                        .map(|&value| self.func_ctx.values[value].ty),
-                                    ret,
-                                    self.reprs,
-                                    self.types,
-                                    self.isa.default_call_conv(),
-                                );
-                                self.signatures.insert(func, sig.clone());
-                                sig
-                            };
-                            self.builder.func.import_signature(signature)
-                        };
+                    let ret = inst
+                        .value
+                        .map(|val| self.func_ctx.values[val].ty)
+                        .unwrap_or(self.builtin_types.nothing);
 
-                        let ext_func_data = ExtFuncData {
-                            name: ExternalName::user(FUNC_NAMESPACE, func.as_u32()),
-                            signature,
-                            colocated: !self.funcs[func].flags.contains(FuncFlags::EXTERNAL),
-                        };
-                        let func_ref = self.builder.func.import_function(ext_func_data);
-                        self.cir_builder_context.used_func_lookup[func] = func_ref.into();
-                        self.cir_builder_context.used_funcs.push(func);
+                    let args_iter = self.func_ctx
+                        .value_slices
+                        .get(args)
+                        .iter()
+                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
+                        .map(|&value| self.func_ctx.values[value].ty);
 
-                        func_ref
-                    };
+                    let func_ref = self.func_ref_of(func, args_iter, ret);
 
                     self.builder.ins().call(func_ref, &value_args)
                 };
 
                 if let Some(value) = inst.value.expand() {
-                    if !self.func_ctx.values[value].flags.contains(MirFlags::POINTER) {
+                    if !self.func_ctx.values[value]
+                        .flags
+                        .contains(MirFlags::POINTER)
+                    {
                         let ret = self.builder.func.dfg.inst_results(ir_inst)[0];
                         self.cir_builder_context.value_lookup[inst.value.unwrap()] = ret.into();
                     }
@@ -279,7 +318,9 @@ impl CirBuilder<'_> {
                 }
             }
             InstKind::DerefPointer(value)
-                if self.func_ctx.values[value].flags.contains(MirFlags::POINTER) =>
+                if self.func_ctx.values[value]
+                    .flags
+                    .contains(MirFlags::POINTER) =>
             {
                 let value = self.use_value(value);
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] = value.into();
@@ -308,8 +349,12 @@ impl CirBuilder<'_> {
                 };
 
                 match (
-                    self.func_ctx.values[value].flags.contains(MirFlags::POINTER),
-                    self.func_ctx.values[target].flags.contains(MirFlags::POINTER),
+                    self.func_ctx.values[value]
+                        .flags
+                        .contains(MirFlags::POINTER),
+                    self.func_ctx.values[target]
+                        .flags
+                        .contains(MirFlags::POINTER),
                 ) {
                     (true, true) => {
                         let target_ir = self.use_value_as_pointer(target);
@@ -370,6 +415,42 @@ impl CirBuilder<'_> {
         }
     }
 
+    fn func_ref_of(&mut self, func: Func, args: impl Iterator<Item = Ty>, ret: Ty) -> FuncRef {
+        if let Some(func_ref) = self.cir_builder_context.used_func_lookup[func].expand() {
+            func_ref
+        } else {
+            let signature = {
+                let call_conv = self.funcs[func.meta()].sig.cc;
+                let signature = if let Some(sig) = self.signatures.get(func) {
+                    sig.clone()
+                } else {
+                    let sig = translate_signature(
+                        call_conv,
+                        args,
+                        ret,
+                        self.reprs,
+                        self.types,
+                        self.isa.default_call_conv(),
+                    );
+                    self.signatures.insert(func, sig.clone());
+                    sig
+                };
+                self.builder.func.import_signature(signature)
+            };
+
+            let ext_func_data = ExtFuncData {
+                name: ExternalName::user(FUNC_NAMESPACE, func.as_u32()),
+                signature,
+                colocated: !self.funcs[func].flags.contains(FuncFlags::EXTERNAL),
+            };
+            let func_ref = self.builder.func.import_function(ext_func_data);
+            self.cir_builder_context.used_func_lookup[func] = func_ref.into();
+            self.cir_builder_context.used_funcs.push(func);
+
+            func_ref
+        }
+    }
+
     fn unwrap_size(&self, size: Offset) -> i32 {
         size.arch(self.isa.pointer_bytes() == 4)
     }
@@ -394,8 +475,9 @@ impl CirBuilder<'_> {
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
             "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
-            "u8" | "u16" | "u32" | "u64" | "uint" |
-            "i8" | "i16" | "i32" | "i64" | "iint" => self.generate_native_int_conv(args, result),
+            "u8" | "u16" | "u32" | "u64" | "uint" | "i8" | "i16" | "i32" | "i64" | "int" => {
+                self.generate_native_int_conv(args, result)
+            }
             _ => unimplemented!("Unhandled native function: {:?}", str),
         }
     }
@@ -404,13 +486,13 @@ impl CirBuilder<'_> {
         let &[value] = self.func_ctx.value_slices.get(args) else {
             unreachable!();
         };
-        
+
         let value_ir = self.use_value(value);
         let result = result.unwrap();
 
         let value_repr = self.repr_of(value);
         let result_repr = self.repr_of(result);
-        
+
         let result_ir = if result_repr.is_int() {
             let value_bytes = value_repr.bytes();
             let result_bytes = result_repr.bytes();
@@ -434,7 +516,8 @@ impl CirBuilder<'_> {
     fn generate_native_add(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
         match self.func_ctx.value_slices.get(args) {
             &[value] => {
-                self.cir_builder_context.value_lookup[result.unwrap()] = self.use_value(value).into();
+                self.cir_builder_context.value_lookup[result.unwrap()] =
+                    self.use_value(value).into();
             }
             &[left, right] => {
                 let left = self.use_value(left);
@@ -515,7 +598,9 @@ impl CirBuilder<'_> {
     fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
         match self.func_ctx.value_slices.get(args) {
             &[left, right] => {
-                let signed = !self.func_ctx.values[left].flags.contains(MirFlags::UNSIGNED);
+                let signed = !self.func_ctx.values[left]
+                    .flags
+                    .contains(MirFlags::UNSIGNED);
                 let left = self.use_value(left);
                 let right = self.use_value(right);
 
@@ -544,7 +629,9 @@ impl CirBuilder<'_> {
             unreachable!();
         };
 
-        let signed = !self.func_ctx.values[left].flags.contains(MirFlags::UNSIGNED);
+        let signed = !self.func_ctx.values[left]
+            .flags
+            .contains(MirFlags::UNSIGNED);
 
         let left = self.use_value(left);
         let right = self.use_value(right);
@@ -603,12 +690,7 @@ impl CirBuilder<'_> {
         }
     }
 
-    fn set_bit_field(
-        &mut self,
-        target: Value,
-        value: ir::Value,
-        offset: i32,
-    ) -> ir::Value {
+    fn set_bit_field(&mut self, target: Value, value: ir::Value, offset: i32) -> ir::Value {
         let target_ty = self.repr_of(target);
         let value_ty = self.builder.func.dfg.value_type(value);
 
@@ -667,12 +749,13 @@ impl CirBuilder<'_> {
         } = self.func_ctx.values[value];
         let repr = self.reprs[ty].repr;
         let variable = Variable::new(value.index());
-        let value =
-            if flags.contains(MirFlags::ASSIGNABLE) && self.cir_builder_context.variable_set.contains(variable) {
-                self.builder.use_var(variable)
-            } else {
-                self.cir_builder_context.value_lookup[value].unwrap()
-            };
+        let value = if flags.contains(MirFlags::ASSIGNABLE)
+            && self.cir_builder_context.variable_set.contains(variable)
+        {
+            self.builder.use_var(variable)
+        } else {
+            self.cir_builder_context.value_lookup[value].unwrap()
+        };
 
         let offset = self.unwrap_size(offset);
         if flags.contains(MirFlags::POINTER) {

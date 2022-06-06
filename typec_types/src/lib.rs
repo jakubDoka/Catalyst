@@ -1,33 +1,29 @@
-
 #![feature(let_else)]
 #![feature(result_into_ok_or_err)]
 #![feature(let_chains)]
 
 pub mod error;
 pub mod func;
+pub mod global;
 pub mod graph;
 pub mod jit;
 pub mod tir;
 pub mod ty;
-pub mod global;
 
 pub use error::TyError;
 pub use func::{
-    Func, FuncEnt, FuncFlags, FuncKind, FuncList, FuncMeta, Funcs, Sig, ToCompile,
-    ToLink, Macros, FuncInstances, Initializers,
+    Func, FuncEnt, FuncFlags, FuncInstances, FuncKind, FuncList, FuncMeta, Funcs, Initializers,
+    Macros, Sig, ToCompile, ToLink,
 };
+pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals};
 pub use graph::Graph;
 pub use tir::{
-    Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, 
-    TirStack, TirPatternMeta,
+    Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
+    TirStack,
 };
 pub use ty::{
-    BoundImpl, BoundImpls, BuiltinTypes, TyInstances, FuncLists, Ty, TyComp, TyCompEnt, TyCompList,
-    TyComps, TyDisplay, TyEnt, TyFlags, TyKind, TyList, TyLists, TypeBase, Types,
-    TyGraph,
-};
-pub use global::{
-    Global, GlobalEnt, Globals, GlobalData, GlobalBytes, GlobalMap
+    BoundImpl, BoundImpls, BuiltinTypes, FuncLists, Ty, TyComp, TyCompEnt, TyCompList, TyComps,
+    TyDisplay, TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
 };
 
 #[macro_export]

@@ -1,55 +1,54 @@
 #![feature(result_option_inspect)]
 #![feature(let_else)]
-
 #![feature(let_chains)]
 #![feature(result_flattening)]
 #![feature(scoped_threads)]
 
-pub mod state;
 pub mod dead_code_elim;
 pub mod generator;
 pub mod logger;
 pub mod scope_builder;
 pub mod source_loader;
+pub mod state;
 pub mod subcommand;
 pub mod tir_builder;
 
-pub use state::{DeadCodeElim, MainTirBuilder, Generator, Logger, MainScopeBuilder, SourceLoader};
-pub use subcommand::Subcommand;
 pub use generator::GenerationContext;
+pub use state::{DeadCodeElim, Generator, Logger, MainScopeBuilder, MainTirBuilder, SourceLoader};
+pub use subcommand::Subcommand;
 
 use cli::CmdInput;
 
-use cranelift_codegen::ir::{Type, ExternalName, Signature};
+use cranelift_codegen::ir::{ExternalName, Signature, Type};
 use cranelift_codegen::isa::TargetIsa;
-use cranelift_codegen::settings::{Flags, Configurable};
+use cranelift_codegen::settings::{Configurable, Flags};
 use cranelift_codegen::{Context, MachReloc};
 
-use cranelift_frontend::{FunctionBuilderContext, FunctionBuilder};
-use cranelift_jit::{JITModule, JITBuilder};
-use cranelift_module::{Module, Linkage, DataContext};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_module::{DataContext, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use errors::Diagnostics;
 use incr::Incr;
-use instance::*;
 use incr::*;
+use instance::*;
 
-use instance::func::{MirBuilderContext};
+use instance::func::MirBuilderContext;
 use instance::repr::{build_builtin_reprs, build_reprs};
 use target_lexicon::Triple;
 
-use modules::*;
-use parser::*;
-use lexer::*;
-use module_types::*;
-use instance_types::*;
-use storage::*;
-use typec_types::*;
-use typec::*;
 use ast::*;
 use gen::*;
+use instance_types::*;
+use lexer::*;
 use matching::*;
+use module_types::*;
+use modules::*;
+use parser::*;
+use storage::*;
+use typec::*;
+use typec_types::*;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -80,10 +79,10 @@ macro_rules! time_report {
 }
 
 /// Main extremely big object containing all needed state for compilation. Currently, the
-/// allocations are accumulated and memory is basically getting freed only at the end of 
-/// the program. Compilation is also single threaded. This should change in the future, mainly 
+/// allocations are accumulated and memory is basically getting freed only at the end of
+/// the program. Compilation is also single threaded. This should change in the future, mainly
 /// for codegen faze which takes most of the time.
-/// 
+///
 /// TODO: This could get fixed with dependency analysis, that would eliminate useless objects.
 /// Question is whether we would compile programs at such scale this would matter.
 pub struct Compiler {
@@ -160,7 +159,6 @@ pub struct Compiler {
 }
 
 impl Compiler {
-
     /// Creates an compiler instance. For some reason this process is surprisingly slow.
     fn new() -> Self {
         time_report!("initialization of compiler");
@@ -168,7 +166,7 @@ impl Compiler {
         let input = CmdInput::new();
 
         let subcommand = Subcommand::new(&input);
-        
+
         let modified_time = get_exe_modification_time();
         let root_path = subcommand.root_path().unwrap();
         let incr_path = root_path.join("incr.bin");
@@ -177,28 +175,24 @@ impl Compiler {
         } else {
             Incr::default()
         };
-        
+
         let mut sources = Sources::new();
         let mut builtin_source = BuiltinSource::new(&mut sources);
-        
+
         let mut modules = Modules::new();
         let mut types = Types::new();
-        let builtin_types = BuiltinTypes::new(
-            &mut sources, 
-            &mut builtin_source, 
-            &mut types
-        );
+        let builtin_types = BuiltinTypes::new(&mut sources, &mut builtin_source, &mut types);
         let mut ty_lists = TyLists::new();
         let mut funcs = Funcs::new();
 
         let b_source = builtin_source.source;
         typec::create_builtin_items(
-            &mut types, 
-            &mut ty_lists, 
-            &builtin_types, 
-            &mut funcs, 
-            &mut sources, 
-            &mut builtin_source, 
+            &mut types,
+            &mut ty_lists,
+            &builtin_types,
+            &mut funcs,
+            &mut sources,
+            &mut builtin_source,
             &mut modules[b_source].items,
         );
 
@@ -209,7 +203,7 @@ impl Compiler {
 
         let (object_module, triple) = Self::init_object_module(&input);
 
-        Self {            
+        Self {
             subcommand: Subcommand::new(&input),
             input,
 
@@ -221,16 +215,16 @@ impl Compiler {
 
             ast_data: AstData::new(),
             ast_temp: FramedStack::new(),
-            
+
             scope: Scope::new(),
             module_map: Map::new(),
             loader_context: LoaderContext::new(),
             modules,
             units: Units::new(),
             module_order: Vec::new(),
-            
+
             diagnostics: Diagnostics::new(),
-            
+
             ty_graph: TyGraph::new(),
             types,
             builtin_types,
@@ -256,7 +250,7 @@ impl Compiler {
             _jit_module: jit_module,
             _jit_compile_results: SparseMap::new(),
             host_isa,
-                        
+
             object_module,
             triple,
             reprs,
@@ -279,18 +273,16 @@ impl Compiler {
             let setting_builder = cranelift_codegen::settings::builder();
 
             let flags = Flags::new(setting_builder);
-    
+
             let target_triple = target_lexicon::Triple::host();
-    
+
             cranelift_codegen::isa::lookup(target_triple)
                 .unwrap()
                 .finish(flags)
                 .unwrap()
         };
 
-        let builder = JITBuilder::new(
-            cranelift_module::default_libcall_names()
-        ).unwrap();
+        let builder = JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
 
         (JITModule::new(builder), isa)
     }
@@ -304,17 +296,19 @@ impl Compiler {
                 .enabled("no-verify")
                 .then_some("false")
                 .unwrap_or("true");
-            
+
             setting_builder.set("enable_verifier", verify).unwrap();
-            
+
             if let Some(opt_level) = input.field("o") {
                 let opt_level = match opt_level {
                     "0" | "none" => "none",
                     "1" | "speed" => "speed",
-                    "2" | "speed_and_size" => "speed_and_size",                 
+                    "2" | "speed_and_size" => "speed_and_size",
                     _ => {
                         println!("{ERR}error:{END} unknown optimization level: {}", opt_level);
-                        println!("{INFO}info:{END} use one of: none(0), speed(1), speed_and_size(2)");
+                        println!(
+                            "{INFO}info:{END} use one of: none(0), speed(1), speed_and_size(2)"
+                        );
                         exit!(1);
                     }
                 };
@@ -322,12 +316,12 @@ impl Compiler {
             }
 
             let flags = Flags::new(setting_builder);
-    
+
             let target_triple = input.field("target").map_or_else(
                 || target_lexicon::Triple::host(),
                 |target| target_lexicon::triple!(target),
             );
-    
+
             (
                 cranelift_codegen::isa::lookup(target_triple.clone())
                     .unwrap()
@@ -338,11 +332,9 @@ impl Compiler {
         };
 
         let object_module = {
-            let builder = ObjectBuilder::new(
-                isa, 
-                "catalyst", 
-                cranelift_module::default_libcall_names()
-            ).unwrap();
+            let builder =
+                ObjectBuilder::new(isa, "catalyst", cranelift_module::default_libcall_names())
+                    .unwrap();
             ObjectModule::new(builder)
         };
 
@@ -350,9 +342,9 @@ impl Compiler {
     }
 
     /// All source code is loaded into memory here.
-    /// 
-    /// TODO: Try to use streams instead of `read_to_string`, Files 
-    /// could get loaded while parsing, though performance improvement 
+    ///
+    /// TODO: Try to use streams instead of `read_to_string`, Files
+    /// could get loaded while parsing, though performance improvement
     /// is questionable.
     fn load_modules(&mut self) {
         time_report!("loading of modules");
@@ -379,36 +371,42 @@ impl Compiler {
 
         for (i, &id) in module_order.iter().enumerate() {
             self.modules[id].ordering = i;
-        }            
+        }
 
         self.module_order = module_order;
     }
 
-    /// Probably the slowest stage in frontend. Building Tir means 
+    /// Probably the slowest stage in frontend. Building Tir means
     /// type-checking all imported source code. Parsing is also included
-    /// so that ast does not have to be accumulated for all files. Types are 
-    /// checked one ta the time but Tir is accumulated. Tir is also generic 
-    /// and ty_instances are not materialized here but rather the Tir has notion 
+    /// so that ast does not have to be accumulated for all files. Types are
+    /// checked one ta the time but Tir is accumulated. Tir is also generic
+    /// and ty_instances are not materialized here but rather the Tir has notion
     /// of generic calls.
     fn build_tir(&mut self) {
         time_report!("building of tir");
         main_tir_builder!(self).build(&self.module_order);
     }
 
-    /// Function takes tir and translates it into bite code. It uses type swapping to 
-    /// instantiate functions from generic templates. Types still need to be instantiated 
+    /// Function takes tir and translates it into bite code. It uses type swapping to
+    /// instantiate functions from generic templates. Types still need to be instantiated
     /// and allocated.
-    /// 
+    ///
     /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
     /// Though this may require cloning type context.
     fn generate(&mut self) {
         time_report!("generating");
-        generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa()).generate();
+        generator!(
+            self,
+            self.incr.modules,
+            self.incr.functions,
+            *self.object_module.isa()
+        )
+        .generate();
     }
 
-    /// Only reachable functions are being included in final executable. 
-    /// Which functions are used is determined here. First vec contains 
-    /// functions that have local byte-code, second contains imports that 
+    /// Only reachable functions are being included in final executable.
+    /// Which functions are used is determined here. First vec contains
+    /// functions that have local byte-code, second contains imports that
     /// should only be imported.
     fn collect_used_funcs(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
@@ -420,9 +418,9 @@ impl Compiler {
 
         frontier.extend(self.initializers.iter().map(|(id, _)| id));
 
-        // explanted after while loop 
+        // explanted after while loop
         self.initializers.reverse();
-        
+
         let mut i = 0;
         while let Some(&func) = frontier.get(i) {
             for reloc in &self.compile_results[func].relocs {
@@ -433,25 +431,26 @@ impl Compiler {
                 match namespace {
                     FUNC_NAMESPACE => {
                         let func = Func(index);
-        
+
                         if !seen_funcs.insert(func) {
                             continue;
                         }
-                        
+
                         frontier.push(func);
                     }
                     DATA_NAMESPACE => {
                         let global = Global(index);
-        
+
                         if !seen_globals.insert(global) {
                             continue;
                         }
-                        
+
                         globals.push(global);
                         frontier.push(self.globals[global].init);
-                        self.initializers.push((self.globals[global].init, Some(global).into()));
+                        self.initializers
+                            .push((self.globals[global].init, Some(global).into()));
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
             }
 
@@ -459,7 +458,7 @@ impl Compiler {
         }
 
         // firs we reverse the initializers and then we push global initializers
-        // and then vi reverse again. This ensures ordering where all globals are 
+        // and then vi reverse again. This ensures ordering where all globals are
         // initialized be before entrypoint functions and entrypoint functions are
         // also preserve the correct order.
         self.initializers.reverse();
@@ -498,11 +497,12 @@ impl Compiler {
                 name.clear();
                 id.to_ident(&mut name);
             }
-            let global_ref = self.object_module
+            let global_ref = self
+                .object_module
                 .declare_data(&name, Linkage::Export, true, false)
                 .unwrap();
             global_lookup[global] = PackedOption::from(global_ref);
-            
+
             if let Some(_data) = global_ent.bytes.expand() {
                 todo!();
             } else {
@@ -510,27 +510,28 @@ impl Compiler {
                 let size = self.reprs[global_ent.ty].layout.size().arch(arch32);
                 data_ctx.define_zeroinit(size as usize);
             }
-            
-            self.object_module.define_data(global_ref, &data_ctx).unwrap();
+
+            self.object_module
+                .define_data(global_ref, &data_ctx)
+                .unwrap();
             data_ctx.clear();
         }
 
         for func in to_link {
-            let call_conv = self.funcs[func].flags.call_conv();
+            let call_conv = self.funcs[func.meta()].sig.cc;
             let sig = self.funcs[func.meta()].sig;
             let name = self.sources.display(self.funcs[func.meta()].name);
             let signature = translate_signature(
-                call_conv, 
-                self.ty_lists
-                    .get(sig.args)
-                    .iter()
-                    .copied(), 
-                sig.ret, 
-                &self.reprs, 
-                &self.types, 
+                call_conv,
+                self.ty_lists.get(sig.args).iter().copied(),
+                sig.ret,
+                &self.reprs,
+                &self.types,
                 system_call_conv,
             );
-            let func_id = self.object_module.declare_function(name, Linkage::Import, &signature)
+            let func_id = self
+                .object_module
+                .declare_function(name, Linkage::Import, &signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
         }
@@ -543,18 +544,23 @@ impl Compiler {
             }
             let signature = self.signatures.get(func).unwrap();
             let linkage = Linkage::Export;
-            let func_id = self.object_module.declare_function(&name, linkage, signature)
+            let func_id = self
+                .object_module
+                .declare_function(&name, linkage, signature)
                 .unwrap();
             func_lookup[func] = PackedOption::from(func_id);
         }
 
         // declare entrypoint
         {
-            let entry_point = self.object_module.declare_function(
-                CATALYST_ENTRY, 
-                Linkage::Export, 
-                &Signature::new(self.object_module.isa().default_call_conv()),
-            ).unwrap();
+            let entry_point = self
+                .object_module
+                .declare_function(
+                    CATALYST_ENTRY,
+                    Linkage::Export,
+                    &Signature::new(self.object_module.isa().default_call_conv()),
+                )
+                .unwrap();
 
             let func = self.funcs.push(Default::default(), Default::default());
 
@@ -562,22 +568,25 @@ impl Compiler {
 
             {
                 self.func_ctx.clear();
-    
+
                 let entry = self.func_ctx.create_block();
                 self.func_ctx.select_block(entry);
-    
+
                 for &(func, global) in self.initializers.iter() {
                     if let Some(global) = global.expand() {
                         let ty = self.globals[global].ty;
                         let access = {
-                            let value = self.func_ctx.values.push(ValueEnt::flags(ty, MirFlags::POINTER));
+                            let value = self
+                                .func_ctx
+                                .values
+                                .push(ValueEnt::flags(ty, MirFlags::POINTER));
                             let kind = InstKind::GlobalAccess(global);
                             let ent = InstEnt::new(kind, value.into());
                             self.func_ctx.add_inst(ent);
                             value
                         };
-                        
-                        let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);        
+
+                        let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
                         if has_sret {
                             let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
                             let args = self.func_ctx.value_slices.push(&[access]);
@@ -596,21 +605,30 @@ impl Compiler {
                             }
                         }
                     } else {
-                        let return_value = self.func_ctx.values.push(ValueEnt::repr(self.builtin_types.int));
+                        let return_value = self
+                            .func_ctx
+                            .values
+                            .push(ValueEnt::repr(self.builtin_types.int));
                         let kind = InstKind::Call(func, ValueList::reserved_value());
                         let ent = InstEnt::new(kind, return_value.into());
-                        self.func_ctx.add_inst(ent);    
+                        self.func_ctx.add_inst(ent);
                     }
                 }
-    
+
                 self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
             }
 
-            self.context.func.signature = Signature::new(self.object_module.isa().default_call_conv());
+            self.context.func.signature =
+                Signature::new(self.object_module.isa().default_call_conv());
 
-            generator!(self, self.incr.modules, self.incr.functions, *self.object_module.isa())
-                .build_cir_and_emit(func, false);
-            
+            generator!(
+                self,
+                self.incr.modules,
+                self.incr.functions,
+                *self.object_module.isa()
+            )
+            .build_cir_and_emit(func, false);
+
             to_compile.push(func);
         }
 
@@ -625,15 +643,11 @@ impl Compiler {
                 } = r.name else {
                     unreachable!();
                 };
-                
+
                 let id = match namespace {
-                    FUNC_NAMESPACE => {
-                        func_lookup[Func(index)].unwrap().as_u32()
-                    }
-                    DATA_NAMESPACE => {
-                        global_lookup[Global(index)].unwrap().as_u32()
-                    }
-                    _ => unreachable!()
+                    FUNC_NAMESPACE => func_lookup[Func(index)].unwrap().as_u32(),
+                    DATA_NAMESPACE => global_lookup[Global(index)].unwrap().as_u32(),
+                    _ => unreachable!(),
                 };
 
                 let name = ExternalName::user(namespace, id);
@@ -643,15 +657,17 @@ impl Compiler {
                 r
             }));
 
-            self.object_module.define_function_bytes(
-                func_lookup[func].unwrap(), 
-                &compile_result.bytes, 
-                &reloc_temp
-            ).unwrap();
-        }        
+            self.object_module
+                .define_function_bytes(
+                    func_lookup[func].unwrap(),
+                    &compile_result.bytes,
+                    &reloc_temp,
+                )
+                .unwrap();
+        }
     }
 
-    /// All compiled functions are saved. That means their byte-code 
+    /// All compiled functions are saved. That means their byte-code
     /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
@@ -671,7 +687,7 @@ impl Compiler {
             return;
         }
 
-        let entry = format!("/entry:{CATALYST_ENTRY}");        
+        let entry = format!("/entry:{CATALYST_ENTRY}");
 
         let output = cc::windows_registry::find(&self.triple.to_string(), "link.exe")
             .unwrap()
@@ -686,15 +702,15 @@ impl Compiler {
         std::fs::remove_file("catalyst.o").unwrap();
 
         assert!(
-            output.status.success(), 
-            "{:?}\nstdout: {}\nstderr: {}", 
-            output.status, 
-            String::from_utf8(output.stdout).unwrap(), 
+            output.status.success(),
+            "{:?}\nstdout: {}\nstderr: {}",
+            output.status,
+            String::from_utf8(output.stdout).unwrap(),
             String::from_utf8(output.stderr).unwrap(),
         );
     }
 
-    /// Function iterates trough all possible diagnostic options, 
+    /// Function iterates trough all possible diagnostic options,
     /// logs them and if errors are encountered, exits.
     fn log_diagnostics(&self) {
         logger!(self).log();
@@ -711,16 +727,15 @@ impl Compiler {
         s.log_diagnostics();
 
         s.incr.reduce(&s.modules, &s.module_order);
-        
+
         s.build_tir();
         s.log_diagnostics();
-        
+
         s.generate();
         s.log_diagnostics();
-        
-        
+
         s.build_object();
-        
+
         s.save_incr_data();
 
         s.link();
@@ -733,9 +748,9 @@ impl Default for Compiler {
     }
 }
 
-/// We need to know if compiler is sync with incremental data. 
-/// This si simplest most optimal solution that plays well with 
-/// development cycle. 
+/// We need to know if compiler is sync with incremental data.
+/// This si simplest most optimal solution that plays well with
+/// development cycle.
 fn get_exe_modification_time() -> Option<SystemTime> {
     std::fs::metadata(&std::env::current_exe().ok()?)
         .map(|m| m.modified())

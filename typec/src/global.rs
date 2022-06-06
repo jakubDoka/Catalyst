@@ -1,5 +1,3 @@
 use crate::*;
 
-impl GlobalBuilder<'_> {
-    
-}
+impl GlobalBuilder<'_> {}

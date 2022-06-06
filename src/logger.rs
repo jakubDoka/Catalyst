@@ -1,4 +1,4 @@
-use crate::{*, state::Logger};
+use crate::{state::Logger, *};
 
 impl Logger<'_> {
     /// Function iterates trough all possible diagnostic options,
@@ -16,26 +16,21 @@ impl Logger<'_> {
 
         self.diagnostics.iter::<ModuleError>().map(|errs| {
             errs.for_each(|err| {
-                modules::error::display(
-                    err,
-                    &self.sources,
-                    &self.units,
-                    &mut errors,
-                )
-                .unwrap()
+                modules::error::display(err, &self.sources, &self.units, &mut errors).unwrap()
             })
         });
 
         self.diagnostics.iter::<TyError>().map(|errs| {
             errs.for_each(|err| {
                 typec::error::display(
-                    err, 
-                    &self.sources, 
-                    &self.types, 
-                    &self.ty_lists, 
+                    err,
+                    &self.sources,
+                    &self.types,
+                    &self.ty_lists,
                     &self.ty_comps,
-                    &mut errors
-                ).unwrap()
+                    &mut errors,
+                )
+                .unwrap()
             })
         });
 

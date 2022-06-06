@@ -44,17 +44,14 @@ impl FuncMeta {
     pub fn home_module(&self, ty_lists: &TyLists, modules: &Modules, types: &Types) -> Source {
         let def_loc = self.name.source();
 
-        ty_lists
-            .get(self.params)
-            .iter()
-            .fold(def_loc, |acc, &ty| {
-                let other = types[ty].name.source();
-                if modules[other].ordering > modules[acc].ordering {
-                    other
-                } else {
-                    acc
-                }
-            })
+        ty_lists.get(self.params).iter().fold(def_loc, |acc, &ty| {
+            let other = types[ty].name.source();
+            if modules[other].ordering > modules[acc].ordering {
+                other
+            } else {
+                acc
+            }
+        })
     }
 }
 
@@ -67,44 +64,6 @@ bitflags! {
         const EXTERNAL = 1 << 3;
         const STRUCT_RET = 1 << 4;
         const ANONYMOUS = 1 << 5;
-    }
-}
-
-impl FuncFlags {
-    const CALL_CONV_OFFSET: u32 = 32 - 8;
-    const CALL_CONV_MASK: u32 = 0xFF << Self::CALL_CONV_OFFSET;
-
-    pub fn set_call_conv(&mut self, cc: Option<CallConv>) {
-        let Some(cc) = cc else {
-            self.bits &= !Self::CALL_CONV_MASK;
-            self.bits &= !(1 << (Self::CALL_CONV_OFFSET - 1));
-            return;
-        };
-
-        let bytes = unsafe { std::mem::transmute::<_, u8>(cc) } as u32;
-
-        self.bits &= !Self::CALL_CONV_MASK;
-        self.bits |= bytes << Self::CALL_CONV_OFFSET;
-        self.bits |= 1 << (Self::CALL_CONV_OFFSET - 1);
-    }
-
-    pub fn call_conv(&self) -> Option<CallConv> {
-        if self.bits & (1 << (Self::CALL_CONV_OFFSET - 1)) == 0 {
-            return None;
-        }
-
-        let bytes = (self.bits & Self::CALL_CONV_MASK) >> Self::CALL_CONV_OFFSET;
-        unsafe { Some(std::mem::transmute::<_, CallConv>(bytes as u8)) }
-    }
-}
-
-impl std::ops::BitOr<Option<CallConv>> for FuncFlags {
-    type Output = Self;
-
-    fn bitor(self, rhs: Option<CallConv>) -> Self {
-        let mut result = self;
-        result.set_call_conv(rhs);
-        result
     }
 }
 
@@ -126,10 +85,21 @@ impl Default for FuncKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sig {
+    pub cc: Option<CallConv>,
     pub args: TyList,
     pub ret: Ty,
+}
+
+impl Default for Sig {
+    fn default() -> Self {
+        Self {
+            cc: Some(CallConv::Fast),
+            args: TyList::default(),
+            ret: Ty::default(),
+        }
+    }
 }
 
 pub struct SignatureDisplay<'a> {

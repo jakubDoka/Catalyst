@@ -67,14 +67,12 @@ impl<'a> ScopeBuilder<'a> {
                         self.scope.pop_item();
                     }
                     let span = self.types[bound].name;
-                    self.scope
-                        .push_item("Self", ScopeItem::new(bound, span));
+                    self.scope.push_item("Self", ScopeItem::new(bound, span));
                     prev = Some(bound);
                 }
 
                 drop(self.collect_function(Some(func), None, ast));
             }
-
 
             self.scope.pop_frame();
         }
@@ -83,7 +81,7 @@ impl<'a> ScopeBuilder<'a> {
     fn collect_global(&mut self, ast: Ast) {
         let AstEnt { kind, .. } = self.ast_data.nodes[ast];
         let mutable = kind == AstKind::Variable(true);
-        
+
         let &[name, value] = self.ast_data.children(ast) else {
             unreachable!();
         };
@@ -93,17 +91,22 @@ impl<'a> ScopeBuilder<'a> {
 
         let global_ent = GlobalEnt {
             id,
-            name: span, 
+            name: span,
             mutable,
-            
+
             ..Default::default()
         };
         let global = self.globals.push(global_ent);
 
         self.scope_context.global_ast[global] = value;
-        
+
         let item = ModuleItem::new(scope_id, global, span);
-        drop(self.scope.insert(self.diagnostics, self.source, scope_id, item.to_scope_item()));
+        drop(self.scope.insert(
+            self.diagnostics,
+            self.source,
+            scope_id,
+            item.to_scope_item(),
+        ));
         self.modules[self.source].items.push(item);
     }
 
@@ -133,8 +136,7 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                self.scope
-                    .push_item("Self", ScopeItem::new(dest, span));
+                self.scope.push_item("Self", ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {
@@ -142,10 +144,13 @@ impl<'a> ScopeBuilder<'a> {
                         continue;
                     }
 
-                    let reserved = self.funcs.push(FuncEnt::default(), FuncMeta {
-                        kind: FuncKind::Owned(dest),
-                        ..Default::default()
-                    });
+                    let reserved = self.funcs.push(
+                        FuncEnt::default(),
+                        FuncMeta {
+                            kind: FuncKind::Owned(dest),
+                            ..Default::default()
+                        },
+                    );
                     let id = self.types[ty].id;
                     self.collect_function(Some(reserved), Some(id), func)?;
                 }
@@ -156,14 +161,16 @@ impl<'a> ScopeBuilder<'a> {
             self.scope_context.bounds_to_verify.push((dest, ty, ast));
         } else if !body.is_reserved_value() {
             self.scope.mark_frame();
-            self.scope
-                .push_item("Self", ScopeItem::new(ty, span));
+            self.scope.push_item("Self", ScopeItem::new(ty, span));
 
             for &func in self.ast_data.children(body) {
-                let reserved = self.funcs.push(FuncEnt::default(), FuncMeta {
-                    kind: FuncKind::Owned(ty),
-                    ..Default::default()
-                });
+                let reserved = self.funcs.push(
+                    FuncEnt::default(),
+                    FuncMeta {
+                        kind: FuncKind::Owned(ty),
+                        ..Default::default()
+                    },
+                );
                 self.collect_function(Some(reserved), None, func)?;
             }
 
@@ -192,10 +199,13 @@ impl<'a> ScopeBuilder<'a> {
 
         let funcs = {
             for (i, &func) in self.ast_data.children(body).iter().enumerate() {
-                let reserved = self.funcs.push(FuncEnt::default(), FuncMeta {
-                    kind: FuncKind::Bound(slot, i as u32),
-                    ..Default::default()
-                });
+                let reserved = self.funcs.push(
+                    FuncEnt::default(),
+                    FuncMeta {
+                        kind: FuncKind::Bound(slot, i as u32),
+                        ..Default::default()
+                    },
+                );
                 self.scope_context.func_ast[reserved] = func;
                 self.scope_context.bound_funcs.push(reserved);
                 self.func_lists.push_one(reserved);
@@ -294,9 +304,9 @@ impl<'a> ScopeBuilder<'a> {
         };
 
         self.scope.mark_frame();
-        
+
         let params = self.handle_generics(generics, prepared);
-        
+
         let sig = {
             let args = {
                 self.ty_lists.mark_frame();
@@ -325,19 +335,21 @@ impl<'a> ScopeBuilder<'a> {
                 ty_parser!(self).parse_type(return_type)?
             };
 
-            
-            Sig { args, ret }
+            Sig { args, ret, cc: call_conv }
         };
-        
+
         self.scope.pop_frame();
 
-        let func = prepared.unwrap_or_else(|| self.funcs.push(Default::default(), Default::default()));
+        let func =
+            prepared.unwrap_or_else(|| self.funcs.push(Default::default(), Default::default()));
 
         let scope_id = {
             let span = self.ast_data.nodes[name].span;
             let str = self.sources.display(span);
             let id = ID::new(str);
-            if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) = self.funcs[func.meta()].kind {
+            if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) =
+                self.funcs[func.meta()].kind
+            {
                 if let Some(bound) = bound {
                     let implementor = self.types[owner].id;
                     ID::bound_impl_func(bound, implementor, id)
@@ -377,7 +389,6 @@ impl<'a> ScopeBuilder<'a> {
                     | (FuncFlags::INLINE & is_inline.is_some())
                     | (FuncFlags::ENTRY & is_entry.is_some())
                     | (FuncFlags::GENERIC & !params.is_reserved_value())
-                    | call_conv
             };
 
             if is_entry.is_some() {
@@ -392,10 +403,7 @@ impl<'a> ScopeBuilder<'a> {
                 })
             }
 
-            let ent = FuncEnt {
-                id,
-                flags,
-            };
+            let ent = FuncEnt { id, flags };
             self.funcs[func] = ent;
 
             let meta = &mut self.funcs[func.meta()];
@@ -447,8 +455,7 @@ impl<'a> ScopeBuilder<'a> {
                 };
 
                 let str = self.sources.display(span);
-                self.scope
-                    .push_item(str, ScopeItem::new(bound, span));
+                self.scope.push_item(str, ScopeItem::new(bound, span));
                 self.ty_lists.push_one(bound);
             }
         }
@@ -481,7 +488,7 @@ impl<'a> ScopeBuilder<'a> {
 
     pub fn parse_macro_tag(&self) -> Option<Macro> {
         let raw_tag = self.find_simple_tag("macro")?;
-        let raw_tag = self.ast_data.children(raw_tag)[0]; 
+        let raw_tag = self.ast_data.children(raw_tag)[0];
 
         // TODO: emit error
         assert_eq!(self.ast_data.nodes[raw_tag].kind, AstKind::Call);

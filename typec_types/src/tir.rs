@@ -19,7 +19,6 @@ impl Default for TirPatternMeta {
     }
 }
 
-
 #[derive(Clone)]
 pub struct TirData {
     pub ents: PrimaryMap<Tir, TirEnt>,
@@ -94,7 +93,7 @@ pub enum TirKind {
     Return(PackedOption<Tir>),
     Argument(u32),
     Call(PackedOption<Ty>, TyList, Func, TirList),
-    IndirectCall(Tir, TyList, TirList),
+    IndirectCall(Tir, TirList),
     IntLit(u128),
     BoolLit(bool),
     CharLit(char),
@@ -190,16 +189,16 @@ impl<'a> TirDisplay<'a> {
 
         let ent = self.data.ents[root];
         match ent.kind {
-            TirKind::IndirectCall(ptr, params, args) => {
+            TirKind::IndirectCall(ptr, args) => {
                 write!(f, "indirect_call ")?;
 
-                if let Some((&first, others)) = self.ty_lists.get(params).split_first() {
-                    write!(f, "[{}", ty_display!(self, first))?;
-                    for &ty in others {
-                        write!(f, ", {}", ty_display!(self, ty))?;
-                    }
-                    write!(f, "] ")?;
-                }
+                // if let Some((&first, others)) = self.ty_lists.get(params).split_first() {
+                //     write!(f, "[{}", ty_display!(self, first))?;
+                //     for &ty in others {
+                //         write!(f, ", {}", ty_display!(self, ty))?;
+                //     }
+                //     write!(f, "] ")?;
+                // }
 
                 self.fmt(ptr, f, displayed, level, false)?;
                 write!(f, "(")?;

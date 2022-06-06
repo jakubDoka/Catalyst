@@ -168,15 +168,15 @@ impl BuiltinTypes {
 
     pub fn integers(&self) -> [Ty; 10] {
         [
-            self.i8, self.i16, self.i32, self.i64, self.int, 
-            self.u8, self.u16, self.u32, self.u64, self.uint,
+            self.i8, self.i16, self.i32, self.i64, self.int, self.u8, self.u16, self.u32, self.u64,
+            self.uint,
         ]
     }
 
     pub fn numbers(&self) -> [Ty; 10] {
         [
-            self.i8, self.i16, self.i32, self.i64, self.int, 
-            self.u8, self.u16, self.u32, self.u64, self.uint,
+            self.i8, self.i16, self.i32, self.i64, self.int, self.u8, self.u16, self.u32, self.u64,
+            self.uint,
         ]
     }
 }

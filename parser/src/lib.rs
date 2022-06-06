@@ -9,8 +9,6 @@ pub mod error;
 
 pub use error::AstError;
 
-
-
 pub struct Parser<'a> {
     next: Token,
     current: Token,
@@ -674,13 +672,13 @@ impl<'a> Parser<'a> {
             if precedence < prev_precedence {
                 expr = self.composite_expr(expr, precedence);
             }
-            
+
             let span = {
                 let start = self.data.nodes[prev].span;
                 let end = self.data.nodes[expr].span;
                 start.join(end)
             };
-            
+
             let op = if prev_precedence == EQUAL_SIGN_PRECEDENCE && op_span.len() > 1 {
                 // transforms `a += b` into `a = a + b` for any operator ending with `=` except `==` and `!=`
                 let op = {

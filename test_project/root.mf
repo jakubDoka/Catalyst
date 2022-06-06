@@ -4,16 +4,9 @@ use {
     "root/patterns"
 }
 
-#macro(source, source)
-fn hello() {
-    putchar('g')
-}
-
 let CONSTANT = 1
 let STRUCT_CONSTANT = init_something()
 let mut dangerous_int = 0
-
-break
 
 #entry
 fn main() -> int {
@@ -37,8 +30,7 @@ fn main() -> int {
     if iter_fib(5) != 8 {
         return 5
     }
-    
-    
+       
     {
         let mut i = 1
         let mut b = 0
@@ -51,7 +43,6 @@ fn main() -> int {
             return 6
         }
     }
-    
     
     if structure_test() != 0 {
         return structure_test()
@@ -119,15 +110,15 @@ fn main() -> int {
         return 22
     }
 
-    //let fn_ptr = fn_ptr_test
+    let fn_ptr = fn_ptr_test
 
-    //if fn_ptr(1, 1) != 2 {
-    //    return 23
-    //}
+    if fn_ptr(1, 1) != 2 {
+        return 23
+    }
 
     putchar(40.u32() as char)
     putchar('h')
-    exit(-34)    
+    exit(-34)
 
     0
 }

@@ -1,16 +1,15 @@
-
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 
 pub mod ansi_consts;
 pub mod bit_serde;
 pub mod framed_stack;
+pub mod instances;
 pub mod map;
 pub mod pool_map;
 pub mod sparse_map;
 pub mod stack_map;
 pub mod tree;
-pub mod instances;
 
 pub use ansi_consts::{END, ERR, INFO, SUCCESS, WARNING, WEAK};
 pub use bit_serde::BitSerde;
@@ -20,12 +19,12 @@ pub use cranelift_entity::{
     EntityList, EntityRef, EntitySet, ListPool, PrimaryMap,
 };
 pub use framed_stack::FramedStack;
+pub use instances::{HasMeta, MetaMap, MetaRef};
 pub use map::{Map, SecondaryMap, Set, ID};
 pub use pool_map::PoolMap;
 pub use sparse_map::SparseMap;
 pub use stack_map::{FramedStackMap, StackMap};
-pub use tree::{TreeStorage, GenericGraph, CycleDetectResources};
-pub use instances::{MetaMap, MetaRef, HasMeta};
+pub use tree::{CycleDetectResources, GenericGraph, TreeStorage};
 
 pub extern crate cranelift_entity;
 

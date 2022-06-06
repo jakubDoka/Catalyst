@@ -4,12 +4,12 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use crate::manifest::*;
 use crate::module::*;
+use crate::state::*;
 use ast::*;
 use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;
-use crate::state::*;
 
 impl UnitBuilder<'_> {
     pub fn load_units(&mut self, root: &Path) -> errors::Result<Vec<Unit>> {
@@ -25,7 +25,9 @@ impl UnitBuilder<'_> {
         let slot = self.units.push(units::UnitEnt::new());
         self.loader_context.map.insert(root.as_path(), slot);
 
-        self.loader_context.unit_frontier.push_back((root, None, slot));
+        self.loader_context
+            .unit_frontier
+            .push_back((root, None, slot));
 
         while let Some((path, span, slot)) = self.loader_context.unit_frontier.pop_front() {
             self.loader_context.buffer.clear();
@@ -113,7 +115,9 @@ impl UnitBuilder<'_> {
                         id
                     };
 
-                    self.loader_context.map.insert((self.sources.display(name), slot), id);
+                    self.loader_context
+                        .map
+                        .insert(ID::scoped(self.sources.display(name).into(), slot), id);
                     self.loader_context.cycle_graph.add_edge(id.0);
                 }
             }
@@ -128,7 +132,9 @@ impl UnitBuilder<'_> {
             self.loader_context.cycle_graph.close_node(0);
         }
 
-        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::max_node(&self.loader_context.cycle_graph));
+        let mut ordering = Vec::with_capacity(TreeStorage::<Unit>::max_node(
+            &self.loader_context.cycle_graph,
+        ));
         self.loader_context
             .cycle_graph
             .detect_cycles(slot, Some(&mut ordering))

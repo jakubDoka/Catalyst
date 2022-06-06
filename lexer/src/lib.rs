@@ -1,14 +1,13 @@
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(int_log)]
-
 #![feature(let_else)]
 
 pub mod types;
 
 pub use types::{
-    BuiltinSource, Source, SourceEnt, Sources, SourcesExt, 
-    Span, Token, TokenKind, EQUAL_SIGN_PRECEDENCE,
+    BuiltinSource, Source, SourceEnt, Sources, SourcesExt, Span, Token, TokenKind,
+    EQUAL_SIGN_PRECEDENCE,
 };
 
 pub struct Lexer<'a> {

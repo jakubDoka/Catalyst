@@ -1,9 +1,9 @@
+use crate::state::*;
 use ast::*;
 use lexer::*;
 use module_types::{error::ModuleError, *};
 use parser::*;
 use storage::*;
-use crate::state::*;
 
 pub const SOURCE_FILE_EXTENSION: &'static str = "mf";
 pub const MANIFEST_FILE_EXTENSION: &'static str = "mfm";
@@ -12,8 +12,6 @@ pub const DEFAULT_RESOURCE_ROOT_VAR: &'static str = ".mp_build_resources";
 pub const MANIFEST_LOCAL_PATH: &'static str = "project.mfm";
 pub const GITHUB_DOMAIN: &'static str = "github.com";
 pub const DEFAULT_ROOT_SOURCE_PATH: &'static str = "src/root.mf";
-
-
 
 impl ModuleBuilder<'_> {
     pub fn load_unit_modules(&mut self, unit: Unit) -> errors::Result<Vec<Source>> {
@@ -37,7 +35,7 @@ impl ModuleBuilder<'_> {
         }
 
         while let Some((path, span, slot)) = self.loader_context.module_frontier.pop_front() {
-             {
+            {
                 {
                     let Ok(content) = std::fs::read_to_string(&path).map_err(|err| {
                         self.diagnostics.push(ModuleError::ModuleLoadFail {
@@ -64,7 +62,9 @@ impl ModuleBuilder<'_> {
             }
 
             let mut counter = 0;
-            if let Some(imports) = ModuleImports::new(&self.loader_context.ast, &self.sources).imports() {
+            if let Some(imports) =
+                ModuleImports::new(&self.loader_context.ast, &self.sources).imports()
+            {
                 for ModuleImport {
                     nick,
                     name,
@@ -75,16 +75,22 @@ impl ModuleBuilder<'_> {
                         let unit = self
                             .loader_context
                             .map
-                            .get((self.sources.display(name), unit))
+                            .get(ID::scoped(self.sources.display(name).into(), unit))
                             .copied()
                             .unwrap_or(unit);
 
                         self.loader_context.buffer.clear();
                         self.loader_context.buffer.push(&self.units[unit].root_path);
-                        self.loader_context.buffer.push(&self.units[unit].local_source_path);
+                        self.loader_context
+                            .buffer
+                            .push(&self.units[unit].local_source_path);
                         self.loader_context.buffer.set_extension("");
-                        self.loader_context.buffer.push(self.sources.display(path_span));
-                        self.loader_context.buffer.set_extension(SOURCE_FILE_EXTENSION);
+                        self.loader_context
+                            .buffer
+                            .push(self.sources.display(path_span));
+                        self.loader_context
+                            .buffer
+                            .set_extension(SOURCE_FILE_EXTENSION);
                     }
 
                     let id = {
@@ -117,7 +123,7 @@ impl ModuleBuilder<'_> {
                     self.modules[slot].dependency.push(id);
 
                     self.module_map
-                        .insert((self.sources.display(nick), slot), id);
+                        .insert(ID::scoped(self.sources.display(nick).into(), slot), id);
                     if id.0 >= base_line {
                         self.loader_context.cycle_graph.add_edge(id.0 - base_line);
                     }
@@ -130,8 +136,9 @@ impl ModuleBuilder<'_> {
             self.loader_context.cycle_graph.close_node(0);
         }
 
-        let mut ordering =
-            Vec::with_capacity(TreeStorage::<Source>::max_node(&self.loader_context.cycle_graph));
+        let mut ordering = Vec::with_capacity(TreeStorage::<Source>::max_node(
+            &self.loader_context.cycle_graph,
+        ));
         self.loader_context
             .cycle_graph
             .detect_cycles(Source(0), Some(&mut ordering))

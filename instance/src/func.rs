@@ -1,9 +1,9 @@
-use cranelift_codegen::{packed_option::PackedOption};
+use cranelift_codegen::packed_option::PackedOption;
 
+use crate::*;
 use instance_types::*;
 use storage::*;
 use typec_types::*;
-use crate::*;
 
 pub type ExprResult = errors::Result<Option<Value>>;
 
@@ -68,7 +68,8 @@ impl<'a> MirBuilder<'a> {
             if sig.ret == self.builtin_types.nothing {
                 self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
             } else {
-                self.func_ctx.add_inst(InstEnt::new(InstKind::Return, value));
+                self.func_ctx
+                    .add_inst(InstEnt::new(InstKind::Return, value));
             }
         }
 
@@ -125,10 +126,44 @@ impl<'a> MirBuilder<'a> {
             TirKind::Match(..) => self.r#match(tir, dest)?,
             TirKind::MatchBlock(..) => self.match_block(tir, dest)?,
             TirKind::GlobalAccess(..) => self.global_access(tir, dest)?,
+            TirKind::FuncPtr(..) => self.func_ptr(tir, dest)?,
+            TirKind::IndirectCall(..) => self.indirect_call(tir, dest)?,
             _ => unimplemented!("Unhandled Kind::{:?}", kind),
         };
 
         self.mir_builder_context.tir_mapping[tir] = value.into();
+
+        Ok(value)
+    }
+
+    fn indirect_call(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
+        let TirEnt {
+            ty,
+            kind: TirKind::IndirectCall(func, args),
+            ..
+        } = self.tir_data.ents[tir] else {
+            unreachable!()
+        };
+
+        let func = self.expr(func, None)?.unwrap();
+
+        self.call_low(Err(func), tir, ty, dest, args)
+    }
+
+    fn func_ptr(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
+        let TirEnt {
+            kind: TirKind::FuncPtr(func),
+            ..
+        } = self.tir_data.ents[tir] else {
+            unreachable!()
+        };
+        
+        let value = self.unwrap_dest(tir, dest).or(dest);
+
+        {
+            let kind = InstKind::FuncPtr(func);
+            self.func_ctx.add_inst(InstEnt::new(kind, value));
+        }
 
         Ok(value)
     }
@@ -141,7 +176,7 @@ impl<'a> MirBuilder<'a> {
         } = self.tir_data.ents[tir] else {
             unreachable!();
         };
-        
+
         let on_stack = self.on_stack(tir);
         let dest = self.unwrap_dest_low(ty, on_stack, dest).or(dest);
 
@@ -214,7 +249,9 @@ impl<'a> MirBuilder<'a> {
             }
             block
         });
-        self.mir_builder_context.match_block_stack.push(block.into());
+        self.mir_builder_context
+            .match_block_stack
+            .push(block.into());
 
         drop(self.expr(branches, dest));
 
@@ -309,12 +346,7 @@ impl<'a> MirBuilder<'a> {
         Ok(Some(value))
     }
 
-    fn char_lit(
-        &mut self,
-        ty: Ty,
-        literal_value: char,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn char_lit(&mut self, ty: Ty, literal_value: char, dest: Option<Value>) -> ExprResult {
         let value = self.gen_int_lit(ty, literal_value as u128);
 
         self.gen_assign(value, dest);
@@ -345,9 +377,7 @@ impl<'a> MirBuilder<'a> {
             .unwrap();
 
         let value = if let Some(value) = value.expand() {
-            dest.is_none()
-                .then_some(self.expr(value, dest)?)
-                .flatten()
+            dest.is_none().then_some(self.expr(value, dest)?).flatten()
         } else {
             None
         };
@@ -433,12 +463,7 @@ impl<'a> MirBuilder<'a> {
         Ok(Some(value))
     }
 
-    fn bool_lit(
-        &mut self,
-        ty: Ty,
-        literal_value: bool,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn bool_lit(&mut self, ty: Ty, literal_value: bool, dest: Option<Value>) -> ExprResult {
         let value = self.value_from_ty(ty);
 
         {
@@ -518,12 +543,7 @@ impl<'a> MirBuilder<'a> {
         Ok(None)
     }
 
-    fn int_lit(
-        &mut self,
-        ty: Ty,
-        literal_value: u128,
-        dest: Option<Value>,
-    ) -> ExprResult {
+    fn int_lit(&mut self, ty: Ty, literal_value: u128, dest: Option<Value>) -> ExprResult {
         let value = self.gen_int_lit(ty, literal_value);
 
         self.gen_assign(value, dest);
@@ -651,6 +671,10 @@ impl<'a> MirBuilder<'a> {
             };
         }
 
+       self.call_low(Ok(func), tir, ty, dest, args)
+    }
+
+    fn call_low(&mut self, func: Result<Func, Value>, tir: Tir, ty: Ty, dest: Option<Value>, args: TirList) -> ExprResult {
         let on_stack = self.on_stack(tir);
         let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
 
@@ -675,9 +699,13 @@ impl<'a> MirBuilder<'a> {
             self.func_ctx.value_slices.pop_frame()
         };
 
+        let kind = match func {
+            Ok(func) => InstKind::Call(func, args),
+            Err(func) => InstKind::IndirectCall(func, args),
+        };
+
         if on_stack && !has_sret {
             let temp = {
-                let kind = InstKind::Call(func, args);
                 let value = self.value_from_ty(ty);
                 let ent = InstEnt::new(kind, value.into());
                 self.func_ctx.add_inst(ent);
@@ -686,7 +714,6 @@ impl<'a> MirBuilder<'a> {
 
             self.gen_assign(temp, value);
         } else {
-            let kind = InstKind::Call(func, args);
             let inst = InstEnt::new(kind, value);
             self.func_ctx.add_inst(inst);
 
@@ -791,8 +818,7 @@ impl<'a> MirBuilder<'a> {
 
     fn on_stack(&self, tir: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.tir_data.ents[tir];
-        self.reprs[ty].flags.contains(ReprFlags::ON_STACK)
-            || flags.contains(TirFlags::SPILLED)
+        self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED)
     }
 
     fn r#return(&mut self, value: Option<Tir>) -> ExprResult {

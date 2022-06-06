@@ -1,9 +1,9 @@
 use cranelift_codegen::ir::{self, Type};
 
+use crate::*;
 use instance_types::*;
 use storage::*;
 use typec_types::*;
-use crate::*;
 
 impl<'a> ReprInstancing<'a> {
     pub fn load_generic_types(

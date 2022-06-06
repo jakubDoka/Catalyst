@@ -5,7 +5,7 @@ impl DeadCodeElim<'_> {
     pub fn collect_used_funcs(
         &mut self,
         compiled: &mut Vec<Func>,
-        linked: &mut Vec<Func>, 
+        linked: &mut Vec<Func>,
         used_funcs: &mut EntitySet<Func>,
     ) {
         let mut i = 0;
@@ -28,7 +28,6 @@ impl DeadCodeElim<'_> {
 
             i += 1;
         }
-
 
         compiled.retain(|&f| {
             if self.funcs[f].flags.contains(FuncFlags::EXTERNAL) {

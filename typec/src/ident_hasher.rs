@@ -1,8 +1,8 @@
+use crate::IdentHasher;
 use ast::*;
 use lexer::*;
 use storage::*;
 use typec_types::*;
-use crate::IdentHasher;
 
 impl<'a> IdentHasher<'a> {
     pub fn ident_id(&mut self, ast: Ast, owner: Option<(Ty, Span)>) -> errors::Result<ID> {
@@ -24,7 +24,7 @@ impl<'a> IdentHasher<'a> {
                     match self.scope.get_concrete::<Source>(id) {
                         Ok(source) => ID::from(source),
                         Err(err) => todo!("{err:?}"),
-                    }                    
+                    }
                 };
 
                 let (ty, span) = if let Some(owner) = owner {
@@ -37,7 +37,7 @@ impl<'a> IdentHasher<'a> {
                             Ok(ty) => ty,
                             Err(err) => todo!("{err:?}"),
                         },
-                        span
+                        span,
                     )
                 };
 
@@ -60,15 +60,13 @@ impl<'a> IdentHasher<'a> {
                     todo!("{item:?}");
                 };
 
-                Ok(
-                    if let Some(source) = item.pointer.may_read::<Source>() {
-                        (item_id + ID::from(source), None)
-                    } else if let Some(ty) = item.pointer.may_read::<Ty>() {
-                        (ID::owned(self.types[ty].id, item_id), Some((ty, span)))
-                    } else {
-                        todo!("{item:?}");
-                    }
-                )
+                Ok(if let Some(source) = item.pointer.may_read::<Source>() {
+                    (ID::scoped(item_id, source), None)
+                } else if let Some(ty) = item.pointer.may_read::<Ty>() {
+                    (ID::owned(self.types[ty].id, item_id), Some((ty, span)))
+                } else {
+                    todo!("{item:?}");
+                })
             }
             (&[], None) => return Ok((ast::id_of(ast, self.ast_data, self.sources), None)),
             (&[], Some((ty, span))) => {

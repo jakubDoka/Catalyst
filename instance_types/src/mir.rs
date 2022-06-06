@@ -137,6 +137,8 @@ impl InstEnt {
 
 #[derive(Debug)]
 pub enum InstKind {
+    IndirectCall(Value, ValueList),
+    FuncPtr(Func),
     GlobalAccess(Global),
     BitCast(Value),
     DerefPointer(Value),
@@ -275,10 +277,35 @@ impl std::fmt::Display for MirDisplay<'_> {
 
             for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
+                    InstKind::IndirectCall(func, values) => {
+                        let args = self
+                            .func
+                            .value_slices
+                            .get(values)
+                            .iter()
+                            .map(|&v| format!("{v}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        writeln!(
+                            f,
+                            "\t{} = func_ptr {} ({})",
+                            self.value_to_string(inst.value.unwrap()),
+                            func,
+                            args,
+                        )?;
+                    }
+                    InstKind::FuncPtr(func) => {
+                        writeln!(
+                            f,
+                            "\t{} = func_ptr {}",
+                            self.value_to_string(inst.value.unwrap()),
+                            func
+                        )?;
+                    }
                     InstKind::BitCast(value) => {
                         writeln!(
                             f,
-                            "    {} = bitcast {}",
+                            "\t{} = bitcast {}",
                             self.value_to_string(inst.value.unwrap()),
                             value
                         )?;
@@ -286,7 +313,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::GlobalAccess(g) => {
                         writeln!(
                             f,
-                            "    {} = global {}",
+                            "\t{} = global {}",
                             self.value_to_string(inst.value.unwrap()),
                             g
                         )?;
@@ -294,7 +321,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::TakePointer(target) => {
                         writeln!(
                             f,
-                            "    {} = ptr {}",
+                            "\t{} = ptr {}",
                             self.value_to_string(inst.value.unwrap()),
                             target
                         )?;
@@ -302,7 +329,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::DerefPointer(target) => {
                         writeln!(
                             f,
-                            "    {} = deref {}",
+                            "\t{} = deref {}",
                             self.value_to_string(inst.value.unwrap()),
                             target
                         )?;
@@ -310,7 +337,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::Offset(target) => {
                         writeln!(
                             f,
-                            "    {} = offset {}",
+                            "\t{} = offset {}",
                             self.value_to_string(inst.value.unwrap()),
                             target
                         )?;
@@ -318,25 +345,25 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::StackAddr(stack) => {
                         writeln!(
                             f,
-                            "    {} = stack {}",
+                            "\t{} = stack {}",
                             self.value_to_string(inst.value.unwrap()),
                             stack
                         )?;
                     }
                     InstKind::Variable => {
-                        writeln!(f, "    let {}", inst.value.unwrap())?;
+                        writeln!(f, "\tlet {}", inst.value.unwrap())?;
                     }
                     InstKind::Assign(value) => {
-                        writeln!(f, "    {} = {}", inst.value.unwrap(), value)?;
+                        writeln!(f, "\t{} = {}", inst.value.unwrap(), value)?;
                     }
                     InstKind::JumpIfFalse(block) => {
-                        writeln!(f, "    if {} goto {}", inst.value.unwrap(), block)?;
+                        writeln!(f, "\tif {} goto {}", inst.value.unwrap(), block)?;
                     }
                     InstKind::Jump(block) => {
                         if let Some(value) = inst.value.expand() {
-                            writeln!(f, "    goto {} with {}", block, value)?;
+                            writeln!(f, "\tgoto {} with {}", block, value)?;
                         } else {
-                            writeln!(f, "    goto {}", block)?;
+                            writeln!(f, "\tgoto {}", block)?;
                         }
                     }
                     InstKind::Call(func, values) => {
@@ -351,19 +378,19 @@ impl std::fmt::Display for MirDisplay<'_> {
                         if let Some(value) = inst.value.expand() {
                             writeln!(
                                 f,
-                                "    {} = call {}({})",
+                                "\t{} = call {}({})",
                                 self.value_to_string(value),
                                 func,
                                 args
                             )?;
                         } else {
-                            writeln!(f, "    call {}({})", func, args)?;
+                            writeln!(f, "\tcall {}({})", func, args)?;
                         }
                     }
                     InstKind::IntLit(value) => {
                         writeln!(
                             f,
-                            "    {} = {}",
+                            "\t{} = {}",
                             self.value_to_string(inst.value.unwrap()),
                             value
                         )?;
@@ -371,16 +398,16 @@ impl std::fmt::Display for MirDisplay<'_> {
                     InstKind::BoolLit(value) => {
                         writeln!(
                             f,
-                            "    {} = {}",
+                            "\t{} = {}",
                             self.value_to_string(inst.value.unwrap()),
                             value
                         )?;
                     }
                     InstKind::Return => {
                         if let Some(value) = inst.value.expand() {
-                            writeln!(f, "    return {}", value)?;
+                            writeln!(f, "\treturn {}", value)?;
                         } else {
-                            writeln!(f, "    return")?;
+                            writeln!(f, "\treturn")?;
                         }
                     }
                 }

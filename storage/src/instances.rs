@@ -1,13 +1,13 @@
 use std::ops::{Index, IndexMut};
 
-use cranelift_entity::{PrimaryMap, EntityRef, SecondaryMap};
+use cranelift_entity::{EntityRef, PrimaryMap, SecondaryMap};
 
 use crate::gen_entity;
 
 pub struct MetaMap<K: HasMeta, H, M> {
     headers: PrimaryMap<K, H>,
     mapping: SecondaryMap<K, Meta>,
-    meta: PrimaryMap<Meta, M>
+    meta: PrimaryMap<Meta, M>,
 }
 
 impl<K: HasMeta, H, M> MetaMap<K, H, M> {
@@ -15,7 +15,7 @@ impl<K: HasMeta, H, M> MetaMap<K, H, M> {
         Self {
             headers: PrimaryMap::new(),
             mapping: SecondaryMap::new(),
-            meta: PrimaryMap::new()
+            meta: PrimaryMap::new(),
         }
     }
 

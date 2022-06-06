@@ -28,46 +28,50 @@ impl Scope {
         }
     }
 
-    pub fn get_concrete<T: EntityRef + 'static>(&self, id: impl Into<ID>) -> Result<T, ScopeFindError> {
+    pub fn get_concrete<T: EntityRef + 'static>(
+        &self,
+        id: impl Into<ID>,
+    ) -> Result<T, ScopeFindError> {
         self.get_concrete_by_id(id.into())
     }
 
-    pub fn get_concrete_by_id<T: EntityRef + 'static>(&self, id: impl Into<ID>) -> Result<T, ScopeFindError> {
+    pub fn get_concrete_by_id<T: EntityRef + 'static>(
+        &self,
+        id: impl Into<ID>,
+    ) -> Result<T, ScopeFindError> {
         let id = id.into();
-        self
-            .get_by_id(id)
-            .and_then(|item| item.pointer
+        self.get_by_id(id).and_then(|item| {
+            item.pointer
                 .may_read::<T>()
-                .ok_or(ScopeFindError::InvalidType(item.pointer.id)),
-            )
+                .ok_or(ScopeFindError::InvalidType(item.pointer.id))
+        })
     }
 
     pub fn get(&self, id: impl Into<ID>) -> Result<ScopeItem, ScopeFindError> {
         self.get_by_id(id.into())
     }
-    
+
     pub fn get_by_id(&self, id: ID) -> Result<ScopeItem, ScopeFindError> {
         self.map
             .get(id)
             .cloned()
             .ok_or(ScopeFindError::NotFound)
-            .and_then(|item| item.pointer
-                .may_read::<ScopeCollision>()
-                .is_none()
-                .then_some(item)
-                .ok_or_else(|| ScopeFindError::Collision(self.suggestions(id.into())))            
-            )
+            .and_then(|item| {
+                item.pointer
+                    .may_read::<ScopeCollision>()
+                    .is_none()
+                    .then_some(item)
+                    .ok_or_else(|| ScopeFindError::Collision(self.suggestions(id.into())))
+            })
     }
-        
+
     pub fn suggestions(&self, id: ID) -> Vec<Span> {
-        self
-            .dependencies
+        self.dependencies
             .iter()
-            .filter_map(|&(source, span)| self.map.get((id, source)).map(|_| span))
+            .filter_map(|&(source, span)| self.map.get(ID::scoped(id, source)).map(|_| span))
             .collect::<Vec<_>>()
-    
     }
-    
+
     pub fn mark_frame(&mut self) {
         self.frames.push(self.stack.len());
     }
@@ -125,12 +129,12 @@ impl Scope {
                     if item_source == current_source {
                         assert!(self.map.insert(id, item) == Some(ScopeItem::collision()));
                     } else {
-                        assert!(self.map.insert((id, item_source), item).is_none());
+                        assert!(self.map.insert(ID::scoped(id, item_source), item).is_none());
                     }
                 } else if colliding_source == current_source {
                     if item_source != current_source {
                         assert!(self.map.insert(id, colliding) == Some(ScopeItem::collision()));
-                        assert!(self.map.insert((id, item_source), item).is_none());
+                        assert!(self.map.insert(ID::scoped(id, item_source), item).is_none());
                     } else {
                         diagnostics.push(ModuleError::ScopeCollision {
                             new: item.span,
@@ -139,9 +143,11 @@ impl Scope {
                         return Err(());
                     }
                 } else {
-                    assert!(self.map.insert((id, item_source), item).is_none());
+                    assert!(self.map.insert(ID::scoped(id, item_source), item).is_none());
                     assert!(
-                        self.map.insert((id, colliding_source), colliding).is_none(),
+                        self.map
+                            .insert(ID::scoped(id, colliding_source), colliding)
+                            .is_none(),
                         "{:?}",
                         colliding
                     );

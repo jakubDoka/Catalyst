@@ -9,7 +9,7 @@ impl Generator<'_> {
         let sys_cc = self.isa.default_call_conv();
 
         for &(func, _) in self.to_compile.iter() {
-            let call_conv = self.funcs[func].flags.call_conv();
+            let call_conv = self.funcs[func.meta()].sig.cc;
             let sig = self.funcs[func.meta()].sig;
             self.signatures.insert(
                 func,
@@ -31,50 +31,46 @@ impl Generator<'_> {
                 continue;
             }
 
-            self.load_generic_params(
-                id, 
-                params,
-                ptr_ty, 
-            );
+            self.load_generic_params(id, params, ptr_ty);
 
             let tir = std::mem::take(&mut self.funcs[id.meta()].tir_data);
-            let result = mir_builder!(self, id, ptr_ty, sys_cc, tir)
-                .func();
+            let result = mir_builder!(self, id, ptr_ty, sys_cc, tir).func();
 
             self.funcs[id.meta()].tir_data = tir;
 
             if result.is_err() {
                 continue;
             }
-            
-            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));    
-            
+
+            // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
+
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 
             self.build_cir_and_emit(id, true);
         }
     }
-    
+
     pub fn build_cir_and_emit(&mut self, id: Func, save: bool) {
         let builder = FunctionBuilder::new(
-            &mut self.context.func, 
-            &mut self.generation_context.builder_context
+            &mut self.context.func,
+            &mut self.generation_context.builder_context,
         );
 
-
         cir_builder!(self, builder, *self.isa).generate();
-        
+
         // if !self.func_meta[parent].name.is_reserved_value() {
         //     println!("{}", self.sources. display(self.func_meta[parent].name));
         // }
         // println!("{}", self.context.func.display());
 
-        self.generation_context.replace_cache.replace(self.types, self.reprs);
+        self.generation_context
+            .replace_cache
+            .replace(self.types, self.reprs);
 
         let mut bytes = vec![];
-        self.context.compile_and_emit(self.isa, &mut bytes)
-            .unwrap();
-        let relocs = self.context
+        self.context.compile_and_emit(self.isa, &mut bytes).unwrap();
+        let relocs = self
+            .context
             .mach_compile_result
             .as_ref()
             .unwrap()
@@ -84,7 +80,10 @@ impl Generator<'_> {
 
         let compile_result = CompileResult { bytes, relocs };
 
-        let signature = std::mem::replace(&mut self.context.func.signature, Signature::new(CallConv::Fast));
+        let signature = std::mem::replace(
+            &mut self.context.func.signature,
+            Signature::new(CallConv::Fast),
+        );
 
         if save {
             self.save_compile_result(id, signature, &compile_result);
@@ -94,30 +93,39 @@ impl Generator<'_> {
         self.context.clear();
     }
 
-    fn save_compile_result(&mut self, func: Func, signature: Signature, compile_result: &CompileResult) {        
-        let reloc_records = compile_result.relocs.iter().map(|r| {
-            let ExternalName::User {
+    fn save_compile_result(
+        &mut self,
+        func: Func,
+        signature: Signature,
+        compile_result: &CompileResult,
+    ) {
+        let reloc_records = compile_result
+            .relocs
+            .iter()
+            .map(|r| {
+                let ExternalName::User {
                 namespace,
                 index,
             } = r.name else {
                 unreachable!();
             };
 
-            let name = match namespace {
-                FUNC_NAMESPACE => self.funcs[Func(index)].id,
-                DATA_NAMESPACE => self.globals[Global(index)].id,
-                _ => unreachable!(),
-            };
-            
-            IncrRelocRecord {
-                offset: r.offset,
-                srcloc: r.srcloc,
-                kind: r.kind,
-                name,
-                namespace,
-                addend: r.addend,
-            }
-        }).collect::<Vec<_>>();
+                let name = match namespace {
+                    FUNC_NAMESPACE => self.funcs[Func(index)].id,
+                    DATA_NAMESPACE => self.globals[Global(index)].id,
+                    _ => unreachable!(),
+                };
+
+                IncrRelocRecord {
+                    offset: r.offset,
+                    srcloc: r.srcloc,
+                    kind: r.kind,
+                    name,
+                    namespace,
+                    addend: r.addend,
+                }
+            })
+            .collect::<Vec<_>>();
 
         let incr_func_data = IncrFunc {
             signature,
@@ -131,19 +139,16 @@ impl Generator<'_> {
         let module_id = self.modules[source].id;
         let func_id = self.funcs[func].id;
 
-        self.incr_modules.get_mut(module_id)
-            .unwrap().owned_funcs.insert(func_id, ());
+        self.incr_modules
+            .get_mut(module_id)
+            .unwrap()
+            .owned_funcs
+            .insert(func_id, ());
 
         self.incr_funcs.insert(func_id, incr_func_data);
     }
 
-    fn load_generic_params(
-        &mut self,
-        id: Func,
-        params: TyList,
-        ptr_ty: Type,
-    ) {
-
+    fn load_generic_params(&mut self, id: Func, params: TyList, ptr_ty: Type) {
         ReprInstancing {
             types: &mut self.types,
             ty_lists: &mut self.ty_lists,
@@ -155,22 +160,20 @@ impl Generator<'_> {
             ptr_ty,
         }
         .load_generic_types(
-            params, 
-            self.funcs[id.meta()].tir_data.used_types, 
-            &mut self.generation_context.replace_cache
+            params,
+            self.funcs[id.meta()].tir_data.used_types,
+            &mut self.generation_context.replace_cache,
         );
     }
 
-    pub fn skip_incrementally(
-        &mut self,
-        func: Func,
-        id: ID,
-    ) -> bool {
+    pub fn skip_incrementally(&mut self, func: Func, id: ID) -> bool {
         let Some(incr_func_data) = self.incr_funcs.get(id) else {
             return false;
         };
 
-        self.generation_context.frontier.extend(incr_func_data.function_dependencies());
+        self.generation_context
+            .frontier
+            .extend(incr_func_data.function_dependencies());
 
         let mut used_incr_funcs = vec![];
         while let Some(id) = self.generation_context.frontier.pop() {
@@ -184,19 +187,21 @@ impl Generator<'_> {
                 ..Default::default()
             };
 
-
             let func = self.funcs.push_instance(func_ent, Func::reserved_value());
             self.generation_context.reused_incr_funcs.push(func);
             let incr_func_data = self.incr_funcs.get(id).unwrap();
 
             used_incr_funcs.push(func);
-            
-            self.signatures.insert(func, incr_func_data.signature.clone());
-            self.generation_context.frontier.extend(incr_func_data.function_dependencies());
+
+            self.signatures
+                .insert(func, incr_func_data.signature.clone());
+            self.generation_context
+                .frontier
+                .extend(incr_func_data.function_dependencies());
         }
-        
+
         self.compile_results[func] = self.incr_data_to_compile_result(incr_func_data);
-        
+
         for func in used_incr_funcs {
             let id = self.funcs[func].id;
             let incr_func_data = self.incr_funcs.get(id).unwrap();
@@ -229,7 +234,6 @@ impl Generator<'_> {
 
         CompileResult { bytes, relocs }
     }
-
 }
 
 pub struct GenerationContext {

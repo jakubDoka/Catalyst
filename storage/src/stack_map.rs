@@ -58,6 +58,14 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
         self.stack.pop_frame();
     }
 
+    pub fn deep_clone(&mut self, target: E) -> E {
+        self.lists.deep_clone(target)
+    }
+
+    pub fn get_mut(&mut self, list: E) -> &mut [T] {
+        self.lists.get_mut(list)
+    }
+
     pub fn clear(&mut self) {
         self.lists.clear();
     }

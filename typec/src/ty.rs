@@ -69,27 +69,28 @@ impl TyBuilder<'_> {
                 unreachable!();
             };
             let name = self.ast_data.nodes[name].span;
-            
+
             let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
                 continue
             };
 
             self.ty_graph.add_edge(self.ty, ty);
 
-            let ent = TyCompEnt {
-                ty,
-                index,
-                name,
-            };
+            let ent = TyCompEnt { ty, index, name };
 
             variants.push(ent);
         }
-        
+
         for comp in variants {
             let id = ID::owned(id, self.sources.id_of(comp.name));
             let comp_id = self.ty_comps.push_one(comp);
             let module_item = ModuleItem::new(id, comp_id, comp.name);
-            drop(self.scope.insert(self.diagnostics, comp.name.source(), id, module_item.to_scope_item()));
+            drop(self.scope.insert(
+                self.diagnostics,
+                comp.name.source(),
+                id,
+                module_item.to_scope_item(),
+            ));
             self.modules[comp.name.source()].items.push(module_item);
         }
 
@@ -144,7 +145,12 @@ impl TyBuilder<'_> {
             };
 
             let module_item = ModuleItem::new(id, field, span);
-            drop(self.scope.insert(self.diagnostics, span.source(), id, module_item.to_scope_item()));
+            drop(self.scope.insert(
+                self.diagnostics,
+                span.source(),
+                id,
+                module_item.to_scope_item(),
+            ));
             self.modules[span.source()].items.push(module_item);
         }
         self.ty_comps.close_frame()

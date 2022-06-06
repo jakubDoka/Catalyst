@@ -15,7 +15,7 @@ impl MainScopeBuilder<'_> {
         if let Some(imports) = ModuleImports::new(&self.ast_data, &self.sources).imports() {
             for import in imports {
                 let nick = self.sources.display(import.nick);
-                let Some(&dep) = self.module_map.get((nick, source)) else {
+                let Some(&dep) = self.module_map.get(ID::scoped(nick.into(), source)) else {
                     continue; // recovery, module might not exist due to previous recovery
                 };
                 self.scope

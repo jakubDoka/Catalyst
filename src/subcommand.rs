@@ -1,7 +1,7 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
-use cli::*;
 use crate::exit;
+use cli::*;
 use storage::*;
 
 /// Sub command handles parsing of command line arguments

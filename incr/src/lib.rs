@@ -1,8 +1,6 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 
-
-
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{Signature, SourceLoc},
@@ -80,13 +78,12 @@ impl Incr {
     pub fn reduce(&mut self, modules: &Modules, module_order: &[Source]) {
         let mut dirty = EntitySet::new();
         let mut new_modules = Map::with_capacity(self.modules.len());
-        
+
         for &id in module_order {
             let module = &modules[id];
 
             let Ok(Ok(modified)) = std::fs::metadata(&module.path).map(|m| m.modified()) else {
                 dirty.insert(id);
-                
                 if let Some(mut existing) = self.modules.remove(id) {
                     Self::wipe(&mut existing, &mut self.functions);
                     Self::wipe(&mut existing, &mut self.jit_functions);
@@ -105,7 +102,9 @@ impl Incr {
                 continue;
             };
 
-            if existing_module.modified != modified || module.dependency.iter().any(|&dep| dirty.contains(dep)) {
+            if existing_module.modified != modified
+                || module.dependency.iter().any(|&dep| dirty.contains(dep))
+            {
                 dirty.insert(id);
                 Self::wipe(&mut existing_module, &mut self.functions);
                 Self::wipe(&mut existing_module, &mut self.jit_functions);
@@ -185,7 +184,9 @@ pub struct IncrFunc {
 
 impl IncrFunc {
     pub fn function_dependencies(&self) -> impl Iterator<Item = ID> + '_ {
-        self.reloc_records.iter().filter_map(|r| (r.namespace == FUNC_NAMESPACE).then_some(r.name))
+        self.reloc_records
+            .iter()
+            .filter_map(|r| (r.namespace == FUNC_NAMESPACE).then_some(r.name))
     }
 }
 

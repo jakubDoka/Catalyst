@@ -298,6 +298,10 @@ impl ID {
         ty + name
     }
 
+    pub fn scoped(item: Self, scope: impl EntityRef + IDFilter) -> Self {
+        Self::from(scope) + item
+    }
+
     pub fn bound_impl_func(bound: Self, implementor: Self, func: Self) -> Self {
         implementor + Self::owned(bound, func)
     }
@@ -364,31 +368,6 @@ impl<T: EntityRef + IDFilter> From<T> for ID {
         Self(entity.index() as u64)
     }
 }
-
-macro_rules! strip_plus {
-    (+ $($s:tt)*) => {
-        $($s)*
-    };
-}
-
-macro_rules! impl_from_for_tuples {
-    ($($($t:ident),*);*) => {
-        $(
-            #[allow(non_snake_case)]
-            impl<$($t: Into<ID>),*> From<($($t),*)> for ID {
-                fn from(($($t),*): ($($t),*)) -> Self {
-                    strip_plus!($(+ $t.into())*)
-                }
-            }
-        )*
-    };
-}
-
-impl_from_for_tuples!(
-    A, B;
-    A, B, C;
-    A, B, C, D
-);
 
 impl std::ops::Add<ID> for ID {
     type Output = Self;

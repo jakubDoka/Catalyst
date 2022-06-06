@@ -283,6 +283,7 @@ file "instance/src/state.rs" {
         TyLists
         FuncLists
         TyComps
+        TyInstances
         BoundImpls
         ReprFields
         BuiltinTypes

@@ -1,6 +1,5 @@
 use std::ops::Not;
 
-use cranelift_codegen::isa::CallConv;
 use matching::*;
 use module_types::*;
 
@@ -18,10 +17,13 @@ impl TirBuilder<'_> {
 
         let func_ent = FuncEnt {
             id: ID::new("<global>") + self.globals[self.global].id,
-            flags: FuncFlags::ANONYMOUS | Some(CallConv::Fast),
+            flags: FuncFlags::ANONYMOUS,
         };
         let func_meta = FuncMeta {
-            sig: Sig { ret, ..Default::default() },
+            sig: Sig {
+                ret,
+                ..Default::default()
+            },
             name: self.globals[global].name,
             body,
 
@@ -39,9 +41,7 @@ impl TirBuilder<'_> {
         let FuncMeta {
             kind,
             params,
-            sig: Sig {
-                ret, args, ..
-            },
+            sig: Sig { ret, args, .. },
             ..
         } = self.funcs[self.func.meta()];
         let flags = self.funcs[self.func].flags;
@@ -111,7 +111,9 @@ impl TirBuilder<'_> {
         self.scope_context.used_types.clear();
         self.scope_context.used_types_set.clear();
 
-        if !self.tir_data.ents[root].flags.contains(TirFlags::TERMINATING)
+        if !self.tir_data.ents[root]
+            .flags
+            .contains(TirFlags::TERMINATING)
             && ret != self.builtin_types.nothing
         {
             let because = ret_ast
@@ -181,7 +183,9 @@ impl TirBuilder<'_> {
             };
             self.tir_stack.push(expr);
             final_expr = Some(expr);
-            terminating |= self.tir_data.ents[expr].flags.contains(TirFlags::TERMINATING);
+            terminating |= self.tir_data.ents[expr]
+                .flags
+                .contains(TirFlags::TERMINATING);
             if terminating {
                 break; // TODO: emit warning
             }
@@ -435,15 +439,19 @@ impl TirBuilder<'_> {
                         }
 
                         let span = self.ast_data.nodes[name].span;
-                        let id = self.sources.id_of(span);
+                        let ty = self.types.base_of(ty);
+                        let id = ID::owned(self.types[ty].id, self.sources.id_of(span));
 
-                        let Ok(res) = self.find_field(ty, id, span) else {
-                            continue;
+                        let field = self.scope.get_concrete::<TyComp>(id);
+                        let Ok(field_id) = field else {
+                            todo!("{field:?}");
                         };
 
-                        let i = self.ty_comps[res.0].index;
+                        let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
 
-                        (res, pattern, i as usize)
+                        let i = self.ty_comps[field_id].index;
+
+                        ((field_id, field_ty), pattern, i as usize)
                     };
 
                     let field_access = {
@@ -466,13 +474,7 @@ impl TirBuilder<'_> {
                     }
                     last_i = i + 1;
 
-                    drop(self.pattern(
-                        field,
-                        field_access,
-                        branch,
-                        depth + 1,
-                        base_expr_span,
-                    ));
+                    drop(self.pattern(field, field_access, branch, depth + 1, base_expr_span));
                 }
 
                 for filed in &self.ty_comps.get(fields)[last_i..] {
@@ -492,7 +494,9 @@ impl TirBuilder<'_> {
 
             AstKind::Ident => {
                 let id = self.sources.id_of(span);
-                let range = self.types.range_of(self.tir_data.ents[expr].ty, self.ty_comps);
+                let range = self
+                    .types
+                    .range_of(self.tir_data.ents[expr].ty, self.ty_comps);
                 let value = if id == ID::new("_") {
                     TirPatternMeta::Default
                 } else {
@@ -794,197 +798,226 @@ impl TirBuilder<'_> {
         Ok(loop_slot)
     }
 
-    fn call(&mut self, ast: Ast) -> errors::Result<Tir> {
-        let &[caller, ..] = self.ast_data.children(ast) else {
-            unreachable!();
+    fn direct_call(
+        &mut self,
+        func: Func,
+        ast: Ast,
+        caller: Option<Ty>,
+        mut obj: Option<Tir>,
+        instantiation: Option<Ast>,
+        span: Span,
+    ) -> errors::Result<Tir> {
+        let Sig { args, ret, .. } = self.funcs[func.meta()].sig;
+        let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
+        let args = self.ty_lists.get(args).to_vec();
+        let tir_args = self.arguments(ast, &mut obj, &args)?;
+
+        let (params, ret) = if generic {
+            self.instantiate_call(caller, func, instantiation, &tir_args, span)?
+        } else {
+            tir_args
+                .iter()
+                .zip(args)
+                .map(|(&arg, ty)| self.infer_tir_ty(arg, ty, |_, _, _| todo!()))
+                .fold(Ok(()), |acc, err| acc.and(err))?;
+            (TyList::reserved_value(), ret)
         };
 
-        let (id, _fn_span, mut obj, caller, instantiation) =
-            if self.ast_data.nodes[caller].kind == AstKind::DotExpr {
-                let &[expr, name] = self.ast_data.children(caller) else {
-                    unreachable!();
-                };
+        let args = self.tir_data.cons.push(&tir_args);
+        let kind = TirKind::Call(caller.into(), params, func, args);
+        let ent = TirEnt::with_flags(kind, ret, TirFlags::GENERIC & generic, span);
+        Ok(self.tir_data.ents.push(ent))
+    }
 
-                let expr = self.expr(expr)?;
-                let ty = {
-                    let ty = self.tir_data.ents[expr].ty;
-                    self.types.caller_of(ty)
-                };
+    fn instantiate_call(
+        &mut self,
+        caller: Option<Ty>,
+        func: Func,
+        instantiation: Option<Ast>,
+        tir_args: &[Tir],
+        _span: Span,
+    ) -> errors::Result<(TyList, Ty)> {
+        let FuncMeta {
+            params,
+            sig: Sig { args, ret, .. },
+            ..
+        } = self.funcs[func.meta()];
+        let params = self.ty_lists.get(params);
 
-                let (ident, instantiation) = {
-                    if AstKind::Instantiation == self.ast_data.nodes[name].kind {
-                        (self.ast_data.children(name)[0], Some(name))
-                    } else {
-                        (name, None)
-                    }
-                };
+        prepare_params(params, self.types);
 
-                let span = self.tir_data.ents[expr].span;
-                let name_id = ident_hasher!(self).ident_id(ident, Some((ty, span)))?;
+        let mut param_slots = vec![Ty::default(); params.len()];
 
-                let span = self.ast_data.nodes[name].span;
-                (name_id, span, Some(expr), Some(ty), instantiation)
+        if let Some(instantiation) = instantiation {
+            if params.len() > self.ast_data.children(instantiation).len() - 1 {
+                todo!();
             } else {
-                let (ident, instantiation) = {
-                    if AstKind::Instantiation == self.ast_data.nodes[caller].kind {
-                        (self.ast_data.children(caller)[0], Some(caller))
-                    } else {
-                        (caller, None)
-                    }
-                };
+                for (i, &param) in self.ast_data.children(instantiation)[1..]
+                    .iter()
+                    .enumerate()
+                {
+                    let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
+                        continue;
+                    };
+                    param_slots[i] = ty;
+                }
+            }
+        }
 
-                let (name_id, owner) = ident_hasher!(self).ident_id_low(ident, None)?;
+        tir_args
+            .iter()
+            .zip(self.ty_lists.get(args))
+            .map(|(&arg, &arg_ty)| {
+                let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
+                infer_parameters(
+                    ty,
+                    arg_ty,
+                    &mut param_slots,
+                    span,
+                    self.types,
+                    self.ty_lists,
+                    self.bound_impls,
+                    self.diagnostics,
+                )
+            })
+            // fold prevents allocation
+            .fold(Ok(()), |acc, err| acc.and(err))?;
 
-                let span = self.ast_data.nodes[caller].span;
-                (name_id, span, None, owner.map(|(ty, _)| ty), instantiation)
+        if let (Some(ty), Some(param)) = (caller, param_slots.last_mut()) && param.is_reserved_value() {
+            *param = ty;
+        }
+
+        param_slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
+            // OK if no cycles performed
+            .fold(Ok(()), |_, _| todo!())?;
+
+        let ret = ty_parser!(self).instantiate(ret, &mut param_slots);
+        self.scope_context.use_type(ret, self.types);
+
+        Ok((self.ty_lists.push(&param_slots), ret))
+    }
+
+    fn indirect_call(&mut self, value: Tir, ast: Ast, span: Span) -> errors::Result<Tir> {
+        let TirEnt { ty, .. } = self.tir_data.ents[value];
+
+        let TyKind::FuncPtr(Sig { args, ret, .. }) = self.types[ty].kind else {
+            todo!("{:?}", self.types[ty].kind);
+        };
+
+        let arg_tys = self.ty_lists.get(args).to_vec();
+
+        let tir_args = self.arguments(ast, &mut None, &arg_tys)?;
+
+        tir_args
+            .iter()
+            .zip(arg_tys)
+            .map(|(&arg, ty)| self.infer_tir_ty(arg, ty, |_, _, _| todo!()))
+            .fold(Ok(()), |acc, err| acc.and(err))?;
+
+        let args = self.tir_data.cons.push(&tir_args);
+        let kind = TirKind::IndirectCall(value, args);
+        let ent = TirEnt::with_flags(kind, ret, TirFlags::GENERIC, span);
+        Ok(self.tir_data.ents.push(ent))
+    }
+
+    fn call(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let caller = self.ast_data.children(ast)[0];
+        let AstEnt { kind, span, .. } = self.ast_data.nodes[caller];
+
+        if kind == AstKind::DotExpr {
+            let &[lhs, rhs] = self.ast_data.children(caller) else {
+                unreachable!();
             };
 
-        // TODO: Handle function pointer as field
-        let func = self.scope.get_concrete::<Func>(id);
-        let Ok(func) = func else {
-            todo!("{func:?}");
-        };
+            let obj = self.expr(lhs)?;
+            let TirEnt { ty, span, .. } = self.tir_data.ents[obj];
+            let ty = self.types.caller_of(ty);
 
-        let FuncMeta { sig, params, .. } = self.funcs[func.meta()];
-        let flags = self.funcs[func].flags;
+            let (rhs, instantiation) = if self.ast_data.nodes[rhs].kind == AstKind::Instantiation {
+                (self.ast_data.children(rhs)[0], Some(rhs))
+            } else {
+                (rhs, None)
+            };
 
-        let arg_tys = self.ty_lists.get(sig.args).to_vec(); // TODO: avoid allocation
+            let id = ident_hasher!(self).ident_id(rhs, Some((ty, span)))?;
 
-        // handle auto ref or deref
+            let field_or_method = self.scope.get(id);
+            let Ok(field_or_method) = field_or_method else {
+                todo!("{field_or_method:?} {}", span.log(self.sources));
+            };
+
+            if let Some(field) = field_or_method.pointer.may_read::<TyComp>() {
+                let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field].ty);
+                let field = {
+                    let kind = TirKind::FieldAccess(obj, field);
+                    let ent = TirEnt::new(kind, field_ty, span);
+                    self.tir_data.ents.push(ent)
+                };
+                self.indirect_call(field, ast, span)
+            } else if let Some(method) = field_or_method.pointer.may_read::<Func>() {
+                self.direct_call(method, ast, Some(ty), Some(obj), instantiation, span)
+            } else {
+                todo!("{field_or_method:?}");
+            }
+        } else {
+            let (caller, instantiation) =
+                if self.ast_data.nodes[caller].kind == AstKind::Instantiation {
+                    (self.ast_data.children(caller)[0], Some(caller))
+                } else {
+                    (caller, None)
+                };
+
+            let (id, caller) = ident_hasher!(self).ident_id_low(caller, None)?;
+            let func_or_var = self.scope.get(id);
+            let Ok(func_or_var) = func_or_var else {
+                todo!("{func_or_var:?}");
+            };
+
+            if let Some(var) = func_or_var.pointer.may_read::<Tir>() {
+                self.indirect_call(var, ast, span)
+            } else if let Some(method) = func_or_var.pointer.may_read::<Func>() {
+                self.direct_call(
+                    method,
+                    ast,
+                    caller.map(|(ty, _)| ty),
+                    None,
+                    instantiation,
+                    span,
+                )
+            } else {
+                todo!();
+            }
+        }
+    }
+
+    fn arguments(
+        &mut self,
+        ast: Ast,
+        obj: &mut Option<Tir>,
+        arg_tys: &[Ty],
+    ) -> errors::Result<Vec<Tir>> {
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
             *obj = self.ptr_correct(*obj, expected);
         }
 
-        // we first collect results, its in a way of recovery
-        // TODO: This can be optimized when needed
-        let args = {
-            let mut vec = Vec::with_capacity(arg_tys.len() + obj.is_some() as usize);
-            if let Some(obj) = obj {
-                vec.push(obj);
-            }
-            self.ast_data.children(ast)[1..]
-                .iter()
-                .fold(Ok(()), |acc, &arg| {
-                    self.expr(arg).map(|arg| vec.push(arg)).and(acc)
-                })?;
-            vec
-        };
+        let mut vec = Vec::with_capacity(arg_tys.len() + obj.is_some() as usize);
+        if let &mut Some(obj) = obj {
+            vec.push(obj);
+        }
+        self.ast_data.children(ast)[1..]
+            .iter()
+            .fold(Ok(()), |acc, &arg| {
+                self.expr(arg).map(|arg| vec.push(arg)).and(acc)
+            })?;
 
-        let generic = flags.contains(FuncFlags::GENERIC);
-
-        let because = self.funcs[func.meta()].name;
-        // check arg count
-        {
-            let args_len = args.len();
-            if arg_tys.len() != args_len {
-                let loc = self.ast_data.nodes[ast].span;
-                self.diagnostics.push(TyError::FunctionParamMismatch {
-                    because,
-                    expected: arg_tys.len(),
-                    got: args_len,
-                    loc,
-                });
-                return Err(());
-            }
+        if arg_tys.len() != vec.len() {
+            todo!();
         }
 
-        let (ret, func, params) = if !generic {
-            // here we type check all arguments and then check for errors
-            args.iter()
-                .zip(arg_tys)
-                .map(|(&arg, ty)| {
-                    self.infer_tir_ty(arg, ty, |_, got, loc| TyError::CallArgTypeMismatch {
-                        because,
-                        expected: ty,
-                        got,
-                        loc,
-                    })
-                })
-                .fold(Ok(()), |acc, err| acc.and(err))?;
-            
-            (sig.ret, func, TyList::reserved_value())
-        } else {
-            let params = self.ty_lists.get(params);
-
-            prepare_params(params, self.types);
-
-            let mut param_slots = vec![Ty::default(); params.len()];
-
-            if let Some(instantiation) = instantiation {
-                if params.len() > self.ast_data.children(instantiation).len() - 1 {
-                    let loc = self.ast_data.nodes[instantiation].span;
-                    self.diagnostics
-                        .push(TyError::InstantiationParamCountMismatch {
-                            because,
-                            expected: params.len(),
-                            got: self.ast_data.children(instantiation).len() - 1,
-                            loc,
-                        });
-                    return Err(());
-                } else {
-                    for (i, &param) in self.ast_data.children(instantiation)[1..].iter().enumerate() {
-                        let Ok(ty) = ty_parser!(self).parse_type_optional(param) else {
-                            continue;
-                        };
-                        param_slots[i] = ty;
-                    }
-                }
-            }
-
-            args.iter()
-                .zip(arg_tys)
-                .map(|(&arg, arg_ty)| {
-                    let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
-                    infer_parameters(
-                        ty,
-                        arg_ty,
-                        &mut param_slots,
-                        span,
-                        self.types,
-                        self.ty_lists,
-                        self.bound_impls,
-                        self.diagnostics,
-                    )
-                })
-                // fold prevents allocation
-                .fold(Ok(()), |acc, err| acc.and(err))?;
-
-            if let (None, Some(ty), Some(param)) = (obj, caller, param_slots.last_mut()) && param.is_reserved_value() {
-                *param = ty;
-            }
-
-            param_slots
-                .iter()
-                .enumerate()
-                .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
-                // OK if no cycles performed
-                .fold(Ok(()), |_, param| {
-                    let span = self.ast_data.nodes[ast].span;
-                    self.diagnostics.push(TyError::UnknownGenericParam {
-                        func: self.funcs[func.meta()].name,
-                        param,
-                        loc: span,
-                    });
-                    Err(())
-                })?;
-
-            let ret = ty_parser!(self).instantiate(sig.ret, &mut param_slots);
-
-            self.scope_context.use_type(ret, self.types);
-
-            (ret, func, self.ty_lists.push(&param_slots))
-        };
-
-        let result = {
-            let span = self.ast_data.nodes[ast].span;
-            let args = self.tir_data.cons.push(&args);
-            let kind = TirKind::Call(caller.into(), params, func, args);
-            let flags = TirFlags::GENERIC & generic;
-            let ent = TirEnt::with_flags(kind, ret, flags, span);
-            self.tir_data.ents.push(ent)
-        };
-
-        Ok(result)
+        Ok(vec)
     }
 
     fn _resolve_caller(&mut self, caller: Ast) -> errors::Result<_CallerData> {
@@ -1013,10 +1046,10 @@ impl TirBuilder<'_> {
             let span = self.ast_data.nodes[name].span;
 
             Ok(_CallerData {
-                id: name_id, 
-                fn_span: span, 
-                obj: Some(expr), 
-                caller: Some(ty), 
+                id: name_id,
+                fn_span: span,
+                obj: Some(expr),
+                caller: Some(ty),
                 instantiation,
             })
         } else {
@@ -1032,14 +1065,14 @@ impl TirBuilder<'_> {
 
             let span = self.ast_data.nodes[caller].span;
             Ok(_CallerData {
-                id: name_id, 
-                fn_span: span, 
-                obj: None, 
-                caller: owner.map(|(ty, _)| ty), 
+                id: name_id,
+                fn_span: span,
+                obj: None,
+                caller: owner.map(|(ty, _)| ty),
                 instantiation,
             })
         }
-    } 
+    }
 
     fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> Tir {
         let ty = self.tir_data.ents[target].ty;
@@ -1102,7 +1135,16 @@ impl TirBuilder<'_> {
         let span = self.ast_data.nodes[field].span;
         let (field_id, field_ty) = {
             let id = self.sources.id_of(span);
-            self.find_field(base_ty, id, span)?
+            let caller_ty = self.types.caller_of(base_ty);
+            let field = self
+                .scope
+                .get_concrete::<TyComp>(ID::owned(self.types[caller_ty].id, id));
+            let Ok(field_id) = field else {
+                todo!("{field:?} {}", span.log(self.sources));
+            };
+            let field_ty = ty_parser!(self).subtype(base_ty, self.ty_comps[field_id].ty);
+            self.scope_context.use_type(field_ty, self.types);
+            (field_id, field_ty)
         };
 
         while base_ty != self.tir_data.ents[header].ty {
@@ -1110,7 +1152,6 @@ impl TirBuilder<'_> {
         }
 
         let result = {
-            self.scope_context.use_type(field_ty, self.types);
             let kind = TirKind::FieldAccess(header, field_id);
             let ent = TirEnt::new(kind, field_ty, span);
             self.tir_data.ents.push(ent)
@@ -1190,10 +1231,14 @@ impl TirBuilder<'_> {
                 let span = self.ast_data.nodes[name].span;
                 let id = self.sources.id_of(span);
 
-                let Ok(res) = self.find_field(ty, id, span) else {
-                    continue;
+                let field = self
+                    .scope
+                    .get_concrete::<TyComp>(ID::owned(self.types[ty].id, id));
+                let Ok(field_id) = field else {
+                    todo!("{field:?}");
                 };
-                (expr, res)
+                let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
+                (expr, (field_id, field_ty))
             } else {
                 let span = self.ast_data.nodes[field].span;
                 let Ok(res) = self.get_field(ty, i, span) else {
@@ -1370,7 +1415,8 @@ impl TirBuilder<'_> {
                 let &[.., ret_ast, _] = s.ast_data.children(s.scope_context.func_ast[s.func]) else {
                     unreachable!();
                 };
-                let ret_span = (!ret_ast.is_reserved_value()).then(|| s.ast_data.nodes[ret_ast].span);
+                let ret_span =
+                    (!ret_ast.is_reserved_value()).then(|| s.ast_data.nodes[ret_ast].span);
                 TyError::ReturnTypeMismatch {
                     because: ret_span,
                     expected: ret,
@@ -1481,7 +1527,7 @@ impl TirBuilder<'_> {
         } else {
             todo!("emit error");
         };
-        
+
         let result = self.tir_data.ents.push(ent);
 
         Ok(result)
@@ -1513,14 +1559,14 @@ impl TirBuilder<'_> {
                 ID::new(str)
             };
 
-            let left_id = self.types.base_id_of(left_ty);
+            let left_id = self.types[left_ty].id;
 
             ID::binary(left_id, op_id)
         };
 
         let func = self.scope.get_concrete::<Func>(id);
         let Ok(func) = func else {
-            todo!("{func:?}")
+            todo!("{func:?} {}", op_span.log(self.sources))
         };
 
         /* sanity check */
@@ -1628,34 +1674,6 @@ impl TirBuilder<'_> {
         ))
     }
 
-    fn find_field(&mut self, on: Ty, id: ID, _loc: Span) -> errors::Result<(TyComp, Ty)> {
-        let id = {
-            let on = if let TyKind::Instance(base, ..) = self.types[on].kind {
-                base
-            } else {
-                on
-            };
-            let ty_id = self.types[on].id;
-            ID::owned(ty_id, id)
-        };
-
-        let field = self.scope.get_concrete::<TyComp>(id);
-        let Ok(field) = field else {
-            todo!("{field:?}");
-        };
-        
-        let ty = self.ty_comps[field].ty;
-        let ty = if let TyKind::Instance(_, params) = self.types[on].kind {
-            let params = self.ty_lists.get(params).to_vec();
-            let ty = ty_parser!(self).instantiate(ty, &params);
-            ty
-        } else {
-            ty
-        };
-
-        Ok((field, ty))
-    }
-
     fn infer_tir_ty(
         &mut self,
         right: Tir,
@@ -1692,6 +1710,6 @@ struct _CallerData {
     id: ID,
     fn_span: Span,
     obj: Option<Tir>,
-    caller: Option<Ty>, 
+    caller: Option<Ty>,
     instantiation: Option<Ast>,
 }

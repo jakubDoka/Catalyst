@@ -15,8 +15,8 @@ macro_rules! gen_kind {
             $($keyword:ident = $keyword_repr:literal,)*
         }
 
-        punktation {
-            $($punktation:ident = $punktation_repr:literal,)*
+        punctuation {
+            $($punctuation:ident = $punctuation_repr:literal,)*
         }
 
         literal {
@@ -28,19 +28,19 @@ macro_rules! gen_kind {
         }
 
         operators {
-            $(($($op_lit:literal)+) = $op_precendense:expr,)*
+            $(($($op_lit:literal)+) = $op_precedence:expr,)*
         }
     ) => {
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
         pub enum TokenKind {
             $(
-                #[token($keyword_repr)]   
+                #[token($keyword_repr)]
                 $keyword,
             )*
 
             $(
-                #[token($punktation_repr)]
-                $punktation,
+                #[token($punctuation_repr)]
+                $punctuation,
             )*
 
             $(
@@ -55,14 +55,14 @@ macro_rules! gen_kind {
 
             $(
                 $(
-                    #[token($op_lit, |_| $op_precendense)]
+                    #[token($op_lit, |_| $op_precedence)]
                 )+
             )*
             Operator(u8),
 
             #[regex(r"(\n|;)")]
             NewLine,
-            
+
             #[error]
             Error,
             Eof,
@@ -75,11 +75,11 @@ macro_rules! gen_kind {
                     $(
                         TokenKind::$keyword => concat!("'", $keyword_repr, "'"),
                     )*
-                    
+
                     $(
-                        TokenKind::$punktation => concat!("'", $punktation_repr, "'"),
+                        TokenKind::$punctuation => concat!("'", $punctuation_repr, "'"),
                     )*
-                    
+
                     $(
                         TokenKind::$literal => stringify!($literal),
                     )*
@@ -119,7 +119,7 @@ gen_kind!(
         Match = "match",
     }
 
-    punktation {
+    punctuation {
         LeftCurly = "{",
         RightCurly = "}",
         LeftParen = "(",
@@ -144,7 +144,7 @@ gen_kind!(
     }
 
     skipped {
-        Space = r"[ \r\t]+",    
+        Space = r"[ \r\t]+",
         Comment = r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)",
     }
 
@@ -160,11 +160,11 @@ gen_kind!(
         ("&&") = 11,
         ("||") = 12,
         (
-            "=" "+=" 
-            "-=" "*=" 
-            "/=" "%=" 
-            "<<=" ">>=" 
-            "&=" "^=" 
+            "=" "+="
+            "-=" "*="
+            "/=" "%="
+            "<<=" ">>="
+            "&=" "^="
             "|="
         ) = EQUAL_SIGN_PRECEDENCE,
     }

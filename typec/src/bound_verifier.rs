@@ -1,4 +1,3 @@
-
 use module_types::scope::ScopeFindError;
 
 use crate::{TyError, *};
@@ -7,7 +6,8 @@ impl BoundVerifier<'_> {
     pub fn verify(&mut self) {
         // we have to collect all functions first and the check if all bound
         // functions are implemented, its done here
-        while let Some((implementor, bound, impl_block)) = self.scope_context.bounds_to_verify.pop() {
+        while let Some((implementor, bound, impl_block)) = self.scope_context.bounds_to_verify.pop()
+        {
             let &[.., implementor_ast, body] = self.ast_data.children(impl_block) else {
                 unreachable!();
             };
@@ -108,8 +108,16 @@ impl BoundVerifier<'_> {
     }
 
     pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
-        let FuncMeta { params: a_params, sig: a, .. } = self.funcs[impl_func.meta()];
-        let FuncMeta { params: b_params, sig: b, .. } = self.funcs[bound_func.meta()];
+        let FuncMeta {
+            params: a_params,
+            sig: a,
+            ..
+        } = self.funcs[impl_func.meta()];
+        let FuncMeta {
+            params: b_params,
+            sig: b,
+            ..
+        } = self.funcs[bound_func.meta()];
 
         let a_param_len = self.ty_lists.len(a_params);
         let b_param_len = self.ty_lists.len(b_params);
@@ -134,7 +142,9 @@ impl BoundVerifier<'_> {
             let a_args = self.ty_lists.get(a.args);
             let b_args = self.ty_lists.get(b.args);
             let ast_params = {
-                let children = self.ast_data.children(self.scope_context.func_ast[impl_func]);
+                let children = self
+                    .ast_data
+                    .children(self.scope_context.func_ast[impl_func]);
                 let has_ret = (a.ret != self.builtin_types.nothing) as usize;
                 &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
