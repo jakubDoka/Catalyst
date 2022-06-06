@@ -69,7 +69,7 @@ fn main() -> int {
         return 12
     }
 
-    if Loo::{ field: Loo::{ field: 90; yes: false }.as_ptr(); yes: true }.as_ptr().field.field != 90 {
+    if Loo::{ field: ^Loo::{ field: 90; yes: false }; yes: true }.as_ptr().field.field != 90 {
         return 13
     }
     
@@ -141,10 +141,6 @@ struct PtrTest {
 
 impl PtrTest {
     fn as_ptr(s: *Self) -> *Self {
-        s
-    }
-
-    fn as_ptr_ptr(s: * *Self) -> * *Self {
         s
     }
 }

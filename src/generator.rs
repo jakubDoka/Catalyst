@@ -42,6 +42,9 @@ impl Generator<'_> {
                 continue;
             }
 
+            // if !self.funcs[id.meta()].name.is_reserved_value() {
+            //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
+            // }
             // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
@@ -58,8 +61,8 @@ impl Generator<'_> {
 
         cir_builder!(self, builder, *self.isa).generate();
 
-        // if !self.func_meta[parent].name.is_reserved_value() {
-        //     println!("{}", self.sources. display(self.func_meta[parent].name));
+        // if !self.funcs[id.meta()].name.is_reserved_value() {
+        //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
         // }
         // println!("{}", self.context.func.display());
 

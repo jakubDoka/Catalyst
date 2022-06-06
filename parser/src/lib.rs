@@ -961,6 +961,7 @@ impl<'a> Parser<'a> {
 
         match self.sources.display(span) {
             "*" => return self.deref(),
+            "^" => return self.r#ref(),
             _ => (),
         }
 
@@ -978,6 +979,18 @@ impl<'a> Parser<'a> {
         self.stack.push(op);
         self.stack.push(expr);
         self.alloc(AstKind::Unary, span.join(end))
+    }
+
+    fn r#ref(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        let expr = self.simple_expr();
+        let end = self.data.nodes[expr].span;
+
+        self.stack.mark_frame();
+        self.stack.push(expr);
+        self.alloc(AstKind::Ref, span.join(end))
     }
 
     fn deref(&mut self) -> Ast {

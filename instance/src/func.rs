@@ -305,7 +305,7 @@ impl<'a> MirBuilder<'a> {
             unreachable!();
         };
 
-        let mir_value = self.expr(value, dest)?.unwrap();
+        let mir_value = self.expr(value, None)?.unwrap();
 
         // // funny thing, any stack allocated value treated as
         // // value is pointer but pointer treated as pointer is value

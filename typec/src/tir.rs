@@ -234,6 +234,7 @@ impl TirBuilder<'_> {
             AstKind::Deref => self.deref(ast),
             AstKind::BitCast => self.bit_cast(ast),
             AstKind::Match => self.r#match(ast),
+            AstKind::Ref => self.r#ref(ast),
             AstKind::Error => Err(()),
             _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
@@ -241,6 +242,12 @@ impl TirBuilder<'_> {
                 self.sources.display(span)
             ),
         }
+    }
+
+    fn r#ref(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let expr = self.ast_data.children(ast)[0];
+        let expr = self.expr(expr)?;
+        Ok(self.take_ptr(expr))
     }
 
     fn r#match(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -1109,8 +1116,8 @@ impl TirBuilder<'_> {
         let kind = TirKind::TakePtr(target);
         let ptr_ty = pointer_of(ty, self.types, self.ty_instances);
         self.scope_context.use_type(ptr_ty, self.types);
-        let deref = TirEnt::new(kind, ptr_ty, span);
-        self.tir_data.ents.push(deref)
+        let ptr = TirEnt::new(kind, ptr_ty, span);
+        self.tir_data.ents.push(ptr)
     }
 
     fn deref_ptr(&mut self, target: Tir) -> Tir {
