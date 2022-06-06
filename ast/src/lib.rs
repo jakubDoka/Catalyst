@@ -154,7 +154,7 @@ impl std::fmt::Debug for AstData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
-    Ref,
+    Ref(bool),
     TupleConstructorBody,
     StructPatternField,
     StructPattern,
@@ -170,7 +170,6 @@ pub enum AstKind {
     Error,
     UseBoundFunc,
     Deref,
-    Pointer,
     Char,
     Tag,
     Impl,

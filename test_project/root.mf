@@ -116,11 +116,37 @@ fn main() -> int {
         return 23
     }
 
+    {
+        let mut field_ptr_test = FieldPtrTest::(0, 0)
+        
+        let field_ptr = ^mut field_ptr_test.a
+        *field_ptr = 10
+        if field_ptr_test.a != 10 {
+            return 24
+        }
+
+        field_ptr_test.set_b(10)
+        if field_ptr_test.a != 10 {
+            return 24
+        } 
+    }
+
     putchar(40.u32() as char)
     putchar('h')
     exit(-34)
 
     0
+}
+
+struct FieldPtrTest {
+    a: int
+    b: int
+}
+
+impl FieldPtrTest {
+    fn set_b(s: *mut Self, value: int) {
+        s.b = value
+    }
 }
 
 fn fn_ptr_test(a: int, b: int) -> int {

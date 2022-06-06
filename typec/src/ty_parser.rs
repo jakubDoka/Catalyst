@@ -32,7 +32,7 @@ impl TyParser<'_> {
             TyKind::Param(i, ..) => params[i as usize],
             TyKind::Ptr(ty, ..) => {
                 let ty = self.instantiate(ty, params);
-                pointer_of(ty, self.types, self.ty_instances)
+                pointer_of(ty, flags.contains(TyFlags::MUTABLE), self.types, self.ty_instances)
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
@@ -87,7 +87,7 @@ impl TyParser<'_> {
         match kind {
             AstKind::Ident => self.parse_ident_type(span),
             AstKind::Instantiation => self.parse_instance_type(ty),
-            AstKind::Pointer => self.parse_ptr_type(ty),
+            AstKind::Ref(mutable) => self.parse_ptr_type(ty, mutable),
             _ => {
                 self.diagnostics
                     .push(TyError::InvalidTypeExpression { loc: span });
@@ -155,13 +155,13 @@ impl TyParser<'_> {
         result
     }
 
-    pub fn parse_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+    pub fn parse_ptr_type(&mut self, ty: Ast, mutable: bool) -> errors::Result<Ty> {
         let inner_ty = {
             let inner = self.ast_data.children(ty)[0];
             self.parse_type(inner)?
         };
 
-        Ok(pointer_of(inner_ty, self.types, self.ty_instances))
+        Ok(pointer_of(inner_ty, mutable, self.types, self.ty_instances))
     }
 
     pub fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> Ty {

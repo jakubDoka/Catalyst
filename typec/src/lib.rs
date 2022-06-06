@@ -107,7 +107,7 @@ pub fn prepare_params(params: &[Ty], types: &mut Types) {
 }
 
 /// creates a pointer of `ty`, already instantiated entities will be reused.
-pub fn pointer_of(ty: Ty, types: &mut Types, ty_instances: &mut TyInstances) -> Ty {
+pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut TyInstances) -> Ty {
     let TyEnt {
         kind,
         id,
@@ -115,7 +115,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types, ty_instances: &mut TyInstances) -> 
         flags,
         ..
     } = types[ty];
-    let id = ID::pointer(id);
+    let id = ID::pointer(id, mutable);
 
     if let Some(&already) = ty_instances.get(id) {
         return already;
@@ -131,7 +131,7 @@ pub fn pointer_of(ty: Ty, types: &mut Types, ty_instances: &mut TyInstances) -> 
         id,
         name,
         kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN,
+        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
     };
     let ptr = types.push(ent);
 

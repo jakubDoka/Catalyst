@@ -608,12 +608,17 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         self.advance();
 
+        let mutable = self.current.kind() == TokenKind::Mut;
+        if mutable {
+            self.advance();
+        }
+
         self.stack.mark_frame();
 
         let ty = self.type_expr();
         self.stack.push(ty);
 
-        self.alloc(AstKind::Pointer, span.join(self.data.nodes[ty].span))
+        self.alloc(AstKind::Ref(mutable), span.join(self.data.nodes[ty].span))
     }
 
     fn literal_expr(&mut self) -> Ast {
@@ -985,12 +990,17 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         self.advance();
 
+        let mutable = self.current.kind() == TokenKind::Mut;
+        if mutable {
+            self.advance();
+        }
+
         let expr = self.simple_expr();
         let end = self.data.nodes[expr].span;
 
         self.stack.mark_frame();
         self.stack.push(expr);
-        self.alloc(AstKind::Ref, span.join(end))
+        self.alloc(AstKind::Ref(mutable), span.join(end))
     }
 
     fn deref(&mut self) -> Ast {

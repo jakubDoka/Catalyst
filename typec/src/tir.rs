@@ -234,7 +234,7 @@ impl TirBuilder<'_> {
             AstKind::Deref => self.deref(ast),
             AstKind::BitCast => self.bit_cast(ast),
             AstKind::Match => self.r#match(ast),
-            AstKind::Ref => self.r#ref(ast),
+            AstKind::Ref(mutable) => self.r#ref(ast, mutable),
             AstKind::Error => Err(()),
             _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
@@ -244,10 +244,10 @@ impl TirBuilder<'_> {
         }
     }
 
-    fn r#ref(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#ref(&mut self, ast: Ast, mutable: bool) -> errors::Result<Tir> {
         let expr = self.ast_data.children(ast)[0];
         let expr = self.expr(expr)?;
-        Ok(self.take_ptr(expr))
+        Ok(self.take_ptr(expr, mutable))
     }
 
     fn r#match(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -825,7 +825,7 @@ impl TirBuilder<'_> {
             tir_args
                 .iter()
                 .zip(args)
-                .map(|(&arg, ty)| self.infer_tir_ty(arg, ty, |_, _, _| todo!()))
+                .map(|(&arg, ty)| self.infer_tir_ty(arg, ty, |s, got, _| todo!("{} != {}", ty_display!(s, got), ty_display!(s, ty))))
                 .fold(Ok(()), |acc, err| acc.and(err))?;
             (TyList::reserved_value(), ret)
         };
@@ -1091,14 +1091,22 @@ impl TirBuilder<'_> {
             target = self.deref_ptr(target);
         }
 
+        let mutable = self.types[expected].flags.contains(TyFlags::MUTABLE);
+
         for _ in target_depth..expected_depth {
-            target = self.take_ptr(target);
+            target = self.take_ptr(target, mutable);
         }
 
         target
     }
 
-    fn take_ptr(&mut self, target: Tir) -> Tir {
+    fn is_mutable(&self, target: Tir) -> bool {
+        let TirEnt { ty, flags, .. }= self.tir_data.ents[target];
+        self.types[ty].flags.contains(TyFlags::MUTABLE) ||
+            flags.contains(TirFlags::ASSIGNABLE)
+    }
+
+    fn take_ptr(&mut self, target: Tir, mutable: bool) -> Tir {
         let TirEnt {
             ty,
             span,
@@ -1107,6 +1115,11 @@ impl TirBuilder<'_> {
             ..
         } = &mut self.tir_data.ents[target];
         let (span, ty) = (*span, *ty);
+        
+        if !flags.contains(TirFlags::ASSIGNABLE) && mutable {
+            todo!();
+        }
+        
         if let &mut TirKind::Access(target) = kind {
             self.tir_data.ents[target].flags.insert(TirFlags::SPILLED);
         } else {
@@ -1114,7 +1127,7 @@ impl TirBuilder<'_> {
         }
 
         let kind = TirKind::TakePtr(target);
-        let ptr_ty = pointer_of(ty, self.types, self.ty_instances);
+        let ptr_ty = pointer_of(ty, mutable, self.types, self.ty_instances);
         self.scope_context.use_type(ptr_ty, self.types);
         let ptr = TirEnt::new(kind, ptr_ty, span);
         self.tir_data.ents.push(ptr)
@@ -1123,9 +1136,11 @@ impl TirBuilder<'_> {
     fn deref_ptr(&mut self, target: Tir) -> Tir {
         let span = self.tir_data.ents[target].span;
         let kind = TirKind::DerefPointer(target);
-        let deref_ty = self.types.deref(self.tir_data.ents[target].ty);
+        let ty = self.tir_data.ents[target].ty;
+        let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);
-        let deref = TirEnt::new(kind, deref_ty, span);
+        let assignable = self.types[ty].flags.contains(TyFlags::MUTABLE);
+        let deref = TirEnt::with_flags(kind, deref_ty, TirFlags::ASSIGNABLE & assignable, span);
         self.tir_data.ents.push(deref)
     }
 
@@ -1159,8 +1174,9 @@ impl TirBuilder<'_> {
         }
 
         let result = {
+            let flags = TirFlags::ASSIGNABLE & self.is_mutable(header);
             let kind = TirKind::FieldAccess(header, field_id);
-            let ent = TirEnt::new(kind, field_ty, span);
+            let ent = TirEnt::with_flags(kind, field_ty, flags, span);
             self.tir_data.ents.push(ent)
         };
 

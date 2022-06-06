@@ -48,8 +48,9 @@ impl<'a> ReprInstancing<'a> {
         match kind {
             TyKind::Param(index, ..) => self.ty_lists.get(params)[index as usize],
             TyKind::Ptr(base, depth) => {
+                let mutable = flags.contains(TyFlags::MUTABLE);
                 let ins_base = self.expand_instances(params, base, new_instances);
-                let ptr_id = ID::pointer(self.types[ins_base].id);
+                let ptr_id = ID::pointer(self.types[ins_base].id, mutable);
 
                 if let Some(&already) = self.ty_instances.get(ptr_id) {
                     return already;
@@ -162,7 +163,8 @@ impl<'a> LayoutBuilder<'a> {
             TyKind::Param(index, ..) => self.ty_lists.get(params)[index as usize],
             TyKind::Ptr(base, _) => {
                 let base = self.true_type(base, params);
-                let ptr_id = ID::pointer(self.types[base].id);
+                let mutable = flags.contains(TyFlags::MUTABLE);
+                let ptr_id = ID::pointer(self.types[base].id, mutable);
                 self.ty_instances.get(ptr_id).unwrap().clone()
             }
             TyKind::Instance(base, params) => {

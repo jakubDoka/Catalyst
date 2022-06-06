@@ -290,8 +290,8 @@ impl ID {
         Self::new("<impl>") + bound + implementor
     }
 
-    pub fn pointer(ty: Self) -> Self {
-        Self::new("*") + ty
+    pub fn pointer(ty: Self, mutable: bool) -> Self {
+        Self::new(if mutable { "*mut" } else { "*" }) + ty
     }
 
     pub fn owned(ty: Self, name: Self) -> Self {

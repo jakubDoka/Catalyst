@@ -234,6 +234,7 @@ bitflags! {
         const GENERIC = 1 << 0;
         const BUILTIN = 1 << 1;
         const SIGNED = 1 << 2;
+        const MUTABLE = 1 << 3;
     }
 }
 
@@ -358,6 +359,9 @@ impl Ty {
             }
             TyKind::Ptr(ty, ..) => {
                 write!(to, "*")?;
+                if types[self].flags.contains(TyFlags::MUTABLE) {
+                    write!(to, "mut ")?;
+                }
                 ty.display(types, ty_lists, sources, to)?;
             }
             TyKind::FuncPtr(sig) => {
