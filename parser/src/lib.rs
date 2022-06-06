@@ -589,8 +589,9 @@ impl<'a> Parser<'a> {
 
     fn type_expr(&mut self) -> Ast {
         match self.current.kind() {
+            TokenKind::Fn => self.func_ptr_type(),
             TokenKind::Operator(..) => match self.sources.display(self.current.span()) {
-                "*" => self.type_pointer_expr(),
+                "^" => self.type_pointer_expr(),
                 _ => unimplemented!(
                     "unhandled token as type expr:\n{}",
                     self.current.span().log(self.sources),
@@ -602,6 +603,42 @@ impl<'a> Parser<'a> {
                 unimplemented!("unhandled token as type expr:\n{}", span.log(self.sources),)
             }
         }
+    }
+
+    fn func_ptr_type(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+
+        self.stack.mark_frame();
+        
+        if self.current.kind() == TokenKind::String {
+            let ast = self
+                .data
+                .alloc_sonless(AstKind::String, self.current.span());
+            self.stack.push(ast);
+            self.advance();
+        } else {
+            self.stack.push_default();
+        }
+        
+        let end = self.list(
+            TokenKind::LeftParen, 
+            TokenKind::Comma, 
+            TokenKind::RightParen, 
+            Self::type_expr,
+        );
+
+        let end = if self.current.kind() == TokenKind::RightArrow {
+            self.advance();
+            let return_type = self.type_expr();
+            self.stack.push(return_type);
+            self.data.nodes[return_type].span
+        } else {
+            self.stack.push_default();
+            end
+        };
+
+        self.alloc(AstKind::FuncPtr, span.join(end))
     }
 
     fn type_pointer_expr(&mut self) -> Ast {

@@ -88,12 +88,46 @@ impl TyParser<'_> {
             AstKind::Ident => self.parse_ident_type(span),
             AstKind::Instantiation => self.parse_instance_type(ty),
             AstKind::Ref(mutable) => self.parse_ptr_type(ty, mutable),
+            AstKind::FuncPtr => self.parse_func_ptr_type(ty),
             _ => {
                 self.diagnostics
                     .push(TyError::InvalidTypeExpression { loc: span });
                 return Err(());
             }
         }
+    }
+
+    pub fn parse_func_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
+        let children = self.ast_data.children(ty);
+        let &[cc, .., ret] = children else {
+            unreachable!();
+        };
+
+        let mut generic = false;
+
+        let cc = parse_call_conv(cc, self.sources, self.ast_data, self.diagnostics);
+
+        let args = {
+            self.ty_lists.mark_frame();
+    
+            for &param in &children[1..children.len() - 1] {
+                let ty = self.parse_type(param)?;
+                generic |= self.types[ty].flags.contains(TyFlags::GENERIC);
+                self.ty_lists.push_one(ty);
+            }
+
+            self.ty_lists.pop_frame()
+        };
+
+        let ret = if ret.is_reserved_value() {
+            self.builtin_types.nothing
+        } else {
+            self.parse_type(ret)?
+        };
+        generic |= self.types[ret].flags.contains(TyFlags::GENERIC);
+        let sig = Sig { args, ret, cc };
+        
+        Ok(self.func_pointer_of(sig, generic))
     }
 
     pub fn parse_ident_type(&mut self, span: Span) -> errors::Result<Ty> {

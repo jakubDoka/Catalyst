@@ -2,7 +2,6 @@ use std::{str::FromStr, vec};
 
 use crate::{ty::get_param, *};
 use ast::*;
-use cranelift_codegen::isa::CallConv;
 use lexer::*;
 use module_types::*;
 use storage::*;
@@ -286,26 +285,11 @@ impl<'a> ScopeBuilder<'a> {
             unreachable!();
         };
 
-        let call_conv = if call_conv.is_reserved_value() {
-            Some(CallConv::Fast)
-        } else {
-            let span = self.ast_data.nodes[call_conv].span.strip_sides();
-            let str = self.sources.display(span);
-            if str == "default" {
-                None
-            } else {
-                CallConv::from_str(str)
-                    .map_err(|_| {
-                        self.diagnostics
-                            .push(TyError::InvalidCallConv { loc: span })
-                    })
-                    .ok()
-            }
-        };
-
         self.scope.mark_frame();
 
         let params = self.handle_generics(generics, prepared);
+
+        let cc = parse_call_conv(call_conv, self.sources, self.ast_data, self.diagnostics);
 
         let sig = {
             let args = {
@@ -335,7 +319,7 @@ impl<'a> ScopeBuilder<'a> {
                 ty_parser!(self).parse_type(return_type)?
             };
 
-            Sig { args, ret, cc: call_conv }
+            Sig { args, ret, cc }
         };
 
         self.scope.pop_frame();

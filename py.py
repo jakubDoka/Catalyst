@@ -75,11 +75,11 @@ for (i, m) in enumerate(modules):
                     }}
                 }}
 
-                fn foo(s: *Self) -> int {{
+                fn foo(s: ^Self) -> int {{
                     s.data
                 }}
 
-                fn bar(s: *Self) -> int {{
+                fn bar(s: ^Self) -> int {{
                     s.data * 2
                 }}
             }}

@@ -16,6 +16,9 @@ pub mod tir;
 pub mod ty;
 pub mod ty_parser;
 
+use std::str::FromStr;
+
+use cranelift_codegen::isa::CallConv;
 pub use scope::ScopeContext;
 pub use state::{
     BoundVerifier, GlobalBuilder, IdentHasher, ScopeBuilder, TirBuilder, TyBuilder, TyParser,
@@ -306,4 +309,23 @@ pub fn char_value(sources: &Sources, span: Span) -> std::result::Result<char, Ch
         return Err(CharError::ExtraCharacters);
     }
     Ok(char)
+}
+
+pub fn parse_call_conv(call_conv: Ast, sources: &Sources, ast_data: &AstData, diagnostics: &mut Diagnostics) -> Option<CallConv> {
+    if call_conv.is_reserved_value() {
+        Some(CallConv::Fast)
+    } else {
+        let span = ast_data.nodes[call_conv].span.strip_sides();
+        let str = sources.display(span);
+        if str == "default" {
+            None
+        } else {
+            CallConv::from_str(str)
+                .map_err(|_| {
+                    diagnostics
+                        .push(TyError::InvalidCallConv { loc: span })
+                })
+                .ok()
+        }
+    }
 }

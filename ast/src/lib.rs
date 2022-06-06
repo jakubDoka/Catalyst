@@ -154,6 +154,7 @@ impl std::fmt::Debug for AstData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    FuncPtr,
     Ref(bool),
     TupleConstructorBody,
     StructPatternField,

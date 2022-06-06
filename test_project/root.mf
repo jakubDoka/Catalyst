@@ -117,18 +117,27 @@ fn main() -> int {
     }
 
     {
-        let mut field_ptr_test = FieldPtrTest::(0, 0)
+        let number = -1
+        let mut field_ptr_test = FieldPtrTest::(number, fn_ptr, 0)
         
+        if field_ptr_test.a != -1 {
+            return 24
+        }
+
         let field_ptr = ^mut field_ptr_test.a
         *field_ptr = 10
         if field_ptr_test.a != 10 {
-            return 24
+            return 25
         }
 
         field_ptr_test.set_b(10)
         if field_ptr_test.a != 10 {
-            return 24
-        } 
+            return 26
+        }
+
+        if field_ptr_test.func(3, -3) != 0 {
+            return 27
+        }
     }
 
     putchar(40.u32() as char)
@@ -140,11 +149,12 @@ fn main() -> int {
 
 struct FieldPtrTest {
     a: int
+    func: fn(int, int) -> int
     b: int
 }
 
 impl FieldPtrTest {
-    fn set_b(s: *mut Self, value: int) {
+    fn set_b(s: ^mut Self, value: int) {
         s.b = value
     }
 }
@@ -154,7 +164,7 @@ fn fn_ptr_test(a: int, b: int) -> int {
 }
 
 impl Loo {
-    fn [T] as_ptr(s: *Loo[T]) -> *Loo[T] {
+    fn [T] as_ptr(s: ^Loo[T]) -> ^Loo[T] {
         s
     }
 }
@@ -166,7 +176,7 @@ struct PtrTest {
 }
 
 impl PtrTest {
-    fn as_ptr(s: *Self) -> *Self {
+    fn as_ptr(s: ^Self) -> ^Self {
         s
     }
 }

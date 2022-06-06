@@ -101,6 +101,7 @@ impl<'a> MirBuilder<'a> {
 
     fn expr(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
         if let Some(value) = self.mir_builder_context.tir_mapping[tir].expand() {
+            self.gen_assign(value, dest);
             return Ok(Some(value));
         }
 
