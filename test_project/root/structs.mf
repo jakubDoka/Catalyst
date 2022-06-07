@@ -52,6 +52,40 @@ struct SomethingElse {
     f: bool
 }
 
-break
+fn se() -> SomethingElse {
+    SomethingElse::(false, false)
+}
+ 
+fn ownership_test() {
+    let to = TestOwnership::(se(), se(), se())
 
-fn gli() {}
+    let res = if false {
+        if true {
+            to.a
+        } else {
+            to.b
+        }
+    } else {
+        to.c
+    }
+
+    let to = TestOwnership::(se(), se(), se())
+
+    loop {
+        let a = to.a
+        break
+    }
+
+    let to = TestOwnership::(se(), se(), se())
+    
+    // invalid
+    loop {
+        let a = to.a
+    }
+}
+
+struct TestOwnership {
+    a: SomethingElse
+    b: SomethingElse
+    c: SomethingElse
+}

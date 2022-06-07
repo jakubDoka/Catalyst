@@ -54,6 +54,7 @@ file "src/state.rs" {
         mut Globals
         mut GlobalMap
         mut Initializers
+        mut o_ctx: OwnershipContext
 
         host_isa: `Box<dyn TargetIsa>`
         Sources
@@ -337,5 +338,24 @@ file "gen/src/state.rs" {
         TyLists
         FuncCtx
         Sources
+    }
+}
+
+file "ownership/src/state.rs" {
+    use "typec_types"
+    use "ownership_types"
+    use "lexer"
+
+    struct OwnershipSolver {
+        mut o_ctx: OwnershipContext
+        mut TirData
+        
+        TyLists
+        Funcs
+        Sources
+        BoundImpls
+        BuiltinTypes
+        TyComps
+        Types
     }
 }

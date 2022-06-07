@@ -34,6 +34,8 @@ members = [
     "cli",
     "errors",
     "matching",
+    "ownership",
+    "ownership_types",
 ]
 
 [profile.release]
@@ -65,3 +67,5 @@ cli = { path = "cli" }
 storage = { path = "storage" }
 incr = { path = "incr" }
 matching = { path = "matching" }
+ownership = { path = "ownership" }
+ownership_types = { path = "ownership_types" }

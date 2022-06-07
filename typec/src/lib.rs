@@ -5,6 +5,7 @@
 #![feature(inline_const_pat)]
 #![allow(incomplete_features)]
 #![feature(atomic_mut_ptr)]
+#![feature(default_free_fn)]
 
 pub mod bound_verifier;
 pub mod error;
@@ -134,7 +135,9 @@ pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut T
         id,
         name,
         kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
+        flags: flags & !TyFlags::BUILTIN 
+            | TyFlags::MUTABLE & mutable
+            | TyFlags::COPY,
     };
     let ptr = types.push(ent);
 
@@ -181,12 +184,25 @@ pub fn implements(
 pub fn create_builtin_items(
     types: &mut Types,
     ty_lists: &mut TyLists,
+    ty_instances: &mut TyInstances,
     builtin: &BuiltinTypes,
     funcs: &mut Funcs,
+    func_lists: &mut FuncLists,
     sources: &mut Sources,
     builtin_source: &mut BuiltinSource,
     target: &mut Vec<module::ModuleItem>,
 ) {
+
+    // init the drop trait, TODO: maybe there is less time consuming wai to do this
+    {
+        let span = builtin_source.make_span(sources, "drop");
+        let id = ID::owned(types[builtin.drop].id, "drop".into());
+        let arg = pointer_of(builtin.drop, true, types, ty_instances);
+        let drop_func = create_func_with_params(span, &[builtin.drop], &[arg], builtin.nothing, id, ty_lists, funcs, target);
+        let funcs = func_lists.push(&[drop_func]);
+        types[builtin.drop].kind = TyKind::Bound(funcs);
+    }
+
     for from in builtin.numbers() {
         for to in builtin.numbers() {
             let name = types[to].name;
@@ -251,14 +267,27 @@ pub fn create_builtin_items(
 }
 
 fn create_func(
-    span: Span,
+    span: Span, 
     args: &[Ty],
     ret: Ty,
     id: ID,
     ty_lists: &mut TyLists,
     funcs: &mut Funcs,
     target: &mut Vec<module::ModuleItem>,
-) {
+) -> Func {
+    create_func_with_params(span, &[], args, ret, id, ty_lists, funcs, target)
+}
+
+fn create_func_with_params(
+    span: Span,
+    params: &[Ty],
+    args: &[Ty],
+    ret: Ty,
+    id: ID,
+    ty_lists: &mut TyLists,
+    funcs: &mut Funcs,
+    target: &mut Vec<module::ModuleItem>,
+) -> Func {
     let sig = Sig {
         args: ty_lists.push(args),
         ret,
@@ -271,6 +300,7 @@ fn create_func(
         };
         let meta = FuncMeta {
             sig,
+            params: ty_lists.push(params),
             name: span,
             kind: FuncKind::Builtin,
             ..Default::default()
@@ -280,6 +310,8 @@ fn create_func(
 
     let item = module::ModuleItem::new(id, func, span);
     target.push(item);
+
+    func
 }
 
 pub fn int_value(sources: &Sources, span: Span, signed: bool) -> u128 {
@@ -311,7 +343,12 @@ pub fn char_value(sources: &Sources, span: Span) -> std::result::Result<char, Ch
     Ok(char)
 }
 
-pub fn parse_call_conv(call_conv: Ast, sources: &Sources, ast_data: &AstData, diagnostics: &mut Diagnostics) -> Option<CallConv> {
+pub fn parse_call_conv(
+    call_conv: Ast,
+    sources: &Sources,
+    ast_data: &AstData,
+    diagnostics: &mut Diagnostics,
+) -> Option<CallConv> {
     if call_conv.is_reserved_value() {
         Some(CallConv::Fast)
     } else {
@@ -321,10 +358,7 @@ pub fn parse_call_conv(call_conv: Ast, sources: &Sources, ast_data: &AstData, di
             None
         } else {
             CallConv::from_str(str)
-                .map_err(|_| {
-                    diagnostics
-                        .push(TyError::InvalidCallConv { loc: span })
-                })
+                .map_err(|_| diagnostics.push(TyError::InvalidCallConv { loc: span }))
                 .ok()
         }
     }

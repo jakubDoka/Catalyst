@@ -125,6 +125,15 @@ impl<'a> ScopeBuilder<'a> {
                 ID::bound_impl(bound_id, dest_id)
             };
 
+            let flag = if ty == self.builtin_types.drop {
+                TyFlags::DROP
+            } else if ty == self.builtin_types.copy {
+                TyFlags::COPY
+            } else {
+                TyFlags::empty()
+            };
+            self.types[dest].flags.insert(flag);
+            
             if let Some(collision) = self.bound_impls.insert(id, BoundImpl::new(span)) {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {
                     loc: self.ast_data.nodes[ast].span,

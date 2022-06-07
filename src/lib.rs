@@ -40,6 +40,7 @@ use target_lexicon::Triple;
 
 use ast::*;
 use gen::*;
+use ownership_types::*;
 use instance_types::*;
 use lexer::*;
 use matching::*;
@@ -131,6 +132,7 @@ pub struct Compiler {
     func_instances: FuncInstances,
     to_link: ToLink,
     macros: Macros,
+    o_ctx: OwnershipContext,
 
     // globals
     globals: Globals,
@@ -184,13 +186,17 @@ impl Compiler {
         let builtin_types = BuiltinTypes::new(&mut sources, &mut builtin_source, &mut types);
         let mut ty_lists = TyLists::new();
         let mut funcs = Funcs::new();
+        let mut func_lists = FuncLists::new();
+        let mut ty_instances = TyInstances::new();
 
         let b_source = builtin_source.source;
         typec::create_builtin_items(
             &mut types,
             &mut ty_lists,
+            &mut ty_instances,
             &builtin_types,
             &mut funcs,
+            &mut func_lists,
             &mut sources,
             &mut builtin_source,
             &mut modules[b_source].items,
@@ -230,9 +236,9 @@ impl Compiler {
             builtin_types,
             funcs,
             ty_lists,
-            ty_instances: TyInstances::new(),
+            ty_instances,
             ty_comps: TyComps::new(),
-            func_lists: FuncLists::new(),
+            func_lists,
             bound_impls: BoundImpls::new(),
             tir_stack: FramedStack::new(),
             tir_data: TirData::new(),
@@ -242,6 +248,7 @@ impl Compiler {
             func_instances: FuncInstances::new(),
             to_link: ToLink::new(),
             macros: Macros::new(),
+            o_ctx: OwnershipContext::new(),
 
             globals: Globals::new(),
             _global_data: GlobalData::new(),

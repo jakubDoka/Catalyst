@@ -15,6 +15,12 @@ impl<T> FramedStack<T> {
         }
     }
 
+    pub fn extend(&mut self, items: &[T])
+        where T: Clone
+    {
+        self.data.extend_from_slice(items);
+    }
+
     pub fn set(&mut self, index: usize, value: T) {
         self.data[*self.frames.last().unwrap() as usize + index] = value;
     }
@@ -68,5 +74,14 @@ impl<T> FramedStack<T> {
         let id = stack_map.push(self.top_frame());
         self.pop_frame();
         id
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frames.len() == 1
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.frames.truncate(1);
     }
 }

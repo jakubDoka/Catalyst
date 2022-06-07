@@ -18,6 +18,36 @@ pub type TyInstances = Map<Ty>;
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn item_count(&self, ty: Ty, ty_comps: &TyComps) -> usize {
+        match self[ty].kind {
+            TyKind::Struct(fields) => ty_comps.len_of(fields),
+            TyKind::Instance(base, ..) => self.item_count(base, ty_comps),
+            TyKind::Ptr(_, _)
+            | TyKind::FuncPtr(_)
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Bool => 1,
+            TyKind::Enum(_, _) => todo!(),
+            kind => unimplemented!("{kind:?}"),
+        }
+    }
+
+    fn item_ty(&self, ty: Ty, index: usize, ty_comps: &TyComps) -> Ty {
+        assert!(index < self.item_count(ty, ty_comps));
+
+        match self[ty].kind {
+            TyKind::Struct(fields) => ty_comps.get(fields)[index].ty,
+            TyKind::Instance(base, _) => self.item_ty(base, index, ty_comps),
+            TyKind::Ptr(_, _)
+            | TyKind::FuncPtr(_)
+            | TyKind::Int(_)
+            | TyKind::Uint(_)
+            | TyKind::Bool => unreachable!(),
+            TyKind::Enum(_, _) => todo!(),
+            kind => unimplemented!("{kind:?}"),
+        }
+    }
+
     fn range_of(&self, ty: Ty, ty_comps: &TyComps) -> PatternRange {
         match self[ty].kind {
             TyKind::Instance(..) | TyKind::Struct(..) => PatternRange::default(),
@@ -127,7 +157,7 @@ macro_rules! gen_builtin_table {
         }
 
         impl BuiltinTypes {
-            pub fn all(&self) -> [Ty; 15] {
+            pub fn all(&self) -> [Ty; 17] {
                 [$(self.$name),*]
             }
         }
@@ -139,13 +169,15 @@ macro_rules! gen_builtin_table {
                 types: &mut Types,
             ) -> Self {
                 $(
+                    let repr = $repr;
                     let ent = TyEnt {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
-                        kind: $repr,
-                        flags: (TyFlags::GENERIC & matches!($repr, TyKind::Param(..)))
+                        kind: repr,
+                        flags: (TyFlags::GENERIC & matches!(repr, TyKind::Param(..)))
                             | TyFlags::BUILTIN
-                            | (TyFlags::SIGNED & matches!($repr, TyKind::Int(..))),
+                            | (TyFlags::SIGNED & matches!(repr, TyKind::Int(..)))
+                            | TyFlags::COPY,
                     };
                     let $name = types.push(ent);
                 )*
@@ -183,6 +215,8 @@ impl BuiltinTypes {
 
 gen_builtin_table!(
     nothing: TyKind::Struct(TyCompList::default()),
+    drop: TyKind::Bound(FuncList::default()),
+    copy: TyKind::Bound(FuncList::default()),
     ty_any: TyKind::Param(0, TyList::default(), None.into()),
     any: TyKind::Param(0, TyList::default(), None.into()),
     bool: TyKind::Bool,
@@ -235,6 +269,8 @@ bitflags! {
         const BUILTIN = 1 << 1;
         const SIGNED = 1 << 2;
         const MUTABLE = 1 << 3;
+        const COPY = 1 << 4;
+        const DROP = 1 << 5;
     }
 }
 

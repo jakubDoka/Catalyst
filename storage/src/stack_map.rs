@@ -271,6 +271,10 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
             .windows(2)
             .map(|window| &self.data[window[0] as usize..window[1] as usize])
     }
+
+    pub fn key_of(&self, id: E, index: usize) -> Option<S> {
+        self.start_index_of(id).map(|i| S::new(i + index))
+    }
 }
 
 impl<E: EntityRef, T, S: EntityRef> Index<S> for StackMap<E, T, S> {

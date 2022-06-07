@@ -1,3 +1,5 @@
+use ownership::*;
+
 use crate::*;
 
 impl MainTirBuilder<'_> {
@@ -33,9 +35,16 @@ impl MainTirBuilder<'_> {
             // if self.incr.functions.get(id).is_some() {
             //     continue;
             // }
-
+            
+            
             self.tir_data.clear();
             if tir_builder!(self).func(func).is_err() {
+                continue;
+            };
+            
+            logger!(self).log();
+            
+            if ownership_solver!(self).solve(func).is_err() {
                 continue;
             };
             // println!("{}", self.sources.display(self.funcs[func.meta()].name));

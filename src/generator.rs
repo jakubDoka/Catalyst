@@ -31,6 +31,10 @@ impl Generator<'_> {
                 continue;
             }
 
+            // if !self.funcs[id.meta()].name.is_reserved_value() {
+            //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
+            // }
+
             self.load_generic_params(id, params, ptr_ty);
 
             let tir = std::mem::take(&mut self.funcs[id.meta()].tir_data);
@@ -42,9 +46,7 @@ impl Generator<'_> {
                 continue;
             }
 
-            // if !self.funcs[id.meta()].name.is_reserved_value() {
-            //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
-            // }
+            
             // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();

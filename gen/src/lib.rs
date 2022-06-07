@@ -115,7 +115,7 @@ impl CirBuilder<'_> {
                 let TyKind::FuncPtr(Sig { cc, .. }) = self.types[self.func_ctx.values[func].ty].kind else {
                     unreachable!();
                 };
-                
+
                 let ir_inst = {
                     let value_args: Vec<_> = self
                         .func_ctx
@@ -130,7 +130,8 @@ impl CirBuilder<'_> {
                         .map(|val| self.func_ctx.values[val].ty)
                         .unwrap_or(self.builtin_types.nothing);
 
-                    let args_iter = self.func_ctx
+                    let args_iter = self
+                        .func_ctx
                         .value_slices
                         .get(mir_args)
                         .iter()
@@ -138,11 +139,11 @@ impl CirBuilder<'_> {
                         .map(|&value| self.func_ctx.values[value].ty);
 
                     let func_sig = translate_signature(
-                        cc, 
-                        args_iter, 
-                        ret, 
-                        self.reprs, 
-                        self.types, 
+                        cc,
+                        args_iter,
+                        ret,
+                        self.reprs,
+                        self.types,
                         self.isa.default_call_conv(),
                     );
                     let sig_ref = self.builder.func.import_signature(func_sig);
@@ -169,10 +170,7 @@ impl CirBuilder<'_> {
 
                 let args_iter = self.ty_lists.get(args).iter().cloned();
                 let func_ref = self.func_ref_of(func, args_iter, ret);
-                let ir_value = self.builder.ins().func_addr(
-                    self.reprs[ret].repr,
-                    func_ref,
-                );
+                let ir_value = self.builder.ins().func_addr(self.reprs[ret].repr, func_ref);
                 self.cir_builder_context.value_lookup[value] = ir_value.into();
             }
             InstKind::GlobalAccess(global) => {
@@ -241,7 +239,8 @@ impl CirBuilder<'_> {
                         .map(|val| self.func_ctx.values[val].ty)
                         .unwrap_or(self.builtin_types.nothing);
 
-                    let args_iter = self.func_ctx
+                    let args_iter = self
+                        .func_ctx
                         .value_slices
                         .get(args)
                         .iter()

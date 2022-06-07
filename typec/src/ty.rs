@@ -110,13 +110,13 @@ impl TyBuilder<'_> {
 
         self.build_generics(generics);
 
-        let fields = self.build_fields(id, body);
+        let fields = self.build_fields(id, body, self.types[self.ty].flags.contains(TyFlags::COPY));
         self.types[self.ty].kind = TyKind::Struct(fields);
 
         self.scope.pop_frame();
     }
 
-    fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
+    fn build_fields(&mut self, id: ID, body: Ast, copy: bool) -> TyCompList {
         for (i, &field_ast) in self.ast_data.children(body).iter().enumerate() {
             let &[name, field_ty_ast] = self.ast_data.children(field_ast) else {
                 unreachable!();
@@ -125,6 +125,10 @@ impl TyBuilder<'_> {
             let Ok(field_ty) = ty_parser!(self).parse_type(field_ty_ast) else {
                 continue;
             };
+
+            if copy && !self.types[field_ty].flags.contains(TyFlags::COPY) {
+                todo!("{}", self.ast_data.nodes[name].span.log(self.sources));
+            }
 
             self.ty_graph.add_edge(self.ty, field_ty);
 

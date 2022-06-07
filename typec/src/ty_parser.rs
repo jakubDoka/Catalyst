@@ -32,7 +32,12 @@ impl TyParser<'_> {
             TyKind::Param(i, ..) => params[i as usize],
             TyKind::Ptr(ty, ..) => {
                 let ty = self.instantiate(ty, params);
-                pointer_of(ty, flags.contains(TyFlags::MUTABLE), self.types, self.ty_instances)
+                pointer_of(
+                    ty,
+                    flags.contains(TyFlags::MUTABLE),
+                    self.types,
+                    self.ty_instances,
+                )
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
@@ -109,7 +114,7 @@ impl TyParser<'_> {
 
         let args = {
             self.ty_lists.mark_frame();
-    
+
             for &param in &children[1..children.len() - 1] {
                 let ty = self.parse_type(param)?;
                 generic |= self.types[ty].flags.contains(TyFlags::GENERIC);
@@ -126,7 +131,7 @@ impl TyParser<'_> {
         };
         generic |= self.types[ret].flags.contains(TyFlags::GENERIC);
         let sig = Sig { args, ret, cc };
-        
+
         Ok(self.func_pointer_of(sig, generic))
     }
 
@@ -268,11 +273,16 @@ impl TyParser<'_> {
             return already;
         }
 
+        if generic {
+            panic!("generic function pointer");
+        }
+
         let ty_ent = TyEnt {
             id,
             name: Span::new(self.types[sig.ret].name.source(), 0, 0),
             kind: TyKind::FuncPtr(sig),
-            flags: TyFlags::GENERIC & generic,
+            flags: (TyFlags::GENERIC & generic)
+                | TyFlags::COPY,
         };
         let ty = self.types.push(ty_ent);
         self.ty_instances.insert_unique(id, ty);

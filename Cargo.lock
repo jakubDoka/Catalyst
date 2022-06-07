@@ -24,9 +24,9 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "beef"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bed554bd50246729a1ec158d08aa3235d1b69d94ad120ebe187e28894787e736"
+checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
 
 [[package]]
 name = "bitflags"
@@ -57,6 +57,8 @@ dependencies = [
  "module_types",
  "modules",
  "num_cpus",
+ "ownership",
+ "ownership_types",
  "parser",
  "storage",
  "target-lexicon",
@@ -265,9 +267,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f647032dfaa1f8b6dc29bd3edb7bbef4861b8b8007ebb118d6db284fd59f6ee"
+checksum = "e6012d540c5baa3589337a98ce73408de9b5a25ec9fc2c6fd6be8f0d39e0ca5a"
 dependencies = [
  "autocfg",
  "hashbrown",
@@ -416,6 +418,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ownership"
+version = "0.1.0"
+dependencies = [
+ "errors",
+ "lexer",
+ "ownership_types",
+ "storage",
+ "typec_types",
+]
+
+[[package]]
+name = "ownership_types"
+version = "0.1.0"
+dependencies = [
+ "storage",
+ "typec_types",
+]
+
+[[package]]
 name = "parser"
 version = "0.1.0"
 dependencies = [
@@ -496,9 +517,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.95"
+version = "1.0.96"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbaf6116ab8924f39d52792136fb74fd60a80194cf1b1c6ffa6453eef1c3f942"
+checksum = "0748dd251e24453cb8717f0354206b91557e4ec8703673a4b30208f2abaf1ebf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -507,9 +528,9 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7fa7e55043acb85fca6b3c01485a2eeb6b69c5d21002e273c79e465f43b7ac1"
+checksum = "c02424087780c9b71cc96799eaeddff35af2bc513278cda5c99fc1f5d026d3c1"
 
 [[package]]
 name = "typec"

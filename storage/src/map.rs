@@ -137,12 +137,17 @@ impl Set {
         Set { map: Map::new() }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     pub fn with_capacity(len: usize) -> Self {
         Set {
             map: Map::with_capacity(len),
         }
     }
 
+    // return true if value was added
     pub fn insert(&mut self, key: impl Into<ID>) -> bool {
         self.map.insert(key, ()).is_none()
     }
@@ -162,6 +167,10 @@ impl Set {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -180,6 +189,10 @@ impl<T> Map<T> {
         Map {
             inner: HashMap::with_capacity_and_hasher(len, BH),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     pub fn insert(&mut self, id: impl Into<ID>, value: T) -> Option<T> {

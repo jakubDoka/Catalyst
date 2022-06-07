@@ -81,15 +81,15 @@ pub enum TirKind {
     TakePtr(Tir),
     Variable(Tir),
     GlobalAccess(Global),
-    Access(Tir),
-    Assign(Tir, Tir),
+    Access(Tir, PackedOption<Tir>),
+    Assign(Tir, Tir, TirList),
     Break(Tir, PackedOption<Tir>),
     Loop(Tir),
     LoopInProgress(PackedOption<Tir>, bool),
     FieldAccess(Tir, TyComp),
     Constructor(TirList),
-    If(Tir, Tir, PackedOption<Tir>),
-    Block(TirList),
+    If(Tir, Tir, Tir),
+    Block(TirList, TirList),
     Return(PackedOption<Tir>),
     Argument(u32),
     Call(PackedOption<Ty>, TyList, Func, TirList),
@@ -248,17 +248,30 @@ impl<'a> TirDisplay<'a> {
                 self.fmt(cond, f, displayed, level, false)?;
                 write!(f, " then ")?;
                 self.fmt(then, f, displayed, level, false)?;
-                if let Some(otherwise) = otherwise.expand() {
-                    write!(f, " else ")?;
-                    self.fmt(otherwise, f, displayed, level, false)?;
-                }
+                write!(f, " else ")?;
+                self.fmt(otherwise, f, displayed, level, false)?;
             }
-            TirKind::Block(content) => {
+            TirKind::Block(content, drops) => {
                 if !content.is_reserved_value() {
                     writeln!(f, "{{")?;
                     for &expr in self.data.cons.get(content).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
+
+                    if !drops.is_reserved_value() {
+                        for _ in 0..level + 1 {
+                            write!(f, "  ")?;
+                        }
+                        write!(f, "drops {{")?;
+                        for &expr in self.data.cons.get(drops).iter() {
+                            self.fmt(expr, f, displayed, level + 2, true)?;
+                        }
+                        for _ in 0..level + 1 {
+                            write!(f, "  ")?;
+                        }
+                        write!(f, "}}")?;
+                    }
+
                     for _ in 0..level {
                         write!(f, "  ")?;
                     }
@@ -318,16 +331,26 @@ impl<'a> TirDisplay<'a> {
                     self.fmt(ret, f, displayed, level, false)?;
                 }
             }
-            TirKind::Assign(left, right) => {
+            TirKind::Assign(left, right, drops) => {
                 self.fmt(left, f, displayed, level, false)?;
                 write!(f, " = ")?;
                 self.fmt(right, f, displayed, level, false)?;
+                if !drops.is_reserved_value() {
+                    write!(f, " drops {{")?;
+                    for &expr in self.data.cons.get(drops).iter() {
+                        self.fmt(expr, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}}")?;
+                }
             }
             TirKind::Variable(tir) => {
                 write!(f, "let ")?;
                 self.fmt(tir, f, displayed, level, false)?;
             }
-            TirKind::Access(value) => {
+            TirKind::Access(value, _var) => {
                 self.fmt(value, f, displayed, level, false)?;
             }
             TirKind::Match(expr, branches) => {

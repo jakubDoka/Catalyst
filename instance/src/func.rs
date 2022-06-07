@@ -77,7 +77,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn block(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirKind::Block(stmts) = self.tir_data.ents[tir].kind else {
+        let TirKind::Block(stmts, drops) = self.tir_data.ents[tir].kind else {
             unreachable!()
         };
 
@@ -116,8 +116,8 @@ impl<'a> MirBuilder<'a> {
             TirKind::Block(..) => self.block(tir, dest)?,
             TirKind::Loop(..) => self.r#loop(tir, dest)?,
             TirKind::Break(loop_header, value) => self.r#break(loop_header, value)?,
-            TirKind::Assign(a, b) => self.assign(a, b)?,
-            TirKind::Access(value) => self.expr(value, dest)?,
+            TirKind::Assign(..) => self.assign(tir)?,
+            TirKind::Access(value, ..) => self.expr(value, dest)?,
             TirKind::IntLit(value) => self.int_lit(ty, value, dest)?,
             TirKind::BoolLit(value) => self.bool_lit(ty, value, dest)?,
             TirKind::CharLit(value) => self.char_lit(ty, value, dest)?,
@@ -158,7 +158,7 @@ impl<'a> MirBuilder<'a> {
         } = self.tir_data.ents[tir] else {
             unreachable!()
         };
-        
+
         let value = self.unwrap_dest(tir, dest).or(dest);
 
         {
@@ -355,9 +355,13 @@ impl<'a> MirBuilder<'a> {
         Ok(Some(value))
     }
 
-    fn assign(&mut self, a: Tir, b: Tir) -> ExprResult {
-        let a = self.expr(a, None)?.unwrap();
-        let b = self.expr(b, Some(a))?.unwrap();
+    fn assign(&mut self, tir: Tir) -> ExprResult {
+        let TirEnt { kind: TirKind::Assign(lhs, rhs, drops), .. } = self.tir_data.ents[tir] else {
+            unreachable!()
+        };
+        
+        let a = self.expr(lhs, None)?.unwrap();
+        let b = self.expr(rhs, Some(a))?.unwrap();
 
         if a == b {
             return Ok(None);
@@ -565,20 +569,11 @@ impl<'a> MirBuilder<'a> {
         let no_value = ty == self.builtin_types.nothing;
 
         let then_block = self.func_ctx.create_block();
-        let otherwise_block = otherwise.is_some().then(|| self.func_ctx.create_block());
-        let mut skip_block = None;
-
-        let mut get_skip_block = |s: &mut Self| {
-            skip_block.unwrap_or_else(|| {
-                let b = s.func_ctx.create_block();
-                skip_block = Some(b);
-                b
-            })
-        };
+        let otherwise_block = self.func_ctx.create_block();
+        let mut join_block = None;
 
         {
-            let kind =
-                InstKind::JumpIfFalse(otherwise_block.unwrap_or_else(|| get_skip_block(self)));
+            let kind = InstKind::JumpIfFalse(otherwise_block);
             let ent = InstEnt::new(kind, cond);
             self.func_ctx.add_inst(ent);
         }
@@ -589,43 +584,39 @@ impl<'a> MirBuilder<'a> {
             self.func_ctx.add_inst(ent);
         }
 
-        {
-            self.func_ctx.select_block(then_block);
-            let value = {
-                let value = self.expr(then, block_dest)?;
-                (!on_stack && !no_value).then_some(value).flatten()
-            };
-
-            if !self.func_ctx.is_terminated() {
-                let kind = InstKind::Jump(get_skip_block(self));
-                let ent = InstEnt::new(kind, value);
-                self.func_ctx.add_inst(ent);
-            }
-        }
-
-        if let Some(block) = otherwise_block {
+        let mut build_branch = |block, tir| {
             self.func_ctx.select_block(block);
             let value = {
-                let value = self.expr(otherwise.unwrap(), block_dest)?;
+                let value = self.expr(tir, block_dest)?;
                 (!on_stack && !no_value).then_some(value).flatten()
             };
 
             if !self.func_ctx.is_terminated() {
-                let kind = InstKind::Jump(get_skip_block(self));
+                let join_block = join_block.unwrap_or_else(|| {
+                    let b = self.func_ctx.create_block();
+                    join_block = Some(b);
+                    b
+                });
+                let kind = InstKind::Jump(join_block);
                 let ent = InstEnt::new(kind, value);
                 self.func_ctx.add_inst(ent);
             }
-        }
+
+            Ok(())
+        };
+
+        build_branch(then_block, then)?;
+        build_branch(otherwise_block, otherwise)?;
 
         if !on_stack && let Some(value) = value {
             let values = self.func_ctx.value_slices.push(&[value]);
-            if let Some(skip_block) = skip_block {
-                self.func_ctx.blocks[skip_block].params = values;
+            if let Some(join_block) = join_block {
+                self.func_ctx.blocks[join_block].params = values;
             }
         };
 
-        if let Some(skip_block) = skip_block {
-            self.func_ctx.select_block(skip_block);
+        if let Some(join_block) = join_block {
+            self.func_ctx.select_block(join_block);
         }
 
         Ok(value)
@@ -672,10 +663,17 @@ impl<'a> MirBuilder<'a> {
             };
         }
 
-       self.call_low(Ok(func), tir, ty, dest, args)
+        self.call_low(Ok(func), tir, ty, dest, args)
     }
 
-    fn call_low(&mut self, func: Result<Func, Value>, tir: Tir, ty: Ty, dest: Option<Value>, args: TirList) -> ExprResult {
+    fn call_low(
+        &mut self,
+        func: Result<Func, Value>,
+        tir: Tir,
+        ty: Ty,
+        dest: Option<Value>,
+        args: TirList,
+    ) -> ExprResult {
         let on_stack = self.on_stack(tir);
         let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
 

@@ -610,7 +610,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         self.stack.mark_frame();
-        
+
         if self.current.kind() == TokenKind::String {
             let ast = self
                 .data
@@ -620,11 +620,11 @@ impl<'a> Parser<'a> {
         } else {
             self.stack.push_default();
         }
-        
+
         let end = self.list(
-            TokenKind::LeftParen, 
-            TokenKind::Comma, 
-            TokenKind::RightParen, 
+            TokenKind::LeftParen,
+            TokenKind::Comma,
+            TokenKind::RightParen,
             Self::type_expr,
         );
 
