@@ -35,6 +35,14 @@ impl TirData {
         }
     }
 
+    pub fn is_terminating(&self, tir: Tir) -> bool {
+        self.ents[tir].flags.contains(TirFlags::TERMINATING)
+    }
+
+    pub fn termination(&self, tir: Tir) -> TirFlags {
+        self.ents[tir].flags.termination()
+    }
+
     pub fn clear(&mut self) {
         self.ents.clear();
         self.cons.clear();
@@ -118,10 +126,21 @@ gen_entity!(TirList);
 bitflags! {
     #[derive(Default)]
     pub struct TirFlags: u32 {
-        const ASSIGNABLE = 1 << 0;
+        const MUTABLE = 1 << 0;
         const TERMINATING = 1 << 1;
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
+        const LOOP_CONTROL = 1 << 4;
+    }
+}
+
+impl TirFlags {
+    pub fn termination(self) -> Self {
+        self & (TirFlags::TERMINATING | TirFlags::LOOP_CONTROL)
+    }
+
+    pub fn is_globally_terminating(&self) -> bool {
+        self.contains(TirFlags::TERMINATING) && !self.contains(TirFlags::LOOP_CONTROL)
     }
 }
 

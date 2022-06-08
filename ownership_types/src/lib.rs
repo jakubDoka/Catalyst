@@ -2,34 +2,60 @@ use storage::*;
 use typec_types::*;
 
 pub struct OwnershipContext {
+    pub loop_depth: Vec<u32>,
     pub move_lookup: Set,
-    pub scopes: Vec<Tir>,
-    pub spawned: EntitySet<Tir>,
+    pub scopes: Vec<(Tir, bool)>,
+    pub spawned: SecondaryMap<Tir, u32>,
     pub disjoint: FramedStack<Tir>,
     pub to_drop: FramedStack<Tir>,
     pub bound_ids: FramedStack<ID>,
+    pub attached_drops: SecondaryMap<Tir, EntityList<Tir>>,
+    pub slices: ListPool<Tir>,
 }
 
 impl OwnershipContext {
     pub fn new() -> Self {
         Self {
+            loop_depth: Vec::new(),
             move_lookup: Set::new(),
             scopes: Vec::new(),
-            spawned: EntitySet::new(),
+            spawned: SecondaryMap::new(),
             disjoint: FramedStack::new(),
             to_drop: FramedStack::new(),
             bound_ids: FramedStack::new(),
+            attached_drops: SecondaryMap::new(),
+            slices: ListPool::new(),
         }
     }
 
-    pub fn propagate_drop(&mut self, tir: Tir, data: &mut OwnershipData) {
+    pub fn start_loop(&mut self) {
+        self.loop_depth.push(self.scopes.len() as u32);
+    }
+
+    pub fn end_loop(&mut self) {
+        self.loop_depth.pop().unwrap();
+    }
+
+    pub fn loop_depth(&self) -> Option<usize> {
+        self.loop_depth.last().map(|&d| d as usize)
+    }
+
+    pub fn spawn(&mut self, tir: Tir) {
+        self.spawned[tir] = self.scopes.len() as u32;
+    }
+
+    pub fn is_spawned(&self, tir: Tir) -> bool {
+        self.spawned[tir] != 0
+    }
+
+    pub fn propagate_drop(&mut self, tir: Tir) {
         for &disjoint in self.disjoint.top_frame() {
-            data.drops[disjoint].outer_drops.push(tir, &mut data.lists);
+            self.attached_drops[disjoint].push(tir, &mut self.slices);
         }
     }
 
-    pub fn start_scope(&mut self, root: Tir) {
-        self.scopes.push(root);
+    pub fn start_scope(&mut self, root: Tir, terminating: bool) {
+        self.scopes.push((root, terminating));
         self.to_drop.mark_frame();
     }
 
@@ -61,36 +87,14 @@ impl OwnershipContext {
     }
 
     pub fn clear(&mut self) {
+        self.loop_depth.clear();
         self.move_lookup.clear();
         self.scopes.clear();
         self.spawned.clear();
         self.disjoint.clear();
         self.to_drop.clear();
         self.bound_ids.clear();
+        self.attached_drops.clear();
+        self.slices.clear();
     }
-}
-
-pub struct OwnershipData {
-    pub drops: SecondaryMap<Tir, Drops>,
-    pub lists: ListPool<Tir>,
-}
-
-impl OwnershipData {
-    pub fn new() -> Self {
-        Self {
-            drops: SecondaryMap::new(),
-            lists: ListPool::new(),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.drops.clear();
-        self.lists.clear();
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Drops {
-    pub outer_drops: EntityList<Tir>,
-    pub inner_drops: EntityList<Tir>,
 }

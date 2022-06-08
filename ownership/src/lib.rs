@@ -35,8 +35,10 @@ impl OwnershipSolver<'_> {
             }
             TirKind::MatchBlock(_) => self.spawn(root), // TODO
             TirKind::Loop(block) => {
+                self.o_ctx.start_loop();
                 self.solve_low(block)?;
                 self.spawn(root)?;
+                self.o_ctx.end_loop();
                 Ok(())
             },
 
@@ -86,7 +88,7 @@ impl OwnershipSolver<'_> {
             }
 
             TirKind::Block(args, ..) => {
-                self.o_ctx.start_scope(root);
+                self.o_ctx.start_scope(root, self.tir_data.is_terminating(root));
                 // TODO: eliminate `to_vec`
                 
                 if let Some((&last, others)) = self.tir_data.cons.get(args).to_vec().split_last() {
@@ -167,7 +169,7 @@ impl OwnershipSolver<'_> {
     }
 
     fn spawn(&mut self, value: Tir) -> errors::Result {
-        self.o_ctx.spawned.insert(value);
+        self.o_ctx.spawn(value);
         self.o_ctx.to_drop.push(value);
         
         Ok(())
@@ -200,8 +202,19 @@ impl OwnershipSolver<'_> {
         Ok(id)
     }
 
+    fn term() {
+        let vec = vec![1];
+
+        loop {
+            loop {
+
+            }
+        }
+    }
+ 
     fn value_id_low(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<ID> {
-        if self.o_ctx.spawned.contains(value) {
+        if self.o_ctx.is_spawned(value) {
+            if let Some(depth) = 
             return Ok(value.into());
         }
 
@@ -220,9 +233,11 @@ impl OwnershipSolver<'_> {
             TirKind::GlobalAccess(..) if move_out && !copy => todo!("moving value contained in global state"),
             TirKind::DerefPointer(..) if move_out && !copy => todo!("moving value behind pointer"),
             
-            TirKind::TakePtr(..) 
-            | TirKind::GlobalAccess(..) 
-            | TirKind::DerefPointer(..) => Ok(ID::reserved_value()),
+            TirKind::TakePtr(value) | TirKind::DerefPointer(value) => {
+                self.value_id(value, move_out, can_deref)?;
+                Ok(ID::reserved_value()) 
+            },
+            TirKind::GlobalAccess(..) => Ok(ID::reserved_value()),
 
             kind => unimplemented!("{:?} {}", kind, self.tir_data.ents[value].span.log(self.sources)),
         }

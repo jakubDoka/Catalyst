@@ -524,7 +524,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn variable(&mut self, tir: Tir) -> ExprResult {
-        let assignable = self.tir_data.ents[tir].flags.contains(TirFlags::ASSIGNABLE);
+        let assignable = self.tir_data.ents[tir].flags.contains(TirFlags::MUTABLE);
         let on_stack = self.on_stack(tir);
 
         let dest = if on_stack {

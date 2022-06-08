@@ -112,9 +112,7 @@ impl TirBuilder<'_> {
         self.scope_context.used_types.clear();
         self.scope_context.used_types_set.clear();
 
-        if !self.tir_data.ents[root]
-            .flags
-            .contains(TirFlags::TERMINATING)
+        if !self.is_terminating(root)
             && ret != self.builtin_types.nothing
         {
             let because = ret_ast
@@ -177,17 +175,15 @@ impl TirBuilder<'_> {
         self.scope.mark_frame();
 
         let mut final_expr = None;
-        let mut terminating = false;
+        let mut termination = TirFlags::empty();
         for &stmt in self.ast_data.children(ast) {
             let Ok(expr) = self.expr(stmt) else {
                 continue; // Recover here
             };
             self.tir_stack.push(expr);
             final_expr = Some(expr);
-            terminating |= self.tir_data.ents[expr]
-                .flags
-                .contains(TirFlags::TERMINATING);
-            if terminating {
+            termination |= self.termination(expr);
+            if !termination.is_empty() {
                 break; // TODO: emit warning
             }
         }
@@ -201,10 +197,9 @@ impl TirBuilder<'_> {
 
             let slice = self.tir_stack.top_frame();
             let items = self.tir_data.cons.push(slice);
-
             let kind = TirKind::Block(items, default());
-            let flags = TirFlags::TERMINATING & terminating;
-            let ent = TirEnt::with_flags(kind, ty, flags, span);
+            let flags = termination;
+            let ent = TirEnt { kind, ty, flags, span };
             self.tir_data.ents.push(ent)
         };
 
@@ -263,6 +258,7 @@ impl TirBuilder<'_> {
 
         // load match arms
         let mut temp = vec![];
+        let mut termination = TirFlags::all().termination();
         for &arm in self.ast_data.children(body) {
             let &[pat, body] = self.ast_data.children(arm) else {
                 unreachable!();
@@ -301,6 +297,7 @@ impl TirBuilder<'_> {
                     }
 
                     let expr = self.expr(body)?;
+                    termination &= self.termination(expr);
                     self.tir_stack.push(expr);
 
                     self.scope.pop_frame();
@@ -338,7 +335,8 @@ impl TirBuilder<'_> {
             let kind = TirKind::Match(expr, branching);
             let ty = self.tir_data.ents[branching].ty;
             let span = self.ast_data.nodes[ast].span;
-            TirEnt::new(kind, ty, span)
+            let flags = termination;
+            TirEnt { kind, ty, flags, span }
         }))
     }
 
@@ -637,9 +635,12 @@ impl TirBuilder<'_> {
 
         let expr = self.expr(expr);
         let ty = ty_parser!(self).parse_type(ty);
-
+        
         let (expr, ty) = (expr?, ty?); // recovery
-
+        if self.is_terminating(expr) {
+            return Ok(expr);
+        }
+        
         self.scope_context.use_type(ty, self.types);
 
         let kind = TirKind::BitCast(expr);
@@ -680,6 +681,9 @@ impl TirBuilder<'_> {
         };
 
         let expr = self.expr(expr)?;
+        if self.is_terminating(expr) {
+            return Ok(expr);
+        }
         let operand_ty = self.tir_data.ents[expr].ty;
 
         let func = {
@@ -763,7 +767,7 @@ impl TirBuilder<'_> {
             let ent = TirEnt::with_flags(
                 kind,
                 self.builtin_types.nothing,
-                TirFlags::TERMINATING,
+                TirFlags::TERMINATING | TirFlags::LOOP_CONTROL,
                 span,
             );
             self.tir_data.ents.push(ent)
@@ -800,7 +804,8 @@ impl TirBuilder<'_> {
             let ty = ret
                 .map(|ret| self.tir_data.ents[ret].ty)
                 .unwrap_or(self.builtin_types.nothing);
-            let flags = TirFlags::TERMINATING & infinite;
+            let terminating = !self.tir_data.ents[loop_slot].flags.contains(TirFlags::LOOP_CONTROL);
+            let flags = TirFlags::TERMINATING & (infinite | terminating);
             let kind = TirKind::Loop(block);
             let span = span;
             self.tir_data.ents[loop_slot] = TirEnt::with_flags(kind, ty, flags, span);
@@ -818,12 +823,12 @@ impl TirBuilder<'_> {
         instantiation: Option<Ast>,
         span: Span,
     ) -> errors::Result<Tir> {
-        let Sig { args, ret, .. } = self.funcs[func.meta()].sig;
+        let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
         let args = self.ty_lists.get(args).to_vec();
-        let tir_args = self.arguments(ast, &mut obj, &args)?;
+        let (terminating, tir_args) = self.arguments(ast, &mut obj, &args)?;
 
-        let (params, ret) = if generic {
+        let (params, ty) = if generic {
             self.instantiate_call(caller, func, instantiation, &tir_args, span)?
         } else {
             tir_args
@@ -835,12 +840,13 @@ impl TirBuilder<'_> {
                     })
                 })
                 .fold(Ok(()), |acc, err| acc.and(err))?;
-            (TyList::reserved_value(), ret)
+            (TyList::reserved_value(), ty)
         };
 
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::Call(caller.into(), params, func, args);
-        let ent = TirEnt::with_flags(kind, ret, TirFlags::GENERIC & generic, span);
+        let flags = terminating | (TirFlags::GENERIC & generic);
+        let ent = TirEnt { kind, ty, flags, span };
         Ok(self.tir_data.ents.push(ent))
     }
 
@@ -918,13 +924,13 @@ impl TirBuilder<'_> {
     fn indirect_call(&mut self, value: Tir, ast: Ast, span: Span) -> errors::Result<Tir> {
         let TirEnt { ty, .. } = self.tir_data.ents[value];
 
-        let TyKind::FuncPtr(Sig { args, ret, .. }) = self.types[ty].kind else {
+        let TyKind::FuncPtr(Sig { args, ret: ty, .. }) = self.types[ty].kind else {
             todo!("{:?}", self.types[ty].kind);
         };
 
         let arg_tys = self.ty_lists.get(args).to_vec();
 
-        let tir_args = self.arguments(ast, &mut None, &arg_tys)?;
+        let (terminating, tir_args) = self.arguments(ast, &mut None, &arg_tys)?;
 
         tir_args
             .iter()
@@ -934,7 +940,8 @@ impl TirBuilder<'_> {
 
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::IndirectCall(value, args);
-        let ent = TirEnt::with_flags(kind, ret, TirFlags::GENERIC, span);
+        let flags = terminating;
+        let ent = TirEnt { kind, ty, flags, span };
         Ok(self.tir_data.ents.push(ent))
     }
 
@@ -1008,7 +1015,7 @@ impl TirBuilder<'_> {
         ast: Ast,
         obj: &mut Option<Tir>,
         arg_tys: &[Ty],
-    ) -> errors::Result<Vec<Tir>> {
+    ) -> errors::Result<(TirFlags, Vec<Tir>)> {
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
             *obj = self.ptr_correct(*obj, expected);
         }
@@ -1017,17 +1024,23 @@ impl TirBuilder<'_> {
         if let &mut Some(obj) = obj {
             vec.push(obj);
         }
-        self.ast_data.children(ast)[1..]
-            .iter()
-            .fold(Ok(()), |acc, &arg| {
-                self.expr(arg).map(|arg| vec.push(arg)).and(acc)
-            })?;
-
+        let mut termination = TirFlags::empty();
+        for &arg in &self.ast_data.children(ast)[1..] {
+            let Ok(arg) = self.expr(arg) else {
+                continue;
+            };
+            termination |= self.termination(arg);
+            vec.push(arg);
+            if !termination.is_empty() {
+                break;
+            }
+        }
+        
         if arg_tys.len() != vec.len() {
             todo!();
         }
 
-        Ok(vec)
+        Ok((termination, vec))
     }
 
     fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> Tir {
@@ -1051,10 +1064,14 @@ impl TirBuilder<'_> {
 
     fn is_mutable(&self, target: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.tir_data.ents[target];
-        self.types[ty].flags.contains(TyFlags::MUTABLE) || flags.contains(TirFlags::ASSIGNABLE)
+        self.types[ty].flags.contains(TyFlags::MUTABLE) || flags.contains(TirFlags::MUTABLE)
     }
 
     fn take_ptr(&mut self, target: Tir, mutable: bool) -> Tir {
+        if self.is_terminating(target) {
+            return target
+        }
+
         let TirEnt {
             ty,
             span,
@@ -1064,7 +1081,7 @@ impl TirBuilder<'_> {
         } = &mut self.tir_data.ents[target];
         let (span, ty) = (*span, *ty);
 
-        if !flags.contains(TirFlags::ASSIGNABLE) && mutable {
+        if !flags.contains(TirFlags::MUTABLE) && mutable {
             todo!();
         }
 
@@ -1082,13 +1099,16 @@ impl TirBuilder<'_> {
     }
 
     fn deref_ptr(&mut self, target: Tir) -> Tir {
+        if self.is_terminating(target) {
+            return target
+        }
         let span = self.tir_data.ents[target].span;
         let kind = TirKind::DerefPointer(target);
         let ty = self.tir_data.ents[target].ty;
         let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);
         let assignable = self.types[ty].flags.contains(TyFlags::MUTABLE);
-        let deref = TirEnt::with_flags(kind, deref_ty, TirFlags::ASSIGNABLE & assignable, span);
+        let deref = TirEnt::with_flags(kind, deref_ty, TirFlags::MUTABLE & assignable, span);
         self.tir_data.ents.push(deref)
     }
 
@@ -1098,6 +1118,9 @@ impl TirBuilder<'_> {
         };
 
         let mut header = self.expr(header)?;
+        if self.is_terminating(header) {
+            return Ok(header)
+        }
 
         let ty = self.tir_data.ents[header].ty;
         let base_ty = self.types.base_of(ty);
@@ -1122,7 +1145,7 @@ impl TirBuilder<'_> {
         }
 
         let result = {
-            let flags = TirFlags::ASSIGNABLE & self.is_mutable(header);
+            let flags = TirFlags::MUTABLE & self.is_mutable(header);
             let kind = TirKind::FieldAccess(header, field_id);
             let ent = TirEnt::with_flags(kind, field_ty, flags, span);
             self.tir_data.ents.push(ent)
@@ -1165,7 +1188,8 @@ impl TirBuilder<'_> {
 
             let args = self.tir_data.cons.push(&[flag, value]);
             let kind = TirKind::Constructor(args);
-            let ent = TirEnt::new(kind, enum_ty, span);
+            let flags = self.termination(value);
+            let ent = TirEnt::with_flags(kind, enum_ty, flags, span);
 
             Ok(self.tir_data.ents.push(ent))
         } else {
@@ -1193,6 +1217,7 @@ impl TirBuilder<'_> {
 
         // TODO: maybe avoid allocation
         let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
+        let mut termination = TirFlags::empty();
         for (i, &field) in self.ast_data.children(body).iter().enumerate() {
             let (expr, (field, field_ty)) = if kind == AstKind::ConstructorBody {
                 let &[name, expr] = self.ast_data.children(field) else {
@@ -1228,6 +1253,11 @@ impl TirBuilder<'_> {
             }) else {
                 continue;
             };
+
+            termination |= self.termination(value);
+            if !termination.is_empty() {
+                break;
+            }
 
             if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
                 let TirEnt { ty, span, .. } = self.tir_data.ents[value];
@@ -1325,9 +1355,13 @@ impl TirBuilder<'_> {
         };
 
         let value = self.expr(value)?;
+        if self.is_terminating(value) {
+            return Ok(value);
+        }
+
         self.tir_data.ents[value]
             .flags
-            .insert(TirFlags::ASSIGNABLE & mutable);
+            .insert(TirFlags::MUTABLE & mutable);
 
             
         let result = {
@@ -1383,6 +1417,9 @@ impl TirBuilder<'_> {
             None
         } else {
             let value = self.expr(value)?;
+            if self.is_terminating(value) {
+                return Ok(value);
+            }
             self.infer_tir_ty(value, ret, |s, got, loc| {
                 let &[.., ret_ast, _] = s.ast_data.children(s.scope_context.func_ast[s.func]) else {
                     unreachable!();
@@ -1450,7 +1487,7 @@ impl TirBuilder<'_> {
             let ents = &self.tir_data.ents;
             let then_flags = ents[then].flags;
             let otherwise_flags = ents[otherwise].flags;
-            (then_flags & otherwise_flags) & TirFlags::TERMINATING
+            (then_flags & otherwise_flags) & (TirFlags::all().termination())
         };
 
         let result = {
@@ -1489,7 +1526,7 @@ impl TirBuilder<'_> {
         } else if let Some(global) = value.pointer.may_read::<Global>() {
             let kind = TirKind::GlobalAccess(global);
             let GlobalEnt { ty, mutable, .. } = self.globals[global];
-            TirEnt::with_flags(kind, ty, TirFlags::ASSIGNABLE & mutable, span)
+            TirEnt::with_flags(kind, ty, TirFlags::MUTABLE & mutable, span)
         } else if let Some(func) = value.pointer.may_read::<Func>() {
             let kind = TirKind::FuncPtr(func);
             let ty = if func_ptr_ty {
@@ -1520,6 +1557,12 @@ impl TirBuilder<'_> {
             let right = self.expr(right);
             (left?, right?)
         };
+
+        if self.is_terminating(left) {
+            return Ok(left);
+        }
+
+        let termination = self.termination(left) | self.termination(right);
 
         let left_ty = self.tir_data.ents[left].ty;
 
@@ -1572,7 +1615,8 @@ impl TirBuilder<'_> {
             let ty = self.funcs[func.meta()].sig.ret;
             let args = self.tir_data.cons.push(&[left, right]);
             let kind = TirKind::Call(left_ty.into(), TyList::reserved_value(), func, args);
-            let ent = TirEnt::new(kind, ty, span);
+            let flags = termination;
+            let ent = TirEnt { kind, ty, flags, span };
             self.tir_data.ents.push(ent)
         };
 
@@ -1580,6 +1624,10 @@ impl TirBuilder<'_> {
     }
 
     fn assign(&mut self, left: Tir, right: Tir, span: Span) -> errors::Result<Tir> {
+        if self.is_terminating(right) {
+            return Ok(right);
+        }
+        
         let TirEnt {
             ty,
             flags,
@@ -1587,7 +1635,7 @@ impl TirBuilder<'_> {
             kind,
         } = self.tir_data.ents[left];
 
-        if !flags.contains(TirFlags::ASSIGNABLE) {
+        if !flags.contains(TirFlags::MUTABLE) {
             let because = if let TirKind::Access(here, ..) = kind {
                 Some(self.tir_data.ents[here].span)
             } else {
@@ -1647,6 +1695,14 @@ impl TirBuilder<'_> {
             TyComp::new(self.ty_comps.start_index_of(fields).unwrap() + index),
             ty,
         ))
+    }
+
+    fn is_terminating(&self, tir: Tir) -> bool {
+        self.tir_data.is_terminating(tir)
+    }
+
+    pub fn termination(&self, expr: Tir) -> TirFlags {
+        self.tir_data.termination(expr)
     }
 
     fn infer_tir_ty(
