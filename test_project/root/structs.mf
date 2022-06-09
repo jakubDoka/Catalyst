@@ -57,7 +57,7 @@ fn se() -> SomethingElse {
 }
  
 fn ownership_test() {
-    let to = TestOwnership::(se(), se(), se())
+    let mut to = TestOwnership::(se(), se(), se())
 
     let res = if false {
         if true {
@@ -69,18 +69,28 @@ fn ownership_test() {
         to.c
     }
 
-    let to = TestOwnership::(se(), se(), se())
+    to = TestOwnership::(se(), se(), se())
 
     loop {
         let a = to.a
         break
     }
 
-    let to = TestOwnership::(se(), se(), se())
     
-    // invalid
-    loop {
-        let a = to.a
+    let res = loop'a {
+        to.a = se()
+        if true {
+            loop'b {
+                loop {
+                    if true {
+                        let a = to.a
+                        to.a = a
+                        break'b to.a
+                    }
+                    continue'a
+                }
+            }
+        }
     }
 }
 

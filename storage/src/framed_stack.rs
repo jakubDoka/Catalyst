@@ -15,6 +15,12 @@ impl<T> FramedStack<T> {
         }
     }
 
+    pub fn nth_frame(&self, n: usize) -> &[T] {
+        let start = self.frames[self.frames.len() - n - 1] as usize;
+        let end = self.frames.get(self.frames.len() - n).map(|&i| i as usize).unwrap_or(self.data.len());
+        &self.data[start..end]
+    }
+
     pub fn extend(&mut self, items: &[T])
         where T: Clone
     {

@@ -39,8 +39,8 @@ impl TirData {
         self.ents[tir].flags.contains(TirFlags::TERMINATING)
     }
 
-    pub fn termination(&self, tir: Tir) -> TirFlags {
-        self.ents[tir].flags.termination()
+    pub fn terminal_flags(&self, tir: Tir) -> TirFlags {
+        self.ents[tir].flags.terminal_flags()
     }
 
     pub fn clear(&mut self) {
@@ -91,14 +91,15 @@ pub enum TirKind {
     GlobalAccess(Global),
     Access(Tir, PackedOption<Tir>),
     Assign(Tir, Tir, TirList),
-    Break(Tir, PackedOption<Tir>),
+    Break(Tir, PackedOption<Tir>, TirList),
+    Continue(Tir, TirList),
     Loop(Tir),
     LoopInProgress(PackedOption<Tir>, bool),
     FieldAccess(Tir, TyComp),
     Constructor(TirList),
     If(Tir, Tir, Tir),
     Block(TirList, TirList),
-    Return(PackedOption<Tir>),
+    Return(PackedOption<Tir>, TirList),
     Argument(u32),
     Call(PackedOption<Ty>, TyList, Func, TirList),
     IndirectCall(Tir, TirList),
@@ -110,7 +111,7 @@ pub enum TirKind {
 
 impl TirKind {
     pub fn is_terminating(&self) -> bool {
-        matches!(self, TirKind::Return(_))
+        matches!(self, TirKind::Return(..))
     }
 }
 
@@ -130,17 +131,13 @@ bitflags! {
         const TERMINATING = 1 << 1;
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
-        const LOOP_CONTROL = 1 << 4;
+        const CONTINUE = 1 << 4;
     }
 }
 
 impl TirFlags {
-    pub fn termination(self) -> Self {
-        self & (TirFlags::TERMINATING | TirFlags::LOOP_CONTROL)
-    }
-
-    pub fn is_globally_terminating(&self) -> bool {
-        self.contains(TirFlags::TERMINATING) && !self.contains(TirFlags::LOOP_CONTROL)
+    pub fn terminal_flags(self) -> Self {
+        self & (Self::TERMINATING | Self::CONTINUE)
     }
 }
 
@@ -299,10 +296,20 @@ impl<'a> TirDisplay<'a> {
                     write!(f, "{{}}")?;
                 }
             }
-            TirKind::Return(expr) => {
+            TirKind::Return(expr, drops) => {
                 write!(f, "return ")?;
                 if let Some(expr) = expr.expand() {
                     self.fmt(expr, f, displayed, level, false)?;
+                }
+                if !drops.is_reserved_value() {
+                    write!(f, " drops {{")?;
+                    for &expr in self.data.cons.get(drops).iter() {
+                        self.fmt(expr, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}}")?;
                 }
             }
             TirKind::Argument(id) => {
@@ -342,12 +349,36 @@ impl<'a> TirDisplay<'a> {
                 write!(f, "loop ")?;
                 self.fmt(block, f, displayed, level, false)?;
             }
-            TirKind::Break(loop_expr, ret) => {
+            TirKind::Break(loop_expr, ret, drops) => {
                 write!(f, "break ")?;
                 self.fmt(loop_expr, f, displayed, level, false)?;
                 if let Some(ret) = ret.expand() {
-                    write!(f, " ")?;
+                    write!(f, "  ")?;
                     self.fmt(ret, f, displayed, level, false)?;
+                }
+                if !drops.is_reserved_value() {
+                    write!(f, " drops {{")?;
+                    for &expr in self.data.cons.get(drops).iter() {
+                        self.fmt(expr, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}}")?;
+                }
+            }
+            TirKind::Continue(loop_expr, drops) => {
+                write!(f, "continue ")?;
+                self.fmt(loop_expr, f, displayed, level, false)?;
+                if !drops.is_reserved_value() {
+                    write!(f, " drops {{")?;
+                    for &expr in self.data.cons.get(drops).iter() {
+                        self.fmt(expr, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}}")?;
                 }
             }
             TirKind::Assign(left, right, drops) => {

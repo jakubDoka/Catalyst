@@ -175,15 +175,15 @@ impl TirBuilder<'_> {
         self.scope.mark_frame();
 
         let mut final_expr = None;
-        let mut termination = TirFlags::empty();
+        let mut terminal_flags = TirFlags::empty();
         for &stmt in self.ast_data.children(ast) {
             let Ok(expr) = self.expr(stmt) else {
                 continue; // Recover here
             };
             self.tir_stack.push(expr);
             final_expr = Some(expr);
-            termination |= self.termination(expr);
-            if !termination.is_empty() {
+            terminal_flags |= self.terminal_flags(expr);
+            if !terminal_flags.is_empty() {
                 break; // TODO: emit warning
             }
         }
@@ -198,7 +198,7 @@ impl TirBuilder<'_> {
             let slice = self.tir_stack.top_frame();
             let items = self.tir_data.cons.push(slice);
             let kind = TirKind::Block(items, default());
-            let flags = termination;
+            let flags = terminal_flags;
             let ent = TirEnt { kind, ty, flags, span };
             self.tir_data.ents.push(ent)
         };
@@ -227,6 +227,7 @@ impl TirBuilder<'_> {
             AstKind::Block => self.block(ast),
             AstKind::Loop => self.r#loop(ast),
             AstKind::Break => self.r#break(ast),
+            AstKind::Continue => self.r#continue(ast),
             AstKind::Deref => self.deref(ast),
             AstKind::BitCast => self.bit_cast(ast),
             AstKind::Match => self.r#match(ast),
@@ -238,6 +239,23 @@ impl TirBuilder<'_> {
                 self.sources.display(span)
             ),
         }
+    }
+
+    fn r#continue(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let span = self.ast_data.nodes[ast].span;
+        let &[label] = self.ast_data.children(ast) else {
+            unreachable!();
+        };
+
+        let (loop_expr, is_lowest) = self.find_loop(label, true)?;
+        let kind = TirKind::Continue(loop_expr, default());
+        let ent = TirEnt::with_flags(
+            kind,
+            self.builtin_types.nothing,
+            TirFlags::TERMINATING | (TirFlags::CONTINUE & is_lowest),
+            span,
+        );
+        Ok(self.tir_data.ents.push(ent))
     }
 
     fn r#ref(&mut self, ast: Ast, mutable: bool) -> errors::Result<Tir> {
@@ -258,7 +276,7 @@ impl TirBuilder<'_> {
 
         // load match arms
         let mut temp = vec![];
-        let mut termination = TirFlags::all().termination();
+        let mut terminal_flags = TirFlags::all().terminal_flags();
         for &arm in self.ast_data.children(body) {
             let &[pat, body] = self.ast_data.children(arm) else {
                 unreachable!();
@@ -297,7 +315,7 @@ impl TirBuilder<'_> {
                     }
 
                     let expr = self.expr(body)?;
-                    termination &= self.termination(expr);
+                    terminal_flags &= self.terminal_flags(expr);
                     self.tir_stack.push(expr);
 
                     self.scope.pop_frame();
@@ -335,7 +353,7 @@ impl TirBuilder<'_> {
             let kind = TirKind::Match(expr, branching);
             let ty = self.tir_data.ents[branching].ty;
             let span = self.ast_data.nodes[ast].span;
-            let flags = termination;
+            let flags = terminal_flags;
             TirEnt { kind, ty, flags, span }
         }))
     }
@@ -716,7 +734,7 @@ impl TirBuilder<'_> {
 
     fn r#break(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
-        let &[value] = self.ast_data.children(ast) else {
+        let &[label, value] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
@@ -726,16 +744,13 @@ impl TirBuilder<'_> {
             Some(self.expr(value)?)
         };
 
-        let loop_expr = self.scope.get_concrete::<Tir>("<loop>");
-        let Ok(loop_expr) = loop_expr else {
-            todo!("{loop_expr:?}");
-        };
+        let (loop_expr, _) = self.find_loop(label, false)?;
 
         {
-            let TirKind::LoopInProgress(ret, infinite) = &mut self.tir_data.ents[loop_expr].kind else {
-                unreachable!();
+            let TirEnt { flags, kind: TirKind::LoopInProgress(ret, infinite), .. } = &mut self.tir_data.ents[loop_expr] else {
+                unreachable!("{:?}", self.tir_data.ents[loop_expr].kind);
             };
-
+            flags.remove(TirFlags::TERMINATING);
             *infinite = false;
 
             if let Some(ret) = ret.expand() {
@@ -763,11 +778,11 @@ impl TirBuilder<'_> {
         }
 
         let result = {
-            let kind = TirKind::Break(loop_expr, value.into());
+            let kind = TirKind::Break(loop_expr, value.into(), default());
             let ent = TirEnt::with_flags(
                 kind,
                 self.builtin_types.nothing,
-                TirFlags::TERMINATING | TirFlags::LOOP_CONTROL,
+                TirFlags::TERMINATING,
                 span,
             );
             self.tir_data.ents.push(ent)
@@ -778,7 +793,7 @@ impl TirBuilder<'_> {
 
     fn r#loop(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
-        let &[body_ast] = self.ast_data.children(ast) else {
+        let &[label, body_ast] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
@@ -790,25 +805,26 @@ impl TirBuilder<'_> {
 
         // break and continue will propagate side effects so we save the lookup
 
-        self.scope
-            .push_item("<loop>", ScopeItem::new(loop_slot, span));
+        let id = if label.is_reserved_value() {
+            ID::reserved_value()
+        } else {
+            ast::id_of(label, self.ast_data, self.sources)
+        };
 
+        self.scope_context.loops.push((loop_slot, id));
         let block = self.block(body_ast)?;
-
-        self.scope.pop_item();
+        self.scope_context.loops.pop().unwrap();
 
         {
-            let TirKind::LoopInProgress(ret, infinite) = self.tir_data.ents[loop_slot].kind else {
+            let TirEnt { flags, kind: TirKind::LoopInProgress(ret, infinite), .. } = self.tir_data.ents[loop_slot] else {
                 unreachable!();
             };
             let ty = ret
                 .map(|ret| self.tir_data.ents[ret].ty)
                 .unwrap_or(self.builtin_types.nothing);
-            let terminating = !self.tir_data.ents[loop_slot].flags.contains(TirFlags::LOOP_CONTROL);
-            let flags = TirFlags::TERMINATING & (infinite | terminating);
+            let flags = (TirFlags::TERMINATING & infinite) | flags;
             let kind = TirKind::Loop(block);
-            let span = span;
-            self.tir_data.ents[loop_slot] = TirEnt::with_flags(kind, ty, flags, span);
+            self.tir_data.ents[loop_slot] = TirEnt { kind, ty, flags, span };
         }
 
         Ok(loop_slot)
@@ -826,7 +842,7 @@ impl TirBuilder<'_> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
         let args = self.ty_lists.get(args).to_vec();
-        let (terminating, tir_args) = self.arguments(ast, &mut obj, &args)?;
+        let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args)?;
 
         let (params, ty) = if generic {
             self.instantiate_call(caller, func, instantiation, &tir_args, span)?
@@ -845,7 +861,8 @@ impl TirBuilder<'_> {
 
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::Call(caller.into(), params, func, args);
-        let flags = terminating | (TirFlags::GENERIC & generic);
+        let flags = terminal_flags 
+            | (TirFlags::GENERIC & generic);
         let ent = TirEnt { kind, ty, flags, span };
         Ok(self.tir_data.ents.push(ent))
     }
@@ -930,7 +947,7 @@ impl TirBuilder<'_> {
 
         let arg_tys = self.ty_lists.get(args).to_vec();
 
-        let (terminating, tir_args) = self.arguments(ast, &mut None, &arg_tys)?;
+        let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys)?;
 
         tir_args
             .iter()
@@ -940,7 +957,7 @@ impl TirBuilder<'_> {
 
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::IndirectCall(value, args);
-        let flags = terminating;
+        let flags = terminal_flags;
         let ent = TirEnt { kind, ty, flags, span };
         Ok(self.tir_data.ents.push(ent))
     }
@@ -1024,14 +1041,14 @@ impl TirBuilder<'_> {
         if let &mut Some(obj) = obj {
             vec.push(obj);
         }
-        let mut termination = TirFlags::empty();
+        let mut terminal_flags = TirFlags::empty();
         for &arg in &self.ast_data.children(ast)[1..] {
             let Ok(arg) = self.expr(arg) else {
                 continue;
             };
-            termination |= self.termination(arg);
+            terminal_flags |= self.terminal_flags(arg);
             vec.push(arg);
-            if !termination.is_empty() {
+            if !terminal_flags.is_empty() {
                 break;
             }
         }
@@ -1040,7 +1057,7 @@ impl TirBuilder<'_> {
             todo!();
         }
 
-        Ok((termination, vec))
+        Ok((terminal_flags, vec))
     }
 
     fn ptr_correct(&mut self, mut target: Tir, expected: Ty) -> Tir {
@@ -1188,7 +1205,7 @@ impl TirBuilder<'_> {
 
             let args = self.tir_data.cons.push(&[flag, value]);
             let kind = TirKind::Constructor(args);
-            let flags = self.termination(value);
+            let flags = TirFlags::TERMINATING & self.is_terminating(value);
             let ent = TirEnt::with_flags(kind, enum_ty, flags, span);
 
             Ok(self.tir_data.ents.push(ent))
@@ -1217,7 +1234,7 @@ impl TirBuilder<'_> {
 
         // TODO: maybe avoid allocation
         let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
-        let mut termination = TirFlags::empty();
+        let mut terminal_flags = TirFlags::empty();
         for (i, &field) in self.ast_data.children(body).iter().enumerate() {
             let (expr, (field, field_ty)) = if kind == AstKind::ConstructorBody {
                 let &[name, expr] = self.ast_data.children(field) else {
@@ -1254,8 +1271,8 @@ impl TirBuilder<'_> {
                 continue;
             };
 
-            termination |= self.termination(value);
-            if !termination.is_empty() {
+            terminal_flags |= self.terminal_flags(value);
+            if !terminal_flags.is_empty() {
                 break;
             }
 
@@ -1436,8 +1453,12 @@ impl TirBuilder<'_> {
             Some(value)
         };
 
+        for &(loop_header, _) in self.scope_context.loops.iter() {
+            self.tir_data.ents[loop_header].flags.insert(TirFlags::TERMINATING);
+        }
+
         let result = {
-            let kind = TirKind::Return(value.into());
+            let kind = TirKind::Return(value.into(), default());
             let ent = TirEnt::with_flags(
                 kind,
                 self.builtin_types.nothing,
@@ -1487,7 +1508,7 @@ impl TirBuilder<'_> {
             let ents = &self.tir_data.ents;
             let then_flags = ents[then].flags;
             let otherwise_flags = ents[otherwise].flags;
-            (then_flags & otherwise_flags) & (TirFlags::all().termination())
+            (then_flags & otherwise_flags) & TirFlags::TERMINATING
         };
 
         let result = {
@@ -1558,11 +1579,12 @@ impl TirBuilder<'_> {
             (left?, right?)
         };
 
-        if self.is_terminating(left) {
+        let mut terminal_flags = self.terminal_flags(left);
+        if terminal_flags.is_empty() {
+            terminal_flags = self.terminal_flags(right);
+        } else {
             return Ok(left);
         }
-
-        let termination = self.termination(left) | self.termination(right);
 
         let left_ty = self.tir_data.ents[left].ty;
 
@@ -1615,7 +1637,7 @@ impl TirBuilder<'_> {
             let ty = self.funcs[func.meta()].sig.ret;
             let args = self.tir_data.cons.push(&[left, right]);
             let kind = TirKind::Call(left_ty.into(), TyList::reserved_value(), func, args);
-            let flags = termination;
+            let flags = TirFlags::TERMINATING & terminal_flags;
             let ent = TirEnt { kind, ty, flags, span };
             self.tir_data.ents.push(ent)
         };
@@ -1697,12 +1719,43 @@ impl TirBuilder<'_> {
         ))
     }
 
+    fn find_loop(&mut self, label: Ast, is_continue: bool) -> errors::Result<(Tir, bool)> {
+        let id = if label.is_reserved_value() {
+            ID::reserved_value()
+        } else {
+            ast::id_of(label, self.ast_data, self.sources)
+        };
+        
+        self.scope_context.loops
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, &(tir, loop_id))| (id == loop_id).then(|| {
+                if is_continue {
+                    if let Some(&(tir, _)) = self.scope_context.loops.get(i + 1) {
+                        self.tir_data.ents[tir].flags.insert(TirFlags::TERMINATING | TirFlags::CONTINUE);
+                    }
+                } else {
+                    for &(tir, _) in &self.scope_context.loops[i + 1..] {
+                        if let TirKind::LoopInProgress(.., false) = self.tir_data.ents[tir].kind {
+                            continue;
+                        }
+                        
+                        self.tir_data.ents[tir].flags.insert(TirFlags::TERMINATING);
+                    }
+                }
+                (tir, i == self.scope_context.loops.len() - 1)
+            }))
+            .ok_or(())
+            .map_err(|()| todo!("{}", self.ast_data.nodes[label].span.log(self.sources)))
+    }
+
     fn is_terminating(&self, tir: Tir) -> bool {
         self.tir_data.is_terminating(tir)
     }
 
-    pub fn termination(&self, expr: Tir) -> TirFlags {
-        self.tir_data.termination(expr)
+    pub fn terminal_flags(&self, expr: Tir) -> TirFlags {
+        self.tir_data.terminal_flags(expr)
     }
 
     fn infer_tir_ty(

@@ -771,6 +771,7 @@ impl<'a> Parser<'a> {
             TokenKind::Let => self.variable(),
             TokenKind::Loop => self.loop_expr(),
             TokenKind::Break => self.break_expr(),
+            TokenKind::Continue => self.continue_expr(),
             TokenKind::Operator(..) => self.unary(),
             TokenKind::LeftParen => self.paren_expr(),
             TokenKind::Match => self.match_expr(),
@@ -787,6 +788,7 @@ impl<'a> Parser<'a> {
                     TokenKind::Let,
                     TokenKind::Loop,
                     TokenKind::Break,
+                    TokenKind::Continue,
                     TokenKind::Operator(0),
                     TokenKind::LeftParen,
                     TokenKind::Match,
@@ -796,6 +798,14 @@ impl<'a> Parser<'a> {
         };
 
         self.handle_tail_expr(span, result)
+    }
+
+    fn continue_expr(&mut self) -> Ast {
+        let span = self.current.span();
+        self.advance();
+        self.stack.mark_frame();
+        self.label();
+        self.alloc(AstKind::Continue, span)
     }
 
     fn match_expr(&mut self) -> Ast {
@@ -1058,6 +1068,8 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
+        self.label();
+
         let end = if self.current.kind() == TokenKind::NewLine {
             self.stack.push_default();
             span
@@ -1076,11 +1088,23 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
+        self.label();
+
         let body = self.block();
         self.stack.push(body);
         let end = self.data.nodes[body].span;
 
         self.alloc(AstKind::Loop, span.join(end))
+    }
+
+    fn label(&mut self) {
+        if self.current.kind() == TokenKind::Label {
+            let label = self.data.alloc_sonless(AstKind::Label, self.current.span());
+            self.stack.push(label);
+            self.advance();
+        } else {
+            self.stack.push_default();
+        }
     }
 
     fn variable(&mut self) -> Ast {

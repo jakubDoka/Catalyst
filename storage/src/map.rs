@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     ops::{Deref, DerefMut, Index, IndexMut},
@@ -189,6 +189,10 @@ impl<T> Map<T> {
         Map {
             inner: HashMap::with_capacity_and_hasher(len, BH),
         }
+    }
+
+    pub fn entry(&mut self, key: impl Into<ID>) -> Entry<ID, T> {
+        self.inner.entry(key.into())
     }
 
     pub fn is_empty(&self) -> bool {

@@ -107,7 +107,7 @@ impl<'a> MirBuilder<'a> {
 
         let TirEnt { kind, ty, .. } = self.tir_data.ents[tir];
         let value = match kind {
-            TirKind::Return(value) => self.r#return(value.expand())?,
+            TirKind::Return(..) => self.r#return(tir)?,
             TirKind::Call(..) => self.call(tir, dest)?,
             TirKind::If(..) => self.r#if(tir, dest)?,
             TirKind::Variable(value) => self.variable(value)?,
@@ -115,7 +115,8 @@ impl<'a> MirBuilder<'a> {
             TirKind::FieldAccess(..) => self.field_access(tir, dest)?,
             TirKind::Block(..) => self.block(tir, dest)?,
             TirKind::Loop(..) => self.r#loop(tir, dest)?,
-            TirKind::Break(loop_header, value) => self.r#break(loop_header, value)?,
+            TirKind::Break(..) => self.r#break(tir)?,
+            TirKind::Continue(..) => self.r#continue(tir)?,
             TirKind::Assign(..) => self.assign(tir)?,
             TirKind::Access(value, ..) => self.expr(value, dest)?,
             TirKind::IntLit(value) => self.int_lit(ty, value, dest)?,
@@ -135,6 +136,23 @@ impl<'a> MirBuilder<'a> {
         self.mir_builder_context.tir_mapping[tir] = value.into();
 
         Ok(value)
+    }
+
+    fn r#continue(&mut self, tir: Tir) -> ExprResult {
+        let TirEnt { kind: TirKind::Continue(loop_header_marker, drops), .. } = self.tir_data.ents[tir] else {
+            unreachable!();
+        };
+        
+        let &Loop { entry, .. } = self
+            .func_ctx
+            .loops
+            .iter()
+            .rev()
+            .find(|loop_header| loop_header.marker == loop_header_marker)
+            .unwrap();
+
+        self.func_ctx.add_inst(InstEnt::new(InstKind::Jump(entry), None));
+        Ok(None)
     }
 
     fn indirect_call(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
@@ -372,7 +390,11 @@ impl<'a> MirBuilder<'a> {
         Ok(None)
     }
 
-    fn r#break(&mut self, loop_header_marker: Tir, value: PackedOption<Tir>) -> ExprResult {
+    fn r#break(&mut self, tir: Tir) -> ExprResult {
+        let TirEnt { kind: TirKind::Break(loop_header_marker, value, drops), .. } = self.tir_data.ents[tir] else {
+            unreachable!()
+        };
+
         let &Loop { exit, dest, .. } = self
             .func_ctx
             .loops
@@ -408,7 +430,7 @@ impl<'a> MirBuilder<'a> {
         let value = self.unwrap_dest_low(ty, on_stack, dest);
 
         let loop_header = Loop {
-            _enter: enter_block,
+            entry: enter_block,
             exit: exit_block,
             marker: tir,
             dest,
@@ -820,8 +842,12 @@ impl<'a> MirBuilder<'a> {
         self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED)
     }
 
-    fn r#return(&mut self, value: Option<Tir>) -> ExprResult {
-        let value = if let Some(value) = value {
+    fn r#return(&mut self, tir: Tir) -> ExprResult {
+        let TirEnt { kind: TirKind::Return(value, drops), .. } = self.tir_data.ents[tir] else {
+            unreachable!();
+        };
+
+        let value = if let Some(value) = value.expand() {
             let dest = self.return_dest;
             self.expr(value, dest)?
         } else {

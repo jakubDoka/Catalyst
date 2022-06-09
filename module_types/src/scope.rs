@@ -89,7 +89,12 @@ impl Scope {
             self.frames.last(),
             self.stack.len()
         );
-        self.stack.pop().unwrap();
+        let item = self.stack.pop().unwrap();
+        if let Some(shadow) = item.shadow {
+            self.map.insert(item.id, shadow);
+        } else {
+            assert!(self.map.remove(item.id).is_some());
+        }
     }
 
     pub fn pop_frame(&mut self) {

@@ -1,7 +1,9 @@
 #![feature(if_let_guard)]
+#![feature(let_chains)]
 
 pub mod state;
 
+use ownership_types::Validity;
 pub use state::OwnershipSolver;
 
 use storage::*;
@@ -33,7 +35,8 @@ impl OwnershipSolver<'_> {
                 self.spawn(root)?;
                 Ok(())
             }
-            TirKind::MatchBlock(_) => self.spawn(root), // TODO
+            TirKind::MatchBlock(block) => self.solve_low(block), // TODO
+            
             TirKind::Loop(block) => {
                 self.o_ctx.start_loop();
                 self.solve_low(block)?;
@@ -44,10 +47,9 @@ impl OwnershipSolver<'_> {
 
             TirKind::Assign(to, value, ..) => {
                 self.solve_low(value)?;
-                self.move_in(to)?;
-                
                 let mut drops = vec![];
-                self.emit_drops(to, ID::default(), &mut drops)?;
+                self.move_in(to, &mut drops)?;
+                
                 let drops = self.tir_data.cons.push(&drops);
                 self.tir_data.ents[root].kind = TirKind::Assign(to, value, drops);
                 
@@ -74,7 +76,7 @@ impl OwnershipSolver<'_> {
                 Ok(())
             }
 
-            TirKind::Break(.., value) | TirKind::Return(value) if value.is_some() => {
+            TirKind::Break(_, value, ..) | TirKind::Return(value, ..) if value.is_some() => {
                 self.solve_low(value.unwrap())?;
                 self.move_out(value.unwrap())?;
                 Ok(())
@@ -88,7 +90,7 @@ impl OwnershipSolver<'_> {
             }
 
             TirKind::Block(args, ..) => {
-                self.o_ctx.start_scope(root, self.tir_data.is_terminating(root));
+                self.o_ctx.start_scope(root);
                 // TODO: eliminate `to_vec`
                 
                 if let Some((&last, others)) = self.tir_data.cons.get(args).to_vec().split_last() {
@@ -141,13 +143,16 @@ impl OwnershipSolver<'_> {
             | TirKind::CharLit(..) => self.spawn(root),
         
             TirKind::FieldAccess(header, ..) => self.solve_low(header),
-
+            
             TirKind::Access(..)
-            | TirKind::Return(..)
-            | TirKind::TakePtr(..)
-            | TirKind::DerefPointer(..)
             | TirKind::GlobalAccess(..)
+            | TirKind::Continue(..)
+            | TirKind::Return(..)
             | TirKind::Break(..) => Ok(()),
+
+            | TirKind::DerefPointer(value)
+            | TirKind::TakePtr(value) => self.solve_low(value),
+
 
             TirKind::Invalid | TirKind::Argument(..) | TirKind::LoopInProgress(..) => {
                 unreachable!()
@@ -156,7 +161,7 @@ impl OwnershipSolver<'_> {
     }
 
     fn emit_drops(&mut self, root: Tir, id: ID, buffer: &mut Vec<Tir>) -> errors::Result {
-        if self.o_ctx.move_lookup.contains(id) {
+        if !self.o_ctx.move_lookup.get(id).map(Validity::is_valid).unwrap_or(false) {
             return Ok(());
         }
         
@@ -175,7 +180,53 @@ impl OwnershipSolver<'_> {
         Ok(())
     }
 
-    fn move_in(&mut self, value: Tir) -> errors::Result {
+    fn move_in(&mut self, value: Tir, buffer: &mut Vec<Tir>) -> errors::Result {
+        let id = self.value_id(value, false, true)?.0;
+        self.move_in_low(value, id, buffer)
+    }
+
+    fn move_in_low(&mut self, value: Tir, id: ID, buffer: &mut Vec<Tir>) -> errors::Result {
+        let TirEnt { ty, span, .. }= self.tir_data.ents[value];
+        let TyEnt { mut kind, flags, .. } = self.types[ty];
+        if let TyKind::Instance(base, ..) = kind {
+            kind = self.types[base].kind;
+        }
+        
+        if flags.contains(TyFlags::COPY) {
+            return Ok(());
+        }
+        self.o_ctx.move_lookup.insert(id, Validity::Valid);
+        
+        match kind {
+            TyKind::Struct(fields) => {
+                for (fid, &field) in self.ty_comps.get_iter(fields) {
+                    let id = ID::owned(id, ID(field.index as u64));
+                    
+                    let field_access = || {
+                        let kind = TirKind::FieldAccess(value, fid);
+                        TirEnt::new(kind, ty, span)
+                    };
+
+                    match self.o_ctx.move_lookup.insert(id, Validity::Valid) {
+                        Some(Validity::Valid) | None => {
+                            let field_access = self.tir_data.ents.push(field_access());
+                            self.emit_drops(field_access, id, &mut vec![])?;
+                        }
+                        Some(Validity::Partial) => {
+                            let field_access = self.tir_data.ents.push(field_access());
+                            self.move_in_low(field_access, id, buffer)?;
+                        }
+                        Some(Validity::Invalid) => {
+                            println!("poop");
+                        },
+                    }
+                }
+            },
+            TyKind::Enum(_, _) => todo!(),
+            TyKind::Instance(_, _) => todo!(),
+            kind => unimplemented!("{kind:?}"),
+        }
+
         Ok(())
     }
 
@@ -184,38 +235,32 @@ impl OwnershipSolver<'_> {
         let ty = self.tir_data.ents[value].ty;
 
         // the call also checks if none of the referenced values are already moved
-        let id = self.value_id(value, true, false)?;
+        let (id, root) = self.value_id(value, true, false)?;
         if self.types[ty].flags.contains(TyFlags::COPY) {
             return Ok(());
         };
 
-        self.o_ctx.move_lookup.insert(id);
+        let root = self.o_ctx.spawned[root].level as usize;
+        if !self.o_ctx.terminating_since(root, self.tir_data) {
+            todo!("value can possibly be moved twice in this loop {}", self.tir_data.ents[value].span.log(self.sources));
+        }
+
+        self.o_ctx.move_lookup.insert(id, Validity::Invalid);
 
         Ok(())
     }
 
-    fn value_id(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<ID> {
-        let id = self.value_id_low(value, move_out, can_deref)?;
-        if move_out && self.o_ctx.move_lookup.contains(id) {
+    fn value_id(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<(ID, Tir)> {
+        let res = self.value_id_low(value, move_out, can_deref)?;
+        if move_out && !self.o_ctx.move_lookup.get(res.0).map(Validity::is_valid).unwrap_or(true) {
             todo!("value already moved {}", self.tir_data.ents[value].span.log(self.sources));
         }
-        Ok(id)
-    }
-
-    fn term() {
-        let vec = vec![1];
-
-        loop {
-            loop {
-
-            }
-        }
+        Ok(res)
     }
  
-    fn value_id_low(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<ID> {
+    fn value_id_low(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<(ID, Tir)> {
         if self.o_ctx.is_spawned(value) {
-            if let Some(depth) = 
-            return Ok(value.into());
+            return Ok((value.into(), value));
         }
 
         let TirEnt { kind, ty, .. } = self.tir_data.ents[value];
@@ -225,19 +270,19 @@ impl OwnershipSolver<'_> {
                 self.value_id(var.expand().unwrap_or(value), move_out, can_deref)
             },
             TirKind::FieldAccess(header, field) => {
-                let header_id = self.value_id(header, move_out, copy)?;
+                let (header_id, root) = self.value_id(header, move_out, copy)?;
                 let field_id = self.ty_comps[field].index;
-                Ok(ID::owned(header_id, ID(field_id as u64)))
+                Ok((ID::owned(header_id, ID(field_id as u64)), root))
             },
             
             TirKind::GlobalAccess(..) if move_out && !copy => todo!("moving value contained in global state"),
             TirKind::DerefPointer(..) if move_out && !copy => todo!("moving value behind pointer"),
             
             TirKind::TakePtr(value) | TirKind::DerefPointer(value) => {
-                self.value_id(value, move_out, can_deref)?;
-                Ok(ID::reserved_value()) 
+                let (_, value) = self.value_id(value, move_out, can_deref)?;
+                Ok((ID::reserved_value(), value)) 
             },
-            TirKind::GlobalAccess(..) => Ok(ID::reserved_value()),
+            TirKind::GlobalAccess(..) => Ok((ID::reserved_value(), value)),
 
             kind => unimplemented!("{:?} {}", kind, self.tir_data.ents[value].span.log(self.sources)),
         }

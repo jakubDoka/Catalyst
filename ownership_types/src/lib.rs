@@ -1,14 +1,16 @@
+use std::collections::hash_map::Entry;
+
 use storage::*;
 use typec_types::*;
 
 pub struct OwnershipContext {
-    pub loop_depth: Vec<u32>,
-    pub move_lookup: Set,
-    pub scopes: Vec<(Tir, bool)>,
-    pub spawned: SecondaryMap<Tir, u32>,
+    pub loop_depths: Vec<u32>,
+    pub move_lookup: Map<(Validity, u32)>,
+    pub scopes: Vec<Tir>,
+    pub spawned: SecondaryMap<Tir, Spawn>,
     pub disjoint: FramedStack<Tir>,
     pub to_drop: FramedStack<Tir>,
-    pub bound_ids: FramedStack<ID>,
+    pub bound_ids: FramedStack<(ID, Validity)>,
     pub attached_drops: SecondaryMap<Tir, EntityList<Tir>>,
     pub slices: ListPool<Tir>,
 }
@@ -16,8 +18,8 @@ pub struct OwnershipContext {
 impl OwnershipContext {
     pub fn new() -> Self {
         Self {
-            loop_depth: Vec::new(),
-            move_lookup: Set::new(),
+            loop_depths: Vec::new(),
+            move_lookup: Map::new(),
             scopes: Vec::new(),
             spawned: SecondaryMap::new(),
             disjoint: FramedStack::new(),
@@ -29,23 +31,45 @@ impl OwnershipContext {
     }
 
     pub fn start_loop(&mut self) {
-        self.loop_depth.push(self.scopes.len() as u32);
+        self.loop_depths.push(self.scopes.len() as u32);
     }
 
     pub fn end_loop(&mut self) {
-        self.loop_depth.pop().unwrap();
+        self.loop_depths.pop().unwrap();
+    }
+
+    pub fn terminating_since(&self, depth: usize, tir_data: &TirData) -> bool {
+        let mut prev = self.scopes.len();
+        for &loop_depth in self.loop_depths.iter().rev() {
+            if depth > loop_depth as usize {
+                break;
+            }
+
+            let flags = self.scopes[loop_depth as usize..prev].iter()
+                .fold(TirFlags::empty(), |acc, &tir| acc | {
+                    tir_data.ents[tir].flags
+                });
+
+            if flags.terminal_flags() != TirFlags::TERMINATING {
+                return false;
+            }
+
+            prev = loop_depth as usize;
+        } 
+
+        true
     }
 
     pub fn loop_depth(&self) -> Option<usize> {
-        self.loop_depth.last().map(|&d| d as usize)
+        self.loop_depths.last().map(|&d| d as usize)
     }
 
     pub fn spawn(&mut self, tir: Tir) {
-        self.spawned[tir] = self.scopes.len() as u32;
+        self.spawned[tir].level = self.scopes.len() as u32;
     }
 
     pub fn is_spawned(&self, tir: Tir) -> bool {
-        self.spawned[tir] != 0
+        self.spawned[tir].level != u32::MAX
     }
 
     pub fn propagate_drop(&mut self, tir: Tir) {
@@ -54,8 +78,8 @@ impl OwnershipContext {
         }
     }
 
-    pub fn start_scope(&mut self, root: Tir, terminating: bool) {
-        self.scopes.push((root, terminating));
+    pub fn start_scope(&mut self, root: Tir) {
+        self.scopes.push(root);
         self.to_drop.mark_frame();
     }
 
@@ -72,22 +96,40 @@ impl OwnershipContext {
 
     pub fn end_branch(&mut self) {
         self.disjoint.pop_frame();
-        for &id in self.bound_ids.top_frame() {
+        for &(id, _) in self.bound_ids.top_frame() {
             self.move_lookup.remove(id);
         }
     }
 
+    pub fn register(&mut self, id: ID, validity: Validity) {
+        match self.move_lookup.entry(id) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().0 = validity;
+                self.bound_ids.top_frame_mut()[entry.get().1 as usize].1 = validity;
+            },
+            Entry::Vacant(entry) => {
+                let len = self.bound_ids.top_frame().len();
+                entry.insert((validity, len as u32));
+                self.bound_ids.push((id, validity));
+            },
+        }
+    }
+
     pub fn pop_branches(&mut self, count: usize) {
-        for _ in 0..count {
-            for &id in self.bound_ids.top_frame() {
-                self.move_lookup.insert(id);
-            }   
-            self.bound_ids.pop_frame();
+        let ids = (0..count)
+            .flat_map(|_| self.bound_ids.nth_frame(count))
+            .cloned()
+            .collect::<Vec<_>>();  
+        
+        (0..count).for_each(|_| self.bound_ids.pop_frame());
+
+        for (id, validity) in ids {
+            self.register(id, validity);
         }
     }
 
     pub fn clear(&mut self) {
-        self.loop_depth.clear();
+        self.loop_depths.clear();
         self.move_lookup.clear();
         self.scopes.clear();
         self.spawned.clear();
@@ -96,5 +138,35 @@ impl OwnershipContext {
         self.bound_ids.clear();
         self.attached_drops.clear();
         self.slices.clear();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Validity {
+    Valid,
+    Partial,
+    Invalid,
+}
+
+impl Validity {
+    pub fn merge(&mut self, other: Self) {
+        todo!()
+    }
+
+    pub fn is_valid(&self) -> bool {
+        *self == Validity::Valid
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Spawn {
+    pub level: u32,
+}
+
+impl Default for Spawn {
+    fn default() -> Self {
+        Self {
+            level: u32::MAX,
+        }
     }
 }

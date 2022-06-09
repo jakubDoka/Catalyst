@@ -5,7 +5,7 @@ use typec_types::*;
 
 #[derive(Debug)]
 pub struct Loop {
-    pub _enter: Block,
+    pub entry: Block,
     pub exit: Block,
     pub marker: Tir,
     pub dest: Option<Value>,

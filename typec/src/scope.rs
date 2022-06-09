@@ -533,6 +533,7 @@ pub struct ScopeContext {
     pub global_ast: SecondaryMap<Global, Ast>,
     pub used_types: Vec<Ty>,
     pub used_types_set: EntitySet<Ty>,
+    pub loops: Vec<(Tir, ID)>,
 }
 
 impl ScopeContext {
@@ -546,6 +547,7 @@ impl ScopeContext {
             global_ast: SecondaryMap::new(),
             used_types: Vec::new(),
             used_types_set: EntitySet::new(),
+            loops: Vec::new(),
         }
     }
 
