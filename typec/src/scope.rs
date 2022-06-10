@@ -99,9 +99,7 @@ impl<'a> ScopeBuilder<'a> {
 
         self.scope_context.global_ast[global] = value;
 
-        let item = ModuleItem::new(scope_id, global, span);
-        self.scope.insert_current(self.diagnostics, item);
-        self.modules[self.source].items.push(item);
+        self.insert_to_scope(scope_id, global, span)
     }
 
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {
@@ -225,11 +223,7 @@ impl<'a> ScopeBuilder<'a> {
         self.types[slot].kind = TyKind::Bound(funcs);
         self.scope_context.type_ast[slot] = ast;
 
-        {
-            let item = module::ModuleItem::new(scope_id, slot, name);
-            self.scope.insert_current(self.diagnostics, item);
-            self.modules[self.source].items.push(item);
-        }
+        self.insert_to_scope(scope_id, slot, name);
 
         Ok(())
     }
@@ -257,11 +251,7 @@ impl<'a> ScopeBuilder<'a> {
         let ty = self.types.push(ent);
         self.scope_context.type_ast[ty] = ast;
 
-        {
-            let item = module::ModuleItem::new(scope_id, ty, span);
-            self.scope.insert_current(self.diagnostics, item);
-            self.modules[self.source].items.push(item);
-        }
+        self.insert_to_scope(scope_id, ty, span);
 
         Ok(())
     }
@@ -393,12 +383,8 @@ impl<'a> ScopeBuilder<'a> {
 
             self.scope_context.func_ast[func] = ast;
         }
-
-        {
-            let module_item = module::ModuleItem::new(scope_id, func, current_span);
-            self.scope.insert_current(self.diagnostics, module_item);
-            self.modules[self.source].items.push(module_item);
-        }
+        
+        self.insert_to_scope(scope_id, func, current_span);
 
         Ok(func)
     }
@@ -502,6 +488,12 @@ impl<'a> ScopeBuilder<'a> {
                     .starts_with(name)
             })
             .copied()
+    }
+
+    fn insert_to_scope(&mut self, id: ID, slot: impl EntityRef + 'static, span: Span) {
+        let item = module::ModuleItem::new(id, slot, span);
+        self.scope.insert_current(self.diagnostics, item);
+        self.modules[self.source].items.push(item);
     }
 }
 
