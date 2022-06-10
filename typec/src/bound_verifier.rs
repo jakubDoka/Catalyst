@@ -43,12 +43,7 @@ impl BoundVerifier<'_> {
 
                     {
                         let item = module::ModuleItem::new(id, func, span);
-                        drop(self.scope.insert(
-                            self.diagnostics,
-                            span.source(),
-                            id,
-                            item.to_scope_item(),
-                        ));
+                        self.scope.insert_current(self.diagnostics, item);
                         self.modules[span.source()].items.push(item);
                     }
                 }

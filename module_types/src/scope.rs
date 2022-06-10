@@ -1,6 +1,6 @@
-use std::any::TypeId;
+use std::{any::TypeId, collections::hash_map::Entry};
 
-use crate::error::*;
+use crate::{error::*, ModuleItem};
 use lexer::*;
 use storage::*;
 
@@ -108,14 +108,27 @@ impl Scope {
         });
     }
 
+    pub fn insert_current(
+        &mut self,
+        diagnostics: &mut errors::Diagnostics,
+        item: ModuleItem,
+    ) {
+        self.insert(diagnostics, item.span.source(), item)
+    }
+
     pub fn insert(
         &mut self,
         diagnostics: &mut errors::Diagnostics,
         current_source: Source,
-        id: impl Into<ID>,
-        item: ScopeItem,
-    ) -> errors::Result {
-        self.insert_by_id(diagnostics, current_source, id.into(), item)
+        item: ModuleItem,
+    ) {
+        drop(self.insert_by_id(diagnostics, current_source, item.id, item.to_scope_item()))
+    }
+
+    pub fn insert_builtin(&mut self, item: ModuleItem) {
+        let id = item.id;
+        let item = item.to_scope_item();
+        assert!(self.map.insert(id, item).is_none())
     }
 
     fn insert_by_id(
@@ -127,17 +140,19 @@ impl Scope {
     ) -> errors::Result {
         let item_source = item.span.source();
 
-        match self.map.insert(id, ScopeItem::collision()) {
-            Some(colliding) => {
+        match self.map.entry(id) {
+            Entry::Occupied(mut entry) => {
+                let colliding = entry.get().clone();
                 let colliding_source = colliding.span.source();
                 if colliding.pointer.is_of::<ScopeCollision>() {
                     if item_source == current_source {
-                        assert!(self.map.insert(id, item) == Some(ScopeItem::collision()));
+                        entry.insert(item);
                     } else {
                         assert!(self.map.insert(ID::scoped(id, item_source), item).is_none());
                     }
                 } else if colliding_source == current_source {
                     if item_source != current_source {
+                        entry.insert(ScopeItem::collision());
                         assert!(self.map.insert(id, colliding) == Some(ScopeItem::collision()));
                         assert!(self.map.insert(ID::scoped(id, item_source), item).is_none());
                     } else {
@@ -158,7 +173,7 @@ impl Scope {
                     );
                 }
             }
-            None => assert!(self.map.insert(id, item) == Some(ScopeItem::collision())),
+            Entry::Vacant(entry) => drop(entry.insert(item)),
         }
 
         Ok(())

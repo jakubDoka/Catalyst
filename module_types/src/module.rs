@@ -28,7 +28,7 @@ impl ModuleEnt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModuleItem {
     pub id: ID,
     pub kind: scope::ScopePointer,

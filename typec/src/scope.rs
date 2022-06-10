@@ -100,12 +100,7 @@ impl<'a> ScopeBuilder<'a> {
         self.scope_context.global_ast[global] = value;
 
         let item = ModuleItem::new(scope_id, global, span);
-        drop(self.scope.insert(
-            self.diagnostics,
-            self.source,
-            scope_id,
-            item.to_scope_item(),
-        ));
+        self.scope.insert_current(self.diagnostics, item);
         self.modules[self.source].items.push(item);
     }
 
@@ -189,7 +184,6 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_bound(&mut self, ast: Ast) -> errors::Result {
-        let source = self.ast_data.nodes[ast].span.source();
         let &[name, body] = self.ast_data.children(ast) else {
             unreachable!();
         };
@@ -233,10 +227,7 @@ impl<'a> ScopeBuilder<'a> {
 
         {
             let item = module::ModuleItem::new(scope_id, slot, name);
-            drop(
-                self.scope
-                    .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
-            );
+            self.scope.insert_current(self.diagnostics, item);
             self.modules[self.source].items.push(item);
         }
 
@@ -244,7 +235,6 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_struct(&mut self, ast: Ast) -> errors::Result {
-        let source = self.ast_data.nodes[ast].span.source();
         let &[generics, name, _body] = self.ast_data.children(ast) else {
             unreachable!();
         };
@@ -269,10 +259,7 @@ impl<'a> ScopeBuilder<'a> {
 
         {
             let item = module::ModuleItem::new(scope_id, ty, span);
-            drop(
-                self.scope
-                    .insert(self.diagnostics, source, scope_id, item.to_scope_item()),
-            );
+            self.scope.insert_current(self.diagnostics, item);
             self.modules[self.source].items.push(item);
         }
 
@@ -409,12 +396,7 @@ impl<'a> ScopeBuilder<'a> {
 
         {
             let module_item = module::ModuleItem::new(scope_id, func, current_span);
-            drop(self.scope.insert(
-                self.diagnostics,
-                current_span.source(),
-                scope_id,
-                module_item.to_scope_item(),
-            ));
+            self.scope.insert_current(self.diagnostics, module_item);
             self.modules[self.source].items.push(module_item);
         }
 
