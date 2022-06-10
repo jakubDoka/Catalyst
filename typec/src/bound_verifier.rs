@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use module_types::scope::ScopeFindError;
 
 use crate::{TyError, *};
@@ -29,16 +31,43 @@ impl BoundVerifier<'_> {
                     };
 
                     let span = self.ast_data.nodes[func].span;
-                    let func = self.scope.get_concrete::<Func>(id);
-                    let Ok(func) = func else {
-                        todo!("{func:?}");
+                    let matcher = matcher!(Ty = "type");
+                    let handler = scope_error_handler(
+                        self.diagnostics,
+                        not_found_handler(span),
+                        span,
+                        "function",
+                        matcher,
+                    );
+                    let Ok(func) = self.scope.get_concrete::<Func>(id).map_err(handler) else {
+                        continue;
                     };
 
                     let id = {
                         let func = ast::id_of(ident, self.ast_data, self.sources);
-                        let bound = self.types[bound].id;
+                        let bound_id = self.types[bound].id;
+
+                        let bound_func_id = ID::owned(bound_id, func);
+
+                        let matcher = matcher!(Ty = "type");
+                        let handler = scope_error_handler(
+                            self.diagnostics,
+                            || TyError::UnexpectedBoundFunc { bound, loc: span },
+                            span,
+                            "function",
+                            matcher,
+                        );
+                        if self
+                            .scope
+                            .get_concrete::<Func>(bound_func_id)
+                            .map_err(handler)
+                            .is_err()
+                        {
+                            continue;
+                        };
+
                         let implementor = self.types[implementor].id;
-                        ID::bound_impl_func(bound, implementor, func)
+                        ID::bound_impl_func(bound_id, implementor, func)
                     };
 
                     {

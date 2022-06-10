@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 #![feature(let_else)]
 
+pub mod error;
 pub mod state;
 
 pub use state::OwnershipSolver;
@@ -189,8 +190,12 @@ impl OwnershipSolver<'_> {
             TirKind::IntLit(..)
             | TirKind::BoolLit(..)
             | TirKind::CharLit(..)
-            | TirKind::TakePtr(..)
             | TirKind::FuncPtr(..) => self.declare(root),
+
+            TirKind::TakePtr(value) => {
+                self.ensure_not_moved(value)?;
+                self.declare(root)
+            }
 
             // already declared
             TirKind::Argument(_) => Ok(Self::base_id(root)),
@@ -229,7 +234,7 @@ impl OwnershipSolver<'_> {
                 .alloc(buffer.len(), Default::default());
             let frontier = buffer
                 .drain(..)
-                .map(|(o, _)| o)
+                .map(|access| access.ownership)
                 .zip(self.o_ctx.drops_nodes.slice_keys(drops))
                 .collect();
             self.emit_drops(frontier)?;
@@ -263,19 +268,24 @@ impl OwnershipSolver<'_> {
         };
         let level = self.o_ctx.ownerships[ownership].loop_level;
 
-        for &(accessed, _) in self
+        for &Access {
+            ownership: accessed,
+            ..
+        } in self
             .o_ctx
             .currently_accessed
             .iter_from_frame(level as usize)
         {
             let ent = &self.o_ctx.ownerships[accessed];
-            if ent.moved && ent.loop_level <= level {
+            if let Some(last_move) = ent.last_move.expand() && ent.loop_level <= level {
                 let tir = ent.tir.unwrap();
-                let span = self.tir_data.ents[tir].span;
-                todo!(
-                    "value can be moved more then once in a loop: {}",
-                    span.log(self.sources)
-                );
+                let because = self.tir_data.ents[tir].span;
+                let loc = self.tir_data.ents[last_move].span;
+                self.diagnostics.push(OwError::LoopDoubleMove {
+                    because,
+                    loc,
+                });
+                return Err(());
             }
         }
         Ok(())
@@ -358,7 +368,7 @@ impl OwnershipSolver<'_> {
                 ty = base;
             }
 
-            let drop = !self.o_ctx.ownerships[ownership].moved;
+            let drop = self.o_ctx.ownerships[ownership].last_move.is_none();
 
             match self.types[ty].kind {
                 TyKind::Struct(fields) => {
@@ -391,9 +401,8 @@ impl OwnershipSolver<'_> {
                 | TyKind::FuncPtr(..)
                 | TyKind::Int(..)
                 | TyKind::Uint(..)
-                | TyKind::Bool => (),
-
-                TyKind::Enum(..) => (), //todo!(),
+                | TyKind::Bool
+                | TyKind::Enum(..) => (),
 
                 TyKind::Instance(..) | TyKind::Unresolved => unreachable!(),
             }
@@ -414,18 +423,18 @@ impl OwnershipSolver<'_> {
 
             let ent = &mut self.o_ctx.ownerships[ownership];
             let mut ty = ent.ty;
-            if !ent.moved {
+            if ent.last_move.is_none() {
                 continue;
             }
 
             if ent.level < self.o_ctx.scope.level() as u32 {
                 let new = OwnershipEnt {
-                    moved: false,
+                    last_move: None.into(),
                     ..*ent
                 };
                 self.o_ctx.push_item(new, false);
             } else {
-                ent.moved = false;
+                ent.last_move = None.into();
             }
 
             if let TyKind::Instance(base, ..) = self.types[ty].kind {
@@ -447,37 +456,54 @@ impl OwnershipSolver<'_> {
     }
 
     fn move_out(&mut self, target: Tir) -> errors::Result {
+        self.move_out_low(target, target)
+    }
+
+    fn move_out_low(&mut self, target: Tir, hint: Tir) -> errors::Result {
+        let Some((should_move, ownership)) = self.ensure_not_moved(target)? else {
+            return Ok(());
+        };
+
+        let ent = &mut self.o_ctx.ownerships[ownership];
+        ent.last_move = (should_move).then_some(hint).into();
+        if ent.level < self.o_ctx.scope.level() as u32 {
+            self.o_ctx.push_current_access(ownership, hint);
+        }
+
+        Ok(())
+    }
+
+    fn ensure_not_moved(&mut self, target: Tir) -> errors::Result<Option<(bool, Ownership)>> {
         let id = self.traverse(target)?;
 
+        if id.is_reserved_value() {
+            return Ok(None);
+        }
+
         let Some(ownership) = self.o_ctx.scope.get(id) else {
-            return Ok(());
+            unreachable!();
         };
 
         let ent = &mut self.o_ctx.ownerships[ownership];
 
         let copy = self.types[ent.ty].flags.contains(TyFlags::COPY);
         if !copy {
-            if ent.moved {
-                let span = self.tir_data.ents[target].span;
-                todo!("moving already moved value: {}", span.log(self.sources))
+            if let Some(because) = ent.last_move.expand() {
+                let because = self.tir_data.ents[because].span;
+                let loc = self.tir_data.ents[target].span;
+                self.diagnostics.push(OwError::DoubleMove { because, loc });
+                return Err(());
             }
 
             if ent.behind_pointer {
-                let span = self.tir_data.ents[target].span;
-                todo!(
-                    "moving value behind pointer that is not copyable: {}",
-                    span.log(self.sources)
-                )
+                let loc = self.tir_data.ents[target].span;
+                self.diagnostics
+                    .push(OwError::MoveFromBehindPointer { loc });
+                return Err(());
             }
         }
-        ent.moved = !copy;
-        // println!("{copy} {ownership} {}", ty_display!(self, ent.ty));
 
-        if ent.level < self.o_ctx.scope.level() as u32 {
-            self.o_ctx.push_current_access(ownership);
-        }
-
-        Ok(())
+        Ok(Some((!copy, ownership)))
     }
 
     fn declare(&mut self, tir: Tir) -> errors::Result<ID> {

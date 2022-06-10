@@ -1,0 +1,36 @@
+use lexer::Sources;
+use ownership_types::OwError;
+
+pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt::Result {
+    use std::fmt::Write;
+    match error {
+        OwError::DoubleMove { loc, because } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "accessing already moved memory")
+            })?;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                write!(to, "because of this previous move")
+            })?;
+        }
+        OwError::MoveFromBehindPointer { loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| write!(to, "move behind a pointer"))?;
+        }
+        OwError::LoopDoubleMove { because, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                writeln!(to, "accessing already moved memory")
+            })?;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                writeln!(to, "because this value is outside of loop")
+            })?;
+        }
+    }
+    writeln!(to, "|> type does not implement 'copy' bound")?;
+    Ok(())
+}

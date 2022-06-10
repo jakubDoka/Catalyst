@@ -16,7 +16,11 @@ impl MainScopeBuilder<'_> {
                 let Some(&dep) = self.module_map.get(ID::scoped(nick.into(), source)) else {
                     continue; // recovery, module might not exist due to previous recovery
                 };
-                self.scope.insert(&mut self.diagnostics,source, ModuleItem::new(nick.into(), dep, import.nick));
+                self.scope.insert(
+                    &mut self.diagnostics,
+                    source,
+                    ModuleItem::new(nick.into(), dep, import.nick),
+                );
                 for &item in self.modules[dep].items.iter() {
                     self.scope.insert(&mut self.diagnostics, source, item);
                 }

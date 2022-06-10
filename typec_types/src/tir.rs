@@ -127,11 +127,12 @@ gen_entity!(TirList);
 bitflags! {
     #[derive(Default)]
     pub struct TirFlags: u32 {
-        const MUTABLE = 1 << 0;
+        const IMMUTABLE = 1 << 0;
         const TERMINATING = 1 << 1;
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
         const CONTINUE = 1 << 4;
+        const ASSIGNABLE = 1 << 5;
     }
 }
 

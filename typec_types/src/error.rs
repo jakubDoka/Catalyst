@@ -2,6 +2,49 @@ use crate::*;
 use lexer::*;
 
 pub enum TyError {
+    ExpectedCopyType {
+        loc: Span,
+    },
+    CallArgCountMismatch {
+        because: Result<Span, Ty>,
+        expected: usize,
+        got: usize,
+        loc: Span,
+    },
+    CallNonFunction {
+        ty: Ty,
+        loc: Span,
+    },
+    ExplicitParamOverflow {
+        because: Span,
+        expected: usize,
+        got: usize,
+        loc: Span,
+    },
+    EnumVariantNotFound {
+        ty: Ty,
+        loc: Span,
+    },
+    FieldNotFound {
+        ty: Ty,
+        loc: Span,
+    },
+    ScopeItemNotFound {
+        loc: Span,
+    },
+    ScopeCollision {
+        items: Vec<Span>,
+        loc: Span,
+    },
+    InvalidItemType {
+        expected: String,
+        got: String,
+        loc: Span,
+    },
+    UnexpectedBoundFunc {
+        bound: Ty,
+        loc: Span,
+    },
     UnregisteredFieldIndex {
         index: usize,
         max: usize,

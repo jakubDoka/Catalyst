@@ -9,6 +9,7 @@ pub enum ScopeFindError {
     NotFound,
     InvalidType(TypeId),
     Collision(Vec<Span>),
+    Other,
 }
 
 pub struct Scope {
@@ -108,11 +109,7 @@ impl Scope {
         });
     }
 
-    pub fn insert_current(
-        &mut self,
-        diagnostics: &mut errors::Diagnostics,
-        item: ModuleItem,
-    ) {
+    pub fn insert_current(&mut self, diagnostics: &mut errors::Diagnostics, item: ModuleItem) {
         self.insert(diagnostics, item.span.source(), item)
     }
 

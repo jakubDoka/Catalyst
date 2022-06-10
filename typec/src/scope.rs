@@ -383,7 +383,7 @@ impl<'a> ScopeBuilder<'a> {
 
             self.scope_context.func_ast[func] = ast;
         }
-        
+
         self.insert_to_scope(scope_id, func, current_span);
 
         Ok(func)
@@ -491,7 +491,7 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn insert_to_scope(&mut self, id: ID, slot: impl EntityRef + 'static, span: Span) {
-        let item = module::ModuleItem::new(id, slot, span);
+        let item = ModuleItem::new(id, slot, span);
         self.scope.insert_current(self.diagnostics, item);
         self.modules[self.source].items.push(item);
     }

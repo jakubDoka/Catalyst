@@ -82,12 +82,13 @@ fn ownership_test() {
         if true {
             loop {
                 {a}
-                a = se()
+                //a = se()
                 break'a
             }
         }
         //break'a
     }
+    let b = ^a
     let a = move_in_and_out(a)
     
     let res = loop'a {

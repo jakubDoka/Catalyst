@@ -40,6 +40,8 @@ impl MainTirBuilder<'_> {
                 continue;
             }
 
+            logger!(self).log();
+
             if ownership_solver!(self).solve(func).is_err() {
                 continue;
             }

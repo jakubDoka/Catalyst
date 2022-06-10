@@ -20,6 +20,10 @@ impl Logger<'_> {
             })
         });
 
+        self.diagnostics.iter::<OwError>().map(|errs| {
+            errs.for_each(|err| ownership::error::display(err, &self.sources, &mut errors).unwrap())
+        });
+
         self.diagnostics.iter::<TyError>().map(|errs| {
             errs.for_each(|err| {
                 typec::error::display(

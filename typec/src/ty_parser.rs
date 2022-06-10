@@ -63,7 +63,7 @@ impl TyParser<'_> {
                                 self.instantiate(field.ty, &params);
                             }
                         }
-                        kind => todo!("{kind:?}"),
+                        kind => unimplemented!("{kind:?}"),
                     }
                 }
 
@@ -142,10 +142,15 @@ impl TyParser<'_> {
             return Ok(Ty::reserved_value());
         }
 
-        match self.scope.get_concrete::<Ty>(str) {
-            Ok(ty) => Ok(ty),
-            Err(err) => todo!("{err:?}"),
-        }
+        let matcher = matcher!(Func = "function");
+        let handler = scope_error_handler(
+            self.diagnostics,
+            not_found_handler(span),
+            span,
+            "type",
+            matcher,
+        );
+        self.scope.get_concrete::<Ty>(str).map_err(handler)
     }
 
     fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {

@@ -432,6 +432,7 @@ dependencies = [
 name = "ownership_types"
 version = "0.1.0"
 dependencies = [
+ "lexer",
  "storage",
  "typec_types",
 ]

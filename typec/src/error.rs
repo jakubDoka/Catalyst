@@ -533,6 +533,141 @@ pub fn display(
             })?;
             writeln!(to, "|> The type of second argument in binary expression is determined by the first one.")?;
         }
+
+        TyError::ScopeCollision { items, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "Multiple external items with same name exist.")
+            })?;
+            writeln!(to, "|> try using the module specifier:")?;
+            for &item in items {
+                writeln!(
+                    to,
+                    "|\t{}::{}",
+                    sources.display(item),
+                    sources.display(*loc)
+                )?;
+            }
+        }
+        TyError::InvalidItemType { expected, got, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "expected {} but got {}",
+                    expected.split_whitespace().collect::<Vec<_>>().join(" or "),
+                    got,
+                )
+            })?;
+        }
+        TyError::UnexpectedBoundFunc {
+            bound: because,
+            loc,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "function is not required by th bound")
+            })?;
+
+            let because = types[*because].name;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                write!(to, "because this function is required by the bound")
+            })?;
+        }
+        TyError::ScopeItemNotFound { loc: span } => {
+            span.loc_to(sources, to)?;
+            span.underline_error(sources, to, &|to| {
+                write!(to, "item not found (TODO: add some helpful message)")
+            })?;
+        }
+        TyError::FieldNotFound { ty, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| write!(to, "field not found"))?;
+
+            writeln!(to, "|> available fields:")?;
+            let TyKind::Struct(fields) = types[*ty].kind else {
+                unreachable!();
+            };
+
+            for field in ty_comps.get(fields) {
+                writeln!(to, "|\t{}", sources.display(field.name))?;
+            }
+        }
+        TyError::EnumVariantNotFound { ty, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| write!(to, "enum variant not found"))?;
+
+            writeln!(to, "|> available variants:")?;
+            let TyKind::Enum(.., variants) = types[*ty].kind else {
+                unreachable!();
+            };
+
+            for variant in ty_comps.get(variants) {
+                writeln!(to, "|\t{}", sources.display(variant.name))?;
+            }
+        }
+        TyError::ExplicitParamOverflow {
+            because,
+            expected,
+            got,
+            loc,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "expected at most {} generic parameters but got {}",
+                    expected, got
+                )
+            })?;
+
+            because.underline_error(sources, to, &|to| write!(to, "limited by this definition"))?;
+        }
+        &TyError::CallNonFunction { ty, loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(
+                    to,
+                    "tried to call '{}', which is not a function pointer",
+                    ty_display!(state, ty)
+                )
+            })?;
+        }
+        &TyError::CallArgCountMismatch {
+            expected,
+            got,
+            loc,
+            because,
+        } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "expected {} arguments but got {}", expected, got)
+            })?;
+
+            match because {
+                Ok(because) => {
+                    because.underline_error(sources, to, &|to| {
+                        write!(to, "demanded by this definition")
+                    })?;
+                }
+                Err(because) => {
+                    writeln!(
+                        to,
+                        "|> because type of called expression is '{}'",
+                        ty_display!(state, because)
+                    )?;
+                }
+            }
+        }
+        TyError::ExpectedCopyType { loc } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "expected filed to have a copy type")
+            })?;
+            writeln!(to, "|> owner of the field explicitly implements copy, that means all fields has to also be copy")?;
+        }
     }
 
     writeln!(to)?;

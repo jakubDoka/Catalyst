@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 storage = { path = "../storage" }
 typec_types = { path = "../typec_types" }
+lexer = { path = "../lexer" }

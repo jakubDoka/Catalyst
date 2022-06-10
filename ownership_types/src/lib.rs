@@ -1,5 +1,9 @@
+pub mod error;
+
+pub use error::OwError;
+
 use storage::*;
-use typec_types::{Tir, Ty};
+use typec_types::*;
 
 pub struct OwnershipContext {
     pub scope: OwnershipScope,
@@ -7,7 +11,7 @@ pub struct OwnershipContext {
     pub drops: SecondaryMap<Tir, DropNodeList>,
     pub drops_nodes: StackMap<DropNodeList, DropNodeEnt, DropNode>,
     pub seen: SecondaryMap<Tir, ID>,
-    pub currently_accessed: FramedStack<(Ownership, u32)>,
+    pub currently_accessed: FramedStack<Access>,
     pub branch_ids: Vec<u32>,
 }
 
@@ -24,9 +28,12 @@ impl OwnershipContext {
         }
     }
 
-    pub fn push_current_access(&mut self, ownership: Ownership) {
-        self.currently_accessed
-            .push((ownership, self.branch_ids.last().unwrap_or(&0).clone()));
+    pub fn push_current_access(&mut self, ownership: Ownership, tir: Tir) {
+        self.currently_accessed.push(Access {
+            ownership,
+            branch_id: self.branch_ids.last().unwrap_or(&0).clone(),
+            tir,
+        });
     }
 
     pub fn mark_current_access_frame(&mut self) {
@@ -76,7 +83,15 @@ impl OwnershipContext {
 }
 
 #[derive(Default, Clone, Copy, Debug)]
+pub struct Access {
+    pub ownership: Ownership,
+    pub branch_id: u32,
+    pub tir: Tir,
+}
+
+#[derive(Default, Clone, Copy, Debug)]
 pub struct DropNodeEnt {
+    // pub tir: PackedOption<Tir>,
     pub drop: bool,
     pub children: DropNodeList,
 }
@@ -149,7 +164,7 @@ impl OwnershipScope {
         } in self.items.top_frame()
         {
             if let Some(shadow) = shadow {
-                ownerships[shadow].moved = ownerships[ownership].moved;
+                ownerships[shadow].last_move = ownerships[ownership].last_move;
                 self.map.insert(id, shadow);
             } else {
                 self.map.remove(id);
@@ -175,7 +190,7 @@ struct Item {
 pub struct OwnershipEnt {
     pub tir: PackedOption<Tir>,
     pub ty: Ty,
-    pub moved: bool,
+    pub last_move: PackedOption<Tir>,
     pub behind_pointer: bool,
     pub level: u32,
     pub loop_level: u32,

@@ -1000,7 +1000,7 @@ impl<'a> Parser<'a> {
         self.expect_many(&[TokenKind::RightParen, TokenKind::Comma]);
 
         if self.current.kind() == TokenKind::Comma {
-            todo!("tuples are not yet supported");
+            unimplemented!("tuples are not yet supported");
         } else {
             self.advance();
         }

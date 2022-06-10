@@ -121,13 +121,13 @@ impl TyBuilder<'_> {
                 continue;
             };
 
+            let span = self.ast_data.nodes[name].span;
             if copy && !self.types[field_ty].flags.contains(TyFlags::COPY) {
-                todo!("{}", self.ast_data.nodes[name].span.log(self.sources));
+                self.diagnostics
+                    .push(TyError::ExpectedCopyType { loc: span });
             }
 
             self.ty_graph.add_edge(self.ty, field_ty);
-
-            let span = self.ast_data.nodes[name].span;
 
             let id = {
                 let name = self.sources.id_of(span);

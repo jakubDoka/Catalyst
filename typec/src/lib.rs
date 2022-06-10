@@ -17,7 +17,7 @@ pub mod tir;
 pub mod ty;
 pub mod ty_parser;
 
-use std::str::FromStr;
+use std::{any::TypeId, str::FromStr};
 
 use cranelift_codegen::isa::CallConv;
 pub use scope::ScopeContext;
@@ -28,7 +28,7 @@ pub use state::{
 use ast::*;
 use errors::*;
 use lexer::*;
-use module_types::*;
+use module_types::{scope::ScopeFindError, *};
 use storage::*;
 use typec_types::{TyError, *};
 
@@ -368,4 +368,46 @@ pub fn parse_call_conv(
                 .ok()
         }
     }
+}
+
+pub fn scope_error_handler<'a>(
+    diagnostics: &'a mut Diagnostics,
+    not_found: impl Fn() -> TyError + 'a,
+    loc: Span,
+    expected: &'a str,
+    matcher: &'a [(TypeId, &str)],
+) -> impl FnMut(ScopeFindError) + 'a {
+    move |e| {
+        let err = match e {
+            ScopeFindError::NotFound => not_found(),
+            ScopeFindError::InvalidType(got) => TyError::InvalidItemType {
+                expected: expected.into(),
+                got: matcher
+                    .iter()
+                    .find_map(|&(id, name)| (id == got).then_some(name))
+                    .unwrap_or("something unhandled")
+                    .into(),
+                loc,
+            },
+            ScopeFindError::Collision(items) => TyError::ScopeCollision { items, loc },
+            ScopeFindError::Other => return,
+        };
+        diagnostics.push(err);
+    }
+}
+
+pub fn not_found_handler(span: Span) -> impl Fn() -> TyError {
+    move || TyError::ScopeItemNotFound { loc: span }
+}
+
+#[macro_export]
+macro_rules! matcher {
+    ($($name:ident = $str:literal),*) => {
+        &[$(
+           (TypeId::of::<$name>(), $str),
+        )*]
+    };
+    () => {
+
+    };
 }

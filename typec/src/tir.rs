@@ -405,7 +405,7 @@ impl TirBuilder<'_> {
                 let ent = TirEnt::new(kind, ty, span);
                 self.tir_data.ents.push(ent)
             } else {
-                todo!();
+                unimplemented!();
             };
 
             base = {
@@ -472,9 +472,16 @@ impl TirBuilder<'_> {
                         let ty = self.types.base_of(ty);
                         let id = ID::owned(self.types[ty].id, self.sources.id_of(span));
 
-                        let field = self.scope.get_concrete::<TyComp>(id);
-                        let Ok(field_id) = field else {
-                            todo!("{field:?}");
+                        let matcher = matcher!(Func = "function");
+                        let handler = scope_error_handler(
+                            self.diagnostics,
+                            || TyError::FieldNotFound { ty, loc: span },
+                            span,
+                            "field",
+                            matcher,
+                        );
+                        let Ok(field_id) = self.scope.get_concrete::<TyComp>(id).map_err(handler) else {
+                            continue;
                         };
 
                         let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
@@ -599,10 +606,18 @@ impl TirBuilder<'_> {
         } = self.types[expr_ty]
         {
             let id = ID::owned(enum_id, id);
-            let variant = self.scope.get_concrete::<TyComp>(id);
-            let Ok(variant) = variant else {
-                todo!("{variant:?}");
-            };
+            let matcher = matcher!(Func = "function");
+            let handler = scope_error_handler(
+                self.diagnostics,
+                || TyError::EnumVariantNotFound {
+                    ty: expr_ty,
+                    loc: span,
+                },
+                span,
+                "enum-variant",
+                matcher,
+            );
+            let variant = self.scope.get_concrete::<TyComp>(id).map_err(handler)?;
             let TyCompEnt {
                 ty: variant, index, ..
             } = self.ty_comps[variant];
@@ -714,10 +729,15 @@ impl TirBuilder<'_> {
                 ID::unary(ty, op)
             };
 
-            match self.scope.get_concrete::<Func>(id) {
-                Ok(func) => func,
-                Err(err) => todo!("{err:?}"),
-            }
+            let matcher = matcher!();
+            let handler = scope_error_handler(
+                self.diagnostics,
+                not_found_handler(span),
+                span,
+                "operator",
+                matcher,
+            );
+            self.scope.get_concrete::<Func>(id).map_err(handler)?
         };
 
         let result = {
@@ -847,7 +867,8 @@ impl TirBuilder<'_> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
         let args = self.ty_lists.get(args).to_vec();
-        let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args)?;
+        let origin = self.funcs[func.meta()].name;
+        let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args, Ok(origin))?;
 
         let (params, ty) = if generic {
             self.instantiate_call(caller, func, instantiation, &tir_args, span)?
@@ -887,6 +908,7 @@ impl TirBuilder<'_> {
         let FuncMeta {
             params,
             sig: Sig { args, ret, .. },
+            name,
             ..
         } = self.funcs[func.meta()];
         let params = self.ty_lists.get(params);
@@ -897,7 +919,13 @@ impl TirBuilder<'_> {
 
         if let Some(instantiation) = instantiation {
             if params.len() > self.ast_data.children(instantiation).len() - 1 {
-                todo!();
+                self.diagnostics.push(TyError::ExplicitParamOverflow {
+                    because: name,
+                    expected: params.len(),
+                    got: self.ast_data.children(instantiation).len() - 1,
+                    loc: self.ast_data.nodes[instantiation].span,
+                });
+                return Err(());
             } else {
                 for (i, &param) in self.ast_data.children(instantiation)[1..]
                     .iter()
@@ -951,12 +979,16 @@ impl TirBuilder<'_> {
         let TirEnt { ty, .. } = self.tir_data.ents[value];
 
         let TyKind::FuncPtr(Sig { args, ret: ty, .. }) = self.types[ty].kind else {
-            todo!("{:?}", self.types[ty].kind);
+            self.diagnostics.push(TyError::CallNonFunction {
+                ty,
+                loc: span,
+            });
+            return Err(());
         };
 
         let arg_tys = self.ty_lists.get(args).to_vec();
 
-        let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys)?;
+        let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys, Err(ty))?;
 
         tir_args
             .iter()
@@ -997,24 +1029,33 @@ impl TirBuilder<'_> {
 
             let id = ident_hasher!(self).ident_id(rhs, Some((ty, span)))?;
 
-            let field_or_method = self.scope.get(id);
-            let Ok(field_or_method) = field_or_method else {
-                todo!("{field_or_method:?} {}", span.log(self.sources));
-            };
-
-            if let Some(field) = field_or_method.pointer.may_read::<TyComp>() {
-                let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field].ty);
-                let field = {
-                    let kind = TirKind::FieldAccess(obj, field);
-                    let ent = TirEnt::new(kind, field_ty, span);
-                    self.tir_data.ents.push(ent)
-                };
-                self.indirect_call(field, ast, span)
-            } else if let Some(method) = field_or_method.pointer.may_read::<Func>() {
-                self.direct_call(method, ast, Some(ty), Some(obj), instantiation, span)
-            } else {
-                todo!("{field_or_method:?}");
-            }
+            let matcher = matcher!();
+            self.scope
+                .get(id)
+                .and_then(|field_or_method| {
+                    if let Some(field) = field_or_method.pointer.may_read::<TyComp>() {
+                        let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field].ty);
+                        let field = {
+                            let kind = TirKind::FieldAccess(obj, field);
+                            let ent = TirEnt::new(kind, field_ty, span);
+                            self.tir_data.ents.push(ent)
+                        };
+                        self.indirect_call(field, ast, span)
+                            .map_err(|_| ScopeFindError::Other)
+                    } else if let Some(method) = field_or_method.pointer.may_read::<Func>() {
+                        self.direct_call(method, ast, Some(ty), Some(obj), instantiation, span)
+                            .map_err(|_| ScopeFindError::Other)
+                    } else {
+                        Err(ScopeFindError::InvalidType(field_or_method.pointer.id))
+                    }
+                })
+                .map_err(scope_error_handler(
+                    self.diagnostics,
+                    not_found_handler(span),
+                    span,
+                    "field method",
+                    matcher,
+                ))
         } else {
             let (caller, instantiation) =
                 if self.ast_data.nodes[caller].kind == AstKind::Instantiation {
@@ -1046,6 +1087,7 @@ impl TirBuilder<'_> {
         ast: Ast,
         obj: &mut Option<Tir>,
         arg_tys: &[Ty],
+        origin: std::result::Result<Span, Ty>,
     ) -> errors::Result<(TirFlags, Vec<Tir>)> {
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
             *obj = self.ptr_correct(*obj, expected);
@@ -1068,7 +1110,13 @@ impl TirBuilder<'_> {
         }
 
         if arg_tys.len() != vec.len() {
-            todo!();
+            self.diagnostics.push(TyError::CallArgCountMismatch {
+                because: origin,
+                expected: arg_tys.len(),
+                got: vec.len(),
+                loc: self.ast_data.nodes[ast].span,
+            });
+            return Err(());
         }
 
         Ok((terminal_flags, vec))
@@ -1095,7 +1143,7 @@ impl TirBuilder<'_> {
 
     fn is_mutable(&self, target: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.tir_data.ents[target];
-        self.types[ty].flags.contains(TyFlags::MUTABLE) || flags.contains(TirFlags::MUTABLE)
+        self.types[ty].flags.contains(TyFlags::MUTABLE) || !flags.contains(TirFlags::IMMUTABLE)
     }
 
     fn take_ptr(&mut self, target: Tir, mutable: bool) -> Tir {
@@ -1112,7 +1160,7 @@ impl TirBuilder<'_> {
         } = &mut self.tir_data.ents[target];
         let (span, ty) = (*span, *ty);
 
-        if !flags.contains(TirFlags::MUTABLE) && mutable {
+        if flags.contains(TirFlags::IMMUTABLE) && mutable {
             todo!();
         }
 
@@ -1139,7 +1187,8 @@ impl TirBuilder<'_> {
         let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);
         let assignable = self.types[ty].flags.contains(TyFlags::MUTABLE);
-        let deref = TirEnt::with_flags(kind, deref_ty, TirFlags::MUTABLE & assignable, span);
+        let flags = (TirFlags::IMMUTABLE & !assignable) | (TirFlags::ASSIGNABLE & assignable);
+        let deref = TirEnt::with_flags(kind, deref_ty, flags, span);
         self.tir_data.ents.push(deref)
     }
 
@@ -1160,12 +1209,19 @@ impl TirBuilder<'_> {
         let (field_id, field_ty) = {
             let id = self.sources.id_of(span);
             let caller_ty = self.types.caller_of(base_ty);
-            let field = self
+            let field_id = ID::owned(self.types[caller_ty].id, id);
+            let matcher = matcher!(Func = "method");
+            let handler = scope_error_handler(
+                self.diagnostics,
+                || TyError::FieldNotFound { ty, loc: span },
+                span,
+                "field",
+                matcher,
+            );
+            let field_id = self
                 .scope
-                .get_concrete::<TyComp>(ID::owned(self.types[caller_ty].id, id));
-            let Ok(field_id) = field else {
-                todo!("{field:?} {}", span.log(self.sources));
-            };
+                .get_concrete::<TyComp>(field_id)
+                .map_err(handler)?;
             let field_ty = ty_parser!(self).subtype(base_ty, self.ty_comps[field_id].ty);
             self.scope_context.use_type(field_ty, self.types);
             (field_id, field_ty)
@@ -1176,7 +1232,8 @@ impl TirBuilder<'_> {
         }
 
         let result = {
-            let flags = TirFlags::MUTABLE & self.is_mutable(header);
+            let mutable = self.is_mutable(header);
+            let flags = (TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable);
             let kind = TirKind::FieldAccess(header, field_id);
             let ent = TirEnt::with_flags(kind, field_ty, flags, span);
             self.tir_data.ents.push(ent)
@@ -1206,10 +1263,18 @@ impl TirBuilder<'_> {
         // let span = self.ast_data.nodes[name].span;
         let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
         if let Some((enum_ty, span)) = owner {
-            let variant = self.scope.get_concrete::<TyComp>(id);
-            let Ok(variant) = variant else {
-                todo!("{variant:?}");
-            };
+            let matcher = matcher!(Func = "method");
+            let handler = scope_error_handler(
+                self.diagnostics,
+                || TyError::EnumVariantNotFound {
+                    ty: enum_ty,
+                    loc: span,
+                },
+                span,
+                "enum-variant",
+                matcher,
+            );
+            let variant = self.scope.get_concrete::<TyComp>(id).map_err(handler)?;
             let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
             let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
                 unreachable!();
@@ -1224,10 +1289,20 @@ impl TirBuilder<'_> {
 
             Ok(self.tir_data.ents.push(ent))
         } else {
-            let ty = self.scope.get_concrete::<Ty>(id);
-            let Ok(ty) = ty else {
-                todo!("{ty:?}");
-            };
+            let span = self.ast_data.nodes[name].span;
+            let matcher = matcher!(
+                Func = "function",
+                Global = "global-value",
+                Tir = "local-value"
+            );
+            let handler = scope_error_handler(
+                self.diagnostics,
+                not_found_handler(span),
+                span,
+                "constructor",
+                matcher,
+            );
+            let ty = self.scope.get_concrete::<Ty>(id).map_err(handler)?;
             self.constructor_low(ty, body)
         }
     }
@@ -1257,13 +1332,19 @@ impl TirBuilder<'_> {
 
                 let span = self.ast_data.nodes[name].span;
                 let id = self.sources.id_of(span);
-
-                let field = self
+                let field_id = ID::owned(self.types[ty].id, id);
+                let matcher = matcher!(Func = "method");
+                let handler = scope_error_handler(
+                    self.diagnostics,
+                    || TyError::FieldNotFound { ty, loc: span },
+                    span,
+                    "field",
+                    matcher,
+                );
+                let field_id = self
                     .scope
-                    .get_concrete::<TyComp>(ID::owned(self.types[ty].id, id));
-                let Ok(field_id) = field else {
-                    todo!("{field:?}");
-                };
+                    .get_concrete::<TyComp>(field_id)
+                    .map_err(handler)?;
                 let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
                 (expr, (field_id, field_ty))
             } else {
@@ -1392,7 +1473,7 @@ impl TirBuilder<'_> {
 
         self.tir_data.ents[value]
             .flags
-            .insert(TirFlags::MUTABLE & mutable);
+            .insert((TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable));
 
         let result = {
             let kind = TirKind::Variable(value);
@@ -1543,42 +1624,48 @@ impl TirBuilder<'_> {
     }
 
     fn symbol_low(&mut self, id: ID, span: Span, func_ptr_ty: bool) -> errors::Result<TirEnt> {
-        let value = self.scope.get(id);
-        let Ok(value) = value else {
-            todo!("{value:?}");
-        };
+        let matcher = matcher!(Ty = "type");
+        self.scope
+            .get(id)
+            .and_then(|value| {
+                if let Some(var) = value.pointer.may_read::<Tir>() {
+                    let (var, local) = match self.tir_data.ents[var].kind {
+                        TirKind::Variable(local) => (Some(var), local),
+                        TirKind::Argument(_) => (None, var),
+                        kind => unimplemented!("{:?}", kind),
+                    };
 
-        let ent = if let Some(var) = value.pointer.may_read::<Tir>() {
-            let (var, local) = match self.tir_data.ents[var].kind {
-                TirKind::Variable(local) => (Some(var), local),
-                TirKind::Argument(_) => (None, var),
-                kind => unimplemented!("{:?}", kind),
-            };
-
-            let mut copy = self.tir_data.ents[local];
-            copy.kind = TirKind::Access(local, var.into());
-            copy.span = span;
-            copy
-        } else if let Some(global) = value.pointer.may_read::<Global>() {
-            let kind = TirKind::GlobalAccess(global);
-            let GlobalEnt { ty, mutable, .. } = self.globals[global];
-            TirEnt::with_flags(kind, ty, TirFlags::MUTABLE & mutable, span)
-        } else if let Some(func) = value.pointer.may_read::<Func>() {
-            let kind = TirKind::FuncPtr(func);
-            let ty = if func_ptr_ty {
-                let sig = self.funcs[func.meta()].sig;
-                let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
-                ty_parser!(self).func_pointer_of(sig, generic)
-            } else {
-                self.builtin_types.nothing
-            };
-            self.scope_context.use_type(ty, self.types);
-            TirEnt::new(kind, ty, span)
-        } else {
-            todo!("emit error");
-        };
-
-        Ok(ent)
+                    let mut copy = self.tir_data.ents[local];
+                    copy.kind = TirKind::Access(local, var.into());
+                    copy.span = span;
+                    Ok(copy)
+                } else if let Some(global) = value.pointer.may_read::<Global>() {
+                    let kind = TirKind::GlobalAccess(global);
+                    let GlobalEnt { ty, mutable, .. } = self.globals[global];
+                    let flags = (TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable);
+                    Ok(TirEnt::with_flags(kind, ty, flags, span))
+                } else if let Some(func) = value.pointer.may_read::<Func>() {
+                    let kind = TirKind::FuncPtr(func);
+                    let ty = if func_ptr_ty {
+                        let sig = self.funcs[func.meta()].sig;
+                        let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
+                        ty_parser!(self).func_pointer_of(sig, generic)
+                    } else {
+                        self.builtin_types.nothing
+                    };
+                    self.scope_context.use_type(ty, self.types);
+                    Ok(TirEnt::new(kind, ty, span))
+                } else {
+                    Err(ScopeFindError::InvalidType(value.pointer.id))
+                }
+            })
+            .map_err(scope_error_handler(
+                self.diagnostics,
+                not_found_handler(span),
+                span,
+                "local-value global-value function-pointer",
+                matcher,
+            ))
     }
 
     fn binary(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -1619,10 +1706,15 @@ impl TirBuilder<'_> {
             ID::binary(left_id, op_id)
         };
 
-        let func = self.scope.get_concrete::<Func>(id);
-        let Ok(func) = func else {
-            todo!("{func:?} {}", op_span.log(self.sources))
-        };
+        let matcher = matcher!(Ty = "type", Global = "global-value");
+        let handler = scope_error_handler(
+            self.diagnostics,
+            not_found_handler(op_span),
+            op_span,
+            "operator",
+            matcher,
+        );
+        let func = self.scope.get_concrete::<Func>(id).map_err(handler)?;
 
         /* sanity check */
         {
@@ -1677,7 +1769,7 @@ impl TirBuilder<'_> {
             kind,
         } = self.tir_data.ents[left];
 
-        if !flags.contains(TirFlags::MUTABLE) {
+        if !flags.contains(TirFlags::ASSIGNABLE) {
             let because = if let TirKind::Access(here, ..) = kind {
                 Some(self.tir_data.ents[here].span)
             } else {
