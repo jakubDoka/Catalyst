@@ -1,6 +1,5 @@
-use ownership::*;
-
 use crate::*;
+use ownership::*;
 
 impl MainTirBuilder<'_> {
     /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
@@ -35,18 +34,16 @@ impl MainTirBuilder<'_> {
             // if self.incr.functions.get(id).is_some() {
             //     continue;
             // }
-            
-            
+
             self.tir_data.clear();
             if tir_builder!(self).func(func).is_err() {
                 continue;
-            };
-            
-            logger!(self).log();
-            
+            }
+
             if ownership_solver!(self).solve(func).is_err() {
                 continue;
-            };
+            }
+
             // println!("{}", self.sources.display(self.funcs[func.meta()].name));
             // println!("{}", TirDisplay::new(
             //     &self.types,

@@ -1,60 +1,56 @@
 //! This file is generated, do not edit!
-use typec_types::*;
-use ownership_types::*;
+use errors::*;
 use lexer::*;
+use ownership_types::*;
+use typec_types::*;
 
 pub struct OwnershipSolver<'a> {
-	pub o_ctx: &'a mut OwnershipContext,
-	pub tir_data: &'a mut TirData,
-	pub ty_lists: &'a TyLists,
-	pub funcs: &'a Funcs,
-	pub sources: &'a Sources,
-	pub bound_impls: &'a BoundImpls,
-	pub builtin_types: &'a BuiltinTypes,
-	pub ty_comps: &'a TyComps,
-	pub types: &'a Types,
+    pub o_ctx: &'a mut OwnershipContext,
+    pub diagnostics: &'a mut Diagnostics,
+    pub tir_data: &'a TirData,
+    pub funcs: &'a Funcs,
+    pub types: &'a Types,
+    pub ty_comps: &'a TyComps,
+    pub ty_lists: &'a TyLists,
+    pub sources: &'a Sources,
 }
 
 impl<'a> OwnershipSolver<'a> {
-	pub fn new(
-		o_ctx: &'a mut OwnershipContext,
-		tir_data: &'a mut TirData,
-		ty_lists: &'a TyLists,
-		funcs: &'a Funcs,
-		sources: &'a Sources,
-		bound_impls: &'a BoundImpls,
-		builtin_types: &'a BuiltinTypes,
-		ty_comps: &'a TyComps,
-		types: &'a Types,
-	) -> Self {
-		Self {
-			o_ctx,
-			tir_data,
-			ty_lists,
-			funcs,
-			sources,
-			bound_impls,
-			builtin_types,
-			ty_comps,
-			types,
-		}
-	}
+    pub fn new(
+        o_ctx: &'a mut OwnershipContext,
+        diagnostics: &'a mut Diagnostics,
+        tir_data: &'a TirData,
+        funcs: &'a Funcs,
+        types: &'a Types,
+        ty_comps: &'a TyComps,
+        ty_lists: &'a TyLists,
+        sources: &'a Sources,
+    ) -> Self {
+        Self {
+            o_ctx,
+            diagnostics,
+            tir_data,
+            funcs,
+            types,
+            ty_comps,
+            ty_lists,
+            sources,
+        }
+    }
 }
 
 #[macro_export]
 macro_rules! ownership_solver {
-	($self:expr) => {
-		OwnershipSolver::new(
-			&mut $self.o_ctx,
-			&mut $self.tir_data,
-			&$self.ty_lists,
-			&$self.funcs,
-			&$self.sources,
-			&$self.bound_impls,
-			&$self.builtin_types,
-			&$self.ty_comps,
-			&$self.types,
-		)
-	};
+    ($self:expr) => {
+        OwnershipSolver::new(
+            &mut $self.o_ctx,
+            &mut $self.diagnostics,
+            &$self.tir_data,
+            &$self.funcs,
+            &$self.types,
+            &$self.ty_comps,
+            &$self.ty_lists,
+            &$self.sources,
+        )
+    };
 }
-

@@ -1,290 +1,507 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
+#![feature(let_else)]
 
 pub mod state;
 
-use ownership_types::Validity;
 pub use state::OwnershipSolver;
 
+use ownership_types::*;
 use storage::*;
 use typec_types::*;
 
 impl OwnershipSolver<'_> {
     pub fn solve(&mut self, func: Func) -> errors::Result {
-        self.o_ctx.clear();
-
         let FuncMeta { body, args, .. } = self.funcs[func.meta()];
 
         if body.is_reserved_value() {
             return Ok(());
         }
-        
-        // TODO: eliminate `to_vec` 
-        for arg in self.tir_data.cons.get(args).to_vec() {
-            self.spawn(arg)?;
+
+        self.o_ctx.clear();
+
+        for &arg in self.tir_data.cons.get(args) {
+            self.declare(arg)?;
         }
 
-        self.solve_low(body)
+        self.traverse(body)?;
+
+        self.emit_stack_drops(body)?;
+
+        Ok(())
     }
 
-    pub fn solve_low(&mut self, root: Tir) -> errors::Result {
-        match self.tir_data.ents[root].kind {
-            TirKind::Match(value, branching) => {
-                self.solve_low(value)?;
-                self.solve_low(branching)?;
-                self.spawn(root)?;
-                Ok(())
-            }
-            TirKind::MatchBlock(block) => self.solve_low(block), // TODO
-            
-            TirKind::Loop(block) => {
-                self.o_ctx.start_loop();
-                self.solve_low(block)?;
-                self.spawn(root)?;
-                self.o_ctx.end_loop();
-                Ok(())
-            },
+    fn traverse(&mut self, tir: Tir) -> errors::Result<ID> {
+        self.traverse_low(tir, true)
+    }
 
-            TirKind::Assign(to, value, ..) => {
-                self.solve_low(value)?;
-                let mut drops = vec![];
-                self.move_in(to, &mut drops)?;
-                
-                let drops = self.tir_data.cons.push(&drops);
-                self.tir_data.ents[root].kind = TirKind::Assign(to, value, drops);
-                
-                self.move_out(value)?;
-                
-                Ok(())
-            }
+    fn traverse_low(&mut self, tir: Tir, create_scope: bool) -> errors::Result<ID> {
+        let id = self.o_ctx.seen[tir];
+        if id.is_reserved_value() {
+            let id = self.traverse_unchecked(tir, create_scope)?;
+            self.o_ctx.seen[tir] = id;
+            Ok(id)
+        } else {
+            Ok(id)
+        }
+    }
+
+    fn traverse_unchecked(&mut self, root: Tir, create_scope: bool) -> errors::Result<ID> {
+        let TirEnt { kind, .. } = self.tir_data.ents[root];
+
+        match kind {
+            // TODO control flow
+            TirKind::Match(..) | TirKind::MatchBlock(..) => self.declare(root),
 
             TirKind::If(cond, then, otherwise) => {
-                self.solve_low(cond)?;
-
-                self.o_ctx.start_branch(&[otherwise]);
-                self.solve_low(then)?;
-                self.o_ctx.end_branch();
-                
-                self.o_ctx.start_branch(&[then]);
-                self.solve_low(otherwise)?;
-                self.o_ctx.end_branch();
-
-                self.o_ctx.pop_branches([then, otherwise].len());
-
-                self.spawn(root)?;
-
-                Ok(())
+                self.move_out(cond)?;
+                self.create_branches(&[then, otherwise])?;
+                self.declare(root)
             }
 
-            TirKind::Break(_, value, ..) | TirKind::Return(value, ..) if value.is_some() => {
-                self.solve_low(value.unwrap())?;
-                self.move_out(value.unwrap())?;
-                Ok(())
-            }
+            TirKind::Loop(block) => {
+                let id = self.declare(root)?;
+                self.o_ctx.seen[root] = id;
+                self.o_ctx.mark_frame();
+                self.o_ctx.currently_accessed.mark_frame();
+                self.traverse_low(block, false)?;
 
-            TirKind::Variable(value) => {
-                self.solve_low(value)?;
-                self.move_out(value)?;
-                self.spawn(root)?;
-                Ok(())
-            }
+                self.o_ctx.pop_frame();
 
-            TirKind::Block(args, ..) => {
-                self.o_ctx.start_scope(root);
-                // TODO: eliminate `to_vec`
-                
-                if let Some((&last, others)) = self.tir_data.cons.get(args).to_vec().split_last() {
-                    for &arg in others {
-                        self.solve_low(arg)?;
-                    }
-
-                    self.solve_low(last)?;
-                    if self.tir_data.ents[last].ty == self.tir_data.ents[root].ty
-                        && self.tir_data.ents[last].ty != self.builtin_types.nothing {
-                        self.move_out(last)?;
-                    }
-                }
-                
+                if !self.tir_data.ents[block]
+                    .flags
+                    .contains(TirFlags::TERMINATING)
                 {
-                    let mut drops = vec![];
-                    // TODO: eliminate `to_vec`
-                    for drop in self.o_ctx.to_drop.top_frame().to_vec() {
-                        self.emit_drops(drop, drop.into(), &mut drops)?;
-                    }
-                    let drops = self.tir_data.cons.push(&drops);
-                    self.tir_data.ents[root].kind = TirKind::Block(args, drops);
+                    self.check_loop_moves(root)?;
+                } else {
+                    self.o_ctx.currently_accessed.merge_top_frames(1);
+                    // we want to keep the frame after merge so we push dummy that is
+                    // popped few lines later
+                    self.o_ctx.currently_accessed.mark_frame();
                 }
-                
-                self.o_ctx.end_scope();
-                self.spawn(root)?;
-                Ok(())
+
+                self.emit_stack_drops(block)?;
+                self.o_ctx.currently_accessed.pop_frame();
+                Ok(id)
             }
+
+            TirKind::GlobalAccess(..) | TirKind::DerefPointer(..) => {
+                self.declare_low(Self::base_id(root), root, true)
+            }
+
+            TirKind::Access(value, ..) => Ok(Self::base_id(value)),
+
+            TirKind::Continue(loop_header, ..) => {
+                let loop_level = self.level_of(loop_header)?;
+                self.check_loop_moves(loop_header)?;
+                self.emit_loop_control_drops(root, loop_level)?;
+
+                Ok(ID::reserved_value())
+            }
+
+            TirKind::Break(loop_header, value, ..) => {
+                if let Some(value) = value.expand() {
+                    self.move_out(value)?;
+                }
+
+                let loop_level = self.level_of(loop_header)?;
+                self.emit_loop_control_drops(root, loop_level)?;
+
+                Ok(ID::reserved_value())
+            }
+
+            TirKind::Return(value, ..) => {
+                if let Some(value) = value.expand() {
+                    self.move_out(value)?;
+                }
+
+                self.emit_return_drops(root)?;
+
+                Ok(ID::reserved_value())
+            }
+
+            TirKind::Block(stmts, ..) => {
+                if create_scope {
+                    self.o_ctx.mark_frame();
+                }
+
+                if let Some((&last, others)) = self.tir_data.cons.get(stmts).split_last() {
+                    for &stmt in others {
+                        self.traverse(stmt)?;
+                    }
+
+                    self.move_out(last)?;
+                    // let span = self.tir_data.ents[last].span;
+                    // println!("{} {:?}", span.log(self.sources), self.o_ctx.currently_accessed.top_frame());
+                }
+
+                if create_scope {
+                    self.emit_stack_drops(root)?;
+                    self.o_ctx.pop_frame();
+                }
+
+                self.declare(root)
+            }
+
+            TirKind::Variable(value) | TirKind::BitCast(value) => {
+                self.move_out(value)?;
+                self.declare(value)
+            }
+
+            TirKind::Assign(to, from, ..) => {
+                self.emit_assign_drops(root, to)?;
+                self.move_out(from)?;
+                self.move_in(to)?;
+                Ok(ID::reserved_value())
+            }
+
+            TirKind::FieldAccess(header, field) => {
+                let base_id = self.traverse(header)?;
+                let field = self.ty_comps[field];
+                let id = Self::field_id(base_id, field.index);
+
+                if self.o_ctx.scope.get(id).is_none() {
+                    let Some(ownership) = self.o_ctx.scope.get(base_id) else {
+                        unreachable!()
+                    };
+
+                    let ent = OwnershipEnt {
+                        tir: root.into(),
+                        ty: field.ty,
+                        id,
+                        ..self.o_ctx.ownerships[ownership]
+                    };
+                    self.o_ctx.push_item(ent, true);
+                };
+
+                Ok(id)
+            }
+
             TirKind::Constructor(args)
             | TirKind::Call(.., args)
             | TirKind::IndirectCall(.., args) => {
-                // TODO: eliminate `to_vec` 
-                for arg in self.tir_data.cons.get(args).to_vec() {
-                    self.solve_low(arg)?;
+                for &arg in self.tir_data.cons.get(args) {
                     self.move_out(arg)?;
                 }
-                self.spawn(root)?;
-                Ok(())
+                self.declare(root)
             }
-            TirKind::BitCast(value) => {
-                self.solve_low(value)?;
-                self.move_out(value)?;
-                self.spawn(root)?;
-                Ok(())
-            }
-            
+
             TirKind::IntLit(..)
             | TirKind::BoolLit(..)
-            | TirKind::FuncPtr(..)
-            | TirKind::CharLit(..) => self.spawn(root),
-        
-            TirKind::FieldAccess(header, ..) => self.solve_low(header),
-            
-            TirKind::Access(..)
-            | TirKind::GlobalAccess(..)
-            | TirKind::Continue(..)
-            | TirKind::Return(..)
-            | TirKind::Break(..) => Ok(()),
+            | TirKind::CharLit(..)
+            | TirKind::TakePtr(..)
+            | TirKind::FuncPtr(..) => self.declare(root),
 
-            | TirKind::DerefPointer(value)
-            | TirKind::TakePtr(value) => self.solve_low(value),
+            // already declared
+            TirKind::Argument(_) => Ok(Self::base_id(root)),
 
+            TirKind::LoopInProgress(..) => unreachable!(),
+            TirKind::Invalid => unimplemented!(),
+        }
+    }
 
-            TirKind::Invalid | TirKind::Argument(..) | TirKind::LoopInProgress(..) => {
-                unreachable!()
+    fn create_branches(&mut self, branches: &[Tir]) -> errors::Result {
+        for (i, &branch) in branches.iter().enumerate() {
+            self.o_ctx.mark_current_access_frame_low(i as u32);
+            self.traverse(branch)?;
+        }
+
+        let mut buffer = vec![];
+        for &branch in branches {
+            for (i, &other) in branches.iter().rev().enumerate() {
+                if other == branch {
+                    continue;
+                }
+
+                if self.tir_data.ents[branch]
+                    .flags
+                    .contains(TirFlags::TERMINATING)
+                {
+                    continue;
+                }
+
+                buffer.extend_from_slice(self.o_ctx.currently_accessed.nth_frame_inv(i));
+            }
+
+            let drops = self
+                .o_ctx
+                .drops_nodes
+                .alloc(buffer.len(), Default::default());
+            let frontier = buffer
+                .drain(..)
+                .map(|(o, _)| o)
+                .zip(self.o_ctx.drops_nodes.slice_keys(drops))
+                .collect();
+            self.emit_drops(frontier)?;
+            self.o_ctx.drops[branch] = self.o_ctx.drops_nodes.join(self.o_ctx.drops[branch], drops);
+        }
+
+        for (i, &branch) in branches.iter().rev().enumerate() {
+            if !self.tir_data.ents[branch]
+                .flags
+                .contains(TirFlags::TERMINATING)
+            {
+                buffer.extend_from_slice(self.o_ctx.currently_accessed.nth_frame_inv(i));
             }
         }
-    }
 
-    fn emit_drops(&mut self, root: Tir, id: ID, buffer: &mut Vec<Tir>) -> errors::Result {
-        if !self.o_ctx.move_lookup.get(id).map(Validity::is_valid).unwrap_or(false) {
-            return Ok(());
+        for _ in branches {
+            self.o_ctx.currently_accessed.pop_frame();
         }
-        
-        let root_ty = self.tir_data.ents[root].ty;
-        if self.types[root_ty].flags.contains(TyFlags::DROP) {
-            buffer.push(root);
+
+        for item in buffer.drain(..) {
+            self.o_ctx.currently_accessed.push(item);
         }
 
         Ok(())
     }
 
-    fn spawn(&mut self, value: Tir) -> errors::Result {
-        self.o_ctx.spawn(value);
-        self.o_ctx.to_drop.push(value);
-        
+    fn check_loop_moves(&mut self, loop_header: Tir) -> errors::Result {
+        let id = self.o_ctx.seen[loop_header];
+        let Some(ownership) = self.o_ctx.scope.get(id) else {
+            unreachable!();
+        };
+        let level = self.o_ctx.ownerships[ownership].loop_level;
+
+        for &(accessed, _) in self
+            .o_ctx
+            .currently_accessed
+            .iter_from_frame(level as usize)
+        {
+            let ent = &self.o_ctx.ownerships[accessed];
+            if ent.moved && ent.loop_level <= level {
+                let tir = ent.tir.unwrap();
+                let span = self.tir_data.ents[tir].span;
+                todo!(
+                    "value can be moved more then once in a loop: {}",
+                    span.log(self.sources)
+                );
+            }
+        }
         Ok(())
     }
 
-    fn move_in(&mut self, value: Tir, buffer: &mut Vec<Tir>) -> errors::Result {
-        let id = self.value_id(value, false, true)?.0;
-        self.move_in_low(value, id, buffer)
+    fn level_of(&self, root: Tir) -> errors::Result<usize> {
+        let Some(ownership) = self.o_ctx.scope.get(Self::base_id(root)) else {
+            unreachable!();
+        };
+
+        Ok(self.o_ctx.ownerships[ownership].level as usize)
     }
 
-    fn move_in_low(&mut self, value: Tir, id: ID, buffer: &mut Vec<Tir>) -> errors::Result {
-        let TirEnt { ty, span, .. }= self.tir_data.ents[value];
-        let TyEnt { mut kind, flags, .. } = self.types[ty];
-        if let TyKind::Instance(base, ..) = kind {
-            kind = self.types[base].kind;
-        }
-        
-        if flags.contains(TyFlags::COPY) {
-            return Ok(());
-        }
-        self.o_ctx.move_lookup.insert(id, Validity::Valid);
-        
-        match kind {
-            TyKind::Struct(fields) => {
-                for (fid, &field) in self.ty_comps.get_iter(fields) {
-                    let id = ID::owned(id, ID(field.index as u64));
-                    
-                    let field_access = || {
-                        let kind = TirKind::FieldAccess(value, fid);
-                        TirEnt::new(kind, ty, span)
-                    };
+    fn emit_loop_control_drops(&mut self, on: Tir, loop_level: usize) -> errors::Result {
+        let drops = self.o_ctx.drops_nodes.alloc(
+            self.o_ctx.scope.all_items_from_frame(loop_level).count(),
+            Default::default(),
+        );
+        let iter = self.o_ctx.drops_nodes.slice_keys(drops);
+        let frontier = self
+            .o_ctx
+            .scope
+            .all_items_from_frame(loop_level)
+            .zip(iter)
+            .collect();
+        self.emit_drops(frontier)?;
 
-                    match self.o_ctx.move_lookup.insert(id, Validity::Valid) {
-                        Some(Validity::Valid) | None => {
-                            let field_access = self.tir_data.ents.push(field_access());
-                            self.emit_drops(field_access, id, &mut vec![])?;
-                        }
-                        Some(Validity::Partial) => {
-                            let field_access = self.tir_data.ents.push(field_access());
-                            self.move_in_low(field_access, id, buffer)?;
-                        }
-                        Some(Validity::Invalid) => {
-                            println!("poop");
-                        },
+        self.o_ctx.drops[on] = drops;
+
+        Ok(())
+    }
+
+    fn emit_return_drops(&mut self, on: Tir) -> errors::Result {
+        let drops = self
+            .o_ctx
+            .drops_nodes
+            .alloc(self.o_ctx.scope.all_items().count(), Default::default());
+        let iter = self.o_ctx.drops_nodes.slice_keys(drops);
+        let frontier = self.o_ctx.scope.all_items().zip(iter).collect();
+        self.emit_drops(frontier)?;
+
+        self.o_ctx.drops[on] = drops;
+
+        Ok(())
+    }
+
+    fn emit_assign_drops(&mut self, on: Tir, to: Tir) -> errors::Result {
+        let id = self.traverse(to)?;
+        let drops = self.o_ctx.drops_nodes.alloc(1, Default::default());
+        let drop = self.o_ctx.drops_nodes.key_of(drops, 0).unwrap();
+        let Some(ownership) = self.o_ctx.scope.get(id) else {
+            unreachable!();
+        };
+        let frontier = vec![(ownership, drop)];
+
+        self.emit_drops(frontier)?;
+        self.o_ctx.drops[on] = drops;
+
+        Ok(())
+    }
+
+    fn emit_stack_drops(&mut self, on: Tir) -> errors::Result {
+        let drops = self
+            .o_ctx
+            .drops_nodes
+            .alloc(self.o_ctx.scope.top_items().count(), Default::default());
+        let iter = self.o_ctx.drops_nodes.slice_keys(drops);
+        let frontier = self.o_ctx.scope.top_items().zip(iter).collect();
+        self.emit_drops(frontier)?;
+
+        self.o_ctx.drops[on] = self.o_ctx.drops_nodes.join(self.o_ctx.drops[on], drops);
+
+        Ok(())
+    }
+
+    fn emit_drops(&mut self, mut frontier: Vec<(Ownership, DropNode)>) -> errors::Result {
+        while let Some((ownership, drop_node)) = frontier.pop() {
+            let OwnershipEnt { mut ty, id, .. } = self.o_ctx.ownerships[ownership];
+            if let TyKind::Instance(base, ..) = self.types[ty].kind {
+                ty = base;
+            }
+
+            let drop = !self.o_ctx.ownerships[ownership].moved;
+
+            match self.types[ty].kind {
+                TyKind::Struct(fields) => {
+                    let fields = self.ty_comps.get(fields);
+                    let drops = self
+                        .o_ctx
+                        .drops_nodes
+                        .alloc(fields.len(), Default::default());
+                    for (field, drop) in fields.iter().zip(self.o_ctx.drops_nodes.slice_keys(drops))
+                    {
+                        let id = Self::field_id(id, field.index);
+                        let ownership = self.o_ctx.scope.get(id).unwrap_or_else(|| {
+                            self.o_ctx.push(OwnershipEnt {
+                                tir: None.into(),
+                                ty: field.ty,
+                                ..Default::default()
+                            })
+                        });
+                        frontier.push((ownership, drop));
                     }
+                    self.o_ctx.drops_nodes[drop_node] = DropNodeEnt {
+                        drop,
+                        children: drops,
+                    };
                 }
-            },
-            TyKind::Enum(_, _) => todo!(),
-            TyKind::Instance(_, _) => todo!(),
-            kind => unimplemented!("{kind:?}"),
+
+                TyKind::Param(..)
+                | TyKind::Bound(..)
+                | TyKind::Ptr(..)
+                | TyKind::FuncPtr(..)
+                | TyKind::Int(..)
+                | TyKind::Uint(..)
+                | TyKind::Bool => (),
+
+                TyKind::Enum(..) => (), //todo!(),
+
+                TyKind::Instance(..) | TyKind::Unresolved => unreachable!(),
+            }
         }
 
         Ok(())
     }
 
-    fn move_out(&mut self, value: Tir) -> errors::Result {
-        // println!("=== {}", self.tir_data.ents[value].span.log(self.sources));
-        let ty = self.tir_data.ents[value].ty;
+    fn move_in(&mut self, target: Tir) -> errors::Result {
+        let id = self.traverse(target)?;
 
-        // the call also checks if none of the referenced values are already moved
-        let (id, root) = self.value_id(value, true, false)?;
-        if self.types[ty].flags.contains(TyFlags::COPY) {
+        let mut frontier = vec![id];
+
+        while let Some(id) = frontier.pop() {
+            let Some(ownership) = self.o_ctx.scope.get(id) else {
+                continue;
+            };
+
+            let ent = &mut self.o_ctx.ownerships[ownership];
+            let mut ty = ent.ty;
+            if !ent.moved {
+                continue;
+            }
+
+            if ent.level < self.o_ctx.scope.level() as u32 {
+                let new = OwnershipEnt {
+                    moved: false,
+                    ..*ent
+                };
+                self.o_ctx.push_item(new, false);
+            } else {
+                ent.moved = false;
+            }
+
+            if let TyKind::Instance(base, ..) = self.types[ty].kind {
+                ty = base;
+            }
+
+            match self.types[ty].kind {
+                TyKind::Struct(fields) => frontier.extend(
+                    self.ty_comps
+                        .get(fields)
+                        .iter()
+                        .map(|f| Self::field_id(id, f.index)),
+                ),
+                _ if self.types[ty].flags.contains(TyFlags::COPY) => {}
+                kind => unimplemented!("{kind:?}"),
+            }
+        }
+        Ok(())
+    }
+
+    fn move_out(&mut self, target: Tir) -> errors::Result {
+        let id = self.traverse(target)?;
+
+        let Some(ownership) = self.o_ctx.scope.get(id) else {
             return Ok(());
         };
 
-        let root = self.o_ctx.spawned[root].level as usize;
-        if !self.o_ctx.terminating_since(root, self.tir_data) {
-            todo!("value can possibly be moved twice in this loop {}", self.tir_data.ents[value].span.log(self.sources));
-        }
+        let ent = &mut self.o_ctx.ownerships[ownership];
 
-        self.o_ctx.move_lookup.insert(id, Validity::Invalid);
+        let copy = self.types[ent.ty].flags.contains(TyFlags::COPY);
+        if !copy {
+            if ent.moved {
+                let span = self.tir_data.ents[target].span;
+                todo!("moving already moved value: {}", span.log(self.sources))
+            }
+
+            if ent.behind_pointer {
+                let span = self.tir_data.ents[target].span;
+                todo!(
+                    "moving value behind pointer that is not copyable: {}",
+                    span.log(self.sources)
+                )
+            }
+        }
+        ent.moved = !copy;
+        // println!("{copy} {ownership} {}", ty_display!(self, ent.ty));
+
+        if ent.level < self.o_ctx.scope.level() as u32 {
+            self.o_ctx.push_current_access(ownership);
+        }
 
         Ok(())
     }
 
-    fn value_id(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<(ID, Tir)> {
-        let res = self.value_id_low(value, move_out, can_deref)?;
-        if move_out && !self.o_ctx.move_lookup.get(res.0).map(Validity::is_valid).unwrap_or(true) {
-            todo!("value already moved {}", self.tir_data.ents[value].span.log(self.sources));
-        }
-        Ok(res)
+    fn declare(&mut self, tir: Tir) -> errors::Result<ID> {
+        self.declare_low(Self::base_id(tir), tir, false)
     }
- 
-    fn value_id_low(&mut self, value: Tir, move_out: bool, can_deref: bool) -> errors::Result<(ID, Tir)> {
-        if self.o_ctx.is_spawned(value) {
-            return Ok((value.into(), value));
-        }
 
-        let TirEnt { kind, ty, .. } = self.tir_data.ents[value];
-        let copy = self.types[ty].flags.contains(TyFlags::COPY) || can_deref;
-        match kind {
-            TirKind::Access(value, var) => {
-                self.value_id(var.expand().unwrap_or(value), move_out, can_deref)
-            },
-            TirKind::FieldAccess(header, field) => {
-                let (header_id, root) = self.value_id(header, move_out, copy)?;
-                let field_id = self.ty_comps[field].index;
-                Ok((ID::owned(header_id, ID(field_id as u64)), root))
-            },
-            
-            TirKind::GlobalAccess(..) if move_out && !copy => todo!("moving value contained in global state"),
-            TirKind::DerefPointer(..) if move_out && !copy => todo!("moving value behind pointer"),
-            
-            TirKind::TakePtr(value) | TirKind::DerefPointer(value) => {
-                let (_, value) = self.value_id(value, move_out, can_deref)?;
-                Ok((ID::reserved_value(), value)) 
-            },
-            TirKind::GlobalAccess(..) => Ok((ID::reserved_value(), value)),
+    fn declare_low(&mut self, id: ID, tir: Tir, behind_pointer: bool) -> errors::Result<ID> {
+        let ownership_ent = OwnershipEnt {
+            tir: tir.into(),
+            ty: self.tir_data.ents[tir].ty,
+            behind_pointer,
+            id,
+            ..Default::default()
+        };
+        self.o_ctx.push_item(ownership_ent, false);
 
-            kind => unimplemented!("{:?} {}", kind, self.tir_data.ents[value].span.log(self.sources)),
-        }
+        Ok(id)
+    }
+
+    fn base_id(tir: Tir) -> ID {
+        tir.into()
+    }
+
+    fn field_id(id: ID, field_index: u32) -> ID {
+        id + ID(field_index as u64)
     }
 }

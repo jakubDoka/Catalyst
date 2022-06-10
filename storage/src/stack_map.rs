@@ -100,12 +100,12 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
     pub fn alloc(&mut self, size: usize, init: T) -> E
     where
         T: Clone,
+        E: ReservedValue,
     {
-        let index = self.indices.len();
-        self.indices.push(index as u32);
-        self.indices.push((index + size) as u32);
+        let index = self.data.len();
         self.data.resize(index + size, init);
-        E::new(index)
+
+        self.close_frame()
     }
 
     pub fn push_iter(&mut self, iter: impl IntoIterator<Item = T>) -> E

@@ -28,24 +28,19 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-
-use errors::Diagnostics;
-use incr::Incr;
-use incr::*;
-use instance::*;
-
-use instance::func::MirBuilderContext;
-use instance::repr::{build_builtin_reprs, build_reprs};
 use target_lexicon::Triple;
 
 use ast::*;
+use errors::*;
 use gen::*;
-use ownership_types::*;
+use incr::*;
+use instance::*;
 use instance_types::*;
 use lexer::*;
 use matching::*;
 use module_types::*;
 use modules::*;
+use ownership_types::*;
 use parser::*;
 use storage::*;
 use typec::*;
@@ -132,6 +127,8 @@ pub struct Compiler {
     func_instances: FuncInstances,
     to_link: ToLink,
     macros: Macros,
+
+    // ownership
     o_ctx: OwnershipContext,
 
     // globals
@@ -248,6 +245,7 @@ impl Compiler {
             func_instances: FuncInstances::new(),
             to_link: ToLink::new(),
             macros: Macros::new(),
+
             o_ctx: OwnershipContext::new(),
 
             globals: Globals::new(),

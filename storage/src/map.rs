@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     ops::{Deref, DerefMut, Index, IndexMut},
@@ -276,7 +276,7 @@ impl<T: BitSerde> BitSerde for Map<T> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ID(pub u64);
 
 impl ID {
@@ -357,6 +357,12 @@ impl ReservedValue for ID {
 
     fn is_reserved_value(&self) -> bool {
         self.0 == u64::MAX
+    }
+}
+
+impl Default for ID {
+    fn default() -> Self {
+        Self::reserved_value()
     }
 }
 

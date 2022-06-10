@@ -342,20 +342,20 @@ file "gen/src/state.rs" {
 }
 
 file "ownership/src/state.rs" {
-    use "typec_types"
     use "ownership_types"
     use "lexer"
+    use "typec_types"
+    use "errors"
 
     struct OwnershipSolver {
         mut o_ctx: OwnershipContext
-        mut TirData
-        
-        TyLists
+        mut Diagnostics
+
+        TirData
         Funcs
-        Sources
-        BoundImpls
-        BuiltinTypes
-        TyComps
         Types
+        TyComps
+        TyLists
+        Sources
     }
 }

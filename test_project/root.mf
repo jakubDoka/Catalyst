@@ -53,7 +53,7 @@ fn main() -> int {
         return 8
     }
     
-    if move_in_and_out(0) != 0 {
+    if generics::move_in_and_out(0) != 0 {
         return 9
     }    
     
@@ -140,7 +140,7 @@ fn main() -> int {
         }
     }
 
-    ownership_test()
+    //ownership_test()
 
     putchar(40.u32() as char)
     putchar('h')

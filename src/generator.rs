@@ -46,7 +46,6 @@ impl Generator<'_> {
                 continue;
             }
 
-            
             // println!("{}", MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();

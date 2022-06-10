@@ -133,7 +133,7 @@ impl<'a> ScopeBuilder<'a> {
                 TyFlags::empty()
             };
             self.types[dest].flags.insert(flag);
-            
+
             if let Some(collision) = self.bound_impls.insert(id, BoundImpl::new(span)) {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {
                     loc: self.ast_data.nodes[ast].span,

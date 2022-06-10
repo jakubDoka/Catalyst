@@ -309,10 +309,10 @@ impl CirBuilder<'_> {
                 let repr = self.repr_of(value);
                 let flags = self.func_ctx.values[value].flags;
                 if flags.contains(MirFlags::ASSIGNABLE) {
+                    let value = self.use_value(value);
                     let variable = Variable::new(value.index());
                     self.cir_builder_context.variable_set.insert(variable);
                     self.builder.declare_var(variable, repr);
-                    let value = self.cir_builder_context.value_lookup[value].unwrap();
                     self.builder.def_var(variable, value);
                 }
             }
@@ -678,8 +678,10 @@ impl CirBuilder<'_> {
     fn assign_value(&mut self, target: mir::Value, value: ir::Value) {
         let mir::ValueEnt { flags, offset, .. } = self.func_ctx.values[target];
         let offset = self.unwrap_size(offset);
-        if flags.contains(MirFlags::ASSIGNABLE) {
-            let variable = Variable::new(target.index());
+        let variable = Variable::new(target.index());
+        if flags.contains(MirFlags::ASSIGNABLE)
+            && self.cir_builder_context.variable_set.contains(variable)
+        {
             let target_ir = self.builder.use_var(variable);
             let value = self.set_bit_field_low(target_ir, value, offset);
             self.builder.def_var(variable, value);

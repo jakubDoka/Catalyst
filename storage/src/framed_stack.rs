@@ -15,14 +15,51 @@ impl<T> FramedStack<T> {
         }
     }
 
-    pub fn nth_frame(&self, n: usize) -> &[T] {
+    pub fn merge_top_frames(&mut self, amount: usize) {
+        self.frames.drain(self.frames.len() - amount..);
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
+    }
+
+    pub fn iter_from_frame_inv(&self, n: usize) -> impl Iterator<Item = &T> {
         let start = self.frames[self.frames.len() - n - 1] as usize;
-        let end = self.frames.get(self.frames.len() - n).map(|&i| i as usize).unwrap_or(self.data.len());
+        self.data[start..].iter()
+    }
+
+    pub fn iter_from_frame(&self, n: usize) -> impl Iterator<Item = &T> {
+        let start = self.frames[n] as usize;
+        self.data[start..].iter()
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+
+    pub fn nth_frame_inv(&self, n: usize) -> &[T] {
+        let start = self.frames[self.frames.len() - n - 1] as usize;
+        let end = self
+            .frames
+            .get(self.frames.len() - n)
+            .map(|&i| i as usize)
+            .unwrap_or(self.data.len());
+        &self.data[start..end]
+    }
+
+    pub fn nth_frame(&self, n: usize) -> &[T] {
+        let start = self.frames[n] as usize;
+        let end = self
+            .frames
+            .get(n + 1)
+            .map(|&i| i as usize)
+            .unwrap_or(self.data.len());
         &self.data[start..end]
     }
 
     pub fn extend(&mut self, items: &[T])
-        where T: Clone
+    where
+        T: Clone,
     {
         self.data.extend_from_slice(items);
     }

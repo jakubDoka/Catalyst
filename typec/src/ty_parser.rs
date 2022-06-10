@@ -281,8 +281,7 @@ impl TyParser<'_> {
             id,
             name: Span::new(self.types[sig.ret].name.source(), 0, 0),
             kind: TyKind::FuncPtr(sig),
-            flags: (TyFlags::GENERIC & generic)
-                | TyFlags::COPY,
+            flags: (TyFlags::GENERIC & generic) | TyFlags::COPY,
         };
         let ty = self.types.push(ty_ent);
         self.ty_instances.insert_unique(id, ty);

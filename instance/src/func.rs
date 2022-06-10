@@ -48,7 +48,7 @@ impl<'a> MirBuilder<'a> {
             };
 
             if has_sret {
-                let value = self.flagged_value_from_ty(sig.ret, mir::MirFlags::POINTER);
+                let value = self.flagged_value_from_ty(sig.ret, MirFlags::POINTER);
                 self.return_dest = Some(value);
                 self.func_ctx.value_slices.push_one(value);
             }
@@ -142,7 +142,7 @@ impl<'a> MirBuilder<'a> {
         let TirEnt { kind: TirKind::Continue(loop_header_marker, drops), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
-        
+
         let &Loop { entry, .. } = self
             .func_ctx
             .loops
@@ -151,7 +151,8 @@ impl<'a> MirBuilder<'a> {
             .find(|loop_header| loop_header.marker == loop_header_marker)
             .unwrap();
 
-        self.func_ctx.add_inst(InstEnt::new(InstKind::Jump(entry), None));
+        self.func_ctx
+            .add_inst(InstEnt::new(InstKind::Jump(entry), None));
         Ok(None)
     }
 
@@ -350,7 +351,7 @@ impl<'a> MirBuilder<'a> {
 
         let mir_value = self.expr(value, dest)?.unwrap();
 
-        let value = self.flagged_value_from_ty(ty, mir::MirFlags::POINTER);
+        let value = self.flagged_value_from_ty(ty, MirFlags::POINTER);
 
         {
             let kind = InstKind::DerefPointer(mir_value);
@@ -377,7 +378,7 @@ impl<'a> MirBuilder<'a> {
         let TirEnt { kind: TirKind::Assign(lhs, rhs, drops), .. } = self.tir_data.ents[tir] else {
             unreachable!()
         };
-        
+
         let a = self.expr(lhs, None)?.unwrap();
         let b = self.expr(rhs, Some(a))?.unwrap();
 
@@ -565,7 +566,7 @@ impl<'a> MirBuilder<'a> {
 
         self.func_ctx.values[value.unwrap()]
             .flags
-            .insert(mir::MirFlags::ASSIGNABLE & assignable);
+            .insert(MirFlags::ASSIGNABLE & (assignable && !on_stack));
 
         Ok(None)
     }
@@ -763,7 +764,7 @@ impl<'a> MirBuilder<'a> {
                     self.func_ctx.stacks.push(ent)
                 };
 
-                let value = self.flagged_value_from_ty(ret, mir::MirFlags::POINTER);
+                let value = self.flagged_value_from_ty(ret, MirFlags::POINTER);
 
                 {
                     let kind = InstKind::StackAddr(stack);
@@ -878,7 +879,7 @@ impl<'a> MirBuilder<'a> {
         self.flagged_value_from_ty(ty, Default::default())
     }
 
-    fn flagged_value_from_ty(&mut self, ty: Ty, flags: mir::MirFlags) -> Value {
+    fn flagged_value_from_ty(&mut self, ty: Ty, flags: MirFlags) -> Value {
         let value = ValueEnt::flags(ty, flags);
         self.func_ctx.values.push(value)
     }

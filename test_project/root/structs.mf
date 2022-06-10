@@ -1,3 +1,7 @@
+fn [T] move_in_and_out(arg: T) -> T {
+    arg
+}
+
 fn other(a: int, b: int, c: int) -> int {
     return a + b * c
 }
@@ -71,11 +75,20 @@ fn ownership_test() {
 
     to = TestOwnership::(se(), se(), se())
 
-    loop {
-        let a = to.a
-        break
+    let a = to.a
+    to.a = a
+    let mut a = se()
+    loop'a {
+        if true {
+            loop {
+                {a}
+                a = se()
+                break'a
+            }
+        }
+        //break'a
     }
-
+    let a = move_in_and_out(a)
     
     let res = loop'a {
         to.a = se()

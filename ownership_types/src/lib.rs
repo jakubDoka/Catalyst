@@ -1,172 +1,185 @@
-use std::collections::hash_map::Entry;
-
 use storage::*;
-use typec_types::*;
+use typec_types::{Tir, Ty};
 
 pub struct OwnershipContext {
-    pub loop_depths: Vec<u32>,
-    pub move_lookup: Map<(Validity, u32)>,
-    pub scopes: Vec<Tir>,
-    pub spawned: SecondaryMap<Tir, Spawn>,
-    pub disjoint: FramedStack<Tir>,
-    pub to_drop: FramedStack<Tir>,
-    pub bound_ids: FramedStack<(ID, Validity)>,
-    pub attached_drops: SecondaryMap<Tir, EntityList<Tir>>,
-    pub slices: ListPool<Tir>,
+    pub scope: OwnershipScope,
+    pub ownerships: PrimaryMap<Ownership, OwnershipEnt>,
+    pub drops: SecondaryMap<Tir, DropNodeList>,
+    pub drops_nodes: StackMap<DropNodeList, DropNodeEnt, DropNode>,
+    pub seen: SecondaryMap<Tir, ID>,
+    pub currently_accessed: FramedStack<(Ownership, u32)>,
+    pub branch_ids: Vec<u32>,
 }
 
 impl OwnershipContext {
     pub fn new() -> Self {
         Self {
-            loop_depths: Vec::new(),
-            move_lookup: Map::new(),
-            scopes: Vec::new(),
-            spawned: SecondaryMap::new(),
-            disjoint: FramedStack::new(),
-            to_drop: FramedStack::new(),
-            bound_ids: FramedStack::new(),
-            attached_drops: SecondaryMap::new(),
-            slices: ListPool::new(),
+            scope: OwnershipScope::new(),
+            ownerships: PrimaryMap::new(),
+            drops: SecondaryMap::new(),
+            drops_nodes: StackMap::new(),
+            seen: SecondaryMap::new(),
+            currently_accessed: FramedStack::new(),
+            branch_ids: Vec::new(),
         }
     }
 
-    pub fn start_loop(&mut self) {
-        self.loop_depths.push(self.scopes.len() as u32);
+    pub fn push_current_access(&mut self, ownership: Ownership) {
+        self.currently_accessed
+            .push((ownership, self.branch_ids.last().unwrap_or(&0).clone()));
     }
 
-    pub fn end_loop(&mut self) {
-        self.loop_depths.pop().unwrap();
+    pub fn mark_current_access_frame(&mut self) {
+        self.mark_current_access_frame_low(0);
     }
 
-    pub fn terminating_since(&self, depth: usize, tir_data: &TirData) -> bool {
-        let mut prev = self.scopes.len();
-        for &loop_depth in self.loop_depths.iter().rev() {
-            if depth > loop_depth as usize {
-                break;
-            }
-
-            let flags = self.scopes[loop_depth as usize..prev].iter()
-                .fold(TirFlags::empty(), |acc, &tir| acc | {
-                    tir_data.ents[tir].flags
-                });
-
-            if flags.terminal_flags() != TirFlags::TERMINATING {
-                return false;
-            }
-
-            prev = loop_depth as usize;
-        } 
-
-        true
+    pub fn mark_current_access_frame_low(&mut self, branch_id: u32) {
+        self.currently_accessed.mark_frame();
+        self.branch_ids.push(branch_id);
     }
 
-    pub fn loop_depth(&self) -> Option<usize> {
-        self.loop_depths.last().map(|&d| d as usize)
+    pub fn pop_current_access_frame(&mut self) {
+        self.currently_accessed.pop_frame();
+        self.branch_ids.pop();
     }
 
-    pub fn spawn(&mut self, tir: Tir) {
-        self.spawned[tir].level = self.scopes.len() as u32;
+    pub fn push(&mut self, mut ent: OwnershipEnt) -> Ownership {
+        ent.level = self.scope.level() as u32;
+        ent.loop_level = self.currently_accessed.frame_count() as u32;
+        self.ownerships.push(ent)
     }
 
-    pub fn is_spawned(&self, tir: Tir) -> bool {
-        self.spawned[tir].level != u32::MAX
+    pub fn mark_frame(&mut self) {
+        self.scope.mark_frame();
+        // self.currently_accessed.mark_frame();
     }
 
-    pub fn propagate_drop(&mut self, tir: Tir) {
-        for &disjoint in self.disjoint.top_frame() {
-            self.attached_drops[disjoint].push(tir, &mut self.slices);
-        }
+    pub fn pop_frame(&mut self) {
+        self.scope.pop_frame(&mut self.ownerships);
+        // self.currently_accessed.pop_frame();
     }
 
-    pub fn start_scope(&mut self, root: Tir) {
-        self.scopes.push(root);
-        self.to_drop.mark_frame();
-    }
-
-    pub fn end_scope(&mut self) {        
-        self.to_drop.pop_frame();
-        self.scopes.pop().unwrap();
-    }
-
-    pub fn start_branch(&mut self, roots: &[Tir]) {
-        self.disjoint.mark_frame();
-        self.disjoint.extend(roots);
-        self.bound_ids.mark_frame();
-    }
-
-    pub fn end_branch(&mut self) {
-        self.disjoint.pop_frame();
-        for &(id, _) in self.bound_ids.top_frame() {
-            self.move_lookup.remove(id);
-        }
-    }
-
-    pub fn register(&mut self, id: ID, validity: Validity) {
-        match self.move_lookup.entry(id) {
-            Entry::Occupied(mut entry) => {
-                entry.get_mut().0 = validity;
-                self.bound_ids.top_frame_mut()[entry.get().1 as usize].1 = validity;
-            },
-            Entry::Vacant(entry) => {
-                let len = self.bound_ids.top_frame().len();
-                entry.insert((validity, len as u32));
-                self.bound_ids.push((id, validity));
-            },
-        }
-    }
-
-    pub fn pop_branches(&mut self, count: usize) {
-        let ids = (0..count)
-            .flat_map(|_| self.bound_ids.nth_frame(count))
-            .cloned()
-            .collect::<Vec<_>>();  
-        
-        (0..count).for_each(|_| self.bound_ids.pop_frame());
-
-        for (id, validity) in ids {
-            self.register(id, validity);
-        }
+    pub fn push_item(&mut self, ent: OwnershipEnt, intermediate: bool) {
+        let id = ent.id;
+        let ownership = self.push(ent);
+        self.scope.push(id, ownership, intermediate);
     }
 
     pub fn clear(&mut self) {
-        self.loop_depths.clear();
-        self.move_lookup.clear();
-        self.scopes.clear();
-        self.spawned.clear();
-        self.disjoint.clear();
-        self.to_drop.clear();
-        self.bound_ids.clear();
-        self.attached_drops.clear();
-        self.slices.clear();
+        self.scope.clear();
+        self.ownerships.clear();
+        self.drops.clear();
+        self.drops_nodes.clear();
+        self.seen.clear();
+        self.currently_accessed.clear();
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Validity {
-    Valid,
-    Partial,
-    Invalid,
+#[derive(Default, Clone, Copy, Debug)]
+pub struct DropNodeEnt {
+    pub drop: bool,
+    pub children: DropNodeList,
 }
 
-impl Validity {
-    pub fn merge(&mut self, other: Self) {
-        todo!()
-    }
+gen_entity!(DropNode);
+gen_entity!(DropNodeList);
 
-    pub fn is_valid(&self) -> bool {
-        *self == Validity::Valid
-    }
+pub struct OwnershipScope {
+    map: Map<Ownership>,
+    items: FramedStack<Item>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Spawn {
-    pub level: u32,
-}
-
-impl Default for Spawn {
-    fn default() -> Self {
+impl OwnershipScope {
+    pub fn new() -> Self {
         Self {
-            level: u32::MAX,
+            map: Map::new(),
+            items: FramedStack::new(),
         }
     }
+
+    pub fn all_items_from_frame(&self, n: usize) -> impl Iterator<Item = Ownership> + '_ {
+        self.items
+            .iter_from_frame_inv(n)
+            .filter(|i| !i.intermediate)
+            .map(|i| i.ownership)
+    }
+
+    pub fn all_items(&self) -> impl Iterator<Item = Ownership> + '_ {
+        self.items
+            .iter()
+            .filter(|i| !i.intermediate)
+            .map(|i| i.ownership)
+    }
+
+    pub fn top_items(&self) -> impl Iterator<Item = Ownership> + '_ {
+        self.items
+            .top_frame()
+            .iter()
+            .filter(|i| !i.intermediate)
+            .map(|i| i.ownership)
+    }
+
+    pub fn level(&self) -> usize {
+        self.items.frame_count()
+    }
+
+    pub fn get(&self, id: ID) -> Option<Ownership> {
+        self.map.get(id).cloned()
+    }
+
+    pub fn mark_frame(&mut self) {
+        self.items.mark_frame();
+    }
+
+    fn push(&mut self, id: ID, ownership: Ownership, intermediate: bool) {
+        self.items.push(Item {
+            id,
+            ownership,
+            intermediate,
+            shadow: self.map.insert(id, ownership),
+        });
+    }
+
+    pub fn pop_frame(&mut self, ownerships: &mut PrimaryMap<Ownership, OwnershipEnt>) {
+        for &Item {
+            id,
+            shadow,
+            ownership,
+            ..
+        } in self.items.top_frame()
+        {
+            if let Some(shadow) = shadow {
+                ownerships[shadow].moved = ownerships[ownership].moved;
+                self.map.insert(id, shadow);
+            } else {
+                self.map.remove(id);
+            }
+        }
+        self.items.pop_frame();
+    }
+
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.items.clear();
+    }
 }
+
+struct Item {
+    id: ID,
+    ownership: Ownership,
+    shadow: Option<Ownership>,
+    intermediate: bool,
+}
+
+#[derive(Default, Debug)]
+pub struct OwnershipEnt {
+    pub tir: PackedOption<Tir>,
+    pub ty: Ty,
+    pub moved: bool,
+    pub behind_pointer: bool,
+    pub level: u32,
+    pub loop_level: u32,
+    pub id: ID,
+}
+
+gen_entity!(Ownership);

@@ -135,9 +135,7 @@ pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut T
         id,
         name,
         kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN 
-            | TyFlags::MUTABLE & mutable
-            | TyFlags::COPY,
+        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable | TyFlags::COPY,
     };
     let ptr = types.push(ent);
 
@@ -192,13 +190,21 @@ pub fn create_builtin_items(
     builtin_source: &mut BuiltinSource,
     target: &mut Vec<module::ModuleItem>,
 ) {
-
     // init the drop trait, TODO: maybe there is less time consuming wai to do this
     {
         let span = builtin_source.make_span(sources, "drop");
         let id = ID::owned(types[builtin.drop].id, "drop".into());
         let arg = pointer_of(builtin.drop, true, types, ty_instances);
-        let drop_func = create_func_with_params(span, &[builtin.drop], &[arg], builtin.nothing, id, ty_lists, funcs, target);
+        let drop_func = create_func_with_params(
+            span,
+            &[builtin.drop],
+            &[arg],
+            builtin.nothing,
+            id,
+            ty_lists,
+            funcs,
+            target,
+        );
         let funcs = func_lists.push(&[drop_func]);
         types[builtin.drop].kind = TyKind::Bound(funcs);
     }
@@ -267,7 +273,7 @@ pub fn create_builtin_items(
 }
 
 fn create_func(
-    span: Span, 
+    span: Span,
     args: &[Ty],
     ret: Ty,
     id: ID,

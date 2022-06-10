@@ -1,5 +1,4 @@
-
-use std::{ops::Not, default::default};
+use std::{default::default, ops::Not};
 
 use matching::*;
 use module_types::*;
@@ -21,10 +20,7 @@ impl TirBuilder<'_> {
             flags: FuncFlags::ANONYMOUS,
         };
         let func_meta = FuncMeta {
-            sig: Sig {
-                ret,
-                ..default()
-            },
+            sig: Sig { ret, ..default() },
             name: self.globals[global].name,
             body,
 
@@ -112,9 +108,7 @@ impl TirBuilder<'_> {
         self.scope_context.used_types.clear();
         self.scope_context.used_types_set.clear();
 
-        if !self.is_terminating(root)
-            && ret != self.builtin_types.nothing
-        {
+        if !self.is_terminating(root) && ret != self.builtin_types.nothing {
             let because = ret_ast
                 .is_reserved_value()
                 .not()
@@ -199,7 +193,12 @@ impl TirBuilder<'_> {
             let items = self.tir_data.cons.push(slice);
             let kind = TirKind::Block(items, default());
             let flags = terminal_flags;
-            let ent = TirEnt { kind, ty, flags, span };
+            let ent = TirEnt {
+                kind,
+                ty,
+                flags,
+                span,
+            };
             self.tir_data.ents.push(ent)
         };
 
@@ -298,14 +297,13 @@ impl TirBuilder<'_> {
 
                     for node in &temp {
                         if let TirPatternMeta::Var(name) = node.value {
-                            
                             let variable = {
                                 let kind = TirKind::Variable(node.meta);
                                 let ty = self.builtin_types.nothing;
                                 let ent = TirEnt::new(kind, ty, name);
                                 self.tir_data.ents.push(ent)
                             };
-                            
+
                             let id = self.sources.id_of(name);
                             let item = ScopeItem::new(variable, name);
                             self.scope.push_item(id, item);
@@ -354,7 +352,12 @@ impl TirBuilder<'_> {
             let ty = self.tir_data.ents[branching].ty;
             let span = self.ast_data.nodes[ast].span;
             let flags = terminal_flags;
-            TirEnt { kind, ty, flags, span }
+            TirEnt {
+                kind,
+                ty,
+                flags,
+                span,
+            }
         }))
     }
 
@@ -634,10 +637,7 @@ impl TirBuilder<'_> {
 
             Ok(value)
         } else {
-            let data = PatternLevelData {
-                depth,
-                ..default()
-            };
+            let data = PatternLevelData { depth, ..default() };
 
             branch.push(data);
 
@@ -653,12 +653,12 @@ impl TirBuilder<'_> {
 
         let expr = self.expr(expr);
         let ty = ty_parser!(self).parse_type(ty);
-        
+
         let (expr, ty) = (expr?, ty?); // recovery
         if self.is_terminating(expr) {
             return Ok(expr);
         }
-        
+
         self.scope_context.use_type(ty, self.types);
 
         let kind = TirKind::BitCast(expr);
@@ -824,7 +824,12 @@ impl TirBuilder<'_> {
                 .unwrap_or(self.builtin_types.nothing);
             let flags = (TirFlags::TERMINATING & infinite) | flags;
             let kind = TirKind::Loop(block);
-            self.tir_data.ents[loop_slot] = TirEnt { kind, ty, flags, span };
+            self.tir_data.ents[loop_slot] = TirEnt {
+                kind,
+                ty,
+                flags,
+                span,
+            };
         }
 
         Ok(loop_slot)
@@ -861,9 +866,13 @@ impl TirBuilder<'_> {
 
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::Call(caller.into(), params, func, args);
-        let flags = terminal_flags 
-            | (TirFlags::GENERIC & generic);
-        let ent = TirEnt { kind, ty, flags, span };
+        let flags = terminal_flags | (TirFlags::GENERIC & generic);
+        let ent = TirEnt {
+            kind,
+            ty,
+            flags,
+            span,
+        };
         Ok(self.tir_data.ents.push(ent))
     }
 
@@ -958,7 +967,12 @@ impl TirBuilder<'_> {
         let args = self.tir_data.cons.push(&tir_args);
         let kind = TirKind::IndirectCall(value, args);
         let flags = terminal_flags;
-        let ent = TirEnt { kind, ty, flags, span };
+        let ent = TirEnt {
+            kind,
+            ty,
+            flags,
+            span,
+        };
         Ok(self.tir_data.ents.push(ent))
     }
 
@@ -1052,7 +1066,7 @@ impl TirBuilder<'_> {
                 break;
             }
         }
-        
+
         if arg_tys.len() != vec.len() {
             todo!();
         }
@@ -1086,7 +1100,7 @@ impl TirBuilder<'_> {
 
     fn take_ptr(&mut self, target: Tir, mutable: bool) -> Tir {
         if self.is_terminating(target) {
-            return target
+            return target;
         }
 
         let TirEnt {
@@ -1117,7 +1131,7 @@ impl TirBuilder<'_> {
 
     fn deref_ptr(&mut self, target: Tir) -> Tir {
         if self.is_terminating(target) {
-            return target
+            return target;
         }
         let span = self.tir_data.ents[target].span;
         let kind = TirKind::DerefPointer(target);
@@ -1136,7 +1150,7 @@ impl TirBuilder<'_> {
 
         let mut header = self.expr(header)?;
         if self.is_terminating(header) {
-            return Ok(header)
+            return Ok(header);
         }
 
         let ty = self.tir_data.ents[header].ty;
@@ -1380,13 +1394,12 @@ impl TirBuilder<'_> {
             .flags
             .insert(TirFlags::MUTABLE & mutable);
 
-            
         let result = {
             let kind = TirKind::Variable(value);
             let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
             self.tir_data.ents.push(ent)
         };
-        
+
         {
             let item = ScopeItem::new(result, span);
             self.scope.push_item(id, item);
@@ -1454,7 +1467,9 @@ impl TirBuilder<'_> {
         };
 
         for &(loop_header, _) in self.scope_context.loops.iter() {
-            self.tir_data.ents[loop_header].flags.insert(TirFlags::TERMINATING);
+            self.tir_data.ents[loop_header]
+                .flags
+                .insert(TirFlags::TERMINATING);
         }
 
         let result = {
@@ -1638,7 +1653,12 @@ impl TirBuilder<'_> {
             let args = self.tir_data.cons.push(&[left, right]);
             let kind = TirKind::Call(left_ty.into(), TyList::reserved_value(), func, args);
             let flags = TirFlags::TERMINATING & terminal_flags;
-            let ent = TirEnt { kind, ty, flags, span };
+            let ent = TirEnt {
+                kind,
+                ty,
+                flags,
+                span,
+            };
             self.tir_data.ents.push(ent)
         };
 
@@ -1649,7 +1669,7 @@ impl TirBuilder<'_> {
         if self.is_terminating(right) {
             return Ok(right);
         }
-        
+
         let TirEnt {
             ty,
             flags,
@@ -1667,6 +1687,7 @@ impl TirBuilder<'_> {
                 because,
                 loc: left_span,
             });
+            return Err(());
         }
 
         self.infer_tir_ty(right, ty, |_, got, loc| TyError::AssignTypeMismatch {
@@ -1725,27 +1746,33 @@ impl TirBuilder<'_> {
         } else {
             ast::id_of(label, self.ast_data, self.sources)
         };
-        
-        self.scope_context.loops
+
+        self.scope_context
+            .loops
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(i, &(tir, loop_id))| (id == loop_id).then(|| {
-                if is_continue {
-                    if let Some(&(tir, _)) = self.scope_context.loops.get(i + 1) {
-                        self.tir_data.ents[tir].flags.insert(TirFlags::TERMINATING | TirFlags::CONTINUE);
-                    }
-                } else {
-                    for &(tir, _) in &self.scope_context.loops[i + 1..] {
-                        if let TirKind::LoopInProgress(.., false) = self.tir_data.ents[tir].kind {
-                            continue;
+            .find_map(|(i, &(tir, loop_id))| {
+                (id == loop_id).then(|| {
+                    if is_continue {
+                        if let Some(&(tir, _)) = self.scope_context.loops.get(i + 1) {
+                            self.tir_data.ents[tir]
+                                .flags
+                                .insert(TirFlags::TERMINATING | TirFlags::CONTINUE);
                         }
-                        
-                        self.tir_data.ents[tir].flags.insert(TirFlags::TERMINATING);
+                    } else {
+                        for &(tir, _) in &self.scope_context.loops[i + 1..] {
+                            if let TirKind::LoopInProgress(.., false) = self.tir_data.ents[tir].kind
+                            {
+                                continue;
+                            }
+
+                            self.tir_data.ents[tir].flags.insert(TirFlags::TERMINATING);
+                        }
                     }
-                }
-                (tir, i == self.scope_context.loops.len() - 1)
-            }))
+                    (tir, i == self.scope_context.loops.len() - 1)
+                })
+            })
             .ok_or(())
             .map_err(|()| todo!("{}", self.ast_data.nodes[label].span.log(self.sources)))
     }
