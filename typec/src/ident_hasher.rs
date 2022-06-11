@@ -43,7 +43,7 @@ impl<'a> IdentHasher<'a> {
 
                 let id = {
                     let name = ast::id_of(item, self.ast_data, self.sources);
-                    let ty = self.types.base_id_of(ty);
+                    let ty = self.types.ptr_leaf_id_of(ty);
                     ID::owned(ty, name)
                 };
 
@@ -71,7 +71,7 @@ impl<'a> IdentHasher<'a> {
             (&[], None) => return Ok((ast::id_of(ast, self.ast_data, self.sources), None)),
             (&[], Some((ty, span))) => {
                 let name = ast::id_of(ast, self.ast_data, self.sources);
-                let ty_id = self.types.base_id_of(ty);
+                let ty_id = self.types.ptr_leaf_id_of(ty);
                 Ok((ID::owned(ty_id, name), Some((ty, span))))
             }
             _ => {

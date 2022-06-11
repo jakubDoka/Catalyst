@@ -428,7 +428,7 @@ impl<'a> ScopeBuilder<'a> {
             self.ty_lists.push_one(owner);
             let span = self.types[owner].name;
 
-            let bound = ty_parser!(self).parse_composite_bound_low(span);
+            let bound = ty_factory!(self).parse_composite_bound_low(span);
             let bound = if used.contains(bound) {
                 get_param(bound, self.types)
             } else {
@@ -494,40 +494,5 @@ impl<'a> ScopeBuilder<'a> {
         let item = ModuleItem::new(id, slot, span);
         self.scope.insert_current(self.diagnostics, item);
         self.modules[self.source].items.push(item);
-    }
-}
-
-pub struct ScopeContext {
-    pub bound_funcs: Vec<Func>,
-    pub tags: Vec<Ast>,
-    /// (implementor, bound, impl block)
-    pub bounds_to_verify: Vec<(Ty, Ty, Ast)>,
-    pub type_ast: SecondaryMap<Ty, Ast>,
-    pub func_ast: SecondaryMap<Func, Ast>,
-    pub global_ast: SecondaryMap<Global, Ast>,
-    pub used_types: Vec<Ty>,
-    pub used_types_set: EntitySet<Ty>,
-    pub loops: Vec<(Tir, ID)>,
-}
-
-impl ScopeContext {
-    pub fn new() -> Self {
-        Self {
-            bound_funcs: Vec::new(),
-            tags: Vec::new(),
-            bounds_to_verify: Vec::new(),
-            type_ast: SecondaryMap::new(),
-            func_ast: SecondaryMap::new(),
-            global_ast: SecondaryMap::new(),
-            used_types: Vec::new(),
-            used_types_set: EntitySet::new(),
-            loops: Vec::new(),
-        }
-    }
-
-    pub fn use_type(&mut self, ty: Ty, types: &Types) {
-        if self.used_types_set.insert(ty) && types[ty].flags.contains(TyFlags::GENERIC) {
-            self.used_types.push(ty);
-        }
     }
 }

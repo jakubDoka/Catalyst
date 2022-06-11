@@ -133,13 +133,28 @@ file "modules/src/state.rs" {
     }
 }
 
+file "typec_types/src/state.rs" {
+    use "crate"
+    use "lexer"
+
+    struct TyFactory {
+        mut Types
+        mut TyLists
+        mut TyInstances
+        mut BoundImpls
+
+        TyComps
+        Sources
+        BuiltinTypes
+    }
+}
+
 file "typec/src/state.rs" {
     use "module_types"
     use "typec_types"
     use "lexer"
     use "errors"
     use "ast"
-    use "crate::scope"
     use "storage"
 
     struct BoundVerifier {
@@ -357,5 +372,20 @@ file "ownership/src/state.rs" {
         TyComps
         TyLists
         Sources
+    }
+
+    struct DropSolver {
+        mut o_ctx: OwnershipContext
+        mut TirData
+        mut ScopeContext
+        mut BoundImpls
+        mut Types
+        mut TyLists
+        mut TyInstances
+
+        BuiltinTypes
+        Sources
+        Funcs
+        TyComps
     }
 }

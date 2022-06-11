@@ -62,16 +62,7 @@ impl<'a> MirBuilder<'a> {
         }
         self.func_ctx.select_block(entry_point);
 
-        let value = self.expr(body, self.return_dest)?;
-
-        if !self.func_ctx.is_terminated() {
-            if sig.ret == self.builtin_types.nothing {
-                self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
-            } else {
-                self.func_ctx
-                    .add_inst(InstEnt::new(InstKind::Return, value));
-            }
-        }
+        self.expr(body, self.return_dest)?;
 
         Ok(())
     }
@@ -198,7 +189,7 @@ impl<'a> MirBuilder<'a> {
         };
 
         let on_stack = self.on_stack(tir);
-        let dest = self.unwrap_dest_low(ty, on_stack, dest).or(dest);
+        let dest = self.unwrap_dest(tir, dest).or(dest);
 
         let value = self.flagged_value_from_ty(ty, MirFlags::POINTER);
 
@@ -321,25 +312,24 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::TakePtr(value), .. } = self.tir_data.ents[tir] else {
+        let TirEnt { flags, span, ty, kind: TirKind::TakePtr(value), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
 
         let mir_value = self.expr(value, None)?.unwrap();
 
-        // // funny thing, any stack allocated value treated as
-        // // value is pointer but pointer treated as pointer is value
-        let value = self.value_from_ty(ty);
+        let value = self.unwrap_dest(tir, None).unwrap();
+
+        let pointer = self.value_from_ty(ty);
 
         {
             let kind = InstKind::TakePointer(mir_value);
-            let inst = InstEnt::new(kind, value.into());
+            let inst = InstEnt::new(kind, pointer.into());
             self.func_ctx.add_inst(inst);
         }
 
+        self.gen_assign(pointer, Some(value));
         self.gen_assign(value, dest);
-
-        self.mir_builder_context.tir_mapping[tir] = value.into();
 
         Ok(Some(value))
     }
@@ -349,7 +339,7 @@ impl<'a> MirBuilder<'a> {
             unreachable!()
         };
 
-        let mir_value = self.expr(value, dest)?.unwrap();
+        let mir_value = self.expr(value, None)?.unwrap();
 
         let value = self.flagged_value_from_ty(ty, MirFlags::POINTER);
 
@@ -360,8 +350,6 @@ impl<'a> MirBuilder<'a> {
         }
 
         self.gen_assign(value, dest);
-
-        self.mir_builder_context.tir_mapping[tir] = value.into();
 
         Ok(Some(value))
     }
@@ -420,7 +408,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn r#loop(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::Loop(body), .. } = self.tir_data.ents[tir] else {
+        let TirEnt { kind: TirKind::Loop(body), .. } = self.tir_data.ents[tir] else {
             unreachable!()
         };
 
@@ -428,7 +416,7 @@ impl<'a> MirBuilder<'a> {
         let exit_block = self.func_ctx.create_block();
 
         let on_stack = self.on_stack(tir);
-        let value = self.unwrap_dest_low(ty, on_stack, dest);
+        let value = self.unwrap_dest(tir, dest);
 
         let loop_header = Loop {
             entry: enter_block,
@@ -511,7 +499,7 @@ impl<'a> MirBuilder<'a> {
         };
 
         let on_stack = self.on_stack(tir);
-        let Some(mut value) = self.unwrap_dest_low(ty, on_stack, dest).or(dest) else {
+        let Some(mut value) = self.unwrap_dest(tir, dest).or(dest) else {
             unreachable!();
         };
 
@@ -547,10 +535,11 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn variable(&mut self, tir: Tir) -> ExprResult {
-        let assignable = self.tir_data.ents[tir].flags.contains(TirFlags::ASSIGNABLE);
-        let on_stack = self.on_stack(tir);
+        let flags = self.tir_data.ents[tir].flags;
+        let assignable = !flags.contains(TirFlags::IMMUTABLE);
+        let pointer = self.on_stack(tir) || flags.contains(TirFlags::POINTER);
 
-        let dest = if on_stack {
+        let dest = if pointer {
             self.unwrap_dest(tir, None)
         } else {
             None
@@ -566,7 +555,7 @@ impl<'a> MirBuilder<'a> {
 
         self.func_ctx.values[value.unwrap()]
             .flags
-            .insert(MirFlags::ASSIGNABLE & (assignable && !on_stack));
+            .insert(MirFlags::ASSIGNABLE & (assignable && !pointer));
 
         Ok(None)
     }
@@ -587,7 +576,7 @@ impl<'a> MirBuilder<'a> {
         let cond = self.expr(cond, None)?;
 
         let on_stack = self.on_stack(tir);
-        let value = self.unwrap_dest_low(ty, on_stack, dest);
+        let value = self.unwrap_dest(tir, dest);
         let block_dest = on_stack.then_some(value.or(dest)).flatten();
         let no_value = ty == self.builtin_types.nothing;
 
@@ -701,9 +690,7 @@ impl<'a> MirBuilder<'a> {
         let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
 
         let filtered_dest = on_stack.then_some(dest).flatten();
-        let value = self
-            .unwrap_dest_low(ty, on_stack, filtered_dest)
-            .or(filtered_dest);
+        let value = self.unwrap_dest(tir, filtered_dest).or(filtered_dest);
 
         let args = {
             let args_view = self.tir_data.cons.get(args);
@@ -750,10 +737,6 @@ impl<'a> MirBuilder<'a> {
     fn unwrap_dest(&mut self, tir: Tir, dest: Option<Value>) -> Option<Value> {
         let on_stack = self.on_stack(tir);
         let ret = self.tir_data.ents[tir].ty;
-        self.unwrap_dest_low(ret, on_stack, dest)
-    }
-
-    fn unwrap_dest_low(&mut self, ret: Ty, on_stack: bool, dest: Option<Value>) -> Option<Value> {
         let has_ret = ret != self.builtin_types.nothing;
         (dest.is_none() && has_ret).then(|| {
             if on_stack {
@@ -775,7 +758,8 @@ impl<'a> MirBuilder<'a> {
                 value
             } else {
                 // no need to allocate, register is enough
-                self.value_from_ty(ret)
+                let pointer = self.tir_data.ents[tir].flags.contains(TirFlags::POINTER);
+                self.flagged_value_from_ty(ret, MirFlags::POINTER & pointer)
             }
         })
     }
@@ -840,7 +824,8 @@ impl<'a> MirBuilder<'a> {
 
     fn on_stack(&self, tir: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.tir_data.ents[tir];
-        self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED)
+        (self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED))
+            && !flags.contains(TirFlags::POINTER)
     }
 
     fn r#return(&mut self, tir: Tir) -> ExprResult {

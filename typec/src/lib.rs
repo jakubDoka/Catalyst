@@ -20,7 +20,6 @@ pub mod ty_parser;
 use std::{any::TypeId, str::FromStr};
 
 use cranelift_codegen::isa::CallConv;
-pub use scope::ScopeContext;
 pub use state::{
     BoundVerifier, GlobalBuilder, IdentHasher, ScopeBuilder, TirBuilder, TyBuilder, TyParser,
 };
@@ -64,7 +63,7 @@ pub fn infer_parameters(
                         loc: span,
                     });
                 } else {
-                    let base_ref = types.base_of(parametrized);
+                    let base_ref = types.ptr_leaf_of(parametrized);
                     drop(implements(
                         base_ref,
                         parametrized,
@@ -108,40 +107,6 @@ pub fn prepare_params(params: &[Ty], types: &mut Types) {
         };
         *index = i as u8;
     }
-}
-
-/// creates a pointer of `ty`, already instantiated entities will be reused.
-pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut TyInstances) -> Ty {
-    let TyEnt {
-        kind,
-        id,
-        name,
-        flags,
-        ..
-    } = types[ty];
-    let id = ID::pointer(id, mutable);
-
-    if let Some(&already) = ty_instances.get(id) {
-        return already;
-    }
-
-    let depth = if let TyKind::Ptr(.., depth) = kind {
-        depth
-    } else {
-        0
-    };
-
-    let ent = TyEnt {
-        id,
-        name,
-        kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable | TyFlags::COPY,
-    };
-    let ptr = types.push(ent);
-
-    assert!(ty_instances.insert(id, ptr).is_none());
-
-    ptr
 }
 
 pub fn implements(

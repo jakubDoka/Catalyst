@@ -132,7 +132,7 @@ bitflags! {
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
         const CONTINUE = 1 << 4;
-        const ASSIGNABLE = 1 << 5;
+        const POINTER = 1 << 5;
     }
 }
 
@@ -275,24 +275,21 @@ impl<'a> TirDisplay<'a> {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
 
-                    if !drops.is_reserved_value() {
-                        for _ in 0..level + 1 {
-                            write!(f, "  ")?;
-                        }
-                        write!(f, "drops {{")?;
-                        for &expr in self.data.cons.get(drops).iter() {
-                            self.fmt(expr, f, displayed, level + 2, true)?;
-                        }
-                        for _ in 0..level + 1 {
-                            write!(f, "  ")?;
-                        }
-                        write!(f, "}}")?;
-                    }
-
                     for _ in 0..level {
                         write!(f, "  ")?;
                     }
                     write!(f, "}}")?;
+
+                    if !drops.is_reserved_value() {
+                        writeln!(f, " drops {{")?;
+                        for &expr in self.data.cons.get(drops).iter() {
+                            self.fmt(expr, f, displayed, level + 1, true)?;
+                        }
+                        for _ in 0..level {
+                            write!(f, "  ")?;
+                        }
+                        write!(f, "}}")?;
+                    }
                 } else {
                     write!(f, "{{}}")?;
                 }
@@ -303,7 +300,7 @@ impl<'a> TirDisplay<'a> {
                     self.fmt(expr, f, displayed, level, false)?;
                 }
                 if !drops.is_reserved_value() {
-                    write!(f, " drops {{")?;
+                    writeln!(f, " drops {{")?;
                     for &expr in self.data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
@@ -358,7 +355,7 @@ impl<'a> TirDisplay<'a> {
                     self.fmt(ret, f, displayed, level, false)?;
                 }
                 if !drops.is_reserved_value() {
-                    write!(f, " drops {{")?;
+                    writeln!(f, " drops {{")?;
                     for &expr in self.data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
@@ -372,7 +369,7 @@ impl<'a> TirDisplay<'a> {
                 write!(f, "continue ")?;
                 self.fmt(loop_expr, f, displayed, level, false)?;
                 if !drops.is_reserved_value() {
-                    write!(f, " drops {{")?;
+                    writeln!(f, " drops {{")?;
                     for &expr in self.data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
@@ -387,7 +384,7 @@ impl<'a> TirDisplay<'a> {
                 write!(f, " = ")?;
                 self.fmt(right, f, displayed, level, false)?;
                 if !drops.is_reserved_value() {
-                    write!(f, " drops {{")?;
+                    writeln!(f, " drops {{")?;
                     for &expr in self.data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }

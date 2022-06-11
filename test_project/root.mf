@@ -8,6 +8,7 @@ let CONSTANT = 1
 let STRUCT_CONSTANT = init_something()
 let mut dangerous_int = 0
 
+
 #entry
 fn main() -> int {
     if other(1, 2, 3) != 7 {
@@ -69,11 +70,11 @@ fn main() -> int {
         return 12
     }
 
-    if Loo::{ field: ^Loo::{ field: 90; yes: false }; yes: true }.as_ptr().field.field != 90 {
+    if Loo::{ field: ^^Loo::{ field: 90; yes: false }; yes: true }.as_ptr().field.field != 90 {
         return 13
     }
     
-    let vec = Vec::new::[int]()
+    let vec = ^Vec::new::[int]()
     
     let ptr = malloc(100)
     

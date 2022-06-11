@@ -1,5 +1,4 @@
 //! This file is generated, do not edit!
-use crate::scope::*;
 use ast::*;
 use errors::*;
 use lexer::*;

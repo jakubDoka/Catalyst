@@ -82,7 +82,7 @@ fn ownership_test() {
         if true {
             loop {
                 {a}
-                //a = se()
+                a = se()
                 break'a
             }
         }
@@ -112,4 +112,12 @@ struct TestOwnership {
     a: SomethingElse
     b: SomethingElse
     c: SomethingElse
+}
+
+impl drop as TestOwnership {
+    fn drop(s: ^mut Self) {
+        s.a = se()
+        s.b = se()
+        s.c = se()
+    }
 }

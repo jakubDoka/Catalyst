@@ -18,6 +18,11 @@ pub type TyInstances = Map<Ty>;
 impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
+    fn may_drop(&self, ty: Ty) -> bool {
+        !self[ty].flags.contains(TyFlags::BUILTIN)
+            && !matches!(self[ty].kind, TyKind::Ptr(..) | TyKind::FuncPtr(..))
+    }
+
     fn item_count(&self, ty: Ty, ty_comps: &TyComps) -> usize {
         match self[ty].kind {
             TyKind::Struct(fields) => ty_comps.len_of(fields),
@@ -73,7 +78,7 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
             },
             TyKind::Bool => PatternRange::new(false..true),
 
-            TyKind::Unresolved | TyKind::Bound(_) | TyKind::Param(..) => unreachable!(),
+            TyKind::Unresolved | TyKind::Bound(..) | TyKind::Param(..) => unreachable!(),
         }
     }
 
@@ -91,21 +96,28 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
         }
     }
 
-    fn base_id_of(&self, ty: Ty) -> ID {
-        self[self.base_of(ty)].id
+    fn ptr_leaf_id_of(&self, ty: Ty) -> ID {
+        self[self.ptr_leaf_of(ty)].id
     }
 
-    fn base_of(&self, mut ty: Ty) -> Ty {
-        while let TyKind::Ptr(base, _) = self[ty].kind {
+    fn ptr_leaf_of(&self, mut ty: Ty) -> Ty {
+        while let TyKind::Ptr(base, ..) = self[ty].kind {
             ty = base;
         }
 
         ty
     }
 
+    fn base_of(&self, ty: Ty) -> Ty {
+        match self[ty].kind {
+            TyKind::Instance(base, ..) => base,
+            _ => ty,
+        }
+    }
+
     fn depth_of(&self, ty: Ty) -> usize {
         match self[ty].kind {
-            TyKind::Ptr(_, depth) => depth as usize,
+            TyKind::Ptr(.., depth) => depth as usize,
             _ => 0,
         }
     }

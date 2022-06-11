@@ -46,6 +46,8 @@ impl MainTirBuilder<'_> {
                 continue;
             }
 
+            drop_solver!(self).solve(func);
+
             // println!("{}", self.sources.display(self.funcs[func.meta()].name));
             // println!("{}", TirDisplay::new(
             //     &self.types,
@@ -96,6 +98,13 @@ impl MainTirBuilder<'_> {
             let Ok(init) = tir_builder!(self).global(global) else {
                 continue;
             };
+
+            if ownership_solver!(self).solve(init).is_err() {
+                continue;
+            }
+
+            drop_solver!(self).solve(init);
+
             self.funcs[init.meta()].tir_data = self.tir_data.clone();
             self.to_compile.push((init, TyList::reserved_value()));
             self.global_map.insert(self.globals[global].id, global);

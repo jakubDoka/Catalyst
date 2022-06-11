@@ -178,7 +178,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         self.close_frame()
     }
 
-    pub fn slice_keys(&self, id: E) -> impl Iterator<Item = S> {
+    pub fn slice_keys(&self, id: E) -> impl Iterator<Item = S> + Clone {
         match (
             self.indices.get(id.index()),
             self.indices.get(id.index() + 1),
@@ -213,10 +213,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
     }
 
     pub fn get_iter(&self, id: E) -> impl Iterator<Item = (S, &T)> + Clone {
-        self.get(id)
-            .iter()
-            .enumerate()
-            .map(move |(i, v)| (S::new(i + id.index()), v))
+        self.slice_keys(id).map(|k| (k, &self[k]))
     }
 
     pub fn push_one(&mut self, value: T) -> S {

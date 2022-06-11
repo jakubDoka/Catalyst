@@ -10,8 +10,14 @@ impl TirBuilder<'_> {
         self.global = global;
 
         let ast = self.scope_context.global_ast[self.global];
-        let body = self.expr(ast)?;
-        let ret = self.tir_data.ents[body].ty;
+        let value = self.expr(ast)?;
+        let ret = self.tir_data.ents[value].ty;
+
+        let body = {
+            let kind = TirKind::Return(value.into(), default());
+            let ent = TirEnt::new(kind, ret, self.ast_data.nodes[ast].span);
+            self.tir_data.ents.push(ent)
+        };
 
         self.globals[self.global].ty = ret;
 
@@ -100,26 +106,9 @@ impl TirBuilder<'_> {
             self.tir_data.cons.push(&tir_args)
         };
 
-        let root = self.block(body_ast)?;
+        let root = self.block_low(body_ast, Some((ret, ret_ast)))?;
         self.funcs[self.func.meta()].body = root;
         self.funcs[self.func.meta()].args = args;
-
-        self.tir_data.used_types = self.ty_lists.push(&self.scope_context.used_types);
-        self.scope_context.used_types.clear();
-        self.scope_context.used_types_set.clear();
-
-        if !self.is_terminating(root) && ret != self.builtin_types.nothing {
-            let because = ret_ast
-                .is_reserved_value()
-                .not()
-                .then(|| self.ast_data.nodes[ret_ast].span);
-            self.infer_tir_ty(root, ret, |_, got, loc| TyError::ReturnTypeMismatch {
-                because,
-                expected: ret,
-                got,
-                loc,
-            })?;
-        }
 
         self.scope.pop_frame();
 
@@ -163,6 +152,10 @@ impl TirBuilder<'_> {
     }
 
     fn block(&mut self, ast: Ast) -> errors::Result<Tir> {
+        self.block_low(ast, None)
+    }
+
+    fn block_low(&mut self, ast: Ast, root_data: Option<(Ty, Ast)>) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
 
         self.tir_stack.mark_frame();
@@ -188,6 +181,30 @@ impl TirBuilder<'_> {
             } else {
                 self.builtin_types.nothing
             };
+
+            if let Some((ret, ret_ast)) = root_data && !terminal_flags.contains(TirFlags::TERMINATING) {
+                let because = ret_ast
+                    .is_reserved_value()
+                    .not()
+                    .then(|| self.ast_data.nodes[ret_ast].span);
+
+                let ret_value = (ret != self.builtin_types.nothing).then_some(final_expr).flatten();
+
+                if ret_value.is_some() {
+                    self.infer_ty(ty, ret, |_| TyError::ReturnTypeMismatch {
+                        because,
+                        expected: ret,
+                        got: ty,
+                        loc: span,
+                    })?;
+                }
+
+                let kind = TirKind::Return(ret_value.into(), default());
+                let ent = TirEnt::new(kind, ret, span);
+                let tir = self.tir_data.ents.push(ent);
+                self.tir_stack.push(tir);
+                terminal_flags |= TirFlags::TERMINATING;
+            }
 
             let slice = self.tir_stack.top_frame();
             let items = self.tir_data.cons.push(slice);
@@ -469,7 +486,7 @@ impl TirBuilder<'_> {
                         }
 
                         let span = self.ast_data.nodes[name].span;
-                        let ty = self.types.base_of(ty);
+                        let ty = self.types.ptr_leaf_of(ty);
                         let id = ID::owned(self.types[ty].id, self.sources.id_of(span));
 
                         let matcher = matcher!(Func = "function");
@@ -484,7 +501,7 @@ impl TirBuilder<'_> {
                             continue;
                         };
 
-                        let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
+                        let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field_id].ty);
 
                         let i = self.ty_comps[field_id].index;
 
@@ -722,7 +739,7 @@ impl TirBuilder<'_> {
         let func = {
             let span = self.ast_data.nodes[op].span;
             let id = {
-                let ty = self.types.base_id_of(operand_ty);
+                let ty = self.types.ptr_leaf_id_of(operand_ty);
 
                 let op = self.sources.id_of(span);
 
@@ -969,7 +986,7 @@ impl TirBuilder<'_> {
             // OK if no cycles performed
             .fold(Ok(()), |_, _| todo!())?;
 
-        let ret = ty_parser!(self).instantiate(ret, &mut param_slots);
+        let ret = ty_factory!(self).instantiate(ret, &mut param_slots);
         self.scope_context.use_type(ret, self.types);
 
         Ok((self.ty_lists.push(&param_slots), ret))
@@ -1034,7 +1051,7 @@ impl TirBuilder<'_> {
                 .get(id)
                 .and_then(|field_or_method| {
                     if let Some(field) = field_or_method.pointer.may_read::<TyComp>() {
-                        let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field].ty);
+                        let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field].ty);
                         let field = {
                             let kind = TirKind::FieldAccess(obj, field);
                             let ent = TirEnt::new(kind, field_ty, span);
@@ -1141,11 +1158,6 @@ impl TirBuilder<'_> {
         target
     }
 
-    fn is_mutable(&self, target: Tir) -> bool {
-        let TirEnt { ty, flags, .. } = self.tir_data.ents[target];
-        self.types[ty].flags.contains(TyFlags::MUTABLE) || !flags.contains(TirFlags::IMMUTABLE)
-    }
-
     fn take_ptr(&mut self, target: Tir, mutable: bool) -> Tir {
         if self.is_terminating(target) {
             return target;
@@ -1187,7 +1199,7 @@ impl TirBuilder<'_> {
         let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);
         let assignable = self.types[ty].flags.contains(TyFlags::MUTABLE);
-        let flags = (TirFlags::IMMUTABLE & !assignable) | (TirFlags::ASSIGNABLE & assignable);
+        let flags = (TirFlags::IMMUTABLE & !assignable) | TirFlags::POINTER;
         let deref = TirEnt::with_flags(kind, deref_ty, flags, span);
         self.tir_data.ents.push(deref)
     }
@@ -1203,7 +1215,7 @@ impl TirBuilder<'_> {
         }
 
         let ty = self.tir_data.ents[header].ty;
-        let base_ty = self.types.base_of(ty);
+        let base_ty = self.types.ptr_leaf_of(ty);
 
         let span = self.ast_data.nodes[field].span;
         let (field_id, field_ty) = {
@@ -1222,7 +1234,7 @@ impl TirBuilder<'_> {
                 .scope
                 .get_concrete::<TyComp>(field_id)
                 .map_err(handler)?;
-            let field_ty = ty_parser!(self).subtype(base_ty, self.ty_comps[field_id].ty);
+            let field_ty = ty_factory!(self).subtype(base_ty, self.ty_comps[field_id].ty);
             self.scope_context.use_type(field_ty, self.types);
             (field_id, field_ty)
         };
@@ -1232,8 +1244,8 @@ impl TirBuilder<'_> {
         }
 
         let result = {
-            let mutable = self.is_mutable(header);
-            let flags = (TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable);
+            let header_flags = self.tir_data.ents[header].flags;
+            let flags = header_flags & (TirFlags::IMMUTABLE | TirFlags::POINTER);
             let kind = TirKind::FieldAccess(header, field_id);
             let ent = TirEnt::with_flags(kind, field_ty, flags, span);
             self.tir_data.ents.push(ent)
@@ -1345,7 +1357,7 @@ impl TirBuilder<'_> {
                     .scope
                     .get_concrete::<TyComp>(field_id)
                     .map_err(handler)?;
-                let field_ty = ty_parser!(self).subtype(ty, self.ty_comps[field_id].ty);
+                let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field_id].ty);
                 (expr, (field_id, field_ty))
             } else {
                 let span = self.ast_data.nodes[field].span;
@@ -1437,7 +1449,7 @@ impl TirBuilder<'_> {
                 self.ty_lists.push_one(param);
             }
 
-            ty_parser!(self).parse_instance_type_low(ty, span)
+            ty_factory!(self).parse_instance_type_low(ty, span)
         } else {
             ty
         };
@@ -1473,7 +1485,7 @@ impl TirBuilder<'_> {
 
         self.tir_data.ents[value]
             .flags
-            .insert((TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable));
+            .insert(TirFlags::IMMUTABLE & !mutable);
 
         let result = {
             let kind = TirKind::Variable(value);
@@ -1642,14 +1654,14 @@ impl TirBuilder<'_> {
                 } else if let Some(global) = value.pointer.may_read::<Global>() {
                     let kind = TirKind::GlobalAccess(global);
                     let GlobalEnt { ty, mutable, .. } = self.globals[global];
-                    let flags = (TirFlags::IMMUTABLE & !mutable) | (TirFlags::ASSIGNABLE & mutable);
+                    let flags = (TirFlags::IMMUTABLE & !mutable) | TirFlags::POINTER;
                     Ok(TirEnt::with_flags(kind, ty, flags, span))
                 } else if let Some(func) = value.pointer.may_read::<Func>() {
                     let kind = TirKind::FuncPtr(func);
                     let ty = if func_ptr_ty {
                         let sig = self.funcs[func.meta()].sig;
                         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
-                        ty_parser!(self).func_pointer_of(sig, generic)
+                        ty_factory!(self).func_pointer_of(sig, generic)
                     } else {
                         self.builtin_types.nothing
                     };
@@ -1769,7 +1781,7 @@ impl TirBuilder<'_> {
             kind,
         } = self.tir_data.ents[left];
 
-        if !flags.contains(TirFlags::ASSIGNABLE) {
+        if flags.contains(TirFlags::IMMUTABLE) {
             let because = if let TirKind::Access(here, ..) = kind {
                 Some(self.tir_data.ents[here].span)
             } else {
@@ -1821,7 +1833,7 @@ impl TirBuilder<'_> {
 
         let ty = if let TyKind::Instance(.., params) = self.types[on].kind {
             let params = self.ty_lists.get(params).to_vec();
-            ty_parser!(self).instantiate(field.ty, &params)
+            ty_factory!(self).instantiate(field.ty, &params)
         } else {
             field.ty
         };
