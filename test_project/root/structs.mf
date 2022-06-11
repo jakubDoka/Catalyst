@@ -1,3 +1,7 @@
+use {
+    "root/generics"
+}
+
 fn [T] move_in_and_out(arg: T) -> T {
     arg
 }
@@ -98,14 +102,16 @@ fn ownership_test() {
                 loop {
                     if true {
                         let a = to.a
-                        to.a = a
-                        break'b to.a
+                        //to.a = se()
+                        break'b a
                     }
                     continue'a
                 }
             }
         }
     }
+
+    return
 }
 
 struct TestOwnership {
@@ -116,8 +122,6 @@ struct TestOwnership {
 
 impl drop as TestOwnership {
     fn drop(s: ^mut Self) {
-        s.a = se()
-        s.b = se()
-        s.c = se()
+        putchar('d')
     }
 }

@@ -22,13 +22,22 @@ pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt:
         OwError::LoopDoubleMove { because, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
-                writeln!(to, "accessing already moved memory")
+                write!(to, "accessing already moved memory")
             })?;
 
             because.loc_to(sources, to)?;
             because.underline_info(sources, to, &|to| {
-                writeln!(to, "because this value is outside of loop")
+                write!(to, "because this value is outside of loop")
             })?;
+        }
+        OwError::PartiallyMovedDrop { loc, because } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "detected partially moved value that implements 'drop' bound when generating drops here")
+            })?;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| write!(to, "caused by this move"))?;
         }
     }
     writeln!(to, "|> type does not implement 'copy' bound")?;

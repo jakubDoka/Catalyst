@@ -16,6 +16,8 @@ pub struct OwnershipContext {
     pub currently_accessed: FramedStack<Access>,
     pub branch_ids: Vec<u32>,
     pub loops: Vec<(Tir, u32)>,
+    pub pre_eval: SecondaryMap<Tir, TirList>,
+    pub pre_eval_lists: StackMap<TirList, Tir>,
 }
 
 impl OwnershipContext {
@@ -31,6 +33,8 @@ impl OwnershipContext {
             currently_accessed: FramedStack::new(),
             branch_ids: Vec::new(),
             loops: Vec::new(),
+            pre_eval: SecondaryMap::new(),
+            pre_eval_lists: StackMap::new(),
         }
     }
 
@@ -73,7 +77,9 @@ impl OwnershipContext {
     }
 
     pub fn push(&mut self, mut ent: OwnershipEnt) -> Ownership {
-        ent.level = self.scope.level() as u32;
+        if ent.level == u32::MAX {
+            ent.level = self.scope.level() as u32;
+        }
         ent.loop_level = self.currently_accessed.frame_count() as u32;
         self.ownerships.push(ent)
     }
@@ -111,6 +117,8 @@ impl OwnershipContext {
         self.currently_accessed.clear();
         self.branch_ids.clear();
         self.loops.clear();
+        self.pre_eval.clear();
+        self.pre_eval_lists.clear();
     }
 }
 
@@ -144,7 +152,7 @@ impl OwnershipScope {
     }
 
     pub fn all_items_from_frame(&self, n: usize) -> impl Iterator<Item = Ownership> + '_ {
-        self.items.iter_from_frame_inv(n).map(|i| i.ownership)
+        self.items.iter_from_frame(n).map(|i| i.ownership)
     }
 
     pub fn all_items(&self) -> impl Iterator<Item = Ownership> + '_ {
@@ -214,7 +222,7 @@ struct Item {
     shadow: Option<Ownership>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct OwnershipEnt {
     pub tir: PackedOption<Tir>,
     pub ty: Ty,

@@ -431,7 +431,7 @@ impl TirBuilder<'_> {
             base = {
                 let expr = self.match_branching_recursive(branch)?;
                 let flags = self.tir_data.ents[base].flags & flags;
-                let kind = TirKind::If(comparison, expr, base);
+                let kind = TirKind::If(comparison, expr, base, default());
                 let expr_ty = self.tir_data.ents[expr].ty;
                 let base_ty = self.tir_data.ents[base].ty;
                 let ty = if expr_ty != base_ty {
@@ -1623,7 +1623,7 @@ impl TirBuilder<'_> {
         };
 
         let result = {
-            let kind = TirKind::If(cond, then, otherwise);
+            let kind = TirKind::If(cond, then, otherwise, default());
             let ent = TirEnt::with_flags(kind, ty, flags, span);
             self.tir_data.ents.push(ent)
         };

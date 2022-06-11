@@ -4,7 +4,7 @@ use ownership::*;
 impl MainTirBuilder<'_> {
     /// Generic type representation is built here. `ty_buffer` is for memory reuse and should be empty
     /// before and after this function.
-    pub fn build_types(&mut self, stage: usize, source: Source, ty_buffer: &mut Vec<Ty>) {
+    fn build_types(&mut self, stage: usize, source: Source, ty_buffer: &mut Vec<Ty>) {
         ty_buffer.extend(
             self.modules[source]
                 .items
@@ -20,7 +20,7 @@ impl MainTirBuilder<'_> {
 
     /// Similar to `Self::build_types` but for functions. This action depends on types
     /// so it has to be called after.
-    pub fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
+    fn build_funcs(&mut self, stage: usize, source: Source, func_buffer: &mut Vec<Func>) {
         func_buffer.extend(
             self.modules[source]
                 .items
@@ -39,8 +39,6 @@ impl MainTirBuilder<'_> {
             if tir_builder!(self).func(func).is_err() {
                 continue;
             }
-
-            logger!(self).log();
 
             if ownership_solver!(self).solve(func).is_err() {
                 continue;
@@ -63,11 +61,8 @@ impl MainTirBuilder<'_> {
 
     /// Compute the type layouts. This is only used for incremental
     /// computation while jit-compiling macros.
-    pub fn build_layouts(&mut self, bottom: usize) {
-        let iter = (bottom..self.types.len()).map(|i| {
-            let ty = Ty::new(i);
-            ty
-        });
+    fn build_layouts(&mut self, bottom: usize) {
+        let iter = (bottom..self.types.len()).map(Ty::new);
 
         for ty in iter.clone() {
             self.ty_graph.add_vertex(ty);
@@ -84,7 +79,7 @@ impl MainTirBuilder<'_> {
         self.ty_graph.clear();
     }
 
-    pub fn build_globals(&mut self, stage: usize, source: Source, global_buffer: &mut Vec<Global>) {
+    fn build_globals(&mut self, stage: usize, source: Source, global_buffer: &mut Vec<Global>) {
         global_buffer.extend(
             self.modules[source]
                 .items

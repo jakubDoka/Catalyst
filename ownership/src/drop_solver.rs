@@ -71,8 +71,14 @@ impl DropSolver<'_> {
                 | TirKind::Variable(header)
                 | TirKind::FieldAccess(header, ..) => frontier.push(header),
 
-                TirKind::If(conf, then, otherwise) => {
-                    frontier.extend_from_slice(&[conf, then, otherwise])
+                TirKind::If(conf, then, otherwise, ..) => {
+                    frontier.extend_from_slice(&[conf, then, otherwise]);
+                    let pre_computes = self.o_ctx.pre_eval[node];
+                    let list = self
+                        .tir_data
+                        .cons
+                        .push(self.o_ctx.pre_eval_lists.get(pre_computes));
+                    self.tir_data.ents[node].kind = TirKind::If(conf, then, otherwise, list);
                 }
 
                 TirKind::Constructor(args) | TirKind::Call(.., args) => {

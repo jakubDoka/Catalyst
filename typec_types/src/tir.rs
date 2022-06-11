@@ -97,7 +97,7 @@ pub enum TirKind {
     LoopInProgress(PackedOption<Tir>, bool),
     FieldAccess(Tir, TyComp),
     Constructor(TirList),
-    If(Tir, Tir, Tir),
+    If(Tir, Tir, Tir, TirList),
     Block(TirList, TirList),
     Return(PackedOption<Tir>, TirList),
     Argument(u32),
@@ -260,7 +260,17 @@ impl<'a> TirDisplay<'a> {
                 }
                 write!(f, "}}")?;
             }
-            TirKind::If(cond, then, otherwise) => {
+            TirKind::If(cond, then, otherwise, pre_computes) => {
+                if !pre_computes.is_reserved_value() {
+                    writeln!(f, "pre-compute {{")?;
+                    for &field in self.data.cons.get(pre_computes).iter() {
+                        self.fmt(field, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}} ")?;
+                }
                 write!(f, "if ")?;
                 self.fmt(cond, f, displayed, level, false)?;
                 write!(f, " then ")?;
@@ -322,14 +332,13 @@ impl<'a> TirDisplay<'a> {
 
                 write!(f, "{func}")?;
 
-                write!(f, "::[")?;
-                for (i, &param) in params.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
+                if let Some((&first, others)) = params.split_first() {
+                    write!(f, "::[{}", ty_display!(self, first))?;
+                    for &ty in others {
+                        write!(f, ", {}", ty_display!(self, ty))?;
                     }
-                    write!(f, "{}", ty_display!(self, param))?;
+                    write!(f, "] ")?;
                 }
-                write!(f, "]")?;
 
                 write!(f, "(")?;
                 for (i, &arg) in self.data.cons.get(args).iter().enumerate() {

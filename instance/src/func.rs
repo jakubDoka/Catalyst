@@ -569,7 +569,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn r#if(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { ty, kind: TirKind::If(cond, then, otherwise), .. } = self.tir_data.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::If(cond, then, otherwise, pre_computes), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
 
