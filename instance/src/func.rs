@@ -72,22 +72,23 @@ impl<'a> MirBuilder<'a> {
             unreachable!()
         };
 
-        if stmts.is_reserved_value() {
-            return Ok(None);
-        }
+        let value = if !stmts.is_reserved_value() {
+            let stmts = self.tir_data.cons.get(stmts);
+            if stmts.is_empty() {
+                return Ok(None);
+            }
 
-        let stmts = self.tir_data.cons.get(stmts);
-        if stmts.is_empty() {
-            return Ok(None);
-        }
+            for &stmt in stmts[..stmts.len() - 1].iter() {
+                self.expr(stmt, None)?;
+            }
+            self.expr(stmts[stmts.len() - 1], dest)?
+        } else {
+            None
+        };
 
-        for &stmt in stmts[..stmts.len() - 1].iter() {
-            self.expr(stmt, None)?;
-        }
+        self.gen_drops(drops)?;
 
-        let value = self.expr(stmts[stmts.len() - 1], dest)?;
-
-        Ok(value)
+        return Ok(value);
     }
 
     fn expr(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
@@ -134,6 +135,8 @@ impl<'a> MirBuilder<'a> {
             unreachable!();
         };
 
+        self.gen_drops(drops)?;
+
         let &Loop { entry, .. } = self
             .func_ctx
             .loops
@@ -145,6 +148,66 @@ impl<'a> MirBuilder<'a> {
         self.func_ctx
             .add_inst(InstEnt::new(InstKind::Jump(entry), None));
         Ok(None)
+    }
+
+    fn gen_drops(&mut self, drops: TirList) -> errors::Result {
+        for &drop in self.tir_data.cons.get(drops) {
+            let drop = self.expr(drop, None)?.unwrap();
+            self.gen_drop(drop);
+        }
+
+        Ok(())
+    }
+
+    fn gen_drop(&mut self, drop: Value) {
+        let mut frontier = vec![drop];
+
+        while let Some(drop) = frontier.pop() {
+            let ValueEnt { ty, .. } = self.func_ctx.values[drop];
+            let TyEnt { flags, kind, .. } = self.types[ty];
+            if let TyKind::Enum(..) = kind {
+                continue;
+            }
+            if flags.contains(TyFlags::DROP) {
+                let prt = {
+                    let mut_ptr = pointer_of(ty, true, self.types, self.ty_instances);
+                    let value = self.value_from_ty(mut_ptr);
+                    let kind = InstKind::TakePtr(drop);
+                    self.func_ctx.add_inst(InstEnt::new(kind, value.into()));
+                    value
+                };
+
+                let drop_fn = {
+                    let impl_id = {
+                        let bound = self.types[self.builtin_types.drop].id;
+                        let implementor = self.types[self.types.base_of(ty)].id;
+                        ID::bound_impl(bound, implementor)
+                    };
+
+                    let Some(&bound_impl) = self.bound_impls.get(impl_id) else {
+                        unreachable!()
+                    };
+
+                    self.func_lists.get(bound_impl.funcs)[0]
+                };
+
+                if self.funcs[drop_fn].flags.contains(FuncFlags::GENERIC) {
+                    todo!("generic trait methods not yes supported")
+                }
+
+                let args = self.func_ctx.value_slices.push(&[prt]);
+                let kind = InstKind::Call(drop_fn, args);
+                self.func_ctx.add_inst(InstEnt::new(kind, None));
+            }
+
+            for field in self.repr_fields.get(self.reprs[ty].fields) {
+                let value = self
+                    .access_offset(field.ty, drop, field.offset, None)
+                    .unwrap()
+                    .unwrap();
+                frontier.push(value);
+            }
+        }
     }
 
     fn indirect_call(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
@@ -312,7 +375,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn take_pointer(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
-        let TirEnt { flags, span, ty, kind: TirKind::TakePtr(value), .. } = self.tir_data.ents[tir] else {
+        let TirEnt { ty, kind: TirKind::TakePtr(value), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
 
@@ -323,7 +386,7 @@ impl<'a> MirBuilder<'a> {
         let pointer = self.value_from_ty(ty);
 
         {
-            let kind = InstKind::TakePointer(mir_value);
+            let kind = InstKind::TakePtr(mir_value);
             let inst = InstEnt::new(kind, pointer.into());
             self.func_ctx.add_inst(inst);
         }
@@ -368,6 +431,9 @@ impl<'a> MirBuilder<'a> {
         };
 
         let a = self.expr(lhs, None)?.unwrap();
+
+        self.gen_drops(drops)?;
+
         let b = self.expr(rhs, Some(a))?.unwrap();
 
         if a == b {
@@ -383,6 +449,8 @@ impl<'a> MirBuilder<'a> {
         let TirEnt { kind: TirKind::Break(loop_header_marker, value, drops), .. } = self.tir_data.ents[tir] else {
             unreachable!()
         };
+
+        self.gen_drops(drops)?;
 
         let &Loop { exit, dest, .. } = self
             .func_ctx
@@ -572,6 +640,10 @@ impl<'a> MirBuilder<'a> {
         let TirEnt { ty, kind: TirKind::If(cond, then, otherwise, pre_computes), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
+
+        for &pre_compute in self.tir_data.cons.get(pre_computes) {
+            self.expr(pre_compute, None)?;
+        }
 
         let cond = self.expr(cond, None)?;
 
@@ -832,6 +904,8 @@ impl<'a> MirBuilder<'a> {
         let TirEnt { kind: TirKind::Return(value, drops), .. } = self.tir_data.ents[tir] else {
             unreachable!();
         };
+
+        self.gen_drops(drops)?;
 
         let value = if let Some(value) = value.expand() {
             let dest = self.return_dest;

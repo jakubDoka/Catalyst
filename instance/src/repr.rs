@@ -216,8 +216,9 @@ impl<'a> LayoutBuilder<'a> {
         let fields = self.repr_fields.push(&[
             ReprField {
                 offset: Offset::ZERO,
+                ty: discriminant_ty,
             },
-            ReprField { offset },
+            ReprField { offset, ty },
         ]);
 
         self.reprs[ty] = ReprEnt {
@@ -244,7 +245,10 @@ impl<'a> LayoutBuilder<'a> {
 
             copyable &= ent.flags.contains(ReprFlags::COPYABLE);
 
-            let field = ReprField { offset: size };
+            let field = ReprField {
+                offset: size,
+                ty: field_ty,
+            };
             self.repr_fields.push_one(field);
 
             size = size + ent.layout.size();

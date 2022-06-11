@@ -289,19 +289,19 @@ impl<'a> TirDisplay<'a> {
                         write!(f, "  ")?;
                     }
                     write!(f, "}}")?;
-
-                    if !drops.is_reserved_value() {
-                        writeln!(f, " drops {{")?;
-                        for &expr in self.data.cons.get(drops).iter() {
-                            self.fmt(expr, f, displayed, level + 1, true)?;
-                        }
-                        for _ in 0..level {
-                            write!(f, "  ")?;
-                        }
-                        write!(f, "}}")?;
-                    }
                 } else {
                     write!(f, "{{}}")?;
+                }
+
+                if !drops.is_reserved_value() {
+                    writeln!(f, " drops {{")?;
+                    for &expr in self.data.cons.get(drops).iter() {
+                        self.fmt(expr, f, displayed, level + 1, true)?;
+                    }
+                    for _ in 0..level {
+                        write!(f, "  ")?;
+                    }
+                    write!(f, "}}")?;
                 }
             }
             TirKind::Return(expr, drops) => {

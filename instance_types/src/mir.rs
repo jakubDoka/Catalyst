@@ -142,7 +142,7 @@ pub enum InstKind {
     GlobalAccess(Global),
     BitCast(Value),
     DerefPointer(Value),
-    TakePointer(Value),
+    TakePtr(Value),
     Offset(Value),
     StackAddr(StackSlot),
     Variable,
@@ -318,7 +318,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             g
                         )?;
                     }
-                    InstKind::TakePointer(target) => {
+                    InstKind::TakePtr(target) => {
                         writeln!(
                             f,
                             "\t{} = ptr {}",

@@ -315,17 +315,14 @@ impl<'a> ScopeBuilder<'a> {
 
         let scope_id = {
             let span = self.ast_data.nodes[name].span;
-            let str = self.sources.display(span);
-            let id = ID::new(str);
+            let id = self.sources.id_of(span);
             if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) =
                 self.funcs[func.meta()].kind
             {
                 if let Some(bound) = bound {
-                    let implementor = self.types[owner].id;
-                    ID::bound_impl_func(bound, implementor, id)
+                    ID::bound_impl_func(self.types[owner].id, ID::owned(bound, id))
                 } else {
-                    let owner = self.types[owner].id;
-                    ID::owned(owner, id)
+                    ID::owned(self.types[owner].id, id)
                 }
             } else {
                 id

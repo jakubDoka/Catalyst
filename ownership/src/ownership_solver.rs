@@ -143,7 +143,13 @@ impl OwnershipSolver<'_> {
                 self.declare(root)
             }
 
-            TirKind::Variable(value) | TirKind::BitCast(value) => {
+            TirKind::Variable(value) => {
+                self.move_out(value)?;
+                self.declare_low(Self::base_id(value), value, false, true)?;
+                Ok(ID::reserved_value())
+            }
+
+            TirKind::BitCast(value) => {
                 self.move_out(value)?;
                 self.declare_low(Self::base_id(value), value, false, true)
             }
@@ -214,6 +220,7 @@ impl OwnershipSolver<'_> {
             .iter()
             .copied()
             .filter(|&b| !self.tir_data.ents[b].flags.contains(TirFlags::TERMINATING));
+
         let branch_count = branches.clone().count();
 
         for (i, branch) in branches.clone().rev().enumerate() {
@@ -230,7 +237,7 @@ impl OwnershipSolver<'_> {
             .collect::<Vec<_>>();
 
         let mut buffer = vec![];
-        for branch in branches.clone() {
+        for (_i, branch) in branches.clone().enumerate() {
             for (i, other) in branches.clone().enumerate() {
                 if other == branch {
                     continue;

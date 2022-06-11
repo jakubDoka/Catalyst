@@ -324,9 +324,7 @@ impl CirBuilder<'_> {
                 let value = self.use_value(value);
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] = value.into();
             }
-            InstKind::Offset(value)
-            | InstKind::TakePointer(value)
-            | InstKind::DerefPointer(value) => {
+            InstKind::Offset(value) | InstKind::TakePtr(value) | InstKind::DerefPointer(value) => {
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] =
                     self.cir_builder_context.value_lookup[value].unwrap().into();
                 // check

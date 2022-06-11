@@ -41,6 +41,11 @@ impl DropSolver<'_> {
 
                     if !flags.contains(TirFlags::TERMINATING) {
                         let list = self.collect_drops(node, &mut drop_buffer);
+                        println!(
+                            "{:?} {}",
+                            list,
+                            self.tir_data.ents[node].span.log(self.sources)
+                        );
                         self.tir_data.ents[node].kind = TirKind::Block(items, list);
                     }
                 }

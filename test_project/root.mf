@@ -143,11 +143,22 @@ fn main() -> int {
 
     //ownership_test()
 
+    let a = TestOwnership::(se(), se(), se())
+
+    if false {
+        drop_(a)
+    } else {
+        //putchar('k')
+    }
+
     putchar(40.u32() as char)
     putchar('h')
-    exit(-34)
 
-    0
+    -34
+}
+
+fn drop_(t: TestOwnership) {
+
 }
 
 struct FieldPtrTest {

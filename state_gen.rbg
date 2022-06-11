@@ -303,13 +303,13 @@ file "instance/src/state.rs" {
         mut MirBuilderContext
         mut ToCompile
         mut FuncInstances
+        mut Types
+        mut TyInstances
         
         Reprs
-        Types
         TyLists
         FuncLists
         TyComps
-        TyInstances
         BoundImpls
         ReprFields
         BuiltinTypes

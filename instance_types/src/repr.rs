@@ -41,12 +41,14 @@ pub struct ReprEnt {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReprField {
     pub offset: Offset,
+    pub ty: Ty,
 }
 
 impl ReservedValue for ReprField {
     fn reserved_value() -> Self {
         Self {
             offset: Offset::new(i32::MAX, i32::MAX),
+            ty: Ty::reserved_value(),
         }
     }
 

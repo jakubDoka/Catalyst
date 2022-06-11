@@ -67,7 +67,7 @@ impl BoundVerifier<'_> {
                         drop(self.compare_signatures(bound_func, func));
 
                         let implementor = self.types[implementor].id;
-                        ID::bound_impl_func(bound_id, implementor, func_id)
+                        ID::bound_impl_func(implementor, func_id)
                     };
 
                     {
@@ -94,9 +94,9 @@ impl BoundVerifier<'_> {
                     let (sugar_id, certain_id) = {
                         let func = self.sources.id_of(ent.name);
                         let ty = self.types[implementor].id;
-                        let sugar_id = ID::owned(ty, func);
                         let bound = self.types[bound].id;
-                        let certain_id = ID::bound_impl_func(bound, ty, func);
+                        let certain_id = ID::bound_impl_func(ty, ID::owned(bound, func));
+                        let sugar_id = ID::owned(ty, func);
                         (sugar_id, certain_id)
                     };
 

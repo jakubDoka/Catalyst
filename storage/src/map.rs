@@ -319,8 +319,8 @@ impl ID {
         Self::from(scope) + item
     }
 
-    pub fn bound_impl_func(bound: Self, implementor: Self, func: Self) -> Self {
-        implementor + Self::owned(bound, func)
+    pub fn bound_impl_func(implementor: Self, func: Self) -> Self {
+        implementor + func
     }
 
     pub fn binary(left: Self, op: Self) -> Self {
