@@ -266,8 +266,18 @@ file "typec/src/state.rs" {
         AstData
     }
 
-    struct GlobalBuilder {
-        mut Diagnostics
+    struct BuiltinBuilder {
+        mut BuiltinSource
+        mut Sources
+        mut Types
+        mut TyLists
+        mut TyInstances
+        mut Funcs
+        mut FuncLists
+        mut TyComps
+        mut BoundImpls
+
+        BuiltinTypes
     }
 }
 

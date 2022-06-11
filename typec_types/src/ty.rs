@@ -186,7 +186,7 @@ macro_rules! gen_builtin_table {
                         id: ID::new(stringify!($name)),
                         name: builtin_source.make_span(sources, stringify!($name)),
                         kind: repr,
-                        flags: (TyFlags::GENERIC & matches!(repr, TyKind::Param(..)))
+                        flags: (TyFlags::GENERIC & matches!(repr, TyKind::Param(..) | TyKind::Bound(..)))
                             | TyFlags::BUILTIN
                             | (TyFlags::SIGNED & matches!(repr, TyKind::Int(..)))
                             | TyFlags::COPY,
@@ -394,6 +394,7 @@ impl Ty {
                 write!(to, "]")?;
             }
             TyKind::Param(_, list, ..) => {
+                write!(to, "impl ")?;
                 if ty_lists.get(list).is_empty() {
                     write!(to, "any")?;
                 }
@@ -406,7 +407,7 @@ impl Ty {
                 }
             }
             TyKind::Ptr(ty, ..) => {
-                write!(to, "*")?;
+                write!(to, "^")?;
                 if types[self].flags.contains(TyFlags::MUTABLE) {
                     write!(to, "mut ")?;
                 }

@@ -1,4 +1,4 @@
-use ast::Ast;
+use ast::*;
 use lexer::*;
 use module_types::*;
 use storage::*;

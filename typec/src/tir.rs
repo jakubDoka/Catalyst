@@ -1,9 +1,12 @@
 use std::{default::default, ops::Not};
 
+use crate::*;
+use ast::*;
+use lexer::*;
 use matching::*;
 use module_types::*;
-
-use crate::{TyError, *};
+use storage::*;
+use typec_types::*;
 
 impl TirBuilder<'_> {
     pub fn global(&mut self, global: Global) -> errors::Result<Func> {

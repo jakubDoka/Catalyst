@@ -1,4 +1,8 @@
 use crate::*;
+use ast::*;
+use lexer::*;
+use storage::*;
+use typec_types::*;
 
 impl TyParser<'_> {
     pub fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {

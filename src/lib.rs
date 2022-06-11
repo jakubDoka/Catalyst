@@ -178,26 +178,8 @@ impl Compiler {
         let mut sources = Sources::new();
         let mut builtin_source = BuiltinSource::new(&mut sources);
 
-        let mut modules = Modules::new();
         let mut types = Types::new();
         let builtin_types = BuiltinTypes::new(&mut sources, &mut builtin_source, &mut types);
-        let mut ty_lists = TyLists::new();
-        let mut funcs = Funcs::new();
-        let mut func_lists = FuncLists::new();
-        let mut ty_instances = TyInstances::new();
-
-        let b_source = builtin_source.source;
-        typec::create_builtin_items(
-            &mut types,
-            &mut ty_lists,
-            &mut ty_instances,
-            &builtin_types,
-            &mut funcs,
-            &mut func_lists,
-            &mut sources,
-            &mut builtin_source,
-            &mut modules[b_source].items,
-        );
 
         let (jit_module, host_isa) = Self::init_jit_module(&input);
 
@@ -222,7 +204,7 @@ impl Compiler {
             scope: Scope::new(),
             module_map: Map::new(),
             loader_context: LoaderContext::new(),
-            modules,
+            modules: Modules::new(),
             units: Units::new(),
             module_order: Vec::new(),
 
@@ -231,11 +213,11 @@ impl Compiler {
             ty_graph: TyGraph::new(),
             types,
             builtin_types,
-            funcs,
-            ty_lists,
-            ty_instances,
+            funcs: Funcs::new(),
+            ty_lists: TyLists::new(),
+            ty_instances: TyInstances::new(),
             ty_comps: TyComps::new(),
-            func_lists,
+            func_lists: FuncLists::new(),
             bound_impls: BoundImpls::new(),
             tir_stack: FramedStack::new(),
             tir_data: TirData::new(),
@@ -344,6 +326,11 @@ impl Compiler {
         };
 
         (object_module, triple)
+    }
+
+    fn init_builtin(&mut self) {
+        let b_source = self.builtin_source.source;
+        builtin_builder!(self).create_builtin_items(&mut self.modules[b_source].items)
     }
 
     /// All source code is loaded into memory here.
@@ -727,6 +714,8 @@ impl Compiler {
         time_report!("compilation");
 
         let mut s = Self::new();
+
+        s.init_builtin();
 
         s.load_modules();
         s.log_diagnostics();

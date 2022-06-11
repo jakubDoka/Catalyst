@@ -444,19 +444,61 @@ macro_rules! ty_builder {
     };
 }
 
-pub struct GlobalBuilder<'a> {
-    pub diagnostics: &'a mut Diagnostics,
+pub struct BuiltinBuilder<'a> {
+    pub builtin_source: &'a mut BuiltinSource,
+    pub sources: &'a mut Sources,
+    pub types: &'a mut Types,
+    pub ty_lists: &'a mut TyLists,
+    pub ty_instances: &'a mut TyInstances,
+    pub funcs: &'a mut Funcs,
+    pub func_lists: &'a mut FuncLists,
+    pub ty_comps: &'a mut TyComps,
+    pub bound_impls: &'a mut BoundImpls,
+    pub builtin_types: &'a BuiltinTypes,
 }
 
-impl<'a> GlobalBuilder<'a> {
-    pub fn new(diagnostics: &'a mut Diagnostics) -> Self {
-        Self { diagnostics }
+impl<'a> BuiltinBuilder<'a> {
+    pub fn new(
+        builtin_source: &'a mut BuiltinSource,
+        sources: &'a mut Sources,
+        types: &'a mut Types,
+        ty_lists: &'a mut TyLists,
+        ty_instances: &'a mut TyInstances,
+        funcs: &'a mut Funcs,
+        func_lists: &'a mut FuncLists,
+        ty_comps: &'a mut TyComps,
+        bound_impls: &'a mut BoundImpls,
+        builtin_types: &'a BuiltinTypes,
+    ) -> Self {
+        Self {
+            builtin_source,
+            sources,
+            types,
+            ty_lists,
+            ty_instances,
+            funcs,
+            func_lists,
+            ty_comps,
+            bound_impls,
+            builtin_types,
+        }
     }
 }
 
 #[macro_export]
-macro_rules! global_builder {
+macro_rules! builtin_builder {
     ($self:expr) => {
-        GlobalBuilder::new(&mut $self.diagnostics)
+        BuiltinBuilder::new(
+            &mut $self.builtin_source,
+            &mut $self.sources,
+            &mut $self.types,
+            &mut $self.ty_lists,
+            &mut $self.ty_instances,
+            &mut $self.funcs,
+            &mut $self.func_lists,
+            &mut $self.ty_comps,
+            &mut $self.bound_impls,
+            &$self.builtin_types,
+        )
     };
 }

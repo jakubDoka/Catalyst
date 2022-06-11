@@ -1,8 +1,10 @@
-use std::any::TypeId;
+use module_types::*;
 
-use module_types::scope::ScopeFindError;
-
-use crate::{TyError, *};
+use crate::*;
+use ast::*;
+use lexer::*;
+use storage::*;
+use typec_types::*;
 
 impl BoundVerifier<'_> {
     pub fn verify(&mut self) {
@@ -44,10 +46,10 @@ impl BoundVerifier<'_> {
                     };
 
                     let id = {
-                        let func = ast::id_of(ident, self.ast_data, self.sources);
+                        let func_id = ast::id_of(ident, self.ast_data, self.sources);
                         let bound_id = self.types[bound].id;
 
-                        let bound_func_id = ID::owned(bound_id, func);
+                        let bound_func_id = ID::owned(bound_id, func_id);
 
                         let matcher = matcher!(Ty = "type");
                         let handler = scope_error_handler(
@@ -57,21 +59,19 @@ impl BoundVerifier<'_> {
                             "function",
                             matcher,
                         );
-                        if self
-                            .scope
-                            .get_concrete::<Func>(bound_func_id)
-                            .map_err(handler)
-                            .is_err()
-                        {
+
+                        let Ok(bound_func) = self.scope.get_concrete::<Func>(bound_func_id).map_err(handler) else {
                             continue;
                         };
 
+                        drop(self.compare_signatures(bound_func, func));
+
                         let implementor = self.types[implementor].id;
-                        ID::bound_impl_func(bound_id, implementor, func)
+                        ID::bound_impl_func(bound_id, implementor, func_id)
                     };
 
                     {
-                        let item = module::ModuleItem::new(id, func, span);
+                        let item = ModuleItem::new(id, func, span);
                         self.scope.insert_current(self.diagnostics, item);
                         self.modules[span.source()].items.push(item);
                     }
@@ -165,6 +165,9 @@ impl BoundVerifier<'_> {
             // TODO: same here
             let a_args = self.ty_lists.get(a.args);
             let b_args = self.ty_lists.get(b.args);
+
+            debug_assert_eq!(a_args.len(), b_args.len());
+
             let ast_params = {
                 let children = self
                     .ast_data
