@@ -12,15 +12,16 @@ impl<'a> ReprInstancing<'a> {
         types: TyList,
         replace_cache: &mut ReplaceCache,
     ) {
-        let types = self.ty_lists.get(types).to_vec(); // TODO: optimize if needed
-        let new_types = types
-            .iter()
-            .map(|&ty| self.instantiate_repr(params, ty))
-            .collect::<Vec<_>>();
+        let mut types = self.vec_pool.alloc(self.ty_lists.get(types));
+        let mut new_types = self.vec_pool.alloc_iter(
+            types
+                .iter()
+                .map(|&ty| self.instantiate_repr(params, ty))
+        );
 
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`
-        for (ty, new_ty) in types.into_iter().zip(new_types) {
+        for (ty, new_ty) in types.drain(..).zip(new_types.drain(..)) {
             replace_cache.save(new_ty, ty, self.types, self.reprs);
         }
     }
@@ -70,7 +71,7 @@ impl<'a> ReprInstancing<'a> {
             TyKind::Instance(base, i_params) => {
                 let mut id = ID::new("<instance>") + self.types[base].id;
                 self.ty_lists.mark_frame();
-                for param in self.ty_lists.get(i_params).to_vec() {
+                for param in self.vec_pool.alloc(self.ty_lists.get(i_params)).drain(..) {
                     // TODO: optimize if needed
                     let param = self.expand_instances(params, param, new_instances);
                     id = id + self.types[param].id;

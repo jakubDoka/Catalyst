@@ -8,16 +8,27 @@ use typec_types::*;
 
 impl BoundVerifier<'_> {
     pub fn verify(&mut self) {
-        // we have to collect all functions first and the check if all bound
-        // functions are implemented, its done here
         while let Some((implementor, bound, impl_block)) = self.scope_context.bounds_to_verify.pop()
         {
+            // let implementor = self.types.base_of(implementor); // already based
+
             let &[.., implementor_ast, body] = self.ast_data.children(impl_block) else {
                 unreachable!();
             };
             let implementor_span = self.ast_data.nodes[implementor_ast].span;
 
-            // handle use expressions
+            let implementor_id = self.types[implementor].id;
+            let id = {
+                let bound = self.types[bound].id;
+                ID::bound_impl(bound, implementor_id)
+            };
+
+            let Some(bound_ent) = self.bound_impls.get_mut(id) else {
+                unreachable!();
+            };
+
+            let param_offset = self.ty_lists.len_of(bound_ent.params);
+
             if !body.is_reserved_value() {
                 for &ast in self.ast_data.children(body) {
                     if self.ast_data.nodes[ast].kind != AstKind::UseBoundFunc {
@@ -64,10 +75,9 @@ impl BoundVerifier<'_> {
                             continue;
                         };
 
-                        drop(self.compare_signatures(bound_func, func));
+                        drop(self.compare_signatures(bound_func, func, param_offset));
 
-                        let implementor = self.types[implementor].id;
-                        ID::bound_impl_func(implementor, func_id)
+                        ID::bound_impl_func(implementor_id, func_id)
                     };
 
                     {
@@ -78,25 +88,22 @@ impl BoundVerifier<'_> {
                 }
             }
 
-            // let impl_span = self.ast_data.nodes[impl_block].span;
-
-            // check if all functions exist and match the signature
             let funcs = {
                 let TyKind::Bound(funcs) = self.types[bound].kind else {
                     unreachable!();
                 };
 
                 // TODO: don't allocate if it impacts performance
-                let mut vec = self.func_lists.get(funcs).to_vec();
-                for func in &mut vec {
+                let mut vec = self.vec_pool.alloc(self.func_lists.get(funcs));
+                for func in vec.iter_mut() {
                     let ent = &self.funcs[func.meta()];
 
                     let (sugar_id, certain_id) = {
                         let func = self.sources.id_of(ent.name);
-                        let ty = self.types[implementor].id;
                         let bound = self.types[bound].id;
-                        let certain_id = ID::bound_impl_func(ty, ID::owned(bound, func));
-                        let sugar_id = ID::owned(ty, func);
+                        let certain_id =
+                            ID::bound_impl_func(implementor_id, ID::owned(bound, func));
+                        let sugar_id = ID::owned(implementor_id, func);
                         (sugar_id, certain_id)
                     };
 
@@ -108,7 +115,7 @@ impl BoundVerifier<'_> {
                         todo!("{maybe_other:?}");
                     };
 
-                    drop(self.compare_signatures(*func, other));
+                    drop(self.compare_signatures(*func, other, param_offset));
 
                     *func = other;
                 }
@@ -116,22 +123,20 @@ impl BoundVerifier<'_> {
                 self.func_lists.push(&vec)
             };
 
-            let id = {
-                let implementor = self.types[implementor].id;
-                let bound = self.types[bound].id;
-                ID::bound_impl(bound, implementor)
+            let Some(bound_ent) = self.bound_impls.get_mut(id) else {
+                unreachable!();
             };
 
-            let bound = BoundImpl {
-                span: self.ast_data.nodes[impl_block].span,
-                funcs,
-            };
-
-            assert!(self.bound_impls.insert(id, bound).is_some());
+            bound_ent.funcs = funcs;
         }
     }
 
-    pub fn compare_signatures(&mut self, bound_func: Func, impl_func: Func) -> errors::Result {
+    pub fn compare_signatures(
+        &mut self,
+        bound_func: Func,
+        impl_func: Func,
+        param_offset: usize,
+    ) -> errors::Result {
         let FuncMeta {
             params: a_params,
             sig: a,
@@ -143,20 +148,22 @@ impl BoundVerifier<'_> {
             ..
         } = self.funcs[bound_func.meta()];
 
-        let a_param_len = self.ty_lists.len(a_params);
-        let b_param_len = self.ty_lists.len(b_params);
+        let a_param_len = self.ty_lists.len_of(a_params);
+        let b_param_len = self.ty_lists.len_of(b_params);
 
         // println!("{}", self.func_meta[bound_func].name.log(self.sources));
 
-        if a_param_len != b_param_len - 1 {
+        if a_param_len - param_offset != b_param_len - 1 {
             self.diagnostics.push(TyError::BoundImplFuncParamCount {
                 impl_func: self.funcs[impl_func.meta()].name,
                 bound_func: self.funcs[bound_func.meta()].name,
-                expected: b_param_len,
+                expected: b_param_len - 1,
                 found: a_param_len,
             });
             return Err(());
         }
+
+        prepare_params(&self.ty_lists.get(a_params)[param_offset..], self.types);
 
         // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
         let mut params = vec![Ty::reserved_value(); b_param_len];
@@ -183,16 +190,16 @@ impl BoundVerifier<'_> {
 
         for ((&referenced, &parametrized), &ast) in iter {
             let span = self.ast_data.nodes[ast].span;
-            drop(infer_parameters(
+            if let Err(err) = infer_parameters(
                 referenced,
                 parametrized,
                 &mut params,
                 span,
                 self.types,
                 self.ty_lists,
-                self.bound_impls,
-                self.diagnostics,
-            ));
+            ) {
+                self.diagnostics.push(err);
+            }
         }
 
         Ok(())

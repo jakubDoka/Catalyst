@@ -8,6 +8,12 @@ struct [T] Loo {
     yes: bool
 }
 
+impl [T] drop as Loo[T] {
+    fn drop(s: ^mut Self) {
+        putchar('l')
+    }
+}
+
 struct Goo {
     afield: int
 }

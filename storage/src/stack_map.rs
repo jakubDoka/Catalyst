@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, Range},
 };
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
@@ -20,7 +20,7 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
         }
     }
 
-    pub fn len(&self, list: E) -> usize {
+    pub fn len_of(&self, list: E) -> usize {
         self.lists.len_of(list)
     }
 
@@ -69,6 +69,14 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
     pub fn clear(&mut self) {
         self.lists.clear();
     }
+
+    pub fn push_from_within(&mut self, list: E) {
+        self.stack.extend(self.lists.get(list));
+    }
+
+    pub fn join(&mut self, a: E, b: E) -> E {
+        self.lists.join(a, b)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -92,9 +100,9 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         T: Clone,
         E: ReservedValue,
     {
-        self.data.reserve(self.len_of(id)); // SAFETY: push will not reallocate
-        let from = unsafe { std::mem::transmute::<_, &[T]>(self.get(id)) };
-        self.push(from)
+        let from = self.range_of(id);
+        self.data.extend_from_within(from);
+        self.close_frame()
     }
 
     pub fn alloc(&mut self, size: usize, init: T) -> E
@@ -127,13 +135,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
 
     #[inline]
     pub fn get(&self, id: E) -> &[T] {
-        match (
-            self.indices.get(id.index()),
-            self.indices.get(id.index() + 1),
-        ) {
-            (Some(start), Some(end)) => &self.data[*start as usize..*end as usize],
-            _ => &[],
-        }
+        &self.data[self.range_of(id)]
     }
 
     pub fn len(&self) -> usize {
@@ -145,11 +147,8 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         E: ReservedValue,
         T: Clone,
     {
-        self.data.reserve(self.len_of(*to) + 1); // SAFETY: push will not reallocate
-
-        let slice = unsafe { std::mem::transmute::<_, &[T]>(self.get(*to)) };
-
-        self.data.extend_from_slice(slice);
+        let range = self.range_of(*to);
+        self.data.extend_from_within(range);
         self.push_one(elem);
         *to = self.close_frame();
     }
@@ -159,10 +158,7 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         E: ReservedValue,
         T: Clone,
     {
-        self.data.reserve(self.len_of(a) + self.len_of(b)); // SAFETY: push will not reallocate
-
-        let (a_s, b_s) =
-            unsafe { std::mem::transmute::<_, (&[T], &[T])>((self.get(a), self.get(b))) };
+        let (a_s, b_s) = (self.range_of(a), self.range_of(b));
 
         if a_s.is_empty() {
             return b;
@@ -172,39 +168,32 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
             return a;
         }
 
-        self.data.extend_from_slice(a_s);
-        self.data.extend_from_slice(b_s);
+        self.data.extend_from_within(a_s);
+        self.data.extend_from_within(b_s);
 
         self.close_frame()
     }
 
     pub fn slice_keys(&self, id: E) -> impl Iterator<Item = S> + Clone {
-        match (
-            self.indices.get(id.index()),
-            self.indices.get(id.index() + 1),
-        ) {
-            (Some(&start), Some(&end)) => (start as usize..end as usize).map(S::new),
-            _ => (0..0).map(S::new),
-        }
+        self.range_of(id).map(S::new)
     }
 
     pub fn len_of(&self, id: E) -> usize {
-        match (
-            self.indices.get(id.index()),
-            self.indices.get(id.index() + 1),
-        ) {
-            (Some(start), Some(end)) => *end as usize - *start as usize,
-            _ => 0,
-        }
+        self.range_of(id).len()
     }
 
     pub fn get_mut(&mut self, id: E) -> &mut [T] {
+        let range = self.range_of(id);
+        &mut self.data[range]
+    }
+
+    pub fn range_of(&self, id: E) -> Range<usize> {
         match (
             self.indices.get(id.index()),
             self.indices.get(id.index() + 1),
         ) {
-            (Some(start), Some(end)) => &mut self.data[*start as usize..*end as usize],
-            _ => &mut [],
+            (Some(start), Some(end)) => *start as usize..*end as usize,
+            _ => 0..0,
         }
     }
 

@@ -72,7 +72,7 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
         let len = usize::read(cursor, buffer)?;
         let free_len = usize::read(cursor, buffer)?;
 
-        if len * std::mem::size_of::<bool>() + (len - free_len) * std::mem::size_of::<T>()
+        if len * std::mem::size_of::<bool>() + (len - free_len) * T::size()
             > buffer.len()
         {
             return Err(format!(
@@ -80,7 +80,7 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
                 len,
                 std::mem::size_of::<bool>(),
                 len - free_len,
-                std::mem::size_of::<T>(),
+                T::size(),
                 buffer.len()
             ));
         }
@@ -99,5 +99,9 @@ impl<K: EntityRef, T: BitSerde + ReservedValue> BitSerde for PoolMap<K, T> {
         }
 
         Ok(map)
+    }
+
+    fn size() -> usize {
+        usize::size() + usize::size()
     }
 }

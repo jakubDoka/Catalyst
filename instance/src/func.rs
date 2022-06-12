@@ -164,13 +164,17 @@ impl<'a> MirBuilder<'a> {
 
         while let Some(drop) = frontier.pop() {
             let ValueEnt { ty, .. } = self.func_ctx.values[drop];
-            let TyEnt { flags, kind, .. } = self.types[ty];
+            let base_ty = self.types.base_of(ty);
+            let TyEnt { kind, .. } = self.types[base_ty];
             if let TyKind::Enum(..) = kind {
                 continue;
             }
-            if flags.contains(TyFlags::DROP) {
+            
+            if let Ok(bound_impl) = bound_checker!(self).drop_impl(ty) {
                 let prt = {
                     let mut_ptr = pointer_of(ty, true, self.types, self.ty_instances);
+                    self.reprs[mut_ptr].repr = self.ptr_ty;
+                    
                     let value = self.value_from_ty(mut_ptr);
                     let kind = InstKind::TakePtr(drop);
                     self.func_ctx.add_inst(InstEnt::new(kind, value.into()));
@@ -178,22 +182,19 @@ impl<'a> MirBuilder<'a> {
                 };
 
                 let drop_fn = {
-                    let impl_id = {
-                        let bound = self.types[self.builtin_types.drop].id;
-                        let implementor = self.types[self.types.base_of(ty)].id;
-                        ID::bound_impl(bound, implementor)
-                    };
-
-                    let Some(&bound_impl) = self.bound_impls.get(impl_id) else {
-                        unreachable!()
-                    };
-
-                    self.func_lists.get(bound_impl.funcs)[0]
+                    let drop_fn_index = 0;
+                    let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
+                    let mut param_slots = vec![Ty::reserved_value(); self.ty_lists.len_of(bound_impl.params)];
+                    infer_parameters(
+                        ty, 
+                        bound_impl.ty, 
+                        &mut param_slots, 
+                        Default::default(), 
+                        self.types, 
+                        self.ty_lists
+                    ).unwrap();
+                    self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
                 };
-
-                if self.funcs[drop_fn].flags.contains(FuncFlags::GENERIC) {
-                    todo!("generic trait methods not yes supported")
-                }
 
                 let args = self.func_ctx.value_slices.push(&[prt]);
                 let kind = InstKind::Call(drop_fn, args);
@@ -711,43 +712,51 @@ impl<'a> MirBuilder<'a> {
             unreachable!();
         };
 
-        let param_slice = self.ty_lists.get(params);
-
+        let mut param_slots = vec![];
         // dispatch bound call
         if let FuncKind::Bound(bound, index) = self.funcs[func.meta()].kind {
-            let id = {
-                let bound = self.types[bound].id;
-                let implementor = self.types[caller.unwrap()].id;
-                ID::bound_impl(bound, implementor)
-            };
-
-            let funcs = self.bound_impls.get(id).unwrap().funcs;
-            func = self.func_lists.get(funcs)[index as usize]
+            let bound_impl = bound_checker!(self).implements(bound, caller.unwrap(), false).unwrap();
+            param_slots.resize(self.ty_lists.len_of(bound_impl.params), Ty::reserved_value());
+            
+            infer_parameters(
+                caller.unwrap(), 
+                bound_impl.ty, 
+                &mut param_slots, 
+                Default::default(), 
+                self.types, 
+                self.ty_lists
+            ).unwrap();
+            func = self.func_lists.get(bound_impl.funcs)[index as usize];
         }
-
-        let func_ent = self.funcs[func];
 
         // instantiate generic function
         if flags.contains(TirFlags::GENERIC) {
-            let id = param_slice
-                .iter()
-                .fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
-
-            func = if let Some(&instance) = self.func_instances.get(id) {
-                instance
-            } else {
-                let instance = FuncEnt {
-                    id,
-                    flags: func_ent.flags & !FuncFlags::GENERIC,
-                };
-                let instance = self.funcs.push_instance(instance, func);
-                self.func_instances.insert(id, instance);
-                self.to_compile.push((instance, params));
-                instance
-            };
+            func = self.instantiate_func(func, params, &param_slots);
         }
 
         self.call_low(Ok(func), tir, ty, dest, args)
+    }
+
+    pub fn instantiate_func(&mut self, func: Func, params: TyList, global_params: &[Ty]) -> Func {
+        let func_ent = self.funcs[func];
+        let id = global_params.iter()
+            .chain(self.ty_lists.get(params))
+            .fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
+
+        if let Some(&instance) = self.func_instances.get(id) {
+            instance
+        } else {
+            let instance = FuncEnt {
+                id,
+                flags: func_ent.flags & !FuncFlags::GENERIC,
+            };
+            let instance = self.funcs.push_instance(instance, func);
+            self.func_instances.insert(id, instance);
+            let global_params = self.ty_lists.push(global_params);
+            let params = self.ty_lists.join(global_params, params);
+            self.to_compile.push((instance, params));
+            instance
+        }
     }
 
     fn call_low(

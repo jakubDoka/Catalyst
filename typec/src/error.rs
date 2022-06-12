@@ -72,16 +72,13 @@ pub fn display(
             })?;
             writeln!(to, "|> Extra parameters are forbidden.")?;
         }
-        &TyError::MissingBound { loc, input, bound } => {
+        TyError::MissingBounds { loc, bounds } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| {
-                write!(
-                    to,
-                    "type '{}' does not implement bound '{}'",
-                    ty_display!(state, input),
-                    ty_display!(state, bound)
-                )
-            })?;
+
+            let mut missing = String::new();
+            bounds.log(types, ty_lists, sources, &mut missing, 1)?;
+
+            loc.underline_error(sources, to, &|to| write!(to, "{}", missing))?;
         }
         &TyError::UnknownEnumVariant { loc, on } => {
             loc.loc_to(sources, to)?;
@@ -212,6 +209,7 @@ pub fn display(
                 write!(to, "expected because of this function")
             })?;
         }
+
         TyError::UnknownGenericParam { loc, func, param } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
@@ -667,18 +665,6 @@ pub fn display(
                 write!(to, "expected filed to have a copy type")
             })?;
             writeln!(to, "|> owner of the field explicitly implements copy, that means all fields has to also be copy")?;
-        }
-        TyError::CopyDropCollision { copy_loc, drop_loc } => {
-            writeln!(
-                to,
-                "{ERR}|> 'copy' and 'drop' are not allowed to be implemented at the same time{END}"
-            )?;
-
-            copy_loc.loc_to(sources, to)?;
-            copy_loc.underline_info(sources, to, &|to| write!(to, "'copy' is implemented here"))?;
-
-            drop_loc.loc_to(sources, to)?;
-            drop_loc.underline_info(sources, to, &|to| write!(to, "'drop' is implemented here"))?;
         }
     }
 

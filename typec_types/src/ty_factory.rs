@@ -10,7 +10,7 @@ impl TyFactory<'_> {
         assert_eq!(self.types.ptr_leaf_of(parent), parent);
 
         if let TyKind::Instance(.., params) = self.types[parent].kind {
-            let params = self.ty_lists.get(params).to_vec();
+            let params = self.vec_pool.alloc(self.ty_lists.get(params));
             return self.instantiate(child, &params);
         }
 
@@ -44,7 +44,7 @@ impl TyFactory<'_> {
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
-                for param in self.ty_lists.get(i_params).to_vec() {
+                for param in self.vec_pool.alloc(self.ty_lists.get(i_params)).drain(..) {
                     // TODO: optimize if needed
                     let ty = self.instantiate(param, params);
                     self.ty_lists.push_one(ty);
@@ -61,7 +61,7 @@ impl TyFactory<'_> {
                     let kind = self.types[base].kind;
                     match kind {
                         TyKind::Struct(ty_comps) => {
-                            let params = self.ty_lists.get(params).to_vec(); // TODO: optimize if needed
+                            let params = self.vec_pool.alloc(self.ty_lists.get(params));
                             for field in self.ty_comps.get(ty_comps) {
                                 self.instantiate(field.ty, &params);
                             }
@@ -135,8 +135,8 @@ impl TyFactory<'_> {
             let bound = self.types[ty].id;
             let id = ID::bound_impl(bound, id);
             let bound = BoundImpl {
-                span: Default::default(),
                 funcs,
+                ..Default::default()
             };
             self.bound_impls.insert_unique(id, bound);
         }
@@ -172,7 +172,7 @@ impl TyFactory<'_> {
             id,
             name: Span::new(self.types[sig.ret].name.source(), 0, 0),
             kind: TyKind::FuncPtr(sig),
-            flags: (TyFlags::GENERIC & generic) | TyFlags::COPY,
+            flags: (TyFlags::GENERIC & generic),
         };
         let ty = self.types.push(ty_ent);
         self.ty_instances.insert_unique(id, ty);
@@ -221,11 +221,79 @@ pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut T
         id,
         name,
         kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable | TyFlags::COPY,
+        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
     };
     let ptr = types.push(ent);
 
     assert!(ty_instances.insert(id, ptr).is_none());
 
     ptr
+}
+
+pub fn infer_parameters(
+    root_reference: Ty,
+    root_parametrized: Ty,
+    params: &mut [Ty],
+    span: Span,
+    types: &Types,
+    ty_lists: &TyLists,
+) -> std::result::Result<(), TyError> {
+    // TODO: user preallocated vec if needed
+    let mut frontier = vec![(root_reference, root_parametrized)];
+
+    let error = Err(TyError::GenericTypeMismatch {
+        expected: root_parametrized,
+        found: root_reference,
+        loc: span,
+    });
+
+    while let Some((reference, parametrized)) = frontier.pop() {
+        let TyEnt { kind, flags, .. } = types[parametrized];
+        if !flags.contains(TyFlags::GENERIC) {
+            continue;
+        }
+
+        match (kind, types[reference].kind) {
+            (TyKind::Param(index, ..), _) => {
+                // we use `base_of_low` because we want to compare parameter
+                // backing bounds correctly
+                let other = params[index as usize];
+
+                if !other.is_reserved_value() && other != reference {
+                    return error;
+                } else {
+                    params[index as usize] = reference;
+                }
+            }
+            (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth))
+                if depth == ref_depth
+                    && types[parametrized].flags.contains(TyFlags::MUTABLE)
+                        == types[reference].flags.contains(TyFlags::MUTABLE) =>
+            {
+                frontier.push((ref_ty, ty));
+            }
+            (TyKind::Instance(base, params), TyKind::Instance(ref_base, ref_params))
+                if base == ref_base =>
+            {
+                let params = ty_lists.get(params);
+                let ref_params = ty_lists.get(ref_params);
+                for (&ref_param, &param) in ref_params.iter().zip(params) {
+                    frontier.push((ref_param, param));
+                }
+            }
+            (a, b) if a == b => {}
+            _ => return error,
+        }
+    }
+
+    Ok(())
+}
+
+pub fn prepare_params(params: &[Ty], types: &mut Types) {
+    for (i, &param) in params.iter().enumerate() {
+        let TyKind::Param(index, ..) = &mut types[param].kind else {
+            unreachable!("{:?}", types[param].kind);
+        };
+        *index = i as u8;
+    }
 }

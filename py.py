@@ -8,7 +8,26 @@ modules = ['root/mod' + str(i) for i in range(split)]
 
 imports = ";".join([f'"{i}"' for i in modules])
 
-file = open("bench_project/root.mf", "w")
+def create_file(path):
+    import os
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return open(path, "w")
+
+file = create_file("bench_project/project.mfm")
+file.write("root: \"root.mf\"")
+
+file = create_file("bench_project/root/bound_def.mf")
+file.write("""
+
+bound B {
+    fn new() -> Self
+    fn foo(s: ^Self) -> int
+    fn bar(s: ^Self) -> int
+}
+
+""")
+
+file = create_file("bench_project/root.mf")
 file.write(f"""
     use {{
         "root/bound_def"
@@ -36,7 +55,8 @@ import os
 
 for (i, m) in enumerate(modules):
     path = "bench_project/" + m + ".mf"
-    file = open(path, "w+")
+    print(path)
+    file = create_file(path)
     file.write(f"""
         use {{
             "root/bound_def"
@@ -47,6 +67,12 @@ for (i, m) in enumerate(modules):
         file.write(f"""
             struct S{id} {{
                 data: int
+            }}
+
+            impl drop as S{id} {{
+                fn drop(s: ^mut Self) {{
+                    1 + 1
+                }}
             }}
 
             fn smh{id}(n: int) -> int {{

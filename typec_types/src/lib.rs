@@ -11,8 +11,9 @@ pub mod state;
 pub mod tir;
 pub mod ty;
 pub mod ty_factory;
+pub mod bound_checker;
 
-pub use error::TyError;
+pub use error::{MissingBoundTree, TyError};
 pub use func::{
     Func, FuncEnt, FuncFlags, FuncInstances, FuncKind, FuncList, FuncMeta, Funcs, Initializers,
     Macros, Sig, ToCompile, ToLink,
@@ -20,7 +21,7 @@ pub use func::{
 pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals};
 pub use graph::Graph;
 pub use scope_context::ScopeContext;
-pub use state::TyFactory;
+pub use state::{TyFactory, BoundChecker};
 pub use tir::{
     Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
     TirStack,
@@ -29,7 +30,7 @@ pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, FuncLists, Ty, TyComp, TyCompEnt, TyCompList, TyComps,
     TyDisplay, TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
 };
-pub use ty_factory::pointer_of;
+pub use ty_factory::{pointer_of, infer_parameters, prepare_params};
 
 #[macro_export]
 macro_rules! ty_display {

@@ -1,11 +1,8 @@
 use crate::*;
 use lexer::*;
 
+#[derive(Debug)]
 pub enum TyError {
-    CopyDropCollision {
-        copy_loc: Span,
-        drop_loc: Span,
-    },
     ExpectedCopyType {
         loc: Span,
     },
@@ -98,10 +95,9 @@ pub enum TyError {
         func: Span,
         param: usize,
     },
-    MissingBound {
+    MissingBounds {
         loc: Span,
-        input: Ty,
-        bound: Ty,
+        bounds: MissingBoundTree,
     },
     BoundImplFuncParamCount {
         impl_func: Span,
@@ -215,4 +211,43 @@ pub enum TyError {
         got: Ty,
         loc: Span,
     },
+}
+
+#[derive(Debug)]
+pub struct MissingBoundTree {
+    pub bound: Ty,
+    pub implementor: Ty,
+    pub unimplemented: Vec<MissingBoundTree>,
+}
+
+impl MissingBoundTree {
+    pub fn log(
+        &self,
+        types: &Types,
+        ty_lists: &TyLists,
+        sources: &Sources,
+        dump: &mut String,
+        depth: usize,
+    ) -> std::fmt::Result {
+        use std::fmt::Write;
+
+        write!(dump, "| {}", "\t".repeat(depth))?;
+        write!(
+            dump,
+            "{} does not implement {}",
+            TyDisplay::new(types, ty_lists, sources, self.implementor),
+            TyDisplay::new(types, ty_lists, sources, self.bound),
+        )?;
+
+        if !self.unimplemented.is_empty() {
+            writeln!(dump, " because:")?;
+            for unimplemented in &self.unimplemented {
+                unimplemented.log(types, ty_lists, sources, dump, depth + 1)?;
+            }
+        } else {
+            writeln!(dump)?;
+        }
+
+        Ok(())
+    }
 }

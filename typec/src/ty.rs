@@ -55,7 +55,7 @@ impl TyBuilder<'_> {
 
         // we need to allocate as build_variant also pushes to ty_comps,
         // if this becomes a bottleneck, we will store long lived vec in context
-        let mut variants = Vec::with_capacity(self.ast_data.children(ast).len() + 1);
+        let mut variants = self.vec_pool.with_capacity(self.ast_data.children(ast).len() + 1);
         let ent = TyCompEnt {
             ty: discriminant_ty,
             index: 0,
@@ -81,7 +81,7 @@ impl TyBuilder<'_> {
             variants.push(ent);
         }
 
-        for comp in variants {
+        for comp in variants.drain(..) {
             let id = ID::owned(id, self.sources.id_of(comp.name));
             let comp_id = self.ty_comps.push_one(comp);
             let module_item = ModuleItem::new(id, comp_id, comp.name);
@@ -105,13 +105,13 @@ impl TyBuilder<'_> {
 
         self.build_generics(generics);
 
-        let fields = self.build_fields(id, body, self.types[self.ty].flags.contains(TyFlags::COPY));
+        let fields = self.build_fields(id, body);
         self.types[self.ty].kind = TyKind::Struct(fields);
 
         self.scope.pop_frame();
     }
 
-    fn build_fields(&mut self, id: ID, body: Ast, copy: bool) -> TyCompList {
+    fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
         for (i, &field_ast) in self.ast_data.children(body).iter().enumerate() {
             let &[name, field_ty_ast] = self.ast_data.children(field_ast) else {
                 unreachable!();
@@ -122,11 +122,6 @@ impl TyBuilder<'_> {
             };
 
             let span = self.ast_data.nodes[name].span;
-            if copy && !self.types[field_ty].flags.contains(TyFlags::COPY) {
-                self.diagnostics
-                    .push(TyError::ExpectedCopyType { loc: span });
-            }
-
             self.ty_graph.add_edge(self.ty, field_ty);
 
             let id = {

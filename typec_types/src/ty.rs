@@ -130,16 +130,20 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct BoundImpl {
     pub span: Span,
+    pub ty: Ty,
+    pub params: TyList,
     pub funcs: FuncList,
 }
 
 impl BoundImpl {
-    pub fn new(span: Span) -> Self {
+    pub fn new(span: Span, ty: Ty, params: TyList) -> Self {
         BoundImpl {
             span,
+            ty,
+            params,
             funcs: Default::default(),
         }
     }
@@ -147,14 +151,11 @@ impl BoundImpl {
 
 impl ReservedValue for BoundImpl {
     fn reserved_value() -> Self {
-        BoundImpl {
-            span: Span::default(),
-            funcs: FuncList::default(),
-        }
+        Default::default()
     }
 
     fn is_reserved_value(&self) -> bool {
-        self.span.is_reserved_value() && self.funcs.is_reserved_value()
+        *self == Default::default()
     }
 }
 
@@ -189,7 +190,6 @@ macro_rules! gen_builtin_table {
                         flags: (TyFlags::GENERIC & matches!(repr, TyKind::Param(..) | TyKind::Bound(..)))
                             | TyFlags::BUILTIN
                             | (TyFlags::SIGNED & matches!(repr, TyKind::Int(..)))
-                            | TyFlags::COPY,
                     };
                     let $name = types.push(ent);
                 )*
@@ -281,8 +281,6 @@ bitflags! {
         const BUILTIN = 1 << 1;
         const SIGNED = 1 << 2;
         const MUTABLE = 1 << 3;
-        const COPY = 1 << 4;
-        const DROP = 1 << 5;
     }
 }
 

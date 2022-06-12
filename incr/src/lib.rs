@@ -142,6 +142,10 @@ impl BitSerde for Incr {
             jit_functions: Map::read(cursor, buffer)?,
         })
     }
+
+    fn size() -> usize {
+        String::size() + IncrModules::size() + IncrFuncs::size() + IncrFuncs::size()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +222,10 @@ impl BitSerde for IncrFunc {
             reloc_records: Vec::read(cursor, buffer)?,
         })
     }
+
+    fn size() -> usize {
+        Signature::size() + Vec::<u8>::size() + Vec::<IncrRelocRecord>::size()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -249,5 +257,9 @@ impl BitSerde for IncrRelocRecord {
             namespace: u32::read(cursor, buffer)?,
             addend: i64::read(cursor, buffer)?,
         })
+    }
+
+    fn size() -> usize {
+        CodeOffset::size() + SourceLoc::size() + Reloc::size() + ID::size() + u32::size() + i64::size()
     }
 }

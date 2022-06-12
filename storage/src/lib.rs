@@ -1,5 +1,6 @@
 #![feature(auto_traits)]
 #![feature(negative_impls)]
+#![feature(vec_into_raw_parts)]
 
 pub mod ansi_consts;
 pub mod bit_serde;
@@ -10,6 +11,7 @@ pub mod pool_map;
 pub mod sparse_map;
 pub mod stack_map;
 pub mod tree;
+pub mod vec_pool;
 
 pub use ansi_consts::{END, ERR, INFO, SUCCESS, WARNING, WEAK};
 pub use bit_serde::BitSerde;
@@ -25,6 +27,7 @@ pub use pool_map::PoolMap;
 pub use sparse_map::SparseMap;
 pub use stack_map::{FramedStackMap, StackMap};
 pub use tree::{CycleDetectResources, GenericGraph, TreeStorage};
+pub use vec_pool::{VecPool, PoolVec};
 
 pub extern crate cranelift_entity;
 

@@ -80,7 +80,7 @@ impl Generator<'_> {
             .unwrap()
             .buffer
             .relocs()
-            .to_vec();
+            .to_owned();
 
         let compile_result = CompileResult { bytes, relocs };
 
@@ -153,17 +153,7 @@ impl Generator<'_> {
     }
 
     fn load_generic_params(&mut self, id: Func, params: TyList, ptr_ty: Type) {
-        ReprInstancing {
-            types: &mut self.types,
-            ty_lists: &mut self.ty_lists,
-            ty_instances: &mut self.ty_instances,
-            ty_comps: &self.ty_comps,
-            sources: &self.sources,
-            repr_fields: &mut self.repr_fields,
-            reprs: &mut self.reprs,
-            ptr_ty,
-        }
-        .load_generic_types(
+        repr_instancing!(self, ptr_ty).load_generic_types(
             params,
             self.funcs[id.meta()].tir_data.used_types,
             &mut self.generation_context.replace_cache,

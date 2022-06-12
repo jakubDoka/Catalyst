@@ -10,6 +10,9 @@ impl<T> !BitSafe for *mut T {}
 pub trait BitSerde: Sized {
     fn write(&self, buffer: &mut Vec<u8>);
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String>;
+    fn size() -> usize {
+        std::mem::size_of::<Self>()
+    }
 }
 
 impl BitSerde for Signature {
@@ -50,6 +53,10 @@ impl BitSerde for String {
 
         String::from_utf8(slice.to_vec()).map_err(|e| e.to_string())
     }
+
+    fn size() -> usize {
+        std::mem::size_of::<usize>()
+    }
 }
 
 impl<T: BitSerde> BitSerde for Vec<T> {
@@ -62,11 +69,11 @@ impl<T: BitSerde> BitSerde for Vec<T> {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
-        if len * std::mem::size_of::<T>() > buffer.len() {
+        if len * T::size() > buffer.len() {
             return Err(format!(
                 "Vec length {} * {} exceeds buffer length {}",
                 len,
-                std::mem::size_of::<T>(),
+                T::size(),
                 buffer.len()
             ));
         }
@@ -75,6 +82,10 @@ impl<T: BitSerde> BitSerde for Vec<T> {
             vec.push(T::read(cursor, buffer)?);
         }
         Ok(vec)
+    }
+
+    fn size() -> usize {
+        std::mem::size_of::<usize>()
     }
 }
 

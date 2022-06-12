@@ -89,7 +89,6 @@ impl OwnershipSolver<'_> {
 
             TirKind::Continue(loop_header, ..) => {
                 let loop_level = self.o_ctx.loop_level(loop_header);
-                println!("loop_level: {}", loop_level);
                 self.check_loop_moves(loop_header)?;
                 self.emit_loop_control_drops(root, loop_level)?;
 
@@ -102,7 +101,6 @@ impl OwnershipSolver<'_> {
                 }
 
                 let loop_level = self.o_ctx.loop_level(loop_header);
-                println!("loop_level: {}", loop_level);
                 self.emit_loop_control_drops(root, loop_level)?;
 
                 Ok(ID::reserved_value())
@@ -216,29 +214,32 @@ impl OwnershipSolver<'_> {
     }
 
     fn emit_branch_drops(&mut self, branches: &[Tir], on: Tir) -> errors::Result {
-        let branches = branches
+        let branches_iter = branches
             .iter()
             .copied()
             .filter(|&b| !self.tir_data.ents[b].flags.contains(TirFlags::TERMINATING));
 
-        let branch_count = branches.clone().count();
+        let branch_count = branches_iter.clone().count();
 
-        for (i, branch) in branches.clone().rev().enumerate() {
-            self.o_ctx.mark_current_access_frame_low(i as u32);
+        for (i, &branch) in branches.iter().rev().enumerate() {
+            if !self.tir_data.ents[branch].flags.contains(TirFlags::TERMINATING) {
+                self.o_ctx.mark_current_access_frame_low(i as u32);
+            }
             self.move_out(branch)?;
         }
 
-        let accessed = self
-            .o_ctx
-            .currently_accessed
-            .iter_from_frame_inv(branch_count)
-            .filter(|access| self.o_ctx.ownerships[access.ownership].last_move.is_some())
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut accessed = self.vec_pool.alloc_iter(
+            self
+                .o_ctx
+                .currently_accessed
+                .iter_from_frame_inv(branch_count)
+                .filter(|access| self.o_ctx.ownerships[access.ownership].last_move.is_some())
+                .cloned()
+        );
 
-        let mut buffer = vec![];
-        for (_i, branch) in branches.clone().enumerate() {
-            for (i, other) in branches.clone().enumerate() {
+        let mut buffer = self.vec_pool.get();
+        for (_i, branch) in branches_iter.clone().enumerate() {
+            for (i, other) in branches_iter.clone().enumerate() {
                 if other == branch {
                     continue;
                 }
@@ -248,19 +249,19 @@ impl OwnershipSolver<'_> {
 
             buffer.retain(|access| self.o_ctx.ownerships[access.ownership].last_move.is_some());
 
-            for access in &buffer {
+            for access in buffer.iter() {
                 let ent = &mut self.o_ctx.ownerships[access.ownership];
                 ent.last_move.take();
             }
 
-            let frontier = buffer.drain(..).map(|access| access.ownership).collect();
+            let frontier = self.vec_pool.alloc_iter(buffer.drain(..).map(|access| access.ownership));
             let drops = self.emit_drops(frontier, on)?;
             self.o_ctx.drops[branch] = self.o_ctx.drop_nodes.join(self.o_ctx.drops[branch], drops);
         }
 
         self.o_ctx.currently_accessed.merge_top_frames(branch_count);
 
-        for &access in &accessed {
+        for &access in accessed.iter() {
             let ent = &mut self.o_ctx.ownerships[access.ownership];
             ent.last_move = access.tir.into();
         }
@@ -268,7 +269,7 @@ impl OwnershipSolver<'_> {
         let pre_eval = self
             .o_ctx
             .pre_eval_lists
-            .push_iter(accessed.into_iter().map(|access| access.tir));
+            .push_iter(accessed.drain(..).map(|access| access.tir));
         self.o_ctx.pre_eval[on] = pre_eval;
 
         Ok(())
@@ -303,7 +304,9 @@ impl OwnershipSolver<'_> {
     }
 
     fn emit_loop_control_drops(&mut self, on: Tir, loop_level: usize) -> errors::Result {
-        let frontier = self.o_ctx.scope.all_items_from_frame(loop_level).collect();
+        let frontier = self.vec_pool.alloc_iter(
+            self.o_ctx.scope.all_items_from_frame(loop_level)
+        );
         let drops = self.emit_drops(frontier, on)?;
         self.o_ctx.drops[on] = drops;
 
@@ -311,7 +314,10 @@ impl OwnershipSolver<'_> {
     }
 
     fn emit_return_drops(&mut self, on: Tir) -> errors::Result {
-        let drops = self.emit_drops(self.o_ctx.scope.all_items().collect(), on)?;
+        let frontier = self.vec_pool.alloc_iter(
+            self.o_ctx.scope.all_items(),
+        );
+        let drops = self.emit_drops(frontier, on)?;
         self.o_ctx.drops[on] = drops;
 
         Ok(())
@@ -320,50 +326,54 @@ impl OwnershipSolver<'_> {
     fn emit_assign_drops(&mut self, on: Tir, to: Tir) -> errors::Result {
         let id = self.traverse(to)?;
         let ownership = self.o_ctx.scope.get(id);
-        let drops = self.emit_drops_low(true, vec![ownership], on)?;
+        let frontier = self.vec_pool.alloc(&[ownership]);
+        let drops = self.emit_drops_low(true, frontier, on)?;
         self.o_ctx.drops[on] = drops;
         Ok(())
     }
 
     fn emit_stack_drops(&mut self, on: Tir) -> errors::Result {
-        let drops = self.emit_drops(self.o_ctx.scope.top_items().collect(), on)?;
+        let frontier = self.vec_pool.alloc_iter(
+            self.o_ctx.scope.top_items(),
+        );
+        let drops = self.emit_drops(frontier, on)?;
         self.o_ctx.drops[on] = self.o_ctx.drop_nodes.join(self.o_ctx.drops[on], drops);
         Ok(())
     }
 
-    fn emit_drops(&mut self, frontier: Vec<Ownership>, on: Tir) -> errors::Result<DropNodeList> {
+    fn emit_drops(&mut self, frontier: PoolVec<Ownership>, on: Tir) -> errors::Result<DropNodeList> {
         self.emit_drops_low(false, frontier, on)
     }
 
     fn emit_drops_low(
         &mut self,
         assign: bool,
-        frontier: Vec<Ownership>,
+        mut frontier: PoolVec<Ownership>,
         _on: Tir,
     ) -> errors::Result<DropNodeList> {
-        let mut frontier = frontier
-            .into_iter()
-            .filter_map(|ownership| {
-                let ent = &self.o_ctx.ownerships[ownership];
-                (ent.last_move.is_none() && (!ent.behind_pointer || assign)).then(|| {
-                    (
-                        ownership,
-                        self.o_ctx.drop_nodes.push_one(DropNodeEnt {
-                            meta: Ok(self.o_ctx.ownerships[ownership].tir.unwrap()),
-                            children: DropNodeList::reserved_value(),
-                        }),
-                    )
+        let mut frontier = self.vec_pool.alloc_iter(
+            frontier
+                .drain(..)
+                .filter_map(|ownership| {
+                    let ent = &self.o_ctx.ownerships[ownership];
+                    (ent.last_move.is_none() && (!ent.behind_pointer || assign)).then(|| {
+                        (
+                            ownership,
+                            self.o_ctx.drop_nodes.push_one(DropNodeEnt {
+                                meta: Ok(self.o_ctx.ownerships[ownership].tir.unwrap()),
+                                children: DropNodeList::reserved_value(),
+                            }),
+                        )
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+            );
 
         let drops = self.o_ctx.drop_nodes.close_frame();
 
-        let mut field_buffer = vec![];
+        let mut field_buffer = self.vec_pool.get();
         while let Some((ownership, drop_node)) = frontier.pop() {
             let OwnershipEnt { ty, id, .. } = self.o_ctx.ownerships[ownership];
             let ty = self.types.base_of(ty);
-            let is_dropped = self.types[ty].flags.contains(TyFlags::DROP);
 
             match self.types[ty].kind {
                 TyKind::Struct(fields) => {
@@ -373,14 +383,6 @@ impl OwnershipSolver<'_> {
                         if ownership != OwnershipContext::NO_OWNERSHIP {
                             if self.o_ctx.ownerships[ownership].last_move.is_none() {
                                 field_buffer.push((ownership, k));
-                            } else if is_dropped {
-                                // let move_tir = self.o_ctx.ownerships[ownership].last_move.unwrap();
-                                // let because = self.tir_data.ents[move_tir].span;
-                                // let loc = self.tir_data.ents[on].span;
-                                // self.diagnostics.push(OwError::PartiallyMovedDrop {
-                                //     because,
-                                //     loc,
-                                // })
                             }
                         }
                     }
@@ -423,7 +425,7 @@ impl OwnershipSolver<'_> {
     fn move_in(&mut self, target: Tir) -> errors::Result {
         let id = self.traverse(target)?;
 
-        let mut frontier = vec![id];
+        let mut frontier = self.vec_pool.alloc(&[id]);
 
         while let Some(id) = frontier.pop() {
             let ownership = self.o_ctx.scope.get(id);
@@ -456,8 +458,7 @@ impl OwnershipSolver<'_> {
                         .iter()
                         .map(|f| Self::field_id(id, f.index)),
                 ),
-                _ if self.types[ty].flags.contains(TyFlags::COPY) => {}
-                kind => unimplemented!("{kind:?}"),
+                _ => {},
             }
         }
         Ok(())
@@ -492,7 +493,7 @@ impl OwnershipSolver<'_> {
 
         let ent = &mut self.o_ctx.ownerships[ownership];
 
-        let copy = self.types[ent.ty].flags.contains(TyFlags::COPY);
+        let copy = !self.types.may_drop(ent.ty) || bound_checker!(self).implements_copy(ent.ty);
         if !copy {
             if let Some(because) = ent.last_move.expand() {
                 let because = self.tir_data.ents[because].span;

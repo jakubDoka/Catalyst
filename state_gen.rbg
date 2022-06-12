@@ -2,6 +2,7 @@ file "src/state.rs" {
     use "crate"
     use "ast"
     use "incr"
+    use "storage"
 
     struct SourceLoader {
         mut Units
@@ -10,6 +11,7 @@ file "src/state.rs" {
         mut LoaderContext
         mut Diagnostics
         mut ModuleMap
+        VecPool
 
         Subcommand
     }
@@ -17,7 +19,8 @@ file "src/state.rs" {
     struct MainScopeBuilder {
         mut Diagnostics
         mut Scope
-        
+        VecPool
+
         Modules
         BuiltinSource
         Sources
@@ -55,6 +58,7 @@ file "src/state.rs" {
         mut GlobalMap
         mut Initializers
         mut o_ctx: OwnershipContext
+        VecPool
 
         host_isa: `Box<dyn TargetIsa>`
         Sources
@@ -84,7 +88,8 @@ file "src/state.rs" {
         mut GenerationContext
         mut FuncInstances
         mut GlobalMap
-        
+        VecPool
+
         passed mut IncrModules
         passed mut IncrFuncs
         passed isa: `dyn TargetIsa`
@@ -136,15 +141,28 @@ file "modules/src/state.rs" {
 file "typec_types/src/state.rs" {
     use "crate"
     use "lexer"
+    use "errors"
+    use "storage"
 
     struct TyFactory {
         mut Types
         mut TyLists
         mut TyInstances
         mut BoundImpls
+        VecPool
 
         TyComps
         Sources
+        BuiltinTypes
+    }
+
+    struct BoundChecker {
+        mut BoundImpls
+        mut Diagnostics
+        mut Types
+        VecPool
+        
+        TyLists
         BuiltinTypes
     }
 }
@@ -166,9 +184,10 @@ file "typec/src/state.rs" {
         mut Funcs
         mut FuncLists
         mut BoundImpls
+        mut Types
+        VecPool
         
         AstData
-        Types
         BuiltinTypes
         Sources
     }
@@ -189,7 +208,8 @@ file "typec/src/state.rs" {
         mut TyLists
         mut TyInstances
         mut BoundImpls
-        
+        VecPool
+
         AstData
         TyComps
         Sources
@@ -216,6 +236,7 @@ file "typec/src/state.rs" {
         mut ToLink
         mut Globals
         mut Initializers
+        VecPool
 
         BuiltinTypes
         Sources
@@ -240,7 +261,8 @@ file "typec/src/state.rs" {
         mut TirPatternGraph
         mut Globals
         mut Funcs
-        
+        VecPool
+
         FuncLists
         BuiltinTypes
         Sources
@@ -260,7 +282,8 @@ file "typec/src/state.rs" {
         mut TyGraph
         mut Modules
         mut Diagnostics
-        
+        VecPool
+
         BuiltinTypes
         Sources
         AstData
@@ -276,6 +299,7 @@ file "typec/src/state.rs" {
         mut FuncLists
         mut TyComps
         mut BoundImpls
+        VecPool
 
         BuiltinTypes
     }
@@ -289,6 +313,7 @@ file "instance/src/state.rs" {
     use "errors"
     use "cranelift_codegen::ir"
     use "cranelift_codegen::isa"
+    use "storage"
     
     struct MirBuilder {
         owned Func
@@ -305,12 +330,13 @@ file "instance/src/state.rs" {
         mut FuncInstances
         mut Types
         mut TyInstances
-        
-        Reprs
-        TyLists
+        mut BoundImpls
+        mut TyLists
+        mut Reprs
+        VecPool
+
         FuncLists
         TyComps
-        BoundImpls
         ReprFields
         BuiltinTypes
         Sources
@@ -324,7 +350,8 @@ file "instance/src/state.rs" {
         mut TyInstances
         mut ReprFields
         mut Reprs
-        
+        VecPool
+
         Sources
         TyComps
         
@@ -347,13 +374,15 @@ file "gen/src/state.rs" {
     use "crate"
     use "typec_types"
     use "instance_types"
+    use "storage"
 
     struct CirBuilder {
         owned builder: `FunctionBuilder<'a>`
         
         mut CirBuilderContext
         mut Signatures
-        
+        VecPool
+
         passed isa: `dyn TargetIsa`
         
         Funcs
@@ -371,17 +400,21 @@ file "ownership/src/state.rs" {
     use "lexer"
     use "typec_types"
     use "errors"
+    use "storage"
 
     struct OwnershipSolver {
         mut o_ctx: OwnershipContext
         mut Diagnostics
+        mut BoundImpls
+        mut Types
+        VecPool
 
         TirData
         Funcs
-        Types
         TyComps
         TyLists
         Sources
+        BuiltinTypes
     }
 
     struct DropSolver {
@@ -392,6 +425,7 @@ file "ownership/src/state.rs" {
         mut Types
         mut TyLists
         mut TyInstances
+        VecPool
 
         BuiltinTypes
         Sources

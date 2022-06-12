@@ -82,6 +82,9 @@ macro_rules! time_report {
 /// TODO: This could get fixed with dependency analysis, that would eliminate useless objects.
 /// Question is whether we would compile programs at such scale this would matter.
 pub struct Compiler {
+    // pool
+    vec_pool: VecPool,
+
     // cmd
     input: CmdInput,
     subcommand: Subcommand,
@@ -189,6 +192,8 @@ impl Compiler {
         let (object_module, triple) = Self::init_object_module(&input);
 
         Self {
+            vec_pool: VecPool::new(),
+
             subcommand: Subcommand::new(&input),
             input,
 

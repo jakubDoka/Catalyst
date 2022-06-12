@@ -303,8 +303,11 @@ impl<'a> Parser<'a> {
 
         self.stack.mark_frame();
 
-        let ident = self.ident();
-        self.stack.push(ident);
+        let generics = self.generics(true);
+        self.stack.push(generics);
+
+        let ty = self.type_expr();
+        self.stack.push(ty);
 
         // handle bound impl
         let mut end = span;
@@ -1415,7 +1418,7 @@ impl<'a> Parser<'a> {
         if !expected.contains(&self.current.kind()) {
             self.diagnostics.push(AstError::UnexpectedToken {
                 got: self.current.kind(),
-                expected: expected.to_vec(),
+                expected: expected.to_owned(),
                 loc: self.current.span(),
             });
         }

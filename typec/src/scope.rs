@@ -40,7 +40,7 @@ impl<'a> ScopeBuilder<'a> {
 
             match kind {
                 AstKind::Variable(..) => drop(self.collect_global(ast)),
-                AstKind::Function(..) => drop(self.collect_function(None, None, ast)),
+                AstKind::Function(..) => drop(self.collect_function(None, ast)),
                 AstKind::Impl => drop(self.collect_impl(ast)),
                 AstKind::Struct | AstKind::Bound | AstKind::Enum => (),
                 _ => todo!("Unhandled top-level item:\n{}", self.sources.display(span)),
@@ -70,7 +70,7 @@ impl<'a> ScopeBuilder<'a> {
                     prev = Some(bound);
                 }
 
-                drop(self.collect_function(Some(func), None, ast));
+                drop(self.collect_function(Some(func), ast));
             }
 
             self.scope.pop_frame();
@@ -103,54 +103,28 @@ impl<'a> ScopeBuilder<'a> {
     }
 
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {
-        let &[ty, dest, body] = self.ast_data.children(ast) else {
+        let &[generics, ty, dest, body] = self.ast_data.children(ast) else {
 			unreachable!();
 		};
+
+        let params = self.handle_generics(generics, None, None);
 
         let span = self.ast_data.nodes[ty].span;
         let ty = ty_parser!(self).parse_type(ty)?;
 
         if !dest.is_reserved_value() {
             let dest = ty_parser!(self).parse_type(dest)?;
-            let dest_id = self.types[dest].id;
+            let base_dest = self.types.base_of(dest);
+            let dest_id = self.types[base_dest].id;
             let id = {
                 let bound_id = self.types[ty].id;
                 ID::bound_impl(bound_id, dest_id)
             };
 
-            let flag = if ty == self.builtin_types.drop {
-                TyFlags::DROP
-            } else if ty == self.builtin_types.copy {
-                TyFlags::COPY
-            } else {
-                TyFlags::empty()
-            };
-            self.types[dest].flags.insert(flag);
-
-            if self.types[dest]
-                .flags
-                .contains(TyFlags::COPY | TyFlags::DROP)
+            if let Some(collision) = self
+                .bound_impls
+                .insert(id, BoundImpl::new(span, dest, params))
             {
-                let (copy_loc, drop_loc) = if ty == self.builtin_types.drop {
-                    let copy_id = self.types[self.builtin_types.copy].id;
-                    let copy_impl = self
-                        .bound_impls
-                        .get(ID::bound_impl(copy_id, dest_id))
-                        .unwrap();
-                    (copy_impl.span, span)
-                } else {
-                    let drop_id = self.types[self.builtin_types.drop].id;
-                    let drop_impl = self
-                        .bound_impls
-                        .get(ID::bound_impl(drop_id, dest_id))
-                        .unwrap();
-                    (span, drop_impl.span)
-                };
-                self.diagnostics
-                    .push(TyError::CopyDropCollision { copy_loc, drop_loc })
-            }
-
-            if let Some(collision) = self.bound_impls.insert(id, BoundImpl::new(span)) {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {
                     loc: self.ast_data.nodes[ast].span,
                     because: collision.span,
@@ -160,7 +134,15 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                self.scope.push_item("Self", ScopeItem::new(dest, span));
+                let dest_clone = if let TyKind::Instance(..) = self.types[dest].kind 
+                    && self.types[dest].flags.contains(TyFlags::GENERIC)
+                {
+                    self.types.push(self.types[dest])
+                } else {
+                    dest
+                };
+                self.scope.push_item("Self", ScopeItem::new(dest_clone, span));
+    
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {
@@ -171,18 +153,20 @@ impl<'a> ScopeBuilder<'a> {
                     let reserved = self.funcs.push(
                         FuncEnt::default(),
                         FuncMeta {
-                            kind: FuncKind::Owned(dest),
+                            kind: FuncKind::Owned(base_dest),
                             ..Default::default()
                         },
                     );
                     let id = self.types[ty].id;
-                    self.collect_function(Some(reserved), Some(id), func)?;
+                    self.collect_function_low(Some(reserved), Some(id), Some(params), func)?;
                 }
 
                 self.scope.pop_frame();
             }
 
-            self.scope_context.bounds_to_verify.push((dest, ty, ast));
+            self.scope_context
+                .bounds_to_verify
+                .push((base_dest, ty, ast));
         } else if !body.is_reserved_value() {
             self.scope.mark_frame();
             self.scope.push_item("Self", ScopeItem::new(ty, span));
@@ -195,7 +179,7 @@ impl<'a> ScopeBuilder<'a> {
                         ..Default::default()
                     },
                 );
-                self.collect_function(Some(reserved), None, func)?;
+                self.collect_function_low(Some(reserved), None, Some(params), func)?;
             }
 
             self.scope.pop_frame();
@@ -239,7 +223,11 @@ impl<'a> ScopeBuilder<'a> {
         // bound implements it self
         {
             let id = ID::bound_impl(id, id);
-            let bound = BoundImpl { span: name, funcs };
+            let bound = BoundImpl {
+                span: name,
+                funcs,
+                ..Default::default()
+            };
             self.bound_impls.insert_unique(id, bound);
         }
 
@@ -279,10 +267,15 @@ impl<'a> ScopeBuilder<'a> {
         Ok(())
     }
 
-    fn collect_function(
+    fn collect_function(&mut self, prepared: Option<Func>, ast: Ast) -> errors::Result<Func> {
+        self.collect_function_low(prepared, None, None, ast)
+    }
+
+    fn collect_function_low(
         &mut self,
         prepared: Option<Func>,
         bound: Option<ID>,
+        global_params: Option<TyList>,
         ast: Ast,
     ) -> errors::Result<Func> {
         let children = self.ast_data.children(ast);
@@ -296,7 +289,7 @@ impl<'a> ScopeBuilder<'a> {
 
         self.scope.mark_frame();
 
-        let params = self.handle_generics(generics, prepared);
+        let params = self.handle_generics(generics, prepared, global_params);
 
         let cc = parse_call_conv(call_conv, self.sources, self.ast_data, self.diagnostics);
 
@@ -342,6 +335,7 @@ impl<'a> ScopeBuilder<'a> {
             if let FuncKind::Owned(owner) | FuncKind::Bound(owner, ..) =
                 self.funcs[func.meta()].kind
             {
+                let owner = self.types.base_of(owner);
                 if let Some(bound) = bound {
                     ID::bound_impl_func(self.types[owner].id, ID::owned(bound, id))
                 } else {
@@ -409,11 +403,20 @@ impl<'a> ScopeBuilder<'a> {
         Ok(func)
     }
 
-    pub fn handle_generics(&mut self, generics: Ast, prepared: Option<Func>) -> TyList {
+    pub fn handle_generics(
+        &mut self,
+        generics: Ast,
+        prepared: Option<Func>,
+        global_params: Option<TyList>,
+    ) -> TyList {
         let mut used = EntitySet::new();
         let mut used_list = vec![];
 
         self.ty_lists.mark_frame();
+
+        if let Some(global_params) = global_params {
+            self.ty_lists.push_from_within(global_params);
+        }
 
         if !generics.is_reserved_value() {
             for &ast in self.ast_data.children(generics).iter() {

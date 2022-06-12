@@ -117,13 +117,14 @@ impl CirBuilder<'_> {
                 };
 
                 let ir_inst = {
-                    let value_args: Vec<_> = self
-                        .func_ctx
-                        .value_slices
-                        .get(mir_args)
-                        .iter()
-                        .map(|&value| self.use_value(value))
-                        .collect();
+                    let value_args = self.vec_pool.alloc_iter(
+                        self
+                            .func_ctx
+                            .value_slices
+                            .get(mir_args)
+                            .iter()
+                            .map(|&value| self.use_value(value))
+                    );
 
                     let ret = inst
                         .value
@@ -226,13 +227,17 @@ impl CirBuilder<'_> {
                 }
 
                 let ir_inst = {
-                    let value_args: Vec<_> = self
-                        .func_ctx
-                        .value_slices
-                        .get(args)
-                        .iter()
-                        .map(|&value| self.use_value(value))
-                        .collect();
+                    let value_args = self.vec_pool.alloc_iter(
+                        self
+                            .func_ctx
+                            .value_slices
+                            .get(args)
+                            .iter()
+                            .map(|&value| {
+                                // println!("{}", ty_display!(self, self.func_ctx.values[value].ty));
+                                self.use_value(value)
+                            })
+                    );
 
                     let ret = inst
                         .value

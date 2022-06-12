@@ -21,8 +21,8 @@ impl DropSolver<'_> {
 
     fn traverse(&mut self, root: Tir) {
         let mut seen = EntitySet::new();
-        let mut frontier = vec![root];
-        let mut drop_buffer = vec![];
+        let mut frontier = self.vec_pool.alloc(&[root]);
+        let mut drop_buffer = self.vec_pool.get();
         while let Some(node) = frontier.pop() {
             if !seen.insert(node) {
                 continue;
@@ -41,11 +41,6 @@ impl DropSolver<'_> {
 
                     if !flags.contains(TirFlags::TERMINATING) {
                         let list = self.collect_drops(node, &mut drop_buffer);
-                        println!(
-                            "{:?} {}",
-                            list,
-                            self.tir_data.ents[node].span.log(self.sources)
-                        );
                         self.tir_data.ents[node].kind = TirKind::Block(items, list);
                     }
                 }

@@ -177,8 +177,8 @@ fn fn_ptr_test(a: int, b: int) -> int {
     a + b
 }
 
-impl Loo {
-    fn [T] as_ptr(s: ^Loo[T]) -> ^Loo[T] {
+impl [T] Loo[T] {
+    fn as_ptr(s: ^Self) -> ^Self {
         s
     }
 }

@@ -79,7 +79,7 @@ impl TirBuilder<'_> {
         let args = {
             let ast_args = &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
             let args = self.ty_lists.get(args);
-            let mut tir_args = Vec::with_capacity(args.len());
+            let mut tir_args = self.vec_pool.with_capacity(args.len());
             for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
                 // println!("=== {} {} {:?}", ty_display!(self, ty), self.ast.nodes[ast].span.log(self.sources), self.types[ty].flags);
                 self.scope_context.use_type(ty, self.types);
@@ -886,7 +886,7 @@ impl TirBuilder<'_> {
     ) -> errors::Result<Tir> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
-        let args = self.ty_lists.get(args).to_vec();
+        let mut args = self.vec_pool.alloc(self.ty_lists.get(args));
         let origin = self.funcs[func.meta()].name;
         let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args, Ok(origin))?;
 
@@ -895,7 +895,7 @@ impl TirBuilder<'_> {
         } else {
             tir_args
                 .iter()
-                .zip(args)
+                .zip(args.drain(..))
                 .map(|(&arg, ty)| {
                     self.infer_tir_ty(arg, ty, |s, got, _| {
                         todo!("{} != {}", ty_display!(s, got), ty_display!(s, ty))
@@ -923,7 +923,7 @@ impl TirBuilder<'_> {
         func: Func,
         instantiation: Option<Ast>,
         tir_args: &[Tir],
-        _span: Span,
+        span: Span,
     ) -> errors::Result<(TyList, Ty)> {
         let FuncMeta {
             params,
@@ -931,17 +931,17 @@ impl TirBuilder<'_> {
             name,
             ..
         } = self.funcs[func.meta()];
-        let params = self.ty_lists.get(params);
+        let param_slice = self.ty_lists.get(params);
 
-        prepare_params(params, self.types);
+        prepare_params(param_slice, self.types);
 
-        let mut param_slots = vec![Ty::default(); params.len()];
+        let mut param_slots = vec![Ty::default(); param_slice.len()];
 
         if let Some(instantiation) = instantiation {
-            if params.len() > self.ast_data.children(instantiation).len() - 1 {
+            if param_slice.len() > self.ast_data.children(instantiation).len() - 1 {
                 self.diagnostics.push(TyError::ExplicitParamOverflow {
                     because: name,
-                    expected: params.len(),
+                    expected: param_slice.len(),
                     got: self.ast_data.children(instantiation).len() - 1,
                     loc: self.ast_data.nodes[instantiation].span,
                 });
@@ -959,24 +959,19 @@ impl TirBuilder<'_> {
             }
         }
 
-        tir_args
-            .iter()
-            .zip(self.ty_lists.get(args))
-            .map(|(&arg, &arg_ty)| {
-                let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
-                infer_parameters(
-                    ty,
-                    arg_ty,
-                    &mut param_slots,
-                    span,
-                    self.types,
-                    self.ty_lists,
-                    self.bound_impls,
-                    self.diagnostics,
-                )
-            })
-            // fold prevents allocation
-            .fold(Ok(()), |acc, err| acc.and(err))?;
+        for (&arg, &arg_ty) in tir_args.iter().zip(self.ty_lists.get(args)) {
+            let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
+            if let Err(err) = infer_parameters(
+                ty,
+                arg_ty,
+                &mut param_slots,
+                span,
+                self.types,
+                self.ty_lists,
+            ) {
+                self.diagnostics.push(err);
+            }
+        }
 
         if let (Some(ty), Some(param)) = (caller, param_slots.last_mut()) && param.is_reserved_value() {
             *param = ty;
@@ -984,8 +979,21 @@ impl TirBuilder<'_> {
 
         param_slots
             .iter()
+            .zip(self.ty_lists.get(params))
             .enumerate()
-            .filter_map(|(i, ty)| ty.is_reserved_value().then_some(i))
+            .filter_map(|(i, (&ty, &bound))| {
+                if ty.is_reserved_value() {
+                    Some(i)
+                } else {
+                    if let Err(err) = bound_checker!(self).implements_param(bound, ty, true) {
+                        self.diagnostics.push(TyError::MissingBounds {
+                            loc: span,
+                            bounds: err,
+                        });
+                    }
+                    None
+                }
+            })
             // OK if no cycles performed
             .fold(Ok(()), |_, _| todo!())?;
 
@@ -1006,13 +1014,13 @@ impl TirBuilder<'_> {
             return Err(());
         };
 
-        let arg_tys = self.ty_lists.get(args).to_vec();
+        let mut arg_tys = self.vec_pool.alloc(self.ty_lists.get(args));
 
         let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys, Err(ty))?;
 
         tir_args
             .iter()
-            .zip(arg_tys)
+            .zip(arg_tys.drain(..))
             .map(|(&arg, ty)| self.infer_tir_ty(arg, ty, |_, _, _| todo!()))
             .fold(Ok(()), |acc, err| acc.and(err))?;
 
@@ -1039,7 +1047,8 @@ impl TirBuilder<'_> {
 
             let obj = self.expr(lhs)?;
             let TirEnt { ty, span, .. } = self.tir_data.ents[obj];
-            let ty = self.types.caller_of(ty);
+            let ty = self.types.ptr_leaf_of(ty);
+            let caller = self.types.caller_of(ty);
 
             let (rhs, instantiation) = if self.ast_data.nodes[rhs].kind == AstKind::Instantiation {
                 (self.ast_data.children(rhs)[0], Some(rhs))
@@ -1047,7 +1056,7 @@ impl TirBuilder<'_> {
                 (rhs, None)
             };
 
-            let id = ident_hasher!(self).ident_id(rhs, Some((ty, span)))?;
+            let id = ident_hasher!(self).ident_id(rhs, Some((caller, span)))?;
 
             let matcher = matcher!();
             self.scope
@@ -1108,12 +1117,12 @@ impl TirBuilder<'_> {
         obj: &mut Option<Tir>,
         arg_tys: &[Ty],
         origin: std::result::Result<Span, Ty>,
-    ) -> errors::Result<(TirFlags, Vec<Tir>)> {
+    ) -> errors::Result<(TirFlags, PoolVec<Tir>)> {
         if let (Some(obj), Some(&expected)) = (obj.as_mut(), arg_tys.first()) {
             *obj = self.ptr_correct(*obj, expected);
         }
 
-        let mut vec = Vec::with_capacity(arg_tys.len() + obj.is_some() as usize);
+        let mut vec = self.vec_pool.with_capacity(arg_tys.len() + obj.is_some() as usize);
         if let &mut Some(obj) = obj {
             vec.push(obj);
         }
@@ -1388,16 +1397,16 @@ impl TirBuilder<'_> {
 
             if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
                 let TirEnt { ty, span, .. } = self.tir_data.ents[value];
-                drop(infer_parameters(
+                if let Err(err) = infer_parameters(
                     ty,
                     field_ty,
                     &mut param_slots,
                     span,
                     self.types,
                     self.ty_lists,
-                    self.bound_impls,
-                    self.diagnostics,
-                ));
+                ) {
+                    self.diagnostics.push(err);
+                }
             } else {
                 // we ignore this to report more errors
                 drop(self.infer_tir_ty(value, field_ty, |_, got, loc| {
@@ -1835,7 +1844,7 @@ impl TirBuilder<'_> {
         };
 
         let ty = if let TyKind::Instance(.., params) = self.types[on].kind {
-            let params = self.ty_lists.get(params).to_vec();
+            let params = self.vec_pool.alloc(self.ty_lists.get(params));
             ty_factory!(self).instantiate(field.ty, &params)
         } else {
             field.ty
