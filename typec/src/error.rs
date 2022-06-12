@@ -668,6 +668,18 @@ pub fn display(
             })?;
             writeln!(to, "|> owner of the field explicitly implements copy, that means all fields has to also be copy")?;
         }
+        TyError::CopyDropCollision { copy_loc, drop_loc } => {
+            writeln!(
+                to,
+                "{ERR}|> 'copy' and 'drop' are not allowed to be implemented at the same time{END}"
+            )?;
+
+            copy_loc.loc_to(sources, to)?;
+            copy_loc.underline_info(sources, to, &|to| write!(to, "'copy' is implemented here"))?;
+
+            drop_loc.loc_to(sources, to)?;
+            drop_loc.underline_info(sources, to, &|to| write!(to, "'drop' is implemented here"))?;
+        }
     }
 
     writeln!(to)?;

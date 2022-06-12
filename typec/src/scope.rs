@@ -112,8 +112,8 @@ impl<'a> ScopeBuilder<'a> {
 
         if !dest.is_reserved_value() {
             let dest = ty_parser!(self).parse_type(dest)?;
+            let dest_id = self.types[dest].id;
             let id = {
-                let dest_id = self.types[dest].id;
                 let bound_id = self.types[ty].id;
                 ID::bound_impl(bound_id, dest_id)
             };
@@ -126,6 +126,29 @@ impl<'a> ScopeBuilder<'a> {
                 TyFlags::empty()
             };
             self.types[dest].flags.insert(flag);
+
+            if self.types[dest]
+                .flags
+                .contains(TyFlags::COPY | TyFlags::DROP)
+            {
+                let (copy_loc, drop_loc) = if ty == self.builtin_types.drop {
+                    let copy_id = self.types[self.builtin_types.copy].id;
+                    let copy_impl = self
+                        .bound_impls
+                        .get(ID::bound_impl(copy_id, dest_id))
+                        .unwrap();
+                    (copy_impl.span, span)
+                } else {
+                    let drop_id = self.types[self.builtin_types.drop].id;
+                    let drop_impl = self
+                        .bound_impls
+                        .get(ID::bound_impl(drop_id, dest_id))
+                        .unwrap();
+                    (span, drop_impl.span)
+                };
+                self.diagnostics
+                    .push(TyError::CopyDropCollision { copy_loc, drop_loc })
+            }
 
             if let Some(collision) = self.bound_impls.insert(id, BoundImpl::new(span)) {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {

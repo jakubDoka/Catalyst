@@ -2,6 +2,10 @@ use crate::*;
 use lexer::*;
 
 pub enum TyError {
+    CopyDropCollision {
+        copy_loc: Span,
+        drop_loc: Span,
+    },
     ExpectedCopyType {
         loc: Span,
     },
