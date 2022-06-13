@@ -132,7 +132,6 @@ bitflags! {
         const SPILLED = 1 << 2;
         const GENERIC = 1 << 3;
         const CONTINUE = 1 << 4;
-        const POINTER = 1 << 5;
     }
 }
 

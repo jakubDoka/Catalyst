@@ -396,7 +396,7 @@ file "gen/src/state.rs" {
 }
 
 file "ownership/src/state.rs" {
-    use "ownership_types"
+    use "crate"
     use "lexer"
     use "typec_types"
     use "errors"

@@ -1,5 +1,5 @@
 //! This file is generated, do not edit!
-use ownership_types::*;
+use crate::*;
 use lexer::*;
 use typec_types::*;
 use errors::*;

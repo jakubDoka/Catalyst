@@ -40,11 +40,11 @@ use lexer::*;
 use matching::*;
 use module_types::*;
 use modules::*;
-use ownership_types::*;
 use parser::*;
 use storage::*;
 use typec::*;
 use typec_types::*;
+use ownership::*;
 
 use std::path::PathBuf;
 use std::str::FromStr;

@@ -35,7 +35,7 @@ members = [
     "errors",
     "matching",
     "ownership",
-    "ownership_types",
+    "lifetimes",
 ]
 
 [profile.release]
@@ -68,4 +68,4 @@ storage = { path = "storage" }
 incr = { path = "incr" }
 matching = { path = "matching" }
 ownership = { path = "ownership" }
-ownership_types = { path = "ownership_types" }
+lifetimes = { path = "lifetimes" }

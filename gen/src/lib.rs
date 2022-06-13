@@ -396,6 +396,8 @@ impl CirBuilder<'_> {
                             .store(MemFlags::new(), value, target, offset as i32);
                     }
                     (false, false) => {
+                        // print value and target types
+                        // println!("{} {}", ty_display!(self, self.func_ctx.values[value].ty), ty_display!(self, self.func_ctx.values[target].ty));
                         let value = self.use_value(value);
                         self.assign_value(target, value);
                     }
@@ -788,7 +790,8 @@ impl CirBuilder<'_> {
         if self.builder.func.dfg.value_type(value) == repr {
             return value;
         }
-        // dbg!(repr, self.builder.func.dfg.value_type(value));
+        
+        dbg!(repr, self.builder.func.dfg.value_type(value));
         let load_repr = repr.as_int();
 
         let mask = ((1 << load_repr.bits()) - 1) << offset * 8;

@@ -1,4 +1,4 @@
-use ownership_types::*;
+use crate::*;
 use storage::*;
 use typec_types::*;
 

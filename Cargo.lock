@@ -53,12 +53,12 @@ dependencies = [
  "instance",
  "instance_types",
  "lexer",
+ "lifetimes",
  "matching",
  "module_types",
  "modules",
  "num_cpus",
  "ownership",
- "ownership_types",
  "parser",
  "storage",
  "target-lexicon",
@@ -319,6 +319,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349d5a591cd28b49e1d1037471617a32ddcda5731b99419008085f72d5a53836"
 
 [[package]]
+name = "lifetimes"
+version = "0.1.0"
+
+[[package]]
 name = "log"
 version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -422,16 +426,6 @@ name = "ownership"
 version = "0.1.0"
 dependencies = [
  "errors",
- "lexer",
- "ownership_types",
- "storage",
- "typec_types",
-]
-
-[[package]]
-name = "ownership_types"
-version = "0.1.0"
-dependencies = [
  "lexer",
  "storage",
  "typec_types",

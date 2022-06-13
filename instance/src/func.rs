@@ -382,8 +382,13 @@ impl<'a> MirBuilder<'a> {
 
         let mir_value = self.expr(value, None)?.unwrap();
 
-        let value = self.unwrap_dest(tir, None).unwrap();
-
+        let on_stack = self.on_stack(tir);
+        let value = if on_stack {
+            self.unwrap_dest(tir, None)
+        } else {
+            None
+        };
+            
         let pointer = self.value_from_ty(ty);
 
         {
@@ -392,10 +397,13 @@ impl<'a> MirBuilder<'a> {
             self.func_ctx.add_inst(inst);
         }
 
-        self.gen_assign(pointer, Some(value));
-        self.gen_assign(value, dest);
-
-        Ok(Some(value))
+        if let Some(value) = value {
+            self.gen_assign(pointer, Some(value));
+            self.gen_assign(value, dest);
+        } else {
+            self.gen_assign(pointer, dest);
+        }
+        Ok(Some(pointer))
     }
 
     fn deref_pointer(&mut self, tir: Tir, dest: Option<Value>) -> ExprResult {
@@ -606,7 +614,7 @@ impl<'a> MirBuilder<'a> {
     fn variable(&mut self, tir: Tir) -> ExprResult {
         let flags = self.tir_data.ents[tir].flags;
         let assignable = !flags.contains(TirFlags::IMMUTABLE);
-        let pointer = self.on_stack(tir) || flags.contains(TirFlags::POINTER);
+        let pointer = self.on_stack(tir);
 
         let dest = if pointer {
             self.unwrap_dest(tir, None)
@@ -614,7 +622,7 @@ impl<'a> MirBuilder<'a> {
             None
         };
 
-        let value = self.expr(tir, dest)?;
+        let value = dest.or(self.expr(tir, dest)?);
 
         {
             let kind = InstKind::Variable;
@@ -839,8 +847,7 @@ impl<'a> MirBuilder<'a> {
                 value
             } else {
                 // no need to allocate, register is enough
-                let pointer = self.tir_data.ents[tir].flags.contains(TirFlags::POINTER);
-                self.flagged_value_from_ty(ret, MirFlags::POINTER & pointer)
+                self.value_from_ty(ret)
             }
         })
     }
@@ -905,8 +912,7 @@ impl<'a> MirBuilder<'a> {
 
     fn on_stack(&self, tir: Tir) -> bool {
         let TirEnt { ty, flags, .. } = self.tir_data.ents[tir];
-        (self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED))
-            && !flags.contains(TirFlags::POINTER)
+        self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || flags.contains(TirFlags::SPILLED)
     }
 
     fn r#return(&mut self, tir: Tir) -> ExprResult {

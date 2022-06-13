@@ -1,9 +1,3 @@
-#![feature(let_chains)]
-
-pub mod error;
-
-pub use error::OwError;
-
 use storage::*;
 use typec_types::*;
 

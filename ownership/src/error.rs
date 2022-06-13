@@ -1,5 +1,12 @@
-use lexer::Sources;
-use ownership_types::OwError;
+use lexer::*;
+
+pub enum OwError {
+    DoubleMove { because: Span, loc: Span },
+    MoveFromBehindPointer { loc: Span },
+    LoopDoubleMove { because: Span, loc: Span },
+    PartiallyMovedDrop { because: Span, loc: Span },
+}
+
 
 pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt::Result {
     use std::fmt::Write;

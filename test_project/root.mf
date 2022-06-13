@@ -151,8 +151,11 @@ fn main() -> int {
         //putchar('k')
     }
 
+    let a = 'h'
+    let b = ^a
+
     putchar(40.u32() as char)
-    putchar('h')
+    putchar(*b)
 
     -34
 }

@@ -1211,7 +1211,7 @@ impl TirBuilder<'_> {
         let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);
         let assignable = self.types[ty].flags.contains(TyFlags::MUTABLE);
-        let flags = (TirFlags::IMMUTABLE & !assignable) | TirFlags::POINTER;
+        let flags = TirFlags::IMMUTABLE & !assignable;
         let deref = TirEnt::with_flags(kind, deref_ty, flags, span);
         self.tir_data.ents.push(deref)
     }
@@ -1257,7 +1257,7 @@ impl TirBuilder<'_> {
 
         let result = {
             let header_flags = self.tir_data.ents[header].flags;
-            let flags = header_flags & (TirFlags::IMMUTABLE | TirFlags::POINTER);
+            let flags = header_flags & TirFlags::IMMUTABLE;
             let kind = TirKind::FieldAccess(header, field_id);
             let ent = TirEnt::with_flags(kind, field_ty, flags, span);
             self.tir_data.ents.push(ent)
@@ -1666,7 +1666,7 @@ impl TirBuilder<'_> {
                 } else if let Some(global) = value.pointer.may_read::<Global>() {
                     let kind = TirKind::GlobalAccess(global);
                     let GlobalEnt { ty, mutable, .. } = self.globals[global];
-                    let flags = (TirFlags::IMMUTABLE & !mutable) | TirFlags::POINTER;
+                    let flags = TirFlags::IMMUTABLE & !mutable;
                     Ok(TirEnt::with_flags(kind, ty, flags, span))
                 } else if let Some(func) = value.pointer.may_read::<Func>() {
                     let kind = TirKind::FuncPtr(func);
