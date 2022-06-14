@@ -219,9 +219,9 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn bit_cast(&mut self, tir: Tir, dest: Dest) -> ExprValue {
-        let TirEnt { 
-            kind: TirKind::BitCast(value), 
-            .. 
+        let TirEnt {
+            kind: TirKind::BitCast(value),
+            ..
         } = self.tir_data.ents[tir] else {
             unreachable!();
         };
@@ -340,11 +340,11 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn r#loop(&mut self, tir: Tir, dest: Dest) -> ExprValue {
-        let TirEnt { 
-            kind: TirKind::Loop(body), 
+        let TirEnt {
+            kind: TirKind::Loop(body),
             flags,
             ty,
-            .. 
+            ..
         } = self.tir_data.ents[tir] else {
             unreachable!()
         };
@@ -671,10 +671,10 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn global_access(&mut self, tir: Tir) -> ExprValue {
-        let TirEnt { 
-            ty, 
-            kind: TirKind::GlobalAccess(global), 
-            .. 
+        let TirEnt {
+            ty,
+            kind: TirKind::GlobalAccess(global),
+            ..
         } = self.tir_data.ents[tir] else {
             unreachable!();
         };
