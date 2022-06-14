@@ -862,7 +862,7 @@ impl TirBuilder<'_> {
             let ty = ret
                 .map(|ret| self.tir_data.ents[ret].ty)
                 .unwrap_or(self.builtin_types.nothing);
-            let flags = (TirFlags::TERMINATING & infinite) | flags;
+            let flags = (TirFlags::TERMINATING & infinite) | (flags & !TirFlags::TERMINATING);
             let kind = TirKind::Loop(block);
             self.tir_data.ents[loop_slot] = TirEnt {
                 kind,
@@ -1122,7 +1122,9 @@ impl TirBuilder<'_> {
             *obj = self.ptr_correct(*obj, expected);
         }
 
-        let mut vec = self.vec_pool.with_capacity(arg_tys.len() + obj.is_some() as usize);
+        let mut vec = self
+            .vec_pool
+            .with_capacity(arg_tys.len() + obj.is_some() as usize);
         if let &mut Some(obj) = obj {
             vec.push(obj);
         }
@@ -1206,7 +1208,7 @@ impl TirBuilder<'_> {
             return target;
         }
         let span = self.tir_data.ents[target].span;
-        let kind = TirKind::DerefPointer(target);
+        let kind = TirKind::DerefPtr(target);
         let ty = self.tir_data.ents[target].ty;
         let deref_ty = self.types.deref(ty);
         self.scope_context.use_type(deref_ty, self.types);

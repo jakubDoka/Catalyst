@@ -85,7 +85,7 @@ pub enum TirKind {
     Match(Tir, Tir),
     MatchBlock(Tir),
     BitCast(Tir),
-    DerefPointer(Tir),
+    DerefPtr(Tir),
     TakePtr(Tir),
     Variable(Tir),
     GlobalAccess(Global),
@@ -241,7 +241,7 @@ impl<'a> TirDisplay<'a> {
                 write!(f, "take_pointer ")?;
                 self.fmt(tir, f, displayed, level, false)?;
             }
-            TirKind::DerefPointer(tir) => {
+            TirKind::DerefPtr(tir) => {
                 write!(f, "deref_pointer ")?;
                 self.fmt(tir, f, displayed, level, false)?;
             }

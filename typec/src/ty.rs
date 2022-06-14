@@ -55,7 +55,9 @@ impl TyBuilder<'_> {
 
         // we need to allocate as build_variant also pushes to ty_comps,
         // if this becomes a bottleneck, we will store long lived vec in context
-        let mut variants = self.vec_pool.with_capacity(self.ast_data.children(ast).len() + 1);
+        let mut variants = self
+            .vec_pool
+            .with_capacity(self.ast_data.children(ast).len() + 1);
         let ent = TyCompEnt {
             ty: discriminant_ty,
             index: 0,

@@ -108,7 +108,7 @@ pub struct BlockEnt {
 crate::impl_linked_node!(inout Block, BlockEnt);
 gen_entity!(Block);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct InstEnt {
     pub prev: PackedOption<Inst>,
     pub next: PackedOption<Inst>,
@@ -117,20 +117,17 @@ pub struct InstEnt {
 }
 
 impl InstEnt {
-    pub fn valueless(kind: InstKind) -> Self {
-        Self::new(kind, None)
-    }
-
-    pub fn with_value(kind: InstKind, value: Value) -> Self {
-        Self::new(kind, value.into())
-    }
-
-    pub fn new(kind: InstKind, value: Option<Value>) -> Self {
+    pub fn new(kind: InstKind) -> Self {
         Self {
-            prev: None.into(),
-            next: None.into(),
             kind,
-            value: value.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn value(self, value: impl Into<Option<Value>>) -> Self {
+        Self {
+            value: value.into().into(),
+            ..self
         }
     }
 }
@@ -141,7 +138,7 @@ pub enum InstKind {
     FuncPtr(Func),
     GlobalAccess(Global),
     BitCast(Value),
-    DerefPointer(Value),
+    DerefPtr(Value),
     TakePtr(Value),
     Offset(Value),
     StackAddr(StackSlot),
@@ -153,6 +150,12 @@ pub enum InstKind {
     IntLit(u128),
     BoolLit(bool),
     Return,
+}
+
+impl Default for InstKind {
+    fn default() -> Self {
+        InstKind::Return
+    }
 }
 
 impl InstKind {
@@ -172,20 +175,20 @@ pub struct ValueEnt {
 }
 
 impl ValueEnt {
-    pub fn new(ty: Ty, offset: Offset, flags: MirFlags) -> ValueEnt {
-        ValueEnt { ty, offset, flags }
+    pub fn new(ty: Ty) -> ValueEnt {
+        ValueEnt {
+            ty,
+            offset: Offset::ZERO,
+            flags: MirFlags::empty(),
+        }
     }
 
-    pub fn repr(ty: Ty) -> Self {
-        Self::new(ty, Offset::ZERO, MirFlags::default())
+    pub fn offset(self, offset: Offset) -> Self {
+        Self { offset, ..self }
     }
 
-    pub fn offset(ty: Ty, offset: Offset) -> Self {
-        Self::new(ty, offset, MirFlags::default())
-    }
-
-    pub fn flags(ty: Ty, flags: MirFlags) -> Self {
-        Self::new(ty, Offset::ZERO, flags)
+    pub fn flags(self, flags: MirFlags) -> Self {
+        Self { flags, ..self }
     }
 }
 
@@ -245,10 +248,11 @@ impl<'a> MirDisplay<'a> {
 
     pub fn value_to_string(&self, value: Value) -> String {
         format!(
-            "{}:{}>{}",
+            "{}:{}>{}[{:?}]",
             value,
             self.func.values[value].offset.arch64,
             ty_display!(self, self.func.values[value].ty),
+            self.func.values[value].flags,
         )
     }
 }
@@ -326,7 +330,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             target
                         )?;
                     }
-                    InstKind::DerefPointer(target) => {
+                    InstKind::DerefPtr(target) => {
                         writeln!(
                             f,
                             "\t{} = deref {}",

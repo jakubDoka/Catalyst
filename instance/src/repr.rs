@@ -13,11 +13,9 @@ impl<'a> ReprInstancing<'a> {
         replace_cache: &mut ReplaceCache,
     ) {
         let mut types = self.vec_pool.alloc(self.ty_lists.get(types));
-        let mut new_types = self.vec_pool.alloc_iter(
-            types
-                .iter()
-                .map(|&ty| self.instantiate_repr(params, ty))
-        );
+        let mut new_types = self
+            .vec_pool
+            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params, ty)));
 
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`

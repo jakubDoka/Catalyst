@@ -260,6 +260,11 @@ impl BitSerde for IncrRelocRecord {
     }
 
     fn size() -> usize {
-        CodeOffset::size() + SourceLoc::size() + Reloc::size() + ID::size() + u32::size() + i64::size()
+        CodeOffset::size()
+            + SourceLoc::size()
+            + Reloc::size()
+            + ID::size()
+            + u32::size()
+            + i64::size()
     }
 }

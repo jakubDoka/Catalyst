@@ -27,7 +27,7 @@ pub use pool_map::PoolMap;
 pub use sparse_map::SparseMap;
 pub use stack_map::{FramedStackMap, StackMap};
 pub use tree::{CycleDetectResources, GenericGraph, TreeStorage};
-pub use vec_pool::{VecPool, PoolVec};
+pub use vec_pool::{PoolVec, VecPool};
 
 pub extern crate cranelift_entity;
 

@@ -103,7 +103,7 @@ fn ownership_test() {
                     if true {
                         let a = to.a
                         //to.a = se()
-                        break'b a
+                        break'a a
                     }
                     continue'a
                 }

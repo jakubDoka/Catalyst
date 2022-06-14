@@ -259,9 +259,7 @@ impl<T: BitSerde> BitSerde for Map<T> {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
-        if len * (std::mem::size_of::<ID>() + T::size())
-            > buffer.len()
-        {
+        if len * (std::mem::size_of::<ID>() + T::size()) > buffer.len() {
             return Err(format!(
                 "Map::read: buffer too small: {} < {} ({})",
                 buffer.len() + std::mem::align_of::<T>() * len,

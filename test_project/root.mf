@@ -1,7 +1,7 @@
 use {
     "root/structs"
     "root/generics"
-    "root/patterns"
+    //"root/patterns"
 }
 
 let CONSTANT = 1
@@ -46,7 +46,6 @@ fn main() -> int {
     }
     
     if structure_test() != 0 {
-        return structure_test()
         return 7
     }
     
@@ -81,7 +80,8 @@ fn main() -> int {
     if ptr as int == 0 {
         return 15
     }
-        
+
+    /*    
     if Enum::Something::{}.is_something() {} else {
         return 16
     }
@@ -89,6 +89,7 @@ fn main() -> int {
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
         return 17
     }
+    */
 
     if CONSTANT != 1 {
         return 18

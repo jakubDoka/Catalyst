@@ -2,17 +2,22 @@ use crate::*;
 use lexer::*;
 use storage::*;
 
-
 impl BoundChecker<'_> {
     pub fn implements_copy(&mut self, ty: Ty) -> bool {
         self.implements(self.builtin_types.copy, ty, false).is_ok()
     }
 
     pub fn drop_impl(&mut self, ty: Ty) -> errors::Result<BoundImpl> {
-        self.implements(self.builtin_types.drop, ty, false).map_err(|_| ())
+        self.implements(self.builtin_types.drop, ty, false)
+            .map_err(|_| ())
     }
 
-    pub fn implements_param(&mut self, bound: Ty, implementor: Ty, build_err: bool) -> Result<(), MissingBoundTree> {
+    pub fn implements_param(
+        &mut self,
+        bound: Ty,
+        implementor: Ty,
+        build_err: bool,
+    ) -> Result<(), MissingBoundTree> {
         // bound can be pain Bound or BoundCombo
         let TyKind::Param(_, bounds, ..) = self.types[bound].kind else {
             unreachable!();

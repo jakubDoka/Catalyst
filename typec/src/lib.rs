@@ -18,12 +18,10 @@ pub mod ty;
 pub mod ty_parser;
 
 pub use state::{
-    BoundVerifier, BuiltinBuilder, IdentHasher, ScopeBuilder, TirBuilder, TyBuilder,
-    TyParser,
+    BoundVerifier, BuiltinBuilder, IdentHasher, ScopeBuilder, TirBuilder, TyBuilder, TyParser,
 };
 pub use utils::{
-    char_value, int_value, not_found_handler, parse_call_conv,
-    scope_error_handler, CharError,
+    char_value, int_value, not_found_handler, parse_call_conv, scope_error_handler, CharError,
 };
 
 pub mod utils {

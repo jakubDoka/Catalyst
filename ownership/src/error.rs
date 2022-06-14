@@ -7,7 +7,6 @@ pub enum OwError {
     PartiallyMovedDrop { because: Span, loc: Span },
 }
 
-
 pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt::Result {
     use std::fmt::Write;
     match error {

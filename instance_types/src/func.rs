@@ -6,9 +6,10 @@ use typec_types::*;
 #[derive(Debug)]
 pub struct Loop {
     pub entry: Block,
-    pub exit: Block,
+    pub exit: Option<Block>,
     pub marker: Tir,
     pub dest: Option<Value>,
+    pub block_pass: bool,
 }
 
 pub struct FuncCtx {

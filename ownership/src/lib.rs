@@ -8,9 +8,9 @@ pub mod ownership_solver;
 pub mod state;
 pub mod types;
 
+pub use error::OwError;
 pub use state::{DropSolver, OwnershipSolver};
 pub use types::{
-    Ownership, OwnershipContext, OwnershipEnt, OwnershipScope, 
-    DropNode, DropNodeEnt, DropNodeList, Access,
+    Access, DropNode, DropNodeEnt, DropNodeList, Ownership, OwnershipContext, OwnershipEnt,
+    OwnershipScope,
 };
-pub use error::OwError;

@@ -40,11 +40,11 @@ use lexer::*;
 use matching::*;
 use module_types::*;
 use modules::*;
+use ownership::*;
 use parser::*;
 use storage::*;
 use typec::*;
 use typec_types::*;
-use ownership::*;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -576,28 +576,28 @@ impl Compiler {
                             let value = self
                                 .func_ctx
                                 .values
-                                .push(ValueEnt::flags(ty, MirFlags::POINTER));
+                                .push(ValueEnt::new(ty).flags(MirFlags::POINTER));
                             let kind = InstKind::GlobalAccess(global);
-                            let ent = InstEnt::new(kind, value.into());
+                            let ent = InstEnt::new(kind).value(value);
                             self.func_ctx.add_inst(ent);
                             value
                         };
 
                         let has_sret = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
                         if has_sret {
-                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
                             let args = self.func_ctx.value_slices.push(&[access]);
                             let kind = InstKind::Call(func, args);
-                            let ent = InstEnt::new(kind, return_value.into());
+                            let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                         } else {
-                            let return_value = self.func_ctx.values.push(ValueEnt::repr(ty));
+                            let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
                             let kind = InstKind::Call(func, ValueList::reserved_value());
-                            let ent = InstEnt::new(kind, return_value.into());
+                            let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                             {
                                 let kind = InstKind::Assign(return_value);
-                                let ent = InstEnt::new(kind, access.into());
+                                let ent = InstEnt::new(kind).value(access);
                                 self.func_ctx.add_inst(ent);
                             }
                         }
@@ -605,14 +605,14 @@ impl Compiler {
                         let return_value = self
                             .func_ctx
                             .values
-                            .push(ValueEnt::repr(self.builtin_types.int));
+                            .push(ValueEnt::new(self.builtin_types.int));
                         let kind = InstKind::Call(func, ValueList::reserved_value());
-                        let ent = InstEnt::new(kind, return_value.into());
+                        let ent = InstEnt::new(kind).value(return_value);
                         self.func_ctx.add_inst(ent);
                     }
                 }
 
-                self.func_ctx.add_inst(InstEnt::new(InstKind::Return, None));
+                self.func_ctx.add_inst(InstEnt::new(InstKind::Return));
             }
 
             self.context.func.signature =

@@ -65,7 +65,7 @@ impl DropSolver<'_> {
                 }
 
                 TirKind::Loop(header)
-                | TirKind::DerefPointer(header)
+                | TirKind::DerefPtr(header)
                 | TirKind::TakePtr(header)
                 | TirKind::BitCast(header)
                 | TirKind::Variable(header)

@@ -134,15 +134,15 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                let dest_clone = if let TyKind::Instance(..) = self.types[dest].kind 
+                let dest_clone = if let TyKind::Instance(..) = self.types[dest].kind
                     && self.types[dest].flags.contains(TyFlags::GENERIC)
                 {
                     self.types.push(self.types[dest])
                 } else {
                     dest
                 };
-                self.scope.push_item("Self", ScopeItem::new(dest_clone, span));
-    
+                self.scope
+                    .push_item("Self", ScopeItem::new(dest_clone, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {

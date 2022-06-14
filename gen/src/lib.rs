@@ -88,6 +88,12 @@ impl CirBuilder<'_> {
 
         self.builder.seal_all_blocks();
         self.builder.finalize();
+
+        // for (k, &v) in self.cir_builder_context.value_lookup.iter() {
+        //     if let Some(v) = v.expand() {
+        //         println!("{} -> {}", k, v);
+        //     }
+        // }
     }
 
     fn generate_block(&mut self, id: mir::Block) {
@@ -118,12 +124,11 @@ impl CirBuilder<'_> {
 
                 let ir_inst = {
                     let value_args = self.vec_pool.alloc_iter(
-                        self
-                            .func_ctx
+                        self.func_ctx
                             .value_slices
                             .get(mir_args)
                             .iter()
-                            .map(|&value| self.use_value(value))
+                            .map(|&value| self.use_value(value)),
                     );
 
                     let ret = inst
@@ -226,36 +231,32 @@ impl CirBuilder<'_> {
                     return;
                 }
 
-                let ir_inst = {
-                    let value_args = self.vec_pool.alloc_iter(
-                        self
+                let ir_inst =
+                    {
+                        let value_args = self.vec_pool.alloc_iter(
+                            self.func_ctx.value_slices.get(args).iter().map(|&value| {
+                                // println!("{}", ty_display!(self, self.func_ctx.values[value].ty));
+                                self.use_value(value)
+                            }),
+                        );
+
+                        let ret = inst
+                            .value
+                            .map(|val| self.func_ctx.values[val].ty)
+                            .unwrap_or(self.builtin_types.nothing);
+
+                        let args_iter = self
                             .func_ctx
                             .value_slices
                             .get(args)
                             .iter()
-                            .map(|&value| {
-                                // println!("{}", ty_display!(self, self.func_ctx.values[value].ty));
-                                self.use_value(value)
-                            })
-                    );
+                            .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
+                            .map(|&value| self.func_ctx.values[value].ty);
 
-                    let ret = inst
-                        .value
-                        .map(|val| self.func_ctx.values[val].ty)
-                        .unwrap_or(self.builtin_types.nothing);
+                        let func_ref = self.func_ref_of(func, args_iter, ret);
 
-                    let args_iter = self
-                        .func_ctx
-                        .value_slices
-                        .get(args)
-                        .iter()
-                        .skip(self.reprs[ret].flags.contains(ReprFlags::ON_STACK) as usize)
-                        .map(|&value| self.func_ctx.values[value].ty);
-
-                    let func_ref = self.func_ref_of(func, args_iter, ret);
-
-                    self.builder.ins().call(func_ref, &value_args)
-                };
+                        self.builder.ins().call(func_ref, &value_args)
+                    };
 
                 if let Some(value) = inst.value.expand() {
                     if !self.func_ctx.values[value]
@@ -314,14 +315,14 @@ impl CirBuilder<'_> {
                 let repr = self.repr_of(value);
                 let flags = self.func_ctx.values[value].flags;
                 if flags.contains(MirFlags::ASSIGNABLE) {
-                    let value = self.use_value(value);
                     let variable = Variable::new(value.index());
+                    let value = self.use_value(value);
                     self.cir_builder_context.variable_set.insert(variable);
                     self.builder.declare_var(variable, repr);
                     self.builder.def_var(variable, value);
                 }
             }
-            InstKind::DerefPointer(value)
+            InstKind::DerefPtr(value)
                 if self.func_ctx.values[value]
                     .flags
                     .contains(MirFlags::POINTER) =>
@@ -329,7 +330,7 @@ impl CirBuilder<'_> {
                 let value = self.use_value(value);
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] = value.into();
             }
-            InstKind::Offset(value) | InstKind::TakePtr(value) | InstKind::DerefPointer(value) => {
+            InstKind::Offset(value) | InstKind::TakePtr(value) | InstKind::DerefPtr(value) => {
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] =
                     self.cir_builder_context.value_lookup[value].unwrap().into();
                 // check
@@ -704,6 +705,8 @@ impl CirBuilder<'_> {
             return value;
         }
 
+        // dbg!(target);
+
         let target = self.use_value(target);
 
         self.set_bit_field_low(target, value, offset)
@@ -729,6 +732,8 @@ impl CirBuilder<'_> {
         if self.builder.func.dfg.value_type(value) != target_ty {
             value = self.builder.ins().uextend(target_ty, value);
         }
+
+        // dbg!(value_ty, target_ty, offset);
 
         let mask = {
             let value_bits = value_ty.as_int().bits();
@@ -790,9 +795,12 @@ impl CirBuilder<'_> {
         if self.builder.func.dfg.value_type(value) == repr {
             return value;
         }
-        
-        dbg!(repr, self.builder.func.dfg.value_type(value));
+
+        // println!("{}", self.builder.func.display());
+        // dbg!(repr, self.builder.func.dfg.value_type(value));
         let load_repr = repr.as_int();
+
+        // dbg!(load_repr.bits());
 
         let mask = ((1 << load_repr.bits()) - 1) << offset * 8;
         value = self.builder.ins().band_imm(value, mask);

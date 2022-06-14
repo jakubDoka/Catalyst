@@ -1,5 +1,9 @@
-use std::{mem::MaybeUninit, rc::Rc, cell::RefCell, ops::{Deref, DerefMut}};
-
+use std::{
+    cell::RefCell,
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
 struct VecPoolInner {
     storage: [Vec<(*mut u32, usize)>; 8],
@@ -41,9 +45,7 @@ pub struct VecPool {
 
 impl VecPool {
     pub fn new() -> Self {
-        let mut storage: [MaybeUninit<Vec<(*mut (), usize)>>; 8] = unsafe {
-            std::mem::zeroed()
-        };
+        let mut storage: [MaybeUninit<Vec<(*mut (), usize)>>; 8] = unsafe { std::mem::zeroed() };
 
         for item in storage.iter_mut() {
             *item = MaybeUninit::new(Vec::new());
@@ -51,9 +53,7 @@ impl VecPool {
 
         Self {
             inner: Rc::new(RefCell::new(VecPoolInner {
-                storage: unsafe {
-                    std::mem::transmute(storage)
-                },
+                storage: unsafe { std::mem::transmute(storage) },
             })),
         }
     }
@@ -61,9 +61,10 @@ impl VecPool {
     pub fn get<T>(&self) -> PoolVec<T> {
         let align = std::mem::align_of::<T>();
         let size = std::mem::size_of::<T>();
-        let vec = self.inner.borrow_mut().storage[align - 1].pop().map(|(ptr, cap)| {
-            unsafe { Vec::from_raw_parts(ptr as *mut T, 0, cap / size) }
-        }).unwrap_or(Vec::new());
+        let vec = self.inner.borrow_mut().storage[align - 1]
+            .pop()
+            .map(|(ptr, cap)| unsafe { Vec::from_raw_parts(ptr as *mut T, 0, cap / size) })
+            .unwrap_or(Vec::new());
 
         PoolVec {
             vec,
@@ -86,6 +87,12 @@ impl VecPool {
     pub fn with_capacity<T>(&self, capacity: usize) -> PoolVec<T> {
         let mut vec = self.get();
         vec.reserve(capacity);
+        vec
+    }
+
+    pub fn of_size<T: Clone>(&self, init: T, size: usize) -> PoolVec<T> {
+        let mut vec = self.get();
+        vec.resize(size, init);
         vec
     }
 }
@@ -111,6 +118,8 @@ impl<T> DerefMut for PoolVec<T> {
 
 impl<T> Drop for PoolVec<T> {
     fn drop(&mut self) {
-        self.inner.borrow_mut().return_vec(std::mem::take(&mut self.vec));
+        self.inner
+            .borrow_mut()
+            .return_vec(std::mem::take(&mut self.vec));
     }
 }
