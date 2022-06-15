@@ -203,17 +203,18 @@ impl<'a> MirBuilder<'a> {
 
         let mut dest = on_stack.then(|| self.create_stack(ty));
         let value = self.expr(var, &mut dest).unwrap();
+        
         let pointer = self.func_ctx.values[value]
             .flags
             .contains(MirFlags::POINTER);
 
-        let kind = InstKind::Variable;
-        let ent = InstEnt::new(kind).value(value);
-        self.func_ctx.add_inst(ent);
-
         self.func_ctx.values[value]
             .flags
             .insert(MirFlags::ASSIGNABLE & (assignable && !on_stack && !pointer));
+
+        let kind = InstKind::Variable;
+        let ent = InstEnt::new(kind).value(value);
+        self.func_ctx.add_inst(ent);
 
         None
     }
@@ -369,8 +370,10 @@ impl<'a> MirBuilder<'a> {
         self.expr(body, &mut None);
         self.func_ctx.loops.pop().unwrap();
 
-        if let Some(join_block) = join_block && !self.func_ctx.is_terminated() {
-            self.gen_jump(enter_block, None);
+        if let Some(join_block) = join_block {
+            if !self.func_ctx.is_terminated() {
+                self.gen_jump(enter_block, None);
+            }
             self.func_ctx.select_block(join_block);
         }
 
@@ -388,6 +391,7 @@ impl<'a> MirBuilder<'a> {
         };
 
         let &mut mut dest_copy = dest;
+        let has_ret = ty != self.builtin_types.nothing;
 
         let then_block = self.func_ctx.create_block();
         let otherwise_block = self.func_ctx.create_block();
@@ -406,13 +410,13 @@ impl<'a> MirBuilder<'a> {
         self.gen_jump(then_block, None);
 
         self.func_ctx.select_block(then_block);
-        let value = self.expr(then, &mut dest_copy);
+        let value = has_ret.then_some(self.expr(then, &mut dest_copy)).flatten();
         if let Some(join_block) = join_block && !self.func_ctx.is_terminated() {
             self.gen_jump(join_block, value);
         }
 
         self.func_ctx.select_block(otherwise_block);
-        let value = self.expr(otherwise, &mut dest_copy);
+        let value = has_ret.then_some(self.expr(otherwise, &mut dest_copy)).flatten();
         if let Some(join_block) = join_block && !self.func_ctx.is_terminated(){
             self.gen_jump(join_block, value);
         }

@@ -95,7 +95,7 @@ fn ownership_test() {
     let b = ^a
     let a = move_in_and_out(a)
     
-    let res = loop'a {
+    loop'a {
         to.a = se()
         if true {
             loop'b {
@@ -103,12 +103,13 @@ fn ownership_test() {
                     if true {
                         let a = to.a
                         //to.a = se()
-                        break'a a
+                        break'b a
                     }
                     continue'a
                 }
             }
         }
+        break'a
     }
 
     return

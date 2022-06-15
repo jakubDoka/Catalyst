@@ -33,7 +33,7 @@ impl OwnershipContext {
     }
 
     pub fn start_loop(&mut self, tir: Tir) {
-        self.loops.push((tir, self.scope.level() as u32));
+        self.loops.push((tir, self.scope.level() as u32 - 1));
     }
 
     pub fn end_loop(&mut self) {
