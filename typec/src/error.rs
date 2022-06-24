@@ -76,8 +76,7 @@ pub fn display(
             loc.loc_to(sources, to)?;
 
             let mut missing = String::new();
-            missing_bound_tree_display!(state, bounds)
-                .write_low(&mut missing, 1)?;
+            missing_bound_tree_display!(state, bounds).write_low(&mut missing, 1)?;
 
             loc.underline_error(sources, to, &|to| write!(to, "{}", missing))?;
         }
@@ -666,6 +665,18 @@ pub fn display(
                 write!(to, "expected filed to have a copy type")
             })?;
             writeln!(to, "|> owner of the field explicitly implements copy, that means all fields has to also be copy")?;
+        }
+        TyError::StringError {
+            mut loc,
+            error,
+            pos,
+        } => {
+            let message = match error {
+                EscapeError::InvalidEscape => "invalid escape sequence",
+            };
+            loc = loc.slice(pos..);
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| write!(to, "{}", message))?;
         }
     }
 

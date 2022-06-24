@@ -268,7 +268,7 @@ impl CirBuilder<'_> {
                     }
                 }
             }
-            InstKind::IntLit(literal) => {
+            InstKind::Int(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let literal = if self.types[self.func_ctx.values[value].ty]
@@ -304,7 +304,7 @@ impl CirBuilder<'_> {
                     self.builder.ins().jump(block, &[]);
                 }
             }
-            InstKind::BoolLit(literal) => {
+            InstKind::Bool(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let ir_value = self.builder.ins().bconst(repr, literal);
@@ -479,6 +479,7 @@ impl CirBuilder<'_> {
             "-" => self.generate_native_sub(args, result),
             "*" => self.generate_native_mul(args, result),
             "/" => self.generate_native_div(args, result),
+            "%" => self.generate_native_rem(args, result),
             "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
             "u8" | "u16" | "u32" | "u64" | "uint" | "i8" | "i16" | "i32" | "i64" | "int" => {
                 self.generate_native_int_conv(args, result)
@@ -603,9 +604,9 @@ impl CirBuilder<'_> {
     fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
         match self.func_ctx.value_slices.get(args) {
             &[left, right] => {
-                let signed = !self.func_ctx.values[left]
+                let signed = self.types[self.func_ctx.values[left].ty]
                     .flags
-                    .contains(MirFlags::UNSIGNED);
+                    .contains(TyFlags::SIGNED);
                 let left = self.use_value(left);
                 let right = self.use_value(right);
 
@@ -629,19 +630,49 @@ impl CirBuilder<'_> {
         }
     }
 
+    fn generate_native_rem(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+        match self.func_ctx.value_slices.get(args) {
+            &[left, right] => {
+                let signed = self.types[self.func_ctx.values[left].ty]
+                    .flags
+                    .contains(TyFlags::SIGNED);
+                let left = self.use_value(left);
+                let right = self.use_value(right);
+
+                let ty = self.builder.func.dfg.value_type(left);
+
+                assert!(ty == self.builder.func.dfg.value_type(right));
+
+                let rem = if ty.is_int() {
+                    if signed {
+                        self.builder.ins().srem(left, right)
+                    } else {
+                        self.builder.ins().urem(left, right)
+                    }
+                } else {
+                    unimplemented!("Unimplemented division for {}", ty);
+                };
+
+                self.cir_builder_context.value_lookup[result.unwrap()] = rem.into();
+            }
+            _ => unreachable!(),
+        }
+    }
+
     fn generate_native_cmp(&mut self, op: &str, args: ValueList, result: PackedOption<mir::Value>) {
         let &[left, right] = self.func_ctx.value_slices.get(args) else {
             unreachable!();
         };
 
-        let signed = !self.func_ctx.values[left]
+        let signed = self.types[self.func_ctx.values[left].ty]
             .flags
-            .contains(MirFlags::UNSIGNED);
+            .contains(TyFlags::SIGNED);
 
         let left = self.use_value(left);
         let right = self.use_value(right);
 
         let ty = self.builder.func.dfg.value_type(left);
+
         assert!(
             ty == self.builder.func.dfg.value_type(right),
             "{:?} != {:?}",
@@ -770,6 +801,7 @@ impl CirBuilder<'_> {
 
         let offset = self.unwrap_size(offset);
         if flags.contains(MirFlags::POINTER) {
+            // println!("{:?} {}", repr, ty_display!(self, ty));
             let loader_repr = repr.as_int();
 
             if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {

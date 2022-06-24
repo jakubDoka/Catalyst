@@ -146,8 +146,8 @@ pub enum InstKind {
     JumpIfFalse(Block),
     Jump(Block),
     Call(typec_types::Func, ValueList),
-    IntLit(u128),
-    BoolLit(bool),
+    Int(u128),
+    Bool(bool),
     Return,
 }
 
@@ -201,8 +201,6 @@ bitflags! {
         const POINTER = 1 << 0;
         /// The value can be assigned to
         const ASSIGNABLE = 1 << 2;
-        /// The value is unsigned integer.
-        const UNSIGNED = 1 << 3;
     }
 }
 
@@ -243,7 +241,11 @@ impl std::fmt::Display for MirDisplay<'_> {
             writeln!(f, "  {} = stack({})", i, stack.size)?;
         }
 
-        for (id, block) in self.func_ctx.blocks.linked_iter(self.func_ctx.start.expand()) {
+        for (id, block) in self
+            .func_ctx
+            .blocks
+            .linked_iter(self.func_ctx.start.expand())
+        {
             writeln!(
                 f,
                 "  {}({}): {{",
@@ -369,7 +371,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             writeln!(f, "\tcall {}({})", func, args)?;
                         }
                     }
-                    InstKind::IntLit(value) => {
+                    InstKind::Int(value) => {
                         writeln!(
                             f,
                             "\t{} = {}",
@@ -377,7 +379,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             value
                         )?;
                     }
-                    InstKind::BoolLit(value) => {
+                    InstKind::Bool(value) => {
                         writeln!(
                             f,
                             "\t{} = {}",

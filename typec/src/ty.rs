@@ -114,7 +114,9 @@ impl TyBuilder<'_> {
     }
 
     fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
-        let mut fields = self.vec_pool.with_capacity(self.ast_data.children(body).len());
+        let mut fields = self
+            .vec_pool
+            .with_capacity(self.ast_data.children(body).len());
         for (i, &field_ast) in self.ast_data.children(body).iter().enumerate() {
             let &[name, field_ty_ast] = self.ast_data.children(field_ast) else {
                 unreachable!();
@@ -126,7 +128,6 @@ impl TyBuilder<'_> {
 
             let span = self.ast_data.nodes[name].span;
             self.ty_graph.add_edge(self.ty, field_ty);
-
 
             let field = TyCompEnt {
                 name: span,

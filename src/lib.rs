@@ -136,7 +136,7 @@ pub struct Compiler {
 
     // globals
     globals: Globals,
-    _global_data: GlobalData,
+    global_data: GlobalData,
     global_map: GlobalMap,
 
     // jit
@@ -236,7 +236,7 @@ impl Compiler {
             o_ctx: OwnershipContext::new(),
 
             globals: Globals::new(),
-            _global_data: GlobalData::new(),
+            global_data: GlobalData::new(),
             global_map: GlobalMap::new(),
 
             _jit_module: jit_module,
@@ -392,6 +392,7 @@ impl Compiler {
     /// Though this may require cloning type context.
     fn generate(&mut self) {
         time_report!("generating");
+
         generator!(
             self,
             self.incr.modules,
@@ -405,7 +406,7 @@ impl Compiler {
     /// Which functions are used is determined here. First vec contains
     /// functions that have local byte-code, second contains imports that
     /// should only be imported.
-    fn collect_used_funcs(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
+    fn collect_used_items(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
 
         let mut seen_funcs = EntitySet::with_capacity(self.funcs.len());
@@ -443,9 +444,10 @@ impl Compiler {
                         }
 
                         globals.push(global);
-                        frontier.push(self.globals[global].init);
-                        self.initializers
-                            .push((self.globals[global].init, Some(global).into()));
+                        if let Some(init) = self.globals[global].init.expand() {
+                            frontier.push(init);
+                            self.initializers.push((init, Some(global).into()));
+                        }
                     }
                     _ => unreachable!(),
                 }
@@ -484,7 +486,7 @@ impl Compiler {
         global_lookup.resize(self.globals.len());
         let system_call_conv = self.object_module.isa().default_call_conv();
 
-        let (globals, mut to_compile, to_link) = self.collect_used_funcs();
+        let (globals, mut to_compile, to_link) = self.collect_used_items();
         let mut name = String::new();
 
         for global in globals {
@@ -500,8 +502,8 @@ impl Compiler {
                 .unwrap();
             global_lookup[global] = PackedOption::from(global_ref);
 
-            if let Some(_data) = global_ent.bytes.expand() {
-                todo!();
+            if let Some(data) = global_ent.bytes.expand() {
+                data_ctx.define(self.global_data.get(data).into());
             } else {
                 let arch32 = self.object_module.isa().pointer_bytes() == 4;
                 let size = self.reprs[global_ent.ty].layout.size().arch(arch32);

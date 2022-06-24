@@ -8,7 +8,7 @@ use typec_types::*;
 impl BuiltinBuilder<'_> {
     /// instantiates all builtin items like types, operators and functions.
     pub fn create_builtin_items(&mut self, target: &mut Vec<ModuleItem>) {
-        // init the drop trait, TODO: maybe there is less time consuming wai to do this
+        // init the drop trait, TODO: maybe there is less time consuming way to do this
         {
             let span = self.builtin_source.make_span(self.sources, "drop");
             let id = ID::owned(self.types[self.builtin_types.drop].id, "drop".into());
@@ -25,6 +25,32 @@ impl BuiltinBuilder<'_> {
             );
             let funcs = self.func_lists.push(&[drop_func]);
             self.types[self.builtin_types.drop].kind = TyKind::Bound(funcs);
+        }
+
+        // construct str struct
+        {
+            let len = self.builtin_types.uint;
+            let len_name = self.builtin_source.make_span(self.sources, "len");
+            let ptr = pointer_of(self.builtin_types.u8, false, self.types, self.ty_instances);
+            let ptr_name = self.builtin_source.make_span(self.sources, "ptr");
+
+            let parent_id = self.types[self.builtin_types.str].id;
+
+            for (i, (name, ty)) in [(ptr_name, ptr), (len_name, len)].into_iter().enumerate() {
+                let id = ID::owned(parent_id, self.sources.id_of(name));
+                let field = TyCompEnt {
+                    name,
+                    ty,
+                    index: i as u32,
+                };
+                let field = self.ty_comps.push_one(field);
+                let module_item = ModuleItem::new(id, field, name);
+                target.push(module_item);
+            }
+
+            let fields = self.ty_comps.close_frame();
+
+            self.types[self.builtin_types.str].kind = TyKind::Struct(fields);
         }
 
         for from in self.builtin_types.numbers() {
@@ -96,9 +122,11 @@ impl BuiltinBuilder<'_> {
         id: ID,
         target: &mut Vec<ModuleItem>,
     ) -> Func {
-
         let sig = Sig {
-            args: self.ty_comps.push_iter(args.iter().map(|&ty| TyCompEnt {ty, ..Default::default() })),
+            args: self.ty_comps.push_iter(args.iter().map(|&ty| TyCompEnt {
+                ty,
+                ..Default::default()
+            })),
             ret,
             ..Default::default()
         };

@@ -56,6 +56,7 @@ file "src/state.rs" {
         mut Macros
         mut Globals
         mut GlobalMap
+        mut GlobalData
         mut Initializers
         mut o_ctx: OwnershipContext
         VecPool
@@ -288,6 +289,8 @@ file "typec/src/state.rs" {
         mut Diagnostics
         mut TirPatternGraph
         mut Globals
+        mut GlobalMap
+        mut GlobalData
         mut Funcs
         VecPool
 

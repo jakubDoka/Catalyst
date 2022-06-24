@@ -110,9 +110,9 @@ impl<'a> ReprInstancing<'a> {
 }
 
 impl<'a> LayoutBuilder<'a> {
-    pub fn build_layouts(&mut self, order: &[Ty]) {
+    pub fn build(&mut self, order: impl IntoIterator<Item = Ty>) {
         self.reprs.resize(self.types.len());
-        for &id in order {
+        for id in order {
             self.build_size(id);
         }
     }
@@ -123,7 +123,9 @@ impl<'a> LayoutBuilder<'a> {
 
     pub fn build_size_low(&mut self, id: Ty, params: TyList) {
         let ty = &self.types[id];
-        if ty.flags.contains(TyFlags::GENERIC) || ty.flags.contains(TyFlags::BUILTIN) {
+        if ty.flags.contains(TyFlags::GENERIC)
+            || (ty.flags.contains(TyFlags::BUILTIN) && !matches!(ty.kind, TyKind::Struct(..)))
+        {
             return;
         }
 
@@ -230,6 +232,7 @@ impl<'a> LayoutBuilder<'a> {
 
     pub fn resolve_struct_repr(&mut self, ty: Ty, params: TyList, fields: TyCompList) {
         let fields = self.ty_comps.get(fields);
+        // println!("resolve_struct_repr: {}", ty_display!(self, ty));
 
         let align = fields
             .iter()
@@ -242,12 +245,15 @@ impl<'a> LayoutBuilder<'a> {
             let field_ty = self.true_type(field.ty, params);
             let ent = &self.reprs[field_ty];
 
+            assert_ne!(ent.layout, Layout::ZERO);
+
             copyable &= ent.flags.contains(ReprFlags::COPYABLE);
 
             let field = ReprField {
                 offset: size,
                 ty: field_ty,
             };
+
             self.repr_fields.push_one(field);
 
             size = size + ent.layout.size();
@@ -291,8 +297,8 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
                 reprs[builtin_types.$ty] = ReprEnt {
                     layout: $layout,
                     repr: $repr,
-                    fields: Default::default(),
                     flags: ReprFlags::COPYABLE,
+                    ..reprs[builtin_types.$ty]
                 };
             )*
         };
@@ -314,6 +320,12 @@ pub fn build_builtin_reprs(ptr_ty: Type, reprs: &mut Reprs, builtin_types: &Buil
         (uint, ptr_ty, Layout::PTR),
         (char, ir::types::I32, hom(4)),
     );
+
+    reprs[builtin_types.str] = ReprEnt {
+        repr: ptr_ty,
+        flags: ReprFlags::COPYABLE | ReprFlags::ON_STACK,
+        ..reprs[builtin_types.str]
+    };
 }
 
 pub fn build_reprs(ptr_ty: Type, reprs: &mut Reprs, types: impl Iterator<Item = Ty>) {

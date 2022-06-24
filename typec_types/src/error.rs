@@ -3,6 +3,11 @@ use lexer::*;
 
 #[derive(Debug)]
 pub enum TyError {
+    StringError {
+        loc: Span,
+        error: EscapeError,
+        pos: usize,
+    },
     ExpectedCopyType {
         loc: Span,
     },
@@ -235,8 +240,7 @@ impl MissingBoundTreeDisplay<'_> {
         if !self.missing_bound_tree.unimplemented.is_empty() {
             writeln!(dump, " because:")?;
             for unimplemented in &self.missing_bound_tree.unimplemented {
-                missing_bound_tree_display!(self, unimplemented)
-                    .write_low(dump, depth + 1)?;
+                missing_bound_tree_display!(self, unimplemented).write_low(dump, depth + 1)?;
             }
         } else {
             writeln!(dump)?;

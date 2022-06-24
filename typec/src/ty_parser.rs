@@ -47,7 +47,10 @@ impl TyParser<'_> {
             for &param in &children[1..children.len() - 1] {
                 let ty = self.parse_type(param)?;
                 generic |= self.types[ty].flags.contains(TyFlags::GENERIC);
-                args.push(TyCompEnt { ty, ..Default::default() });
+                args.push(TyCompEnt {
+                    ty,
+                    ..Default::default()
+                });
             }
 
             self.ty_comps.push(&args)

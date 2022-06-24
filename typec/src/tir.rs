@@ -37,7 +37,7 @@ impl TirBuilder<'_> {
         };
         let func = self.funcs.push(func_ent, func_meta);
 
-        self.globals[self.global].init = func;
+        self.globals[self.global].init = Some(func).into();
 
         Ok(func)
     }
@@ -233,6 +233,7 @@ impl TirBuilder<'_> {
             AstKind::Int => self.int(ast),
             AstKind::Bool => self.bool(ast),
             AstKind::Char => self.char(ast),
+            AstKind::String => self.string(ast),
             AstKind::Variable(mutable) => self.variable(mutable, ast),
             AstKind::Constructor => self.constructor(ast),
             AstKind::DotExpr => self.dot_expr(ast),
@@ -252,6 +253,76 @@ impl TirBuilder<'_> {
                 self.sources.display(span)
             ),
         }
+    }
+
+    fn string(&mut self, ast: Ast) -> errors::Result<Tir> {
+        let span = self.ast_data.nodes[ast].span;
+
+        let (ptr, len) = {
+            let str = self.sources.display(span);
+            let id = ID::new(str);
+
+            let global = if let Some(&global) = self.global_map.get(id) {
+                global
+            } else {
+                let mut translator = EscapeTranslator::new(&str[1..str.len() - 1]);
+                let bytes = {
+                    let bytes = (&mut translator).flat_map(|c| {
+                        let mut data = [0u8; 4];
+                        let len = c.encode_utf8(&mut data).len();
+                        data.into_iter().take(len)
+                    });
+                    self.global_data.push_iter(bytes)
+                };
+
+                if let Some((error, pos)) = translator.report_error() {
+                    self.diagnostics.push(TyError::StringError {
+                        error,
+                        pos,
+                        loc: span,
+                    })
+                }
+
+                let global = GlobalEnt {
+                    id,
+                    name: span,
+                    mutable: false,
+                    ty: self.builtin_types.u8,
+                    init: None.into(),
+                    bytes: Some(bytes).into(),
+                };
+                let global = self.globals.push(global);
+                self.global_map.insert(id, global);
+                global
+            };
+
+            let global_access = {
+                let kind = TirKind::GlobalAccess(global);
+                let flags = TirFlags::IMMUTABLE;
+                let ty = self.builtin_types.uint;
+                let ent = TirEnt::with_flags(kind, ty, flags, span);
+                self.tir_data.ents.push(ent)
+            };
+
+            (
+                self.take_ptr(global_access, false),
+                self.global_data
+                    .get(self.globals[global].bytes.unwrap())
+                    .len(),
+            )
+        };
+
+        let len = self.int_lit(len as u128, self.builtin_types.uint);
+
+        let result = {
+            let args = self.tir_data.cons.push(&[ptr, len]);
+            let kind = TirKind::Constructor(args);
+            let ty = self.builtin_types.str;
+            let ent = TirEnt::new(kind, ty, span);
+            self.tir_data.ents.push(ent)
+        };
+
+        Ok(result)
     }
 
     fn r#continue(&mut self, ast: Ast) -> errors::Result<Tir> {
@@ -880,7 +951,9 @@ impl TirBuilder<'_> {
     ) -> errors::Result<Tir> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
-        let mut args = self.vec_pool.alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
+        let mut args = self
+            .vec_pool
+            .alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
         let origin = self.funcs[func.meta()].name;
         let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args, Ok(origin))?;
 
@@ -1008,7 +1081,9 @@ impl TirBuilder<'_> {
             return Err(());
         };
 
-        let mut arg_tys = self.vec_pool.alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
+        let mut arg_tys = self
+            .vec_pool
+            .alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
 
         let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys, Err(ty))?;
 
@@ -1331,6 +1406,16 @@ impl TirBuilder<'_> {
         let AstEnt { span, kind, .. } = self.ast_data.nodes[body];
         let TyEnt { flags, .. } = self.types[ty];
 
+        let (mut param_slots, ty) = if let TyKind::Instance(base, params) = self.types[ty].kind {
+            (self.vec_pool.alloc(self.ty_lists.get(params)), base)
+        } else {
+            (
+                self.vec_pool
+                    .of_size(Ty::reserved_value(), flags.param_count()),
+                ty,
+            )
+        };
+
         let TyKind::Struct(fields) = self.types[ty].kind else {
             self.diagnostics.push(TyError::ExpectedStruct {
                 got: ty,
@@ -1342,7 +1427,6 @@ impl TirBuilder<'_> {
         let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
 
         // TODO: maybe avoid allocation
-        let mut param_slots = vec![Ty::reserved_value(); flags.param_count()];
         let mut terminal_flags = TirFlags::empty();
         for (i, &field) in self.ast_data.children(body).iter().enumerate() {
             let (expr, (field, field_ty)) = if kind == AstKind::ConstructorBody {
@@ -1453,7 +1537,7 @@ impl TirBuilder<'_> {
                 })?;
 
             self.ty_lists.mark_frame();
-            for param in param_slots {
+            for param in param_slots.drain(..) {
                 self.ty_lists.push_one(param);
             }
 

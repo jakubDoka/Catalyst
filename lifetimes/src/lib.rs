@@ -1,4 +1,1 @@
-
-pub struct LifetimeContext {
-    
-}
+pub struct LifetimeContext {}

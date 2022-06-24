@@ -1,0 +1,57 @@
+fn "default" putchar(char: char) -> char extern
+
+fn "default" malloc(size: int) -> ^i8 extern
+
+fn "default" exit(code: int) extern
+
+impl u8 {
+    fn log(s: Self) {
+        let mut div = 10
+        loop {
+            if s < div.u8() {
+                break
+            }
+            div *= 10
+        }
+
+        loop {
+            div /= 10
+            if div == 0 {
+                break
+            }
+            let s = s / div.u8()
+            putchar(('0' as u32 + s.u32() % 10u32) as char)
+        }
+    }
+}
+
+impl str {
+    fn log(s: ^Self) {
+        let mut i = 0u
+        loop {
+            if i >= s.len {
+                break
+            }
+            putchar(((s.ptr as uint + i) as ^u8).u32() as char)
+            i += 1u
+        }
+    }
+}
+
+struct [T] Vec {
+    data: ^T
+    len: int
+    cap: int
+}
+
+impl [T] Vec[T] {
+    fn new() -> Self {
+        Self::{
+            data: 0 as ^T
+            len: 0
+            cap: 0
+        }
+    }
+
+    
+}

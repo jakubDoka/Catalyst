@@ -1,3 +1,6 @@
+use {
+    "root/utils"
+}
 
 fn [T] move_in_and_out(arg: T) -> T {
     arg
@@ -10,7 +13,7 @@ struct [T] Loo {
 
 impl [T] drop as Loo[T] {
     fn drop(s: ^mut Self) {
-        putchar('l')
+        "Loo[T] dropped\n".log()
     }
 }
 
@@ -36,7 +39,7 @@ impl Spec as Goo {
     use something as try
 
     fn and_this() {
-        putchar('u')
+        "and_this called\n".log()
     }
 }
 
@@ -56,24 +59,4 @@ bound Spec {
     fn field(s: ^Self) -> int
     fn try()
     fn and_this()
-}
-
-fn "default" putchar(char: char) -> char extern
-
-fn "default" malloc(size: int) -> ^i8 extern
-
-struct [T] Vec {
-    data: ^T
-    len: int
-    cap: int
-}
-
-impl Vec {
-    fn [T] new() -> Self[T] {
-        Self::{
-            data: 0 as ^T
-            len: 0
-            cap: 0
-        }
-    }
 }

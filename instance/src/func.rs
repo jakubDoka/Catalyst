@@ -203,7 +203,7 @@ impl<'a> MirBuilder<'a> {
 
         let mut dest = on_stack.then(|| self.create_stack(ty));
         let value = self.expr(var, &mut dest).unwrap();
-        
+
         let pointer = self.func_ctx.values[value]
             .flags
             .contains(MirFlags::POINTER);
@@ -416,7 +416,9 @@ impl<'a> MirBuilder<'a> {
         }
 
         self.func_ctx.select_block(otherwise_block);
-        let value = has_ret.then_some(self.expr(otherwise, &mut dest_copy)).flatten();
+        let value = has_ret
+            .then_some(self.expr(otherwise, &mut dest_copy))
+            .flatten();
         if let Some(join_block) = join_block && !self.func_ctx.is_terminated(){
             self.gen_jump(join_block, value);
         }
@@ -476,6 +478,7 @@ impl<'a> MirBuilder<'a> {
 
         let TyCompEnt { index, .. } = self.ty_comps[field];
         let fields = self.reprs[base_ty].fields;
+        // println!("{}", ty_display!(self, base_ty));
         let ReprField { offset, ty } = self.repr_fields.get(fields)[index as usize];
 
         let value = self.gen_offset(base, ty, offset);
@@ -494,13 +497,14 @@ impl<'a> MirBuilder<'a> {
         };
 
         let on_stack = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
+        // println!("{}", on_stack);
         let mut result = dest.unwrap_or_else(|| {
             if on_stack {
                 self.create_stack(ty)
             } else {
                 let value = self.add_value(ValueEnt::new(ty));
 
-                let kind = InstKind::IntLit(0);
+                let kind = InstKind::Int(0);
                 let ent = InstEnt::new(kind).value(value);
                 self.add_inst(ent);
 
@@ -519,12 +523,20 @@ impl<'a> MirBuilder<'a> {
             .get(values)
             .iter()
             .zip(self.repr_fields.get(fields));
-
-        for (&value, field) in iter {
-            result = self.gen_offset(result, ty, field.offset);
-            self.expr(value, &mut Some(result));
-            // this is important for structures that need bit manipulation (they fit into pointer)
-            result = self.gen_offset(result, ty, Offset::ZERO - field.offset);
+        // println!("{}", ty_display!(self, ty));
+        if on_stack {
+            for (&value, field) in iter {
+                let dest = self.gen_offset(result, ty, field.offset);
+                self.expr(value, &mut Some(dest));
+            }
+        } else {
+            for (&value, field) in iter {
+                // println!("{} {}", ty_display!(self, field.ty), field.offset);
+                result = self.gen_offset(result, ty, field.offset);
+                self.expr(value, &mut Some(result));
+                // this is important for structures that need bit manipulation (they fit into pointer)
+                result = self.gen_offset(result, ty, Offset::ZERO - field.offset);
+            }
         }
 
         Some(result)
@@ -661,9 +673,9 @@ impl<'a> MirBuilder<'a> {
 
         let inst = match kind {
             TirKind::FuncPtr(v) => InstKind::FuncPtr(v),
-            TirKind::IntLit(v) => InstKind::IntLit(v),
-            TirKind::BoolLit(v) => InstKind::BoolLit(v),
-            TirKind::CharLit(v) => InstKind::IntLit(v as u128),
+            TirKind::IntLit(v) => InstKind::Int(v),
+            TirKind::BoolLit(v) => InstKind::Bool(v),
+            TirKind::CharLit(v) => InstKind::Int(v as u128),
             TirKind::GlobalAccess(global) => InstKind::GlobalAccess(global),
             _ => unreachable!(),
         };

@@ -297,7 +297,8 @@ impl<'a> ScopeBuilder<'a> {
 
         let sig = {
             let args = {
-                let ast_args = &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END];
+                let ast_args =
+                    &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END];
                 let mut args = self.vec_pool.with_capacity(ast_args.len());
                 for &ast in ast_args {
                     let &[name, lifetime, ty] = self.ast_data.children(ast) else {
@@ -328,7 +329,7 @@ impl<'a> ScopeBuilder<'a> {
                         continue;
                     };
 
-                    args.push(TyCompEnt { 
+                    args.push(TyCompEnt {
                         ty,
                         name,
                         index: lifetime,

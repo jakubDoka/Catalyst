@@ -2,6 +2,7 @@ use {
     "root/structs"
     "root/generics"
     //"root/patterns"
+    "root/utils"
 }
 
 let CONSTANT = 1
@@ -154,11 +155,23 @@ fn main() -> int {
     let a = 'h'
     let b = ^a
 
+    let str = str::{ ptr: ^('x' as u32).u8(); len: 1u }
+    putchar(('x' as u32).u8().u32() as char)
+    "\n".log()
+
+    putchar(str.ptr.u32() as char)
+    str.log()
+    "\n".log()
+
+    "Hello, world!\n".log()
+
     putchar(40.u32() as char)
-    putchar(*b)
+    "\n".log()
 
     -34
 }
+
+
 
 fn drop_(t: TestOwnership) {
 
@@ -223,5 +236,3 @@ fn iter_fib(x: int) -> int {
         i += 1
     }
 }
-
-fn "default" exit(code: int) extern

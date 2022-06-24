@@ -8,6 +8,13 @@ impl Generator<'_> {
         let ptr_ty = self.isa.pointer_type();
         let sys_cc = self.isa.default_call_conv();
 
+        build_builtin_reprs(ptr_ty, self.reprs, self.builtin_types);
+        build_reprs(
+            ptr_ty,
+            self.reprs,
+            self.types.keys().skip(self.builtin_types.all().len()),
+        );
+
         for &(func, _) in self.to_compile.iter() {
             let call_conv = self.funcs[func.meta()].sig.cc;
             let sig = self.funcs[func.meta()].sig;
@@ -46,10 +53,7 @@ impl Generator<'_> {
                 continue;
             }
 
-            // println!(
-            //     "{}",
-            //     MirDisplay::new(&self.sources, &self.ty_lists, &self.func_ctx, &self.types)
-            // );
+            // println!("{}", mir_display!(self, self.func_ctx));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 

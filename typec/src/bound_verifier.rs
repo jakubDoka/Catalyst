@@ -183,8 +183,14 @@ impl BoundVerifier<'_> {
                 &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
 
-            let a = a_args.iter().map(|arg| arg.ty).chain(std::iter::once(a.ret));
-            let b = b_args.iter().map(|arg| arg.ty).chain(std::iter::once(b.ret));
+            let a = a_args
+                .iter()
+                .map(|arg| arg.ty)
+                .chain(std::iter::once(a.ret));
+            let b = b_args
+                .iter()
+                .map(|arg| arg.ty)
+                .chain(std::iter::once(b.ret));
             a.zip(b).zip(ast_params)
         };
 

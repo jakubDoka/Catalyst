@@ -21,7 +21,7 @@ pub use func::{
 pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals};
 pub use graph::Graph;
 pub use scope_context::ScopeContext;
-pub use state::{BoundChecker, TyFactory, SigDisplay, TyDisplay, MissingBoundTreeDisplay};
+pub use state::{BoundChecker, MissingBoundTreeDisplay, SigDisplay, TyDisplay, TyFactory};
 pub use tir::{
     Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
     TirStack,

@@ -12,7 +12,7 @@ pub struct GlobalEnt {
     pub name: Span,
     pub mutable: bool,
     pub ty: Ty,
-    pub init: Func,
+    pub init: PackedOption<Func>,
     pub bytes: PackedOption<GlobalBytes>,
 }
 

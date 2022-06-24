@@ -597,19 +597,15 @@ impl<'a> Parser<'a> {
             TokenKind::Operator(..) => match self.sources.display(self.current.span()) {
                 "^" => self.type_pointer_expr(),
                 _ => {
-                    self.diagnostics.push(AstError::UnexpectedTypePrefix { 
+                    self.diagnostics.push(AstError::UnexpectedTypePrefix {
                         loc: self.current.span(),
                     });
                     Err(())
-                },
+                }
             },
             TokenKind::Ident => self.type_ident_expr(),
             _ => {
-                self.emit_expect_error(&[
-                    TokenKind::Fn, 
-                    TokenKind::Operator(0), 
-                    TokenKind::Ident
-                ]);
+                self.emit_expect_error(&[TokenKind::Fn, TokenKind::Operator(0), TokenKind::Ident]);
                 Err(())
             }
         }
@@ -1006,16 +1002,12 @@ impl<'a> Parser<'a> {
 
         let expr = self.expr();
 
-        
         if self.current.kind() == TokenKind::Comma {
             unimplemented!("tuples are not yet supported");
         } else if self.current.kind() == TokenKind::RightParen {
             self.advance();
         } else {
-            self.emit_expect_error(&[
-                TokenKind::RightParen, 
-                TokenKind::Comma
-            ]);
+            self.emit_expect_error(&[TokenKind::RightParen, TokenKind::Comma]);
             return Err(());
         }
 

@@ -129,13 +129,10 @@ impl TyFactory<'_> {
 
         // make bound combo implement all contained bounds
         for &ty in self.ty_lists.top() {
-            let TyKind::Bound(funcs) = self.types[ty].kind else {
-                unreachable!();
-            };
             let bound = self.types[ty].id;
             let id = ID::bound_impl(bound, id);
             let bound = BoundImpl {
-                funcs,
+                ty,
                 ..Default::default()
             };
             self.bound_impls.insert_unique(id, bound);

@@ -169,7 +169,7 @@ macro_rules! gen_builtin_table {
         }
 
         impl BuiltinTypes {
-            pub fn all(&self) -> [Ty; 17] {
+            pub fn all(&self) -> [Ty; 18] {
                 [$(self.$name),*]
             }
         }
@@ -226,8 +226,9 @@ impl BuiltinTypes {
 
 gen_builtin_table!(
     nothing: TyKind::Struct(TyCompList::default()),
-    drop: TyKind::Bound(FuncList::default()),
-    copy: TyKind::Bound(FuncList::default()),
+    drop: TyKind::Unresolved,
+    copy: TyKind::Bound(Default::default()),
+    str: TyKind::Unresolved,
     ty_any: TyKind::Param(0, TyList::default(), None.into()),
     any: TyKind::Param(0, TyList::default(), None.into()),
     bool: TyKind::Bool,

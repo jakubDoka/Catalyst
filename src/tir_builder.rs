@@ -36,9 +36,9 @@ impl MainTirBuilder<'_> {
             // }
 
             // println!("{}", self.sources.display(self.funcs[func.meta()].name));
-            
+
             self.tir_data.clear();
-            
+
             if tir_builder!(self).func(func).is_err() {
                 continue;
             }
@@ -79,7 +79,7 @@ impl MainTirBuilder<'_> {
                 .push(TyError::InfinitelySizedType { cycle });
         }
 
-        layout_builder!(self).build_layouts(&self.ty_order[check_point..]);
+        layout_builder!(self).build(self.ty_order[check_point..].iter().copied());
         build_reprs(self.host_isa.pointer_type(), &mut self.reprs, iter);
         self.ty_graph.clear();
     }
@@ -107,7 +107,6 @@ impl MainTirBuilder<'_> {
 
             self.funcs[init.meta()].tir_data = self.tir_data.clone();
             self.to_compile.push((init, TyList::reserved_value()));
-            self.global_map.insert(self.globals[global].id, global);
             // self.initializers.push(init); // this is performed during dead code elimination
         }
     }
@@ -119,6 +118,9 @@ impl MainTirBuilder<'_> {
     /// and ty_instances are not materialized here but rather the Tir has notion
     /// of generic calls.
     pub fn build(&mut self, module_order: &[Source]) {
+        layout_builder!(self).build(self.types.keys().skip(self.builtin_types.all().len()));
+        layout_builder!(self).build([self.builtin_types.str]);
+
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];
         let mut global_buffer = vec![];

@@ -13,7 +13,7 @@ pub enum AstError {
     },
     UnexpectedTypePrefix {
         loc: Span,
-    }
+    },
 }
 
 impl AstError {
@@ -41,9 +41,7 @@ impl AstError {
             }
             AstError::UnexpectedTypePrefix { loc } => {
                 loc.loc_to(sources, to)?;
-                loc.underline_error(sources, to, &|to| {
-                    write!(to, "unexpected type prefix")
-                })?;
+                loc.underline_error(sources, to, &|to| write!(to, "unexpected type prefix"))?;
                 writeln!(to, "supported type prefixes:")?;
                 writeln!(to, "\t'^' - pointer to prefixed type")?;
             }
