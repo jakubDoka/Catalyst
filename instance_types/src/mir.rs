@@ -3,7 +3,6 @@ use std::{marker::PhantomData, ops::IndexMut};
 use cranelift_codegen::{ir::Type, packed_option::PackedOption};
 use cranelift_entity::{EntityRef, PrimaryMap};
 
-use lexer::*;
 use storage::*;
 use typec_types::*;
 
@@ -224,35 +223,14 @@ impl StackEnt {
 
 gen_entity!(StackSlot);
 
-pub struct MirDisplay<'a> {
-    sources: &'a Sources,
-    func: &'a FuncCtx,
-    types: &'a Types,
-    ty_lists: &'a TyLists,
-}
-
-impl<'a> MirDisplay<'a> {
-    pub fn new(
-        sources: &'a Sources,
-        ty_lists: &'a TyLists,
-        func: &'a FuncCtx,
-        types: &'a Types,
-    ) -> Self {
-        Self {
-            sources,
-            ty_lists,
-            func,
-            types,
-        }
-    }
-
+impl MirDisplay<'_> {
     pub fn value_to_string(&self, value: Value) -> String {
         format!(
             "{}:{}>{}[{:?}]",
             value,
-            self.func.values[value].offset.arch64,
-            ty_display!(self, self.func.values[value].ty),
-            self.func.values[value].flags,
+            self.func_ctx.values[value].offset.arch64,
+            ty_display!(self, self.func_ctx.values[value].ty),
+            self.func_ctx.values[value].flags,
         )
     }
 }
@@ -261,16 +239,16 @@ impl std::fmt::Display for MirDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "(signature) {{")?;
 
-        for (i, stack) in self.func.stacks.iter() {
+        for (i, stack) in self.func_ctx.stacks.iter() {
             writeln!(f, "  {} = stack({})", i, stack.size)?;
         }
 
-        for (id, block) in self.func.blocks.linked_iter(self.func.start.expand()) {
+        for (id, block) in self.func_ctx.blocks.linked_iter(self.func_ctx.start.expand()) {
             writeln!(
                 f,
                 "  {}({}): {{",
                 id,
-                self.func
+                self.func_ctx
                     .value_slices
                     .get(block.params)
                     .iter()
@@ -279,11 +257,11 @@ impl std::fmt::Display for MirDisplay<'_> {
                     .join(", "),
             )?;
 
-            for (_, inst) in self.func.insts.linked_iter(block.start.expand()) {
+            for (_, inst) in self.func_ctx.insts.linked_iter(block.start.expand()) {
                 match inst.kind {
                     InstKind::IndirectCall(func, values) => {
                         let args = self
-                            .func
+                            .func_ctx
                             .value_slices
                             .get(values)
                             .iter()
@@ -372,7 +350,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                     }
                     InstKind::Call(func, values) => {
                         let args = self
-                            .func
+                            .func_ctx
                             .value_slices
                             .get(values)
                             .iter()

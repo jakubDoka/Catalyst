@@ -520,7 +520,7 @@ impl Compiler {
             let name = self.sources.display(self.funcs[func.meta()].name);
             let signature = translate_signature(
                 call_conv,
-                self.ty_lists.get(sig.args).iter().copied(),
+                self.ty_comps.get(sig.args).iter().map(|arg| arg.ty),
                 sig.ret,
                 &self.reprs,
                 &self.types,

@@ -8,13 +8,12 @@ let CONSTANT = 1
 let STRUCT_CONSTANT = init_something()
 let mut dangerous_int = 0
 
-
 #entry
 fn main() -> int {
     if other(1, 2, 3) != 7 {
         return 1
     }
-    
+
     if structs::bti(true) != 1 {
         return 2
     }

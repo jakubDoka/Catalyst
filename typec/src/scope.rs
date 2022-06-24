@@ -10,6 +10,8 @@ use typec_types::{
     *,
 };
 
+pub const RETURN_LIFETIME: u32 = u32::MAX - 1;
+
 impl<'a> ScopeBuilder<'a> {
     pub fn collect_items<'f>(
         &mut self,
@@ -295,24 +297,45 @@ impl<'a> ScopeBuilder<'a> {
 
         let sig = {
             let args = {
-                self.ty_lists.mark_frame();
+                let ast_args = &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END];
+                let mut args = self.vec_pool.with_capacity(ast_args.len());
+                for &ast in ast_args {
+                    let &[name, lifetime, ty] = self.ast_data.children(ast) else {
+                        unreachable!();
+                    };
 
-                for &ast in
-                    &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_ARG_END]
-                {
-                    let children = self.ast_data.children(ast);
-                    let amount = children.len() - 1;
-                    let ty = children[amount];
+                    let name = self.ast_data.nodes[name].span;
+
+                    let lifetime = if lifetime.is_reserved_value() {
+                        0
+                    } else {
+                        let span = self.ast_data.nodes[lifetime].span;
+                        let id = self.sources.id_of(span);
+
+                        // distinct id implies distinct Ast, we could have used new entity
+                        // but this is more neat :]
+                        if id == ID::new("'ret") {
+                            RETURN_LIFETIME
+                        } else if let Ok(lifetime) = self.scope.get_concrete::<Ast>(id) {
+                            lifetime.0
+                        } else {
+                            self.scope.push_item(id, ScopeItem::new(lifetime, span));
+                            lifetime.0
+                        }
+                    };
+
                     let Ok(ty) = ty_parser!(self).parse_type(ty) else {
                         continue;
                     };
 
-                    for _ in 0..amount {
-                        self.ty_lists.push_one(ty);
-                    }
+                    args.push(TyCompEnt { 
+                        ty,
+                        name,
+                        index: lifetime,
+                    });
                 }
 
-                self.ty_lists.pop_frame()
+                self.ty_comps.push(&args)
             };
 
             let ret = if return_type.is_reserved_value() {

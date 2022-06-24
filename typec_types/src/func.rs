@@ -88,7 +88,7 @@ impl Default for FuncKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sig {
     pub cc: Option<CallConv>,
-    pub args: TyList,
+    pub args: TyCompList,
     pub ret: Ty,
 }
 
@@ -96,46 +96,32 @@ impl Default for Sig {
     fn default() -> Self {
         Self {
             cc: Some(CallConv::Fast),
-            args: TyList::default(),
+            args: TyCompList::default(),
             ret: Ty::default(),
         }
     }
 }
 
-pub struct SignatureDisplay<'a> {
-    pub sig: &'a Sig,
-    pub sources: &'a Sources,
-    pub ty_lists: &'a TyLists,
-    pub types: &'a Types,
-}
-
-impl<'a> SignatureDisplay<'a> {
-    pub fn new(
-        sources: &'a Sources,
-        ty_lists: &'a TyLists,
-        types: &'a Types,
-        sig: &'a Sig,
-    ) -> Self {
-        SignatureDisplay {
-            sig,
-            types,
-            ty_lists,
-            sources,
-        }
-    }
-}
-
-impl std::fmt::Display for SignatureDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for (i, &ty) in self.ty_lists.get(self.sig.args).iter().enumerate() {
+impl SigDisplay<'_> {
+    pub fn write(&self, f: &mut String) -> std::fmt::Result {
+        use std::fmt::Write;
+        write!(f, "fn (")?;
+        for (i, &arg) in self.ty_comps.get(self.sig.args).iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", ty_display!(self, ty))?;
+            ty_display!(self, arg.ty).write(f)?;
         }
-        write!(f, ") -> {}", ty_display!(self, self.sig.ret),)?;
+        ty_display!(self, self.sig.ret).write(f)?;
         Ok(())
+    }
+}
+
+impl std::fmt::Display for SigDisplay<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        self.write(&mut s)?;
+        write!(f, "{s}")
     }
 }
 

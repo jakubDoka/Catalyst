@@ -165,6 +165,33 @@ file "typec_types/src/state.rs" {
         TyLists
         BuiltinTypes
     }
+
+    struct TyDisplay {
+        owned Ty
+        
+        TyLists
+        TyComps
+        Types
+        Sources
+    }
+
+    struct SigDisplay {
+        owned Sig
+
+        TyLists
+        TyComps
+        Types
+        Sources
+    }
+
+    struct MissingBoundTreeDisplay {
+        passed MissingBoundTree
+
+        TyLists
+        TyComps
+        Types
+        Sources
+    }
 }
 
 file "typec/src/state.rs" {
@@ -185,8 +212,9 @@ file "typec/src/state.rs" {
         mut FuncLists
         mut BoundImpls
         mut Types
-        VecPool
         
+        TyComps
+        VecPool
         AstData
         BuiltinTypes
         Sources
@@ -208,10 +236,10 @@ file "typec/src/state.rs" {
         mut TyLists
         mut TyInstances
         mut BoundImpls
+        mut TyComps
+        
         VecPool
-
         AstData
-        TyComps
         Sources
         BuiltinTypes
     }
@@ -305,6 +333,21 @@ file "typec/src/state.rs" {
     }
 }
 
+file "instance_types/src/state.rs" {
+    use "crate"
+    use "typec_types"
+    use "lexer"
+
+    struct MirDisplay {
+        passed FuncCtx
+        
+        TyComps
+        Types
+        TyLists
+        Sources
+    }
+}
+
 file "instance/src/state.rs" {
     use "crate"
     use "typec_types"
@@ -385,6 +428,7 @@ file "gen/src/state.rs" {
 
         passed isa: `dyn TargetIsa`
         
+        TyComps
         Funcs
         Reprs
         Types

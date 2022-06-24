@@ -76,7 +76,8 @@ pub fn display(
             loc.loc_to(sources, to)?;
 
             let mut missing = String::new();
-            bounds.log(types, ty_lists, sources, &mut missing, 1)?;
+            missing_bound_tree_display!(state, bounds)
+                .write_low(&mut missing, 1)?;
 
             loc.underline_error(sources, to, &|to| write!(to, "{}", missing))?;
         }

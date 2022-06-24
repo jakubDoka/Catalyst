@@ -77,30 +77,24 @@ impl TirBuilder<'_> {
         self.generics(params, generics);
 
         let args = {
-            let ast_args = &header[ast::FUNCTION_ARG_START..header.len() - ast::FUNCTION_ARG_END];
-            let args = self.ty_lists.get(args);
+            let args = self.ty_comps.get(args);
             let mut tir_args = self.vec_pool.with_capacity(args.len());
-            for (i, (&ast, &ty)) in ast_args.iter().zip(args).enumerate() {
+            for (i, &TyCompEnt { ty, name, .. }) in args.iter().enumerate() {
                 // println!("=== {} {} {:?}", ty_display!(self, ty), self.ast.nodes[ast].span.log(self.sources), self.types[ty].flags);
                 self.scope_context.use_type(ty, self.types);
 
-                let &[name, ..] = self.ast_data.children(ast) else {
-                    unreachable!();
-                };
-                let span = self.ast_data.nodes[name].span;
-
                 let arg = {
                     let kind = TirKind::Argument(i as u32);
-                    let ent = TirEnt::new(kind, ty, span);
+                    let ent = TirEnt::new(kind, ty, name);
                     self.tir_data.ents.push(ent)
                 };
 
                 {
                     let id = {
-                        let str = self.sources.display(span);
+                        let str = self.sources.display(name);
                         ID::new(str)
                     };
-                    let item = ScopeItem::new(arg, span);
+                    let item = ScopeItem::new(arg, name);
                     self.scope.push_item(id, item);
                 }
 
@@ -886,7 +880,7 @@ impl TirBuilder<'_> {
     ) -> errors::Result<Tir> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
         let generic = self.funcs[func].flags.contains(FuncFlags::GENERIC);
-        let mut args = self.vec_pool.alloc(self.ty_lists.get(args));
+        let mut args = self.vec_pool.alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
         let origin = self.funcs[func.meta()].name;
         let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args, Ok(origin))?;
 
@@ -959,11 +953,11 @@ impl TirBuilder<'_> {
             }
         }
 
-        for (&arg, &arg_ty) in tir_args.iter().zip(self.ty_lists.get(args)) {
+        for (&arg, &arg_comp) in tir_args.iter().zip(self.ty_comps.get(args)) {
             let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
             if let Err(err) = infer_parameters(
                 ty,
-                arg_ty,
+                arg_comp.ty,
                 &mut param_slots,
                 span,
                 self.types,
@@ -1014,7 +1008,7 @@ impl TirBuilder<'_> {
             return Err(());
         };
 
-        let mut arg_tys = self.vec_pool.alloc(self.ty_lists.get(args));
+        let mut arg_tys = self.vec_pool.alloc_iter(self.ty_comps.get(args).iter().map(|arg| arg.ty));
 
         let (terminal_flags, tir_args) = self.arguments(ast, &mut None, &arg_tys, Err(ty))?;
 
@@ -1657,7 +1651,7 @@ impl TirBuilder<'_> {
                 if let Some(var) = value.pointer.may_read::<Tir>() {
                     let (var, local) = match self.tir_data.ents[var].kind {
                         TirKind::Variable(local) => (Some(var), local),
-                        TirKind::Argument(_) => (None, var),
+                        TirKind::Argument(..) => (None, var),
                         kind => unimplemented!("{:?}", kind),
                     };
 
@@ -1745,7 +1739,7 @@ impl TirBuilder<'_> {
         /* sanity check */
         {
             let func_ent = &self.funcs[func.meta()];
-            let args = self.ty_lists.get(func_ent.sig.args);
+            let args = self.ty_comps.get(func_ent.sig.args);
 
             let arg_count = args.len();
             if arg_count != 2 {
@@ -1758,7 +1752,7 @@ impl TirBuilder<'_> {
                 return Err(());
             }
 
-            let expected = args[1];
+            let expected = args[1].ty;
             self.infer_tir_ty(right, expected, |_, got, loc| TyError::BinaryTypeMismatch {
                 expected,
                 got,

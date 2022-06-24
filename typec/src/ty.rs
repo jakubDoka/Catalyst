@@ -114,6 +114,7 @@ impl TyBuilder<'_> {
     }
 
     fn build_fields(&mut self, id: ID, body: Ast) -> TyCompList {
+        let mut fields = self.vec_pool.with_capacity(self.ast_data.children(body).len());
         for (i, &field_ast) in self.ast_data.children(body).iter().enumerate() {
             let &[name, field_ty_ast] = self.ast_data.children(field_ast) else {
                 unreachable!();
@@ -126,24 +127,27 @@ impl TyBuilder<'_> {
             let span = self.ast_data.nodes[name].span;
             self.ty_graph.add_edge(self.ty, field_ty);
 
+
+            let field = TyCompEnt {
+                name: span,
+                ty: field_ty,
+                index: i as u32,
+            };
+            fields.push(field)
+        }
+
+        for field_ent in fields.drain(..) {
+            let name = field_ent.name;
             let id = {
-                let name = self.sources.id_of(span);
+                let name = self.sources.id_of(name);
                 ID::owned(id, name)
             };
-
-            let field = {
-                let field = TyCompEnt {
-                    name: span,
-                    ty: field_ty,
-                    index: i as u32,
-                };
-                self.ty_comps.push_one(field)
-            };
-
-            let module_item = ModuleItem::new(id, field, span);
+            let field = self.ty_comps.push_one(field_ent);
+            let module_item = ModuleItem::new(id, field, name);
             self.scope.insert_current(self.diagnostics, module_item);
-            self.modules[span.source()].items.push(module_item);
+            self.modules[name.source()].items.push(module_item);
         }
+
         self.ty_comps.close_frame()
     }
 

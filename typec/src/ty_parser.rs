@@ -43,15 +43,14 @@ impl TyParser<'_> {
         let cc = parse_call_conv(cc, self.sources, self.ast_data, self.diagnostics);
 
         let args = {
-            self.ty_lists.mark_frame();
-
+            let mut args = self.vec_pool.with_capacity(children.len() - 2);
             for &param in &children[1..children.len() - 1] {
                 let ty = self.parse_type(param)?;
                 generic |= self.types[ty].flags.contains(TyFlags::GENERIC);
-                self.ty_lists.push_one(ty);
+                args.push(TyCompEnt { ty, ..Default::default() });
             }
 
-            self.ty_lists.pop_frame()
+            self.ty_comps.push(&args)
         };
 
         let ret = if ret.is_reserved_value() {

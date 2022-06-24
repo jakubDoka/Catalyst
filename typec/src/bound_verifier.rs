@@ -170,8 +170,8 @@ impl BoundVerifier<'_> {
 
         let iter = {
             // TODO: same here
-            let a_args = self.ty_lists.get(a.args);
-            let b_args = self.ty_lists.get(b.args);
+            let a_args = self.ty_comps.get(a.args);
+            let b_args = self.ty_comps.get(b.args);
 
             debug_assert_eq!(a_args.len(), b_args.len());
 
@@ -183,12 +183,12 @@ impl BoundVerifier<'_> {
                 &children[ast::FUNCTION_ARG_START..children.len() - ast::FUNCTION_RET + has_ret]
             };
 
-            let a = a_args.iter().chain(std::iter::once(&a.ret));
-            let b = b_args.iter().chain(std::iter::once(&b.ret));
+            let a = a_args.iter().map(|arg| arg.ty).chain(std::iter::once(a.ret));
+            let b = b_args.iter().map(|arg| arg.ty).chain(std::iter::once(b.ret));
             a.zip(b).zip(ast_params)
         };
 
-        for ((&referenced, &parametrized), &ast) in iter {
+        for ((referenced, parametrized), &ast) in iter {
             let span = self.ast_data.nodes[ast].span;
             if let Err(err) = infer_parameters(
                 referenced,

@@ -11,6 +11,9 @@ pub enum AstError {
         expected: Vec<TokenKind>,
         loc: Span,
     },
+    UnexpectedTypePrefix {
+        loc: Span,
+    }
 }
 
 impl AstError {
@@ -35,6 +38,14 @@ impl AstError {
                     }
                     write!(to, " but got {}", got.as_str())
                 })?;
+            }
+            AstError::UnexpectedTypePrefix { loc } => {
+                loc.loc_to(sources, to)?;
+                loc.underline_error(sources, to, &|to| {
+                    write!(to, "unexpected type prefix")
+                })?;
+                writeln!(to, "supported type prefixes:")?;
+                writeln!(to, "\t'^' - pointer to prefixed type")?;
             }
         }
 

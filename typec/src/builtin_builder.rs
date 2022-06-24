@@ -96,8 +96,9 @@ impl BuiltinBuilder<'_> {
         id: ID,
         target: &mut Vec<ModuleItem>,
     ) -> Func {
+
         let sig = Sig {
-            args: self.ty_lists.push(args),
+            args: self.ty_comps.push_iter(args.iter().map(|&ty| TyCompEnt {ty, ..Default::default() })),
             ret,
             ..Default::default()
         };

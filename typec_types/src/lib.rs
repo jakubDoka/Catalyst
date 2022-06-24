@@ -21,30 +21,16 @@ pub use func::{
 pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals};
 pub use graph::Graph;
 pub use scope_context::ScopeContext;
-pub use state::{BoundChecker, TyFactory};
+pub use state::{BoundChecker, TyFactory, SigDisplay, TyDisplay, MissingBoundTreeDisplay};
 pub use tir::{
     Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
     TirStack,
 };
 pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, FuncLists, Ty, TyComp, TyCompEnt, TyCompList, TyComps,
-    TyDisplay, TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
+    TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
 };
 pub use ty_factory::{infer_parameters, pointer_of, prepare_params};
-
-#[macro_export]
-macro_rules! ty_display {
-    ($self:expr, $ty:expr) => {
-        TyDisplay::new(&$self.types, &$self.ty_lists, &$self.sources, $ty)
-    };
-}
-
-#[macro_export]
-macro_rules! sig_display {
-    ($self:expr, $sig:expr) => {
-        SignatureDisplay::new($self.sources, $self.ty_lists, $self.types, $sig)
-    };
-}
 
 #[macro_export]
 macro_rules! tir_display {

@@ -174,7 +174,7 @@ impl CirBuilder<'_> {
                     unreachable!();
                 };
 
-                let args_iter = self.ty_lists.get(args).iter().cloned();
+                let args_iter = self.ty_comps.get(args).iter().map(|arg| arg.ty);
                 let func_ref = self.func_ref_of(func, args_iter, ret);
                 let ir_value = self.builder.ins().func_addr(self.reprs[ret].repr, func_ref);
                 self.cir_builder_context.value_lookup[value] = ir_value.into();

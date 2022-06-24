@@ -126,3 +126,17 @@ impl drop as TestOwnership {
         putchar('d')
     }
 }
+
+struct LifetimeTest {
+    field: ^int
+}
+
+impl LifetimeTest {
+    fn field_ref(s'ret: ^Self) -> ^^int {
+        ^s.field
+    }
+
+    fn set_field(s'a: ^mut Self, v'a: ^int) {
+        s.field = v
+    }
+}

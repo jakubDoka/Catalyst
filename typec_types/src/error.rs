@@ -220,29 +220,23 @@ pub struct MissingBoundTree {
     pub unimplemented: Vec<MissingBoundTree>,
 }
 
-impl MissingBoundTree {
-    pub fn log(
-        &self,
-        types: &Types,
-        ty_lists: &TyLists,
-        sources: &Sources,
-        dump: &mut String,
-        depth: usize,
-    ) -> std::fmt::Result {
+impl MissingBoundTreeDisplay<'_> {
+    pub fn write_low(&self, dump: &mut String, depth: usize) -> std::fmt::Result {
         use std::fmt::Write;
 
         write!(dump, "| {}", "\t".repeat(depth))?;
         write!(
             dump,
             "{} does not implement {}",
-            TyDisplay::new(types, ty_lists, sources, self.implementor),
-            TyDisplay::new(types, ty_lists, sources, self.bound),
+            ty_display!(self, self.missing_bound_tree.implementor),
+            ty_display!(self, self.missing_bound_tree.bound),
         )?;
 
-        if !self.unimplemented.is_empty() {
+        if !self.missing_bound_tree.unimplemented.is_empty() {
             writeln!(dump, " because:")?;
-            for unimplemented in &self.unimplemented {
-                unimplemented.log(types, ty_lists, sources, dump, depth + 1)?;
+            for unimplemented in &self.missing_bound_tree.unimplemented {
+                missing_bound_tree_display!(self, unimplemented)
+                    .write_low(dump, depth + 1)?;
             }
         } else {
             writeln!(dump)?;

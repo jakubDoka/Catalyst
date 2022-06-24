@@ -35,7 +35,10 @@ impl MainTirBuilder<'_> {
             //     continue;
             // }
 
+            // println!("{}", self.sources.display(self.funcs[func.meta()].name));
+            
             self.tir_data.clear();
+            
             if tir_builder!(self).func(func).is_err() {
                 continue;
             }
@@ -46,7 +49,6 @@ impl MainTirBuilder<'_> {
 
             drop_solver!(self).solve(func);
 
-            // println!("{}", self.sources.display(self.funcs[func.meta()].name));
             // println!(
             //     "{}",
             //     TirDisplay::new(

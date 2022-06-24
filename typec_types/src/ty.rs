@@ -10,7 +10,6 @@ pub type TyGraph = Graph<Ty>;
 pub type TyLists = FramedStackMap<TyList, Ty>;
 pub type Types = PrimaryMap<Ty, TyEnt>;
 pub type FuncLists = StackMap<FuncList, Func>;
-// pub type TyCompLookup = Map<TyComp>;
 pub type TyComps = StackMap<TyCompList, TyCompEnt, TyComp>;
 pub type BoundImpls = Map<BoundImpl>;
 pub type TyInstances = Map<Ty>;
@@ -245,7 +244,7 @@ gen_builtin_table!(
     u64: TyKind::Uint(64),
 );
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TyCompEnt {
     pub ty: Ty,
     pub index: u32,
@@ -304,34 +303,6 @@ impl TyFlags {
 
 impl_bool_bit_and!(TyFlags);
 
-pub struct TyDisplay<'a> {
-    pub types: &'a Types,
-    pub ty_lists: &'a TyLists,
-    pub sources: &'a Sources,
-    pub ty: Ty,
-}
-
-impl<'a> TyDisplay<'a> {
-    #[inline(never)]
-    pub fn new(types: &'a Types, ty_lists: &'a TyLists, sources: &'a Sources, ty: Ty) -> Self {
-        TyDisplay {
-            types,
-            ty_lists,
-            sources,
-            ty,
-        }
-    }
-}
-
-impl std::fmt::Display for TyDisplay<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut str = String::new();
-        self.ty
-            .display(self.types, self.ty_lists, self.sources, &mut str)?;
-        write!(f, "{str}")
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TyKind {
     Param(u8, TyList, PackedOption<Ty>),
@@ -360,76 +331,65 @@ gen_entity!(TyList);
 gen_entity!(TyComp);
 gen_entity!(TyCompList);
 
-impl Ty {
-    pub fn display(
-        self,
-        types: &Types,
-        ty_lists: &TyLists,
-        sources: &Sources,
-        to: &mut String,
-    ) -> std::fmt::Result {
+impl TyDisplay<'_> {
+    pub fn write(&self, to: &mut String) -> std::fmt::Result {
         use std::fmt::Write;
-        match types[self].kind {
+        match self.types[self.ty].kind {
             TyKind::Struct(..)
             | TyKind::Bound(..)
             | TyKind::Int(..)
             | TyKind::Uint(..)
             | TyKind::Enum(..)
             | TyKind::Bool => {
-                let name = types[self].name;
-                write!(to, "{}", sources.display(name))?;
+                let name = self.types[self.ty].name;
+                write!(to, "{}", self.sources.display(name))?;
             }
             TyKind::Instance(base, params) => {
-                let base = types[base].name;
-                write!(to, "{}", sources.display(base))?;
+                let base = self.types[base].name;
+                write!(to, "{}", self.sources.display(base))?;
                 write!(to, "[")?;
-                for (i, param) in ty_lists.get(params).iter().enumerate() {
+                for (i, &param) in self.ty_lists.get(params).iter().enumerate() {
                     if i != 0 {
                         write!(to, ", ")?;
                     }
-                    param.display(types, ty_lists, sources, to)?;
+                    ty_display!(self, param).write(to)?;
                 }
                 write!(to, "]")?;
             }
             TyKind::Param(_, list, ..) => {
                 write!(to, "impl ")?;
-                if ty_lists.get(list).is_empty() {
+                if self.ty_lists.get(list).is_empty() {
                     write!(to, "any")?;
                 }
 
-                for (i, ty) in ty_lists.get(list).iter().enumerate() {
+                for (i, &ty) in self.ty_lists.get(list).iter().enumerate() {
                     if i != 0 {
                         write!(to, " + ")?;
                     }
-                    ty.display(types, ty_lists, sources, to)?;
+                    ty_display!(self, ty).write(to)?;
                 }
             }
             TyKind::Ptr(ty, ..) => {
                 write!(to, "^")?;
-                if types[self].flags.contains(TyFlags::MUTABLE) {
+                if self.types[self.ty].flags.contains(TyFlags::MUTABLE) {
                     write!(to, "mut ")?;
                 }
-                ty.display(types, ty_lists, sources, to)?;
+                ty_display!(self, ty).write(to)?;
             }
             TyKind::FuncPtr(sig) => {
-                write!(to, "fn ")?;
-
-                write!(to, "(")?;
-                if let Some((first, other)) = ty_lists.get(sig.args).split_first() {
-                    first.display(types, ty_lists, sources, to)?;
-                    for result in other {
-                        write!(to, ", ")?;
-                        result.display(types, ty_lists, sources, to)?;
-                    }
-                };
-                write!(to, ")")?;
-
-                write!(to, " -> ")?;
-                sig.ret.display(types, ty_lists, sources, to)?;
+                sig_display!(self, sig).write(to)?;
             }
             TyKind::Unresolved => write!(to, "unresolved")?,
         }
 
         Ok(())
+    }
+}
+
+impl std::fmt::Display for TyDisplay<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut to = String::new();
+        self.write(&mut to)?;
+        write!(f, "{to}")
     }
 }

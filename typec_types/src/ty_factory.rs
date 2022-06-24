@@ -185,8 +185,8 @@ impl TyFactory<'_> {
 
         id = id + ID::new("<args>");
 
-        for &arg in self.ty_lists.get(sig.args) {
-            let arg = self.types[arg].id;
+        for &arg in self.ty_comps.get(sig.args) {
+            let arg = self.types[arg.ty].id;
             id = id + arg;
         }
 

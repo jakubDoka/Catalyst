@@ -7,12 +7,14 @@ struct State<'a> {
     types: &'a Types,
     ty_lists: &'a TyLists,
     sources: &'a Sources,
+    ty_comps: &'a TyComps,
 }
 
 pub fn display(
     err: &InstError,
     types: &Types,
     ty_lists: &TyLists,
+    ty_comps: &TyComps,
     sources: &Sources,
     to: &mut String,
 ) -> std::fmt::Result {
@@ -22,6 +24,7 @@ pub fn display(
         types,
         ty_lists,
         sources,
+        ty_comps,
     };
 
     let _ = ty_display!(state, Ty::reserved_value());

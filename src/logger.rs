@@ -44,6 +44,7 @@ impl Logger<'_> {
                     &err,
                     &self.types,
                     &self.ty_lists,
+                    &self.ty_comps,
                     &self.sources,
                     &mut errors,
                 )
