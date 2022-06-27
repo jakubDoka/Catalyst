@@ -1056,6 +1056,17 @@ impl TirBuilder<'_> {
         }
 
         let param_slice = self.vec_pool.alloc(self.ty_lists.get(params));
+        for (i, &p) in param_slots.iter().enumerate() {
+            if p.is_reserved_value() {
+                self.diagnostics.push(TyError::UnknownGenericTypeParam {
+                    loc: Span::default(),
+                    ty: param_slice[i],
+                    param: i,
+                });
+                continue;
+            }
+        }
+
         let ret = self.instantiate(ret, &mut param_slots, param_slice.as_slice());
         self.scope_context.use_type(ret, self.types);
 

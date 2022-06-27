@@ -53,7 +53,7 @@ impl Generator<'_> {
                 continue;
             }
 
-            // println!("{}", mir_display!(self, self.func_ctx));
+            println!("{}", mir_display!(self, self.func_ctx));
 
             self.context.func.signature = self.signatures.get(id).unwrap().clone();
 
@@ -69,9 +69,6 @@ impl Generator<'_> {
 
         cir_builder!(self, builder, *self.isa).generate();
 
-        // if !self.funcs[id.meta()].name.is_reserved_value() {
-        //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
-        // }
         println!("{:?}", self.context.func);
 
         self.generation_context

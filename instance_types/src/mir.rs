@@ -376,7 +376,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                                 args
                             )?;
                         } else {
-                            writeln!(f, "\tcall {}({})", func, args)?;
+                            writeln!(f, "\tcall [{}] {}({})", params, func, args)?;
                         }
                     }
                     InstKind::Int(value) => {

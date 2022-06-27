@@ -20,10 +20,17 @@ impl<'a> ReprInstancing<'a> {
         //     print!("{} ", ty_display!(self, ty));
         // }
         // println!();
+        let params = self.vec_pool.alloc(self.ty_lists.get(params));
+        let subs = self.vec_pool.alloc(self.ty_lists.get(subs));
+
+        for (&a, &b) in params.iter().zip(subs.iter()) {
+            print!("({} {}) ", ty_display!(self, a), ty_display!(self, b));
+        }
+        println!();
         
         let mut new_types = self
             .vec_pool
-            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params, subs, ty)));
+            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params.as_slice(), subs.as_slice(), ty)));
 
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`
@@ -32,11 +39,9 @@ impl<'a> ReprInstancing<'a> {
         }
     }
 
-    pub fn instantiate_repr(&mut self, params: TyList, subs: TyList, ty: Ty) -> Ty {
-        let params = self.vec_pool.alloc(self.ty_lists.get(params));
-        let subs = self.vec_pool.alloc(self.ty_lists.get(subs));
+    pub fn instantiate_repr(&mut self, params: &[Ty], subs: &[Ty], ty: Ty) -> Ty {
         let mut new_instances = self.vec_pool.get();
-        let result = ty_factory!(self).instantiate(ty, params.as_slice(), subs.as_slice(), &mut new_instances);
+        let result = ty_factory!(self).instantiate(ty, params, subs, &mut new_instances);
 
         // the types are sorted by dependance (leafs first)
         for &instance in new_instances.iter() {

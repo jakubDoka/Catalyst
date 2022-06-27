@@ -57,13 +57,20 @@ impl<'a> MirBuilder<'a> {
                 self.func_ctx.value_slices.push_one(value);
             }
 
+            for &used in self.ty_lists.get(self.tir_data.used_types) {
+                print!("{} ", ty_display!(self, used));
+            }
+            println!();
+
             for &tir in self.tir_data.cons.get(args) {
                 let ty = self.tir_data.ents[tir].ty;
+                print!("{} ", ty_display!(self, ty));
                 let value = self.add_value(ValueEnt::new(ty));
                 self.func_ctx.value_slices.push_one(value);
                 self.mir_builder_context.seen.insert(tir);
                 self.mir_builder_context.tir_mapping[tir] = value.into();
             }
+            println!();
 
             self.func_ctx.blocks[entry_point].params = self.func_ctx.value_slices.pop_frame();
         }
