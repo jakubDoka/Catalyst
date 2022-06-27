@@ -96,7 +96,7 @@ impl TyParser<'_> {
             self.ty_lists.push_one(param);
         }
 
-        Ok(ty_factory!(self).parse_instance_type_low(header, self.ast_data.nodes[ty].span))
+        Ok(ty_factory!(self).parse_instance_type(header, self.ast_data.nodes[ty].span))
     }
 
     pub fn parse_ptr_type(&mut self, ty: Ast, mutable: bool) -> errors::Result<Ty> {
@@ -105,7 +105,7 @@ impl TyParser<'_> {
             self.parse_type(inner)?
         };
 
-        Ok(pointer_of(inner_ty, mutable, self.types, self.ty_instances))
+        Ok(ty_factory!(self).pointer_of(inner_ty, mutable))
     }
 
     pub fn parse_composite_bound(&mut self, asts: &[Ast], span: Span) -> Ty {

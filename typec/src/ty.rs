@@ -175,10 +175,9 @@ impl TyBuilder<'_> {
 
 pub fn get_param(ty: Ty, types: &mut Types) -> Ty {
     let next_ty = types.next_key();
-    let TyKind::Param(index, .., next) = &mut types[ty].kind else {
+    let TyKind::Param(.., next) = &mut types[ty].kind else {
         unreachable!();
     };
-    let index = *index as u8;
 
     if let Some(next) = next.expand() {
         return next;
@@ -186,12 +185,6 @@ pub fn get_param(ty: Ty, types: &mut Types) -> Ty {
 
     *next = next_ty.into();
 
-    let mut copy = types[ty];
-    // this is only useful for parameters on types
-    // but it bring minimal overhead
-    let TyKind::Param(other_index, ..) = &mut copy.kind else {
-        unreachable!();
-    };
-    *other_index = index + 1;
+    let copy = types[ty];
     types.push(copy)
 }

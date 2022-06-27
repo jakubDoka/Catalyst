@@ -73,13 +73,24 @@ fn main() -> int {
         return 13
     }
     
-    let vec = ^Vec::new::[int]()
+    let mut vec = Vec::new::[Vec[int]]()
+
+    vec.push(Vec::new::[int]())
+    vec.push(Vec::new::[int]())
+
+    vec.get_unwrapped_last().push(34)
+
+    if *vec.get_unwrapped_last().get_unwrapped_last() != 34 {
+        return 14
+    }
     
     let ptr = malloc(100)
     
     if ptr as int == 0 {
         return 15
     }
+
+    free(ptr)
 
     /*    
     if Enum::Something::{}.is_something() {} else {

@@ -9,13 +9,21 @@ impl<'a> ReprInstancing<'a> {
     pub fn load_generic_types(
         &mut self,
         params: TyList,
+        subs: TyList,
         types: TyList,
         replace_cache: &mut ReplaceCache,
     ) {
+
         let mut types = self.vec_pool.alloc(self.ty_lists.get(types));
+        
+        // for &ty in types.iter() {
+        //     print!("{} ", ty_display!(self, ty));
+        // }
+        // println!();
+        
         let mut new_types = self
             .vec_pool
-            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params, ty)));
+            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params, subs, ty)));
 
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`
@@ -24,88 +32,20 @@ impl<'a> ReprInstancing<'a> {
         }
     }
 
-    pub fn instantiate_repr(&mut self, params: TyList, ty: Ty) -> Ty {
-        let mut new_instances = vec![]; // TODO: optimize if needed
-        let result = self.expand_instances(params, ty, &mut new_instances);
+    pub fn instantiate_repr(&mut self, params: TyList, subs: TyList, ty: Ty) -> Ty {
+        let params = self.vec_pool.alloc(self.ty_lists.get(params));
+        let subs = self.vec_pool.alloc(self.ty_lists.get(subs));
+        let mut new_instances = self.vec_pool.get();
+        let result = ty_factory!(self).instantiate(ty, params.as_slice(), subs.as_slice(), &mut new_instances);
 
         // the types are sorted by dependance (leafs first)
-        for &instance in &new_instances {
+        for &instance in new_instances.iter() {
             layout_builder!(self).build_size(instance);
         }
 
         build_reprs(self.ptr_ty, self.reprs, new_instances.drain(..));
 
         result
-    }
-
-    fn expand_instances(&mut self, params: TyList, ty: Ty, new_instances: &mut Vec<Ty>) -> Ty {
-        let TyEnt { kind, flags, .. } = self.types[ty];
-        if !flags.contains(TyFlags::GENERIC) {
-            return ty;
-        }
-
-        match kind {
-            TyKind::Param(index, ..) => self.ty_lists.get(params)[index as usize],
-            TyKind::Ptr(base, depth) => {
-                let mutable = flags.contains(TyFlags::MUTABLE);
-                let ins_base = self.expand_instances(params, base, new_instances);
-                let ptr_id = ID::pointer(self.types[ins_base].id, mutable);
-
-                if let Some(&already) = self.ty_instances.get(ptr_id) {
-                    return already;
-                }
-
-                let pointer = TyEnt {
-                    kind: TyKind::Ptr(ins_base, depth),
-                    flags: flags & !TyFlags::GENERIC,
-                    ..self.types[ty]
-                };
-
-                let new_ty = self.types.push(pointer);
-                self.ty_instances.insert_unique(ptr_id, new_ty);
-                //new_instances.push(new_ty); // already know the size
-                new_ty
-            }
-            TyKind::Instance(base, i_params) => {
-                let mut id = ID::new("<instance>") + self.types[base].id;
-                self.ty_lists.mark_frame();
-                for param in self.vec_pool.alloc(self.ty_lists.get(i_params)).drain(..) {
-                    // TODO: optimize if needed
-                    let param = self.expand_instances(params, param, new_instances);
-                    id = id + self.types[param].id;
-                    self.ty_lists.push_one(param);
-                }
-
-                if let Some(&already) = self.ty_instances.get(id) {
-                    self.ty_lists.discard();
-                    return already;
-                }
-
-                let new_i_params = self.ty_lists.pop_frame();
-
-                match self.types[base].kind {
-                    TyKind::Struct(fields) => {
-                        for &field in self.ty_comps.get(fields) {
-                            self.expand_instances(new_i_params, field.ty, new_instances);
-                        }
-                    }
-                    kind => unimplemented!("{kind:?}"),
-                }
-
-                let instance = TyEnt {
-                    id,
-                    kind: TyKind::Instance(base, new_i_params),
-                    flags: flags & !TyFlags::GENERIC,
-                    ..self.types[ty]
-                };
-                let ty = self.types.push(instance);
-                self.ty_instances.insert_unique(id, ty);
-                new_instances.push(ty);
-
-                ty
-            }
-            kind => unimplemented!("{kind:?}"),
-        }
     }
 }
 
@@ -134,13 +74,13 @@ impl<'a> LayoutBuilder<'a> {
                 let TyEnt { kind, .. } = self.types[base];
                 match kind {
                     TyKind::Struct(fields) => {
-                        self.resolve_struct_repr(id, params, fields);
+                        self.resolve_struct_repr(id, base, params, fields);
                     }
                     _ => unimplemented!("{kind:?}"),
                 }
             }
             TyKind::Struct(fields) => {
-                self.resolve_struct_repr(id, params, fields);
+                self.resolve_struct_repr(id, id, params, fields);
             }
             TyKind::Ptr(..) | TyKind::FuncPtr(..) => {
                 self.reprs[id].layout = Layout::PTR;
@@ -153,17 +93,20 @@ impl<'a> LayoutBuilder<'a> {
         };
     }
 
-    pub fn true_type(&self, ty: Ty, params: TyList) -> Ty {
+    pub fn true_type(&self, ty: Ty, subs: &[Ty], params: TyList) -> Ty {
         let TyEnt { kind, flags, .. } = self.types[ty];
+
+        if let Some(index) = subs.iter().position(|&x| x == ty) {
+            return self.ty_lists.get(params)[index];
+        }
 
         if !flags.contains(TyFlags::GENERIC) {
             return ty;
         }
 
         match kind {
-            TyKind::Param(index, ..) => self.ty_lists.get(params)[index as usize],
             TyKind::Ptr(base, _) => {
-                let base = self.true_type(base, params);
+                let base = self.true_type(base, subs, params);
                 let mutable = flags.contains(TyFlags::MUTABLE);
                 let ptr_id = ID::pointer(self.types[base].id, mutable);
                 self.ty_instances.get(ptr_id).unwrap().clone()
@@ -171,7 +114,7 @@ impl<'a> LayoutBuilder<'a> {
             TyKind::Instance(base, params) => {
                 let mut id = ID::new("<instance>") + self.types[base].id;
                 for &param in self.ty_lists.get(params) {
-                    let param = self.true_type(param, params);
+                    let param = self.true_type(param, subs, params);
                     id = id + self.types[param].id;
                 }
                 self.ty_instances.get(id).unwrap().clone()
@@ -230,22 +173,31 @@ impl<'a> LayoutBuilder<'a> {
         };
     }
 
-    pub fn resolve_struct_repr(&mut self, ty: Ty, params: TyList, fields: TyCompList) {
+    pub fn resolve_struct_repr(&mut self, ty: Ty, base: Ty, params: TyList, fields: TyCompList) {
         let fields = self.ty_comps.get(fields);
         // println!("resolve_struct_repr: {}", ty_display!(self, ty));
 
+        let subs = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
+
         let align = fields
             .iter()
-            .map(|field| self.reprs[self.true_type(field.ty, params)].layout.size())
+            .map(|field| self.reprs[self.true_type(field.ty, subs.as_slice(), params)].layout.size())
             .fold(Offset::ZERO, |acc, align| acc.max(align).min(Offset::PTR));
 
         let mut size = Offset::ZERO;
         let mut copyable = true;
         for &field in fields.iter() {
-            let field_ty = self.true_type(field.ty, params);
+            let field_ty = self.true_type(field.ty, subs.as_slice(), params);
             let ent = &self.reprs[field_ty];
 
-            assert_ne!(ent.layout, Layout::ZERO);
+            assert_ne!(
+                ent.layout,
+                Layout::ZERO,
+                "zero layout for {} {} {}",
+                ty_display!(self, field_ty),
+                field_ty,
+                field.name.log(self.sources),
+            );
 
             copyable &= ent.flags.contains(ReprFlags::COPYABLE);
 

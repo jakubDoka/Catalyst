@@ -491,6 +491,7 @@ impl Compiler {
 
         for global in globals {
             let global_ent = self.globals[global];
+
             {
                 let id = global_ent.id;
                 name.clear();
@@ -589,12 +590,12 @@ impl Compiler {
                         if has_sret {
                             let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
                             let args = self.func_ctx.value_slices.push(&[access]);
-                            let kind = InstKind::Call(func, args);
+                            let kind = InstKind::Call(func, TyList::reserved_value(), args);
                             let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                         } else {
                             let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
-                            let kind = InstKind::Call(func, ValueList::reserved_value());
+                            let kind = InstKind::Call(func, TyList::reserved_value(), ValueList::reserved_value());
                             let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                             {
@@ -608,7 +609,7 @@ impl Compiler {
                             .func_ctx
                             .values
                             .push(ValueEnt::new(self.builtin_types.int));
-                        let kind = InstKind::Call(func, ValueList::reserved_value());
+                        let kind = InstKind::Call(func, TyList::reserved_value(), ValueList::reserved_value());
                         let ent = InstEnt::new(kind).value(return_value);
                         self.func_ctx.add_inst(ent);
                     }
@@ -666,10 +667,30 @@ impl Compiler {
         }
     }
 
+    fn save_globals_ents(&mut self) {
+        for global in self.globals.keys() {
+            self.save_global_ent(global);
+        }
+    }
+
+    fn save_global_ent(&mut self, ent: Global) {
+        let ent = &self.globals[ent];
+        let g = IncrGlobalData {
+            mutable: ent.mutable,
+            bytes: ent.bytes.map(|data| self.incr.global_data.bytes
+                .push(self.global_data.get(data))).into(),
+            name: ent.name,
+            ty: self.types[ent.ty].id,
+            init: ent.init.map(|init| self.funcs[init].id).into(),
+        };
+        self.incr.global_data.globals.insert(ent.id, g);
+    }
+
     /// All compiled functions are saved. That means their byte-code
     /// signature and relocs. Singular optimally sized file is produced.
     fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
+        self.save_globals_ents();
         self.incr.save(&self.incr_path).unwrap();
     }
 
@@ -715,6 +736,22 @@ impl Compiler {
         logger!(self).log();
     }
 
+    fn load_incr_globals(&mut self) {
+        for (id, data) in self.incr.global_data.globals.iter() {
+            let g = self.globals.push(GlobalEnt {
+                id,
+                name: data.name,
+                mutable: data.mutable,
+                ty: *self.ty_instances.get(data.ty).unwrap(),
+                init: data.init.map(|init| *self.func_instances
+                    .get(init).unwrap()).into(),
+                bytes: data.bytes.map(|data| self.global_data
+                    .push(self.incr.global_data.bytes.get(data))).into(),
+            });
+            self.global_map.insert(id, g);
+        }
+    }
+
     /// All stages glued together perform compilation. Calling this is preferable, but
     /// stages of compilation may be exposed as public API.
     pub fn compile() {
@@ -731,6 +768,8 @@ impl Compiler {
 
         s.build_tir();
         s.log_diagnostics();
+
+        s.load_incr_globals();
 
         s.generate();
         s.log_diagnostics();

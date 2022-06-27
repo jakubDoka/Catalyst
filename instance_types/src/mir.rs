@@ -145,7 +145,7 @@ pub enum InstKind {
     Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
-    Call(typec_types::Func, ValueList),
+    Call(typec_types::Func, TyList, ValueList),
     Int(u128),
     Bool(bool),
     Return,
@@ -350,7 +350,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             writeln!(f, "\tgoto {}", block)?;
                         }
                     }
-                    InstKind::Call(func, values) => {
+                    InstKind::Call(func, params, values) => {
                         let args = self
                             .func_ctx
                             .value_slices
@@ -359,11 +359,19 @@ impl std::fmt::Display for MirDisplay<'_> {
                             .map(|&v| format!("{v}"))
                             .collect::<Vec<_>>()
                             .join(", ");
+                        let params = self
+                            .ty_lists
+                            .get(params)
+                            .iter()
+                            .map(|&v| format!("{}", ty_display!(self, v)))
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         if let Some(value) = inst.value.expand() {
                             writeln!(
                                 f,
-                                "\t{} = call {}({})",
+                                "\t{} = call [{}] {}({})",
                                 self.value_to_string(value),
+                                params,
                                 func,
                                 args
                             )?;

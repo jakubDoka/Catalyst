@@ -38,9 +38,9 @@ impl Generator<'_> {
                 continue;
             }
 
-            // if !self.funcs[id.meta()].name.is_reserved_value() {
-            //     println!("{}", self.sources.display(self.funcs[id.meta()].name));
-            // }
+            if !self.funcs[id.meta()].name.is_reserved_value() {
+                println!("{}", self.sources.display(self.funcs[id.meta()].name));
+            }
 
             self.load_generic_params(id, params, ptr_ty);
 
@@ -72,7 +72,7 @@ impl Generator<'_> {
         // if !self.funcs[id.meta()].name.is_reserved_value() {
         //     println!("{}", self.sources. display(self.funcs[id.meta()].name));
         // }
-        // println!("{}", self.context.func.display());
+        println!("{:?}", self.context.func);
 
         self.generation_context
             .replace_cache
@@ -162,6 +162,7 @@ impl Generator<'_> {
     fn load_generic_params(&mut self, id: Func, params: TyList, ptr_ty: Type) {
         repr_instancing!(self, ptr_ty).load_generic_types(
             params,
+            self.funcs[id.meta()].params,
             self.funcs[id.meta()].tir_data.used_types,
             &mut self.generation_context.replace_cache,
         );

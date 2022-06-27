@@ -148,6 +148,8 @@ impl BoundVerifier<'_> {
             ..
         } = self.funcs[bound_func.meta()];
 
+        println!("{:?} {:?}", self.ty_lists.get(a_params), self.ty_lists.get(b_params));
+
         let a_param_len = self.ty_lists.len_of(a_params);
         let b_param_len = self.ty_lists.len_of(b_params);
 
@@ -162,11 +164,6 @@ impl BoundVerifier<'_> {
             });
             return Err(());
         }
-
-        prepare_params(&self.ty_lists.get(a_params)[param_offset..], self.types);
-
-        // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
-        let mut params = vec![Ty::reserved_value(); b_param_len];
 
         let iter = {
             // TODO: same here
@@ -194,20 +191,32 @@ impl BoundVerifier<'_> {
             a.zip(b).zip(ast_params)
         };
 
+        // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
+        let mut params = self.vec_pool.of_size(Ty::reserved_value(), b_param_len);
+
+        let mut failed = false;
         for ((referenced, parametrized), &ast) in iter {
             let span = self.ast_data.nodes[ast].span;
-            if let Err(err) = infer_parameters(
+            if let Err(err) = bound_checker!(self).infer_parameters(
                 referenced,
                 parametrized,
                 &mut params,
+                self.ty_lists.get(b_params),
                 span,
-                self.types,
-                self.ty_lists,
+                true,
             ) {
-                self.diagnostics.push(err);
+                if let Some(err) = err {
+                    self.diagnostics.push(err);
+                } else {
+                    failed = true;
+                }
             }
         }
 
-        Ok(())
+        if failed {
+            Err(())
+        } else {
+            Ok(())
+        }
     }
 }

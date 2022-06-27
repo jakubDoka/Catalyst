@@ -25,6 +25,7 @@ pub struct Incr {
     pub modules: IncrModules,
     pub functions: IncrFuncs,
     pub jit_functions: IncrFuncs,
+    pub global_data: IncrGlobalDataStorage,
 }
 
 impl Incr {
@@ -85,8 +86,9 @@ impl Incr {
             let Ok(Ok(modified)) = std::fs::metadata(&module.path).map(|m| m.modified()) else {
                 dirty.insert(id);
                 if let Some(mut existing) = self.modules.remove(id) {
-                    Self::wipe(&mut existing, &mut self.functions);
-                    Self::wipe(&mut existing, &mut self.jit_functions);
+                    Self::wipe_funcs(&mut existing, &mut self.functions);
+                    Self::wipe_funcs(&mut existing, &mut self.jit_functions);
+                    Self::wipe_globals(&mut existing, &mut self.global_data);
                     new_modules.insert(id, existing);
                 }
 
@@ -106,8 +108,9 @@ impl Incr {
                 || module.dependency.iter().any(|&dep| dirty.contains(dep))
             {
                 dirty.insert(id);
-                Self::wipe(&mut existing_module, &mut self.functions);
-                Self::wipe(&mut existing_module, &mut self.jit_functions);
+                Self::wipe_funcs(&mut existing_module, &mut self.functions);
+                Self::wipe_funcs(&mut existing_module, &mut self.jit_functions);
+                Self::wipe_globals(&mut existing_module, &mut self.global_data);
                 existing_module.modified = modified;
             }
 
@@ -117,9 +120,17 @@ impl Incr {
         self.modules = new_modules;
     }
 
-    pub fn wipe(module: &mut IncrModule, functions: &mut IncrFuncs) {
+    pub fn wipe_funcs(module: &mut IncrModule, functions: &mut IncrFuncs) {
         for (id, _) in module.owned_funcs.iter() {
             functions.remove(id);
+        }
+
+        module.owned_funcs.clear();
+    }
+
+    pub fn wipe_globals(module: &mut IncrModule, globals: &mut IncrGlobalDataStorage) {
+        for (id, _) in module.owned_funcs.iter() {
+            globals.globals.remove(id);
         }
 
         module.owned_funcs.clear();
@@ -132,6 +143,7 @@ impl BitSerde for Incr {
         self.modules.write(buffer);
         self.functions.write(buffer);
         self.jit_functions.write(buffer);
+        self.global_data.write(buffer);
     }
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
@@ -140,11 +152,67 @@ impl BitSerde for Incr {
             modules: Map::read(cursor, buffer)?,
             functions: Map::read(cursor, buffer)?,
             jit_functions: Map::read(cursor, buffer)?,
+            global_data: IncrGlobalDataStorage::read(cursor, buffer)?,
         })
     }
 
     fn size() -> usize {
         String::size() + IncrModules::size() + IncrFuncs::size() + IncrFuncs::size()
+    }
+}
+
+gen_entity!(GlobalDataBytes);
+
+#[derive(Default)]
+pub struct IncrGlobalDataStorage {
+    pub globals: Map<IncrGlobalData>,
+    pub bytes: StackMap<GlobalDataBytes, u8>,
+}
+
+impl BitSerde for IncrGlobalDataStorage {
+    fn write(&self, buffer: &mut Vec<u8>) {
+        self.globals.write(buffer);
+        self.bytes.write(buffer);
+    }
+
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
+            globals: Map::read(cursor, buffer)?,
+            bytes: StackMap::read(cursor, buffer)?,
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct IncrGlobalData {
+    pub mutable: bool,
+    pub bytes: Option<GlobalDataBytes>,
+    pub name: Span,
+    pub ty: ID,
+    pub init: Option<ID>,
+}
+
+impl BitSerde for IncrGlobalData {
+    fn write(&self, buffer: &mut Vec<u8>) {
+        self.mutable.write(buffer);
+        self.bytes.write(buffer);
+        self.name.write(buffer);
+        self.ty.write(buffer);
+        self.init.write(buffer);
+    }
+
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(Self {
+            mutable: bool::read(cursor, buffer)?,
+            bytes: Option::read(cursor, buffer)?,
+            name: Span::read(cursor, buffer)?,
+            ty: ID::read(cursor, buffer)?,
+            init: Option::read(cursor, buffer)?,
+        })
+    }
+
+    fn size() -> usize {
+        bool::size() + Option::<GlobalDataBytes>::size() + Span::size() + ID::size() + Option::<ID>::size()
     }
 }
 

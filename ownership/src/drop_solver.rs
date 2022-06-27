@@ -128,7 +128,9 @@ impl DropSolver<'_> {
                 let meta = child.meta.unwrap_err();
                 let field = {
                     let kind = TirKind::FieldAccess(tir, meta);
-                    let ty = ty_factory!(self).subtype(ty, self.ty_comps[meta].ty);
+                    let mut new_instances = self.vec_pool.get();
+                    let ty = ty_factory!(self).subtype(ty, self.ty_comps[meta].ty, &mut new_instances);
+                    new_instances.drain(..).for_each(|i| self.scope_context.use_type(i, self.types));
                     let span = self.tir_data.ents[tir].span;
                     let ent = TirEnt::new(kind, ty, span);
                     self.tir_data.ents.push(ent)

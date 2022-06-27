@@ -19,8 +19,9 @@ file "src/state.rs" {
     struct MainScopeBuilder {
         mut Diagnostics
         mut Scope
-        VecPool
+        mut TyGraph
 
+        VecPool
         Modules
         BuiltinSource
         Sources
@@ -89,12 +90,13 @@ file "src/state.rs" {
         mut GenerationContext
         mut FuncInstances
         mut GlobalMap
-        VecPool
+        mut TyGraph
 
         passed mut IncrModules
         passed mut IncrFuncs
         passed isa: `dyn TargetIsa`
 
+        VecPool
         Globals
         BuiltinTypes
         Sources
@@ -150,8 +152,9 @@ file "typec_types/src/state.rs" {
         mut TyLists
         mut TyInstances
         mut BoundImpls
-        VecPool
+        mut TyGraph
 
+        VecPool
         TyComps
         Sources
         BuiltinTypes
@@ -161,10 +164,12 @@ file "typec_types/src/state.rs" {
         mut BoundImpls
         mut Diagnostics
         mut Types
-        VecPool
         
+        VecPool
         TyLists
         BuiltinTypes
+        TyComps
+        Sources
     }
 
     struct TyDisplay {
@@ -238,6 +243,7 @@ file "typec/src/state.rs" {
         mut TyInstances
         mut BoundImpls
         mut TyComps
+        mut TyGraph
         
         VecPool
         AstData
@@ -265,8 +271,9 @@ file "typec/src/state.rs" {
         mut ToLink
         mut Globals
         mut Initializers
-        VecPool
+        mut TyGraph
 
+        VecPool
         BuiltinTypes
         Sources
         AstData
@@ -292,8 +299,10 @@ file "typec/src/state.rs" {
         mut GlobalMap
         mut GlobalData
         mut Funcs
-        VecPool
+        mut TyGraph
+        mut FuncInstances
 
+        VecPool
         FuncLists
         BuiltinTypes
         Sources
@@ -313,8 +322,8 @@ file "typec/src/state.rs" {
         mut TyGraph
         mut Modules
         mut Diagnostics
-        VecPool
 
+        VecPool
         BuiltinTypes
         Sources
         AstData
@@ -330,8 +339,9 @@ file "typec/src/state.rs" {
         mut FuncLists
         mut TyComps
         mut BoundImpls
-        VecPool
+        mut TyGraph
 
+        VecPool
         BuiltinTypes
     }
 }
@@ -379,6 +389,8 @@ file "instance/src/state.rs" {
         mut BoundImpls
         mut TyLists
         mut Reprs
+        mut TyGraph
+        
         VecPool
 
         FuncLists
@@ -391,23 +403,28 @@ file "instance/src/state.rs" {
     }
 
     struct ReprInstancing {
+        owned ptr_ty: Type
+        
         mut Types
         mut TyLists
         mut TyInstances
         mut ReprFields
         mut Reprs
-        VecPool
+        mut BoundImpls
+        mut TyGraph
 
+        VecPool
         Sources
         TyComps
-        
-        owned ptr_ty: Type
+        BuiltinTypes
     }
 
     struct LayoutBuilder {
         mut ReprFields
         mut Reprs
         
+        VecPool
+        BuiltinTypes
         Types
         Sources
         TyComps
@@ -472,8 +489,9 @@ file "ownership/src/state.rs" {
         mut Types
         mut TyLists
         mut TyInstances
-        VecPool
+        mut TyGraph
 
+        VecPool
         BuiltinTypes
         Sources
         Funcs

@@ -1,16 +1,32 @@
 use lexer::*;
+use typec_types::*;
 
 pub enum OwError {
-    DoubleMove { because: Span, loc: Span },
-    MoveFromBehindPointer { loc: Span },
-    LoopDoubleMove { because: Span, loc: Span },
-    PartiallyMovedDrop { because: Span, loc: Span },
+    DoubleMove { ty: Ty, because: Span, loc: Span },
+    MoveFromBehindPointer { ty: Ty, loc: Span },
+    LoopDoubleMove { ty: Ty, because: Span, loc: Span },
+    PartiallyMovedDrop { ty: Ty, because: Span, loc: Span },
 }
 
-pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt::Result {
+pub fn display(error: &OwError, ty_lists: &TyLists, ty_comps: &TyComps, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
     use std::fmt::Write;
-    match error {
-        OwError::DoubleMove { loc, because } => {
+
+    struct State<'a> {
+        ty_lists: &'a TyLists,
+        ty_comps: &'a TyComps,
+        types: &'a Types,
+        sources: &'a Sources,
+    }
+
+    let state = State {
+        ty_lists,
+        ty_comps,
+        types,
+        sources,
+    };
+
+    let &ty = match error {
+        OwError::DoubleMove { ty, loc, because } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "accessing already moved memory")
@@ -20,12 +36,14 @@ pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt:
             because.underline_info(sources, to, &|to| {
                 write!(to, "because of this previous move")
             })?;
+            ty
         }
-        OwError::MoveFromBehindPointer { loc } => {
+        OwError::MoveFromBehindPointer { ty, loc } => {
             loc.loc_to(sources, to)?;
-            loc.underline_error(sources, to, &|to| write!(to, "move behind a pointer"))?;
+            loc.underline_error(sources, to, &|to| write!(to, "move from behind a pointer"))?;
+            ty
         }
-        OwError::LoopDoubleMove { because, loc } => {
+        OwError::LoopDoubleMove { ty, because, loc } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "accessing already moved memory")
@@ -35,8 +53,9 @@ pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt:
             because.underline_info(sources, to, &|to| {
                 write!(to, "because this value is outside of loop")
             })?;
+            ty
         }
-        OwError::PartiallyMovedDrop { loc, because } => {
+        OwError::PartiallyMovedDrop { ty, loc, because } => {
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "detected partially moved value that implements 'drop' bound when generating drops here")
@@ -44,8 +63,9 @@ pub fn display(error: &OwError, sources: &Sources, to: &mut String) -> std::fmt:
 
             because.loc_to(sources, to)?;
             because.underline_info(sources, to, &|to| write!(to, "caused by this move"))?;
+            ty
         }
-    }
-    writeln!(to, "|> type does not implement 'copy' bound")?;
+    };
+    writeln!(to, "|> '{}' does not implement 'copy' bound", ty_display!(state, ty))?;
     Ok(())
 }

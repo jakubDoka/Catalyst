@@ -1,8 +1,14 @@
 fn "default" putchar(char: char) -> char extern
-
-fn "default" malloc(size: int) -> ^i8 extern
-
+fn "default" malloc(size: int) -> ^mut u8 extern
+fn "default" free(ptr: ^mut u8) extern
+fn "default" realloc(ptr: ^mut u8, size: uint) -> ^mut u8 extern
 fn "default" exit(code: int) extern
+
+impl uint {
+    fn max(a: Self, b: Self) -> Self {
+        if a < b { b } else { a }
+    }
+}
 
 impl u8 {
     fn log(s: Self) {
@@ -38,20 +44,68 @@ impl str {
     }
 }
 
+#no_ownership
+fn [T] unsafe_read(value: ^T) -> T {
+    *value
+}
+
 struct [T] Vec {
-    data: ^T
-    len: int
-    cap: int
+    data: ^mut T
+    len: uint
+    cap: uint
 }
 
 impl [T] Vec[T] {
     fn new() -> Self {
         Self::{
-            data: 0 as ^T
-            len: 0
-            cap: 0
+            data: 0 as ^mut T
+            len: 0u
+            cap: 0u
         }
     }
 
-    
+    fn push(s: ^mut Self, elem: T) {
+        s.len += 1u
+        
+        if s.len >= s.cap {
+            let new_cap = s.cap.max(1u) * 2u
+            let cap_in_bytes = new_cap * size_of::[T]()
+            s.data = realloc(s.data as ^mut u8, cap_in_bytes) as ^mut T
+            s.cap = new_cap
+        }
+
+        *s.get_unwrapped_last() = elem
+    }
+
+    fn drop_range(s: ^mut Self, start: uint, end: uint) {
+        let mut i = start
+        loop {
+            if i >= end {
+                break
+            }
+            //s.drop_elem(i)
+            i += 1u
+        }
+    }
+
+    fn drop_elem(s: ^mut Self, index: uint) {
+        let elem = s.get_unwrapped_mut(index)
+        unsafe_read(elem)
+    }
+
+    fn get_unwrapped_mut(s: ^mut Self, index: uint) -> ^mut T {
+        (s.data as uint + index * size_of::[T]()) as ^mut T
+    }
+
+    fn get_unwrapped_last(s: ^mut Self) -> ^mut T {
+        s.get_unwrapped_mut(s.len - 1u)
+    }
+}
+
+impl [T] drop as Vec[T] {
+    fn drop(s: ^mut Self) {
+        s.drop_range(0u, s.len)
+        free(s.data as ^mut u8)
+        "vec dropped".log()
+    }
 }

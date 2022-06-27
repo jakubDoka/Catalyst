@@ -315,7 +315,7 @@ impl ID {
     }
 
     pub fn pointer(ty: Self, mutable: bool) -> Self {
-        Self::new(if mutable { "*mut" } else { "*" }) + ty
+        Self::new(if mutable { "^mut" } else { "^" }) + ty
     }
 
     pub fn owned(ty: Self, name: Self) -> Self {

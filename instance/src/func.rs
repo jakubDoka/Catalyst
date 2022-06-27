@@ -468,6 +468,7 @@ impl<'a> MirBuilder<'a> {
     fn field_access(&mut self, tir: Tir) -> ExprValue {
         let TirEnt {
             kind: TirKind::FieldAccess(base, field),
+            span,
             ..
         } = self.tir_data.ents[tir] else {
             unreachable!()
@@ -478,7 +479,7 @@ impl<'a> MirBuilder<'a> {
 
         let TyCompEnt { index, .. } = self.ty_comps[field];
         let fields = self.reprs[base_ty].fields;
-        // println!("{}", ty_display!(self, base_ty));
+        println!("{} {}", ty_display!(self, base_ty), span.log(self.sources));
         let ReprField { offset, ty } = self.repr_fields.get(fields)[index as usize];
 
         let value = self.gen_offset(base, ty, offset);
@@ -557,18 +558,19 @@ impl<'a> MirBuilder<'a> {
             let bound_impl = bound_checker!(self)
                 .implements(bound, caller.unwrap(), false)
                 .unwrap();
+            let param_slice = self.ty_lists.get(bound_impl.params);
             param_slots.resize(
-                self.ty_lists.len_of(bound_impl.params),
+                param_slice.len(),
                 Ty::reserved_value(),
             );
 
-            infer_parameters(
+            bound_checker!(self).infer_parameters(
                 caller.unwrap(),
                 bound_impl.ty,
                 &mut param_slots,
+                param_slice,
                 Default::default(),
-                self.types,
-                self.ty_lists,
+                false,
             )
             .unwrap();
 
@@ -576,10 +578,11 @@ impl<'a> MirBuilder<'a> {
         }
 
         if flags.contains(TirFlags::GENERIC) {
+            // println!("{}", span.log(self.sources));
             func = self.instantiate_func(func, params, &param_slots);
         }
 
-        self.call_low(|args| InstKind::Call(func, args), ty, args, dest)
+        self.call_low(|args| InstKind::Call(func, params, args), ty, args, dest)
     }
 
     fn indirect_call(&mut self, tir: Tir, dest: Dest) -> ExprValue {
@@ -614,7 +617,13 @@ impl<'a> MirBuilder<'a> {
             self.func_instances.insert(id, instance);
             let global_params = self.ty_lists.push(global_params);
             let params = self.ty_lists.join(global_params, params);
-            self.to_compile.push((instance, params));
+            self.ty_lists.get_mut(params).iter_mut().for_each(|ty| {
+                self.ty_instances.get(self.types[*ty].id).map(|&original| *ty = original);
+            });
+
+            if self.funcs[func.meta()].kind != FuncKind::Builtin {
+                self.to_compile.push((instance, params));
+            }
             instance
         }
     }
@@ -743,9 +752,11 @@ impl<'a> MirBuilder<'a> {
                 continue;
             }
 
+            let ty = self.ty_instances.get(self.types[ty].id).cloned().unwrap_or(ty);
+
             if let Ok(bound_impl) = bound_checker!(self).drop_impl(ty) {
                 let prt = {
-                    let mut_ptr = pointer_of(ty, true, self.types, self.ty_instances);
+                    let mut_ptr = ty_factory!(self).pointer_of(ty, true);
                     self.reprs[mut_ptr].repr = self.ptr_ty;
 
                     let value = self.add_value(ValueEnt::new(mut_ptr));
@@ -757,24 +768,27 @@ impl<'a> MirBuilder<'a> {
                 let drop_fn = {
                     let drop_fn_index = 0;
                     let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
+                    let param_slice = self.ty_lists.get(bound_impl.params);
                     let mut param_slots = self.vec_pool.of_size(
                         Ty::reserved_value(),
-                        self.ty_lists.len_of(bound_impl.params),
+                        param_slice.len(),
                     );
-                    infer_parameters(
+
+                    bound_checker!(self).infer_parameters(
                         ty,
                         bound_impl.ty,
                         &mut param_slots,
+                        param_slice,
                         Default::default(),
-                        self.types,
-                        self.ty_lists,
+                        false,
                     )
                     .unwrap();
+
                     self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
                 };
 
                 let args = self.func_ctx.value_slices.push(&[prt]);
-                let kind = InstKind::Call(drop_fn, args);
+                let kind = InstKind::Call(drop_fn, TyList::reserved_value(), args);
                 self.func_ctx.add_inst(InstEnt::new(kind));
             }
 

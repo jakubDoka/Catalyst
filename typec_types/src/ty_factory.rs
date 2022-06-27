@@ -4,20 +4,29 @@ use storage::*;
 use crate::*;
 
 impl TyFactory<'_> {
-    pub fn subtype(&mut self, parent: Ty, child: Ty) -> Ty {
+    pub fn subtype(&mut self, parent: Ty, child: Ty, new_instances: &mut Vec<Ty>) -> Ty {
         // better just assert and force caller to prepare this, in general
         // case this is needed anyway and llvm can optimize this when inlining
         assert_eq!(self.types.ptr_leaf_of(parent), parent);
 
-        if let TyKind::Instance(.., params) = self.types[parent].kind {
+        if let TyKind::Instance(base, params) = self.types[parent].kind {
             let params = self.vec_pool.alloc(self.ty_lists.get(params));
-            return self.instantiate(child, &params);
+            let parent_params = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
+            let (ty, new) = self.instantiate_low(child, &params, parent_params.as_slice(), new_instances);
+            if new {
+                self.ty_graph.add_edge(parent, ty);
+            }
+            return ty;
         }
 
         child
     }
 
-    pub fn instantiate(&mut self, target: Ty, params: &[Ty]) -> Ty {
+    pub fn instantiate(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> Ty {
+        self.instantiate_low(target, params, subs, new_instances).0
+    }
+
+    pub fn instantiate_low(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> (Ty, bool) {
         let TyEnt {
             kind, flags, name, ..
         } = self.types[target];
@@ -27,30 +36,41 @@ impl TyFactory<'_> {
         // println!(" param: {}", ty_display!(self, param));
         // }
 
-        if !flags.contains(TyFlags::GENERIC) {
-            return target;
+        if let Some(index) = subs.iter().position(|&x| x == target) {
+            return (params[index], false);
         }
 
-        let result = match kind {
-            TyKind::Param(i, ..) => params[i as usize],
+        if !flags.contains(TyFlags::GENERIC) {
+            return (target, false);
+        }
+
+        match kind {
             TyKind::Ptr(ty, ..) => {
-                let ty = self.instantiate(ty, params);
-                pointer_of(
+                let (ty, _) = self.instantiate_low(ty, params, subs, new_instances);
+                let (ptr, new) = self.pointer_of_low(
                     ty,
                     flags.contains(TyFlags::MUTABLE),
-                    self.types,
-                    self.ty_instances,
-                )
+                );
+
+                if new {
+                    new_instances.push(ptr);
+                }
+
+                (ptr, new)
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
                 for param in self.vec_pool.alloc(self.ty_lists.get(i_params)).drain(..) {
                     // TODO: optimize if needed
-                    let ty = self.instantiate(param, params);
+                    let (ty, _) = self.instantiate_low(param, params, subs, new_instances);
                     self.ty_lists.push_one(ty);
                 }
 
-                let result = self.parse_instance_type_low(base, name);
+                let (result, new) = self.parse_instance_type_low(base, name);
+                
+                if new {
+                    new_instances.push(result);
+                }
 
                 let TyEnt { kind, flags, .. } = self.types[result];
                 if !flags.contains(TyFlags::GENERIC) {
@@ -62,24 +82,52 @@ impl TyFactory<'_> {
                     match kind {
                         TyKind::Struct(ty_comps) => {
                             let params = self.vec_pool.alloc(self.ty_lists.get(params));
+                            let subs = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
                             for field in self.ty_comps.get(ty_comps) {
-                                self.instantiate(field.ty, &params);
+                                let (ty, new) = self.instantiate_low(field.ty, &params, subs.as_slice(), new_instances);
+                                if new {
+                                    self.ty_graph.add_edge(result, ty);
+                                }
                             }
                         }
                         kind => unimplemented!("{kind:?}"),
                     }
                 }
 
-                result
+                (result, new)
             }
-            _ => todo!(),
-        };
+            TyKind::Struct(ty_comps) => {
+                self.ty_lists.mark_frame();
+                for &param in params {
+                    self.ty_lists.push_one(param);
+                }
+                let (result, new) = self.parse_instance_type_low(target, name);
+                
+                if new {
+                    new_instances.push(result);
+                }
 
-        result
+                let subs = collect_ty_params(target, self.types, self.vec_pool, self.builtin_types);
+                for field in self.ty_comps.get(ty_comps) {
+                    let (ty, new) = self.instantiate_low(field.ty, &params, subs.as_slice(), new_instances);
+                    if new {
+                        self.ty_graph.add_edge(result, ty);
+                    }
+                }
+
+                (result, new)
+            }
+            kind => unimplemented!("{:?}", kind),
+        }
     }
 
-    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], if instance already exists, it is reused.
-    pub fn parse_instance_type_low(&mut self, header: Ty, span: Span) -> Ty {
+    pub fn parse_instance_type(&mut self, header: Ty, span: Span) -> Ty {
+        self.parse_instance_type_low(header, span).0
+    }
+
+    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], 
+    /// if instance already exists, it is reused.
+    pub fn parse_instance_type_low(&mut self, header: Ty, span: Span) -> (Ty, bool) {
         let mut id = ID::new("<instance>") + self.types[header].id;
         let mut generic = false;
 
@@ -90,7 +138,7 @@ impl TyFactory<'_> {
 
         if let Some(&already) = self.ty_instances.get(id) {
             self.ty_lists.discard();
-            return already;
+            return (already, false);
         }
 
         let params = self.ty_lists.pop_frame();
@@ -106,8 +154,9 @@ impl TyFactory<'_> {
         };
 
         self.ty_instances.insert_unique(id, result);
+        self.ty_graph.add_vertex(result);
 
-        result
+        (result, true)
     }
 
     pub fn parse_composite_bound_low(&mut self, span: Span) -> Ty {
@@ -143,7 +192,7 @@ impl TyFactory<'_> {
             let ent = TyEnt {
                 id,
                 name: span,
-                kind: TyKind::Param(0, bounds, None.into()),
+                kind: TyKind::Param(bounds, None.into()),
                 flags: TyFlags::GENERIC,
             };
             self.types.push(ent)
@@ -162,7 +211,7 @@ impl TyFactory<'_> {
         }
 
         if generic {
-            panic!("generic function pointer");
+            todo!("generic function pointer");
         }
 
         let ty_ent = TyEnt {
@@ -173,6 +222,12 @@ impl TyFactory<'_> {
         };
         let ty = self.types.push(ty_ent);
         self.ty_instances.insert_unique(id, ty);
+
+        for &arg in self.ty_comps.get(sig.args) {
+            self.ty_graph.add_edge(ty, arg.ty);
+        }
+
+        self.ty_graph.add_edge(ty, sig.ret);
 
         ty
     }
@@ -192,105 +247,58 @@ impl TyFactory<'_> {
         let ret = self.types[sig.ret].id;
         id + ret
     }
-}
 
-pub fn pointer_of(ty: Ty, mutable: bool, types: &mut Types, ty_instances: &mut TyInstances) -> Ty {
-    let TyEnt {
-        kind,
-        id,
-        name,
-        flags,
-        ..
-    } = types[ty];
-    let id = ID::pointer(id, mutable);
-
-    if let Some(&already) = ty_instances.get(id) {
-        return already;
+    pub fn pointer_of(&mut self, ty: Ty, mutable: bool) -> Ty {
+        self.pointer_of_low(ty, mutable).0
     }
 
-    let depth = if let TyKind::Ptr(.., depth) = kind {
-        depth
-    } else {
-        0
-    };
-
-    let ent = TyEnt {
-        id,
-        name,
-        kind: TyKind::Ptr(ty, depth + 1),
-        flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
-    };
-    let ptr = types.push(ent);
-
-    assert!(ty_instances.insert(id, ptr).is_none());
-
-    ptr
-}
-
-pub fn infer_parameters(
-    root_reference: Ty,
-    root_parametrized: Ty,
-    params: &mut [Ty],
-    span: Span,
-    types: &Types,
-    ty_lists: &TyLists,
-) -> std::result::Result<(), TyError> {
-    // TODO: user preallocated vec if needed
-    let mut frontier = vec![(root_reference, root_parametrized)];
-
-    let error = Err(TyError::GenericTypeMismatch {
-        expected: root_parametrized,
-        found: root_reference,
-        loc: span,
-    });
-
-    while let Some((reference, parametrized)) = frontier.pop() {
-        let TyEnt { kind, flags, .. } = types[parametrized];
-        if !flags.contains(TyFlags::GENERIC) {
-            continue;
+    pub fn pointer_of_low(&mut self, ty: Ty, mutable: bool) -> (Ty, bool) {
+        let TyEnt {
+            kind,
+            id,
+            name,
+            flags,
+            ..
+        } = self.types[ty];
+        let id = ID::pointer(id, mutable);
+    
+        if let Some(&already) = self.ty_instances.get(id) {
+            return (already, false);
         }
-
-        match (kind, types[reference].kind) {
-            (TyKind::Param(index, ..), _) => {
-                // we use `base_of_low` because we want to compare parameter
-                // backing bounds correctly
-                let other = params[index as usize];
-
-                if !other.is_reserved_value() && other != reference {
-                    return error;
-                } else {
-                    params[index as usize] = reference;
-                }
-            }
-            (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth))
-                if depth == ref_depth
-                    && types[parametrized].flags.contains(TyFlags::MUTABLE)
-                        == types[reference].flags.contains(TyFlags::MUTABLE) =>
-            {
-                frontier.push((ref_ty, ty));
-            }
-            (TyKind::Instance(base, params), TyKind::Instance(ref_base, ref_params))
-                if base == ref_base =>
-            {
-                let params = ty_lists.get(params);
-                let ref_params = ty_lists.get(ref_params);
-                for (&ref_param, &param) in ref_params.iter().zip(params) {
-                    frontier.push((ref_param, param));
-                }
-            }
-            (a, b) if a == b => {}
-            _ => return error,
-        }
-    }
-
-    Ok(())
-}
-
-pub fn prepare_params(params: &[Ty], types: &mut Types) {
-    for (i, &param) in params.iter().enumerate() {
-        let TyKind::Param(index, ..) = &mut types[param].kind else {
-            unreachable!("{:?}", types[param].kind);
+    
+        let depth = if let TyKind::Ptr(.., depth) = kind {
+            depth
+        } else {
+            0
         };
-        *index = i as u8;
+    
+        let ent = TyEnt {
+            id,
+            name,
+            kind: TyKind::Ptr(ty, depth + 1),
+            flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
+        };
+        let ptr = self.types.push(ent);
+    
+        assert!(self.ty_instances.insert(id, ptr).is_none());
+        self.ty_graph.add_vertex(ptr);
+
+        (ptr, true)
     }
+}
+
+pub fn collect_ty_params(ty: Ty, types: &Types, vec_pool: &VecPool, builtin_types: &BuiltinTypes) -> PoolVec<Ty> {
+    let max = types[ty].flags.param_count();
+    let mut params = vec_pool.with_capacity(max);
+    let mut current = Some(builtin_types.ty_any);
+    let mut i = 0;
+    while i < max && let Some(next) = current {
+        params.push(next);
+        let TyKind::Param(.., next) = types[next].kind else {
+            unreachable!();
+        };
+        current = next.expand();
+        i += 1;
+    }
+    params
 }

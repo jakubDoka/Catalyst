@@ -64,6 +64,7 @@ bitflags! {
         const EXTERNAL = 1 << 3;
         const STRUCT_RET = 1 << 4;
         const ANONYMOUS = 1 << 5;
+        const NO_OWNERSHIP = 1 << 6;
     }
 }
 

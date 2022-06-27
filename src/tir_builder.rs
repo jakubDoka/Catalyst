@@ -43,11 +43,14 @@ impl MainTirBuilder<'_> {
                 continue;
             }
 
-            if ownership_solver!(self).solve(func).is_err() {
-                continue;
+            if !self.funcs[func].flags.contains(FuncFlags::NO_OWNERSHIP) {
+                if ownership_solver!(self).solve(func).is_err() {
+                    continue;
+                }
+    
+                drop_solver!(self).solve(func);
             }
 
-            drop_solver!(self).solve(func);
 
             // println!(
             //     "{}",
@@ -68,10 +71,6 @@ impl MainTirBuilder<'_> {
     /// computation while jit-compiling macros.
     fn build_layouts(&mut self, bottom: usize) {
         let iter = (bottom..self.types.len()).map(Ty::new);
-
-        for ty in iter.clone() {
-            self.ty_graph.add_vertex(ty);
-        }
 
         let check_point = self.ty_order.len();
         if let Err(cycle) = self.ty_graph.total_ordering(&mut self.ty_order) {

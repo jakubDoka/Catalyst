@@ -5,7 +5,7 @@ use std::{
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
-use crate::FramedStack;
+use crate::{FramedStack, BitSerde};
 
 pub struct FramedStackMap<E: EntityRef, T> {
     lists: StackMap<E, T>,
@@ -30,6 +30,10 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
 
     pub fn push(&mut self, slice: &[T]) -> E {
         self.lists.push(slice)
+    }
+
+    pub fn push_iter(&mut self, iter: impl Iterator<Item = T>) -> E {
+        self.lists.push_iter(iter)
     }
 
     pub fn mark_frame(&mut self) {
@@ -260,6 +264,27 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
 
     pub fn key_of(&self, id: E, index: usize) -> Option<S> {
         self.start_index_of(id).map(|i| S::new(i + index))
+    }
+}
+
+impl<E: EntityRef, T: BitSerde, S: EntityRef> BitSerde for StackMap<E, T, S> {
+    fn write(&self, buffer: &mut Vec<u8>) {
+        self.indices.write(buffer);
+        self.data.write(buffer);
+    }
+
+    fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
+        Ok(StackMap {
+            indices: Vec::read(cursor, buffer)?,
+            data: Vec::read(cursor, buffer)?,
+            _ph: PhantomData,
+        })
+    }
+}
+
+impl<E: EntityRef, T, S: EntityRef> Default for StackMap<E, T, S> {
+    fn default() -> Self {
+        StackMap::new()
     }
 }
 

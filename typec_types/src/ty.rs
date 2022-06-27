@@ -18,8 +18,10 @@ impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
     fn may_drop(&self, ty: Ty) -> bool {
-        !self[ty].flags.contains(TyFlags::BUILTIN)
+        (
+            !self[ty].flags.contains(TyFlags::BUILTIN)
             && !matches!(self[ty].kind, TyKind::Ptr(..) | TyKind::FuncPtr(..))
+        ) || matches!(self[ty].kind, TyKind::Param(..))
     }
 
     fn item_count(&self, ty: Ty, ty_comps: &TyComps) -> usize {
@@ -229,8 +231,8 @@ gen_builtin_table!(
     drop: TyKind::Unresolved,
     copy: TyKind::Bound(Default::default()),
     str: TyKind::Unresolved,
-    ty_any: TyKind::Param(0, TyList::default(), None.into()),
-    any: TyKind::Param(0, TyList::default(), None.into()),
+    ty_any: TyKind::Param(TyList::default(), None.into()),
+    any: TyKind::Param(TyList::default(), None.into()),
     bool: TyKind::Bool,
     char: TyKind::Int(32),
     int: TyKind::Int(-1),
@@ -306,7 +308,7 @@ impl_bool_bit_and!(TyFlags);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TyKind {
-    Param(u8, TyList, PackedOption<Ty>),
+    Param(TyList, PackedOption<Ty>),
     Bound(FuncList),
     Struct(TyCompList),
     Enum(Ty, TyCompList),
@@ -357,7 +359,7 @@ impl TyDisplay<'_> {
                 }
                 write!(to, "]")?;
             }
-            TyKind::Param(_, list, ..) => {
+            TyKind::Param(list, ..) => {
                 write!(to, "impl ")?;
                 if self.ty_lists.get(list).is_empty() {
                     write!(to, "any")?;

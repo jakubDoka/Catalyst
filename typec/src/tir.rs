@@ -24,8 +24,10 @@ impl TirBuilder<'_> {
 
         self.globals[self.global].ty = ret;
 
+        let id = ID::new("<global>") + self.globals[self.global].id; 
+
         let func_ent = FuncEnt {
-            id: ID::new("<global>") + self.globals[self.global].id,
+            id,
             flags: FuncFlags::ANONYMOUS,
         };
         let func_meta = FuncMeta {
@@ -38,6 +40,7 @@ impl TirBuilder<'_> {
         let func = self.funcs.push(func_ent, func_meta);
 
         self.globals[self.global].init = Some(func).into();
+        self.func_instances.insert(id, func);
 
         Ok(func)
     }
@@ -125,7 +128,7 @@ impl TirBuilder<'_> {
             let str = self.sources.display(span);
             self.scope.push_item(str, ScopeItem::new(bound_combo, span));
 
-            let TyKind::Param(_, bounds, ..) = self.types[bound_combo].kind else {
+            let TyKind::Param(bounds, ..) = self.types[bound_combo].kind else {
                 unreachable!();
             };
 
@@ -280,17 +283,17 @@ impl TirBuilder<'_> {
                         error,
                         pos,
                         loc: span,
-                    })
+                    });
                 }
 
                 let global = GlobalEnt {
                     id,
-                    name: span,
-                    mutable: false,
                     ty: self.builtin_types.u8,
-                    init: None.into(),
                     bytes: Some(bytes).into(),
+                    
+                    ..default()
                 };
+
                 let global = self.globals.push(global);
                 self.global_map.insert(id, global);
                 global
@@ -569,7 +572,7 @@ impl TirBuilder<'_> {
                             continue;
                         };
 
-                        let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field_id].ty);
+                        let field_ty = self.subtype(ty, self.ty_comps[field_id].ty);
 
                         let i = self.ty_comps[field_id].index;
 
@@ -752,14 +755,13 @@ impl TirBuilder<'_> {
         };
 
         let expr = self.expr(expr);
-        let ty = ty_parser!(self).parse_type(ty);
+        let ty = ty_parser!(self).parse_type(ty)?;
+        self.scope_context.use_type(ty, self.types);
 
-        let (expr, ty) = (expr?, ty?); // recovery
+        let expr = expr?; // recovery
         if self.is_terminating(expr) {
             return Ok(expr);
         }
-
-        self.scope_context.use_type(ty, self.types);
 
         let kind = TirKind::BitCast(expr);
         let ent = TirEnt::new(kind, ty, span);
@@ -965,7 +967,13 @@ impl TirBuilder<'_> {
                 .zip(args.drain(..))
                 .map(|(&arg, ty)| {
                     self.infer_tir_ty(arg, ty, |s, got, _| {
-                        todo!("{} != {}", ty_display!(s, got), ty_display!(s, ty))
+                        let span = s.tir_data.ents[arg].span;
+                        todo!(
+                            "{} != {} {}",
+                            ty_display!(s, got),
+                            ty_display!(s, ty),
+                            span.log(s.sources)
+                        );
                     })
                 })
                 .fold(Ok(()), |acc, err| acc.and(err))?;
@@ -990,7 +998,7 @@ impl TirBuilder<'_> {
         func: Func,
         instantiation: Option<Ast>,
         tir_args: &[Tir],
-        span: Span,
+        _span: Span,
     ) -> errors::Result<(TyList, Ty)> {
         let FuncMeta {
             params,
@@ -999,9 +1007,7 @@ impl TirBuilder<'_> {
             ..
         } = self.funcs[func.meta()];
         let param_slice = self.ty_lists.get(params);
-
-        prepare_params(param_slice, self.types);
-
+        
         let mut param_slots = vec![Ty::default(); param_slice.len()];
 
         if let Some(instantiation) = instantiation {
@@ -1012,6 +1018,7 @@ impl TirBuilder<'_> {
                     got: self.ast_data.children(instantiation).len() - 1,
                     loc: self.ast_data.nodes[instantiation].span,
                 });
+
                 return Err(());
             } else {
                 for (i, &param) in self.ast_data.children(instantiation)[1..]
@@ -1025,18 +1032,22 @@ impl TirBuilder<'_> {
                 }
             }
         }
-
+        
         for (&arg, &arg_comp) in tir_args.iter().zip(self.ty_comps.get(args)) {
             let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
-            if let Err(err) = infer_parameters(
+            if let Err(err) = bound_checker!(self).infer_parameters(
                 ty,
                 arg_comp.ty,
                 &mut param_slots,
+                self.ty_lists.get(params),
                 span,
-                self.types,
-                self.ty_lists,
+                true,
             ) {
-                self.diagnostics.push(err);
+                if let Some(err) = err {
+                    self.diagnostics.push(err);
+                } else {
+                    return Err(());
+                }
             }
         }
 
@@ -1044,27 +1055,8 @@ impl TirBuilder<'_> {
             *param = ty;
         }
 
-        param_slots
-            .iter()
-            .zip(self.ty_lists.get(params))
-            .enumerate()
-            .filter_map(|(i, (&ty, &bound))| {
-                if ty.is_reserved_value() {
-                    Some(i)
-                } else {
-                    if let Err(err) = bound_checker!(self).implements_param(bound, ty, true) {
-                        self.diagnostics.push(TyError::MissingBounds {
-                            loc: span,
-                            bounds: err,
-                        });
-                    }
-                    None
-                }
-            })
-            // OK if no cycles performed
-            .fold(Ok(()), |_, _| todo!())?;
-
-        let ret = ty_factory!(self).instantiate(ret, &mut param_slots);
+        let param_slice = self.vec_pool.alloc(self.ty_lists.get(params));
+        let ret = self.instantiate(ret, &mut param_slots, param_slice.as_slice());
         self.scope_context.use_type(ret, self.types);
 
         Ok((self.ty_lists.push(&param_slots), ret))
@@ -1132,7 +1124,7 @@ impl TirBuilder<'_> {
                 .get(id)
                 .and_then(|field_or_method| {
                     if let Some(field) = field_or_method.pointer.may_read::<TyComp>() {
-                        let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field].ty);
+                        let field_ty = self.subtype(ty, self.ty_comps[field].ty);
                         let field = {
                             let kind = TirKind::FieldAccess(obj, field);
                             let ent = TirEnt::new(kind, field_ty, span);
@@ -1266,7 +1258,7 @@ impl TirBuilder<'_> {
         }
 
         let kind = TirKind::TakePtr(target);
-        let ptr_ty = pointer_of(ty, mutable, self.types, self.ty_instances);
+        let ptr_ty = ty_factory!(self).pointer_of(ty, mutable);
         self.scope_context.use_type(ptr_ty, self.types);
         let ptr = TirEnt::new(kind, ptr_ty, span);
         self.tir_data.ents.push(ptr)
@@ -1317,7 +1309,7 @@ impl TirBuilder<'_> {
                 .scope
                 .get_concrete::<TyComp>(field_id)
                 .map_err(handler)?;
-            let field_ty = ty_factory!(self).subtype(base_ty, self.ty_comps[field_id].ty);
+            let field_ty = self.subtype(base_ty, self.ty_comps[field_id].ty);
             self.scope_context.use_type(field_ty, self.types);
             (field_id, field_ty)
         };
@@ -1449,7 +1441,7 @@ impl TirBuilder<'_> {
                     .scope
                     .get_concrete::<TyComp>(field_id)
                     .map_err(handler)?;
-                let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field_id].ty);
+                let field_ty = self.subtype(ty, self.ty_comps[field_id].ty);
                 (expr, (field_id, field_ty))
             } else {
                 let span = self.ast_data.nodes[field].span;
@@ -1476,16 +1468,21 @@ impl TirBuilder<'_> {
             }
 
             if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
-                let TirEnt { ty, span, .. } = self.tir_data.ents[value];
-                if let Err(err) = infer_parameters(
-                    ty,
+                let TirEnt { ty: parametrized_field_ty, span, .. } = self.tir_data.ents[value];
+                let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
+                if let Err(err) = bound_checker!(self).infer_parameters(
+                    parametrized_field_ty,
                     field_ty,
                     &mut param_slots,
+                    subs.as_slice(),
                     span,
-                    self.types,
-                    self.ty_lists,
+                    true,
                 ) {
-                    self.diagnostics.push(err);
+                    if let Some(err) = err {
+                        self.diagnostics.push(err);
+                    } else {
+                        return Err(());
+                    }
                 }
             } else {
                 // we ignore this to report more errors
@@ -1535,13 +1532,9 @@ impl TirBuilder<'_> {
                     });
                     Err(())
                 })?;
-
-            self.ty_lists.mark_frame();
-            for param in param_slots.drain(..) {
-                self.ty_lists.push_one(param);
-            }
-
-            ty_factory!(self).parse_instance_type_low(ty, span)
+            
+            let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
+            self.instantiate(ty, param_slots.as_slice(), subs.as_slice())
         } else {
             ty
         };
@@ -1923,9 +1916,10 @@ impl TirBuilder<'_> {
             return Err(());
         };
 
-        let ty = if let TyKind::Instance(.., params) = self.types[on].kind {
+        let ty = if let TyKind::Instance(base, params) = self.types[on].kind {
             let params = self.vec_pool.alloc(self.ty_lists.get(params));
-            ty_factory!(self).instantiate(field.ty, &params)
+            let subs = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
+            self.instantiate(field.ty, &params, subs.as_slice())
         } else {
             field.ty
         };
@@ -1934,6 +1928,24 @@ impl TirBuilder<'_> {
             TyComp::new(self.ty_comps.start_index_of(fields).unwrap() + index),
             ty,
         ))
+    }
+
+    fn subtype(&mut self, parent: Ty, child: Ty) -> Ty {
+        let mut new_types = self.vec_pool.get();
+        let ty = ty_factory!(self).subtype(parent, child, &mut new_types);
+        for ty in new_types.drain(..) {
+            self.scope_context.use_type(ty, self.types)
+        }
+        ty
+    }
+
+    fn instantiate(&mut self, ty: Ty, params: &[Ty], subs: &[Ty]) -> Ty {
+        let mut new_types = self.vec_pool.get();
+        let ty = ty_factory!(self).instantiate(ty, &params, subs, &mut new_types);
+        for ty in new_types.drain(..) {
+            self.scope_context.use_type(ty, self.types)
+        }
+        ty
     }
 
     fn find_loop(&mut self, label: Ast, is_continue: bool) -> errors::Result<(Tir, bool)> {

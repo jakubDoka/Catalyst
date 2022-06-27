@@ -41,7 +41,7 @@ impl OwnershipSolver<'_> {
     }
 
     fn traverse_unchecked(&mut self, root: Tir, create_scope: bool) -> errors::Result<ID> {
-        let TirEnt { kind, flags, .. } = self.tir_data.ents[root];
+        let TirEnt { kind, flags, ty, .. } = self.tir_data.ents[root];
 
         match kind {
             // TODO control flow
@@ -172,7 +172,7 @@ impl OwnershipSolver<'_> {
 
                     let ent = OwnershipEnt {
                         tir: root.into(),
-                        ty: field.ty,
+                        ty,
                         id,
                         ..self.o_ctx.ownerships[ownership]
                     };
@@ -300,6 +300,7 @@ impl OwnershipSolver<'_> {
                 self.diagnostics.push(OwError::LoopDoubleMove {
                     because,
                     loc,
+                    ty: ent.ty,
                 });
                 return Err(());
             }
@@ -495,24 +496,24 @@ impl OwnershipSolver<'_> {
 
         let ent = &mut self.o_ctx.ownerships[ownership];
 
-        let copy = !self.types.may_drop(ent.ty) || bound_checker!(self).implements_copy(ent.ty);
-        if !copy {
+        let no_copy = self.types.may_drop(ent.ty) || bound_checker!(self).implements_copy(ent.ty);
+        if no_copy {
             if let Some(because) = ent.last_move.expand() {
                 let because = self.tir_data.ents[because].span;
                 let loc = self.tir_data.ents[target].span;
-                self.diagnostics.push(OwError::DoubleMove { because, loc });
+                self.diagnostics.push(OwError::DoubleMove { because, loc, ty: ent.ty });
                 return Err(());
             }
 
             if ent.behind_pointer {
                 let loc = self.tir_data.ents[target].span;
                 self.diagnostics
-                    .push(OwError::MoveFromBehindPointer { loc });
+                    .push(OwError::MoveFromBehindPointer { loc, ty: ent.ty });
                 return Err(());
             }
         }
 
-        Ok(Some((!copy, ownership)))
+        Ok(Some((no_copy, ownership)))
     }
 
     fn declare(&mut self, tir: Tir) -> errors::Result<ID> {

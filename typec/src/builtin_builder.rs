@@ -14,7 +14,7 @@ impl BuiltinBuilder<'_> {
             let id = ID::owned(self.types[self.builtin_types.drop].id, "drop".into());
             self.ty_lists.push_one(self.builtin_types.drop);
             let param = ty_factory!(self).parse_composite_bound_low(span);
-            let arg = pointer_of(param, true, self.types, self.ty_instances);
+            let arg = ty_factory!(self).pointer_of(param, true);
             let drop_func = self.create_func_with_params(
                 span,
                 &[param],
@@ -31,7 +31,7 @@ impl BuiltinBuilder<'_> {
         {
             let len = self.builtin_types.uint;
             let len_name = self.builtin_source.make_span(self.sources, "len");
-            let ptr = pointer_of(self.builtin_types.u8, false, self.types, self.ty_instances);
+            let ptr = ty_factory!(self).pointer_of(self.builtin_types.u8, false);
             let ptr_name = self.builtin_source.make_span(self.sources, "ptr");
 
             let parent_id = self.types[self.builtin_types.str].id;
@@ -53,6 +53,20 @@ impl BuiltinBuilder<'_> {
             self.types[self.builtin_types.str].kind = TyKind::Struct(fields);
         }
 
+        // construct size_of function
+        {
+            let span = self.builtin_source.make_span(self.sources, "size_of");
+            let id = ID::new("size_of");
+            self.create_func_with_params(
+                span,
+                &[self.builtin_types.any],
+                &[],
+                self.builtin_types.uint,
+                id,
+                target,
+            );
+        }
+
         for from in self.builtin_types.numbers() {
             for to in self.builtin_types.numbers() {
                 let name = self.types[to].name;
@@ -64,17 +78,18 @@ impl BuiltinBuilder<'_> {
                 self.create_func(name, &[from], to, id, target);
             }
         }
+        
+        for ty in self.builtin_types.all() {
+            let ent = &self.types[ty];
+            self.ty_instances.insert(ent.id, ty);
+            target.push(ModuleItem::new(ent.id, ty, ent.name));
+        }
 
         let comparison_operators = "== != < > <= >=";
         let math_operators = "+ - * / %";
         let integer_binary_operators = format!("{} {}", comparison_operators, math_operators);
         let math_unary_operators = "-";
         let integer_unary_operators = format!("{}", math_unary_operators);
-
-        for ty in self.builtin_types.all() {
-            let ent = &self.types[ty];
-            target.push(ModuleItem::new(ent.id, ty, ent.name));
-        }
 
         for op in integer_binary_operators.split(' ') {
             for ty in self.builtin_types.integers() {
@@ -133,6 +148,7 @@ impl BuiltinBuilder<'_> {
         let func = {
             let ent = FuncEnt {
                 id,
+                flags: FuncFlags::GENERIC & !params.is_empty(),
                 ..Default::default()
             };
             let meta = FuncMeta {

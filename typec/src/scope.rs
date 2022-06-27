@@ -1,4 +1,4 @@
-use std::{str::FromStr, vec};
+use std::{str::FromStr};
 
 use crate::{ty::get_param, *};
 use ast::*;
@@ -236,6 +236,7 @@ impl<'a> ScopeBuilder<'a> {
         self.types[slot].kind = TyKind::Bound(funcs);
         self.scope_context.type_ast[slot] = ast;
 
+        self.ty_instances.insert(id, slot);
         self.insert_to_scope(scope_id, slot, name);
 
         Ok(())
@@ -264,6 +265,7 @@ impl<'a> ScopeBuilder<'a> {
         let ty = self.types.push(ent);
         self.scope_context.type_ast[ty] = ast;
 
+        self.ty_instances.insert(id, ty);
         self.insert_to_scope(scope_id, ty, span);
 
         Ok(())
@@ -391,12 +393,14 @@ impl<'a> ScopeBuilder<'a> {
         {
             let is_entry = self.find_simple_tag("entry");
             let is_inline = self.find_simple_tag("inline");
+            let is_no_ownership = self.find_simple_tag("no_ownership");
 
             let flags = {
                 (FuncFlags::EXTERNAL & external)
                     | (FuncFlags::INLINE & is_inline.is_some())
                     | (FuncFlags::ENTRY & is_entry.is_some())
                     | (FuncFlags::GENERIC & !params.is_reserved_value())
+                    | (FuncFlags::NO_OWNERSHIP & is_no_ownership.is_some())
             };
 
             if is_entry.is_some() {
@@ -434,7 +438,7 @@ impl<'a> ScopeBuilder<'a> {
         global_params: Option<TyList>,
     ) -> TyList {
         let mut used = EntitySet::new();
-        let mut used_list = vec![];
+        // let mut used_list = vec![];
 
         self.ty_lists.mark_frame();
 
@@ -454,11 +458,11 @@ impl<'a> ScopeBuilder<'a> {
                     // because we will need same bounds with distinct state
                     // in next stages
                     let next_bound = get_param(bound, self.types);
-                    let id = self.types[bound].id;
-                    assert!(self.ty_instances.insert(id, bound) == Some(bound));
+                    // let id = self.types[bound].id;
+                    // assert!(self.ty_instances.insert(id, bound) == Some(bound));
                     next_bound
                 } else {
-                    used_list.push(bound);
+                    // used_list.push(bound);
                     bound
                 };
 
@@ -486,10 +490,10 @@ impl<'a> ScopeBuilder<'a> {
             self.ty_lists.push_one(bound);
         }
 
-        for bound in used_list {
-            let id = self.types[bound].id;
-            assert!(self.ty_instances.insert(id, bound).is_some());
-        }
+        // for bound in used_list {
+        //     let id = self.types[bound].id;
+        //     assert!(self.ty_instances.insert(id, bound).is_some());
+        // }
 
         self.ty_lists.pop_frame()
     }

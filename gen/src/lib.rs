@@ -225,9 +225,9 @@ impl CirBuilder<'_> {
                 };
                 self.cir_builder_context.value_lookup[target_value] = ir_value.into();
             }
-            InstKind::Call(func, args) => {
+            InstKind::Call(func, params, args) => {
                 if self.funcs[func.meta()].kind == FuncKind::Builtin {
-                    self.generate_native_call(func, args, inst.value);
+                    self.generate_native_call(func, params, args, inst.value);
                     return;
                 }
 
@@ -468,27 +468,40 @@ impl CirBuilder<'_> {
     fn generate_native_call(
         &mut self,
         func: Func,
+        params: TyList,
         args: ValueList,
         result: PackedOption<mir::Value>,
     ) {
         let name = self.funcs[func.meta()].name;
         let str = self.sources.display(name);
 
-        match str {
-            "+" => self.generate_native_add(args, result),
-            "-" => self.generate_native_sub(args, result),
-            "*" => self.generate_native_mul(args, result),
-            "/" => self.generate_native_div(args, result),
-            "%" => self.generate_native_rem(args, result),
-            "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args, result),
+        let value = match str {
+            "+" => self.generate_native_add(args),
+            "-" => self.generate_native_sub(args),
+            "*" => self.generate_native_mul(args),
+            "/" => self.generate_native_div(args),
+            "%" => self.generate_native_rem(args),
+            "<" | ">" | "<=" | ">=" | "==" | "!=" => self.generate_native_cmp(str, args),
             "u8" | "u16" | "u32" | "u64" | "uint" | "i8" | "i16" | "i32" | "i64" | "int" => {
                 self.generate_native_int_conv(args, result)
             }
+            "size_of" => self.generate_size_of(params),
             _ => unimplemented!("Unhandled native function: {:?}", str),
+        };
+
+        if let Some(result) = result.expand() {
+            self.cir_builder_context.value_lookup[result] = value.unwrap().into();
         }
     }
 
-    fn generate_native_int_conv(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_size_of(&mut self, params: TyList) -> Option<ir::Value> {
+        let ty = self.ty_lists.get(params)[0];
+        let size = self.unwrap_size(self.reprs[ty].layout.size());
+        let size = self.builder.ins().iconst(self.isa.pointer_type(), size as i64);
+        Some(size)
+    }
+
+    fn generate_native_int_conv(&mut self, args: ValueList, result: PackedOption<mir::Value>) -> Option<ir::Value> {
         let &[value] = self.func_ctx.value_slices.get(args) else {
             unreachable!();
         };
@@ -516,14 +529,13 @@ impl CirBuilder<'_> {
             todo!()
         };
 
-        self.cir_builder_context.value_lookup[result] = result_ir.into();
+        Some(result_ir)
     }
 
-    fn generate_native_add(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_add(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
             &[value] => {
-                self.cir_builder_context.value_lookup[result.unwrap()] =
-                    self.use_value(value).into();
+                Some(self.use_value(value))
             }
             &[left, right] => {
                 let left = self.use_value(left);
@@ -539,13 +551,13 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented addition for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = add.into();
+                Some(add)
             }
             _ => unreachable!(),
         }
     }
 
-    fn generate_native_sub(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_sub(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
             &[value] => {
                 let value = self.use_value(value);
@@ -557,7 +569,7 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented subtraction for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = neg.into();
+                Some(neg)
             }
             &[left, right] => {
                 let left = self.use_value(left);
@@ -573,13 +585,13 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented subtraction for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = sub.into();
+                Some(sub)
             }
             _ => unreachable!(),
         }
     }
 
-    fn generate_native_mul(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_mul(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
             &[left, right] => {
                 let left = self.use_value(left);
@@ -595,13 +607,13 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented multiplication for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = mul.into();
+                Some(mul)
             }
             _ => unreachable!(),
         }
     }
 
-    fn generate_native_div(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_div(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
             &[left, right] => {
                 let signed = self.types[self.func_ctx.values[left].ty]
@@ -624,13 +636,13 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented division for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = div.into();
+                Some(div)
             }
             _ => unreachable!(),
         }
     }
 
-    fn generate_native_rem(&mut self, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_rem(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
             &[left, right] => {
                 let signed = self.types[self.func_ctx.values[left].ty]
@@ -653,13 +665,13 @@ impl CirBuilder<'_> {
                     unimplemented!("Unimplemented division for {}", ty);
                 };
 
-                self.cir_builder_context.value_lookup[result.unwrap()] = rem.into();
+                Some(rem)
             }
             _ => unreachable!(),
         }
     }
 
-    fn generate_native_cmp(&mut self, op: &str, args: ValueList, result: PackedOption<mir::Value>) {
+    fn generate_native_cmp(&mut self, op: &str, args: ValueList) -> Option<ir::Value> {
         let &[left, right] = self.func_ctx.value_slices.get(args) else {
             unreachable!();
         };
@@ -679,8 +691,6 @@ impl CirBuilder<'_> {
             ty,
             self.builder.func.dfg.value_type(right)
         );
-
-        let result = result.unwrap();
 
         if ty.is_int() {
             let inst = if signed {
@@ -706,7 +716,7 @@ impl CirBuilder<'_> {
             };
 
             let value = self.builder.ins().icmp(inst, left, right);
-            self.cir_builder_context.value_lookup[result] = value.into();
+            Some(value)
         } else {
             unimplemented!("Unimplemented comparison for {}", ty);
         }
@@ -801,7 +811,7 @@ impl CirBuilder<'_> {
 
         let offset = self.unwrap_size(offset);
         if flags.contains(MirFlags::POINTER) {
-            // println!("{:?} {}", repr, ty_display!(self, ty));
+            println!("{:?} {} {}", repr, ty_display!(self, ty), ty);
             let loader_repr = repr.as_int();
 
             if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
