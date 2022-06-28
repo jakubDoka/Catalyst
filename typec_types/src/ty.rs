@@ -18,10 +18,9 @@ impl TypeBase for Types {}
 
 pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
     fn may_drop(&self, ty: Ty) -> bool {
-        (
-            !self[ty].flags.contains(TyFlags::BUILTIN)
-            && !matches!(self[ty].kind, TyKind::Ptr(..) | TyKind::FuncPtr(..))
-        ) || matches!(self[ty].kind, TyKind::Param(..))
+        (!self[ty].flags.contains(TyFlags::BUILTIN)
+            && !matches!(self[ty].kind, TyKind::Ptr(..) | TyKind::FuncPtr(..)))
+            || matches!(self[ty].kind, TyKind::Param(..))
     }
 
     fn item_count(&self, ty: Ty, ty_comps: &TyComps) -> usize {

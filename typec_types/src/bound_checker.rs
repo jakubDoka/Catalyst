@@ -1,4 +1,4 @@
-use crate::{*, ty_factory::prepare_params};
+use crate::{ty_factory::prepare_params, *};
 use lexer::*;
 use storage::*;
 
@@ -25,24 +25,24 @@ impl BoundChecker<'_> {
 
         // TODO: user preallocated vec if needed
         let mut frontier = vec![(root_reference, root_parametrized)];
-    
+
         let error = Err(Some(TyError::GenericTypeMismatch {
             expected: root_parametrized,
             found: root_reference,
             loc: span,
         }));
-    
+
         while let Some((reference, parametrized)) = frontier.pop() {
             let TyEnt { kind, flags, .. } = self.types[parametrized];
-            
+
             if !flags.contains(TyFlags::GENERIC) {
                 continue;
             }
-    
+
             match (kind, self.types[reference].kind) {
                 (TyKind::Param(index, ..), _) => {
                     let other = params[index as usize];
-                
+
                     if let Some(other) = other && other != reference {
                         return error;
                     } else {
@@ -51,14 +51,12 @@ impl BoundChecker<'_> {
                         }
                         params[index as usize] = Some(reference);
                     }
-                }           
+                }
                 (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth))
                     if depth == ref_depth
-                        && (
-                            !self.types[parametrized].flags.contains(TyFlags::MUTABLE)
-                            || self.types[reference].flags.contains(TyFlags::MUTABLE) 
-                        ) 
-                => {
+                        && (!self.types[parametrized].flags.contains(TyFlags::MUTABLE)
+                            || self.types[reference].flags.contains(TyFlags::MUTABLE)) =>
+                {
                     frontier.push((ref_ty, ty));
                 }
                 (TyKind::Instance(base, params), TyKind::Instance(ref_base, ref_params))
@@ -73,10 +71,10 @@ impl BoundChecker<'_> {
                 (a, b) if a == b => {}
                 _ => {
                     return error;
-                },
+                }
             }
         }
-    
+
         Ok(())
     }
 
@@ -199,8 +197,7 @@ impl BoundChecker<'_> {
                 }
             })
             .collect();
-        
-            
+
         if is_ok {
             self.bound_impls.insert(id, bound_impl);
             return Ok(bound_impl);

@@ -69,7 +69,7 @@ impl<T: BitSerde> BitSerde for Vec<T> {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         let len = usize::read(cursor, buffer)?;
-        
+
         if len.checked_mul(T::size()).is_none() || len * T::size() > buffer.len() {
             return Err(format!(
                 "Vec length {} * {} exceeds buffer length {}",

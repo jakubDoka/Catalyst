@@ -24,7 +24,7 @@ impl TirBuilder<'_> {
 
         self.globals[self.global].ty = ret;
 
-        let id = ID::new("<global>") + self.globals[self.global].id; 
+        let id = ID::new("<global>") + self.globals[self.global].id;
 
         let func_ent = FuncEnt {
             id,
@@ -1011,7 +1011,7 @@ impl TirBuilder<'_> {
             ..
         } = self.funcs[func.meta()];
         let param_slice = self.ty_lists.get(params);
-        
+
         let mut param_slots = vec![None; param_slice.len()];
 
         if let Some(instantiation) = instantiation {
@@ -1036,7 +1036,7 @@ impl TirBuilder<'_> {
                 }
             }
         }
-        
+
         for (&arg, &arg_comp) in tir_args.iter().zip(self.ty_comps.get(args)) {
             let TirEnt { ty, span, .. } = self.tir_data.ents[arg];
             if let Err(err) = bound_checker!(self).infer_parameters(
@@ -1068,8 +1068,12 @@ impl TirBuilder<'_> {
             self.scope_context.use_type(p, self.types);
         }
 
-        let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
-        param_slots.iter().for_each(|&p| self.scope_context.use_type(p, self.types));
+        let param_slots = self
+            .vec_pool
+            .alloc_iter(param_slots.drain(..).map(Option::unwrap));
+        param_slots
+            .iter()
+            .for_each(|&p| self.scope_context.use_type(p, self.types));
         let ret = self.instantiate(ret, param_slots.as_slice(), param_slice.as_slice());
         Ok((self.ty_lists.push(&param_slots), ret))
     }
@@ -1410,7 +1414,11 @@ impl TirBuilder<'_> {
         let TyEnt { flags, .. } = self.types[ty];
 
         let (mut param_slots, ty) = if let TyKind::Instance(base, params) = self.types[ty].kind {
-            (self.vec_pool.alloc_iter(self.ty_lists.get(params).iter().copied().map(Some)), base)
+            (
+                self.vec_pool
+                    .alloc_iter(self.ty_lists.get(params).iter().copied().map(Some)),
+                base,
+            )
         } else {
             (
                 self.vec_pool
@@ -1452,7 +1460,7 @@ impl TirBuilder<'_> {
                     .scope
                     .get_concrete::<TyComp>(field_id)
                     .map_err(handler)?;
-                // we don't want to register the subtype in used types since struct type might 
+                // we don't want to register the subtype in used types since struct type might
                 // not be inferred yet and we kow that the type that initialized this field exists.
                 let field_ty = ty_factory!(self).subtype(ty, self.ty_comps[field_id].ty);
                 (expr, (field_id, field_ty))
@@ -1481,7 +1489,11 @@ impl TirBuilder<'_> {
             }
 
             if self.types[field_ty].flags.contains(TyFlags::GENERIC) {
-                let TirEnt { ty: parametrized_field_ty, span, .. } = self.tir_data.ents[value];
+                let TirEnt {
+                    ty: parametrized_field_ty,
+                    span,
+                    ..
+                } = self.tir_data.ents[value];
                 let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
                 if let Err(err) = bound_checker!(self).infer_parameters(
                     parametrized_field_ty,
@@ -1545,16 +1557,19 @@ impl TirBuilder<'_> {
                     });
                     Err(())
                 })?;
-                
-            let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
-            param_slots.iter().for_each(|&p| self.scope_context.use_type(p, self.types));
+
+            let param_slots = self
+                .vec_pool
+                .alloc_iter(param_slots.drain(..).map(Option::unwrap));
+            param_slots
+                .iter()
+                .for_each(|&p| self.scope_context.use_type(p, self.types));
             let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
             let ty = self.instantiate(ty, param_slots.as_slice(), subs.as_slice());
             ty
         } else {
             ty
         };
-
 
         let result = {
             let fields = self.tir_data.cons.push(&initial_values);

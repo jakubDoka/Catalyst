@@ -47,7 +47,7 @@ impl MainTirBuilder<'_> {
                 if ownership_solver!(self).solve(func).is_err() {
                     continue;
                 }
-    
+
                 drop_solver!(self).solve(func);
             }
 

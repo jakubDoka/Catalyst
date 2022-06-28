@@ -21,14 +21,17 @@ impl Logger<'_> {
         });
 
         self.diagnostics.iter::<OwError>().map(|errs| {
-            errs.for_each(|err| ownership::error::display(
-                err, 
-                &self.ty_lists,
-                &self.ty_comps,
-                &self.types,
-                &self.sources, 
-                &mut errors
-            ).unwrap())
+            errs.for_each(|err| {
+                ownership::error::display(
+                    err,
+                    &self.ty_lists,
+                    &self.ty_comps,
+                    &self.types,
+                    &self.sources,
+                    &mut errors,
+                )
+                .unwrap()
+            })
         });
 
         self.diagnostics.iter::<TyError>().map(|errs| {

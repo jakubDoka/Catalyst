@@ -41,7 +41,9 @@ impl OwnershipSolver<'_> {
     }
 
     fn traverse_unchecked(&mut self, root: Tir, create_scope: bool) -> errors::Result<ID> {
-        let TirEnt { kind, flags, ty, .. } = self.tir_data.ents[root];
+        let TirEnt {
+            kind, flags, ty, ..
+        } = self.tir_data.ents[root];
 
         match kind {
             // TODO control flow
@@ -501,7 +503,11 @@ impl OwnershipSolver<'_> {
             if let Some(because) = ent.last_move.expand() {
                 let because = self.tir_data.ents[because].span;
                 let loc = self.tir_data.ents[target].span;
-                self.diagnostics.push(OwError::DoubleMove { because, loc, ty: ent.ty });
+                self.diagnostics.push(OwError::DoubleMove {
+                    because,
+                    loc,
+                    ty: ent.ty,
+                });
                 return Err(());
             }
 

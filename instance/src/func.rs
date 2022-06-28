@@ -4,7 +4,6 @@ use crate::*;
 use instance_types::*;
 use storage::*;
 use typec_types::*;
-use lexer::*;
 
 type ExprValue = Option<Value>;
 type Dest<'a> = &'a mut Option<Value>;
@@ -568,27 +567,27 @@ impl<'a> MirBuilder<'a> {
                 .implements(bound, caller.unwrap(), false)
                 .unwrap();
             let param_slice = self.ty_lists.get(bound_impl.params);
-            param_slots.resize(
-                param_slice.len(),
-                None,
-            );
+            param_slots.resize(param_slice.len(), None);
 
-            bound_checker!(self).infer_parameters(
-                caller.unwrap(),
-                bound_impl.ty,
-                &mut param_slots,
-                param_slice,
-                Default::default(),
-                false,
-            )
-            .unwrap();
+            bound_checker!(self)
+                .infer_parameters(
+                    caller.unwrap(),
+                    bound_impl.ty,
+                    &mut param_slots,
+                    param_slice,
+                    Default::default(),
+                    false,
+                )
+                .unwrap();
 
             func = self.func_lists.get(bound_impl.funcs)[index as usize];
         }
 
         if flags.contains(TirFlags::GENERIC) {
             // println!("{}", span.log(self.sources));
-            let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
+            let param_slots = self
+                .vec_pool
+                .alloc_iter(param_slots.drain(..).map(Option::unwrap));
             func = self.instantiate_func(func, params, &param_slots);
         }
 
@@ -638,7 +637,8 @@ impl<'a> MirBuilder<'a> {
                     .map(|&ty| *self.ty_instances.get(self.types[ty].id).unwrap_or(&ty)),
             );
             if self.funcs[func.meta()].kind != FuncKind::Builtin {
-                self.to_compile.push((instance, self.ty_lists.push(&param_vec)));
+                self.to_compile
+                    .push((instance, self.ty_lists.push(&param_vec)));
             }
             instance
         }
@@ -768,7 +768,11 @@ impl<'a> MirBuilder<'a> {
                 continue;
             }
 
-            let ty = self.ty_instances.get(self.types[ty].id).cloned().unwrap_or(ty);
+            let ty = self
+                .ty_instances
+                .get(self.types[ty].id)
+                .cloned()
+                .unwrap_or(ty);
 
             if let Ok(bound_impl) = bound_checker!(self).drop_impl(ty) {
                 let prt = {
@@ -785,10 +789,7 @@ impl<'a> MirBuilder<'a> {
                     let drop_fn_index = 0;
                     let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
                     let param_slice = self.ty_lists.get(bound_impl.params);
-                    let mut param_slots = self.vec_pool.of_size(
-                        None,
-                        param_slice.len(),
-                    );
+                    let mut param_slots = self.vec_pool.of_size(None, param_slice.len());
 
                     // for &param in param_slice {
                     //     print!("{}", ty_display!(self, param));
@@ -796,17 +797,20 @@ impl<'a> MirBuilder<'a> {
                     // println!();
                     // println!("{} {}", ty_display!(self, ty), ty_display!(self, bound_impl.ty));
 
-                    bound_checker!(self).infer_parameters(
-                        ty,
-                        bound_impl.ty,
-                        &mut param_slots,
-                        param_slice,
-                        Default::default(),
-                        false,
-                    )
-                    .unwrap();
+                    bound_checker!(self)
+                        .infer_parameters(
+                            ty,
+                            bound_impl.ty,
+                            &mut param_slots,
+                            param_slice,
+                            Default::default(),
+                            false,
+                        )
+                        .unwrap();
 
-                    let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
+                    let param_slots = self
+                        .vec_pool
+                        .alloc_iter(param_slots.drain(..).map(Option::unwrap));
                     self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
                 };
 

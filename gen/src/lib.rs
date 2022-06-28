@@ -497,11 +497,18 @@ impl CirBuilder<'_> {
     fn generate_size_of(&mut self, params: TyList) -> Option<ir::Value> {
         let ty = self.ty_lists.get(params)[0];
         let size = self.unwrap_size(self.reprs[ty].layout.size());
-        let size = self.builder.ins().iconst(self.isa.pointer_type(), size as i64);
+        let size = self
+            .builder
+            .ins()
+            .iconst(self.isa.pointer_type(), size as i64);
         Some(size)
     }
 
-    fn generate_native_int_conv(&mut self, args: ValueList, result: PackedOption<mir::Value>) -> Option<ir::Value> {
+    fn generate_native_int_conv(
+        &mut self,
+        args: ValueList,
+        result: PackedOption<mir::Value>,
+    ) -> Option<ir::Value> {
         let &[value] = self.func_ctx.value_slices.get(args) else {
             unreachable!();
         };
@@ -534,9 +541,7 @@ impl CirBuilder<'_> {
 
     fn generate_native_add(&mut self, args: ValueList) -> Option<ir::Value> {
         match self.func_ctx.value_slices.get(args) {
-            &[value] => {
-                Some(self.use_value(value))
-            }
+            &[value] => Some(self.use_value(value)),
             &[left, right] => {
                 let left = self.use_value(left);
                 let right = self.use_value(right);

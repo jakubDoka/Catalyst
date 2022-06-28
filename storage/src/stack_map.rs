@@ -5,7 +5,7 @@ use std::{
 
 use cranelift_entity::{packed_option::ReservedValue, EntityRef};
 
-use crate::{FramedStack, BitSerde};
+use crate::{BitSerde, FramedStack};
 
 pub struct FramedStackMap<E: EntityRef, T> {
     lists: StackMap<E, T>,

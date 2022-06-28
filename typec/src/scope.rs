@@ -1,4 +1,4 @@
-use std::{str::FromStr};
+use std::str::FromStr;
 
 use crate::{ty::get_param, *};
 use ast::*;
@@ -106,8 +106,11 @@ impl<'a> ScopeBuilder<'a> {
 
     fn create_unique_params(&mut self, params: TyList) -> TyList {
         let mut params = self.vec_pool.alloc(self.ty_lists.get(params));
-        let new_params = self.vec_pool.alloc_iter(params.drain(..)
-            .map(|ty| ty_factory!(self).make_param_unique(ty)));
+        let new_params = self.vec_pool.alloc_iter(
+            params
+                .drain(..)
+                .map(|ty| ty_factory!(self).make_param_unique(ty)),
+        );
         self.ty_lists.push(new_params.as_slice())
     }
 
@@ -152,9 +155,8 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                
-                self.scope
-                    .push_item("Self", ScopeItem::new(dest, span));
+
+                self.scope.push_item("Self", ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {

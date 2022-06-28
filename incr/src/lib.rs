@@ -212,7 +212,11 @@ impl BitSerde for IncrGlobalData {
     }
 
     fn size() -> usize {
-        bool::size() + Option::<GlobalDataBytes>::size() + Span::size() + ID::size() + Option::<ID>::size()
+        bool::size()
+            + Option::<GlobalDataBytes>::size()
+            + Span::size()
+            + ID::size()
+            + Option::<ID>::size()
     }
 }
 

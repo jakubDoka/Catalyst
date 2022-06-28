@@ -3,7 +3,7 @@ use cranelift_codegen::ir::{self, Type};
 use crate::*;
 use instance_types::*;
 use storage::*;
-use typec_types::{*, ty_factory::prepare_params};
+use typec_types::{ty_factory::prepare_params, *};
 
 impl<'a> ReprInstancing<'a> {
     pub fn load_generic_types(
@@ -13,9 +13,8 @@ impl<'a> ReprInstancing<'a> {
         types: TyList,
         replace_cache: &mut ReplaceCache,
     ) {
-
         let mut types = self.vec_pool.alloc(self.ty_lists.get(types));
-        
+
         // for &ty in types.iter() {
         //     print!("{} ", ty_display!(self, ty));
         // }
@@ -29,10 +28,12 @@ impl<'a> ReprInstancing<'a> {
         // println!();
 
         prepare_params(&subs, self.types);
-        
-        let mut new_types = self
-            .vec_pool
-            .alloc_iter(types.iter().map(|&ty| self.instantiate_repr(params.as_slice(), subs.as_slice(), ty)));
+
+        let mut new_types = self.vec_pool.alloc_iter(
+            types
+                .iter()
+                .map(|&ty| self.instantiate_repr(params.as_slice(), subs.as_slice(), ty)),
+        );
 
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`
@@ -188,7 +189,11 @@ impl<'a> LayoutBuilder<'a> {
 
         let align = fields
             .iter()
-            .map(|field| self.reprs[self.true_type(field.ty, subs.as_slice(), params)].layout.size())
+            .map(|field| {
+                self.reprs[self.true_type(field.ty, subs.as_slice(), params)]
+                    .layout
+                    .size()
+            })
             .fold(Offset::ZERO, |acc, align| acc.max(align).min(Offset::PTR));
 
         let mut size = Offset::ZERO;

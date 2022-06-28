@@ -513,8 +513,6 @@ impl Compiler {
                 data_ctx.define_zeroinit(size as usize);
             }
 
-
-
             self.object_module
                 .define_data(global_ref, &data_ctx)
                 .unwrap();
@@ -599,7 +597,11 @@ impl Compiler {
                             self.func_ctx.add_inst(ent);
                         } else {
                             let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
-                            let kind = InstKind::Call(func, TyList::reserved_value(), ValueList::reserved_value());
+                            let kind = InstKind::Call(
+                                func,
+                                TyList::reserved_value(),
+                                ValueList::reserved_value(),
+                            );
                             let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                             {
@@ -613,7 +615,11 @@ impl Compiler {
                             .func_ctx
                             .values
                             .push(ValueEnt::new(self.builtin_types.int));
-                        let kind = InstKind::Call(func, TyList::reserved_value(), ValueList::reserved_value());
+                        let kind = InstKind::Call(
+                            func,
+                            TyList::reserved_value(),
+                            ValueList::reserved_value(),
+                        );
                         let ent = InstEnt::new(kind).value(return_value);
                         self.func_ctx.add_inst(ent);
                     }
@@ -681,8 +687,10 @@ impl Compiler {
         let ent = &self.globals[ent];
         let g = IncrGlobalData {
             mutable: ent.mutable,
-            bytes: ent.bytes.map(|data| self.incr.global_data.bytes
-                .push(self.global_data.get(data))).into(),
+            bytes: ent
+                .bytes
+                .map(|data| self.incr.global_data.bytes.push(self.global_data.get(data)))
+                .into(),
             name: ent.name,
             ty: self.types[ent.ty].id,
             init: ent.init.map(|init| self.funcs[init].id).into(),
@@ -751,12 +759,16 @@ impl Compiler {
                 name: data.name,
                 mutable: data.mutable,
                 ty: *self.ty_instances.get(data.ty).unwrap(),
-                init: data.init.map(|init| *self.func_instances
-                    .get(init).unwrap()).into(),
-                bytes: data.bytes.map(|data| self.global_data
-                    .push(self.incr.global_data.bytes.get(data))).into(),
+                init: data
+                    .init
+                    .map(|init| *self.func_instances.get(init).unwrap())
+                    .into(),
+                bytes: data
+                    .bytes
+                    .map(|data| self.global_data.push(self.incr.global_data.bytes.get(data)))
+                    .into(),
             });
-            
+
             self.global_map.insert_unique(id, g);
         }
     }
@@ -769,17 +781,17 @@ impl Compiler {
         let mut s = Self::new();
 
         s.init_builtin();
-        
+
         s.load_modules();
         s.log_diagnostics();
-        
+
         s.incr.reduce(&s.modules, &s.module_order);
-        
+
         s.build_tir();
         s.log_diagnostics();
-        
+
         s.load_incr_globals();
-        
+
         s.generate();
         s.log_diagnostics();
 

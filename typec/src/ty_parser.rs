@@ -28,7 +28,8 @@ impl TyParser<'_> {
                     .push(TyError::InvalidTypeExpression { loc: span });
                 return Err(());
             }
-        }.map(Some)
+        }
+        .map(Some)
     }
 
     pub fn parse_func_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
@@ -81,7 +82,10 @@ impl TyParser<'_> {
             "type",
             matcher,
         );
-        self.scope.get_concrete::<Ty>(str).map_err(handler).map(Some)
+        self.scope
+            .get_concrete::<Ty>(str)
+            .map_err(handler)
+            .map(Some)
     }
 
     fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {
@@ -96,7 +100,11 @@ impl TyParser<'_> {
         }
 
         let mut new_instances = self.vec_pool.get();
-        Ok(ty_factory!(self).parse_instance_type(header, self.ast_data.nodes[ty].span, &mut new_instances))
+        Ok(ty_factory!(self).parse_instance_type(
+            header,
+            self.ast_data.nodes[ty].span,
+            &mut new_instances,
+        ))
     }
 
     pub fn parse_ptr_type(&mut self, ty: Ast, mutable: bool) -> errors::Result<Ty> {

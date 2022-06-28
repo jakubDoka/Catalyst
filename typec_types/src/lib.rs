@@ -30,7 +30,7 @@ pub use ty::{
     BoundImpl, BoundImpls, BuiltinTypes, FuncLists, Ty, TyComp, TyCompEnt, TyCompList, TyComps,
     TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
 };
-pub use ty_factory::{collect_ty_params};
+pub use ty_factory::collect_ty_params;
 
 #[macro_export]
 macro_rules! tir_display {

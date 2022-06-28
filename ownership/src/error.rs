@@ -8,7 +8,14 @@ pub enum OwError {
     PartiallyMovedDrop { ty: Ty, because: Span, loc: Span },
 }
 
-pub fn display(error: &OwError, ty_lists: &TyLists, ty_comps: &TyComps, types: &Types, sources: &Sources, to: &mut String) -> std::fmt::Result {
+pub fn display(
+    error: &OwError,
+    ty_lists: &TyLists,
+    ty_comps: &TyComps,
+    types: &Types,
+    sources: &Sources,
+    to: &mut String,
+) -> std::fmt::Result {
     use std::fmt::Write;
 
     struct State<'a> {
@@ -66,6 +73,10 @@ pub fn display(error: &OwError, ty_lists: &TyLists, ty_comps: &TyComps, types: &
             ty
         }
     };
-    writeln!(to, "|> '{}' does not implement 'copy' bound", ty_display!(state, ty))?;
+    writeln!(
+        to,
+        "|> '{}' does not implement 'copy' bound",
+        ty_display!(state, ty)
+    )?;
     Ok(())
 }

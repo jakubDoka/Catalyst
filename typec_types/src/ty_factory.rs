@@ -11,7 +11,8 @@ impl TyFactory<'_> {
 
         if let TyKind::Instance(base, params) = self.types[parent].kind {
             let params = self.vec_pool.alloc(self.ty_lists.get(params));
-            let parent_params = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
+            let parent_params =
+                collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
             let (ty, new) = self.instantiate_low(child, &params, parent_params.as_slice());
             if new {
                 self.ty_graph.add_edge(parent, ty);
@@ -31,14 +32,15 @@ impl TyFactory<'_> {
         let kind = match ent.kind {
             TyKind::Instance(base, params) => {
                 let mut params = self.vec_pool.alloc(self.ty_lists.get(params));
-                let new_params = self.vec_pool.alloc_iter(params
-                    .drain(..).map(|ty| self.make_param_unique(ty)));
+                let new_params = self
+                    .vec_pool
+                    .alloc_iter(params.drain(..).map(|ty| self.make_param_unique(ty)));
                 let new_params = self.ty_lists.push(new_params.as_slice());
                 TyKind::Instance(base, new_params)
-            },
+            }
             _ => ent.kind,
         };
-        let ty = self.types.push(TyEnt {id, kind, ..ent});
+        let ty = self.types.push(TyEnt { id, kind, ..ent });
         self.ty_instances.insert(id, ty);
         ty
     }
@@ -52,7 +54,13 @@ impl TyFactory<'_> {
         self.instantiate_recur(target, params, subs, &mut new_instances)
     }
 
-    pub fn instantiate_recur(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> (Ty, bool) {
+    pub fn instantiate_recur(
+        &mut self,
+        target: Ty,
+        params: &[Ty],
+        subs: &[Ty],
+        new_instances: &mut Vec<Ty>,
+    ) -> (Ty, bool) {
         let TyEnt {
             kind, flags, name, ..
         } = self.types[target];
@@ -101,13 +109,23 @@ impl TyFactory<'_> {
         (ty, new)
     }
 
-    pub fn parse_instance_type(&mut self, header: Ty, span: Span, new_instances: &mut Vec<Ty>) -> Ty {
+    pub fn parse_instance_type(
+        &mut self,
+        header: Ty,
+        span: Span,
+        new_instances: &mut Vec<Ty>,
+    ) -> Ty {
         self.parse_instance_type_low(header, span, new_instances).0
     }
 
-    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], 
+    /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`],
     /// if instance already exists, it is reused.
-    pub fn parse_instance_type_low(&mut self, header: Ty, span: Span, new_instances: &mut Vec<Ty>) -> (Ty, bool) {
+    pub fn parse_instance_type_low(
+        &mut self,
+        header: Ty,
+        span: Span,
+        new_instances: &mut Vec<Ty>,
+    ) -> (Ty, bool) {
         let mut id = ID::new("<instance>") + self.types[header].id;
         let mut generic = false;
 
@@ -137,9 +155,15 @@ impl TyFactory<'_> {
             match self.types[header].kind {
                 TyKind::Struct(ty_comps) => {
                     let params = self.vec_pool.alloc(self.ty_lists.get(params));
-                    let subs = collect_ty_params(header, self.types, self.vec_pool, self.builtin_types);
+                    let subs =
+                        collect_ty_params(header, self.types, self.vec_pool, self.builtin_types);
                     for field in self.ty_comps.get(ty_comps) {
-                        let (ty, new) = self.instantiate_recur(field.ty, params.as_slice(), subs.as_slice(), new_instances);
+                        let (ty, new) = self.instantiate_recur(
+                            field.ty,
+                            params.as_slice(),
+                            subs.as_slice(),
+                            new_instances,
+                        );
                         if new {
                             self.ty_graph.add_edge(result, ty);
                         }
@@ -150,7 +174,7 @@ impl TyFactory<'_> {
 
             self.ty_graph.add_vertex(result);
         }
-        
+
         self.ty_instances.insert_unique(id, result);
         new_instances.push(result);
 
@@ -259,17 +283,17 @@ impl TyFactory<'_> {
             ..
         } = self.types[ty];
         let id = ID::pointer(id, mutable);
-    
+
         if let Some(&already) = self.ty_instances.get(id) {
             return (already, false);
         }
-    
+
         let depth = if let TyKind::Ptr(.., depth) = kind {
             depth
         } else {
             0
         };
-    
+
         let ent = TyEnt {
             id,
             name,
@@ -277,7 +301,7 @@ impl TyFactory<'_> {
             flags: flags & !TyFlags::BUILTIN | TyFlags::MUTABLE & mutable,
         };
         let ptr = self.types.push(ent);
-    
+
         assert!(self.ty_instances.insert(id, ptr).is_none());
 
         if !flags.contains(TyFlags::GENERIC) {
@@ -288,7 +312,12 @@ impl TyFactory<'_> {
     }
 }
 
-pub fn collect_ty_params(ty: Ty, types: &Types, vec_pool: &VecPool, builtin_types: &BuiltinTypes) -> PoolVec<Ty> {
+pub fn collect_ty_params(
+    ty: Ty,
+    types: &Types,
+    vec_pool: &VecPool,
+    builtin_types: &BuiltinTypes,
+) -> PoolVec<Ty> {
     let max = types[ty].flags.param_count();
     let mut params = vec_pool.with_capacity(max);
     let mut current = Some(builtin_types.ty_any);

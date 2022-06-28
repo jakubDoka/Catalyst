@@ -78,7 +78,7 @@ impl BuiltinBuilder<'_> {
                 self.create_func(name, &[from], to, id, target);
             }
         }
-        
+
         for ty in self.builtin_types.all() {
             let ent = &self.types[ty];
             self.ty_instances.insert(ent.id, ty);
