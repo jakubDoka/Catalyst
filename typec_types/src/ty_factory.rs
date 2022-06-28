@@ -4,7 +4,7 @@ use storage::*;
 use crate::*;
 
 impl TyFactory<'_> {
-    pub fn subtype(&mut self, parent: Ty, child: Ty, new_instances: &mut Vec<Ty>) -> Ty {
+    pub fn subtype(&mut self, parent: Ty, child: Ty) -> Ty {
         // better just assert and force caller to prepare this, in general
         // case this is needed anyway and llvm can optimize this when inlining
         assert_eq!(self.types.ptr_leaf_of(parent), parent);
@@ -12,7 +12,7 @@ impl TyFactory<'_> {
         if let TyKind::Instance(base, params) = self.types[parent].kind {
             let params = self.vec_pool.alloc(self.ty_lists.get(params));
             let parent_params = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
-            let (ty, new) = self.instantiate_low(child, &params, parent_params.as_slice(), new_instances);
+            let (ty, new) = self.instantiate_low(child, &params, parent_params.as_slice());
             if new {
                 self.ty_graph.add_edge(parent, ty);
             }
@@ -22,11 +22,37 @@ impl TyFactory<'_> {
         child
     }
 
-    pub fn instantiate(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> Ty {
-        self.instantiate_low(target, params, subs, new_instances).0
+    pub fn make_param_unique(&mut self, ty: Ty) -> Ty {
+        let ent = self.types[ty];
+        let id = ID::unique(ent.id);
+        if let Some(&already) = self.ty_instances.get(id) {
+            return already;
+        }
+        let kind = match ent.kind {
+            TyKind::Instance(base, params) => {
+                let mut params = self.vec_pool.alloc(self.ty_lists.get(params));
+                let new_params = self.vec_pool.alloc_iter(params
+                    .drain(..).map(|ty| self.make_param_unique(ty)));
+                let new_params = self.ty_lists.push(new_params.as_slice());
+                TyKind::Instance(base, new_params)
+            },
+            _ => ent.kind,
+        };
+        let ty = self.types.push(TyEnt {id, kind, ..ent});
+        self.ty_instances.insert(id, ty);
+        ty
     }
 
-    pub fn instantiate_low(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> (Ty, bool) {
+    pub fn instantiate(&mut self, target: Ty, params: &[Ty], subs: &[Ty]) -> Ty {
+        self.instantiate_low(target, params, subs).0
+    }
+
+    pub fn instantiate_low(&mut self, target: Ty, params: &[Ty], subs: &[Ty]) -> (Ty, bool) {
+        let mut new_instances = self.vec_pool.get();
+        self.instantiate_recur(target, params, subs, &mut new_instances)
+    }
+
+    pub fn instantiate_recur(&mut self, target: Ty, params: &[Ty], subs: &[Ty], new_instances: &mut Vec<Ty>) -> (Ty, bool) {
         let TyEnt {
             kind, flags, name, ..
         } = self.types[target];
@@ -36,98 +62,52 @@ impl TyFactory<'_> {
         // println!(" param: {}", ty_display!(self, param));
         // }
 
-        if let Some(index) = subs.iter().position(|&x| x == target) {
-            return (params[index], false);
-        }
-
         if !flags.contains(TyFlags::GENERIC) {
+            // println!("skip: {}", ty_display!(self, target));
             return (target, false);
         }
 
-        match kind {
+        let (ty, new) = match kind {
+            TyKind::Param(index, ..) => return (params[index as usize], true),
             TyKind::Ptr(ty, ..) => {
-                let (ty, _) = self.instantiate_low(ty, params, subs, new_instances);
-                let (ptr, new) = self.pointer_of_low(
-                    ty,
-                    flags.contains(TyFlags::MUTABLE),
-                );
-
-                if new {
-                    new_instances.push(ptr);
-                }
-
-                (ptr, new)
+                // println!("ptr: {}", ty_display!(self, ty));
+                let (ty, _) = self.instantiate_recur(ty, params, subs, new_instances);
+                self.pointer_of_low(ty, flags.contains(TyFlags::MUTABLE))
             }
             TyKind::Instance(base, i_params) => {
                 self.ty_lists.mark_frame();
                 for param in self.vec_pool.alloc(self.ty_lists.get(i_params)).drain(..) {
-                    // TODO: optimize if needed
-                    let (ty, _) = self.instantiate_low(param, params, subs, new_instances);
+                    // println!("param: {} on base: {}", ty_display!(self, param), ty_display!(self, base));
+                    let (ty, _) = self.instantiate_recur(param, params, subs, new_instances);
                     self.ty_lists.push_one(ty);
                 }
-
-                let (result, new) = self.parse_instance_type_low(base, name);
-                
-                if new {
-                    new_instances.push(result);
-                }
-
-                let TyEnt { kind, flags, .. } = self.types[result];
-                if !flags.contains(TyFlags::GENERIC) {
-                    let TyKind::Instance(base, params) = kind else {
-                        unreachable!();
-                    };
-
-                    let kind = self.types[base].kind;
-                    match kind {
-                        TyKind::Struct(ty_comps) => {
-                            let params = self.vec_pool.alloc(self.ty_lists.get(params));
-                            let subs = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
-                            for field in self.ty_comps.get(ty_comps) {
-                                let (ty, new) = self.instantiate_low(field.ty, &params, subs.as_slice(), new_instances);
-                                if new {
-                                    self.ty_graph.add_edge(result, ty);
-                                }
-                            }
-                        }
-                        kind => unimplemented!("{kind:?}"),
-                    }
-                }
-
-                (result, new)
+                self.parse_instance_type_low(base, name, new_instances)
             }
-            TyKind::Struct(ty_comps) => {
+            TyKind::Struct(..) => {
                 self.ty_lists.mark_frame();
                 for &param in params {
                     self.ty_lists.push_one(param);
                 }
-                let (result, new) = self.parse_instance_type_low(target, name);
-                
-                if new {
-                    new_instances.push(result);
-                }
-
-                let subs = collect_ty_params(target, self.types, self.vec_pool, self.builtin_types);
-                for field in self.ty_comps.get(ty_comps) {
-                    let (ty, new) = self.instantiate_low(field.ty, &params, subs.as_slice(), new_instances);
-                    if new {
-                        self.ty_graph.add_edge(result, ty);
-                    }
-                }
-
-                (result, new)
+                self.parse_instance_type_low(target, name, new_instances)
             }
             kind => unimplemented!("{:?}", kind),
+        };
+
+        if new {
+            new_instances.push(ty);
         }
+
+        // println!("expand: {}", ty_display!(self, ty));
+        (ty, new)
     }
 
-    pub fn parse_instance_type(&mut self, header: Ty, span: Span) -> Ty {
-        self.parse_instance_type_low(header, span).0
+    pub fn parse_instance_type(&mut self, header: Ty, span: Span, new_instances: &mut Vec<Ty>) -> Ty {
+        self.parse_instance_type_low(header, span, new_instances).0
     }
 
     /// further specification of [`parse_type`], it expects the `ty` to be of [`ast::Kind::Instantiation`], 
     /// if instance already exists, it is reused.
-    pub fn parse_instance_type_low(&mut self, header: Ty, span: Span) -> (Ty, bool) {
+    pub fn parse_instance_type_low(&mut self, header: Ty, span: Span, new_instances: &mut Vec<Ty>) -> (Ty, bool) {
         let mut id = ID::new("<instance>") + self.types[header].id;
         let mut generic = false;
 
@@ -153,8 +133,26 @@ impl TyFactory<'_> {
             self.types.push(ent)
         };
 
+        if !generic {
+            match self.types[header].kind {
+                TyKind::Struct(ty_comps) => {
+                    let params = self.vec_pool.alloc(self.ty_lists.get(params));
+                    let subs = collect_ty_params(header, self.types, self.vec_pool, self.builtin_types);
+                    for field in self.ty_comps.get(ty_comps) {
+                        let (ty, new) = self.instantiate_recur(field.ty, params.as_slice(), subs.as_slice(), new_instances);
+                        if new {
+                            self.ty_graph.add_edge(result, ty);
+                        }
+                    }
+                }
+                kind => unimplemented!("{kind:?}"),
+            }
+
+            self.ty_graph.add_vertex(result);
+        }
+        
         self.ty_instances.insert_unique(id, result);
-        self.ty_graph.add_vertex(result);
+        new_instances.push(result);
 
         (result, true)
     }
@@ -192,7 +190,7 @@ impl TyFactory<'_> {
             let ent = TyEnt {
                 id,
                 name: span,
-                kind: TyKind::Param(bounds, None.into()),
+                kind: TyKind::Param(0, bounds, None.into()),
                 flags: TyFlags::GENERIC,
             };
             self.types.push(ent)
@@ -281,7 +279,10 @@ impl TyFactory<'_> {
         let ptr = self.types.push(ent);
     
         assert!(self.ty_instances.insert(id, ptr).is_none());
-        self.ty_graph.add_vertex(ptr);
+
+        if !flags.contains(TyFlags::GENERIC) {
+            self.ty_graph.add_vertex(ptr);
+        }
 
         (ptr, true)
     }
@@ -301,4 +302,13 @@ pub fn collect_ty_params(ty: Ty, types: &Types, vec_pool: &VecPool, builtin_type
         i += 1;
     }
     params
+}
+
+pub fn prepare_params(params: &[Ty], types: &mut Types) {
+    for (i, &param) in params.iter().enumerate() {
+        let TyKind::Param(index, ..) = &mut types[param].kind else {
+            unreachable!("{:?}", types[param].kind);
+        };
+        *index = i as u32;
+    }
 }

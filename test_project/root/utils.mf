@@ -1,3 +1,5 @@
+
+
 fn "default" putchar(char: char) -> char extern
 fn "default" malloc(size: int) -> ^mut u8 extern
 fn "default" free(ptr: ^mut u8) extern
@@ -10,22 +12,22 @@ impl uint {
     }
 }
 
-impl u8 {
+impl uint {
     fn log(s: Self) {
-        let mut div = 10
+        let mut div = 10u
         loop {
-            if s < div.u8() {
+            if s < div {
                 break
             }
-            div *= 10
+            div *= 10u
         }
 
         loop {
-            div /= 10
-            if div == 0 {
+            div /= 10u
+            if div == 0u {
                 break
             }
-            let s = s / div.u8()
+            let s = s / div
             putchar(('0' as u32 + s.u32() % 10u32) as char)
         }
     }
@@ -49,14 +51,25 @@ fn [T] unsafe_read(value: ^T) -> T {
     *value
 }
 
+#no_ownership
+fn [T] unsafe_write(value: ^mut T, new_value: T) {
+    *value = new_value
+}
+
 struct [T] Vec {
     data: ^mut T
     len: uint
     cap: uint
 }
 
-impl [T] Vec[T] {
-    fn new() -> Self {
+/*
+fn [T] zeroed() -> T {
+    [0u8; size_of::[T]()] as T
+}
+*/
+
+impl Vec {
+    fn [T] new() -> Self[T] {
         Self::{
             data: 0 as ^mut T
             len: 0u
@@ -64,9 +77,9 @@ impl [T] Vec[T] {
         }
     }
 
-    fn push(s: ^mut Self, elem: T) {
+    fn [T] push(s: ^mut Self[T], elem: T) {
         s.len += 1u
-        
+
         if s.len >= s.cap {
             let new_cap = s.cap.max(1u) * 2u
             let cap_in_bytes = new_cap * size_of::[T]()
@@ -74,30 +87,30 @@ impl [T] Vec[T] {
             s.cap = new_cap
         }
 
-        *s.get_unwrapped_last() = elem
+        unsafe_write(s.get_unwrapped_last(), elem)
     }
 
-    fn drop_range(s: ^mut Self, start: uint, end: uint) {
+    fn [T] drop_range(s: ^mut Self[T], start: uint, end: uint) {
         let mut i = start
         loop {
             if i >= end {
                 break
             }
-            //s.drop_elem(i)
-            i += 1u
+            s.drop_elem(i)
+            i += 1u     
         }
     }
 
-    fn drop_elem(s: ^mut Self, index: uint) {
+    fn [T] drop_elem(s: ^mut Self[T], index: uint) {
         let elem = s.get_unwrapped_mut(index)
         unsafe_read(elem)
     }
 
-    fn get_unwrapped_mut(s: ^mut Self, index: uint) -> ^mut T {
+    fn [T] get_unwrapped_mut(s: ^mut Self[T], index: uint) -> ^mut T {
         (s.data as uint + index * size_of::[T]()) as ^mut T
     }
 
-    fn get_unwrapped_last(s: ^mut Self) -> ^mut T {
+    fn [T] get_unwrapped_last(s: ^mut Self[T]) -> ^mut T {
         s.get_unwrapped_mut(s.len - 1u)
     }
 }
@@ -106,6 +119,5 @@ impl [T] drop as Vec[T] {
     fn drop(s: ^mut Self) {
         s.drop_range(0u, s.len)
         free(s.data as ^mut u8)
-        "vec dropped".log()
     }
 }

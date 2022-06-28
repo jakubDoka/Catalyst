@@ -104,12 +104,20 @@ impl<'a> ScopeBuilder<'a> {
         self.insert_to_scope(scope_id, global, span)
     }
 
+    fn create_unique_params(&mut self, params: TyList) -> TyList {
+        let mut params = self.vec_pool.alloc(self.ty_lists.get(params));
+        let new_params = self.vec_pool.alloc_iter(params.drain(..)
+            .map(|ty| ty_factory!(self).make_param_unique(ty)));
+        self.ty_lists.push(new_params.as_slice())
+    }
+
     fn collect_impl(&mut self, ast: Ast) -> errors::Result {
         let &[generics, ty, dest, body] = self.ast_data.children(ast) else {
 			unreachable!();
 		};
 
         let params = self.handle_generics(generics, None, None);
+        let unique_params = self.create_unique_params(params);
 
         let span = self.ast_data.nodes[ty].span;
         let ty = ty_parser!(self).parse_type(ty)?;
@@ -123,9 +131,17 @@ impl<'a> ScopeBuilder<'a> {
                 ID::bound_impl(bound_id, dest_id)
             };
 
+            let dest_clone = if let TyKind::Instance(..) = self.types[dest].kind
+                && self.types[dest].flags.contains(TyFlags::GENERIC)
+            {
+                ty_factory!(self).make_param_unique(dest)
+            } else {
+                dest
+            };
+
             if let Some(collision) = self
                 .bound_impls
-                .insert(id, BoundImpl::new(span, dest, params))
+                .insert(id, BoundImpl::new(span, dest_clone, unique_params))
             {
                 self.diagnostics.push(TyError::DuplicateBoundImpl {
                     loc: self.ast_data.nodes[ast].span,
@@ -136,15 +152,9 @@ impl<'a> ScopeBuilder<'a> {
 
             if !body.is_reserved_value() {
                 self.scope.mark_frame();
-                let dest_clone = if let TyKind::Instance(..) = self.types[dest].kind
-                    && self.types[dest].flags.contains(TyFlags::GENERIC)
-                {
-                    self.types.push(self.types[dest])
-                } else {
-                    dest
-                };
+                
                 self.scope
-                    .push_item("Self", ScopeItem::new(dest_clone, span));
+                    .push_item("Self", ScopeItem::new(dest, span));
 
                 // TODO: we can avoid inserting funcs into the scope all together
                 for &func in self.ast_data.children(body) {

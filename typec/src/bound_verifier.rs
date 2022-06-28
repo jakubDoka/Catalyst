@@ -148,7 +148,7 @@ impl BoundVerifier<'_> {
             ..
         } = self.funcs[bound_func.meta()];
 
-        println!("{:?} {:?}", self.ty_lists.get(a_params), self.ty_lists.get(b_params));
+        // println!("{:?} {:?}", self.ty_lists.get(a_params), self.ty_lists.get(b_params));
 
         let a_param_len = self.ty_lists.len_of(a_params);
         let b_param_len = self.ty_lists.len_of(b_params);
@@ -192,7 +192,7 @@ impl BoundVerifier<'_> {
         };
 
         // TODO: don't allocate if this becomes issue, bounds might get implemented a lot
-        let mut params = self.vec_pool.of_size(Ty::reserved_value(), b_param_len);
+        let mut params = self.vec_pool.of_size(None, b_param_len);
 
         let mut failed = false;
         for ((referenced, parametrized), &ast) in iter {

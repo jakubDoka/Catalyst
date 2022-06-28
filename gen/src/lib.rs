@@ -811,7 +811,7 @@ impl CirBuilder<'_> {
 
         let offset = self.unwrap_size(offset);
         if flags.contains(MirFlags::POINTER) {
-            println!("{:?} {} {}", repr, ty_display!(self, ty), ty);
+            // println!("{:?} {} {}", repr, ty_display!(self, ty), ty);
             let loader_repr = repr.as_int();
 
             if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {

@@ -72,14 +72,14 @@ fn main() -> int {
     if Loo::{ field: ^^Loo::{ field: 90; yes: false }; yes: true }.as_ptr().field.field != 90 {
         return 13
     }
-    
+
     let mut vec = Vec::new::[Vec[int]]()
 
     vec.push(Vec::new::[int]())
     vec.push(Vec::new::[int]())
 
     vec.get_unwrapped_last().push(34)
-
+    
     if *vec.get_unwrapped_last().get_unwrapped_last() != 34 {
         return 14
     }

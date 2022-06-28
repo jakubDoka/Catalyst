@@ -35,7 +35,7 @@ impl MainTirBuilder<'_> {
             //     continue;
             // }
 
-            // println!("{}", self.sources.display(self.funcs[func.meta()].name));
+            //println!("{}", self.sources.display(self.funcs[func.meta()].name));
 
             self.tir_data.clear();
 
@@ -51,7 +51,7 @@ impl MainTirBuilder<'_> {
                 drop_solver!(self).solve(func);
             }
 
-
+            self.save_used_types();
             // println!(
             //     "{}",
             //     TirDisplay::new(
@@ -103,11 +103,18 @@ impl MainTirBuilder<'_> {
             }
 
             drop_solver!(self).solve(init);
+            self.save_used_types();
 
             self.funcs[init.meta()].tir_data = self.tir_data.clone();
             self.to_compile.push((init, TyList::reserved_value()));
             // self.initializers.push(init); // this is performed during dead code elimination
         }
+    }
+
+    fn save_used_types(&mut self) {
+        self.tir_data.used_types = self.ty_lists.push(&self.scope_context.used_types);
+        self.scope_context.used_types.clear();
+        self.scope_context.used_types_set.clear();
     }
 
     /// Probably the slowest stage in frontend. Building Tir means

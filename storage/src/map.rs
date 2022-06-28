@@ -310,6 +310,10 @@ impl ID {
         Self::from_bytes(data.as_bytes())
     }
 
+    pub fn unique(id: Self) -> Self {
+        Self::new("<unique>") + id
+    }
+
     pub fn bound_impl(bound: Self, implementor: Self) -> Self {
         Self::new("<impl>") + bound + implementor
     }

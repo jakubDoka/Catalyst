@@ -72,7 +72,7 @@ impl TyBuilder<'_> {
             };
             let name = self.ast_data.nodes[name].span;
 
-            let Ok(ty) = ty_parser!(self).parse_type(ty_expr) else {
+            let Ok(ty) = ty_parser!(self).parse_type(ty_expr, ) else {
                 continue
             };
 
@@ -175,9 +175,10 @@ impl TyBuilder<'_> {
 
 pub fn get_param(ty: Ty, types: &mut Types) -> Ty {
     let next_ty = types.next_key();
-    let TyKind::Param(.., next) = &mut types[ty].kind else {
+    let TyKind::Param(index, .., next) = &mut types[ty].kind else {
         unreachable!();
     };
+    let index = *index;
 
     if let Some(next) = next.expand() {
         return next;
@@ -185,6 +186,12 @@ pub fn get_param(ty: Ty, types: &mut Types) -> Ty {
 
     *next = next_ty.into();
 
-    let copy = types[ty];
+    let mut copy = types[ty];
+    // this is only useful for parameters on types
+    // but it bring minimal overhead
+    let TyKind::Param(other_index, ..) = &mut copy.kind else {
+        unreachable!();
+    };
+    *other_index = index + 1;
     types.push(copy)
 }

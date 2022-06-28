@@ -3,7 +3,7 @@ use cranelift_codegen::ir::{self, Type};
 use crate::*;
 use instance_types::*;
 use storage::*;
-use typec_types::*;
+use typec_types::{*, ty_factory::prepare_params};
 
 impl<'a> ReprInstancing<'a> {
     pub fn load_generic_types(
@@ -23,10 +23,12 @@ impl<'a> ReprInstancing<'a> {
         let params = self.vec_pool.alloc(self.ty_lists.get(params));
         let subs = self.vec_pool.alloc(self.ty_lists.get(subs));
 
-        for (&a, &b) in params.iter().zip(subs.iter()) {
-            print!("({} {}) ", ty_display!(self, a), ty_display!(self, b));
-        }
-        println!();
+        // for (&a, &b) in params.iter().zip(subs.iter()) {
+        //     print!("({} {}) ", ty_display!(self, a), ty_display!(self, b));
+        // }
+        // println!();
+
+        prepare_params(&subs, self.types);
         
         let mut new_types = self
             .vec_pool
@@ -35,13 +37,15 @@ impl<'a> ReprInstancing<'a> {
         // this is done like this because there is no guarantee that
         // for all a, b in P is a not in b and b not in a, where P are `params`
         for (ty, new_ty) in types.drain(..).zip(new_types.drain(..)) {
+            // print!("{} -> {} ", ty_display!(self, ty), ty_display!(self, new_ty));
             replace_cache.save(new_ty, ty, self.types, self.reprs);
         }
+        // println!();
     }
 
     pub fn instantiate_repr(&mut self, params: &[Ty], subs: &[Ty], ty: Ty) -> Ty {
         let mut new_instances = self.vec_pool.get();
-        let result = ty_factory!(self).instantiate(ty, params, subs, &mut new_instances);
+        let (result, _) = ty_factory!(self).instantiate_recur(ty, params, subs, &mut new_instances);
 
         // the types are sorted by dependance (leafs first)
         for &instance in new_instances.iter() {
@@ -101,19 +105,17 @@ impl<'a> LayoutBuilder<'a> {
     pub fn true_type(&self, ty: Ty, subs: &[Ty], params: TyList) -> Ty {
         let TyEnt { kind, flags, .. } = self.types[ty];
 
-        if let Some(index) = subs.iter().position(|&x| x == ty) {
-            return self.ty_lists.get(params)[index];
-        }
-
         if !flags.contains(TyFlags::GENERIC) {
             return ty;
         }
 
         match kind {
+            TyKind::Param(index, ..) => self.ty_lists.get(params)[index as usize],
             TyKind::Ptr(base, _) => {
                 let base = self.true_type(base, subs, params);
                 let mutable = flags.contains(TyFlags::MUTABLE);
                 let ptr_id = ID::pointer(self.types[base].id, mutable);
+                // println!("{}", ty_display!(self, base));
                 self.ty_instances.get(ptr_id).unwrap().clone()
             }
             TyKind::Instance(base, params) => {

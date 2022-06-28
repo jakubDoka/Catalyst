@@ -191,6 +191,7 @@ macro_rules! gen_builtin_table {
                         flags: (TyFlags::GENERIC & matches!(repr, TyKind::Param(..) | TyKind::Bound(..)))
                             | TyFlags::BUILTIN
                             | (TyFlags::SIGNED & matches!(repr, TyKind::Int(..)))
+                            //| (TyFlags::EXPANDED & !matches!(repr, TyKind::Param(..) | TyKind::Bound(..))),
                     };
                     let $name = types.push(ent);
                 )*
@@ -231,8 +232,8 @@ gen_builtin_table!(
     drop: TyKind::Unresolved,
     copy: TyKind::Bound(Default::default()),
     str: TyKind::Unresolved,
-    ty_any: TyKind::Param(TyList::default(), None.into()),
-    any: TyKind::Param(TyList::default(), None.into()),
+    ty_any: TyKind::Param(0, TyList::default(), None.into()),
+    any: TyKind::Param(0, TyList::default(), None.into()),
     bool: TyKind::Bool,
     char: TyKind::Int(32),
     int: TyKind::Int(-1),
@@ -283,6 +284,7 @@ bitflags! {
         const BUILTIN = 1 << 1;
         const SIGNED = 1 << 2;
         const MUTABLE = 1 << 3;
+        //const EXPANDED = 1 << 4;
     }
 }
 
@@ -308,7 +310,7 @@ impl_bool_bit_and!(TyFlags);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TyKind {
-    Param(TyList, PackedOption<Ty>),
+    Param(u32, TyList, PackedOption<Ty>),
     Bound(FuncList),
     Struct(TyCompList),
     Enum(Ty, TyCompList),
@@ -359,7 +361,7 @@ impl TyDisplay<'_> {
                 }
                 write!(to, "]")?;
             }
-            TyKind::Param(list, ..) => {
+            TyKind::Param(_, list, ..) => {
                 write!(to, "impl ")?;
                 if self.ty_lists.get(list).is_empty() {
                     write!(to, "any")?;

@@ -6,21 +6,20 @@ use typec_types::*;
 
 impl TyParser<'_> {
     pub fn parse_type(&mut self, ty: Ast) -> errors::Result<Ty> {
-        let res = self.parse_type_optional(ty)?;
-        if res.is_reserved_value() {
+        let Some(res) = self.parse_type_optional(ty)? else {
             let span = self.ast_data.nodes[ty].span;
             self.diagnostics
                 .push(TyError::ExpectedConcreteType { loc: span });
             return Err(());
-        }
+        };
         Ok(res)
     }
 
     /// parse a type just like `parse_type` but can return `Ty::reserved_value` in case the ty is '_'.
-    pub fn parse_type_optional(&mut self, ty: Ast) -> errors::Result<Ty> {
+    pub fn parse_type_optional(&mut self, ty: Ast) -> errors::Result<Option<Ty>> {
         let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ty];
         match kind {
-            AstKind::Ident => self.parse_ident_type(span),
+            AstKind::Ident => return self.parse_ident_type(span),
             AstKind::Instantiation => self.parse_instance_type(ty),
             AstKind::Ref(mutable) => self.parse_ptr_type(ty, mutable),
             AstKind::FuncPtr => self.parse_func_ptr_type(ty),
@@ -29,7 +28,7 @@ impl TyParser<'_> {
                     .push(TyError::InvalidTypeExpression { loc: span });
                 return Err(());
             }
-        }
+        }.map(Some)
     }
 
     pub fn parse_func_ptr_type(&mut self, ty: Ast) -> errors::Result<Ty> {
@@ -67,11 +66,11 @@ impl TyParser<'_> {
         Ok(ty_factory!(self).func_pointer_of(sig, generic))
     }
 
-    pub fn parse_ident_type(&mut self, span: Span) -> errors::Result<Ty> {
+    pub fn parse_ident_type(&mut self, span: Span) -> errors::Result<Option<Ty>> {
         let str = self.sources.display(span);
 
         if str == "_" {
-            return Ok(Ty::reserved_value());
+            return Ok(None);
         }
 
         let matcher = matcher!(Func = "function");
@@ -82,7 +81,7 @@ impl TyParser<'_> {
             "type",
             matcher,
         );
-        self.scope.get_concrete::<Ty>(str).map_err(handler)
+        self.scope.get_concrete::<Ty>(str).map_err(handler).map(Some)
     }
 
     fn parse_instance_type(&mut self, ty: Ast) -> errors::Result<Ty> {
@@ -96,7 +95,8 @@ impl TyParser<'_> {
             self.ty_lists.push_one(param);
         }
 
-        Ok(ty_factory!(self).parse_instance_type(header, self.ast_data.nodes[ty].span))
+        let mut new_instances = self.vec_pool.get();
+        Ok(ty_factory!(self).parse_instance_type(header, self.ast_data.nodes[ty].span, &mut new_instances))
     }
 
     pub fn parse_ptr_type(&mut self, ty: Ast, mutable: bool) -> errors::Result<Ty> {

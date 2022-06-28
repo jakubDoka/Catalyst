@@ -63,6 +63,7 @@ pub mod scope_context {
         pub used_types: Vec<Ty>,
         pub used_types_set: EntitySet<Ty>,
         pub loops: Vec<(Tir, ID)>,
+        pub generic: bool,
     }
 
     impl ScopeContext {
@@ -77,11 +78,13 @@ pub mod scope_context {
                 used_types: Vec::new(),
                 used_types_set: EntitySet::new(),
                 loops: Vec::new(),
+                generic: false,
             }
         }
 
         pub fn use_type(&mut self, ty: Ty, types: &Types) {
             if self.used_types_set.insert(ty) && types[ty].flags.contains(TyFlags::GENERIC) {
+                assert!(self.generic);
                 self.used_types.push(ty);
             }
         }

@@ -4,6 +4,7 @@ use crate::*;
 use instance_types::*;
 use storage::*;
 use typec_types::*;
+use lexer::*;
 
 type ExprValue = Option<Value>;
 type Dest<'a> = &'a mut Option<Value>;
@@ -57,20 +58,21 @@ impl<'a> MirBuilder<'a> {
                 self.func_ctx.value_slices.push_one(value);
             }
 
-            for &used in self.ty_lists.get(self.tir_data.used_types) {
-                print!("{} ", ty_display!(self, used));
-            }
-            println!();
+            // for &used in self.ty_lists.get(self.tir_data.used_types) {
+            //     print!("{} ", ty_display!(self, used));
+            // }
+            // println!();
 
             for &tir in self.tir_data.cons.get(args) {
                 let ty = self.tir_data.ents[tir].ty;
-                print!("{} ", ty_display!(self, ty));
-                let value = self.add_value(ValueEnt::new(ty));
+                let on_stack = self.reprs[ty].flags.contains(ReprFlags::ON_STACK);
+                // print!("{} ", ty_display!(self, ty));
+                let value = self.add_value(ValueEnt::new(ty).flags(MirFlags::POINTER & on_stack));
                 self.func_ctx.value_slices.push_one(value);
                 self.mir_builder_context.seen.insert(tir);
                 self.mir_builder_context.tir_mapping[tir] = value.into();
             }
-            println!();
+            // println!();
 
             self.func_ctx.blocks[entry_point].params = self.func_ctx.value_slices.pop_frame();
         }
@@ -475,7 +477,7 @@ impl<'a> MirBuilder<'a> {
     fn field_access(&mut self, tir: Tir) -> ExprValue {
         let TirEnt {
             kind: TirKind::FieldAccess(base, field),
-            span,
+            // span,
             ..
         } = self.tir_data.ents[tir] else {
             unreachable!()
@@ -486,7 +488,7 @@ impl<'a> MirBuilder<'a> {
 
         let TyCompEnt { index, .. } = self.ty_comps[field];
         let fields = self.reprs[base_ty].fields;
-        println!("{} {}", ty_display!(self, base_ty), span.log(self.sources));
+        // println!("{} {}", ty_display!(self, base_ty), span.log(self.sources));
         let ReprField { offset, ty } = self.repr_fields.get(fields)[index as usize];
 
         let value = self.gen_offset(base, ty, offset);
@@ -568,7 +570,7 @@ impl<'a> MirBuilder<'a> {
             let param_slice = self.ty_lists.get(bound_impl.params);
             param_slots.resize(
                 param_slice.len(),
-                Ty::reserved_value(),
+                None,
             );
 
             bound_checker!(self).infer_parameters(
@@ -586,6 +588,7 @@ impl<'a> MirBuilder<'a> {
 
         if flags.contains(TirFlags::GENERIC) {
             // println!("{}", span.log(self.sources));
+            let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
             func = self.instantiate_func(func, params, &param_slots);
         }
 
@@ -613,6 +616,12 @@ impl<'a> MirBuilder<'a> {
             .chain(self.ty_lists.get(params))
             .fold(func_ent.id, |acc, &ty| acc + self.types[ty].id);
 
+        // print!("{:?} {}", id, self.sources.display(self.funcs[func.meta()].name));
+        // for &ty in global_params.iter().chain(self.ty_lists.get(params)) {
+        //     print!(" {}", ty_display!(self, ty));
+        // }
+        // println!();
+
         if let Some(&instance) = self.func_instances.get(id) {
             instance
         } else {
@@ -622,14 +631,14 @@ impl<'a> MirBuilder<'a> {
             };
             let instance = self.funcs.push_instance(instance, func);
             self.func_instances.insert(id, instance);
-            let global_params = self.ty_lists.push(global_params);
-            let params = self.ty_lists.join(global_params, params);
-            self.ty_lists.get_mut(params).iter_mut().for_each(|ty| {
-                self.ty_instances.get(self.types[*ty].id).map(|&original| *ty = original);
-            });
-
+            let param_vec = self.vec_pool.alloc_iter(
+                global_params
+                    .iter()
+                    .chain(self.ty_lists.get(params))
+                    .map(|&ty| *self.ty_instances.get(self.types[ty].id).unwrap_or(&ty)),
+            );
             if self.funcs[func.meta()].kind != FuncKind::Builtin {
-                self.to_compile.push((instance, params));
+                self.to_compile.push((instance, self.ty_lists.push(&param_vec)));
             }
             instance
         }
@@ -777,9 +786,15 @@ impl<'a> MirBuilder<'a> {
                     let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
                     let param_slice = self.ty_lists.get(bound_impl.params);
                     let mut param_slots = self.vec_pool.of_size(
-                        Ty::reserved_value(),
+                        None,
                         param_slice.len(),
                     );
+
+                    // for &param in param_slice {
+                    //     print!("{}", ty_display!(self, param));
+                    // }
+                    // println!();
+                    // println!("{} {}", ty_display!(self, ty), ty_display!(self, bound_impl.ty));
 
                     bound_checker!(self).infer_parameters(
                         ty,
@@ -791,6 +806,7 @@ impl<'a> MirBuilder<'a> {
                     )
                     .unwrap();
 
+                    let param_slots = self.vec_pool.alloc_iter(param_slots.drain(..).map(Option::unwrap));
                     self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
                 };
 

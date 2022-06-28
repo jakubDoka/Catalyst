@@ -81,6 +81,10 @@ impl<E: EntityRef + ReservedValue, T: Clone> FramedStackMap<E, T> {
     pub fn join(&mut self, a: E, b: E) -> E {
         self.lists.join(a, b)
     }
+
+    pub fn join_low(&mut self, a: E, b: E, reuse: bool) -> E {
+        self.lists.join_low(a, b, reuse)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -162,13 +166,21 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         E: ReservedValue,
         T: Clone,
     {
+        self.join_low(a, b, true)
+    }
+
+    pub fn join_low(&mut self, a: E, b: E, reuse: bool) -> E
+    where
+        E: ReservedValue,
+        T: Clone,
+    {
         let (a_s, b_s) = (self.range_of(a), self.range_of(b));
 
-        if a_s.is_empty() {
+        if a_s.is_empty() && reuse {
             return b;
         }
 
-        if b_s.is_empty() {
+        if b_s.is_empty() && reuse {
             return a;
         }
 

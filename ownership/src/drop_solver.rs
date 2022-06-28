@@ -13,10 +13,6 @@ impl DropSolver<'_> {
         }
 
         self.traverse(body);
-
-        self.tir_data.used_types = self.ty_lists.push(&self.scope_context.used_types);
-        self.scope_context.used_types.clear();
-        self.scope_context.used_types_set.clear();
     }
 
     fn traverse(&mut self, root: Tir) {
@@ -128,9 +124,8 @@ impl DropSolver<'_> {
                 let meta = child.meta.unwrap_err();
                 let field = {
                     let kind = TirKind::FieldAccess(tir, meta);
-                    let mut new_instances = self.vec_pool.get();
-                    let ty = ty_factory!(self).subtype(ty, self.ty_comps[meta].ty, &mut new_instances);
-                    new_instances.drain(..).for_each(|i| self.scope_context.use_type(i, self.types));
+                    let ty = ty_factory!(self).subtype(ty, self.ty_comps[meta].ty);
+                    self.scope_context.use_type(ty, self.types);
                     let span = self.tir_data.ents[tir].span;
                     let ent = TirEnt::new(kind, ty, span);
                     self.tir_data.ents.push(ent)

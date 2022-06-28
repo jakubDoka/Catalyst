@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{*, ty_factory::prepare_params};
 use lexer::*;
 use storage::*;
 
@@ -16,11 +16,13 @@ impl BoundChecker<'_> {
         &mut self,
         root_reference: Ty,
         root_parametrized: Ty,
-        params: &mut [Ty],
+        params: &mut [Option<Ty>],
         subs: &[Ty],
         span: Span,
         check_bounds: bool,
     ) -> std::result::Result<(), Option<TyError>> {
+        prepare_params(subs, self.types);
+
         // TODO: user preallocated vec if needed
         let mut frontier = vec![(root_reference, root_parametrized)];
     
@@ -33,30 +35,23 @@ impl BoundChecker<'_> {
         while let Some((reference, parametrized)) = frontier.pop() {
             let TyEnt { kind, flags, .. } = self.types[parametrized];
             
-            // TODO: this may pop up as an bottle neck but we need profiling to prove it
-            if let Some(index) = subs.iter().position(|&sub| sub == parametrized) {
-                // we use `base_of_low` because we want to compare parameter
-                // backing bounds correctly
-
-                
-                let other = params[index];
-                
-                if !other.is_reserved_value() && other != reference {
-                    return error;
-                } else {
-                    if check_bounds && self.implements_param(subs[index], reference, true).is_err() {
-                        return Err(None);
-                    }
-                    params[index] = reference;
-                }
-                continue;
-            }
-    
             if !flags.contains(TyFlags::GENERIC) {
                 continue;
             }
     
-            match (kind, self.types[reference].kind) {            
+            match (kind, self.types[reference].kind) {
+                (TyKind::Param(index, ..), _) => {
+                    let other = params[index as usize];
+                
+                    if let Some(other) = other && other != reference {
+                        return error;
+                    } else {
+                        if check_bounds && self.implements_param(parametrized, reference, true).is_err() {
+                            return Err(None);
+                        }
+                        params[index as usize] = Some(reference);
+                    }
+                }           
                 (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth))
                     if depth == ref_depth
                         && (
@@ -92,7 +87,8 @@ impl BoundChecker<'_> {
         build_err: bool,
     ) -> Result<(), MissingBoundTree> {
         // bound can be pain Bound or BoundCombo
-        let TyKind::Param(bounds, ..) = self.types[bound].kind else {
+        // println!("implements_param: {}", ty_display!(self, bound));
+        let TyKind::Param(_, bounds, ..) = self.types[bound].kind else {
             unreachable!();
         };
 
@@ -159,18 +155,21 @@ impl BoundChecker<'_> {
             return Err(default_error);
         };
 
-        return self.try_implement(bound_impl, bound, implementor, build_err);
+        return self.try_implement(id, bound_impl, bound, implementor, build_err);
     }
 
     fn try_implement(
         &mut self,
+        id: ID,
         bound_impl: BoundImpl,
         bound: Ty,
         implementor: Ty,
         build_err: bool,
     ) -> Result<BoundImpl, MissingBoundTree> {
         let param_slice = self.ty_lists.get(bound_impl.params);
-        let mut params = vec![Ty::reserved_value(); param_slice.len()];
+        let mut params = vec![None; param_slice.len()];
+
+        // println!("try_implement: {} {}", ty_display!(self, implementor), ty_display!(self, bound_impl.ty));
 
         self.infer_parameters(
             implementor,
@@ -180,6 +179,11 @@ impl BoundChecker<'_> {
             Span::default(),
             false,
         )
+        // .map_err(|err| {
+        //     if let Some(TyError::GenericTypeMismatch { expected, found, loc }) = err {
+        //         println!("{} {} {}", ty_display!(self, expected), ty_display!(self, found), loc.log(self.sources));
+        //     }
+        // })
         .unwrap();
 
         let mut is_ok = true;
@@ -187,7 +191,7 @@ impl BoundChecker<'_> {
             .iter()
             .zip(param_slice)
             .filter_map(|(&inferred, &param)| {
-                if let Err(err) = self.implements_param(param, inferred, build_err) {
+                if let Err(err) = self.implements_param(param, inferred.unwrap(), build_err) {
                     is_ok = false;
                     build_err.then_some(err)
                 } else {
@@ -195,8 +199,10 @@ impl BoundChecker<'_> {
                 }
             })
             .collect();
-
+        
+            
         if is_ok {
+            self.bound_impls.insert(id, bound_impl);
             return Ok(bound_impl);
         } else {
             return Err(MissingBoundTree {

@@ -492,6 +492,8 @@ impl Compiler {
         for global in globals {
             let global_ent = self.globals[global];
 
+            // println!("{}", global_ent.name.log(&self.sources));
+
             {
                 let id = global_ent.id;
                 name.clear();
@@ -510,6 +512,8 @@ impl Compiler {
                 let size = self.reprs[global_ent.ty].layout.size().arch(arch32);
                 data_ctx.define_zeroinit(size as usize);
             }
+
+
 
             self.object_module
                 .define_data(global_ref, &data_ctx)
@@ -738,6 +742,10 @@ impl Compiler {
 
     fn load_incr_globals(&mut self) {
         for (id, data) in self.incr.global_data.globals.iter() {
+            if self.global_map.contains_key(id) {
+                continue;
+            }
+
             let g = self.globals.push(GlobalEnt {
                 id,
                 name: data.name,
@@ -748,7 +756,8 @@ impl Compiler {
                 bytes: data.bytes.map(|data| self.global_data
                     .push(self.incr.global_data.bytes.get(data))).into(),
             });
-            self.global_map.insert(id, g);
+            
+            self.global_map.insert_unique(id, g);
         }
     }
 
@@ -760,17 +769,17 @@ impl Compiler {
         let mut s = Self::new();
 
         s.init_builtin();
-
+        
         s.load_modules();
         s.log_diagnostics();
-
+        
         s.incr.reduce(&s.modules, &s.module_order);
-
+        
         s.build_tir();
         s.log_diagnostics();
-
+        
         s.load_incr_globals();
-
+        
         s.generate();
         s.log_diagnostics();
 
