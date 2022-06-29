@@ -46,8 +46,12 @@ impl OwnershipSolver<'_> {
         } = self.tir_data.ents[root];
 
         match kind {
-            // TODO control flow
-            TirKind::Match(..) | TirKind::MatchBlock(..) => self.declare(root),
+            TirKind::Match(target, branches) => {
+                self.move_out(target)?;
+                self.traverse(branches)?;
+                self.declare(root)
+            }
+            TirKind::MultiEntryBlock(block) => self.traverse(block),
 
             TirKind::If(cond, then, otherwise, ..) => {
                 self.move_out(cond)?;
@@ -363,6 +367,10 @@ impl OwnershipSolver<'_> {
             .alloc_iter(frontier.drain(..).filter_map(|ownership| {
                 let ent = &self.o_ctx.ownerships[ownership];
                 (ent.last_move.is_none() && (!ent.behind_pointer || assign)).then(|| {
+                    println!(
+                        "{}",
+                        self.tir_data.ents[ent.tir.unwrap()].span.log(self.sources)
+                    );
                     (
                         ownership,
                         self.o_ctx.drop_nodes.push_one(DropNodeEnt {
@@ -421,7 +429,6 @@ impl OwnershipSolver<'_> {
 
                 TyKind::Instance(..) | TyKind::Unresolved => unreachable!(),
             }
-            drop(0);
         }
 
         Ok(drops)

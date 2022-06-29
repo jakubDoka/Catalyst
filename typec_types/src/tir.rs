@@ -83,7 +83,7 @@ impl TirEnt {
 pub enum TirKind {
     FuncPtr(Func),
     Match(Tir, Tir),
-    MatchBlock(Tir),
+    MultiEntryBlock(Tir),
     BitCast(Tir),
     DerefPtr(Tir),
     TakePtr(Tir),
@@ -419,7 +419,7 @@ impl<'a> TirDisplay<'a> {
                 }
                 write!(f, "}}")?;
             }
-            TirKind::MatchBlock(block) => {
+            TirKind::MultiEntryBlock(block) => {
                 write!(f, "match_block ")?;
                 self.fmt(block, f, displayed, level, false)?;
             }

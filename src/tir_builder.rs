@@ -35,7 +35,7 @@ impl MainTirBuilder<'_> {
             //     continue;
             // }
 
-            //println!("{}", self.sources.display(self.funcs[func.meta()].name));
+            println!("{}", self.sources.display(self.funcs[func.meta()].name));
 
             self.tir_data.clear();
 
@@ -52,17 +52,17 @@ impl MainTirBuilder<'_> {
             }
 
             self.save_used_types();
-            // println!(
-            //     "{}",
-            //     TirDisplay::new(
-            //         &self.types,
-            //         &self.ty_lists,
-            //         &self.ty_comps,
-            //         &self.sources,
-            //         &self.tir_data,
-            //         self.funcs[func.meta()].body,
-            //     )
-            // );
+            println!(
+                "{}",
+                TirDisplay::new(
+                    &self.types,
+                    &self.ty_lists,
+                    &self.ty_comps,
+                    &self.sources,
+                    &self.tir_data,
+                    self.funcs[func.meta()].body,
+                )
+            );
             self.funcs[func.meta()].tir_data = self.tir_data.clone();
         }
     }

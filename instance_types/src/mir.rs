@@ -146,8 +146,8 @@ pub enum InstKind {
     JumpIfFalse(Block),
     Jump(Block),
     Call(typec_types::Func, TyList, ValueList),
-    Int(u128),
-    Bool(bool),
+    IntLit(u128),
+    BoolLit(bool),
     Return,
 }
 
@@ -379,7 +379,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             writeln!(f, "\tcall [{}] {}({})", params, func, args)?;
                         }
                     }
-                    InstKind::Int(value) => {
+                    InstKind::IntLit(value) => {
                         writeln!(
                             f,
                             "\t{} = {}",
@@ -387,7 +387,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             value
                         )?;
                     }
-                    InstKind::Bool(value) => {
+                    InstKind::BoolLit(value) => {
                         writeln!(
                             f,
                             "\t{} = {}",

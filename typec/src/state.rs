@@ -503,6 +503,7 @@ pub struct BuiltinBuilder<'a> {
     pub ty_comps: &'a mut TyComps,
     pub bound_impls: &'a mut BoundImpls,
     pub ty_graph: &'a mut TyGraph,
+    pub func_instances: &'a mut FuncInstances,
     pub vec_pool: &'a VecPool,
     pub builtin_types: &'a BuiltinTypes,
 }
@@ -519,6 +520,7 @@ impl<'a> BuiltinBuilder<'a> {
         ty_comps: &'a mut TyComps,
         bound_impls: &'a mut BoundImpls,
         ty_graph: &'a mut TyGraph,
+        func_instances: &'a mut FuncInstances,
         vec_pool: &'a VecPool,
         builtin_types: &'a BuiltinTypes,
     ) -> Self {
@@ -533,6 +535,7 @@ impl<'a> BuiltinBuilder<'a> {
             ty_comps,
             bound_impls,
             ty_graph,
+            func_instances,
             vec_pool,
             builtin_types,
         }
@@ -553,6 +556,7 @@ macro_rules! builtin_builder {
             &mut $self.ty_comps,
             &mut $self.bound_impls,
             &mut $self.ty_graph,
+            &mut $self.func_instances,
             &$self.vec_pool,
             &$self.builtin_types,
         )

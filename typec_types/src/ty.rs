@@ -128,6 +128,13 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
             _ => unreachable!(),
         }
     }
+
+    fn may_deref(&mut self, ty: Ty) -> (Ty, bool, bool) {
+        match self[ty].kind {
+            TyKind::Ptr(base, _) => (base, true, self[ty].flags.contains(TyFlags::MUTABLE)),
+            _ => (ty, false, false),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]

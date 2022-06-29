@@ -340,6 +340,7 @@ file "typec/src/state.rs" {
         mut TyComps
         mut BoundImpls
         mut TyGraph
+        mut FuncInstances
 
         VecPool
         BuiltinTypes

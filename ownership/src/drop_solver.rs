@@ -25,8 +25,8 @@ impl DropSolver<'_> {
             }
             let TirEnt { kind, flags, .. } = self.tir_data.ents[node];
             match kind {
-                TirKind::Match(..) => (),      //todo!(),
-                TirKind::MatchBlock(..) => (), //todo!(),
+                TirKind::Match(.., branches) => frontier.push(branches),
+                TirKind::MultiEntryBlock(block) => frontier.push(block),
 
                 TirKind::Continue(header, ..) => {
                     let list = self.collect_drops(node, &mut drop_buffer);

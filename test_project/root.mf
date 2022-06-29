@@ -1,7 +1,7 @@
 use {
     "root/structs"
     "root/generics"
-    //"root/patterns"
+    "root/patterns"
     "root/utils"
 }
 

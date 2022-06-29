@@ -130,8 +130,8 @@ impl<'a> MirBuilder<'a> {
             TirKind::TakePtr(..) => self.take_ptr(tir),
             TirKind::DerefPtr(..) => self.deref_ptr(tir),
 
-            TirKind::Match(_, _) => todo!(),
-            TirKind::MatchBlock(_) => todo!(),
+            TirKind::Match(..) => self.r#match(tir, dest),
+            TirKind::MultiEntryBlock(..) => self.multi_entry_block(tir, dest),
 
             TirKind::Argument(..) | TirKind::LoopInProgress(..) | TirKind::Invalid => {
                 unreachable!()
@@ -152,6 +152,58 @@ impl<'a> MirBuilder<'a> {
         self.mir_builder_context.tir_mapping[tir] = result.into();
 
         result
+    }
+
+    fn r#match(&mut self, tir: Tir, dest: Dest) -> ExprValue {
+        let TirEnt { kind: TirKind::Match(expr, branches), ty, flags, .. } = self.tir_data.ents[tir] else {
+            unreachable!();
+        };
+
+        self.expr(expr, &mut None);
+
+        let (value, block) = self.gen_join_block(flags, ty, dest);
+
+        self.mir_builder_context
+            .match_block_stack
+            .push(block.into());
+
+        self.expr(branches, dest);
+
+        self.mir_builder_context.match_block_stack.pop().unwrap();
+
+        if let Some(block) = block {
+            self.func_ctx.select_block(block);
+        }
+
+        value
+    }
+
+    fn multi_entry_block(&mut self, tir: Tir, dest: Dest) -> ExprValue {
+        let TirEnt { kind: TirKind::MultiEntryBlock(tir), .. } = self.tir_data.ents[tir] else {
+            unreachable!();
+        };
+
+        if let Some(block) = self.mir_builder_context.match_block_mapping[tir].expand() {
+            self.gen_jump(block, None);
+            self.expr(tir, dest);
+        } else {
+            let block = self.func_ctx.create_block();
+            self.gen_jump(block, None);
+            self.func_ctx.select_block(block);
+            let expr = self.expr(tir, dest);
+            if !self.func_ctx.is_terminated() {
+                let block = self
+                    .mir_builder_context
+                    .match_block_stack
+                    .last()
+                    .unwrap()
+                    .unwrap();
+                self.gen_jump(block, expr);
+            }
+            self.mir_builder_context.match_block_mapping[tir] = block.into();
+        }
+
+        None
     }
 
     fn deref_ptr(&mut self, tir: Tir) -> ExprValue {
@@ -403,7 +455,25 @@ impl<'a> MirBuilder<'a> {
 
         let then_block = self.func_ctx.create_block();
         let otherwise_block = self.func_ctx.create_block();
-        let (result, join_block) = self.gen_join_block(flags, ty, dest);
+        let (mut result, mut join_block) = (None, None);
+        let mut computed = false;
+
+        let mut branch = |s: &mut Self, block: Block, tir: Tir| {
+            s.func_ctx.select_block(block);
+            let value = has_ret.then_some(s.expr(tir, &mut dest_copy)).flatten();
+            if !s.func_ctx.is_terminated() {
+                // we need to do this lazily since terminating flag does not
+                // cover match branching case
+                if !computed {
+                    computed = true;
+                    (result, join_block) = s.gen_join_block(flags, ty, dest);
+                }
+
+                if let Some(join_block) = join_block {
+                    s.gen_jump(join_block, value);
+                }
+            }
+        };
 
         let cond = self.expr(cond, &mut None).unwrap();
 
@@ -411,31 +481,23 @@ impl<'a> MirBuilder<'a> {
             self.expr(pre_compute, &mut None).unwrap();
         }
 
-        let kind = InstKind::JumpIfFalse(otherwise_block);
-        let ent = InstEnt::new(kind).value(cond);
-        self.add_inst(ent);
+        self.gen_switch(cond, then_block, otherwise_block);
 
-        self.gen_jump(then_block, None);
-
-        self.func_ctx.select_block(then_block);
-        let value = has_ret.then_some(self.expr(then, &mut dest_copy)).flatten();
-        if let Some(join_block) = join_block && !self.func_ctx.is_terminated() {
-            self.gen_jump(join_block, value);
-        }
-
-        self.func_ctx.select_block(otherwise_block);
-        let value = has_ret
-            .then_some(self.expr(otherwise, &mut dest_copy))
-            .flatten();
-        if let Some(join_block) = join_block && !self.func_ctx.is_terminated(){
-            self.gen_jump(join_block, value);
-        }
+        branch(self, then_block, then);
+        branch(self, otherwise_block, otherwise);
 
         if let Some(join_block) = join_block {
             self.func_ctx.select_block(join_block);
         }
 
         result
+    }
+
+    fn gen_switch(&mut self, cond: Value, then: Block, otherwise: Block) {
+        let kind = InstKind::JumpIfFalse(otherwise);
+        let ent = InstEnt::new(kind).value(cond);
+        self.add_inst(ent);
+        self.gen_jump(then, None);
     }
 
     fn gen_join_block(
@@ -513,7 +575,7 @@ impl<'a> MirBuilder<'a> {
             } else {
                 let value = self.add_value(ValueEnt::new(ty));
 
-                let kind = InstKind::Int(0);
+                let kind = InstKind::IntLit(0);
                 let ent = InstEnt::new(kind).value(value);
                 self.add_inst(ent);
 
@@ -698,9 +760,9 @@ impl<'a> MirBuilder<'a> {
 
         let inst = match kind {
             TirKind::FuncPtr(v) => InstKind::FuncPtr(v),
-            TirKind::IntLit(v) => InstKind::Int(v),
-            TirKind::BoolLit(v) => InstKind::Bool(v),
-            TirKind::CharLit(v) => InstKind::Int(v as u128),
+            TirKind::IntLit(v) => InstKind::IntLit(v),
+            TirKind::BoolLit(v) => InstKind::BoolLit(v),
+            TirKind::CharLit(v) => InstKind::IntLit(v as u128),
             TirKind::GlobalAccess(global) => InstKind::GlobalAccess(global),
             _ => unreachable!(),
         };
@@ -758,71 +820,129 @@ impl<'a> MirBuilder<'a> {
     }
 
     fn gen_drop(&mut self, drop: Value) {
-        let mut frontier = vec![drop];
+        let ValueEnt { ty, .. } = self.func_ctx.values[drop];
+        let base_ty = self.types.base_of(ty);
+        let TyEnt { kind, .. } = self.types[base_ty];
 
-        while let Some(drop) = frontier.pop() {
-            let ValueEnt { ty, .. } = self.func_ctx.values[drop];
-            let base_ty = self.types.base_of(ty);
-            let TyEnt { kind, .. } = self.types[base_ty];
-            if let TyKind::Enum(..) = kind {
-                continue;
+        let ty = self
+            .ty_instances
+            .get(self.types[ty].id)
+            .cloned()
+            .unwrap_or(ty);
+
+        if let Ok(bound_impl) = bound_checker!(self).drop_impl(ty) {
+            let prt = {
+                let mut_ptr = ty_factory!(self).pointer_of(ty, true);
+                self.reprs[mut_ptr].repr = self.ptr_ty;
+
+                let value = self.add_value(ValueEnt::new(mut_ptr));
+                let kind = InstKind::TakePtr(drop);
+                self.func_ctx.add_inst(InstEnt::new(kind).value(value));
+                value
+            };
+
+            let drop_fn = {
+                let drop_fn_index = 0;
+                let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
+                let param_slice = self.ty_lists.get(bound_impl.params);
+                let mut param_slots = self.vec_pool.of_size(None, param_slice.len());
+
+                // for &param in param_slice {
+                //     print!("{}", ty_display!(self, param));
+                // }
+                // println!();
+                // println!("{} {}", ty_display!(self, ty), ty_display!(self, bound_impl.ty));
+
+                bound_checker!(self)
+                    .infer_parameters(
+                        ty,
+                        bound_impl.ty,
+                        &mut param_slots,
+                        param_slice,
+                        Default::default(),
+                        false,
+                    )
+                    .unwrap();
+
+                let param_slots = self
+                    .vec_pool
+                    .alloc_iter(param_slots.drain(..).map(Option::unwrap));
+                self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
+            };
+
+            let args = self.func_ctx.value_slices.push(&[prt]);
+            let kind = InstKind::Call(drop_fn, TyList::reserved_value(), args);
+            self.func_ctx.add_inst(InstEnt::new(kind));
+        }
+
+        match kind {
+            TyKind::Struct(..) => {
+                for field in self.repr_fields.get(self.reprs[ty].fields) {
+                    let value = self.gen_offset(drop, field.ty, field.offset);
+                    self.gen_drop(value);
+                }
             }
+            TyKind::Enum(discriminant_ty, variants) => {
+                let [flag, value] = self.repr_fields.get(self.reprs[ty].fields) else {
+                    unreachable!();
+                };
+                let flag = self.gen_offset(drop, flag.ty, flag.offset);
 
-            let ty = self
-                .ty_instances
-                .get(self.types[ty].id)
-                .cloned()
-                .unwrap_or(ty);
-
-            if let Ok(bound_impl) = bound_checker!(self).drop_impl(ty) {
-                let prt = {
-                    let mut_ptr = ty_factory!(self).pointer_of(ty, true);
-                    self.reprs[mut_ptr].repr = self.ptr_ty;
-
-                    let value = self.add_value(ValueEnt::new(mut_ptr));
-                    let kind = InstKind::TakePtr(drop);
-                    self.func_ctx.add_inst(InstEnt::new(kind).value(value));
-                    value
+                let mut then;
+                let mut otherwise;
+                // we construct end block anyway since enum with no variants cant be
+                // constructed which implies it cant be dropped
+                let end = self.func_ctx.create_block();
+                // we skip first component which is the flag
+                let Some((last, others)) = self.ty_comps.get(variants)[1..].split_last() else {
+                    unreachable!();
                 };
 
-                let drop_fn = {
-                    let drop_fn_index = 0;
-                    let drop_fn = self.func_lists.get(bound_impl.funcs)[drop_fn_index];
-                    let param_slice = self.ty_lists.get(bound_impl.params);
-                    let mut param_slots = self.vec_pool.of_size(None, param_slice.len());
+                for (i, variant) in others.iter().enumerate() {
+                    then = self.func_ctx.create_block();
+                    otherwise = self.func_ctx.create_block();
 
-                    // for &param in param_slice {
-                    //     print!("{}", ty_display!(self, param));
-                    // }
-                    // println!();
-                    // println!("{} {}", ty_display!(self, ty), ty_display!(self, bound_impl.ty));
+                    let cond = {
+                        let cont_flag = {
+                            let kind = InstKind::IntLit(i as u128);
+                            let value = self.add_value(ValueEnt::new(discriminant_ty));
+                            self.add_inst(InstEnt::new(kind).value(value));
+                            value
+                        };
 
-                    bound_checker!(self)
-                        .infer_parameters(
-                            ty,
-                            bound_impl.ty,
-                            &mut param_slots,
-                            param_slice,
-                            Default::default(),
-                            false,
-                        )
-                        .unwrap();
+                        let cmp_fn = {
+                            let id = {
+                                let left = self.types[discriminant_ty].id;
+                                let op = ID::new("==");
+                                ID::binary(left, op)
+                            };
+                            *self.func_instances.get(id).unwrap()
+                        };
 
-                    let param_slots = self
-                        .vec_pool
-                        .alloc_iter(param_slots.drain(..).map(Option::unwrap));
-                    self.instantiate_func(drop_fn, bound_impl.params, &param_slots)
-                };
+                        let args = self.func_ctx.value_slices.push(&[flag, cont_flag]);
+                        let kind = InstKind::Call(cmp_fn, TyList::reserved_value(), args);
+                        let value = self.add_value(ValueEnt::new(self.builtin_types.bool));
+                        self.func_ctx.add_inst(InstEnt::new(kind).value(value));
+                        value
+                    };
 
-                let args = self.func_ctx.value_slices.push(&[prt]);
-                let kind = InstKind::Call(drop_fn, TyList::reserved_value(), args);
-                self.func_ctx.add_inst(InstEnt::new(kind));
+                    self.gen_switch(cond, then, otherwise);
+
+                    self.func_ctx.select_block(then);
+                    let value = self.gen_offset(drop, variant.ty, value.offset);
+                    self.gen_drop(value);
+                    self.gen_jump(end, None);
+
+                    self.func_ctx.select_block(otherwise);
+                }
+
+                let value = self.gen_offset(drop, last.ty, value.offset);
+                self.gen_drop(value);
+                self.gen_jump(end, None);
+
+                self.func_ctx.select_block(end);
             }
-
-            for field in self.repr_fields.get(self.reprs[ty].fields) {
-                let value = self.gen_offset(drop, field.ty, field.offset);
-                frontier.push(value);
-            }
+            _ => (),
         }
     }
 

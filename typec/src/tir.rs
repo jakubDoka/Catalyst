@@ -290,10 +290,12 @@ impl TirBuilder<'_> {
                     });
                 }
 
+                let bytes = bytes.is_reserved_value().not().then_some(bytes).into();
+
                 let global = GlobalEnt {
                     id,
                     ty: self.builtin_types.u8,
-                    bytes: Some(bytes).into(),
+                    bytes,
                     name: span,
 
                     ..default()
@@ -314,9 +316,10 @@ impl TirBuilder<'_> {
 
             (
                 self.take_ptr(global_access, false),
-                self.global_data
-                    .get(self.globals[global].bytes.unwrap())
-                    .len(),
+                self.globals[global]
+                    .bytes
+                    .map(|bytes| self.global_data.get(bytes).len())
+                    .unwrap_or(0),
             )
         };
 
@@ -422,7 +425,7 @@ impl TirBuilder<'_> {
                 };
 
                 self.tir_data.ents.push({
-                    let kind = TirKind::MatchBlock(inner_block);
+                    let kind = TirKind::MultiEntryBlock(inner_block);
                     let ty = self.tir_data.ents[inner_block].ty;
                     let span = self.ast_data.nodes[body].span;
                     TirEnt::new(kind, ty, span)
@@ -539,6 +542,8 @@ impl TirBuilder<'_> {
                 let low_expr = self.path_match(expr, path, branch, depth)?;
                 let ty = self.tir_data.ents[low_expr].ty;
 
+                let (ty, pointer, mutable) = self.types.may_deref(ty);
+
                 let TyKind::Struct(fields) = self.types[ty].kind else {
                     unreachable!();
                 };
@@ -587,7 +592,12 @@ impl TirBuilder<'_> {
                     let field_access = {
                         let kind = TirKind::FieldAccess(low_expr, field_id);
                         let ent = TirEnt::new(kind, field_ty, span);
-                        self.tir_data.ents.push(ent)
+                        let field = self.tir_data.ents.push(ent);
+                        if pointer {
+                            self.take_ptr(field, mutable)
+                        } else {
+                            field
+                        }
                     };
 
                     // push skipped fields
@@ -641,7 +651,6 @@ impl TirBuilder<'_> {
                 };
                 branch.push(data);
             }
-
             AstKind::Int | AstKind::Bool | AstKind::Char => {
                 let tir = self.expr(ast)?;
                 let ty = self.tir_data.ents[expr].ty;

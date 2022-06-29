@@ -268,7 +268,7 @@ impl CirBuilder<'_> {
                     }
                 }
             }
-            InstKind::Int(literal) => {
+            InstKind::IntLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let literal = if self.types[self.func_ctx.values[value].ty]
@@ -304,7 +304,7 @@ impl CirBuilder<'_> {
                     self.builder.ins().jump(block, &[]);
                 }
             }
-            InstKind::Bool(literal) => {
+            InstKind::BoolLit(literal) => {
                 let value = inst.value.unwrap();
                 let repr = self.repr_of(value);
                 let ir_value = self.builder.ins().bconst(repr, literal);

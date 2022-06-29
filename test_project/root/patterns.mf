@@ -1,4 +1,17 @@
+use {
+    "root/utils"
+}
 
+enum Holder {
+    Some: Vec[int]
+    None: nothing
+}
+
+impl Holder {
+    fn drop(s: Self, vec: Vec[int]) {
+
+    }
+}
 
 enum Enum {
     Something: nothing
@@ -31,5 +44,7 @@ impl Enum {
             Structural::{ integer } => integer
             Something::() => 1
         }
+
+        0
     }
 }

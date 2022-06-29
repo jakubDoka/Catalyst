@@ -161,6 +161,7 @@ impl BuiltinBuilder<'_> {
             self.funcs.push(ent, meta)
         };
 
+        self.func_instances.insert_unique(id, func);
         let item = ModuleItem::new(id, func, span);
         target.push(item);
 
