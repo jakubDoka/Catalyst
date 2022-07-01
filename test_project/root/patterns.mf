@@ -2,6 +2,21 @@ use {
     "root/utils"
 }
 
+enum [T] Option {
+    Some: Some[T]
+    None: nothing
+}
+
+impl [T] Option[T] {
+    fn test() {
+        let some = Self::Some::(1);
+    }
+}
+
+struct [T] Some {
+    value: T
+}
+
 enum Holder {
     Some: Vec[int]
     None: nothing

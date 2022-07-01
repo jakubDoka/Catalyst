@@ -8,12 +8,14 @@ use module_types::*;
 use storage::*;
 use typec_types::*;
 
+type Expected = Option<Ty>;
+
 impl TirBuilder<'_> {
     pub fn global(&mut self, global: Global) -> errors::Result<Func> {
         self.global = global;
 
         let ast = self.scope_context.global_ast[self.global];
-        let value = self.expr(ast)?;
+        let value = self.expr(ast, None)?;
         let ret = self.tir_data.ents[value].ty;
 
         let body = {
@@ -65,7 +67,6 @@ impl TirBuilder<'_> {
             unreachable!();
         };
         let &body_ast = header.last().unwrap();
-
         if body_ast.is_reserved_value() {
             if flags.contains(FuncFlags::EXTERNAL) {
                 self.funcs[self.func.meta()].kind = FuncKind::External;
@@ -110,7 +111,7 @@ impl TirBuilder<'_> {
             self.tir_data.cons.push(&tir_args)
         };
 
-        let root = self.block_low(body_ast, Some((ret, ret_ast)))?;
+        let root = self.block_low(body_ast, Some((ret, ret_ast)), None)?;
         self.funcs[self.func.meta()].body = root;
         self.funcs[self.func.meta()].args = args;
 
@@ -155,11 +156,11 @@ impl TirBuilder<'_> {
         }
     }
 
-    fn block(&mut self, ast: Ast) -> errors::Result<Tir> {
-        self.block_low(ast, None)
+    fn block(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
+        self.block_low(ast, None, expected)
     }
 
-    fn block_low(&mut self, ast: Ast, root_data: Option<(Ty, Ast)>) -> errors::Result<Tir> {
+    fn block_low(&mut self, ast: Ast, root_data: Option<(Ty, Ast)>, expected: Expected) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
 
         self.tir_stack.mark_frame();
@@ -167,8 +168,9 @@ impl TirBuilder<'_> {
 
         let mut final_expr = None;
         let mut terminal_flags = TirFlags::empty();
-        for &stmt in self.ast_data.children(ast) {
-            let Ok(expr) = self.expr(stmt) else {
+        for (i, &stmt) in self.ast_data.children(ast).iter().enumerate() {
+            let expected = (i == self.ast_data.children(ast).len() - 1).then_some(expected).flatten();
+            let Ok(expr) = self.expr(stmt, expected) else {
                 continue; // Recover here
             };
             self.tir_stack.push(expr);
@@ -229,30 +231,32 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn expr(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn expr(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
+        let expected = expected.map(|ty| self.types[ty].flags
+            .contains(TyFlags::GENERIC).not().then_some(ty)).flatten();
         let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ast];
         match kind {
             AstKind::Unary => self.unary(ast),
             AstKind::Binary => self.binary(ast),
             AstKind::Ident | AstKind::Path => self.symbol(ast),
-            AstKind::If => self.r#if(ast),
+            AstKind::If => self.r#if(ast, expected),
             AstKind::Return => self.r#return(ast),
-            AstKind::Int => self.int(ast),
+            AstKind::Int => self.int(ast, expected),
             AstKind::Bool => self.bool(ast),
             AstKind::Char => self.char(ast),
             AstKind::String => self.string(ast),
             AstKind::Variable(mutable) => self.variable(mutable, ast),
-            AstKind::Constructor => self.constructor(ast),
+            AstKind::Constructor => self.constructor(ast, expected),
             AstKind::DotExpr => self.dot_expr(ast),
-            AstKind::Call => self.call(ast),
-            AstKind::Block => self.block(ast),
-            AstKind::Loop => self.r#loop(ast),
+            AstKind::Call => self.call(ast, expected),
+            AstKind::Block => self.block(ast, expected),
+            AstKind::Loop => self.r#loop(ast, expected),
             AstKind::Break => self.r#break(ast),
             AstKind::Continue => self.r#continue(ast),
             AstKind::Deref => self.deref(ast),
-            AstKind::BitCast => self.bit_cast(ast),
-            AstKind::Match => self.r#match(ast),
-            AstKind::Ref(mutable) => self.r#ref(ast, mutable),
+            AstKind::BitCast => self.bit_cast(ast, expected),
+            AstKind::Match => self.r#match(ast, expected),
+            AstKind::Ref(mutable) => self.r#ref(ast, mutable, expected),
             AstKind::Error => Err(()),
             _ => unimplemented!(
                 "Unhandled expression ast {:?}: {}",
@@ -353,18 +357,18 @@ impl TirBuilder<'_> {
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn r#ref(&mut self, ast: Ast, mutable: bool) -> errors::Result<Tir> {
+    fn r#ref(&mut self, ast: Ast, mutable: bool, expected: Expected) -> errors::Result<Tir> {
         let expr = self.ast_data.children(ast)[0];
-        let expr = self.expr(expr)?;
+        let expr = self.expr(expr, expected.map(|e| self.types.deref(e)))?;
         Ok(self.take_ptr(expr, mutable))
     }
 
-    fn r#match(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#match(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let &[expr, body] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let expr = self.expr(expr)?;
+        let expr = self.expr(expr, None)?;
         let span = self.ast_data.nodes[ast].span;
 
         self.tir_pattern_graph.clear();
@@ -408,7 +412,7 @@ impl TirBuilder<'_> {
                         }
                     }
 
-                    let expr = self.expr(body)?;
+                    let expr = self.expr(body, expected)?;
                     terminal_flags &= self.terminal_flags(expr);
                     self.tir_stack.push(expr);
 
@@ -652,7 +656,7 @@ impl TirBuilder<'_> {
                 branch.push(data);
             }
             AstKind::Int | AstKind::Bool | AstKind::Char => {
-                let tir = self.expr(ast)?;
+                let tir = self.expr(ast, None)?;
                 let ty = self.tir_data.ents[expr].ty;
                 self.infer_tir_ty(tir, ty, |_, got, loc| TyError::PatternTypeMismatch {
                     loc,
@@ -762,14 +766,16 @@ impl TirBuilder<'_> {
         }
     }
 
-    fn bit_cast(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn bit_cast(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[expr, ty] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
-        let expr = self.expr(expr);
-        let ty = self.parse_type(ty)?;
+        let expr = self.expr(expr, None);
+        let Some(ty) = self.parse_type_optional(ty)?.or(expected) else {
+            todo!();
+        };
 
         let expr = expr?; // recovery
         if self.is_terminating(expr) {
@@ -783,7 +789,7 @@ impl TirBuilder<'_> {
 
     fn deref(&mut self, ast: Ast) -> errors::Result<Tir> {
         let expr = self.ast_data.children(ast)[0];
-        let target = self.expr(expr)?;
+        let target = self.expr(expr, None)?;
         let ty = self.tir_data.ents[target].ty;
 
         if !matches!(self.types[ty].kind, TyKind::Ptr(..)) {
@@ -813,7 +819,7 @@ impl TirBuilder<'_> {
             unreachable!()
         };
 
-        let expr = self.expr(expr)?;
+        let expr = self.expr(expr, None)?;
         if self.is_terminating(expr) {
             return Ok(expr);
         }
@@ -858,43 +864,51 @@ impl TirBuilder<'_> {
             unreachable!();
         };
 
-        let value = if value.is_reserved_value() {
-            None
-        } else {
-            Some(self.expr(value)?)
-        };
+        
 
         let (loop_expr, _) = self.find_loop(label, false)?;
 
-        {
-            let TirEnt { flags, kind: TirKind::LoopInProgress(ret, infinite), .. } = &mut self.tir_data.ents[loop_expr] else {
-                unreachable!("{:?}", self.tir_data.ents[loop_expr].kind);
-            };
-            flags.remove(TirFlags::TERMINATING);
-            *infinite = false;
+        let TirEnt { ref mut flags, ty, kind: TirKind::LoopInProgress(ret, ref mut infinite), .. } = self.tir_data.ents[loop_expr] else {
+            unreachable!("{:?}", self.tir_data.ents[loop_expr].kind);
+        };
+        flags.remove(TirFlags::TERMINATING);
+        *infinite = false;
 
-            if let Some(ret) = ret.expand() {
-                let TirEnt {
-                    span: ret_span, ty, ..
-                } = self.tir_data.ents[ret];
-                if let Some(value) = value {
-                    self.infer_tir_ty(value, ty, |_, got, loc| TyError::BreakValueTypeMismatch {
-                        because: ret_span,
-                        expected: ty,
-                        got,
-                        loc,
-                    })?;
-                } else {
-                    self.diagnostics.push(TyError::MissingBreakValue {
-                        because: ret_span,
-                        expected: ty,
-                        loc: span,
-                    });
-                    return Err(());
-                }
+        let ty = (ty != self.builtin_types.nothing)
+            .then_some(ty)
+            .or_else(|| ret.map(|ret| self.tir_data.ents[ret].ty));
+
+        let value = if value.is_reserved_value() {
+            None
+        } else {
+            Some(self.expr(value, ty)?)
+        };
+
+        let TirKind::LoopInProgress(ret, ..) = &mut self.tir_data.ents[loop_expr].kind else {
+            unreachable!("{:?}", self.tir_data.ents[loop_expr].kind);
+        };
+
+        if let Some(ret) = ret.expand() {
+            let TirEnt {
+                span: ret_span, ty, ..
+            } = self.tir_data.ents[ret];
+            if let Some(value) = value {
+                self.infer_tir_ty(value, ty, |_, got, loc| TyError::BreakValueTypeMismatch {
+                    because: ret_span,
+                    expected: ty,
+                    got,
+                    loc,
+                })?;
             } else {
-                *ret = value.into();
+                self.diagnostics.push(TyError::MissingBreakValue {
+                    because: ret_span,
+                    expected: ty,
+                    loc: span,
+                });
+                return Err(());
             }
+        } else {
+            *ret = value.into();
         }
 
         let result = {
@@ -911,7 +925,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn r#loop(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#loop(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[label, body_ast] = self.ast_data.children(ast) else {
             unreachable!();
@@ -919,7 +933,7 @@ impl TirBuilder<'_> {
 
         let loop_slot = {
             let kind = TirKind::LoopInProgress(None.into(), true);
-            let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
+            let ent = TirEnt::new(kind, expected.unwrap_or(self.builtin_types.nothing), span);
             self.tir_data.ents.push(ent)
         };
 
@@ -932,7 +946,7 @@ impl TirBuilder<'_> {
         };
 
         self.scope_context.loops.push((loop_slot, id));
-        let block = self.block(body_ast)?;
+        let block = self.block(body_ast, None)?;
         self.scope_context.loops.pop().unwrap();
 
         {
@@ -962,6 +976,7 @@ impl TirBuilder<'_> {
         caller: Option<Ty>,
         mut obj: Option<Tir>,
         instantiation: Option<Ast>,
+        expected: Expected,
         span: Span,
     ) -> errors::Result<Tir> {
         let Sig { args, ret: ty, .. } = self.funcs[func.meta()].sig;
@@ -973,7 +988,7 @@ impl TirBuilder<'_> {
         let (terminal_flags, tir_args) = self.arguments(ast, &mut obj, &args, Ok(origin))?;
 
         let (params, ty) = if generic {
-            self.instantiate_call(caller, func, instantiation, &tir_args, span)?
+            self.instantiate_call(caller, func, instantiation, &tir_args, expected, span)?
         } else {
             tir_args
                 .iter()
@@ -1011,6 +1026,7 @@ impl TirBuilder<'_> {
         func: Func,
         instantiation: Option<Ast>,
         tir_args: &[Tir],
+        expected: Expected,
         _span: Span,
     ) -> errors::Result<(TyList, Ty)> {
         let FuncMeta {
@@ -1062,6 +1078,17 @@ impl TirBuilder<'_> {
                     return Err(());
                 }
             }
+        }
+
+        if let Some(ty) = expected {
+            drop(bound_checker!(self).infer_parameters(
+                ty, 
+                ret,
+                &mut param_slots,
+                self.ty_lists.get(params),
+                Default::default(),
+                true,
+            ));
         }
 
         if let (Some(ty), Some(param @ &mut None)) = (caller, param_slots.last_mut()) {
@@ -1122,7 +1149,7 @@ impl TirBuilder<'_> {
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn call(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn call(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let caller = self.ast_data.children(ast)[0];
         let AstEnt { kind, span, .. } = self.ast_data.nodes[caller];
 
@@ -1131,7 +1158,7 @@ impl TirBuilder<'_> {
                 unreachable!();
             };
 
-            let obj = self.expr(lhs)?;
+            let obj = self.expr(lhs, None)?;
             let TirEnt { ty, span, .. } = self.tir_data.ents[obj];
             let ty = self.types.ptr_leaf_of(ty);
             let caller = self.types.caller_of(ty);
@@ -1158,7 +1185,7 @@ impl TirBuilder<'_> {
                         self.indirect_call(field, ast, span)
                             .map_err(|_| ScopeFindError::Other)
                     } else if let Some(method) = field_or_method.pointer.may_read::<Func>() {
-                        self.direct_call(method, ast, Some(ty), Some(obj), instantiation, span)
+                        self.direct_call(method, ast, Some(ty), Some(obj), instantiation, expected, span)
                             .map_err(|_| ScopeFindError::Other)
                     } else {
                         Err(ScopeFindError::InvalidType(field_or_method.pointer.id))
@@ -1188,6 +1215,7 @@ impl TirBuilder<'_> {
                     caller.map(|(ty, _)| ty),
                     None,
                     instantiation,
+                    expected,
                     span,
                 )
             } else {
@@ -1215,8 +1243,8 @@ impl TirBuilder<'_> {
             vec.push(obj);
         }
         let mut terminal_flags = TirFlags::empty();
-        for &arg in &self.ast_data.children(ast)[1..] {
-            let Ok(arg) = self.expr(arg) else {
+        for (&arg, &ty) in self.ast_data.children(ast)[1..].iter().zip(arg_tys) {
+            let Ok(arg) = self.expr(arg, Some(ty)) else {
                 continue;
             };
             terminal_flags |= self.terminal_flags(arg);
@@ -1309,7 +1337,7 @@ impl TirBuilder<'_> {
             unreachable!();
         };
 
-        let mut header = self.expr(header)?;
+        let mut header = self.expr(header, None)?;
         if self.is_terminating(header) {
             return Ok(header);
         }
@@ -1366,39 +1394,28 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn constructor(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn constructor(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let &[name, body] = self.ast_data.children(ast) else {
             unreachable!("{:?}", self.ast_data.children(ast));
         };
 
-        // let span = self.ast_data.nodes[name].span;
+        let name_span = self.ast_data.nodes[name].span;
+        if let Some(ty) = expected {
+            if name.is_reserved_value() {
+                return self.constructor_low(ty, body);
+            } else if let &[ph, name] = self.ast_data.children(name) && ph.is_reserved_value() {
+                let id = ident_hasher!(self).ident_id(name, Some((ty, name_span)))?;
+                return self.construct_enum(ty, id, body, name_span);
+            }
+        }
+
+        self.construct_non_inferred(name, body)
+    }
+
+    fn construct_non_inferred(&mut self, name: Ast, body: Ast) -> errors::Result<Tir> {
         let (id, owner) = ident_hasher!(self).ident_id_low(name, None)?;
         if let Some((enum_ty, span)) = owner {
-            let matcher = matcher!(Func = "method");
-            let handler = scope_error_handler(
-                self.diagnostics,
-                || TyError::EnumVariantNotFound {
-                    ty: enum_ty,
-                    loc: span,
-                },
-                span,
-                "enum-variant",
-                matcher,
-            );
-            let variant = self.scope.get_concrete::<TyComp>(id).map_err(handler)?;
-            let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
-            let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
-                unreachable!();
-            };
-            let value = self.constructor_low(ty, body)?;
-            let flag = self.int_lit(index as u128 - 1, discriminant);
-
-            let args = self.tir_data.cons.push(&[flag, value]);
-            let kind = TirKind::Constructor(args);
-            let flags = TirFlags::TERMINATING & self.is_terminating(value);
-            let ent = TirEnt::with_flags(kind, enum_ty, flags, span);
-
-            Ok(self.tir_data.ents.push(ent))
+            self.construct_enum(enum_ty, id, body, span)
         } else {
             let span = self.ast_data.nodes[name].span;
             let matcher = matcher!(
@@ -1416,6 +1433,34 @@ impl TirBuilder<'_> {
             let ty = self.scope.get_concrete::<Ty>(id).map_err(handler)?;
             self.constructor_low(ty, body)
         }
+    }
+
+    fn construct_enum(&mut self, enum_ty: Ty, id: ID, body: Ast, span: Span) -> errors::Result<Tir> {
+        let matcher = matcher!(Func = "method");
+        let handler = scope_error_handler(
+            self.diagnostics,
+            || TyError::EnumVariantNotFound {
+                ty: enum_ty,
+                loc: span,
+            },
+            span,
+            "enum-variant",
+            matcher,
+        );
+        let variant = self.scope.get_concrete::<TyComp>(id).map_err(handler)?;
+        let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
+        let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
+            unreachable!();
+        };
+        let value = self.constructor_low(ty, body)?;
+        let flag = self.int_lit(index as u128 - 1, discriminant);
+
+        let args = self.tir_data.cons.push(&[flag, value]);
+        let kind = TirKind::Constructor(args);
+        let flags = TirFlags::TERMINATING & self.is_terminating(value);
+        let ent = TirEnt::with_flags(kind, enum_ty, flags, span);
+
+        Ok(self.tir_data.ents.push(ent))
     }
 
     fn constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
@@ -1487,7 +1532,7 @@ impl TirBuilder<'_> {
 
             let Ok(value) = (match self.ast_data.nodes[expr].kind {
                 AstKind::ConstructorBody | AstKind::TupleConstructorBody => self.constructor_low(field_ty, expr),
-                _ => self.expr(expr),
+                _ => self.expr(expr, Some(field_ty)),
             }) else {
                 continue;
             };
@@ -1592,7 +1637,7 @@ impl TirBuilder<'_> {
 
     fn variable(&mut self, mutable: bool, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
-        let &[name, value] = self.ast_data.children(ast) else {
+        let &[name, ty, value] = self.ast_data.children(ast) else {
             unreachable!();
         };
 
@@ -1602,11 +1647,24 @@ impl TirBuilder<'_> {
             ID::new(str)
         };
 
-        let value = self.expr(value)?;
-        if self.is_terminating(value) {
-            return Ok(value);
-        }
+        let ty = if ty.is_reserved_value() {
+            None
+        } else {
+            Some(self.parse_type(ty)?)
+        };
 
+        let value = if value.is_reserved_value() {
+            let kind = TirKind::Uninit;
+            let ent = TirEnt::new(kind, ty.unwrap(), span);
+            self.tir_data.ents.push(ent)
+        } else {
+            let value = self.expr(value, ty)?;
+            if self.is_terminating(value) {
+                return Ok(value);
+            }
+            value
+        };
+        
         self.tir_data.ents[value]
             .flags
             .insert(TirFlags::IMMUTABLE & !mutable);
@@ -1625,7 +1683,7 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn int(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn int(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let ty = {
             let str = self.sources.display(span);
@@ -1636,7 +1694,11 @@ impl TirBuilder<'_> {
                     .integers()
                     .into_iter()
                     .find(|&ty| str.ends_with(self.sources.display(self.types[ty].name)))
-                    .unwrap_or(self.builtin_types.int)
+                    .unwrap_or_else(|| if let Some(ty) = expected {
+                        ty
+                    } else {
+                        self.builtin_types.int
+                    })
             }
         };
         let signed = self.types[ty].flags.contains(TyFlags::SIGNED);
@@ -1663,7 +1725,7 @@ impl TirBuilder<'_> {
             })?;
             None
         } else {
-            let value = self.expr(value)?;
+            let value = self.expr(value, Some(ret))?;
             if self.is_terminating(value) {
                 return Ok(value);
             }
@@ -1703,26 +1765,26 @@ impl TirBuilder<'_> {
         Ok(result)
     }
 
-    fn r#if(&mut self, ast: Ast) -> errors::Result<Tir> {
+    fn r#if(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
         let &[cond, then, otherwise] = self.ast_data.children(ast) else {
             unreachable!()
         };
 
-        let cond = self.expr(cond)?;
+        let cond = self.expr(cond, Some(self.builtin_types.bool))?;
         drop(
             self.infer_tir_ty(cond, self.builtin_types.bool, |_, got, loc| {
                 TyError::IfConditionTypeMismatch { got, loc }
             }),
         );
 
-        let then = self.block(then);
+        let then = self.block(then, expected);
         let otherwise = if otherwise.is_reserved_value() {
             let kind = TirKind::Block(default(), default());
             let ent = TirEnt::new(kind, self.builtin_types.nothing, span);
             self.tir_data.ents.push(ent)
         } else {
-            self.block(otherwise)?
+            self.block(otherwise, expected)?
         };
         let then = then?;
 
@@ -1812,8 +1874,8 @@ impl TirBuilder<'_> {
 
         // we walk the ast even if something fails for better error diagnostics
         let (left, right) = {
-            let left = self.expr(left);
-            let right = self.expr(right);
+            let left = self.expr(left, None);
+            let right = self.expr(right, None);
             (left?, right?)
         };
 

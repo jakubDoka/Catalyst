@@ -133,6 +133,8 @@ impl<'a> MirBuilder<'a> {
             TirKind::Match(..) => self.r#match(tir, dest),
             TirKind::MultiEntryBlock(..) => self.multi_entry_block(tir, dest),
 
+            TirKind::Uninit => self.uninit(tir),
+
             TirKind::Argument(..) | TirKind::LoopInProgress(..) | TirKind::Invalid => {
                 unreachable!()
             }
@@ -152,6 +154,13 @@ impl<'a> MirBuilder<'a> {
         self.mir_builder_context.tir_mapping[tir] = result.into();
 
         result
+    }
+
+    fn uninit(&mut self, tir: Tir) -> ExprValue {
+        let ty = self.tir_data.ents[tir].ty;
+        let value = self.add_value(ValueEnt::new(ty));
+        self.add_inst(InstEnt::new(InstKind::Uninit).value(value));
+        Some(value)
     }
 
     fn r#match(&mut self, tir: Tir, dest: Dest) -> ExprValue {

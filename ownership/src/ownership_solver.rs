@@ -46,6 +46,11 @@ impl OwnershipSolver<'_> {
         } = self.tir_data.ents[root];
 
         match kind {
+            TirKind::Uninit => {
+                let id = self.declare(root);
+                self.move_out(root)?;
+                id
+            }
             TirKind::Match(target, branches) => {
                 self.move_out(target)?;
                 self.traverse(branches)?;
@@ -367,10 +372,10 @@ impl OwnershipSolver<'_> {
             .alloc_iter(frontier.drain(..).filter_map(|ownership| {
                 let ent = &self.o_ctx.ownerships[ownership];
                 (ent.last_move.is_none() && (!ent.behind_pointer || assign)).then(|| {
-                    println!(
-                        "{}",
-                        self.tir_data.ents[ent.tir.unwrap()].span.log(self.sources)
-                    );
+                    // println!(
+                    //     "{}",
+                    //     self.tir_data.ents[ent.tir.unwrap()].span.log(self.sources)
+                    // );
                     (
                         ownership,
                         self.o_ctx.drop_nodes.push_one(DropNodeEnt {
@@ -510,11 +515,19 @@ impl OwnershipSolver<'_> {
             if let Some(because) = ent.last_move.expand() {
                 let because = self.tir_data.ents[because].span;
                 let loc = self.tir_data.ents[target].span;
-                self.diagnostics.push(OwError::DoubleMove {
-                    because,
-                    loc,
-                    ty: ent.ty,
-                });
+                if ent.last_move == ent.tir {
+                    self.diagnostics.push(OwError::AccessOfUninit {
+                        loc,
+                        because,
+                        ty: ent.ty,
+                    })
+                } else {
+                    self.diagnostics.push(OwError::DoubleMove {
+                        because,
+                        loc,
+                        ty: ent.ty,
+                    });
+                }
                 return Err(());
             }
 

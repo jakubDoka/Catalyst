@@ -92,7 +92,8 @@ impl DropSolver<'_> {
                 | TirKind::Argument(_)
                 | TirKind::BoolLit(..)
                 | TirKind::CharLit(..)
-                | TirKind::FuncPtr(..) => (),
+                | TirKind::FuncPtr(..)
+                | TirKind::Uninit => (),
 
                 TirKind::LoopInProgress(..) | TirKind::Invalid => unreachable!(),
             }

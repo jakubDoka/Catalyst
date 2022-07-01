@@ -88,6 +88,7 @@ pub enum TirKind {
     DerefPtr(Tir),
     TakePtr(Tir),
     Variable(Tir),
+    Uninit,
     GlobalAccess(Global),
     Access(Tir, PackedOption<Tir>),
     Assign(Tir, Tir, TirList),
@@ -405,6 +406,9 @@ impl<'a> TirDisplay<'a> {
             TirKind::Variable(tir) => {
                 write!(f, "let ")?;
                 self.fmt(tir, f, displayed, level, false)?;
+            }
+            TirKind::Uninit => {
+                write!(f, "uninit")?;
             }
             TirKind::Access(value, _var) => {
                 self.fmt(value, f, displayed, level, false)?;

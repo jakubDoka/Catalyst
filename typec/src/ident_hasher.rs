@@ -41,12 +41,12 @@ impl<'a> IdentHasher<'a> {
                     )
                 };
 
+                let ty = self.types.caller_of(ty);
                 let id = {
                     let name = ast::id_of(item, self.ast_data, self.sources);
-                    let ty = self.types.ptr_leaf_id_of(ty);
+                    let ty = self.types[ty].id;
                     ID::owned(ty, name)
                 };
-
                 Ok((id + module_id, Some((ty, span))))
             }
             (&[module_or_type, item], None) => {
@@ -63,6 +63,7 @@ impl<'a> IdentHasher<'a> {
                 Ok(if let Some(source) = item.pointer.may_read::<Source>() {
                     (ID::scoped(item_id, source), None)
                 } else if let Some(ty) = item.pointer.may_read::<Ty>() {
+                    let ty = self.types.caller_of(ty);
                     (ID::owned(self.types[ty].id, item_id), Some((ty, span)))
                 } else {
                     todo!("{item:?}");
@@ -71,8 +72,8 @@ impl<'a> IdentHasher<'a> {
             (&[], None) => return Ok((ast::id_of(ast, self.ast_data, self.sources), None)),
             (&[], Some((ty, span))) => {
                 let name = ast::id_of(ast, self.ast_data, self.sources);
-                let ty_id = self.types.ptr_leaf_id_of(ty);
-                Ok((ID::owned(ty_id, name), Some((ty, span))))
+                let ty = self.types.caller_of(ty);
+                Ok((ID::owned(self.types[ty].id, name), Some((ty, span))))
             }
             _ => {
                 self.diagnostics.push(TyError::InvalidPath {

@@ -117,6 +117,9 @@ impl CirBuilder<'_> {
 
     fn generate_inst(&mut self, inst: &mir::InstEnt) {
         match inst.kind {
+            InstKind::Uninit => {
+                todo!();
+            }
             InstKind::IndirectCall(func, mir_args) => {
                 let TyKind::FuncPtr(Sig { cc, .. }) = self.types[self.func_ctx.values[func].ty].kind else {
                     unreachable!();

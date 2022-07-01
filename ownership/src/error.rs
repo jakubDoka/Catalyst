@@ -3,6 +3,7 @@ use typec_types::*;
 
 pub enum OwError {
     DoubleMove { ty: Ty, because: Span, loc: Span },
+    AccessOfUninit { ty: Ty, because: Span, loc: Span },
     MoveFromBehindPointer { ty: Ty, loc: Span },
     LoopDoubleMove { ty: Ty, because: Span, loc: Span },
     PartiallyMovedDrop { ty: Ty, because: Span, loc: Span },
@@ -37,6 +38,18 @@ pub fn display(
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| {
                 write!(to, "accessing already moved memory")
+            })?;
+
+            because.loc_to(sources, to)?;
+            because.underline_info(sources, to, &|to| {
+                write!(to, "because of this previous move")
+            })?;
+            ty
+        }
+        OwError::AccessOfUninit { ty, loc, because } => {
+            loc.loc_to(sources, to)?;
+            loc.underline_error(sources, to, &|to| {
+                write!(to, "accessing uninitialized memory")
             })?;
 
             because.loc_to(sources, to)?;

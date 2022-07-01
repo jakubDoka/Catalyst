@@ -148,6 +148,7 @@ pub enum InstKind {
     Call(typec_types::Func, TyList, ValueList),
     IntLit(u128),
     BoolLit(bool),
+    Uninit,
     Return,
 }
 
@@ -277,6 +278,9 @@ impl std::fmt::Display for MirDisplay<'_> {
                             func,
                             args,
                         )?;
+                    }
+                    InstKind::Uninit => {
+                        writeln!(f, "\t{} = uninit", self.value_to_string(inst.value.unwrap()))?;
                     }
                     InstKind::FuncPtr(func) => {
                         writeln!(

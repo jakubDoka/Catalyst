@@ -27,7 +27,7 @@ impl<'a> ScopeBuilder<'a> {
                 AstKind::Function(..) | AstKind::Impl | AstKind::Variable(..) => (),
                 AstKind::Struct => drop(self.collect_struct(ast)),
                 AstKind::Bound => drop(self.collect_bound(ast)),
-                AstKind::Enum => drop(self.collect_struct(ast)), // there is no difference at this level
+                 AstKind::Enum => drop(self.collect_struct(ast)), // there is no difference at this level
                 _ => (unimplemented!("Unhandled top-level item:\n{}", self.sources.display(span))),
             }
 
@@ -256,7 +256,7 @@ impl<'a> ScopeBuilder<'a> {
 
     fn collect_struct(&mut self, ast: Ast) -> errors::Result {
         let &[generics, name, _body] = self.ast_data.children(ast) else {
-            unreachable!();
+            unreachable!("{:?} {}", self.ast_data.children(ast), self.ast_data.nodes[ast].span.log(self.sources));
         };
 
         let span = self.ast_data.nodes[name].span;

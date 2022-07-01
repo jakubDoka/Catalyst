@@ -238,8 +238,8 @@ impl<'a> Parser<'a> {
         self.advance();
         self.stack.mark_frame();
 
-        // generics will be handled later but we reserve them now
-        self.stack.push_default();
+        let generics = self.generics(false)?;
+        self.stack.push(generics);
 
         let ident = self.ident()?;
         self.stack.push(ident);
@@ -768,7 +768,7 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         let result = match self.current.kind() {
             TokenKind::Return => self.return_expr(),
-            TokenKind::Ident => self.ident_expr(),
+            TokenKind::Ident | TokenKind::DoubleColon => self.ident_expr(),
             TokenKind::Int | TokenKind::String | TokenKind::Bool | TokenKind::Char => {
                 self.literal_expr()
             }
@@ -1127,21 +1127,34 @@ impl<'a> Parser<'a> {
         let name = self.ident()?;
         self.stack.push(name);
 
-        {
-            let span = self.current.span();
-            let str = self.sources.display(span);
-            if str != "=" {
-                self.diagnostics.push(AstError::ExpectedAssign {
-                    got: self.current.kind(),
-                    loc: span,
-                });
-            }
+        let end = if self.current.kind() == TokenKind::Colon {
             self.advance();
-        }
+            let ty = self.type_expr()?;
+            self.stack.push(ty);
+            self.data.nodes[ty].span
+        } else {
+            self.stack.push_default();
+            span
+        };
 
-        let value = self.expr()?;
-        self.stack.push(value);
-        let end = self.data.nodes[value].span;
+        let span = self.current.span();
+        let str = self.sources.display(span);
+        let end = if str == "=" {
+            let value = self.expr()?;
+            self.stack.push(value);
+            self.data.nodes[value].span
+        } else {
+            if self.stack.top_frame().last().unwrap().is_reserved_value() {
+                self.diagnostics.push(AstError::ExpectedAssign { 
+                    got: self.current.kind(), 
+                    loc: self.current.span() 
+                });
+                return Err(());
+            }
+            self.stack.push_default();
+            end
+        };
+        self.advance();
 
         Ok(self.alloc(AstKind::Variable(mutable), span.join(end)))
     }
@@ -1248,7 +1261,12 @@ impl<'a> Parser<'a> {
 
     fn path(&mut self) -> errors::Result<Ast> {
         let mut span = self.current.span();
-        let mut result = self.ident()?;
+        let mut result = if self.current.kind() == TokenKind::DoubleColon {
+            self.advance();
+            Ast::reserved_value()
+        } else {
+            self.ident()?
+        };
 
         self.stack.mark_frame();
         self.stack.push(result);

@@ -43,14 +43,16 @@ impl BoundChecker<'_> {
                 (TyKind::Param(index, ..), _) => {
                     let other = params[index as usize];
 
-                    if let Some(other) = other && other != reference {
-                        return error;
+                    if let Some(other) = other {
+                        if reference != other && (!matches!(self.types[other].kind, TyKind::Param(..)) || self.implements_param(other, reference, true).is_err()) {
+                            return error;
+                        }
                     } else {
                         if check_bounds && self.implements_param(parametrized, reference, true).is_err() {
                             return Err(None);
                         }
-                        params[index as usize] = Some(reference);
                     }
+                    params[index as usize] = Some(reference);
                 }
                 (TyKind::Ptr(ty, depth), TyKind::Ptr(ref_ty, ref_depth))
                     if depth == ref_depth
