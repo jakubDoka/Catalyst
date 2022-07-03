@@ -5,6 +5,7 @@ use cranelift_entity::{EntityRef, PrimaryMap};
 
 use storage::*;
 use typec_types::*;
+use lexer::*;
 
 use crate::*;
 
@@ -145,7 +146,7 @@ pub enum InstKind {
     Assign(Value),
     JumpIfFalse(Block),
     Jump(Block),
-    Call(typec_types::Func, TyList, ValueList),
+    Call(typec_types::Func, TyList, ValueList, Span),
     IntLit(u128),
     BoolLit(bool),
     Uninit,
@@ -201,7 +202,7 @@ bitflags! {
         /// The value is a pointer.
         const POINTER = 1 << 0;
         /// The value can be assigned to
-        const ASSIGNABLE = 1 << 2;
+        const ASSIGNABLE = 1 << 1;
     }
 }
 
@@ -354,7 +355,7 @@ impl std::fmt::Display for MirDisplay<'_> {
                             writeln!(f, "\tgoto {}", block)?;
                         }
                     }
-                    InstKind::Call(func, params, values) => {
+                    InstKind::Call(func, params, values, ..) => {
                         let args = self
                             .func_ctx
                             .value_slices

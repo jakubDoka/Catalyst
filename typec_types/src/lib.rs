@@ -18,12 +18,12 @@ pub use func::{
     Func, FuncEnt, FuncFlags, FuncInstances, FuncKind, FuncList, FuncMeta, Funcs, Initializers,
     Macros, Sig, ToCompile, ToLink,
 };
-pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals};
+pub use global::{Global, GlobalBytes, GlobalData, GlobalEnt, GlobalMap, Globals, GlobalFlags};
 pub use graph::Graph;
 pub use scope_context::ScopeContext;
-pub use state::{BoundChecker, MissingBoundTreeDisplay, SigDisplay, TyDisplay, TyFactory};
+pub use state::{BoundChecker, MissingBoundTreeDisplay, SigDisplay, TyDisplay, TyFactory, TirDisplay};
 pub use tir::{
-    Tir, TirData, TirDisplay, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
+    Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirPatternGraph, TirPatternMeta,
     TirStack,
 };
 pub use ty::{
@@ -31,20 +31,6 @@ pub use ty::{
     TyEnt, TyFlags, TyGraph, TyInstances, TyKind, TyList, TyLists, TypeBase, Types,
 };
 pub use ty_factory::collect_ty_params;
-
-#[macro_export]
-macro_rules! tir_display {
-    ($self:expr, $tir:expr) => {
-        $crate::tir::TirDisplay::new(
-            $self.types,
-            $self.ty_lists,
-            $self.ty_comps,
-            $self.sources,
-            $self.data,
-            $tir,
-        )
-    };
-}
 
 pub mod scope_context {
     use ast::*;

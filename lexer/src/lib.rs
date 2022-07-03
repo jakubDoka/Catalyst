@@ -83,6 +83,7 @@ impl<'a> EscapeTranslator<'a> {
                 let c = next()?;
                 match c {
                     'n' => '\n',
+                    't' => '\t',
                     _ => {
                         self.error = Some(EscapeError::InvalidEscape);
                         return None;

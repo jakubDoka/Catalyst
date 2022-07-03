@@ -52,17 +52,7 @@ impl MainTirBuilder<'_> {
             }
 
             self.save_used_types();
-            // println!(
-            //     "{}",
-            //     TirDisplay::new(
-            //         &self.types,
-            //         &self.ty_lists,
-            //         &self.ty_comps,
-            //         &self.sources,
-            //         &self.tir_data,
-            //         self.funcs[func.meta()].body,
-            //     )
-            // );
+            // println!("{}", tir_display!(self, self.funcs[func.meta()].body, self.tir_data));
             self.funcs[func.meta()].tir_data = self.tir_data.clone();
         }
     }
@@ -125,7 +115,7 @@ impl MainTirBuilder<'_> {
     /// of generic calls.
     pub fn build(&mut self, module_order: &[Source]) {
         layout_builder!(self).build(self.types.keys().skip(self.builtin_types.all().len()));
-        layout_builder!(self).build([self.builtin_types.str]);
+        layout_builder!(self).build([self.builtin_types.str, self.builtin_types.stack_trace]);
 
         let mut func_buffer = vec![];
         let mut ty_buffer = vec![];

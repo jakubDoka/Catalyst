@@ -144,35 +144,7 @@ impl TirFlags {
 
 impl_bool_bit_and!(TirFlags);
 
-pub struct TirDisplay<'a> {
-    pub types: &'a Types,
-    pub ty_lists: &'a TyLists,
-    pub ty_comps: &'a TyComps,
-    pub sources: &'a Sources,
-    pub data: &'a TirData,
-    pub root: Tir,
-}
-
 impl<'a> TirDisplay<'a> {
-    #[inline(never)]
-    pub fn new(
-        types: &'a Types,
-        ty_lists: &'a TyLists,
-        ty_comps: &'a TyComps,
-        sources: &'a Sources,
-        data: &'a TirData,
-        root: Tir,
-    ) -> Self {
-        Self {
-            types,
-            ty_lists,
-            ty_comps,
-            sources,
-            data,
-            root,
-        }
-    }
-
     fn fmt(
         &self,
         root: Tir,
@@ -199,12 +171,12 @@ impl<'a> TirDisplay<'a> {
             write!(
                 f,
                 "{root}: {} = ",
-                ty_display!(self, self.data.ents[root].ty)
+                ty_display!(self, self.tir_data.ents[root].ty)
             )?;
         }
         displayed.insert(root);
 
-        let ent = self.data.ents[root];
+        let ent = self.tir_data.ents[root];
         match ent.kind {
             TirKind::IndirectCall(ptr, args) => {
                 write!(f, "indirect_call ")?;
@@ -219,7 +191,7 @@ impl<'a> TirDisplay<'a> {
 
                 self.fmt(ptr, f, displayed, level, false)?;
                 write!(f, "(")?;
-                if let Some((&first, others)) = self.data.cons.get(args).split_first() {
+                if let Some((&first, others)) = self.tir_data.cons.get(args).split_first() {
                     self.fmt(first, f, displayed, level, false)?;
                     for &ty in others {
                         write!(f, ", ")?;
@@ -252,7 +224,7 @@ impl<'a> TirDisplay<'a> {
             }
             TirKind::Constructor(fields) => {
                 writeln!(f, "::{{")?;
-                for &field in self.data.cons.get(fields).iter() {
+                for &field in self.tir_data.cons.get(fields).iter() {
                     self.fmt(field, f, displayed, level + 1, true)?;
                 }
                 for _ in 0..level {
@@ -263,7 +235,7 @@ impl<'a> TirDisplay<'a> {
             TirKind::If(cond, then, otherwise, pre_computes) => {
                 if !pre_computes.is_reserved_value() {
                     writeln!(f, "pre-compute {{")?;
-                    for &field in self.data.cons.get(pre_computes).iter() {
+                    for &field in self.tir_data.cons.get(pre_computes).iter() {
                         self.fmt(field, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -281,7 +253,7 @@ impl<'a> TirDisplay<'a> {
             TirKind::Block(content, drops) => {
                 if !content.is_reserved_value() {
                     writeln!(f, "{{")?;
-                    for &expr in self.data.cons.get(content).iter() {
+                    for &expr in self.tir_data.cons.get(content).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
 
@@ -295,7 +267,7 @@ impl<'a> TirDisplay<'a> {
 
                 if !drops.is_reserved_value() {
                     writeln!(f, " drops {{")?;
-                    for &expr in self.data.cons.get(drops).iter() {
+                    for &expr in self.tir_data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -311,7 +283,7 @@ impl<'a> TirDisplay<'a> {
                 }
                 if !drops.is_reserved_value() {
                     writeln!(f, " drops {{")?;
-                    for &expr in self.data.cons.get(drops).iter() {
+                    for &expr in self.tir_data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -341,7 +313,7 @@ impl<'a> TirDisplay<'a> {
                 }
 
                 write!(f, "(")?;
-                for (i, &arg) in self.data.cons.get(args).iter().enumerate() {
+                for (i, &arg) in self.tir_data.cons.get(args).iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
@@ -365,7 +337,7 @@ impl<'a> TirDisplay<'a> {
                 }
                 if !drops.is_reserved_value() {
                     writeln!(f, " drops {{")?;
-                    for &expr in self.data.cons.get(drops).iter() {
+                    for &expr in self.tir_data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -379,7 +351,7 @@ impl<'a> TirDisplay<'a> {
                 self.fmt(loop_expr, f, displayed, level, false)?;
                 if !drops.is_reserved_value() {
                     writeln!(f, " drops {{")?;
-                    for &expr in self.data.cons.get(drops).iter() {
+                    for &expr in self.tir_data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -394,7 +366,7 @@ impl<'a> TirDisplay<'a> {
                 self.fmt(right, f, displayed, level, false)?;
                 if !drops.is_reserved_value() {
                     writeln!(f, " drops {{")?;
-                    for &expr in self.data.cons.get(drops).iter() {
+                    for &expr in self.tir_data.cons.get(drops).iter() {
                         self.fmt(expr, f, displayed, level + 1, true)?;
                     }
                     for _ in 0..level {
@@ -442,6 +414,6 @@ impl<'a> TirDisplay<'a> {
 impl std::fmt::Display for TirDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut displayed = EntitySet::new();
-        self.fmt(self.root, f, &mut displayed, 1, true)
+        self.fmt(self.tir, f, &mut displayed, 1, true)
     }
 }

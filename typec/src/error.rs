@@ -584,14 +584,14 @@ pub fn display(
             loc.loc_to(sources, to)?;
             loc.underline_error(sources, to, &|to| write!(to, "field not found"))?;
 
-            writeln!(to, "|> available fields:")?;
-            let TyKind::Struct(fields) = types[*ty].kind else {
-                unreachable!();
+            if let TyKind::Struct(fields) = types[*ty].kind {
+                writeln!(to, "|> available fields:")?;
+                for field in ty_comps.get(fields) {
+                    writeln!(to, "|\t{}", sources.display(field.name))?;
+                }
+            } else {
+                writeln!(to, "|> this is not a struct")?;
             };
-
-            for field in ty_comps.get(fields) {
-                writeln!(to, "|\t{}", sources.display(field.name))?;
-            }
         }
         TyError::EnumVariantNotFound { ty, loc } => {
             loc.loc_to(sources, to)?;

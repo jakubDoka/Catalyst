@@ -113,6 +113,7 @@ impl SigDisplay<'_> {
             }
             ty_display!(self, arg.ty).write(f)?;
         }
+        write!(f, ") -> ")?;
         ty_display!(self, self.sig.ret).write(f)?;
         Ok(())
     }

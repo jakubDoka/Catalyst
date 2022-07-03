@@ -14,7 +14,7 @@ fn bti(b: bool) -> int {
     return if b { 1 } else { 0 }
 }
 
-fn structure_test() -> int {
+fn structure_test() {
     let mut something = init_something()
     something = Something::{
         a: 2
@@ -28,10 +28,12 @@ fn structure_test() -> int {
     let something_else = init_something_else()
 
     if something.e {} else {
-        return -1
+        panic("broken access or initialization")
     }
 
-    something.a - bti(something.b.e) + -bti(something_else.f)
+    if something.a - bti(something.b.e) + -bti(something_else.f) != 0 {
+        panic("broken chained access")
+    }
 }
 
 fn init_something_else() -> SomethingElse {

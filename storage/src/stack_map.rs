@@ -245,6 +245,13 @@ impl<E: EntityRef, T, S: EntityRef> StackMap<E, T, S> {
         &self.data[self.indices[id] as usize..]
     }
 
+    pub fn extend(&mut self, data: &[T])
+        where
+            T: Clone,  
+    {
+        self.data.extend_from_slice(data);
+    }
+
     pub fn top_mut(&mut self) -> &mut [T] {
         let id = self.indices.len() - 1;
         &mut self.data[self.indices[id] as usize..]

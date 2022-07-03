@@ -44,7 +44,9 @@ impl BoundChecker<'_> {
                     let other = params[index as usize];
 
                     if let Some(other) = other {
-                        if reference != other && (!matches!(self.types[other].kind, TyKind::Param(..)) || self.implements_param(other, reference, true).is_err()) {
+                        if reference != other && (!matches!(self.types[other].kind, TyKind::Param(..)) 
+                            || self.implements_param(other, reference, false).is_err()) 
+                        {
                             return error;
                         }
                     } else {

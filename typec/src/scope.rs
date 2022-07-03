@@ -83,17 +83,31 @@ impl<'a> ScopeBuilder<'a> {
         let AstEnt { kind, .. } = self.ast_data.nodes[ast];
         let mutable = kind == AstKind::Variable(true);
 
-        let &[name, value] = self.ast_data.children(ast) else {
+        let &[name, ty, value] = self.ast_data.children(ast) else {
             unreachable!();
         };
         let span = self.ast_data.nodes[name].span;
         let scope_id = self.sources.id_of(span);
         let id = self.modules[self.source].id + scope_id;
 
+        let ty = if ty.is_reserved_value() {
+            Ty::reserved_value()
+        } else {
+            match ty_parser!(self).parse_type(ty) {
+                Ok(ty) => ty,
+                _ => return,
+            }
+        };
+
+        let flags = (GlobalFlags::MUTABLE & mutable)
+            | (GlobalFlags::THREAD_LOCAL & self.find_simple_tag("thread_local").is_some())
+            | GlobalFlags::WRITABLE;
+
         let global_ent = GlobalEnt {
             id,
             name: span,
-            mutable,
+            flags,
+            ty,
 
             ..Default::default()
         };
@@ -101,7 +115,7 @@ impl<'a> ScopeBuilder<'a> {
 
         self.scope_context.global_ast[global] = value;
 
-        self.insert_to_scope(scope_id, global, span)
+        self.insert_to_scope(scope_id, global, span);
     }
 
     fn create_unique_params(&mut self, params: TyList) -> TyList {

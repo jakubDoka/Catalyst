@@ -1,5 +1,6 @@
 #![feature(explicit_generic_args_with_impl_trait)]
 #![feature(let_else)]
+#![feature(let_chains)]
 
 pub mod state;
 
@@ -11,7 +12,7 @@ pub use state::CirBuilder;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
     ExtFuncData, ExternalName, FuncRef, GlobalValueData, InstBuilder, MemFlags, Signature,
-    StackSlotData,
+    StackSlotData, StackSlotKind,
 };
 use cranelift_codegen::isa::{CallConv, TargetIsa};
 use cranelift_codegen::{ir, packed_option::PackedOption};
@@ -68,7 +69,7 @@ impl CirBuilderContext {
 }
 
 impl CirBuilder<'_> {
-    pub fn generate(&mut self) {
+    pub fn generate(&mut self, entry: bool, span: Span) {
         self.cir_builder_context.clear();
 
         for (id, stack) in self.func_ctx.stacks.iter() {
@@ -83,7 +84,7 @@ impl CirBuilder<'_> {
         }
 
         for (id, _) in self.func_ctx.blocks() {
-            self.generate_block(id);
+            self.generate_block(id, entry, span);
         }
 
         self.builder.seal_all_blocks();
@@ -96,14 +97,18 @@ impl CirBuilder<'_> {
         // }
     }
 
-    fn generate_block(&mut self, id: mir::Block) {
+    fn generate_block(&mut self, id: mir::Block, entry: bool, span: Span) {
         let block = self.cir_builder_context.block_lookup[id].unwrap();
         self.builder.switch_to_block(block);
-
+        
         for (value, ent) in self.func_ctx.block_params(id) {
             let repr = self.reprs[ent.ty].repr;
             let ir_value = self.builder.append_block_param(block, repr);
             self.cir_builder_context.value_lookup[value] = ir_value.into();
+        }
+
+        if self.stack_frame.is_none() {
+            self.create_stack_trace(entry, span);
         }
 
         for (_, inst) in self
@@ -228,11 +233,13 @@ impl CirBuilder<'_> {
                 };
                 self.cir_builder_context.value_lookup[target_value] = ir_value.into();
             }
-            InstKind::Call(func, params, args) => {
+            InstKind::Call(func, params, args, span) => {
                 if self.funcs[func.meta()].kind == FuncKind::Builtin {
-                    self.generate_native_call(func, params, args, inst.value);
+                    self.generate_native_call(func, params, args, inst.value, span);
                     return;
                 }
+
+                self.save_stack_trace(span);
 
                 let ir_inst =
                     {
@@ -325,18 +332,13 @@ impl CirBuilder<'_> {
                     self.builder.def_var(variable, value);
                 }
             }
-            InstKind::DerefPtr(value)
-                if self.func_ctx.values[value]
-                    .flags
-                    .contains(MirFlags::POINTER) =>
-            {
+            InstKind::DerefPtr(value) => {
                 let value = self.use_value(value);
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] = value.into();
             }
-            InstKind::Offset(value) | InstKind::TakePtr(value) | InstKind::DerefPtr(value) => {
+            InstKind::Offset(value) | InstKind::TakePtr(value) => {
                 self.cir_builder_context.value_lookup[inst.value.unwrap()] =
                     self.cir_builder_context.value_lookup[value].unwrap().into();
-                // check
             }
             InstKind::Assign(value) => {
                 let target = inst.value.unwrap();
@@ -474,6 +476,7 @@ impl CirBuilder<'_> {
         params: TyList,
         args: ValueList,
         result: PackedOption<mir::Value>,
+        span: Span, 
     ) {
         let name = self.funcs[func.meta()].name;
         let str = self.sources.display(name);
@@ -489,12 +492,22 @@ impl CirBuilder<'_> {
                 self.generate_native_int_conv(args, result)
             }
             "size_of" => self.generate_size_of(params),
+            "get_stack_trace" => self.generate_get_stack_trace(span),
             _ => unimplemented!("Unhandled native function: {:?}", str),
         };
 
         if let Some(result) = result.expand() {
             self.cir_builder_context.value_lookup[result] = value.unwrap().into();
         }
+    }
+
+    fn generate_get_stack_trace(&mut self, span: Span) -> Option<ir::Value> {
+        if self.stack_frame.is_none() {
+            self.create_stack_trace(false, span);
+        }
+        let stack = self.stack_frame.unwrap();
+        self.save_stack_trace(span);
+        Some(self.builder.ins().stack_addr(self.isa.pointer_type(), stack, 0))
     }
 
     fn generate_size_of(&mut self, params: TyList) -> Option<ir::Value> {
@@ -551,7 +564,7 @@ impl CirBuilder<'_> {
 
                 let ty = self.builder.func.dfg.value_type(left);
 
-                assert!(ty == self.builder.func.dfg.value_type(right));
+                assert_eq!(ty, self.builder.func.dfg.value_type(right));
 
                 let add = if ty.is_int() {
                     self.builder.ins().iadd(left, right)
@@ -809,7 +822,7 @@ impl CirBuilder<'_> {
         } = self.func_ctx.values[value];
         let repr = self.reprs[ty].repr;
         let variable = Variable::new(value.index());
-        let value = if flags.contains(MirFlags::ASSIGNABLE)
+        let v = if flags.contains(MirFlags::ASSIGNABLE)
             && self.cir_builder_context.variable_set.contains(variable)
         {
             self.builder.use_var(variable)
@@ -823,12 +836,12 @@ impl CirBuilder<'_> {
             let loader_repr = repr.as_int();
 
             if self.reprs[ty].flags.contains(ReprFlags::ON_STACK) || as_pointer {
-                value
+                v
             } else {
                 let value = self
                     .builder
                     .ins()
-                    .load(loader_repr, MemFlags::new(), value, offset);
+                    .load(loader_repr, MemFlags::new(), v, offset);
                 if repr == ir::types::B1 {
                     self.builder.ins().icmp_imm(IntCC::NotEqual, value, 0)
                 } else {
@@ -837,7 +850,7 @@ impl CirBuilder<'_> {
             }
         } else {
             assert!(!as_pointer);
-            self.read_bit_field(value, offset, repr)
+            self.read_bit_field(v, offset, repr)
         }
     }
 
@@ -861,6 +874,60 @@ impl CirBuilder<'_> {
             value = self.builder.ins().ireduce(repr, value);
         }
         value
+    }
+
+    fn save_stack_trace(&mut self, span: Span) {
+        if let Some(stack) = self.stack_frame && !span.is_reserved_value() {
+            let ptr_ty = self.isa.pointer_type();
+    
+            let (line, col) = self.sources.line_data_of(span);
+
+            let offset = ptr_ty.bytes() as i32;
+            
+            let line = self.builder.ins().iconst(ir::types::I32, line as i64);
+            self.builder.ins().stack_store(line, stack, offset);
+
+            let col = self.builder.ins().iconst(ir::types::I32, col as i64);
+            self.builder.ins().stack_store(col, stack, offset * 2);
+
+            let stack_addr = self.builder.ins().stack_addr(ptr_ty, stack, 0);
+            self.builder.ins().set_pinned_reg(stack_addr);
+        }
+    }
+
+    fn create_stack_trace(&mut self, entry: bool, span: Span) {
+        if span.is_reserved_value() {
+            return;
+        }
+
+        let ptr_ty = self.isa.pointer_type();
+
+        let size = self.reprs[self.builtin_types.stack_trace].layout.size(); 
+        let stack = self.builder.create_stack_slot(StackSlotData {
+            kind: StackSlotKind::ExplicitSlot,
+            size: self.unwrap_size(size) as u32,
+        });
+        
+
+        let prev = if entry {
+            self.builder.ins().iconst(ptr_ty, 0)
+        } else {
+            self.builder.ins().get_pinned_reg(ptr_ty)
+        };
+        self.builder.ins().stack_store(prev, stack, 0);
+
+        let (f_start, f_end) = self.sources.file_of(span);
+
+        let offset = ptr_ty.bytes() as i32;
+
+        let f_start = self.builder.ins().iconst(ir::types::I32, f_start as i64);
+        self.builder.ins().stack_store(f_start, stack, offset * 3);
+
+        let f_end = self.builder.ins().iconst(ir::types::I32, f_end as i64);
+        self.builder.ins().stack_store(f_end, stack, offset * 4);
+
+            
+        self.stack_frame = Some(stack);
     }
 }
 

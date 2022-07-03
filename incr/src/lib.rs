@@ -185,7 +185,7 @@ impl BitSerde for IncrGlobalDataStorage {
 
 #[derive(Default)]
 pub struct IncrGlobalData {
-    pub mutable: bool,
+    pub flags: u32,
     pub bytes: Option<GlobalDataBytes>,
     pub name: Span,
     pub ty: ID,
@@ -194,7 +194,7 @@ pub struct IncrGlobalData {
 
 impl BitSerde for IncrGlobalData {
     fn write(&self, buffer: &mut Vec<u8>) {
-        self.mutable.write(buffer);
+        self.flags.write(buffer);
         self.bytes.write(buffer);
         self.name.write(buffer);
         self.ty.write(buffer);
@@ -203,7 +203,7 @@ impl BitSerde for IncrGlobalData {
 
     fn read(cursor: &mut usize, buffer: &[u8]) -> Result<Self, String> {
         Ok(Self {
-            mutable: bool::read(cursor, buffer)?,
+            flags: u32::read(cursor, buffer)?,
             bytes: Option::read(cursor, buffer)?,
             name: Span::read(cursor, buffer)?,
             ty: ID::read(cursor, buffer)?,

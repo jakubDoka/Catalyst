@@ -31,6 +31,36 @@ macro_rules! gen_kind {
             $(($($op_lit:literal)+) = $op_precedence:expr,)*
         }
     ) => {
+        
+
+        impl TokenKind {
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(
+                        TokenKind::$keyword => concat!("'", $keyword_repr, "'"),
+                    )*
+
+                    $(
+                        TokenKind::$punctuation => concat!("'", $punctuation_repr, "'"),
+                    )*
+
+                    $(
+                        TokenKind::$literal => stringify!($literal),
+                    )*
+
+                    $(
+                        TokenKind::$skipped => stringify!($skipped),
+                    )*
+
+                    TokenKind::Operator(..) => "Operator",
+                    TokenKind::NewLine => "'\\n' | ';'",
+                    TokenKind::Error => "<error>",
+                    TokenKind::Eof => "<eof>",
+                    TokenKind::None => "<none>",
+                }
+            }
+        }
+
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
         pub enum TokenKind {
             $(
@@ -67,34 +97,6 @@ macro_rules! gen_kind {
             Error,
             Eof,
             None,
-        }
-
-        impl TokenKind {
-            pub fn as_str(self) -> &'static str {
-                match self {
-                    $(
-                        TokenKind::$keyword => concat!("'", $keyword_repr, "'"),
-                    )*
-
-                    $(
-                        TokenKind::$punctuation => concat!("'", $punctuation_repr, "'"),
-                    )*
-
-                    $(
-                        TokenKind::$literal => stringify!($literal),
-                    )*
-
-                    $(
-                        TokenKind::$skipped => stringify!($skipped),
-                    )*
-
-                    TokenKind::Operator(..) => "Operator",
-                    TokenKind::NewLine => "'\\n' | ';'",
-                    TokenKind::Error => "<error>",
-                    TokenKind::Eof => "<eof>",
-                    TokenKind::None => "<none>",
-                }
-            }
         }
     };
 }
@@ -134,6 +136,7 @@ gen_kind!(
         ThickRightArrow = "=>",
         DoubleColon = "::",
         Hash = "#",
+        DoubleHash = "##",
     }
 
     literal {
@@ -190,6 +193,14 @@ pub trait SourcesExt: IndexMut<Source, Output = SourceEnt> {
     fn id_of(&self, span: Span) -> ID {
         ID::new(self.display(span))
     }
+
+    fn line_data_of(&self, span: Span) -> (usize, usize) {
+        self[span.source].mapping.line_data_at(span.start as usize)
+    }
+
+    fn file_of(&self, span: Span) -> (u32, u32) {
+        self[span.source].path_span
+    }
 }
 
 pub struct BuiltinSource {
@@ -205,6 +216,7 @@ impl BuiltinSource {
             content: "".to_string(),
             path: PathBuf::new(),
             mapping: LineMapping::new(""),
+            path_span: (0, 0),
         };
 
         let source = sources.push(source);
@@ -239,6 +251,7 @@ pub struct SourceEnt {
     pub path: PathBuf,
     pub content: String,
     pub mapping: LineMapping,
+    pub path_span: (u32, u32),
 }
 
 impl SourceEnt {
@@ -247,6 +260,7 @@ impl SourceEnt {
             path,
             mapping: LineMapping::new(&content),
             content,
+            path_span: (0, 0),
         }
     }
 
@@ -284,11 +298,11 @@ impl LineMapping {
 
     pub fn line_data_at(&self, pos: usize) -> (usize, usize) {
         if pos == 0 {
-            return (0, 0);
+            return (1, 0);
         }
 
         match self.new_lines.binary_search(&(pos as u32)) {
-            Ok(i) | Err(i) => (i - 1, pos - self.new_lines[i - 1] as usize),
+            Ok(i) | Err(i) => (i, pos - self.new_lines[i - 1] as usize),
         }
     }
 
@@ -489,8 +503,8 @@ impl Span {
             to,
             "|> {}:{}:{} ",
             source_ent.path.display(),
-            line + 1,
-            col + 1
+            line,
+            col
         )
     }
 }

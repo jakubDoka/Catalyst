@@ -198,6 +198,17 @@ file "typec_types/src/state.rs" {
         Types
         Sources
     }
+
+    struct TirDisplay {
+        owned Tir
+        
+        passed TirData
+        
+        Types
+        TyLists
+        TyComps
+        Sources
+    }
 }
 
 file "typec/src/state.rs" {
@@ -282,7 +293,8 @@ file "typec/src/state.rs" {
     struct TirBuilder {
         owned Func = "Func::reserved_value()"
         owned Global = "Global::reserved_value()"
-        
+        owned stack_frame: `Option<Tir>` = "None"
+
         mut TyLists
         mut TyInstances
         mut TyComps
@@ -341,6 +353,8 @@ file "typec/src/state.rs" {
         mut BoundImpls
         mut TyGraph
         mut FuncInstances
+        mut Globals
+        mut GlobalData
 
         VecPool
         BuiltinTypes
@@ -442,7 +456,8 @@ file "gen/src/state.rs" {
 
     struct CirBuilder {
         owned builder: `FunctionBuilder<'a>`
-        
+        owned stack_frame: `Option<ir::StackSlot>` = "None"
+
         mut CirBuilderContext
         mut Signatures
         VecPool

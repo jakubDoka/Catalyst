@@ -288,8 +288,13 @@ impl Compiler {
                 .enabled("no-verify")
                 .then_some("false")
                 .unwrap_or("true");
-
             setting_builder.set("enable_verifier", verify).unwrap();
+
+            let pinned_reg = input
+                .enabled("no-trace")
+                .then_some("false")
+                .unwrap_or("true");
+            setting_builder.set("enable_pinned_reg", pinned_reg).unwrap();
 
             if let Some(opt_level) = input.field("o") {
                 let opt_level = match opt_level {
@@ -335,7 +340,7 @@ impl Compiler {
 
     fn init_builtin(&mut self) {
         let b_source = self.builtin_source.source;
-        builtin_builder!(self).create_builtin_items(&mut self.modules[b_source].items)
+        builtin_builder!(self).create_builtin_items(&mut self.modules[b_source].items);
     }
 
     /// All source code is loaded into memory here.
@@ -501,7 +506,7 @@ impl Compiler {
             }
             let global_ref = self
                 .object_module
-                .declare_data(&name, Linkage::Export, true, false)
+                .declare_data(&name, Linkage::Export, true, global_ent.flags.contains(GlobalFlags::THREAD_LOCAL))
                 .unwrap();
             global_lookup[global] = PackedOption::from(global_ref);
 
@@ -592,7 +597,7 @@ impl Compiler {
                         if has_sret {
                             let return_value = self.func_ctx.values.push(ValueEnt::new(ty));
                             let args = self.func_ctx.value_slices.push(&[access]);
-                            let kind = InstKind::Call(func, TyList::reserved_value(), args);
+                            let kind = InstKind::Call(func, TyList::reserved_value(), args, Default::default());
                             let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
                         } else {
@@ -601,6 +606,7 @@ impl Compiler {
                                 func,
                                 TyList::reserved_value(),
                                 ValueList::reserved_value(),
+                                Default::default(),
                             );
                             let ent = InstEnt::new(kind).value(return_value);
                             self.func_ctx.add_inst(ent);
@@ -619,6 +625,7 @@ impl Compiler {
                             func,
                             TyList::reserved_value(),
                             ValueList::reserved_value(),
+                            Default::default(),
                         );
                         let ent = InstEnt::new(kind).value(return_value);
                         self.func_ctx.add_inst(ent);
@@ -686,7 +693,7 @@ impl Compiler {
     fn save_global_ent(&mut self, ent: Global) {
         let ent = &self.globals[ent];
         let g = IncrGlobalData {
-            mutable: ent.mutable,
+            flags: ent.flags.bits(),
             bytes: ent
                 .bytes
                 .map(|data| self.incr.global_data.bytes.push(self.global_data.get(data)))
@@ -757,7 +764,7 @@ impl Compiler {
             let g = self.globals.push(GlobalEnt {
                 id,
                 name: data.name,
-                mutable: data.mutable,
+                flags: GlobalFlags::from_bits(data.flags).unwrap(),
                 ty: *self.ty_instances.get(data.ty).unwrap(),
                 init: data
                     .init
@@ -780,11 +787,12 @@ impl Compiler {
 
         let mut s = Self::new();
 
-        s.init_builtin();
-
+        
         s.load_modules();
         s.log_diagnostics();
-
+        
+        s.init_builtin();
+     
         s.incr.reduce(&s.modules, &s.module_order);
 
         s.build_tir();

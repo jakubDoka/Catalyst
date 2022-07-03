@@ -111,7 +111,41 @@ impl TirBuilder<'_> {
             self.tir_data.cons.push(&tir_args)
         };
 
-        let root = self.block_low(body_ast, Some((ret, ret_ast)), None)?;
+        self.start_block();
+
+        let span = self.ast_data.nodes[body_ast].span;
+        let (mut ret_val, mut flags) = self.block_body(body_ast, Some(ret))?;
+        
+        if !flags.contains(TirFlags::TERMINATING) {
+            ret_val = if let Some(ret_val) = ret_val 
+                && let ty = self.tir_data.ents[ret_val].ty 
+                && ret != self.builtin_types.nothing 
+            {
+                self.infer_ty(ty, ret, |_| {
+                    TyError::ReturnTypeMismatch {
+                        because: ret_ast
+                            .is_reserved_value()
+                            .not()
+                            .then(|| self.ast_data.nodes[ret_ast].span),
+                        expected: ret,
+                        got: ty,
+                        loc: span,
+                    }
+                })?;
+                Some(ret_val)
+            } else {
+                None
+            };
+            
+            let kind = TirKind::Return(ret_val.into(), default());
+            let ent = TirEnt::with_flags(kind, self.builtin_types.nothing, TirFlags::TERMINATING, span);
+            let tir = self.tir_data.ents.push(ent);
+            self.tir_stack.push(tir);
+            flags |= TirFlags::TERMINATING;
+        }
+
+        let root = self.close_block(ret_val, flags, span);
+        
         self.funcs[self.func.meta()].body = root;
         self.funcs[self.func.meta()].args = args;
 
@@ -157,83 +191,70 @@ impl TirBuilder<'_> {
     }
 
     fn block(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
-        self.block_low(ast, None, expected)
+        let span = self.ast_data.nodes[ast].span;
+        self.start_block();
+        let (ret, flags) = self.block_body(ast, expected)?;
+        Ok(self.close_block(ret, flags, span))
     }
 
-    fn block_low(&mut self, ast: Ast, root_data: Option<(Ty, Ast)>, expected: Expected) -> errors::Result<Tir> {
-        let span = self.ast_data.nodes[ast].span;
-
+    fn start_block(&mut self) {
         self.tir_stack.mark_frame();
         self.scope.mark_frame();
+    }
 
+    fn block_body(&mut self, ast: Ast, expected: Expected) -> errors::Result<(Option<Tir>, TirFlags)> {
         let mut final_expr = None;
         let mut terminal_flags = TirFlags::empty();
-        for (i, &stmt) in self.ast_data.children(ast).iter().enumerate() {
-            let expected = (i == self.ast_data.children(ast).len() - 1).then_some(expected).flatten();
-            let Ok(expr) = self.expr(stmt, expected) else {
-                continue; // Recover here
-            };
-            self.tir_stack.push(expr);
-            final_expr = Some(expr);
-            terminal_flags |= self.terminal_flags(expr);
-            if !terminal_flags.is_empty() {
-                break; // TODO: emit warning
+        if let Some((&last, others)) = self.ast_data.children(ast).split_last() {
+            for &stmt in others {
+                let Ok(expr) = self.expr(stmt, None) else {
+                    continue;
+                };
+                self.tir_stack.push(expr);
+                terminal_flags |= self.terminal_flags(expr);
+                if !terminal_flags.is_empty() {
+                    final_expr = Some(expr);
+                    break; // TODO: emit warning
+                }
+            }
+
+            if terminal_flags.is_empty() {
+                let expected = (expected != Some(self.builtin_types.nothing)).then_some(expected).flatten();
+                let expr = self.expr(last, expected)?;
+                self.tir_stack.push(expr);
+                final_expr = Some(expr);
+                terminal_flags |= self.terminal_flags(expr);
             }
         }
 
-        let result = {
-            let ty = if let Some(expr) = final_expr {
-                self.tir_data.ents[expr].ty
-            } else {
-                self.builtin_types.nothing
-            };
+        Ok((final_expr, terminal_flags))
+    }
 
-            if let Some((ret, ret_ast)) = root_data && !terminal_flags.contains(TirFlags::TERMINATING) {
-                let because = ret_ast
-                    .is_reserved_value()
-                    .not()
-                    .then(|| self.ast_data.nodes[ret_ast].span);
-
-                let ret_value = (ret != self.builtin_types.nothing).then_some(final_expr).flatten();
-
-                if ret_value.is_some() {
-                    self.infer_ty(ty, ret, |_| TyError::ReturnTypeMismatch {
-                        because,
-                        expected: ret,
-                        got: ty,
-                        loc: span,
-                    })?;
-                }
-
-                let kind = TirKind::Return(ret_value.into(), default());
-                let ent = TirEnt::new(kind, ret, span);
-                let tir = self.tir_data.ents.push(ent);
-                self.tir_stack.push(tir);
-                terminal_flags |= TirFlags::TERMINATING;
-            }
-
-            let slice = self.tir_stack.top_frame();
-            let items = self.tir_data.cons.push(slice);
-            let kind = TirKind::Block(items, default());
-            let flags = terminal_flags;
-            let ent = TirEnt {
-                kind,
-                ty,
-                flags,
-                span,
-            };
-            self.tir_data.ents.push(ent)
+    fn close_block(&mut self, ret: Option<Tir>, flags: TirFlags, span: Span) -> Tir {
+        let ty = if let Some(expr) = ret {
+            self.tir_data.ents[expr].ty
+        } else {
+            self.builtin_types.nothing
         };
+
+        let slice = self.tir_stack.top_frame();
+        let items = self.tir_data.cons.push(slice);
+        let kind = TirKind::Block(items, default());
+        let ent = TirEnt {
+            kind,
+            ty,
+            flags,
+            span,
+        };
+        let result = self.tir_data.ents.push(ent);
 
         self.tir_stack.pop_frame();
         self.scope.pop_frame();
 
-        Ok(result)
+        result
     }
 
     fn expr(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
-        let expected = expected.map(|ty| self.types[ty].flags
-            .contains(TyFlags::GENERIC).not().then_some(ty)).flatten();
         let ast::AstEnt { kind, span, .. } = self.ast_data.nodes[ast];
         match kind {
             AstKind::Unary => self.unary(ast),
@@ -268,31 +289,37 @@ impl TirBuilder<'_> {
 
     fn string(&mut self, ast: Ast) -> errors::Result<Tir> {
         let span = self.ast_data.nodes[ast].span;
+        let str = self.sources.display(span);
+        self.string_from_str(str, true, span)
+    }
 
+    fn string_from_str(&mut self, str: &str, escape: bool, span: Span) -> errors::Result<Tir> {
         let (ptr, len) = {
-            let str = self.sources.display(span);
             let id = ID::new(str);
 
             let global = if let Some(&global) = self.global_map.get(id) {
                 global
             } else {
-                let mut translator = EscapeTranslator::new(&str[1..str.len() - 1]);
-                let bytes = {
+                let bytes = if escape {
+                    let mut translator = EscapeTranslator::new(&str[1..str.len() - 1]);
                     let bytes = (&mut translator).flat_map(|c| {
                         let mut data = [0u8; 4];
                         let len = c.encode_utf8(&mut data).len();
                         data.into_iter().take(len)
                     });
-                    self.global_data.push_iter(bytes)
+                    let bytes = self.global_data.push_iter(bytes);
+                    if let Some((error, pos)) = translator.report_error() {
+                        self.diagnostics.push(TyError::StringError {
+                            error,
+                            pos,
+                            loc: span,
+                        });
+                    }
+                    bytes
+                } else {
+                    self.global_data.push(str.as_bytes())
                 };
 
-                if let Some((error, pos)) = translator.report_error() {
-                    self.diagnostics.push(TyError::StringError {
-                        error,
-                        pos,
-                        loc: span,
-                    });
-                }
 
                 let bytes = bytes.is_reserved_value().not().then_some(bytes).into();
 
@@ -359,7 +386,7 @@ impl TirBuilder<'_> {
 
     fn r#ref(&mut self, ast: Ast, mutable: bool, expected: Expected) -> errors::Result<Tir> {
         let expr = self.ast_data.children(ast)[0];
-        let expr = self.expr(expr, expected.map(|e| self.types.deref(e)))?;
+        let expr = self.expr(expr, expected.and_then(|e| self.types.try_deref(e)))?;
         Ok(self.take_ptr(expr, mutable))
     }
 
@@ -1086,9 +1113,9 @@ impl TirBuilder<'_> {
                 ret,
                 &mut param_slots,
                 self.ty_lists.get(params),
-                Default::default(),
+                _span,
                 true,
-            ));
+            ))
         }
 
         if let (Some(ty), Some(param @ &mut None)) = (caller, param_slots.last_mut()) {
@@ -1151,7 +1178,7 @@ impl TirBuilder<'_> {
 
     fn call(&mut self, ast: Ast, expected: Expected) -> errors::Result<Tir> {
         let caller = self.ast_data.children(ast)[0];
-        let AstEnt { kind, span, .. } = self.ast_data.nodes[caller];
+        let AstEnt { kind, .. } = self.ast_data.nodes[caller];
 
         if kind == AstKind::DotExpr {
             let &[lhs, rhs] = self.ast_data.children(caller) else {
@@ -1159,9 +1186,10 @@ impl TirBuilder<'_> {
             };
 
             let obj = self.expr(lhs, None)?;
-            let TirEnt { ty, span, .. } = self.tir_data.ents[obj];
+            let TirEnt { ty, span: caller_span, .. } = self.tir_data.ents[obj];
             let ty = self.types.ptr_leaf_of(ty);
             let caller = self.types.caller_of(ty);
+            let call_span = self.ast_data.nodes[rhs].span;
 
             let (rhs, instantiation) = if self.ast_data.nodes[rhs].kind == AstKind::Instantiation {
                 (self.ast_data.children(rhs)[0], Some(rhs))
@@ -1169,7 +1197,7 @@ impl TirBuilder<'_> {
                 (rhs, None)
             };
 
-            let id = ident_hasher!(self).ident_id(rhs, Some((caller, span)))?;
+            let id = ident_hasher!(self).ident_id(rhs, Some((caller, caller_span)))?;
 
             let matcher = matcher!();
             self.scope
@@ -1179,13 +1207,13 @@ impl TirBuilder<'_> {
                         let field_ty = self.subtype(ty, self.ty_comps[field].ty);
                         let field = {
                             let kind = TirKind::FieldAccess(obj, field);
-                            let ent = TirEnt::new(kind, field_ty, span);
+                            let ent = TirEnt::new(kind, field_ty, call_span);
                             self.tir_data.ents.push(ent)
                         };
-                        self.indirect_call(field, ast, span)
+                        self.indirect_call(field, ast, call_span)
                             .map_err(|_| ScopeFindError::Other)
                     } else if let Some(method) = field_or_method.pointer.may_read::<Func>() {
-                        self.direct_call(method, ast, Some(ty), Some(obj), instantiation, expected, span)
+                        self.direct_call(method, ast, Some(ty), Some(obj), instantiation, expected, call_span)
                             .map_err(|_| ScopeFindError::Other)
                     } else {
                         Err(ScopeFindError::InvalidType(field_or_method.pointer.id))
@@ -1193,8 +1221,8 @@ impl TirBuilder<'_> {
                 })
                 .map_err(scope_error_handler(
                     self.diagnostics,
-                    not_found_handler(span),
-                    span,
+                    not_found_handler(call_span),
+                    caller_span,
                     "field method",
                     matcher,
                 ))
@@ -1206,6 +1234,7 @@ impl TirBuilder<'_> {
                     (caller, None)
                 };
 
+            let span = self.ast_data.nodes[caller].span;
             let (id, caller) = ident_hasher!(self).ident_id_low(caller, None)?;
             let func = self.symbol_low(id, span, false)?;
             if let TirKind::FuncPtr(func) = func.kind {
@@ -1238,12 +1267,12 @@ impl TirBuilder<'_> {
 
         let mut vec = self
             .vec_pool
-            .with_capacity(arg_tys.len() + obj.is_some() as usize);
+            .with_capacity(arg_tys.len() + obj.is_some() as usize);        
         if let &mut Some(obj) = obj {
             vec.push(obj);
         }
         let mut terminal_flags = TirFlags::empty();
-        for (&arg, &ty) in self.ast_data.children(ast)[1..].iter().zip(arg_tys) {
+        for (&arg, &ty) in self.ast_data.children(ast)[1..].iter().zip(arg_tys.iter().skip(obj.is_some() as usize)) {
             let Ok(arg) = self.expr(arg, Some(ty)) else {
                 continue;
             };
@@ -1353,7 +1382,7 @@ impl TirBuilder<'_> {
             let matcher = matcher!(Func = "method");
             let handler = scope_error_handler(
                 self.diagnostics,
-                || TyError::FieldNotFound { ty, loc: span },
+                || TyError::FieldNotFound { ty: caller_ty, loc: span },
                 span,
                 "field",
                 matcher,
@@ -1447,27 +1476,40 @@ impl TirBuilder<'_> {
             "enum-variant",
             matcher,
         );
+        
         let variant = self.scope.get_concrete::<TyComp>(id).map_err(handler)?;
         let TyCompEnt { ty, index, .. } = self.ty_comps[variant];
-        let TyKind::Enum(discriminant, _) = self.types[enum_ty].kind else {
+        let (mut param_slots, base) = self.param_slots_and_base_of(enum_ty);
+        let TyKind::Enum(discriminant, _) = self.types[base].kind else {
             unreachable!();
         };
         let value = self.constructor_low(ty, body)?;
         let flag = self.int_lit(index as u128 - 1, discriminant);
+        
+        if !param_slots.is_empty() {
+            let subs = collect_ty_params(base, self.types, self.vec_pool, self.builtin_types);
+            drop(bound_checker!(self).infer_parameters(
+                self.tir_data.ents[value].ty, 
+                enum_ty, 
+                &mut param_slots, 
+                subs.as_slice(),
+                span,
+                false,
+            ));
+        }
+
+        let ty = self.instantiate_constructor_type(&mut param_slots, enum_ty, span)?;
 
         let args = self.tir_data.cons.push(&[flag, value]);
         let kind = TirKind::Constructor(args);
         let flags = TirFlags::TERMINATING & self.is_terminating(value);
-        let ent = TirEnt::with_flags(kind, enum_ty, flags, span);
+        let ent = TirEnt::with_flags(kind, ty, flags, span);
 
         Ok(self.tir_data.ents.push(ent))
     }
 
-    fn constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
-        let AstEnt { span, kind, .. } = self.ast_data.nodes[body];
-        let TyEnt { flags, .. } = self.types[ty];
-
-        let (mut param_slots, ty) = if let TyKind::Instance(base, params) = self.types[ty].kind {
+    fn param_slots_and_base_of(&mut self, ty: Ty) -> (PoolVec<Option<Ty>>, Ty) {
+        if let TyKind::Instance(base, params) = self.types[ty].kind {
             (
                 self.vec_pool
                     .alloc_iter(self.ty_lists.get(params).iter().copied().map(Some)),
@@ -1476,10 +1518,16 @@ impl TirBuilder<'_> {
         } else {
             (
                 self.vec_pool
-                    .of_size(Option::<Ty>::None, flags.param_count()),
+                    .of_size(Option::<Ty>::None, self.types[ty].flags.param_count()),
                 ty,
             )
-        };
+        }
+    }
+
+    fn constructor_low(&mut self, ty: Ty, body: Ast) -> errors::Result<Tir> {
+        let AstEnt { span, kind, .. } = self.ast_data.nodes[body];
+
+        let (mut param_slots, ty) = self.param_slots_and_base_of(ty);
 
         let TyKind::Struct(fields) = self.types[ty].kind else {
             self.diagnostics.push(TyError::ExpectedStruct {
@@ -1490,6 +1538,7 @@ impl TirBuilder<'_> {
         };
 
         let mut initial_values = vec![Tir::reserved_value(); self.ty_comps.get(fields).len()];
+        let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
 
         // TODO: maybe avoid allocation
         let mut terminal_flags = TirFlags::empty();
@@ -1548,7 +1597,7 @@ impl TirBuilder<'_> {
                     span,
                     ..
                 } = self.tir_data.ents[value];
-                let subs = collect_ty_params(ty, self.types, self.vec_pool, self.builtin_types);
+                
                 if let Err(err) = bound_checker!(self).infer_parameters(
                     parametrized_field_ty,
                     field_ty,
@@ -1597,7 +1646,20 @@ impl TirBuilder<'_> {
 
         let span = self.ast_data.nodes[body].span;
 
-        let ty = if param_slots.len() > 0 {
+        let ty = self.instantiate_constructor_type(&mut param_slots, ty, span)?;
+
+        let result = {
+            let fields = self.tir_data.cons.push(&initial_values);
+            let kind = TirKind::Constructor(fields);
+            let ent = TirEnt::new(kind, ty, span);
+            self.tir_data.ents.push(ent)
+        };
+
+        Ok(result)
+    }
+
+    fn instantiate_constructor_type(&mut self, param_slots: &mut Vec<Option<Ty>>, ty: Ty, span: Span) -> errors::Result<Ty> {
+        Ok(if !param_slots.is_empty() {
             param_slots
                 .iter()
                 .enumerate()
@@ -1623,16 +1685,7 @@ impl TirBuilder<'_> {
             ty
         } else {
             ty
-        };
-
-        let result = {
-            let fields = self.tir_data.cons.push(&initial_values);
-            let kind = TirKind::Constructor(fields);
-            let ent = TirEnt::new(kind, ty, span);
-            self.tir_data.ents.push(ent)
-        };
-
-        Ok(result)
+        })
     }
 
     fn variable(&mut self, mutable: bool, ast: Ast) -> errors::Result<Tir> {
@@ -1694,7 +1747,7 @@ impl TirBuilder<'_> {
                     .integers()
                     .into_iter()
                     .find(|&ty| str.ends_with(self.sources.display(self.types[ty].name)))
-                    .unwrap_or_else(|| if let Some(ty) = expected {
+                    .unwrap_or_else(|| if let Some(ty) = expected && !matches!(self.types[ty].kind, TyKind::Param(..)) {
                         ty
                     } else {
                         self.builtin_types.int
@@ -1839,8 +1892,8 @@ impl TirBuilder<'_> {
                     Ok(copy)
                 } else if let Some(global) = value.pointer.may_read::<Global>() {
                     let kind = TirKind::GlobalAccess(global);
-                    let GlobalEnt { ty, mutable, .. } = self.globals[global];
-                    let flags = TirFlags::IMMUTABLE & !mutable;
+                    let GlobalEnt { ty, flags, .. } = self.globals[global];
+                    let flags = TirFlags::IMMUTABLE & !flags.contains(GlobalFlags::MUTABLE);
                     Ok(TirEnt::with_flags(kind, ty, flags, span))
                 } else if let Some(func) = value.pointer.may_read::<Func>() {
                     let kind = TirKind::FuncPtr(func);
@@ -1871,11 +1924,15 @@ impl TirBuilder<'_> {
         let &[left, op, right] = self.ast_data.children(ast) else {
             unreachable!()
         };
+        
+        let op_span = self.ast_data.nodes[op].span;
+        let is_assign = self.sources.display(op_span) == "=";
 
         // we walk the ast even if something fails for better error diagnostics
         let (left, right) = {
             let left = self.expr(left, None);
-            let right = self.expr(right, None);
+            let expected = (is_assign && left.is_ok()).then(|| self.tir_data.ents[left.unwrap()].ty);
+            let right = self.expr(right, expected);
             (left?, right?)
         };
 
@@ -1886,21 +1943,15 @@ impl TirBuilder<'_> {
             return Ok(left);
         }
 
+        if is_assign {
+            return self.assign(left, right, span);
+        }
+
         let left_ty = self.tir_data.ents[left].ty;
 
-        let op_span = self.ast_data.nodes[op].span;
         let id = {
-            let op_id = {
-                let str = self.sources.display(op_span);
-                if str == "=" {
-                    return self.assign(left, right, span);
-                }
-
-                ID::new(str)
-            };
-
+            let op_id = self.sources.id_of(op_span);
             let left_id = self.types[left_ty].id;
-
             ID::binary(left_id, op_id)
         };
 

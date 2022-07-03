@@ -38,12 +38,14 @@ impl Generator<'_> {
                 continue;
             }
 
+            // println!("{}", tir_display!(self, self.funcs[id.meta()].body, self.funcs[id.meta()].tir_data));
+            
             // if !self.funcs[id.meta()].name.is_reserved_value() {
             //     println!("{}", self.sources.display(self.funcs[id.meta()].name));
             // }
-
+            
             self.load_generic_params(id, params, ptr_ty);
-
+            
             let tir = std::mem::take(&mut self.funcs[id.meta()].tir_data);
             let result = mir_builder!(self, id, ptr_ty, sys_cc, tir).func();
 
@@ -67,7 +69,10 @@ impl Generator<'_> {
             &mut self.generation_context.builder_context,
         );
 
-        cir_builder!(self, builder, *self.isa).generate();
+        cir_builder!(self, builder, *self.isa).generate(
+            self.funcs[id].flags.contains(FuncFlags::ENTRY),
+            self.funcs[id.meta()].name,
+        );
 
         // println!("{:?}", self.context.func);
 
@@ -186,7 +191,7 @@ impl Generator<'_> {
                 ..Default::default()
             };
 
-            let func = self.funcs.push_instance(func_ent, Func::reserved_value());
+            let func = self.funcs.push_header(func_ent, Func::reserved_value());
             self.generation_context.reused_incr_funcs.push(func);
             let incr_func_data = self.incr_funcs.get(id).unwrap();
 

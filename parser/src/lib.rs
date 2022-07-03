@@ -20,6 +20,25 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    pub fn parse_file_tags(
+        sources: &'a Sources,
+        diagnostics: &'a mut errors::Diagnostics,
+        ast_file: &'a mut AstData,
+        temp: &'a mut FramedStack<Ast>,
+        source: Source,
+    ) -> InterState {
+        let inter_state = InterState::new(source);
+        Self::parse_with(
+            sources,
+            diagnostics,
+            ast_file,
+            temp,
+            inter_state,
+            Self::take_file_tags,
+        )
+        .unwrap()
+    }
+    
     pub fn parse_imports(
         sources: &'a Sources,
         diagnostics: &'a mut errors::Diagnostics,
@@ -116,6 +135,16 @@ impl<'a> Parser<'a> {
             progress: s.lexer.progress(),
             source,
         })
+    }
+
+    fn take_file_tags(&mut self) -> errors::Result<bool> {
+        self.skip_new_lines();
+        while self.current.kind() == TokenKind::DoubleHash {
+            let tag = self.tag()?;
+            self.data.elements.push(tag);
+            self.skip_new_lines();
+        }
+        Ok(true)
     }
 
     fn take_imports(&mut self) -> errors::Result<bool> {
@@ -1127,7 +1156,8 @@ impl<'a> Parser<'a> {
         let name = self.ident()?;
         self.stack.push(name);
 
-        let end = if self.current.kind() == TokenKind::Colon {
+        let has_explicit_type = self.current.kind() == TokenKind::Colon;
+        let end = if has_explicit_type {
             self.advance();
             let ty = self.type_expr()?;
             self.stack.push(ty);
@@ -1140,11 +1170,12 @@ impl<'a> Parser<'a> {
         let span = self.current.span();
         let str = self.sources.display(span);
         let end = if str == "=" {
+            self.advance();
             let value = self.expr()?;
             self.stack.push(value);
             self.data.nodes[value].span
         } else {
-            if self.stack.top_frame().last().unwrap().is_reserved_value() {
+            if !has_explicit_type {
                 self.diagnostics.push(AstError::ExpectedAssign { 
                     got: self.current.kind(), 
                     loc: self.current.span() 
@@ -1154,7 +1185,6 @@ impl<'a> Parser<'a> {
             self.stack.push_default();
             end
         };
-        self.advance();
 
         Ok(self.alloc(AstKind::Variable(mutable), span.join(end)))
     }
@@ -1262,7 +1292,6 @@ impl<'a> Parser<'a> {
     fn path(&mut self) -> errors::Result<Ast> {
         let mut span = self.current.span();
         let mut result = if self.current.kind() == TokenKind::DoubleColon {
-            self.advance();
             Ast::reserved_value()
         } else {
             self.ident()?

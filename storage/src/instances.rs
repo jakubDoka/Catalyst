@@ -19,7 +19,7 @@ impl<K: HasMeta, H, M> MetaMap<K, H, M> {
         }
     }
 
-    pub fn push_instance(&mut self, header: H, inherits: K) -> K {
+    pub fn push_header(&mut self, header: H, inherits: K) -> K {
         let key = self.headers.push(header);
         self.mapping[key] = self.mapping[inherits];
         key

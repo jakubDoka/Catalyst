@@ -30,14 +30,10 @@ impl OwnershipSolver<'_> {
     }
 
     fn traverse_low(&mut self, tir: Tir, create_scope: bool) -> errors::Result<ID> {
-        let id = self.o_ctx.seen[tir];
-        if id.is_reserved_value() {
-            let id = self.traverse_unchecked(tir, create_scope)?;
-            self.o_ctx.seen[tir] = id;
-            Ok(id)
-        } else {
-            Ok(id)
+        if self.o_ctx.seen[tir].is_reserved_value() {
+            self.o_ctx.seen[tir] = self.traverse_unchecked(tir, create_scope)?;
         }
+        Ok(self.o_ctx.seen[tir])
     }
 
     fn traverse_unchecked(&mut self, root: Tir, create_scope: bool) -> errors::Result<ID> {

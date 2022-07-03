@@ -12,24 +12,24 @@ let mut dangerous_int = 0
 #entry
 fn main() -> int {
     if other(1, 2, 3) != 7 {
-        return 1
+        panic("broken fn calls and math")
     }
 
     if structs::bti(true) != 1 {
-        return 2
+        panic("broken if expression and module imports from structs")
     }
     
     if generics::bti(false) != 0 {
-        return 3
+        panic("broken if expression and module imports from generics")
     }
 
     
     if fib(5) != 8 {
-        return 4
+        panic("broken recursion")
     }
     
     if iter_fib(5) != 8 {
-        return 5
+        panic("broken loops and mutable variables")
     }
        
     {
@@ -41,58 +41,47 @@ fn main() -> int {
             b += i
             i += 1
         } } != 5050 {
-            return 6
+            panic("broken loops as expression")
         }
     }
     
-    if structure_test() != 0 {
-        return 7
-    }
+    structure_test()
     
     if init_something().a != 0 {
-        return 8
+        panic("broken field access on arbitrary expressions")
     }
     
     if generics::move_in_and_out(0) != 0 {
-        return 9
+        panic("broken generics")
     }    
-    
+
     if Goo::new().field() != 10 {
-        return 10
+        panic("broken static methods")
     }
+    
     
     if (*PtrTest::{ a: false; b: false; c: true }.as_ptr()).c {} else {
-        return 11
+        panic("broken pointer access")
     }
-
+    
     if foo::[Goo]() + foo::[Goo]() != 20 {
-        return 12
+        panic("broken bounds")
     }
 
     if Loo::{ field: ^^Loo::{ field: 90; yes: false }; yes: true }.as_ptr().field.field != 90 {
-        return 13
+        panic("broken pointer access and generic structs")
     }
 
-    let mut vec = Vec::new::[Vec[int]]()
-
-    vec.push(Vec::new::[int]())
-    vec.push(Vec::new::[int]())
-
-    vec.get_unwrapped_last().push(34)
-    
-    if *vec.get_unwrapped_last().get_unwrapped_last() != 34 {
-        return 14
-    }
+    vector_test()
     
     let ptr = malloc(100)
     
-    if ptr as int == 0 {
-        return 15
+    if is_null(ptr) {
+        panic("broken is_null")
     }
 
     free(ptr)
 
-    /*    
     if Enum::Something::{}.is_something() {} else {
         return 16
     }
@@ -100,7 +89,6 @@ fn main() -> int {
     if Enum::Structural::{ integer: 6 }.integer() != 6 {
         return 17
     }
-    */
 
     if CONSTANT != 1 {
         return 18
@@ -182,7 +170,32 @@ fn main() -> int {
     -34
 }
 
+struct StackFrame {
+    line: u32
+    col: u32
+    file: ^str
+    prev: ^StackFrame
+}
 
+fn vector_test() {
+    let mut vec = Vec::new::[Vec[int]]()
+
+    vec.push(Vec::new::[int]())
+    vec.push(Vec::new::[int]())
+
+    vec.get_unwrapped_last().push(34)
+    
+    let invalid = unsafe_read(vec.get_unwrapped_last())
+
+    forget(invalid)
+
+    if *vec.get_unwrapped_last().get_unwrapped_last() != 34 {
+        panic("vector indexing is broken")
+    }
+}
+
+#no_ownership
+fn [T] forget(value: T) {}
 
 fn drop_(t: TestOwnership) {
 

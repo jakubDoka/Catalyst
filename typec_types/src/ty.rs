@@ -23,6 +23,13 @@ pub trait TypeBase: IndexMut<Ty, Output = TyEnt> {
             || matches!(self[ty].kind, TyKind::Param(..))
     }
 
+    fn try_deref(&self, ty: Ty) -> Option<Ty> {
+        match self[ty].kind {
+            TyKind::Ptr(ty, ..) => Some(ty),
+            _ => None,
+        }
+    }
+
     fn item_count(&self, ty: Ty, ty_comps: &TyComps) -> usize {
         match self[ty].kind {
             TyKind::Struct(fields) => ty_comps.len_of(fields),
@@ -174,10 +181,11 @@ macro_rules! gen_builtin_table {
                 pub $name: Ty,
             )*
             pub discriminant: Span,
+            pub stack_trace_span: Span,
         }
 
         impl BuiltinTypes {
-            pub fn all(&self) -> [Ty; 18] {
+            pub fn all(&self) -> [Ty; 19] {
                 [$(self.$name),*]
             }
         }
@@ -207,6 +215,7 @@ macro_rules! gen_builtin_table {
                         $name,
                     )*
                     discriminant: builtin_source.make_span(sources, "discriminant"),
+                    stack_trace_span: builtin_source.make_span(sources, "stack_frame"),
                 }
             }
         }
@@ -238,6 +247,7 @@ gen_builtin_table!(
     drop: TyKind::Unresolved,
     copy: TyKind::Bound(Default::default()),
     str: TyKind::Unresolved,
+    stack_trace: TyKind::Unresolved,
     ty_any: TyKind::Param(0, TyList::default(), None.into()),
     any: TyKind::Param(0, TyList::default(), None.into()),
     bool: TyKind::Bool,
