@@ -162,7 +162,7 @@ pub struct Compiler {
 
 impl Compiler {
     /// Creates an compiler instance. For some reason this process is surprisingly slow.
-    fn new() -> Self {
+    pub fn new() -> Self {
         time_report!("initialization of compiler");
 
         let input = CmdInput::new();
@@ -260,7 +260,7 @@ impl Compiler {
     }
 
     /// All customization of these components should be handled here.
-    fn init_jit_module(_input: &CmdInput) -> (JITModule, Box<dyn TargetIsa>) {
+    pub fn init_jit_module(_input: &CmdInput) -> (JITModule, Box<dyn TargetIsa>) {
         let isa = {
             let setting_builder = cranelift_codegen::settings::builder();
 
@@ -280,7 +280,7 @@ impl Compiler {
     }
 
     /// All target configuration is performed here.
-    fn init_object_module(input: &CmdInput) -> (ObjectModule, Triple) {
+    pub fn init_object_module(input: &CmdInput) -> (ObjectModule, Triple) {
         let (isa, triple) = {
             let mut setting_builder = cranelift_codegen::settings::builder();
 
@@ -338,7 +338,7 @@ impl Compiler {
         (object_module, triple)
     }
 
-    fn init_builtin(&mut self) {
+    pub fn init_builtin(&mut self) {
         let b_source = self.builtin_source.source;
         builtin_builder!(self).create_builtin_items(&mut self.modules[b_source].items);
     }
@@ -348,7 +348,7 @@ impl Compiler {
     /// TODO: Try to use streams instead of `read_to_string`, Files
     /// could get loaded while parsing, though performance improvement
     /// is questionable.
-    fn load_modules(&mut self) {
+    pub fn load_modules(&mut self) {
         time_report!("loading of modules");
 
         let Subcommand::Compile(path) = &self.subcommand else {
@@ -384,7 +384,7 @@ impl Compiler {
     /// checked one ta the time but Tir is accumulated. Tir is also generic
     /// and ty_instances are not materialized here but rather the Tir has notion
     /// of generic calls.
-    fn build_tir(&mut self) {
+    pub fn build_tir(&mut self) {
         time_report!("building of tir");
         main_tir_builder!(self).build(&self.module_order);
     }
@@ -395,7 +395,7 @@ impl Compiler {
     ///
     /// TODO: Make codegen multithreaded. This should not be a problem regarding the setup we already have.
     /// Though this may require cloning type context.
-    fn generate(&mut self) {
+    pub fn generate(&mut self) {
         time_report!("generating");
 
         generator!(
@@ -411,7 +411,7 @@ impl Compiler {
     /// Which functions are used is determined here. First vec contains
     /// functions that have local byte-code, second contains imports that
     /// should only be imported.
-    fn collect_used_items(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
+    pub fn collect_used_items(&mut self) -> (Vec<Global>, Vec<Func>, Vec<Func>) {
         time_report!("dead code elimination");
 
         let mut seen_funcs = EntitySet::with_capacity(self.funcs.len());
@@ -481,7 +481,7 @@ impl Compiler {
     }
 
     /// Object file is being created here. Only reachable functions are included.
-    fn build_object(&mut self) {
+    pub fn build_object(&mut self) {
         time_report!("building object file");
 
         let mut func_lookup = SecondaryMap::new();
@@ -684,13 +684,13 @@ impl Compiler {
         }
     }
 
-    fn save_globals_ents(&mut self) {
+    pub fn save_globals_ents(&mut self) {
         for global in self.globals.keys() {
             self.save_global_ent(global);
         }
     }
 
-    fn save_global_ent(&mut self, ent: Global) {
+    pub fn save_global_ent(&mut self, ent: Global) {
         let ent = &self.globals[ent];
         let g = IncrGlobalData {
             flags: ent.flags.bits(),
@@ -707,7 +707,7 @@ impl Compiler {
 
     /// All compiled functions are saved. That means their byte-code
     /// signature and relocs. Singular optimally sized file is produced.
-    fn save_incr_data(&mut self) {
+    pub fn save_incr_data(&mut self) {
         time_report!("saving incremental data");
         self.save_globals_ents();
         self.incr.save(&self.incr_path).unwrap();
@@ -716,7 +716,7 @@ impl Compiler {
     /// Linking is last and destructing stage of compilation.
     /// It also takes a tall as external linker needs to be booted.
     /// Currently, only MSVC linker is supported.
-    fn link(self) {
+    pub fn link(self) {
         time_report!("linking");
 
         let binary = self.object_module.finish().emit().unwrap();
@@ -751,11 +751,11 @@ impl Compiler {
 
     /// Function iterates trough all possible diagnostic options,
     /// logs them and if errors are encountered, exits.
-    fn log_diagnostics(&self) {
+    pub fn log_diagnostics(&self) {
         logger!(self).log();
     }
 
-    fn load_incr_globals(&mut self) {
+    pub fn load_incr_globals(&mut self) {
         for (id, data) in self.incr.global_data.globals.iter() {
             if self.global_map.contains_key(id) {
                 continue;
@@ -780,6 +780,10 @@ impl Compiler {
         }
     }
 
+    pub fn lsp_loop(&mut self) {
+
+    }
+
     /// All stages glued together perform compilation. Calling this is preferable, but
     /// stages of compilation may be exposed as public API.
     pub fn compile() {
@@ -787,27 +791,37 @@ impl Compiler {
 
         let mut s = Self::new();
 
+        match &s.subcommand {
+            Subcommand::Compile(_) => {
+                s.load_modules();
+                s.log_diagnostics();
+                
+                s.init_builtin();
+             
+                s.incr.reduce(&s.modules, &s.module_order);
         
-        s.load_modules();
-        s.log_diagnostics();
+                s.build_tir();
+                s.log_diagnostics();
         
-        s.init_builtin();
-     
-        s.incr.reduce(&s.modules, &s.module_order);
-
-        s.build_tir();
-        s.log_diagnostics();
-
-        s.load_incr_globals();
-
-        s.generate();
-        s.log_diagnostics();
-
-        s.build_object();
-
-        s.save_incr_data();
-
-        s.link();
+                s.load_incr_globals();
+        
+                s.generate();
+                s.log_diagnostics();
+        
+                s.build_object();
+        
+                s.save_incr_data();
+        
+                s.link();
+            },
+            Subcommand::Lsp => {
+                s.lsp_loop();
+            }
+            Subcommand::None => {
+                println!("no subcommand specified");
+            },
+        }
+        
     }
 }
 

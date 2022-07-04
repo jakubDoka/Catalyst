@@ -8,6 +8,7 @@ use storage::*;
 /// for all subcommands.
 pub enum Subcommand {
     Compile(PathBuf),
+    Lsp,
     None,
 }
 
@@ -27,6 +28,7 @@ impl Subcommand {
                 let path = input.args().get(1).map(String::as_str).unwrap_or(".");
                 return Self::Compile(PathBuf::from(path));
             }
+            "lsp" => return Self::Lsp,
             sub => {
                 println!("invalid subcommand: {sub}");
                 println!("options: {INFO}{SUBCOMMANDS}{END}");

@@ -5,13 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[lib]
-name="catalyst_lib"
-path="src/lib.rs"
-
 [[bin]]
-name="catalyst"
-path="src/main.rs"
+name = "catalystc"
+path = "src/main.rs"
 
 [workspace]
 exclude = [
@@ -36,36 +32,9 @@ members = [
     "matching",
     "ownership",
     "lifetimes",
+    "core",
 ]
 
-[profile.release]
-debug = true
-
 [dependencies]
-cranelift-codegen = "0.82.1"
-cranelift-frontend = "0.82.1"
-cranelift-module = "0.82.1"
-cranelift-object = "0.82.1"
-cranelift-jit = "0.82.1"
-cranelift-native = "0.82.1"
-target-lexicon = "0.12.3"
-cc = "1.0.73"
-num_cpus = "1.13.1"
-
-lexer = { path = "lexer" }
-errors = { path = "errors" }
-parser = { path = "parser" }
-ast = { path = "ast" }
-modules = { path = "modules" }
-module_types = { path = "module_types" }
-typec = { path = "typec" }
-typec_types = { path = "typec_types" }
-instance = { path = "instance" }
-instance_types = { path = "instance_types" }
-gen = { path = "gen" }
-cli = { path = "cli" }
+core = { path = "core" }
 storage = { path = "storage" }
-incr = { path = "incr" }
-matching = { path = "matching" }
-ownership = { path = "ownership" }
-lifetimes = { path = "lifetimes" }

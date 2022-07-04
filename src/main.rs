@@ -1,6 +1,6 @@
 use storage::*;
 
 fn main() {
-    catalyst_lib::Compiler::compile();
+    core::Compiler::compile();
     println!("{SUCCESS}Build complete!{END}");
 }
