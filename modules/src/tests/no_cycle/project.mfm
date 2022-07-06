@@ -1,5 +1,0 @@
-root: "root.mf"
-
-dependencies {
-    a: "helper"
-}
