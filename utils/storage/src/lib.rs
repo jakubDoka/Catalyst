@@ -1,4 +1,5 @@
 #![feature(string_extend_from_within)]
+#![feature(int_log)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten 
@@ -19,8 +20,6 @@
 /// 
 /// # Examples
 /// ```
-/// use serde::{Serialize, Deserialize};
-/// 
 /// // supports bulk declaration 
 /// storage::gen_v_ptr!(Something SomethingElse);
 /// ```
@@ -28,11 +27,12 @@
 macro_rules! gen_v_ptr {
     ($($ty:ident)*) => {
         $(
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
             pub struct $ty(u32);
         
             impl $crate::v_ptr::VPtr for $ty {
                 fn new(index: usize) -> Self {
+                    assert!(index as u32 != u32::MAX);
                     $ty(index as u32)
                 }
                 
@@ -42,8 +42,30 @@ macro_rules! gen_v_ptr {
             }
 
             impl $crate::invalid::Invalid for $ty {
-                fn invalid() -> Self {
+                unsafe fn invalid() -> Self {
                     $ty(u32::MAX)
+                }
+
+                fn is_invalid(&self) -> bool {
+                    self.0 == u32::MAX
+                }
+            }
+
+            impl $crate::serde::Serialize for $ty {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: $crate::serde::Serializer,
+                {
+                    self.0.serialize(serializer)
+                }
+            }
+
+            impl<'a> $crate::serde::Deserialize<'a> for $ty {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: $crate::serde::Deserializer<'a>,
+                {
+                    u32::deserialize(deserializer).map($ty)
                 }
             }
         )*
@@ -72,12 +94,22 @@ macro_rules! ident {
     };
 }
 
+pub extern crate serde;
+
 pub mod interner;
 pub mod v_ptr;
 pub mod invalid;
 pub mod sparse_map;
+pub mod pool_map;
+pub mod v_ptr_set;
+pub mod bump_map;
+pub mod frames;
 
 pub use interner::{Interner, InternedSegment};
 pub use v_ptr::{VPtr};
 pub use invalid::{Invalid, Maybe};
-pub use sparse_map::{};
+pub use sparse_map::{SparseMap};
+pub use pool_map::{PoolMap};
+pub use v_ptr_set::{VPtrSet};
+pub use bump_map::{BumpMap};
+pub use frames::{Frames};
