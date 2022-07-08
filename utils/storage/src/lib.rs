@@ -103,6 +103,7 @@ pub mod sparse_map;
 pub mod pool_map;
 pub mod v_ptr_set;
 pub mod bump_map;
+pub mod pool_bump_map;
 pub mod frames;
 
 pub use interner::{Interner, InternedSegment};
@@ -111,5 +112,6 @@ pub use invalid::{Invalid, Maybe};
 pub use sparse_map::{SparseMap};
 pub use pool_map::{PoolMap};
 pub use v_ptr_set::{VPtrSet};
-pub use bump_map::{BumpMap};
+pub use bump_map::{BumpMap, CacheBumpMap};
+pub use pool_bump_map::{PoolBumpMap};
 pub use frames::{Frames};

@@ -8,12 +8,12 @@ impl<T> Frames<T> {
     pub fn new() -> Self {
         Frames {
             data: Vec::new(),
-            indices: vec![0],
+            indices: Vec::new(),
         }
     }
 
     pub fn pop(&mut self) -> impl Iterator<Item = T> + '_ {
-        let check = self.indices.pop().unwrap();
+        let check = self.indices.pop().expect("marked frame");
         self.data.drain(check as usize..) 
     }
 
