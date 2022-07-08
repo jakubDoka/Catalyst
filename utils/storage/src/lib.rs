@@ -1,5 +1,6 @@
 #![feature(string_extend_from_within)]
 #![feature(int_log)]
+#![feature(result_into_ok_or_err)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten 

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::{Index, IndexMut}};
+use std::{marker::PhantomData, ops::{Index, IndexMut}, mem::MaybeUninit, intrinsics::transmute};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,11 +11,9 @@ pub type CacheBumpMap<K, T, C = ()> = BumpMap<K, T, C, Frames<T>>;
 /// and push them all at once Which is useful when building tree in 
 /// recursive manner. If `C` implements [`VPtr`] you are then able to 
 /// address elements of slices directly.
-#[derive(Deserialize, Serialize)]
 pub struct BumpMap<K, T, C = (), CACHE = ()> {
-    data: Vec<T>,
+    data: Vec<MaybeUninit<T>>,
     indices: Vec<u32>,
-    #[serde(skip)]
     frames: CACHE,
     _ph: PhantomData<fn(K, C) -> (K, C)>
 }
@@ -132,7 +130,7 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
             T: Clone, 
     {
         let top = self.frames.pop();
-        self.data.extend(top);
+        self.data.extend(top.map(MaybeUninit::new));
         self.close_frame()
     }
 }
@@ -171,7 +169,7 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn bump(&mut self, items: impl IntoIterator<Item = T>) -> Maybe<K> {
-        self.data.extend(items.into_iter());
+        self.data.extend(items.into_iter().map(MaybeUninit::new));
         self.close_frame()
     }
 
@@ -197,13 +195,24 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn get(&self, key: K) -> &[T] {
-        &self.data[self.indices[key.index() - 1] as usize..self.indices[key.index()] as usize]
+        unsafe { transmute(&self.data[self.indices[key.index() - 1] as usize..self.indices[key.index()] as usize]) }
     }
 
     /// Returns mut slice corresponding to given `key`. The slice is known to not be empty.
     pub fn get_mut(&mut self, key: K) -> &mut [T] {
+        unsafe { transmute(self.get_mut_uninit(key)) }
+    }
+
+    pub unsafe fn get_mut_uninit(&mut self, key: K) -> &mut [MaybeUninit<T>] {
         &mut self.data[self.indices[key.index() - 1] as usize..self.indices[key.index()] as usize]
     }
+    // pub(crate) fn serialize<'de, M>(&self, freed: &VPtrSet<K>, access: M) 
+    //     where
+    //         M: MapAccess<'de>
+    // {
+    //     let size = access.size_hint().unwrap_or(0);
+    //     let (data_len, indices_len) = 
+    // }
 }
 
 impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
@@ -220,13 +229,14 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     /// storage::gen_v_ptr!(DummyList Dummy);
     /// ```
     pub fn push(&mut self, value: T) -> C {
-        self.data.push(value);
+        self.data.push(MaybeUninit::new(value));
         C::new(self.data.len() - 1)
     }
 
     /// Discards pushed elements and returns ownership to them to the caller via iterator.
     pub fn discard_pushed(&mut self) -> impl Iterator<Item = T> + '_ {
         self.data.drain(*self.indices.last().unwrap() as usize..)
+            .map(|i| unsafe { i.assume_init() })
     }
 
     /// Bumps pushed elements and returns [`VPtr`] to them. Elements that were bumped 
@@ -236,6 +246,15 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
             K: VPtr
     {
         self.close_frame()
+    }
+
+    pub fn slice_of(&self, concrete: C) -> K
+        where
+            K: VPtr
+    {
+        let index = concrete.index();
+        let result = self.indices.binary_search(&(index as u32)).map(|i| i + 1).into_ok_or_err();
+        K::new(result)
     }
 }
 
@@ -265,13 +284,13 @@ impl<K, T, C: VPtr, CACHE> Index<C> for BumpMap<K, T, C, CACHE> {
     type Output = T;
 
     fn index(&self, index: C) -> &Self::Output {
-        &self.data[index.index()]
+        unsafe { &*self.data[index.index()].as_ptr() }
     }
 }
 
 impl<K, T, C: VPtr, CACHE> IndexMut<C> for BumpMap<K, T, C, CACHE> {
     fn index_mut(&mut self, index: C) -> &mut Self::Output {
-        &mut self.data[index.index()]
+        unsafe { &mut *self.data[index.index()].as_mut_ptr() }
     }
 }
 
@@ -280,3 +299,37 @@ impl<K, T, C, CACHE: Default> Default for BumpMap<K, T, C, CACHE> {
         BumpMap::new()
     }
 }
+
+impl<K, T: Serialize, C, CACHE> Serialize for BumpMap<K, T, C, CACHE> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer 
+    {
+        unsafe { transmute::<_, &SerializableBumpMap<K, T, C, CACHE>>(self) }.serialize(serializer)
+    }
+}
+
+impl<'de, K, T: Deserialize<'de>, C, CACHE: Default> Deserialize<'de> for BumpMap<K, T, C, CACHE> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        SerializableBumpMap::<K, T, C, CACHE>::deserialize(deserializer)
+            .map(|s| BumpMap {
+                data: unsafe { transmute(s.data) },
+                indices: s.indices,
+                frames: CACHE::default(),
+                _ph: PhantomData
+            })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableBumpMap<K, T, C = (), CACHE = ()> {
+    data: Vec<T>,
+    indices: Vec<u32>,
+    #[serde(skip)]
+    _frames: CACHE,
+    _ph: PhantomData<fn(K, C) -> (K, C)>
+}
+
