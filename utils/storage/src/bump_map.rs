@@ -50,6 +50,10 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.frames.push(value);
     }
 
+    pub fn cached(&self) -> &[T] {
+        self.frames.top()
+    }
+
     /// Discards current frame on the cache. and returns iterator of 
     /// moved elements.
     /// 
@@ -126,8 +130,7 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     /// ```
     pub fn bump_cached(&mut self) -> Maybe<K> 
         where 
-            K: VPtr,
-            T: Clone, 
+            K: VPtr
     {
         let top = self.frames.pop();
         self.data.extend(top.map(MaybeUninit::new));

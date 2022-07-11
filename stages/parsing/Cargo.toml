@@ -6,5 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+logos = "0.12.0"
 lexing = { path = "../lexing" }
 storage = { path = "../../utils/storage" }
+errors = { path = "../../utils/errors" }
+lalrpop-util = { version = "0.19.8" }

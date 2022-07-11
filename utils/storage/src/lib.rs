@@ -107,7 +107,7 @@ pub mod bump_map;
 pub mod pool_bump_map;
 pub mod frames;
 
-pub use interner::{Interner, InternedSegment};
+pub use interner::{Interner, Ident, InternedSegment};
 pub use v_ptr::{VPtr};
 pub use invalid::{Invalid, Maybe};
 pub use sparse_map::{SparseMap};

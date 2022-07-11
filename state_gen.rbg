@@ -1,0 +1,9 @@
+file "stages/parsing/src/state_gen.rs" {
+    use "crate";
+
+    struct AstDisplay {
+        Ast
+        AstData
+        str
+    }
+}

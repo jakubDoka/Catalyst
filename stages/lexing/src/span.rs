@@ -4,6 +4,7 @@ use ansi_coloring::*;
 
 /// Identical to [`std::ops::Range`]<[`u32`]> but a lot more ergonomic
 /// since it is defined here.
+#[derive(Default, Clone, Copy)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -41,6 +42,13 @@ impl Span {
     #[inline]
     pub fn range(&self) -> Range<usize> {
         self.start()..self.end()
+    }
+
+    pub fn join(self, other: Self) -> Self {
+        Span {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+        }
     }
 
     /// Underlines the span for error display, the performance is not important here.
@@ -110,4 +118,18 @@ impl Span {
 
         Ok(())
     }
+
+    pub fn into_lsp_range(&self, line_mapping: &crate::LineMapping) -> errors::lsp_types::Range {
+        errors::lsp_types::Range::new(
+            {
+                let (lind, col) = line_mapping.line_info_at(self.start());
+                errors::lsp_types::Position::new(lind as u32, col as u32)
+            },
+            {
+                let (lind, col) = line_mapping.line_info_at(self.end());
+                errors::lsp_types::Position::new(lind as u32, col as u32)
+            }
+        )
+    }
 }
+

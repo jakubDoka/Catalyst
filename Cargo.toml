@@ -9,6 +9,10 @@ edition = "2021"
 members = [
     "utils/ansi-coloring",
     "utils/storage",
+    "utils/errors",
+    "utils/cli",
+    "utils/state",
+
     "stages/lexing",
     "stages/parsing",
 ]

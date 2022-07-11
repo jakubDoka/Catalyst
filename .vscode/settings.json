@@ -1,8 +1,10 @@
 {
     "cSpell.words": [
         "cranelifts",
+        "ents",
         "Hasher",
         "interner",
+        "lalrpop",
         "repr",
         "rfind",
         "Uninit"

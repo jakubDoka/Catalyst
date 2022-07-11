@@ -1,7 +1,33 @@
-use crate::{TokenKind, Span, Token};
+use crate::{TokenKind, Token, Span};
 
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, TokenKind>,
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(source: &'a str) -> Self {
+        Lexer {
+            inner: logos::Lexer::new(source),
+        }
+    }
+
+    pub fn progress(&self) -> usize {
+        self.inner.source().len() - self.inner.remainder().len()
+    }
+
+    pub fn finished(&self) -> bool {
+        self.inner.remainder().len() == 0
+    }
+
+    pub fn next(&mut self) -> Token {
+        let kind = self.inner.next().unwrap_or(TokenKind::Eof);
+        let span = Span::new(self.inner.span());
+
+        Token {
+            kind,
+            span,
+        }
+    }
 }
 
 impl Iterator for Lexer<'_> {
@@ -9,12 +35,6 @@ impl Iterator for Lexer<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let kind = self.inner.next().unwrap_or(TokenKind::Eof);
-        let span = Span::new(self.inner.span());
-        
-        Some(Token {
-            kind,
-            span,
-        })
+        Some(self.next())
     }
 }

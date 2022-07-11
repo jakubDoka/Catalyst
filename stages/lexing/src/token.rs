@@ -4,6 +4,7 @@ use crate::Span;
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
 /// Smallest lexical component.
+#[derive(Clone, Copy, Default)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
@@ -19,6 +20,13 @@ macro_rules! gen_kind {
             $($punctuation:ident = $punctuation_repr:literal,)*
         }
 
+        pairs {
+            $(
+                $pair0:ident = $pair_repr0:literal,
+                $pair1:ident = $pair_repr1:literal,
+            )*
+        }
+
         literal {
             $($literal:ident = $literal_regex:literal,)*
         }
@@ -28,7 +36,7 @@ macro_rules! gen_kind {
         }
 
         operators {
-            $(($($op_lit:literal)+) = $op_precedence:expr,)*
+            $($op_name:ident = $op_regex:literal,)*
         }
     ) => {
         
@@ -45,6 +53,11 @@ macro_rules! gen_kind {
                     )*
 
                     $(
+                        TokenKind::$pair0 => concat!("'", $pair_repr0, "'"),
+                        TokenKind::$pair1 => concat!("'", $pair_repr1, "'"),
+                    )*
+
+                    $(
                         TokenKind::$literal => stringify!($literal),
                     )*
 
@@ -52,11 +65,30 @@ macro_rules! gen_kind {
                         TokenKind::$skipped => stringify!($skipped),
                     )*
 
-                    TokenKind::Operator(..) => "Operator",
+                    $(
+                        TokenKind::$op_name => "Operator",
+                    )*
+
                     TokenKind::NewLine => "'\\n' | ';'",
                     TokenKind::Error => "<error>",
                     TokenKind::Eof => "<eof>",
                     TokenKind::None => "<none>",
+                }
+            }
+
+            pub fn complement(self) -> Option<Self> {
+                match self {
+                    $(
+                        TokenKind::$pair0 => Some(TokenKind::$pair1),
+                    )*
+                    _ => None,
+                }
+            }
+
+            pub fn is_closing(self) -> bool {
+                match self {
+                    $(TokenKind::$pair1)|* => true,
+                    _ => false,
                 }
             }
         }
@@ -74,6 +106,13 @@ macro_rules! gen_kind {
             )*
 
             $(
+                #[token($pair_repr0)]
+                $pair0,
+                #[token($pair_repr1)]
+                $pair1,
+            )*
+
+            $(
                 #[regex($literal_regex)]
                 $literal,
             )*
@@ -84,11 +123,9 @@ macro_rules! gen_kind {
             )*
 
             $(
-                $(
-                    #[token($op_lit, |_| $op_precedence)]
-                )+
+                #[regex($op_regex)]
+                $op_name,
             )*
-            Operator(u8),
 
             #[regex(r"(\n|;)")]
             NewLine,
@@ -123,12 +160,7 @@ gen_kind!(
     }
 
     punctuation {
-        LeftCurly = "{",
-        RightCurly = "}",
-        LeftParen = "(",
-        RightParen = ")",
-        LeftBracket = "[",
-        RightBracket = "]",
+        
         Comma = ",",
         Colon = ":",
         Dot = ".",
@@ -137,6 +169,15 @@ gen_kind!(
         DoubleColon = "::",
         Hash = "#",
         DoubleHash = "##",
+    }
+
+    pairs {
+        LeftCurly = "{",
+        RightCurly = "}",
+        LeftParen = "(",
+        RightParen = ")",
+        LeftBracket = "[",
+        RightBracket = "]",
     }
 
     literal {
@@ -154,24 +195,17 @@ gen_kind!(
     }
 
     operators {
-        ("*" "/" "%") = 3,
-        ("+" "-") = 4,
-        ("<<" ">>") = 5,
-        ("<" ">" "<=" ">=") = 6,
-        ("==" "!=") = 7,
-        ("&") = 8,
-        ("^") = 9,
-        ("|") = 10,
-        ("&&") = 11,
-        ("||") = 12,
-        (
-            "=" "+="
-            "-=" "*="
-            "/=" "%="
-            "<<=" ">>="
-            "&=" "^="
-            "|="
-        ) = EQUAL_SIGN_PRECEDENCE,
+        OpPre3 = r"(\*|/|%)",
+        OpPre4 = r"(\+|-)",
+        OpPre5 = "(<<|>>)",
+        OpPre6 = "(<|>|<=|>=)",
+        OpPre7 = "(==|!=)",
+        OpPre8 = "&",
+        OpPre9 = r"\^",
+        OpPre10 = r"\|",
+        OpPre11 = "(&&)",
+        OpPre12 = r"(\|\|)",
+        OpPre13 = r"(=|\+=|-=|\*=|/=|%=|<<=|>>=|&=|\^=|\|=)",
     }
 );
 

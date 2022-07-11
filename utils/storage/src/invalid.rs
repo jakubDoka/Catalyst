@@ -70,3 +70,9 @@ impl<T: Invalid> From<T> for Maybe<T> {
         Maybe::some(value)
     }
 }
+
+impl<T: Invalid> Default for Maybe<T> {
+    fn default() -> Self {
+        Maybe::none()
+    }
+}
