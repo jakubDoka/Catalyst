@@ -1,8 +1,16 @@
-use std::{ops::{Index, IndexMut}, mem::replace, marker::PhantomData};
+use std::{
+    marker::PhantomData,
+    mem::replace,
+    ops::{Index, IndexMut},
+};
 
-use serde::{Serialize, Deserialize, de::{MapAccess, Visitor}, Deserializer, ser::SerializeMap};
+use serde::{
+    de::{MapAccess, Visitor},
+    ser::SerializeMap,
+    Deserialize, Deserializer, Serialize,
+};
 
-use crate::{VPtr, Maybe};
+use crate::{Maybe, VPtr};
 
 /// Storage plugin that supports data reuse and optional storage.
 pub struct SparseMap<K, T> {
@@ -28,15 +36,14 @@ where
     }
 }
 
-
 struct SparseMapVisitor<K, V> {
-    marker: PhantomData<fn() -> SparseMap<K, V>>
+    marker: PhantomData<fn() -> SparseMap<K, V>>,
 }
 
 impl<K, V> SparseMapVisitor<K, V> {
     fn new() -> Self {
         SparseMapVisitor {
-            marker: PhantomData
+            marker: PhantomData,
         }
     }
 }
@@ -56,7 +63,6 @@ where
     where
         M: MapAccess<'de>,
     {
-
         let size_hint = access.size_hint().unwrap_or(0);
         let (mapping_len, value_len) = (size_hint >> 32, size_hint & 0xFFFFFFFF);
 
@@ -99,17 +105,17 @@ impl<K, T> SparseMap<K, T> {
 
 impl<K: VPtr, T> SparseMap<K, T> {
     /// Inserts new value under the key.
-    /// 
+    ///
     /// # Example
     /// ```
     /// let mut map = storage::SparseMap::<Dummy, usize>::new();
-    /// 
+    ///
     /// map.insert(Dummy(0), 10);
     /// assert_eq!(map[Dummy(0)], 10);
     /// assert_eq!(map.len(), 1);
-    /// 
+    ///
     /// assert_eq!(map.insert(Dummy(0), 20), Some(10));
-    /// 
+    ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
     pub fn insert(&mut self, key: K, value: T) -> Option<T> {
@@ -126,34 +132,36 @@ impl<K: VPtr, T> SparseMap<K, T> {
     }
 
     /// Removes value under the key. Former value is returned if any.
-    /// 
+    ///
     /// # Example
     /// ```
     /// let mut map = storage::SparseMap::<Dummy, usize>::new();
-    /// 
+    ///
     /// assert_eq!(map.remove(Dummy(0)), None);
     /// map.insert(Dummy(0), 10);
     /// assert_eq!(map.remove(Dummy(0)), Some(10));
-    /// 
+    ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
     pub fn remove(&mut self, key: K) -> Option<T> {
-        self.project(key)
-            .expand()
-            .map(|private| {
-                self.mapping[key.index()] = Maybe::none();
-                let last_id = self.data.last().unwrap().0;
-                self.mapping[last_id.index()] = private.into();
-                self.data.swap_remove(private.index()).1
-            })
+        self.project(key).expand().map(|private| {
+            self.mapping[key.index()] = Maybe::none();
+            let last_id = self.data.last().unwrap().0;
+            self.mapping[last_id.index()] = private.into();
+            self.data.swap_remove(private.index()).1
+        })
     }
 
     pub fn get(&self, key: K) -> Option<&T> {
-        self.project(key).expand().map(|key| &self.data[key.index()].1)
+        self.project(key)
+            .expand()
+            .map(|key| &self.data[key.index()].1)
     }
 
     pub fn get_mut(&mut self, key: K) -> Option<&mut T> {
-        self.project(key).expand().map(|key| &mut self.data[key.index()].1)
+        self.project(key)
+            .expand()
+            .map(|key| &mut self.data[key.index()].1)
     }
 
     fn project(&self, key: K) -> Maybe<Private> {
@@ -204,7 +212,7 @@ mod test {
         map.insert(Private::new(30), 30);
 
         let bytes = rmp_serde::to_vec(&map).unwrap();
-        
+
         let map2: SparseMap<Private, usize> = rmp_serde::from_slice(&bytes[..]).unwrap();
 
         assert_eq!(map2.get(Private::new(0)), Some(&10));

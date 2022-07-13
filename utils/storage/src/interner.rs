@@ -1,11 +1,15 @@
-use std::{ops::{Range, Index}, hash::{Hasher, BuildHasher, Hash}, collections::{HashMap, hash_map::Entry}};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    hash::{BuildHasher, Hash, Hasher},
+    ops::{Index, Range},
+};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::VPtr;
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),
-/// and are assigned unique id. 
+/// and are assigned unique id.
 pub struct Interner {
     map: HashMap<InternerEntry, Ident, InternerBuildHasher>,
     indices: Vec<u32>,
@@ -15,7 +19,7 @@ pub struct Interner {
 impl Interner {
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
-        Interner { 
+        Interner {
             map: HashMap::with_hasher(InternerBuildHasher),
             indices: vec![0],
             data: Box::default(),
@@ -39,13 +43,16 @@ impl Interner {
         let entry = self.map.entry(entry);
         let vacant = matches!(entry, Entry::Vacant(..));
 
-        
-        (*entry.and_modify(|_| self.data.truncate(prev))
-            .or_insert_with(|| {
-                let index = self.indices.len();
-                self.indices.push(self.data.len() as u32);
-                Ident::new(index)     
-            }), vacant)        
+        (
+            *entry
+                .and_modify(|_| self.data.truncate(prev))
+                .or_insert_with(|| {
+                    let index = self.indices.len();
+                    self.indices.push(self.data.len() as u32);
+                    Ident::new(index)
+                }),
+            vacant,
+        )
     }
 
     fn push_segments(&mut self, components: &[InternedSegment]) -> InternerEntry {
@@ -56,7 +63,7 @@ impl Interner {
                 InternedSegment::Ident(ident) => {
                     let range = self.range_of(ident);
                     self.data.extend_from_within(range)
-                },
+                }
                 InternedSegment::String(str) => self.data.push_str(str),
                 InternedSegment::Int(int) => write!(self.data, "{}", int).unwrap(),
             }
@@ -91,9 +98,13 @@ impl Index<Ident> for Interner {
 impl Serialize for Interner {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer 
+        S: serde::Serializer,
     {
-        let map = self.map.iter().map(|(&k, &v)| (k.start, k.end, v)).collect::<Vec<_>>();
+        let map = self
+            .map
+            .iter()
+            .map(|(&k, &v)| (k.start, k.end, v))
+            .collect::<Vec<_>>();
         let raw = unsafe {
             RawInterner {
                 map,
@@ -114,12 +125,23 @@ impl Serialize for Interner {
 impl<'a> Deserialize<'a> for Interner {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'a> 
+        D: serde::Deserializer<'a>,
     {
         let raw = RawInterner::deserialize(deserializer)?;
-        let map = raw.map.into_iter().map(|(start, end, ident)| {
-            (InternerEntry { str: &*raw.data as *const String, start, end }, ident)
-        }).collect::<HashMap<_, _, InternerBuildHasher>>();
+        let map = raw
+            .map
+            .into_iter()
+            .map(|(start, end, ident)| {
+                (
+                    InternerEntry {
+                        str: &*raw.data as *const String,
+                        start,
+                        end,
+                    },
+                    ident,
+                )
+            })
+            .collect::<HashMap<_, _, InternerBuildHasher>>();
 
         Ok(Interner {
             map,
@@ -130,8 +152,8 @@ impl<'a> Deserialize<'a> for Interner {
 }
 
 /// Enum offers allocation free passing of composite strings into [`Interner`].
-/// See [`ident!`] macro for ease of use. The enum is displayed and pushed to 
-/// interner storage, hashed. If it is a new string, it is kept, otherwise 
+/// See [`ident!`] macro for ease of use. The enum is displayed and pushed to
+/// interner storage, hashed. If it is a new string, it is kept, otherwise
 /// discarded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InternedSegment<'a> {
@@ -187,8 +209,8 @@ impl Hash for InternerEntry {
 impl PartialEq<Self> for InternerEntry {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            (*self.str)[self.start as usize..self.end as usize] ==
-            (*other.str)[other.start as usize..other.end as usize]
+            (*self.str)[self.start as usize..self.end as usize]
+                == (*other.str)[other.start as usize..other.end as usize]
         }
     }
 }
@@ -217,7 +239,7 @@ impl BuildHasher for InternerBuildHasher {
 }
 
 struct InternerHasher {
-    value: u64
+    value: u64,
 }
 
 impl Hasher for InternerHasher {
@@ -246,7 +268,10 @@ pub mod test {
         let mut interner = Interner::new();
         assert_eq!(interner.intern_str("a"), interner.intern_str("a"));
         let b = interner.intern_str("b");
-        assert_eq!(interner.intern(ident!("c", b)), interner.intern(ident!("c", b)));
+        assert_eq!(
+            interner.intern(ident!("c", b)),
+            interner.intern(ident!("c", b))
+        );
         let cb = interner.intern(ident!("c", b));
         assert_eq!(&interner[cb], "cb");
     }
@@ -259,10 +284,14 @@ pub mod test {
         let c = interner.intern_str("c");
 
         let mut buf = Vec::new();
-        interner.serialize(&mut rmp_serde::encode::Serializer::new(&mut buf)).unwrap();
-        
-        let interner2 = Interner::deserialize(&mut rmp_serde::decode::Deserializer::new(buf.as_slice())).unwrap();
-        
+        interner
+            .serialize(&mut rmp_serde::encode::Serializer::new(&mut buf))
+            .unwrap();
+
+        let interner2 =
+            Interner::deserialize(&mut rmp_serde::decode::Deserializer::new(buf.as_slice()))
+                .unwrap();
+
         assert_eq!(&interner2[a], "a");
         assert_eq!(&interner2[b], "b");
         assert_eq!(&interner2[c], "c");

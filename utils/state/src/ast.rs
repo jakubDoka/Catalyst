@@ -1,4 +1,4 @@
-use std::{path::PathBuf, fmt::Display};
+use std::{fmt::Display, path::PathBuf};
 
 use crate::tokens::{Lexer, TokKind};
 
@@ -19,17 +19,18 @@ impl SourceCode {
                 TokKind::Call => calls.push(Call::new(lexer)),
                 kind => lexer.error_many(kind, &[TokKind::File, TokKind::Call]),
             }
-            lexer.skip_newlines();    
+            lexer.skip_newlines();
         }
 
         let parent = path.parent().unwrap();
-        files.iter_mut().for_each(|file| file.path = parent.join(file.path.clone()));
-        calls.iter_mut().for_each(|call| call.path = parent.join(call.path.clone()));
+        files
+            .iter_mut()
+            .for_each(|file| file.path = parent.join(file.path.clone()));
+        calls
+            .iter_mut()
+            .for_each(|call| call.path = parent.join(call.path.clone()));
 
-        SourceCode {
-            files,
-            calls,
-        }
+        SourceCode { files, calls }
     }
 }
 
@@ -101,7 +102,7 @@ impl File {
 impl Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "//! This file is generated, do not edit!")?;
-        
+
         for import in &self.imports {
             writeln!(f, "{};", import)?;
         }
@@ -110,7 +111,7 @@ impl Display for File {
 
         for structure in &self.structs {
             writeln!(f, "{}", structure)?;
-            
+
             structure.write_constructor(f)?;
             writeln!(f)?;
 
@@ -259,7 +260,6 @@ impl Field {
             }
             mutable
         };
-        
 
         lexer.expect(TokKind::Ident);
         let name = lexer.show(lexer.current().span).to_string();

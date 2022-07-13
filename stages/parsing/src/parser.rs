@@ -1,43 +1,45 @@
-mod imports;
+pub mod imports;
+pub mod manifest;
 
 use std::vec;
 
-use lexing::*;
-use storage::{Maybe, Ident};
 use crate::*;
+use diags::*;
+use lexing::*;
+use storage::*;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     state: &'a mut ParserState,
     ast_data: &'a mut AstData,
-    diagnostics: &'a mut Diagnostics,
+    workspace: &'a mut Workspace,
 }
-
 
 impl<'a> Parser<'a> {
     pub fn new(
-        lexer: Lexer<'a>,
+        source: &'a str,
         state: &'a mut ParserState,
         ast_data: &'a mut AstData,
-        diagnostics: &'a mut Diagnostics,
+        workspace: &'a mut Workspace,
     ) -> Self {
         Self {
-            lexer,
+            lexer: Lexer::new(source, state.progress),
             state,
             ast_data,
-            diagnostics,
+            workspace,
         }
     }
 
-    fn parse_with(&mut self, method: fn(&mut Self) -> errors::Result) -> errors::Result<(Maybe<AstList>, bool)> {
+    fn parse_with(&mut self, method: fn(&mut Self) -> errors::Result) -> (Maybe<AstList>, bool) {
         self.ast_data.start_cache();
-        method(self)?;
+        drop(method(self));
         self.state.progress = self.lexer.progress();
-        Ok((self.ast_data.bump_cached(), self.lexer.finished()))
+        (self.ast_data.bump_cached(), self.lexer.finished())
     }
 
     fn capture(&mut self, kind: AstKind) {
-        self.ast_data.push(AstEnt::leaf(kind, self.state.current.span));
+        self.ast_data
+            .push(AstEnt::leaf(kind, self.state.current.span));
         self.advance();
     }
 
@@ -46,7 +48,11 @@ impl<'a> Parser<'a> {
         self.state.next = self.lexer.next();
     }
 
-    fn optional(&mut self, keyword: TokenKind, method: impl Fn(&mut Self) -> errors::Result) -> errors::Result {
+    fn optional(
+        &mut self,
+        keyword: TokenKind,
+        method: impl Fn(&mut Self) -> errors::Result,
+    ) -> errors::Result {
         if self.at(keyword) {
             method(self)
         } else {
@@ -72,37 +78,67 @@ impl<'a> Parser<'a> {
     fn total_span(&mut self) -> Span {
         let start = self.state.start.pop().unwrap();
         let end = self.ast_data.cached().last().unwrap().span;
-        start.join(end)
+        start.joined(end)
     }
 
     fn at(&self, kind: TokenKind) -> bool {
         self.state.current.kind == kind
     }
 
-    fn list(&mut self, left: TokenKind, sep: TokenKind, right: TokenKind, method: impl Fn(&mut Self) -> errors::Result) -> errors::Result {
-        self.expect(left)?;
-        self.advance();
+    fn list(
+        &mut self,
+        left: Option<TokenKind>,
+        sep: Option<TokenKind>,
+        right: Option<TokenKind>,
+        method: impl Fn(&mut Self) -> errors::Result,
+    ) -> errors::Result {
+        assert!(!matches!((left, sep, right), (.., None, None)));
+
+        let frame_count = self.ast_data.frame_count();
+
+        if let Some(left) = left {
+            self.expect(left)?;
+            self.advance();
+        }
 
         loop {
-            if self.at(right) {
+            if let Some(right) = right && self.at(right) {
                 break;
             }
 
             if let Err(()) = method(self) {
-                self.recover(&[sep, right])?;
+                let terminals = sep.into_iter().chain(right).collect::<Vec<_>>();
+                self.recover(&terminals, frame_count)?;
             }
 
-            if self.at(right) {
-                break;
+            if let Some(right) = right {
+                if self.at(right) {
+                    break;
+                }
+
+                self.expect(sep.unwrap())?;
+                self.advance();
+            } else if let Some(sep) = sep {
+                if self.at(sep) {
+                    break;
+                }
+                self.advance();
+            } else {
+                unreachable!();
             }
 
-            self.expect(sep)?;
-            self.advance();
+            self.skip_newlines();
         }
 
         self.advance();
-        
+
         Ok(())
+    }
+
+    fn skip_newlines(&mut self) {
+        while self.at(TokenKind::NewLine) {
+            self.advance();
+        }
     }
 
     fn expect(&mut self, kind: TokenKind) -> errors::Result {
@@ -118,7 +154,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn recover(&mut self, kinds: &[TokenKind]) -> errors::Result {
+    fn recover(&mut self, kinds: &[TokenKind], frame_count: usize) -> errors::Result {
+        while frame_count < self.ast_data.frame_count() {
+            drop(self.ast_data.discard_cache());
+        }
+
         let mut pair_stack: Vec<(Span, TokenKind)> = vec![];
         loop {
             if let Some(complement) = self.state.current.kind.complement() {
@@ -151,27 +191,30 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    
     fn expect_error(&mut self, kinds: &[TokenKind]) {
-        self.diagnostics.push(diagnostic! {
-            loc: (self.state.current.span, self.state.path.unwrap()),
-            message: "expected one of {} but got {}" => (
+        self.workspace.push(diag! {
+            (self.state.current.span, self.state.path.unwrap())
+            error => "expected one of {} but got {}" {
                 kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
-            ),
-            level: ERROR,
+            },
         });
     }
-    
+
     fn unmatched_paren(&mut self, kind: TokenKind, span: Span) {
-        self.diagnostics.push(diagnostic! {
-            loc: (self.state.current.span, self.state.path.unwrap()),
-            message: "unmatched paren {}" => (kind.as_str()),
-            level: ERROR,
-            related: (
-                (span, self.state.path.unwrap()) => "the starting paren",
-            ),
+        self.workspace.push(diag! {
+            (self.state.current.span, self.state.path.unwrap())
+            error => "unmatched paren {}" { kind.as_str() },
+            (span, self.state.path.unwrap()) => "the starting paren",
         });
+    }
+
+    fn ctx_keyword(&mut self, keyword: &str) -> bool {
+        let present = self.lexer.display(self.state.current.span) == keyword;
+        if present {
+            self.advance();
+        }
+        present
     }
 }
 
@@ -190,7 +233,7 @@ impl ParserState {
     }
 
     pub fn start(&mut self, source: &str, path: Ident) {
-        let mut lexer = Lexer::new(source);
+        let mut lexer = Lexer::new(source, 0);
         self.current = lexer.next();
         self.next = lexer.next();
         self.progress = lexer.progress();

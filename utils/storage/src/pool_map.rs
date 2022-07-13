@@ -1,17 +1,25 @@
-use std::{marker::PhantomData, mem::MaybeUninit, ops::{Index, IndexMut}};
+use std::{
+    marker::PhantomData,
+    mem::MaybeUninit,
+    ops::{Index, IndexMut},
+};
 
-use serde::{Serialize, Serializer, ser::SerializeMap, Deserialize, Deserializer, de::{MapAccess, Visitor}};
+use serde::{
+    de::{MapAccess, Visitor},
+    ser::SerializeMap,
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 
-use crate::{VPtrSet, VPtr};
+use crate::{VPtr, VPtrSet};
 
-/// Supports reusable storage via stack base allocator. It performs extra 
+/// Supports reusable storage via stack base allocator. It performs extra
 /// checks for debug builds but is unsafe on release.
 pub struct PoolMap<K, V> {
     free: Vec<K>,
     free_lookup: VPtrSet<K>,
     data: Vec<MaybeUninit<V>>,
 
-    _ph: PhantomData<fn(K) -> K>
+    _ph: PhantomData<fn(K) -> K>,
 }
 
 impl<K, V> PoolMap<K, V> {
@@ -21,7 +29,7 @@ impl<K, V> PoolMap<K, V> {
             free: Vec::new(),
             free_lookup: VPtrSet::new(),
             data: Vec::new(),
-            _ph: PhantomData
+            _ph: PhantomData,
         }
     }
 }
@@ -29,25 +37,25 @@ impl<K, V> PoolMap<K, V> {
 impl<K: VPtr, V> PoolMap<K, V> {
     /// Pushes new value to map and returns it's key. Value of key is deterministic
     /// but arbitrary. Previously removed slots can be reused.
-    /// 
+    ///
     /// # Example
     /// ```
     /// let mut map = storage::PoolMap::<Dummy, usize>::new();
-    /// 
+    ///
     /// let ten = map.push(10);
     /// assert_eq!(map[ten], 10);
-    /// 
+    ///
     /// let twenty = map.push(20);
     /// assert_ne!(ten, twenty);
-    /// 
+    ///
     /// let removed_ten = map.remove(ten);
     /// assert_eq!(removed_ten, 10);
-    /// 
+    ///
     /// // this can happen
     /// let restored_ten = map.push(10);
     /// assert_eq!(ten, restored_ten);
     /// assert_eq!(map[restored_ten], 10);
-    /// 
+    ///
     /// storage::gen_v_ptr!(Dummy);
     pub fn push(&mut self, value: V) -> K {
         let key = if let Some(key) = self.free.pop() {
@@ -65,23 +73,23 @@ impl<K: VPtr, V> PoolMap<K, V> {
 
     /// Pushes new value to map and returns it's key. Value of key is deterministic
     /// but arbitrary. Previously removed slots can be reused.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```
     /// let mut map = storage::PoolMap::<Dummy, usize>::new();
     /// let ten = map.push(10);
     /// let twenty = map.push(20);
-    /// 
+    ///
     /// assert_eq!(map.remove(ten), 10);
     /// assert_eq!(map.remove(twenty), 20);
     /// assert_eq!(map.push(0), twenty);
     /// assert_eq!(map.push(0), ten);
-    /// 
+    ///
     /// storage::gen_v_ptr!(Dummy);
     pub fn remove(&mut self, key: K) -> V {
         assert!(self.free_lookup.insert(key));
-        
+
         let elem = &mut self.data[key.index()];
         let value = std::mem::replace(elem, MaybeUninit::uninit());
         self.free.push(key);
@@ -98,15 +106,16 @@ impl<K: VPtr, V> PoolMap<K, V> {
 impl<K, V> Serialize for PoolMap<K, V>
 where
     K: Serialize + VPtr,
-    V: Serialize
+    V: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         let size = (self.free.len() << 32) | (self.data.len() - self.free.len());
         let mut map = serializer.serialize_map(Some(size))?;
-        let iter = self.data
+        let iter = self
+            .data
             .iter()
             .enumerate()
             .map(|(i, elem)| (K::new(i), elem))
@@ -119,13 +128,13 @@ where
 }
 
 struct PoolMapVisitor<K, V> {
-    marker: PhantomData<fn() -> PoolMap<K, V>>
+    marker: PhantomData<fn() -> PoolMap<K, V>>,
 }
 
 impl<K, V> PoolMapVisitor<K, V> {
     fn new() -> Self {
         PoolMapVisitor {
-            marker: PhantomData
+            marker: PhantomData,
         }
     }
 }
@@ -145,7 +154,6 @@ where
     where
         M: MapAccess<'de>,
     {
-
         let size_hint = access.size_hint().unwrap_or(0);
         let (free_len, value_len) = (size_hint >> 32, size_hint & 0xFFFFFFFF);
 
@@ -223,7 +231,7 @@ mod test {
 
         let ser = rmp_serde::to_vec(&map).unwrap();
         let mut map2: PoolMap<Dummy, usize> = rmp_serde::from_slice(&ser).unwrap();
-        
+
         assert_eq!(map2[ten], 10);
         assert_eq!(map2[thirty], 30);
         assert_eq!(map2.push(20), twenty);

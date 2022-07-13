@@ -1,12 +1,15 @@
-use std::{ops::{Deref, DerefMut, Index, IndexMut}, mem::{replace, MaybeUninit}};
+use std::{
+    mem::{replace, MaybeUninit},
+    ops::{Deref, DerefMut, Index, IndexMut},
+};
 
-use crate::{BumpMap, VPtr, Maybe, PoolMap, Frames, VPtrSet};
+use crate::{BumpMap, Frames, Maybe, PoolMap, VPtr, VPtrSet};
 
 pub type CachedPoolBumpMap<K, T, C = ()> = PoolBumpMap<K, T, C, Frames<T>>;
 
-/// Struct is similar to [`PoolMap`] as it allows removing elements 
-/// but it stores slices of T as [`BumpMap`]. Accessing removed memory 
-/// results into panic. Its is considered `unsafe` to explicitly call 
+/// Struct is similar to [`PoolMap`] as it allows removing elements
+/// but it stores slices of T as [`BumpMap`]. Accessing removed memory
+/// results into panic. Its is considered `unsafe` to explicitly call
 /// [`Deref`] or [`DerefMut`] on this struct.
 pub struct PoolBumpMap<K, T, C = (), CACHE = ()> {
     inner: BumpMap<K, T, C, CACHE>,
@@ -31,23 +34,23 @@ impl<K, T, C, CACHE: Default> PoolBumpMap<K, T, C, CACHE> {
 
 impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
     /// Same behavior as [`BumpMap::bump_slice`] but removed slices can be reused.
-    /// 
+    ///
     /// # Example
     /// ```
     /// let mut map = storage::PoolBumpMap::<DummyList, usize>::new();
-    /// 
+    ///
     /// let slice = map.bump_slice(&[10, 20, 30]);
     /// assert_eq!(&map[slice], &[10, 20, 30]);
     /// assert_eq!(map.remove(slice).collect::<Vec<_>>(), vec![10, 20, 30]);
-    /// 
+    ///
     /// let restored_slice = map.bump_slice(&[10, 20, 30]);
     /// assert_eq!(slice, restored_slice); // reused
-    /// 
+    ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn bump_slice(&mut self, slice: &[T]) -> Maybe<K> 
-        where
-            T: Clone
+    pub fn bump_slice(&mut self, slice: &[T]) -> Maybe<K>
+    where
+        T: Clone,
     {
         self.bump(slice.iter().cloned())
     }
@@ -89,10 +92,10 @@ impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
 }
 
 impl<K, T, C: VPtr, CACHE> PoolBumpMap<K, T, C, CACHE> {
-    /// Same behavior as [`BumpMap::bump_pushed`] but removed slices can be reused. 
+    /// Same behavior as [`BumpMap::bump_pushed`] but removed slices can be reused.
     pub fn bump_pushed(&mut self) -> Maybe<K>
-        where
-            K: VPtr
+    where
+        K: VPtr,
     {
         self.tmp.extend(self.inner.discard_pushed());
         self.bump_prepared()
@@ -100,48 +103,50 @@ impl<K, T, C: VPtr, CACHE> PoolBumpMap<K, T, C, CACHE> {
 }
 
 impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
-
-
-    /// Removes slice from the [`PoolBumpMap`] and returns ownership to slice 
+    /// Removes slice from the [`PoolBumpMap`] and returns ownership to slice
     /// contents via iterator. The backing memory is saved for next allocations.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let mut map = storage::PoolBumpMap::<DummyList, usize>::new();
     /// let slice1 = map.bump([10, 20, 30]);
     /// let slice2 = map.bump([40, 50, 60]);
-    /// 
+    ///
     /// assert_eq!(map.remove(slice2.unwrap()).collect::<Vec<_>>(), vec![40, 50, 60]);
     /// assert_eq!(map.remove(slice1.unwrap()).collect::<Vec<_>>(), vec![10, 20, 30]);
     /// assert_eq!(map.bump([0, 0, 0]), slice2);
     /// assert_eq!(map.bump([0, 0, 0]), slice1);
-    /// 
+    ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn remove(&mut self, key: K) -> impl Iterator<Item = T> + '_ {
         assert!(self.free_lookup.insert(key));
-        
+
         let size = self.get(key).len();
         let new_size = self.heads.len().max(size + 1);
         self.heads.resize(new_size, Maybe::none());
-        
+
         let freed = self.freed.push((key, self.heads[size]));
         self.heads[size] = Maybe::some(freed);
-        
-        unsafe { 
-            self.get_mut_uninit(key).iter_mut()
+
+        unsafe {
+            self.get_mut_uninit(key)
+                .iter_mut()
                 .map(|v| replace(v, MaybeUninit::uninit()).assume_init())
         }
     }
 
     /// Same behavior as [`Self::remove`] but removal is optional.
     pub fn may_remove(&mut self, key: Maybe<K>) -> impl Iterator<Item = T> + '_ {
-        key.expand().map(|key| self.remove(key)).into_iter().flatten()
+        key.expand()
+            .map(|key| self.remove(key))
+            .into_iter()
+            .flatten()
     }
 
     fn check_index(&self, concrete: C) -> bool
-        where
-            C: VPtr
+    where
+        C: VPtr,
     {
         self.free_lookup.contains(self.inner.slice_of(concrete))
     }

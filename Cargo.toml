@@ -13,8 +13,13 @@ members = [
     "utils/cli",
     "utils/state",
 
+    "types/lexing-t",
+    "types/packaging-t",
+    "types/diags",
+
     "stages/lexing",
     "stages/parsing",
+    "stages/packaging",
 ]
 
 [dependencies]

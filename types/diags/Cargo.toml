@@ -1,13 +1,13 @@
 [package]
-name = "parsing"
+name = "diags"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-logos = "0.12.0"
-lexing = { path = "../lexing" }
+lsp-types = "0.93.0"
 storage = { path = "../../utils/storage" }
-errors = { path = "../../utils/errors" }
-diags = { path = "../../types/diags" }
+ansi-coloring = { path = "../../utils/ansi-coloring" }
+lexing-t = { path = "../lexing-t" }
+packaging-t = { path = "../packaging-t" }

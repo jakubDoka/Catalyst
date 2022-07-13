@@ -1,5 +1,5 @@
-use logos::Logos;
 use crate::Span;
+use logos::Logos;
 
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
@@ -39,7 +39,7 @@ macro_rules! gen_kind {
             $($op_name:ident = $op_regex:literal,)*
         }
     ) => {
-        
+
 
         impl TokenKind {
             pub fn as_str(self) -> &'static str {
@@ -160,7 +160,7 @@ gen_kind!(
     }
 
     punctuation {
-        
+
         Comma = ",",
         Colon = ":",
         Dot = ".",

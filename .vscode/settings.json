@@ -1,6 +1,8 @@
 {
     "cSpell.words": [
+        "canonicalize",
         "cranelifts",
+        "deps",
         "ents",
         "Hasher",
         "interner",

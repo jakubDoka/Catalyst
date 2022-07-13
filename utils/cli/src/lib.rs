@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-/// Cli input simply parses command line input in the most generic 
+/// Cli input simply parses command line input in the most generic
 /// way and makes is convenient to access flags, values and arguments.
 ///
 /// # Syntax
@@ -20,12 +20,12 @@ pub struct CliInput {
 
 impl CliInput {
     /// Creates a new `CliInput` from the given string. Useful for testing.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let input = cli::CliInput::from_str("path/to/file.rs command --field value -flag \"string arg\" --field2 \"string arg 2\"")
     ///     .unwrap();
-    /// 
+    ///
     /// assert_eq!(input.wd(), "path/to/file.rs");
     /// assert_eq!(input.args(), &["command", "string arg"]);
     /// assert_eq!(input.value("field"), Some("value"));
@@ -40,7 +40,7 @@ impl CliInput {
     pub fn new() -> Result<Self, CliError> {
         Self::new_low(std::env::args())
     }
-    
+
     fn new_low(input: impl Iterator<Item = String>) -> Result<Self, CliError> {
         let mut input: Vec<_> = input.collect();
         input.reverse();
@@ -54,30 +54,28 @@ impl CliInput {
             match (chars.next(), chars.next()) {
                 (Some('-'), Some('-')) => {
                     arg.drain(..2);
-                    let Some(field) = input.pop() else { 
+                    let Some(field) = input.pop() else {
                         return Err(CliError::MissingFlagValue(arg));
                     };
                     let mut chars = field.chars();
                     match (chars.next(), chars.next()) {
                         (Some('-'), ..) => return Err(CliError::InvalidValue(arg)),
-                        (Some('"'), ..) => flags.insert(arg, Some(Self::parse_string(&mut input, field)?)),
+                        (Some('"'), ..) => {
+                            flags.insert(arg, Some(Self::parse_string(&mut input, field)?))
+                        }
                         _ => flags.insert(arg, Some(field)),
                     };
-                },
+                }
                 (Some('-'), ..) => {
                     arg.drain(..1);
                     flags.insert(arg, None);
-                },
+                }
                 (Some('"'), ..) => args.push(Self::parse_string(&mut input, arg)?),
                 _ => args.push(arg),
             }
         }
 
-        Ok(Self { 
-            path, 
-            args, 
-            flags 
-        })
+        Ok(Self { path, args, flags })
     }
 
     /// Return the cmd arguments
@@ -101,7 +99,7 @@ impl CliInput {
     /// Returns working directory.
     pub fn wd(&self) -> &str {
         &self.path
-    } 
+    }
 
     fn parse_string(input: &mut Vec<String>, mut start: String) -> Result<String, CliError> {
         loop {

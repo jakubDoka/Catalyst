@@ -1,4 +1,3 @@
-
 use std::ops::Range;
 
 use logos::*;
@@ -36,18 +35,28 @@ impl<'a> Lexer<'a> {
         &self.inner.source()[span]
     }
 
-    
     pub fn error_many(&self, got: TokKind, options: &[TokKind]) -> ! {
-        let kind = options.iter().map(|o| format!("{:?}", o)).collect::<Vec<_>>().join(" or ");
+        let kind = options
+            .iter()
+            .map(|o| format!("{:?}", o))
+            .collect::<Vec<_>>()
+            .join(" or ");
         let line = self.inner.source()[..self.current.span.end].lines().count();
-        let col = self.current.span.start - self.inner.source()[..self.current.span.end].rfind('\n').unwrap_or(0) + 1;
-        println!("expected {} but got {:?} at line {}, column {}", kind, got, line, col);
+        let col = self.current.span.start
+            - self.inner.source()[..self.current.span.end]
+                .rfind('\n')
+                .unwrap_or(0)
+            + 1;
+        println!(
+            "expected {} but got {:?} at line {}, column {}",
+            kind, got, line, col
+        );
         panic!();
     }
 
     pub fn expect(&self, kind: TokKind) {
         if self.current.kind != kind {
-            self.error_many(self.current.kind.clone(), &[kind]); 
+            self.error_many(self.current.kind.clone(), &[kind]);
         }
     }
 
@@ -56,7 +65,6 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,10 +92,7 @@ impl Tok {
             };
         }
 
-        Tok {
-            kind,
-            span,
-        }
+        Tok { kind, span }
     }
 }
 
@@ -112,7 +117,7 @@ pub enum TokKind {
     EscapedIdent,
     #[regex("[a-zA-Z]\\w*")]
     Ident,
-    
+
     #[regex("\\{")]
     LBrace,
     #[regex("\\}")]

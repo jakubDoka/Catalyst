@@ -6,16 +6,15 @@ pub struct LineMapping {
 
 impl LineMapping {
     pub fn new(source: &str) -> Self {
-        LineMapping { 
-            indices: once(0).chain(source
-                .match_indices('\n')
-                .map(|(i, _)| i))
+        LineMapping {
+            indices: once(0)
+                .chain(source.match_indices('\n').map(|(i, _)| i))
                 .collect(),
         }
     }
 
     /// Returns line number anc column number of the given index inside mapped file.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let source = "
@@ -24,11 +23,11 @@ impl LineMapping {
     /// delta
     /// epsilon
     /// ";
-    /// 
+    ///
     /// let mapper = lexing::LineMapper::new(source);
-    /// 
+    ///
     /// let i = |arg: &str| source.find(arg).unwrap();
-    /// 
+    ///
     /// assert_eq!(mapper.line_info_at(i("alfa")), (2, 0));
     /// assert_eq!(mapper.line_info_at(i("beta")), (3, 0));
     /// assert_eq!(mapper.line_info_at(i("gama")), (3, 5));
@@ -39,7 +38,6 @@ impl LineMapping {
         let pos = self.indices.binary_search(&index).unwrap_or_else(|i| i);
         let pos = pos.checked_sub(1).unwrap_or(pos);
 
-        (pos + 1, index - self.indices[pos] - 1)        
+        (pos + 1, index - self.indices[pos] - 1)
     }
 }
-

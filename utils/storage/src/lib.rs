@@ -3,25 +3,24 @@
 #![feature(result_into_ok_or_err)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
-//! Some concepts are identical to cranelifts way of handling things but they are rewritten 
+//! Some concepts are identical to cranelifts way of handling things but they are rewritten
 //! here for more convenience.
-//! 
-//! Core component of storage system is [`VPtr`] which is a trait that defines typed virtual 
-//! pointer, usually pointing to item inside the vector. All storages use this as an access 
-//! point and store it in its own structures. Advantage over just usize is the size and type 
+//!
+//! Core component of storage system is [`VPtr`] which is a trait that defines typed virtual
+//! pointer, usually pointing to item inside the vector. All storages use this as an access
+//! point and store it in its own structures. Advantage over just usize is the size and type
 //! safety. Each container should have distinct [`VPtr`] unless it is a storage plugin.
-//! 
-//! Another important part of API is [`Maybe`]. This value wrapper can optionally store a 
+//!
+//! Another important part of API is [`Maybe`]. This value wrapper can optionally store a
 //! value without any extra memory for flags. Its based of [`Invalid`] trait which determines
 //! whether value is invalid thus the [`Maybe`] holds nothing.
 
-
-/// Macro generates type with [`VPtr`] implemented. The pointers usually don't differ in 
+/// Macro generates type with [`VPtr`] implemented. The pointers usually don't differ in
 /// implementation, they just need to be distinct.
-/// 
+///
 /// # Examples
 /// ```
-/// // supports bulk declaration 
+/// // supports bulk declaration
 /// storage::gen_v_ptr!(Something SomethingElse);
 /// ```
 #[macro_export]
@@ -30,13 +29,13 @@ macro_rules! gen_v_ptr {
         $(
             #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
             pub struct $ty(u32);
-        
+
             impl $crate::v_ptr::VPtr for $ty {
                 fn new(index: usize) -> Self {
                     assert!(index as u32 != u32::MAX);
                     $ty(index as u32)
                 }
-                
+
                 fn index(&self) -> usize {
                     self.0 as usize
                 }
@@ -74,18 +73,18 @@ macro_rules! gen_v_ptr {
 }
 
 /// Macro makes it easy to construct '&[[`InternedSegment`]]'.
-/// 
+///
 /// # Examples
 /// ```
 /// use storage::*;
-/// 
+///
 /// let mut interner = Interner::new();
-/// 
+///
 /// let a = interner.intern_str("a");
-/// 
+///
 /// let usage: &[InternedSegment] = ident!("h", 10, a);
 /// let result: &[InternedSegment] = &["h".into(), 10.into(), a.into()];
-/// 
+///
 /// assert_eq!(usage, result);
 /// ```
 #[macro_export]
@@ -97,22 +96,22 @@ macro_rules! ident {
 
 pub extern crate serde;
 
-pub mod interner;
-pub mod v_ptr;
-pub mod invalid;
-pub mod sparse_map;
-pub mod pool_map;
-pub mod v_ptr_set;
 pub mod bump_map;
-pub mod pool_bump_map;
 pub mod frames;
+pub mod interner;
+pub mod invalid;
+pub mod pool_bump_map;
+pub mod pool_map;
+pub mod sparse_map;
+pub mod v_ptr;
+pub mod v_ptr_set;
 
-pub use interner::{Interner, Ident, InternedSegment};
-pub use v_ptr::{VPtr};
-pub use invalid::{Invalid, Maybe};
-pub use sparse_map::{SparseMap};
-pub use pool_map::{PoolMap};
-pub use v_ptr_set::{VPtrSet};
 pub use bump_map::{BumpMap, CacheBumpMap};
-pub use pool_bump_map::{PoolBumpMap};
-pub use frames::{Frames};
+pub use frames::Frames;
+pub use interner::{Ident, InternedSegment, Interner};
+pub use invalid::{Invalid, Maybe};
+pub use pool_bump_map::PoolBumpMap;
+pub use pool_map::PoolMap;
+pub use sparse_map::SparseMap;
+pub use v_ptr::VPtr;
+pub use v_ptr_set::VPtrSet;

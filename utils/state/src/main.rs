@@ -5,14 +5,14 @@ use std::{env::args, path::PathBuf};
 use ast::SourceCode;
 use tokens::Lexer;
 
-mod tokens;
 mod ast;
+mod tokens;
 
 fn main() {
     let file_path = args().nth(1).expect("no file given");
-    
+
     let mut frontier = vec![PathBuf::from(file_path)];
-    
+
     while let Some(path) = frontier.pop() {
         println!("loading {}", path.display());
         let source = std::fs::read_to_string(&path).expect("could not read file");
@@ -25,4 +25,3 @@ fn main() {
         frontier.extend(ast.calls.into_iter().map(|call| call.path));
     }
 }
-

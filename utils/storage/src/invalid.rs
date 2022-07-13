@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub trait Invalid: Sized {
     unsafe fn invalid() -> Self;

@@ -10,3 +10,4 @@ logos = "0.12.0"
 ansi-coloring = { path = "../../utils/ansi-coloring" }
 errors = { path = "../../utils/errors" }
 storage = { path = "../../utils/storage" }
+lexing-t = { path = "../../types/lexing-t" }

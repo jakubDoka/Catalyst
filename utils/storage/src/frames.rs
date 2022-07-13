@@ -1,4 +1,3 @@
-
 pub struct Frames<T> {
     data: Vec<T>,
     indices: Vec<u32>,
@@ -12,9 +11,13 @@ impl<T> Frames<T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
     pub fn pop(&mut self) -> impl Iterator<Item = T> + '_ {
         let check = self.indices.pop().expect("marked frame");
-        self.data.drain(check as usize..) 
+        self.data.drain(check as usize..)
     }
 
     pub fn push(&mut self, value: T) {
@@ -36,8 +39,11 @@ impl<T> Frames<T> {
     pub fn nth_from_top(&self, n: usize) -> &[T] {
         let inv = self.indices.len() - n - 1;
         let start = self.indices[inv];
-        let end = *self.indices.get(inv + 1).unwrap_or(&(self.data.len() as u32));
-        
+        let end = *self
+            .indices
+            .get(inv + 1)
+            .unwrap_or(&(self.data.len() as u32));
+
         &self.data[start as usize..end as usize]
     }
 }

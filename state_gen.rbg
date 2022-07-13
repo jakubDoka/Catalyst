@@ -7,3 +7,15 @@ file "stages/parsing/src/state_gen.rs" {
         str
     }
 }
+
+file "stages/packaging/src/state_gen.rs" {
+    use "packaging_t"
+    use "diags"
+    use "storage"
+
+    struct PackageLoader {
+        mut PackagingContext
+        mut Workspace
+        mut Interner
+    }
+}

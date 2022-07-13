@@ -39,11 +39,19 @@ name = "cli"
 version = "0.1.0"
 
 [[package]]
-name = "errors"
+name = "diags"
 version = "0.1.0"
 dependencies = [
+ "ansi-coloring",
+ "lexing-t",
  "lsp-types",
+ "packaging-t",
+ "storage",
 ]
+
+[[package]]
+name = "errors"
+version = "0.1.0"
 
 [[package]]
 name = "fnv"
@@ -79,18 +87,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112c678d4050afce233f4f2852bb2eb519230b3cf12f33585275537d7e41578d"
 
 [[package]]
-name = "lalrpop-util"
-version = "0.19.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcf796c978e9b4d983414f4caedc9273aa33ee214c5b887bd55fde84c85d2dc4"
-
-[[package]]
 name = "lexing"
 version = "0.1.0"
 dependencies = [
  "ansi-coloring",
  "errors",
+ "lexing-t",
  "logos",
+ "storage",
+]
+
+[[package]]
+name = "lexing-t"
+version = "0.1.0"
+dependencies = [
+ "ansi-coloring",
  "storage",
 ]
 
@@ -146,11 +157,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "packaging"
+version = "0.1.0"
+dependencies = [
+ "diags",
+ "errors",
+ "lexing",
+ "packaging-t",
+ "parsing",
+ "storage",
+]
+
+[[package]]
+name = "packaging-t"
+version = "0.1.0"
+dependencies = [
+ "lexing",
+ "storage",
+]
+
+[[package]]
 name = "parsing"
 version = "0.1.0"
 dependencies = [
+ "diags",
  "errors",
- "lalrpop-util",
  "lexing",
  "logos",
  "storage",
