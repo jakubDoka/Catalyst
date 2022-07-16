@@ -204,8 +204,9 @@ pub mod types {
     /// Represents diagnostic state of compiled project.
     #[derive(Default)]
     pub struct Workspace {
-        pub files: SparseMap<Ident, Doc>,
-        pub global_diags: Vec<Diag>,
+        files: SparseMap<Ident, Doc>,
+        global_diags: Vec<Diag>,
+        has_errors: bool,
     }
 
     impl Workspace {
@@ -214,9 +215,10 @@ pub mod types {
         }
 
         pub fn push(&mut self, diag: Diag) {
+            self.has_errors |= diag.severity == raw::DiagnosticSeverity::ERROR;
             if let Some(loc) = diag.loc.expand() {
                 if self.files.get(loc.source).is_none() {
-                    self.files.insert(loc.source, Doc::new());    
+                    self.files.insert(loc.source, Doc::new());
                 }
 
                 if loc.span.is_some() {
@@ -227,6 +229,32 @@ pub mod types {
             } else {
                 self.global_diags.push(diag);
             }
+        }
+
+        pub fn log(&self, packaging_context: &PackagingContext) {
+            let mut to = String::new();
+            self.display(packaging_context, &mut to).unwrap();
+            println!("{}", to);
+        }
+
+        pub fn display(
+            &self,
+            packaging_context: &PackagingContext,
+            to: &mut dyn Write,
+        ) -> std::fmt::Result {
+            for diag in &self.global_diags {
+                diag.display(packaging_context, to)?;
+            }
+
+            for doc in self.files.values() {
+                doc.display(packaging_context, to)?;
+            }
+
+            Ok(())
+        }
+
+        pub fn has_errors(&self) -> bool {
+            self.has_errors
         }
     }
 
@@ -240,6 +268,22 @@ pub mod types {
     impl Doc {
         pub fn new() -> Self {
             Self::default()
+        }
+
+        pub fn display(
+            &self,
+            packaging_context: &PackagingContext,
+            to: &mut dyn Write,
+        ) -> std::fmt::Result {
+            for diag in &self.global_diags {
+                diag.display(packaging_context, to)?;
+            }
+
+            for diag in &self.code_diags {
+                diag.display(packaging_context, to)?;
+            }
+
+            Ok(())
         }
     }
 
@@ -269,6 +313,8 @@ pub mod types {
             for rel in &self.related {
                 rel.display(packaging_context, to)?;
             }
+
+            writeln!(to)?;
 
             Ok(())
         }

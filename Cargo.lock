@@ -70,6 +70,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphs"
+version = "0.1.0"
+dependencies = [
+ "storage",
+]
+
+[[package]]
 name = "idna"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -172,6 +179,7 @@ dependencies = [
 name = "packaging-t"
 version = "0.1.0"
 dependencies = [
+ "graphs",
  "lexing",
  "storage",
 ]

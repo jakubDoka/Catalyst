@@ -18,82 +18,6 @@ pub struct SparseMap<K, T> {
     data: Vec<(K, T)>,
 }
 
-impl<K: VPtr + Serialize, T: Serialize> Serialize for SparseMap<K, T>
-where
-    K: Serialize,
-    T: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let len = (self.mapping.len() << 32) | self.data.len();
-        let mut map = serializer.serialize_map(Some(len))?;
-        for (key, value) in self.data.iter() {
-            map.serialize_entry(key, value)?;
-        }
-        map.end()
-    }
-}
-
-struct SparseMapVisitor<K, V> {
-    marker: PhantomData<fn() -> SparseMap<K, V>>,
-}
-
-impl<K, V> SparseMapVisitor<K, V> {
-    fn new() -> Self {
-        SparseMapVisitor {
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<'de, K, V> Visitor<'de> for SparseMapVisitor<K, V>
-where
-    K: Deserialize<'de> + VPtr,
-    V: Deserialize<'de>,
-{
-    type Value = SparseMap<K, V>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("SparseMap")
-    }
-
-    fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
-    where
-        M: MapAccess<'de>,
-    {
-        let size_hint = access.size_hint().unwrap_or(0);
-        let (mapping_len, value_len) = (size_hint >> 32, size_hint & 0xFFFFFFFF);
-
-        let mut map = SparseMap {
-            mapping: Vec::with_capacity(mapping_len),
-            data: Vec::with_capacity(value_len),
-        };
-
-        // While there are entries remaining in the input, add them
-        // into our map.
-        while let Some((key, value)) = access.next_entry()? {
-            map.insert(key, value);
-        }
-
-        Ok(map)
-    }
-}
-
-impl<'de, K, V> Deserialize<'de> for SparseMap<K, V>
-where
-    K: Deserialize<'de> + VPtr,
-    V: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_map(SparseMapVisitor::new())
-    }
-}
-
 impl<K, T> SparseMap<K, T> {
     pub fn new() -> Self {
         SparseMap {
@@ -176,19 +100,33 @@ impl<K: VPtr, T> SparseMap<K, T> {
     pub fn size_hint(&self) -> usize {
         self.mapping.len()
     }
+
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.data.iter().map(|(_, value)| value)
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.data.iter_mut().map(|(_, value)| value)
+    }
 }
 
 impl<K: VPtr, T> Index<K> for SparseMap<K, T> {
     type Output = T;
 
     fn index(&self, key: K) -> &T {
-        &self.data[self.mapping[key.index()].unwrap().index()].1
+        assert!(key.index() < self.mapping.len());
+        let inner = self.mapping[key.index()].unwrap().index();
+        assert!(inner < self.data.len());
+        &self.data[inner].1
     }
 }
 
 impl<K: VPtr, T> IndexMut<K> for SparseMap<K, T> {
     fn index_mut(&mut self, key: K) -> &mut T {
-        &mut self.data[self.mapping[key.index()].unwrap().index()].1
+        assert!(key.index() < self.mapping.len());
+        let inner = self.mapping[key.index()].unwrap().index();
+        assert!(inner < self.data.len());
+        &mut self.data[inner].1
     }
 }
 
@@ -199,6 +137,82 @@ impl<K, T> Default for SparseMap<K, T> {
 }
 
 gen_v_ptr!(Private);
+
+impl<K: VPtr + Serialize, T: Serialize> Serialize for SparseMap<K, T>
+where
+    K: Serialize,
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let len = (self.mapping.len() << 32) | self.data.len();
+        let mut map = serializer.serialize_map(Some(len))?;
+        for (key, value) in self.data.iter() {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+struct SparseMapVisitor<K, V> {
+    marker: PhantomData<fn() -> SparseMap<K, V>>,
+}
+
+impl<K, V> SparseMapVisitor<K, V> {
+    fn new() -> Self {
+        SparseMapVisitor {
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'de, K, V> Visitor<'de> for SparseMapVisitor<K, V>
+where
+    K: Deserialize<'de> + VPtr,
+    V: Deserialize<'de>,
+{
+    type Value = SparseMap<K, V>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("SparseMap")
+    }
+
+    fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let size_hint = access.size_hint().unwrap_or(0);
+        let (mapping_len, value_len) = (size_hint >> 32, size_hint & 0xFFFFFFFF);
+
+        let mut map = SparseMap {
+            mapping: Vec::with_capacity(mapping_len),
+            data: Vec::with_capacity(value_len),
+        };
+
+        // While there are entries remaining in the input, add them
+        // into our map.
+        while let Some((key, value)) = access.next_entry()? {
+            map.insert(key, value);
+        }
+
+        Ok(map)
+    }
+}
+
+impl<'de, K, V> Deserialize<'de> for SparseMap<K, V>
+where
+    K: Deserialize<'de> + VPtr,
+    V: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(SparseMapVisitor::new())
+    }
+}
 
 #[cfg(test)]
 mod test {

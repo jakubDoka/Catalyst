@@ -12,6 +12,7 @@ members = [
     "utils/errors",
     "utils/cli",
     "utils/state",
+    "utils/graphs",
 
     "types/lexing-t",
     "types/packaging-t",

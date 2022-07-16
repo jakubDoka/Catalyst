@@ -6,7 +6,7 @@ impl Parser<'_> {
     }
 
     fn take_manifest(&mut self) -> errors::Result {
-        list!(self, none, NewLine, none, manifest_field)
+        list!(self, none, NewLine, Eof, manifest_field)
     }
 
     fn manifest_field(&mut self) -> errors::Result {
@@ -42,6 +42,13 @@ impl Parser<'_> {
         let use_git = self.ctx_keyword("git");
         self.expect(TokenKind::String)?;
         self.capture(AstKind::String);
+
+        if matches!(self.state.current.kind, TokenKind::Version | TokenKind::Ident) {
+            self.capture(AstKind::Ident);
+        } else {
+            self.ast_data.cache(AstEnt::none());
+        }
+        
         self.finish(AstKind::ManifestImport { use_git });
         Ok(())
     }

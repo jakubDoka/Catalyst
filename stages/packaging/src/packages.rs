@@ -1,7 +1,7 @@
 use std::{
     fs::{create_dir_all, read_to_string},
     path::*,
-    process::Command,
+    process::Command, str::FromStr,
 };
 
 use crate::*;
@@ -11,7 +11,7 @@ use packaging_t::*;
 use parsing::*;
 use storage::*;
 
-pub const MANIFEST_EXTENSION: &str = ".ctlm";
+pub const MANIFEST_EXTENSION: &str = "ctlm";
 pub const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
 pub const DEFAULT_DEP_ROOT: &str = "deps";
 
@@ -23,8 +23,9 @@ impl PackageLoader<'_> {
         path.push("package");
         path.set_extension(MANIFEST_EXTENSION);
         let id = self.intern_path(&path)?;
+        path.pop();
 
-        let mut frontier = vec![(id, root.to_owned(), Maybe::none())];
+        let mut frontier = vec![(id, path, Maybe::none())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
@@ -33,6 +34,13 @@ impl PackageLoader<'_> {
                 break;
             }
         }
+
+        let ModuleKind::Package { ref root_module } = self.packaging_context.modules[id].kind else {
+            unreachable!();
+        };
+
+        let path = root_module.to_owned();
+        self.load_modules(&path)?;
 
         Ok(())
     }
@@ -65,17 +73,17 @@ impl PackageLoader<'_> {
             path.join(root_module)
         };
 
-        let Some(deps_ast) = self.find_field("deps", fields, &content, ast_data) else {
-            return Ok(false);
-        };
-
-        let deps = self.load_package_deps(id, &mut path, deps_ast, &content, ast_data, frontier);
+        let deps =
+            self.find_field("deps", fields, &content, ast_data)
+                .map_or(Maybe::none(), |deps_ast| {
+                    self.load_package_deps(id, &mut path, deps_ast, &content, ast_data, frontier)
+                });
 
         let package = Module {
-            path: root_module,
+            path,
             line_mapping: LineMapping::new(&content),
             content,
-            ordering: 0,
+            kind: ModuleKind::Package { root_module },
             deps,
         };
         self.packaging_context.modules.insert(id, package);
@@ -90,15 +98,15 @@ impl PackageLoader<'_> {
         deps_ast: AstEnt,
         content: &str,
         ast_data: &AstData,
-        frontier: &mut Frontier
+        frontier: &mut Frontier,
     ) -> Maybe<DepList> {
         self.packaging_context.conns.start_cache();
-        for dep in &ast_data[deps_ast.children] {
+        for dep in &ast_data[ast_data[deps_ast.children][1].children] {
             let &AstEnt { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
-                unreachable!();
+                unreachable!("{:?}", dep.kind);
             };
 
-            let [name, path] = &ast_data[children] else {
+            let [name, path, version] = &ast_data[children] else {
                 unreachable!();
             };
 
@@ -112,6 +120,9 @@ impl PackageLoader<'_> {
                 name.span
             };
 
+            let version = (version.kind != AstKind::None)
+                .then_some(&content[version.span.range()]);
+
             let current_loc = Loc {
                 source: id,
                 span: path_span.into(),
@@ -119,17 +130,20 @@ impl PackageLoader<'_> {
             .into();
 
             let path_result = if use_git {
-                self.download_package(current_loc, path_str)
+                self.download_package(current_loc, version, path_str)
             } else {
+                let to_pop = Path::new(path_str).components().count();
                 temp_path.push(path_str);
-                temp_path.canonicalize().map_err(|err| {
+                let p = temp_path.canonicalize().map_err(|err| {
                     self.file_error(
                         current_loc,
                         temp_path,
                         "cannot canonicalize local package path",
                         err,
                     )
-                })
+                });
+                assert!((0..to_pop).fold(true, |acc, _| acc & temp_path.pop()));
+                p
             };
 
             let Ok(path) = path_result else {
@@ -143,28 +157,41 @@ impl PackageLoader<'_> {
             let dep = Dep { name, ptr };
             self.packaging_context.conns.cache(dep);
 
-            frontier.push((ptr, path, current_loc));
+            if self.packaging_context.modules.get(ptr).is_none() {
+                frontier.push((ptr, path, current_loc));
+            }
+
+            // println!("{}", path.display());
+
         }
 
         self.packaging_context.conns.bump_cached()
     }
 
-    fn download_package(&mut self, loc: Maybe<Loc>, path: &str) -> errors::Result<PathBuf> {
-        let (url, rev) = path
-            .split_once('@')
-            .map(|(url, rev)| (url, Some(rev)))
-            .unwrap_or((path, None));
+    fn load_modules(&mut self, path: &Path) -> errors::Result {
+        // let id = self.intern_path(path)?;
 
-        let rev = rev.map(|rev| {
-            rev.parse::<Version>()
-                .ok()
-                .map(|v| v.major().to_string())
-                .unwrap_or_else(|| rev.to_string())
-        });
+        // let mut frontier = vec![(id, path.clone(), Maybe::none())];
+        // let mut ast_data = AstData::new();
+        // let mut parser_state = ParserState::new();
 
+        // loop {
+        //     if let Ok(true) = self.load_module(&mut ast_data, &mut parser_state, &mut frontier) {
+        //         break;
+        //     }
+        // }
+
+        Ok(())
+    }
+
+    fn download_package(&mut self, loc: Maybe<Loc>, version: Option<&str>, url: &str) -> errors::Result<PathBuf> {
+        let url = &format!("https://{}", url);
+        let rev_owned = self.resolve_version(loc, version, url)?;
+        let rev = rev_owned.as_ref().map(|v| v.as_str());
+        
         let mut dep_root = self.get_dep_root()?;
         dep_root.push(url);
-        dep_root.push(rev.as_ref().map(|s| s.as_str()).unwrap_or("main"));
+        dep_root.push(rev.unwrap_or("main"));
 
         let install_path = dep_root.canonicalize().map_err(|err| {
             self.file_error(loc, &dep_root, "cannot canonicalize installation path", err)
@@ -179,24 +206,54 @@ impl PackageLoader<'_> {
 
         let id = self.intern_path(install_path.as_path())?;
 
-        let fixed_args = ["clone", "--depth", "1", url, &self.interner[id]];
-        let optional_args = rev.as_ref().map(|rev| ["--branch", rev.as_str()]);
+        let fixed_args = [
+            "clone",
+            "--depth",
+            "1",
+            "--filter",
+            "blob:none",
+            url,
+            &self.interner[id].to_owned(),
+        ];
+        let optional_args = rev.map(|rev| ["--branch", rev]);
         let args = fixed_args
             .into_iter()
             .chain(optional_args.into_iter().flatten());
 
-        let output_result = Command::new("git").args(args.clone()).output();
+        self.execute_git(loc, args)?;
 
-        self.workspace
-            .push(diag!((exp loc) hint => "executing: git {}" {
-                args.collect::<Vec<_>>().join(" ")
-            }));
+        Ok(install_path)
+    }
 
-        let output = output_result.map_err(|err| {
-            self.workspace.push(diag!(
+    fn resolve_version(&mut self, loc: Maybe<Loc>, version: Option<&str>, url: &str) -> errors::Result<Option<String>> {
+        let Some(version) = version else {
+            return Ok(None);
+        };
+
+        let args = ["ls-remote", url, &format!("refs/tags/{}", version)]; 
+        
+        let output = self.execute_git(loc, args)?;
+
+        
+            
+        todo!();
+    }
+
+    fn execute_git<'a>(&mut self, loc: Maybe<Loc>, args: impl IntoIterator<Item = &'a str> + Clone) -> errors::Result<String> {
+        self.workspace.push(diag! {
+            (exp loc) hint => "executing: git {}" {
+                args.clone().into_iter().collect::<Vec<_>>().join(" ")
+            }
+        });
+
+        let output = Command::new("git")
+            .args(args)
+            .output();
+        let output = output.map_err(|err| {
+            self.workspace.push(diag! {
                 (exp loc) error => "cannot execute git",
                 (none) => "error: {}" { err }
-            ))
+            })
         })?;
 
         if !output.status.success() {
@@ -206,7 +263,7 @@ impl PackageLoader<'_> {
             return Err(());
         }
 
-        Ok(install_path)
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     fn intern_path(&mut self, path: &Path) -> errors::Result<Ident> {
@@ -249,7 +306,7 @@ impl PackageLoader<'_> {
     ) -> Option<AstEnt> {
         ast_data[fields]
             .iter()
-            .find(|field| &content[field.span.range()] == name)
+            .find(|field| &content[ast_data[field.children][0].span.range()] == name)
             .copied()
     }
 
@@ -276,5 +333,30 @@ impl PackageLoader<'_> {
             (none) => "current value: {}" { var },
             (none) => "trace: {}" { err },
         });
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::env::var;
+
+    use super::*;
+
+    #[test]
+    fn test_load() {
+        let mut module_loader = PackageLoader {
+            packaging_context: &mut PackagingContext::new(),
+            workspace: &mut Workspace::new(),
+            interner: &mut Interner::new(),
+            package_graph: &mut PackageGraph::new(),
+        };
+
+        let path = var("TEST_PROJECT_PATH").expect("test should be run from `test.bat`");
+
+        drop(module_loader.load(Path::new(&path)));
+
+        module_loader.workspace.log(module_loader.packaging_context);
+
+        assert!(!module_loader.workspace.has_errors());
     }
 }

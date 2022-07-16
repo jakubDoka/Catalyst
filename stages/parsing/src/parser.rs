@@ -39,7 +39,7 @@ impl<'a> Parser<'a> {
 
     fn capture(&mut self, kind: AstKind) {
         self.ast_data
-            .push(AstEnt::leaf(kind, self.state.current.span));
+            .cache(AstEnt::leaf(kind, self.state.current.span));
         self.advance();
     }
 
@@ -77,7 +77,7 @@ impl<'a> Parser<'a> {
 
     fn total_span(&mut self) -> Span {
         let start = self.state.start.pop().unwrap();
-        let end = self.ast_data.cached().last().unwrap().span;
+        let end = self.ast_data.cached().last().map_or(start, |n| n.span);
         start.joined(end)
     }
 
@@ -99,6 +99,7 @@ impl<'a> Parser<'a> {
         if let Some(left) = left {
             self.expect(left)?;
             self.advance();
+            self.skip_newlines();
         }
 
         loop {
@@ -113,13 +114,16 @@ impl<'a> Parser<'a> {
 
             if let Some(right) = right {
                 if self.at(right) {
+                    self.advance();
                     break;
                 }
 
-                self.expect(sep.unwrap())?;
-                self.advance();
+                if let Some(sep) = sep {
+                    self.expect(sep)?;
+                    self.advance();
+                }
             } else if let Some(sep) = sep {
-                if self.at(sep) {
+                if !self.at(sep) {
                     break;
                 }
                 self.advance();
@@ -129,8 +133,6 @@ impl<'a> Parser<'a> {
 
             self.skip_newlines();
         }
-
-        self.advance();
 
         Ok(())
     }
@@ -194,7 +196,7 @@ impl<'a> Parser<'a> {
     fn expect_error(&mut self, kinds: &[TokenKind]) {
         self.workspace.push(diag! {
             (self.state.current.span, self.state.path.unwrap())
-            error => "expected one of {} but got {}" {
+            error => "expected {} but got {}" {
                 kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
             },

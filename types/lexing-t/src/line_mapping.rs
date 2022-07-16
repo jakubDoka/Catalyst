@@ -38,6 +38,15 @@ impl LineMapping {
         let pos = self.indices.binary_search(&index).unwrap_or_else(|i| i);
         let pos = pos.checked_sub(1).unwrap_or(pos);
 
-        (pos + 1, index - self.indices[pos] - 1)
+        (
+            pos + 1,
+            (index - self.indices[pos]).checked_sub(1).unwrap_or(0),
+        )
+    }
+}
+
+impl Default for LineMapping {
+    fn default() -> Self {
+        LineMapping::new("")
     }
 }
