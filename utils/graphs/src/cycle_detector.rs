@@ -190,6 +190,18 @@ impl CycleDetector {
     /// let result = cd.ordering(std::iter::once(0), &mut buffer);
     /// 
     /// assert_eq!(result, Err(vec![0, 1, 2, 0]));
+    /// 
+    /// let mut cd = CycleDetector::new();
+    /// { cd.new_node().add_edge(1); }
+    /// { cd.new_node().add_edge(2); }
+    /// { cd.new_node().add_edge(3); } // cycle is created
+    /// { cd.new_node(); }             // unrelated reachable node
+    /// let mut buffer = Vec::new();
+    /// 
+    /// let result = cd.ordering(std::iter::once(0), &mut buffer);
+    /// 
+    /// assert_eq!(result, Ok(()));
+    /// assert_eq!(buffer, vec![3, 2, 1, 0]);
     /// ```
     pub fn ordering(
         &mut self,
@@ -214,7 +226,6 @@ impl CycleDetector {
             let node = *node as usize;
             let NodeMeta { seen, is_recursive } = self.meta[node];
 
-            
             if is_recursive {
                 return Err(self
                     .stack

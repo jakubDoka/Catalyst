@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Frames, Maybe, VPtr};
+use crate::*;
 
 pub type CacheBumpMap<K, T, C = ()> = BumpMap<K, T, C, Frames<T>>;
 
@@ -32,6 +32,12 @@ impl<K, T, C, CACHE: Default> BumpMap<K, T, C, CACHE> {
             frames: CACHE::default(),
             _ph: PhantomData,
         }
+    }
+
+    pub fn clear(&mut self) where CACHE: Clear {
+        self.data.clear();
+        self.indices.truncate(1);
+        self.frames.clear();
     }
 }
 

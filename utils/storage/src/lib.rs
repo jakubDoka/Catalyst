@@ -105,6 +105,8 @@ pub mod pool_map;
 pub mod sparse_map;
 pub mod v_ptr;
 pub mod v_ptr_set;
+pub mod clear;
+pub mod shadow_map;
 
 pub use bump_map::{BumpMap, CacheBumpMap};
 pub use frames::Frames;
@@ -115,3 +117,4 @@ pub use pool_map::PoolMap;
 pub use sparse_map::SparseMap;
 pub use v_ptr::VPtr;
 pub use v_ptr_set::VPtrSet;
+pub use clear::Clear;

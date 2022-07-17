@@ -22,14 +22,18 @@ impl Parser<'_> {
     fn imports(&mut self) -> errors::Result {
         self.start();
         self.advance();
-        list!(self, LeftParen, NewLine, RightParen, import)?;
+        list!(self, LeftCurly, NewLine, RightCurly, import)?;
         self.finish(AstKind::Imports);
         Ok(())
     }
 
     fn import(&mut self) -> errors::Result {
         self.start();
-        self.optional(TokenKind::Ident, |s| Ok(s.capture(AstKind::Ident)))?;
+        if self.state.current.kind == TokenKind::Ident {
+            self.capture(AstKind::Ident);
+        } else {
+            self.ast_data.cache(AstEnt::none());
+        }
         self.capture(AstKind::String);
         self.finish(AstKind::Import);
         Ok(())

@@ -1,3 +1,5 @@
+use crate::Clear;
+
 pub struct Frames<T> {
     data: Vec<T>,
     indices: Vec<u32>,
@@ -51,5 +53,12 @@ impl<T> Frames<T> {
 impl<T> Default for Frames<T> {
     fn default() -> Self {
         Frames::new()
+    }
+}
+
+impl<T> Clear for Frames<T> {
+    fn clear(&mut self) {
+        self.data.clear();
+        self.indices.clear();
     }
 }

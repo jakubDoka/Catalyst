@@ -2,7 +2,7 @@ use lexing::*;
 use std::path::*;
 use storage::*;
 
-pub type PackageGraph = graphs::CycleDetector;
+pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
 pub struct PackagingContext {
@@ -27,7 +27,7 @@ pub struct Module {
 }
 
 pub enum ModuleKind {
-    Package { root_module: PathBuf },
+    Package { root_module: PathBuf, span: Maybe<Span>, },
     Module { package: Ident, ordering: usize },
     Default,
 }

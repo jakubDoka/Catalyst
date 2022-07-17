@@ -112,7 +112,7 @@ impl Span {
     /// | {ERR}^^^^^^^^^^^^^^^^^^{END}
     /// "#);
     ///
-    /// assert_eq!(buff, &expected[1..]);
+    /// assert_eq!(buff, &expected[1..expected.len() - 1]);
     /// ```
     #[inline(never)]
     pub fn underline(
@@ -159,7 +159,7 @@ impl Span {
         .replace("\n", "\n| ");
 
         writeln!(target, "| {}", display)?;
-        writeln!(
+        write!(
             target,
             "| {}{color}{}{END}",
             " ".repeat(underline_start),

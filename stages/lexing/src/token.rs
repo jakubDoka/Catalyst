@@ -160,7 +160,6 @@ gen_kind!(
     }
 
     punctuation {
-        Version = r"v[0-9]*.([0-9]*|\*).([0-9]*|\*)",
         Comma = ",",
         Colon = ":",
         Dot = ".",

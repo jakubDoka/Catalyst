@@ -43,8 +43,8 @@ impl Parser<'_> {
         self.expect(TokenKind::String)?;
         self.capture(AstKind::String);
 
-        if matches!(self.state.current.kind, TokenKind::Version | TokenKind::Ident) {
-            self.capture(AstKind::Ident);
+        if self.state.current.kind == TokenKind::String {
+            self.capture(AstKind::String);
         } else {
             self.ast_data.cache(AstEnt::none());
         }

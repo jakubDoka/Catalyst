@@ -108,6 +108,14 @@ impl<K: VPtr, T> SparseMap<K, T> {
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.data.iter_mut().map(|(_, value)| value)
     }
+
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = K> + ExactSizeIterator<Item = K> + '_ {
+        self.data.iter().map(|&(key, _)| key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (K, &T)> {
+        self.data.iter().map(|(key, value)| (*key, value))
+    }
 }
 
 impl<K: VPtr, T> Index<K> for SparseMap<K, T> {
