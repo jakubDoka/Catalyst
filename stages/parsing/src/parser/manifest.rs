@@ -48,7 +48,7 @@ impl Parser<'_> {
         } else {
             self.ast_data.cache(AstEnt::none());
         }
-        
+
         self.finish(AstKind::ManifestImport { use_git });
         Ok(())
     }

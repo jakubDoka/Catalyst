@@ -48,6 +48,10 @@ impl<T> Frames<T> {
 
         &self.data[start as usize..end as usize]
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
 }
 
 impl<T> Default for Frames<T> {

@@ -26,6 +26,14 @@ impl<T: Invalid> Maybe<T> {
         }
     }
 
+    pub fn as_ref_option(&self) -> Option<&T> {
+        if self.0.is_invalid() {
+            None
+        } else {
+            Some(&self.0)
+        }
+    }
+
     pub fn take(&mut self) -> Self {
         if self.0.is_invalid() {
             Self::none()

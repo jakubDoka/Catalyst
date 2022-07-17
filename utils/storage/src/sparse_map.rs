@@ -55,6 +55,10 @@ impl<K: VPtr, T> SparseMap<K, T> {
         }
     }
 
+    pub fn insert_unique(&mut self, key: K, value: T) {
+        assert!(self.insert(key, value).is_none());
+    }
+
     /// Removes value under the key. Former value is returned if any.
     ///
     /// # Example
@@ -115,6 +119,11 @@ impl<K: VPtr, T> SparseMap<K, T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (K, &T)> {
         self.data.iter().map(|(key, value)| (*key, value))
+    }
+
+    pub fn clear(&mut self) {
+        self.mapping.clear();
+        self.data.clear();
     }
 }
 

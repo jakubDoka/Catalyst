@@ -1,4 +1,7 @@
-use std::{mem::replace, ops::{Index, IndexMut}};
+use std::{
+    mem::replace,
+    ops::{Index, IndexMut},
+};
 
 use crate::*;
 
@@ -17,14 +20,16 @@ impl<K: VPtr, V, C: VPtr> OrderedMap<K, V, C> {
     pub fn insert(&mut self, key: K, value: V) -> (C, Option<V>) {
         let index = self.data.push((key, value));
         let shadow = replace(&mut self.index[key], Maybe::some(index));
-        (index, shadow.expand().map(|shadow| self.data.remove(shadow).1))
+        (
+            index,
+            shadow.expand().map(|shadow| self.data.remove(shadow).1),
+        )
     }
 
     pub fn remove(&mut self, key: K) -> Option<V> {
-        let index = self.index[key].expand()?;
+        let index = self.index[key].take().expand()?;
         let (found_key, value) = self.data.remove(index);
         assert!(found_key == key);
-        self.index[key] = Maybe::none();
         Some(value)
     }
 
@@ -39,7 +44,9 @@ impl<K: VPtr, V, C: VPtr> OrderedMap<K, V, C> {
     }
 
     pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
-        self.index[key].expand().map(|index| &mut self.data[index].1)
+        self.index[key]
+            .expand()
+            .map(|index| &mut self.data[index].1)
     }
 }
 
@@ -59,9 +66,9 @@ impl<K, V, C: VPtr> IndexMut<C> for OrderedMap<K, V, C> {
 
 impl<K, V, C: Invalid> Default for OrderedMap<K, V, C> {
     fn default() -> Self {
-        Self { 
-            index: ShadowMap::new(), 
-            data: PoolMap::new(), 
+        Self {
+            index: ShadowMap::new(),
+            data: PoolMap::new(),
         }
     }
 }

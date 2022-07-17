@@ -1,4 +1,7 @@
-use std::{marker::PhantomData, ops::{Index, IndexMut}};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 use crate::VPtr;
 
@@ -25,7 +28,8 @@ impl<K: VPtr, T> Index<K> for ShadowMap<K, T> {
 impl<K: VPtr, T: Default + Clone> IndexMut<K> for ShadowMap<K, T> {
     fn index_mut(&mut self, key: K) -> &mut T {
         let index = key.index();
-        self.data.resize(self.data.len().max(index + 1), Default::default());
+        self.data
+            .resize(self.data.len().max(index + 1), Default::default());
         &mut self.data[index]
     }
 }

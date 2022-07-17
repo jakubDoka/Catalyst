@@ -34,7 +34,10 @@ impl<K, T, C, CACHE: Default> BumpMap<K, T, C, CACHE> {
         }
     }
 
-    pub fn clear(&mut self) where CACHE: Clear {
+    pub fn clear(&mut self)
+    where
+        CACHE: Clear,
+    {
         self.data.clear();
         self.indices.truncate(1);
         self.frames.clear();

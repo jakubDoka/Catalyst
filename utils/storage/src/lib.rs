@@ -97,27 +97,27 @@ macro_rules! ident {
 pub extern crate serde;
 
 pub mod bump_map;
+pub mod clear;
 pub mod frames;
 pub mod interner;
 pub mod invalid;
+pub mod ordered_map;
 pub mod pool_bump_map;
 pub mod pool_map;
+pub mod shadow_map;
 pub mod sparse_map;
 pub mod v_ptr;
 pub mod v_ptr_set;
-pub mod clear;
-pub mod shadow_map;
-pub mod ordered_map;
 
 pub use bump_map::{BumpMap, CacheBumpMap};
+pub use clear::Clear;
 pub use frames::Frames;
 pub use interner::{Ident, InternedSegment, Interner};
 pub use invalid::{Invalid, Maybe};
+pub use ordered_map::OrderedMap;
 pub use pool_bump_map::PoolBumpMap;
 pub use pool_map::PoolMap;
+pub use shadow_map::ShadowMap;
 pub use sparse_map::SparseMap;
 pub use v_ptr::VPtr;
 pub use v_ptr_set::VPtrSet;
-pub use clear::Clear;
-pub use shadow_map::ShadowMap;
-pub use ordered_map::OrderedMap;
