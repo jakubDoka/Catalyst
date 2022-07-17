@@ -17,11 +17,13 @@ members = [
 
     "types/lexing-t",
     "types/packaging-t",
+    "types/type-checking-t",
     "types/diags",
 
     "stages/lexing",
     "stages/parsing",
     "stages/packaging",
+    "stages/type-checking",
 ]
 
 [dependencies]
