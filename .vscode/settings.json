@@ -1,11 +1,14 @@
 {
     "cSpell.words": [
+        "bitflags",
         "canonicalize",
         "cranelifts",
         "ctlm",
         "deps",
         "ents",
+        "Funcs",
         "Hasher",
+        "insts",
         "interner",
         "lalrpop",
         "repr",

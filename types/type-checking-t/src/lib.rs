@@ -1,8 +1,7 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+pub mod func;
+pub mod tir;
+pub mod ty;
+
+pub use func::{DefEnt, Func, FuncEnt, FuncList, Funcs, Sig};
+pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirMeta};
+pub use ty::{BuiltinTypes, Ty, TyEnt, TyList};

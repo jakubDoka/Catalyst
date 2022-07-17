@@ -94,6 +94,7 @@ macro_rules! ident {
     };
 }
 
+pub extern crate bitflags;
 pub extern crate serde;
 
 pub mod bump_map;
@@ -109,13 +110,14 @@ pub mod sparse_map;
 pub mod v_ptr;
 pub mod v_ptr_set;
 
+pub use bitflags::bitflags;
 pub use bump_map::{BumpMap, CacheBumpMap};
 pub use clear::Clear;
 pub use frames::Frames;
 pub use interner::{Ident, InternedSegment, Interner};
 pub use invalid::{Invalid, Maybe};
 pub use ordered_map::OrderedMap;
-pub use pool_bump_map::PoolBumpMap;
+pub use pool_bump_map::{CachedPoolBumpMap, PoolBumpMap};
 pub use pool_map::PoolMap;
 pub use shadow_map::ShadowMap;
 pub use sparse_map::SparseMap;

@@ -48,6 +48,14 @@ impl<K: VPtr, V, C: VPtr> OrderedMap<K, V, C> {
             .expand()
             .map(|index| &mut self.data[index].1)
     }
+
+    pub fn index(&self, key: K) -> Option<C> {
+        self.index[key].expand()
+    }
+
+    pub fn id(&self, key: C) -> K {
+        self.data[key].0
+    }
 }
 
 impl<K, V, C: VPtr> Index<C> for OrderedMap<K, V, C> {
