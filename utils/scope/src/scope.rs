@@ -116,7 +116,7 @@ pub struct ScopeItem {
     pub id: Ident,
     pub ptr: ScopePointer,
     pub span: Span,
-    pub module: Ident,
+    module: Ident,
 }
 
 impl Invalid for ScopeItem {

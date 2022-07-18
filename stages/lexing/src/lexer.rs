@@ -1,4 +1,5 @@
-use crate::{Span, Token, TokenKind};
+use crate::{Token, TokenKind};
+use lexing_t::*;
 
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, TokenKind>,

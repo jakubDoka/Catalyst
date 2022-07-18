@@ -193,7 +193,7 @@ macro_rules! diag {
 
 pub use types::{Diag, DiagRel, Doc, Loc, Workspace};
 
-pub mod types {
+mod types {
     use std::fmt::Write;
 
     use ansi_coloring::*;

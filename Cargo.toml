@@ -15,10 +15,11 @@ members = [
     "utils/graphs",
     "utils/scope",
 
+    "types/diags",
     "types/lexing-t",
     "types/packaging-t",
+    "types/parsing-t",
     "types/type-checking-t",
-    "types/diags",
 
     "stages/lexing",
     "stages/parsing",

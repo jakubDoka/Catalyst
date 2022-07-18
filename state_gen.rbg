@@ -1,4 +1,4 @@
-file "stages/parsing/src/state_gen.rs" {
+file "types/parsing-t/src/state_gen.rs" {
     use "crate";
 
     struct AstDisplay {
@@ -18,5 +18,24 @@ file "stages/packaging/src/state_gen.rs" {
         mut Workspace
         mut Interner
         mut PackageGraph
+    }
+}
+
+file "stages/type-checking/src/state_gen.rs" {
+    use "storage"
+    use "diags"
+    use "scope"
+    use "type_checking_t"
+    use "parsing_t"
+
+
+    struct ItemCollector {
+        mut Interner
+        mut Scope
+        mut Types
+        mut Funcs
+        mut Workspace
+
+        AstData
     }
 }

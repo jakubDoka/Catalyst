@@ -1,5 +1,5 @@
 [package]
-name = "packaging-t"
+name = "parsing-t"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../../utils/storage" }
-graphs = { path = "../../utils/graphs" }
-lexing-t = { path = "../lexing-t" }
+lexing-t = { path = "../../types/lexing-t" }

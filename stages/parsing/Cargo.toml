@@ -8,6 +8,10 @@ edition = "2021"
 [dependencies]
 logos = "0.12.0"
 lexing = { path = "../lexing" }
+
 storage = { path = "../../utils/storage" }
 errors = { path = "../../utils/errors" }
+
 diags = { path = "../../types/diags" }
+lexing-t = { path = "../../types/lexing-t" }
+parsing-t = { path = "../../types/parsing-t" }

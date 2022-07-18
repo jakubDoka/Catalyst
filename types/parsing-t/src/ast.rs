@@ -1,11 +1,9 @@
-use std::default::default;
-
-use lexing::*;
+use lexing_t::*;
 use storage::*;
 
 pub type AstData = CacheBumpMap<AstList, AstEnt, Ast>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct AstEnt {
     pub kind: AstKind,
     pub children: Maybe<AstList>,
@@ -26,7 +24,7 @@ impl AstEnt {
     }
 
     pub fn none() -> Self {
-        AstEnt::new(AstKind::None, Maybe::none(), default())
+        AstEnt::default()
     }
 }
 
@@ -51,6 +49,12 @@ pub enum AstKind {
 impl AstKind {
     pub fn is_none(&self) -> bool {
         *self == AstKind::None
+    }
+}
+
+impl Default for AstKind {
+    fn default() -> Self {
+        AstKind::None
     }
 }
 

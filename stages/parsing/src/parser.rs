@@ -1,11 +1,13 @@
-pub mod imports;
-pub mod manifest;
+mod imports;
+mod manifest;
 
 use std::vec;
 
 use crate::*;
 use diags::*;
 use lexing::*;
+use lexing_t::*;
+use parsing_t::*;
 use storage::*;
 
 pub struct Parser<'a> {

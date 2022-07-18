@@ -30,7 +30,7 @@ macro_rules! gen_v_ptr {
             #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
             pub struct $ty(u32);
 
-            impl $crate::v_ptr::VPtr for $ty {
+            impl $crate::VPtr for $ty {
                 fn new(index: usize) -> Self {
                     assert!(index as u32 != u32::MAX);
                     $ty(index as u32)
@@ -41,7 +41,7 @@ macro_rules! gen_v_ptr {
                 }
             }
 
-            impl $crate::invalid::Invalid for $ty {
+            impl $crate::Invalid for $ty {
                 unsafe fn invalid() -> Self {
                     $ty(u32::MAX)
                 }
@@ -97,18 +97,18 @@ macro_rules! ident {
 pub extern crate bitflags;
 pub extern crate serde;
 
-pub mod bump_map;
-pub mod clear;
-pub mod frames;
-pub mod interner;
-pub mod invalid;
-pub mod ordered_map;
-pub mod pool_bump_map;
-pub mod pool_map;
-pub mod shadow_map;
-pub mod sparse_map;
-pub mod v_ptr;
-pub mod v_ptr_set;
+mod bump_map;
+mod clear;
+mod frames;
+mod interner;
+mod invalid;
+mod ordered_map;
+mod pool_bump_map;
+mod pool_map;
+mod shadow_map;
+mod sparse_map;
+mod v_ptr;
+mod v_ptr_set;
 
 pub use bitflags::bitflags;
 pub use bump_map::{BumpMap, CacheBumpMap};

@@ -46,7 +46,7 @@ dependencies = [
  "lexing-t",
  "lsp-types",
  "packaging-t",
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]
@@ -73,7 +73,7 @@ dependencies = [
 name = "graphs"
 version = "0.1.0"
 dependencies = [
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]
@@ -101,7 +101,7 @@ dependencies = [
  "errors",
  "lexing-t",
  "logos",
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]
@@ -109,7 +109,7 @@ name = "lexing-t"
 version = "0.1.0"
 dependencies = [
  "ansi-coloring",
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]
@@ -155,26 +155,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e378b66a060d48947b590737b30a1be76706c8dd7b8ba0f2fe3989c68a853f"
 
 [[package]]
-name = "matrix"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b47e18b8a0ba6c9f2059ed8516261d169d462a07fafa8ec220ef6ac89c0efbc"
-dependencies = [
- "num-complex",
- "num-traits",
-]
-
-[[package]]
-name = "num-complex"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
-dependencies = [
- "autocfg",
- "num-traits",
-]
-
-[[package]]
 name = "num-traits"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -189,10 +169,11 @@ version = "0.1.0"
 dependencies = [
  "diags",
  "errors",
- "lexing",
+ "lexing-t",
  "packaging-t",
  "parsing",
- "storage 0.1.0",
+ "parsing-t",
+ "storage",
 ]
 
 [[package]]
@@ -200,8 +181,8 @@ name = "packaging-t"
 version = "0.1.0"
 dependencies = [
  "graphs",
- "lexing",
- "storage 0.1.0",
+ "lexing-t",
+ "storage",
 ]
 
 [[package]]
@@ -211,8 +192,18 @@ dependencies = [
  "diags",
  "errors",
  "lexing",
+ "lexing-t",
  "logos",
- "storage 0.1.0",
+ "parsing-t",
+ "storage",
+]
+
+[[package]]
+name = "parsing-t"
+version = "0.1.0"
+dependencies = [
+ "lexing-t",
+ "storage",
 ]
 
 [[package]]
@@ -284,7 +275,7 @@ name = "scope"
 version = "0.1.0"
 dependencies = [
  "lexing-t",
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]
@@ -346,15 +337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "storage"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d99bf466fc0f8efe841664f55cbef63ef4cc22c79b66f967b416ee513b0b56"
-dependencies = [
- "matrix",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -384,7 +366,11 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 name = "type-checking"
 version = "0.1.0"
 dependencies = [
- "storage 0.5.0",
+ "diags",
+ "parsing-t",
+ "scope",
+ "storage",
+ "type-checking-t",
 ]
 
 [[package]]
@@ -392,7 +378,7 @@ name = "type-checking-t"
 version = "0.1.0"
 dependencies = [
  "lexing-t",
- "storage 0.1.0",
+ "storage",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use crate::Span;
+use lexing_t::*;
 use logos::Logos;
 
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;

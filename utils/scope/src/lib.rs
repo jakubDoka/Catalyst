@@ -8,4 +8,6 @@ macro_rules! scoped_ident {
     };
 }
 
-pub mod scope;
+mod scope;
+
+pub use scope::{Scope, ScopeError, ScopeItem, ScopePointer};

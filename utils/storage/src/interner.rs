@@ -260,7 +260,7 @@ impl Hasher for InternerHasher {
 gen_v_ptr!(Ident);
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use super::*;
 
     #[test]
