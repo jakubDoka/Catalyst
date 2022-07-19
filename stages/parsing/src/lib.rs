@@ -27,16 +27,33 @@ macro_rules! list {
 macro_rules! branch {
     (
         $self:expr => {
-            $($cond:ident => $res:expr,)*
+            $($cond:ident$(($($value:pat = $default:expr),*))? => $res:expr,)*
         }
     ) => {
         match $self.state.current.kind {
-            $(TokenKind::$cond => drop($res),)*
+            $(TokenKind::$cond$(($($value),*))? => drop($res),)*
             _ => {
                 let terminals = [
-                    $(TokenKind::$cond),*
+                    $(TokenKind::$cond$(($($default),*))?),*
                 ];
                 $self.expect_error(&terminals);
+                return Err(())
+            },
+        }
+    };
+
+    (
+        str $self:expr => {
+            $($str:literal => $res:expr,)*
+        }
+    ) => {
+        match $self.current_token_str() {
+            $($str => drop($res),)*
+            _ => {
+                let terminals = [
+                    $($str),*
+                ];
+                $self.expect_str_error(&terminals);
                 return Err(())
             },
         }

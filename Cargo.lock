@@ -182,6 +182,7 @@ version = "0.1.0"
 dependencies = [
  "graphs",
  "lexing-t",
+ "scope",
  "storage",
 ]
 
@@ -367,6 +368,8 @@ name = "type-checking"
 version = "0.1.0"
 dependencies = [
  "diags",
+ "errors",
+ "packaging-t",
  "parsing-t",
  "scope",
  "storage",
@@ -378,6 +381,8 @@ name = "type-checking-t"
 version = "0.1.0"
 dependencies = [
  "lexing-t",
+ "packaging-t",
+ "parsing-t",
  "storage",
 ]
 

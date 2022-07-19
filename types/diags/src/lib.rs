@@ -231,23 +231,23 @@ mod types {
             }
         }
 
-        pub fn log(&self, packaging_context: &PackagingContext) {
+        pub fn log(&self, packages: &Packages) {
             let mut to = String::new();
-            self.display(packaging_context, &mut to).unwrap();
+            self.display(packages, &mut to).unwrap();
             println!("{}", to);
         }
 
         pub fn display(
             &self,
-            packaging_context: &PackagingContext,
+            packages: &Packages,
             to: &mut dyn Write,
         ) -> std::fmt::Result {
             for diag in &self.global_diags {
-                diag.display(packaging_context, to)?;
+                diag.display(packages, to)?;
             }
 
             for doc in self.files.values() {
-                doc.display(packaging_context, to)?;
+                doc.display(packages, to)?;
             }
 
             Ok(())
@@ -272,15 +272,15 @@ mod types {
 
         pub fn display(
             &self,
-            packaging_context: &PackagingContext,
+            packages: &Packages,
             to: &mut dyn Write,
         ) -> std::fmt::Result {
             for diag in &self.global_diags {
-                diag.display(packaging_context, to)?;
+                diag.display(packages, to)?;
             }
 
             for diag in &self.code_diags {
-                diag.display(packaging_context, to)?;
+                diag.display(packages, to)?;
             }
 
             Ok(())
@@ -299,19 +299,19 @@ mod types {
     impl Diag {
         pub fn display(
             &self,
-            packaging_context: &PackagingContext,
+            packages: &Packages,
             to: &mut dyn Write,
         ) -> std::fmt::Result {
             let color = color_of(self.severity);
             if let Some(loc) = self.loc.expand() {
-                loc.display(color, packaging_context, to)?;
+                loc.display(color, packages, to)?;
             } else {
                 write!(to, "| ")?;
             }
             writeln!(to, "{color}{}{END}", self.message)?;
 
             for rel in &self.related {
-                rel.display(packaging_context, to)?;
+                rel.display(packages, to)?;
             }
 
             writeln!(to)?;
@@ -330,12 +330,12 @@ mod types {
     impl DiagRel {
         pub fn display(
             &self,
-            packaging_context: &PackagingContext,
+            packages: &Packages,
             to: &mut dyn Write,
         ) -> std::fmt::Result {
             let color = WEAK;
             if let Some(loc) = self.loc.expand() {
-                loc.display(color, packaging_context, to)?;
+                loc.display(color, packages, to)?;
             } else {
                 write!(to, "| ")?;
             }
@@ -356,10 +356,10 @@ mod types {
         fn display(
             &self,
             color: &str,
-            packaging_context: &PackagingContext,
+            packages: &Packages,
             to: &mut dyn Write,
         ) -> std::fmt::Result {
-            let module = &packaging_context.modules[self.source];
+            let module = &packages.modules[self.source];
             if let Some(span) = self.span.expand() {
                 let (line, col) = module.line_mapping.line_info_at(span.start());
                 writeln!(to, "| {}:{}:{}", module.path.display(), line, col)?;

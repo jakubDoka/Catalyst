@@ -19,7 +19,7 @@ pub struct TirMeta {
 pub enum TirKind {}
 
 bitflags! {
-    pub struct TirFlags: u8 {
+    struct TirFlags: u8 {
 
     }
 }

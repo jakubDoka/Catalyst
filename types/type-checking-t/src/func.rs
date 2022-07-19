@@ -22,8 +22,7 @@ pub struct FuncEnt {
 }
 
 bitflags! {
-    #[derive(Default)]
-    pub struct FuncFlags: u8 {
+    struct FuncFlags: u8 {
 
     }
 }

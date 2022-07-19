@@ -14,7 +14,7 @@ file "stages/packaging/src/state_gen.rs" {
     use "storage"
 
     struct PackageLoader {
-        mut PackagingContext
+        mut Packages
         mut Workspace
         mut Interner
         mut PackageGraph
@@ -27,14 +27,20 @@ file "stages/type-checking/src/state_gen.rs" {
     use "scope"
     use "type_checking_t"
     use "parsing_t"
+    use "packaging_t"
 
 
     struct ItemCollector {
+        owned current_file: Ident
+
         mut Interner
         mut Scope
         mut Types
         mut Funcs
         mut Workspace
+        mut ItemContext
+        mut Visibility
+        mut Packages
 
         AstData
     }

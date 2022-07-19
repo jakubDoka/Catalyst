@@ -36,7 +36,7 @@ macro_rules! gen_kind {
         }
 
         operators {
-            $($op_name:ident = $op_regex:literal,)*
+            $(($($op_lit:literal)+) = $op_precedence:expr,)*
         }
     ) => {
 
@@ -65,10 +65,7 @@ macro_rules! gen_kind {
                         TokenKind::$skipped => stringify!($skipped),
                     )*
 
-                    $(
-                        TokenKind::$op_name => "Operator",
-                    )*
-
+                    TokenKind::Operator(..) => "Operator",
                     TokenKind::NewLine => "'\\n' | ';'",
                     TokenKind::Error => "<error>",
                     TokenKind::Eof => "<eof>",
@@ -123,9 +120,11 @@ macro_rules! gen_kind {
             )*
 
             $(
-                #[regex($op_regex)]
-                $op_name,
+                $(
+                    #[token($op_lit, |_| $op_precedence)]
+                )+
             )*
+            Operator(u8),
 
             #[regex(r"(\n|;)")]
             NewLine,
@@ -157,6 +156,8 @@ gen_kind!(
         Impl = "impl",
         As = "as",
         Match = "match",
+        Pub = "pub",
+        Priv = "priv",
     }
 
     punctuation {
@@ -194,17 +195,24 @@ gen_kind!(
     }
 
     operators {
-        OpPre3 = r"(\*|/|%)",
-        OpPre4 = r"(\+|-)",
-        OpPre5 = "(<<|>>)",
-        OpPre6 = "(<|>|<=|>=)",
-        OpPre7 = "(==|!=)",
-        OpPre8 = "&",
-        OpPre9 = r"\^",
-        OpPre10 = r"\|",
-        OpPre11 = "(&&)",
-        OpPre12 = r"(\|\|)",
-        OpPre13 = r"(=|\+=|-=|\*=|/=|%=|<<=|>>=|&=|\^=|\|=)",
+        ("*" "/" "%") = 3,
+        ("+" "-") = 4,
+        ("<<" ">>") = 5,
+        ("<" ">" "<=" ">=") = 6,
+        ("==" "!=") = 7,
+        ("&") = 8,
+        ("^") = 9,
+        ("|") = 10,
+        ("&&") = 11,
+        ("||") = 12,
+        (
+            "=" "+="
+            "-=" "*="
+            "/=" "%="
+            "<<=" ">>="
+            "&=" "^="
+            "|="
+        ) = EQUAL_SIGN_PRECEDENCE,
     }
 );
 

@@ -1,5 +1,7 @@
 mod imports;
 mod manifest;
+mod r#struct;
+mod ty;
 
 use std::vec;
 
@@ -205,6 +207,16 @@ impl<'a> Parser<'a> {
         });
     }
 
+    fn expect_str_error(&mut self, strs: &[&str]) {
+        self.workspace.push(diag! {
+            (self.state.current.span, self.state.path.unwrap())
+            error => "expected {} but got {}" {
+                strs.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(" | "),
+                self.current_token_str()
+            },
+        });
+    }
+
     fn unmatched_paren(&mut self, kind: TokenKind, span: Span) {
         self.workspace.push(diag! {
             (self.state.current.span, self.state.path.unwrap())
@@ -219,6 +231,80 @@ impl<'a> Parser<'a> {
             self.advance();
         }
         present
+    }
+
+    fn generics(&mut self, has_bounds: bool) -> errors::Result {
+        self.start();
+
+        let parser = if has_bounds {
+            Self::generic_bounded_param
+        } else {
+            Self::ident
+        };
+
+        self.list(
+            Some(TokenKind::LeftBracket),
+            Some(TokenKind::Comma),
+            Some(TokenKind::RightBracket),
+            parser,
+        )?;
+
+        self.finish(AstKind::Generics);
+
+        Ok(())
+    }
+
+    fn generic_bounded_param(&mut self) -> errors::Result {
+        self.start();
+        self.expect(TokenKind::Ident)?;
+        self.capture(AstKind::Ident);
+
+        if self.at(TokenKind::Colon) {
+            self.advance();
+            self.ident()?;
+
+            while self.ctx_keyword("+") {
+                self.advance();
+                self.skip_newlines();
+                self.ident()?;
+            }
+        }
+
+        self.finish(AstKind::GenericParam);
+
+        Ok(())
+    }
+
+    fn ident(&mut self) -> errors::Result {
+        self.expect(TokenKind::Ident)?;
+        self.capture(AstKind::Ident);
+        Ok(())
+    }
+
+    fn visibility(&mut self) -> Vis {
+        let res = match self.state.current.kind {
+            TokenKind::Pub => Vis::Pub,
+            TokenKind::Priv => Vis::Priv,
+            _ => Vis::None,
+        };
+
+        if res != Vis::None {
+            self.advance();
+        }
+
+        res
+    }
+
+    fn advance_if(&mut self, kind: TokenKind) -> bool {
+        let res = self.state.current.kind == kind;
+        if res {
+            self.advance();
+        }
+        res
+    }
+
+    fn current_token_str(&self) -> &str {
+        self.lexer.display(self.state.current.span)
     }
 }
 

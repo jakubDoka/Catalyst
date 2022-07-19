@@ -26,6 +26,12 @@ impl<K: VPtr, V, C: VPtr> OrderedMap<K, V, C> {
         )
     }
 
+    pub fn insert_unique(&mut self, key: K, value: V) -> C {
+        let (index, shadow) = self.insert(key, value);
+        assert!(shadow.is_none());
+        index
+    }
+
     pub fn remove(&mut self, key: K) -> Option<V> {
         let index = self.index[key].take().expand()?;
         let (found_key, value) = self.data.remove(index);

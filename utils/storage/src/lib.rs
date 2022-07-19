@@ -15,6 +15,23 @@
 //! value without any extra memory for flags. Its based of [`Invalid`] trait which determines
 //! whether value is invalid thus the [`Maybe`] holds nothing.
 
+#[macro_export]
+macro_rules! impl_flag_and_bool {
+    ($ty:ty) => {
+        impl std::ops::BitAnd<bool> for $ty {
+            type Output = Self;
+        
+            fn bitand(self, rhs: bool) -> Self {
+                if rhs {
+                    self
+                } else {
+                    Self::empty()
+                }
+            }
+        }        
+    };
+}
+
 /// Macro generates type with [`VPtr`] implemented. The pointers usually don't differ in
 /// implementation, they just need to be distinct.
 ///
@@ -94,6 +111,35 @@ macro_rules! ident {
     };
 }
 
+#[macro_export]
+macro_rules! bitflags {
+    (
+        struct $name:ident: $repr:ty {
+            $($first:ident $($item:ident)*)?
+        }
+    ) => {       
+        $crate::bitflags::bitflags! {
+            #[derive(Default)]
+            pub struct $name: $repr {
+                
+            }
+        }
+
+        impl $name {
+            $(
+                bitflags!(__fields__ (1, $name), $first $($item)*);
+            )?
+        }
+
+        impl_flag_and_bool!($name);
+    };
+
+    (__fields__ ($prev:expr, $repr:ident), $current:ident $($next:ident $($other:ident)*)?) => {
+        pub const $current: $repr = $repr { bits: $prev };
+        $( bitflags!(__fields__ (Self::$current.bits << 1, $repr), $next $($other)*); )?
+    }
+}
+
 pub extern crate bitflags;
 pub extern crate serde;
 
@@ -110,7 +156,6 @@ mod sparse_map;
 mod v_ptr;
 mod v_ptr_set;
 
-pub use bitflags::bitflags;
 pub use bump_map::{BumpMap, CacheBumpMap};
 pub use clear::Clear;
 pub use frames::Frames;

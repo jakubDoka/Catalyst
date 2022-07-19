@@ -114,16 +114,16 @@ pub enum ScopeError {
 #[derive(Clone, Copy)]
 pub struct ScopeItem {
     pub id: Ident,
-    pub ptr: ScopePointer,
+    pub ptr: ScopePtr,
     pub span: Span,
-    module: Ident,
+    pub module: Ident,
 }
 
 impl Invalid for ScopeItem {
     unsafe fn invalid() -> Self {
         ScopeItem {
             id: Ident::invalid(),
-            ptr: ScopePointer::invalid(),
+            ptr: ScopePtr::invalid(),
             span: Span::invalid(),
             module: Ident::invalid(),
         }
@@ -135,12 +135,12 @@ impl Invalid for ScopeItem {
 }
 
 #[derive(Clone, Copy)]
-pub struct ScopePointer {
+pub struct ScopePtr {
     pub id: TypeId,
     pub ptr: usize,
 }
 
-impl ScopePointer {
+impl ScopePtr {
     pub fn new<T: VPtr + 'static>(id: T) -> Self {
         Self {
             id: TypeId::of::<T>(),
@@ -161,9 +161,9 @@ impl ScopePointer {
     }
 }
 
-impl Invalid for ScopePointer {
+impl Invalid for ScopePtr {
     unsafe fn invalid() -> Self {
-        ScopePointer {
+        ScopePtr {
             id: TypeId::of::<InvalidItem>(),
             ptr: u32::MAX as usize,
         }

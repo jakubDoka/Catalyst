@@ -12,6 +12,7 @@ pub struct Types {
 pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
+    pub file: Maybe<Ident>,
     pub span: Maybe<Span>,
 }
 
@@ -64,9 +65,9 @@ impl Default for TyKind {
 }
 
 bitflags! {
-    #[derive(Default)]
-    pub struct TyFlags: u8 {
-
+    struct TyFlags: u8 {
+        PUBLIC PRIVATE
+        GENERIC
     }
 }
 
@@ -103,6 +104,7 @@ macro_rules! gen_builtin_types {
 impl BuiltinTypes {
     gen_builtin_types! {
         NOTHING
+        INFERRED
         DROP COPY
         STR STACK_TRACE
         TY_ANY ANY

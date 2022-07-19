@@ -40,7 +40,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        let ModuleKind::Package { ref root_module, span } = self.packaging_context.modules[id].kind else {
+        let ModKind::Package { ref root_module, span } = self.packages.modules[id].kind else {
             unreachable!();
         };
 
@@ -49,27 +49,27 @@ impl PackageLoader<'_> {
 
         self.package_graph.clear();
         self.package_graph.load_nodes(
-            self.packaging_context
+            self.packages
                 .modules
                 .keys()
                 .map(|id| id.index() as u32),
         );
 
-        for (k, module) in self.packaging_context.modules.iter() {
+        for (k, module) in self.packages.modules.iter() {
             self.package_graph.new_node(k.index() as u32).add_edges(
-                self.packaging_context.conns[module.deps]
+                self.packages.conns[module.deps]
                     .iter()
                     .map(|dep| dep.ptr.index() as u32),
             );
         }
 
         let roots = [id.index() as u32, module_id.index() as u32];
-        let mut ordering = Vec::with_capacity(self.packaging_context.modules.len());
+        let mut ordering = Vec::with_capacity(self.packages.modules.len());
         self.package_graph
             .ordering(roots, &mut ordering)
             .map_err(|cycle| self.dependency_cycle(cycle))?;
 
-        self.packaging_context
+        self.packages
             .module_order
             .extend(ordering.into_iter().map(|i| Ident::new(i as usize)));
 
@@ -121,14 +121,14 @@ impl PackageLoader<'_> {
                     )
                 });
 
-        let package = Module {
+        let package = Mod {
             path,
             line_mapping: LineMapping::new(&content),
             content,
-            kind: ModuleKind::Package { root_module, span },
+            kind: ModKind::Package { root_module, span },
             deps,
         };
-        self.packaging_context.modules.insert(id, package);
+        self.packages.modules.insert(id, package);
 
         Ok(false)
     }
@@ -143,7 +143,7 @@ impl PackageLoader<'_> {
         frontier: &mut PackageFrontier,
         project_path: &Path,
     ) -> Maybe<DepList> {
-        self.packaging_context.conns.start_cache();
+        self.packages.conns.start_cache();
         for dep in &ast_data[ast_data[deps_ast.children][1].children] {
             let &AstEnt { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
                 unreachable!("{:?}", dep.kind);
@@ -204,14 +204,14 @@ impl PackageLoader<'_> {
             };
 
             let dep = Dep { name, ptr };
-            self.packaging_context.conns.cache(dep);
+            self.packages.conns.cache(dep);
 
-            if self.packaging_context.modules.get(ptr).is_none() {
+            if self.packages.modules.get(ptr).is_none() {
                 frontier.push((ptr, path, current_loc));
             }
         }
 
-        self.packaging_context.conns.bump_cached()
+        self.packages.conns.bump_cached()
     }
 
     fn load_modules(
@@ -273,17 +273,18 @@ impl PackageLoader<'_> {
             Maybe::none()
         };
 
-        let module = Module {
+        let module = Mod {
             path,
             line_mapping: LineMapping::new(&content),
             content,
-            kind: ModuleKind::Module {
+            kind: ModKind::Module {
                 package: package_id,
                 ordering: 0,
+                items: vec![],
             },
             deps,
         };
-        self.packaging_context.modules.insert(id, module);
+        self.packages.modules.insert(id, module);
 
         Ok(false)
     }
@@ -297,7 +298,7 @@ impl PackageLoader<'_> {
         ast_data: &AstData,
         frontier: &mut ModuleFrontier,
     ) -> errors::Result<Maybe<DepList>> {
-        self.packaging_context.conns.start_cache();
+        self.packages.conns.start_cache();
 
         for import in &ast_data[imports.children] {
             let [name, path] = &ast_data[import.children] else {
@@ -308,8 +309,8 @@ impl PackageLoader<'_> {
             let path_str = &content[path_span.range()];
             let (package, module_name) = path_str.split_once('/').unwrap_or((path_str, ""));
 
-            let package_ent = &self.packaging_context.modules[package_id];
-            let maybe_package = self.packaging_context.conns[package_ent.deps]
+            let package_ent = &self.packages.modules[package_id];
+            let maybe_package = self.packages.conns[package_ent.deps]
                 .iter()
                 .find_map(|dep| {
                     (&package_ent.content[dep.name.range()] == package).then_some(dep.ptr)
@@ -321,7 +322,7 @@ impl PackageLoader<'_> {
                     (path_span.sliced(..package.len()), id)
                     error => "cannot find this package in manifest",
                     (none) => "available packages: {}" { 
-                        self.packaging_context.conns[package_ent.deps]
+                        self.packages.conns[package_ent.deps]
                             .iter()
                             .map(|dep| &package_ent.content[dep.name.range()])
                             .collect::<Vec<_>>()
@@ -331,8 +332,8 @@ impl PackageLoader<'_> {
                 continue;
             };
 
-            let external_package = &self.packaging_context.modules[external_package_id];
-            let ModuleKind::Package { ref root_module, .. } = external_package.kind else {
+            let external_package = &self.packages.modules[external_package_id];
+            let ModKind::Package { ref root_module, .. } = external_package.kind else {
                 unreachable!();
             };
             let mut path = root_module.with_extension("").join(module_name);
@@ -354,14 +355,14 @@ impl PackageLoader<'_> {
                 name: name.span,
                 ptr: import_id,
             };
-            self.packaging_context.conns.cache(dep);
+            self.packages.conns.cache(dep);
 
-            if self.packaging_context.modules.get(import_id).is_none() {
+            if self.packages.modules.get(import_id).is_none() {
                 frontier.push((import_id, external_package_id, path, import_loc));
             }
         }
 
-        Ok(self.packaging_context.conns.bump_cached())
+        Ok(self.packages.conns.bump_cached())
     }
 
     fn download_package(
@@ -553,7 +554,7 @@ mod test {
     #[test]
     fn test_load() {
         let mut module_loader = PackageLoader {
-            packaging_context: &mut PackagingContext::new(),
+            packages: &mut Packages::new(),
             workspace: &mut Workspace::new(),
             interner: &mut Interner::new(),
             package_graph: &mut PackageGraph::new(),
@@ -563,7 +564,7 @@ mod test {
 
         drop(module_loader.load(Path::new(&path)));
 
-        module_loader.workspace.log(module_loader.packaging_context);
+        module_loader.workspace.log(module_loader.packages);
 
         assert!(!module_loader.workspace.has_errors());
     }

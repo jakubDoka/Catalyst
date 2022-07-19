@@ -1,52 +1,26 @@
-use lexing_t::*;
-use std::path::*;
-use storage::*;
 
-pub type PackageGraph = graphs::ProjectedCycleDetector;
-
-#[derive(Default)]
-pub struct PackagingContext {
-    pub modules: SparseMap<Ident, Module>,
-    pub conns: CacheBumpMap<DepList, Dep>,
-    pub module_order: Vec<Ident>,
+#[macro_export]
+macro_rules! span_str {
+    ($self:expr, $span:expr) => {
+        $self.packages.span_str($self.current_file, $span)
+    };
 }
 
-impl PackagingContext {
-    pub fn new() -> Self {
-        Self::default()
-    }
+#[macro_export]
+macro_rules! insert_scope_item {
+    ($self:expr, $res:expr) => {
+        if let Err(span) = $self.scope.insert($self.current_file, 
+            $res.to_scope_item($self.current_file), $self.interner) 
+        {
+            $self.workspace.push(diag! {
+                ($res.span, $self.current_file) error => "duplicate definition",
+                (span, $self.current_file) => "previous definition",
+            })
+        }
+        $self.packages.modules[$self.current_file].add_item($res);
+    };
 }
 
-#[derive(Default)]
-pub struct Module {
-    pub path: PathBuf,
-    pub deps: Maybe<DepList>,
-    pub content: String,
-    pub kind: ModuleKind,
-    pub line_mapping: LineMapping,
-}
+mod packaging;
 
-pub enum ModuleKind {
-    Package {
-        root_module: PathBuf,
-        span: Maybe<Span>,
-    },
-    Module {
-        package: Ident,
-        ordering: usize,
-    },
-    Default,
-}
-
-impl Default for ModuleKind {
-    fn default() -> Self {
-        ModuleKind::Default
-    }
-}
-
-pub struct Dep {
-    pub name: Span,
-    pub ptr: Ident,
-}
-
-gen_v_ptr!(DepList);
+pub use packaging::{PackageGraph, Packages, Mod, ModItem, ModKind, Dep, DepList};

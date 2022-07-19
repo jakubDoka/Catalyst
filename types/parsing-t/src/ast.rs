@@ -2,6 +2,7 @@ use lexing_t::*;
 use storage::*;
 
 pub type AstData = CacheBumpMap<AstList, AstEnt, Ast>;
+pub type Visibility = ShadowMap<Ident, Vis>;
 
 #[derive(Clone, Copy, Default)]
 pub struct AstEnt {
@@ -30,6 +31,20 @@ impl AstEnt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    Struct { vis: Vis },
+    StructBody,
+    StructField { 
+        vis: Vis, 
+        mutable: bool,
+        exported: bool, 
+    },
+
+    Generics,
+    GenericParam,
+   
+    TyInstance,
+    PtrTy { mutable: bool },
+
     ManifestSection,
     ManifestImports,
     ManifestImport { use_git: bool },
@@ -55,6 +70,19 @@ impl AstKind {
 impl Default for AstKind {
     fn default() -> Self {
         AstKind::None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vis {
+    Pub,
+    None,
+    Priv,
+}
+
+impl Default for Vis {
+    fn default() -> Self {
+        Vis::None
     }
 }
 
