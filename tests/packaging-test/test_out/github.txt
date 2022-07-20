@@ -1,4 +1,4 @@
-| cannot load manifest[0m
-| related path: test_project\package.ctlm
-| trace: The system cannot find the path specified. (os error 3)
+| test_project:1:17
+| deps { water git "github.com/jakubDoka/water" "v1.*.*" ; a "a" ; b "b" }
+|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ executing: git clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water\main
 
