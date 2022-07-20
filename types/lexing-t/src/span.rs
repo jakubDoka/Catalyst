@@ -121,6 +121,7 @@ impl Span {
         pattern: &str,
         source: &str,
         target: &mut dyn std::fmt::Write,
+        style: &Style,
     ) -> std::fmt::Result {
         let Range { start, end } = self.range();
 
@@ -151,9 +152,11 @@ impl Span {
         }
 
         let display = format!(
-            "{}{HIGHLIGHT}{}{END}{}",
+            "{}{}{}{}{}",
             &source[region_start..start],
+            style.highlight,
             &source[start..end],
+            style.end,
             &source[end..region_end],
         )
         .replace("\n", "\n| ");
@@ -161,9 +164,10 @@ impl Span {
         writeln!(target, "| {}", display)?;
         write!(
             target,
-            "| {}{color}{}{END}",
+            "| {}{color}{}{}",
             " ".repeat(underline_start),
-            pattern.repeat(underline_end - underline_start)
+            pattern.repeat(underline_end - underline_start),
+            style.end,
         )?;
 
         Ok(())

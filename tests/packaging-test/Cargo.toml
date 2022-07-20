@@ -1,12 +1,13 @@
 [package]
-name = "testing"
+name = "packaging-test"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+testing = { path = "../../utils/testing" }
+storage = { path = "../../utils/storage" }
+packaging = { path = "../../stages/packaging" }
 diags = { path = "../../types/diags" }
 packaging-t = { path = "../../types/packaging-t" }
-ansi-coloring = { path = "../../utils/ansi-coloring" }
-

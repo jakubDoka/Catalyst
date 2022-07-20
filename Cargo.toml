@@ -7,6 +7,19 @@ edition = "2021"
 
 [workspace]
 members = [
+    "stages/lexing",
+    "stages/parsing",
+    "stages/packaging",
+    "stages/type-checking",
+
+    "tests/packaging-test",
+
+    "types/diags",
+    "types/lexing-t",
+    "types/packaging-t",
+    "types/parsing-t",
+    "types/type-checking-t",
+    
     "utils/ansi-coloring",
     "utils/storage",
     "utils/errors",
@@ -15,17 +28,6 @@ members = [
     "utils/graphs",
     "utils/scope",
     "utils/testing",
-
-    "types/diags",
-    "types/lexing-t",
-    "types/packaging-t",
-    "types/parsing-t",
-    "types/type-checking-t",
-
-    "stages/lexing",
-    "stages/parsing",
-    "stages/packaging",
-    "stages/type-checking",
 ]
 
 [dependencies]

@@ -187,6 +187,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "packaging-test"
+version = "0.1.0"
+dependencies = [
+ "diags",
+ "packaging",
+ "packaging-t",
+ "storage",
+ "testing",
+]
+
+[[package]]
 name = "parsing"
 version = "0.1.0"
 dependencies = [
@@ -352,6 +363,7 @@ dependencies = [
 name = "testing"
 version = "0.1.0"
 dependencies = [
+ "ansi-coloring",
  "diags",
  "packaging-t",
 ]

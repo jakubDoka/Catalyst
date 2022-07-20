@@ -40,6 +40,10 @@ impl PackageLoader<'_> {
             }
         }
 
+        if self.workspace.has_errors() {
+            return Err(());
+        } 
+
         let ModKind::Package { ref root_module, span } = self.packages.modules[id].kind else {
             unreachable!();
         };

@@ -231,19 +231,19 @@ mod types {
             }
         }
 
-        pub fn log(&self, packages: &Packages) {
+        pub fn log(&self, packages: &Packages, style: &Style) {
             let mut to = String::new();
-            self.display(packages, &mut to).unwrap();
+            self.display(packages, &mut to, style).unwrap();
             println!("{}", to);
         }
 
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
             for diag in &self.global_diags {
-                diag.display(packages, to)?;
+                diag.display(packages, to, style)?;
             }
 
             for doc in self.files.values() {
-                doc.display(packages, to)?;
+                doc.display(packages, to, style)?;
             }
 
             Ok(())
@@ -266,13 +266,13 @@ mod types {
             Self::default()
         }
 
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
             for diag in &self.global_diags {
-                diag.display(packages, to)?;
+                diag.display(packages, to, style)?;
             }
 
             for diag in &self.code_diags {
-                diag.display(packages, to)?;
+                diag.display(packages, to, style)?;
             }
 
             Ok(())
@@ -289,17 +289,17 @@ mod types {
     }
 
     impl Diag {
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
-            let color = color_of(self.severity);
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+            let color = color_of(self.severity, style);
             if let Some(loc) = self.loc.expand() {
-                loc.display(color, packages, to)?;
+                loc.display(color, packages, to, style)?;
             } else {
                 write!(to, "| ")?;
             }
             writeln!(to, "{color}{}{END}", self.message)?;
 
             for rel in &self.related {
-                rel.display(packages, to)?;
+                rel.display(packages, to, style)?;
             }
 
             writeln!(to)?;
@@ -316,14 +316,14 @@ mod types {
     }
 
     impl DiagRel {
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
-            let color = WEAK;
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+            let color = style.weak;
             if let Some(loc) = self.loc.expand() {
-                loc.display(color, packages, to)?;
+                loc.display(color, packages, to, style)?;
             } else {
                 write!(to, "| ")?;
             }
-            writeln!(to, "{color}{}{END}", self.message)?;
+            writeln!(to, "{color}{}{}", self.message, style.end)?;
 
             Ok(())
         }
@@ -342,12 +342,13 @@ mod types {
             color: &str,
             packages: &Packages,
             to: &mut dyn Write,
+            style: &Style,
         ) -> std::fmt::Result {
             let module = &packages.modules[self.source];
             if let Some(span) = self.span.expand() {
                 let (line, col) = module.line_mapping.line_info_at(span.start());
                 writeln!(to, "| {}:{}:{}", module.path.display(), line, col)?;
-                span.underline(color, "^", &module.content, to)?;
+                span.underline(color, "^", &module.content, to, style)?;
                 write!(to, " ")
             } else {
                 write!(to, "| {}: ", module.path.display())
@@ -368,12 +369,12 @@ mod types {
         }
     }
 
-    fn color_of(severity: raw::DiagnosticSeverity) -> &'static str {
+    fn color_of<'a>(severity: raw::DiagnosticSeverity, style: &'a Style) -> &'a str {
         match severity {
-            raw::DiagnosticSeverity::ERROR => ERR,
-            raw::DiagnosticSeverity::WARNING => WARN,
-            raw::DiagnosticSeverity::INFORMATION => INFO,
-            raw::DiagnosticSeverity::HINT => WEAK,
+            raw::DiagnosticSeverity::ERROR => style.err,
+            raw::DiagnosticSeverity::WARNING => style.warn,
+            raw::DiagnosticSeverity::INFORMATION => style.info,
+            raw::DiagnosticSeverity::HINT => style.weak,
             _ => unreachable!(),
         }
     }
