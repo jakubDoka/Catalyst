@@ -1,10 +1,9 @@
-use diags::*;
-use parsing_t::*;
-use storage::*;
-use type_checking_t::*;
 use crate::*;
 use packaging_t::*;
+use parsing_t::*;
 use scope::*;
+use storage::*;
+use type_checking_t::*;
 
 impl ItemCollector<'_> {
     pub fn collect(&mut self, ast: Maybe<AstList>) -> errors::Result {
@@ -20,7 +19,7 @@ impl ItemCollector<'_> {
 
             insert_scope_item!(self, res);
         }
-        
+
         Ok(())
     }
 
@@ -49,4 +48,3 @@ impl ItemCollector<'_> {
         }))
     }
 }
-

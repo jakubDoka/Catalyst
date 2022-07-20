@@ -14,6 +14,7 @@ members = [
     "utils/state",
     "utils/graphs",
     "utils/scope",
+    "utils/testing",
 
     "types/diags",
     "types/lexing-t",

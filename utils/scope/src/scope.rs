@@ -41,7 +41,7 @@ impl Scope {
         self.frames.mark();
     }
 
-    pub fn pop_frame(&mut self) {
+    pub fn end_frame(&mut self) {
         for (id, item) in self.frames.pop() {
             if let Some(item) = item.expand() {
                 self.data.insert(id, item.into());

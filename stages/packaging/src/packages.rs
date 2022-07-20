@@ -48,12 +48,8 @@ impl PackageLoader<'_> {
         let module_id = self.load_modules(&path, id, span)?;
 
         self.package_graph.clear();
-        self.package_graph.load_nodes(
-            self.packages
-                .modules
-                .keys()
-                .map(|id| id.index() as u32),
-        );
+        self.package_graph
+            .load_nodes(self.packages.modules.keys().map(|id| id.index() as u32));
 
         for (k, module) in self.packages.modules.iter() {
             self.package_graph.new_node(k.index() as u32).add_edges(

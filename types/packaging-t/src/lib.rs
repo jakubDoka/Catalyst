@@ -1,4 +1,3 @@
-
 #[macro_export]
 macro_rules! span_str {
     ($self:expr, $span:expr) => {
@@ -9,10 +8,12 @@ macro_rules! span_str {
 #[macro_export]
 macro_rules! insert_scope_item {
     ($self:expr, $res:expr) => {
-        if let Err(span) = $self.scope.insert($self.current_file, 
-            $res.to_scope_item($self.current_file), $self.interner) 
-        {
-            $self.workspace.push(diag! {
+        if let Err(span) = $self.scope.insert(
+            $self.current_file,
+            $res.to_scope_item($self.current_file),
+            $self.interner,
+        ) {
+            $self.workspace.push(diags::diag! {
                 ($res.span, $self.current_file) error => "duplicate definition",
                 (span, $self.current_file) => "previous definition",
             })
@@ -23,4 +24,4 @@ macro_rules! insert_scope_item {
 
 mod packaging;
 
-pub use packaging::{PackageGraph, Packages, Mod, ModItem, ModKind, Dep, DepList};
+pub use packaging::{Dep, DepList, Mod, ModItem, ModKind, PackageGraph, Packages};

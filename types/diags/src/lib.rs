@@ -69,7 +69,7 @@ macro_rules! severity {
         $crate::raw::DiagnosticSeverity::ERROR
     };
     (error) => {
-        severity!()
+        $crate::severity!()
     };
     (warning) => {
         $crate::raw::DiagnosticSeverity::WARNING
@@ -131,7 +131,7 @@ macro_rules! related {
     ) => {
         vec![
             $(
-                DiagRel {
+                $crate::DiagRel {
                     loc: $crate::location!($($loc)*),
                     message: format!($message $(, $($message_arg),*)?),
                 },
@@ -182,7 +182,7 @@ macro_rules! diag {
 
         $(, $($related:tt)*)?
     ) => {
-        Diag {
+        $crate::Diag {
             severity: $crate::severity!($($severity)?),
             loc: $crate::location!($($loc)*),
             message: format!($message $(, $($message_arg),*)?),
@@ -237,11 +237,7 @@ mod types {
             println!("{}", to);
         }
 
-        pub fn display(
-            &self,
-            packages: &Packages,
-            to: &mut dyn Write,
-        ) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
             for diag in &self.global_diags {
                 diag.display(packages, to)?;
             }
@@ -270,11 +266,7 @@ mod types {
             Self::default()
         }
 
-        pub fn display(
-            &self,
-            packages: &Packages,
-            to: &mut dyn Write,
-        ) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
             for diag in &self.global_diags {
                 diag.display(packages, to)?;
             }
@@ -297,11 +289,7 @@ mod types {
     }
 
     impl Diag {
-        pub fn display(
-            &self,
-            packages: &Packages,
-            to: &mut dyn Write,
-        ) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
             let color = color_of(self.severity);
             if let Some(loc) = self.loc.expand() {
                 loc.display(color, packages, to)?;
@@ -328,11 +316,7 @@ mod types {
     }
 
     impl DiagRel {
-        pub fn display(
-            &self,
-            packages: &Packages,
-            to: &mut dyn Write,
-        ) -> std::fmt::Result {
+        pub fn display(&self, packages: &Packages, to: &mut dyn Write) -> std::fmt::Result {
             let color = WEAK;
             if let Some(loc) = self.loc.expand() {
                 loc.display(color, packages, to)?;

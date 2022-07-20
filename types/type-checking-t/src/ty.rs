@@ -5,7 +5,27 @@ use storage::*;
 pub struct Types {
     pub ents: OrderedMap<Ident, TyEnt, Ty>,
     pub slices: CachedPoolBumpMap<TyList, Ty>,
-    pub comps: CachedPoolBumpMap<TyCompList, TyCompEnt, TyCompList>,
+    pub comps: CachedPoolBumpMap<TyCompList, TyCompEnt, TyComp>,
+    pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
+}
+
+impl Types {
+    pub fn ptr_depth(&self, ty: Ty) -> u32 {
+        match self.ents[ty].kind {
+            TyKind::Ptr { depth, .. } => depth,
+            _ => 0,
+        }
+    }
+
+    pub fn param_count(&self, ty: Ty) -> usize {
+        match self.ents[ty].kind {
+            TyKind::Instance { base, .. } => self.param_count(base),
+            TyKind::Struct { param_count, .. } | TyKind::Enum { param_count, .. } => {
+                param_count as usize
+            }
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -20,18 +40,20 @@ pub struct TyEnt {
 pub enum TyKind {
     Param {
         index: u32,
-        bounds: TyList,
-        next_clone: Maybe<Ty>,
+        bound: Ty,
     },
     Bound {
+        inherits: TyList,
         funcs: FuncList,
     },
     Struct {
-        fields: TyCompList,
+        fields: Maybe<FieldList>,
+        param_count: u32,
     },
     Enum {
         tag: Ty,
-        variants: TyCompList,
+        variants: Maybe<TyCompList>,
+        param_count: u32,
     },
     Instance {
         base: Ty,
@@ -66,8 +88,9 @@ impl Default for TyKind {
 
 bitflags! {
     struct TyFlags: u8 {
-        PUBLIC PRIVATE
         GENERIC
+        MUTABLE
+        BUILTIN
     }
 }
 
@@ -75,6 +98,13 @@ pub struct TyCompEnt {
     pub ty: Ty,
     pub index: u32,
     pub span: Maybe<Span>,
+}
+
+pub struct FieldEnt {
+    pub mutable: bool,
+    pub exported: bool,
+    pub ty: Ty,
+    pub name: Maybe<Span>,
 }
 
 pub struct BuiltinTypes;
@@ -121,4 +151,4 @@ impl BuiltinTypes {
     }
 }
 
-gen_v_ptr!(Ty TyList TyComp TyCompList);
+gen_v_ptr!(Ty TyList TyComp TyCompList Field FieldList);

@@ -31,23 +31,29 @@ impl AstEnt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
-    Struct { vis: Vis },
+    Struct {
+        vis: Vis,
+    },
     StructBody,
-    StructField { 
-        vis: Vis, 
+    StructField {
+        vis: Vis,
         mutable: bool,
-        exported: bool, 
+        exported: bool,
     },
 
     Generics,
     GenericParam,
-   
+
     TyInstance,
-    PtrTy { mutable: bool },
+    PtrTy {
+        mutable: bool,
+    },
 
     ManifestSection,
     ManifestImports,
-    ManifestImport { use_git: bool },
+    ManifestImport {
+        use_git: bool,
+    },
     ManifestField,
 
     Imports,

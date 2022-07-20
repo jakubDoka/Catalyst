@@ -1,7 +1,7 @@
 use lexing_t::*;
+use scope::*;
 use std::path::*;
 use storage::*;
-use scope::*;
 
 pub type PackageGraph = graphs::ProjectedCycleDetector;
 
@@ -33,9 +33,9 @@ pub struct Mod {
 
 impl Mod {
     pub fn span_str(&self, span: Span) -> &str {
-        unsafe { 
+        unsafe {
             std::str::from_utf8_unchecked(
-                &self.content.as_bytes()[span.start as usize..span.end as usize]
+                &self.content.as_bytes()[span.start as usize..span.end as usize],
             )
         }
     }

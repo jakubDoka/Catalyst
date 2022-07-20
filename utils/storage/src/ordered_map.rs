@@ -65,16 +65,16 @@ impl<K: VPtr, V, C: VPtr> OrderedMap<K, V, C> {
 }
 
 impl<K, V, C: VPtr> Index<C> for OrderedMap<K, V, C> {
-    type Output = (K, V);
+    type Output = V;
 
     fn index(&self, index: C) -> &Self::Output {
-        &self.data[index]
+        &self.data[index].1
     }
 }
 
 impl<K, V, C: VPtr> IndexMut<C> for OrderedMap<K, V, C> {
     fn index_mut(&mut self, index: C) -> &mut Self::Output {
-        &mut self.data[index]
+        &mut self.data[index].1
     }
 }
 

@@ -20,7 +20,7 @@ macro_rules! impl_flag_and_bool {
     ($ty:ty) => {
         impl std::ops::BitAnd<bool> for $ty {
             type Output = Self;
-        
+
             fn bitand(self, rhs: bool) -> Self {
                 if rhs {
                     self
@@ -28,7 +28,7 @@ macro_rules! impl_flag_and_bool {
                     Self::empty()
                 }
             }
-        }        
+        }
     };
 }
 
@@ -117,11 +117,11 @@ macro_rules! bitflags {
         struct $name:ident: $repr:ty {
             $($first:ident $($item:ident)*)?
         }
-    ) => {       
+    ) => {
         $crate::bitflags::bitflags! {
             #[derive(Default)]
             pub struct $name: $repr {
-                
+
             }
         }
 

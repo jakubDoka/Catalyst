@@ -21,6 +21,18 @@ file "stages/packaging/src/state_gen.rs" {
     }
 }
 
+file "types/type-checking-t/src/state_gen.rs" {
+    use "crate";
+    use "storage";
+
+    struct TyFactory {
+        owned current_file: Ident
+
+        mut Types
+        mut Interner
+    }
+}
+
 file "stages/type-checking/src/state_gen.rs" {
     use "storage"
     use "diags"
@@ -39,6 +51,34 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Funcs
         mut Workspace
         mut ItemContext
+        mut Visibility
+        mut Packages
+
+        AstData
+    }
+
+    struct TyBuilder {
+        owned current_file: Ident
+
+        mut Interner
+        mut Scope
+        mut Types
+        mut Funcs
+        mut Workspace
+        mut ItemContext
+        mut Visibility
+        mut Packages
+
+        AstData
+    }
+
+    struct TyParser {
+        owned current_file: Ident
+
+        mut Interner
+        mut Scope
+        mut Types
+        mut Workspace
         mut Visibility
         mut Packages
 
