@@ -4,7 +4,8 @@
 
 | test_project:1:17
 | deps { water git "github.com/jakubDoka/water-kun" }
-|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ git error: Cloning into '\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water-kun\main'...
+|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ git error:
+Cloning into '\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water-kun\main'...
 remote: Repository not found.
 fatal: repository 'https://github.com/jakubDoka/water-kun/' not found
 
