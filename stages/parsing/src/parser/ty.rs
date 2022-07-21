@@ -3,7 +3,7 @@ use super::*;
 impl Parser<'_> {
     pub fn ty(&mut self) -> errors::Result {
         branch! { self => {
-            Ident => self.ident_ty(),
+            Ident => self.ident_ty()?,
             Operator(_ = 0) => branch!{str self => {
                 "^" => self.pointer_ty(),
             }},
@@ -22,7 +22,7 @@ impl Parser<'_> {
     }
 
     pub fn ident_ty(&mut self) -> errors::Result {
-        if self.state.next.kind == TokenKind::RightBracket {
+        if self.state.next.kind == TokenKind::LeftBracket {
             self.ty_instance()?;
         } else {
             self.capture(AstKind::Ident);

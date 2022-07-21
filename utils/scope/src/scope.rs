@@ -65,7 +65,6 @@ impl Scope {
         item: ScopeItem,
         interner: &mut Interner,
     ) -> Result<(), Span> {
-        assert!(self.frames.is_empty());
         if item.module != module {
             let id = interner.intern(scoped_ident!(item.module, item.id));
             self.data.insert_unique(id, item.into());

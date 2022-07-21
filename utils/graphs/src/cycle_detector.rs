@@ -113,7 +113,15 @@ impl ProjectedCycleDetector {
                     }
                 });
                 e
-            })
+            })?;
+
+        buffer.iter_mut().for_each(|n| {
+            if let Some(&mapped) = self.mapping.get(&(*n, false)) {
+                *n = mapped;
+            }
+        });
+
+        Ok(())
     }
 
     /// Prepares struct for reuse. Allocations are preserved.

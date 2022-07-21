@@ -24,6 +24,17 @@ macro_rules! list {
 }
 
 #[macro_export]
+macro_rules! opt_list {
+    ($self:expr, $start:ident, $sep:ident, $end:ident, exp $func:expr) => {
+        $self.opt_list(TokenKind::$start, token!($sep), token!($end), $func)
+    };
+
+    ($self:expr, $start:ident, $sep:ident, $end:ident, $func:ident) => {
+        opt_list!($self, $start, $sep, $end, exp Self::$func)
+    };
+}
+
+#[macro_export]
 macro_rules! branch {
     (
         $self:expr => {
@@ -31,7 +42,7 @@ macro_rules! branch {
         }
     ) => {
         match $self.state.current.kind {
-            $(TokenKind::$cond$(($($value),*))? => drop($res),)*
+            $(TokenKind::$cond$(($($value),*))? => {$res;},)*
             _ => {
                 let terminals = [
                     $(TokenKind::$cond$(($($default),*))?),*

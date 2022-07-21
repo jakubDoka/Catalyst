@@ -9,7 +9,7 @@ impl Parser<'_> {
         self.ident()?;
 
         self.start();
-        list!(self, LeftCurly, Comma, RightCurly, struct_field)?;
+        opt_list!(self, LeftCurly, NewLine, RightCurly, struct_field)?;
         self.finish(AstKind::StructBody);
 
         self.finish(AstKind::Struct { vis });

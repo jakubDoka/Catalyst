@@ -42,7 +42,7 @@ impl PackageLoader<'_> {
 
         if self.workspace.has_errors() {
             return Err(());
-        } 
+        }
 
         let ModKind::Package { ref root_module, span } = self.packages.modules[id].kind else {
             unreachable!();
@@ -321,12 +321,13 @@ impl PackageLoader<'_> {
                 self.workspace.push(diag! {
                     (path_span.sliced(..package.len()), id)
                     error => "cannot find this package in manifest",
-                    (none) => "available packages: {}" { 
+                    (none) => "available packages: '{}'" { 
                         self.packages.conns[package_ent.deps]
                             .iter()
                             .map(|dep| &package_ent.content[dep.name.range()])
+                            .chain(std::iter::once("."))
                             .collect::<Vec<_>>()
-                            .join(", ")
+                            .join("', '")
                     },
                 });
                 continue;
@@ -375,6 +376,11 @@ impl PackageLoader<'_> {
     ) -> errors::Result<PathBuf> {
         let full_url = &format!("https://{}", url);
         let rev_owned = self.resolve_version(version_loc, version, &full_url)?;
+        if version.is_some() && rev_owned.is_none() {
+            self.workspace.push(diag! {
+                (exp version_loc) warning => "cannot find this version, using main branch instead",
+            })
+        }
         let rev = rev_owned.as_ref().map(|v| v.as_str());
 
         let mut dep_root = self.get_dep_root(project_path);
@@ -472,7 +478,7 @@ impl PackageLoader<'_> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             self.workspace
-                .push(diag!((exp loc) error => "git error: {}" { stderr }));
+                .push(diag!((exp loc) error => "git error:\n{}" { stderr }));
             return Err(());
         }
 
@@ -535,37 +541,12 @@ impl PackageLoader<'_> {
     fn dependency_cycle(&mut self, cycle: Vec<u32>) {
         self.workspace.push(diag! {
             (none) error => "dependency cycle detected",
-            (none) => "cycle:\n\t{}\n" {
+            (none) => "cycle:\n\t{}" {
                 cycle.into_iter()
                     .map(|id| &self.interner[Ident::new(id as usize)])
                     .collect::<Vec<_>>()
                     .join("\n\t")
             },
         });
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::env::var;
-
-    use super::*;
-
-    #[test]
-    fn test_load() {
-        let mut module_loader = PackageLoader {
-            packages: &mut Packages::new(),
-            workspace: &mut Workspace::new(),
-            interner: &mut Interner::new(),
-            package_graph: &mut PackageGraph::new(),
-        };
-
-        let path = var("TEST_PROJECT_PATH").expect("test should be run from `test.bat`");
-
-        drop(module_loader.load(Path::new(&path)));
-
-        module_loader.workspace.log(module_loader.packages);
-
-        assert!(!module_loader.workspace.has_errors());
     }
 }

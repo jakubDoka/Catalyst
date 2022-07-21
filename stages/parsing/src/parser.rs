@@ -1,3 +1,4 @@
+mod code;
 mod imports;
 mod manifest;
 mod r#struct;
@@ -87,6 +88,20 @@ impl<'a> Parser<'a> {
 
     fn at(&self, kind: TokenKind) -> bool {
         self.state.current.kind == kind
+    }
+
+    fn opt_list(
+        &mut self,
+        left: TokenKind,
+        sep: Option<TokenKind>,
+        right: Option<TokenKind>,
+        method: impl Fn(&mut Self) -> errors::Result,
+    ) -> errors::Result {
+        if self.at(left) {
+            self.list(Some(left), sep, right, method)?;
+        }
+
+        Ok(())
     }
 
     fn list(
@@ -242,8 +257,8 @@ impl<'a> Parser<'a> {
             Self::ident
         };
 
-        self.list(
-            Some(TokenKind::LeftBracket),
+        self.opt_list(
+            TokenKind::LeftBracket,
             Some(TokenKind::Comma),
             Some(TokenKind::RightBracket),
             parser,

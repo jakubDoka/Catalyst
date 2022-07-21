@@ -42,7 +42,7 @@ impl ItemCollector<'_> {
         self.item_context.types.push((item, ty));
 
         Ok(Some(ModItem {
-            id,
+            id: local,
             ptr: ScopePtr::new(ty),
             span: ident.span,
         }))

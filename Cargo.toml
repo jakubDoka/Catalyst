@@ -13,6 +13,7 @@ members = [
     "stages/type-checking",
 
     "tests/packaging-test",
+    "tests/type-checking-test",
 
     "types/diags",
     "types/lexing-t",

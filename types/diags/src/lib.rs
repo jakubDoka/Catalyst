@@ -237,7 +237,12 @@ mod types {
             println!("{}", to);
         }
 
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+        pub fn display(
+            &self,
+            packages: &Packages,
+            to: &mut dyn Write,
+            style: &Style,
+        ) -> std::fmt::Result {
             for diag in &self.global_diags {
                 diag.display(packages, to, style)?;
             }
@@ -266,7 +271,12 @@ mod types {
             Self::default()
         }
 
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+        pub fn display(
+            &self,
+            packages: &Packages,
+            to: &mut dyn Write,
+            style: &Style,
+        ) -> std::fmt::Result {
             for diag in &self.global_diags {
                 diag.display(packages, to, style)?;
             }
@@ -289,14 +299,19 @@ mod types {
     }
 
     impl Diag {
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+        pub fn display(
+            &self,
+            packages: &Packages,
+            to: &mut dyn Write,
+            style: &Style,
+        ) -> std::fmt::Result {
             let color = color_of(self.severity, style);
             if let Some(loc) = self.loc.expand() {
                 loc.display(color, packages, to, style)?;
             } else {
                 write!(to, "| ")?;
             }
-            writeln!(to, "{color}{}{END}", self.message)?;
+            writeln!(to, "{color}{}{}", self.message, style.end)?;
 
             for rel in &self.related {
                 rel.display(packages, to, style)?;
@@ -316,7 +331,12 @@ mod types {
     }
 
     impl DiagRel {
-        pub fn display(&self, packages: &Packages, to: &mut dyn Write, style: &Style) -> std::fmt::Result {
+        pub fn display(
+            &self,
+            packages: &Packages,
+            to: &mut dyn Write,
+            style: &Style,
+        ) -> std::fmt::Result {
             let color = style.weak;
             if let Some(loc) = self.loc.expand() {
                 loc.display(color, packages, to, style)?;

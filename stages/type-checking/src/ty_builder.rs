@@ -43,7 +43,7 @@ impl TyBuilder<'_> {
             let &[ast_name, ast_ty] = &self.ast_data[field.children] else {
                 unreachable!();
             };
-            let AstKind::StructField { vis, mutable, exported } = ast_name.kind else {
+            let AstKind::StructField { vis, mutable, exported } = field.kind else {
                 unreachable!();
             };
 

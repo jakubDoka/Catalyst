@@ -5,8 +5,9 @@ macro_rules! quick_file_system {
     (($root:expr) $($tokens:tt)*) => {
         let __dir = {
             let mut __dir = $crate::Folder::new($root);
-            quick_file_system!(__recur__ (__dir) $($tokens)*);     
+            quick_file_system!(__recur__ (__dir) $($tokens)*);
             __dir.create();
+            __dir
         };
     };
 
@@ -46,20 +47,20 @@ mod tests {
 }
 
 mod testing {
-    use std::path::*;
     use ansi_coloring::*;
     use diags::*;
     use packaging_t::*;
+    use std::path::*;
 
     pub fn test_case(name: &str, test_code: impl Fn() -> (Workspace, Packages)) {
         let (ws, packages) = test_code();
-        
+
         let mut out = String::new();
         ws.display(&packages, &mut out, &Style::NONE).unwrap();
-        
+
         let path = format!("{}/{}.txt", "test_out", name);
         if !Path::new("test_out").exists() {
-            std::fs::remove_dir_all("test_out").unwrap();
+            std::fs::create_dir("test_out").unwrap();
         }
         std::fs::write(path, out).unwrap();
     }
@@ -93,7 +94,7 @@ mod testing {
                 std::fs::create_dir(&self_path).unwrap();
             }
             for (name, content) in &self.files {
-                std::fs::write(self_path.join(name), content).unwrap();
+                std::fs::write(self_path.join(name), content.replace('\n', " ")).unwrap();
             }
 
             for folder in &self.folders {

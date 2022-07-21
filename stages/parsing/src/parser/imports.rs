@@ -1,6 +1,21 @@
 use super::*;
 
 impl Parser<'_> {
+    pub fn skip_imports(&mut self) -> errors::Result {
+        self.skip_newlines();
+        if self.at(TokenKind::Use) {
+            self.advance();
+            while self.state.current.kind != TokenKind::RightCurly
+                && self.state.current.kind != TokenKind::Eof
+            {
+                self.advance();
+            }
+            self.advance();
+        }
+
+        Ok(())
+    }
+
     pub fn parse_imports(&mut self) -> Option<AstEnt> {
         let (list, ..) = self.parse_with(Self::take_imports);
 
@@ -16,6 +31,7 @@ impl Parser<'_> {
     }
 
     pub(crate) fn take_imports(&mut self) -> errors::Result {
+        self.skip_newlines();
         self.optional(TokenKind::Use, Self::imports)
     }
 

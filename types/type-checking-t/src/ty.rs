@@ -2,6 +2,7 @@ use crate::*;
 use lexing_t::*;
 use storage::*;
 
+#[derive(Default)]
 pub struct Types {
     pub ents: OrderedMap<Ident, TyEnt, Ty>,
     pub slices: CachedPoolBumpMap<TyList, Ty>,

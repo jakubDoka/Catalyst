@@ -26,8 +26,6 @@ file "types/type-checking-t/src/state_gen.rs" {
     use "storage";
 
     struct TyFactory {
-        owned current_file: Ident
-
         mut Types
         mut Interner
     }
@@ -65,7 +63,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Types
         mut Funcs
         mut Workspace
-        mut ItemContext
         mut Visibility
         mut Packages
 

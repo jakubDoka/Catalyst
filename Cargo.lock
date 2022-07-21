@@ -407,6 +407,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "type-checking-test"
+version = "0.1.0"
+dependencies = [
+ "diags",
+ "errors",
+ "packaging",
+ "packaging-t",
+ "parsing",
+ "parsing-t",
+ "scope",
+ "storage",
+ "testing",
+ "type-checking",
+ "type-checking-t",
+]
+
+[[package]]
 name = "unicode-bidi"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

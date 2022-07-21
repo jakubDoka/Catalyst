@@ -23,6 +23,7 @@ mod items {
     use crate::*;
     use parsing_t::*;
 
+    #[derive(Default)]
     pub struct ItemContext {
         pub attrs: Vec<AstEnt>,
         pub funcs: Vec<(AstEnt, Func)>,
