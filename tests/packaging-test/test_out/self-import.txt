@@ -1,5 +1,5 @@
 | \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root.ctl:1:6
 | use { "root" }
 |        ^^^^ cannot find this package in manifest
-| available packages: 
+| available packages: .
 
