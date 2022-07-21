@@ -1,0 +1,4 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\test_project\root.ctl:1:0
+| pub struct A ; priv struct B ; struct C ; struct D
+| ^^^ expected 'struct' | '\n' | ';' | <eof> | 'break' but got 'pub'
+
