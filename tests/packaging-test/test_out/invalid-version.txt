@@ -1,6 +1,6 @@
 | test_project:1:46
 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
-|                                                ^^^^^^^^^^^^^^^^^ cannot find this version
+|                                                ^^^^^^^^^^^^^^^^^ cannot find this version, using main branch instead
 
 | test_project:1:17
 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
