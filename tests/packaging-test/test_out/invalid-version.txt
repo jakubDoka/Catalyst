@@ -1,4 +1,8 @@
+| test_project:1:46
+| deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
+|                                                ^^^^^^^^^^^^^^^^^ cannot find this version
+
 | test_project:1:17
-| deps { water git "github.com/jakubDoka/water" "" }
+| deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
 |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ executing: git clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water\main
 
