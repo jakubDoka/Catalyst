@@ -1,4 +1,4 @@
 | test_project:1:17
-| deps { water git "github.com/jakubDoka/water" "v1.*.*" ; a "a" ; b "b" }
-|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ executing: git clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water\main
+| deps { water git "github.com/jakubDoka/water" "v0.*.*" ; a "a" ; b "b" }
+|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ executing: git clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\deps\github.com\jakubDoka\water\v0 --branch v0.0.1
 
