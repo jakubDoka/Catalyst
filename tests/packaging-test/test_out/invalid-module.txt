@@ -1,0 +1,6 @@
+| \\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root\a.ctl:1:6
+| use { "./a/b" }
+|        ^^^^^ cannot canonicalize module path
+| related path: test_project\root\a/b.ctl
+| trace: The system cannot find the path specified. (os error 3)
+
