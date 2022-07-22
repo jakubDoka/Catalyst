@@ -301,9 +301,16 @@ impl PackageLoader<'_> {
         self.packages.conns.start_cache();
 
         for import in &ast_data[imports.children] {
-            let [name, path] = &ast_data[import.children] else {
+            let [mut name, path] = &ast_data[import.children] else {
                 unreachable!();
             };
+
+            // name defaults to last segment of module path
+            if name.kind.is_none() {
+                let span = path.span.shrink(1);
+                let start = content[span.range()].rfind('/').map(|i| i + 1).unwrap_or(0);
+                name.span = span.sliced(start..);
+            }
 
             let path_span = path.span.shrink(1);
             let path_str = &content[path_span.range()];

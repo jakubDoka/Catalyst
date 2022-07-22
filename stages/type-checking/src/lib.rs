@@ -57,8 +57,11 @@ mod utils {
                         let deps = packages.modules[file].deps;
                         packages.conns[deps]
                             .iter()
-                            .map(|dep| interner.intern(scoped_ident!(dep.ptr, id)))
-                            .filter_map(|id| scope.get(id).is_ok().then_some(id))
+                            .map(|dep| (
+                                interner.intern(scoped_ident!(dep.ptr, id)),
+                                interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)),
+                            ))
+                            .filter_map(|(id, name)| scope.get(id).is_ok().then_some(name))
                             .collect::<Vec<_>>() // borrow checker would complain, rightfully so
                             .into_iter()
                             .map(|id| &interner[id])

@@ -1,3 +1,4 @@
+#![feature(scoped_threads)]
 use std::path::Path;
 
 use diags::*;
@@ -5,8 +6,6 @@ use packaging::*;
 use packaging_t::*;
 use storage::*;
 use testing::*;
-
-const DIR: &str = "test_project";
 
 #[derive(Default)]
 struct TestState {
@@ -16,18 +15,17 @@ struct TestState {
     package_graph: PackageGraph,
 }
 
-fn main() {
-    macro_rules! run {
-        () => {{
-            let mut ts = TestState::default();
-            drop(package_loader!(ts).load(Path::new(DIR)));
-            (ts.workspace, ts.packages)
-        }};
+impl TestState {
+    fn run(name: &str) -> (Workspace, Packages) {
+        let mut ts = TestState::default();
+        drop(package_loader!(ts).load(Path::new(name)));
+        (ts.workspace, ts.packages)
     }
+}
 
-    test_case("github", || {
-        quick_file_system!(
-            (DIR)
+fn main() {
+    gen_test! {
+        "github" {
             file "root.ctl" { use { "water"; "a"; "b" } }
             file "package.ctlm" {
                 deps {
@@ -52,24 +50,12 @@ fn main() {
                     }
                 }
             }
-        );
-
-        run!()
-    });
-
-    test_case("self-import", || {
-        quick_file_system!(
-            (DIR)
+        }
+        "self-import" {
             file "root.ctl" { use { "." } }
             file "package.ctlm" {}
-        );
-
-        run!()
-    });
-
-    test_case("cycle", || {
-        quick_file_system!(
-            (DIR)
+        }
+        "cycle" {
             file "root.ctl" { use { "./a" } }
             file "package.ctlm" {}
             dir "root" {
@@ -78,49 +64,29 @@ fn main() {
                     file "b.ctl" { use { "." } }
                 }
             }
-        );
-
-        run!()
-    });
-
-    test_case("invalid-module", || {
-        quick_file_system!(
-            (DIR)
+        }
+        "invalid-module" {
             file "root.ctl" { use { "./a" } }
             file "package.ctlm" {}
             dir "root" {
                 file "a.ctl" { use { "./a/b" } }
             }
-        );
-
-        run!()
-    });
-
-    test_case("invalid-version", || {
-        quick_file_system!(
-            (DIR)
+        }
+        "invalid-version" {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
                     water git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
                 }
             }
-        );
-
-        run!()
-    });
-
-    test_case("invalid-link", || {
-        quick_file_system!(
-            (DIR)
+        }
+        "invalid-link" {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
                     water git "github.com/jakubDoka/water-kun"
                 }
             }
-        );
-
-        run!()
-    });
+        }
+    };
 }

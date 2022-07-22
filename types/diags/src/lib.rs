@@ -44,7 +44,7 @@ macro_rules! location {
     };
     ($span:expr, $source:expr $(,)?) => {
         Maybe::some($crate::Loc {
-            span: Maybe::some($span),
+            span: $span.into(),
             source: $source,
         })
     };

@@ -1,4 +1,6 @@
 #![feature(let_else)]
+#![feature(inline_const)]
+#![feature(default_free_fn)]
 
 #[macro_export]
 macro_rules! field_ident {
@@ -12,10 +14,11 @@ mod state_gen;
 mod tir;
 mod ty;
 mod ty_factory;
+mod builtin_builder;
 
 pub use func::{DefEnt, Func, FuncEnt, FuncList, Funcs, Sig};
 pub use items::ItemContext;
-pub use state_gen::TyFactory;
+pub use state_gen::{TyFactory, BuiltinBuilder};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirMeta};
 pub use ty::{BuiltinTypes, Field, FieldEnt, FieldList, Ty, TyEnt, TyFlags, TyKind, TyList, Types};
 

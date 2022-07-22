@@ -1,4 +1,25 @@
+#![feature(scoped_threads)]
+
 pub use crate::testing::{test_case, Folder};
+
+#[macro_export]
+macro_rules! gen_test {
+    ($($name:literal {
+        $($structure:tt)*
+    })*) => {
+        std::thread::scope(|h| {
+            $(
+                test_case($name, Some(h), |name| {
+                    quick_file_system!(
+                        (name)
+                        $($structure)*
+                    );
+                    TestState::run(name)
+                });
+            )*
+        });
+    };
+}
 
 #[macro_export]
 macro_rules! quick_file_system {
@@ -50,19 +71,31 @@ mod testing {
     use ansi_coloring::*;
     use diags::*;
     use packaging_t::*;
-    use std::path::*;
+    use std::{path::*, thread::Scope};
 
-    pub fn test_case(name: &str, test_code: impl Fn() -> (Workspace, Packages)) {
-        let (ws, packages) = test_code();
+    pub fn test_case<'a: 'b, 'b, 'c>(
+        name: &'static str,
+        scope: Option<&'a Scope<'b, 'c>>,
+        test_code: fn(&str) -> (Workspace, Packages)
+    ) {
+        let runner = move || {
+            let (ws, packages) = test_code(name);
+    
+            let mut out = String::new();
+            ws.display(&packages, &mut out, &Style::NONE).unwrap();
+    
+            let path = format!("{}/{}.txt", "test_out", name);
+            if !Path::new("test_out").exists() {
+                std::fs::create_dir("test_out").unwrap();
+            }
+            std::fs::write(path, out).unwrap();
+        };
 
-        let mut out = String::new();
-        ws.display(&packages, &mut out, &Style::NONE).unwrap();
-
-        let path = format!("{}/{}.txt", "test_out", name);
-        if !Path::new("test_out").exists() {
-            std::fs::create_dir("test_out").unwrap();
+        if let Some(scope) = scope {
+            scope.spawn(runner);
+        } else {
+            runner();
         }
-        std::fs::write(path, out).unwrap();
     }
 
     pub struct Folder {

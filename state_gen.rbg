@@ -29,6 +29,11 @@ file "types/type-checking-t/src/state_gen.rs" {
         mut Types
         mut Interner
     }
+
+    struct BuiltinBuilder {
+        mut Types
+        mut Interner
+    }
 }
 
 file "stages/type-checking/src/state_gen.rs" {

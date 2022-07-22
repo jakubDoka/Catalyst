@@ -29,6 +29,7 @@ members = [
     "utils/graphs",
     "utils/scope",
     "utils/testing",
+    "utils/tester",
 ]
 
 [dependencies]

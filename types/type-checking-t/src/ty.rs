@@ -1,3 +1,5 @@
+use std::default::default;
+
 use crate::*;
 use lexing_t::*;
 use storage::*;
@@ -44,8 +46,8 @@ pub enum TyKind {
         bound: Ty,
     },
     Bound {
-        inherits: TyList,
-        funcs: FuncList,
+        inherits: Maybe<TyList>,
+        funcs: Maybe<FuncList>,
     },
     Struct {
         fields: Maybe<FieldList>,
@@ -78,6 +80,20 @@ pub enum TyKind {
 impl TyKind {
     pub fn inferrable(&self) -> bool {
         matches!(self, TyKind::Inferrable)
+    }
+
+    pub fn default_bound() -> TyKind {
+        TyKind::Bound {
+            inherits: default(),
+            funcs: default(),
+        }
+    }
+
+    pub fn default_param() -> TyKind {
+        TyKind::Param {
+            index: 0,
+            bound: BuiltinTypes::ANY,
+        }
     }
 }
 
@@ -153,3 +169,9 @@ impl BuiltinTypes {
 }
 
 gen_v_ptr!(Ty TyList TyComp TyCompList Field FieldList);
+
+impl Ty {
+    pub const fn id(&self) -> u32 {
+        self.0
+    }
+}

@@ -4,8 +4,8 @@ use lexing_t::*;
 use storage::*;
 
 pub struct Scope {
-    data: SparseMap<Ident, Maybe<ScopeItem>>,
-    frames: Frames<(Ident, Maybe<ScopeItem>)>,
+    data: SparseMap<Ident, Maybe<Item>>,
+    frames: Frames<(Ident, Maybe<Item>)>,
 }
 
 impl Scope {
@@ -13,17 +13,17 @@ impl Scope {
         Self::default()
     }
 
-    pub fn get(&self, ident: Ident) -> Result<&ScopeItem, ScopeError> {
+    pub fn get(&self, ident: Ident) -> Result<ScopePtr, ScopeError> {
         self.data
             .get(ident)
             .map(|option| option.as_ref_option().ok_or(ScopeError::Collision))
             .ok_or(ScopeError::NotFound)
             .flatten()
+            .map(|item| item.ptr)
     }
 
     pub fn get_concrete<T: VPtr + 'static>(&self, ident: Ident) -> Result<T, ScopeError> {
         self.get(ident)?
-            .ptr
             .try_read::<T>()
             .ok_or(ScopeError::TypeMismatch)
     }
@@ -51,11 +51,16 @@ impl Scope {
         }
     }
 
-    pub fn insert_builtin(&mut self, item: ScopeItem) {
-        self.data.insert_unique(item.id, item.into());
+    pub fn insert_builtin(&mut self, id: Ident, ptr: impl VPtr + 'static) {
+        self.data.insert_unique(id, Item {
+            id,
+            ptr: ScopePtr::new(ptr),
+            span: Maybe::none(),
+            module: Maybe::none(),
+        }.into());
     }
 
-    pub fn insert_current(&mut self, item: ScopeItem, interner: &mut Interner) -> Result<(), Span> {
+    pub fn insert_current(&mut self, item: ScopeItem, interner: &mut Interner) -> Result<(), Maybe<Span>> {
         self.insert(item.id, item, interner)
     }
 
@@ -64,7 +69,7 @@ impl Scope {
         module: Ident,
         item: ScopeItem,
         interner: &mut Interner,
-    ) -> Result<(), Span> {
+    ) -> Result<(), Maybe<Span>> {
         if item.module != module {
             let id = interner.intern(scoped_ident!(item.module, item.id));
             self.data.insert_unique(id, item.into());
@@ -73,13 +78,13 @@ impl Scope {
         if let Some(existing_option) = self.data.get_mut(item.id)
             && let Some(existing) = existing_option.as_mut_option()
         {
-            if existing.module == item.module {
+            if existing.module == item.module.into() || existing.module.is_none() {
                 return Err(existing.span);
             }
 
             if item.module == module {
-                *existing = item;
-            } else if existing.module != module {
+                *existing = item.into();
+            } else if existing.module != module.into() {
                 existing_option.take();
             }
         } else {
@@ -111,6 +116,29 @@ pub enum ScopeError {
 }
 
 #[derive(Clone, Copy)]
+struct Item {
+    pub id: Ident,
+    pub ptr: ScopePtr,
+    pub span: Maybe<Span>,
+    pub module: Maybe<Ident>,
+}
+
+impl Invalid for Item {
+    unsafe fn invalid() -> Self {
+        Item {
+            id: Ident::invalid(),
+            ptr: ScopePtr::invalid(),
+            span: Maybe::none(),
+            module: Maybe::none(),
+        }
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.id.is_invalid()
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct ScopeItem {
     pub id: Ident,
     pub ptr: ScopePtr,
@@ -118,18 +146,31 @@ pub struct ScopeItem {
     pub module: Ident,
 }
 
-impl Invalid for ScopeItem {
-    unsafe fn invalid() -> Self {
-        ScopeItem {
-            id: Ident::invalid(),
-            ptr: ScopePtr::invalid(),
-            span: Span::invalid(),
-            module: Ident::invalid(),
+impl ScopeItem {
+    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, module: Ident) -> Self {
+        Self {
+            id,
+            ptr: ScopePtr::new(ptr),
+            span,
+            module,
         }
     }
+}
 
-    fn is_invalid(&self) -> bool {
-        self.id.is_invalid()
+impl Into<Item> for ScopeItem {
+    fn into(self) -> Item {
+        Item {
+            id: self.id,
+            ptr: self.ptr,
+            span: Maybe::some(self.span),
+            module: Maybe::some(self.module),
+        }
+    }
+}
+
+impl Into<Maybe<Item>> for ScopeItem {
+    fn into(self) -> Maybe<Item> {
+        Maybe::some(self.into())
     }
 }
 
