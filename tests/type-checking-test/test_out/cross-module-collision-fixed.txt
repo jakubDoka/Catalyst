@@ -1,0 +1,4 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\cross-module-collision-fixed\root.ctl:1:40
+| use { "./a" ; f "./b" } struct B { aa : a.A fa : f.A }
+|                                          ^ expected '\n' | ';' but got '.'
+

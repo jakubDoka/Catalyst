@@ -197,5 +197,24 @@ fn main() {
             }
             file "package.ctlm" {}
         }
+        "cross-module-collision-fixed" {
+            dir "root" {
+                file "a.ctl" {
+                    struct A;
+                }
+                file "b.ctl" {
+                    struct A;
+                }
+            }
+            file "root.ctl" {
+                use { "./a"; f "./b" }
+
+                struct B {
+                    aa: a.A
+                    fa: f.A
+                }
+            }
+            file "package.ctlm" {}
+        }
     }
 }
