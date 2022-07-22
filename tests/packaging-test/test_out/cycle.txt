@@ -1,7 +1,7 @@
 | dependency cycle detected
 | cycle:
-	\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root\a.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root\a\b.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\test_project\root\a.ctl
+	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
+	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a\b.ctl
+	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
+	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
 
