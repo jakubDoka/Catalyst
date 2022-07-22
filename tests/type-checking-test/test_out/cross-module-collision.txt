@@ -1,5 +1,5 @@
 | \\?\C:\src\rust\catalyst\tests\type-checking-test\cross-module-collision\root.ctl:1:36
 | use { "./a" ; "./b" } struct B { a : A }
 |                                      ^ the identifier is ambiguous
-| hint: specify the module from which it is imported (\\?\C:\src\rust\catalyst\tests\type-checking-test\cross-module-collision\root\a.ctl::A, \\?\C:\src\rust\catalyst\tests\type-checking-test\cross-module-collision\root\b.ctl::A)
+| hint: specify the module from which it is imported (a::A, b::A)
 
