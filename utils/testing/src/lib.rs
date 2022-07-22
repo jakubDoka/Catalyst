@@ -76,14 +76,14 @@ mod testing {
     pub fn test_case<'a: 'b, 'b, 'c>(
         name: &'static str,
         scope: Option<&'a Scope<'b, 'c>>,
-        test_code: fn(&str) -> (Workspace, Packages)
+        test_code: fn(&str) -> (Workspace, Packages),
     ) {
         let runner = move || {
             let (ws, packages) = test_code(name);
-    
+
             let mut out = String::new();
             ws.display(&packages, &mut out, &Style::NONE).unwrap();
-    
+
             let path = format!("{}/{}.txt", "test_out", name);
             if !Path::new("test_out").exists() {
                 std::fs::create_dir("test_out").unwrap();

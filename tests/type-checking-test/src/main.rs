@@ -60,10 +60,12 @@ impl TestState {
                 };
 
                 for item in items {
-                    self.scope.insert(module, item.to_scope_item(dep.ptr), &mut self.interner).unwrap();
+                    self.scope
+                        .insert(module, item.to_scope_item(dep.ptr), &mut self.interner)
+                        .unwrap();
                 }
             }
-            
+
             loop {
                 let source = &self.packages.modules[module].content;
                 state.start(source, module);
@@ -117,7 +119,7 @@ fn main() {
             }
             file "package.ctlm" {}
         }
-        "complex-generic-struct" {            
+        "complex-generic-struct" {
             file "root.ctl" {
                 struct A;
                 struct B;
@@ -158,7 +160,7 @@ fn main() {
                     j: u64
                 }
             }
-            file "package.ctlm" {}    
+            file "package.ctlm" {}
         }
         "cross-module" {
             dir "root" {

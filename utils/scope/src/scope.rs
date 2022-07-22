@@ -52,15 +52,23 @@ impl Scope {
     }
 
     pub fn insert_builtin(&mut self, id: Ident, ptr: impl VPtr + 'static) {
-        self.data.insert_unique(id, Item {
+        self.data.insert_unique(
             id,
-            ptr: ScopePtr::new(ptr),
-            span: Maybe::none(),
-            module: Maybe::none(),
-        }.into());
+            Item {
+                id,
+                ptr: ScopePtr::new(ptr),
+                span: Maybe::none(),
+                module: Maybe::none(),
+            }
+            .into(),
+        );
     }
 
-    pub fn insert_current(&mut self, item: ScopeItem, interner: &mut Interner) -> Result<(), Maybe<Span>> {
+    pub fn insert_current(
+        &mut self,
+        item: ScopeItem,
+        interner: &mut Interner,
+    ) -> Result<(), Maybe<Span>> {
         self.insert(item.id, item, interner)
     }
 

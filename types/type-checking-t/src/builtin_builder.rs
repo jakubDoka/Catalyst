@@ -25,7 +25,7 @@ impl BuiltinBuilder<'_> {
         macro_rules! int {
             ($width:literal $signed:literal) => {
                 TyEnt {
-                    kind: TyKind::Int { 
+                    kind: TyKind::Int {
                         width: $width,
                         signed: $signed,
                     },
