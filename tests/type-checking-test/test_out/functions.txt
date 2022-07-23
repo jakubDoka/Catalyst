@@ -1,0 +1,4 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\functions\root.ctl:1:0
+| fn main() {} fn priv foo(a : int, b : u32, c : bool) {} fn pub [T] bar(a : T, b : T) {} fn "default" malloc(size : int) -> ^ u8 extern
+| ^^ expected 'struct' | '\n' | ';' | <eof> | 'break' but got 'fn'
+
