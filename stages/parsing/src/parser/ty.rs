@@ -22,19 +22,14 @@ impl Parser<'_> {
     }
 
     pub fn ident_ty(&mut self) -> errors::Result {
-        if self.state.next.kind == TokenKind::LeftBracket {
-            self.ty_instance()?;
-        } else {
-            self.capture(AstKind::Ident);
-        }
-        Ok(())
-    }
-
-    pub fn ty_instance(&mut self) -> errors::Result {
         self.start();
-        self.capture(AstKind::Ident);
-        list!(self, LeftBracket, Comma, RightBracket, ty)?;
-        self.finish(AstKind::TyInstance);
+        self.ident_chain()?;
+        if self.at(TokenKind::LeftBracket) {
+            list!(self, LeftBracket, Comma, RightBracket, ty)?;
+            self.finish(AstKind::TyInstance);
+        } else {
+            self.join_frames();
+        }
         Ok(())
     }
 }

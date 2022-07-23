@@ -1,5 +1,7 @@
-mod code;
+mod expr;
+mod r#fn;
 mod imports;
+mod items;
 mod manifest;
 mod r#struct;
 mod ty;
@@ -70,6 +72,11 @@ impl<'a> Parser<'a> {
         self.ast_data.start_cache();
     }
 
+    fn join_frames(&mut self) {
+        self.state.start.pop().unwrap();
+        self.ast_data.join_cache_frames();
+    }
+
     fn close(&mut self) -> Maybe<AstList> {
         self.ast_data.bump_cached()
     }
@@ -86,64 +93,89 @@ impl<'a> Parser<'a> {
         start.joined(end)
     }
 
-    fn at(&self, kind: TokenKind) -> bool {
-        self.state.current.kind == kind
+    fn at<P>(&self, kind: P) -> bool
+    where
+        P: IntoIterator<Item = TokenKind>,
+    {
+        contains(kind, self.state.current.kind)
     }
 
-    fn opt_list(
-        &mut self,
-        left: TokenKind,
-        sep: Option<TokenKind>,
-        right: Option<TokenKind>,
-        method: impl Fn(&mut Self) -> errors::Result,
-    ) -> errors::Result {
-        if self.at(left) {
-            self.list(Some(left), sep, right, method)?;
+    fn opt_list<L, S, R, M>(&mut self, left: L, sep: S, right: R, method: M) -> errors::Result
+    where
+        L: IntoIterator<Item = TokenKind> + Clone,
+        L::IntoIter: Clone,
+        S: IntoIterator<Item = TokenKind> + Clone,
+        S::IntoIter: Clone,
+        R: IntoIterator<Item = TokenKind> + Clone,
+        R::IntoIter: Clone,
+        M: Fn(&mut Self) -> errors::Result,
+    {
+        if self.at(left.clone()) {
+            self.list(left, sep, right, method)?;
         }
 
         Ok(())
     }
 
-    fn list(
-        &mut self,
-        left: Option<TokenKind>,
-        sep: Option<TokenKind>,
-        right: Option<TokenKind>,
-        method: impl Fn(&mut Self) -> errors::Result,
-    ) -> errors::Result {
-        assert!(!matches!((left, sep, right), (.., None, None)));
+    fn list<L, S, R, M>(&mut self, left: L, sep: S, right: R, method: M) -> errors::Result
+    where
+        L: IntoIterator<Item = TokenKind> + Clone,
+        L::IntoIter: Clone,
+        S: IntoIterator<Item = TokenKind> + Clone,
+        S::IntoIter: Clone,
+        R: IntoIterator<Item = TokenKind> + Clone,
+        R::IntoIter: Clone,
+        M: Fn(&mut Self) -> errors::Result,
+    {
+        let right = move || right.clone();
+        let sep = move || sep.clone();
+
+        assert!(!matches!(
+            (sep().into_iter().next(), right().into_iter().next()),
+            (None, None)
+        ));
 
         let frame_count = self.ast_data.frame_count();
 
-        if let Some(left) = left {
+        if non_empty(left.clone()) {
             self.expect(left)?;
             self.advance();
             self.skip_newlines();
         }
 
+        let terminals = sep().into_iter().chain(right());
+
         loop {
-            if let Some(right) = right && self.at(right) {
+            if self.at(right()) {
                 break;
             }
 
             if let Err(()) = method(self) {
-                let terminals = sep.into_iter().chain(right).collect::<Vec<_>>();
-                self.recover(&terminals, frame_count)?;
+                let terminal = self.recover(terminals.clone(), frame_count)?;
+                if contains(right(), terminal) {
+                    break;
+                }
+                continue;
             }
 
-            if let Some(right) = right {
-                if self.at(right) {
-                    self.advance();
+            if non_empty(right()) {
+                if self.at(right()) {
                     break;
                 }
 
-                if let Some(sep) = sep {
-                    self.expect(sep)?;
+                if non_empty(sep()) {
+                    if let Err(()) = self.expect(sep()) {
+                        let terminal = self.recover(terminals.clone(), frame_count)?;
+                        if contains(right(), terminal) {
+                            break;
+                        }
+                        continue;
+                    }
                     self.advance();
                 }
-            } else if let Some(sep) = sep {
-                if !self.at(sep) {
-                    break;
+            } else if non_empty(sep()) {
+                if !self.at(sep()) {
+                    return Ok(());
                 }
                 self.advance();
             } else {
@@ -152,6 +184,8 @@ impl<'a> Parser<'a> {
 
             self.skip_newlines();
         }
+
+        self.advance();
 
         Ok(())
     }
@@ -162,12 +196,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect(&mut self, kind: TokenKind) -> errors::Result {
-        self.expect_many(&[kind])
-    }
-
-    fn expect_many(&mut self, kinds: &[TokenKind]) -> errors::Result {
-        if kinds.contains(&self.state.current.kind) {
+    fn expect<P>(&mut self, kinds: P) -> errors::Result
+    where
+        P: IntoIterator<Item = TokenKind> + Clone,
+    {
+        if self.at(kinds.clone()) {
             Ok(())
         } else {
             self.expect_error(kinds);
@@ -175,7 +208,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn recover(&mut self, kinds: &[TokenKind], frame_count: usize) -> errors::Result {
+    fn recover(
+        &mut self,
+        terminals: impl IntoIterator<Item = TokenKind> + Clone,
+        frame_count: usize,
+    ) -> errors::Result<TokenKind> {
         while frame_count < self.ast_data.frame_count() {
             drop(self.ast_data.discard_cache());
         }
@@ -197,26 +234,49 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            if kinds.contains(&self.state.current.kind) {
-                break;
+            if contains(terminals.clone(), self.state.current.kind) {
+                let cur = self.state.current.kind;
+                self.advance();
+                return Ok(cur);
             }
 
-            if self.state.current.kind == TokenKind::Eof {
-                self.expect_error(kinds);
+            if self.at(TokenKind::Eof) {
+                self.expect_error(terminals);
                 return Err(());
             }
 
             self.advance();
         }
+    }
+
+    fn ident_chain(&mut self) -> errors::Result {
+        self.start();
+        self.expect(TokenKind::Ident)?;
+        self.capture(AstKind::Ident);
+
+        while self.at(TokenKind::Tick) && self.next(TokenKind::Ident) {
+            self.advance();
+            self.capture(AstKind::Ident);
+        }
+
+        if self.ast_data.cached().len() == 1 {
+            self.join_frames();
+        } else {
+            self.finish(AstKind::IdentChain);
+        }
 
         Ok(())
     }
 
-    fn expect_error(&mut self, kinds: &[TokenKind]) {
+    fn next(&self, kind: TokenKind) -> bool {
+        self.state.next.kind == kind
+    }
+
+    fn expect_error(&mut self, kinds: impl IntoIterator<Item = TokenKind>) {
         self.workspace.push(diag! {
             (self.state.current.span, self.state.path.unwrap())
             error => "expected {} but got {}" {
-                kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
+                kinds.into_iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
             },
         });
@@ -276,12 +336,12 @@ impl<'a> Parser<'a> {
 
         if self.at(TokenKind::Colon) {
             self.advance();
-            self.ident()?;
+            self.ty()?;
 
             while self.ctx_keyword("+") {
                 self.advance();
                 self.skip_newlines();
-                self.ident()?;
+                self.ty()?;
             }
         }
 
@@ -321,6 +381,14 @@ impl<'a> Parser<'a> {
     fn current_token_str(&self) -> &str {
         self.lexer.display(self.state.current.span)
     }
+}
+
+fn non_empty(iter: impl IntoIterator<Item = TokenKind>) -> bool {
+    iter.into_iter().next().is_some()
+}
+
+fn contains(iter: impl IntoIterator<Item = TokenKind>, kind: TokenKind) -> bool {
+    iter.into_iter().any(|item| item == kind)
 }
 
 #[derive(Default)]

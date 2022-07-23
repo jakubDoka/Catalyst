@@ -60,13 +60,12 @@ impl<K: VPtr, V> PoolMap<K, V> {
     pub fn push(&mut self, value: V) -> K {
         let key = if let Some(key) = self.free.pop() {
             assert!(self.free_lookup.remove(key));
+            self[key] = value;
             key
         } else {
-            self.data.push(MaybeUninit::uninit());
+            self.data.push(MaybeUninit::new(value));
             K::new(self.data.len() - 1)
         };
-
-        self[key] = value;
 
         key
     }

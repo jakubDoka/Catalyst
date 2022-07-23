@@ -19,12 +19,13 @@ macro_rules! scope_error_handler {
     };
 }
 
+mod fn_parser;
 mod item_collector;
 mod state_gen;
 mod ty_builder;
 mod ty_parser;
 
-pub use state_gen::{ItemCollector, TyBuilder, TyParser};
+pub use state_gen::{FnParser, ItemCollector, TyBuilder, TyParser};
 pub use utils::handle_scope_error;
 
 mod utils {
@@ -57,11 +58,8 @@ mod utils {
                         let deps = packages.modules[file].deps;
                         packages.conns[deps]
                             .iter()
-                            .map(|dep| (
-                                interner.intern(scoped_ident!(dep.ptr, id)),
-                                interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)),
-                            ))
-                            .filter_map(|(id, name)| scope.get(id).is_ok().then_some(name))
+                            .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
+                            .filter_map(|id| scope.get(id).is_ok().then_some(id))
                             .collect::<Vec<_>>() // borrow checker would complain, rightfully so
                             .into_iter()
                             .map(|id| &interner[id])

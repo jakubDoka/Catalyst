@@ -1,3 +1,5 @@
+use std::iter::once;
+
 use crate::*;
 use storage::*;
 
@@ -42,17 +44,65 @@ impl TyFactory<'_> {
         self.types.ents.insert_unique(id, ent)
     }
 
-    pub fn instance_id(&mut self, base: Ty, params: &[Ty]) -> Ident {
-        let mut segments: Vec<InternedSegment> = vec![];
-        segments.push(self.types.ents.id(base).into());
-        segments.push("[".into());
-        let (&first, rest) = params.split_first().unwrap();
-        segments.push(self.types.ents.id(first).into());
-        for &ty in rest {
-            segments.push(", ".into());
-            segments.push(self.types.ents.id(ty).into());
+    pub fn bound_of(&mut self, id: Option<Ident>, bounds: &[Ty]) -> Ty {
+        let id = id.unwrap_or_else(|| self.anon_bound_id(bounds));
+
+        if let Some(ty) = self.types.ents.index(id) {
+            return ty;
         }
-        segments.push("]".into());
+
+        let inherits = self.types.slices.bump_slice(bounds);
+        let ent = TyEnt {
+            kind: TyKind::Bound {
+                inherits,
+                fns: Maybe::none(),
+            },
+            flags: TyFlags::GENERIC,
+            ..TyEnt::default()
+        };
+        self.types.ents.insert_unique(id, ent)
+    }
+
+    pub fn param_of(&mut self, bound: Ty) -> Ty {
+        let id = self
+            .interner
+            .intern(param_ident!(self.types.ents.id(bound)));
+
+        if let Some(ty) = self.types.ents.index(id) {
+            return ty;
+        }
+
+        let ent = TyEnt {
+            kind: TyKind::Param { bound, index: 0 },
+            flags: TyFlags::GENERIC,
+            ..TyEnt::default()
+        };
+        self.types.ents.insert_unique(id, ent)
+    }
+
+    pub fn anon_bound_id(&mut self, bounds: &[Ty]) -> Ident {
+        let segments = bounds
+            .iter()
+            .map(|&ty| self.types.ents.id(ty))
+            .flat_map(|id| [InternedSegment::from(id), " + ".into()])
+            .take((bounds.len() * 2).checked_sub(1).unwrap_or(0))
+            .collect::<Vec<_>>();
+        self.interner.intern(&segments)
+    }
+
+    pub fn instance_id(&mut self, base: Ty, params: &[Ty]) -> Ident {
+        let segments = [InternedSegment::from(self.types.ents.id(base)), "[".into()]
+            .into_iter()
+            .chain(
+                params
+                    .iter()
+                    .map(|&ty| self.types.ents.id(ty))
+                    .flat_map(|id| [InternedSegment::from(id), ", ".into()])
+                    .take((params.len() * 2).checked_sub(1).unwrap_or(0)),
+            )
+            .chain(once(InternedSegment::from("]")))
+            .collect::<Vec<_>>();
+
         self.interner.intern(&segments)
     }
 

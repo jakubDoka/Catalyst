@@ -7,10 +7,12 @@ use storage::*;
 #[derive(Default)]
 pub struct Types {
     pub ents: OrderedMap<Ident, TyEnt, Ty>,
-    pub slices: CachedPoolBumpMap<TyList, Ty>,
+    pub slices: PoolBumpMap<TyList, Ty, Unused>,
     pub comps: CachedPoolBumpMap<TyCompList, TyCompEnt, TyComp>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
 }
+
+gen_v_ptr!(Unused);
 
 impl Types {
     pub fn ptr_depth(&self, ty: Ty) -> u32 {
@@ -47,7 +49,7 @@ pub enum TyKind {
     },
     Bound {
         inherits: Maybe<TyList>,
-        funcs: Maybe<FuncList>,
+        fns: Maybe<FnList>,
     },
     Struct {
         fields: Maybe<FieldList>,
@@ -66,7 +68,7 @@ pub enum TyKind {
         base: Ty,
         depth: u32,
     },
-    FuncPtr {
+    FnPtr {
         sig: Sig,
     },
     Int {
@@ -85,7 +87,7 @@ impl TyKind {
     pub fn default_bound() -> TyKind {
         TyKind::Bound {
             inherits: default(),
-            funcs: default(),
+            fns: default(),
         }
     }
 

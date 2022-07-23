@@ -22,10 +22,11 @@ struct TestState {
     package_graph: PackageGraph,
     scope: Scope,
     types: Types,
-    funcs: Funcs,
+    fns: Fns,
     item_context: ItemContext,
     visibility: Visibility,
     ast_data: AstData,
+    fn_parser_ctx: FnParserCtx,
 }
 
 impl TestState {
@@ -59,9 +60,12 @@ impl TestState {
                     unreachable!();
                 };
 
+                let dep_id = self
+                    .interner
+                    .intern_str(self.packages.span_str(module, dep.name));
                 for item in items {
                     self.scope
-                        .insert(module, item.to_scope_item(dep.ptr), &mut self.interner)
+                        .insert(module, item.to_scope_item(dep_id), &mut self.interner)
                         .unwrap();
                 }
             }
@@ -69,10 +73,11 @@ impl TestState {
             loop {
                 let source = &self.packages.modules[module].content;
                 state.start(source, module);
+
                 let mut parser =
                     Parser::new(source, &mut state, &mut self.ast_data, &mut self.workspace);
                 drop(parser.skip_imports());
-                let (ast, done) = parser.parse_code();
+                let (ast, done) = parser.parse_items();
 
                 if self.workspace.has_errors() {
                     break;
@@ -80,7 +85,7 @@ impl TestState {
 
                 drop(item_collector!(self, module).collect(ast));
                 drop(ty_builder!(self, module).types(&mut self.item_context.types));
-
+                drop(fn_parser!(self, module).fns(&mut self.item_context.fns));
                 if done {
                     break;
                 }
@@ -126,7 +131,7 @@ fn main() {
                 struct [A, B] C {
                     a: A;
                     b: B
-                }
+                };
                 struct D {
                     l: C[A, B]
                 }
@@ -207,11 +212,30 @@ fn main() {
                 }
             }
             file "root.ctl" {
-                use { "./a"; f "./b" }
+                use { "./a"; f "./b" };
 
                 struct B {
-                    aa: a.A
-                    fa: f.A
+                    aa: a::A;
+                    fa: f::A
+                }
+            }
+            file "package.ctlm" {}
+        }
+
+        "functions" {
+            file "root.ctl" {
+                fn main() {};
+                fn priv foo(a: int, b: u32, c: bool) {};
+                fn pub [T] bar(a: T, b: T) {};
+                //fn "default" malloc(size: int) -> ^u8 extern
+            }
+            file "package.ctlm" {}
+        }
+
+        "function-with-return" {
+            file "root.ctl" {
+                fn main() -> int {
+                    return 0;
                 }
             }
             file "package.ctlm" {}

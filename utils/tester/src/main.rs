@@ -8,21 +8,20 @@ fn main() {
 
     let target = std::env::args().nth(1);
 
-    let dirs_ctor =
-        || {
-            read_dir("tests")
-        .unwrap()
-        .filter_map(|file| file.ok())
-        .filter(|file| file.file_type().unwrap().is_dir())
-        .map(|file| (file.path(), file.file_name().to_str().unwrap().to_owned()))
-        .filter(|(_, name)| !matches!(target, Some(ref target) if !target.as_str().contains(name)))
-        };
+    let dirs_ctor = || {
+        read_dir("tests")
+            .unwrap()
+            .filter_map(|file| file.ok())
+            .filter(|file| file.file_type().unwrap().is_dir())
+            .map(|file| (file.path(), file.file_name().to_str().unwrap().to_owned()))
+            .filter(|(_, name)| !matches!(target, Some(ref target) if !name.contains(target)))
+    };
 
     for (path, name) in dirs_ctor() {
         println!("Compiling test case: {}", name);
         Command::new("cargo")
             .current_dir(path)
-            .args(&["build", "--release"])
+            .args(&["build"])
             .status()
             .unwrap();
     }
@@ -31,7 +30,7 @@ fn main() {
         for (path, name) in dirs_ctor() {
             h.spawn(move || {
                 println!("Running test: {}", name);
-                Command::new(format!("target/release/{}.exe", name))
+                Command::new(format!("target/debug/{}.exe", name))
                     .current_dir(path)
                     .status()
                     .unwrap();

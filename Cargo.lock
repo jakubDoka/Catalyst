@@ -182,6 +182,7 @@ version = "0.1.0"
 dependencies = [
  "graphs",
  "lexing-t",
+ "parsing-t",
  "scope",
  "storage",
 ]

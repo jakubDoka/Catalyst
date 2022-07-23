@@ -1,1 +1,1 @@
-"target/release/tester.exe"
+"target/release/tester.exe" %1

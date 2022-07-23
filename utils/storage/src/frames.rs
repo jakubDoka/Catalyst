@@ -52,6 +52,10 @@ impl<T> Frames<T> {
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
+
+    pub fn join_frames(&mut self) {
+        self.indices.pop().unwrap();
+    }
 }
 
 impl<T> Default for Frames<T> {

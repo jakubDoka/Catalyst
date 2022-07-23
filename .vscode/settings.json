@@ -3,11 +3,11 @@
         "bitand",
         "bitflags",
         "canonicalize",
+        "conv",
         "cranelifts",
         "ctlm",
         "deps",
         "ents",
-        "Funcs",
         "Hasher",
         "insts",
         "interner",
@@ -15,5 +15,6 @@
         "repr",
         "rfind",
         "Uninit"
-    ]
+    ],
+    "rust-analyzer.procMacro.attributes.enable": true,
 }

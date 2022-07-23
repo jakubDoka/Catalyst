@@ -9,7 +9,7 @@ macro_rules! gen_test {
     })*) => {
         std::thread::scope(|h| {
             $(
-                test_case($name, Some(h), |name| {
+                test_case($name, None, |name| {
                     quick_file_system!(
                         (name)
                         $($structure)*
@@ -127,7 +127,11 @@ mod testing {
                 std::fs::create_dir(&self_path).unwrap();
             }
             for (name, content) in &self.files {
-                std::fs::write(self_path.join(name), content.replace('\n', " ")).unwrap();
+                std::fs::write(
+                    self_path.join(name),
+                    content.replace('\n', " ").replace("::", "`"),
+                )
+                .unwrap();
             }
 
             for folder in &self.folders {

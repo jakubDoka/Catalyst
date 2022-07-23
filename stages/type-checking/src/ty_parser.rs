@@ -1,22 +1,38 @@
 use crate::*;
 use diags::*;
-use packaging_t::*;
 use parsing_t::*;
 use storage::*;
 use type_checking_t::*;
 
 impl TyParser<'_> {
+    pub fn parse_bound_sum(&mut self, ast: &[AstEnt]) -> errors::Result<Ty> {
+        let bounds = ast
+            .iter()
+            .filter_map(|&child| self.parse(child).ok())
+            .collect::<Vec<_>>();
+
+        if bounds.len() != ast.len() {
+            return Err(());
+        }
+
+        if bounds.len() == 1 {
+            Ok(bounds[0])
+        } else {
+            Ok(ty_factory!(self).bound_of(None, &bounds))
+        }
+    }
+
     pub fn parse(&mut self, ast: AstEnt) -> errors::Result<Ty> {
         match ast.kind {
-            AstKind::Ident => self.parse_ident(ast),
+            AstKind::Ident | AstKind::IdentChain => self.parse_ident(ast),
             AstKind::PtrTy { mutable } => self.parse_ptr_ty(mutable, ast),
             AstKind::TyInstance => self.parse_instance(ast),
-            _ => unimplemented!(),
+            kind => unimplemented!("{:?}", kind),
         }
     }
 
     fn parse_ident(&mut self, ast: AstEnt) -> errors::Result<Ty> {
-        let id = self.interner.intern_str(span_str!(self, ast.span));
+        let id = ident_chain_id!(self, ast);
         self.scope
             .get_concrete::<Ty>(id)
             .map_err(scope_error_handler!(self, ast.span, id, "type not found"))

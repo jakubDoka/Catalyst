@@ -4,7 +4,7 @@ use storage::*;
 pub type AstData = CacheBumpMap<AstList, AstEnt, Ast>;
 pub type Visibility = ShadowMap<Ident, Vis>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AstEnt {
     pub kind: AstKind,
     pub children: Maybe<AstList>,
@@ -31,6 +31,8 @@ impl AstEnt {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    Return,
+
     Struct {
         vis: Vis,
     },
@@ -40,6 +42,14 @@ pub enum AstKind {
         mutable: bool,
         exported: bool,
     },
+
+    Fn {
+        vis: Vis,
+    },
+    FnArg {
+        mutable: bool,
+    },
+    FnBody,
 
     Generics,
     GenericParam,
@@ -63,6 +73,7 @@ pub enum AstKind {
     Int,
 
     Ident,
+    IdentChain,
 
     None,
 }

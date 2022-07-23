@@ -75,8 +75,12 @@ impl<K: VPtr, T> SparseMap<K, T> {
         self.project(key).expand().map(|private| {
             self.mapping[key.index()] = Maybe::none();
             let last_id = self.data.last().unwrap().0;
-            self.mapping[last_id.index()] = private.into();
-            self.data.swap_remove(private.index()).1
+            if last_id == key {
+                self.data.pop().unwrap().1
+            } else {
+                self.mapping[last_id.index()] = private.into();
+                self.data.swap_remove(private.index()).1
+            }
         })
     }
 

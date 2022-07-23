@@ -169,6 +169,7 @@ gen_kind!(
         DoubleColon = "::",
         Hash = "#",
         DoubleHash = "##",
+        Tick = "`",
     }
 
     pairs {
@@ -215,6 +216,15 @@ gen_kind!(
         ) = EQUAL_SIGN_PRECEDENCE,
     }
 );
+
+impl IntoIterator for TokenKind {
+    type Item = TokenKind;
+    type IntoIter = std::iter::Once<TokenKind>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(self)
+    }
+}
 
 impl Default for TokenKind {
     fn default() -> Self {
