@@ -1,0 +1,4 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\function-with-return\root.ctl:1:18
+| fn main() -> int { return 0 ; }
+|                    ^^^^^^ expected '\n' | ';' but got 'return'
+
