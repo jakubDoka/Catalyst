@@ -1,0 +1,8 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\binary-operators-and-precedence\root.ctl:1:44
+| fn add_square(a : u8, b : u8) -> u8 { return a + b * b } fn mode_ops(c : u8) -> bool { return c + c - c == c }
+|                                              ^ expected 'return' | Int but got Ident
+
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\binary-operators-and-precedence\root.ctl:1:59
+| fn add_square(a : u8, b : u8) -> u8 { return a + b * b } fn mode_ops(c : u8) -> bool { return c + c - c == c }
+|                                                             ^^^^^^^^ expected '\n' | ';' but got Ident
+
