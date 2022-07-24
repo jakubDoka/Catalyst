@@ -56,6 +56,12 @@ impl<T> Frames<T> {
     pub fn join_frames(&mut self) {
         self.indices.pop().unwrap();
     }
+
+    pub fn mark_with(&mut self, amount: usize) -> &T {
+        assert!(self.top().len() >= amount);
+        self.indices.push(self.data.len() as u32 - amount as u32);
+        self.top().iter().rev().nth(amount - 1).unwrap()
+    }
 }
 
 impl<T> Default for Frames<T> {

@@ -86,6 +86,12 @@ macro_rules! gen_v_ptr {
                     u32::deserialize(deserializer).map($ty)
                 }
             }
+
+            impl std::fmt::Display for $ty {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "{}{}", stringify!($ty).to_ascii_lowercase(), self.0)
+                }
+            }
         )*
     };
 }

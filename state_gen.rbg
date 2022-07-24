@@ -24,6 +24,7 @@ file "stages/packaging/src/state_gen.rs" {
 file "types/type-checking-t/src/state_gen.rs" {
     use "crate";
     use "storage";
+    use "packaging_t"
 
     struct TyFactory {
         mut Types
@@ -33,6 +34,19 @@ file "types/type-checking-t/src/state_gen.rs" {
     struct BuiltinBuilder {
         mut Types
         mut Interner
+    }
+
+    struct TirDisplay {
+        owned Ident
+        owned root: `Maybe<TirList>`
+        
+        passed name: str
+        passed tir_data: TirData
+        
+        Interner
+        Types
+        Packages
+        Fns
     }
 }
 

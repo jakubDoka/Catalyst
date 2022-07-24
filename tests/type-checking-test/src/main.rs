@@ -94,7 +94,25 @@ impl TestState {
             self.scope.clear();
         }
 
-        //std::thread::sleep(std::time::Duration::from_secs(10));
+        let iter = self
+            .fns
+            .defs
+            .values()
+            .filter_map(|def| Some((def.source.expand()?, def.span.expand()?, def)));
+
+        let mut str = String::new();
+        for (source, span, def) in iter {
+            let name = self.packages.span_str(source, span);
+            tir_display!(self, source, def.body, name, &def.tir_data)
+                .display(&mut str)
+                .unwrap()
+        }
+
+        if !str.is_empty() {
+            self.workspace.push(diag! {
+                (none) information => "functions:\n{}" { str }
+            });
+        }
 
         Ok(())
     }
@@ -231,11 +249,22 @@ fn main() {
             }
             file "package.ctlm" {}
         }
-
         "function-with-return" {
             file "root.ctl" {
                 fn main() -> int {
                     return 0;
+                }
+            }
+            file "package.ctlm" {}
+        }
+        "binary-operators-and-precedence" {
+            file "root.ctl" {
+                fn add_square(a: u8, b: u8) -> u8 {
+                    return a + b * b
+                };
+
+                fn more_ops(c: u8) -> bool {
+                    return c + c - c == c
                 }
             }
             file "package.ctlm" {}

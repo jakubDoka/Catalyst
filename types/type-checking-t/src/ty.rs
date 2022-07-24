@@ -152,7 +152,6 @@ macro_rules! gen_builtin_types {
 
 impl BuiltinTypes {
     gen_builtin_types! {
-        NOTHING
         INFERRED
         DROP COPY
         STR STACK_TRACE

@@ -123,6 +123,10 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.frames.mark();
     }
 
+    pub fn start_cache_with(&mut self, amount: usize) -> &T {
+        self.frames.mark_with(amount)
+    }
+
     /// Performs bulk push of `values`.
     ///
     /// # Examples

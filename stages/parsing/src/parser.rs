@@ -72,6 +72,12 @@ impl<'a> Parser<'a> {
         self.ast_data.start_cache();
     }
 
+    fn start_with(&mut self, amount: usize) {
+        self.state
+            .start
+            .push(self.ast_data.start_cache_with(amount).span);
+    }
+
     fn join_frames(&mut self) {
         self.state.start.pop().unwrap();
         self.ast_data.join_cache_frames();

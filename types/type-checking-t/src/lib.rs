@@ -5,14 +5,21 @@
 #[macro_export]
 macro_rules! field_ident {
     ($self:expr, $field:expr) => {
-        ident!($self, ".", $field)
+        storage::ident!($self, ".", $field)
     };
 }
 
 #[macro_export]
 macro_rules! param_ident {
     ($param:expr) => {
-        ident!("param ", $param)
+        storage::ident!("param ", $param)
+    };
+}
+
+#[macro_export]
+macro_rules! binary_ident {
+    ($param:expr) => {
+        storage::ident!("binary ", $param)
     };
 }
 
@@ -38,7 +45,7 @@ mod ty_factory;
 
 pub use fns::{Def, DefEnt, FnEnt, FnFlags, FnList, FnParserCtx, Fns, Sig};
 pub use items::{ident_chain_id, ItemContext};
-pub use state_gen::{BuiltinBuilder, TyFactory};
+pub use state_gen::{BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
 pub use ty::{BuiltinTypes, Field, FieldEnt, FieldList, Ty, TyEnt, TyFlags, TyKind, TyList, Types};
 

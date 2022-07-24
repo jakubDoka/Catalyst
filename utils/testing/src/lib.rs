@@ -9,7 +9,7 @@ macro_rules! gen_test {
     })*) => {
         std::thread::scope(|h| {
             $(
-                test_case($name, None, |name| {
+                test_case($name, Some(h), |name| {
                     quick_file_system!(
                         (name)
                         $($structure)*

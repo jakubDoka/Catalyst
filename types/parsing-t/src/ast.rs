@@ -32,6 +32,7 @@ impl AstEnt {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
     Return,
+    Binary,
 
     Struct {
         vis: Vis,
@@ -74,6 +75,8 @@ pub enum AstKind {
 
     Ident,
     IdentChain,
+    Operator,
+    OperatorWithModule,
 
     None,
 }

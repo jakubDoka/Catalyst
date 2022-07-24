@@ -5,7 +5,10 @@ use crate::*;
 impl BuiltinBuilder<'_> {
     pub fn build(&mut self) {
         self.make_builtin_types();
+        self.make_builtin_operators();
     }
+
+    fn make_builtin_operators(&mut self) {}
 
     fn make_builtin_types(&mut self) {
         macro_rules! gen_types {
@@ -35,7 +38,7 @@ impl BuiltinBuilder<'_> {
         }
 
         gen_types! {
-            NOTHING INFERRED => default(),
+            INFERRED => default(),
             DROP COPY => TyEnt {
                 flags: TyFlags::GENERIC,
                 ..default() // TODO

@@ -1,7 +1,7 @@
 use std::{
     marker::PhantomData,
     mem::MaybeUninit,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, Not},
 };
 
 use serde::{
@@ -99,6 +99,19 @@ impl<K: VPtr, V> PoolMap<K, V> {
 
     pub fn size_hint(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (K, &V)> {
+        self.data.iter().enumerate().filter_map(|(i, elem)| {
+            self.free_lookup
+                .contains(K::new(i))
+                .not()
+                .then(|| (K::new(i), unsafe { &*elem.as_ptr() }))
+        })
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.iter().map(|(_, v)| v)
     }
 }
 
