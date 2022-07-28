@@ -5,5 +5,7 @@ fn foo {
 }
 fn bar {
 }
+fn malloc {
+}
 
 

@@ -18,7 +18,7 @@ impl TyParser<'_> {
         if bounds.len() == 1 {
             Ok(bounds[0])
         } else {
-            Ok(ty_factory!(self).bound_of(None, &bounds))
+            Ok(ty_factory!(self).bound_of(None, 0, &bounds))
         }
     }
 

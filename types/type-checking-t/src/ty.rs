@@ -50,6 +50,7 @@ pub enum TyKind {
     Bound {
         inherits: Maybe<TyList>,
         fns: Maybe<FnList>,
+        param_count: u32,
     },
     Struct {
         fields: Maybe<FieldList>,
@@ -88,6 +89,7 @@ impl TyKind {
         TyKind::Bound {
             inherits: default(),
             fns: default(),
+            param_count: 0,
         }
     }
 

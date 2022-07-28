@@ -4,20 +4,34 @@ pub use crate::testing::{test_case, Folder};
 
 #[macro_export]
 macro_rules! gen_test {
-    ($($name:literal {
+    ($($($type:ident)? $name:literal {
         $($structure:tt)*
     })*) => {
         std::thread::scope(|h| {
             $(
                 test_case($name, Some(h), |name| {
-                    quick_file_system!(
-                        (name)
-                        $($structure)*
-                    );
+                    gen_test!(__inner__ name $($type)? $($structure)*);
                     TestState::run(name)
                 });
             )*
         });
+    };
+    
+    (__inner__ $name:ident simple $($structure:tt)*) => {
+        quick_file_system!(
+            ($name)
+            file "root.ctl" {
+                $($structure)*
+            }
+            file "package.ctlm" {}
+        )
+    };
+
+    (__inner__ $name:ident $($structure:tt)*) => {
+        quick_file_system!(
+            ($name)
+            $($structure)*
+        )
     };
 }
 

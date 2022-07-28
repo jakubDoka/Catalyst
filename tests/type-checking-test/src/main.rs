@@ -120,70 +120,55 @@ impl TestState {
 
 fn main() {
     gen_test! {
-        "basic-structs" {
-            file "root.ctl" {
-                struct pub A;
-                struct priv B;
-                struct C;
-                struct D {
-                    pub mut a: A;
-                    priv b: B;
-                    use c: C
-                }
+        simple "basic-structs" {
+            struct pub A;
+            struct priv B;
+            struct C;
+            struct D {
+                pub mut a: A;
+                priv b: B;
+                use c: C
             }
-            file "package.ctlm" {}
         }
-        "generic-structs" {
-            file "root.ctl" {
-                struct pub [T] A;
-                struct priv G {
-                    l: A[G]
-                }
+        simple "generic-structs" {
+            struct pub [T] A;
+            struct priv G {
+                l: A[G]
             }
-            file "package.ctlm" {}
         }
-        "complex-generic-struct" {
-            file "root.ctl" {
-                struct A;
-                struct B;
-                struct [A, B] C {
-                    a: A;
-                    b: B
-                };
-                struct D {
-                    l: C[A, B]
-                }
+        simple "complex-generic-struct" {
+            struct A;
+            struct B;
+            struct [A, B] C {
+                a: A;
+                b: B
+            };
+            struct D {
+                l: C[A, B]
             }
-            file "package.ctlm" {}
         }
-        "pointers" {
-            file "root.ctl" {
-                struct A;
-                struct B;
+        simple "pointers" {
+            struct A;
+            struct B;
 
-                struct C {
-                    a: ^^^A;
-                    b: ^B
-                }
+            struct C {
+                a: ^^^A;
+                b: ^B
             }
-            file "package.ctlm" {}
         }
-        "builtin-types" {
-            file "root.ctl" {
-                struct C {
-                    a: int;
-                    b: i8;
-                    c: i16;
-                    d: i32;
-                    e: i64;
-                    f: uint;
-                    g: u8;
-                    h: u16;
-                    i: u32;
-                    j: u64
-                }
+        simple "builtin-types" {
+            struct C {
+                a: int;
+                b: i8;
+                c: i16;
+                d: i32;
+                e: i64;
+                f: uint;
+                g: u8;
+                h: u16;
+                i: u32;
+                j: u64
             }
-            file "package.ctlm" {}
         }
         "cross-module" {
             dir "root" {
@@ -239,35 +224,66 @@ fn main() {
             }
             file "package.ctlm" {}
         }
-
-        "functions" {
-            file "root.ctl" {
-                fn main() {};
-                fn priv foo(a: int, b: u32, c: bool) {};
-                fn pub [T] bar(a: T, b: T) {};
-                //fn "default" malloc(size: int) -> ^u8 extern
-            }
-            file "package.ctlm" {}
+        simple "functions" {
+            fn main() {};
+            fn priv foo(a: int, b: u32, c: bool) {};
+            fn pub [T] bar(a: T, b: T) {};
+            fn "default" malloc(size: int) -> ^u8 extern
         }
-        "function-with-return" {
-            file "root.ctl" {
-                fn main() -> int {
-                    return 0;
+        simple "function-with-return" {
+            fn main() -> int {
+                return 0;
+            }
+        }
+        simple "bound" {
+            bound pub [T] Something {
+                fn foo(a: T)
+            };
+
+            struct A;
+
+            impl A {
+                fn foo(a: A) {}
+                fn goo(a: int) {}
+                fn [P] soo(p: P) {}
+            };
+
+            impl Something[u8] for A {
+                fn foo(a: u8) {
+                }
+            };
+
+            impl Something[A] for A;
+
+            impl Something[int] for A {
+                use goo as foo
+            };
+
+            impl Something[uint] for A {
+                use soo::[uint] as foo
+            };
+            
+            bound Glue {
+                type Substance
+            };
+
+            impl [T: Glue[Substance: bool]] Something[T] for A {
+                fn foo(a: T) {
                 }
             }
-            file "package.ctlm" {}
         }
-        "binary-operators-and-precedence" {
-            file "root.ctl" {
-                fn add_square(a: u8, b: u8) -> u8 {
-                    return a + b * b
-                };
+        // "binary-operators-and-precedence" {
+        //     file "root.ctl" {
+        //         fn add_square(a: u8, b: u8) -> u8 {
+        //             return a + b * b
+        //         };
 
-                fn more_ops(c: u8) -> bool {
-                    return c + c - c == c
-                }
-            }
-            file "package.ctlm" {}
-        }
+        //         fn more_ops(c: u8) -> bool {
+        //             return c + c - c == c
+        //         }
+        //     }
+        //     file "package.ctlm" {}
+        // }
+        
     }
 }
