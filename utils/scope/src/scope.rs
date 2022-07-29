@@ -4,7 +4,7 @@ use lexing_t::*;
 use storage::*;
 
 pub struct Scope {
-    data: Map<Module, Maybe<Item>>,
+    data: SparseMap<Ident, Maybe<Item>>,
     frames: Frames<(Ident, Maybe<Item>)>,
 }
 
@@ -111,7 +111,7 @@ impl Scope {
 impl Default for Scope {
     fn default() -> Self {
         Self {
-            data: Map::new(),
+            data: SparseMap::new(),
             frames: Frames::new(),
         }
     }

@@ -9,7 +9,7 @@ pub struct FnParserCtx {
 
 #[derive(Default)]
 pub struct Fns {
-    pub ents: Map<FnEnt>,
+    pub ents: SparseMap<Ident, FnEnt>,
     pub defs: PoolMap<Def, DefEnt>,
     pub slices: PoolBumpMap<FnList, Ident>,
 }
@@ -20,7 +20,7 @@ impl Fns {
     }
 
     pub fn params_of_def(&self, def: Def) -> Maybe<TyList> {
-        self.ents.get(self.defs[def].true_func).unwrap().params
+        self.ents[self.defs[def].true_func].params
     }
 
     pub fn args_of(&self, def: Def) -> Maybe<TyList> {

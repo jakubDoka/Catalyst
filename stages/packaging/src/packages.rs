@@ -44,7 +44,7 @@ impl PackageLoader<'_> {
             return Err(());
         }
 
-        let ModKind::Package { ref root_module, span } = self.packages.modules.get(id).unwrap().kind else {
+        let ModKind::Package { ref root_module, span } = self.packages.modules[id].kind else {
             unreachable!();
         };
 
@@ -316,7 +316,7 @@ impl PackageLoader<'_> {
             let path_str = &content[path_span.range()];
             let (package, module_name) = path_str.split_once('/').unwrap_or((path_str, ""));
 
-            let package_ent = self.packages.modules.get(package_id).unwrap();
+            let package_ent = &self.packages.modules[package_id];
             let maybe_package = self.packages.conns[package_ent.deps]
                 .iter()
                 .find_map(|dep| {
@@ -340,7 +340,7 @@ impl PackageLoader<'_> {
                 continue;
             };
 
-            let external_package = self.packages.modules.get(external_package_id).unwrap();
+            let external_package = &self.packages.modules[external_package_id];
             let ModKind::Package { ref root_module, .. } = external_package.kind else {
                 unreachable!();
             };

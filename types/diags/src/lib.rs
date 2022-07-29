@@ -204,7 +204,7 @@ mod types {
     /// Represents diagnostic state of compiled project.
     #[derive(Default)]
     pub struct Workspace {
-        files: Map<Doc>,
+        files: SparseMap<Ident, Doc>,
         global_diags: Vec<Diag>,
         has_errors: bool,
     }
@@ -222,9 +222,9 @@ mod types {
                 }
 
                 if loc.span.is_some() {
-                    self.files.get_mut(loc.source).unwrap().code_diags.push(diag);
+                    self.files[loc.source].code_diags.push(diag);
                 } else {
-                    self.files.get_mut(loc.source).unwrap().global_diags.push(diag);
+                    self.files[loc.source].global_diags.push(diag);
                 }
             } else {
                 self.global_diags.push(diag);
@@ -364,7 +364,7 @@ mod types {
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
-            let module = packages.modules.get(self.source).unwrap();
+            let module = &packages.modules[self.source];
             if let Some(span) = self.span.expand() {
                 let (line, col) = module.line_mapping.line_info_at(span.start());
                 writeln!(to, "| {}:{}:{}", module.path.display(), line, col)?;
