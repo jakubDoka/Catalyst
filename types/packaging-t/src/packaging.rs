@@ -7,7 +7,7 @@ pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
 pub struct Packages {
-    pub modules: SparseMap<Ident, Mod>,
+    pub modules: Map<Mod>,
     pub conns: CacheBumpMap<DepList, Dep>,
     pub module_order: Vec<Ident>,
 }
@@ -18,7 +18,7 @@ impl Packages {
     }
 
     pub fn span_str(&self, file: Ident, span: Span) -> &str {
-        self.modules[file].span_str(span)
+        self.modules.get(file).unwrap().span_str(span)
     }
 }
 

@@ -24,7 +24,7 @@ impl ProjectedCycleDetector {
     /// Panics if called twice without clear. Also when there are duplicates.
     pub fn load_nodes(
         &mut self,
-        nodes: impl DoubleEndedIterator<Item = u32> + ExactSizeIterator<Item = u32>,
+        nodes: impl Iterator<Item = u32>,
     ) {
         assert!(
             self.nodes.is_empty(),
@@ -40,9 +40,9 @@ impl ProjectedCycleDetector {
                     );
                     self.mapping.insert((n, true), i as u32);
                     n
-                })
-                .rev(),
+                }),
         );
+        self.nodes.reverse();
     }
 
     /// Creates [`ProjectedCycleDetectorNode`] instance that will

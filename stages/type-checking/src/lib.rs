@@ -56,7 +56,7 @@ mod utils {
                 (span, file) => "the identifier is ambiguous",
                 (none) => "hint: specify the module from which it is imported ({})" {
                     {
-                        let deps = packages.modules[file].deps;
+                        let deps = packages.modules.get(file).unwrap().deps;
                         packages.conns[deps]
                             .iter()
                             .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
