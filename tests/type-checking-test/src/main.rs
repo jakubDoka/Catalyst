@@ -243,8 +243,8 @@ fn main() {
             struct A;
 
             impl A {
-                fn foo(a: A) {}
-                fn goo(a: int) {}
+                fn foo(a: A) {};
+                fn goo(a: int) {};
                 fn [P] soo(p: P) {}
             };
 
@@ -260,9 +260,9 @@ fn main() {
             };
 
             impl Something[uint] for A {
-                use soo::[uint] as foo
+                use soo[uint] as foo
             };
-            
+
             bound Glue {
                 type Substance
             };
@@ -284,6 +284,6 @@ fn main() {
         //     }
         //     file "package.ctlm" {}
         // }
-        
+
     }
 }

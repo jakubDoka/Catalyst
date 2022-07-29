@@ -19,6 +19,8 @@ impl Parser<'_> {
         branch! { self => {
             Fn => self.r#fn()?,
             Struct => self.r#struct()?,
+            Bound => self.bound()?,
+            Impl => self.r#impl()?,
         }};
         Ok(())
     }

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, hash::{BuildHasher, Hasher}};
+use std::{
+    collections::HashMap,
+    hash::{BuildHasher, Hasher},
+};
 
 use crate::*;
 
@@ -110,7 +113,7 @@ impl Hasher for MapHasher {
 
     fn write(&mut self, bytes: &[u8]) {
         debug_assert!(bytes.len() == 4);
-        // SAFETY: MapHasher is only used whit complementary 
+        // SAFETY: MapHasher is only used whit complementary
         // keys with correct width.
         self.0 = unsafe { *(bytes.as_ptr() as *const u32) }
     }

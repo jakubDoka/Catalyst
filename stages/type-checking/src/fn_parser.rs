@@ -102,6 +102,16 @@ impl FnParser<'_> {
             | AstKind::Import
             | AstKind::Operator
             | AstKind::OperatorWithModule
+            | AstKind::ImplBody
+            | AstKind::BoundBody
+            | AstKind::Bound { .. }
+            | AstKind::BoundType { .. }
+            | AstKind::BoundImpl { .. }
+            | AstKind::Impl { .. }
+            | AstKind::ImplType
+            | AstKind::FnSignature { .. }
+            | AstKind::ImplUse
+            | AstKind::FieldTy
             | AstKind::None => unreachable!(),
         };
 

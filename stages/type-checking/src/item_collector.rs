@@ -12,7 +12,10 @@ impl ItemCollector<'_> {
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
                 AstKind::Struct { vis } => self.collect_struct(item, vis),
-                AstKind::Fn { .. } => continue,
+                AstKind::Fn { .. }
+                | AstKind::Impl { .. }
+                | AstKind::BoundImpl { .. }
+                | AstKind::Bound { .. } => continue,
                 kind => unimplemented!("{:?}", kind),
             };
 
@@ -25,7 +28,10 @@ impl ItemCollector<'_> {
 
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
-                AstKind::Struct { .. } => continue,
+                AstKind::Struct { .. }
+                | AstKind::Impl { .. }
+                | AstKind::BoundImpl { .. }
+                | AstKind::Bound { .. } => continue,
                 AstKind::Fn { vis } => self.collect_fn(item, vis),
                 kind => unimplemented!("{:?}", kind),
             };

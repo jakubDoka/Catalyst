@@ -34,6 +34,24 @@ pub enum AstKind {
     Return,
     Binary,
 
+    Bound {
+        vis: Vis,
+    },
+    BoundType {
+        vis: Vis,
+    },
+    BoundImpl {
+        vis: Vis,
+    },
+    BoundBody,
+
+    Impl {
+        vis: Vis,
+    },
+    ImplBody,
+    ImplType,
+    ImplUse,
+
     Struct {
         vis: Vis,
     },
@@ -45,6 +63,9 @@ pub enum AstKind {
     },
 
     Fn {
+        vis: Vis,
+    },
+    FnSignature {
         vis: Vis,
     },
     FnArg {
@@ -59,6 +80,7 @@ pub enum AstKind {
     PtrTy {
         mutable: bool,
     },
+    FieldTy,
 
     ManifestSection,
     ManifestImports,

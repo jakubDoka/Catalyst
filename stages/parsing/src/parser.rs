@@ -1,3 +1,4 @@
+mod bound;
 mod expr;
 mod r#fn;
 mod imports;
@@ -5,7 +6,6 @@ mod items;
 mod manifest;
 mod r#struct;
 mod ty;
-mod bound;
 
 use std::vec;
 
@@ -154,6 +154,7 @@ impl<'a> Parser<'a> {
 
         loop {
             if self.at(right()) {
+                self.advance();
                 break;
             }
 
@@ -167,6 +168,7 @@ impl<'a> Parser<'a> {
 
             if non_empty(right()) {
                 if self.at(right()) {
+                    self.advance();
                     break;
                 }
 
@@ -191,8 +193,6 @@ impl<'a> Parser<'a> {
 
             self.skip_newlines();
         }
-
-        self.advance();
 
         Ok(())
     }
@@ -387,6 +387,15 @@ impl<'a> Parser<'a> {
 
     fn current_token_str(&self) -> &str {
         self.lexer.display(self.state.current.span)
+    }
+
+    fn expect_ctx_keyword(&mut self, arg: &str) -> errors::Result {
+        if self.ctx_keyword(arg) {
+            Ok(())
+        } else {
+            self.expect_str_error(&[arg]);
+            Err(())
+        }
     }
 }
 

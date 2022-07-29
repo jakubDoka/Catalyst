@@ -2,6 +2,23 @@ use super::*;
 
 impl Parser<'_> {
     pub fn r#fn(&mut self) -> errors::Result {
+        let vis = self.signature_unfinished()?;
+
+        if self.at(TokenKind::Extern) {
+            self.advance();
+            self.ast_data.cache(AstEnt::none());
+        } else {
+            self.start();
+            list!(self, LeftCurly, NewLine, RightCurly, expr)?;
+            self.finish(AstKind::FnBody);
+        }
+
+        self.finish(AstKind::Fn { vis });
+
+        Ok(())
+    }
+
+    fn signature_unfinished(&mut self) -> errors::Result<Vis> {
         self.start();
         self.advance();
         let vis = self.visibility();
@@ -15,18 +32,12 @@ impl Parser<'_> {
         } else {
             self.ast_data.cache(AstEnt::none());
         }
+        Ok(vis)
+    }
 
-        if self.at(TokenKind::Extern) {
-            self.advance();
-            self.ast_data.cache(AstEnt::none());
-        } else {
-            self.start();
-            list!(self, LeftCurly, NewLine, RightCurly, expr)?;
-            self.finish(AstKind::FnBody);
-        }
-
-        self.finish(AstKind::Fn { vis });
-
+    pub fn signature(&mut self) -> errors::Result {
+        let vis = self.signature_unfinished()?;
+        self.finish(AstKind::FnSignature { vis });
         Ok(())
     }
 

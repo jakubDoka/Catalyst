@@ -140,12 +140,13 @@ macro_rules! gen_kind {
 gen_kind!(
     keywords {
         Fn = "fn",
+        Type = "type",
         Return = "return",
         Use = "use",
         Extern = "extern",
         If = "if",
         Else = "else",
-        Loop = "loop",
+        For = "for",
         Break = "break",
         Continue = "continue",
         Let = "let",

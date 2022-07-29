@@ -16,7 +16,7 @@ macro_rules! gen_test {
             )*
         });
     };
-    
+
     (__inner__ $name:ident simple $($structure:tt)*) => {
         quick_file_system!(
             ($name)
