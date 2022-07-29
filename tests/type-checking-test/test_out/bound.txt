@@ -1,4 +1,0 @@
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:374
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ; bound Glue { type Substance } ; impl [T : Glue [Substance : bool ;]] Something [T] for A { fn foo(a : T) {} }
-|                                                                                                                                                                                                                                                                                                                                                                                        ^ expected ',' but got '\n' | ';'
-
