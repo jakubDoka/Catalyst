@@ -162,6 +162,7 @@ mod shadow_map;
 mod sparse_map;
 mod v_ptr;
 mod v_ptr_set;
+mod map;
 
 pub use bump_map::{BumpMap, CacheBumpMap};
 pub use clear::Clear;
@@ -175,3 +176,4 @@ pub use shadow_map::ShadowMap;
 pub use sparse_map::SparseMap;
 pub use v_ptr::VPtr;
 pub use v_ptr_set::VPtrSet;
+pub use map::Map;
