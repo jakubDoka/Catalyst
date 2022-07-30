@@ -29,13 +29,6 @@ impl Parser<'_> {
         self.generics(false)?;
         self.ident()?;
 
-        if self.at(TokenKind::Colon) {
-            self.advance();
-            self.ty()?;
-        } else {
-            self.ast_data.cache(AstEnt::none());
-        }
-
         self.finish(AstKind::BoundType { vis });
 
         Ok(())

@@ -56,6 +56,14 @@ pub struct ModItem {
 }
 
 impl ModItem {
+    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span) -> Self {
+        Self {
+            id,
+            ptr: ScopePtr::new(ptr),
+            span,
+        }
+    }
+
     pub fn to_scope_item(&self, module: Ident) -> ScopeItem {
         ScopeItem {
             id: self.id,

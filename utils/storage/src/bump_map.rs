@@ -401,6 +401,13 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         key
     }
 
+    pub fn reserve_len(&self, reserved: &Reserved<K>) -> usize
+    where
+        K: VPtr,
+    {
+        self[reserved.id].len() - (reserved.end - reserved.start)
+    }
+
     /// Finalizes the reserved slice and return valid [`VPtr`] to it.
     ///
     /// # Panics
@@ -444,7 +451,9 @@ impl<K, T: Clone, C> Clone for BumpMap<K, T, C> {
 
 impl<K, T, C, CACHE> Drop for BumpMap<K, T, C, CACHE> {
     fn drop(&mut self) {
-        assert_eq!(self.reserves_in_progress, 0);
+        if !std::thread::panicking() {
+            assert_eq!(self.reserves_in_progress, 0);
+        }
     }
 }
 

@@ -1,6 +1,10 @@
+use std::ops::Not;
+
 use crate::*;
 use diags::*;
+use packaging_t::span_str;
 use parsing_t::*;
+use scope::ScopeItem;
 use storage::*;
 use type_checking_t::*;
 
@@ -66,5 +70,56 @@ impl TyParser<'_> {
         }
 
         Ok(ty_factory!(self).instance(base, &params))
+    }
+
+    pub fn sig(&mut self, cc: AstEnt, args: &[AstEnt], ret: AstEnt) -> errors::Result<Sig> {
+        let cc = cc
+            .kind
+            .is_none()
+            .not()
+            .then(|| self.interner.intern_str(span_str!(self, cc.span.shrink(1))))
+            .into();
+        let args = self.args(args)?;
+        let ret = if ret.kind.is_none() {
+            Maybe::none()
+        } else {
+            ty_parser!(self, self.current_file).parse(ret)?.into()
+        };
+        Ok(Sig { cc, args, ret })
+    }
+
+    pub fn args(&mut self, args: &[AstEnt]) -> errors::Result<Maybe<TyList>> {
+        let mut reserved = self.types.slices.reserve(args.len());
+        for &ast_arg in args {
+            let [.., ty] = self.ast_data[ast_arg.children] else {
+                unreachable!("{:?}", &self.ast_data[ast_arg.children]);
+            };
+            let ty = ty_parser!(self, self.current_file).parse(ty)?;
+            self.types.slices.push_to_reserved(&mut reserved, ty);
+        }
+        Ok(self.types.slices.finish_reserved(reserved))
+    }
+
+    pub fn generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
+        let mut params = Vec::with_capacity(self.ast_data[generics.children].len());
+        for &ast_param in &self.ast_data[generics.children] {
+            let (&name, bounds) = self.ast_data[ast_param.children].split_first().unwrap();
+            let name = self.interner.intern_str(span_str!(self, name.span));
+
+            let bound = ty_parser!(self, self.current_file).parse_bound_sum(bounds)?;
+            let param = ty_factory!(self).param_of(bound);
+            let item = ScopeItem::new(name, param, ast_param.span, self.current_file);
+            self.scope.push(item);
+
+            // handle duplicate, all params need to be unique
+            let param = params
+                .iter()
+                .rev()
+                .find_map(|&p| (p == param).then(|| ty_factory!(self).next_param_of(param)))
+                .unwrap_or(param);
+
+            params.push(param);
+        }
+        Ok(self.types.slices.bump_slice(&params))
     }
 }

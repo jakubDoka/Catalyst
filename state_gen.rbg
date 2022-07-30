@@ -82,7 +82,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Types
         mut Funcs
         mut Workspace
-        mut ItemContext
         mut Visibility
         mut Packages
 

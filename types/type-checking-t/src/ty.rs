@@ -104,11 +104,11 @@ impl Default for TyKind {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct BoundFuncEnt {
     pub sig: Sig,
     pub params: Maybe<TyList>,
-    pub span: Span,
+    pub span: Maybe<Span>,
 }
 
 bitflags! {

@@ -179,7 +179,7 @@ mod v_ptr;
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod v_ptr_set;
 
-pub use bump_map::{BumpMap, CacheBumpMap};
+pub use bump_map::{BumpMap, CacheBumpMap, Reserved};
 pub use clear::Clear;
 pub use frames::Frames;
 pub use interner::{Ident, InternedSegment, Interner};

@@ -13,12 +13,19 @@ macro_rules! insert_scope_item {
             $res.to_scope_item($self.current_file),
             $self.interner,
         ) {
-            $self.workspace.push(diags::diag! {
-                ($res.span, $self.current_file) error => "duplicate definition",
-                (span, $self.current_file) => "previous definition",
-            })
+            $crate::duplicate_definition!($self, $res.span, span);
         }
         $self.packages.modules[$self.current_file].add_item($res);
+    };
+}
+
+#[macro_export]
+macro_rules! duplicate_definition {
+    ($self:expr, $a:expr, $b:expr) => {
+        $self.workspace.push(diags::diag! {
+            ($a, $self.current_file) error => "duplicate definition",
+            ($b, $self.current_file) => "previous definition",
+        })
     };
 }
 
