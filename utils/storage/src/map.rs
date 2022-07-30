@@ -5,6 +5,9 @@ use std::{
 
 use crate::*;
 
+/// Struct encapsulates a HashMap that is focused on storing values by [`Ident`].
+/// Special hasher, that just copies the [`Ident`].index() as hash, is used. Api 
+/// is also a bit modified to make it nicer to work with.
 #[derive(Debug, Clone)]
 pub struct Map<T> {
     inner: HashMap<Ident, T, HasherFactory>,
@@ -61,18 +64,18 @@ impl<T> Map<T> {
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (&Ident, &T)> {
-        self.inner.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (Ident, &T)> {
+        self.inner.iter().map(|(k, v)| (*k, v))
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&Ident, &mut T)> {
-        self.inner.iter_mut()
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Ident, &mut T)> {
+        self.inner.iter_mut().map(|(k, v)| (*k, v))
     }
 
     #[inline]
-    pub fn keys(&self) -> impl Iterator<Item = &Ident> {
-        self.inner.keys()
+    pub fn keys(&self) -> impl Iterator<Item = Ident> + '_ {
+        self.inner.keys().copied()
     }
 
     #[inline]

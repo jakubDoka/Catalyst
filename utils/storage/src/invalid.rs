@@ -1,23 +1,37 @@
 use serde::{Deserialize, Serialize};
 
+/// Introduces the concept of invalid value for the implementor type.
 pub trait Invalid: Sized {
+    /// invalid value constructor, it is unsafe 
+    /// to prevent accidental misuse.
     unsafe fn invalid() -> Self;
 
+    /// checks if the value is invalid. This should be 
+    /// cheaper then 1:1 comparison if possible.
     fn is_invalid(&self) -> bool;
 }
 
+/// Maybe is very similar to [`Option`] but it keeps `sizeof Maybe<T> == sizeof T`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Maybe<T>(T);
 
 impl<T: Invalid> Maybe<T> {
+    /// Creates a new `Maybe` containing valid value.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the value is invalid.
     pub fn some(value: T) -> Self {
+        assert!(!value.is_invalid());
         Maybe(value)
     }
 
+    /// Creates a new `Maybe` containing invalid value.
     pub fn none() -> Self {
         Maybe(unsafe { T::invalid() })
     }
 
+    /// Grants optional mutable access.
     pub fn as_mut_option(&mut self) -> Option<&mut T> {
         if self.0.is_invalid() {
             None
@@ -26,22 +40,21 @@ impl<T: Invalid> Maybe<T> {
         }
     }
 
+    /// Grants optional immutable access.
     pub fn as_ref_option(&self) -> Option<&T> {
         if self.0.is_invalid() {
-            None
+            None.take()
         } else {
             Some(&self.0)
         }
     }
 
+    /// Takes the value out of the maybe, leaving an invalid value in its place.
     pub fn take(&mut self) -> Self {
-        if self.0.is_invalid() {
-            Self::none()
-        } else {
-            std::mem::replace(self, Self::none())
-        }
+        std::mem::replace(self, Self::none())
     }
 
+    /// Transforms [`Maybe`] into [`Option`].
     pub fn expand(self) -> Option<T> {
         if self.0.is_invalid() {
             None
@@ -50,14 +63,17 @@ impl<T: Invalid> Maybe<T> {
         }
     }
 
+    /// Returns true if value is valid.
     pub fn is_some(&self) -> bool {
         !self.0.is_invalid()
     }
 
+    /// Returns true if value is invalid.
     pub fn is_none(&self) -> bool {
         self.0.is_invalid()
     }
 
+    /// Returns the contained value of panics.
     pub fn unwrap(self) -> T {
         assert!(self.is_some());
         self.0

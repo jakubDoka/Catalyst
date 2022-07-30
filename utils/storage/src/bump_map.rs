@@ -67,14 +67,47 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.frames.push(value);
     }
 
-    pub fn frame_count(&self) -> usize {
+    /// Returns amount of frames in cache.
+    pub fn chace_frame_count(&self) -> usize {
         self.frames.len()
     }
 
+    /// Returns top frame in cache.
+    ///
+    /// # Examples
+    /// ```
+    /// let mut map = storage::CacheBumpMap::<DummyList, usize>::new();
+    /// map.start_cache();
+    /// map.cache(0);
+    /// map.cache(1);
+    /// map.cache(2);
+    /// 
+    /// assert_eq!(map.top_frame(), &[0, 1, 2]);
+    /// 
+    /// storage::gen_v_ptr!(DummyList);
+    /// ```
     pub fn cached(&self) -> &[T] {
         self.frames.top()
     }
 
+    /// Joins first two cache frames.
+    /// 
+    /// # Examples
+    /// ```
+    /// let mut map = storage::CacheBumpMap::<DummyList, usize>::new();
+    /// map.start_cache();
+    /// map.cache(0);
+    /// map.cache(1);
+    /// map.cache(2);
+    /// map.start_cache();
+    /// map.cache(3);
+    /// map.cache(4);
+    /// map.join_cache_frames();
+    /// 
+    /// assert_eq!(map.cached(), &[0, 1, 2, 3, 4]);
+    /// 
+    /// storage::gen_v_ptr!(DummyList);
+    /// ```
     pub fn join_cache_frames(&mut self) {
         self.frames.join_frames();
     }
@@ -123,8 +156,24 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.frames.mark();
     }
 
-    pub fn start_cache_with(&mut self, amount: usize) -> &T {
-        self.frames.mark_with(amount)
+    /// Splits current frame into two frames where top frame has `top_frame_length`. 
+    /// # Examples
+    /// ```
+    /// let mut map = storage::CacheBumpMap::<DummyList, usize>::new();
+    /// map.start_cache();
+    /// map.cache(0);
+    /// map.cache(1);
+    /// map.cache(2);
+    /// map.cache(3);
+    /// 
+    /// map.split_cache_at(2);
+    /// 
+    /// assert_eq!(map.cached(), &[2, 3]);
+    /// 
+    /// storage::gen_v_ptr!(DummyList);
+    /// ```
+    pub fn split_cache_at(&mut self, top_frame_length: usize) -> &T {
+        self.frames.split_at(top_frame_length)
     }
 
     /// Performs bulk push of `values`.
@@ -166,6 +215,7 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.close_frame()
     }
 
+    /// Clones and strips frames from the bump map.
     pub fn without_frames(&self) -> BumpMap<K, T, C, ()>
     where
         T: Clone,
@@ -294,6 +344,7 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         self.close_frame()
     }
 
+    /// Shorthand for pushing one element and immediately bumping it.
     pub fn bump_push(&mut self, value: T) -> (C, Maybe<K>)
     where
         K: VPtr,
@@ -301,6 +352,7 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         (self.push(value), self.bump_pushed())
     }
 
+    /// Uses binary search to determinate in which frame the given `key` is located.
     pub fn slice_of(&self, concrete: C) -> K
     where
         K: VPtr,
@@ -314,6 +366,7 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         K::new(result)
     }
 
+    /// Reserves a slice of uninitialized memory that is supposed to be filled later.
     pub fn reserve(&mut self, size: usize) -> Reserved<K>
     where
         T: Clone,
@@ -331,6 +384,11 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         }
     }
 
+    /// Pushes one element to reserved slice.
+    ///
+    /// # Panics
+    /// 
+    /// Panics if `reserved` is already filled.
     pub fn push_to_reserved(&mut self, reserved: &mut Reserved<K>, value: T) -> C
     where
         T: Clone,
@@ -343,6 +401,11 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         key
     }
 
+    /// Finalizes the reserved slice and return valid [`VPtr`] to it.
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if `reserved` is not filled.
     pub fn finish_reserved(&mut self, reserved: Reserved<K>) -> Maybe<K>
     where
         K: VPtr,
@@ -352,6 +415,7 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         reserved.id
     }
 
+    /// Other way of finalizing a reserved slice if filling all itr remaining elements with [`Clone`] value.
     pub fn fill_reserved(&mut self, mut reserved: Reserved<K>, value: T) -> Maybe<K>
     where
         T: Clone,

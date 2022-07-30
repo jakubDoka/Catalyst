@@ -68,7 +68,6 @@ impl ItemCollector<'_> {
             sig,
         };
         let def = self.fns.defs.push(ent);
-
         let ent = FnEnt {
             params,
             flags: FnFlags::GENERIC & params.is_some(),

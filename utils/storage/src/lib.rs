@@ -150,18 +150,33 @@ macro_rules! bitflags {
 pub extern crate bitflags;
 pub extern crate serde;
 
+/// Bump allocator for fixed size slices.
 mod bump_map;
+/// Trait representing reusable object.
 mod clear;
+/// Homogenous stack with frame markers.
 mod frames;
+/// String to uid mapping.
 mod interner;
+/// Trait representing invalid value and wrapper [`Maybe`] struct for 
+/// representing optional values without memory costs.
 mod invalid;
+/// HashMap wrapper to work with [`Ident`].
 mod map;
+/// Map with addressable values. (by [`VPtr`])
 mod ordered_map;
+/// Bump map with ability to reallocate slices.
 mod pool_bump_map;
+/// Vector abstraction that allows reusing allocations while preserving other values.
 mod pool_map;
+/// Storage that can map additional info for existing map.
 mod shadow_map;
+/// Similar to shadow map, but lot more memory efficient when storing big structures
+/// that are sparsely populated.
 mod sparse_map;
+/// Trait representing virtual pointer.
 mod v_ptr;
+/// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod v_ptr_set;
 
 pub use bump_map::{BumpMap, CacheBumpMap};

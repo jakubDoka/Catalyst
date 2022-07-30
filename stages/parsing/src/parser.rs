@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
     fn start_with(&mut self, amount: usize) {
         self.state
             .start
-            .push(self.ast_data.start_cache_with(amount).span);
+            .push(self.ast_data.split_cache_at(amount).span);
     }
 
     fn join_frames(&mut self) {
@@ -142,7 +142,7 @@ impl<'a> Parser<'a> {
             (None, None)
         ));
 
-        let frame_count = self.ast_data.frame_count();
+        let frame_count = self.ast_data.chace_frame_count();
 
         if non_empty(left.clone()) {
             self.expect(left)?;
@@ -220,7 +220,7 @@ impl<'a> Parser<'a> {
         terminals: impl IntoIterator<Item = TokenKind> + Clone,
         frame_count: usize,
     ) -> errors::Result<TokenKind> {
-        while frame_count < self.ast_data.frame_count() {
+        while frame_count < self.ast_data.chace_frame_count() {
             drop(self.ast_data.discard_cache());
         }
 
