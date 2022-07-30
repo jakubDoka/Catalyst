@@ -81,9 +81,9 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     /// map.cache(0);
     /// map.cache(1);
     /// map.cache(2);
-    /// 
+    ///
     /// assert_eq!(map.top_frame(), &[0, 1, 2]);
-    /// 
+    ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn cached(&self) -> &[T] {
@@ -91,7 +91,7 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     }
 
     /// Joins first two cache frames.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let mut map = storage::CacheBumpMap::<DummyList, usize>::new();
@@ -103,9 +103,9 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     /// map.cache(3);
     /// map.cache(4);
     /// map.join_cache_frames();
-    /// 
+    ///
     /// assert_eq!(map.cached(), &[0, 1, 2, 3, 4]);
-    /// 
+    ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn join_cache_frames(&mut self) {
@@ -156,7 +156,7 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
         self.frames.mark();
     }
 
-    /// Splits current frame into two frames where top frame has `top_frame_length`. 
+    /// Splits current frame into two frames where top frame has `top_frame_length`.
     /// # Examples
     /// ```
     /// let mut map = storage::CacheBumpMap::<DummyList, usize>::new();
@@ -165,11 +165,11 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     /// map.cache(1);
     /// map.cache(2);
     /// map.cache(3);
-    /// 
+    ///
     /// map.split_cache_at(2);
-    /// 
+    ///
     /// assert_eq!(map.cached(), &[2, 3]);
-    /// 
+    ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn split_cache_at(&mut self, top_frame_length: usize) -> &T {
@@ -387,7 +387,7 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     /// Pushes one element to reserved slice.
     ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `reserved` is already filled.
     pub fn push_to_reserved(&mut self, reserved: &mut Reserved<K>, value: T) -> C
     where
@@ -402,9 +402,9 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     }
 
     /// Finalizes the reserved slice and return valid [`VPtr`] to it.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `reserved` is not filled.
     pub fn finish_reserved(&mut self, reserved: Reserved<K>) -> Maybe<K>
     where

@@ -22,11 +22,11 @@ struct TestState {
     package_graph: PackageGraph,
     scope: Scope,
     types: Types,
-    fns: Fns,
+    funcs: Funcs,
     item_context: ItemContext,
     visibility: Visibility,
     ast_data: AstData,
-    fn_parser_ctx: FnParserCtx,
+    func_parser_ctx: FuncParserCtx,
 }
 
 impl TestState {
@@ -85,7 +85,7 @@ impl TestState {
 
                 drop(item_collector!(self, module).collect(ast));
                 drop(ty_builder!(self, module).types(&mut self.item_context.types));
-                drop(fn_parser!(self, module).fns(&mut self.item_context.fns));
+                drop(func_parser!(self, module).funcs(&mut self.item_context.funcs));
                 if done {
                     break;
                 }
@@ -95,7 +95,7 @@ impl TestState {
         }
 
         let iter = self
-            .fns
+            .funcs
             .defs
             .values()
             .filter_map(|def| Some((def.source.expand()?, def.span.expand()?, def)));

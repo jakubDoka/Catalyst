@@ -17,7 +17,7 @@ impl Parser<'_> {
 
     pub fn item(&mut self) -> errors::Result {
         branch! { self => {
-            Fn => self.r#fn()?,
+            Func => self.r#fn()?,
             Struct => self.r#struct()?,
             Bound => self.bound()?,
             Impl => self.r#impl()?,

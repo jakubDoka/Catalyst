@@ -16,7 +16,7 @@ impl Parser<'_> {
 
     fn bound_item(&mut self) -> errors::Result {
         branch! { self => {
-            Fn => self.signature()?,
+            Func => self.signature()?,
             Type => self.bound_type()?,
         }};
         Ok(())
@@ -70,7 +70,7 @@ impl Parser<'_> {
 
     fn impl_item(&mut self) -> errors::Result {
         branch! { self => {
-            Fn => self.r#fn()?,
+            Func => self.r#fn()?,
             Type => self.impl_type()?,
             Use => self.impl_use()?,
         }};

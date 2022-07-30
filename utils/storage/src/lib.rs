@@ -158,7 +158,7 @@ mod clear;
 mod frames;
 /// String to uid mapping.
 mod interner;
-/// Trait representing invalid value and wrapper [`Maybe`] struct for 
+/// Trait representing invalid value and wrapper [`Maybe`] struct for
 /// representing optional values without memory costs.
 mod invalid;
 /// HashMap wrapper to work with [`Ident`].

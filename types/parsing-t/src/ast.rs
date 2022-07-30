@@ -62,16 +62,16 @@ pub enum AstKind {
         exported: bool,
     },
 
-    Fn {
+    Func {
         vis: Vis,
     },
-    FnSignature {
+    FuncSignature {
         vis: Vis,
     },
-    FnArg {
+    FuncArg {
         mutable: bool,
     },
-    FnBody,
+    FuncBody,
 
     Generics,
     GenericParam,

@@ -26,7 +26,7 @@ mod state_gen;
 mod ty_builder;
 mod ty_parser;
 
-pub use state_gen::{FnParser, ItemCollector, TyBuilder, TyParser};
+pub use state_gen::{FuncParser, ItemCollector, TyBuilder, TyParser};
 pub use utils::handle_scope_error;
 
 mod utils {

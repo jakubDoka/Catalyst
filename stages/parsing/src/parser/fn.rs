@@ -10,10 +10,10 @@ impl Parser<'_> {
         } else {
             self.start();
             list!(self, LeftCurly, NewLine, RightCurly, expr)?;
-            self.finish(AstKind::FnBody);
+            self.finish(AstKind::FuncBody);
         }
 
-        self.finish(AstKind::Fn { vis });
+        self.finish(AstKind::Func { vis });
 
         Ok(())
     }
@@ -37,7 +37,7 @@ impl Parser<'_> {
 
     pub fn signature(&mut self) -> errors::Result {
         let vis = self.signature_unfinished()?;
-        self.finish(AstKind::FnSignature { vis });
+        self.finish(AstKind::FuncSignature { vis });
         Ok(())
     }
 
@@ -56,7 +56,7 @@ impl Parser<'_> {
         self.expect(TokenKind::Colon)?;
         self.advance();
         self.ty()?;
-        self.finish(AstKind::FnArg { mutable });
+        self.finish(AstKind::FuncArg { mutable });
         Ok(())
     }
 }

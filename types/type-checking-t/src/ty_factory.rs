@@ -55,7 +55,7 @@ impl TyFactory<'_> {
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits,
-                fns: Maybe::none(),
+                funcs: Maybe::none(),
                 param_count: param_count as u32,
             },
             flags: TyFlags::GENERIC,

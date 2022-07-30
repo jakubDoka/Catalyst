@@ -3,18 +3,18 @@ use lexing_t::*;
 use storage::*;
 
 #[derive(Default)]
-pub struct FnParserCtx {
+pub struct FuncParserCtx {
     pub current_fn: Maybe<Def>,
 }
 
 #[derive(Default)]
-pub struct Fns {
-    pub ents: SparseMap<Ident, FnEnt>,
+pub struct Funcs {
+    pub ents: SparseMap<Ident, FuncEnt>,
     pub defs: PoolMap<Def, DefEnt>,
-    pub slices: PoolBumpMap<FnList, Ident>,
+    pub slices: PoolBumpMap<FuncList, Ident>,
 }
 
-impl Fns {
+impl Funcs {
     pub fn new() -> Self {
         Self::default()
     }
@@ -29,14 +29,14 @@ impl Fns {
 }
 
 #[derive(Clone, Copy)]
-pub struct FnEnt {
+pub struct FuncEnt {
     pub params: Maybe<TyList>,
-    pub flags: FnFlags,
+    pub flags: FuncFlags,
     pub def: Def,
 }
 
 bitflags! {
-    struct FnFlags: u8 {
+    struct FuncFlags: u8 {
         GENERIC
     }
 }
@@ -57,4 +57,4 @@ pub struct Sig {
     pub ret: Maybe<Ty>,
 }
 
-gen_v_ptr!(Def FnList);
+gen_v_ptr!(Def FuncList Func);

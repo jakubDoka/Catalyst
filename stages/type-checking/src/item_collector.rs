@@ -12,7 +12,7 @@ impl ItemCollector<'_> {
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
                 AstKind::Struct { vis } => self.collect_struct(item, vis),
-                AstKind::Fn { .. }
+                AstKind::Func { .. }
                 | AstKind::Impl { .. }
                 | AstKind::BoundImpl { .. }
                 | AstKind::Bound { .. } => continue,
@@ -32,7 +32,7 @@ impl ItemCollector<'_> {
                 | AstKind::Impl { .. }
                 | AstKind::BoundImpl { .. }
                 | AstKind::Bound { .. } => continue,
-                AstKind::Fn { vis } => self.collect_fn(item, vis),
+                AstKind::Func { vis } => self.collect_fn(item, vis),
                 kind => unimplemented!("{:?}", kind),
             };
 
@@ -67,14 +67,14 @@ impl ItemCollector<'_> {
             tir_data: TirData::new(),
             sig,
         };
-        let def = self.fns.defs.push(ent);
-        let ent = FnEnt {
+        let def = self.funcs.defs.push(ent);
+        let ent = FuncEnt {
             params,
-            flags: FnFlags::GENERIC & params.is_some(),
+            flags: FuncFlags::GENERIC & params.is_some(),
             def,
         };
-        self.fns.ents.insert(id, ent);
-        self.item_context.fns.push((item, def));
+        self.funcs.ents.insert(id, ent);
+        self.item_context.funcs.push((item, def));
 
         Ok(Some(ModItem {
             id: local_id,

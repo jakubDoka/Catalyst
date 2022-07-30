@@ -6,7 +6,7 @@ use storage::*;
 
 #[derive(Default)]
 pub struct Types {
-    pub ents: OrderedMap<Ident, TyEnt, Ty>,
+    pub ents: OrderedMap<TyEnt, Ty>,
     pub slices: PoolBumpMap<TyList, Ty, Unused>,
     pub comps: CachedPoolBumpMap<TyCompList, TyCompEnt, TyComp>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
@@ -49,7 +49,7 @@ pub enum TyKind {
     },
     Bound {
         inherits: Maybe<TyList>,
-        fns: Maybe<FnList>,
+        funcs: Maybe<FuncList>,
         param_count: u32,
     },
     Struct {
@@ -69,7 +69,7 @@ pub enum TyKind {
         base: Ty,
         depth: u32,
     },
-    FnPtr {
+    FuncPtr {
         sig: Sig,
     },
     Int {
@@ -88,7 +88,7 @@ impl TyKind {
     pub fn default_bound() -> TyKind {
         TyKind::Bound {
             inherits: default(),
-            fns: default(),
+            funcs: default(),
             param_count: 0,
         }
     }

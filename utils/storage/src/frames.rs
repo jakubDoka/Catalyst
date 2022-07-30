@@ -1,6 +1,6 @@
 use crate::Clear;
 
-/// Holds a Vector of `T` that is split into frames and makes it easy 
+/// Holds a Vector of `T` that is split into frames and makes it easy
 /// to modify and view them.
 pub struct Frames<T> {
     data: Vec<T>,
@@ -69,15 +69,16 @@ impl<T> Frames<T> {
         self.indices.pop().unwrap();
     }
 
-    /// Splits the top frame into two such that `top_frame_length` 
+    /// Splits the top frame into two such that `top_frame_length`
     /// matches the `self.top().len()` afterwards.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `top_frame_length` is greater than the length of the current top frame.
     pub fn split_at(&mut self, top_frame_length: usize) -> &T {
         assert!(self.top().len() >= top_frame_length);
-        self.indices.push(self.data.len() as u32 - top_frame_length as u32);
+        self.indices
+            .push(self.data.len() as u32 - top_frame_length as u32);
         self.top().iter().rev().nth(top_frame_length - 1).unwrap()
     }
 }

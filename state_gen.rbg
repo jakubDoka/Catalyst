@@ -46,7 +46,7 @@ file "types/type-checking-t/src/state_gen.rs" {
         Interner
         Types
         Packages
-        Fns
+        Funcs
     }
 }
 
@@ -58,18 +58,18 @@ file "stages/type-checking/src/state_gen.rs" {
     use "parsing_t"
     use "packaging_t"
 
-    struct FnParser {
+    struct FuncParser {
         owned current_file: Ident
         owned TirData = "TirData::default()"
 
         mut Interner
         mut Scope
         mut Types
-        mut Fns
+        mut Funcs
         mut Workspace
         mut Visibility
         mut Packages
-        mut FnParserCtx
+        mut FuncParserCtx
 
         AstData
     }
@@ -80,7 +80,7 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Interner
         mut Scope
         mut Types
-        mut Fns
+        mut Funcs
         mut Workspace
         mut ItemContext
         mut Visibility
@@ -95,7 +95,7 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Interner
         mut Scope
         mut Types
-        mut Fns
+        mut Funcs
         mut Workspace
         mut Visibility
         mut Packages

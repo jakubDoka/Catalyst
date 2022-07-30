@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 
 /// Introduces the concept of invalid value for the implementor type.
 pub trait Invalid: Sized {
-    /// invalid value constructor, it is unsafe 
+    /// invalid value constructor, it is unsafe
     /// to prevent accidental misuse.
     unsafe fn invalid() -> Self;
 
-    /// checks if the value is invalid. This should be 
+    /// checks if the value is invalid. This should be
     /// cheaper then 1:1 comparison if possible.
     fn is_invalid(&self) -> bool;
 }
@@ -17,9 +17,9 @@ pub struct Maybe<T>(T);
 
 impl<T: Invalid> Maybe<T> {
     /// Creates a new `Maybe` containing valid value.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the value is invalid.
     pub fn some(value: T) -> Self {
         assert!(!value.is_invalid());

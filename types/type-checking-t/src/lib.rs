@@ -37,13 +37,13 @@ macro_rules! ident_chain_id {
 }
 
 mod builtin_builder;
-mod fns;
+mod funcs;
 mod state_gen;
 mod tir;
 mod ty;
 mod ty_factory;
 
-pub use fns::{Def, DefEnt, FnEnt, FnFlags, FnList, FnParserCtx, Fns, Sig};
+pub use funcs::{Def, DefEnt, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Funcs, Sig};
 pub use items::{ident_chain_id, ItemContext};
 pub use state_gen::{BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
@@ -58,7 +58,7 @@ mod items {
     #[derive(Default)]
     pub struct ItemContext {
         pub attrs: Vec<AstEnt>,
-        pub fns: Vec<(AstEnt, Def)>,
+        pub funcs: Vec<(AstEnt, Def)>,
         pub types: Vec<(AstEnt, Ty)>,
         pub bounds: Vec<(AstEnt, Ty)>,
     }

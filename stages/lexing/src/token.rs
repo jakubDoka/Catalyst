@@ -139,7 +139,7 @@ macro_rules! gen_kind {
 
 gen_kind!(
     keywords {
-        Fn = "fn",
+        Func = "fn",
         Type = "type",
         Return = "return",
         Use = "use",

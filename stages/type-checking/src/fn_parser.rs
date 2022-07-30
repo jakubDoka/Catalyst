@@ -9,20 +9,20 @@ use crate::*;
 
 type Expected = Option<Ty>;
 
-impl FnParser<'_> {
-    pub fn fns(&mut self, fns: &mut Vec<(AstEnt, Def)>) -> errors::Result {
-        for (ast, def) in fns.drain(..) {
+impl FuncParser<'_> {
+    pub fn funcs(&mut self, funcs: &mut Vec<(AstEnt, Def)>) -> errors::Result {
+        for (ast, def) in funcs.drain(..) {
             let [_cc, generics, _name, ref args @  .., _ret, body] = self.ast_data[ast.children] else {
                 unreachable!();
             };
 
             self.tir_data.clear();
-            self.fn_parser_ctx.current_fn = def.into();
-            let Ok(body) = self.r#fn(body, generics, args, self.fns.defs[def].sig.ret.expand()) else {
+            self.func_parser_ctx.current_fn = def.into();
+            let Ok(body) = self.r#fn(body, generics, args, self.funcs.defs[def].sig.ret.expand()) else {
                 continue;
             };
-            self.fns.defs[def].tir_data = self.tir_data.clone();
-            self.fns.defs[def].body = body.into();
+            self.funcs.defs[def].tir_data = self.tir_data.clone();
+            self.funcs.defs[def].body = body.into();
         }
 
         Ok(())
@@ -87,9 +87,9 @@ impl FnParser<'_> {
             AstKind::Struct { .. }
             | AstKind::StructBody
             | AstKind::StructField { .. }
-            | AstKind::Fn { .. }
-            | AstKind::FnArg { .. }
-            | AstKind::FnBody
+            | AstKind::Func { .. }
+            | AstKind::FuncArg { .. }
+            | AstKind::FuncBody
             | AstKind::Generics
             | AstKind::GenericParam
             | AstKind::TyInstance
@@ -109,7 +109,7 @@ impl FnParser<'_> {
             | AstKind::BoundImpl { .. }
             | AstKind::Impl { .. }
             | AstKind::ImplType
-            | AstKind::FnSignature { .. }
+            | AstKind::FuncSignature { .. }
             | AstKind::ImplUse
             | AstKind::FieldTy
             | AstKind::None => unreachable!(),
@@ -136,7 +136,7 @@ impl FnParser<'_> {
                 "binary operator not found"
             ))?;
 
-        let sig = self.fns.defs[def].sig;
+        let sig = self.funcs.defs[def].sig;
         let [left_ty, right_ty] = self.types.slices[sig.args] else {
             unreachable!();
         };
@@ -208,7 +208,7 @@ impl FnParser<'_> {
         let expr = if r#return.kind.is_none() {
             TirEnt::new(TirKind::Unreachable)
         } else {
-            let expected = self.fns.defs[self.fn_parser_ctx.current_fn.unwrap()]
+            let expected = self.funcs.defs[self.func_parser_ctx.current_fn.unwrap()]
                 .sig
                 .ret;
             self.expr(r#return, expected.expand())?
@@ -262,7 +262,7 @@ impl FnParser<'_> {
     }
 
     fn push_args(&mut self, args: &[AstEnt]) {
-        let types = self.fns.args_of(self.fn_parser_ctx.current_fn.unwrap());
+        let types = self.funcs.args_of(self.func_parser_ctx.current_fn.unwrap());
         let mut reserved = self.tir_data.reserve(args.len());
         for (i, (arg, &ty)) in args.iter().zip(self.types.slices[types].iter()).enumerate() {
             let [name, ..] = self.ast_data[arg.children] else {
@@ -282,8 +282,8 @@ impl FnParser<'_> {
 
     fn push_generics(&mut self, generics: AstEnt) {
         let params = self
-            .fns
-            .params_of_def(self.fn_parser_ctx.current_fn.unwrap());
+            .funcs
+            .params_of_def(self.func_parser_ctx.current_fn.unwrap());
         for (&ast_param, &param) in self.ast_data[generics.children]
             .iter()
             .zip(self.types.slices[params].iter())

@@ -6,7 +6,7 @@ use std::{
 use crate::*;
 
 /// Struct encapsulates a HashMap that is focused on storing values by [`Ident`].
-/// Special hasher, that just copies the [`Ident`].index() as hash, is used. Api 
+/// Special hasher, that just copies the [`Ident`].index() as hash, is used. Api
 /// is also a bit modified to make it nicer to work with.
 #[derive(Debug, Clone)]
 pub struct Map<T> {
