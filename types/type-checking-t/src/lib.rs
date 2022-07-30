@@ -47,7 +47,10 @@ pub use funcs::{Def, DefEnt, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Funcs,
 pub use items::{ident_chain_id, ItemContext};
 pub use state_gen::{BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
-pub use ty::{BuiltinTypes, Field, FieldEnt, FieldList, Ty, TyEnt, TyFlags, TyKind, TyList, Types};
+pub use ty::{
+    BoundFunc, BoundFuncEnt, BoundFuncList, BuiltinTypes, EnumVariant, EnumVariantEnt,
+    EnumVariantList, Field, FieldEnt, FieldList, Ty, TyEnt, TyFlags, TyKind, TyList, Types,
+};
 
 mod items {
     use crate::*;

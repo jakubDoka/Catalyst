@@ -95,6 +95,7 @@ impl ItemCollector<'_> {
         let ent = TyEnt {
             kind: TyKind::Inferrable,
             flags: TyFlags::GENERIC & generics.children.is_some(),
+            param_count: self.ast_data[generics.children].len() as u8,
             file: self.current_file.into(),
             span: ident.span.into(),
         };

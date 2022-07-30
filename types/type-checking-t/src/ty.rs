@@ -8,8 +8,9 @@ use storage::*;
 pub struct Types {
     pub ents: OrderedMap<TyEnt, Ty>,
     pub slices: PoolBumpMap<TyList, Ty, Unused>,
-    pub comps: CachedPoolBumpMap<TyCompList, TyCompEnt, TyComp>,
+    pub variants: CachedPoolBumpMap<EnumVariantList, EnumVariantEnt, EnumVariant>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
+    pub funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
 }
 
 gen_v_ptr!(Unused);
@@ -23,13 +24,7 @@ impl Types {
     }
 
     pub fn param_count(&self, ty: Ty) -> usize {
-        match self.ents[ty].kind {
-            TyKind::Instance { base, .. } => self.param_count(base),
-            TyKind::Struct { param_count, .. } | TyKind::Enum { param_count, .. } => {
-                param_count as usize
-            }
-            _ => 0,
-        }
+        self.ents[ty].param_count as usize
     }
 }
 
@@ -37,6 +32,7 @@ impl Types {
 pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
+    pub param_count: u8,
     pub file: Maybe<Ident>,
     pub span: Maybe<Span>,
 }
@@ -47,19 +43,20 @@ pub enum TyKind {
         index: u32,
         bound: Ty,
     },
+    AssocType {
+        index: u32,
+    },
     Bound {
         inherits: Maybe<TyList>,
-        funcs: Maybe<FuncList>,
-        param_count: u32,
+        assoc_types: Maybe<TyList>,
+        funcs: Maybe<BoundFuncList>,
     },
     Struct {
         fields: Maybe<FieldList>,
-        param_count: u32,
     },
     Enum {
         tag: Ty,
-        variants: Maybe<TyCompList>,
-        param_count: u32,
+        variants: Maybe<EnumVariantList>,
     },
     Instance {
         base: Ty,
@@ -88,8 +85,8 @@ impl TyKind {
     pub fn default_bound() -> TyKind {
         TyKind::Bound {
             inherits: default(),
+            assoc_types: default(),
             funcs: default(),
-            param_count: 0,
         }
     }
 
@@ -107,6 +104,13 @@ impl Default for TyKind {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct BoundFuncEnt {
+    pub sig: Sig,
+    pub params: Maybe<TyList>,
+    pub span: Span,
+}
+
 bitflags! {
     struct TyFlags: u8 {
         GENERIC
@@ -115,9 +119,9 @@ bitflags! {
     }
 }
 
-pub struct TyCompEnt {
+#[derive(Clone, Copy)]
+pub struct EnumVariantEnt {
     pub ty: Ty,
-    pub index: u32,
     pub span: Maybe<Span>,
 }
 
@@ -171,7 +175,12 @@ impl BuiltinTypes {
     }
 }
 
-gen_v_ptr!(Ty TyList TyComp TyCompList Field FieldList);
+gen_v_ptr!(
+    EnumVariant EnumVariantList
+    Ty TyList
+    Field FieldList
+    BoundFunc BoundFuncList
+);
 
 impl Ty {
     pub const fn id(&self) -> u32 {

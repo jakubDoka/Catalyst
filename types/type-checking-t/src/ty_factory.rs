@@ -44,20 +44,33 @@ impl TyFactory<'_> {
         self.types.ents.insert_unique(id, ent)
     }
 
-    pub fn bound_of(&mut self, id: Option<Ident>, param_count: usize, bounds: &[Ty]) -> Ty {
-        let id = id.unwrap_or_else(|| self.anon_bound_id(bounds));
+    pub fn anon_bound_of(&mut self, bounds: &[Ty]) -> Ty {
+        let id = self.anon_bound_id(bounds);
+        self.bound_of(id, 0, bounds, &[], &[])
+    }
 
+    pub fn bound_of(
+        &mut self,
+        id: Ident,
+        param_count: usize,
+        inherits: &[Ty],
+        assoc_types: &[Ty],
+        funcs: &[BoundFuncEnt],
+    ) -> Ty {
         if let Some(ty) = self.types.ents.index(id) {
             return ty;
         }
 
-        let inherits = self.types.slices.bump_slice(bounds);
+        let inherits = self.types.slices.bump_slice(inherits);
+        let assoc_types = self.types.slices.bump_slice(assoc_types);
+        let funcs = self.types.funcs.bump_slice(funcs);
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits,
-                funcs: Maybe::none(),
-                param_count: param_count as u32,
+                assoc_types,
+                funcs,
             },
+            param_count: param_count as u8,
             flags: TyFlags::GENERIC,
             ..TyEnt::default()
         };

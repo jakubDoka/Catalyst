@@ -25,10 +25,7 @@ impl TyBuilder<'_> {
 
         self.generics(generics);
         let fields = self.struct_fields(body, ty);
-        let kind = TyKind::Struct {
-            fields,
-            param_count: self.ast_data[generics.children].len() as u32,
-        };
+        let kind = TyKind::Struct { fields };
         self.types.ents[ty].kind = kind;
 
         self.scope.end_frame();
