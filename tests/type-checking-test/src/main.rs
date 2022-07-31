@@ -85,7 +85,7 @@ impl TestState {
 
                 drop(item_collector!(self, module).collect(ast, &mut self.item_context));
                 drop(ty_builder!(self, module).types(&mut self.item_context.types));
-                drop(func_parser!(self, module).funcs(&mut self.item_context.funcs));
+                drop(func_parser!(self, module).funcs(self.item_context.funcs.drain(..)));
                 if done {
                     break;
                 }

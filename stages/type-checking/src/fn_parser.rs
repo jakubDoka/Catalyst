@@ -10,8 +10,22 @@ use crate::*;
 type Expected = Option<Ty>;
 
 impl FuncParser<'_> {
-    pub fn funcs(&mut self, funcs: &mut Vec<(AstEnt, Def)>) -> errors::Result {
-        for (ast, def) in funcs.drain(..) {
+    pub fn bound_impls(&mut self, impls: impl IntoIterator<Item = (AstEnt, Impl)>) {
+        for (ast, r#impl) in impls {
+            let &body = self.ast_data[ast.children].last().unwrap();
+
+            for &item in &self.ast_data[body.children] {
+                match item.kind {
+                    AstKind::ImplType => todo!(),
+                    AstKind::FuncSignature { vis } => todo!(),
+                    kind => unimplemented!("{:?}", kind),
+                }
+            }
+        }
+    }
+
+    pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (AstEnt, Def)>) {
+        for (ast, def) in funcs {
             let [_cc, generics, _name, ref args @  .., _ret, body] = self.ast_data[ast.children] else {
                 unreachable!();
             };
@@ -24,8 +38,6 @@ impl FuncParser<'_> {
             self.funcs.defs[def].tir_data = self.tir_data.clone();
             self.funcs.defs[def].body = body.into();
         }
-
-        Ok(())
     }
 
     fn r#fn(
