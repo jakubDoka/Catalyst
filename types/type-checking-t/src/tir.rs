@@ -57,7 +57,7 @@ impl TirDisplay<'_> {
             TirKind::Call { def, params, args } => {
                 write!(to, "call ")?;
 
-                let name = &self.interner[self.funcs.defs[def].true_func];
+                let name = &self.interner[self.funcs.defs.id(def)];
                 write!(to, "{}", name)?;
 
                 if let Some((&first, others)) = self.types.slices[params].split_first() {

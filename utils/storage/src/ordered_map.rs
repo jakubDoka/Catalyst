@@ -54,6 +54,10 @@ impl<V, C: VPtr> OrderedMap<V, C> {
     pub fn id(&self, key: C) -> Ident {
         self.data[key].0
     }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.data.values().map(|(_, value)| value)
+    }
 }
 
 impl<V, C: VPtr> Index<C> for OrderedMap<V, C> {

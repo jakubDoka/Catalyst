@@ -9,8 +9,7 @@ pub struct FuncParserCtx {
 
 #[derive(Default)]
 pub struct Funcs {
-    pub ents: SparseMap<Ident, FuncEnt>,
-    pub defs: PoolMap<Def, DefEnt>,
+    pub defs: OrderedMap<DefEnt, Def>,
     pub slices: PoolBumpMap<FuncList, Ident>,
 }
 
@@ -20,7 +19,7 @@ impl Funcs {
     }
 
     pub fn params_of_def(&self, def: Def) -> Maybe<TyList> {
-        self.ents[self.defs[def].true_func].params
+        self.defs[def].params
     }
 
     pub fn args_of(&self, def: Def) -> Maybe<TyList> {
@@ -28,26 +27,20 @@ impl Funcs {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct FuncEnt {
+pub struct DefEnt {
     pub params: Maybe<TyList>,
     pub flags: FuncFlags,
-    pub def: Def,
+    pub source: Maybe<Ident>,
+    pub span: Maybe<Span>,
+    pub body: Maybe<TirList>,
+    pub tir_data: TirData,
+    pub sig: Sig,
 }
 
 bitflags! {
     struct FuncFlags: u8 {
         GENERIC
     }
-}
-
-pub struct DefEnt {
-    pub true_func: Ident,
-    pub source: Maybe<Ident>,
-    pub span: Maybe<Span>,
-    pub body: Maybe<TirList>,
-    pub tir_data: TirData,
-    pub sig: Sig,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]

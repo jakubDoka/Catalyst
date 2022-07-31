@@ -109,20 +109,15 @@ impl ItemCollector<'_> {
         let (local_id, id) = self.compute_ids(name.span, vis);
 
         let ent = DefEnt {
-            true_func: id,
+            params,
+            flags: FuncFlags::GENERIC & params.is_some(),
             source: self.current_file.into(),
             span: name.span.into(),
             body: Maybe::none(),
             tir_data: TirData::new(),
             sig,
         };
-        let def = self.funcs.defs.push(ent);
-        let ent = FuncEnt {
-            params,
-            flags: FuncFlags::GENERIC & params.is_some(),
-            def,
-        };
-        self.funcs.ents.insert(id, ent);
+        let def = self.funcs.defs.insert_unique(id, ent);
         ctx.funcs.push((item, def));
 
         Ok(Some(ModItem::new(local_id, def, name.span)))
