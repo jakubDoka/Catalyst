@@ -1,0 +1,8 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound-associated-types\root.ctl:1:46
+| bound Something { type A ; type B ; fn foo(a : A, b : B) ; }
+|                                                ^ type not found
+
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound-associated-types\root.ctl:1:53
+| bound Something { type A ; type B ; fn foo(a : A, b : B) ; }
+|                                                       ^ type not found
+
