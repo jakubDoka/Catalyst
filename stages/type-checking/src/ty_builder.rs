@@ -24,90 +24,37 @@ impl TyBuilder<'_> {
 
         self.scope.start_frame();
 
-        self.generics(generics);
-        let (assoc_types, funcs) = self.bound_items(body, ty);
-        let kind = TyKind::Bound {
-            assoc_types,
-            funcs,
-            inherits: Maybe::none(),
+        ty_parser!(self, self.current_file).generics(generics);
+        let res_funcs = self.bound_funcs(body, ty);
+        let TyKind::Bound { ref mut funcs, .. } = self.types.ents[ty].kind else {
+            unreachable!();
         };
-        self.types.ents[ty].kind = kind;
+        *funcs = res_funcs;
 
         self.scope.end_frame();
 
         Ok(())
     }
 
-    fn bound_items(&mut self, ast: AstEnt, ty: Ty) -> (Maybe<TyList>, Maybe<BoundFuncList>) {
-        let assoc_type_count = self.ast_data[ast.children]
-            .iter()
-            .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
-            .count();
+    fn bound_funcs(&mut self, ast: AstEnt, ty: Ty) -> Maybe<BoundFuncList> {
+        let assoc_type_count = self.types.assoc_ty_count(ty);
         let func_count = self.ast_data[ast.children].len() - assoc_type_count;
 
-        let (mut assoc_types, mut funcs) = (
-            self.types.slices.reserve(assoc_type_count),
-            self.types.funcs.reserve(func_count),
-        );
+        let mut funcs = self.types.funcs.reserve(func_count);
 
         for &item in self.ast_data[ast.children].iter() {
-            let res = match item.kind {
-                AstKind::BoundType { vis } => self.assoc_type(item, ty, &mut assoc_types, vis),
-                AstKind::FuncSignature { vis } => self.func_signature(item, ty, &mut funcs, vis),
-                kind => unimplemented!("{:?}", kind),
+            let AstKind::FuncSignature { vis } = item.kind else {
+                continue;
             };
 
-            let Ok(item) = res else {
+            let Ok(item) = self.func_signature(item, ty, &mut funcs, vis) else {
                 continue;
             };
 
             insert_scope_item!(self, item);
         }
 
-        (
-            self.types
-                .slices
-                .fill_reserved(assoc_types, BuiltinTypes::ANY),
-            self.types.funcs.fill_reserved(funcs, Default::default()),
-        )
-    }
-
-    fn assoc_type(
-        &mut self,
-        ast: AstEnt,
-        ty: Ty,
-        assoc_types: &mut Reserved<TyList>,
-        vis: Vis,
-    ) -> errors::Result<ModItem> {
-        let &[generics, name] = &self.ast_data[ast.children] else {
-            unreachable!("{:?}", &self.ast_data[ast.children]);
-        };
-
-        let local_id = self.interner.intern(scoped_ident!(
-            self.types.ents.id(ty),
-            span_str!(self, name.span)
-        ));
-        let id = intern_scoped_ident!(self, local_id);
-        self.visibility[id] = vis;
-
-        if let Some(prev) = self.types.ents.get(id) {
-            duplicate_definition!(self, ast.span, prev.span);
-            return Err(());
-        }
-
-        let ty_ent = TyEnt {
-            kind: TyKind::AssocType {
-                index: self.types.slices.reserve_len(&assoc_types) as u32,
-            },
-            flags: TyFlags::GENERIC & generics.children.is_some(),
-            param_count: self.ast_data[generics.children].len() as u8,
-            file: self.current_file.into(),
-            span: name.span.into(),
-        };
-        let ty = self.types.ents.insert_unique(id, ty_ent);
-        self.types.slices.push_to_reserved(assoc_types, ty);
-
-        Ok(ModItem::new(local_id, ty, name.span))
+        self.types.funcs.fill_reserved(funcs, Default::default())
     }
 
     fn func_signature(
@@ -122,7 +69,7 @@ impl TyBuilder<'_> {
         };
 
         let local_id = self.interner.intern(scoped_ident!(
-            self.types.ents.id(ty),
+            span_str!(self, self.types.ents[ty].span.unwrap()),
             span_str!(self, name.span)
         ));
         let id = intern_scoped_ident!(self, local_id);
@@ -134,7 +81,7 @@ impl TyBuilder<'_> {
         }
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).generics(generics)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
         self.scope.end_frame();
 
@@ -155,7 +102,7 @@ impl TyBuilder<'_> {
 
         self.scope.start_frame();
 
-        self.generics(generics);
+        ty_parser!(self, self.current_file).generics(generics);
         let fields = self.struct_fields(body, ty);
         let kind = TyKind::Struct { fields };
         self.types.ents[ty].kind = kind;
@@ -201,20 +148,5 @@ impl TyBuilder<'_> {
             insert_scope_item!(self, item);
         }
         self.types.fields.bump_pushed()
-    }
-
-    fn generics(&mut self, generics: AstEnt) {
-        let mut param = BuiltinTypes::TY_ANY;
-        for ast_param in &self.ast_data[generics.children] {
-            let id = self.interner.intern_str(span_str!(self, ast_param.span));
-            let item = ScopeItem {
-                id,
-                ptr: ScopePtr::new(param),
-                span: ast_param.span,
-                module: self.current_file,
-            };
-            self.scope.push(item);
-            param = ty_factory!(self).next_param_of(param);
-        }
     }
 }

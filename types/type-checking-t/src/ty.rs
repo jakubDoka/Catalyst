@@ -11,6 +11,8 @@ pub struct Types {
     pub variants: CachedPoolBumpMap<EnumVariantList, EnumVariantEnt, EnumVariant>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
     pub funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
+    pub impl_index: Map<Impl>,
+    pub impls: PoolMap<Impl, ImplEnt>,
 }
 
 gen_v_ptr!(Unused);
@@ -25,6 +27,30 @@ impl Types {
 
     pub fn param_count(&self, ty: Ty) -> usize {
         self.ents[ty].param_count as usize
+    }
+
+    pub fn instance_base_of(&self, ty: Ty) -> Ty {
+        if let TyKind::Instance { base, .. } = self.ents[ty].kind {
+            base
+        } else {
+            ty
+        }
+    }
+
+    pub fn assoc_ty_index(&self, ty: Ty) -> Option<usize> {
+        if let TyKind::AssocType { index } = self.ents[ty].kind {
+            Some(index as usize)
+        } else {
+            None
+        }
+    }
+
+    pub fn assoc_ty_count(&self, ty: Ty) -> usize {
+        if let TyKind::Bound { assoc_types, .. } = self.ents[ty].kind {
+            self.slices[assoc_types].len()
+        } else {
+            0
+        }
     }
 }
 
@@ -111,6 +137,14 @@ pub struct BoundFuncEnt {
     pub span: Maybe<Span>,
 }
 
+pub struct ImplEnt {
+    pub params: Maybe<TyList>,
+    pub bound: Ty,
+    pub implementor: Ty,
+    pub span: Maybe<Span>,
+    pub next: Maybe<Impl>,
+}
+
 bitflags! {
     struct TyFlags: u8 {
         GENERIC
@@ -180,6 +214,7 @@ gen_v_ptr!(
     Ty TyList
     Field FieldList
     BoundFunc BoundFuncList
+    Impl
 );
 
 impl Ty {

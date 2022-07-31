@@ -28,14 +28,14 @@ impl TyFactory<'_> {
         self.types.ents.insert_unique(id, ent)
     }
 
-    pub fn instance(&mut self, base: Ty, params: &[Ty]) -> Ty {
-        let id = self.instance_id(base, params);
+    pub fn instance(&mut self, base: Ty, params: impl IntoIterator<Item = Ty> + Clone) -> Ty {
+        let id = self.instance_id(base, params.clone());
 
         if let Some(ty) = self.types.ents.index(id) {
             return ty;
         }
 
-        let params = self.types.slices.bump_slice(params).unwrap();
+        let params = self.types.slices.bump(params).unwrap();
         let ent = TyEnt {
             kind: TyKind::Instance { base, params },
             flags: self.types.ents[base].flags,
@@ -104,15 +104,16 @@ impl TyFactory<'_> {
         self.interner.intern(&segments)
     }
 
-    pub fn instance_id(&mut self, base: Ty, params: &[Ty]) -> Ident {
+    pub fn instance_id(&mut self, base: Ty, params: impl IntoIterator<Item = Ty> + Clone) -> Ident {
         let segments = [InternedSegment::from(self.types.ents.id(base)), "[".into()]
             .into_iter()
             .chain(
                 params
-                    .iter()
-                    .map(|&ty| self.types.ents.id(ty))
+                    .clone()
+                    .into_iter()
+                    .map(|ty| self.types.ents.id(ty))
                     .flat_map(|id| [InternedSegment::from(id), ", ".into()])
-                    .take((params.len() * 2).checked_sub(1).unwrap_or(0)),
+                    .take((params.into_iter().count() * 2).checked_sub(1).unwrap_or(0)),
             )
             .chain(once(InternedSegment::from("]")))
             .collect::<Vec<_>>();

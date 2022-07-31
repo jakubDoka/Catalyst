@@ -13,7 +13,7 @@ impl<V, C: VPtr> OrderedMap<V, C> {
     /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.   
     pub fn insert(&mut self, key: Ident, value: V) -> (C, Option<V>) {
         let index = self.data.push((key, value));
-        let shadow = self.index.remove(key);
+        let shadow = self.index.insert(key, index);
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
     }
 

@@ -24,6 +24,13 @@ macro_rules! binary_ident {
 }
 
 #[macro_export]
+macro_rules! bound_impl_ident {
+    ($bound:expr, $implementor:expr) => {
+        storage::ident!("impl ", $bound, " for ", $implementor)
+    };
+}
+
+#[macro_export]
 macro_rules! ident_chain_id {
     ($self:expr, $ast:expr) => {
         $crate::ident_chain_id(
@@ -36,6 +43,7 @@ macro_rules! ident_chain_id {
     };
 }
 
+mod bound_checker;
 mod builtin_builder;
 mod funcs;
 mod state_gen;
@@ -45,11 +53,12 @@ mod ty_factory;
 
 pub use funcs::{Def, DefEnt, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Funcs, Sig};
 pub use items::{ident_chain_id, ItemContext};
-pub use state_gen::{BuiltinBuilder, TirDisplay, TyFactory};
+pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
 pub use ty::{
     BoundFunc, BoundFuncEnt, BoundFuncList, BuiltinTypes, EnumVariant, EnumVariantEnt,
-    EnumVariantList, Field, FieldEnt, FieldList, Ty, TyEnt, TyFlags, TyKind, TyList, Types,
+    EnumVariantList, Field, FieldEnt, FieldList, Impl, ImplEnt, Ty, TyEnt, TyFlags, TyKind, TyList,
+    Types,
 };
 
 mod items {
@@ -63,7 +72,7 @@ mod items {
         pub attrs: Vec<AstEnt>,
         pub funcs: Vec<(AstEnt, Def)>,
         pub types: Vec<(AstEnt, Ty)>,
-        pub bounds: Vec<(AstEnt, Ty)>,
+        pub impls: Vec<(AstEnt, Impl)>,
     }
 
     pub fn ident_chain_id(

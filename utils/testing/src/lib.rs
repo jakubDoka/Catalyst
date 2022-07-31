@@ -9,7 +9,7 @@ macro_rules! gen_test {
     })*) => {
         std::thread::scope(|h| {
             $(
-                test_case($name, Some(h), |name| {
+                test_case($name, None, |name| {
                     gen_test!(__inner__ name $($type)? $($structure)*);
                     TestState::run(name)
                 });

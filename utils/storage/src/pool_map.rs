@@ -97,6 +97,10 @@ impl<K: VPtr, V> PoolMap<K, V> {
         unsafe { value.assume_init() }
     }
 
+    pub fn next(&self) -> K {
+        self.free.last().copied().unwrap_or(K::new(self.data.len()))
+    }
+
     pub fn size_hint(&self) -> usize {
         self.data.len()
     }

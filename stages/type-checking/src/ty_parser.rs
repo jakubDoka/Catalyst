@@ -2,9 +2,9 @@ use std::ops::Not;
 
 use crate::*;
 use diags::*;
-use packaging_t::span_str;
+use packaging_t::*;
 use parsing_t::*;
-use scope::ScopeItem;
+use scope::*;
 use storage::*;
 use type_checking_t::*;
 
@@ -47,18 +47,50 @@ impl TyParser<'_> {
         Ok(ty_factory!(self).pointer_of(mutable, base))
     }
 
+    fn parse_filed_ty(&mut self, base: Ty, ast: AstEnt) -> errors::Result<(Ty, usize)> {
+        let [name, ty] = self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        let ty = self.parse(ty)?;
+
+        let id = self.interner.intern(scoped_ident!(
+            self.types.ents.id(base),
+            span_str!(self, name.span)
+        ));
+
+        println!("=={}", &self.interner[id]);
+
+        let assoc_ty = self.types.ents.index(id).ok_or_else(|| {
+            self.workspace.push(diag! {
+                (name.span, self.current_file) => "associated type not found"
+            })
+        })?;
+        let index = self.types.assoc_ty_index(assoc_ty).ok_or_else(|| {
+            self.workspace.push(diag! {
+                (name.span, self.current_file) => "this is not an associated type"
+            })
+        })?;
+
+        Ok((ty, index + 1))
+    }
+
     fn parse_instance(&mut self, ast: AstEnt) -> errors::Result<Ty> {
         let (&first, rest) = self.ast_data[ast.children].split_first().unwrap();
 
-        let params = rest
-            .iter()
-            .filter_map(|&id| self.parse(id).ok())
-            .collect::<Vec<_>>();
+        let base = self.parse(first)?;
+
+        let mut params = Vec::with_capacity(rest.len());
+        params.extend(rest.iter().filter_map(|&child| {
+            if child.kind != AstKind::FieldTy {
+                self.parse(child).ok().map(|ty| (ty, 0))
+            } else {
+                self.parse_filed_ty(base, child).ok()
+            }
+        }));
         if params.len() != rest.len() {
             return Err(());
         }
-
-        let base = self.parse(first)?;
 
         let param_count = self.types.param_count(base);
         if params.len() != param_count {
@@ -69,7 +101,9 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        Ok(ty_factory!(self).instance(base, &params))
+        params.sort_by_key(|&(_, index)| index);
+
+        Ok(ty_factory!(self).instance(base, params.into_iter().map(|(ty, _)| ty)))
     }
 
     pub fn sig(&mut self, cc: AstEnt, args: &[AstEnt], ret: AstEnt) -> errors::Result<Sig> {
@@ -100,7 +134,7 @@ impl TyParser<'_> {
         Ok(self.types.slices.finish_reserved(reserved))
     }
 
-    pub fn generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
+    pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
         let mut params = Vec::with_capacity(self.ast_data[generics.children].len());
         for &ast_param in &self.ast_data[generics.children] {
             let (&name, bounds) = self.ast_data[ast_param.children].split_first().unwrap();
@@ -121,5 +155,82 @@ impl TyParser<'_> {
             params.push(param);
         }
         Ok(self.types.slices.bump_slice(&params))
+    }
+
+    pub fn generics(&mut self, generics: AstEnt) {
+        let mut param = BuiltinTypes::TY_ANY;
+        for &(mut ast_param) in &self.ast_data[generics.children] {
+            if ast_param.kind != AstKind::Ident {
+                ast_param = self.ast_data[ast_param.children][0];
+            }
+            let id = self.interner.intern_str(span_str!(self, ast_param.span));
+            let item = ScopeItem {
+                id,
+                ptr: ScopePtr::new(param),
+                span: ast_param.span,
+                module: self.current_file,
+            };
+            self.scope.push(item);
+            param = ty_factory!(self).next_param_of(param);
+        }
+    }
+
+    pub fn assoc_types(&mut self, ast: AstEnt, bound_id: Ident) -> Maybe<TyList> {
+        let assoc_type_count = self.ast_data[ast.children]
+            .iter()
+            .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
+            .count();
+
+        let mut assoc_types = self.types.slices.reserve(assoc_type_count);
+
+        for &item in self.ast_data[ast.children].iter() {
+            let AstKind::BoundType { vis } = item.kind else {
+                continue;
+            };
+
+            drop(self.assoc_type(item, bound_id, &mut assoc_types, vis));
+        }
+
+        self.types
+            .slices
+            .fill_reserved(assoc_types, BuiltinTypes::ANY)
+    }
+
+    fn assoc_type(
+        &mut self,
+        ast: AstEnt,
+        bound_id: Ident,
+        assoc_types: &mut Reserved<TyList>,
+        vis: Vis,
+    ) -> errors::Result {
+        let &[generics, name] = &self.ast_data[ast.children] else {
+            unreachable!("{:?}", &self.ast_data[ast.children]);
+        };
+
+        let id = self
+            .interner
+            .intern(scoped_ident!(bound_id, span_str!(self, name.span)));
+        self.visibility[id] = vis;
+
+        println!(">>{}", &self.interner[id]);
+
+        if let Some(prev) = self.types.ents.get(id) {
+            duplicate_definition!(self, ast.span, prev.span);
+            return Err(());
+        }
+
+        let ty_ent = TyEnt {
+            kind: TyKind::AssocType {
+                index: self.types.slices.reserve_len(&assoc_types) as u32,
+            },
+            flags: TyFlags::GENERIC & generics.children.is_some(),
+            param_count: self.ast_data[generics.children].len() as u8,
+            file: self.current_file.into(),
+            span: name.span.into(),
+        };
+        let ty = self.types.ents.insert_unique(id, ty_ent);
+        self.types.slices.push_to_reserved(assoc_types, ty);
+
+        Ok(())
     }
 }
