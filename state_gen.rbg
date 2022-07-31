@@ -27,17 +27,17 @@ file "types/type-checking-t/src/state_gen.rs" {
     use "packaging_t"
 
     struct TyFactory {
-        mut Types
+        mut Typec
         mut Interner
     }
 
     struct BoundChecker {
-        mut Types
+        mut Typec
         mut Interner
     }
 
     struct BuiltinBuilder {
-        mut Types
+        mut Typec
         mut Interner
     }
 
@@ -49,9 +49,8 @@ file "types/type-checking-t/src/state_gen.rs" {
         passed tir_data: TirData
         
         Interner
-        Types
+        Typec
         Packages
-        Funcs
     }
 }
 
@@ -69,8 +68,7 @@ file "stages/type-checking/src/state_gen.rs" {
 
         mut Interner
         mut Scope
-        mut Types
-        mut Funcs
+        mut Typec
         mut Workspace
         mut Visibility
         mut Packages
@@ -84,8 +82,7 @@ file "stages/type-checking/src/state_gen.rs" {
 
         mut Interner
         mut Scope
-        mut Types
-        mut Funcs
+        mut Typec
         mut Workspace
         mut Visibility
         mut Packages
@@ -98,8 +95,7 @@ file "stages/type-checking/src/state_gen.rs" {
 
         mut Interner
         mut Scope
-        mut Types
-        mut Funcs
+        mut Typec
         mut Workspace
         mut Visibility
         mut Packages
@@ -112,7 +108,7 @@ file "stages/type-checking/src/state_gen.rs" {
 
         mut Interner
         mut Scope
-        mut Types
+        mut Typec
         mut Workspace
         mut Visibility
         mut Packages

@@ -21,8 +21,7 @@ struct TestState {
     interner: Interner,
     package_graph: PackageGraph,
     scope: Scope,
-    types: Types,
-    funcs: Funcs,
+    typec: Typec,
     item_context: ItemContext,
     visibility: Visibility,
     ast_data: AstData,
@@ -52,7 +51,7 @@ impl TestState {
         let mut state = ParserState::new();
         for module in modules {
             for &ty in BuiltinTypes::ALL {
-                self.scope.insert_builtin(self.types.ents.id(ty), ty);
+                self.scope.insert_builtin(self.typec.types.id(ty), ty);
             }
 
             for dep in &self.packages.conns[self.packages.modules[module].deps] {
@@ -83,9 +82,10 @@ impl TestState {
                     break;
                 }
 
-                drop(item_collector!(self, module).collect(ast, &mut self.item_context));
-                drop(ty_builder!(self, module).types(&mut self.item_context.types));
-                drop(func_parser!(self, module).funcs(self.item_context.funcs.drain(..)));
+                item_collector!(self, module).collect(ast, &mut self.item_context);
+                ty_builder!(self, module).types(&mut self.item_context.types);
+                func_parser!(self, module).funcs(self.item_context.funcs.drain(..));
+
                 if done {
                     break;
                 }
@@ -95,7 +95,7 @@ impl TestState {
         }
 
         let iter = self
-            .funcs
+            .typec
             .defs
             .values()
             .filter_map(|def| Some((def.source.expand()?, def.span.expand()?, def)));

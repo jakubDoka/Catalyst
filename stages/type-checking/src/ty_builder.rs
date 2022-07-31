@@ -6,7 +6,7 @@ use storage::*;
 use type_checking_t::*;
 
 impl TyBuilder<'_> {
-    pub fn types(&mut self, types: &mut Vec<(AstEnt, Ty)>) -> errors::Result {
+    pub fn types(&mut self, types: &mut Vec<(AstEnt, Ty)>) {
         for (ast, ty) in types.drain(..) {
             match ast.kind {
                 AstKind::Struct { .. } => drop(self.r#struct(ast, ty)),
@@ -14,7 +14,6 @@ impl TyBuilder<'_> {
                 _ => unimplemented!(),
             }
         }
-        Ok(())
     }
 
     fn bound(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {
@@ -26,7 +25,7 @@ impl TyBuilder<'_> {
 
         ty_parser!(self, self.current_file).generics(generics);
         let res_funcs = self.bound_funcs(body, ty);
-        let TyKind::Bound { ref mut funcs, .. } = self.types.ents[ty].kind else {
+        let TyKind::Bound { ref mut funcs, .. } = self.typec.types[ty].kind else {
             unreachable!();
         };
         *funcs = res_funcs;
@@ -37,10 +36,10 @@ impl TyBuilder<'_> {
     }
 
     fn bound_funcs(&mut self, ast: AstEnt, ty: Ty) -> Maybe<BoundFuncList> {
-        let assoc_type_count = self.types.assoc_ty_count(ty);
+        let assoc_type_count = self.typec.assoc_ty_count(ty);
         let func_count = self.ast_data[ast.children].len() - assoc_type_count;
 
-        let mut funcs = self.types.funcs.reserve(func_count);
+        let mut funcs = self.typec.funcs.reserve(func_count);
 
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::FuncSignature { vis } = item.kind else {
@@ -54,7 +53,7 @@ impl TyBuilder<'_> {
             insert_scope_item!(self, item);
         }
 
-        self.types.funcs.fill_reserved(funcs, Default::default())
+        self.typec.funcs.fill_reserved(funcs, Default::default())
     }
 
     fn func_signature(
@@ -69,13 +68,13 @@ impl TyBuilder<'_> {
         };
 
         let local_id = self.interner.intern(scoped_ident!(
-            span_str!(self, self.types.ents[ty].span.unwrap()),
+            span_str!(self, self.typec.types[ty].span.unwrap()),
             span_str!(self, name.span)
         ));
         let id = intern_scoped_ident!(self, local_id);
         self.visibility[id] = vis;
 
-        if let Some(already) = self.types.ents.get(id) {
+        if let Some(already) = self.typec.types.get(id) {
             duplicate_definition!(self, ast.span, already.span);
             return Err(());
         }
@@ -90,7 +89,7 @@ impl TyBuilder<'_> {
             params,
             span: name.span.into(),
         };
-        let bound_func = self.types.funcs.push_to_reserved(funcs, bound_func_ent);
+        let bound_func = self.typec.funcs.push_to_reserved(funcs, bound_func_ent);
 
         Ok(ModItem::new(local_id, bound_func, name.span))
     }
@@ -105,7 +104,7 @@ impl TyBuilder<'_> {
         ty_parser!(self, self.current_file).generics(generics);
         let fields = self.struct_fields(body, ty);
         let kind = TyKind::Struct { fields };
-        self.types.ents[ty].kind = kind;
+        self.typec.types[ty].kind = kind;
 
         self.scope.end_frame();
 
@@ -114,7 +113,7 @@ impl TyBuilder<'_> {
 
     fn struct_fields(&mut self, body: AstEnt, ty: Ty) -> Maybe<FieldList> {
         for field in &self.ast_data[body.children] {
-            let struct_id = self.types.ents.id(ty);
+            let struct_id = self.typec.types.id(ty);
 
             let &[ast_name, ast_ty] = &self.ast_data[field.children] else {
                 unreachable!();
@@ -137,7 +136,7 @@ impl TyBuilder<'_> {
                 mutable,
                 exported,
             };
-            let field = self.types.fields.push(ent);
+            let field = self.typec.fields.push(ent);
 
             // struct field acts as any other scope item
             let item = ModItem {
@@ -147,6 +146,6 @@ impl TyBuilder<'_> {
             };
             insert_scope_item!(self, item);
         }
-        self.types.fields.bump_pushed()
+        self.typec.fields.bump_pushed()
     }
 }

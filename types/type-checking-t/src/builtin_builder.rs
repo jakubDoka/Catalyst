@@ -74,6 +74,6 @@ impl BuiltinBuilder<'_> {
 
     fn add_type(&mut self, name: &str, ent: TyEnt) {
         let id = self.interner.intern_str(&name.to_ascii_lowercase());
-        self.types.ents.insert(id, ent);
+        self.typec.types.insert(id, ent);
     }
 }

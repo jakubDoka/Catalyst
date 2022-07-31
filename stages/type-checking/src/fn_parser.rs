@@ -32,11 +32,11 @@ impl FuncParser<'_> {
 
             self.tir_data.clear();
             self.func_parser_ctx.current_fn = def.into();
-            let Ok(body) = self.r#fn(body, generics, args, self.funcs.defs[def].sig.ret.expand()) else {
+            let Ok(body) = self.r#fn(body, generics, args, self.typec.defs[def].sig.ret.expand()) else {
                 continue;
             };
-            self.funcs.defs[def].tir_data = self.tir_data.clone();
-            self.funcs.defs[def].body = body.into();
+            self.typec.defs[def].tir_data = self.tir_data.clone();
+            self.typec.defs[def].body = body.into();
         }
     }
 
@@ -148,8 +148,8 @@ impl FuncParser<'_> {
                 "binary operator not found"
             ))?;
 
-        let sig = self.funcs.defs[def].sig;
-        let [left_ty, right_ty] = self.types.slices[sig.args] else {
+        let sig = self.typec.defs[def].sig;
+        let [left_ty, right_ty] = self.typec.slices[sig.args] else {
             unreachable!();
         };
 
@@ -220,7 +220,7 @@ impl FuncParser<'_> {
         let expr = if r#return.kind.is_none() {
             TirEnt::new(TirKind::Unreachable)
         } else {
-            let expected = self.funcs.defs[self.func_parser_ctx.current_fn.unwrap()]
+            let expected = self.typec.defs[self.func_parser_ctx.current_fn.unwrap()]
                 .sig
                 .ret;
             self.expr(r#return, expected.expand())?
@@ -266,17 +266,17 @@ impl FuncParser<'_> {
             self.workspace.push(diag! {
                 (tir.span, self.current_file) error => "type mismatch",
                 (none) => "expected {} but got {}" {
-                    &self.interner[self.types.ents.id(expected)],
-                    &self.interner[self.types.ents.id(got)],
+                    &self.interner[self.typec.types.id(expected)],
+                    &self.interner[self.typec.types.id(got)],
                 },
             })
         }
     }
 
     fn push_args(&mut self, args: &[AstEnt]) {
-        let types = self.funcs.args_of(self.func_parser_ctx.current_fn.unwrap());
+        let types = self.typec.args_of(self.func_parser_ctx.current_fn.unwrap());
         let mut reserved = self.tir_data.reserve(args.len());
-        for (i, (arg, &ty)) in args.iter().zip(self.types.slices[types].iter()).enumerate() {
+        for (i, (arg, &ty)) in args.iter().zip(self.typec.slices[types].iter()).enumerate() {
             let [name, ..] = self.ast_data[arg.children] else {
                 unreachable!();
             };
@@ -294,11 +294,11 @@ impl FuncParser<'_> {
 
     fn push_generics(&mut self, generics: AstEnt) {
         let params = self
-            .funcs
+            .typec
             .params_of_def(self.func_parser_ctx.current_fn.unwrap());
         for (&ast_param, &param) in self.ast_data[generics.children]
             .iter()
-            .zip(self.types.slices[params].iter())
+            .zip(self.typec.slices[params].iter())
         {
             let [name, ..] = self.ast_data[ast_param.children] else {
                 unreachable!();

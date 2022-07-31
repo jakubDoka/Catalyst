@@ -5,32 +5,33 @@ use lexing_t::*;
 use storage::*;
 
 #[derive(Default)]
-pub struct Types {
-    pub ents: OrderedMap<TyEnt, Ty>,
+pub struct Typec {
+    pub types: OrderedMap<TyEnt, Ty>,
     pub slices: PoolBumpMap<TyList, Ty, Unused>,
     pub variants: CachedPoolBumpMap<EnumVariantList, EnumVariantEnt, EnumVariant>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
     pub funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
     pub impl_index: Map<Impl>,
     pub impls: PoolMap<Impl, ImplEnt>,
+    pub defs: OrderedMap<DefEnt, Def>,
 }
 
 gen_v_ptr!(Unused);
 
-impl Types {
+impl Typec {
     pub fn ptr_depth(&self, ty: Ty) -> u32 {
-        match self.ents[ty].kind {
+        match self.types[ty].kind {
             TyKind::Ptr { depth, .. } => depth,
             _ => 0,
         }
     }
 
     pub fn param_count(&self, ty: Ty) -> usize {
-        self.ents[ty].param_count as usize
+        self.types[ty].param_count as usize
     }
 
     pub fn instance_base_of(&self, ty: Ty) -> Ty {
-        if let TyKind::Instance { base, .. } = self.ents[ty].kind {
+        if let TyKind::Instance { base, .. } = self.types[ty].kind {
             base
         } else {
             ty
@@ -38,7 +39,7 @@ impl Types {
     }
 
     pub fn assoc_ty_index(&self, ty: Ty) -> Option<usize> {
-        if let TyKind::AssocType { index } = self.ents[ty].kind {
+        if let TyKind::AssocType { index } = self.types[ty].kind {
             Some(index as usize)
         } else {
             None
@@ -46,11 +47,19 @@ impl Types {
     }
 
     pub fn assoc_ty_count(&self, ty: Ty) -> usize {
-        if let TyKind::Bound { assoc_types, .. } = self.ents[ty].kind {
+        if let TyKind::Bound { assoc_types, .. } = self.types[ty].kind {
             self.slices[assoc_types].len()
         } else {
             0
         }
+    }
+
+    pub fn params_of_def(&self, def: Def) -> Maybe<TyList> {
+        self.defs[def].params
+    }
+
+    pub fn args_of(&self, def: Def) -> Maybe<TyList> {
+        self.defs[def].sig.args
     }
 }
 
@@ -141,6 +150,7 @@ pub struct ImplEnt {
     pub params: Maybe<TyList>,
     pub bound: Ty,
     pub implementor: Ty,
+    pub funcs: Maybe<BoundFuncList>,
     pub span: Maybe<Span>,
     pub next: Maybe<Impl>,
 }

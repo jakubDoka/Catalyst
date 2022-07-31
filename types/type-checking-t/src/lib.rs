@@ -51,14 +51,14 @@ mod tir;
 mod ty;
 mod ty_factory;
 
-pub use funcs::{Def, DefEnt, FuncFlags, FuncParserCtx, Funcs, Sig};
+pub use funcs::{Def, DefEnt, FuncFlags, FuncParserCtx, Sig};
 pub use items::{ident_chain_id, ItemContext};
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
 pub use ty::{
     BoundFunc, BoundFuncEnt, BoundFuncList, BuiltinTypes, EnumVariant, EnumVariantEnt,
     EnumVariantList, Field, FieldEnt, FieldList, Impl, ImplEnt, Ty, TyEnt, TyFlags, TyKind, TyList,
-    Types,
+    Typec,
 };
 
 mod items {

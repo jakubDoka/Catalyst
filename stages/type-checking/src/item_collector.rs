@@ -7,7 +7,7 @@ use storage::*;
 use type_checking_t::*;
 
 impl ItemCollector<'_> {
-    pub fn collect(&mut self, ast: Maybe<AstList>, ctx: &mut ItemContext) -> errors::Result {
+    pub fn collect(&mut self, ast: Maybe<AstList>, ctx: &mut ItemContext) {
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
                 AstKind::Bound { vis } => self.collect_bound(item, vis, ctx),
@@ -38,8 +38,6 @@ impl ItemCollector<'_> {
 
             insert_scope_item!(self, res);
         }
-
-        Ok(())
     }
 
     fn collect_bound_impl(
@@ -58,24 +56,25 @@ impl ItemCollector<'_> {
         self.scope.end_frame();
 
         let id = {
-            let bound_base = self.types.instance_base_of(bound);
-            let implementor_base = self.types.instance_base_of(implementor);
+            let bound_base = self.typec.instance_base_of(bound);
+            let implementor_base = self.typec.instance_base_of(implementor);
             self.interner.intern(bound_impl_ident!(
-                self.types.ents.id(bound_base),
-                self.types.ents.id(implementor_base)
+                self.typec.types.id(bound_base),
+                self.typec.types.id(implementor_base)
             ))
         };
 
-        let next = self.types.impl_index.insert(id, self.types.impls.next());
+        let next = self.typec.impl_index.insert(id, self.typec.impls.next());
 
         let impl_ent = ImplEnt {
             params,
             bound,
             implementor,
+            funcs: Maybe::none(),
             span: target.span.into(),
             next: next.into(),
         };
-        let r#impl = self.types.impls.push(impl_ent);
+        let r#impl = self.typec.impls.push(impl_ent);
         ctx.impls.push((item, r#impl));
 
         let mut current = next;
@@ -83,10 +82,10 @@ impl ItemCollector<'_> {
             if bound_checker!(self).impls_overlap(r#impl, other) {
                 self.workspace.push(diag! {
                     (target.span, self.current_file) => "implementation overlaps with existing one",
-                    (self.types.impls[other].span, self.current_file) => "colliding implementation",
+                    (self.typec.impls[other].span, self.current_file) => "colliding implementation",
                 })
             }
-            current = self.types.impls[other].next.expand();
+            current = self.typec.impls[other].next.expand();
         }
 
         Ok(None)
@@ -117,7 +116,7 @@ impl ItemCollector<'_> {
             tir_data: TirData::new(),
             sig,
         };
-        let def = self.funcs.defs.insert_unique(id, ent);
+        let def = self.typec.defs.insert_unique(id, ent);
         ctx.funcs.push((item, def));
 
         Ok(Some(ModItem::new(local_id, def, name.span)))
@@ -145,11 +144,11 @@ impl ItemCollector<'_> {
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8
-                + self.types.slices[assoc_types].len() as u8,
+                + self.typec.slices[assoc_types].len() as u8,
             file: self.current_file.into(),
             span: name.span.into(),
         };
-        let ty = self.types.ents.insert_unique(id, ent);
+        let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
         Ok(Some(ModItem::new(local_id, ty, name.span)))
@@ -174,7 +173,7 @@ impl ItemCollector<'_> {
             file: self.current_file.into(),
             span: name.span.into(),
         };
-        let ty = self.types.ents.insert_unique(id, ent);
+        let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
         Ok(Some(ModItem::new(local_id, ty, name.span)))

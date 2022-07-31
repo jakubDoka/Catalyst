@@ -7,25 +7,6 @@ pub struct FuncParserCtx {
     pub current_fn: Maybe<Def>,
 }
 
-#[derive(Default)]
-pub struct Funcs {
-    pub defs: OrderedMap<DefEnt, Def>,
-}
-
-impl Funcs {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn params_of_def(&self, def: Def) -> Maybe<TyList> {
-        self.defs[def].params
-    }
-
-    pub fn args_of(&self, def: Def) -> Maybe<TyList> {
-        self.defs[def].sig.args
-    }
-}
-
 pub struct DefEnt {
     pub params: Maybe<TyList>,
     pub flags: FuncFlags,

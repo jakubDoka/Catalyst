@@ -2,7 +2,7 @@ use crate::*;
 
 impl BoundChecker<'_> {
     pub fn impls_overlap(&self, a: Impl, b: Impl) -> bool {
-        let (a_ent, b_ent) = (&self.types.impls[a], &self.types.impls[b]);
+        let (a_ent, b_ent) = (&self.typec.impls[a], &self.typec.impls[b]);
         self.types_overlap(a_ent.bound, b_ent.bound)
             && self.types_overlap(a_ent.implementor, b_ent.implementor)
     }
@@ -15,7 +15,7 @@ impl BoundChecker<'_> {
                 continue;
             }
 
-            let (a_ent, b_ent) = (&self.types.ents[a], &self.types.ents[b]);
+            let (a_ent, b_ent) = (&self.typec.types[a], &self.typec.types[b]);
 
             match (a_ent.kind, b_ent.kind) {
                 (
@@ -33,15 +33,15 @@ impl BoundChecker<'_> {
                     }
 
                     frontier.extend(
-                        self.types
+                        self.typec
                             .slices
                             .get(params_a)
                             .iter()
-                            .zip(self.types.slices.get(params_b).iter())
+                            .zip(self.typec.slices.get(params_b).iter())
                             // Associated types should not be checked for overlap otherwise there would be
                             // no difference compared to generic parameters.
                             .take(
-                                self.types.param_count(base_a) - self.types.assoc_ty_count(base_a),
+                                self.typec.param_count(base_a) - self.typec.assoc_ty_count(base_a),
                             )
                             .map(|(a, b)| (*a, *b)),
                     );
@@ -69,9 +69,9 @@ impl BoundChecker<'_> {
                     }
 
                     frontier.extend(
-                        self.types.slices[sig_a.args]
+                        self.typec.slices[sig_a.args]
                             .iter()
-                            .zip(self.types.slices[sig_b.args].iter())
+                            .zip(self.typec.slices[sig_b.args].iter())
                             .map(|(a, b)| (*a, *b)),
                     );
 

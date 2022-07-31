@@ -55,16 +55,16 @@ impl TyParser<'_> {
         let ty = self.parse(ty)?;
 
         let id = self.interner.intern(scoped_ident!(
-            self.types.ents.id(base),
+            self.typec.types.id(base),
             span_str!(self, name.span)
         ));
 
-        let assoc_ty = self.types.ents.index(id).ok_or_else(|| {
+        let assoc_ty = self.typec.types.index(id).ok_or_else(|| {
             self.workspace.push(diag! {
                 (name.span, self.current_file) => "associated type not found"
             })
         })?;
-        let index = self.types.assoc_ty_index(assoc_ty).ok_or_else(|| {
+        let index = self.typec.assoc_ty_index(assoc_ty).ok_or_else(|| {
             self.workspace.push(diag! {
                 (name.span, self.current_file) => "this is not an associated type"
             })
@@ -90,7 +90,7 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        let param_count = self.types.param_count(base);
+        let param_count = self.typec.param_count(base);
         if params.len() != param_count {
             self.workspace.push(diag! {
                 (ast.span, self.current_file) => "wrong number of type parameters",
@@ -121,15 +121,15 @@ impl TyParser<'_> {
     }
 
     pub fn args(&mut self, args: &[AstEnt]) -> errors::Result<Maybe<TyList>> {
-        let mut reserved = self.types.slices.reserve(args.len());
+        let mut reserved = self.typec.slices.reserve(args.len());
         for &ast_arg in args {
             let [.., ty] = self.ast_data[ast_arg.children] else {
                 unreachable!("{:?}", &self.ast_data[ast_arg.children]);
             };
             let ty = ty_parser!(self, self.current_file).parse(ty)?;
-            self.types.slices.push_to_reserved(&mut reserved, ty);
+            self.typec.slices.push_to_reserved(&mut reserved, ty);
         }
-        Ok(self.types.slices.finish_reserved(reserved))
+        Ok(self.typec.slices.finish_reserved(reserved))
     }
 
     pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
@@ -152,7 +152,7 @@ impl TyParser<'_> {
 
             params.push(param);
         }
-        Ok(self.types.slices.bump_slice(&params))
+        Ok(self.typec.slices.bump_slice(&params))
     }
 
     pub fn generics(&mut self, generics: AstEnt) {
@@ -179,7 +179,7 @@ impl TyParser<'_> {
             .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
             .count();
 
-        let mut assoc_types = self.types.slices.reserve(assoc_type_count);
+        let mut assoc_types = self.typec.slices.reserve(assoc_type_count);
 
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::BoundType { vis } = item.kind else {
@@ -189,7 +189,7 @@ impl TyParser<'_> {
             drop(self.assoc_type(item, bound_id, &mut assoc_types, vis));
         }
 
-        self.types
+        self.typec
             .slices
             .fill_reserved(assoc_types, BuiltinTypes::ANY)
     }
@@ -210,22 +210,22 @@ impl TyParser<'_> {
             .intern(scoped_ident!(bound_id, span_str!(self, name.span)));
         self.visibility[id] = vis;
 
-        if let Some(prev) = self.types.ents.get(id) {
+        if let Some(prev) = self.typec.types.get(id) {
             duplicate_definition!(self, ast.span, prev.span);
             return Err(());
         }
 
         let ty_ent = TyEnt {
             kind: TyKind::AssocType {
-                index: self.types.slices.reserve_len(&assoc_types) as u32,
+                index: self.typec.slices.reserve_len(&assoc_types) as u32,
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
             file: self.current_file.into(),
             span: name.span.into(),
         };
-        let ty = self.types.ents.insert_unique(id, ty_ent);
-        self.types.slices.push_to_reserved(assoc_types, ty);
+        let ty = self.typec.types.insert_unique(id, ty_ent);
+        self.typec.slices.push_to_reserved(assoc_types, ty);
 
         Ok(())
     }

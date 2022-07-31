@@ -57,13 +57,13 @@ impl TirDisplay<'_> {
             TirKind::Call { def, params, args } => {
                 write!(to, "call ")?;
 
-                let name = &self.interner[self.funcs.defs.id(def)];
+                let name = &self.interner[self.typec.defs.id(def)];
                 write!(to, "{}", name)?;
 
-                if let Some((&first, others)) = self.types.slices[params].split_first() {
-                    write!(to, "[{}", &self.interner[self.types.ents.id(first)])?;
+                if let Some((&first, others)) = self.typec.slices[params].split_first() {
+                    write!(to, "[{}", &self.interner[self.typec.types.id(first)])?;
                     for &param in others {
-                        write!(to, ", {}", &self.interner[self.types.ents.id(param)])?;
+                        write!(to, ", {}", &self.interner[self.typec.types.id(param)])?;
                     }
                     write!(to, "]")?;
                 }
