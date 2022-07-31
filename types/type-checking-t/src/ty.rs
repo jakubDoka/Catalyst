@@ -63,7 +63,7 @@ pub struct TyEnt {
     pub span: Maybe<Span>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TyKind {
     Param {
         index: u32,

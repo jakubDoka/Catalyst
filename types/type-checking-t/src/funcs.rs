@@ -50,7 +50,7 @@ pub struct DefEnt {
     pub sig: Sig,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Sig {
     pub cc: Maybe<Ident>,
     pub args: Maybe<TyList>,
