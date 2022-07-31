@@ -36,7 +36,7 @@ impl TyParser<'_> {
     }
 
     fn parse_ident(&mut self, ast: AstEnt) -> errors::Result<Ty> {
-        let id = ident_chain_id!(self, ast);
+        let id = self.ident_chain_id(ast);
         self.scope
             .get_concrete::<Ty>(id)
             .map_err(scope_error_handler!(self, ast.span, id, "type not found"))
@@ -230,5 +230,33 @@ impl TyParser<'_> {
         self.typec.slices.push_to_reserved(assoc_types, ty);
 
         Ok(())
+    }
+
+    pub fn ident_chain_id(&mut self, ast: AstEnt) -> Ident {
+        match ast.kind {
+            AstKind::IdentChain => {
+                let segments = self.ast_data[ast.children]
+                    .iter()
+                    .map(|child| self.packages.span_str(self.current_file, child.span))
+                    .map(|str| self.interner.intern_str(str))
+                    .map(|id| self.scope.get_concrete::<Ident>(id).unwrap_or(id))
+                    .map(|segment| [InternedSegment::from(segment), "`".into()])
+                    .flatten()
+                    .take(
+                        (self.ast_data[ast.children].len() * 2)
+                            .checked_sub(1)
+                            .unwrap_or(0),
+                    ) // -1 for the excess `
+                    .collect::<Vec<_>>();
+
+                self.interner.intern(&segments)
+            }
+            AstKind::Ident => {
+                let str = self.packages.span_str(self.current_file, ast.span);
+                let id = self.interner.intern_str(str);
+                self.scope.get_concrete::<Ident>(id).unwrap_or(id)
+            }
+            _ => unimplemented!(),
+        }
     }
 }

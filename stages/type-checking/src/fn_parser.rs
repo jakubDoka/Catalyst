@@ -192,7 +192,7 @@ impl FuncParser<'_> {
     }
 
     fn ident(&mut self, ast: AstEnt) -> errors::Result<TirEnt> {
-        let id = ident_chain_id!(self, ast);
+        let id = ty_parser!(self, self.current_file).ident_chain_id(ast);
 
         let something = self.scope.get(id).map_err(scope_error_handler!(
             self,
