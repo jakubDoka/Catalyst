@@ -10,7 +10,6 @@ pub struct FuncParserCtx {
 #[derive(Default)]
 pub struct Funcs {
     pub defs: OrderedMap<DefEnt, Def>,
-    pub slices: PoolBumpMap<FuncList, Ident>,
 }
 
 impl Funcs {
@@ -50,4 +49,4 @@ pub struct Sig {
     pub ret: Maybe<Ty>,
 }
 
-gen_v_ptr!(Def FuncList Func);
+gen_v_ptr!(Def);
