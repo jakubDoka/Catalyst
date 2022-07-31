@@ -59,8 +59,6 @@ impl TyParser<'_> {
             span_str!(self, name.span)
         ));
 
-        println!("=={}", &self.interner[id]);
-
         let assoc_ty = self.types.ents.index(id).ok_or_else(|| {
             self.workspace.push(diag! {
                 (name.span, self.current_file) => "associated type not found"
@@ -211,8 +209,6 @@ impl TyParser<'_> {
             .interner
             .intern(scoped_ident!(bound_id, span_str!(self, name.span)));
         self.visibility[id] = vis;
-
-        println!(">>{}", &self.interner[id]);
 
         if let Some(prev) = self.types.ents.get(id) {
             duplicate_definition!(self, ast.span, prev.span);

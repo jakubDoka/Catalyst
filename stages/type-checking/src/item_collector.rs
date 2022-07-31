@@ -1,5 +1,5 @@
 use crate::*;
-use diags::inner_lexing::Span;
+use diags::{diag, inner_lexing::Span};
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -77,6 +77,17 @@ impl ItemCollector<'_> {
         };
         let r#impl = self.types.impls.push(impl_ent);
         ctx.impls.push((item, r#impl));
+
+        let mut current = next;
+        while let Some(other) = current {
+            if bound_checker!(self).impls_overlap(r#impl, other) {
+                self.workspace.push(diag! {
+                    (target.span, self.current_file) => "implementation overlaps with existing one",
+                    (self.types.impls[other].span, self.current_file) => "colliding implementation",
+                })
+            }
+            current = self.types.impls[other].next.expand();
+        }
 
         Ok(None)
     }

@@ -4,12 +4,16 @@ pub use crate::testing::{test_case, Folder};
 
 #[macro_export]
 macro_rules! gen_test {
-    ($($($type:ident)? $name:literal {
-        $($structure:tt)*
-    })*) => {
+    (
+        $parallel:literal
+        $($($type:ident)? $name:literal {
+            $($structure:tt)*
+        })*
+    ) => {
         std::thread::scope(|h| {
             $(
-                test_case($name, None, |name| {
+                let value = $parallel.then_some(h);
+                test_case($name, value, |name| {
                     gen_test!(__inner__ name $($type)? $($structure)*);
                     TestState::run(name)
                 });

@@ -25,6 +25,7 @@ impl TestState {
 
 fn main() {
     gen_test! {
+        true
         "github" {
             file "root.ctl" { use { "water"; "a"; "b" } }
             file "package.ctlm" {

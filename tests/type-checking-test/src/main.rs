@@ -120,6 +120,7 @@ impl TestState {
 
 fn main() {
     gen_test! {
+        true
         simple "basic-structs" {
             struct pub A;
             struct priv B;
@@ -267,8 +268,8 @@ fn main() {
                 type Substance
             };
 
-            impl [T: Glue[Substance: bool]] Something[T] for A {
-                fn foo(a: T) {
+            impl [K, T: Glue[Substance: K]] Something[K] for T {
+                fn foo(a: K) {
                 }
             }
         }
