@@ -31,15 +31,25 @@ macro_rules! bound_impl_ident {
 }
 
 #[macro_export]
-macro_rules! ident_chain_id {
-    ($self:expr, $ast:expr) => {
-        $crate::ident_chain_id(
-            $self.current_file,
-            $ast,
-            $self.interner,
-            $self.ast_data,
-            $self.packages,
-        )
+macro_rules! match_scope_ptr {
+    (
+        ($self:expr, $ptr:expr, $span:expr) => {
+            $($binding:ident: $ty:ty => $code:expr,)*
+        }
+    ) => {
+        $(
+            if let Some($binding) = $ptr.try_read::<$ty>() {
+                let _ = $binding;
+                $code
+            } else
+        )*
+        {
+            let options = [$(stringify!($binding),)*];
+            $self.workspace.push(diag! {
+                ($span, $self.current_file) => "expected {}" { options.join(" or ") },
+            });
+            return Err(());
+        }
     };
 }
 
@@ -52,7 +62,7 @@ mod ty;
 mod ty_factory;
 
 pub use funcs::{Def, DefEnt, FuncFlags, FuncParserCtx, Sig};
-pub use items::{ident_chain_id, ItemContext};
+pub use items::ItemContext;
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
 pub use ty::{
@@ -63,9 +73,7 @@ pub use ty::{
 
 mod items {
     use crate::*;
-    use packaging_t::*;
     use parsing_t::*;
-    use storage::*;
 
     #[derive(Default)]
     pub struct ItemContext {
@@ -73,33 +81,5 @@ mod items {
         pub funcs: Vec<(AstEnt, Def)>,
         pub types: Vec<(AstEnt, Ty)>,
         pub impls: Vec<(AstEnt, Impl)>,
-    }
-
-    pub fn ident_chain_id(
-        file: Ident,
-        ast: AstEnt,
-        interner: &mut Interner,
-        ast_data: &AstData,
-        packages: &Packages,
-    ) -> Ident {
-        match ast.kind {
-            AstKind::IdentChain => {
-                let segments = ast_data[ast.children]
-                    .iter()
-                    .map(|child| interner.intern_str(packages.span_str(file, child.span)))
-                    .map(|segment| [InternedSegment::from(segment), "`".into()])
-                    .flatten()
-                    .take(
-                        (ast_data[ast.children].len() * 2)
-                            .checked_sub(1)
-                            .unwrap_or(0),
-                    ) // -1 for the excess `
-                    .collect::<Vec<_>>();
-
-                interner.intern(&segments)
-            }
-            AstKind::Ident => interner.intern_str(packages.span_str(file, ast.span)),
-            _ => unimplemented!(),
-        }
     }
 }

@@ -11,10 +11,10 @@ macro_rules! scope_error_handler {
                 $self.current_file,
                 $id,
                 $message,
-                $self.packages,
-                $self.interner,
-                $self.scope,
-                $self.workspace,
+                &$self.packages,
+                &mut $self.interner,
+                &$self.scope,
+                &mut $self.workspace,
             )
         }
     };

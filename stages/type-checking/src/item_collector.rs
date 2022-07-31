@@ -45,15 +45,29 @@ impl ItemCollector<'_> {
         item: AstEnt,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
-        let [generics, bound, target, ..] = self.ast_data[item.children] else {
+        let [generics, ast_bound, ast_implementor, ..] = self.ast_data[item.children] else {
             unreachable!();
         };
 
         self.scope.start_frame();
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
-        let bound = ty_parser!(self, self.current_file).parse(bound)?;
-        let implementor = ty_parser!(self, self.current_file).parse(target)?;
+        let bound = ty_parser!(self, self.current_file).parse(ast_bound)?;
+        let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
         self.scope.end_frame();
+
+        if !self.typec.is_valid_bound(bound) {
+            self.workspace.push(diag! {
+                (ast_bound.span, self.current_file) => "expected valid bound type"
+            });
+        }
+
+        if self.typec.has_param_base(implementor) {
+            self.workspace.push(diag! {
+                (ast_implementor.span, self.current_file) => "expected valid implementor type",
+                (none) => "implementor cannot have generic base",
+                (none) => "if you want to implement bound for a bound use it explicitly",
+            });
+        }
 
         let id = {
             let bound_base = self.typec.instance_base_of(bound);
@@ -71,7 +85,7 @@ impl ItemCollector<'_> {
             bound,
             implementor,
             funcs: Maybe::none(),
-            span: target.span.into(),
+            span: ast_implementor.span.into(),
             next: next.into(),
         };
         let r#impl = self.typec.impls.push(impl_ent);
@@ -81,7 +95,7 @@ impl ItemCollector<'_> {
         while let Some(other) = current {
             if bound_checker!(self).impls_overlap(r#impl, other) {
                 self.workspace.push(diag! {
-                    (target.span, self.current_file) => "implementation overlaps with existing one",
+                    (ast_implementor.span, self.current_file) => "implementation overlaps with existing one",
                     (self.typec.impls[other].span, self.current_file) => "colliding implementation",
                 })
             }

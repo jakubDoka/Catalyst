@@ -62,6 +62,13 @@ impl TestState {
                 let dep_id = self
                     .interner
                     .intern_str(self.packages.span_str(module, dep.name));
+                self.scope
+                    .insert(
+                        module,
+                        ScopeItem::new(dep_id, dep.ptr, dep.name, module),
+                        &mut self.interner,
+                    )
+                    .unwrap();
                 for item in items {
                     self.scope
                         .insert(module, item.to_scope_item(dep_id), &mut self.interner)
@@ -250,8 +257,7 @@ fn main() {
             };
 
             impl Something[u8] for A {
-                fn foo(a: u8) {
-                }
+                fn foo(a: u8) {}
             };
 
             impl Something[A] for A;
@@ -263,14 +269,13 @@ fn main() {
             impl Something[uint] for A {
                 use soo[uint] as foo
             };
+        }
+        simple "bound-associated-types" {
+            bound Something {
+                type A;
+                type B;
 
-            bound Glue {
-                type Substance
-            };
-
-            impl [K, T: Glue[Substance: K]] Something[K] for T {
-                fn foo(a: K) {
-                }
+                fn foo(a: Self::A, b: Self::B);
             }
         }
         // "binary-operators-and-precedence" {

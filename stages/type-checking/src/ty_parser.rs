@@ -126,10 +126,12 @@ impl TyParser<'_> {
             let [.., ty] = self.ast_data[ast_arg.children] else {
                 unreachable!("{:?}", &self.ast_data[ast_arg.children]);
             };
-            let ty = ty_parser!(self, self.current_file).parse(ty)?;
+            let Ok(ty) = ty_parser!(self, self.current_file).parse(ty) else {
+                continue;
+            };
             self.typec.slices.push_to_reserved(&mut reserved, ty);
         }
-        Ok(self.typec.slices.finish_reserved(reserved))
+        Ok(self.typec.slices.fill_reserved(reserved, BuiltinTypes::ANY))
     }
 
     pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {

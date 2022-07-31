@@ -19,6 +19,7 @@ pub struct Typec {
 gen_v_ptr!(Unused);
 
 impl Typec {
+    #[inline]
     pub fn ptr_depth(&self, ty: Ty) -> u32 {
         match self.types[ty].kind {
             TyKind::Ptr { depth, .. } => depth,
@@ -26,10 +27,12 @@ impl Typec {
         }
     }
 
+    #[inline]
     pub fn param_count(&self, ty: Ty) -> usize {
         self.types[ty].param_count as usize
     }
 
+    #[inline]
     pub fn instance_base_of(&self, ty: Ty) -> Ty {
         if let TyKind::Instance { base, .. } = self.types[ty].kind {
             base
@@ -38,6 +41,28 @@ impl Typec {
         }
     }
 
+    #[inline]
+    pub fn pointer_leaf_of(&self, ty: Ty) -> Ty {
+        if let TyKind::Ptr { base, .. } = self.types[ty].kind {
+            self.pointer_leaf_of(base)
+        } else {
+            ty
+        }
+    }
+
+    #[inline]
+    pub fn absolute_base_of(&self, ty: Ty) -> Ty {
+        self.pointer_leaf_of(self.instance_base_of(ty))
+    }
+
+    pub fn has_param_base(&self, ty: Ty) -> bool {
+        matches!(
+            self.types[self.absolute_base_of(ty)].kind,
+            TyKind::Param { .. }
+        )
+    }
+
+    #[inline]
     pub fn assoc_ty_index(&self, ty: Ty) -> Option<usize> {
         if let TyKind::AssocType { index } = self.types[ty].kind {
             Some(index as usize)
@@ -46,6 +71,7 @@ impl Typec {
         }
     }
 
+    #[inline]
     pub fn assoc_ty_count(&self, ty: Ty) -> usize {
         if let TyKind::Bound { assoc_types, .. } = self.types[ty].kind {
             self.slices[assoc_types].len()
@@ -54,12 +80,22 @@ impl Typec {
         }
     }
 
+    #[inline]
     pub fn params_of_def(&self, def: Def) -> Maybe<TyList> {
         self.defs[def].params
     }
 
+    #[inline]
     pub fn args_of(&self, def: Def) -> Maybe<TyList> {
         self.defs[def].sig.args
+    }
+
+    #[inline]
+    pub fn is_valid_bound(&self, ty: Ty) -> bool {
+        matches!(
+            self.types[self.instance_base_of(ty)].kind,
+            TyKind::Bound { .. }
+        )
     }
 }
 
