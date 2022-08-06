@@ -26,7 +26,7 @@ impl FuncParser<'_> {
 
     pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (AstEnt, Def)>) {
         for (ast, def) in funcs {
-            let [_cc, generics, _name, ref args @  .., _ret, body] = self.ast_data[ast.children] else {
+            let [_cc, generics, _name, ref args @ .., _ret, body] = self.ast_data[ast.children] else {
                 unreachable!();
             };
 

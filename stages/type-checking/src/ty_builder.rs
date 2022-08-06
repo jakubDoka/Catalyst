@@ -17,12 +17,13 @@ impl TyBuilder<'_> {
     }
 
     fn bound(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {
-        let &[generics, .., body] = &self.ast_data[ast.children] else {
+        let &[generics, name, .., body] = &self.ast_data[ast.children] else {
             unreachable!();
         };
 
         self.scope.start_frame();
-
+        let ty_id = self.interner.intern_str(span_str!(self, name.span));
+        self.scope.self_alias = ty_id.into();
         ty_parser!(self, self.current_file).generics(generics);
         let res_funcs = self.bound_funcs(body, ty);
         let TyKind::Bound { ref mut funcs, .. } = self.typec.types[ty].kind else {
@@ -30,6 +31,7 @@ impl TyBuilder<'_> {
         };
         *funcs = res_funcs;
 
+        self.scope.self_alias.take();
         self.scope.end_frame();
 
         Ok(())

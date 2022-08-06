@@ -4,13 +4,21 @@ use lexing_t::*;
 use storage::*;
 
 pub struct Scope {
-    data: SparseMap<Ident, Maybe<Item>>,
+    data: Map<Maybe<Item>>,
     frames: Frames<(Ident, Maybe<Item>)>,
+    pub self_alias: Maybe<Ident>,
 }
 
 impl Scope {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn project(&self, id: Ident, str: &str) -> Ident {
+        self.self_alias
+            .expand()
+            .and_then(|s| (str == "Self").then_some(s))
+            .unwrap_or(id)
     }
 
     pub fn get(&self, ident: Ident) -> Result<ScopePtr, ScopeError> {
@@ -111,8 +119,9 @@ impl Scope {
 impl Default for Scope {
     fn default() -> Self {
         Self {
-            data: SparseMap::new(),
+            data: Map::new(),
             frames: Frames::new(),
+            self_alias: Maybe::none(),
         }
     }
 }

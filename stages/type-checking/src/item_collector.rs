@@ -148,7 +148,7 @@ impl ItemCollector<'_> {
 
         let (local_id, id) = self.compute_ids(name.span, vis);
 
-        let assoc_types = ty_parser!(self, self.current_file).assoc_types(body, id);
+        let assoc_types = ty_parser!(self, self.current_file).assoc_types(body, id, local_id);
 
         let ent = TyEnt {
             kind: TyKind::Bound {

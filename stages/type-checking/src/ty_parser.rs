@@ -175,7 +175,12 @@ impl TyParser<'_> {
         }
     }
 
-    pub fn assoc_types(&mut self, ast: AstEnt, bound_id: Ident) -> Maybe<TyList> {
+    pub fn assoc_types(
+        &mut self,
+        ast: AstEnt,
+        bound_id: Ident,
+        local_bound_id: Ident,
+    ) -> Maybe<TyList> {
         let assoc_type_count = self.ast_data[ast.children]
             .iter()
             .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
@@ -188,7 +193,7 @@ impl TyParser<'_> {
                 continue;
             };
 
-            drop(self.assoc_type(item, bound_id, &mut assoc_types, vis));
+            drop(self.assoc_type(item, bound_id, local_bound_id, &mut assoc_types, vis));
         }
 
         self.typec
@@ -200,6 +205,7 @@ impl TyParser<'_> {
         &mut self,
         ast: AstEnt,
         bound_id: Ident,
+        local_bound_id: Ident,
         assoc_types: &mut Reserved<TyList>,
         vis: Vis,
     ) -> errors::Result {
@@ -210,6 +216,9 @@ impl TyParser<'_> {
         let id = self
             .interner
             .intern(scoped_ident!(bound_id, span_str!(self, name.span)));
+        let local_id = self
+            .interner
+            .intern(scoped_ident!(local_bound_id, span_str!(self, name.span)));
         self.visibility[id] = vis;
 
         if let Some(prev) = self.typec.types.get(id) {
@@ -229,6 +238,9 @@ impl TyParser<'_> {
         let ty = self.typec.types.insert_unique(id, ty_ent);
         self.typec.slices.push_to_reserved(assoc_types, ty);
 
+        let item = ModItem::new(local_id, ty, name.span);
+        insert_scope_item!(self, item);
+
         Ok(())
     }
 
@@ -238,15 +250,15 @@ impl TyParser<'_> {
                 let segments = self.ast_data[ast.children]
                     .iter()
                     .map(|child| self.packages.span_str(self.current_file, child.span))
-                    .map(|str| self.interner.intern_str(str))
-                    .map(|id| self.scope.get_concrete::<Ident>(id).unwrap_or(id))
+                    .map(|str| (self.interner.intern_str(str), str))
+                    .map(|(id, str)| self.scope.project(id, str))
                     .map(|segment| [InternedSegment::from(segment), "`".into()])
                     .flatten()
                     .take(
                         (self.ast_data[ast.children].len() * 2)
                             .checked_sub(1)
                             .unwrap_or(0),
-                    ) // -1 for the excess `
+                    ) // -1 for the excess
                     .collect::<Vec<_>>();
 
                 self.interner.intern(&segments)
@@ -254,7 +266,7 @@ impl TyParser<'_> {
             AstKind::Ident => {
                 let str = self.packages.span_str(self.current_file, ast.span);
                 let id = self.interner.intern_str(str);
-                self.scope.get_concrete::<Ident>(id).unwrap_or(id)
+                self.scope.project(id, str)
             }
             _ => unimplemented!(),
         }

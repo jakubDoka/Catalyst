@@ -62,13 +62,6 @@ impl TestState {
                 let dep_id = self
                     .interner
                     .intern_str(self.packages.span_str(module, dep.name));
-                self.scope
-                    .insert(
-                        module,
-                        ScopeItem::new(dep_id, dep.ptr, dep.name, module),
-                        &mut self.interner,
-                    )
-                    .unwrap();
                 for item in items {
                     self.scope
                         .insert(module, item.to_scope_item(dep_id), &mut self.interner)
