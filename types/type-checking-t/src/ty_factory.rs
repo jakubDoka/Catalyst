@@ -36,7 +36,7 @@ impl TyFactory<'_> {
             return ty;
         }
 
-        let params = self.typec.slices.bump(params).unwrap();
+        let params = self.typec.ty_lists.bump(params).unwrap();
         let ent = TyEnt {
             kind: TyKind::Instance { base, params },
             flags: self.typec.types[base].flags,
@@ -62,8 +62,8 @@ impl TyFactory<'_> {
             return ty;
         }
 
-        let inherits = self.typec.slices.bump_slice(inherits);
-        let assoc_types = self.typec.slices.bump_slice(assoc_types);
+        let inherits = self.typec.ty_lists.bump_slice(inherits);
+        let assoc_types = self.typec.ty_lists.bump_slice(assoc_types);
         let funcs = self.typec.funcs.bump_slice(funcs);
         let ent = TyEnt {
             kind: TyKind::Bound {

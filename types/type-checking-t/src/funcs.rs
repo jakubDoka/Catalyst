@@ -7,6 +7,7 @@ pub struct FuncParserCtx {
     pub current_fn: Maybe<Def>,
 }
 
+#[derive(Default)]
 pub struct DefEnt {
     pub params: Maybe<TyList>,
     pub flags: FuncFlags,
@@ -30,4 +31,4 @@ pub struct Sig {
     pub ret: Maybe<Ty>,
 }
 
-gen_v_ptr!(Def);
+gen_v_ptr!(Def DefList);

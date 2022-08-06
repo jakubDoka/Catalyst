@@ -1,3 +1,5 @@
+use std::default::default;
+
 use diags::*;
 use packaging_t::*;
 use parsing_t::*;
@@ -12,16 +14,118 @@ type Expected = Option<Ty>;
 impl FuncParser<'_> {
     pub fn bound_impls(&mut self, impls: impl IntoIterator<Item = (AstEnt, Impl)>) {
         for (ast, r#impl) in impls {
-            let &body = self.ast_data[ast.children].last().unwrap();
+            let [generics, .., body] = self.ast_data[ast.children] else {
+                unreachable!();
+            };
+
+            self.scope.start_frame();
+            self.push_generics(generics, self.typec.impls[r#impl].params);
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
-                    AstKind::ImplType => todo!(),
-                    AstKind::FuncSignature { vis } => todo!(),
+                    AstKind::ImplType => (),
+                    AstKind::ImplUse | AstKind::Func { .. } => (),
                     kind => unimplemented!("{:?}", kind),
                 }
             }
+
+            let mut funcs = vec![Maybe::none(); self.typec.func_count_of_impl(r#impl)];
+
+            for &item in &self.ast_data[body.children] {
+                match item.kind {
+                    AstKind::Func { .. } => drop(self.bound_impl_func(item, r#impl, &mut funcs)),
+                    AstKind::ImplUse => (),
+                    AstKind::ImplType => (),
+                    kind => unimplemented!("{:?}", kind),
+                }
+            }
+
+            self.scope.end_frame();
+
+            let mut missing = funcs
+                .iter()
+                .enumerate()
+                .filter_map(|(i, maybe)| maybe.is_none().then_some(i))
+                .peekable();
+
+            if missing.peek().is_some() {
+                let suggestions = missing
+                    .map(|i| self.typec.func_of_impl(r#impl, i))
+                    .map(|func| &self.interner[func.name])
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let loc = self.typec.loc_of(self.typec.impls[r#impl].bound);
+                self.workspace.push(diag! {
+                    (ast.span, self.current_file) => "some of the methods are not implemented",
+                    (none) => "missing methods: {}" { suggestions },
+                    (loc.span, loc.source) => "related bound type",
+                });
+                continue;
+            }
+
+            self.typec.impls[r#impl].funcs = self
+                .typec
+                .def_lists
+                .bump(funcs.into_iter().map(Maybe::unwrap));
         }
+    }
+
+    fn bound_impl_func(
+        &mut self,
+        item: AstEnt,
+        r#impl: Impl,
+        funcs: &mut Vec<Maybe<Def>>,
+    ) -> errors::Result {
+        let [cc, generics, ast_name, ref args @ .., ret, body] = self.ast_data[item.children] else {
+            unreachable!();
+        };
+
+        self.scope.start_frame();
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+        let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
+
+        let name = self.interner.intern_str(span_str!(self, ast_name.span));
+        let impl_id = self.typec.impls[r#impl].id;
+        let id = self.interner.intern(scoped_ident!(impl_id, name));
+
+        let Some(index) = self.typec.func_index_of_impl(r#impl, name) else {
+            let loc = self.typec.loc_of(self.typec.impls[r#impl].bound);
+            self.workspace.push(diag! {
+                (ast_name.span, self.current_file) => "function with this name does not exist for the bound",
+                (loc.span, loc.source) => "related bound defined here"
+            });
+            return Err(());
+        };
+
+        if let Some(already) = funcs[index].expand() {
+            let func = &self.typec.defs[already];
+            self.workspace.push(diag! {
+                (ast_name.span, self.current_file) => "function with this name is already implemented",
+                (func.span, self.current_file) => "previously defined here"
+            });
+            return Ok(());
+        }
+
+        let def_ent = DefEnt {
+            params,
+            flags: FuncFlags::GENERIC & params.is_some(),
+            source: self.current_file.into(),
+            span: ast_name.span.into(),
+            sig,
+            ..default()
+        };
+        let def = self.typec.defs.insert_unique(id, def_ent);
+
+        funcs[index] = Maybe::some(def);
+
+        self.tir_data.clear();
+        self.func_parser_ctx.current_fn = def.into();
+        let body = self.r#fn(body, generics, args, self.typec.defs[def].sig.ret.expand())?;
+        self.typec.defs[def].tir_data = self.tir_data.clone();
+        self.typec.defs[def].body = body.into();
+
+        Ok(())
     }
 
     pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (AstEnt, Def)>) {
@@ -49,7 +153,11 @@ impl FuncParser<'_> {
     ) -> errors::Result<Maybe<TirList>> {
         self.scope.start_frame();
 
-        self.push_generics(generics);
+        let parsed_generics = self
+            .typec
+            .params_of_def(self.func_parser_ctx.current_fn.unwrap());
+
+        self.push_generics(generics, parsed_generics);
         self.push_args(args);
 
         let TirKind::Block { stmts } = self.block(body, ret).kind else {
@@ -149,7 +257,7 @@ impl FuncParser<'_> {
             ))?;
 
         let sig = self.typec.defs[def].sig;
-        let [left_ty, right_ty] = self.typec.slices[sig.args] else {
+        let [left_ty, right_ty] = self.typec.ty_lists[sig.args] else {
             unreachable!();
         };
 
@@ -276,7 +384,11 @@ impl FuncParser<'_> {
     fn push_args(&mut self, args: &[AstEnt]) {
         let types = self.typec.args_of(self.func_parser_ctx.current_fn.unwrap());
         let mut reserved = self.tir_data.reserve(args.len());
-        for (i, (arg, &ty)) in args.iter().zip(self.typec.slices[types].iter()).enumerate() {
+        for (i, (arg, &ty)) in args
+            .iter()
+            .zip(self.typec.ty_lists[types].iter())
+            .enumerate()
+        {
             let [name, ..] = self.ast_data[arg.children] else {
                 unreachable!();
             };
@@ -292,13 +404,10 @@ impl FuncParser<'_> {
         self.tir_data.finish_reserved(reserved);
     }
 
-    fn push_generics(&mut self, generics: AstEnt) {
-        let params = self
-            .typec
-            .params_of_def(self.func_parser_ctx.current_fn.unwrap());
+    fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
         for (&ast_param, &param) in self.ast_data[generics.children]
             .iter()
-            .zip(self.typec.slices[params].iter())
+            .zip(self.typec.ty_lists[parsed_generics].iter())
         {
             let [name, ..] = self.ast_data[ast_param.children] else {
                 unreachable!();

@@ -60,7 +60,7 @@ impl TirDisplay<'_> {
                 let name = &self.interner[self.typec.defs.id(def)];
                 write!(to, "{}", name)?;
 
-                if let Some((&first, others)) = self.typec.slices[params].split_first() {
+                if let Some((&first, others)) = self.typec.ty_lists[params].split_first() {
                     write!(to, "[{}", &self.interner[self.typec.types.id(first)])?;
                     for &param in others {
                         write!(to, ", {}", &self.interner[self.typec.types.id(param)])?;

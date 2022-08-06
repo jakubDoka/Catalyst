@@ -38,7 +38,7 @@ impl TyBuilder<'_> {
     }
 
     fn bound_funcs(&mut self, ast: AstEnt, ty: Ty) -> Maybe<BoundFuncList> {
-        let assoc_type_count = self.typec.assoc_ty_count(ty);
+        let assoc_type_count = self.typec.assoc_ty_count_of_bound(ty);
         let func_count = self.ast_data[ast.children].len() - assoc_type_count;
 
         let mut funcs = self.typec.funcs.reserve(func_count);
@@ -65,13 +65,14 @@ impl TyBuilder<'_> {
         funcs: &mut Reserved<BoundFuncList>,
         vis: Vis,
     ) -> errors::Result<ModItem> {
-        let [cc, generics, name, ref args @ .., ret] = self.ast_data[ast.children] else {
+        let [cc, generics, ast_name, ref args @ .., ret] = self.ast_data[ast.children] else {
             unreachable!();
         };
 
+        let name = self.interner.intern_str(span_str!(self, ast_name.span));
         let local_id = self.interner.intern(scoped_ident!(
             span_str!(self, self.typec.types[ty].span.unwrap()),
-            span_str!(self, name.span)
+            name
         ));
         let id = intern_scoped_ident!(self, local_id);
         self.visibility[id] = vis;
@@ -88,12 +89,13 @@ impl TyBuilder<'_> {
 
         let bound_func_ent = BoundFuncEnt {
             sig,
+            name,
             params,
-            span: name.span.into(),
+            span: ast_name.span.into(),
         };
         let bound_func = self.typec.funcs.push_to_reserved(funcs, bound_func_ent);
 
-        Ok(ModItem::new(local_id, bound_func, name.span))
+        Ok(ModItem::new(local_id, bound_func, ast_name.span))
     }
 
     fn r#struct(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {

@@ -1,5 +1,6 @@
 #![feature(let_else)]
 #![feature(let_chains)]
+#![feature(default_free_fn)]
 
 #[macro_export]
 macro_rules! scope_error_handler {
@@ -56,16 +57,19 @@ mod utils {
                 (span, file) => "the identifier is ambiguous",
                 (none) => "hint: specify the module from which it is imported ({})" {
                     {
-                        let deps = packages.modules[file].deps;
-                        packages.conns[deps]
-                            .iter()
-                            .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
-                            .filter_map(|id| scope.get(id).is_ok().then_some(id))
-                            .collect::<Vec<_>>() // borrow checker would complain, rightfully so
-                            .into_iter()
-                            .map(|id| &interner[id])
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        if let Some(module) = packages.modules.get(file) {
+                            packages.conns[module.deps]
+                                .iter()
+                                .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
+                                .filter_map(|id| scope.get(id).is_ok().then_some(id))
+                                .collect::<Vec<_>>() // borrow checker would complain, rightfully so
+                                .into_iter()
+                                .map(|id| &interner[id])
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        } else {
+                            "wait what?".to_string()
+                        }
                     }
                 },
             },

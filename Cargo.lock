@@ -405,6 +405,7 @@ dependencies = [
 name = "type-checking-t"
 version = "0.1.0"
 dependencies = [
+ "diags",
  "lexing-t",
  "packaging-t",
  "parsing-t",

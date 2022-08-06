@@ -15,7 +15,12 @@ macro_rules! insert_scope_item {
         ) {
             $crate::duplicate_definition!($self, $res.span, span);
         }
-        $self.packages.modules[$self.current_file].add_item($res);
+        $self
+            .packages
+            .modules
+            .get_mut($self.current_file)
+            .unwrap()
+            .add_item($res);
     };
 }
 

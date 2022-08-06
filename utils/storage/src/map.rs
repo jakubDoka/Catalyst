@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     hash::{BuildHasher, Hasher},
 };
 
@@ -86,6 +86,11 @@ impl<T> Map<T> {
     #[inline]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.inner.values_mut()
+    }
+
+    #[inline]
+    pub fn entry(&mut self, key: Ident) -> Entry<Ident, T> {
+        self.inner.entry(key)
     }
 }
 

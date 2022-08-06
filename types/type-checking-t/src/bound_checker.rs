@@ -34,14 +34,15 @@ impl BoundChecker<'_> {
 
                     frontier.extend(
                         self.typec
-                            .slices
+                            .ty_lists
                             .get(params_a)
                             .iter()
-                            .zip(self.typec.slices.get(params_b).iter())
+                            .zip(self.typec.ty_lists.get(params_b).iter())
                             // Associated types should not be checked for overlap otherwise there would be
                             // no difference compared to generic parameters.
                             .take(
-                                self.typec.param_count(base_a) - self.typec.assoc_ty_count(base_a),
+                                self.typec.param_count(base_a)
+                                    - self.typec.assoc_ty_count_of_bound(base_a),
                             )
                             .map(|(a, b)| (*a, *b)),
                     );
@@ -69,9 +70,9 @@ impl BoundChecker<'_> {
                     }
 
                     frontier.extend(
-                        self.typec.slices[sig_a.args]
+                        self.typec.ty_lists[sig_a.args]
                             .iter()
-                            .zip(self.typec.slices[sig_b.args].iter())
+                            .zip(self.typec.ty_lists[sig_b.args].iter())
                             .map(|(a, b)| (*a, *b)),
                     );
 

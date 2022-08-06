@@ -281,7 +281,7 @@ impl<'a> Parser<'a> {
 
     fn expect_error(&mut self, kinds: impl IntoIterator<Item = TokenKind>) {
         self.workspace.push(diag! {
-            (self.state.current.span, self.state.path.unwrap())
+            (self.state.current.span, self.state.path)
             error => "expected {} but got {}" {
                 kinds.into_iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
@@ -291,7 +291,7 @@ impl<'a> Parser<'a> {
 
     fn expect_str_error(&mut self, strs: &[&str]) {
         self.workspace.push(diag! {
-            (self.state.current.span, self.state.path.unwrap())
+            (self.state.current.span, self.state.path)
             error => "expected {} but got {}" {
                 strs.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(" | "),
                 self.current_token_str()
@@ -301,9 +301,9 @@ impl<'a> Parser<'a> {
 
     fn unmatched_paren(&mut self, kind: TokenKind, span: Span) {
         self.workspace.push(diag! {
-            (self.state.current.span, self.state.path.unwrap())
+            (self.state.current.span, self.state.path)
             error => "unmatched paren {}" { kind.as_str() },
-            (span, self.state.path.unwrap()) => "the starting paren",
+            (span, self.state.path) => "the starting paren",
         });
     }
 
@@ -413,7 +413,7 @@ pub struct ParserState {
     current: Token,
     next: Token,
     progress: usize,
-    path: Maybe<Ident>,
+    path: Ident,
 }
 
 impl ParserState {
@@ -426,6 +426,6 @@ impl ParserState {
         self.current = lexer.next();
         self.next = lexer.next();
         self.progress = lexer.progress();
-        self.path = Maybe::some(path);
+        self.path = path;
     }
 }

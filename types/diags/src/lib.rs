@@ -1,3 +1,5 @@
+#![feature(let_else)]
+
 //! Crate defines all diagnostic structures and macros for constructing them.
 
 pub extern crate lexing_t as inner_lexing;
@@ -204,7 +206,7 @@ mod types {
     /// Represents diagnostic state of compiled project.
     #[derive(Default)]
     pub struct Workspace {
-        files: SparseMap<Ident, Doc>,
+        files: Map<Doc>,
         global_diags: Vec<Diag>,
         has_errors: bool,
     }
@@ -222,9 +224,17 @@ mod types {
                 }
 
                 if loc.span.is_some() {
-                    self.files[loc.source].code_diags.push(diag);
+                    self.files
+                        .entry(loc.source)
+                        .or_default()
+                        .code_diags
+                        .push(diag);
                 } else {
-                    self.files[loc.source].global_diags.push(diag);
+                    self.files
+                        .entry(loc.source)
+                        .or_default()
+                        .global_diags
+                        .push(diag);
                 }
             } else {
                 self.global_diags.push(diag);
@@ -364,7 +374,11 @@ mod types {
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
-            let module = &packages.modules[self.source];
+            let Some(module) = packages.modules.get(self.source) else {
+                writeln!(to, "| no source information")?;
+                return Ok(());
+            };
+
             if let Some(span) = self.span.expand() {
                 let (line, col) = module.line_mapping.line_info_at(span.start());
                 writeln!(to, "| {}:{}:{}", module.path.display(), line, col)?;

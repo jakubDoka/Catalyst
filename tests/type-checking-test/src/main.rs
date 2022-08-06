@@ -45,7 +45,12 @@ impl TestState {
             .module_order
             .iter()
             .copied()
-            .filter(|&m| matches!(self.packages.modules[m].kind, ModKind::Module { .. }))
+            .filter(|&m| {
+                matches!(
+                    self.packages.modules.get(m).unwrap().kind,
+                    ModKind::Module { .. }
+                )
+            })
             .collect::<Vec<_>>();
 
         let mut state = ParserState::new();
@@ -54,8 +59,8 @@ impl TestState {
                 self.scope.insert_builtin(self.typec.types.id(ty), ty);
             }
 
-            for dep in &self.packages.conns[self.packages.modules[module].deps] {
-                let ModKind::Module { ref items, .. } = self.packages.modules[dep.ptr].kind else {
+            for dep in &self.packages.conns[self.packages.modules.get(module).unwrap().deps] {
+                let ModKind::Module { ref items, .. } = self.packages.modules.get(dep.ptr).unwrap().kind else {
                     unreachable!();
                 };
 
@@ -70,7 +75,7 @@ impl TestState {
             }
 
             loop {
-                let source = &self.packages.modules[module].content;
+                let source = &self.packages.modules.get(module).unwrap().content;
                 state.start(source, module);
 
                 let mut parser =
@@ -85,6 +90,7 @@ impl TestState {
                 item_collector!(self, module).collect(ast, &mut self.item_context);
                 ty_builder!(self, module).types(&mut self.item_context.types);
                 func_parser!(self, module).funcs(self.item_context.funcs.drain(..));
+                func_parser!(self, module).bound_impls(self.item_context.bound_impls.drain(..));
 
                 if done {
                     break;

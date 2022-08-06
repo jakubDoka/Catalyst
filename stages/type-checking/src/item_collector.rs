@@ -81,6 +81,7 @@ impl ItemCollector<'_> {
         let next = self.typec.impl_index.insert(id, self.typec.impls.next());
 
         let impl_ent = ImplEnt {
+            id,
             params,
             bound,
             implementor,
@@ -89,7 +90,7 @@ impl ItemCollector<'_> {
             next: next.into(),
         };
         let r#impl = self.typec.impls.push(impl_ent);
-        ctx.impls.push((item, r#impl));
+        ctx.bound_impls.push((item, r#impl));
 
         let mut current = next;
         while let Some(other) = current {
@@ -158,7 +159,7 @@ impl ItemCollector<'_> {
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8
-                + self.typec.slices[assoc_types].len() as u8,
+                + self.typec.ty_lists[assoc_types].len() as u8,
             file: self.current_file.into(),
             span: name.span.into(),
         };

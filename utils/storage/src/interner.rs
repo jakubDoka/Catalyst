@@ -19,11 +19,13 @@ pub struct Interner {
 impl Interner {
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
-        Interner {
+        let mut s = Interner {
             map: HashMap::with_hasher(InternerBuildHasher),
             indices: vec![0],
             data: Box::default(),
-        }
+        };
+        s.intern_str("");
+        s
     }
 
     /// Interns a string
@@ -258,6 +260,18 @@ impl Hasher for InternerHasher {
 }
 
 gen_v_ptr!(Ident);
+
+impl Ident {
+    pub fn empty() -> Self {
+        Ident(0)
+    }
+}
+
+impl Default for Ident {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
 
 #[cfg(test)]
 mod test {

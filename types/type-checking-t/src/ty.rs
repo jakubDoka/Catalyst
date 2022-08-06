@@ -1,19 +1,21 @@
 use std::default::default;
 
 use crate::*;
+use diags::*;
 use lexing_t::*;
 use storage::*;
 
 #[derive(Default)]
 pub struct Typec {
     pub types: OrderedMap<TyEnt, Ty>,
-    pub slices: PoolBumpMap<TyList, Ty, Unused>,
+    pub ty_lists: PoolBumpMap<TyList, Ty, Unused>,
     pub variants: CachedPoolBumpMap<EnumVariantList, EnumVariantEnt, EnumVariant>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
     pub funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
     pub impl_index: Map<Impl>,
     pub impls: PoolMap<Impl, ImplEnt>,
     pub defs: OrderedMap<DefEnt, Def>,
+    pub def_lists: PoolBumpMap<DefList, Def, Unused>,
 }
 
 gen_v_ptr!(Unused);
@@ -55,6 +57,7 @@ impl Typec {
         self.pointer_leaf_of(self.instance_base_of(ty))
     }
 
+    #[inline]
     pub fn has_param_base(&self, ty: Ty) -> bool {
         matches!(
             self.types[self.absolute_base_of(ty)].kind,
@@ -72,9 +75,18 @@ impl Typec {
     }
 
     #[inline]
-    pub fn assoc_ty_count(&self, ty: Ty) -> usize {
+    pub fn assoc_ty_count_of_bound(&self, ty: Ty) -> usize {
         if let TyKind::Bound { assoc_types, .. } = self.types[ty].kind {
-            self.slices[assoc_types].len()
+            self.ty_lists[assoc_types].len()
+        } else {
+            0
+        }
+    }
+
+    #[inline]
+    pub fn func_count_of_bound(&self, ty: Ty) -> usize {
+        if let TyKind::Bound { funcs, .. } = self.types[ty].kind {
+            self.funcs[funcs].len()
         } else {
             0
         }
@@ -97,6 +109,40 @@ impl Typec {
             TyKind::Bound { .. }
         )
     }
+
+    #[inline]
+    pub fn func_count_of_impl(&self, r#impl: Impl) -> usize {
+        self.func_count_of_bound(self.instance_base_of(self.impls[r#impl].bound))
+    }
+
+    #[inline]
+    pub fn func_of_bound(&self, ty: Ty, index: usize) -> BoundFuncEnt {
+        let TyKind::Bound { funcs, .. } = self.types[ty].kind else {
+            unreachable!();
+        };
+
+        self.funcs[funcs][index]
+    }
+
+    #[inline]
+    pub fn func_of_impl(&self, r#impl: Impl, index: usize) -> BoundFuncEnt {
+        self.func_of_bound(self.instance_base_of(self.impls[r#impl].bound), index)
+    }
+
+    #[inline]
+    pub fn func_index_of_impl(&self, r#impl: Impl, name: Ident) -> Option<usize> {
+        let bound = self.impls[r#impl].bound;
+        let TyKind::Bound { funcs, .. } = self.types[self.instance_base_of(bound)].kind else {
+            unreachable!();
+        };
+        self.funcs[funcs].iter().position(|func| func.name == name)
+    }
+
+    #[inline]
+    pub fn loc_of(&self, ty: Ty) -> Loc {
+        let TyEnt { file, span, .. } = self.types[ty];
+        Loc { span, source: file }
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -104,7 +150,7 @@ pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
     pub param_count: u8,
-    pub file: Maybe<Ident>,
+    pub file: Ident,
     pub span: Maybe<Span>,
 }
 
@@ -178,15 +224,17 @@ impl Default for TyKind {
 #[derive(Clone, Copy, Default)]
 pub struct BoundFuncEnt {
     pub sig: Sig,
+    pub name: Ident,
     pub params: Maybe<TyList>,
     pub span: Maybe<Span>,
 }
 
 pub struct ImplEnt {
+    pub id: Ident,
     pub params: Maybe<TyList>,
     pub bound: Ty,
     pub implementor: Ty,
-    pub funcs: Maybe<BoundFuncList>,
+    pub funcs: Maybe<DefList>,
     pub span: Maybe<Span>,
     pub next: Maybe<Impl>,
 }

@@ -121,7 +121,7 @@ impl TyParser<'_> {
     }
 
     pub fn args(&mut self, args: &[AstEnt]) -> errors::Result<Maybe<TyList>> {
-        let mut reserved = self.typec.slices.reserve(args.len());
+        let mut reserved = self.typec.ty_lists.reserve(args.len());
         for &ast_arg in args {
             let [.., ty] = self.ast_data[ast_arg.children] else {
                 unreachable!("{:?}", &self.ast_data[ast_arg.children]);
@@ -129,9 +129,12 @@ impl TyParser<'_> {
             let Ok(ty) = ty_parser!(self, self.current_file).parse(ty) else {
                 continue;
             };
-            self.typec.slices.push_to_reserved(&mut reserved, ty);
+            self.typec.ty_lists.push_to_reserved(&mut reserved, ty);
         }
-        Ok(self.typec.slices.fill_reserved(reserved, BuiltinTypes::ANY))
+        Ok(self
+            .typec
+            .ty_lists
+            .fill_reserved(reserved, BuiltinTypes::ANY))
     }
 
     pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
@@ -154,7 +157,7 @@ impl TyParser<'_> {
 
             params.push(param);
         }
-        Ok(self.typec.slices.bump_slice(&params))
+        Ok(self.typec.ty_lists.bump_slice(&params))
     }
 
     pub fn generics(&mut self, generics: AstEnt) {
@@ -186,7 +189,7 @@ impl TyParser<'_> {
             .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
             .count();
 
-        let mut assoc_types = self.typec.slices.reserve(assoc_type_count);
+        let mut assoc_types = self.typec.ty_lists.reserve(assoc_type_count);
 
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::BoundType { vis } = item.kind else {
@@ -197,7 +200,7 @@ impl TyParser<'_> {
         }
 
         self.typec
-            .slices
+            .ty_lists
             .fill_reserved(assoc_types, BuiltinTypes::ANY)
     }
 
@@ -228,7 +231,7 @@ impl TyParser<'_> {
 
         let ty_ent = TyEnt {
             kind: TyKind::AssocType {
-                index: self.typec.slices.reserve_len(&assoc_types) as u32,
+                index: self.typec.ty_lists.reserve_len(&assoc_types) as u32,
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
@@ -236,7 +239,7 @@ impl TyParser<'_> {
             span: name.span.into(),
         };
         let ty = self.typec.types.insert_unique(id, ty_ent);
-        self.typec.slices.push_to_reserved(assoc_types, ty);
+        self.typec.ty_lists.push_to_reserved(assoc_types, ty);
 
         let item = ModItem::new(local_id, ty, name.span);
         insert_scope_item!(self, item);
