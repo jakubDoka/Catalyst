@@ -12,7 +12,7 @@ use crate::VPtr;
 /// and are assigned unique id.
 pub struct Interner {
     map: HashMap<InternerEntry, Ident, InternerBuildHasher>,
-    indices: Vec<u32>,
+    indices: Vec<usize>,
     data: Box<String>,
 }
 
@@ -24,7 +24,7 @@ impl Interner {
             indices: vec![0],
             data: Box::default(),
         };
-        s.intern_str("");
+        assert_eq!(s.intern_str(""), Ident::empty());
         s
     }
 
@@ -50,7 +50,7 @@ impl Interner {
                 .and_modify(|_| self.data.truncate(prev))
                 .or_insert_with(|| {
                     let index = self.indices.len();
-                    self.indices.push(self.data.len() as u32);
+                    self.indices.push(self.data.len());
                     Ident::new(index)
                 }),
             vacant,
@@ -78,7 +78,7 @@ impl Interner {
         let index = ident.index();
         let start = self.indices[index - 1];
         let end = self.indices[index];
-        start as usize..end as usize
+        start..end
     }
 }
 
@@ -188,7 +188,7 @@ impl From<u32> for InternedSegment<'_> {
 #[derive(Deserialize, Serialize)]
 struct RawInterner {
     map: Vec<(u32, u32, Ident)>,
-    indices: Vec<u32>,
+    indices: Vec<usize>,
     data: Box<String>,
 }
 
