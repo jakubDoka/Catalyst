@@ -62,7 +62,7 @@ mod tir;
 mod ty;
 mod ty_factory;
 
-pub use funcs::{Def, DefEnt, DefList, FuncFlags, FuncParserCtx, Sig};
+pub use funcs::{Def, DefEnt, DefList, Func, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Sig};
 pub use items::ItemContext;
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};
 pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};

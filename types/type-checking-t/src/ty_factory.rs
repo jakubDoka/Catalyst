@@ -64,7 +64,7 @@ impl TyFactory<'_> {
 
         let inherits = self.typec.ty_lists.bump_slice(inherits);
         let assoc_types = self.typec.ty_lists.bump_slice(assoc_types);
-        let funcs = self.typec.funcs.bump_slice(funcs);
+        let funcs = self.typec.bound_funcs.bump_slice(funcs);
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits,

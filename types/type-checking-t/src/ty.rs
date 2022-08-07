@@ -11,11 +11,11 @@ pub struct Typec {
     pub ty_lists: PoolBumpMap<TyList, Ty, Unused>,
     pub variants: CachedPoolBumpMap<EnumVariantList, EnumVariantEnt, EnumVariant>,
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
-    pub funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
-    pub impl_index: Map<Impl>,
-    pub impls: PoolMap<Impl, ImplEnt>,
+    pub bound_funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
+    pub impls: PartialOrderedMap<ImplEnt, Impl>,
     pub defs: OrderedMap<DefEnt, Def>,
     pub def_lists: PoolBumpMap<DefList, Def, Unused>,
+    pub funcs: OrderedMap<FuncEnt, Func>,
 }
 
 gen_v_ptr!(Unused);
@@ -86,7 +86,7 @@ impl Typec {
     #[inline]
     pub fn func_count_of_bound(&self, ty: Ty) -> usize {
         if let TyKind::Bound { funcs, .. } = self.types[ty].kind {
-            self.funcs[funcs].len()
+            self.bound_funcs[funcs].len()
         } else {
             0
         }
@@ -121,7 +121,7 @@ impl Typec {
             unreachable!();
         };
 
-        self.funcs[funcs][index]
+        self.bound_funcs[funcs][index]
     }
 
     #[inline]
@@ -135,7 +135,9 @@ impl Typec {
         let TyKind::Bound { funcs, .. } = self.types[self.instance_base_of(bound)].kind else {
             unreachable!();
         };
-        self.funcs[funcs].iter().position(|func| func.name == name)
+        self.bound_funcs[funcs]
+            .iter()
+            .position(|func| func.name == name)
     }
 
     #[inline]
@@ -248,6 +250,7 @@ bitflags! {
         GENERIC
         MUTABLE
         BUILTIN
+        TY_PARAM
     }
 }
 

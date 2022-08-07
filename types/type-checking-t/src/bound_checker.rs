@@ -1,19 +1,48 @@
+use storage::*;
+
 use crate::*;
 
 impl BoundChecker<'_> {
-    pub fn compare_bound_signatures(&self, a: Sig, b: Sig, bound: Ty, implementor: Ty) -> bool {
-        if a.cc != b.cc {
+    pub fn compare_bound_signatures(
+        &self,
+        bound_sig: Sig,
+        implementor_params: Maybe<TyList>,
+        implementor_sig: Sig,
+        r#impl: Impl,
+    ) -> bool {
+        if bound_sig.cc != implementor_sig.cc {
             return false;
         }
 
-        let params_a = &self.typec.ty_lists[a.args];
-        let params_b = &self.typec.ty_lists[b.args];
+        let params_a = &self.typec.ty_lists[bound_sig.args];
+        let params_b = &self.typec.ty_lists[implementor_sig.args];
         if params_a.len() != params_b.len() {
             return false;
         }
 
+        let ImplEnt {
+            params,
+            bound,
+            implementor,
+            ..
+        } = self.typec.impls[r#impl];
+        let param_slice = &self.typec.ty_lists[params];
+        let implementor_param_slice = &self.typec.ty_lists[implementor_params];
+
         let ty_comparator = |a, b| {
-            self.types_overlap_low(a, b, |a, b| a == bound && b == implementor, |a, b| a == b)
+            self.types_overlap_low(
+                a,
+                b,
+                |a, b| {
+                    (a == bound && b == implementor)
+                        || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
+                    if (self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
+                        param_slice[index as usize] == b)
+                    || (!self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
+                        implementor_param_slice.get(index as usize).map_or(false, |&a| a == b)))
+                },
+                |a, b| a == b,
+            )
         };
 
         let params_not_equal = params_a
@@ -25,11 +54,11 @@ impl BoundChecker<'_> {
             return false;
         }
 
-        if let (Some(ret_a), Some(ret_b)) = (a.ret.expand(), b.ret.expand()) && !ty_comparator(ret_a, ret_b) {
+        if let (Some(ret_a), Some(ret_b)) = (bound_sig.ret.expand(), implementor_sig.ret.expand()) && !ty_comparator(ret_a, ret_b) {
             return false;
         }
 
-        a.ret == b.ret
+        bound_sig.ret == implementor_sig.ret
     }
 
     pub fn impls_overlap(&self, a: Impl, b: Impl) -> bool {
@@ -46,7 +75,7 @@ impl BoundChecker<'_> {
         &self,
         a: Ty,
         b: Ty,
-        ty_cmp: impl Fn(Ty, Ty) -> bool,
+        skip_case: impl Fn(Ty, Ty) -> bool,
         param_cmp: impl Fn(TyKind, TyKind) -> bool,
     ) -> bool {
         let mut frontier = vec![(a, b)];
@@ -56,7 +85,7 @@ impl BoundChecker<'_> {
                 continue;
             }
 
-            if ty_cmp(a, b) {
+            if skip_case(a, b) {
                 continue;
             }
 

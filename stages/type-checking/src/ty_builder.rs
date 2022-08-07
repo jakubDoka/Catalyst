@@ -41,7 +41,7 @@ impl TyBuilder<'_> {
         let assoc_type_count = self.typec.assoc_ty_count_of_bound(ty);
         let func_count = self.ast_data[ast.children].len() - assoc_type_count;
 
-        let mut funcs = self.typec.funcs.reserve(func_count);
+        let mut funcs = self.typec.bound_funcs.reserve(func_count);
 
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::FuncSignature { vis } = item.kind else {
@@ -55,7 +55,9 @@ impl TyBuilder<'_> {
             self.insert_scope_item(item);
         }
 
-        self.typec.funcs.fill_reserved(funcs, Default::default())
+        self.typec
+            .bound_funcs
+            .fill_reserved(funcs, Default::default())
     }
 
     fn func_signature(
@@ -93,7 +95,10 @@ impl TyBuilder<'_> {
             params,
             span: ast_name.span.into(),
         };
-        let bound_func = self.typec.funcs.push_to_reserved(funcs, bound_func_ent);
+        let bound_func = self
+            .typec
+            .bound_funcs
+            .push_to_reserved(funcs, bound_func_ent);
 
         Ok(ModItem::new(local_id, bound_func, ast_name.span))
     }

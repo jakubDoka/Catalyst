@@ -165,6 +165,8 @@ mod invalid;
 mod map;
 /// Map with addressable values. (by [`VPtr`])
 mod ordered_map;
+/// Similar to ordered map but some indexes may not have mapping.
+mod partial_ordered_map;
 /// Bump map with ability to reallocate slices.
 mod pool_bump_map;
 /// Vector abstraction that allows reusing allocations while preserving other values.
@@ -186,6 +188,7 @@ pub use interner::{Ident, InternedSegment, Interner};
 pub use invalid::{Invalid, Maybe};
 pub use map::Map;
 pub use ordered_map::OrderedMap;
+pub use partial_ordered_map::PartialOrderedMap;
 pub use pool_bump_map::{CachedPoolBumpMap, PoolBumpMap};
 pub use pool_map::PoolMap;
 pub use shadow_map::ShadowMap;

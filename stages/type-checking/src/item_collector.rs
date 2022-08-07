@@ -79,7 +79,7 @@ impl ItemCollector<'_> {
             ))
         };
 
-        let next = self.typec.impl_index.insert(id, self.typec.impls.next());
+        let next = self.typec.impls.index(id);
 
         let impl_ent = ImplEnt {
             id,
@@ -95,7 +95,7 @@ impl ItemCollector<'_> {
             ),
             next: next.into(),
         };
-        let r#impl = self.typec.impls.push(impl_ent);
+        let r#impl = self.typec.impls.redirect_insert(id, impl_ent);
         ctx.bound_impls.push((item, r#impl));
 
         let mut current = next;

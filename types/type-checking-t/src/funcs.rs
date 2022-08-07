@@ -17,6 +17,11 @@ pub struct DefEnt {
     pub sig: Sig,
 }
 
+pub struct FuncEnt {
+    pub def: Def,
+    pub params: Maybe<TyList>,
+}
+
 bitflags! {
     struct FuncFlags: u8 {
         GENERIC
@@ -30,4 +35,7 @@ pub struct Sig {
     pub ret: Maybe<Ty>,
 }
 
-gen_v_ptr!(Def DefList);
+gen_v_ptr!(
+    Def DefList
+    Func FuncList
+);
