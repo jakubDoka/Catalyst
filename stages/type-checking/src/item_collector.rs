@@ -20,7 +20,7 @@ impl ItemCollector<'_> {
                 continue;
             };
 
-            insert_scope_item!(self, res);
+            self.insert_scope_item(res);
         }
 
         for &item in &self.ast_data[ast] {
@@ -36,7 +36,7 @@ impl ItemCollector<'_> {
                 continue;
             };
 
-            insert_scope_item!(self, res);
+            self.insert_scope_item(res);
         }
     }
 
@@ -200,4 +200,6 @@ impl ItemCollector<'_> {
         self.visibility[id] = vis;
         (local, id)
     }
+
+    insert_scope_item!();
 }

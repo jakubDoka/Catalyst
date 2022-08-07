@@ -11,8 +11,7 @@ pub struct FuncParserCtx {
 pub struct DefEnt {
     pub params: Maybe<TyList>,
     pub flags: FuncFlags,
-    pub source: Maybe<Ident>,
-    pub span: Maybe<Span>,
+    pub loc: Maybe<Loc>,
     pub body: Maybe<TirList>,
     pub tir_data: TirData,
     pub sig: Sig,

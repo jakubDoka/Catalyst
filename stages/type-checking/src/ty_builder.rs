@@ -52,7 +52,7 @@ impl TyBuilder<'_> {
                 continue;
             };
 
-            insert_scope_item!(self, item);
+            self.insert_scope_item(item);
         }
 
         self.typec.funcs.fill_reserved(funcs, Default::default())
@@ -70,15 +70,15 @@ impl TyBuilder<'_> {
         };
 
         let name = self.interner.intern_str(span_str!(self, ast_name.span));
-        let local_id = self.interner.intern(scoped_ident!(
-            span_str!(self, self.typec.types[ty].span.unwrap()),
-            name
-        ));
+        let local_id = self
+            .interner
+            .intern(scoped_ident!(self.typec.types[ty].loc.ident(), name));
         let id = intern_scoped_ident!(self, local_id);
         self.visibility[id] = vis;
 
         if let Some(already) = self.typec.types.get(id) {
-            duplicate_definition!(self, ast.span, already.span);
+            let span = already.loc.expand(self.interner).span;
+            self.duplicate_definition(ast.span, span);
             return Err(());
         }
 
@@ -148,8 +148,11 @@ impl TyBuilder<'_> {
                 ptr: ScopePtr::new(field),
                 span: ast_name.span,
             };
-            insert_scope_item!(self, item);
+            self.insert_scope_item(item);
         }
         self.typec.fields.bump_pushed()
     }
+
+    duplicate_definition!();
+    insert_scope_item!();
 }

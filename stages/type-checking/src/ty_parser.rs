@@ -37,10 +37,10 @@ impl TyParser<'_> {
 
     fn parse_ident(&mut self, ast: AstEnt) -> errors::Result<Ty> {
         let id = self.ident_chain_id(ast);
-        self.scope
-            .get_concrete::<Ty>(id)
-            .map_err(scope_error_handler!(self, ast.span, id, "type not found"))
+        self.get_from_scope_concrete(id, ast.span, "type not found")
     }
+
+    scope_error_handler!(concrete);
 
     fn parse_ptr_ty(&mut self, mutable: bool, ast: AstEnt) -> errors::Result<Ty> {
         let base = self.parse(self.ast_data[ast.children][0])?;
@@ -225,7 +225,7 @@ impl TyParser<'_> {
         self.visibility[id] = vis;
 
         if let Some(prev) = self.typec.types.get(id) {
-            duplicate_definition!(self, ast.span, prev.span);
+            self.duplicate_definition(ast.span, prev.span);
             return Err(());
         }
 
@@ -242,7 +242,7 @@ impl TyParser<'_> {
         self.typec.ty_lists.push_to_reserved(assoc_types, ty);
 
         let item = ModItem::new(local_id, ty, name.span);
-        insert_scope_item!(self, item);
+        self.insert_scope_item(item);
 
         Ok(())
     }
@@ -274,4 +274,7 @@ impl TyParser<'_> {
             _ => unimplemented!(),
         }
     }
+
+    insert_scope_item!();
+    duplicate_definition!();
 }

@@ -39,13 +39,13 @@ macro_rules! location {
         $value
     };
     ($source:expr $(,)?) => {
-        Maybe::some($crate::Loc {
+        Maybe::some($crate::DiagLoc {
             span: Maybe::none(),
             source: $source,
         })
     };
     ($span:expr, $source:expr $(,)?) => {
-        Maybe::some($crate::Loc {
+        Maybe::some($crate::DiagLoc {
             span: $span.into(),
             source: $source,
         })
@@ -193,15 +193,19 @@ macro_rules! diag {
     };
 }
 
-pub use types::{Diag, DiagRel, Doc, Loc, Workspace};
+pub use types::{Diag, DiagLoc, DiagPackages, DiagRel, Doc, Workspace};
 
-mod types {
-    use std::fmt::Write;
+pub mod types {
+    use std::{fmt::Write, path::Path};
 
     use ansi_coloring::*;
     use inner_lexing::*;
-    use packaging_t::*;
     use storage::*;
+
+    pub trait DiagPackages {
+        fn line_info(&self, module: Ident, pos: Option<usize>) -> (&Path, Option<(usize, usize)>);
+        fn content_of(&self, module: Ident) -> &str;
+    }
 
     /// Represents diagnostic state of compiled project.
     #[derive(Default)]
@@ -241,7 +245,7 @@ mod types {
             }
         }
 
-        pub fn log(&self, packages: &Packages, style: &Style) {
+        pub fn log(&self, packages: &dyn DiagPackages, style: &Style) {
             let mut to = String::new();
             self.display(packages, &mut to, style).unwrap();
             println!("{}", to);
@@ -249,7 +253,7 @@ mod types {
 
         pub fn display(
             &self,
-            packages: &Packages,
+            packages: &dyn DiagPackages,
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
@@ -283,7 +287,7 @@ mod types {
 
         pub fn display(
             &self,
-            packages: &Packages,
+            packages: &dyn DiagPackages,
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
@@ -303,7 +307,7 @@ mod types {
     #[derive(Debug, PartialEq, Eq)]
     pub struct Diag {
         pub severity: raw::DiagnosticSeverity,
-        pub loc: Maybe<Loc>,
+        pub loc: Maybe<DiagLoc>,
         pub message: String,
         pub related: Vec<DiagRel>,
     }
@@ -311,7 +315,7 @@ mod types {
     impl Diag {
         pub fn display(
             &self,
-            packages: &Packages,
+            packages: &dyn DiagPackages,
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
@@ -336,14 +340,14 @@ mod types {
     /// Represents additional information about [`Diag`].
     #[derive(Debug, PartialEq, Eq)]
     pub struct DiagRel {
-        pub loc: Maybe<Loc>,
+        pub loc: Maybe<DiagLoc>,
         pub message: String,
     }
 
     impl DiagRel {
         pub fn display(
             &self,
-            packages: &Packages,
+            packages: &dyn DiagPackages,
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
@@ -361,38 +365,35 @@ mod types {
 
     /// Represents location of [`Diag`].
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Loc {
+    pub struct DiagLoc {
         pub span: Maybe<Span>,
         pub source: Ident,
     }
 
-    impl Loc {
+    impl DiagLoc {
         fn display(
             &self,
             color: &str,
-            packages: &Packages,
+            packages: &dyn DiagPackages,
             to: &mut dyn Write,
             style: &Style,
         ) -> std::fmt::Result {
-            let Some(module) = packages.modules.get(self.source) else {
-                writeln!(to, "| no source information")?;
-                return Ok(());
-            };
+            let (path, line_col) =
+                packages.line_info(self.source, self.span.expand().map(|s| s.start as usize));
 
-            if let Some(span) = self.span.expand() {
-                let (line, col) = module.line_mapping.line_info_at(span.start());
-                writeln!(to, "| {}:{}:{}", module.path.display(), line, col)?;
-                span.underline(color, "^", &module.content, to, style)?;
+            if let (Some((line, col)), Some(span)) = (line_col, self.span.expand()) {
+                writeln!(to, "| {}:{}:{}", path.display(), line, col)?;
+                span.underline(color, "^", packages.content_of(self.source), to, style)?;
                 write!(to, " ")
             } else {
-                write!(to, "| {}: ", module.path.display())
+                write!(to, "| {}: ", path.display())
             }
         }
     }
 
-    impl Invalid for Loc {
+    impl Invalid for DiagLoc {
         unsafe fn invalid() -> Self {
-            Loc {
+            DiagLoc {
                 span: Maybe::default(),
                 source: Ident::invalid(),
             }

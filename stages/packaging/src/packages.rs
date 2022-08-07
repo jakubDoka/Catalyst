@@ -17,8 +17,8 @@ pub const FILE_EXTENSION: &str = "ctl";
 pub const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
 pub const DEFAULT_DEP_ROOT: &str = "deps";
 
-type PackageFrontier = Vec<(Ident, PathBuf, Maybe<Loc>)>;
-type ModuleFrontier = Vec<(Ident, Ident, PathBuf, Maybe<Loc>)>;
+type PackageFrontier = Vec<(Ident, PathBuf, Maybe<DiagLoc>)>;
+type ModuleFrontier = Vec<(Ident, Ident, PathBuf, Maybe<DiagLoc>)>;
 
 impl PackageLoader<'_> {
     pub fn load(&mut self, root: &Path) -> errors::Result {
@@ -166,13 +166,13 @@ impl PackageLoader<'_> {
             let version_span = (version.kind != AstKind::None).then(|| version.span.shrink(1));
             let version = version_span.map(|span| &content[span.range()]);
 
-            let version_loc = Loc {
+            let version_loc = DiagLoc {
                 source: id,
                 span: version_span.into(),
             }
             .into();
 
-            let current_loc = Loc {
+            let current_loc = DiagLoc {
                 source: id,
                 span: path_span.into(),
             }
@@ -222,7 +222,7 @@ impl PackageLoader<'_> {
     ) -> errors::Result<Ident> {
         let id = self.intern_path(path)?;
 
-        let loc = Loc {
+        let loc = DiagLoc {
             source: package,
             span: loc,
         }
@@ -347,7 +347,7 @@ impl PackageLoader<'_> {
             let mut path = root_module.with_extension("").join(module_name);
             path.set_extension(FILE_EXTENSION);
 
-            let import_loc = Loc {
+            let import_loc = DiagLoc {
                 source: id,
                 span: path_span.into(),
             }
@@ -376,8 +376,8 @@ impl PackageLoader<'_> {
     fn download_package(
         &mut self,
         project_path: &Path,
-        loc: Maybe<Loc>,
-        version_loc: Maybe<Loc>,
+        loc: Maybe<DiagLoc>,
+        version_loc: Maybe<DiagLoc>,
         version: Option<&str>,
         url: &str,
     ) -> errors::Result<PathBuf> {
@@ -433,7 +433,7 @@ impl PackageLoader<'_> {
 
     fn resolve_version(
         &mut self,
-        loc: Maybe<Loc>,
+        loc: Maybe<DiagLoc>,
         version: Option<&str>,
         url: &str,
     ) -> errors::Result<Option<String>> {
@@ -462,7 +462,7 @@ impl PackageLoader<'_> {
 
     fn execute_git<'a>(
         &mut self,
-        loc: Maybe<Loc>,
+        loc: Maybe<DiagLoc>,
         quiet: bool,
         args: impl IntoIterator<Item = &'a str> + Clone,
     ) -> errors::Result<String> {
@@ -530,7 +530,7 @@ impl PackageLoader<'_> {
             .copied()
     }
 
-    fn file_error(&mut self, loc: Maybe<Loc>, path: &Path, message: &str, err: std::io::Error) {
+    fn file_error(&mut self, loc: Maybe<DiagLoc>, path: &Path, message: &str, err: std::io::Error) {
         self.workspace.push(diag! {
             (exp loc) error => "{}" { message },
             (none) => "related path: {}" { path.display() },
@@ -538,7 +538,7 @@ impl PackageLoader<'_> {
         });
     }
 
-    fn invalid_path_encoding(&mut self, loc: Maybe<Loc>, path: &Path, kind: &str) {
+    fn invalid_path_encoding(&mut self, loc: Maybe<DiagLoc>, path: &Path, kind: &str) {
         self.workspace.push(diag! {
             (exp loc) error => "invalid {} path encoding" { kind },
             (none) => "path: {}" { path.display() },

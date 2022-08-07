@@ -10,4 +10,3 @@ lsp-types = "0.93.0"
 storage = { path = "../../utils/storage" }
 ansi-coloring = { path = "../../utils/ansi-coloring" }
 lexing-t = { path = "../lexing-t" }
-packaging-t = { path = "../packaging-t" }

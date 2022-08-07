@@ -246,15 +246,8 @@ impl FuncParser<'_> {
         };
 
         let op_id = self.op_id(op, true);
-        let def = self
-            .scope
-            .get_concrete::<Def>(op_id)
-            .map_err(scope_error_handler!(
-                self,
-                op.span,
-                op_id,
-                "binary operator not found"
-            ))?;
+        let def =
+            self.get_from_scope_concrete::<Def>(op_id, op.span, "binary operator not found")?;
 
         let sig = self.typec.defs[def].sig;
         let [left_ty, right_ty] = self.typec.ty_lists[sig.args] else {
@@ -302,12 +295,7 @@ impl FuncParser<'_> {
     fn ident(&mut self, ast: AstEnt) -> errors::Result<TirEnt> {
         let id = ty_parser!(self, self.current_file).ident_chain_id(ast);
 
-        let something = self.scope.get(id).map_err(scope_error_handler!(
-            self,
-            ast.span,
-            id,
-            "symbol not found"
-        ))?;
+        let something = self.get_from_scope(id, ast.span, "symbol not found")?;
 
         let result = if let Some(var) = something.try_read::<Tir>() {
             TirEnt::new(TirKind::Access { var })
@@ -418,4 +406,6 @@ impl FuncParser<'_> {
                 .push(ScopeItem::new(id, param, name.span, self.current_file));
         }
     }
+
+    scope_error_handler!();
 }

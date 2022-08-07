@@ -1,7 +1,6 @@
 use std::default::default;
 
 use crate::*;
-use diags::*;
 use lexing_t::*;
 use storage::*;
 
@@ -137,12 +136,6 @@ impl Typec {
         };
         self.funcs[funcs].iter().position(|func| func.name == name)
     }
-
-    #[inline]
-    pub fn loc_of(&self, ty: Ty) -> Loc {
-        let TyEnt { file, span, .. } = self.types[ty];
-        Loc { span, source: file }
-    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -150,8 +143,7 @@ pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
     pub param_count: u8,
-    pub file: Ident,
-    pub span: Maybe<Span>,
+    pub loc: Loc,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -235,7 +227,7 @@ pub struct ImplEnt {
     pub bound: Ty,
     pub implementor: Ty,
     pub funcs: Maybe<DefList>,
-    pub span: Maybe<Span>,
+    pub loc: Loc,
     pub next: Maybe<Impl>,
 }
 

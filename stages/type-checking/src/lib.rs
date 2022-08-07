@@ -4,19 +4,54 @@
 
 #[macro_export]
 macro_rules! scope_error_handler {
-    ($self:expr, $span:expr, $id:expr, $message:expr) => {
-        |err| {
-            handle_scope_error(
-                err,
-                $span,
-                $self.current_file,
-                $id,
-                $message,
-                &$self.packages,
-                &mut $self.interner,
-                &$self.scope,
-                &mut $self.workspace,
-            )
+    () => {
+        scope_error_handler!(any);
+        scope_error_handler!(concrete);
+    };
+
+    (any) => {
+        pub fn get_from_scope(
+            &self,
+            id: Ident,
+            span: lexing_t::Span,
+            message: impl Into<String>,
+        ) -> errors::Result<ScopePtr> {
+            self.scope.get(id).map_err(|err| {
+                crate::handle_scope_error(
+                    err,
+                    span,
+                    self.current_file,
+                    id,
+                    message,
+                    &self.packages,
+                    &mut self.interner,
+                    &self.scope,
+                    &mut self.workspace,
+                )
+            })
+        }
+    };
+
+    (concrete) => {
+        pub fn get_from_scope_concrete<T: VPtr + 'static>(
+            &self,
+            id: Ident,
+            span: lexing_t::Span,
+            message: impl Into<String>,
+        ) -> errors::Result<T> {
+            self.scope.get_concrete::<T>(id).map_err(|err| {
+                crate::handle_scope_error(
+                    err,
+                    span,
+                    self.current_file,
+                    id,
+                    message,
+                    &self.packages,
+                    &mut self.interner,
+                    &self.scope,
+                    &mut self.workspace,
+                )
+            })
         }
     };
 }
