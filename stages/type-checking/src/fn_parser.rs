@@ -1,7 +1,7 @@
 use std::default::default;
 
 use diags::*;
-use inner_lexing::Loc;
+use lexing_t::*;
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -102,6 +102,13 @@ impl FuncParser<'_> {
             return Err(());
         };
 
+        if let Err(err) =
+            bound_checker!(self).compare_bound_signatures(index, default(), sig, r#impl)
+        {
+            self.report_signature_mismatch(err, r#impl, ast_name.span);
+            return Err(());
+        }
+
         if let Some(already) = funcs[index].expand() {
             let span = self.typec.defs[already].loc.expand(self.interner).span;
             self.workspace.push(diag! {
@@ -134,6 +141,44 @@ impl FuncParser<'_> {
         self.typec.defs[def].body = body.into();
 
         Ok(())
+    }
+
+    pub fn report_signature_mismatch(&mut self, err: SignatureError, r#impl: Impl, span: Span) {
+        let loc = self
+            .typec
+            .loc_of(self.typec.impls[r#impl].bound, self.interner);
+        let diag = match err {
+            SignatureError::CallConv(expected, got) => diag!(
+                (span, self.current_file) => "call convention mismatch, expected {} but got {}" {
+                    expected.expand().map_or("\"default\"", |cc| &self.interner[cc]),
+                    got.expand().map_or("\"default\"", |cc| &self.interner[cc]),
+                },
+                (exp loc) => "related bound defined here",
+            ),
+            SignatureError::ArgCount(expected, got) => diag!(
+                (span, self.current_file) => "argument count mismatch, expected {} but got {}" {
+                    expected,
+                    got,
+                },
+                (exp loc) => "related bound defined here",
+            ),
+            SignatureError::Arg(pos, expected, got) => diag!(
+                (span, self.current_file) => "argument {} mismatch, expected {} but got {}" {
+                    pos,
+                    &self.interner[self.typec.types.id(expected)],
+                    &self.interner[self.typec.types.id(got)],
+                },
+                (exp loc) => "related bound defined here",
+            ),
+            SignatureError::Ret(expected, got) => diag!(
+                (span, self.current_file) => "return type mismatch, expected {} but got {}" {
+                    expected.expand().map_or("nothing", |expected| &self.interner[self.typec.types.id(expected)]),
+                    got.expand().map_or("nothing", |got| &self.interner[self.typec.types.id(got)]),
+                },
+                (exp loc) => "related bound defined here",
+            ),
+        };
+        self.workspace.push(diag);
     }
 
     pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (AstEnt, Def)>) {

@@ -80,7 +80,6 @@ impl ItemCollector<'_> {
         };
 
         let next = self.typec.impls.index(id);
-
         let impl_ent = ImplEnt {
             id,
             params,

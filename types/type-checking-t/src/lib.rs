@@ -62,6 +62,7 @@ mod tir;
 mod ty;
 mod ty_factory;
 
+pub use bound_checker::SignatureError;
 pub use funcs::{Def, DefEnt, DefList, Func, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Sig};
 pub use items::ItemContext;
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};

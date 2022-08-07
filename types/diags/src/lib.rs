@@ -371,7 +371,7 @@ pub mod types {
     }
 
     impl DiagLoc {
-        fn display(
+        pub fn display(
             &self,
             color: &str,
             packages: &dyn DiagPackages,

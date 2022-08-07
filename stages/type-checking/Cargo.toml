@@ -15,4 +15,5 @@ type-checking-t = { path = "../../types/type-checking-t" }
 parsing-t = { path = "../../types/parsing-t" }
 packaging-t = { path = "../../types/packaging-t" }
 lexing-t = { path = "../../types/lexing-t" }
+ansi-coloring = { version = "0.1.0", path = "../../utils/ansi-coloring" }
 

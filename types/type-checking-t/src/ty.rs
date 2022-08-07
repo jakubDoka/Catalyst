@@ -150,6 +150,15 @@ impl Typec {
             })
             .into()
     }
+
+    #[inline]
+    pub fn instance_params(&self, bound: Ty) -> Maybe<TyList> {
+        if let TyKind::Instance { params, .. } = self.types[bound].kind {
+            params.into()
+        } else {
+            Maybe::none()
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy)]

@@ -5,28 +5,27 @@ use crate::*;
 impl BoundChecker<'_> {
     pub fn compare_bound_signatures(
         &self,
-        bound_sig: Sig,
+        bound_func_index: usize,
         implementor_params: Maybe<TyList>,
         implementor_sig: Sig,
         r#impl: Impl,
-    ) -> bool {
+    ) -> Result<(), SignatureError> {
+        let bound_sig = self.typec.func_of_impl(r#impl, bound_func_index).sig;
+
         if bound_sig.cc != implementor_sig.cc {
-            return false;
+            return Err(SignatureError::CallConv(bound_sig.cc, implementor_sig.cc));
         }
 
-        let params_a = &self.typec.ty_lists[bound_sig.args];
-        let params_b = &self.typec.ty_lists[implementor_sig.args];
-        if params_a.len() != params_b.len() {
-            return false;
+        let args_a = &self.typec.ty_lists[bound_sig.args];
+        let args_b = &self.typec.ty_lists[implementor_sig.args];
+        if args_a.len() != args_b.len() {
+            return Err(SignatureError::ArgCount(args_a.len(), args_b.len()));
         }
 
         let ImplEnt {
-            params,
-            bound,
-            implementor,
-            ..
+            bound, implementor, ..
         } = self.typec.impls[r#impl];
-        let param_slice = &self.typec.ty_lists[params];
+        let param_slice = &self.typec.ty_lists[self.typec.instance_params(bound)];
         let implementor_param_slice = &self.typec.ty_lists[implementor_params];
 
         let ty_comparator = |a, b| {
@@ -45,20 +44,23 @@ impl BoundChecker<'_> {
             )
         };
 
-        let params_not_equal = params_a
+        let params_not_equal = args_a
             .iter()
-            .zip(params_b.iter())
-            .any(|(&a, &b)| ty_comparator(a, b));
+            .zip(args_b.iter())
+            .enumerate()
+            .find(|(.., (&a, &b))| !ty_comparator(a, b));
 
-        if params_not_equal {
-            return false;
+        if let Some((i, (&a, &b))) = params_not_equal {
+            return Err(SignatureError::Arg(i, a, b));
         }
 
-        if let (Some(ret_a), Some(ret_b)) = (bound_sig.ret.expand(), implementor_sig.ret.expand()) && !ty_comparator(ret_a, ret_b) {
-            return false;
+        if matches!((bound_sig.ret.expand(), implementor_sig.ret.expand()), (Some(ret_a), Some(ret_b)) if !ty_comparator(ret_a, ret_b))
+            || bound_sig.ret != implementor_sig.ret
+        {
+            return Err(SignatureError::Ret(bound_sig.ret, implementor_sig.ret));
         }
 
-        bound_sig.ret == implementor_sig.ret
+        Ok(())
     }
 
     pub fn impls_overlap(&self, a: Impl, b: Impl) -> bool {
@@ -167,4 +169,11 @@ impl BoundChecker<'_> {
 
         true
     }
+}
+
+pub enum SignatureError {
+    CallConv(Maybe<Ident>, Maybe<Ident>),
+    ArgCount(usize, usize),
+    Arg(usize, Ty, Ty),
+    Ret(Maybe<Ty>, Maybe<Ty>),
 }
