@@ -13,18 +13,7 @@ impl BoundChecker<'_> {
         }
 
         let ty_comparator = |a, b| {
-            self.types_overlap_low(
-                a,
-                b,
-                |a, b| a == bound && b == implementor,
-                |a, b| {
-                    matches!(
-                        (a, b),
-                        (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. })
-                        if bound == bound_b
-                    )
-                },
-            )
+            self.types_overlap_low(a, b, |a, b| a == bound && b == implementor, |a, b| a == b)
         };
 
         let params_not_equal = params_a
