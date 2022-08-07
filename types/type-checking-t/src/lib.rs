@@ -1,6 +1,7 @@
 #![feature(let_else)]
 #![feature(inline_const)]
 #![feature(default_free_fn)]
+#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! field_ident {

@@ -1,6 +1,48 @@
 use crate::*;
 
 impl BoundChecker<'_> {
+    pub fn compare_bound_signatures(&self, a: Sig, b: Sig, bound: Ty, implementor: Ty) -> bool {
+        if a.cc != b.cc {
+            return false;
+        }
+
+        let params_a = &self.typec.ty_lists[a.args];
+        let params_b = &self.typec.ty_lists[b.args];
+        if params_a.len() != params_b.len() {
+            return false;
+        }
+
+        let ty_comparator = |a, b| {
+            self.types_overlap_low(
+                a,
+                b,
+                |a, b| a == bound && b == implementor,
+                |a, b| {
+                    matches!(
+                        (a, b),
+                        (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. })
+                        if bound == bound_b
+                    )
+                },
+            )
+        };
+
+        let params_not_equal = params_a
+            .iter()
+            .zip(params_b.iter())
+            .any(|(&a, &b)| ty_comparator(a, b));
+
+        if params_not_equal {
+            return false;
+        }
+
+        if let (Some(ret_a), Some(ret_b)) = (a.ret.expand(), b.ret.expand()) && !ty_comparator(ret_a, ret_b) {
+            return false;
+        }
+
+        a.ret == b.ret
+    }
+
     pub fn impls_overlap(&self, a: Impl, b: Impl) -> bool {
         let (a_ent, b_ent) = (&self.typec.impls[a], &self.typec.impls[b]);
         self.types_overlap(a_ent.bound, b_ent.bound)
@@ -8,10 +50,24 @@ impl BoundChecker<'_> {
     }
 
     pub fn types_overlap(&self, a: Ty, b: Ty) -> bool {
+        self.types_overlap_low(a, b, |_, _| false, |_, _| true)
+    }
+
+    pub fn types_overlap_low(
+        &self,
+        a: Ty,
+        b: Ty,
+        ty_cmp: impl Fn(Ty, Ty) -> bool,
+        param_cmp: impl Fn(TyKind, TyKind) -> bool,
+    ) -> bool {
         let mut frontier = vec![(a, b)];
 
         while let Some((a, b)) = frontier.pop() {
             if a == b {
+                continue;
+            }
+
+            if ty_cmp(a, b) {
                 continue;
             }
 
@@ -63,7 +119,11 @@ impl BoundChecker<'_> {
 
                     frontier.push((base_a, base_b));
                 }
-                (TyKind::Param { .. }, _) | (_, TyKind::Param { .. }) => continue,
+                (a @ TyKind::Param { .. }, b) | (a, b @ TyKind::Param { .. }) => {
+                    if !param_cmp(a, b) {
+                        return false;
+                    }
+                }
                 (TyKind::FuncPtr { sig: sig_a }, TyKind::FuncPtr { sig: sig_b }) => {
                     if sig_a.cc != sig_b.cc {
                         return false;
@@ -82,7 +142,7 @@ impl BoundChecker<'_> {
                         _ => return false,
                     }
                 }
-                (a, b) if a == b => continue,
+                (a, b) if a == b => (),
                 _ => return false,
             }
         }
