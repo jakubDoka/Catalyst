@@ -100,11 +100,10 @@ impl TestState {
             self.scope.clear();
         }
 
-        let iter = self
-            .typec
-            .defs
-            .values()
-            .filter_map(|def| Some((def.source.expand()?, def.span.expand()?, def)));
+        let iter = self.typec.defs.values().filter_map(|def| {
+            let loc = def.loc.expand(&self.interner);
+            Some((loc.file?, loc.span?, def))
+        });
 
         let mut str = String::new();
         for (source, span, def) in iter {

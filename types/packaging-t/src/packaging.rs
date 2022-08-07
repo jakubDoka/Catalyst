@@ -1,3 +1,4 @@
+use diags::DiagPackages;
 use lexing_t::*;
 use scope::*;
 use std::path::*;
@@ -22,6 +23,20 @@ impl Packages {
             .get(file)
             .map(|file| file.span_str(span))
             .unwrap_or_default()
+    }
+}
+
+impl DiagPackages for Packages {
+    fn line_info(&self, module: Ident, pos: Option<usize>) -> (&Path, Option<(usize, usize)>) {
+        let module = self.modules.get(module).unwrap();
+        (
+            module.path.as_path(),
+            pos.map(|pos| module.line_mapping.line_info_at(pos)),
+        )
+    }
+
+    fn content_of(&self, module: Ident) -> &str {
+        self.modules.get(module).unwrap().content.as_str()
     }
 }
 

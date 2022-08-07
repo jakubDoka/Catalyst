@@ -1,5 +1,6 @@
 use crate::*;
-use diags::{diag, inner_lexing::Span};
+use diags::*;
+use lexing_t::*;
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -86,7 +87,12 @@ impl ItemCollector<'_> {
             bound,
             implementor,
             funcs: Maybe::none(),
-            span: ast_implementor.span.into(),
+            loc: Loc::new(
+                Some(item.span.start),
+                self.current_file,
+                "impl",
+                self.interner,
+            ),
             next: next.into(),
         };
         let r#impl = self.typec.impls.push(impl_ent);
@@ -95,9 +101,10 @@ impl ItemCollector<'_> {
         let mut current = next;
         while let Some(other) = current {
             if bound_checker!(self).impls_overlap(r#impl, other) {
+                let span = self.typec.impls[other].loc.expand(self.interner).span;
                 self.workspace.push(diag! {
                     (ast_implementor.span, self.current_file) => "implementation overlaps with existing one",
-                    (self.typec.impls[other].span, self.current_file) => "colliding implementation",
+                    (span, self.current_file) => "colliding implementation",
                 })
             }
             current = self.typec.impls[other].next.expand();
@@ -112,7 +119,7 @@ impl ItemCollector<'_> {
         vis: Vis,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
-        let [cc, generics, name, ref args @ .., ret, _body] = self.ast_data[item.children] else {
+        let [cc, generics, ast_name, ref args @ .., ret, _body] = self.ast_data[item.children] else {
             unreachable!("{:?}", &self.ast_data[item.children]);
         };
 
@@ -120,13 +127,18 @@ impl ItemCollector<'_> {
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
-        let (local_id, id) = self.compute_ids(name.span, vis);
+        let (local_id, id) = self.compute_ids(ast_name.span, vis);
+        let name = span_str!(self, ast_name.span);
 
         let ent = DefEnt {
             params,
             flags: FuncFlags::GENERIC & params.is_some(),
-            source: self.current_file.into(),
-            span: name.span.into(),
+            loc: Loc::new(
+                Some(ast_name.span.start),
+                self.current_file,
+                name,
+                self.interner,
+            ),
             body: Maybe::none(),
             tir_data: TirData::new(),
             sig,
@@ -134,7 +146,7 @@ impl ItemCollector<'_> {
         let def = self.typec.defs.insert_unique(id, ent);
         ctx.funcs.push((item, def));
 
-        Ok(Some(ModItem::new(local_id, def, name.span)))
+        Ok(Some(ModItem::new(local_id, def, ast_name.span)))
     }
 
     fn collect_bound(
@@ -143,14 +155,15 @@ impl ItemCollector<'_> {
         vis: Vis,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
-        let [generics, name, body] = self.ast_data[item.children] else {
+        let [generics, ast_name, body] = self.ast_data[item.children] else {
             unreachable!();
         };
 
-        let (local_id, id) = self.compute_ids(name.span, vis);
+        let (local_id, id) = self.compute_ids(ast_name.span, vis);
 
         let assoc_types = ty_parser!(self, self.current_file).assoc_types(body, id, local_id);
 
+        let name = span_str!(self, ast_name.span);
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits: Maybe::none(),
@@ -160,13 +173,17 @@ impl ItemCollector<'_> {
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8
                 + self.typec.ty_lists[assoc_types].len() as u8,
-            file: self.current_file.into(),
-            span: name.span.into(),
+            loc: Loc::new(
+                Some(ast_name.span.start),
+                self.current_file,
+                name,
+                self.interner,
+            ),
         };
         let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
-        Ok(Some(ModItem::new(local_id, ty, name.span)))
+        Ok(Some(ModItem::new(local_id, ty, ast_name.span)))
     }
 
     fn collect_struct(
@@ -175,23 +192,28 @@ impl ItemCollector<'_> {
         vis: Vis,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
-        let [generics, name, ..] = self.ast_data[item.children] else {
+        let [generics, ast_name, ..] = self.ast_data[item.children] else {
             unreachable!();
         };
 
-        let (local_id, id) = self.compute_ids(name.span, vis);
+        let (local_id, id) = self.compute_ids(ast_name.span, vis);
+        let name = span_str!(self, ast_name.span);
 
         let ent = TyEnt {
             kind: TyKind::Inferrable,
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
-            file: self.current_file.into(),
-            span: name.span.into(),
+            loc: Loc::new(
+                Some(ast_name.span.start),
+                self.current_file,
+                name,
+                self.interner,
+            ),
         };
         let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
-        Ok(Some(ModItem::new(local_id, ty, name.span)))
+        Ok(Some(ModItem::new(local_id, ty, ast_name.span)))
     }
 
     fn compute_ids(&mut self, name: Span, vis: Vis) -> (Ident, Ident) {

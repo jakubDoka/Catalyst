@@ -11,7 +11,7 @@ macro_rules! scope_error_handler {
 
     (any) => {
         pub fn get_from_scope(
-            &self,
+            &mut self,
             id: Ident,
             span: lexing_t::Span,
             message: impl Into<String>,
@@ -34,7 +34,7 @@ macro_rules! scope_error_handler {
 
     (concrete) => {
         pub fn get_from_scope_concrete<T: VPtr + 'static>(
-            &self,
+            &mut self,
             id: Ident,
             span: lexing_t::Span,
             message: impl Into<String>,

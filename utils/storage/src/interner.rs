@@ -263,7 +263,7 @@ gen_v_ptr!(Ident);
 
 impl Ident {
     pub fn empty() -> Self {
-        Ident(0)
+        Ident(1)
     }
 }
 

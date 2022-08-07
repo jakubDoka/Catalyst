@@ -1,6 +1,7 @@
 use std::default::default;
 
 use crate::*;
+use diags::*;
 use lexing_t::*;
 use storage::*;
 
@@ -135,6 +136,17 @@ impl Typec {
             unreachable!();
         };
         self.funcs[funcs].iter().position(|func| func.name == name)
+    }
+
+    #[inline]
+    pub fn loc_of(&self, ty: Ty, interner: &Interner) -> Maybe<DiagLoc> {
+        let loc = self.types[ty].loc.expand(interner);
+        loc.file
+            .map(|file| DiagLoc {
+                span: loc.span.into(),
+                source: file,
+            })
+            .into()
     }
 }
 

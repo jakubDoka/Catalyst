@@ -1,6 +1,7 @@
 use std::default::default;
 
 use diags::*;
+use inner_lexing::Loc;
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -55,11 +56,13 @@ impl FuncParser<'_> {
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                let loc = self.typec.loc_of(self.typec.impls[r#impl].bound);
+                let loc = self
+                    .typec
+                    .loc_of(self.typec.impls[r#impl].bound, self.interner);
                 self.workspace.push(diag! {
                     (ast.span, self.current_file) => "some of the methods are not implemented",
                     (none) => "missing methods: {}" { suggestions },
-                    (loc.span, loc.source) => "related bound type",
+                    (exp loc) => "related bound type",
                 });
                 continue;
             }
@@ -85,24 +88,25 @@ impl FuncParser<'_> {
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
-        let name = self.interner.intern_str(span_str!(self, ast_name.span));
+        let name = span_str!(self, ast_name.span);
+        let name_id = self.interner.intern_str(name);
         let impl_id = self.typec.impls[r#impl].id;
-        let id = self.interner.intern(scoped_ident!(impl_id, name));
+        let id = self.interner.intern(scoped_ident!(impl_id, name_id));
 
-        let Some(index) = self.typec.func_index_of_impl(r#impl, name) else {
-            let loc = self.typec.loc_of(self.typec.impls[r#impl].bound);
+        let Some(index) = self.typec.func_index_of_impl(r#impl, name_id) else {
+            let loc = self.typec.loc_of(self.typec.impls[r#impl].bound, self.interner);
             self.workspace.push(diag! {
                 (ast_name.span, self.current_file) => "function with this name does not exist for the bound",
-                (loc.span, loc.source) => "related bound defined here"
+                (exp loc) => "related bound defined here"
             });
             return Err(());
         };
 
         if let Some(already) = funcs[index].expand() {
-            let func = &self.typec.defs[already];
+            let span = self.typec.defs[already].loc.expand(self.interner).span;
             self.workspace.push(diag! {
                 (ast_name.span, self.current_file) => "function with this name is already implemented",
-                (func.span, self.current_file) => "previously defined here"
+                (span, self.current_file) => "previously defined here"
             });
             return Ok(());
         }
@@ -110,8 +114,12 @@ impl FuncParser<'_> {
         let def_ent = DefEnt {
             params,
             flags: FuncFlags::GENERIC & params.is_some(),
-            source: self.current_file.into(),
-            span: ast_name.span.into(),
+            loc: Loc::new(
+                Some(ast_name.span.start),
+                self.current_file,
+                name,
+                self.interner,
+            ),
             sig,
             ..default()
         };
@@ -246,8 +254,7 @@ impl FuncParser<'_> {
         };
 
         let op_id = self.op_id(op, true);
-        let def =
-            self.get_from_scope_concrete::<Def>(op_id, op.span, "binary operator not found")?;
+        let def: Def = self.get_from_scope_concrete(op_id, op.span, "binary operator not found")?;
 
         let sig = self.typec.defs[def].sig;
         let [left_ty, right_ty] = self.typec.ty_lists[sig.args] else {

@@ -2,6 +2,7 @@ use std::ops::Not;
 
 use crate::*;
 use diags::*;
+use lexing_t::*;
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -212,20 +213,18 @@ impl TyParser<'_> {
         assoc_types: &mut Reserved<TyList>,
         vis: Vis,
     ) -> errors::Result {
-        let &[generics, name] = &self.ast_data[ast.children] else {
+        let &[generics, ast_name] = &self.ast_data[ast.children] else {
             unreachable!("{:?}", &self.ast_data[ast.children]);
         };
 
-        let id = self
-            .interner
-            .intern(scoped_ident!(bound_id, span_str!(self, name.span)));
-        let local_id = self
-            .interner
-            .intern(scoped_ident!(local_bound_id, span_str!(self, name.span)));
+        let name = span_str!(self, ast_name.span);
+        let id = self.interner.intern(scoped_ident!(bound_id, name));
+        let local_id = self.interner.intern(scoped_ident!(local_bound_id, name));
         self.visibility[id] = vis;
 
         if let Some(prev) = self.typec.types.get(id) {
-            self.duplicate_definition(ast.span, prev.span);
+            let span = prev.loc.expand(self.interner).span;
+            self.duplicate_definition(ast.span, span);
             return Err(());
         }
 
@@ -235,13 +234,17 @@ impl TyParser<'_> {
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
-            file: self.current_file.into(),
-            span: name.span.into(),
+            loc: Loc::new(
+                Some(ast_name.span.start),
+                self.current_file,
+                name,
+                self.interner,
+            ),
         };
         let ty = self.typec.types.insert_unique(id, ty_ent);
         self.typec.ty_lists.push_to_reserved(assoc_types, ty);
 
-        let item = ModItem::new(local_id, ty, name.span);
+        let item = ModItem::new(local_id, ty, ast_name.span);
         self.insert_scope_item(item);
 
         Ok(())

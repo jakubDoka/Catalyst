@@ -36,7 +36,7 @@ macro_rules! location {
         Maybe::none()
     };
     (exp $value:expr) => {
-        $value
+        $value.into()
     };
     ($source:expr $(,)?) => {
         Maybe::some($crate::DiagLoc {

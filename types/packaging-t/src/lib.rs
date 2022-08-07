@@ -25,7 +25,7 @@ macro_rules! insert_scope_item {
 macro_rules! duplicate_definition {
     () => {
         fn duplicate_definition(
-            &self,
+            &mut self,
             duplicate: lexing_t::Span,
             because: impl Into<Maybe<lexing_t::Span>>,
         ) {
