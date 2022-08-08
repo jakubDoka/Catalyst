@@ -71,28 +71,43 @@ impl TyParser<'_> {
             })
         })?;
 
-        Ok((ty, index + 1))
+        Ok((ty, index))
     }
 
     fn parse_instance(&mut self, ast: AstEnt) -> errors::Result<Ty> {
         let (&first, rest) = self.ast_data[ast.children].split_first().unwrap();
 
         let base = self.parse(first)?;
+        let param_count = self.typec.param_count(base);
+        let assoc_offset = param_count - self.typec.assoc_ty_count_of_bound(base);
 
-        let mut params = Vec::with_capacity(rest.len());
-        params.extend(rest.iter().filter_map(|&child| {
-            if child.kind != AstKind::FieldTy {
-                self.parse(child).ok().map(|ty| (ty, 0))
-            } else {
-                self.parse_filed_ty(base, child).ok()
-            }
-        }));
-        if params.len() != rest.len() {
+        let mut params = vec![BuiltinTypes::INFERRED; param_count];
+        let mut normal_inc = 0;
+        let mut assoc_inc = 0;
+        let success_len = rest
+            .iter()
+            .filter_map(|&child| {
+                if child.kind != AstKind::FieldTy {
+                    normal_inc += 1;
+                    self.parse(child)
+                        .ok()
+                        .map(|ty| params.get_mut(normal_inc - 1).map(|p| *p = ty))
+                        .flatten()
+                } else {
+                    assoc_inc += 1;
+                    self.parse_filed_ty(base, child)
+                        .ok()
+                        .map(|(ty, index)| params[index + assoc_offset] = ty)
+                }
+            })
+            .count();
+
+        if success_len != rest.len() {
             return Err(());
         }
 
         let param_count = self.typec.param_count(base);
-        if params.len() != param_count {
+        if assoc_offset != success_len - assoc_inc {
             self.workspace.push(diag! {
                 (ast.span, self.current_file) => "wrong number of type parameters",
                 (none) => "expected {}, got {}" { param_count, params.len() },
@@ -100,9 +115,7 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        params.sort_by_key(|&(_, index)| index);
-
-        Ok(ty_factory!(self).instance(base, params.into_iter().map(|(ty, _)| ty)))
+        Ok(ty_factory!(self).instance(base, params.into_iter()))
     }
 
     pub fn sig(&mut self, cc: AstEnt, args: &[AstEnt], ret: AstEnt) -> errors::Result<Sig> {
@@ -132,10 +145,15 @@ impl TyParser<'_> {
             };
             self.typec.ty_lists.push_to_reserved(&mut reserved, ty);
         }
-        Ok(self
-            .typec
-            .ty_lists
-            .fill_reserved(reserved, BuiltinTypes::ANY))
+
+        if !reserved.finished() {
+            self.typec
+                .ty_lists
+                .fill_reserved(reserved, BuiltinTypes::ANY);
+            return Err(());
+        }
+
+        Ok(self.typec.ty_lists.finish_reserved(reserved))
     }
 
     pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {

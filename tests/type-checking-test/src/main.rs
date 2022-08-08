@@ -274,6 +274,14 @@ fn main() {
                 type B;
 
                 fn foo(a: Self::A, b: Self::B);
+            };
+
+            struct F;
+
+            impl Something for F {
+                type A = u32;
+                type B = u32;
+                fn foo(a: Self::A, b: u32) {}
             }
         }
         // "binary-operators-and-precedence" {

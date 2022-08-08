@@ -46,15 +46,78 @@ impl ItemCollector<'_> {
         item: AstEnt,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
-        let [generics, ast_bound, ast_implementor, ..] = self.ast_data[item.children] else {
+        let [generics, ast_bound, ast_implementor, body] = self.ast_data[item.children] else {
             unreachable!();
         };
 
         self.scope.start_frame();
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
-        let bound = ty_parser!(self, self.current_file).parse(ast_bound)?;
+        let mut bound = ty_parser!(self, self.current_file).parse(ast_bound)?;
+        let base_bound = self.typec.instance_base_of(bound);
         let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
         self.scope.end_frame();
+
+        let mut changed = false;
+        for &item in &self.ast_data[body.children] {
+            if item.kind != AstKind::ImplType {
+                continue;
+            };
+
+            let [_generics, ast_name, ast_value] = self.ast_data[item.children] else {
+                unreachable!();
+            };
+
+            let value = ty_parser!(self, self.current_file).parse(ast_value)?;
+            let name = self.interner.intern_str(span_str!(self, ast_name.span));
+            let Some(index) = self.typec.bound_assoc_ty_index(base_bound, name) else {
+                let loc = self.typec.loc_of(base_bound, self.interner);
+                self.workspace.push(diag! {
+                    (ast_name.span, self.current_file) => "no such associated type on the bound",
+                    (exp loc) => "related bound defined here",
+                });
+                return Err(());
+            };
+
+            let assoc_ty_offset =
+                self.typec.param_count(base_bound) - self.typec.assoc_ty_count_of_bound(base_bound);
+            self.typec
+                .set_instance_param_on(bound, index + assoc_ty_offset, value);
+            changed = true;
+        }
+
+        if let TyKind::Instance { base, params, .. } = self.typec.types[bound].kind {
+            let mut iter = self
+                .typec
+                .ty_lists
+                .get(params)
+                .iter()
+                .skip(self.typec.param_count(base) - self.typec.assoc_ty_count_of_bound(base))
+                .enumerate()
+                .filter_map(|(i, &param)| (param == BuiltinTypes::INFERRED).then_some(i))
+                .peekable();
+
+            if iter.peek().is_some() {
+                let list = iter
+                    .map(|i| self.typec.bound_assoc_ty_at(base, i))
+                    .map(|assoc_ty| self.typec.types[assoc_ty].loc.ident())
+                    .map(|ident| &self.interner[ident])
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let loc = self.typec.loc_of(base, self.interner);
+
+                self.workspace.push(diag! {
+                    (item.span, self.current_file) => "not all associated types are specified",
+                    (none) => "missing: {}" { list },
+                    (exp loc) => "related bound defined here",
+                });
+                return Err(());
+            }
+        }
+
+        if changed {
+            bound = ty_factory!(self).rehash_ty(bound);
+        }
 
         if !self.typec.is_valid_bound(bound) {
             self.workspace.push(diag! {

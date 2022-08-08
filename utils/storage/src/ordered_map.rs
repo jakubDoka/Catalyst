@@ -1,4 +1,7 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    collections::hash_map::Entry,
+    ops::{Index, IndexMut},
+};
 
 use crate::*;
 
@@ -15,6 +18,20 @@ impl<V, C: VPtr> OrderedMap<V, C> {
         let index = self.data.push((key, value));
         let shadow = self.index.insert(key, index);
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
+    }
+
+    pub fn rehash(&mut self, key: Ident, value: C) -> C {
+        self.index.remove(self.data[value].0).unwrap();
+        match self.index.entry(key) {
+            Entry::Occupied(entry) => {
+                self.data.remove(value);
+                *entry.get()
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+                value
+            }
+        }
     }
 
     /// Inserts a new value, panicking on shadow and returning [`VPtr`] to it.

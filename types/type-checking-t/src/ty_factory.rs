@@ -11,6 +11,18 @@ macro_rules! ptr_ident {
 }
 
 impl TyFactory<'_> {
+    pub fn rehash_ty(&mut self, ty: Ty) -> Ty {
+        match self.typec.types[ty].kind {
+            TyKind::Instance { base, params } => {
+                let id =
+                    self.instance_id_low(base, self.typec.ty_lists.get(params).iter().copied());
+                let id = self.interner.intern(&id);
+                self.typec.types.rehash(id, ty)
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn pointer_of(&mut self, mutable: bool, base: Ty) -> Ty {
         let base_id = self.typec.types.id(base);
         let id = self.interner.intern(ptr_ident!(base_id));
@@ -106,7 +118,15 @@ impl TyFactory<'_> {
     }
 
     pub fn instance_id(&mut self, base: Ty, params: impl IntoIterator<Item = Ty> + Clone) -> Ident {
-        let segments = [InternedSegment::from(self.typec.types.id(base)), "[".into()]
+        self.interner.intern(&self.instance_id_low(base, params))
+    }
+
+    pub fn instance_id_low(
+        &self,
+        base: Ty,
+        params: impl IntoIterator<Item = Ty> + Clone,
+    ) -> Vec<InternedSegment<'static>> {
+        [InternedSegment::from(self.typec.types.id(base)), "[".into()]
             .into_iter()
             .chain(
                 params
@@ -117,9 +137,7 @@ impl TyFactory<'_> {
                     .take((params.into_iter().count() * 2).checked_sub(1).unwrap_or(0)),
             )
             .chain(once(InternedSegment::from("]")))
-            .collect::<Vec<_>>();
-
-        self.interner.intern(&segments)
+            .collect::<Vec<_>>()
     }
 
     pub fn next_param_of(&mut self, param: Ty) -> Ty {

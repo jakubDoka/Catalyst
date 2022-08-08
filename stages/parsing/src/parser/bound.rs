@@ -77,7 +77,6 @@ impl Parser<'_> {
         self.ident()?;
 
         self.expect_ctx_keyword("=")?;
-        self.advance();
 
         self.ty()?;
 

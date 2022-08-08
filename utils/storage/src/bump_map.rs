@@ -539,3 +539,9 @@ pub struct Reserved<K> {
     end: usize,
     id: Maybe<K>,
 }
+
+impl<K> Reserved<K> {
+    pub fn finished(&self) -> bool {
+        self.start == self.end
+    }
+}

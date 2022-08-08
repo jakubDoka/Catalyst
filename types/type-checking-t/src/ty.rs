@@ -29,6 +29,26 @@ impl Typec {
         }
     }
 
+    pub fn is_incomplete_instance(&self, instance: Ty) -> bool {
+        if let TyKind::Instance { params, .. } = self.types[instance].kind {
+            self.ty_lists
+                .get(params)
+                .iter()
+                .any(|&param| param == BuiltinTypes::INFERRED)
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    pub fn set_instance_param_on(&mut self, instance: Ty, pos: usize, param: Ty) {
+        let TyKind::Instance { params, .. } = self.types[instance].kind else {
+            unreachable!();
+        };
+
+        self.ty_lists.get_mut(params)[pos] = param;
+    }
+
     #[inline]
     pub fn param_count(&self, ty: Ty) -> usize {
         self.types[ty].param_count as usize
@@ -40,6 +60,15 @@ impl Typec {
             base
         } else {
             ty
+        }
+    }
+
+    #[inline]
+    pub fn bound_assoc_ty_at(&self, bound: Ty, pos: usize) -> Ty {
+        if let TyKind::Bound { assoc_types, .. } = self.types[bound].kind {
+            self.ty_lists[assoc_types][pos]
+        } else {
+            unreachable!();
         }
     }
 
@@ -157,6 +186,17 @@ impl Typec {
             params.into()
         } else {
             Maybe::none()
+        }
+    }
+
+    #[inline]
+    pub fn bound_assoc_ty_index(&self, bound: Ty, name: Ident) -> Option<usize> {
+        if let TyKind::Bound { assoc_types, .. } = self.types[bound].kind {
+            self.ty_lists[assoc_types]
+                .iter()
+                .position(|&ty| self.types[ty].loc.ident() == name)
+        } else {
+            None
         }
     }
 }

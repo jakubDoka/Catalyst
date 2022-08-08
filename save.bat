@@ -1,6 +1,6 @@
 @echo off
 
 cargo fmt
-git add .
+git add -- . :!tests/*/test_out/*
 git commit -m%1
 git push

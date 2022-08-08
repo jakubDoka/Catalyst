@@ -25,6 +25,8 @@ impl BoundChecker<'_> {
         let ImplEnt {
             bound, implementor, ..
         } = self.typec.impls[r#impl];
+        let base_bound = self.typec.instance_base_of(bound);
+        let assoc_ty_count = self.typec.assoc_ty_count_of_bound(base_bound);
         let param_slice = &self.typec.ty_lists[self.typec.instance_params(bound)];
         let implementor_param_slice = &self.typec.ty_lists[implementor_params];
 
@@ -34,6 +36,8 @@ impl BoundChecker<'_> {
                 b,
                 |a, b| {
                     (a == bound && b == implementor)
+                        || matches!(self.typec.types[a].kind, TyKind::AssocType { index }
+                    if param_slice[index as usize + assoc_ty_count] == b)
                         || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
                     if (self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
                         param_slice[index as usize] == b)

@@ -164,7 +164,7 @@ impl FuncParser<'_> {
             ),
             SignatureError::Arg(pos, expected, got) => diag!(
                 (span, self.current_file) => "argument {} mismatch, expected {} but got {}" {
-                    pos,
+                    pos + 1,
                     &self.interner[self.typec.types.id(expected)],
                     &self.interner[self.typec.types.id(got)],
                 },
