@@ -101,8 +101,9 @@ impl TestState {
         }
 
         let iter = self.typec.defs.values().filter_map(|def| {
-            let loc = def.loc.expand(&self.interner);
-            Some((loc.file?, loc.span?, def))
+            let loc = def.loc;
+            let span = def.loc.span(&self.interner);
+            Some((loc.file.expand()?, span.expand()?, def))
         });
 
         let mut str = String::new();

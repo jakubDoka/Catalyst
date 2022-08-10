@@ -96,7 +96,7 @@ impl Typec {
 
     #[inline]
     pub fn assoc_ty_index(&self, ty: Ty) -> Option<usize> {
-        if let TyKind::AssocType { index } = self.types[ty].kind {
+        if let TyKind::AssocType { index, .. } = self.types[ty].kind {
             Some(index as usize)
         } else {
             None
@@ -171,10 +171,35 @@ impl Typec {
 
     #[inline]
     pub fn loc_of(&self, ty: Ty, interner: &Interner) -> Maybe<DiagLoc> {
-        let loc = self.types[ty].loc.expand(interner);
+        let loc = self.types[ty].loc;
         loc.file
+            .expand()
             .map(|file| DiagLoc {
-                span: loc.span.into(),
+                span: loc.span(interner),
+                source: file,
+            })
+            .into()
+    }
+
+    #[inline]
+    pub fn loc_of_impl(&self, r#impl: Impl, interner: &Interner) -> Maybe<DiagLoc> {
+        let loc = self.impls[r#impl].loc;
+        loc.file
+            .expand()
+            .map(|file| DiagLoc {
+                span: loc.span(interner),
+                source: file,
+            })
+            .into()
+    }
+
+    #[inline]
+    pub fn loc_of_def(&self, def: Def, interner: &Interner) -> Maybe<DiagLoc> {
+        let loc = self.defs[def].loc;
+        loc.file
+            .expand()
+            .map(|file| DiagLoc {
+                span: loc.span(interner),
                 source: file,
             })
             .into()
@@ -194,7 +219,7 @@ impl Typec {
         if let TyKind::Bound { assoc_types, .. } = self.types[bound].kind {
             self.ty_lists[assoc_types]
                 .iter()
-                .position(|&ty| self.types[ty].loc.ident() == name)
+                .position(|&ty| self.types[ty].loc.name == name)
         } else {
             None
         }

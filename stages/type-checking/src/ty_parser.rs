@@ -240,9 +240,9 @@ impl TyParser<'_> {
         let local_id = self.interner.intern(scoped_ident!(local_bound_id, name));
         self.visibility[id] = vis;
 
-        if let Some(prev) = self.typec.types.get(id) {
-            let span = prev.loc.expand(self.interner).span;
-            self.duplicate_definition(ast.span, span);
+        if let Some(prev) = self.typec.types.index(id) {
+            let loc = self.typec.loc_of(prev, self.interner);
+            self.duplicate_definition(ast.span, loc);
             return Err(());
         }
 
@@ -253,10 +253,9 @@ impl TyParser<'_> {
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
             loc: Loc::new(
-                Some(ast_name.span.start),
+                ast_name.span,
                 self.current_file,
-                name,
-                self.interner,
+                self.interner.intern_str(name),
             ),
         };
         let ty = self.typec.types.insert_unique(id, ty_ent);

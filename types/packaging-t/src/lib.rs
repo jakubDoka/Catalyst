@@ -27,7 +27,7 @@ macro_rules! duplicate_definition {
         fn duplicate_definition(
             &mut self,
             duplicate: lexing_t::Span,
-            because: impl Into<Maybe<lexing_t::Span>>,
+            because: impl Into<Maybe<diags::DiagLoc>>,
         ) {
             $crate::duplicate_definition(
                 duplicate,
@@ -61,7 +61,11 @@ mod util {
         workspace: &mut Workspace,
     ) {
         if let Err(span) = scope.insert(current_file, item.to_scope_item(current_file), interner) {
-            duplicate_definition(item.span, span, current_file, workspace);
+            let loc = DiagLoc {
+                source: current_file,
+                span,
+            };
+            duplicate_definition(item.span, loc.into(), current_file, workspace);
         }
 
         packages
@@ -73,13 +77,20 @@ mod util {
 
     pub fn duplicate_definition(
         duplicate: Span,
-        because: Maybe<Span>,
+        because: Maybe<DiagLoc>,
         current_file: Ident,
         workspace: &mut Workspace,
     ) {
-        workspace.push(diag! {
-            (duplicate, current_file) error => "duplicate definition",
-            (because, current_file) => "previous definition",
-        })
+        if let Some(because) = because.expand() {
+            workspace.push(diag! {
+                (duplicate, current_file) error => "duplicate definition",
+                (exp because) => "previous definition",
+            })
+        } else {
+            workspace.push(diag! {
+                (duplicate, current_file) error => "duplicate definition",
+                (none) => "collision with builtin item"
+            })
+        }
     }
 }

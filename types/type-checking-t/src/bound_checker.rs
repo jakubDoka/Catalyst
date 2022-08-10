@@ -36,8 +36,8 @@ impl BoundChecker<'_> {
                 b,
                 |a, b| {
                     (a == bound && b == implementor)
-                        || matches!(self.typec.types[a].kind, TyKind::AssocType { index }
-                    if param_slice[index as usize + assoc_ty_count] == b)
+                        || matches!(self.typec.types[a].kind, TyKind::AssocType { index, .. }
+                    if param_slice[index as usize + param_slice.len() - assoc_ty_count] == b)
                         || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
                     if (self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
                         param_slice[index as usize] == b)

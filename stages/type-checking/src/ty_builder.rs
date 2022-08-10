@@ -74,13 +74,13 @@ impl TyBuilder<'_> {
         let name = self.interner.intern_str(span_str!(self, ast_name.span));
         let local_id = self
             .interner
-            .intern(scoped_ident!(self.typec.types[ty].loc.ident(), name));
+            .intern(scoped_ident!(self.typec.types[ty].loc.name, name));
         let id = intern_scoped_ident!(self, local_id);
         self.visibility[id] = vis;
 
-        if let Some(already) = self.typec.types.get(id) {
-            let span = already.loc.expand(self.interner).span;
-            self.duplicate_definition(ast.span, span);
+        if let Some(already) = self.typec.types.index(id) {
+            let loc = self.typec.loc_of(already, self.interner);
+            self.duplicate_definition(ast.span, loc);
             return Err(());
         }
 

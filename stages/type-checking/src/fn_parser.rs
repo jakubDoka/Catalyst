@@ -20,11 +20,15 @@ impl FuncParser<'_> {
             };
 
             self.scope.start_frame();
+            self.scope.self_alias = self.typec.types[self.typec.impls[r#impl].implementor]
+                .loc
+                .name
+                .into();
             self.push_generics(generics, self.typec.impls[r#impl].params);
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
-                    AstKind::ImplType => (),
+                    AstKind::ImplType => drop(self.impl_type(item, r#impl)),
                     AstKind::ImplUse | AstKind::Func { .. } => (),
                     kind => unimplemented!("{:?}", kind),
                 }
@@ -74,6 +78,37 @@ impl FuncParser<'_> {
         }
     }
 
+    fn impl_type(&mut self, ast: AstEnt, r#impl: Impl) {
+        let ImplEnt {
+            implementor, bound, ..
+        } = self.typec.impls[r#impl];
+        let base_bound = self.typec.instance_base_of(bound);
+        let [_generics, ast_name, ..] = self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        let name = span_str!(self, ast_name.span);
+        let name_ident = self.interner.intern_str(name);
+        let implementor_name = self.typec.types[implementor].loc.name;
+        let local_id = self
+            .interner
+            .intern(scoped_ident!(implementor_name, name_ident));
+
+        let index = self
+            .typec
+            .bound_assoc_ty_index(base_bound, name_ident)
+            .expect("this code should not be reachable if the bound is malformed");
+
+        let ty = self.typec.bound_assoc_ty_at(base_bound, index);
+
+        self.scope.push(ScopeItem::new(
+            local_id,
+            ty,
+            ast_name.span,
+            self.current_file,
+        ))
+    }
+
     fn bound_impl_func(
         &mut self,
         item: AstEnt,
@@ -110,10 +145,10 @@ impl FuncParser<'_> {
         }
 
         if let Some(already) = funcs[index].expand() {
-            let span = self.typec.defs[already].loc.expand(self.interner).span;
+            let loc = self.typec.loc_of_def(already, self.interner);
             self.workspace.push(diag! {
                 (ast_name.span, self.current_file) => "function with this name is already implemented",
-                (span, self.current_file) => "previously defined here"
+                (exp loc) => "previously defined here"
             });
             return Ok(());
         }
@@ -122,10 +157,9 @@ impl FuncParser<'_> {
             params,
             flags: FuncFlags::GENERIC & params.is_some(),
             loc: Loc::new(
-                Some(ast_name.span.start),
+                ast_name.span,
                 self.current_file,
-                name,
-                self.interner,
+                self.interner.intern_str(name),
             ),
             sig,
             ..default()

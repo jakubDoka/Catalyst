@@ -52,7 +52,7 @@ impl ItemCollector<'_> {
 
         self.scope.start_frame();
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
-        let mut bound = ty_parser!(self, self.current_file).parse(ast_bound)?;
+        let mut bound = ty_parser!(self, self.current_file).parse_impl_bound(ast_bound)?;
         let base_bound = self.typec.instance_base_of(bound);
         let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
         self.scope.end_frame();
@@ -99,7 +99,7 @@ impl ItemCollector<'_> {
             if iter.peek().is_some() {
                 let list = iter
                     .map(|i| self.typec.bound_assoc_ty_at(base, i))
-                    .map(|assoc_ty| self.typec.types[assoc_ty].loc.ident())
+                    .map(|assoc_ty| self.typec.types[assoc_ty].loc.name)
                     .map(|ident| &self.interner[ident])
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -150,10 +150,9 @@ impl ItemCollector<'_> {
             implementor,
             funcs: Maybe::none(),
             loc: Loc::new(
-                Some(item.span.start),
+                item.span,
                 self.current_file,
-                "impl",
-                self.interner,
+                self.interner.intern_str("impl"),
             ),
             next: next.into(),
         };
@@ -163,10 +162,10 @@ impl ItemCollector<'_> {
         let mut current = next;
         while let Some(other) = current {
             if bound_checker!(self).impls_overlap(r#impl, other) {
-                let span = self.typec.impls[other].loc.expand(self.interner).span;
+                let loc = self.typec.loc_of_impl(other, self.interner);
                 self.workspace.push(diag! {
                     (ast_implementor.span, self.current_file) => "implementation overlaps with existing one",
-                    (span, self.current_file) => "colliding implementation",
+                    (exp loc) => "colliding implementation",
                 })
             }
             current = self.typec.impls[other].next.expand();
@@ -196,10 +195,9 @@ impl ItemCollector<'_> {
             params,
             flags: FuncFlags::GENERIC & params.is_some(),
             loc: Loc::new(
-                Some(ast_name.span.start),
+                ast_name.span,
                 self.current_file,
-                name,
-                self.interner,
+                self.interner.intern_str(name),
             ),
             body: Maybe::none(),
             tir_data: TirData::new(),
@@ -236,10 +234,9 @@ impl ItemCollector<'_> {
             param_count: self.ast_data[generics.children].len() as u8
                 + self.typec.ty_lists[assoc_types].len() as u8,
             loc: Loc::new(
-                Some(ast_name.span.start),
+                ast_name.span,
                 self.current_file,
-                name,
-                self.interner,
+                self.interner.intern_str(name),
             ),
         };
         let ty = self.typec.types.insert_unique(id, ent);
@@ -266,10 +263,9 @@ impl ItemCollector<'_> {
             flags: TyFlags::GENERIC & generics.children.is_some(),
             param_count: self.ast_data[generics.children].len() as u8,
             loc: Loc::new(
-                Some(ast_name.span.start),
+                ast_name.span,
                 self.current_file,
-                name,
-                self.interner,
+                self.interner.intern_str(name),
             ),
         };
         let ty = self.typec.types.insert_unique(id, ent);
