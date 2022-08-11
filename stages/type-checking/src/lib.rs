@@ -1,6 +1,7 @@
 #![feature(let_else)]
 #![feature(let_chains)]
 #![feature(default_free_fn)]
+#![feature(decl_macro)]
 
 #[macro_export]
 macro_rules! scope_error_handler {

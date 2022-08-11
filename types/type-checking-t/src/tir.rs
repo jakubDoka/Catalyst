@@ -57,7 +57,7 @@ impl TirDisplay<'_> {
             TirKind::Call { def, params, args } => {
                 write!(to, "call ")?;
 
-                let name = &self.interner[self.typec.defs.id(def)];
+                let name = &self.interner[self.typec.defs[def].loc.name];
                 write!(to, "{}", name)?;
 
                 if let Some((&first, others)) = self.typec.ty_lists[params].split_first() {

@@ -20,11 +20,11 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        if bounds.len() == 1 {
-            Ok(bounds[0])
-        } else {
-            Ok(ty_factory!(self).anon_bound_of(&bounds))
-        }
+        Ok(match bounds.len() {
+            0 => BuiltinTypes::ANY,
+            1 => bounds[0],
+            _ => ty_factory!(self).anon_bound_of(&bounds),
+        })
     }
 
     pub fn parse(&mut self, ast: AstEnt) -> errors::Result<Ty> {
@@ -156,8 +156,20 @@ impl TyParser<'_> {
         Ok(self.typec.ty_lists.finish_reserved(reserved))
     }
 
-    pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
-        let mut params = Vec::with_capacity(self.ast_data[generics.children].len());
+    pub fn bounded_generics(
+        &mut self,
+        generics: AstEnt,
+        init: &mut Vec<Ty>,
+    ) -> errors::Result<Maybe<TyList>> {
+        let old_len = init.len();
+        self.bounded_generics_low(generics, init)?;
+        let bumped = self.typec.ty_lists.bump_slice(&init);
+        init.truncate(old_len);
+        Ok(bumped)
+    }
+
+    pub fn bounded_generics_low(&mut self, generics: AstEnt, init: &mut Vec<Ty>) -> errors::Result {
+        init.reserve(self.ast_data[generics.children].len());
         for &ast_param in &self.ast_data[generics.children] {
             let (&name, bounds) = self.ast_data[ast_param.children].split_first().unwrap();
             let name = self.interner.intern_str(span_str!(self, name.span));
@@ -168,15 +180,15 @@ impl TyParser<'_> {
             self.scope.push(item);
 
             // handle duplicate, all params need to be unique
-            let param = params
+            let param = init
                 .iter()
                 .rev()
                 .find_map(|&p| (p == param).then(|| ty_factory!(self).next_param_of(param)))
                 .unwrap_or(param);
 
-            params.push(param);
+            init.push(param);
         }
-        Ok(self.typec.ty_lists.bump_slice(&params))
+        Ok(())
     }
 
     pub fn generics(&mut self, generics: AstEnt) {
@@ -220,7 +232,7 @@ impl TyParser<'_> {
 
         self.typec
             .ty_lists
-            .fill_reserved(assoc_types, BuiltinTypes::ANY)
+            .fill_reserved(assoc_types, BuiltinTypes::INFERRED)
     }
 
     fn assoc_type(

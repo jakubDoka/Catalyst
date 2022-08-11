@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::*;
 use diags::*;
 use lexing_t::*;
@@ -26,10 +28,13 @@ impl ItemCollector<'_> {
 
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
-                AstKind::Struct { .. } | AstKind::Impl { .. } | AstKind::Bound { .. } => continue,
-
+                AstKind::Struct { .. } | AstKind::Bound { .. } => continue,
+                AstKind::Impl { vis } => {
+                    drop(self.collect_impl(item, vis, ctx));
+                    continue;
+                }
                 AstKind::BoundImpl { .. } => self.collect_bound_impl(item, ctx),
-                AstKind::Func { vis } => self.collect_fn(item, vis, ctx),
+                AstKind::Func { vis } => self.collect_fn(item, vis, &mut vec![], ctx),
                 kind => unimplemented!("{:?}", kind),
             };
 
@@ -39,6 +44,37 @@ impl ItemCollector<'_> {
 
             self.insert_scope_item(res);
         }
+    }
+
+    fn collect_impl(&mut self, ast: AstEnt, vis: Vis, ctx: &mut ItemContext) -> errors::Result {
+        let [ast_generics, ast_type, ast_body] = self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        self.scope.start_frame();
+        let mut generics = vec![];
+        ty_parser!(self, self.current_file).bounded_generics(ast_generics, &mut generics)?;
+
+        let ty = ty_parser!(self, self.current_file).parse(ast_type)?;
+        let name = self.typec.types[ty].loc.name;
+        self.scope.self_alias = name.into();
+
+        for &func in &self.ast_data[ast_body.children] {
+            let AstKind::Func { vis: fn_vis } = func.kind else {
+                unreachable!();
+            };
+            let vis = vis.merge(fn_vis);
+
+            let Ok(Some(res)) = self.collect_fn(func, vis, &mut generics, ctx) else {
+                continue;
+            };
+            self.insert_scope_item(res);
+        }
+
+        self.scope.self_alias.take();
+        self.scope.end_frame();
+
+        Ok(())
     }
 
     fn collect_bound_impl(
@@ -51,7 +87,7 @@ impl ItemCollector<'_> {
         };
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics, &mut vec![])?;
         let mut bound = ty_parser!(self, self.current_file).parse_impl_bound(ast_bound)?;
         let base_bound = self.typec.instance_base_of(bound);
         let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
@@ -133,7 +169,7 @@ impl ItemCollector<'_> {
             });
         }
 
-        let id = {
+        let evidence_id = {
             let bound_base = self.typec.instance_base_of(bound);
             let implementor_base = self.typec.instance_base_of(implementor);
             self.interner.intern(bound_impl_ident!(
@@ -142,9 +178,12 @@ impl ItemCollector<'_> {
             ))
         };
 
-        let next = self.typec.impls.index(id);
+        let next = self.typec.impls.index(evidence_id);
         let impl_ent = ImplEnt {
-            id,
+            id: self.interner.intern(bound_impl_ident!(
+                self.typec.types.id(bound),
+                self.typec.types.id(implementor)
+            )),
             params,
             bound,
             implementor,
@@ -156,7 +195,7 @@ impl ItemCollector<'_> {
             ),
             next: next.into(),
         };
-        let r#impl = self.typec.impls.redirect_insert(id, impl_ent);
+        let r#impl = self.typec.impls.redirect_insert(evidence_id, impl_ent);
         ctx.bound_impls.push((item, r#impl));
 
         let mut current = next;
@@ -178,6 +217,7 @@ impl ItemCollector<'_> {
         &mut self,
         item: AstEnt,
         vis: Vis,
+        upper_params: &mut Vec<Ty>,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
         let [cc, generics, ast_name, ref args @ .., ret, _body] = self.ast_data[item.children] else {
@@ -185,15 +225,16 @@ impl ItemCollector<'_> {
         };
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+        let params =
+            ty_parser!(self, self.current_file).bounded_generics(generics, upper_params)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
-        let (local_id, id) = self.compute_ids(ast_name.span, vis);
+        let (local_id, _) = self.compute_ids(ast_name.span, vis);
         let name = span_str!(self, ast_name.span);
 
         let ent = DefEnt {
             params,
-            flags: FuncFlags::GENERIC & params.is_some(),
+            flags: FuncFlags::GENERIC & params.is_some() & FuncFlags::from(vis),
             loc: Loc::new(
                 ast_name.span,
                 self.current_file,
@@ -203,7 +244,7 @@ impl ItemCollector<'_> {
             tir_data: TirData::new(),
             sig,
         };
-        let def = self.typec.defs.insert_unique(id, ent);
+        let def = self.typec.defs.push(ent);
         ctx.funcs.push((item, def));
 
         Ok(Some(ModItem::new(local_id, def, ast_name.span)))
@@ -275,7 +316,12 @@ impl ItemCollector<'_> {
     }
 
     fn compute_ids(&mut self, name: Span, vis: Vis) -> (Ident, Ident) {
-        let local = self.interner.intern_str(span_str!(self, name));
+        let name_str = span_str!(self, name);
+        let local = if let Some(self_alias) = self.scope.self_alias.expand() {
+            self.interner.intern(scoped_ident!(self_alias, name_str))
+        } else {
+            self.interner.intern_str(name_str)
+        };
         let id = intern_scoped_ident!(self, local);
         self.visibility[id] = vis;
         (local, id)

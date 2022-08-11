@@ -13,8 +13,8 @@ pub struct Typec {
     pub fields: CachedPoolBumpMap<FieldList, FieldEnt, Field>,
     pub bound_funcs: CachedPoolBumpMap<BoundFuncList, BoundFuncEnt, BoundFunc>,
     pub impls: PartialOrderedMap<ImplEnt, Impl>,
-    pub defs: OrderedMap<DefEnt, Def>,
-    pub def_lists: PoolBumpMap<DefList, Def, Unused>,
+    pub defs: PoolMap<Def, DefEnt>,
+    pub func_lists: PoolBumpMap<FuncList, Func, Unused>,
     pub funcs: OrderedMap<FuncEnt, Func>,
 }
 
@@ -27,6 +27,31 @@ impl Typec {
             TyKind::Ptr { depth, .. } => depth,
             _ => 0,
         }
+    }
+
+    #[inline]
+    pub fn sig_of_func(&self, func: Func) -> Sig {
+        self.defs[self.funcs[func].def].sig
+    }
+
+    #[inline]
+    pub fn wrap_def(&mut self, id: Ident, def: Def) -> Func {
+        self.wrap_def_with_params(id, def, None)
+    }
+
+    #[inline]
+    pub fn wrap_def_with_params(
+        &mut self,
+        id: Ident,
+        def: Def,
+        params: impl IntoIterator<Item = Ty>,
+    ) -> Func {
+        let func_ent = FuncEnt {
+            def,
+            params: self.ty_lists.bump(params),
+        };
+
+        self.funcs.insert_unique(id, func_ent)
     }
 
     pub fn is_incomplete_instance(&self, instance: Ty) -> bool {
@@ -171,31 +196,25 @@ impl Typec {
 
     #[inline]
     pub fn loc_of(&self, ty: Ty, interner: &Interner) -> Maybe<DiagLoc> {
-        let loc = self.types[ty].loc;
-        loc.file
-            .expand()
-            .map(|file| DiagLoc {
-                span: loc.span(interner),
-                source: file,
-            })
-            .into()
+        self.loc_to_diag_loc(self.types[ty].loc, interner)
     }
 
     #[inline]
     pub fn loc_of_impl(&self, r#impl: Impl, interner: &Interner) -> Maybe<DiagLoc> {
-        let loc = self.impls[r#impl].loc;
-        loc.file
-            .expand()
-            .map(|file| DiagLoc {
-                span: loc.span(interner),
-                source: file,
-            })
-            .into()
+        self.loc_to_diag_loc(self.impls[r#impl].loc, interner)
     }
 
     #[inline]
     pub fn loc_of_def(&self, def: Def, interner: &Interner) -> Maybe<DiagLoc> {
-        let loc = self.defs[def].loc;
+        self.loc_to_diag_loc(self.defs[def].loc, interner)
+    }
+
+    #[inline]
+    pub fn loc_of_func(&self, func: Func, interner: &Interner) -> Maybe<DiagLoc> {
+        self.loc_of_def(self.funcs[func].def, interner)
+    }
+
+    fn loc_to_diag_loc(&self, loc: Loc, interner: &Interner) -> Maybe<DiagLoc> {
         loc.file
             .expand()
             .map(|file| DiagLoc {
@@ -314,7 +333,7 @@ pub struct ImplEnt {
     pub params: Maybe<TyList>,
     pub bound: Ty,
     pub implementor: Ty,
-    pub funcs: Maybe<DefList>,
+    pub funcs: Maybe<FuncList>,
     pub loc: Loc,
     pub next: Maybe<Impl>,
 }

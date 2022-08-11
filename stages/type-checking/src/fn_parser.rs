@@ -19,12 +19,17 @@ impl FuncParser<'_> {
                 unreachable!();
             };
 
+            let ImplEnt {
+                id,
+                params,
+                implementor,
+                ..
+            } = self.typec.impls[r#impl];
+
             self.scope.start_frame();
-            self.scope.self_alias = self.typec.types[self.typec.impls[r#impl].implementor]
-                .loc
-                .name
-                .into();
-            self.push_generics(generics, self.typec.impls[r#impl].params);
+            self.scope.self_alias = self.typec.types[implementor].loc.name.into();
+            self.push_generics(generics, params);
+            let mut params = self.typec.ty_lists[params].to_vec();
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
@@ -38,8 +43,10 @@ impl FuncParser<'_> {
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
-                    AstKind::Func { .. } => drop(self.bound_impl_func(item, r#impl, &mut funcs)),
-                    AstKind::ImplUse => (),
+                    AstKind::Func { .. } => {
+                        drop(self.bound_impl_func(item, r#impl, &mut params, &mut funcs))
+                    }
+                    AstKind::ImplUse => drop(self.bound_impl_use(item, r#impl, &mut funcs)),
                     AstKind::ImplType => (),
                     kind => unimplemented!("{:?}", kind),
                 }
@@ -48,15 +55,36 @@ impl FuncParser<'_> {
             self.scope.end_frame();
 
             let mut missing = funcs
-                .iter()
+                .iter_mut()
                 .enumerate()
-                .filter_map(|(i, maybe)| maybe.is_none().then_some(i))
+                .filter(|(.., maybe)| maybe.is_none())
+                .filter_map(|(i, maybe)| {
+                    let name = self.typec.func_of_impl(r#impl, i).name;
+
+                    let implementor_name = self.typec.types[implementor].loc.name;
+                    let local_id = self.interner.intern(scoped_ident!(implementor_name, name));
+                    if let Ok(def) = self.scope.get_concrete::<Def>(local_id) {
+                        let sig = self.typec.defs[def].sig;
+                        if bound_checker!(self)
+                            .compare_bound_signatures(i, default(), sig, r#impl)
+                            .is_ok()
+                        {
+                            let id = self.interner.intern(scoped_ident!(id, name));
+                            let func = self.typec.wrap_def(id, def);
+                            *maybe = func.into();
+                            return None;
+                        }
+                    }
+
+                    Some(name)
+                })
                 .peekable();
 
             if missing.peek().is_some() {
                 let suggestions = missing
-                    .map(|i| self.typec.func_of_impl(r#impl, i))
-                    .map(|func| &self.interner[func.name])
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|name| &self.interner[name])
                     .collect::<Vec<_>>()
                     .join(", ");
 
@@ -73,9 +101,80 @@ impl FuncParser<'_> {
 
             self.typec.impls[r#impl].funcs = self
                 .typec
-                .def_lists
+                .func_lists
                 .bump(funcs.into_iter().map(Maybe::unwrap));
         }
+    }
+
+    fn bound_impl_use(
+        &mut self,
+        ast: AstEnt,
+        r#impl: Impl,
+        funcs: &mut Vec<Maybe<Func>>,
+    ) -> errors::Result {
+        let &[value, ast_name] = &self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        let name = span_str!(self, ast_name.span);
+        let name_ident = self.interner.intern_str(name);
+        let id = self
+            .interner
+            .intern(scoped_ident!(self.typec.impls[r#impl].id, name_ident));
+
+        let Some(index) = self.typec.func_index_of_impl(r#impl, name_ident) else {
+            let loc = self.typec.loc_of(self.typec.impls[r#impl].bound, self.interner);
+            self.workspace.push(diag! {
+                (ast_name.span, self.current_file) => "function with this name does not exist for the bound",
+                (exp loc) => "related bound defined here"
+            });
+            return Err(());
+        };
+
+        if let Some(already) = funcs[index].expand() {
+            let loc = self.typec.loc_of_func(already, self.interner);
+            self.workspace.push(diag! {
+                (ast_name.span, self.current_file) => "function with this name is already implemented",
+                (exp loc) => "the function",
+            });
+            return Err(());
+        }
+
+        let func = match value.kind {
+            AstKind::TyInstance => {
+                let [header, ref args @ ..] = self.ast_data[value.children] else {
+                    unreachable!();
+                };
+
+                let local_id = ty_parser!(self, self.current_file).ident_chain_id(header);
+                let def: Def =
+                    self.get_from_scope_concrete(local_id, value.span, "function not found")?;
+                let params = args
+                    .iter()
+                    .map(|&arg| ty_parser!(self, self.current_file).parse(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.typec.wrap_def_with_params(id, def, params)
+            }
+            AstKind::Ident | AstKind::IdentChain => {
+                let local_id = ty_parser!(self, self.current_file).ident_chain_id(value);
+                let def: Def =
+                    self.get_from_scope_concrete(local_id, value.span, "function not found")?;
+                self.typec.wrap_def(id, def)
+            }
+            kind => unimplemented!("{:?}", kind),
+        };
+
+        let sig = self.typec.sig_of_func(func);
+        let params = self.typec.funcs[func].params;
+        if let Err(err) = bound_checker!(self).compare_bound_signatures(index, params, sig, r#impl)
+        {
+            self.report_signature_mismatch(err, r#impl, ast_name.span);
+            return Err(());
+        }
+
+        funcs[index] = Maybe::some(func);
+
+        Ok(())
     }
 
     fn impl_type(&mut self, ast: AstEnt, r#impl: Impl) {
@@ -113,14 +212,16 @@ impl FuncParser<'_> {
         &mut self,
         item: AstEnt,
         r#impl: Impl,
-        funcs: &mut Vec<Maybe<Def>>,
+        upper_params: &mut Vec<Ty>,
+        funcs: &mut Vec<Maybe<Func>>,
     ) -> errors::Result {
         let [cc, generics, ast_name, ref args @ .., ret, body] = self.ast_data[item.children] else {
             unreachable!();
         };
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+        let params =
+            ty_parser!(self, self.current_file).bounded_generics(generics, upper_params)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
         let name = span_str!(self, ast_name.span);
@@ -145,10 +246,10 @@ impl FuncParser<'_> {
         }
 
         if let Some(already) = funcs[index].expand() {
-            let loc = self.typec.loc_of_def(already, self.interner);
+            let loc = self.typec.loc_of_func(already, self.interner);
             self.workspace.push(diag! {
                 (ast_name.span, self.current_file) => "function with this name is already implemented",
-                (exp loc) => "previously defined here"
+                (exp loc) => "previously defined here",
             });
             return Ok(());
         }
@@ -164,9 +265,10 @@ impl FuncParser<'_> {
             sig,
             ..default()
         };
-        let def = self.typec.defs.insert_unique(id, def_ent);
+        let def = self.typec.defs.push(def_ent);
 
-        funcs[index] = Maybe::some(def);
+        let func = self.typec.wrap_def(id, def);
+        funcs[index] = Maybe::some(func);
 
         self.tir_data.clear();
         self.func_parser_ctx.current_fn = def.into();

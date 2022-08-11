@@ -122,6 +122,15 @@ pub enum Vis {
     Priv,
 }
 
+impl Vis {
+    pub fn merge(self, other: Self) -> Self {
+        match other {
+            Vis::None => self,
+            _ => other,
+        }
+    }
+}
+
 impl Default for Vis {
     fn default() -> Self {
         Vis::None

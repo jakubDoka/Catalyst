@@ -126,7 +126,7 @@ impl TestState {
 
 fn main() {
     gen_test! {
-        true
+        false
         simple "basic-structs" {
             struct pub A;
             struct priv B;
@@ -262,11 +262,11 @@ fn main() {
             impl Something[A] for A;
 
             impl Something[int] for A {
-                use goo as foo
+                use Self::goo as foo
             };
 
             impl Something[uint] for A {
-                use soo[uint] as foo
+                use Self::soo[uint] as foo
             };
         }
         simple "bound-associated-types" {

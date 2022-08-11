@@ -11,6 +11,28 @@ macro_rules! ptr_ident {
 }
 
 impl TyFactory<'_> {
+    pub fn as_func_param(&mut self, ty: Ty) -> Ty {
+        match self.typec.types[ty].kind {
+            TyKind::Param { .. } | TyKind::AssocType { .. } => {
+                let prev_id = self.typec.types.id(ty);
+                let new_id = self.interner.intern(ident!("unique ", prev_id));
+
+                let copy = self.typec.types[ty];
+                self.typec.types.insert(new_id, copy).0
+            }
+
+            TyKind::Bound { .. }
+            | TyKind::Struct { .. }
+            | TyKind::Enum { .. }
+            | TyKind::Instance { .. }
+            | TyKind::Ptr { .. }
+            | TyKind::FuncPtr { .. }
+            | TyKind::Int { .. }
+            | TyKind::Bool
+            | TyKind::Inferrable => unimplemented!(),
+        }
+    }
+
     pub fn rehash_ty(&mut self, ty: Ty) -> Ty {
         match self.typec.types[ty].kind {
             TyKind::Instance { base, params } => {

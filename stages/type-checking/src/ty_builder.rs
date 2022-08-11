@@ -43,12 +43,13 @@ impl TyBuilder<'_> {
 
         let mut funcs = self.typec.bound_funcs.reserve(func_count);
 
+        let mut params = vec![];
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::FuncSignature { vis } = item.kind else {
                 continue;
             };
 
-            let Ok(item) = self.func_signature(item, ty, &mut funcs, vis) else {
+            let Ok(item) = self.func_signature(item, ty, &mut params, &mut funcs, vis) else {
                 continue;
             };
 
@@ -64,6 +65,7 @@ impl TyBuilder<'_> {
         &mut self,
         ast: AstEnt,
         ty: Ty,
+        params: &mut Vec<Ty>,
         funcs: &mut Reserved<BoundFuncList>,
         vis: Vis,
     ) -> errors::Result<ModItem> {
@@ -85,7 +87,7 @@ impl TyBuilder<'_> {
         }
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics, params)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
         self.scope.end_frame();
 

@@ -1,5 +1,6 @@
-use crate::{tir::TirList, *};
+use crate::*;
 use lexing_t::*;
+use parsing_t::*;
 use storage::*;
 
 #[derive(Default)]
@@ -25,6 +26,30 @@ pub struct FuncEnt {
 bitflags! {
     struct FuncFlags: u8 {
         GENERIC
+        PUBLIC
+        PRIVATE
+    }
+}
+
+impl From<Vis> for FuncFlags {
+    fn from(vis: Vis) -> Self {
+        match vis {
+            Vis::Pub => FuncFlags::PUBLIC,
+            Vis::None => FuncFlags::empty(),
+            Vis::Priv => FuncFlags::PRIVATE,
+        }
+    }
+}
+
+impl From<FuncFlags> for Vis {
+    fn from(flags: FuncFlags) -> Self {
+        if flags.contains(FuncFlags::PUBLIC) {
+            Vis::Pub
+        } else if flags.contains(FuncFlags::PRIVATE) {
+            Vis::Priv
+        } else {
+            Vis::None
+        }
     }
 }
 
