@@ -44,7 +44,7 @@ impl BoundChecker<'_> {
                     || (!self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
                         implementor_param_slice.get(index as usize).map_or(false, |&a| a == b)))
                 },
-                |a, b| matches!((a, b), (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. }) 
+                |a, b| matches!((a, b), (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. })
                     if bound == bound_b),
             )
         };
