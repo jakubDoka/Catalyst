@@ -1,29 +1,34 @@
 | functions:
 fn foo {
 }
+fn goo {
+}
+fn soo {
+}
+fn foo {
+}
 
 
 | \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:178
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
 |                                                                                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^ some of the methods are not implemented
 | missing methods: foo
 | \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:13
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
 |               ^^^^^^^^^ related bound type
 
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:205
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
-|                                                                                                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ some of the methods are not implemented
-| missing methods: foo
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:315
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
+|                                                                                                                                                                                                                                                                                                                             ^^^ argument 1 mismatch, expected ty_any but got param 
 | \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:13
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
-|               ^^^^^^^^^ related bound type
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
+|               ^^^^^^^^^ related bound defined here
 
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:253
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
-|                                                                                                                                                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ some of the methods are not implemented
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:260
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
+|                                                                                                                                                                                                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ some of the methods are not implemented
 | missing methods: foo
 | \\?\C:\src\rust\catalyst\tests\type-checking-test\bound\root.ctl:1:13
-| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use goo as foo } ; impl Something [uint] for A { use soo [uint] as foo } ;
+| bound pub [T] Something { fn foo(a : T) } ; struct A ; impl A { fn foo(a : A) {} ; fn goo(a : int) {} ; fn [P] soo(p : P) {} } ; impl Something [u8] for A { fn foo(a : u8) {} } ; impl Something [A] for A ; impl Something [int] for A { use Self ` goo as foo } ; impl Something [uint] for A { use Self ` soo [uint] as foo } ;
 |               ^^^^^^^^^ related bound type
 
