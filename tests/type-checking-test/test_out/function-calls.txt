@@ -1,12 +1,17 @@
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\function-calls\root.ctl:1:53
-| struct A ; impl pub A {     fn a() {} ; fn b() { Self ` a() } ; fn c(i : i8) -> i8 { return i } ; fn     d(i : i8) -> i8 { return Self ` c(i) } ; fn e(i : i8, j : i8)     { Self ` e(i, j) } } ;
-|                                                       ^ expected '\n' | ';' but got '`'
+| functions:
+fn a {
+}
+fn b {
+	call a
+}
+fn c {
+	return access tir0
+}
+fn d {
+	return call c(access tir0)
+}
+fn e {
+	call e(access tir0, access tir1)
+}
 
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\function-calls\root.ctl:1:134
-| struct A ; impl pub A {     fn a() {} ; fn b() { Self ` a() } ; fn c(i : i8) -> i8 { return i } ; fn     d(i : i8) -> i8 { return Self ` c(i) } ; fn e(i : i8, j : i8)     { Self ` e(i, j) } } ;
-|                                                                                                                                        ^ expected '\n' | ';' but got '`'
-
-| \\?\C:\src\rust\catalyst\tests\type-checking-test\function-calls\root.ctl:1:177
-| struct A ; impl pub A {     fn a() {} ; fn b() { Self ` a() } ; fn c(i : i8) -> i8 { return i } ; fn     d(i : i8) -> i8 { return Self ` c(i) } ; fn e(i : i8, j : i8)     { Self ` e(i, j) } } ;
-|                                                                                                                                                                                   ^ expected '\n' | ';' but got '`'
 
