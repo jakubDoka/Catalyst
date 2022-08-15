@@ -229,7 +229,7 @@ impl ItemCollector<'_> {
             ty_parser!(self, self.current_file).bounded_generics(generics, upper_params)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
-        let (local_id, _) = self.compute_ids(ast_name.span, vis);
+        let (local_id, _) = self.compute_ids(ast_name.span);
         let name = span_str!(self, ast_name.span);
 
         let ent = DefEnt {
@@ -247,7 +247,7 @@ impl ItemCollector<'_> {
         let def = self.typec.defs.push(ent);
         ctx.funcs.push((item, def));
 
-        Ok(Some(ModItem::new(local_id, def, ast_name.span)))
+        Ok(Some(ModItem::new(local_id, def, ast_name.span, vis)))
     }
 
     fn collect_bound(
@@ -260,7 +260,7 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
-        let (local_id, id) = self.compute_ids(ast_name.span, vis);
+        let (local_id, id) = self.compute_ids(ast_name.span);
 
         let assoc_types = ty_parser!(self, self.current_file).assoc_types(body, id, local_id);
 
@@ -283,7 +283,7 @@ impl ItemCollector<'_> {
         let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
-        Ok(Some(ModItem::new(local_id, ty, ast_name.span)))
+        Ok(Some(ModItem::new(local_id, ty, ast_name.span, vis)))
     }
 
     fn collect_struct(
@@ -296,7 +296,7 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
-        let (local_id, id) = self.compute_ids(ast_name.span, vis);
+        let (local_id, id) = self.compute_ids(ast_name.span);
         let name = span_str!(self, ast_name.span);
 
         let ent = TyEnt {
@@ -312,10 +312,10 @@ impl ItemCollector<'_> {
         let ty = self.typec.types.insert_unique(id, ent);
         ctx.types.push((item, ty));
 
-        Ok(Some(ModItem::new(local_id, ty, ast_name.span)))
+        Ok(Some(ModItem::new(local_id, ty, ast_name.span, vis)))
     }
 
-    fn compute_ids(&mut self, name: Span, vis: Vis) -> (Ident, Ident) {
+    fn compute_ids(&mut self, name: Span) -> (Ident, Ident) {
         let name_str = span_str!(self, name);
         let local = if let Some(self_alias) = self.scope.self_alias.expand() {
             self.interner.intern(scoped_ident!(self_alias, name_str))
@@ -323,7 +323,6 @@ impl ItemCollector<'_> {
             self.interner.intern_str(name_str)
         };
         let id = intern_scoped_ident!(self, local);
-        self.visibility[id] = vis;
         (local, id)
     }
 

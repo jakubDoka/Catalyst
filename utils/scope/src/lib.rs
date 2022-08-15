@@ -19,4 +19,4 @@ macro_rules! intern_scoped_ident {
 
 mod scope;
 
-pub use scope::{Scope, ScopeError, ScopeItem, ScopePtr};
+pub use scope::{Item, Scope, ScopeError, ScopeItem, ScopePtr, Vis};

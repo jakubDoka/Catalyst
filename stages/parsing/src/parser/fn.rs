@@ -1,3 +1,5 @@
+use scope::Vis;
+
 use super::*;
 
 impl Parser<'_> {

@@ -1,6 +1,6 @@
 use crate::*;
 use lexing_t::*;
-use parsing_t::*;
+use scope::Vis;
 use storage::*;
 
 #[derive(Default)]

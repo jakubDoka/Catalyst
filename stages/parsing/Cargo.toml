@@ -11,6 +11,7 @@ lexing = { path = "../lexing" }
 
 storage = { path = "../../utils/storage" }
 errors = { path = "../../utils/errors" }
+scope = { path = "../../utils/scope" }
 
 diags = { path = "../../types/diags" }
 lexing-t = { path = "../../types/lexing-t" }

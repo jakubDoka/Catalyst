@@ -24,6 +24,32 @@ impl Packages {
             .map(|file| file.span_str(span))
             .unwrap_or_default()
     }
+
+    pub fn check_vis(&self, item_module: Ident, module: Ident, vis: Vis) -> Result<(), Vis> {
+        match vis {
+            Vis::Pub => Ok(()),
+            _ if item_module == module => Ok(()),
+            kind => match (self.modules.get(module), self.modules.get(item_module)) {
+                (
+                    Some(Mod {
+                        kind: ModKind::Module { package, .. },
+                        ..
+                    }),
+                    Some(Mod {
+                        kind:
+                            ModKind::Module {
+                                package: item_package,
+                                ..
+                            },
+                        ..
+                    }),
+                ) => (package == item_package)
+                    .then_some(())
+                    .ok_or((kind == Vis::None).then_some(Vis::Pub).unwrap_or(Vis::None)),
+                _ => unreachable!(),
+            },
+        }
+    }
 }
 
 impl DiagPackages for Packages {
@@ -71,14 +97,16 @@ pub struct ModItem {
     pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Span,
+    pub vis: Vis,
 }
 
 impl ModItem {
-    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span) -> Self {
+    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ScopePtr::new(ptr),
             span,
+            vis,
         }
     }
 
@@ -87,6 +115,7 @@ impl ModItem {
             id: self.id,
             ptr: self.ptr,
             span: self.span,
+            vis: self.vis,
             module,
         }
     }

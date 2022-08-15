@@ -1,8 +1,8 @@
 use lexing_t::*;
+use scope::*;
 use storage::*;
 
 pub type AstData = CacheBumpMap<AstList, AstEnt, Ast>;
-pub type Visibility = ShadowMap<Ident, Vis>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AstEnt {
@@ -33,6 +33,9 @@ impl AstEnt {
 pub enum AstKind {
     Return,
     Binary,
+    Index,
+    Call,
+    DotExpr,
 
     Bound {
         vis: Vis,
@@ -61,6 +64,9 @@ pub enum AstKind {
         mutable: bool,
         exported: bool,
     },
+    StructExpr,
+    StructExprBody,
+    StructExprField,
 
     Func {
         vis: Vis,
@@ -77,6 +83,7 @@ pub enum AstKind {
     GenericParam,
 
     TyInstance,
+    InstanceExpr,
     PtrTy {
         mutable: bool,
     },
@@ -112,28 +119,6 @@ impl AstKind {
 impl Default for AstKind {
     fn default() -> Self {
         AstKind::None
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Vis {
-    Pub,
-    None,
-    Priv,
-}
-
-impl Vis {
-    pub fn merge(self, other: Self) -> Self {
-        match other {
-            Vis::None => self,
-            _ => other,
-        }
-    }
-}
-
-impl Default for Vis {
-    fn default() -> Self {
-        Vis::None
     }
 }
 

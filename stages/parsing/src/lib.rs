@@ -40,17 +40,31 @@ macro_rules! branch {
     (
         $self:expr => {
             $($cond:ident$(($($value:pat = $default:expr),*))? => $res:expr,)*
+            $(_ => $default_branch:expr,)?
         }
     ) => {
         match $self.state.current.kind {
             $(TokenKind::$cond$(($($value),*))? => {$res;},)*
             _ => {
-                let terminals = [
-                    $(TokenKind::$cond$(($($default),*))?),*
-                ];
-                $self.expect_error(terminals);
-                return Err(())
+                branch!(__default_branch__ $self, ($($cond$(($($value = $default),*))?),*) $($default_branch)?)
             },
+        }
+    };
+
+    (__default_branch__ $self:expr, ($($cond:ident$(($($value:pat = $default:expr),*))?),*)) => {
+        {
+            let terminals = [
+                $(TokenKind::$cond$(($($default),*))?),*
+            ];
+            $self.expect_error(terminals);
+            return Err(())
+        }
+    };
+
+
+    (__default_branch__ $self:expr, ($($ignored:tt)*) $default_branch:expr) => {
+        {
+            $default_branch
         }
     };
 

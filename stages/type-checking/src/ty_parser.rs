@@ -10,6 +10,16 @@ use storage::*;
 use type_checking_t::*;
 
 impl TyParser<'_> {
+    pub fn parse_impl_bound(&mut self, ast: AstEnt) -> errors::Result<Ty> {
+        let mut maybe_base = self.parse(ast)?;
+        if self.typec.instance_base_of(maybe_base) == maybe_base
+            && self.typec.param_count(maybe_base) != 0
+        {
+            maybe_base = self.parse_instance_low(maybe_base, &[], ast.span)?;
+        }
+        Ok(maybe_base)
+    }
+
     pub fn parse_bound_sum(&mut self, ast: &[AstEnt]) -> errors::Result<Ty> {
         let bounds = ast
             .iter()
@@ -78,6 +88,16 @@ impl TyParser<'_> {
         let (&first, rest) = self.ast_data[ast.children].split_first().unwrap();
 
         let base = self.parse(first)?;
+
+        self.parse_instance_low(base, rest, ast.span)
+    }
+
+    pub fn parse_instance_low(
+        &mut self,
+        base: Ty,
+        rest: &[AstEnt],
+        span: Span,
+    ) -> errors::Result<Ty> {
         let param_count = self.typec.param_count(base);
         let assoc_offset = param_count - self.typec.assoc_ty_count_of_bound(base);
 
@@ -109,7 +129,7 @@ impl TyParser<'_> {
         let param_count = self.typec.param_count(base);
         if assoc_offset != success_len - assoc_inc {
             self.workspace.push(diag! {
-                (ast.span, self.current_file) => "wrong number of type parameters",
+                (span, self.current_file) => "wrong number of type parameters",
                 (none) => "expected {}, got {}" { param_count, params.len() },
             });
             return Err(());
@@ -176,7 +196,7 @@ impl TyParser<'_> {
 
             let bound = ty_parser!(self, self.current_file).parse_bound_sum(bounds)?;
             let param = ty_factory!(self).param_of(bound);
-            let item = ScopeItem::new(name, param, ast_param.span, self.current_file);
+            let item = ScopeItem::new(name, param, ast_param.span, self.current_file, Vis::Priv);
             self.scope.push(item);
 
             // handle duplicate, all params need to be unique
@@ -198,12 +218,7 @@ impl TyParser<'_> {
                 ast_param = self.ast_data[ast_param.children][0];
             }
             let id = self.interner.intern_str(span_str!(self, ast_param.span));
-            let item = ScopeItem {
-                id,
-                ptr: ScopePtr::new(param),
-                span: ast_param.span,
-                module: self.current_file,
-            };
+            let item = ScopeItem::new(id, param, ast_param.span, self.current_file, Vis::Priv);
             self.scope.push(item);
             param = ty_factory!(self).next_param_of(param);
         }
@@ -250,7 +265,6 @@ impl TyParser<'_> {
         let name = span_str!(self, ast_name.span);
         let id = self.interner.intern(scoped_ident!(bound_id, name));
         let local_id = self.interner.intern(scoped_ident!(local_bound_id, name));
-        self.visibility[id] = vis;
 
         if let Some(prev) = self.typec.types.index(id) {
             let loc = self.typec.loc_of(prev, self.interner);
@@ -273,7 +287,7 @@ impl TyParser<'_> {
         let ty = self.typec.types.insert_unique(id, ty_ent);
         self.typec.ty_lists.push_to_reserved(assoc_types, ty);
 
-        let item = ModItem::new(local_id, ty, ast_name.span);
+        let item = ModItem::new(local_id, ty, ast_name.span, vis);
         self.insert_scope_item(item);
 
         Ok(())

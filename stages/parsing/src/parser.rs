@@ -14,6 +14,7 @@ use diags::*;
 use lexing::*;
 use lexing_t::*;
 use parsing_t::*;
+use scope::Vis;
 use storage::*;
 
 pub struct Parser<'a> {
@@ -289,11 +290,11 @@ impl<'a> Parser<'a> {
         });
     }
 
-    fn expect_str_error(&mut self, strs: &[&str]) {
+    fn expect_str_error(&mut self, strings: &[&str]) {
         self.workspace.push(diag! {
             (self.state.current.span, self.state.path)
-            error => "expected {} but got {}" {
-                strs.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(" | "),
+            error => "expected '{}' but got {}" {
+                strings.join("' | '"),
                 self.current_token_str()
             },
         });

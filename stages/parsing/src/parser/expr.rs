@@ -38,17 +38,95 @@ impl Parser<'_> {
         Ok(())
     }
 
-    pub fn unit_expr(&mut self) -> errors::Result {
+    fn unit_expr(&mut self) -> errors::Result {
         branch! { self => {
             Return => self.r#return()?,
             Int => self.capture(AstKind::Int),
-            Ident => self.capture(AstKind::Ident),
+            Ident => self.ident_expr(true)?,
         }};
 
         Ok(())
     }
 
-    pub fn r#return(&mut self) -> errors::Result {
+    fn ident_expr(&mut self, has_tail: bool) -> errors::Result {
+        self.ident_chain()?;
+
+        if self.at(TokenKind::Tick) && self.next(TokenKind::LeftBracket) {
+            self.instance_expr()?;
+        }
+
+        if has_tail {
+            if self.at(TokenKind::Tick) && self.next(TokenKind::LeftCurly) {
+                self.struct_expr()?;
+                return Ok(());
+            }
+
+            loop {
+                branch! {self => {
+                    LeftBracket => self.index_expr()?,
+                    LeftParen => self.call_expr()?,
+                    Dot => self.dot_expr()?,
+                    _ => break,
+                }};
+            }
+        }
+
+        Ok(())
+    }
+
+    fn dot_expr(&mut self) -> errors::Result {
+        self.start_with(1);
+        self.advance();
+        self.ident_expr(false)?;
+        self.finish(AstKind::DotExpr);
+
+        Ok(())
+    }
+
+    fn call_expr(&mut self) -> errors::Result {
+        self.start_with(1);
+        list!(self, LeftParen, Comma, RightParen, expr)?;
+        self.finish(AstKind::Call);
+
+        Ok(())
+    }
+
+    fn index_expr(&mut self) -> errors::Result {
+        self.start_with(1);
+        self.advance();
+        self.expr()?;
+        self.expect(TokenKind::RightBracket)?;
+        self.advance();
+        self.finish(AstKind::Index);
+        Ok(())
+    }
+
+    fn instance_expr(&mut self) -> errors::Result {
+        self.start_with(1);
+        list!(self, LeftBracket, Comma, RightBracket, ty)?;
+        self.finish(AstKind::InstanceExpr);
+        Ok(())
+    }
+
+    fn struct_expr(&mut self) -> errors::Result {
+        self.start_with(1);
+        list!(self, LeftBracket, Comma, RightBracket, struct_expr_field)?;
+        self.finish(AstKind::StructExprBody);
+        self.finish(AstKind::StructExpr);
+        Ok(())
+    }
+
+    fn struct_expr_field(&mut self) -> errors::Result {
+        self.start();
+        self.ident()?;
+        self.expect(TokenKind::Colon)?;
+        self.advance();
+        self.expr()?;
+        self.finish(AstKind::StructExprField);
+        Ok(())
+    }
+
+    fn r#return(&mut self) -> errors::Result {
         self.start();
         self.advance();
         if self.at(TokenKind::NewLine) {

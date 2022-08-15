@@ -23,7 +23,6 @@ struct TestState {
     scope: Scope,
     typec: Typec,
     item_context: ItemContext,
-    visibility: Visibility,
     ast_data: AstData,
     func_parser_ctx: FuncParserCtx,
 }
@@ -297,6 +296,24 @@ fn main() {
         //     }
         //     file "package.ctlm" {}
         // }
+        simple "function-calls" {
+            struct A;
 
+            impl pub A {
+                fn a() {};
+                fn b() {
+                    Self::a()
+                };
+                fn c(i: i8) -> i8 {
+                    return i
+                };
+                fn d(i: i8) -> i8 {
+                    return Self::c(i)
+                };
+                fn e(i: i8, j: i8) {
+                    Self::e(i, j)
+                }
+            };
+        }
     }
 }

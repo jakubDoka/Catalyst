@@ -21,19 +21,21 @@ impl Scope {
             .unwrap_or(id)
     }
 
-    pub fn get(&self, ident: Ident) -> Result<ScopePtr, ScopeError> {
+    pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
         self.data
             .get(ident)
             .map(|option| option.as_ref_option().ok_or(ScopeError::Collision))
             .ok_or(ScopeError::NotFound)
             .flatten()
-            .map(|item| item.ptr)
+            .cloned()
     }
 
-    pub fn get_concrete<T: VPtr + 'static>(&self, ident: Ident) -> Result<T, ScopeError> {
-        self.get(ident)?
-            .try_read::<T>()
-            .ok_or(ScopeError::TypeMismatch)
+    pub fn get_concrete<T: VPtr + 'static>(&self, ident: Ident) -> Result<(T, Item), ScopeError> {
+        let item = self.get(ident)?;
+        Ok((
+            item.ptr.try_read::<T>().ok_or(ScopeError::TypeMismatch)?,
+            item,
+        ))
     }
 
     pub fn push(&mut self, item: ScopeItem) {
@@ -67,6 +69,7 @@ impl Scope {
                 ptr: ScopePtr::new(ptr),
                 span: Maybe::none(),
                 module: Maybe::none(),
+                vis: Vis::None,
             }
             .into(),
         );
@@ -133,11 +136,12 @@ pub enum ScopeError {
 }
 
 #[derive(Clone, Copy)]
-struct Item {
+pub struct Item {
     pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Maybe<Span>,
     pub module: Maybe<Ident>,
+    pub vis: Vis,
 }
 
 impl Invalid for Item {
@@ -147,6 +151,7 @@ impl Invalid for Item {
             ptr: ScopePtr::invalid(),
             span: Maybe::none(),
             module: Maybe::none(),
+            vis: Vis::None,
         }
     }
 
@@ -161,15 +166,17 @@ pub struct ScopeItem {
     pub ptr: ScopePtr,
     pub span: Span,
     pub module: Ident,
+    pub vis: Vis,
 }
 
 impl ScopeItem {
-    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, module: Ident) -> Self {
+    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, module: Ident, vis: Vis) -> Self {
         Self {
             id,
             ptr: ScopePtr::new(ptr),
             span,
             module,
+            vis,
         }
     }
 }
@@ -181,6 +188,7 @@ impl Into<Item> for ScopeItem {
             ptr: self.ptr,
             span: Maybe::some(self.span),
             module: Maybe::some(self.module),
+            vis: self.vis,
         }
     }
 }
@@ -232,3 +240,25 @@ impl Invalid for ScopePtr {
 }
 
 struct InvalidItem;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vis {
+    Pub,
+    None,
+    Priv,
+}
+
+impl Vis {
+    pub fn merge(self, other: Self) -> Self {
+        match other {
+            Vis::None => self,
+            _ => other,
+        }
+    }
+}
+
+impl Default for Vis {
+    fn default() -> Self {
+        Vis::None
+    }
+}

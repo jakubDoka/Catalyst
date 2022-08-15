@@ -70,7 +70,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Scope
         mut Typec
         mut Workspace
-        mut Visibility
         mut Packages
         mut FuncParserCtx
 
@@ -84,7 +83,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Scope
         mut Typec
         mut Workspace
-        mut Visibility
         mut Packages
 
         AstData
@@ -97,7 +95,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Scope
         mut Typec
         mut Workspace
-        mut Visibility
         mut Packages
 
         AstData
@@ -110,7 +107,6 @@ file "stages/type-checking/src/state_gen.rs" {
         mut Scope
         mut Typec
         mut Workspace
-        mut Visibility
         mut Packages
 
         AstData

@@ -78,7 +78,6 @@ impl TyBuilder<'_> {
             .interner
             .intern(scoped_ident!(self.typec.types[ty].loc.name, name));
         let id = intern_scoped_ident!(self, local_id);
-        self.visibility[id] = vis;
 
         if let Some(already) = self.typec.types.index(id) {
             let loc = self.typec.loc_of(already, self.interner);
@@ -102,7 +101,7 @@ impl TyBuilder<'_> {
             .bound_funcs
             .push_to_reserved(funcs, bound_func_ent);
 
-        Ok(ModItem::new(local_id, bound_func, ast_name.span))
+        Ok(ModItem::new(local_id, bound_func, ast_name.span, vis))
     }
 
     fn r#struct(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {
@@ -139,7 +138,6 @@ impl TyBuilder<'_> {
             let id = self
                 .interner
                 .intern(field_ident!(struct_id, span_str!(self, ast_name.span)));
-            self.visibility[id] = vis;
 
             let ent = FieldEnt {
                 ty,
@@ -150,11 +148,7 @@ impl TyBuilder<'_> {
             let field = self.typec.fields.push(ent);
 
             // struct field acts as any other scope item
-            let item = ModItem {
-                id,
-                ptr: ScopePtr::new(field),
-                span: ast_name.span,
-            };
+            let item = ModItem::new(id, field, ast_name.span, vis);
             self.insert_scope_item(item);
         }
         self.typec.fields.bump_pushed()

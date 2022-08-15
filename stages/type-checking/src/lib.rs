@@ -17,19 +17,25 @@ macro_rules! scope_error_handler {
             span: lexing_t::Span,
             message: impl Into<String>,
         ) -> errors::Result<ScopePtr> {
-            self.scope.get(id).map_err(|err| {
-                crate::handle_scope_error(
-                    err,
-                    span,
-                    self.current_file,
-                    id,
-                    message,
-                    &self.packages,
-                    &mut self.interner,
-                    &self.scope,
-                    &mut self.workspace,
-                )
-            })
+            self.scope
+                .get(id)
+                .map_err(|err| {
+                    crate::handle_scope_error(
+                        err,
+                        span,
+                        self.current_file,
+                        id,
+                        message,
+                        &self.packages,
+                        &mut self.interner,
+                        &self.scope,
+                        &mut self.workspace,
+                    )
+                })
+                .and_then(|item| {
+                    check_vis(item, span, self.current_file, self.packages, self.workspace)
+                })
+                .map(|item| item.ptr)
         }
     };
 
@@ -40,19 +46,25 @@ macro_rules! scope_error_handler {
             span: lexing_t::Span,
             message: impl Into<String>,
         ) -> errors::Result<T> {
-            self.scope.get_concrete::<T>(id).map_err(|err| {
-                crate::handle_scope_error(
-                    err,
-                    span,
-                    self.current_file,
-                    id,
-                    message,
-                    &self.packages,
-                    &mut self.interner,
-                    &self.scope,
-                    &mut self.workspace,
-                )
-            })
+            self.scope
+                .get_concrete::<T>(id)
+                .map_err(|err| {
+                    crate::handle_scope_error(
+                        err,
+                        span,
+                        self.current_file,
+                        id,
+                        message,
+                        &self.packages,
+                        &mut self.interner,
+                        &self.scope,
+                        &mut self.workspace,
+                    )
+                })
+                .and_then(|(id, item)| {
+                    check_vis(item, span, self.current_file, self.packages, self.workspace)
+                        .map(|_| id)
+                })
         }
     };
 }
@@ -64,7 +76,7 @@ mod ty_builder;
 mod ty_parser;
 
 pub use state_gen::{FuncParser, ItemCollector, TyBuilder, TyParser};
-pub use utils::handle_scope_error;
+pub use utils::{check_vis, handle_scope_error};
 
 mod utils {
     use diags::*;
@@ -72,6 +84,31 @@ mod utils {
     use packaging_t::*;
     use scope::*;
     use storage::*;
+
+    pub fn check_vis(
+        item: scope::Item,
+        span: Span,
+        module: Ident,
+        packages: &Packages,
+        workspace: &mut Workspace,
+    ) -> errors::Result<scope::Item> {
+        if let Some(item_module) = item.module.expand() {
+            if let Err(err) = packages.check_vis(item_module, module, item.vis) {
+                workspace.push(diag! {
+                    (span, module) => "cannot access this item because of visibility restrictions",
+                    (span, item_module) => "item is defined here",
+                    (none) => "if you have control over pinpointed code, {} will fix the issue" {
+                        match err {
+                            Vis::Pub => "adding 'pub'",
+                            Vis::None => "removing the 'priv'",
+                            Vis::Priv => ":O",
+                        }
+                    },
+                });
+            }
+        }
+        Ok(item)
+    }
 
     pub fn handle_scope_error(
         err: ScopeError,

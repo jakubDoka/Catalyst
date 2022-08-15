@@ -63,7 +63,7 @@ impl FuncParser<'_> {
 
                     let implementor_name = self.typec.types[implementor].loc.name;
                     let local_id = self.interner.intern(scoped_ident!(implementor_name, name));
-                    if let Ok(def) = self.scope.get_concrete::<Def>(local_id) {
+                    if let Ok((def, ..)) = self.scope.get_concrete::<Def>(local_id) {
                         let sig = self.typec.defs[def].sig;
                         if bound_checker!(self)
                             .compare_bound_signatures(i, default(), sig, r#impl)
@@ -205,6 +205,7 @@ impl FuncParser<'_> {
             ty,
             ast_name.span,
             self.current_file,
+            Vis::Pub,
         ))
     }
 
@@ -390,43 +391,54 @@ impl FuncParser<'_> {
                 .span(ast.span)
                 .ty(BuiltinTypes::STR),
             AstKind::Int => self.int(ast, expected),
-
             AstKind::Ident | AstKind::IdentChain => self.ident(ast)?,
+            AstKind::Call => self.call(ast, expected)?,
 
-            AstKind::Struct { .. }
-            | AstKind::StructBody
-            | AstKind::StructField { .. }
-            | AstKind::Func { .. }
-            | AstKind::FuncArg { .. }
-            | AstKind::FuncBody
-            | AstKind::Generics
-            | AstKind::GenericParam
-            | AstKind::TyInstance
-            | AstKind::PtrTy { .. }
-            | AstKind::ManifestSection
-            | AstKind::ManifestImports
-            | AstKind::ManifestImport { .. }
-            | AstKind::ManifestField
-            | AstKind::Imports
-            | AstKind::Import
-            | AstKind::Operator
-            | AstKind::OperatorWithModule
-            | AstKind::ImplBody
-            | AstKind::BoundBody
-            | AstKind::Bound { .. }
-            | AstKind::BoundType { .. }
-            | AstKind::BoundImpl { .. }
-            | AstKind::Impl { .. }
-            | AstKind::ImplType
-            | AstKind::FuncSignature { .. }
-            | AstKind::ImplUse
-            | AstKind::FieldTy
-            | AstKind::None => unreachable!(),
+            kind => unimplemented!("{kind:?}"),
         };
 
         self.expect_type(expr, expected);
 
         Ok(expr)
+    }
+
+    fn call(&mut self, ast: AstEnt, _expected: Expected) -> errors::Result<TirEnt> {
+        let [caller, ref args @ ..] = self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        match caller.kind {
+            AstKind::Ident | AstKind::IdentChain => self.proc_call(caller, args),
+            AstKind::InstanceExpr => {
+                todo!()
+            }
+            AstKind::DotExpr => {
+                todo!()
+            }
+            kind => unimplemented!("{kind:?}"),
+        }
+    }
+
+    fn proc_call(&mut self, caller: AstEnt, args: &[AstEnt]) -> errors::Result<TirEnt> {
+        let id = ty_parser!(self, self.current_file).ident_chain_id(caller);
+        let def: Def = self.get_from_scope_concrete(id, caller.span, "function not found")?;
+
+        let sig = self.typec.defs[def].sig;
+        let arg_types = self.typec.ty_lists[sig.args].to_vec();
+        let args = args
+            .iter()
+            .zip(arg_types)
+            .map(|(&arg, ty)| self.expr(arg, ty.into()))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let kind = TirKind::Call {
+            def,
+            params: default(),
+            args: self.tir_data.bump(args),
+        };
+        Ok(TirEnt::new(kind).span(caller.span).ty(sig.ret))
     }
 
     fn binary(&mut self, ast: AstEnt) -> errors::Result<TirEnt> {
@@ -574,8 +586,13 @@ impl FuncParser<'_> {
                 .ty(ty)
                 .span(name.span);
             let arg = self.tir_data.push_to_reserved(&mut reserved, argument);
-            self.scope
-                .push(ScopeItem::new(id, arg, name.span, self.current_file));
+            self.scope.push(ScopeItem::new(
+                id,
+                arg,
+                name.span,
+                self.current_file,
+                Vis::Priv,
+            ));
         }
         self.tir_data.finish_reserved(reserved);
     }
@@ -590,8 +607,13 @@ impl FuncParser<'_> {
             };
 
             let id = self.interner.intern_str(span_str!(self, name.span));
-            self.scope
-                .push(ScopeItem::new(id, param, name.span, self.current_file));
+            self.scope.push(ScopeItem::new(
+                id,
+                param,
+                name.span,
+                self.current_file,
+                Vis::Priv,
+            ));
         }
     }
 
