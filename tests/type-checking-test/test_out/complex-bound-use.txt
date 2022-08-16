@@ -1,0 +1,4 @@
+| \\?\C:\src\rust\catalyst\tests\type-checking-test\complex-bound-use\root.ctl:1:70
+| bound pub [S] Add { type Out ; fn add(a : Self, b : S) -> Self ` Out } fn [B, A : Add < B >] add(a : A, b : B) -> A ` Out { return A ` add(a, b) }
+|                                                                        ^^ expected '\n' | ';' but got 'fn'
+
