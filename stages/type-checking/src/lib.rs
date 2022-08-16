@@ -123,7 +123,7 @@ mod utils {
     ) {
         let diag = match err {
             ScopeError::NotFound => diag! {
-                (span, file) => "{}" { message.into() },
+                (span, file) => "{} (queried: {})" { message.into(), &interner[id] },
                 //(none) => "maybe you meant {}" { ??? } // TODO
             },
             ScopeError::Collision => diag! {

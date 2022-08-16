@@ -245,7 +245,7 @@ impl ItemCollector<'_> {
             sig,
         };
         let def = self.typec.defs.push(ent);
-        ctx.funcs.push((item, def));
+        ctx.funcs.push((self.scope.self_alias, item, def));
 
         Ok(Some(ModItem::new(local_id, def, ast_name.span, vis)))
     }

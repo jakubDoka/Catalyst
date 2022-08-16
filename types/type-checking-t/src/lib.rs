@@ -76,11 +76,12 @@ pub use ty::{
 mod items {
     use crate::*;
     use parsing_t::*;
+    use storage::*;
 
     #[derive(Default)]
     pub struct ItemContext {
         pub attrs: Vec<AstEnt>,
-        pub funcs: Vec<(AstEnt, Def)>,
+        pub funcs: Vec<(Maybe<Ident>, AstEnt, Def)>,
         pub types: Vec<(AstEnt, Ty)>,
         pub bound_impls: Vec<(AstEnt, Impl)>,
     }

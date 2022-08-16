@@ -318,8 +318,9 @@ impl FuncParser<'_> {
         self.workspace.push(diag);
     }
 
-    pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (AstEnt, Def)>) {
-        for (ast, def) in funcs {
+    pub fn funcs(&mut self, funcs: impl IntoIterator<Item = (Maybe<Ident>, AstEnt, Def)>) {
+        for (self_alias, ast, def) in funcs {
+            self.scope.self_alias = self_alias;
             let [_cc, generics, _name, ref args @ .., _ret, body] = self.ast_data[ast.children] else {
                 unreachable!();
             };
@@ -331,6 +332,7 @@ impl FuncParser<'_> {
             };
             self.typec.defs[def].tir_data = self.tir_data.clone();
             self.typec.defs[def].body = body.into();
+            self.scope.self_alias.take();
         }
     }
 
