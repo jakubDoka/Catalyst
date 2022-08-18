@@ -206,14 +206,14 @@ impl<K: VPtr, T, C: VPtr, CACHE> Index<C> for PoolBumpMap<K, T, C, CACHE> {
     type Output = T;
 
     fn index(&self, index: C) -> &Self::Output {
-        assert!(self.check_index(index));
+        assert!(!self.check_index(index));
         &self.inner[index]
     }
 }
 
 impl<K: VPtr, T, C: VPtr, CACHE> IndexMut<C> for PoolBumpMap<K, T, C, CACHE> {
     fn index_mut(&mut self, index: C) -> &mut Self::Output {
-        assert!(self.check_index(index));
+        assert!(!self.check_index(index));
         &mut self.inner[index]
     }
 }

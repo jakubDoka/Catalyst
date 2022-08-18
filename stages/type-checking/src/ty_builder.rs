@@ -1,4 +1,5 @@
 use crate::*;
+use lexing_t::Loc;
 use packaging_t::*;
 use parsing_t::*;
 use scope::*;
@@ -53,6 +54,8 @@ impl TyBuilder<'_> {
                 continue;
             };
 
+            println!("{:?}", &self.interner[item.id]);
+
             self.insert_scope_item(item);
         }
 
@@ -73,10 +76,10 @@ impl TyBuilder<'_> {
             unreachable!();
         };
 
-        let name = self.interner.intern_str(span_str!(self, ast_name.span));
+        let name_ident = self.interner.intern_str(span_str!(self, ast_name.span));
         let local_id = self
             .interner
-            .intern(scoped_ident!(self.typec.types[ty].loc.name, name));
+            .intern(scoped_ident!(self.typec.types[ty].loc.name, name_ident));
         let id = intern_scoped_ident!(self, local_id);
 
         if let Some(already) = self.typec.types.index(id) {
@@ -92,9 +95,8 @@ impl TyBuilder<'_> {
 
         let bound_func_ent = BoundFuncEnt {
             sig,
-            name,
             params,
-            span: ast_name.span.into(),
+            loc: Loc::new(ast_name.span, self.current_file, name_ident),
         };
         let bound_func = self
             .typec

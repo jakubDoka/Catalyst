@@ -3,7 +3,7 @@ use std::{
     iter::repeat,
     marker::PhantomData,
     mem::MaybeUninit,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, Range},
 };
 
 use serde::{Deserialize, Serialize};
@@ -292,12 +292,7 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     /// storage::gen_v_ptr!(DummyList);
     /// ```
     pub fn get(&self, key: K) -> &[T] {
-        unsafe {
-            transmute(
-                &self.data
-                    [self.indices[key.index() - 1] as usize..self.indices[key.index()] as usize],
-            )
-        }
+        unsafe { transmute(&self.data[self.range_of(key)]) }
     }
 
     /// Returns mut slice corresponding to given `key`. The slice is known to not be empty.
@@ -306,7 +301,14 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     }
 
     pub unsafe fn get_mut_uninit(&mut self, key: K) -> &mut [MaybeUninit<T>] {
-        &mut self.data[self.indices[key.index() - 1] as usize..self.indices[key.index()] as usize]
+        let range = self.range_of(key);
+        &mut self.data[range]
+    }
+
+    pub fn range_of(&self, key: K) -> Range<usize> {
+        let start = self.indices[key.index() - 1] as usize;
+        let end = self.indices[key.index()] as usize;
+        start..end
     }
 }
 
@@ -382,6 +384,22 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
             end: start + size,
             id,
         }
+    }
+
+    pub fn indexed(&self, key: Maybe<K>) -> impl Iterator<Item = (C, &T)>
+    where
+        K: Invalid + VPtr,
+    {
+        key.expand()
+            .map(|k| self.range_of(k))
+            .map(|range| {
+                range
+                    .clone()
+                    .map(|i| C::new(i))
+                    .zip(unsafe { transmute::<_, &[T]>(&self.data[range]) })
+            })
+            .into_iter()
+            .flatten()
     }
 
     /// Pushes one element to reserved slice.

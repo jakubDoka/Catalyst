@@ -55,31 +55,53 @@ impl TirDisplay<'_> {
                 write!(to, "argument {i}")?;
             }
             TirKind::Call { def, params, args } => {
-                write!(to, "call ")?;
-
-                let name = &self.interner[self.typec.defs[def].loc.name];
-                write!(to, "{}", name)?;
-
-                if let Some((&first, others)) = self.typec.ty_lists[params].split_first() {
-                    write!(to, "[{}", &self.interner[self.typec.types.id(first)])?;
-                    for &param in others {
-                        write!(to, ", {}", &self.interner[self.typec.types.id(param)])?;
-                    }
-                    write!(to, "]")?;
-                }
-
-                if let Some((&first, others)) = self.tir_data[args].split_first() {
-                    write!(to, "(")?;
-                    self.display_recur(first, depth, to)?;
-                    for &arg in others {
-                        write!(to, ", ")?;
-                        self.display_recur(arg, depth, to)?;
-                    }
-                    write!(to, ")")?;
-                }
+                let name = self.typec.defs[def].loc.name;
+                self.display_call(name, params, args, depth, to)?;
+            }
+            TirKind::BoundCall {
+                bound_func,
+                params,
+                args,
+            } => {
+                let name = self.typec.bound_funcs[bound_func].loc.name;
+                self.display_call(name, params, args, depth, to)?;
             }
             TirKind::Unreachable => write!(to, "unreachable")?,
             TirKind::Invalid => write!(to, "invalid")?,
+        }
+
+        Ok(())
+    }
+
+    fn display_call(
+        &self,
+        name: Ident,
+        params: Maybe<TyList>,
+        args: Maybe<TirList>,
+        depth: usize,
+        to: &mut dyn std::fmt::Write,
+    ) -> std::fmt::Result {
+        write!(to, "call ")?;
+
+        let name = &self.interner[name];
+        write!(to, "{}", name)?;
+
+        if let Some((&first, others)) = self.typec.ty_lists[params].split_first() {
+            write!(to, "[{}", &self.interner[self.typec.types.id(first)])?;
+            for &param in others {
+                write!(to, ", {}", &self.interner[self.typec.types.id(param)])?;
+            }
+            write!(to, "]")?;
+        }
+
+        if let Some((&first, others)) = self.tir_data[args].split_first() {
+            write!(to, "(")?;
+            self.display_recur(first, depth, to)?;
+            for &arg in others {
+                write!(to, ", ")?;
+                self.display_recur(arg, depth, to)?;
+            }
+            write!(to, ")")?;
         }
 
         Ok(())
@@ -145,6 +167,11 @@ pub enum TirKind {
     },
     Call {
         def: Def,
+        params: Maybe<TyList>,
+        args: Maybe<TirList>,
+    },
+    BoundCall {
+        bound_func: BoundFunc,
         params: Maybe<TyList>,
         args: Maybe<TirList>,
     },

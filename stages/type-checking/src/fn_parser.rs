@@ -59,7 +59,7 @@ impl FuncParser<'_> {
                 .enumerate()
                 .filter(|(.., maybe)| maybe.is_none())
                 .filter_map(|(i, maybe)| {
-                    let name = self.typec.func_of_impl(r#impl, i).name;
+                    let name = self.typec.func_of_impl(r#impl, i).loc.name;
 
                     let implementor_name = self.typec.types[implementor].loc.name;
                     let local_id = self.interner.intern(scoped_ident!(implementor_name, name));
@@ -148,7 +148,7 @@ impl FuncParser<'_> {
 
                 let local_id = ty_parser!(self, self.current_file).ident_chain_id(header);
                 let def: Def =
-                    self.get_from_scope_concrete(local_id, value.span, "function not found")?;
+                    self.get_from_scope_concrete(local_id, value.span, "function", Reports::base)?;
                 let params = args
                     .iter()
                     .map(|&arg| ty_parser!(self, self.current_file).parse(arg))
@@ -158,7 +158,7 @@ impl FuncParser<'_> {
             AstKind::Ident | AstKind::IdentChain => {
                 let local_id = ty_parser!(self, self.current_file).ident_chain_id(value);
                 let def: Def =
-                    self.get_from_scope_concrete(local_id, value.span, "function not found")?;
+                    self.get_from_scope_concrete(local_id, value.span, "function", Reports::base)?;
                 self.typec.wrap_def(id, def)
             }
             kind => unimplemented!("{:?}", kind),
@@ -423,9 +423,13 @@ impl FuncParser<'_> {
 
     fn proc_call(&mut self, caller: AstEnt, args: &[AstEnt]) -> errors::Result<TirEnt> {
         let id = ty_parser!(self, self.current_file).ident_chain_id(caller);
-        let def: Def = self.get_from_scope_concrete(id, caller.span, "function not found")?;
+        let def = self.get_from_scope(id, caller.span, "function", Reports::base)?;
 
-        let sig = self.typec.defs[def].sig;
+        let sig = match_scope_ptr!((self, def, caller.span) => {
+            def: Def => self.typec.defs[def].sig,
+            bound_func: BoundFunc => self.typec.bound_funcs[bound_func].sig,
+        });
+
         let arg_types = self.typec.ty_lists[sig.args].to_vec();
         let args = args
             .iter()
@@ -434,12 +438,21 @@ impl FuncParser<'_> {
             .collect::<Vec<_>>()
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
+        let args = self.tir_data.bump(args);
 
-        let kind = TirKind::Call {
-            def,
-            params: default(),
-            args: self.tir_data.bump(args),
-        };
+        let kind = match_scope_ptr!((self, def, caller.span) => {
+            def: Def => TirKind::Call {
+                def,
+                params: default(),
+                args,
+            },
+            bound_func: BoundFunc => TirKind::BoundCall {
+                bound_func,
+                params: default(),
+                args,
+            },
+        });
+
         Ok(TirEnt::new(kind).span(caller.span).ty(sig.ret))
     }
 
@@ -449,7 +462,8 @@ impl FuncParser<'_> {
         };
 
         let op_id = self.op_id(op, true);
-        let def: Def = self.get_from_scope_concrete(op_id, op.span, "binary operator not found")?;
+        let def: Def =
+            self.get_from_scope_concrete(op_id, op.span, "binary operator", Reports::base)?;
 
         let sig = self.typec.defs[def].sig;
         let [left_ty, right_ty] = self.typec.ty_lists[sig.args] else {
@@ -497,7 +511,7 @@ impl FuncParser<'_> {
     fn ident(&mut self, ast: AstEnt) -> errors::Result<TirEnt> {
         let id = ty_parser!(self, self.current_file).ident_chain_id(ast);
 
-        let something = self.get_from_scope(id, ast.span, "symbol not found")?;
+        let something = self.get_from_scope(id, ast.span, "variable", Reports::base)?;
 
         let result = if let Some(var) = something.try_read::<Tir>() {
             TirEnt::new(TirKind::Access { var })
@@ -600,9 +614,9 @@ impl FuncParser<'_> {
     }
 
     fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
-        for (&ast_param, &param) in self.ast_data[generics.children]
+        for (&ast_param, param) in self.ast_data[generics.children]
             .iter()
-            .zip(self.typec.ty_lists[parsed_generics].iter())
+            .zip(self.typec.ty_lists[parsed_generics].to_vec())
         {
             let [name, ..] = self.ast_data[ast_param.children] else {
                 unreachable!();
@@ -616,6 +630,12 @@ impl FuncParser<'_> {
                 self.current_file,
                 Vis::Priv,
             ));
+
+            let TyKind::Param { bound, .. } = self.typec.types[param].kind else {
+                unreachable!();
+            };
+
+            ty_parser!(self, self.current_file).insert_bound_items(id, bound);
         }
     }
 

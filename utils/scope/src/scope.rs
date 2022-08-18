@@ -33,12 +33,15 @@ impl Scope {
     pub fn get_concrete<T: VPtr + 'static>(&self, ident: Ident) -> Result<(T, Item), ScopeError> {
         let item = self.get(ident)?;
         Ok((
-            item.ptr.try_read::<T>().ok_or(ScopeError::TypeMismatch)?,
+            item.ptr
+                .try_read::<T>()
+                .ok_or(ScopeError::TypeMismatch(item.ptr.id))?,
             item,
         ))
     }
 
-    pub fn push(&mut self, item: ScopeItem) {
+    pub fn push(&mut self, item: impl Into<Item>) {
+        let item: Item = item.into();
         self.frames.push((
             item.id,
             self.data
@@ -132,7 +135,7 @@ impl Default for Scope {
 pub enum ScopeError {
     NotFound,
     Collision,
-    TypeMismatch,
+    TypeMismatch(TypeId),
 }
 
 #[derive(Clone, Copy)]
@@ -170,10 +173,10 @@ pub struct ScopeItem {
 }
 
 impl ScopeItem {
-    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, module: Ident, vis: Vis) -> Self {
+    pub fn new(id: Ident, ptr: impl Into<ScopePtr>, span: Span, module: Ident, vis: Vis) -> Self {
         Self {
             id,
-            ptr: ScopePtr::new(ptr),
+            ptr: ptr.into(),
             span,
             module,
             vis,
@@ -240,6 +243,12 @@ impl Invalid for ScopePtr {
 }
 
 struct InvalidItem;
+
+impl<T: VPtr + 'static> From<T> for ScopePtr {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Vis {

@@ -48,7 +48,7 @@ impl TyParser<'_> {
 
     fn parse_ident(&mut self, ast: AstEnt) -> errors::Result<Ty> {
         let id = self.ident_chain_id(ast);
-        self.get_from_scope_concrete(id, ast.span, "type not found")
+        self.get_from_scope_concrete(id, ast.span, "type", Reports::base)
     }
 
     scope_error_handler!(concrete);
@@ -206,9 +206,49 @@ impl TyParser<'_> {
                 .find_map(|&p| (p == param).then(|| ty_factory!(self).next_param_of(param)))
                 .unwrap_or(param);
 
+            self.insert_bound_items(name, bound);
+
             init.push(param);
         }
         Ok(())
+    }
+
+    pub fn insert_bound_items(&mut self, name: Ident, bound: Ty) {
+        let mut frontier = vec![bound];
+
+        while let Some(bound) = frontier.pop() {
+            let bound = self.typec.instance_base_of(bound);
+            let TyKind::Bound { inherits, assoc_types, funcs } = self.typec.types[bound].kind else {
+                unreachable!("{:?}", self.typec.types[bound].kind);
+            };
+
+            let mut push_to_scope = |(loc, ptr): (Loc, ScopePtr)| {
+                let id = self.interner.intern(scoped_ident!(name, loc.name));
+                let diag_loc = self.typec.loc_to_diag_loc(loc, self.interner).expand();
+                let item = Item {
+                    id,
+                    ptr,
+                    span: diag_loc.map(|loc| loc.span.expand()).flatten().into(),
+                    module: diag_loc.map(|loc| loc.source).into(),
+                    vis: Vis::Priv,
+                };
+                self.scope.push(item);
+                println!("{}", &self.interner[id])
+            };
+
+            self.typec.ty_lists[assoc_types]
+                .iter()
+                .map(|&ty| (self.typec.types[ty].loc, ty.into()))
+                .for_each(&mut push_to_scope);
+
+            self.typec
+                .bound_funcs
+                .indexed(funcs)
+                .map(|(id, &func)| (func.loc, id.into()))
+                .for_each(&mut push_to_scope);
+
+            frontier.extend(self.typec.ty_lists[inherits].iter().copied());
+        }
     }
 
     pub fn generics(&mut self, generics: AstEnt) {

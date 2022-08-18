@@ -1,7 +1,7 @@
 use super::*;
 
 impl Parser<'_> {
-    pub fn skip_imports(&mut self) -> errors::Result {
+    pub fn skip_imports(&mut self) {
         self.skip_newlines();
         if self.at(TokenKind::Use) {
             self.advance();
@@ -12,8 +12,6 @@ impl Parser<'_> {
             }
             self.advance();
         }
-
-        Ok(())
     }
 
     pub fn parse_imports(&mut self) -> Option<AstEnt> {

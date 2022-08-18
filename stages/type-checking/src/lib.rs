@@ -2,6 +2,9 @@
 #![feature(let_chains)]
 #![feature(default_free_fn)]
 #![feature(decl_macro)]
+#![allow(incomplete_features)]
+#![feature(inline_const_pat)]
+#![feature(const_type_id)]
 
 #[macro_export]
 macro_rules! scope_error_handler {
@@ -15,7 +18,8 @@ macro_rules! scope_error_handler {
             &mut self,
             id: Ident,
             span: lexing_t::Span,
-            message: impl Into<String>,
+            message: &str,
+            report: ReportSig,
         ) -> errors::Result<ScopePtr> {
             self.scope
                 .get(id)
@@ -25,6 +29,7 @@ macro_rules! scope_error_handler {
                         span,
                         self.current_file,
                         id,
+                        report,
                         message,
                         &self.packages,
                         &mut self.interner,
@@ -44,7 +49,8 @@ macro_rules! scope_error_handler {
             &mut self,
             id: Ident,
             span: lexing_t::Span,
-            message: impl Into<String>,
+            message: &str,
+            report: ReportSig,
         ) -> errors::Result<T> {
             self.scope
                 .get_concrete::<T>(id)
@@ -54,6 +60,7 @@ macro_rules! scope_error_handler {
                         span,
                         self.current_file,
                         id,
+                        report,
                         message,
                         &self.packages,
                         &mut self.interner,
@@ -76,14 +83,17 @@ mod ty_builder;
 mod ty_parser;
 
 pub use state_gen::{FuncParser, ItemCollector, TyBuilder, TyParser};
-pub use utils::{check_vis, handle_scope_error};
+pub use utils::{check_vis, handle_scope_error, ReportSig, Reports};
 
 mod utils {
+    use std::any::TypeId;
+
     use diags::*;
     use inner_lexing::*;
     use packaging_t::*;
     use scope::*;
     use storage::*;
+    use type_checking_t::*;
 
     pub fn check_vis(
         item: scope::Item,
@@ -115,7 +125,8 @@ mod utils {
         span: Span,
         file: Ident,
         id: Ident,
-        message: impl Into<String>,
+        report: ReportSig,
+        expected: &str,
         packages: &Packages,
         interner: &mut Interner,
         scope: &Scope,
@@ -123,7 +134,7 @@ mod utils {
     ) {
         let diag = match err {
             ScopeError::NotFound => diag! {
-                (span, file) => "{} (queried: {})" { message.into(), &interner[id] },
+                (span, file) => "{} not found (queried: {})" { expected, &interner[id] },
                 //(none) => "maybe you meant {}" { ??? } // TODO
             },
             ScopeError::Collision => diag! {
@@ -146,10 +157,47 @@ mod utils {
                     }
                 },
             },
-            ScopeError::TypeMismatch => diag!(
-                (span, file) => "the identifier is not a type",
+            ScopeError::TypeMismatch(id) => diag!(
+                (span, file) => "the identifier exists but it's not of a correct kind",
+                (none) => "found item was of kind '{}' but context required '{}'" {
+                    report(id), expected.split('|').collect::<Vec<_>>().join("' | '")
+                },
             ),
         };
         workspace.push(diag);
+    }
+
+    macro_rules! make_ty_report {
+        (
+            $(
+                $name:ident {
+                    $($ty:ty => $report:expr,)*
+                }
+            ),*
+        ) => {
+            $(
+                pub fn $name(id: TypeId) -> String {
+                    match id {
+                        $(
+                            const { TypeId::of::<$ty>() } => $report.to_string(),
+                        )*
+                        _ => "unknown".to_string(),
+                    }
+                }
+            )*
+        };
+    }
+
+    pub type ReportSig = fn(TypeId) -> String;
+    pub struct Reports;
+
+    impl Reports {
+        make_ty_report!(
+            base {
+                Def => "function",
+                BoundFunc => "bound function",
+                Ty => "type",
+            }
+        );
     }
 }

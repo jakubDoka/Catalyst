@@ -79,7 +79,7 @@ impl TestState {
 
                 let mut parser =
                     Parser::new(source, &mut state, &mut self.ast_data, &mut self.workspace);
-                drop(parser.skip_imports());
+                parser.skip_imports();
                 let (ast, done) = parser.parse_items();
 
                 if self.workspace.has_errors() {
@@ -314,6 +314,16 @@ fn main() {
                     Self::e(i, j)
                 }
             };
+        }
+        simple "complex-bound-in-use" {
+            bound [OPERAND] Add {
+                type Out;
+                fn add(a: Self, b: OPERAND) -> Self::Out
+            };
+
+            fn [A, B: Add[A]] add(a: A, b: B) -> B::Out {
+                return B::add(a, b)
+            }
         }
     }
 }

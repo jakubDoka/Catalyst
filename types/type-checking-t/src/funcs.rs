@@ -53,7 +53,7 @@ impl From<FuncFlags> for Vis {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Sig {
     pub cc: Maybe<Ident>,
     pub args: Maybe<TyList>,

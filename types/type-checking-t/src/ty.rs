@@ -191,7 +191,7 @@ impl Typec {
         };
         self.bound_funcs[funcs]
             .iter()
-            .position(|func| func.name == name)
+            .position(|func| func.loc.name == name)
     }
 
     #[inline]
@@ -214,7 +214,8 @@ impl Typec {
         self.loc_of_def(self.funcs[func].def, interner)
     }
 
-    fn loc_to_diag_loc(&self, loc: Loc, interner: &Interner) -> Maybe<DiagLoc> {
+    #[inline]
+    pub fn loc_to_diag_loc(&self, loc: Loc, interner: &Interner) -> Maybe<DiagLoc> {
         loc.file
             .expand()
             .map(|file| DiagLoc {
@@ -245,7 +246,7 @@ impl Typec {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
@@ -253,7 +254,7 @@ pub struct TyEnt {
     pub loc: Loc,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TyKind {
     Param {
         index: u32,
@@ -323,9 +324,8 @@ impl Default for TyKind {
 #[derive(Clone, Copy, Default)]
 pub struct BoundFuncEnt {
     pub sig: Sig,
-    pub name: Ident,
     pub params: Maybe<TyList>,
-    pub span: Maybe<Span>,
+    pub loc: Loc,
 }
 
 pub struct ImplEnt {
