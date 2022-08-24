@@ -145,10 +145,10 @@ mod utils {
                                 .iter()
                                 .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
                                 .filter_map(|id| scope.get(id).is_ok().then_some(id))
-                                .collect::<Vec<_>>() // borrow checker would complain, rightfully so
+                                .collect::<BumpVec<_>>() // borrow checker would complain, rightfully so
                                 .into_iter()
                                 .map(|id| &interner[id])
-                                .collect::<Vec<_>>()
+                                .collect::<BumpVec<_>>()
                                 .join(", ")
                         } else {
                             "wait what?".to_string()
@@ -159,7 +159,7 @@ mod utils {
             ScopeError::TypeMismatch(id) => diag!(
                 (span, file) => "the identifier exists but it's not of a correct kind",
                 (none) => "found item was of kind '{}' but context required '{}'" {
-                    report(id), expected.split('|').collect::<Vec<_>>().join("' | '")
+                    report(id), expected.split('|').collect::<BumpVec<_>>().join("' | '")
                 },
             ),
         };

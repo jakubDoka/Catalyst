@@ -24,7 +24,7 @@ impl TyParser<'_> {
         let bounds = ast
             .iter()
             .filter_map(|&child| self.parse(child).ok())
-            .collect::<Vec<_>>();
+            .collect::<BumpVec<_>>();
 
         if bounds.len() != ast.len() {
             return Err(());
@@ -101,7 +101,7 @@ impl TyParser<'_> {
         let param_count = self.typec.param_count(base);
         let assoc_offset = param_count - self.typec.assoc_ty_count_of_bound(base);
 
-        let mut params = vec![BuiltinTypes::INFERRED; param_count];
+        let mut params = bumpvec![BuiltinTypes::INFERRED; param_count];
         let mut normal_inc = 0;
         let mut assoc_inc = 0;
         let success_len = rest
@@ -135,7 +135,7 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        Ok(ty_factory!(self).instance(base, params.into_iter()))
+        Ok(ty_factory!(self).instance(base, params.iter().cloned()))
     }
 
     pub fn sig(&mut self, cc: AstEnt, args: &[AstEnt], ret: AstEnt) -> errors::Result<Sig> {
@@ -177,7 +177,7 @@ impl TyParser<'_> {
     }
 
     pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
-        let mut reserved = Vec::new();
+        let mut reserved = bumpvec![];
         self.bounded_generics_low(generics, &mut reserved)?;
         Ok(self.typec.ty_lists.bump(reserved))
     }
@@ -185,7 +185,7 @@ impl TyParser<'_> {
     pub fn bounded_generics_low(
         &mut self,
         generics: AstEnt,
-        buffer: &mut Vec<Ty>,
+        buffer: &mut BumpVec<Ty>,
     ) -> errors::Result {
         buffer.reserve(self.ast_data[generics.children].len());
         for &ast_param in &self.ast_data[generics.children] {
@@ -213,7 +213,7 @@ impl TyParser<'_> {
     }
 
     pub fn insert_bound_items(&mut self, name: Ident, bound: Ty) {
-        let mut frontier = vec![bound];
+        let mut frontier = bumpvec![bound];
 
         while let Some(bound) = frontier.pop() {
             let bound = self.typec.instance_base_of(bound);
@@ -232,7 +232,6 @@ impl TyParser<'_> {
                     vis: Vis::Priv,
                 };
                 self.scope.push(item);
-                println!("{}", &self.interner[id])
             };
 
             self.typec.ty_lists[self.typec.types[bound].params]
@@ -257,7 +256,7 @@ impl TyParser<'_> {
         ast: AstEnt,
         bound_id: Ident,
         local_bound_id: Ident,
-        params: &mut Vec<Ty>,
+        params: &mut BumpVec<Ty>,
     ) -> usize {
         let prev_len = params.len();
         for &item in self.ast_data[ast.children].iter() {
@@ -333,7 +332,7 @@ impl TyParser<'_> {
                             .checked_sub(1)
                             .unwrap_or(0),
                     ) // -1 for the excess
-                    .collect::<Vec<_>>();
+                    .collect::<BumpVec<_>>();
 
                 self.interner.intern(&segments)
             }
@@ -349,7 +348,7 @@ impl TyParser<'_> {
     pub fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
         for (&ast_param, param) in self.ast_data[generics.children]
             .iter()
-            .zip(self.typec.ty_lists[parsed_generics].to_vec())
+            .zip(self.typec.ty_lists[parsed_generics].to_bumpvec())
         {
             let [name, ..] = self.ast_data[ast_param.children] else {
                 unreachable!();

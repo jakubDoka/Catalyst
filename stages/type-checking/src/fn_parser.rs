@@ -38,7 +38,7 @@ impl FuncParser<'_> {
                 }
             }
 
-            let mut funcs = vec![Maybe::none(); self.typec.func_count_of_impl(r#impl)];
+            let mut funcs = bumpvec![Maybe::none(); self.typec.func_count_of_impl(r#impl)];
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
@@ -81,10 +81,10 @@ impl FuncParser<'_> {
 
             if missing.peek().is_some() {
                 let suggestions = missing
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .into_iter()
                     .map(|name| &self.interner[name])
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .join(", ");
 
                 let loc = self
@@ -109,7 +109,7 @@ impl FuncParser<'_> {
         &mut self,
         ast: AstEnt,
         r#impl: Impl,
-        funcs: &mut Vec<Maybe<Func>>,
+        funcs: &mut BumpVec<Maybe<Func>>,
     ) -> errors::Result {
         let &[value, ast_name] = &self.ast_data[ast.children] else {
             unreachable!();
@@ -151,7 +151,7 @@ impl FuncParser<'_> {
                 let params = args
                     .iter()
                     .map(|&arg| ty_parser!(self, self.current_file).parse(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<BumpVec<_>, _>>()?;
                 self.typec.wrap_def_with_params(id, def, params)
             }
             AstKind::Ident | AstKind::IdentChain => {
@@ -213,7 +213,7 @@ impl FuncParser<'_> {
         item: AstEnt,
         r#impl: Impl,
         upper_params: Maybe<TyList>,
-        funcs: &mut Vec<Maybe<Func>>,
+        funcs: &mut BumpVec<Maybe<Func>>,
     ) -> errors::Result {
         let [cc, generics, ast_name, ref args @ .., ret, body] = self.ast_data[item.children] else {
             unreachable!();
@@ -474,9 +474,9 @@ impl FuncParser<'_> {
         self.typec.re_index_params(params, parent_param_count);
 
         let total_param_count = parent_param_count + self.typec.ty_lists[params].len();
-        let mut infer_slots = vec![BuiltinTypes::INFERRED; total_param_count];
+        let mut infer_slots = bumpvec![BuiltinTypes::INFERRED; total_param_count];
 
-        let types = self.typec.ty_lists[params].to_vec();
+        let types = self.typec.ty_lists[params].to_bumpvec();
 
         let arg_parser = |(&arg, ty)| {
             let instance = ty_factory!(self).try_instantiate(ty, &infer_slots);
@@ -496,7 +496,7 @@ impl FuncParser<'_> {
             .iter()
             .zip(types)
             .map(arg_parser)
-            .collect::<Result<Vec<_>, _>>();
+            .collect::<Result<BumpVec<_>, _>>();
 
         todo!()
     }
@@ -517,14 +517,14 @@ impl FuncParser<'_> {
         args: &[AstEnt],
         types: Maybe<TyList>,
     ) -> errors::Result<Maybe<TirList>> {
-        let arg_types = self.typec.ty_lists[types].to_vec();
+        let arg_types = self.typec.ty_lists[types].to_bumpvec();
         let args = args
             .iter()
             .zip(arg_types)
             .map(|(&arg, ty)| self.expr(arg, ty.into()))
-            .collect::<Vec<_>>()
+            .collect::<BumpVec<_>>()
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<BumpVec<_>, _>>()?;
         Ok(self.tir_data.bump(args))
     }
 

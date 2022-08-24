@@ -54,8 +54,6 @@ impl TyBuilder<'_> {
                 continue;
             };
 
-            println!("{:?}", &self.interner[item.id]);
-
             self.insert_scope_item(item);
         }
 

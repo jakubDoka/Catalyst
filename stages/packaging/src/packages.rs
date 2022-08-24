@@ -17,8 +17,8 @@ pub const FILE_EXTENSION: &str = "ctl";
 pub const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
 pub const DEFAULT_DEP_ROOT: &str = "deps";
 
-type PackageFrontier = Vec<(Ident, PathBuf, Maybe<DiagLoc>)>;
-type ModuleFrontier = Vec<(Ident, Ident, PathBuf, Maybe<DiagLoc>)>;
+type PackageFrontier = BumpVec<(Ident, PathBuf, Maybe<DiagLoc>)>;
+type ModuleFrontier = BumpVec<(Ident, Ident, PathBuf, Maybe<DiagLoc>)>;
 
 impl PackageLoader<'_> {
     pub fn load(&mut self, root: &Path) -> errors::Result {
@@ -28,7 +28,7 @@ impl PackageLoader<'_> {
         let id = self.intern_path(&path)?;
         path.pop();
 
-        let mut frontier = vec![(id, path, Maybe::none())];
+        let mut frontier = bumpvec![(id, path, Maybe::none())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
@@ -64,7 +64,7 @@ impl PackageLoader<'_> {
         }
 
         let roots = [id.index() as u32, module_id.index() as u32];
-        let mut ordering = Vec::with_capacity(self.packages.modules.len());
+        let mut ordering = bumpvec![cap self.packages.modules.len()];
         self.package_graph
             .ordering(roots, &mut ordering)
             .map_err(|cycle| self.dependency_cycle(cycle))?;
@@ -235,7 +235,7 @@ impl PackageLoader<'_> {
                 self.file_error(loc, path, "cannot canonicalize root module path", err)
             })?;
 
-        let mut frontier = vec![(id, package, path, Maybe::none())];
+        let mut frontier = bumpvec![(id, package, path, Maybe::none())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
@@ -333,7 +333,7 @@ impl PackageLoader<'_> {
                             .iter()
                             .map(|dep| &package_ent.content[dep.name.range()])
                             .chain(std::iter::once("."))
-                            .collect::<Vec<_>>()
+                            .collect::<BumpVec<_>>()
                             .join("', '")
                     },
                 });
@@ -469,7 +469,7 @@ impl PackageLoader<'_> {
         if !quiet {
             self.workspace.push(diag! {
                 (exp loc) hint => "executing: git {}" {
-                    args.clone().into_iter().collect::<Vec<_>>().join(" ")
+                    args.clone().into_iter().collect::<BumpVec<_>>().join(" ")
                 }
             });
         }
@@ -551,7 +551,7 @@ impl PackageLoader<'_> {
             (none) => "cycle:\n\t{}" {
                 cycle.into_iter()
                     .map(|id| &self.interner[Ident::new(id as usize)])
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .join("\n\t")
             },
         });

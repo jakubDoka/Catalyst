@@ -1,5 +1,7 @@
 use std::{collections::HashMap, ops::Range};
 
+use storage::BumpVec;
+
 /// Struct is wrapper around [`CycleDetector`] that provides allows for easy
 /// index projection.
 #[derive(Default)]
@@ -85,7 +87,7 @@ impl ProjectedCycleDetector {
     pub fn ordering(
         &mut self,
         roots: impl IntoIterator<Item = u32>,
-        buffer: &mut Vec<u32>,
+        buffer: &mut BumpVec<u32>,
     ) -> Result<(), Vec<u32>> {
         assert!(
             !self.mapping.is_empty(),
@@ -219,7 +221,7 @@ impl CycleDetector {
     pub fn ordering(
         &mut self,
         roots: impl IntoIterator<Item = u32>,
-        buffer: &mut Vec<u32>,
+        buffer: &mut BumpVec<u32>,
     ) -> Result<(), Vec<u32>> {
         self.meta.clear();
         self.meta.resize(self.len(), NodeMeta::default());
@@ -231,7 +233,7 @@ impl CycleDetector {
         Ok(())
     }
 
-    fn sub_ordering(&mut self, root: u32, buffer: &mut Vec<u32>) -> Result<(), Vec<u32>> {
+    fn sub_ordering(&mut self, root: u32, buffer: &mut BumpVec<u32>) -> Result<(), Vec<u32>> {
         self.stack.push(StackFrame::new(
             root,
             Self::children_indices(&self.indices, root),

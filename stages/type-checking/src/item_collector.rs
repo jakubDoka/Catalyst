@@ -133,7 +133,7 @@ impl ItemCollector<'_> {
                     .map(|i| self.typec.bound_assoc_ty_at(base, i))
                     .map(|assoc_ty| self.typec.types[assoc_ty].loc.name)
                     .map(|ident| &self.interner[ident])
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .join(", ");
 
                 let loc = self.typec.loc_of(base, self.interner);
@@ -256,7 +256,7 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
-        let mut param_buffer = vec![];
+        let mut param_buffer = bumpvec![];
         ty_parser!(self, self.current_file).bounded_generics_low(generics, &mut param_buffer)?;
 
         let (local_id, id) = self.compute_ids(ast_name.span);

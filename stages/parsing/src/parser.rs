@@ -225,7 +225,7 @@ impl<'a> Parser<'a> {
             drop(self.ast_data.discard_cache());
         }
 
-        let mut pair_stack: Vec<(Span, TokenKind)> = vec![];
+        let mut pair_stack: BumpVec<(Span, TokenKind)> = bumpvec![];
         loop {
             if let Some(complement) = self.state.current.kind.complement() {
                 pair_stack.push((self.state.current.span, complement));
@@ -284,7 +284,7 @@ impl<'a> Parser<'a> {
         self.workspace.push(diag! {
             (self.state.current.span, self.state.path)
             error => "expected {} but got {}" {
-                kinds.into_iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" | "),
+                kinds.into_iter().map(|k| k.as_str()).collect::<BumpVec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
             },
         });

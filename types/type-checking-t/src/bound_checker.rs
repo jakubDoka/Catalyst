@@ -96,7 +96,7 @@ impl BoundChecker<'_> {
         skip_case: impl Fn(Ty, Ty) -> bool,
         param_cmp: impl Fn(TyKind, TyKind) -> bool,
     ) -> bool {
-        let mut frontier = vec![(a, b)];
+        let mut frontier = bumpvec![(a, b)];
 
         while let Some((a, b)) = frontier.pop() {
             if a == b {

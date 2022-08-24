@@ -199,7 +199,7 @@ impl TyFactory<'_> {
             TyKind::Param { index, .. } => return Some(inferred_slots[index as usize]),
             TyKind::Instance { base } => {
                 let params = self.typec.ty_lists[self.typec.types[ty].params]
-                    .to_vec()
+                    .to_bumpvec()
                     .into_iter()
                     .map(|ty| self.try_instantiate(ty, inferred_slots))
                     .collect::<Option<Vec<_>>>()?;
@@ -212,7 +212,7 @@ impl TyFactory<'_> {
             }
             TyKind::FuncPtr { .. } => {
                 // let args = self.typec.ty_lists[sig.args]
-                //     .to_vec()
+                //     .to_bumpvec()
                 //     .into_iter()
                 //     .map(|ty| self.try_instantiate(ty, inferred_slots))
                 //     .collect::<Option<Vec<_>>>()?;
