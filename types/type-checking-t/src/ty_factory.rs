@@ -13,7 +13,7 @@ macro_rules! ptr_ident {
 impl TyFactory<'_> {
     pub fn as_func_param(&mut self, ty: Ty) -> Ty {
         match self.typec.types[ty].kind {
-            TyKind::Param { .. } | TyKind::AssocType { .. } => {
+            TyKind::Param { .. } => {
                 let prev_id = self.typec.types.id(ty);
                 let new_id = self.interner.intern(ident!("unique ", prev_id));
 
@@ -35,9 +35,13 @@ impl TyFactory<'_> {
 
     pub fn rehash_ty(&mut self, ty: Ty) -> Ty {
         match self.typec.types[ty].kind {
-            TyKind::Instance { base, params } => {
-                let id =
-                    self.instance_id_low(base, self.typec.ty_lists.get(params).iter().copied());
+            TyKind::Instance { base } => {
+                let id = self.instance_id_low(
+                    base,
+                    self.typec.ty_lists[self.typec.types[ty].params]
+                        .iter()
+                        .copied(),
+                );
                 let id = self.interner.intern(&id);
                 self.typec.types.rehash(id, ty)
             }
@@ -72,8 +76,9 @@ impl TyFactory<'_> {
 
         let params = self.typec.ty_lists.bump(params).unwrap();
         let ent = TyEnt {
-            kind: TyKind::Instance { base, params },
+            kind: TyKind::Instance { base },
             flags: self.typec.types[base].flags,
+            params: params.into(),
             ..self.typec.types[base]
         };
         self.typec.types.insert_unique(id, ent)
@@ -87,9 +92,9 @@ impl TyFactory<'_> {
     pub fn bound_of(
         &mut self,
         id: Ident,
-        param_count: usize,
+        assoc_type_count: usize,
         inherits: &[Ty],
-        assoc_types: &[Ty],
+        params: &[Ty],
         funcs: &[BoundFuncEnt],
     ) -> Ty {
         if let Some(ty) = self.typec.types.index(id) {
@@ -97,15 +102,15 @@ impl TyFactory<'_> {
         }
 
         let inherits = self.typec.ty_lists.bump_slice(inherits);
-        let assoc_types = self.typec.ty_lists.bump_slice(assoc_types);
+        let params = self.typec.ty_lists.bump_slice(params);
         let funcs = self.typec.bound_funcs.bump_slice(funcs);
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits,
-                assoc_types,
+                assoc_type_count: assoc_type_count as u32,
                 funcs,
             },
-            param_count: param_count as u8,
+            params,
             flags: TyFlags::GENERIC,
             ..TyEnt::default()
         };
@@ -182,5 +187,49 @@ impl TyFactory<'_> {
             ..self.typec.types[param]
         };
         self.typec.types.insert_unique(id, clone)
+    }
+
+    pub fn try_instantiate(&mut self, ty: Ty, inferred_slots: &[Ty]) -> Option<Ty> {
+        match self.typec.types[ty].kind {
+            TyKind::Param { index, .. }
+                if inferred_slots[index as usize] == BuiltinTypes::INFERRED =>
+            {
+                return None
+            }
+            TyKind::Param { index, .. } => return Some(inferred_slots[index as usize]),
+            TyKind::Instance { base } => {
+                let params = self.typec.ty_lists[self.typec.types[ty].params]
+                    .to_vec()
+                    .into_iter()
+                    .map(|ty| self.try_instantiate(ty, inferred_slots))
+                    .collect::<Option<Vec<_>>>()?;
+                return Some(self.instance(base, params));
+            }
+            TyKind::Ptr { base, .. } => {
+                let mutable = self.typec.types[ty].flags.contains(TyFlags::MUTABLE);
+                let base = self.try_instantiate(base, inferred_slots)?;
+                return Some(self.pointer_of(mutable, base));
+            }
+            TyKind::FuncPtr { .. } => {
+                // let args = self.typec.ty_lists[sig.args]
+                //     .to_vec()
+                //     .into_iter()
+                //     .map(|ty| self.try_instantiate(ty, inferred_slots))
+                //     .collect::<Option<Vec<_>>>()?;
+                // let ret = if let Some(ret) = sig.ret.expand() {
+                //     Some(self.try_instantiate(ret, inferred_slots)?)
+                // } else {
+                //     None
+                // };
+                todo!()
+            }
+
+            TyKind::Bound { .. }
+            | TyKind::Struct { .. }
+            | TyKind::Enum { .. }
+            | TyKind::Int { .. }
+            | TyKind::Bool
+            | TyKind::Inferrable => unreachable!(),
+        }
     }
 }

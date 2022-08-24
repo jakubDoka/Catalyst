@@ -1,7 +1,9 @@
 {
     "cSpell.words": [
+        "allocs",
         "bitand",
         "bitflags",
+        "bumpvec",
         "canonicalize",
         "conv",
         "cranelifts",
@@ -10,6 +12,7 @@
         "ents",
         "Funcs",
         "Hasher",
+        "ilog",
         "impls",
         "insts",
         "interner",

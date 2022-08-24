@@ -75,7 +75,7 @@ impl TyParser<'_> {
                 (name.span, self.current_file) => "associated type not found"
             })
         })?;
-        let index = self.typec.assoc_ty_index(assoc_ty).ok_or_else(|| {
+        let index = self.typec.param_ty_index(assoc_ty).ok_or_else(|| {
             self.workspace.push(diag! {
                 (name.span, self.current_file) => "this is not an associated type"
             })
@@ -176,20 +176,18 @@ impl TyParser<'_> {
         Ok(self.typec.ty_lists.finish_reserved(reserved))
     }
 
-    pub fn bounded_generics(
-        &mut self,
-        generics: AstEnt,
-        init: &mut Vec<Ty>,
-    ) -> errors::Result<Maybe<TyList>> {
-        let old_len = init.len();
-        self.bounded_generics_low(generics, init)?;
-        let bumped = self.typec.ty_lists.bump_slice(&init);
-        init.truncate(old_len);
-        Ok(bumped)
+    pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
+        let mut reserved = Vec::new();
+        self.bounded_generics_low(generics, &mut reserved)?;
+        Ok(self.typec.ty_lists.bump(reserved))
     }
 
-    pub fn bounded_generics_low(&mut self, generics: AstEnt, init: &mut Vec<Ty>) -> errors::Result {
-        init.reserve(self.ast_data[generics.children].len());
+    pub fn bounded_generics_low(
+        &mut self,
+        generics: AstEnt,
+        buffer: &mut Vec<Ty>,
+    ) -> errors::Result {
+        buffer.reserve(self.ast_data[generics.children].len());
         for &ast_param in &self.ast_data[generics.children] {
             let (&name, bounds) = self.ast_data[ast_param.children].split_first().unwrap();
             let name = self.interner.intern_str(span_str!(self, name.span));
@@ -200,7 +198,7 @@ impl TyParser<'_> {
             self.scope.push(item);
 
             // handle duplicate, all params need to be unique
-            let param = init
+            let param = buffer
                 .iter()
                 .rev()
                 .find_map(|&p| (p == param).then(|| ty_factory!(self).next_param_of(param)))
@@ -208,8 +206,9 @@ impl TyParser<'_> {
 
             self.insert_bound_items(name, bound);
 
-            init.push(param);
+            buffer.push(param);
         }
+
         Ok(())
     }
 
@@ -218,7 +217,7 @@ impl TyParser<'_> {
 
         while let Some(bound) = frontier.pop() {
             let bound = self.typec.instance_base_of(bound);
-            let TyKind::Bound { inherits, assoc_types, funcs } = self.typec.types[bound].kind else {
+            let TyKind::Bound { inherits, assoc_type_count, funcs } = self.typec.types[bound].kind else {
                 unreachable!("{:?}", self.typec.types[bound].kind);
             };
 
@@ -236,8 +235,10 @@ impl TyParser<'_> {
                 println!("{}", &self.interner[id])
             };
 
-            self.typec.ty_lists[assoc_types]
+            self.typec.ty_lists[self.typec.types[bound].params]
                 .iter()
+                .rev()
+                .take(assoc_type_count as usize)
                 .map(|&ty| (self.typec.types[ty].loc, ty.into()))
                 .for_each(&mut push_to_scope);
 
@@ -251,43 +252,25 @@ impl TyParser<'_> {
         }
     }
 
-    pub fn generics(&mut self, generics: AstEnt) {
-        let mut param = BuiltinTypes::TY_ANY;
-        for &(mut ast_param) in &self.ast_data[generics.children] {
-            if ast_param.kind != AstKind::Ident {
-                ast_param = self.ast_data[ast_param.children][0];
-            }
-            let id = self.interner.intern_str(span_str!(self, ast_param.span));
-            let item = ScopeItem::new(id, param, ast_param.span, self.current_file, Vis::Priv);
-            self.scope.push(item);
-            param = ty_factory!(self).next_param_of(param);
-        }
-    }
-
     pub fn assoc_types(
         &mut self,
         ast: AstEnt,
         bound_id: Ident,
         local_bound_id: Ident,
-    ) -> Maybe<TyList> {
-        let assoc_type_count = self.ast_data[ast.children]
-            .iter()
-            .filter(|item| matches!(item.kind, AstKind::BoundType { .. }))
-            .count();
-
-        let mut assoc_types = self.typec.ty_lists.reserve(assoc_type_count);
-
+        params: &mut Vec<Ty>,
+    ) -> usize {
+        let mut assoc_type_count = 0;
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::BoundType { vis } = item.kind else {
                 continue;
             };
 
-            drop(self.assoc_type(item, bound_id, local_bound_id, &mut assoc_types, vis));
+            drop(self.assoc_type(item, bound_id, local_bound_id, vis, params.len()));
+
+            assoc_type_count += 1;
         }
 
-        self.typec
-            .ty_lists
-            .fill_reserved(assoc_types, BuiltinTypes::INFERRED)
+        assoc_type_count
     }
 
     fn assoc_type(
@@ -295,12 +278,14 @@ impl TyParser<'_> {
         ast: AstEnt,
         bound_id: Ident,
         local_bound_id: Ident,
-        assoc_types: &mut Reserved<TyList>,
         vis: Vis,
-    ) -> errors::Result {
+        index: usize,
+    ) -> errors::Result<Ty> {
         let &[generics, ast_name] = &self.ast_data[ast.children] else {
             unreachable!("{:?}", &self.ast_data[ast.children]);
         };
+
+        let params = self.bounded_generics(generics)?;
 
         let name = span_str!(self, ast_name.span);
         let id = self.interner.intern(scoped_ident!(bound_id, name));
@@ -313,11 +298,12 @@ impl TyParser<'_> {
         }
 
         let ty_ent = TyEnt {
-            kind: TyKind::AssocType {
-                index: self.typec.ty_lists.reserve_len(&assoc_types) as u32,
+            kind: TyKind::Param {
+                index: index as u32,
+                bound: BuiltinTypes::ANY,
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
-            param_count: self.ast_data[generics.children].len() as u8,
+            params,
             loc: Loc::new(
                 ast_name.span,
                 self.current_file,
@@ -325,12 +311,11 @@ impl TyParser<'_> {
             ),
         };
         let ty = self.typec.types.insert_unique(id, ty_ent);
-        self.typec.ty_lists.push_to_reserved(assoc_types, ty);
 
         let item = ModItem::new(local_id, ty, ast_name.span, vis);
         self.insert_scope_item(item);
 
-        Ok(())
+        Ok(ty)
     }
 
     pub fn ident_chain_id(&mut self, ast: AstEnt) -> Ident {
@@ -358,6 +343,32 @@ impl TyParser<'_> {
                 self.scope.project(id, str)
             }
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
+        for (&ast_param, param) in self.ast_data[generics.children]
+            .iter()
+            .zip(self.typec.ty_lists[parsed_generics].to_vec())
+        {
+            let [name, ..] = self.ast_data[ast_param.children] else {
+                unreachable!();
+            };
+
+            let id = self.interner.intern_str(span_str!(self, name.span));
+            self.scope.push(ScopeItem::new(
+                id,
+                param,
+                name.span,
+                self.current_file,
+                Vis::Priv,
+            ));
+
+            let TyKind::Param { bound, .. } = self.typec.types[param].kind else {
+                unreachable!();
+            };
+
+            ty_parser!(self, self.current_file).insert_bound_items(id, bound);
         }
     }
 

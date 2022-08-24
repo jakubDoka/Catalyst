@@ -1,5 +1,4 @@
 #![feature(let_else)]
-#![feature(let_chains)]
 #![feature(default_free_fn)]
 #![feature(decl_macro)]
 #![allow(incomplete_features)]

@@ -25,7 +25,8 @@ impl TyBuilder<'_> {
         self.scope.start_frame();
         let ty_id = self.interner.intern_str(span_str!(self, name.span));
         self.scope.self_alias = ty_id.into();
-        ty_parser!(self, self.current_file).generics(generics);
+        let params = self.typec.types[ty].params;
+        ty_parser!(self, self.current_file).push_generics(generics, params);
         let res_funcs = self.bound_funcs(body, ty);
         let TyKind::Bound { ref mut funcs, .. } = self.typec.types[ty].kind else {
             unreachable!();
@@ -44,13 +45,12 @@ impl TyBuilder<'_> {
 
         let mut funcs = self.typec.bound_funcs.reserve(func_count);
 
-        let mut params = vec![];
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::FuncSignature { vis } = item.kind else {
                 continue;
             };
 
-            let Ok(item) = self.func_signature(item, ty, &mut params, &mut funcs, vis) else {
+            let Ok(item) = self.func_signature(item, ty, &mut funcs, vis) else {
                 continue;
             };
 
@@ -67,8 +67,7 @@ impl TyBuilder<'_> {
     fn func_signature(
         &mut self,
         ast: AstEnt,
-        ty: Ty,
-        params: &mut Vec<Ty>,
+        parent: Ty,
         funcs: &mut Reserved<BoundFuncList>,
         vis: Vis,
     ) -> errors::Result<ModItem> {
@@ -79,7 +78,7 @@ impl TyBuilder<'_> {
         let name_ident = self.interner.intern_str(span_str!(self, ast_name.span));
         let local_id = self
             .interner
-            .intern(scoped_ident!(self.typec.types[ty].loc.name, name_ident));
+            .intern(scoped_ident!(self.typec.types[parent].loc.name, name_ident));
         let id = intern_scoped_ident!(self, local_id);
 
         if let Some(already) = self.typec.types.index(id) {
@@ -89,7 +88,7 @@ impl TyBuilder<'_> {
         }
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics, params)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
         self.scope.end_frame();
 
@@ -97,6 +96,7 @@ impl TyBuilder<'_> {
             sig,
             params,
             loc: Loc::new(ast_name.span, self.current_file, name_ident),
+            parent: parent.into(),
         };
         let bound_func = self
             .typec
@@ -113,7 +113,8 @@ impl TyBuilder<'_> {
 
         self.scope.start_frame();
 
-        ty_parser!(self, self.current_file).generics(generics);
+        let params = self.typec.types[ty].params;
+        ty_parser!(self, self.current_file).push_generics(generics, params);
         let fields = self.struct_fields(body, ty);
         let kind = TyKind::Struct { fields };
         self.typec.types[ty].kind = kind;

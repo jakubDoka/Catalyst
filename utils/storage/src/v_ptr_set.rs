@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::VPtr;
 
 const WIDTH: usize = std::mem::size_of::<usize>() * 8;
-const WIDTH_POW: usize = WIDTH.log2() as usize;
+const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 
 /// VPtrSet is storage plugin. It stores extra boolean for each [`VPtr`] with 8x efficiency
 /// compared to '[`Vec`]<[`bool`]>'. It also offers same speed (vector element is of [`usize`])

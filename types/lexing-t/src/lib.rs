@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 mod line_mapping;
 mod loc;
 mod span;

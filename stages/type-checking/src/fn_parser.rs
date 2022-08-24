@@ -28,8 +28,7 @@ impl FuncParser<'_> {
 
             self.scope.start_frame();
             self.scope.self_alias = self.typec.types[implementor].loc.name.into();
-            self.push_generics(generics, params);
-            let mut params = self.typec.ty_lists[params].to_vec();
+            ty_parser!(self, self.current_file).push_generics(generics, params);
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
@@ -44,7 +43,7 @@ impl FuncParser<'_> {
             for &item in &self.ast_data[body.children] {
                 match item.kind {
                     AstKind::Func { .. } => {
-                        drop(self.bound_impl_func(item, r#impl, &mut params, &mut funcs))
+                        drop(self.bound_impl_func(item, r#impl, params, &mut funcs))
                     }
                     AstKind::ImplUse => drop(self.bound_impl_use(item, r#impl, &mut funcs)),
                     AstKind::ImplType => (),
@@ -213,7 +212,7 @@ impl FuncParser<'_> {
         &mut self,
         item: AstEnt,
         r#impl: Impl,
-        upper_params: &mut Vec<Ty>,
+        upper_params: Maybe<TyList>,
         funcs: &mut Vec<Maybe<Func>>,
     ) -> errors::Result {
         let [cc, generics, ast_name, ref args @ .., ret, body] = self.ast_data[item.children] else {
@@ -221,8 +220,7 @@ impl FuncParser<'_> {
         };
 
         self.scope.start_frame();
-        let params =
-            ty_parser!(self, self.current_file).bounded_generics(generics, upper_params)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
         let name = span_str!(self, ast_name.span);
@@ -264,6 +262,7 @@ impl FuncParser<'_> {
                 self.interner.intern_str(name),
             ),
             sig,
+            upper_params,
             ..default()
         };
         let def = self.typec.defs.push(def_ent);
@@ -349,7 +348,7 @@ impl FuncParser<'_> {
             .typec
             .params_of_def(self.func_parser_ctx.current_fn.unwrap());
 
-        self.push_generics(generics, parsed_generics);
+        ty_parser!(self, self.current_file).push_generics(generics, parsed_generics);
         self.push_args(args);
 
         let TirKind::Block { stmts } = self.block(body, ret).kind else {
@@ -404,13 +403,13 @@ impl FuncParser<'_> {
         Ok(expr)
     }
 
-    fn call(&mut self, ast: AstEnt, _expected: Expected) -> errors::Result<TirEnt> {
+    fn call(&mut self, ast: AstEnt, expected: Expected) -> errors::Result<TirEnt> {
         let [caller, ref args @ ..] = self.ast_data[ast.children] else {
             unreachable!();
         };
 
         match caller.kind {
-            AstKind::Ident | AstKind::IdentChain => self.proc_call(caller, args),
+            AstKind::Ident | AstKind::IdentChain => self.proc_call(caller, args, expected),
             AstKind::InstanceExpr => {
                 todo!()
             }
@@ -421,16 +420,104 @@ impl FuncParser<'_> {
         }
     }
 
-    fn proc_call(&mut self, caller: AstEnt, args: &[AstEnt]) -> errors::Result<TirEnt> {
+    fn proc_call(
+        &mut self,
+        caller: AstEnt,
+        args: &[AstEnt],
+        expected: Expected,
+    ) -> errors::Result<TirEnt> {
         let id = ty_parser!(self, self.current_file).ident_chain_id(caller);
         let def = self.get_from_scope(id, caller.span, "function", Reports::base)?;
 
-        let sig = match_scope_ptr!((self, def, caller.span) => {
-            def: Def => self.typec.defs[def].sig,
-            bound_func: BoundFunc => self.typec.bound_funcs[bound_func].sig,
+        let (kind, ret) = match_scope_ptr!((self, def, caller.span) => {
+            def: Def => {
+                let DefEnt { sig, params, upper_params, .. } = self.typec.defs[def];
+                let (args, ret) = if self.typec.defs[def].flags.contains(FuncFlags::GENERIC) {
+                    self.parse_generic_args(args, sig, params, upper_params, expected)?
+                } else {
+                    (self.parse_args(args, sig.args)?, sig.ret)
+                };
+
+                (TirKind::Call {
+                    def,
+                    params: default(),
+                    args,
+                }, ret)
+            },
+            bound_func: BoundFunc => {
+                let BoundFuncEnt { sig, params, parent, .. } = self.typec.bound_funcs[bound_func];
+                let (args, ret) = if params.is_some() || self.typec.param_count(parent) > 0 {
+                    self.parse_generic_bound_args(args, sig, params, parent, expected)?
+                } else {
+                    (self.parse_args(args, sig.args)?, sig.ret)
+                };
+                (TirKind::BoundCall {
+                    bound_func,
+                    params: default(),
+                    args,
+                }, ret)
+            },
         });
 
-        let arg_types = self.typec.ty_lists[sig.args].to_vec();
+        Ok(TirEnt::new(kind).span(caller.span).ty(ret))
+    }
+
+    fn parse_generic_bound_args(
+        &mut self,
+        args: &[AstEnt],
+        sig: Sig,
+        params: Maybe<TyList>,
+        parent: Ty,
+        expected: Expected,
+    ) -> errors::Result<(Maybe<TirList>, Maybe<Ty>)> {
+        let parent_param_count = self.typec.param_count(parent);
+        self.typec.re_index_params(params, parent_param_count);
+
+        let total_param_count = parent_param_count + self.typec.ty_lists[params].len();
+        let mut infer_slots = vec![BuiltinTypes::INFERRED; total_param_count];
+
+        let types = self.typec.ty_lists[params].to_vec();
+
+        let arg_parser = |(&arg, ty)| {
+            let instance = ty_factory!(self).try_instantiate(ty, &infer_slots);
+            let expr = self
+                .expr(arg, instance)
+                .map_err(|()| TyInferenceError::InvalidExpr)?;
+            if let Some(expr_ty) = expr.ty.expand() && self.typec.types[ty].flags.contains(TyFlags::GENERIC) {
+                bound_checker!(self).infer_type(expr_ty, ty, &mut infer_slots).map(|()| expr)
+            } else if instance != expr.ty.expand() {
+                Err(TyInferenceError::TypeMismatch(instance.into(), expr.ty))
+            } else {
+                Ok(expr)
+            }
+        };
+
+        let args = args
+            .iter()
+            .zip(types)
+            .map(arg_parser)
+            .collect::<Result<Vec<_>, _>>();
+
+        todo!()
+    }
+
+    fn parse_generic_args(
+        &mut self,
+        args: &[AstEnt],
+        sig: Sig,
+        params: Maybe<TyList>,
+        upper_params: Maybe<TyList>,
+        expected: Expected,
+    ) -> errors::Result<(Maybe<TirList>, Maybe<Ty>)> {
+        todo!()
+    }
+
+    fn parse_args(
+        &mut self,
+        args: &[AstEnt],
+        types: Maybe<TyList>,
+    ) -> errors::Result<Maybe<TirList>> {
+        let arg_types = self.typec.ty_lists[types].to_vec();
         let args = args
             .iter()
             .zip(arg_types)
@@ -438,22 +525,7 @@ impl FuncParser<'_> {
             .collect::<Vec<_>>()
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
-        let args = self.tir_data.bump(args);
-
-        let kind = match_scope_ptr!((self, def, caller.span) => {
-            def: Def => TirKind::Call {
-                def,
-                params: default(),
-                args,
-            },
-            bound_func: BoundFunc => TirKind::BoundCall {
-                bound_func,
-                params: default(),
-                args,
-            },
-        });
-
-        Ok(TirEnt::new(kind).span(caller.span).ty(sig.ret))
+        Ok(self.tir_data.bump(args))
     }
 
     fn binary(&mut self, ast: AstEnt) -> errors::Result<TirEnt> {
@@ -611,32 +683,6 @@ impl FuncParser<'_> {
             ));
         }
         self.tir_data.finish_reserved(reserved);
-    }
-
-    fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
-        for (&ast_param, param) in self.ast_data[generics.children]
-            .iter()
-            .zip(self.typec.ty_lists[parsed_generics].to_vec())
-        {
-            let [name, ..] = self.ast_data[ast_param.children] else {
-                unreachable!();
-            };
-
-            let id = self.interner.intern_str(span_str!(self, name.span));
-            self.scope.push(ScopeItem::new(
-                id,
-                param,
-                name.span,
-                self.current_file,
-                Vis::Priv,
-            ));
-
-            let TyKind::Param { bound, .. } = self.typec.types[param].kind else {
-                unreachable!();
-            };
-
-            ty_parser!(self, self.current_file).insert_bound_items(id, bound);
-        }
     }
 
     scope_error_handler!();

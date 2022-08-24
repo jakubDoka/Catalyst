@@ -44,11 +44,6 @@ impl BuiltinBuilder<'_> {
                 ..default() // TODO
             },
             STR STACK_TRACE => default(), // TODO
-            TY_ANY => TyEnt {
-                flags: TyFlags::GENERIC | TyFlags::TY_PARAM,
-                kind: TyKind::default_param(),
-                ..default()
-            },
             ANY => TyEnt {
                 flags: TyFlags::GENERIC,
                 kind: TyKind::default_bound(),

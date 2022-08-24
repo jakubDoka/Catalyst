@@ -1,4 +1,4 @@
-use std::vec;
+use std::{default::default, vec};
 
 use crate::*;
 use diags::*;
@@ -34,7 +34,7 @@ impl ItemCollector<'_> {
                     continue;
                 }
                 AstKind::BoundImpl { .. } => self.collect_bound_impl(item, ctx),
-                AstKind::Func { vis } => self.collect_fn(item, vis, &mut vec![], ctx),
+                AstKind::Func { vis } => self.collect_fn(item, vis, default(), ctx),
                 kind => unimplemented!("{:?}", kind),
             };
 
@@ -52,8 +52,7 @@ impl ItemCollector<'_> {
         };
 
         self.scope.start_frame();
-        let mut generics = vec![];
-        ty_parser!(self, self.current_file).bounded_generics(ast_generics, &mut generics)?;
+        let generics = ty_parser!(self, self.current_file).bounded_generics(ast_generics)?;
 
         let ty = ty_parser!(self, self.current_file).parse(ast_type)?;
         let name = self.typec.types[ty].loc.name;
@@ -65,7 +64,7 @@ impl ItemCollector<'_> {
             };
             let vis = vis.merge(fn_vis);
 
-            let Ok(Some(res)) = self.collect_fn(func, vis, &mut generics, ctx) else {
+            let Ok(Some(res)) = self.collect_fn(func, vis, generics, ctx) else {
                 continue;
             };
             self.insert_scope_item(res);
@@ -87,7 +86,7 @@ impl ItemCollector<'_> {
         };
 
         self.scope.start_frame();
-        let params = ty_parser!(self, self.current_file).bounded_generics(generics, &mut vec![])?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let mut bound = ty_parser!(self, self.current_file).parse_impl_bound(ast_bound)?;
         let base_bound = self.typec.instance_base_of(bound);
         let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
@@ -121,11 +120,8 @@ impl ItemCollector<'_> {
             changed = true;
         }
 
-        if let TyKind::Instance { base, params, .. } = self.typec.types[bound].kind {
-            let mut iter = self
-                .typec
-                .ty_lists
-                .get(params)
+        if let TyKind::Instance { base, .. } = self.typec.types[bound].kind {
+            let mut iter = self.typec.ty_lists[self.typec.types[bound].params]
                 .iter()
                 .skip(self.typec.param_count(base) - self.typec.assoc_ty_count_of_bound(base))
                 .enumerate()
@@ -217,7 +213,7 @@ impl ItemCollector<'_> {
         &mut self,
         item: AstEnt,
         vis: Vis,
-        upper_params: &mut Vec<Ty>,
+        upper_params: Maybe<TyList>,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
         let [cc, generics, ast_name, ref args @ .., ret, _body] = self.ast_data[item.children] else {
@@ -225,8 +221,7 @@ impl ItemCollector<'_> {
         };
 
         self.scope.start_frame();
-        let params =
-            ty_parser!(self, self.current_file).bounded_generics(generics, upper_params)?;
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
         let (local_id, _) = self.compute_ids(ast_name.span);
@@ -243,6 +238,7 @@ impl ItemCollector<'_> {
             body: Maybe::none(),
             tir_data: TirData::new(),
             sig,
+            upper_params,
         };
         let def = self.typec.defs.push(ent);
         ctx.funcs.push((self.scope.self_alias, item, def));
@@ -260,20 +256,23 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
+        let mut param_buffer = vec![];
+        ty_parser!(self, self.current_file).bounded_generics_low(generics, &mut param_buffer)?;
+
         let (local_id, id) = self.compute_ids(ast_name.span);
 
-        let assoc_types = ty_parser!(self, self.current_file).assoc_types(body, id, local_id);
+        let assoc_type_count =
+            ty_parser!(self, self.current_file).assoc_types(body, id, local_id, &mut param_buffer);
 
         let name = span_str!(self, ast_name.span);
         let ent = TyEnt {
             kind: TyKind::Bound {
                 inherits: Maybe::none(),
-                assoc_types,
+                assoc_type_count: assoc_type_count as u32,
                 funcs: Maybe::none(),
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
-            param_count: self.ast_data[generics.children].len() as u8
-                + self.typec.ty_lists[assoc_types].len() as u8,
+            params: self.typec.ty_lists.bump(param_buffer),
             loc: Loc::new(
                 ast_name.span,
                 self.current_file,
@@ -296,13 +295,15 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
+        let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
+
         let (local_id, id) = self.compute_ids(ast_name.span);
         let name = span_str!(self, ast_name.span);
 
         let ent = TyEnt {
             kind: TyKind::Inferrable,
             flags: TyFlags::GENERIC & generics.children.is_some(),
-            param_count: self.ast_data[generics.children].len() as u8,
+            params,
             loc: Loc::new(
                 ast_name.span,
                 self.current_file,

@@ -1,4 +1,3 @@
-#![feature(scoped_threads)]
 #![feature(let_else)]
 
 use std::path::Path;

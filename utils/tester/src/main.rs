@@ -1,6 +1,3 @@
-#![feature(let_chains)]
-#![feature(scoped_threads)]
-
 use std::{fs::*, path::*, process::*, thread::scope};
 
 fn main() {

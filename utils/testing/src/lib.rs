@@ -1,5 +1,3 @@
-#![feature(scoped_threads)]
-
 pub use crate::testing::{test_case, Folder};
 
 #[macro_export]

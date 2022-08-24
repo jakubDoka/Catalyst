@@ -30,6 +30,7 @@ members = [
     "utils/scope",
     "utils/testing",
     "utils/tester",
+    "utils/bump_alloc",
 ]
 
 [dependencies]

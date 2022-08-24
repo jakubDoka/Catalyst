@@ -55,28 +55,19 @@ impl Typec {
     }
 
     pub fn is_incomplete_instance(&self, instance: Ty) -> bool {
-        if let TyKind::Instance { params, .. } = self.types[instance].kind {
-            self.ty_lists
-                .get(params)
-                .iter()
-                .any(|&param| param == BuiltinTypes::INFERRED)
-        } else {
-            false
-        }
+        self.ty_lists[self.types[instance].params]
+            .iter()
+            .any(|&param| param == BuiltinTypes::INFERRED)
     }
 
     #[inline]
     pub fn set_instance_param_on(&mut self, instance: Ty, pos: usize, param: Ty) {
-        let TyKind::Instance { params, .. } = self.types[instance].kind else {
-            unreachable!();
-        };
-
-        self.ty_lists.get_mut(params)[pos] = param;
+        self.ty_lists[self.types[instance].params][pos] = param;
     }
 
     #[inline]
     pub fn param_count(&self, ty: Ty) -> usize {
-        self.types[ty].param_count as usize
+        self.ty_lists[self.types[ty].params].len()
     }
 
     #[inline]
@@ -90,8 +81,12 @@ impl Typec {
 
     #[inline]
     pub fn bound_assoc_ty_at(&self, bound: Ty, pos: usize) -> Ty {
-        if let TyKind::Bound { assoc_types, .. } = self.types[bound].kind {
-            self.ty_lists[assoc_types][pos]
+        if let TyKind::Bound {
+            assoc_type_count, ..
+        } = self.types[bound].kind
+        {
+            let slice = &self.ty_lists[self.types[bound].params];
+            slice[slice.len() - assoc_type_count as usize + pos]
         } else {
             unreachable!();
         }
@@ -120,8 +115,8 @@ impl Typec {
     }
 
     #[inline]
-    pub fn assoc_ty_index(&self, ty: Ty) -> Option<usize> {
-        if let TyKind::AssocType { index, .. } = self.types[ty].kind {
+    pub fn param_ty_index(&self, ty: Ty) -> Option<usize> {
+        if let TyKind::Param { index, .. } = self.types[ty].kind {
             Some(index as usize)
         } else {
             None
@@ -130,8 +125,11 @@ impl Typec {
 
     #[inline]
     pub fn assoc_ty_count_of_bound(&self, ty: Ty) -> usize {
-        if let TyKind::Bound { assoc_types, .. } = self.types[ty].kind {
-            self.ty_lists[assoc_types].len()
+        if let TyKind::Bound {
+            assoc_type_count, ..
+        } = self.types[ty].kind
+        {
+            assoc_type_count as usize
         } else {
             0
         }
@@ -227,21 +225,31 @@ impl Typec {
 
     #[inline]
     pub fn instance_params(&self, bound: Ty) -> Maybe<TyList> {
-        if let TyKind::Instance { params, .. } = self.types[bound].kind {
-            params.into()
-        } else {
-            Maybe::none()
-        }
+        self.types[bound].params
     }
 
     #[inline]
     pub fn bound_assoc_ty_index(&self, bound: Ty, name: Ident) -> Option<usize> {
-        if let TyKind::Bound { assoc_types, .. } = self.types[bound].kind {
-            self.ty_lists[assoc_types]
+        if let TyKind::Bound {
+            assoc_type_count, ..
+        } = self.types[bound].kind
+        {
+            let slice = &self.ty_lists[self.types[bound].params];
+            slice
                 .iter()
+                .skip(slice.len() - assoc_type_count as usize)
                 .position(|&ty| self.types[ty].loc.name == name)
         } else {
             None
+        }
+    }
+
+    pub fn re_index_params(&mut self, params: Maybe<TyList>, shift: usize) {
+        for (i, &param) in self.ty_lists[params].iter().enumerate() {
+            let TyKind::Param { ref mut index, .. } = self.types[param].kind else {
+                unreachable!();
+            };
+            *index = (i + shift) as u32;
         }
     }
 }
@@ -250,7 +258,7 @@ impl Typec {
 pub struct TyEnt {
     pub kind: TyKind,
     pub flags: TyFlags,
-    pub param_count: u8,
+    pub params: Maybe<TyList>,
     pub loc: Loc,
 }
 
@@ -260,12 +268,9 @@ pub enum TyKind {
         index: u32,
         bound: Ty,
     },
-    AssocType {
-        index: u32,
-    },
     Bound {
         inherits: Maybe<TyList>,
-        assoc_types: Maybe<TyList>,
+        assoc_type_count: u32,
         funcs: Maybe<BoundFuncList>,
     },
     Struct {
@@ -277,7 +282,6 @@ pub enum TyKind {
     },
     Instance {
         base: Ty,
-        params: TyList,
     },
     Ptr {
         base: Ty,
@@ -302,7 +306,7 @@ impl TyKind {
     pub fn default_bound() -> TyKind {
         TyKind::Bound {
             inherits: default(),
-            assoc_types: default(),
+            assoc_type_count: default(),
             funcs: default(),
         }
     }
@@ -326,6 +330,7 @@ pub struct BoundFuncEnt {
     pub sig: Sig,
     pub params: Maybe<TyList>,
     pub loc: Loc,
+    pub parent: Ty,
 }
 
 pub struct ImplEnt {
@@ -343,7 +348,6 @@ bitflags! {
         GENERIC
         MUTABLE
         BUILTIN
-        TY_PARAM
     }
 }
 
@@ -389,7 +393,7 @@ impl BuiltinTypes {
         INFERRED
         DROP COPY
         STR STACK_TRACE
-        TY_ANY ANY
+        ANY
         BOOL
         CHAR
         INT I8 I16 I32 I64
@@ -414,5 +418,11 @@ gen_v_ptr!(
 impl Ty {
     pub const fn id(&self) -> u32 {
         self.0
+    }
+}
+
+impl Default for Ty {
+    fn default() -> Self {
+        BuiltinTypes::INFERRED
     }
 }

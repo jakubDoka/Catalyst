@@ -10,6 +10,7 @@ pub struct FuncParserCtx {
 
 #[derive(Default)]
 pub struct DefEnt {
+    pub upper_params: Maybe<TyList>,
     pub params: Maybe<TyList>,
     pub flags: FuncFlags,
     pub loc: Loc,

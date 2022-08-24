@@ -3,8 +3,17 @@ use storage::*;
 use crate::*;
 
 impl BoundChecker<'_> {
-    pub fn compare_bound_signatures(
+    pub fn infer_type(
         &self,
+        reference: Ty,
+        template: Ty,
+        infer_slots: &[Ty],
+    ) -> Result<(), TyInferenceError> {
+        todo!()
+    }
+
+    pub fn compare_bound_signatures(
+        &mut self,
         bound_func_index: usize,
         implementor_params: Maybe<TyList>,
         implementor_sig: Sig,
@@ -16,33 +25,35 @@ impl BoundChecker<'_> {
             return Err(SignatureError::CallConv(bound_sig.cc, implementor_sig.cc));
         }
 
+        let ImplEnt {
+            bound,
+            implementor,
+            params,
+            ..
+        } = self.typec.impls[r#impl];
+        let base_bound = self.typec.instance_base_of(bound);
+        let param_count = self.typec.param_count(base_bound);
+        self.typec.re_index_params(params, param_count);
+        let param_instances = self.typec.ty_lists[self.typec.instance_params(bound)]
+            .iter()
+            .chain(&self.typec.ty_lists[implementor_params])
+            .copied()
+            .collect::<Vec<_>>();
+
         let args_a = &self.typec.ty_lists[bound_sig.args];
         let args_b = &self.typec.ty_lists[implementor_sig.args];
         if args_a.len() != args_b.len() {
             return Err(SignatureError::ArgCount(args_a.len(), args_b.len()));
         }
 
-        let ImplEnt {
-            bound, implementor, ..
-        } = self.typec.impls[r#impl];
-        let base_bound = self.typec.instance_base_of(bound);
-        let assoc_ty_count = self.typec.assoc_ty_count_of_bound(base_bound);
-        let param_slice = &self.typec.ty_lists[self.typec.instance_params(bound)];
-        let implementor_param_slice = &self.typec.ty_lists[implementor_params];
-
         let ty_comparator = |a, b| {
-            self.types_overlap_low(
+            self.cmp_traversal(
                 a,
                 b,
                 |a, b| {
                     (a == bound && b == implementor)
-                        || matches!(self.typec.types[a].kind, TyKind::AssocType { index, .. }
-                    if param_slice[index as usize + param_slice.len() - assoc_ty_count] == b)
-                        || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
-                    if (self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
-                        param_slice[index as usize] == b)
-                    || (!self.typec.types[a].flags.contains(TyFlags::TY_PARAM) &&
-                        implementor_param_slice.get(index as usize).map_or(false, |&a| a == b)))
+                    || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
+                        if b == param_instances[index as usize])
                 },
                 |a, b| matches!((a, b), (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. })
                     if bound == bound_b),
@@ -75,10 +86,10 @@ impl BoundChecker<'_> {
     }
 
     pub fn types_overlap(&self, a: Ty, b: Ty) -> bool {
-        self.types_overlap_low(a, b, |_, _| false, |_, _| true)
+        self.cmp_traversal(a, b, |_, _| false, |_, _| true)
     }
 
-    pub fn types_overlap_low(
+    pub fn cmp_traversal(
         &self,
         a: Ty,
         b: Ty,
@@ -99,26 +110,15 @@ impl BoundChecker<'_> {
             let (a_ent, b_ent) = (&self.typec.types[a], &self.typec.types[b]);
 
             match (a_ent.kind, b_ent.kind) {
-                (
-                    TyKind::Instance {
-                        base: base_a,
-                        params: params_a,
-                    },
-                    TyKind::Instance {
-                        base: base_b,
-                        params: params_b,
-                    },
-                ) => {
+                (TyKind::Instance { base: base_a }, TyKind::Instance { base: base_b }) => {
                     if base_a != base_b {
                         return false;
                     }
 
                     frontier.extend(
-                        self.typec
-                            .ty_lists
-                            .get(params_a)
+                        self.typec.ty_lists[a_ent.params]
                             .iter()
-                            .zip(self.typec.ty_lists.get(params_b).iter())
+                            .zip(self.typec.ty_lists[b_ent.params].iter())
                             // Associated types should not be checked for overlap otherwise there would be
                             // no difference compared to generic parameters.
                             .take(
@@ -181,4 +181,9 @@ pub enum SignatureError {
     ArgCount(usize, usize),
     Arg(usize, Ty, Ty),
     Ret(Maybe<Ty>, Maybe<Ty>),
+}
+
+pub enum TyInferenceError {
+    InvalidExpr,
+    TypeMismatch(Maybe<Ty>, Maybe<Ty>),
 }

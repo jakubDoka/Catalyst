@@ -1,4 +1,3 @@
-#![feature(scoped_threads)]
 use std::path::Path;
 
 use diags::*;

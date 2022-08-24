@@ -1,6 +1,5 @@
 #![feature(default_free_fn)]
 #![feature(let_else)]
-#![feature(let_chains)]
 #![feature(type_alias_impl_trait)]
 
 #[macro_export]

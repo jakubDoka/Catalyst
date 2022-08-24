@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 //! Crate provides simple constructs of lexical analysis.
 
 mod lexer;

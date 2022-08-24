@@ -1,7 +1,6 @@
 #![feature(let_else)]
 #![feature(inline_const)]
 #![feature(default_free_fn)]
-#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! field_ident {
@@ -62,7 +61,7 @@ mod tir;
 mod ty;
 mod ty_factory;
 
-pub use bound_checker::SignatureError;
+pub use bound_checker::{SignatureError, TyInferenceError};
 pub use funcs::{Def, DefEnt, DefList, Func, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Sig};
 pub use items::ItemContext;
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};

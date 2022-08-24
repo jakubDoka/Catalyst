@@ -452,6 +452,13 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         reserved.start = reserved.end;
         self.finish_reserved(reserved)
     }
+
+    pub fn reserved_view(&self, reserved: &Reserved<K>) -> &[T]
+    where
+        K: VPtr,
+    {
+        &self[reserved.id][..reserved.start]
+    }
 }
 
 impl<K, T: Clone, C> Clone for BumpMap<K, T, C> {
