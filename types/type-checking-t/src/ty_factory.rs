@@ -202,8 +202,8 @@ impl TyFactory<'_> {
                     .to_bumpvec()
                     .into_iter()
                     .map(|ty| self.try_instantiate(ty, inferred_slots))
-                    .collect::<Option<Vec<_>>>()?;
-                return Some(self.instance(base, params));
+                    .collect::<Option<BumpVec<_>>>()?;
+                return Some(self.instance(base, params.iter().copied()));
             }
             TyKind::Ptr { base, .. } => {
                 let mutable = self.typec.types[ty].flags.contains(TyFlags::MUTABLE);

@@ -112,7 +112,7 @@ impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
     /// let slice1 = map.bump([10, 20, 30]);
     /// let slice2 = map.bump([40, 50, 60]);
     ///
-    /// assert_eq!(map.remove(slice2.unwrap()).collect::<Vec<_>>(), vec![40, 50, 60]);
+    /// assert_eq!(map.remove(slice2.unwrap()).collect::<Vec<_>>(), to_bumpvec[40, 50, 60]);
     /// assert_eq!(map.remove(slice1.unwrap()).collect::<Vec<_>>(), vec![10, 20, 30]);
     /// assert_eq!(map.bump([0, 0, 0]), slice2);
     /// assert_eq!(map.bump([0, 0, 0]), slice1);
