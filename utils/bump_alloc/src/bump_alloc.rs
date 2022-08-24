@@ -293,6 +293,18 @@ mod test {
                 drop(vec);
                 println!("{:?}", ptr);
             }),
+            ("no-alloc", |timer| {
+                let vec = vec![0; 100].as_ptr();
+                timer.start();
+                let mut ptr = 0;
+                for _ in 0..1_000_000 {
+                    ptr += vec as usize;
+                    ptr /= 3;
+                    ptr *= 2;
+                }
+                timer.stop();
+                println!("{:?}", ptr);
+            }),
         ])
     }
 

@@ -151,6 +151,8 @@ impl FuncParser<'_> {
                 let params = args
                     .iter()
                     .map(|&arg| ty_parser!(self, self.current_file).parse(arg))
+                    .collect::<BumpVec<_>>()
+                    .into_iter()
                     .collect::<Result<BumpVec<_>, _>>()?;
                 self.typec.wrap_def_with_params(id, def, params)
             }
@@ -496,6 +498,8 @@ impl FuncParser<'_> {
             .iter()
             .zip(types)
             .map(arg_parser)
+            .collect::<BumpVec<_>>()
+            .into_iter()
             .collect::<Result<BumpVec<_>, _>>();
 
         todo!()
