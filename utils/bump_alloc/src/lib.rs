@@ -2,4 +2,4 @@
 
 mod bump_alloc;
 
-pub use bump_alloc::{BumpVec, ToBumpVec};
+pub use crate::bump_alloc::{BumpVec, ToBumpVec};
