@@ -36,12 +36,7 @@ impl TyFactory<'_> {
     pub fn rehash_ty(&mut self, ty: Ty) -> Ty {
         match self.typec.types[ty].kind {
             TyKind::Instance { base } => {
-                let id = self.instance_id_low(
-                    base,
-                    self.typec.ty_lists[self.typec.types[ty].params]
-                        .iter()
-                        .copied(),
-                );
+                let id = self.instance_id_low(base, self.typec.params_of(ty).iter().copied());
                 let id = self.interner.intern(&id);
                 self.typec.types.rehash(id, ty)
             }
@@ -198,7 +193,9 @@ impl TyFactory<'_> {
             }
             TyKind::Param { index, .. } => return Some(inferred_slots[index as usize]),
             TyKind::Instance { base } => {
-                let params = self.typec.ty_lists[self.typec.types[ty].params]
+                let params = self
+                    .typec
+                    .params_of(ty)
                     .to_bumpvec()
                     .into_iter()
                     .map(|ty| self.try_instantiate(ty, inferred_slots))

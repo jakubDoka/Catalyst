@@ -250,7 +250,6 @@ fn main() {
             impl A {
                 fn foo(a: A) {};
                 fn goo(a: int) {};
-                fn [P] soo(p: P) {}
             };
 
             impl Something[u8] for A {
@@ -261,10 +260,6 @@ fn main() {
 
             impl Something[int] for A {
                 use Self::goo as foo
-            };
-
-            impl Something[uint] for A {
-                use Self::soo[uint] as foo
             };
         }
         simple "bound-associated-types" {

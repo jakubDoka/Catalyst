@@ -5,78 +5,98 @@ use crate::*;
 impl BoundChecker<'_> {
     pub fn infer_type(
         &self,
-        reference: Ty,
-        template: Ty,
-        infer_slots: &[Ty],
+        _reference: Ty,
+        _template: Ty,
+        _infer_slots: &[Ty],
     ) -> Result<(), TyInferenceError> {
         todo!()
     }
 
     pub fn compare_bound_signatures(
         &mut self,
-        bound_func_index: usize,
-        implementor_params: Maybe<TyList>,
-        implementor_sig: Sig,
         r#impl: Impl,
+        bound_func_index: usize,
+        def: Def,
     ) -> Result<(), SignatureError> {
-        let bound_sig = self.typec.func_of_impl(r#impl, bound_func_index).sig;
+        let impl_ent = self.typec.impls[r#impl];
+        let def_ent = &self.typec.defs[def];
+        let base_bound = self.typec.instance_base_of(impl_ent.bound);
+        let bound_func_ent = self.typec.func_of_bound(base_bound, bound_func_index);
 
-        if bound_sig.cc != implementor_sig.cc {
-            return Err(SignatureError::CallConv(bound_sig.cc, implementor_sig.cc));
+        let (bound_func_params, impl_func_params) = (
+            &self.typec.ty_lists[bound_func_ent.params],
+            &self.typec.ty_lists[def_ent.params],
+        );
+
+        if bound_func_params.len() != impl_func_params.len() {
+            return Err(SignatureError::ParamCount(
+                bound_func_params.len(),
+                impl_func_params.len(),
+            ));
         }
 
-        let ImplEnt {
-            bound,
-            implementor,
-            params,
-            ..
-        } = self.typec.impls[r#impl];
-        let base_bound = self.typec.instance_base_of(bound);
-        let param_count = self.typec.param_count(base_bound);
-        self.typec.re_index_params(params, param_count);
-        let param_instances = self.typec.ty_lists[self.typec.instance_params(bound)]
-            .iter()
-            .chain(&self.typec.ty_lists[implementor_params])
+        let params = None
+            .into_iter()
+            .chain(self.typec.params_of(base_bound))
+            .chain(bound_func_params)
             .copied()
-            .collect::<Vec<_>>();
+            .collect::<BumpVec<_>>();
 
-        let args_a = &self.typec.ty_lists[bound_sig.args];
-        let args_b = &self.typec.ty_lists[implementor_sig.args];
-        if args_a.len() != args_b.len() {
-            return Err(SignatureError::ArgCount(args_a.len(), args_b.len()));
-        }
+        let params_instances = None
+            .into_iter()
+            .chain(self.typec.params_of(impl_ent.bound))
+            .chain(impl_func_params)
+            .copied()
+            .collect::<BumpVec<_>>();
 
-        let ty_comparator = |a, b| {
+        self.typec.re_index_params(&params);
+        self.typec.re_index_params(&params_instances);
+
+        let cmp = |a, b| {
             self.cmp_traversal(
                 a,
                 b,
                 |a, b| {
-                    (a == bound && b == implementor)
-                    || matches!(self.typec.types[a].kind, TyKind::Param { index, .. }
-                        if b == param_instances[index as usize])
+                    (a == base_bound && b == impl_ent.implementor)
+                        || matches!(self.typec.types[a].kind, TyKind::Param { index, .. } 
+                    if params_instances[index as usize] == b)
                 },
-                |a, b| matches!((a, b), (TyKind::Param { bound, .. }, TyKind::Param { bound: bound_b, .. })
-                    if bound == bound_b),
+                |a, b| a == b,
             )
         };
 
-        let params_not_equal = args_a
-            .iter()
-            .zip(args_b.iter())
-            .enumerate()
-            .find(|(.., (&a, &b))| !ty_comparator(a, b));
+        let def_ent = &self.typec.defs[def];
 
-        if let Some((i, (&a, &b))) = params_not_equal {
+        let (bound_func_args, impl_func_args) = (
+            &self.typec.ty_lists[bound_func_ent.sig.args],
+            &self.typec.ty_lists[def_ent.sig.args],
+        );
+
+        if bound_func_args.len() != impl_func_args.len() {
+            return Err(SignatureError::ArgCount(
+                bound_func_args.len(),
+                impl_func_args.len(),
+            ));
+        }
+
+        let mismatch = bound_func_args
+            .iter()
+            .zip(impl_func_args.iter())
+            .enumerate()
+            .find(|(.., (&a, &b))| !cmp(a, b));
+
+        if let Some((i, (&a, &b))) = mismatch {
             return Err(SignatureError::Arg(i, a, b));
         }
 
-        if matches!((bound_sig.ret.expand(), implementor_sig.ret.expand()), (Some(ret_a), Some(ret_b)) if !ty_comparator(ret_a, ret_b))
-            || bound_sig.ret != implementor_sig.ret
+        let (ret_a, ret_b) = (bound_func_ent.sig.ret.expand(), def_ent.sig.ret.expand());
+        if ret_a == ret_b
+            || matches!((ret_a, ret_b), (Some(ret_a), Some(ret_b)) if cmp(ret_a, ret_b))
         {
-            return Err(SignatureError::Ret(bound_sig.ret, implementor_sig.ret));
+            Ok(())
+        } else {
+            Err(SignatureError::Ret(ret_a, ret_b))
         }
-
-        Ok(())
     }
 
     pub fn impls_overlap(&self, a: Impl, b: Impl) -> bool {
@@ -96,7 +116,7 @@ impl BoundChecker<'_> {
         skip_case: impl Fn(Ty, Ty) -> bool,
         param_cmp: impl Fn(TyKind, TyKind) -> bool,
     ) -> bool {
-        let mut frontier = bumpvec![(a, b)];
+        let mut frontier = vec![(a, b)];
 
         while let Some((a, b)) = frontier.pop() {
             if a == b {
@@ -179,8 +199,9 @@ impl BoundChecker<'_> {
 pub enum SignatureError {
     CallConv(Maybe<Ident>, Maybe<Ident>),
     ArgCount(usize, usize),
+    ParamCount(usize, usize),
     Arg(usize, Ty, Ty),
-    Ret(Maybe<Ty>, Maybe<Ty>),
+    Ret(Option<Ty>, Option<Ty>),
 }
 
 pub enum TyInferenceError {

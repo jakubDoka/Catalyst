@@ -234,7 +234,8 @@ impl TyParser<'_> {
                 self.scope.push(item);
             };
 
-            self.typec.ty_lists[self.typec.types[bound].params]
+            self.typec
+                .params_of(bound)
                 .iter()
                 .rev()
                 .take(assoc_type_count as usize)

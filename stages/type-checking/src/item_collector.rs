@@ -121,7 +121,9 @@ impl ItemCollector<'_> {
         }
 
         if let TyKind::Instance { base, .. } = self.typec.types[bound].kind {
-            let mut iter = self.typec.ty_lists[self.typec.types[bound].params]
+            let mut iter = self
+                .typec
+                .params_of(bound)
                 .iter()
                 .skip(self.typec.param_count(base) - self.typec.assoc_ty_count_of_bound(base))
                 .enumerate()

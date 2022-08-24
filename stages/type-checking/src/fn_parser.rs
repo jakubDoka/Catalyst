@@ -19,16 +19,11 @@ impl FuncParser<'_> {
                 unreachable!();
             };
 
-            let ImplEnt {
-                id,
-                params,
-                implementor,
-                ..
-            } = self.typec.impls[r#impl];
+            let impl_ent = self.typec.impls[r#impl];
 
             self.scope.start_frame();
-            self.scope.self_alias = self.typec.types[implementor].loc.name.into();
-            ty_parser!(self, self.current_file).push_generics(generics, params);
+            self.scope.self_alias = self.typec.types[impl_ent.implementor].loc.name.into();
+            ty_parser!(self, self.current_file).push_generics(generics, impl_ent.params);
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
@@ -42,9 +37,7 @@ impl FuncParser<'_> {
 
             for &item in &self.ast_data[body.children] {
                 match item.kind {
-                    AstKind::Func { .. } => {
-                        drop(self.bound_impl_func(item, r#impl, params, &mut funcs))
-                    }
+                    AstKind::Func { .. } => drop(self.bound_impl_func(item, r#impl, &mut funcs)),
                     AstKind::ImplUse => drop(self.bound_impl_use(item, r#impl, &mut funcs)),
                     AstKind::ImplType => (),
                     kind => unimplemented!("{:?}", kind),
@@ -53,48 +46,7 @@ impl FuncParser<'_> {
 
             self.scope.end_frame();
 
-            let mut missing = funcs
-                .iter_mut()
-                .enumerate()
-                .filter(|(.., maybe)| maybe.is_none())
-                .filter_map(|(i, maybe)| {
-                    let name = self.typec.func_of_impl(r#impl, i).loc.name;
-
-                    let implementor_name = self.typec.types[implementor].loc.name;
-                    let local_id = self.interner.intern(scoped_ident!(implementor_name, name));
-                    if let Ok((def, ..)) = self.scope.get_concrete::<Def>(local_id) {
-                        let sig = self.typec.defs[def].sig;
-                        if bound_checker!(self)
-                            .compare_bound_signatures(i, default(), sig, r#impl)
-                            .is_ok()
-                        {
-                            let id = self.interner.intern(scoped_ident!(id, name));
-                            let func = self.typec.wrap_def(id, def);
-                            *maybe = func.into();
-                            return None;
-                        }
-                    }
-
-                    Some(name)
-                })
-                .peekable();
-
-            if missing.peek().is_some() {
-                let suggestions = missing
-                    .collect::<BumpVec<_>>()
-                    .into_iter()
-                    .map(|name| &self.interner[name])
-                    .collect::<BumpVec<_>>()
-                    .join(", ");
-
-                let loc = self
-                    .typec
-                    .loc_of(self.typec.impls[r#impl].bound, self.interner);
-                self.workspace.push(diag! {
-                    (ast.span, self.current_file) => "some of the methods are not implemented",
-                    (none) => "missing methods: {}" { suggestions },
-                    (exp loc) => "related bound type",
-                });
+            if self.handle_missing_funcs_in_bound_impl(ast, r#impl, &mut funcs) {
                 continue;
             }
 
@@ -103,6 +55,72 @@ impl FuncParser<'_> {
                 .func_lists
                 .bump(funcs.into_iter().map(Maybe::unwrap));
         }
+    }
+
+    fn handle_missing_funcs_in_bound_impl(
+        &mut self,
+        ast: AstEnt,
+        r#impl: Impl,
+        funcs: &mut [Maybe<Func>],
+    ) -> bool {
+        let mut missing = funcs
+            .iter_mut()
+            .enumerate()
+            .filter(|(.., maybe)| maybe.is_none())
+            .filter_map(|(i, maybe)| {
+                self.try_recover_missing_func_in_bound_impl(r#impl, i)
+                    .map(|func| *maybe = func.into())
+                    .err()
+            })
+            .peekable();
+
+        if missing.peek().is_none() {
+            return false;
+        }
+
+        let suggestions = missing
+            .collect::<BumpVec<_>>()
+            .into_iter()
+            .map(|name| &self.interner[name])
+            .collect::<BumpVec<_>>()
+            .join(", ");
+
+        let loc = self
+            .typec
+            .loc_of(self.typec.impls[r#impl].bound, self.interner);
+        self.workspace.push(diag! {
+            (ast.span, self.current_file) => "some of the methods are not implemented",
+            (none) => "missing methods: {}" { suggestions },
+            (exp loc) => "related bound type",
+        });
+
+        true
+    }
+
+    fn try_recover_missing_func_in_bound_impl(
+        &mut self,
+        r#impl: Impl,
+        func_index: usize,
+    ) -> Result<Func, Ident> {
+        let name = self.typec.func_of_impl(r#impl, func_index).loc.name;
+
+        let impl_ent = self.typec.impls[r#impl];
+
+        let implementor_name = self.typec.types[impl_ent.implementor].loc.name;
+        let local_id = self.interner.intern(scoped_ident!(implementor_name, name));
+        let Ok((def, ..)) = self.scope.get_concrete::<Def>(local_id) else {
+            return Err(name);
+        };
+
+        if bound_checker!(self)
+            .compare_bound_signatures(r#impl, func_index, def)
+            .is_err()
+        {
+            return Err(name);
+        }
+
+        let id = self.interner.intern(scoped_ident!(impl_ent.id, name));
+        Ok(self.typec.wrap_def(id, def))
     }
 
     fn bound_impl_use(
@@ -139,36 +157,12 @@ impl FuncParser<'_> {
             return Err(());
         }
 
-        let func = match value.kind {
-            AstKind::TyInstance => {
-                let [header, ref args @ ..] = self.ast_data[value.children] else {
-                    unreachable!();
-                };
+        let local_id = ty_parser!(self, self.current_file).ident_chain_id(value);
+        let def: Def =
+            self.get_from_scope_concrete(local_id, value.span, "function", Reports::base)?;
+        let func = self.typec.wrap_def(id, def);
 
-                let local_id = ty_parser!(self, self.current_file).ident_chain_id(header);
-                let def: Def =
-                    self.get_from_scope_concrete(local_id, value.span, "function", Reports::base)?;
-                let params = args
-                    .iter()
-                    .map(|&arg| ty_parser!(self, self.current_file).parse(arg))
-                    .collect::<BumpVec<_>>()
-                    .into_iter()
-                    .collect::<Result<BumpVec<_>, _>>()?;
-                self.typec.wrap_def_with_params(id, def, params)
-            }
-            AstKind::Ident | AstKind::IdentChain => {
-                let local_id = ty_parser!(self, self.current_file).ident_chain_id(value);
-                let def: Def =
-                    self.get_from_scope_concrete(local_id, value.span, "function", Reports::base)?;
-                self.typec.wrap_def(id, def)
-            }
-            kind => unimplemented!("{:?}", kind),
-        };
-
-        let sig = self.typec.sig_of_func(func);
-        let params = self.typec.funcs[func].params;
-        if let Err(err) = bound_checker!(self).compare_bound_signatures(index, params, sig, r#impl)
-        {
+        if let Err(err) = bound_checker!(self).compare_bound_signatures(r#impl, index, def) {
             self.report_signature_mismatch(err, r#impl, ast_name.span);
             return Err(());
         }
@@ -214,21 +208,35 @@ impl FuncParser<'_> {
         &mut self,
         item: AstEnt,
         r#impl: Impl,
-        upper_params: Maybe<TyList>,
         funcs: &mut BumpVec<Maybe<Func>>,
     ) -> errors::Result {
         let [cc, generics, ast_name, ref args @ .., ret, body] = self.ast_data[item.children] else {
             unreachable!();
         };
 
+        let impl_ent = self.typec.impls[r#impl];
+
         self.scope.start_frame();
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
 
         let name = span_str!(self, ast_name.span);
+        let def_ent = DefEnt {
+            params,
+            flags: FuncFlags::GENERIC & params.is_some(),
+            loc: Loc::new(
+                ast_name.span,
+                self.current_file,
+                self.interner.intern_str(name),
+            ),
+            sig,
+            upper_params: impl_ent.params,
+            ..default()
+        };
+        let def = self.typec.defs.push(def_ent);
+
         let name_id = self.interner.intern_str(name);
-        let impl_id = self.typec.impls[r#impl].id;
-        let id = self.interner.intern(scoped_ident!(impl_id, name_id));
+        let id = self.interner.intern(scoped_ident!(impl_ent.id, name_id));
 
         let Some(index) = self.typec.func_index_of_impl(r#impl, name_id) else {
             let loc = self.typec.loc_of(self.typec.impls[r#impl].bound, self.interner);
@@ -239,9 +247,7 @@ impl FuncParser<'_> {
             return Err(());
         };
 
-        if let Err(err) =
-            bound_checker!(self).compare_bound_signatures(index, default(), sig, r#impl)
-        {
+        if let Err(err) = bound_checker!(self).compare_bound_signatures(r#impl, index, def) {
             self.report_signature_mismatch(err, r#impl, ast_name.span);
             return Err(());
         }
@@ -254,20 +260,6 @@ impl FuncParser<'_> {
             });
             return Ok(());
         }
-
-        let def_ent = DefEnt {
-            params,
-            flags: FuncFlags::GENERIC & params.is_some(),
-            loc: Loc::new(
-                ast_name.span,
-                self.current_file,
-                self.interner.intern_str(name),
-            ),
-            sig,
-            upper_params,
-            ..default()
-        };
-        let def = self.typec.defs.push(def_ent);
 
         let func = self.typec.wrap_def(id, def);
         funcs[index] = Maybe::some(func);
@@ -310,8 +302,15 @@ impl FuncParser<'_> {
             ),
             SignatureError::Ret(expected, got) => diag!(
                 (span, self.current_file) => "return type mismatch, expected {} but got {}" {
-                    expected.expand().map_or("nothing", |expected| &self.interner[self.typec.types.id(expected)]),
-                    got.expand().map_or("nothing", |got| &self.interner[self.typec.types.id(got)]),
+                    expected.map_or("nothing", |expected| &self.interner[self.typec.types.id(expected)]),
+                    got.map_or("nothing", |got| &self.interner[self.typec.types.id(got)]),
+                },
+                (exp loc) => "related bound defined here",
+            ),
+            SignatureError::ParamCount(expected, got) => diag!(
+                (span, self.current_file) => "function parameter count mismatch, expected {} but got {}" {
+                    expected,
+                    got,
                 },
                 (exp loc) => "related bound defined here",
             ),
@@ -470,15 +469,21 @@ impl FuncParser<'_> {
         sig: Sig,
         params: Maybe<TyList>,
         parent: Ty,
-        expected: Expected,
+        _expected: Expected,
     ) -> errors::Result<(Maybe<TirList>, Maybe<Ty>)> {
-        let parent_param_count = self.typec.param_count(parent);
-        self.typec.re_index_params(params, parent_param_count);
+        let _parent_param_count = self.typec.param_count(parent);
 
-        let total_param_count = parent_param_count + self.typec.ty_lists[params].len();
-        let mut infer_slots = bumpvec![BuiltinTypes::INFERRED; total_param_count];
+        let mut infer_slots = self
+            .typec
+            .params_of(parent)
+            .iter()
+            .chain(&self.typec.ty_lists[params])
+            .copied()
+            .collect::<BumpVec<_>>();
 
-        let types = self.typec.ty_lists[params].to_bumpvec();
+        self.typec.re_index_params(&infer_slots);
+
+        let types = self.typec.ty_lists[sig.args].to_bumpvec();
 
         let arg_parser = |(&arg, ty)| {
             let instance = ty_factory!(self).try_instantiate(ty, &infer_slots);
@@ -494,7 +499,7 @@ impl FuncParser<'_> {
             }
         };
 
-        let args = args
+        let _args = args
             .iter()
             .zip(types)
             .map(arg_parser)
@@ -507,11 +512,11 @@ impl FuncParser<'_> {
 
     fn parse_generic_args(
         &mut self,
-        args: &[AstEnt],
-        sig: Sig,
-        params: Maybe<TyList>,
-        upper_params: Maybe<TyList>,
-        expected: Expected,
+        _args: &[AstEnt],
+        _sig: Sig,
+        _params: Maybe<TyList>,
+        _upper_params: Maybe<TyList>,
+        _expected: Expected,
     ) -> errors::Result<(Maybe<TirList>, Maybe<Ty>)> {
         todo!()
     }

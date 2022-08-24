@@ -29,6 +29,10 @@ impl Typec {
         }
     }
 
+    pub fn params_of(&self, ty: Ty) -> &[Ty] {
+        &self.ty_lists[self.types[ty].params]
+    }
+
     #[inline]
     pub fn sig_of_func(&self, func: Func) -> Sig {
         self.defs[self.funcs[func].def].sig
@@ -244,12 +248,12 @@ impl Typec {
         }
     }
 
-    pub fn re_index_params(&mut self, params: Maybe<TyList>, shift: usize) {
-        for (i, &param) in self.ty_lists[params].iter().enumerate() {
+    pub fn re_index_params(&mut self, params: &[Ty]) {
+        for (i, &param) in params.iter().enumerate() {
             let TyKind::Param { ref mut index, .. } = self.types[param].kind else {
-                unreachable!();
+                continue;
             };
-            *index = (i + shift) as u32;
+            *index = i as u32;
         }
     }
 }
@@ -333,6 +337,7 @@ pub struct BoundFuncEnt {
     pub parent: Ty,
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct ImplEnt {
     pub id: Ident,
     pub params: Maybe<TyList>,
