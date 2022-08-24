@@ -5,7 +5,7 @@ impl Parser<'_> {
         self.start();
         self.advance();
         let vis = self.visibility();
-        self.generics(false)?;
+        self.generics()?;
         self.ident()?;
 
         self.start();

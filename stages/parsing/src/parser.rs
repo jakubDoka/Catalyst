@@ -316,20 +316,14 @@ impl<'a> Parser<'a> {
         present
     }
 
-    fn generics(&mut self, has_bounds: bool) -> errors::Result {
+    fn generics(&mut self) -> errors::Result {
         self.start();
-
-        let parser = if has_bounds {
-            Self::generic_bounded_param
-        } else {
-            Self::ident
-        };
 
         self.opt_list(
             TokenKind::LeftBracket,
             Some(TokenKind::Comma),
             Some(TokenKind::RightBracket),
-            parser,
+            Self::generic_bounded_param,
         )?;
 
         self.finish(AstKind::Generics);

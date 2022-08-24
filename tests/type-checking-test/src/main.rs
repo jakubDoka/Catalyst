@@ -314,15 +314,15 @@ fn main() {
                 }
             };
         }
-        simple "complex-bound-in-use" {
-            bound [OPERAND] Add {
-                type Out;
-                fn add(a: Self, b: OPERAND) -> Self::Out
-            };
+        // simple "complex-bound-in-use" {
+        //     bound [OPERAND] Add {
+        //         type Out;
+        //         fn add(a: Self, b: OPERAND) -> Self::Out
+        //     };
 
-            fn [A, B: Add[A]] add(a: A, b: B) -> B::Out {
-                return B::add(a, b)
-            }
-        }
+        //     fn [A, B: Add[A]] add(a: A, b: B) -> B::Out {
+        //         return B::add(a, b)
+        //     }
+        // }
     }
 }

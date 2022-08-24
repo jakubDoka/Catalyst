@@ -5,7 +5,7 @@ impl Parser<'_> {
         self.start();
         self.advance();
         let vis = self.visibility();
-        self.generics(false)?;
+        self.generics()?;
         self.ident()?;
         self.start();
         list!(self, LeftCurly, NewLine, RightCurly, bound_item)?;
@@ -26,7 +26,7 @@ impl Parser<'_> {
         self.start();
         self.advance();
         let vis = self.visibility();
-        self.generics(false)?;
+        self.generics()?;
         self.ident()?;
 
         self.finish(AstKind::BoundType { vis });
@@ -38,7 +38,7 @@ impl Parser<'_> {
         self.start();
         self.advance();
         let vis = self.visibility();
-        self.generics(true)?;
+        self.generics()?;
         self.ty()?;
 
         let is_bound_impl = self.at(TokenKind::For);
@@ -73,7 +73,7 @@ impl Parser<'_> {
     fn impl_type(&mut self) -> errors::Result {
         self.start();
         self.advance();
-        self.generics(true)?;
+        self.generics()?;
         self.ident()?;
 
         self.expect_ctx_keyword("=")?;

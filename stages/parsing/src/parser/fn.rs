@@ -25,7 +25,7 @@ impl Parser<'_> {
         self.advance();
         let vis = self.visibility();
         self.call_conv();
-        self.generics(true)?;
+        self.generics()?;
         self.ident()?;
         list!(self, LeftParen, Comma, RightParen, fn_arg)?;
         if self.at(TokenKind::RightArrow) {

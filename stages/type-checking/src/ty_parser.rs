@@ -259,18 +259,18 @@ impl TyParser<'_> {
         local_bound_id: Ident,
         params: &mut Vec<Ty>,
     ) -> usize {
-        let mut assoc_type_count = 0;
+        let prev_len = params.len();
         for &item in self.ast_data[ast.children].iter() {
             let AstKind::BoundType { vis } = item.kind else {
                 continue;
             };
 
-            drop(self.assoc_type(item, bound_id, local_bound_id, vis, params.len()));
-
-            assoc_type_count += 1;
+            let ty = self
+                .assoc_type(item, bound_id, local_bound_id, vis, params.len())
+                .unwrap_or(BuiltinTypes::INFERRED);
+            params.push(ty);
         }
-
-        assoc_type_count
+        params.len() - prev_len
     }
 
     fn assoc_type(
