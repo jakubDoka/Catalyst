@@ -1,0 +1,6 @@
+| functions:
+fn add {
+	return call add[21`Add[param any, 21`Add`Out], 21`Add`Out](access tir0, access tir1)
+}
+
+
