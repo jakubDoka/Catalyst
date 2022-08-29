@@ -41,7 +41,7 @@ macro_rules! duplicate_definition {
 
 mod packaging;
 
-pub use packaging::{Dep, DepList, Mod, ModItem, ModKind, PackageGraph, Packages};
+pub use packaging::{Dep, Mod, ModItem, ModKind, PackageGraph, Packages};
 
 pub use util::{duplicate_definition, insert_scope_item};
 
@@ -70,7 +70,7 @@ mod util {
 
         packages
             .modules
-            .get_mut(current_file)
+            .get_mut(&current_file)
             .unwrap()
             .add_item(item);
     }

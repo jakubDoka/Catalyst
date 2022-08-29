@@ -3,36 +3,41 @@ use std::{
     ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-use crate::{BumpMap, Frames, Maybe, PoolMap, VPtr, VPtrSet};
+use crate::*;
 
-pub type CachedPoolBumpMap<K, T, C = ()> = PoolBumpMap<K, T, C, Frames<T>>;
+pub type CachedPoolBumpMap<T> = PoolBumpMap<T, Frames<T>>;
+
+struct FreeSlot<T> {
+    id: VSlice<T>,
+    next: Maybe<VRef<FreeSlot<T>>>,
+}
 
 /// Struct is similar to [`PoolMap`] as it allows removing elements
 /// but it stores slices of T as [`BumpMap`]. Accessing removed memory
 /// results into panic. Its is considered `unsafe` to explicitly call
 /// [`Deref`] or [`DerefMut`] on this struct.
-pub struct PoolBumpMap<K, T, C = (), CACHE = ()> {
-    inner: BumpMap<K, T, C, CACHE>,
-    heads: Vec<Maybe<Private>>,
-    freed: PoolMap<Private, (K, Maybe<Private>)>,
-    free_lookup: VPtrSet<K>,
+pub struct PoolBumpMap<T, CACHE = ()> {
+    inner: BumpMap<T, CACHE>,
+    heads: Vec<Maybe<VRef<FreeSlot<T>>>>,
+    freed: PoolMap<FreeSlot<T>>,
+    free_lookup: BitSet,
     tmp: Vec<T>,
 }
 
-impl<K, T, C, CACHE: Default> PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE: Default> PoolBumpMap<T, CACHE> {
     /// Will allocate little bit of memory.
     pub fn new() -> Self {
         Self {
             inner: BumpMap::new(),
             heads: Vec::new(),
             freed: PoolMap::new(),
-            free_lookup: VPtrSet::new(),
+            free_lookup: BitSet::new(),
             tmp: Vec::new(),
         }
     }
 }
 
-impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> PoolBumpMap<T, CACHE> {
     /// Same behavior as [`BumpMap::bump_slice`] but removed slices can be reused.
     ///
     /// # Example
@@ -48,7 +53,7 @@ impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn bump_slice(&mut self, slice: &[T]) -> Maybe<K>
+    pub fn bump_slice(&mut self, slice: &[T]) -> VSlice<T>
     where
         T: Clone,
     {
@@ -57,52 +62,49 @@ impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
 
     /// Same behavior as [`BumpMap::bump`] but removed slices can be reused.
     /// See [`Self::bump_slice`] for more example.
-    pub fn bump(&mut self, items: impl IntoIterator<Item = T>) -> Maybe<K> {
+    pub fn bump(&mut self, items: impl IntoIterator<Item = T>) -> VSlice<T> {
         self.tmp.extend(items);
         self.bump_prepared()
     }
 
-    fn bump_prepared(&mut self) -> Maybe<K> {
+    fn bump_prepared(&mut self) -> VSlice<T> {
         if let Some(Some(head)) = self.heads.get(self.tmp.len()).map(|v| v.expand()) {
-            let (id, next) = self.freed.remove(head);
-            assert!(self.free_lookup.remove(id));
+            let FreeSlot { id, next } = self.freed.remove(head);
+            assert!(self.free_lookup.remove(id.index()));
             self.heads[self.tmp.len()] = next;
             self.inner
                 .get_mut(id)
                 .iter_mut()
                 .zip(self.tmp.drain(..))
                 .for_each(|(a, b)| *a = b);
-            Maybe::some(id)
+            id
         } else {
             self.inner.bump(self.tmp.drain(..))
         }
     }
 
     /// Same behavior as [`BumpMap::get`] but validity of `key` is checked.
-    pub fn get(&self, key: K) -> &[T] {
-        assert!(!self.free_lookup.contains(key));
+    pub fn get(&self, key: VSlice<T>) -> &[T] {
+        assert!(!self.free_lookup.contains(key.index()));
         self.inner.get(key)
     }
 
     /// Same behavior as [`BumpMap::get_mut`] but validity of `key` is checked.
-    pub fn get_mut(&mut self, key: K) -> &mut [T] {
-        assert!(!self.free_lookup.contains(key));
+    pub fn get_mut(&mut self, key: VSlice<T>) -> &mut [T] {
+        assert!(!self.free_lookup.contains(key.index()));
         self.inner.get_mut(key)
     }
 }
 
-impl<K, T, C: VPtr, CACHE> PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> PoolBumpMap<T, CACHE> {
     /// Same behavior as [`BumpMap::bump_pushed`] but removed slices can be reused.
-    pub fn bump_pushed(&mut self) -> Maybe<K>
-    where
-        K: VPtr,
-    {
+    pub fn bump_pushed(&mut self) -> VSlice<T> {
         self.tmp.extend(self.inner.discard_pushed());
         self.bump_prepared()
     }
 }
 
-impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> PoolBumpMap<T, CACHE> {
     /// Removes slice from the [`PoolBumpMap`] and returns ownership to slice
     /// contents via iterator. The backing memory is saved for next allocations.
     ///
@@ -119,103 +121,94 @@ impl<K: VPtr, T, C, CACHE> PoolBumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn remove(&mut self, key: K) -> impl Iterator<Item = T> + '_ {
-        assert!(self.free_lookup.insert(key));
+    pub fn remove(&mut self, key: VSlice<T>) -> impl Iterator<Item = T> + '_ {
+        if key.is_empty() {
+            return None.into_iter().flatten();
+        }
+
+        assert!(self.free_lookup.insert(key.index()));
 
         let size = self.get(key).len();
         let new_size = self.heads.len().max(size + 1);
         self.heads.resize(new_size, Maybe::none());
 
-        let freed = self.freed.push((key, self.heads[size]));
+        let freed = self.freed.push(FreeSlot {
+            id: key,
+            next: self.heads[size],
+        });
         self.heads[size] = Maybe::some(freed);
 
         unsafe {
-            self.get_mut_uninit(key)
-                .iter_mut()
-                .map(|v| replace(v, MaybeUninit::uninit()).assume_init())
+            Some(
+                self.get_mut_uninit(key)
+                    .iter_mut()
+                    .map(|v| replace(v, MaybeUninit::uninit()).assume_init()),
+            )
+            .into_iter()
+            .flatten()
         }
     }
 
-    /// Same behavior as [`Self::remove`] but removal is optional.
-    pub fn may_remove(&mut self, key: Maybe<K>) -> impl Iterator<Item = T> + '_ {
-        key.expand()
-            .map(|key| self.remove(key))
-            .into_iter()
-            .flatten()
-    }
-
-    fn check_index(&self, concrete: C) -> bool
-    where
-        C: VPtr,
-    {
-        self.free_lookup.contains(self.inner.slice_of(concrete))
+    fn check_index(&self, concrete: VRef<T>) -> bool {
+        self.free_lookup
+            .contains(self.inner.slice_of(concrete).index())
     }
 }
 
-impl<K: VPtr, T, C> PoolBumpMap<K, T, C, Frames<T>> {
+impl<T> PoolBumpMap<T, Frames<T>> {
     /// Same behavior as [`BumpMap::bump_cached`] but removed slices can be reused.
-    pub fn bump_cached(&mut self) -> Maybe<K> {
+    pub fn bump_cached(&mut self) -> VSlice<T> {
         self.tmp.extend(self.inner.discard_cache());
         self.bump_prepared()
     }
 }
 
-impl<K, T, C, CACHE: Default> Default for PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE: Default> Default for PoolBumpMap<T, CACHE> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K, T, C, CACHE> Deref for PoolBumpMap<K, T, C, CACHE> {
-    type Target = BumpMap<K, T, C, CACHE>;
+impl<T, CACHE> Deref for PoolBumpMap<T, CACHE> {
+    type Target = BumpMap<T, CACHE>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<K, T, C, CACHE> DerefMut for PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> DerefMut for PoolBumpMap<T, CACHE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<K: VPtr, T, C, CACHE> Index<Maybe<K>> for PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> Index<VSlice<T>> for PoolBumpMap<T, CACHE> {
     type Output = [T];
 
-    fn index(&self, index: Maybe<K>) -> &Self::Output {
-        if let Some(index) = index.expand() {
-            self.get(index)
-        } else {
-            &[]
-        }
+    fn index(&self, index: VSlice<T>) -> &Self::Output {
+        self.get(index)
     }
 }
 
-impl<K: VPtr, T, C, CACHE> IndexMut<Maybe<K>> for PoolBumpMap<K, T, C, CACHE> {
-    fn index_mut(&mut self, index: Maybe<K>) -> &mut Self::Output {
-        if let Some(index) = index.expand() {
-            self.get_mut(index)
-        } else {
-            &mut []
-        }
+impl<T, CACHE> IndexMut<VSlice<T>> for PoolBumpMap<T, CACHE> {
+    fn index_mut(&mut self, index: VSlice<T>) -> &mut Self::Output {
+        self.get_mut(index)
     }
 }
 
-impl<K: VPtr, T, C: VPtr, CACHE> Index<C> for PoolBumpMap<K, T, C, CACHE> {
+impl<T, CACHE> Index<VRef<T>> for PoolBumpMap<T, CACHE> {
     type Output = T;
 
-    fn index(&self, index: C) -> &Self::Output {
+    fn index(&self, index: VRef<T>) -> &Self::Output {
         assert!(!self.check_index(index));
         &self.inner[index]
     }
 }
 
-impl<K: VPtr, T, C: VPtr, CACHE> IndexMut<C> for PoolBumpMap<K, T, C, CACHE> {
-    fn index_mut(&mut self, index: C) -> &mut Self::Output {
+impl<T, CACHE> IndexMut<VRef<T>> for PoolBumpMap<T, CACHE> {
+    fn index_mut(&mut self, index: VRef<T>) -> &mut Self::Output {
         assert!(!self.check_index(index));
         &mut self.inner[index]
     }
 }
-
-gen_v_ptr!(Private);

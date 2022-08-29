@@ -1,31 +1,29 @@
 use std::{
     intrinsics::transmute,
     iter::repeat,
-    marker::PhantomData,
     mem::MaybeUninit,
-    ops::{Index, IndexMut, Range},
+    ops::{Index, IndexMut, Not, Range},
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::*;
 
-pub type CacheBumpMap<K, T, C = ()> = BumpMap<K, T, C, Frames<T>>;
+pub type CacheBumpMap<T> = BumpMap<T, Frames<T>>;
 
 /// BumpMap allows allocating slices in a contiguous memory block.
 /// If us use '[`Frames`]<T>' as `CACHE` you are able to cache elements
 /// and push them all at once Which is useful when building tree in
-/// recursive manner. If `C` implements [`VPtr`] you are then able to
+/// recursive manner. If `VRef<T>` implements [`VPtr`] you are then able to
 /// address elements of slices directly.
-pub struct BumpMap<K, T, C = (), CACHE = ()> {
+pub struct BumpMap<T, CACHE = ()> {
     data: Vec<MaybeUninit<T>>,
     indices: Vec<u32>,
     frames: CACHE,
     reserves_in_progress: usize,
-    _ph: PhantomData<fn(K, C) -> (K, C)>,
 }
 
-impl<K, T, C, CACHE: Default> BumpMap<K, T, C, CACHE> {
+impl<T, CACHE: Default> BumpMap<T, CACHE> {
     /// Allocates little bit of memory.
     pub fn new() -> Self {
         BumpMap {
@@ -33,7 +31,6 @@ impl<K, T, C, CACHE: Default> BumpMap<K, T, C, CACHE> {
             indices: vec![0],
             frames: CACHE::default(),
             reserves_in_progress: 0,
-            _ph: PhantomData,
         }
     }
 
@@ -47,7 +44,7 @@ impl<K, T, C, CACHE: Default> BumpMap<K, T, C, CACHE> {
     }
 }
 
-impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
+impl<T> BumpMap<T, Frames<T>> {
     /// Stores the value in temporary buffer.
     ///
     /// # Examples
@@ -206,17 +203,14 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn bump_cached(&mut self) -> Maybe<K>
-    where
-        K: VPtr,
-    {
+    pub fn bump_cached(&mut self) -> VSlice<T> {
         let top = self.frames.pop();
         self.data.extend(top.map(MaybeUninit::new));
         self.close_frame()
     }
 
     /// Clones and strips frames from the bump map.
-    pub fn without_frames(&self) -> BumpMap<K, T, C, ()>
+    pub fn without_frames(&self) -> BumpMap<T, ()>
     where
         T: Clone,
     {
@@ -227,12 +221,11 @@ impl<K, T, C> BumpMap<K, T, C, Frames<T>> {
             indices: self.indices.clone(),
             frames: (),
             reserves_in_progress: 0,
-            _ph: PhantomData,
         }
     }
 }
 
-impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
+impl<T, CACHE> BumpMap<T, CACHE> {
     /// Allocates slice inside the [`BumpMap`] and returns [`VPtr`] to it.
     ///
     /// # Examples
@@ -245,7 +238,7 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn bump_slice(&mut self, items: &[T]) -> Maybe<K>
+    pub fn bump_slice(&mut self, items: &[T]) -> VSlice<T>
     where
         T: Clone,
     {
@@ -265,19 +258,19 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn bump(&mut self, items: impl IntoIterator<Item = T>) -> Maybe<K> {
+    pub fn bump(&mut self, items: impl IntoIterator<Item = T>) -> VSlice<T> {
         self.data.extend(items.into_iter().map(MaybeUninit::new));
         self.close_frame()
     }
 
-    fn close_frame(&mut self) -> Maybe<K> {
+    fn close_frame(&mut self) -> VSlice<T> {
         if self.indices.last().copied() == Some(self.data.len() as u32) {
-            return Maybe::none();
+            return VSlice::empty();
         }
 
         let index = self.indices.len();
         self.indices.push(self.data.len() as u32);
-        Maybe::some(K::new(index))
+        unsafe { VSlice::new(index) }
     }
 
     /// Returns slice corresponding to given `key`. The slice is known to not be empty.
@@ -291,28 +284,32 @@ impl<K: VPtr, T, C, CACHE> BumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList);
     /// ```
-    pub fn get(&self, key: K) -> &[T] {
+    pub fn get(&self, key: VSlice<T>) -> &[T] {
         unsafe { transmute(&self.data[self.range_of(key)]) }
     }
 
     /// Returns mut slice corresponding to given `key`. The slice is known to not be empty.
-    pub fn get_mut(&mut self, key: K) -> &mut [T] {
+    pub fn get_mut(&mut self, key: VSlice<T>) -> &mut [T] {
         unsafe { transmute(self.get_mut_uninit(key)) }
     }
 
-    pub unsafe fn get_mut_uninit(&mut self, key: K) -> &mut [MaybeUninit<T>] {
+    pub unsafe fn get_mut_uninit(&mut self, key: VSlice<T>) -> &mut [MaybeUninit<T>] {
         let range = self.range_of(key);
         &mut self.data[range]
     }
 
-    pub fn range_of(&self, key: K) -> Range<usize> {
+    pub fn range_of(&self, key: VSlice<T>) -> Range<usize> {
+        if key.is_empty() {
+            return 0..0;
+        }
+
         let start = self.indices[key.index() - 1] as usize;
         let end = self.indices[key.index()] as usize;
         start..end
     }
 }
 
-impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
+impl<T, CACHE> BumpMap<T, CACHE> {
     /// Pushes one element to the [`BumpMap`] and returns direct [`VPtr`] to it.
     ///
     /// # Examples
@@ -325,9 +322,9 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     ///
     /// storage::gen_v_ptr!(DummyList Dummy);
     /// ```
-    pub fn push(&mut self, value: T) -> C {
+    pub fn push(&mut self, value: T) -> VRef<T> {
         self.data.push(MaybeUninit::new(value));
-        C::new(self.data.len() - 1)
+        unsafe { VRef::new(self.data.len() - 1) }
     }
 
     /// Discards pushed elements and returns ownership to them to the caller via iterator.
@@ -339,40 +336,30 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
 
     /// Bumps pushed elements and returns [`VPtr`] to them. Elements that were bumped
     /// cannot be discarded anymore.
-    pub fn bump_pushed(&mut self) -> Maybe<K>
-    where
-        K: VPtr,
-    {
+    pub fn bump_pushed(&mut self) -> VSlice<T> {
         self.close_frame()
     }
 
     /// Shorthand for pushing one element and immediately bumping it.
-    pub fn bump_push(&mut self, value: T) -> (C, Maybe<K>)
-    where
-        K: VPtr,
-    {
+    pub fn bump_push(&mut self, value: T) -> (VRef<T>, VSlice<T>) {
         (self.push(value), self.bump_pushed())
     }
 
     /// Uses binary search to determinate in which frame the given `key` is located.
-    pub fn slice_of(&self, concrete: C) -> K
-    where
-        K: VPtr,
-    {
+    pub fn slice_of(&self, concrete: VRef<T>) -> VSlice<T> {
         let index = concrete.index();
         let result = self
             .indices
             .binary_search(&(index as u32))
             .map(|i| i + 1)
             .into_ok_or_err();
-        K::new(result)
+        unsafe { VSlice::new(result) }
     }
 
     /// Reserves a slice of uninitialized memory that is supposed to be filled later.
-    pub fn reserve(&mut self, size: usize) -> Reserved<K>
+    pub fn reserve(&mut self, size: usize) -> Reserved<T>
     where
         T: Clone,
-        K: VPtr,
     {
         let start = self.data.len();
         self.data
@@ -386,16 +373,15 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         }
     }
 
-    pub fn indexed(&self, key: Maybe<K>) -> impl Iterator<Item = (C, &T)>
-    where
-        K: Invalid + VPtr,
-    {
-        key.expand()
+    pub fn indexed(&self, key: VSlice<T>) -> impl Iterator<Item = (VRef<T>, &T)> {
+        key.is_empty()
+            .not()
+            .then_some(key)
             .map(|k| self.range_of(k))
             .map(|range| {
                 range
                     .clone()
-                    .map(|i| C::new(i))
+                    .map(|i| unsafe { VRef::new(i) })
                     .zip(unsafe { transmute::<_, &[T]>(&self.data[range]) })
             })
             .into_iter()
@@ -407,22 +393,18 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     /// # Panics
     ///
     /// Panics if `reserved` is already filled.
-    pub fn push_to_reserved(&mut self, reserved: &mut Reserved<K>, value: T) -> C
+    pub fn push_to_reserved(&mut self, reserved: &mut Reserved<T>, value: T) -> VRef<T>
     where
         T: Clone,
-        K: VPtr,
     {
         assert_ne!(reserved.end, reserved.start);
         self.data[reserved.start] = MaybeUninit::new(value);
-        let key = C::new(reserved.start);
+        let key = unsafe { VRef::new(reserved.start) };
         reserved.start += 1;
         key
     }
 
-    pub fn reserve_len(&self, reserved: &Reserved<K>) -> usize
-    where
-        K: VPtr,
-    {
+    pub fn reserve_len(&self, reserved: &Reserved<T>) -> usize {
         self[reserved.id].len() - (reserved.end - reserved.start)
     }
 
@@ -431,20 +413,16 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
     /// # Panics
     ///
     /// Panics if `reserved` is not filled.
-    pub fn finish_reserved(&mut self, reserved: Reserved<K>) -> Maybe<K>
-    where
-        K: VPtr,
-    {
+    pub fn finish_reserved(&mut self, reserved: Reserved<T>) -> VSlice<T> {
         assert_eq!(reserved.end, reserved.start);
         self.reserves_in_progress -= 1;
         reserved.id
     }
 
     /// Other way of finalizing a reserved slice if filling all itr remaining elements with [`Clone`] value.
-    pub fn fill_reserved(&mut self, mut reserved: Reserved<K>, value: T) -> Maybe<K>
+    pub fn fill_reserved(&mut self, mut reserved: Reserved<T>, value: T) -> VSlice<T>
     where
         T: Clone,
-        K: VPtr,
     {
         self.data[reserved.start..reserved.end]
             .iter_mut()
@@ -453,15 +431,12 @@ impl<K, T, C: VPtr, CACHE> BumpMap<K, T, C, CACHE> {
         self.finish_reserved(reserved)
     }
 
-    pub fn reserved_view(&self, reserved: &Reserved<K>) -> &[T]
-    where
-        K: VPtr,
-    {
+    pub fn reserved_view(&self, reserved: &Reserved<T>) -> &[T] {
         &self[reserved.id][..reserved.start]
     }
 }
 
-impl<K, T: Clone, C> Clone for BumpMap<K, T, C> {
+impl<T: Clone> Clone for BumpMap<T> {
     fn clone(&self) -> Self {
         assert_eq!(self.reserves_in_progress, 0);
         Self {
@@ -469,12 +444,11 @@ impl<K, T: Clone, C> Clone for BumpMap<K, T, C> {
             indices: self.indices.clone(),
             frames: (),
             reserves_in_progress: 0,
-            _ph: PhantomData,
         }
     }
 }
 
-impl<K, T, C, CACHE> Drop for BumpMap<K, T, C, CACHE> {
+impl<T, CACHE> Drop for BumpMap<T, CACHE> {
     fn drop(&mut self) {
         if !std::thread::panicking() {
             assert_eq!(self.reserves_in_progress, 0);
@@ -482,90 +456,80 @@ impl<K, T, C, CACHE> Drop for BumpMap<K, T, C, CACHE> {
     }
 }
 
-impl<K: VPtr, T, C, CACHE> Index<Maybe<K>> for BumpMap<K, T, C, CACHE> {
+impl<T, CACHE> Index<VSlice<T>> for BumpMap<T, CACHE> {
     type Output = [T];
 
-    fn index(&self, index: Maybe<K>) -> &Self::Output {
-        if let Some(index) = index.expand() {
-            self.get(index)
-        } else {
-            &[]
-        }
+    fn index(&self, index: VSlice<T>) -> &Self::Output {
+        self.get(index)
     }
 }
 
-impl<K: VPtr, T, C, CACHE> IndexMut<Maybe<K>> for BumpMap<K, T, C, CACHE> {
-    fn index_mut(&mut self, index: Maybe<K>) -> &mut Self::Output {
-        if let Some(index) = index.expand() {
-            self.get_mut(index)
-        } else {
-            &mut []
-        }
+impl<T, CACHE> IndexMut<VSlice<T>> for BumpMap<T, CACHE> {
+    fn index_mut(&mut self, index: VSlice<T>) -> &mut Self::Output {
+        self.get_mut(index)
     }
 }
 
-impl<K, T, C: VPtr, CACHE> Index<C> for BumpMap<K, T, C, CACHE> {
+impl<T, CACHE> Index<VRef<T>> for BumpMap<T, CACHE> {
     type Output = T;
 
-    fn index(&self, index: C) -> &Self::Output {
+    fn index(&self, index: VRef<T>) -> &Self::Output {
         unsafe { &*self.data[index.index()].as_ptr() }
     }
 }
 
-impl<K, T, C: VPtr, CACHE> IndexMut<C> for BumpMap<K, T, C, CACHE> {
-    fn index_mut(&mut self, index: C) -> &mut Self::Output {
+impl<T, CACHE> IndexMut<VRef<T>> for BumpMap<T, CACHE> {
+    fn index_mut(&mut self, index: VRef<T>) -> &mut Self::Output {
         unsafe { &mut *self.data[index.index()].as_mut_ptr() }
     }
 }
 
-impl<K, T, C, CACHE: Default> Default for BumpMap<K, T, C, CACHE> {
+impl<T, CACHE: Default> Default for BumpMap<T, CACHE> {
     fn default() -> Self {
         BumpMap::new()
     }
 }
 
-impl<K, T: Serialize, C, CACHE> Serialize for BumpMap<K, T, C, CACHE> {
+impl<T: Serialize, CACHE> Serialize for BumpMap<T, CACHE> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         assert_eq!(self.reserves_in_progress, 0);
-        unsafe { transmute::<_, &SerializableBumpMap<K, T, C, CACHE>>(self) }.serialize(serializer)
+        unsafe { transmute::<_, &SerializableBumpMap<T, CACHE>>(self) }.serialize(serializer)
     }
 }
 
-impl<'de, K, T: Deserialize<'de>, C, CACHE: Default> Deserialize<'de> for BumpMap<K, T, C, CACHE> {
+impl<'de, T: Deserialize<'de>, CACHE: Default> Deserialize<'de> for BumpMap<T, CACHE> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        SerializableBumpMap::<K, T, C, CACHE>::deserialize(deserializer).map(|s| BumpMap {
+        SerializableBumpMap::<T, CACHE>::deserialize(deserializer).map(|s| BumpMap {
             data: unsafe { transmute(s.data) },
             indices: s.indices,
             frames: CACHE::default(),
             reserves_in_progress: 0,
-            _ph: PhantomData,
         })
     }
 }
 
 #[derive(Serialize, Deserialize)]
-struct SerializableBumpMap<K, T, C = (), CACHE = ()> {
+struct SerializableBumpMap<T, CACHE = ()> {
     data: Vec<T>,
     indices: Vec<u32>,
     #[serde(skip)]
     _frames: CACHE,
     _padding: usize,
-    _ph: PhantomData<fn(K, C) -> (K, C)>,
 }
 
-pub struct Reserved<K> {
+pub struct Reserved<T> {
     start: usize,
     end: usize,
-    id: Maybe<K>,
+    id: VSlice<T>,
 }
 
-impl<K> Reserved<K> {
+impl<T> Reserved<T> {
     pub fn finished(&self) -> bool {
         self.start == self.end
     }

@@ -10,6 +10,13 @@ macro_rules! field_ident {
 }
 
 #[macro_export]
+macro_rules! impl_pair_ident {
+    ($pair:expr) => {
+        storage::ident!($pair.0.index() as u32, "$$", $pair.1.index() as u32)
+    };
+}
+
+#[macro_export]
 macro_rules! param_ident {
     ($param:expr) => {
         storage::ident!("param ", $param)
@@ -20,13 +27,6 @@ macro_rules! param_ident {
 macro_rules! binary_ident {
     ($param:expr) => {
         storage::ident!("binary ", $param)
-    };
-}
-
-#[macro_export]
-macro_rules! bound_impl_ident {
-    ($bound:expr, $implementor:expr) => {
-        storage::ident!("impl ", $bound, " for ", $implementor)
     };
 }
 
@@ -53,23 +53,82 @@ macro_rules! match_scope_ptr {
     };
 }
 
-mod bound_checker;
-mod builtin_builder;
-mod funcs;
-mod state_gen;
-mod tir;
-mod ty;
-mod ty_factory;
+#[macro_export]
+macro_rules! gen_kind {
+    {
+        $name:ident {
+            $(
+                $variant:ident $(= $struct:ident $({
+                    $(
+                        $field:ident: $ty:ty,
+                    )*
+                })?)?,
+            )*
+        }
+    } => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum $name {
+            $(
+                $variant$(($struct))?,
+            )*
+        }
 
-pub use bound_checker::{SignatureError, TyInferenceError};
-pub use funcs::{Def, DefEnt, DefList, Func, FuncEnt, FuncFlags, FuncList, FuncParserCtx, Sig};
+        impl $name {
+            pub fn downcast<T: TryFrom<Self, Error = ()>>(self) -> Option<T> {
+                self.try_into().ok()
+            }
+        }
+
+        $(
+            $(
+                $(
+                    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+                    pub struct $struct {
+                        $(
+                            pub $field: $ty,
+                        )*
+                    }
+                )?
+
+                impl Into<$name> for $struct {
+                    fn into(self) -> $name {
+                        $name::$variant(self)
+                    }
+                }
+
+                impl TryFrom<$name> for $struct {
+                    type Error = ();
+                    fn try_from(value: $name) -> Result<Self, Self::Error> {
+                        match value {
+                            $name::$variant(value) => Ok(value),
+                            _ => Err(()),
+                        }
+                    }
+                }
+            )?
+        )*
+    }
+}
+
+mod bound;
+mod builtin_builder;
+mod func;
+mod state_gen;
+mod ty;
+
+pub use bound::{
+    bound_checker::{SignatureError, TyInferenceError},
+    Bound, BoundBase, BoundFlags, BoundFunc, BoundInstance, BoundKind, Impl,
+};
+pub use func::{
+    tir::{Tir, TirData, TirFlags, TirKind, TirMeta},
+    Def, DefFlags, Func, FuncParserCtx, Sig,
+};
 pub use items::ItemContext;
 pub use state_gen::{BoundChecker, BuiltinBuilder, TirDisplay, TyFactory};
-pub use tir::{Tir, TirData, TirEnt, TirFlags, TirKind, TirList, TirMeta};
 pub use ty::{
-    BoundFunc, BoundFuncEnt, BoundFuncList, BuiltinTypes, EnumVariant, EnumVariantEnt,
-    EnumVariantList, Field, FieldEnt, FieldList, Impl, ImplEnt, Ty, TyEnt, TyFlags, TyKind, TyList,
-    Typec,
+    typec::{HasFlag, LocOf, Typec},
+    EnumVariant, Field, Ty, TyEnum, TyFlags, TyInstance, TyInt, TyKind, TyPtr,
 };
 
 mod items {
@@ -79,9 +138,9 @@ mod items {
 
     #[derive(Default)]
     pub struct ItemContext {
-        pub attrs: Vec<AstEnt>,
-        pub funcs: Vec<(Maybe<Ident>, AstEnt, Def)>,
-        pub types: Vec<(AstEnt, Ty)>,
-        pub bound_impls: Vec<(AstEnt, Impl)>,
+        pub attrs: Vec<Ast>,
+        pub funcs: Vec<(Maybe<Ident>, Ast, VRef<Def>)>,
+        pub types: Vec<(Ast, VRef<Ty>)>,
+        pub bound_impls: Vec<(Ast, VRef<Impl>)>,
     }
 }

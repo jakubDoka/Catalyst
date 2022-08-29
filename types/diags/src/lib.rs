@@ -210,7 +210,7 @@ pub mod types {
     /// Represents diagnostic state of compiled project.
     #[derive(Default)]
     pub struct Workspace {
-        files: Map<Doc>,
+        files: Map<Ident, Doc>,
         global_diags: Vec<Diag>,
         has_errors: bool,
     }
@@ -223,7 +223,7 @@ pub mod types {
         pub fn push(&mut self, diag: Diag) {
             self.has_errors |= diag.severity == raw::DiagnosticSeverity::ERROR;
             if let Some(loc) = diag.loc.expand() {
-                if self.files.get(loc.source).is_none() {
+                if self.files.get(&loc.source).is_none() {
                     self.files.insert(loc.source, Doc::new());
                 }
 

@@ -44,13 +44,13 @@ macro_rules! scope_error_handler {
     };
 
     (concrete) => {
-        pub fn get_from_scope_concrete<T: VPtr + 'static>(
+        pub fn get_from_scope_concrete<T: 'static>(
             &mut self,
             id: Ident,
             span: lexing_t::Span,
             message: &str,
             report: ReportSig,
-        ) -> errors::Result<T> {
+        ) -> errors::Result<VRef<T>> {
             self.scope
                 .get_concrete::<T>(id)
                 .map_err(|err| {
@@ -140,7 +140,7 @@ mod utils {
                 (span, file) => "the identifier is ambiguous",
                 (none) => "hint: specify the module from which it is imported ({})" {
                     {
-                        if let Some(module) = packages.modules.get(file) {
+                        if let Some(module) = packages.modules.get(&file) {
                             packages.conns[module.deps]
                                 .iter()
                                 .map(|dep| interner.intern(scoped_ident!(packages.span_str(file, dep.name), id)))
@@ -193,9 +193,9 @@ mod utils {
     impl Reports {
         make_ty_report!(
             base {
-                Def => "function",
-                BoundFunc => "bound function",
-                Ty => "type",
+                VRef<Def> => "function",
+                VRef<BoundFunc> => "bound function",
+                VRef<Ty> => "type",
             }
         );
     }

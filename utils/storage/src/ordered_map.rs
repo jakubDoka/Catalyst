@@ -1,5 +1,6 @@
 use std::{
     collections::hash_map::Entry,
+    default::default,
     ops::{Index, IndexMut},
 };
 
@@ -7,21 +8,21 @@ use crate::*;
 
 /// Has access complexity of an ordinary map, but it allows addressing
 /// values by [`VPtr`]
-pub struct OrderedMap<V, C> {
-    index: Map<C>,
-    data: PoolMap<C, (Ident, V)>,
+pub struct OrderedMap<K: SpecialHash, V> {
+    index: Map<K, VRef<V>>,
+    data: PoolMap<V, (K, V)>,
 }
 
-impl<V, C: VPtr> OrderedMap<V, C> {
+impl<K: SpecialHash, V> OrderedMap<K, V> {
     /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.   
-    pub fn insert(&mut self, key: Ident, value: V) -> (C, Option<V>) {
+    pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {
         let index = self.data.push((key, value));
         let shadow = self.index.insert(key, index);
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
     }
 
-    pub fn rehash(&mut self, key: Ident, value: C) -> C {
-        self.index.remove(self.data[value].0).unwrap();
+    pub fn rehash(&mut self, key: K, value: VRef<V>) -> VRef<V> {
+        self.index.remove(&self.data[value].0).unwrap();
         match self.index.entry(key) {
             Entry::Occupied(entry) => {
                 self.data.remove(value);
@@ -35,40 +36,40 @@ impl<V, C: VPtr> OrderedMap<V, C> {
     }
 
     /// Inserts a new value, panicking on shadow and returning [`VPtr`] to it.
-    pub fn insert_unique(&mut self, key: Ident, value: V) -> C {
+    pub fn insert_unique(&mut self, key: K, value: V) -> VRef<V> {
         let (index, shadow) = self.insert(key, value);
         assert!(shadow.is_none());
         index
     }
 
-    pub fn remove(&mut self, key: Ident) -> Option<V> {
-        let index = self.index.remove(key)?;
+    pub fn remove(&mut self, key: K) -> Option<V> {
+        let index = self.index.remove(&key)?;
         let (found_key, value) = self.data.remove(index);
         assert!(found_key == key);
         Some(value)
     }
 
-    pub fn remove_index(&mut self, index: C) -> (Ident, V) {
+    pub fn remove_index(&mut self, index: VRef<V>) -> (K, V) {
         let (key, value) = self.data.remove(index);
         self.index
-            .remove(key)
+            .remove(&key)
             .expect("index should be present as long as value is present");
         (key, value)
     }
 
-    pub fn get(&self, key: Ident) -> Option<&V> {
-        self.index.get(key).map(|&index| &self.data[index].1)
+    pub fn get(&self, key: K) -> Option<&V> {
+        self.index.get(&key).map(|&index| &self.data[index].1)
     }
 
-    pub fn get_mut(&mut self, key: Ident) -> Option<&mut V> {
-        self.index.get(key).map(|&index| &mut self.data[index].1)
+    pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
+        self.index.get(&key).map(|&index| &mut self.data[index].1)
     }
 
-    pub fn index(&self, key: Ident) -> Option<C> {
-        self.index.get(key).copied()
+    pub fn index(&self, key: K) -> Option<VRef<V>> {
+        self.index.get(&key).map(|&index| index)
     }
 
-    pub fn id(&self, key: C) -> Ident {
+    pub fn id(&self, key: VRef<V>) -> K {
         self.data[key].0
     }
 
@@ -77,30 +78,30 @@ impl<V, C: VPtr> OrderedMap<V, C> {
     }
 }
 
-impl<V, C: VPtr> Index<C> for OrderedMap<V, C> {
+impl<K: SpecialHash, V> Index<VRef<V>> for OrderedMap<K, V> {
     type Output = V;
 
-    fn index(&self, index: C) -> &Self::Output {
+    fn index(&self, index: VRef<V>) -> &Self::Output {
         &self.data[index].1
     }
 }
 
-impl<V, C: VPtr> IndexMut<C> for OrderedMap<V, C> {
-    fn index_mut(&mut self, index: C) -> &mut Self::Output {
+impl<K: SpecialHash, V> IndexMut<VRef<V>> for OrderedMap<K, V> {
+    fn index_mut(&mut self, index: VRef<V>) -> &mut Self::Output {
         &mut self.data[index].1
     }
 }
 
-impl<V, C: Invalid> Default for OrderedMap<V, C> {
+impl<K: SpecialHash, V> Default for OrderedMap<K, V> {
     fn default() -> Self {
         Self {
-            index: Map::new(),
+            index: default(),
             data: PoolMap::new(),
         }
     }
 }
 
-impl<V, C: Invalid> OrderedMap<V, C> {
+impl<K: SpecialHash, V> OrderedMap<K, V> {
     pub fn new() -> Self {
         Self::default()
     }

@@ -10,15 +10,15 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::{Maybe, VPtr};
+use crate::*;
 
 /// Storage plugin that supports data reuse and optional storage.
-pub struct SparseMap<K, T> {
-    mapping: Vec<Maybe<Private>>,
-    data: Vec<(K, T)>,
+pub struct SparseMap<T, V = T> {
+    mapping: Vec<u32>,
+    data: Vec<(VRef<T>, V)>,
 }
 
-impl<K, T> SparseMap<K, T> {
+impl<T, V> SparseMap<T, V> {
     pub fn new() -> Self {
         SparseMap {
             mapping: Vec::new(),
@@ -27,7 +27,7 @@ impl<K, T> SparseMap<K, T> {
     }
 }
 
-impl<K: VPtr, T> SparseMap<K, T> {
+impl<T, V> SparseMap<T, V> {
     /// Inserts new value under the key.
     ///
     /// # Example
@@ -42,20 +42,20 @@ impl<K: VPtr, T> SparseMap<K, T> {
     ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
-    pub fn insert(&mut self, key: K, value: T) -> Option<T> {
-        if let Some(key) = self.project(key).expand() {
-            Some(replace(&mut self.data[key.index()].1, value))
+    pub fn insert(&mut self, key: VRef<T>, value: V) -> Option<V> {
+        if let Some(key) = self.project(key) {
+            Some(replace(&mut self.data[key as usize].1, value))
         } else {
-            let id = Private::new(self.data.len());
+            let id = self.data.len() as u32;
             let size = self.mapping.len().max(key.index() + 1);
-            self.mapping.resize(size, Maybe::none());
-            self.mapping[key.index()] = Maybe::some(id);
+            self.mapping.resize(size, u32::MAX);
+            self.mapping[key.index()] = id;
             self.data.push((key, value));
             None
         }
     }
 
-    pub fn insert_unique(&mut self, key: K, value: T) {
+    pub fn insert_unique(&mut self, key: VRef<T>, value: V) {
         assert!(self.insert(key, value).is_none());
     }
 
@@ -71,34 +71,33 @@ impl<K: VPtr, T> SparseMap<K, T> {
     ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
-    pub fn remove(&mut self, key: K) -> Option<T> {
-        self.project(key).expand().map(|private| {
-            self.mapping[key.index()] = Maybe::none();
+    pub fn remove(&mut self, key: VRef<T>) -> Option<V> {
+        self.project(key).map(|private| {
+            self.mapping[key.index()] = u32::MAX;
             let last_id = self.data.last().unwrap().0;
             if last_id == key {
                 self.data.pop().unwrap().1
             } else {
-                self.mapping[last_id.index()] = private.into();
-                self.data.swap_remove(private.index()).1
+                self.mapping[last_id.index()] = private;
+                self.data.swap_remove(private as usize).1
             }
         })
     }
 
-    pub fn get(&self, key: K) -> Option<&T> {
-        self.project(key)
-            .expand()
-            .map(|key| &self.data[key.index()].1)
+    pub fn get(&self, key: VRef<T>) -> Option<&V> {
+        self.project(key).map(|key| &self.data[key as usize].1)
     }
 
-    pub fn get_mut(&mut self, key: K) -> Option<&mut T> {
-        self.project(key)
-            .expand()
-            .map(|key| &mut self.data[key.index()].1)
+    pub fn get_mut(&mut self, key: VRef<T>) -> Option<&mut V> {
+        self.project(key).map(|key| &mut self.data[key as usize].1)
     }
 
-    fn project(&self, key: K) -> Maybe<Private> {
+    fn project(&self, key: VRef<T>) -> Option<u32> {
         let index = key.index();
-        *self.mapping.get(index).unwrap_or(&Maybe::none())
+        self.mapping
+            .get(index)
+            .copied()
+            .filter(|&id| id != u32::MAX)
     }
 
     pub fn len(&self) -> usize {
@@ -109,19 +108,21 @@ impl<K: VPtr, T> SparseMap<K, T> {
         self.mapping.len()
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &T> {
+    pub fn values(&self) -> impl Iterator<Item = &V> {
         self.data.iter().map(|(_, value)| value)
     }
 
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.data.iter_mut().map(|(_, value)| value)
     }
 
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = K> + ExactSizeIterator<Item = K> + '_ {
+    pub fn keys(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = VRef<T>> + ExactSizeIterator<Item = VRef<T>> + '_ {
         self.data.iter().map(|&(key, _)| key)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (K, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &V)> {
         self.data.iter().map(|(key, value)| (*key, value))
     }
 
@@ -131,39 +132,33 @@ impl<K: VPtr, T> SparseMap<K, T> {
     }
 }
 
-impl<K: VPtr, T> Index<K> for SparseMap<K, T> {
-    type Output = T;
+impl<T, V> Index<VRef<T>> for SparseMap<T, V> {
+    type Output = V;
 
-    fn index(&self, key: K) -> &T {
+    fn index(&self, key: VRef<T>) -> &V {
         assert!(key.index() < self.mapping.len());
-        let inner = self.mapping[key.index()].unwrap().index();
+        let inner = self.mapping[key.index()] as usize;
         assert!(inner < self.data.len());
         &self.data[inner].1
     }
 }
 
-impl<K: VPtr, T> IndexMut<K> for SparseMap<K, T> {
-    fn index_mut(&mut self, key: K) -> &mut T {
+impl<T, V> IndexMut<VRef<T>> for SparseMap<T, V> {
+    fn index_mut(&mut self, key: VRef<T>) -> &mut V {
         assert!(key.index() < self.mapping.len());
-        let inner = self.mapping[key.index()].unwrap().index();
+        let inner = self.mapping[key.index()] as usize;
         assert!(inner < self.data.len());
         &mut self.data[inner].1
     }
 }
 
-impl<K, T> Default for SparseMap<K, T> {
+impl<T, V> Default for SparseMap<T, V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-gen_v_ptr!(Private);
-
-impl<K: VPtr + Serialize, T: Serialize> Serialize for SparseMap<K, T>
-where
-    K: Serialize,
-    T: Serialize,
-{
+impl<T, V: Serialize> Serialize for SparseMap<T, V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -171,17 +166,17 @@ where
         let len = (self.mapping.len() << 32) | self.data.len();
         let mut map = serializer.serialize_map(Some(len))?;
         for (key, value) in self.data.iter() {
-            map.serialize_entry(key, value)?;
+            map.serialize_entry(&key.index(), value)?;
         }
         map.end()
     }
 }
 
-struct SparseMapVisitor<K, V> {
-    marker: PhantomData<fn() -> SparseMap<K, V>>,
+struct SparseMapVisitor<T, V> {
+    marker: PhantomData<fn() -> SparseMap<T, V>>,
 }
 
-impl<K, V> SparseMapVisitor<K, V> {
+impl<T, V> SparseMapVisitor<T, V> {
     fn new() -> Self {
         SparseMapVisitor {
             marker: PhantomData,
@@ -189,12 +184,11 @@ impl<K, V> SparseMapVisitor<K, V> {
     }
 }
 
-impl<'de, K, V> Visitor<'de> for SparseMapVisitor<K, V>
+impl<'de, T, V> Visitor<'de> for SparseMapVisitor<T, V>
 where
-    K: Deserialize<'de> + VPtr,
     V: Deserialize<'de>,
 {
-    type Value = SparseMap<K, V>;
+    type Value = SparseMap<T, V>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("SparseMap")
@@ -215,16 +209,15 @@ where
         // While there are entries remaining in the input, add them
         // into our map.
         while let Some((key, value)) = access.next_entry()? {
-            map.insert(key, value);
+            map.insert(unsafe { VRef::new(key) }, value);
         }
 
         Ok(map)
     }
 }
 
-impl<'de, K, V> Deserialize<'de> for SparseMap<K, V>
+impl<'de, T, V> Deserialize<'de> for SparseMap<T, V>
 where
-    K: Deserialize<'de> + VPtr,
     V: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -241,17 +234,21 @@ mod test {
 
     #[test]
     fn test_sparse_map_serde() {
-        let mut map = SparseMap::<Private, usize>::new();
-        map.insert(Private::new(0), 10);
-        map.insert(Private::new(20), 20);
-        map.insert(Private::new(30), 30);
+        let mut map = SparseMap::<usize>::new();
+        unsafe {
+            map.insert(VRef::new(0), 10);
+            map.insert(VRef::new(20), 20);
+            map.insert(VRef::new(30), 30);
+        }
 
         let bytes = rmp_serde::to_vec(&map).unwrap();
 
-        let map2: SparseMap<Private, usize> = rmp_serde::from_slice(&bytes[..]).unwrap();
+        let map2: SparseMap<usize> = rmp_serde::from_slice(&bytes[..]).unwrap();
 
-        assert_eq!(map2.get(Private::new(0)), Some(&10));
-        assert_eq!(map2.get(Private::new(20)), Some(&20));
-        assert_eq!(map2.get(Private::new(30)), Some(&30));
+        unsafe {
+            assert_eq!(map2.get(VRef::new(0)), Some(&10));
+            assert_eq!(map2.get(VRef::new(20)), Some(&20));
+            assert_eq!(map2.get(VRef::new(30)), Some(&30));
+        }
     }
 }

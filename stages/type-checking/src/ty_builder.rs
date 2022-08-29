@@ -7,7 +7,7 @@ use storage::*;
 use type_checking_t::*;
 
 impl TyBuilder<'_> {
-    pub fn types(&mut self, types: &mut Vec<(AstEnt, Ty)>) {
+    pub fn types(&mut self, types: &mut Vec<(Ast, VRef<Ty>)>) {
         for (ast, ty) in types.drain(..) {
             match ast.kind {
                 AstKind::Struct { .. } => drop(self.r#struct(ast, ty)),
@@ -17,7 +17,7 @@ impl TyBuilder<'_> {
         }
     }
 
-    fn bound(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {
+    fn bound(&mut self, ast: Ast, ty: VRef<Ty>) -> errors::Result {
         let &[generics, name, .., body] = &self.ast_data[ast.children] else {
             unreachable!();
         };
@@ -28,7 +28,7 @@ impl TyBuilder<'_> {
         let params = self.typec.types[ty].params;
         ty_parser!(self, self.current_file).push_generics(generics, params);
         let res_funcs = self.bound_funcs(body, ty);
-        let TyKind::Bound { ref mut funcs, .. } = self.typec.types[ty].kind else {
+        let TyKind::SelfBound { ref mut funcs, .. } = self.typec.types[ty].kind else {
             unreachable!();
         };
         *funcs = res_funcs;
@@ -39,7 +39,7 @@ impl TyBuilder<'_> {
         Ok(())
     }
 
-    fn bound_funcs(&mut self, ast: AstEnt, ty: Ty) -> Maybe<BoundFuncList> {
+    fn bound_funcs(&mut self, ast: Ast, ty: VRef<Ty>) -> VSlice<BoundFunc> {
         let assoc_type_count = self.typec.assoc_ty_count_of_bound(ty);
         let func_count = self.ast_data[ast.children].len() - assoc_type_count;
 
@@ -64,9 +64,9 @@ impl TyBuilder<'_> {
 
     fn func_signature(
         &mut self,
-        ast: AstEnt,
-        parent: Ty,
-        funcs: &mut Reserved<BoundFuncList>,
+        ast: Ast,
+        parent: VRef<Ty>,
+        funcs: &mut Reserved<VSlice<BoundFunc>>,
         vis: Vis,
     ) -> errors::Result<ModItem> {
         let [cc, generics, ast_name, ref args @ .., ret] = self.ast_data[ast.children] else {
@@ -90,7 +90,7 @@ impl TyBuilder<'_> {
         let sig = ty_parser!(self, self.current_file).sig(cc, args, ret)?;
         self.scope.end_frame();
 
-        let bound_func_ent = BoundFuncEnt {
+        let bound_func_ent = BoundFunc {
             sig,
             params,
             loc: Loc::new(ast_name.span, self.current_file, name_ident),
@@ -104,7 +104,7 @@ impl TyBuilder<'_> {
         Ok(ModItem::new(local_id, bound_func, ast_name.span, vis))
     }
 
-    fn r#struct(&mut self, ast: AstEnt, ty: Ty) -> errors::Result {
+    fn r#struct(&mut self, ast: Ast, ty: VRef<Ty>) -> errors::Result {
         let &[generics, .., body] = &self.ast_data[ast.children] else {
             unreachable!();
         };
@@ -122,7 +122,7 @@ impl TyBuilder<'_> {
         Ok(())
     }
 
-    fn struct_fields(&mut self, body: AstEnt, ty: Ty) -> Maybe<FieldList> {
+    fn struct_fields(&mut self, body: Ast, ty: VRef<Ty>) -> VSlice<Field> {
         for field in &self.ast_data[body.children] {
             let struct_id = self.typec.types.id(ty);
 
@@ -140,7 +140,7 @@ impl TyBuilder<'_> {
                 .interner
                 .intern(field_ident!(struct_id, span_str!(self, ast_name.span)));
 
-            let ent = FieldEnt {
+            let ent = Field {
                 ty,
                 name: ast_name.span.into(),
                 mutable,

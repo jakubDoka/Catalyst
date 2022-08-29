@@ -1,4 +1,4 @@
-use std::ops::Not;
+use std::{iter, ops::Not};
 
 use crate::*;
 use diags::*;
@@ -10,20 +10,10 @@ use storage::*;
 use type_checking_t::*;
 
 impl TyParser<'_> {
-    pub fn parse_impl_bound(&mut self, ast: AstEnt) -> errors::Result<Ty> {
-        let mut maybe_base = self.parse(ast)?;
-        if self.typec.instance_base_of(maybe_base) == maybe_base
-            && self.typec.param_count(maybe_base) != 0
-        {
-            maybe_base = self.parse_instance_low(maybe_base, &[], ast.span)?;
-        }
-        Ok(maybe_base)
-    }
-
-    pub fn parse_bound_sum(&mut self, ast: &[AstEnt]) -> errors::Result<Ty> {
+    pub fn parse_bound_sum(&mut self, ast: &[Ast]) -> errors::Result<VRef<Bound>> {
         let bounds = ast
             .iter()
-            .filter_map(|&child| self.parse(child).ok())
+            .filter_map(|&child| self.parse_bound(child).ok())
             .collect::<BumpVec<_>>();
 
         if bounds.len() != ast.len() {
@@ -31,13 +21,45 @@ impl TyParser<'_> {
         }
 
         Ok(match bounds.len() {
-            0 => BuiltinTypes::ANY,
+            0 => Bound::ANY,
             1 => bounds[0],
-            _ => ty_factory!(self).anon_bound_of(&bounds),
+            _ => bound_checker!(self).anon_bound_of(&bounds),
         })
     }
 
-    pub fn parse(&mut self, ast: AstEnt) -> errors::Result<Ty> {
+    pub fn parse_bound_to_ent(&mut self, ast: Ast) -> errors::Result<VRef<Bound>> {
+        match ast.kind {
+            AstKind::Ident | AstKind::IdentChain => self.parse_bound_ident(ast),
+            AstKind::TyInstance => self.parse_bound_instance(ast),
+            kind => unimplemented!("{:?}", kind),
+        }
+    }
+
+    fn parse_bound_ident(&mut self, ast: Ast) -> errors::Result<VRef<Bound>> {
+        let ident = self.ident_chain_id(ast);
+        self.get_from_scope_concrete::<Bound>(ident, ast.span, "bound not found", Reports::base)
+    }
+
+    fn parse_bound_instance(&mut self, ast: Ast) -> errors::Result<VRef<Bound>> {
+        let [base, ref args @ ..] = self.ast_data[ast.children] else {
+            unreachable!();
+        };
+
+        let base = self.parse_bound_ident(base)?;
+
+        let args = args
+            .iter()
+            .filter_map(|&child| self.parse(child).ok())
+            .collect::<BumpVec<_>>();
+
+        if args.len() != self.ast_data[ast.children].len() - 1 {
+            return Err(());
+        }
+
+        Ok(bound_checker!(self).bound_instance_of(base, &args, &[]))
+    }
+
+    pub fn parse(&mut self, ast: Ast) -> errors::Result<VRef<Ty>> {
         match ast.kind {
             AstKind::Ident | AstKind::IdentChain => self.parse_ident(ast),
             AstKind::PtrTy { mutable } => self.parse_ptr_ty(mutable, ast),
@@ -46,19 +68,19 @@ impl TyParser<'_> {
         }
     }
 
-    fn parse_ident(&mut self, ast: AstEnt) -> errors::Result<Ty> {
+    fn parse_ident(&mut self, ast: Ast) -> errors::Result<VRef<Ty>> {
         let id = self.ident_chain_id(ast);
         self.get_from_scope_concrete(id, ast.span, "type", Reports::base)
     }
 
     scope_error_handler!(concrete);
 
-    fn parse_ptr_ty(&mut self, mutable: bool, ast: AstEnt) -> errors::Result<Ty> {
+    fn parse_ptr_ty(&mut self, mutable: bool, ast: Ast) -> errors::Result<VRef<Ty>> {
         let base = self.parse(self.ast_data[ast.children][0])?;
         Ok(ty_factory!(self).pointer_of(mutable, base))
     }
 
-    fn parse_filed_ty(&mut self, base: Ty, ast: AstEnt) -> errors::Result<(Ty, usize)> {
+    fn parse_filed_ty(&mut self, base: VRef<Ty>, ast: Ast) -> errors::Result<(VRef<Ty>, usize)> {
         let [name, ty] = self.ast_data[ast.children] else {
             unreachable!();
         };
@@ -75,7 +97,7 @@ impl TyParser<'_> {
                 (name.span, self.current_file) => "associated type not found"
             })
         })?;
-        let index = self.typec.param_ty_index(assoc_ty).ok_or_else(|| {
+        let index = self.typec.param_index(assoc_ty).ok_or_else(|| {
             self.workspace.push(diag! {
                 (name.span, self.current_file) => "this is not an associated type"
             })
@@ -84,7 +106,7 @@ impl TyParser<'_> {
         Ok((ty, index))
     }
 
-    fn parse_instance(&mut self, ast: AstEnt) -> errors::Result<Ty> {
+    fn parse_instance(&mut self, ast: Ast) -> errors::Result<VRef<Ty>> {
         let (&first, rest) = self.ast_data[ast.children].split_first().unwrap();
 
         let base = self.parse(first)?;
@@ -94,14 +116,23 @@ impl TyParser<'_> {
 
     pub fn parse_instance_low(
         &mut self,
-        base: Ty,
-        rest: &[AstEnt],
+        base: VRef<Ty>,
+        rest: &[Ast],
         span: Span,
-    ) -> errors::Result<Ty> {
+    ) -> errors::Result<VRef<Ty>> {
         let param_count = self.typec.param_count(base);
         let assoc_offset = param_count - self.typec.assoc_ty_count_of_bound(base);
 
-        let mut params = bumpvec![BuiltinTypes::INFERRED; param_count];
+        let mut params = iter::repeat(Ty::INFERRED)
+            .take(assoc_offset)
+            .chain(
+                self.typec
+                    .params_of_ty(base)
+                    .iter()
+                    .skip(assoc_offset)
+                    .copied(),
+            )
+            .collect::<BumpVec<_>>();
         let mut normal_inc = 0;
         let mut assoc_inc = 0;
         let success_len = rest
@@ -138,7 +169,7 @@ impl TyParser<'_> {
         Ok(ty_factory!(self).instance(base, params.iter().cloned()))
     }
 
-    pub fn sig(&mut self, cc: AstEnt, args: &[AstEnt], ret: AstEnt) -> errors::Result<Sig> {
+    pub fn sig(&mut self, cc: Ast, args: &[Ast], ret: Ast) -> errors::Result<Sig> {
         let cc = cc
             .kind
             .is_none()
@@ -154,7 +185,7 @@ impl TyParser<'_> {
         Ok(Sig { cc, args, ret })
     }
 
-    pub fn args(&mut self, args: &[AstEnt]) -> errors::Result<Maybe<TyList>> {
+    pub fn args(&mut self, args: &[Ast]) -> errors::Result<VSlice<VRef<Bound>>> {
         let mut reserved = self.typec.ty_lists.reserve(args.len());
         for &ast_arg in args {
             let [.., ty] = self.ast_data[ast_arg.children] else {
@@ -167,16 +198,14 @@ impl TyParser<'_> {
         }
 
         if !reserved.finished() {
-            self.typec
-                .ty_lists
-                .fill_reserved(reserved, BuiltinTypes::ANY);
+            self.typec.ty_lists.fill_reserved(reserved, TyANY);
             return Err(());
         }
 
         Ok(self.typec.ty_lists.finish_reserved(reserved))
     }
 
-    pub fn bounded_generics(&mut self, generics: AstEnt) -> errors::Result<Maybe<TyList>> {
+    pub fn bounded_generics(&mut self, generics: Ast) -> errors::Result<VSlice<VRef<Bound>>> {
         let mut reserved = bumpvec![];
         self.bounded_generics_low(generics, &mut reserved)?;
         Ok(self.typec.ty_lists.bump(reserved))
@@ -184,8 +213,8 @@ impl TyParser<'_> {
 
     pub fn bounded_generics_low(
         &mut self,
-        generics: AstEnt,
-        buffer: &mut BumpVec<Ty>,
+        generics: Ast,
+        buffer: &mut BumpVec<VRef<Ty>>,
     ) -> errors::Result {
         buffer.reserve(self.ast_data[generics.children].len());
         for &ast_param in &self.ast_data[generics.children] {
@@ -212,12 +241,12 @@ impl TyParser<'_> {
         Ok(())
     }
 
-    pub fn insert_bound_items(&mut self, name: Ident, bound: Ty) {
+    pub fn insert_bound_items(&mut self, name: Ident, bound: VRef<Ty>) {
         let mut frontier = bumpvec![bound];
 
         while let Some(bound) = frontier.pop() {
-            let bound = self.typec.instance_base_of(bound);
-            let TyKind::Bound { inherits, assoc_type_count, funcs } = self.typec.types[bound].kind else {
+            let bound = self.typec.instance_base(bound);
+            let TyKind::SelfBound { inherits, assoc_type_count, funcs } = self.typec.types[bound].kind else {
                 unreachable!("{:?}", self.typec.types[bound].kind);
             };
 
@@ -235,7 +264,7 @@ impl TyParser<'_> {
             };
 
             self.typec
-                .params_of(bound)
+                .params_of_ty(bound)
                 .iter()
                 .rev()
                 .take(assoc_type_count as usize)
@@ -254,10 +283,10 @@ impl TyParser<'_> {
 
     pub fn assoc_types(
         &mut self,
-        ast: AstEnt,
+        ast: Ast,
         bound_id: Ident,
         local_bound_id: Ident,
-        params: &mut BumpVec<Ty>,
+        params: &mut BumpVec<VRef<Ty>>,
     ) -> usize {
         let prev_len = params.len();
         for &item in self.ast_data[ast.children].iter() {
@@ -267,7 +296,7 @@ impl TyParser<'_> {
 
             let ty = self
                 .assoc_type(item, bound_id, local_bound_id, vis, params.len())
-                .unwrap_or(BuiltinTypes::INFERRED);
+                .unwrap_or(Ty::INFERRED);
             params.push(ty);
         }
         params.len() - prev_len
@@ -275,12 +304,12 @@ impl TyParser<'_> {
 
     fn assoc_type(
         &mut self,
-        ast: AstEnt,
+        ast: Ast,
         bound_id: Ident,
         local_bound_id: Ident,
         vis: Vis,
         index: usize,
-    ) -> errors::Result<Ty> {
+    ) -> errors::Result<VRef<Ty>> {
         let &[generics, ast_name] = &self.ast_data[ast.children] else {
             unreachable!("{:?}", &self.ast_data[ast.children]);
         };
@@ -297,10 +326,10 @@ impl TyParser<'_> {
             return Err(());
         }
 
-        let ty_ent = TyEnt {
+        let ty_ent = Ty {
             kind: TyKind::Param {
                 index: index as u32,
-                bound: BuiltinTypes::ANY,
+                bound: TyANY,
             },
             flags: TyFlags::GENERIC & generics.children.is_some(),
             params,
@@ -318,7 +347,7 @@ impl TyParser<'_> {
         Ok(ty)
     }
 
-    pub fn ident_chain_id(&mut self, ast: AstEnt) -> Ident {
+    pub fn ident_chain_id(&mut self, ast: Ast) -> Ident {
         match ast.kind {
             AstKind::IdentChain => {
                 let segments = self.ast_data[ast.children]
@@ -346,7 +375,7 @@ impl TyParser<'_> {
         }
     }
 
-    pub fn push_generics(&mut self, generics: AstEnt, parsed_generics: Maybe<TyList>) {
+    pub fn push_generics(&mut self, generics: Ast, parsed_generics: VSlice<VRef<Bound>>) {
         for (&ast_param, param) in self.ast_data[generics.children]
             .iter()
             .zip(self.typec.ty_lists[parsed_generics].to_bumpvec())

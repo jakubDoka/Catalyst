@@ -1,7 +1,7 @@
 use super::*;
 
 impl Parser<'_> {
-    pub fn parse_manifest(&mut self) -> Maybe<AstList> {
+    pub fn parse_manifest(&mut self) -> VSlice<Ast> {
         self.parse_with(Self::take_manifest).0
     }
 
@@ -46,7 +46,7 @@ impl Parser<'_> {
         if self.state.current.kind == TokenKind::String {
             self.capture(AstKind::String);
         } else {
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         }
 
         self.finish(AstKind::ManifestImport { use_git });

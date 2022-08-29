@@ -1,4 +1,5 @@
 use std::{
+    default::default,
     fs::{create_dir_all, read_to_string},
     path::*,
     process::Command,
@@ -28,7 +29,7 @@ impl PackageLoader<'_> {
         let id = self.intern_path(&path)?;
         path.pop();
 
-        let mut frontier = bumpvec![(id, path, Maybe::none())];
+        let mut frontier = bumpvec![(id, path, default())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
@@ -44,7 +45,7 @@ impl PackageLoader<'_> {
             return Err(());
         }
 
-        let Some(&ModKind::Package { ref root_module, span }) = self.packages.modules.get(id).map(|m| &m.kind) else {
+        let Some(&ModKind::Package { ref root_module, span }) = self.packages.modules.get(&id).map(|m| &m.kind) else {
             unreachable!();
         };
 
@@ -69,9 +70,11 @@ impl PackageLoader<'_> {
             .ordering(roots, &mut ordering)
             .map_err(|cycle| self.dependency_cycle(cycle))?;
 
-        self.packages
-            .module_order
-            .extend(ordering.into_iter().map(|i| Ident::new(i as usize)));
+        self.packages.module_order.extend(
+            ordering
+                .into_iter()
+                .map(|i| unsafe { Ident::new(i as usize) }),
+        );
 
         Ok(())
     }
@@ -102,14 +105,14 @@ impl PackageLoader<'_> {
         let (mut root_module, span) = {
             let (root_module, span) = self
                 .find_field_value("root", fields, &content, ast_data)
-                .unwrap_or(("root", Maybe::none()));
+                .unwrap_or(("root", default()));
             (path.join(root_module), span)
         };
         root_module.set_extension("");
 
         let deps =
             self.find_field("deps", fields, &content, ast_data)
-                .map_or(Maybe::none(), |deps_ast| {
+                .map_or(default(), |deps_ast| {
                     self.load_package_deps(
                         id,
                         &mut path,
@@ -137,15 +140,15 @@ impl PackageLoader<'_> {
         &mut self,
         id: Ident,
         temp_path: &mut PathBuf,
-        deps_ast: AstEnt,
+        deps_ast: Ast,
         content: &str,
         ast_data: &AstData,
         frontier: &mut PackageFrontier,
         project_path: &Path,
-    ) -> Maybe<DepList> {
+    ) -> VSlice<Dep> {
         self.packages.conns.start_cache();
         for dep in &ast_data[ast_data[deps_ast.children][1].children] {
-            let &AstEnt { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
+            let &Ast { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
                 unreachable!("{:?}", dep.kind);
             };
 
@@ -206,7 +209,7 @@ impl PackageLoader<'_> {
             let dep = Dep { name, ptr };
             self.packages.conns.cache(dep);
 
-            if self.packages.modules.get(ptr).is_none() {
+            if self.packages.modules.get(&ptr).is_none() {
                 frontier.push((ptr, path, current_loc));
             }
         }
@@ -235,7 +238,7 @@ impl PackageLoader<'_> {
                 self.file_error(loc, path, "cannot canonicalize root module path", err)
             })?;
 
-        let mut frontier = bumpvec![(id, package, path, Maybe::none())];
+        let mut frontier = bumpvec![(id, package, path, default())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
@@ -268,9 +271,9 @@ impl PackageLoader<'_> {
 
         let deps = if let Some(imports) = imports {
             self.load_module_deps(id, package_id, imports, &content, ast_data, frontier)
-                .unwrap_or(Maybe::none())
+                .unwrap_or(default())
         } else {
-            Maybe::none()
+            default()
         };
 
         let module = Mod {
@@ -293,11 +296,11 @@ impl PackageLoader<'_> {
         &mut self,
         id: Ident,
         package_id: Ident,
-        imports: AstEnt,
+        imports: Ast,
         content: &str,
         ast_data: &AstData,
         frontier: &mut ModuleFrontier,
-    ) -> errors::Result<Maybe<DepList>> {
+    ) -> errors::Result<VSlice<Dep>> {
         self.packages.conns.start_cache();
 
         for import in &ast_data[imports.children] {
@@ -316,7 +319,7 @@ impl PackageLoader<'_> {
             let path_str = &content[path_span.range()];
             let (package, module_name) = path_str.split_once('/').unwrap_or((path_str, ""));
 
-            let package_ent = &self.packages.modules.get(package_id).unwrap();
+            let package_ent = &self.packages.modules.get(&package_id).unwrap();
             let maybe_package = self.packages.conns[package_ent.deps]
                 .iter()
                 .find_map(|dep| {
@@ -340,7 +343,7 @@ impl PackageLoader<'_> {
                 continue;
             };
 
-            let external_package = &self.packages.modules.get(external_package_id).unwrap();
+            let external_package = &self.packages.modules.get(&external_package_id).unwrap();
             let ModKind::Package { ref root_module, .. } = external_package.kind else {
                 unreachable!();
             };
@@ -365,7 +368,7 @@ impl PackageLoader<'_> {
             };
             self.packages.conns.cache(dep);
 
-            if self.packages.modules.get(import_id).is_none() {
+            if self.packages.modules.get(&import_id).is_none() {
                 frontier.push((import_id, external_package_id, path, import_loc));
             }
         }
@@ -494,7 +497,7 @@ impl PackageLoader<'_> {
 
     fn intern_path(&mut self, path: &Path) -> errors::Result<Ident> {
         let Some(str_path) = path.to_str() else {
-            self.invalid_path_encoding(Maybe::none(), path, "manifest");
+            self.invalid_path_encoding(default(), path, "manifest");
             return Err(());
         };
         Ok(self.interner.intern_str(str_path))
@@ -508,7 +511,7 @@ impl PackageLoader<'_> {
     fn find_field_value<'a>(
         &self,
         name: &str,
-        fields: Maybe<AstList>,
+        fields: VSlice<Ast>,
         content: &'a str,
         ast_data: &AstData,
     ) -> Option<(&'a str, Maybe<Span>)> {
@@ -520,10 +523,10 @@ impl PackageLoader<'_> {
     fn find_field(
         &self,
         name: &str,
-        fields: Maybe<AstList>,
+        fields: VSlice<Ast>,
         content: &str,
         ast_data: &AstData,
-    ) -> Option<AstEnt> {
+    ) -> Option<Ast> {
         ast_data[fields]
             .iter()
             .find(|field| &content[ast_data[field.children][0].span.range()] == name)
@@ -550,7 +553,7 @@ impl PackageLoader<'_> {
             (none) error => "dependency cycle detected",
             (none) => "cycle:\n\t{}" {
                 cycle.into_iter()
-                    .map(|id| &self.interner[Ident::new(id as usize)])
+                    .map(|id| &self.interner[unsafe { Ident::new(id as usize) }])
                     .collect::<BumpVec<_>>()
                     .join("\n\t")
             },

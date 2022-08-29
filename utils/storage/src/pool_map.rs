@@ -10,16 +10,15 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{VPtr, VPtrSet};
+use crate::{BitSet, VRef};
 
 /// Supports reusable storage via stack base allocator. It performs extra
 /// checks for debug builds but is unsafe on release.
-pub struct PoolMap<K, V> {
-    free: Vec<K>,
-    free_lookup: VPtrSet<K>,
-    data: Vec<MaybeUninit<V>>,
-
-    _ph: PhantomData<fn(K) -> K>,
+pub struct PoolMap<K, T = K> {
+    free: Vec<VRef<K>>,
+    free_lookup: BitSet,
+    data: Vec<MaybeUninit<T>>,
+    phantom: PhantomData<*const K>,
 }
 
 impl<K, V> PoolMap<K, V> {
@@ -27,20 +26,20 @@ impl<K, V> PoolMap<K, V> {
     pub fn new() -> Self {
         PoolMap {
             free: Vec::new(),
-            free_lookup: VPtrSet::new(),
+            free_lookup: BitSet::new(),
             data: Vec::new(),
-            _ph: PhantomData,
+            phantom: PhantomData,
         }
     }
 }
 
-impl<K: VPtr, V> PoolMap<K, V> {
+impl<K, V> PoolMap<K, V> {
     /// Pushes new value to map and returns it's key. Value of key is deterministic
     /// but arbitrary. Previously removed slots can be reused.
     ///
     /// # Example
     /// ```
-    /// let mut map = storage::PoolMap::<Dummy, usize>::new();
+    /// let mut map = storage::PoolMap::<usize>::new();
     ///
     /// let ten = map.push(10);
     /// assert_eq!(map[ten], 10);
@@ -56,15 +55,15 @@ impl<K: VPtr, V> PoolMap<K, V> {
     /// assert_eq!(ten, restored_ten);
     /// assert_eq!(map[restored_ten], 10);
     ///
-    /// storage::gen_v_ptr!(Dummy);
-    pub fn push(&mut self, value: V) -> K {
+    /// ```
+    pub fn push(&mut self, value: V) -> VRef<K> {
         let key = if let Some(key) = self.free.pop() {
-            assert!(self.free_lookup.remove(key));
+            assert!(self.free_lookup.remove(key.index()));
             self[key] = value;
             key
         } else {
             self.data.push(MaybeUninit::new(value));
-            K::new(self.data.len() - 1)
+            unsafe { VRef::new(self.data.len() - 1) }
         };
 
         key
@@ -76,7 +75,7 @@ impl<K: VPtr, V> PoolMap<K, V> {
     /// # Example
     ///
     /// ```
-    /// let mut map = storage::PoolMap::<Dummy, usize>::new();
+    /// let mut map = storage::PoolMap::<usize>::new();
     /// let ten = map.push(10);
     /// let twenty = map.push(20);
     ///
@@ -84,10 +83,9 @@ impl<K: VPtr, V> PoolMap<K, V> {
     /// assert_eq!(map.remove(twenty), 20);
     /// assert_eq!(map.push(0), twenty);
     /// assert_eq!(map.push(0), ten);
-    ///
-    /// storage::gen_v_ptr!(Dummy);
-    pub fn remove(&mut self, key: K) -> V {
-        assert!(self.free_lookup.insert(key));
+    /// ```
+    pub fn remove(&mut self, key: VRef<K>) -> V {
+        assert!(self.free_lookup.insert(key.index()));
 
         let elem = &mut self.data[key.index()];
         let value = std::mem::replace(elem, MaybeUninit::uninit());
@@ -97,20 +95,23 @@ impl<K: VPtr, V> PoolMap<K, V> {
         unsafe { value.assume_init() }
     }
 
-    pub fn next(&self) -> K {
-        self.free.last().copied().unwrap_or(K::new(self.data.len()))
+    pub fn next(&self) -> VRef<K> {
+        self.free
+            .last()
+            .copied()
+            .unwrap_or(unsafe { VRef::new(self.data.len()) })
     }
 
     pub fn size_hint(&self) -> usize {
         self.data.len()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (K, &V)> {
+    pub fn iter(&self) -> impl Iterator<Item = (VRef<K>, &V)> {
         self.data.iter().enumerate().filter_map(|(i, elem)| {
             self.free_lookup
-                .contains(K::new(i))
+                .contains(i)
                 .not()
-                .then(|| (K::new(i), unsafe { &*elem.as_ptr() }))
+                .then(|| unsafe { (VRef::new(i), &*elem.as_ptr()) })
         })
     }
 
@@ -121,7 +122,6 @@ impl<K: VPtr, V> PoolMap<K, V> {
 
 impl<K, V> Serialize for PoolMap<K, V>
 where
-    K: Serialize + VPtr,
     V: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -134,10 +134,9 @@ where
             .data
             .iter()
             .enumerate()
-            .map(|(i, elem)| (K::new(i), elem))
             .filter(|&(k, _)| !self.free_lookup.contains(k));
         for (k, v) in iter {
-            map.serialize_entry::<K, V>(&k, unsafe { &*v.as_ptr() })?;
+            map.serialize_entry::<usize, V>(&k, unsafe { &*v.as_ptr() })?;
         }
         map.end()
     }
@@ -157,7 +156,6 @@ impl<K, V> PoolMapVisitor<K, V> {
 
 impl<'de, K, V> Visitor<'de> for PoolMapVisitor<K, V>
 where
-    K: Deserialize<'de> + VPtr,
     V: Deserialize<'de>,
 {
     type Value = PoolMap<K, V>;
@@ -175,18 +173,18 @@ where
 
         let mut map = PoolMap {
             free: Vec::with_capacity(free_len),
-            free_lookup: VPtrSet::with_capacity(free_len),
+            free_lookup: BitSet::with_capacity(free_len),
             data: Vec::with_capacity(value_len),
-            _ph: PhantomData,
+            phantom: PhantomData,
         };
 
         // While there are entries remaining in the input, add them
         // into our map.
         for _ in 0..value_len {
-            let (key, value) = access.next_entry::<K, V>()?.unwrap();
-            while map.data.len() < key.index() {
-                map.free.push(K::new(map.data.len()));
-                map.free_lookup.insert(K::new(map.data.len()));
+            let (key, value) = access.next_entry::<usize, V>()?.unwrap();
+            while map.data.len() < key {
+                map.free.push(unsafe { VRef::new(map.data.len()) });
+                map.free_lookup.insert(map.data.len());
                 map.data.push(MaybeUninit::uninit());
             }
             map.data.push(MaybeUninit::new(value));
@@ -198,7 +196,6 @@ where
 
 impl<'de, K, V> Deserialize<'de> for PoolMap<K, V>
 where
-    K: Deserialize<'de> + VPtr,
     V: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -215,19 +212,19 @@ impl<K, V> Default for PoolMap<K, V> {
     }
 }
 
-impl<K: VPtr, V> Index<K> for PoolMap<K, V> {
+impl<K, V> Index<VRef<K>> for PoolMap<K, V> {
     type Output = V;
 
-    fn index(&self, key: K) -> &V {
-        assert!(!self.free_lookup.contains(key));
+    fn index(&self, key: VRef<K>) -> &V {
+        assert!(!self.free_lookup.contains(key.index()));
         // SAFETY: Just asserted.
         unsafe { &*self.data[key.index()].as_ptr() }
     }
 }
 
-impl<K: VPtr, V> IndexMut<K> for PoolMap<K, V> {
-    fn index_mut(&mut self, key: K) -> &mut V {
-        assert!(!self.free_lookup.contains(key));
+impl<K, V> IndexMut<VRef<K>> for PoolMap<K, V> {
+    fn index_mut(&mut self, key: VRef<K>) -> &mut V {
+        assert!(!self.free_lookup.contains(key.index()));
         // SAFETY: Just asserted.
         unsafe { &mut *self.data[key.index()].as_mut_ptr() }
     }
@@ -239,19 +236,17 @@ mod test {
 
     #[test]
     fn test_pool_map_serde() {
-        let mut map = PoolMap::<Dummy, usize>::new();
+        let mut map = PoolMap::<usize>::new();
         let ten = map.push(10);
         let twenty = map.push(20);
         let thirty = map.push(30);
         map.remove(twenty);
 
         let ser = rmp_serde::to_vec(&map).unwrap();
-        let mut map2: PoolMap<Dummy, usize> = rmp_serde::from_slice(&ser).unwrap();
+        let mut map2: PoolMap<usize> = rmp_serde::from_slice(&ser).unwrap();
 
         assert_eq!(map2[ten], 10);
         assert_eq!(map2[thirty], 30);
         assert_eq!(map2.push(20), twenty);
     }
-
-    gen_v_ptr!(Dummy);
 }

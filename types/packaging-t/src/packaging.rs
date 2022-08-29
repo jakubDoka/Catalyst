@@ -1,15 +1,15 @@
 use diags::DiagPackages;
 use lexing_t::*;
 use scope::*;
-use std::path::*;
+use std::{any::Any, path::*};
 use storage::*;
 
 pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
 pub struct Packages {
-    pub modules: Map<Mod>,
-    pub conns: CacheBumpMap<DepList, Dep>,
+    pub modules: Map<Ident, Mod>,
+    pub conns: CacheBumpMap<Dep>,
     pub module_order: Vec<Ident>,
 }
 
@@ -20,7 +20,7 @@ impl Packages {
 
     pub fn span_str(&self, file: Ident, span: Span) -> &str {
         self.modules
-            .get(file)
+            .get(&file)
             .map(|file| file.span_str(span))
             .unwrap_or_default()
     }
@@ -29,7 +29,7 @@ impl Packages {
         match vis {
             Vis::Pub => Ok(()),
             _ if item_module == module => Ok(()),
-            kind => match (self.modules.get(module), self.modules.get(item_module)) {
+            kind => match (self.modules.get(&module), self.modules.get(&item_module)) {
                 (
                     Some(Mod {
                         kind: ModKind::Module { package, .. },
@@ -55,7 +55,7 @@ impl Packages {
 
 impl DiagPackages for Packages {
     fn line_info(&self, module: Ident, pos: Option<usize>) -> (&Path, Option<(usize, usize)>) {
-        let module = self.modules.get(module).unwrap();
+        let module = self.modules.get(&module).unwrap();
         (
             module.path.as_path(),
             pos.map(|pos| module.line_mapping.line_info_at(pos)),
@@ -63,14 +63,14 @@ impl DiagPackages for Packages {
     }
 
     fn content_of(&self, module: Ident) -> &str {
-        self.modules.get(module).unwrap().content.as_str()
+        self.modules.get(&module).unwrap().content.as_str()
     }
 }
 
 #[derive(Default)]
 pub struct Mod {
     pub path: PathBuf,
-    pub deps: Maybe<DepList>,
+    pub deps: VSlice<Dep>,
     pub content: String,
     pub kind: ModKind,
     pub line_mapping: LineMapping,
@@ -102,7 +102,7 @@ pub struct ModItem {
 }
 
 impl ModItem {
-    pub fn new(id: Ident, ptr: impl VPtr + 'static, span: Span, vis: Vis) -> Self {
+    pub fn new(id: Ident, ptr: VRef<impl Any>, span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ScopePtr::new(ptr),
@@ -145,5 +145,3 @@ pub struct Dep {
     pub name: Span,
     pub ptr: Ident,
 }
-
-gen_v_ptr!(DepList);

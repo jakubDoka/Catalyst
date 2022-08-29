@@ -1,8 +1,9 @@
 file "types/parsing-t/src/state_gen.rs" {
     use "crate";
+    use "storage";
 
     struct AstDisplay {
-        Ast
+        ast: `VRef<Ast>`
         AstData
         str
     }

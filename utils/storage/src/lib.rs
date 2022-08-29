@@ -2,6 +2,8 @@
 #![feature(int_log)]
 #![feature(result_into_ok_or_err)]
 #![feature(let_else)]
+#![feature(default_free_fn)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten
@@ -33,66 +35,27 @@ macro_rules! impl_flag_and_bool {
     };
 }
 
-/// Macro generates type with [`VPtr`] implemented. The pointers usually don't differ in
-/// implementation, they just need to be distinct.
-///
-/// # Examples
-/// ```
-/// // supports bulk declaration
-/// storage::gen_v_ptr!(Something SomethingElse);
-/// ```
 #[macro_export]
-macro_rules! gen_v_ptr {
-    ($($ty:ident)*) => {
+macro_rules! gen_constant_groups {
+    ($($name:ident = [$($elem:ident)*];)*) => {
         $(
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-            pub struct $ty(u32);
-
-            impl $crate::VPtr for $ty {
-                fn new(index: usize) -> Self {
-                    assert!(index as u32 != u32::MAX);
-                    $ty(index as u32)
-                }
-
-                fn index(&self) -> usize {
-                    self.0 as usize
-                }
-            }
-
-            impl $crate::Invalid for $ty {
-                unsafe fn invalid() -> Self {
-                    $ty(u32::MAX)
-                }
-
-                fn is_invalid(&self) -> bool {
-                    self.0 == u32::MAX
-                }
-            }
-
-            impl $crate::serde::Serialize for $ty {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: $crate::serde::Serializer,
-                {
-                    self.0.serialize(serializer)
-                }
-            }
-
-            impl<'a> $crate::serde::Deserialize<'a> for $ty {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: $crate::serde::Deserializer<'a>,
-                {
-                    u32::deserialize(deserializer).map($ty)
-                }
-            }
-
-            impl std::fmt::Display for $ty {
-                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    write!(f, "{}{}", stringify!($ty).to_ascii_lowercase(), self.0)
-                }
-            }
+            pub const $name: &'static [VRef<Self>] = &[$(Self::$elem),*];
         )*
+    };
+}
+
+#[macro_export]
+macro_rules! gen_increasing_constants {
+    ($($ident:ident)*) => {
+        gen_increasing_constants!((0) $($ident)*);
+        gen_constant_groups!(ALL = [$($ident)*];);
+    };
+
+    (($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
+        pub const $current: VRef<Self> = unsafe { VRef::new($prev) };
+        $(
+            gen_increasing_constants!((Self::$current.index() + 1) $next $($others)*);
+        )?
     };
 }
 
@@ -114,7 +77,7 @@ macro_rules! gen_v_ptr {
 #[macro_export]
 macro_rules! ident {
     ($($item:expr),* $(,)?) => {
-        &[$($item.into()),*]
+        [$(InternedSegment::from($item)),*]
     };
 }
 
@@ -150,6 +113,8 @@ macro_rules! bitflags {
 pub extern crate bitflags;
 pub extern crate serde;
 
+/// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
+mod bit_set;
 /// Bump allocator for fixed size slices.
 mod bump_map;
 /// Trait representing reusable object.
@@ -171,28 +136,26 @@ mod partial_ordered_map;
 mod pool_bump_map;
 /// Vector abstraction that allows reusing allocations while preserving other values.
 mod pool_map;
+/// Trait representing virtual pointer.
+mod primitives;
 /// Storage that can map additional info for existing map.
 mod shadow_map;
 /// Similar to shadow map, but lot more memory efficient when storing big structures
 /// that are sparsely populated.
 mod sparse_map;
-/// Trait representing virtual pointer.
-mod v_ptr;
-/// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
-mod v_ptr_set;
 
+pub use bit_set::BitSet;
 pub use bump_alloc::*;
 pub use bump_map::{BumpMap, CacheBumpMap, Reserved};
 pub use clear::Clear;
 pub use frames::Frames;
 pub use interner::{Ident, InternedSegment, Interner};
 pub use invalid::{Invalid, Maybe};
-pub use map::Map;
+pub use map::{IdentPair, Map, SpecialHash};
 pub use ordered_map::OrderedMap;
 pub use partial_ordered_map::PartialOrderedMap;
 pub use pool_bump_map::{CachedPoolBumpMap, PoolBumpMap};
 pub use pool_map::PoolMap;
+pub use primitives::{VRef, VRefDefault, VSlice};
 pub use shadow_map::ShadowMap;
 pub use sparse_map::SparseMap;
-pub use v_ptr::VPtr;
-pub use v_ptr_set::VPtrSet;

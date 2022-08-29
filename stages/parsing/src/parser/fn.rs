@@ -8,7 +8,7 @@ impl Parser<'_> {
 
         if self.at(TokenKind::Extern) {
             self.advance();
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         } else {
             self.start();
             list!(self, LeftCurly, NewLine, RightCurly, expr)?;
@@ -32,7 +32,7 @@ impl Parser<'_> {
             self.advance();
             self.ty()?;
         } else {
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         }
         Ok(vis)
     }
@@ -47,7 +47,7 @@ impl Parser<'_> {
         if self.at(TokenKind::String) {
             self.capture(AstKind::String);
         } else {
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         }
     }
 

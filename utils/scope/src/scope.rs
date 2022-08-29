@@ -1,10 +1,13 @@
-use std::any::TypeId;
+use std::{
+    any::{Any, TypeId},
+    default::default,
+};
 
 use lexing_t::*;
 use storage::*;
 
 pub struct Scope {
-    data: Map<Maybe<Item>>,
+    data: Map<Ident, Maybe<Item>>,
     frames: Frames<(Ident, Maybe<Item>)>,
     pub self_alias: Maybe<Ident>,
 }
@@ -23,14 +26,14 @@ impl Scope {
 
     pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
         self.data
-            .get(ident)
+            .get(&ident)
             .map(|option| option.as_ref_option().ok_or(ScopeError::Collision))
             .ok_or(ScopeError::NotFound)
             .flatten()
             .cloned()
     }
 
-    pub fn get_concrete<T: VPtr + 'static>(&self, ident: Ident) -> Result<(T, Item), ScopeError> {
+    pub fn get_concrete<T: 'static>(&self, ident: Ident) -> Result<(VRef<T>, Item), ScopeError> {
         let item = self.get(ident)?;
         Ok((
             item.ptr
@@ -59,13 +62,13 @@ impl Scope {
             if let Some(item) = item.expand() {
                 self.data.insert(id, item.into());
             } else {
-                self.data.remove(id);
+                self.data.remove(&id);
             }
         }
     }
 
-    pub fn insert_builtin(&mut self, id: Ident, ptr: impl VPtr + 'static) {
-        self.data.insert_unique(
+    pub fn insert_builtin(&mut self, id: Ident, ptr: VRef<impl Any>) {
+        self.data.insert(
             id,
             Item {
                 id,
@@ -94,10 +97,10 @@ impl Scope {
     ) -> Result<(), Maybe<Span>> {
         if item.module != module {
             let id = interner.intern(scoped_ident!(item.module, item.id));
-            self.data.insert_unique(id, item.into());
+            self.data.insert(id, item.into());
         }
 
-        if let Some(existing_option) = self.data.get_mut(item.id)
+        if let Some(existing_option) = self.data.get_mut(&item.id)
             && let Some(existing) = existing_option.as_mut_option()
         {
             if existing.module == item.module.into() || existing.module.is_none() {
@@ -110,7 +113,7 @@ impl Scope {
                 existing_option.take();
             }
         } else {
-            self.data.insert_unique(item.id, item.into());
+            self.data.insert(item.id, item.into());
         }
 
         Ok(())
@@ -125,7 +128,7 @@ impl Scope {
 impl Default for Scope {
     fn default() -> Self {
         Self {
-            data: Map::new(),
+            data: default(),
             frames: Frames::new(),
             self_alias: Maybe::none(),
         }
@@ -209,22 +212,22 @@ pub struct ScopePtr {
 }
 
 impl ScopePtr {
-    pub fn new<T: VPtr + 'static>(id: T) -> Self {
+    pub fn new<T: 'static>(id: VRef<T>) -> Self {
         Self {
             id: TypeId::of::<T>(),
             ptr: id.index(),
         }
     }
 
-    pub fn is_of<T: VPtr + 'static>(&self) -> bool {
+    pub fn is_of<T: 'static>(&self) -> bool {
         self.id == TypeId::of::<T>()
     }
 
-    pub fn try_read<T: VPtr + 'static>(&self) -> Option<T> {
-        self.is_of::<T>().then_some(T::new(self.ptr))
+    pub fn try_read<T: 'static>(&self) -> Option<VRef<T>> {
+        self.is_of::<T>().then_some(unsafe { VRef::new(self.ptr) })
     }
 
-    pub fn read<T: VPtr + 'static>(&self) -> T {
+    pub fn read<T: 'static>(&self) -> VRef<T> {
         self.try_read::<T>().unwrap()
     }
 }
@@ -244,8 +247,8 @@ impl Invalid for ScopePtr {
 
 struct InvalidItem;
 
-impl<T: VPtr + 'static> From<T> for ScopePtr {
-    fn from(value: T) -> Self {
+impl<T: 'static> From<VRef<T>> for ScopePtr {
+    fn from(value: VRef<T>) -> Self {
         Self::new(value)
     }
 }

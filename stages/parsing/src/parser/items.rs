@@ -1,7 +1,7 @@
 use super::*;
 
 impl Parser<'_> {
-    pub fn parse_items(&mut self) -> (Maybe<AstList>, bool) {
+    pub fn parse_items(&mut self) -> (VSlice<Ast>, bool) {
         self.parse_with(Self::take_items)
     }
 

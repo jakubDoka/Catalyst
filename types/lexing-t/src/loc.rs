@@ -35,6 +35,20 @@ impl Loc {
     }
 }
 
+impl Invalid for Loc {
+    unsafe fn invalid() -> Self {
+        Self {
+            pos: Maybe::none(),
+            name: Ident::invalid(),
+            file: Maybe::none(),
+        }
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.name.is_invalid()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos(u32);
 

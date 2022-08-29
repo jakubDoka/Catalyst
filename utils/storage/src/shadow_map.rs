@@ -3,30 +3,30 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::VPtr;
+use crate::VRef;
 
-pub struct ShadowMap<K, T> {
-    data: Vec<T>,
-    default: T,
-    _ph: PhantomData<fn(K) -> K>,
+pub struct ShadowMap<T, V> {
+    data: Vec<V>,
+    default: V,
+    phantom: PhantomData<*const T>,
 }
 
-impl<K, T: Default> ShadowMap<K, T> {
+impl<T, V: Default> ShadowMap<T, V> {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl<K: VPtr, T> Index<K> for ShadowMap<K, T> {
-    type Output = T;
+impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
+    type Output = V;
 
-    fn index(&self, key: K) -> &T {
+    fn index(&self, key: VRef<T>) -> &V {
         self.data.get(key.index()).unwrap_or(&self.default)
     }
 }
 
-impl<K: VPtr, T: Default + Clone> IndexMut<K> for ShadowMap<K, T> {
-    fn index_mut(&mut self, key: K) -> &mut T {
+impl<T, V: Default + Clone> IndexMut<VRef<T>> for ShadowMap<T, V> {
+    fn index_mut(&mut self, key: VRef<T>) -> &mut V {
         let index = key.index();
         self.data
             .resize(self.data.len().max(index + 1), Default::default());
@@ -34,12 +34,12 @@ impl<K: VPtr, T: Default + Clone> IndexMut<K> for ShadowMap<K, T> {
     }
 }
 
-impl<K, T: Default> Default for ShadowMap<K, T> {
+impl<T, V: Default> Default for ShadowMap<T, V> {
     fn default() -> Self {
         ShadowMap {
             data: Vec::new(),
-            default: T::default(),
-            _ph: PhantomData,
+            default: V::default(),
+            phantom: PhantomData,
         }
     }
 }

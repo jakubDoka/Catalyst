@@ -1,8 +1,4 @@
-use std::marker::PhantomData;
-
 use serde::{Deserialize, Serialize};
-
-use crate::VPtr;
 
 const WIDTH: usize = std::mem::size_of::<usize>() * 8;
 const WIDTH_POW: usize = WIDTH.ilog2() as usize;
@@ -11,32 +7,29 @@ const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 /// compared to '[`Vec`]<[`bool`]>'. It also offers same speed (vector element is of [`usize`])
 /// as cpu would have to perform bit-shift to retrieve boolean value anyway.
 #[derive(Serialize, Deserialize)]
-pub struct VPtrSet<K> {
+pub struct BitSet {
     data: Vec<usize>,
     len: usize,
-    _ph: PhantomData<fn(K)>,
 }
 
-impl<K> VPtrSet<K> {
+impl BitSet {
     /// No allocations performed.
     pub fn new() -> Self {
-        VPtrSet {
+        BitSet {
             data: Vec::new(),
             len: 0,
-            _ph: PhantomData,
         }
     }
 
-    pub fn with_capacity(free_len: usize) -> VPtrSet<K> {
-        VPtrSet {
+    pub fn with_capacity(free_len: usize) -> Self {
+        Self {
             data: Vec::with_capacity((free_len + WIDTH - (free_len & (WIDTH - 1))) << WIDTH_POW),
             len: 0,
-            _ph: PhantomData,
         }
     }
 }
 
-impl<K: VPtr> VPtrSet<K> {
+impl BitSet {
     /// Returns true if given [`VPtr`] is in set.
     ///
     /// # Examples
@@ -49,7 +42,7 @@ impl<K: VPtr> VPtrSet<K> {
     ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
-    pub fn contains(&self, key: K) -> bool {
+    pub fn contains(&self, key: usize) -> bool {
         let (global, local) = Self::decompose_key(key);
 
         self.data
@@ -70,11 +63,11 @@ impl<K: VPtr> VPtrSet<K> {
     ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
-    pub fn insert(&mut self, key: K) -> bool {
+    pub fn insert(&mut self, key: usize) -> bool {
         let (global, local) = Self::decompose_key(key);
 
         let size = (global + 1).max(self.data.len());
-        self.len = self.len.max(key.index() + 1);
+        self.len = self.len.max(key + 1);
         self.data.resize(size, 0);
 
         let entry = &mut self.data[global];
@@ -97,7 +90,7 @@ impl<K: VPtr> VPtrSet<K> {
     ///
     /// storage::gen_v_ptr!(Dummy);
     /// ```
-    pub fn remove(&mut self, key: K) -> bool {
+    pub fn remove(&mut self, key: usize) -> bool {
         let (global, local) = Self::decompose_key(key);
 
         let mut dummy = 0;
@@ -113,10 +106,7 @@ impl<K: VPtr> VPtrSet<K> {
         &self.data
     }
 
-    fn decompose_key(index: K) -> (usize, usize) {
-        assert!(!index.is_invalid());
-
-        let index = index.index();
+    fn decompose_key(index: usize) -> (usize, usize) {
         // SAFETY: this works since WIDTH is a power of 2.
         (index >> WIDTH_POW, index & (WIDTH - 1))
     }

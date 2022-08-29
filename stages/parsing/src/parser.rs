@@ -39,7 +39,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_with(&mut self, method: fn(&mut Self) -> errors::Result) -> (Maybe<AstList>, bool) {
+    fn parse_with(&mut self, method: fn(&mut Self) -> errors::Result) -> (VSlice<Ast>, bool) {
         self.ast_data.start_cache();
         drop(method(self));
         self.state.progress = self.lexer.progress();
@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
 
     fn capture(&mut self, kind: AstKind) {
         self.ast_data
-            .cache(AstEnt::leaf(kind, self.state.current.span));
+            .cache(Ast::leaf(kind, self.state.current.span));
         self.advance();
     }
 
@@ -85,14 +85,14 @@ impl<'a> Parser<'a> {
         self.ast_data.join_cache_frames();
     }
 
-    fn close(&mut self) -> Maybe<AstList> {
+    fn close(&mut self) -> VSlice<Ast> {
         self.ast_data.bump_cached()
     }
 
     fn finish(&mut self, kind: AstKind) {
         let span = self.total_span();
         let ast = self.close();
-        self.ast_data.cache(AstEnt::new(kind, ast, span));
+        self.ast_data.cache(Ast::new(kind, ast, span));
     }
 
     fn total_span(&mut self) -> Span {

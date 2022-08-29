@@ -45,7 +45,7 @@ impl TestState {
             .copied()
             .filter(|&m| {
                 matches!(
-                    self.packages.modules.get(m).unwrap().kind,
+                    self.packages.modules.get(&m).unwrap().kind,
                     ModKind::Module { .. }
                 )
             })
@@ -53,12 +53,12 @@ impl TestState {
 
         let mut state = ParserState::new();
         for module in modules {
-            for &ty in BuiltinTypes::ALL {
+            for &ty in TyALL {
                 self.scope.insert_builtin(self.typec.types.id(ty), ty);
             }
 
-            for dep in &self.packages.conns[self.packages.modules.get(module).unwrap().deps] {
-                let ModKind::Module { ref items, .. } = self.packages.modules.get(dep.ptr).unwrap().kind else {
+            for dep in &self.packages.conns[self.packages.modules.get(&module).unwrap().deps] {
+                let ModKind::Module { ref items, .. } = self.packages.modules.get(&dep.ptr).unwrap().kind else {
                     unreachable!();
                 };
 
@@ -73,7 +73,7 @@ impl TestState {
             }
 
             loop {
-                let source = &self.packages.modules.get(module).unwrap().content;
+                let source = &self.packages.modules.get(&module).unwrap().content;
                 state.start(source, module);
 
                 let mut parser =
@@ -309,15 +309,15 @@ fn main() {
                 }
             };
         }
-        // simple "complex-bound-in-use" {
-        //     bound [OPERAND] Add {
-        //         type Out;
-        //         fn add(a: Self, b: OPERAND) -> Self::Out
-        //     };
+        simple "complex-bound-in-use" {
+            bound [OPERAND] Add {
+                type Out;
+                fn add(a: Self, b: OPERAND) -> Self::Out
+            };
 
-        //     fn [A, B: Add[A]] add(a: A, b: B) -> B::Out {
-        //         return B::add(a, b)
-        //     }
-        // }
+            fn [A, B: Add[A]] add(a: A, b: B) -> B::Out {
+                return B::add(b, a)
+            }
+        }
     }
 }

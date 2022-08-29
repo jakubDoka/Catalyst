@@ -2,7 +2,7 @@ use crate::*;
 use lexing_t::*;
 use storage::*;
 
-pub type TirData = BumpMap<TirList, TirEnt, Tir>;
+pub type TirData = BumpMap<Tir>;
 
 impl TirDisplay<'_> {
     pub fn display(&self, to: &mut dyn std::fmt::Write) -> std::fmt::Result {
@@ -19,7 +19,7 @@ impl TirDisplay<'_> {
 
     fn display_recur(
         &self,
-        node: TirEnt,
+        node: Tir,
         depth: usize,
         to: &mut dyn std::fmt::Write,
     ) -> std::fmt::Result {
@@ -42,7 +42,7 @@ impl TirDisplay<'_> {
                 }
             }
             TirKind::Access { var } => {
-                write!(to, "access {var}")?;
+                write!(to, "access {var:?}")?;
             }
             TirKind::String | TirKind::Int => {
                 write!(
@@ -76,8 +76,8 @@ impl TirDisplay<'_> {
     fn display_call(
         &self,
         name: Ident,
-        params: Maybe<TyList>,
-        args: Maybe<TirList>,
+        params: VSlice<VRef<Ty>>,
+        args: VSlice<Tir>,
         depth: usize,
         to: &mut dyn std::fmt::Write,
     ) -> std::fmt::Result {
@@ -109,14 +109,14 @@ impl TirDisplay<'_> {
 }
 
 #[derive(Default, Clone, Copy)]
-pub struct TirEnt {
+pub struct Tir {
     pub kind: TirKind,
     pub flags: TirFlags,
-    pub ty: Maybe<Ty>,
+    pub ty: Maybe<VRef<Ty>>,
     pub span: Maybe<Span>,
 }
 
-impl TirEnt {
+impl Tir {
     pub fn terminating(&self) -> bool {
         self.flags.contains(TirFlags::TERMINATING)
     }
@@ -130,7 +130,7 @@ impl TirEnt {
     }
 
     #[inline]
-    pub fn ty(self, ty: impl Into<Maybe<Ty>>) -> Self {
+    pub fn ty(self, ty: impl Into<Maybe<VRef<Ty>>>) -> Self {
         Self {
             ty: ty.into(),
             ..self
@@ -157,23 +157,23 @@ pub struct TirMeta {}
 #[derive(Default, Clone, Copy)]
 pub enum TirKind {
     Block {
-        stmts: Maybe<TirList>,
+        stmts: VSlice<Tir>,
     },
     Return {
-        value: Maybe<Tir>,
+        value: Maybe<VRef<Tir>>,
     },
     Access {
-        var: Tir,
+        var: VRef<Tir>,
     },
     Call {
-        def: Def,
-        params: Maybe<TyList>,
-        args: Maybe<TirList>,
+        def: VRef<Def>,
+        params: VSlice<VRef<Ty>>,
+        args: VSlice<Tir>,
     },
     BoundCall {
-        bound_func: BoundFunc,
-        params: Maybe<TyList>,
-        args: Maybe<TirList>,
+        bound_func: VRef<BoundFunc>,
+        params: VSlice<VRef<Ty>>,
+        args: VSlice<Tir>,
     },
     String,
     Int,
@@ -188,5 +188,3 @@ bitflags! {
         TERMINATING
     }
 }
-
-gen_v_ptr!(Tir TirList);

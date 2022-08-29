@@ -10,7 +10,7 @@ use storage::*;
 use type_checking_t::*;
 
 impl ItemCollector<'_> {
-    pub fn collect(&mut self, ast: Maybe<AstList>, ctx: &mut ItemContext) {
+    pub fn collect(&mut self, ast: VSlice<Ast>, ctx: &mut ItemContext) {
         for &item in &self.ast_data[ast] {
             let res = match item.kind {
                 AstKind::Bound { vis } => self.collect_bound(item, vis, ctx),
@@ -46,7 +46,7 @@ impl ItemCollector<'_> {
         }
     }
 
-    fn collect_impl(&mut self, ast: AstEnt, vis: Vis, ctx: &mut ItemContext) -> errors::Result {
+    fn collect_impl(&mut self, ast: Ast, vis: Vis, ctx: &mut ItemContext) -> errors::Result {
         let [ast_generics, ast_type, ast_body] = self.ast_data[ast.children] else {
             unreachable!();
         };
@@ -78,7 +78,7 @@ impl ItemCollector<'_> {
 
     fn collect_bound_impl(
         &mut self,
-        item: AstEnt,
+        item: Ast,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
         let [generics, ast_bound, ast_implementor, body] = self.ast_data[item.children] else {
@@ -88,7 +88,7 @@ impl ItemCollector<'_> {
         self.scope.start_frame();
         let params = ty_parser!(self, self.current_file).bounded_generics(generics)?;
         let mut bound = ty_parser!(self, self.current_file).parse_impl_bound(ast_bound)?;
-        let base_bound = self.typec.instance_base_of(bound);
+        let base_bound = self.typec.instance_base(bound);
         let implementor = ty_parser!(self, self.current_file).parse(ast_implementor)?;
         self.scope.end_frame();
 
@@ -123,11 +123,11 @@ impl ItemCollector<'_> {
         if let TyKind::Instance { base, .. } = self.typec.types[bound].kind {
             let mut iter = self
                 .typec
-                .params_of(bound)
+                .params_of_ty(bound)
                 .iter()
                 .skip(self.typec.param_count(base) - self.typec.assoc_ty_count_of_bound(base))
                 .enumerate()
-                .filter_map(|(i, &param)| (param == BuiltinTypes::INFERRED).then_some(i))
+                .filter_map(|(i, &param)| (param == Ty::INFERRED).then_some(i))
                 .peekable();
 
             if iter.peek().is_some() {
@@ -168,20 +168,20 @@ impl ItemCollector<'_> {
         }
 
         let evidence_id = {
-            let bound_base = self.typec.instance_base_of(bound);
-            let implementor_base = self.typec.instance_base_of(implementor);
-            self.interner.intern(bound_impl_ident!(
+            let bound_base = self.typec.instance_base(bound);
+            let implementor_base = self.typec.instance_base(implementor);
+            IdentPair(
                 self.typec.types.id(bound_base),
-                self.typec.types.id(implementor_base)
-            ))
+                self.typec.types.id(implementor_base),
+            )
         };
 
         let next = self.typec.impls.index(evidence_id);
-        let impl_ent = ImplEnt {
-            id: self.interner.intern(bound_impl_ident!(
+        let impl_ent = Impl {
+            id: self.interner.intern(impl_pair_ident!(IdentPair(
                 self.typec.types.id(bound),
-                self.typec.types.id(implementor)
-            )),
+                self.typec.types.id(implementor),
+            ))),
             params,
             bound,
             implementor,
@@ -213,9 +213,9 @@ impl ItemCollector<'_> {
 
     fn collect_fn(
         &mut self,
-        item: AstEnt,
+        item: Ast,
         vis: Vis,
-        upper_params: Maybe<TyList>,
+        upper_params: VSlice<VRef<Bound>>,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
         let [cc, generics, ast_name, ref args @ .., ret, _body] = self.ast_data[item.children] else {
@@ -229,9 +229,9 @@ impl ItemCollector<'_> {
         let (local_id, _) = self.compute_ids(ast_name.span);
         let name = span_str!(self, ast_name.span);
 
-        let ent = DefEnt {
-            params,
-            flags: FuncFlags::GENERIC & params.is_some() & FuncFlags::from(vis),
+        let ent = Def {
+            generics: params,
+            flags: DefFlags::GENERIC & params.is_some() & DefFlags::from(vis),
             loc: Loc::new(
                 ast_name.span,
                 self.current_file,
@@ -240,7 +240,7 @@ impl ItemCollector<'_> {
             body: Maybe::none(),
             tir_data: TirData::new(),
             sig,
-            upper_params,
+            upper_generics: upper_params,
         };
         let def = self.typec.defs.push(ent);
         ctx.funcs.push((self.scope.self_alias, item, def));
@@ -250,7 +250,7 @@ impl ItemCollector<'_> {
 
     fn collect_bound(
         &mut self,
-        item: AstEnt,
+        item: Ast,
         vis: Vis,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
@@ -267,8 +267,8 @@ impl ItemCollector<'_> {
             ty_parser!(self, self.current_file).assoc_types(body, id, local_id, &mut param_buffer);
 
         let name = span_str!(self, ast_name.span);
-        let ent = TyEnt {
-            kind: TyKind::Bound {
+        let ent = Ty {
+            kind: TyKind::SelfBound {
                 inherits: Maybe::none(),
                 assoc_type_count: assoc_type_count as u32,
                 funcs: Maybe::none(),
@@ -289,7 +289,7 @@ impl ItemCollector<'_> {
 
     fn collect_struct(
         &mut self,
-        item: AstEnt,
+        item: Ast,
         vis: Vis,
         ctx: &mut ItemContext,
     ) -> errors::Result<Option<ModItem>> {
@@ -302,7 +302,7 @@ impl ItemCollector<'_> {
         let (local_id, id) = self.compute_ids(ast_name.span);
         let name = span_str!(self, ast_name.span);
 
-        let ent = TyEnt {
+        let ent = Ty {
             kind: TyKind::Inferrable,
             flags: TyFlags::GENERIC & generics.children.is_some(),
             params,

@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::VPtr;
+use crate::Invalid;
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
@@ -24,7 +24,7 @@ impl Interner {
             indices: vec![0],
             data: Box::default(),
         };
-        assert_eq!(s.intern_str(""), Ident::empty());
+        assert_eq!(s.intern_str(""), Ident::EMPTY);
         s
     }
 
@@ -35,11 +35,14 @@ impl Interner {
 
     /// Interns a composite ident. This avoids allocating memory for string.
     /// See [`ident!`] macro for ease of use and [`InternedSegment`] for more info.
-    pub fn intern(&mut self, components: &[InternedSegment]) -> Ident {
+    pub fn intern(&mut self, components: impl IntoIterator<Item = InternedSegment>) -> Ident {
         self.intern_low(components).0
     }
 
-    fn intern_low(&mut self, components: &[InternedSegment]) -> (Ident, bool) {
+    fn intern_low(
+        &mut self,
+        components: impl IntoIterator<Item = InternedSegment>,
+    ) -> (Ident, bool) {
         let prev = self.data.len();
         let entry = self.push_segments(components);
         let entry = self.map.entry(entry);
@@ -51,16 +54,19 @@ impl Interner {
                 .or_insert_with(|| {
                     let index = self.indices.len();
                     self.indices.push(self.data.len());
-                    Ident::new(index)
+                    unsafe { Ident::new(index) }
                 }),
             vacant,
         )
     }
 
-    fn push_segments(&mut self, components: &[InternedSegment]) -> InternerEntry {
+    fn push_segments(
+        &mut self,
+        components: impl IntoIterator<Item = InternedSegment>,
+    ) -> InternerEntry {
         use std::fmt::Write;
         let start = self.data.len();
-        for &component in components {
+        for component in components {
             match component {
                 InternedSegment::Ident(ident) => {
                     let range = self.range_of(ident);
@@ -195,7 +201,6 @@ struct RawInterner {
 #[derive(Clone, Copy)]
 struct InternerEntry {
     str: *const String,
-
     start: u32,
     end: u32,
 }
@@ -259,17 +264,34 @@ impl Hasher for InternerHasher {
     }
 }
 
-gen_v_ptr!(Ident);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Ident(u32);
 
 impl Ident {
-    pub fn empty() -> Self {
-        Ident(1)
+    pub const EMPTY: Self = Self(1);
+
+    pub unsafe fn new(index: usize) -> Self {
+        Ident(index as u32)
+    }
+
+    pub const fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
 impl Default for Ident {
     fn default() -> Self {
-        Self::empty()
+        Self::EMPTY
+    }
+}
+
+impl Invalid for Ident {
+    unsafe fn invalid() -> Self {
+        Self(0)
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.0 == 0
     }
 }
 

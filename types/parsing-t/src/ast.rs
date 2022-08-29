@@ -2,18 +2,18 @@ use lexing_t::*;
 use scope::*;
 use storage::*;
 
-pub type AstData = CacheBumpMap<AstList, AstEnt, Ast>;
+pub type AstData = CacheBumpMap<Ast>;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct AstEnt {
+pub struct Ast {
     pub kind: AstKind,
-    pub children: Maybe<AstList>,
+    pub children: VSlice<Ast>,
     pub span: Span,
 }
 
-impl AstEnt {
-    pub fn new(kind: AstKind, children: Maybe<AstList>, span: Span) -> Self {
-        AstEnt {
+impl Ast {
+    pub fn new(kind: AstKind, children: VSlice<Ast>, span: Span) -> Self {
+        Ast {
             kind,
             children,
             span,
@@ -21,11 +21,11 @@ impl AstEnt {
     }
 
     pub fn leaf(kind: AstKind, span: Span) -> Self {
-        AstEnt::new(kind, Maybe::none(), span)
+        Ast::new(kind, VSlice::empty(), span)
     }
 
     pub fn none() -> Self {
-        AstEnt::default()
+        Ast::default()
     }
 }
 
@@ -121,5 +121,3 @@ impl Default for AstKind {
         AstKind::None
     }
 }
-
-gen_v_ptr!(Ast AstList);

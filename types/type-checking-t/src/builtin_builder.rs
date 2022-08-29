@@ -19,7 +19,7 @@ impl BuiltinBuilder<'_> {
 
         macro_rules! gen_types_recur {
             (($init:expr) $ty:ident => $ent:expr $(, $($else:tt)*)?) => {
-                const _: () = assert!(BuiltinTypes::$ty.id() == $init);
+                const _: () = assert!(Ty::$ty.index() == $init);
                 self.add_type(stringify!($ty), $ent);
                 $( gen_types_recur!(($init + 1) $($else)*); )?
             };
@@ -27,11 +27,12 @@ impl BuiltinBuilder<'_> {
 
         macro_rules! int {
             ($width:literal $signed:literal) => {
-                TyEnt {
-                    kind: TyKind::Int {
+                Ty {
+                    kind: TyInt {
                         width: $width,
                         signed: $signed,
-                    },
+                    }
+                    .into(),
                     ..default()
                 }
             };
@@ -39,17 +40,9 @@ impl BuiltinBuilder<'_> {
 
         gen_types! {
             INFERRED => default(),
-            DROP COPY => TyEnt {
-                flags: TyFlags::GENERIC,
-                ..default() // TODO
-            },
+            SELF_BOUND => default(),
             STR STACK_TRACE => default(), // TODO
-            ANY => TyEnt {
-                flags: TyFlags::GENERIC,
-                kind: TyKind::default_bound(),
-                ..default()
-            },
-            BOOL => TyEnt {
+            BOOL => Ty {
                 kind: TyKind::Bool,
                 ..default()
             },
@@ -67,7 +60,7 @@ impl BuiltinBuilder<'_> {
         }
     }
 
-    fn add_type(&mut self, name: &str, mut ent: TyEnt) {
+    fn add_type(&mut self, name: &str, mut ent: Ty) {
         let id = self.interner.intern_str(&name.to_ascii_lowercase());
         ent.loc.name = id;
         self.typec.types.insert_unique(id, ent);

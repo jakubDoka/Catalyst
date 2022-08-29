@@ -14,18 +14,9 @@ impl Parser<'_> {
         }
     }
 
-    pub fn parse_imports(&mut self) -> Option<AstEnt> {
+    pub fn parse_imports(&mut self) -> Option<Ast> {
         let (list, ..) = self.parse_with(Self::take_imports);
-
-        let Some(list) = list.expand() else {
-            return None;
-        };
-
-        let Some(&last) = self.ast_data.get(list).last() else {
-            unreachable!();
-        };
-
-        Some(last)
+        self.ast_data.get(list).last().copied()
     }
 
     pub(crate) fn take_imports(&mut self) -> errors::Result {
@@ -46,7 +37,7 @@ impl Parser<'_> {
         if self.state.current.kind == TokenKind::Ident {
             self.capture(AstKind::Ident);
         } else {
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         }
         self.capture(AstKind::String);
         self.finish(AstKind::Import);

@@ -130,7 +130,7 @@ impl Parser<'_> {
         self.start();
         self.advance();
         if self.at(TokenKind::NewLine) {
-            self.ast_data.cache(AstEnt::none());
+            self.ast_data.cache(Ast::none());
         } else {
             self.expr()?;
         }
