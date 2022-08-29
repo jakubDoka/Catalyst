@@ -22,7 +22,7 @@ file "stages/packaging/src/state_gen.rs" {
     }
 }
 
-file "types/type-checking-t/src/state_gen.rs" {
+file "types/typec-t/src/state_gen.rs" {
     use "crate";
     use "storage";
     use "packaging_t"

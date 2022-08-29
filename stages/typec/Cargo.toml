@@ -1,5 +1,5 @@
 [package]
-name = "type-checking"
+name = "typec"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,7 +11,7 @@ scope = { path = "../../utils/scope" }
 errors = { path = "../../utils/errors" }
 
 diags = { path = "../../types/diags" }
-type-checking-t = { path = "../../types/type-checking-t" }
+typec-t = { path = "../../types/typec-t" }
 parsing-t = { path = "../../types/parsing-t" }
 packaging-t = { path = "../../types/packaging-t" }
 lexing-t = { path = "../../types/lexing-t" }

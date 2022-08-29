@@ -1,5 +1,5 @@
 [package]
-name = "type-checking-t"
+name = "typec-t"
 version = "0.1.0"
 edition = "2021"
 

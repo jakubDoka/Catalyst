@@ -149,7 +149,7 @@ pub use bump_alloc::*;
 pub use bump_map::{BumpMap, CacheBumpMap, Reserved};
 pub use clear::Clear;
 pub use frames::Frames;
-pub use interner::{Ident, InternedSegment, Interner};
+pub use interner::{ident_join, Ident, InternedSegment, Interner};
 pub use invalid::{Invalid, Maybe};
 pub use map::{IdentPair, Map, SpecialHash};
 pub use ordered_map::OrderedMap;

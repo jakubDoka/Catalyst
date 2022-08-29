@@ -1,5 +1,5 @@
 [package]
-name = "type-checking-test"
+name = "typec-test"
 version = "0.1.0"
 edition = "2021"
 
@@ -15,5 +15,5 @@ parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
 scope = { version = "0.1.0", path = "../../utils/scope" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }
-type-checking = { version = "0.1.0", path = "../../stages/type-checking" }
-type-checking-t = { version = "0.1.0", path = "../../types/type-checking-t" }
+typec = { version = "0.1.0", path = "../../stages/typec" }
+typec-t = { version = "0.1.0", path = "../../types/typec-t" }

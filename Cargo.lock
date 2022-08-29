@@ -396,7 +396,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
-name = "type-checking"
+name = "typec"
 version = "0.1.0"
 dependencies = [
  "ansi-coloring",
@@ -407,11 +407,18 @@ dependencies = [
  "parsing-t",
  "scope",
  "storage",
- "type-checking-t",
+ "typec-t",
 ]
 
 [[package]]
-name = "type-checking-t"
+name = "typec-shared"
+version = "0.1.0"
+dependencies = [
+ "storage",
+]
+
+[[package]]
+name = "typec-t"
 version = "0.1.0"
 dependencies = [
  "diags",
@@ -423,7 +430,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "type-checking-test"
+name = "typec-test"
 version = "0.1.0"
 dependencies = [
  "diags",
@@ -435,8 +442,8 @@ dependencies = [
  "scope",
  "storage",
  "testing",
- "type-checking",
- "type-checking-t",
+ "typec",
+ "typec-t",
 ]
 
 [[package]]

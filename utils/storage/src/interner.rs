@@ -8,6 +8,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::Invalid;
 
+pub fn ident_join<'a>(
+    sep: &'a str,
+    identifiers: impl IntoIterator<Item = InternedSegment<'a>>,
+) -> impl Iterator<Item = InternedSegment<'a>> {
+    identifiers
+        .into_iter()
+        .flat_map(move |ident| ident!(sep, ident))
+        .skip(1)
+}
+
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
