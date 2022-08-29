@@ -2,15 +2,19 @@ use super::*;
 
 impl Parser<'_> {
     pub fn ty(&mut self) -> errors::Result {
+        self.ty_low().map(|_| ())
+    }
+
+    pub fn ty_low(&mut self) -> errors::Result<bool> {
         branch! { self => {
-            Ident => if self.next(TokenKind::Colon) { self.field_ty()? }
+            Ident => if self.next(TokenKind::Colon) { self.field_ty()?; return Ok(true) }
                 else { self.ident_ty()? },
             Operator(_ = 0) => branch!{str self => {
                 "^" => self.pointer_ty(),
             }},
         }}
 
-        Ok(())
+        Ok(false)
     }
 
     fn field_ty(&mut self) -> errors::Result {
@@ -35,8 +39,19 @@ impl Parser<'_> {
         self.start();
         self.ident_chain()?;
         if self.at(TokenKind::LeftBracket) {
-            list!(self, LeftBracket, Comma, RightBracket, ty)?;
-            self.finish(AstKind::TyInstance);
+            let mut has_fields = false;
+            list!(
+                self,
+                LeftBracket,
+                Comma,
+                RightBracket,
+                exp | s | s.ty_low().map(|val| has_fields |= val)
+            )?;
+            if has_fields {
+                self.finish(AstKind::BoundInstance);
+            } else {
+                self.finish(AstKind::TyInstance);
+            }
         } else {
             self.join_frames();
         }

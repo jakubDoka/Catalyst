@@ -83,6 +83,7 @@ pub enum AstKind {
     GenericParam,
 
     TyInstance,
+    BoundInstance,
     InstanceExpr,
     PtrTy {
         mutable: bool,

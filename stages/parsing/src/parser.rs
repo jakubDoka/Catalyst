@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn list<L, S, R, M>(&mut self, left: L, sep: S, right: R, method: M) -> errors::Result
+    fn list<L, S, R, M>(&mut self, left: L, sep: S, right: R, mut method: M) -> errors::Result
     where
         L: IntoIterator<Item = TokenKind> + Clone,
         L::IntoIter: Clone,
@@ -133,7 +133,7 @@ impl<'a> Parser<'a> {
         S::IntoIter: Clone,
         R: IntoIterator<Item = TokenKind> + Clone,
         R::IntoIter: Clone,
-        M: Fn(&mut Self) -> errors::Result,
+        M: FnMut(&mut Self) -> errors::Result,
     {
         let right = move || right.clone();
         let sep = move || sep.clone();
