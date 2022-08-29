@@ -415,6 +415,7 @@ name = "typec-shared"
 version = "0.1.0"
 dependencies = [
  "storage",
+ "typec-t",
 ]
 
 [[package]]
