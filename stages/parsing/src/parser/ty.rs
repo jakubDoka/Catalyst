@@ -29,9 +29,17 @@ impl Parser<'_> {
     fn pointer_ty(&mut self) -> errors::Result {
         self.start();
         self.advance();
-        let mutable = self.advance_if(TokenKind::Mut);
+        if self.at(TokenKind::Mut) {
+            self.capture(AstKind::PointerMut);
+            self.advance();
+        } else if self.at(TokenKind::Use) {
+            self.advance();
+            self.ty()?;
+        } else {
+            self.ast_data.cache(Ast::none());
+        }
         self.ty()?;
-        self.finish(AstKind::PtrTy { mutable });
+        self.finish(AstKind::PointerTy);
         Ok(())
     }
 

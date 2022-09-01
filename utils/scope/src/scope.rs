@@ -17,11 +17,10 @@ impl Scope {
         Self::default()
     }
 
-    pub fn project(&self, id: Ident, str: &str) -> Ident {
+    pub fn project(&self, str: &str) -> Option<Ident> {
         self.self_alias
             .expand()
             .and_then(|s| (str == "Self").then_some(s))
-            .unwrap_or(id)
     }
 
     pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
@@ -33,7 +32,7 @@ impl Scope {
             .cloned()
     }
 
-    pub fn get_concrete<T: 'static>(&self, ident: Ident) -> Result<(VRef<T>, Item), ScopeError> {
+    pub fn get_typed<T: 'static>(&self, ident: Ident) -> Result<(VRef<T>, Item), ScopeError> {
         let item = self.get(ident)?;
         Ok((
             item.ptr

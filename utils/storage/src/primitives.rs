@@ -1,5 +1,24 @@
 use std::{fmt::Debug, marker::PhantomData};
 
+pub trait NoShortCircuitCollect {
+    type Item;
+    fn nsc_collect<T: FromIterator<Self::Item>>(self) -> T;
+}
+
+impl<E, I> NoShortCircuitCollect for I
+where
+    I: Iterator<Item = E>,
+{
+    type Item = E;
+
+    #[inline]
+    fn nsc_collect<T: FromIterator<Self::Item>>(mut self) -> T {
+        let res = self.by_ref().collect();
+        self.for_each(drop);
+        res
+    }
+}
+
 macro_rules! gen_derives {
     ($ident:ident) => {
         impl<T> Clone for $ident<T> {
@@ -39,6 +58,8 @@ macro_rules! gen_derives {
 }
 
 use crate::Invalid;
+
+pub type VRefSlice<T> = VSlice<VRef<T>>;
 
 pub trait VRefDefault: Sized {
     fn default_state() -> VRef<Self>;

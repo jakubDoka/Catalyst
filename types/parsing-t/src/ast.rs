@@ -85,9 +85,8 @@ pub enum AstKind {
     TyInstance,
     BoundInstance,
     InstanceExpr,
-    PtrTy {
-        mutable: bool,
-    },
+    PointerTy,
+    PointerMut,
     FieldTy,
 
     ManifestSection,

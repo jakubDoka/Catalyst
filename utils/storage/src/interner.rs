@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::Invalid;
 
-pub fn ident_join<'a>(
+pub fn ident_join<'a, T: Into<InternedSegment<'a>>>(
     sep: &'a str,
-    identifiers: impl IntoIterator<Item = InternedSegment<'a>>,
+    identifiers: impl IntoIterator<Item = T>,
 ) -> impl Iterator<Item = InternedSegment<'a>> {
     identifiers
         .into_iter()
-        .flat_map(move |ident| ident!(sep, ident))
+        .flat_map(move |ident| ident!(sep, ident.into()))
         .skip(1)
 }
 

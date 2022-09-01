@@ -1,4 +1,5 @@
 #![feature(let_else)]
+#![feature(default_free_fn)]
 
 //! Crate defines all diagnostic structures and macros for constructing them.
 
@@ -196,7 +197,7 @@ macro_rules! diag {
 pub use types::{Diag, DiagLoc, DiagPackages, DiagRel, Doc, Workspace};
 
 pub mod types {
-    use std::{fmt::Write, path::Path};
+    use std::{default::default, fmt::Write, path::Path};
 
     use ansi_coloring::*;
     use inner_lexing::*;
@@ -371,6 +372,28 @@ pub mod types {
     }
 
     impl DiagLoc {
+        pub fn new(loc: Loc, interner: &Interner) -> Maybe<Self> {
+            let Some(file) = loc.file.expand() else {
+                return default();
+            };
+
+            let Some(pos) = loc.pos.expand() else {
+                return DiagLoc {
+                    span: default(),
+                    source: file,
+                }.into();
+            };
+
+            let len = interner[loc.name].len();
+            let span = pos.to_span(len);
+
+            DiagLoc {
+                span: span.into(),
+                source: file,
+            }
+            .into()
+        }
+
         pub fn display(
             &self,
             color: &str,

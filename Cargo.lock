@@ -407,6 +407,7 @@ dependencies = [
  "parsing-t",
  "scope",
  "storage",
+ "typec-shared",
  "typec-t",
 ]
 
@@ -414,6 +415,7 @@ dependencies = [
 name = "typec-shared"
 version = "0.1.0"
 dependencies = [
+ "packaging-t",
  "storage",
  "typec-t",
 ]

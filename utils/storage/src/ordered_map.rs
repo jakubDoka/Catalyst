@@ -21,6 +21,17 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
     }
 
+    pub fn get_or_insert(&mut self, key: K, fallback: impl FnOnce(&mut Self) -> V) -> VRef<V> {
+        if let Some(&index) = self.index.get(&key) {
+            index
+        } else {
+            let value = fallback(self);
+            let index = self.data.push((key, value));
+            self.index.insert(key, index);
+            index
+        }
+    }
+
     pub fn rehash(&mut self, key: K, value: VRef<V>) -> VRef<V> {
         self.index.remove(&self.data[value].0).unwrap();
         match self.index.entry(key) {

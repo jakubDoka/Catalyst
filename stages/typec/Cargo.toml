@@ -9,6 +9,7 @@ edition = "2021"
 storage = { path = "../../utils/storage" }
 scope = { path = "../../utils/scope" }
 errors = { path = "../../utils/errors" }
+typec-shared = { path = "../../utils/typec-shared" }
 
 diags = { path = "../../types/diags" }
 typec-t = { path = "../../types/typec-t" }

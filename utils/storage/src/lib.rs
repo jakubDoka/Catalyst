@@ -69,8 +69,8 @@ macro_rules! gen_increasing_constants {
 ///
 /// let a = interner.intern_str("a");
 ///
-/// let usage: &[InternedSegment] = ident!("h", 10, a);
-/// let result: &[InternedSegment] = &["h".into(), 10.into(), a.into()];
+/// let usage = ident!("h", 10, a);
+/// let result: [InternedSegment; _] = ["h".into(), 10.into(), a.into()];
 ///
 /// assert_eq!(usage, result);
 /// ```
@@ -82,26 +82,56 @@ macro_rules! ident {
 }
 
 #[macro_export]
+macro_rules! gen_v_ref_const_group {
+    ($($name:ident = [$($elem:ident)*];)*) => {
+        $(
+            pub const $name: &'static [VRef<Self>] = &[$(Self::$elem),*];
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! gen_v_ref_constants {
+    ($($name:ident)*) => {
+        gen_v_ref_constants!(__low__ (0) $($name)*);
+        gen_v_ref_const_group!(ALL = [$($name)*];);
+    };
+
+    (__low__
+        ($prev:expr) $current:ident $($next:ident $($others:ident)*)?
+    ) => {
+        pub const $current: VRef<Self> = unsafe { VRef::new($prev) };
+        $(
+            gen_v_ref_constants!(__low__ (Self::$current.index() + 1) $next $($others)*);
+        )?
+    };
+}
+
+#[macro_export]
 macro_rules! bitflags {
     (
-        struct $name:ident: $repr:ty {
-            $($first:ident $($item:ident)*)?
-        }
-    ) => {
-        $crate::bitflags::bitflags! {
-            #[derive(Default)]
-            pub struct $name: $repr {
-
+        $(
+            $name:ident: $repr:ty {
+                $($first:ident $($item:ident)*)?
             }
-        }
+        )*
+    ) => {
+        $(
+            $crate::bitflags::bitflags! {
+                #[derive(Default)]
+                pub struct $name: $repr {
 
-        impl $name {
-            $(
-                bitflags!(__fields__ (1, $name), $first $($item)*);
-            )?
-        }
+                }
+            }
 
-        impl_flag_and_bool!($name);
+            impl $name {
+                $(
+                    bitflags!(__fields__ (1, $name), $first $($item)*);
+                )?
+            }
+
+            impl_flag_and_bool!($name);
+        )*
     };
 
     (__fields__ ($prev:expr, $repr:ident), $current:ident $($next:ident $($other:ident)*)?) => {
@@ -144,18 +174,20 @@ mod shadow_map;
 /// that are sparsely populated.
 mod sparse_map;
 
-pub use bit_set::BitSet;
-pub use bump_alloc::*;
-pub use bump_map::{BumpMap, CacheBumpMap, Reserved};
-pub use clear::Clear;
-pub use frames::Frames;
-pub use interner::{ident_join, Ident, InternedSegment, Interner};
-pub use invalid::{Invalid, Maybe};
-pub use map::{IdentPair, Map, SpecialHash};
-pub use ordered_map::OrderedMap;
-pub use partial_ordered_map::PartialOrderedMap;
-pub use pool_bump_map::{CachedPoolBumpMap, PoolBumpMap};
-pub use pool_map::PoolMap;
-pub use primitives::{VRef, VRefDefault, VSlice};
-pub use shadow_map::ShadowMap;
-pub use sparse_map::SparseMap;
+pub use {
+    bit_set::BitSet,
+    bump_alloc::*,
+    bump_map::{BumpMap, CacheBumpMap, Reserved},
+    clear::Clear,
+    frames::Frames,
+    interner::{ident_join, Ident, InternedSegment, Interner},
+    invalid::{Invalid, Maybe},
+    map::{IdentPair, Map, SpecialHash},
+    ordered_map::OrderedMap,
+    partial_ordered_map::PartialOrderedMap,
+    pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
+    pool_map::PoolMap,
+    primitives::{NoShortCircuitCollect, VRef, VRefDefault, VRefSlice, VSlice},
+    shadow_map::ShadowMap,
+    sparse_map::SparseMap,
+};

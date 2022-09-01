@@ -57,6 +57,11 @@ impl Pos {
     pub const fn new(pos: u32) -> Self {
         Self(pos)
     }
+
+    #[inline]
+    pub fn to_span(self, len: usize) -> Span {
+        Span::new(self.0 as usize..self.0 as usize + len)
+    }
 }
 
 impl From<Span> for Pos {

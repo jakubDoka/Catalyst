@@ -22,60 +22,33 @@ file "stages/packaging/src/state_gen.rs" {
     }
 }
 
-file "types/typec-t/src/state_gen.rs" {
-    use "crate";
+file "utils/typec-shared/src/state_gen.rs" {
+    use "typec_t";
     use "storage";
-    use "packaging_t"
 
-    struct TyFactory {
+    struct TyUtils {
         mut Typec
         mut Interner
     }
 
-    struct BoundChecker {
+    struct BoundUtils {
         mut Typec
         mut Interner
     }
 
-    struct BuiltinBuilder {
+    struct BuiltinUtils {
         mut Typec
         mut Interner
-    }
-
-    struct TirDisplay {
-        owned Ident
-        owned root: `Maybe<TirList>`
-        
-        passed name: str
-        passed tir_data: TirData
-        
-        Interner
-        Typec
-        Packages
     }
 }
 
-file "stages/type-checking/src/state_gen.rs" {
+file "stages/typec/src/state_gen.rs" {
     use "storage"
     use "diags"
     use "scope"
-    use "type_checking_t"
+    use "typec_t"
     use "parsing_t"
     use "packaging_t"
-
-    struct FuncParser {
-        owned current_file: Ident
-        owned TirData = "TirData::default()"
-
-        mut Interner
-        mut Scope
-        mut Typec
-        mut Workspace
-        mut Packages
-        mut FuncParserCtx
-
-        AstData
-    }
 
     struct ItemCollector {
         owned current_file: Ident
