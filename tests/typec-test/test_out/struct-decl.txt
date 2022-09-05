@@ -1,4 +1,0 @@
-| struct-decl:1:0
-| 
-|  expected 'fn' | 'struct' | 'bound' | 'impl' but got <none>
-
