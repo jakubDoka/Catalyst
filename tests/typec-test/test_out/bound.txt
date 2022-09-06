@@ -1,9 +1,0 @@
-| functions:
-fn foo {
-}
-fn goo {
-}
-fn foo {
-}
-
-
