@@ -1,26 +1,28 @@
-pub use crate::testing::{test_case, Folder};
-
 #[macro_export]
 macro_rules! gen_test {
     (
-        $parallel:literal
+        $test_struct:ty,
+        $parallel:literal,
         $($($type:ident)? $name:literal {
             $($structure:tt)*
         })*
     ) => {
         std::thread::scope(|h| {
+            fn testable<T: $crate::items::Testable>() {}
+            testable::<$test_struct>();
             $(
                 let value = $parallel.then_some(h);
-                test_case($name, value, |name| {
+                $crate::items::test_case($name, value, |name| {
                     gen_test!(__inner__ name $($type)? $($structure)*);
-                    TestState::run(name)
+
+                    <$test_struct>::run(name)
                 });
             )*
         });
     };
 
     (__inner__ $name:ident simple $($structure:tt)*) => {
-        quick_file_system!(
+        $crate::quick_file_system!(
             ($name)
             file "root.ctl" {
                 $($structure)*
@@ -41,8 +43,8 @@ macro_rules! gen_test {
 macro_rules! quick_file_system {
     (($root:expr) $($tokens:tt)*) => {
         let __dir = {
-            let mut __dir = $crate::Folder::new($root);
-            quick_file_system!(__recur__ (__dir) $($tokens)*);
+            let mut __dir = $crate::items::Folder::new($root);
+            $crate::quick_file_system!(__recur__ (__dir) $($tokens)*);
             __dir.create();
             __dir
         };
@@ -50,7 +52,7 @@ macro_rules! quick_file_system {
 
     (__recur__ ($parent:expr) $($key:ident $name:literal {$($content:tt)*})*) => {
         $(
-            quick_file_system!(__item__ ($parent) $key $name {$($content)*});
+            $crate::quick_file_system!(__item__ ($parent) $key $name {$($content)*});
         )*
     };
 
@@ -59,7 +61,7 @@ macro_rules! quick_file_system {
     };
 
     (__item__ ($parent:expr) dir $name:literal {$($content:tt)*}) => {
-        let mut __dir = $crate::Folder::new($name);
+        let mut __dir = $crate::items::Folder::new($name);
         quick_file_system!(__recur__ (__dir) $($content)*);
         $parent.folders.push(__dir);
     };
@@ -83,11 +85,17 @@ mod tests {
     }
 }
 
-mod testing {
+pub use items::Testable;
+
+pub mod items {
     use ansi_coloring::*;
     use diags::*;
     use packaging_t::*;
     use std::{path::*, thread::Scope};
+
+    pub trait Testable {
+        fn run(name: &str) -> (Workspace, Packages);
+    }
 
     pub fn test_case<'a: 'b, 'b, 'c>(
         name: &'static str,

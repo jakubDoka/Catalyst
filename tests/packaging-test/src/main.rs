@@ -14,7 +14,7 @@ struct TestState {
     package_graph: PackageGraph,
 }
 
-impl TestState {
+impl Testable for TestState {
     fn run(name: &str) -> (Workspace, Packages) {
         let mut ts = TestState::default();
         drop(package_loader!(ts).load(Path::new(name)));
@@ -24,7 +24,8 @@ impl TestState {
 
 fn main() {
     gen_test! {
-        true
+        TestState,
+        true,
         "github" {
             file "root.ctl" { use { "water"; "a"; "b" } }
             file "package.ctlm" {

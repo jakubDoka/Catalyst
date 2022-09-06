@@ -1,6 +1,7 @@
-mod utils;
-
-use std::any::{Any, TypeId};
+use std::{
+    any::{Any, TypeId},
+    default::default,
+};
 
 use diags::diag;
 use lexing_t::Span;
@@ -8,11 +9,45 @@ use packaging_t::span_str;
 use parsing_t::*;
 use scope::*;
 use storage::*;
+use typec_shared::*;
 use typec_t::*;
 
 use crate::*;
 
 impl TyParser<'_> {
+    pub fn generics(
+        &mut self,
+        generic_ast: Ast,
+        offset: usize,
+        on_type: bool,
+        insert_params: bool,
+    ) -> VRefSlice<Bound> {
+        let mut generics = bumpvec!(cap self.ast_data[generic_ast.children].len());
+        for (i, &ast) in self.ast_data[generic_ast.children].iter().enumerate() {
+            let [ast_name, ref bounds @ ..] = self.ast_data[ast.children] else {
+                unreachable!();
+            };
+
+            if insert_params {
+                let name = span_str!(self, ast_name.span);
+                let name_ident = self.interner.intern_str(name);
+                let param = ty_utils!(self).nth_param(i + offset, on_type);
+                self.scope.push(ScopeItem::new(
+                    name_ident,
+                    param,
+                    ast_name.span,
+                    self.current_file,
+                    Vis::Priv,
+                ));
+            }
+
+            let bound = self.bound_sum(bounds).unwrap_or_default();
+            generics.push(bound);
+        }
+
+        self.typec.bound_slices.bump(generics)
+    }
+
     pub fn ty(&mut self, ty_ast: Ast) -> errors::Result<VRef<Ty>> {
         match ty_ast.kind {
             AstKind::Ident | AstKind::IdentChain => self.ident::<TyLookup>(ty_ast),
@@ -22,32 +57,33 @@ impl TyParser<'_> {
         }
     }
 
+    pub fn bound_sum(&mut self, bounds: &[Ast]) -> errors::Result<VRef<Bound>> {
+        let bounds = bounds
+            .iter()
+            .map(|&ast| self.bound(ast))
+            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+
+        let segments = self.typec.bound_sum_id(&bounds);
+        let key = self.interner.intern(segments);
+        let inherits = self.typec.bound_slices.bump(bounds);
+
+        let fallback = |_: &mut Bounds| Bound {
+            kind: BoundBase {
+                inherits,
+                ..default()
+            }
+            .into(),
+            ..default()
+        };
+
+        Ok(self.typec.bounds.get_or_insert(key, fallback))
+    }
+
     pub fn bound(&mut self, bound_ast: Ast) -> errors::Result<VRef<Bound>> {
         match bound_ast.kind {
             AstKind::Ident | AstKind::IdentChain => self.ident::<BoundLookup>(bound_ast),
-            AstKind::BoundInstance | AstKind::TyInstance => self.bound_instance(bound_ast),
             kind => unimplemented!("{:?}", kind),
         }
-    }
-
-    fn bound_instance(&mut self, instance_ast: Ast) -> errors::Result<VRef<Bound>> {
-        let [base, ref param_ast @ ..] = self.ast_data[instance_ast.children] else {
-            unreachable!();
-        };
-
-        let base = self.ident::<BoundLookup>(base)?;
-
-        let params = param_ast
-            .iter()
-            .map(|&param| self.ty(param))
-            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
-
-        let generic = params
-            .iter()
-            .any(|&param| self.typec.types.is_generic(param));
-        let params = self.typec.ty_slices.bump(params);
-
-        todo!();
     }
 
     fn pointer(&mut self, pointer_ast: Ast) -> errors::Result<VRef<Ty>> {

@@ -33,7 +33,7 @@ impl<'a> Parser<'a> {
     ) -> Self {
         Self {
             lexer: Lexer::new(source, state.progress),
-            state,
+            state: state,
             ast_data,
             workspace,
         }

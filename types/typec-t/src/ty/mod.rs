@@ -47,6 +47,7 @@ gen_kind!(TyKind
         width: u8,
         signed: bool,
     },
+    Param = u32,
     Bool,
     Inferred,
 );

@@ -85,16 +85,16 @@ impl Scope {
         item: ScopeItem,
         interner: &mut Interner,
     ) -> Result<(), Maybe<Span>> {
-        self.insert(item.id, item, interner)
+        self.insert(item.module, item, interner)
     }
 
     pub fn insert(
         &mut self,
-        module: Ident,
+        current_module: Ident,
         item: ScopeItem,
         interner: &mut Interner,
     ) -> Result<(), Maybe<Span>> {
-        if item.module != module {
+        if item.module != current_module {
             let id = interner.intern(scoped_ident!(item.module, item.id));
             self.data.insert(id, item.into());
         }
@@ -106,9 +106,9 @@ impl Scope {
                 return Err(existing.span);
             }
 
-            if item.module == module {
+            if item.module == current_module {
                 *existing = item.into();
-            } else if existing.module != module.into() {
+            } else if existing.module != current_module.into() {
                 existing_option.take();
             }
         } else {
@@ -204,7 +204,7 @@ impl Into<Maybe<Item>> for ScopeItem {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ScopePtr {
     pub id: TypeId,
     pub ptr: usize,

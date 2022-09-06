@@ -5,6 +5,7 @@ use storage::*;
 pub type Funcs = OrderedMap<Ident, Func>;
 pub type FuncSlices = PoolBumpMap<VRef<Func>>;
 
+#[derive(Clone, Copy, Default)]
 pub struct Func {
     pub generics: VRefSlice<Bound>,
     pub signature: Signature,

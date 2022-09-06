@@ -1,6 +1,7 @@
 #![feature(let_else)]
 #![feature(associated_type_defaults)]
 #![feature(const_type_id)]
+#![feature(default_free_fn)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
@@ -27,6 +28,7 @@ macro_rules! gen_scope_lookup {
     };
 }
 
+mod item_collector;
 mod state_gen;
 mod ty_parser;
 

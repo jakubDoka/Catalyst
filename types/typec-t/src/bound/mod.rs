@@ -1,3 +1,5 @@
+use std::default::default;
+
 use crate::*;
 use lexing_t::*;
 use storage::*;
@@ -6,6 +8,7 @@ pub type Bounds = OrderedMap<Ident, Bound>;
 pub type BoundFuncs = PoolBumpMap<BoundFunc>;
 pub type BoundSlices = PoolBumpMap<VRef<Bound>>;
 
+#[derive(Clone, Copy, Default)]
 pub struct Bound {
     pub kind: BoundKind,
     pub flags: BoundFlags,
@@ -28,17 +31,21 @@ impl VRefDefault for Bound {
 
 gen_kind!(BoundKind
     Base = BoundBase {
-        generics: VRefSlice<Bound>,
         inherits: VRefSlice<Bound>,
-        assoc_types: VRefSlice<Bound>,
+        generics: VRefSlice<Bound>,
         methods: VSlice<BoundFunc>,
     },
     Instance = BoundInstance {
         base: VRef<Bound>,
         params: VRefSlice<Ty>,
-        assoc_types: VRefSlice<Ty>,
     },
 );
+
+impl Default for BoundKind {
+    fn default() -> Self {
+        Self::Base(default())
+    }
+}
 
 pub struct BoundFunc {
     pub generics: VRefSlice<Bound>,
@@ -60,10 +67,5 @@ pub trait BoundExt: StorageExt<Bound> {
         self.try_inner::<BoundInstance>(bound)
             .map(|bound| bound.base)
             .unwrap_or(bound)
-    }
-
-    #[inline]
-    fn assoc_types(&self, bound: VRef<Bound>) -> VRefSlice<Bound> {
-        self.inner::<BoundBase>(self.base(bound)).assoc_types
     }
 }

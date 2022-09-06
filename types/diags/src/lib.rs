@@ -39,18 +39,20 @@ macro_rules! location {
     (exp $value:expr) => {
         $value.into()
     };
-    ($source:expr $(,)?) => {
+    ($source:expr $(,)?) => {{
+        assert!($source != Ident::EMPTY);
         Maybe::some($crate::DiagLoc {
             span: Maybe::none(),
             source: $source,
         })
-    };
-    ($span:expr, $source:expr $(,)?) => {
+    }};
+    ($span:expr, $source:expr $(,)?) => {{
+        assert!($source != Ident::EMPTY);
         Maybe::some($crate::DiagLoc {
             span: $span.into(),
             source: $source,
         })
-    };
+    }};
 }
 
 /// macro offers shorthand for [`raw::DiagnosticSeverity`].
@@ -74,10 +76,10 @@ macro_rules! severity {
     (error) => {
         $crate::severity!()
     };
-    (warning) => {
+    (warn) => {
         $crate::raw::DiagnosticSeverity::WARNING
     };
-    (information) => {
+    (info) => {
         $crate::raw::DiagnosticSeverity::INFORMATION
     };
     (hint) => {
@@ -213,7 +215,7 @@ pub mod types {
     pub struct Workspace {
         files: Map<Ident, Doc>,
         global_diags: Vec<Diag>,
-        has_errors: bool,
+        error_count: usize,
     }
 
     impl Workspace {
@@ -222,7 +224,7 @@ pub mod types {
         }
 
         pub fn push(&mut self, diag: Diag) {
-            self.has_errors |= diag.severity == raw::DiagnosticSeverity::ERROR;
+            self.error_count += (diag.severity == raw::DiagnosticSeverity::ERROR) as usize;
             if let Some(loc) = diag.loc.expand() {
                 if self.files.get(&loc.source).is_none() {
                     self.files.insert(loc.source, Doc::new());
@@ -269,8 +271,21 @@ pub mod types {
             Ok(())
         }
 
-        pub fn has_errors(&self) -> bool {
-            self.has_errors
+        pub fn error_count(&self) -> ErrorCount {
+            ErrorCount(self.error_count)
+        }
+
+        pub fn changed_since(&self, error_count: ErrorCount) -> bool {
+            self.error_count > error_count.0
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct ErrorCount(usize);
+
+    impl ErrorCount {
+        pub fn has_errors(&mut self) -> bool {
+            self.0 > 0
         }
     }
 
@@ -376,6 +391,8 @@ pub mod types {
             let Some(file) = loc.file.expand() else {
                 return default();
             };
+
+            assert!(file != Ident::EMPTY);
 
             let Some(pos) = loc.pos.expand() else {
                 return DiagLoc {

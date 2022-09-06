@@ -1,3 +1,5 @@
+#![feature(default_free_fn)]
+
 #[macro_export]
 macro_rules! gen_kind {
     (
@@ -43,6 +45,7 @@ macro_rules! gen_kind {
                 impl TryInto<$struct> for $name {
                     type Error = ();
                     fn try_into(self) -> Result<$struct, Self::Error> {
+                        #[allow(unreachable_patterns)]
                         match self {
                             $name::$kind(value) => Ok(value),
                             _ => Err(()),
@@ -53,6 +56,7 @@ macro_rules! gen_kind {
                 impl<'a> TryInto<&'a $struct> for &'a $name {
                     type Error = ();
                     fn try_into(self) -> Result<&'a $struct, Self::Error> {
+                        #[allow(unreachable_patterns)]
                         match self {
                             $name::$kind(value) => Ok(value),
                             _ => Err(()),
@@ -63,6 +67,7 @@ macro_rules! gen_kind {
                 impl<'a> TryInto<&'a mut $struct> for &'a mut $name {
                     type Error = ();
                     fn try_into(self) -> Result<&'a mut $struct, Self::Error> {
+                        #[allow(unreachable_patterns)]
                         match self {
                             $name::$kind(value) => Ok(value),
                             _ => Err(()),

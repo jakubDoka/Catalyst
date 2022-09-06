@@ -41,7 +41,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        if self.workspace.has_errors() {
+        if self.workspace.error_count().has_errors() {
             return Err(());
         }
 
@@ -388,7 +388,7 @@ impl PackageLoader<'_> {
         let rev_owned = self.resolve_version(version_loc, version, &full_url)?;
         if version.is_some() && rev_owned.is_none() {
             self.workspace.push(diag! {
-                (exp version_loc) warning => "cannot find this version, using main branch instead",
+                (exp version_loc) warn => "cannot find this version, using main branch instead",
             })
         }
         let rev = rev_owned.as_ref().map(|v| v.as_str());

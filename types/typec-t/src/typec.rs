@@ -5,6 +5,7 @@ use diags::*;
 use lexing_t::*;
 use storage::*;
 
+#[derive(Default)]
 pub struct Typec {
     pub types: Types,
     pub bounds: Bounds,
@@ -50,6 +51,13 @@ impl Typec {
         );
         let suffix = ident!("]");
         prefix.chain(params).chain(suffix)
+    }
+
+    pub fn bound_sum_id<'a>(
+        &'a self,
+        bounds: &'a [VRef<Bound>],
+    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
+        ident_join(" + ", bounds.iter().map(|&b| self.bounds.id(b)))
     }
 }
 

@@ -67,7 +67,7 @@ impl DiagPackages for Packages {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Mod {
     pub path: PathBuf,
     pub deps: VSlice<Dep>,
@@ -94,6 +94,7 @@ impl Mod {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ModItem {
     pub id: Ident,
     pub ptr: ScopePtr,
@@ -122,6 +123,7 @@ impl ModItem {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum ModKind {
     Package {
         root_module: PathBuf,
@@ -141,6 +143,7 @@ impl Default for ModKind {
     }
 }
 
+#[derive(Default, Clone, Copy)]
 pub struct Dep {
     pub name: Span,
     pub ptr: Ident,

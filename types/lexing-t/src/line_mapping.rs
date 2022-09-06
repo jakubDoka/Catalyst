@@ -1,5 +1,6 @@
 use std::iter::once;
 
+#[derive(Debug)]
 pub struct LineMapping {
     indices: Vec<usize>,
 }
