@@ -497,7 +497,7 @@ impl PackageLoader<'_> {
 
     gen_error_fns! {
         push file_error(self, loc: DiagLoc, path: &Path, message: &str, err: std::io::Error) {
-            err["id"]: ("{}", message);
+            err: ("{}", message);
             info: ("related path: {}", path.display());
             info: ("trace: {}", err);
             (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {

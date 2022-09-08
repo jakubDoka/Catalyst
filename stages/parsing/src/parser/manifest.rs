@@ -22,7 +22,7 @@ impl Parser<'_> {
                 self.finish(AstKind::ManifestField);
             },
             LeftCurly => {
-                let parser = match self.lexer.display(name) {
+                let parser = match self.lexer.inner_span_str(name) {
                     "deps" => Self::dep,
                     _ => Self::manifest_field,
                 };

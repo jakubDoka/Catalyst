@@ -3,13 +3,16 @@ use logos::Logos;
 
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
-/// Smallest lexical component.
 #[derive(Clone, Copy, Default)]
 pub struct Token {
     pub kind: TokenKind,
+    /// Span points to &str inside source file. Origin of span is
+    /// implied by surrounding code.
     pub span: Span,
 }
 
+/// Generates the [`TokenKind`] struct and some useful methods.
+/// It is simply reducing repetition.
 macro_rules! gen_kind {
     (
         keywords {
@@ -20,7 +23,7 @@ macro_rules! gen_kind {
             $($punctuation:ident = $punctuation_repr:literal,)*
         }
 
-        pairs {
+        paren_pairs {
             $(
                 $pair0:ident = $pair_repr0:literal,
                 $pair1:ident = $pair_repr1:literal,
@@ -173,7 +176,7 @@ gen_kind!(
         Tick = "`",
     }
 
-    pairs {
+    paren_pairs {
         LeftCurly = "{",
         RightCurly = "}",
         LeftParen = "(",
@@ -222,12 +225,14 @@ impl IntoIterator for TokenKind {
     type Item = TokenKind;
     type IntoIter = std::iter::Once<TokenKind>;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(self)
     }
 }
 
 impl Default for TokenKind {
+    #[inline]
     fn default() -> Self {
         TokenKind::None
     }

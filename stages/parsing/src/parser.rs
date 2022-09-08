@@ -43,7 +43,7 @@ impl<'a> Parser<'a> {
         self.ast_data.start_cache();
         drop(method(self));
         self.state.progress = self.lexer.progress();
-        (self.ast_data.bump_cached(), self.lexer.finished())
+        (self.ast_data.bump_cached(), self.lexer.is_finished())
     }
 
     fn capture(&mut self, kind: AstKind) {
@@ -324,7 +324,7 @@ impl<'a> Parser<'a> {
     }
 
     fn ctx_keyword(&mut self, keyword: &str) -> bool {
-        let present = self.lexer.display(self.state.current.span) == keyword;
+        let present = self.lexer.inner_span_str(self.state.current.span) == keyword;
         if present {
             self.advance();
         }
@@ -396,7 +396,7 @@ impl<'a> Parser<'a> {
     }
 
     fn current_token_str(&self) -> &str {
-        self.lexer.display(self.state.current.span)
+        self.lexer.inner_span_str(self.state.current.span)
     }
 
     fn expect_ctx_keyword(&mut self, arg: &str) -> errors::Result {

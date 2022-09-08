@@ -1,38 +1,42 @@
-use crate::{Token, TokenKind};
+use crate::*;
 use lexing_t::*;
 
+/// Tight wrapper around logos lexer that provides specific tokens
+/// instead.
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, TokenKind>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str, skip: usize) -> Self {
+    #[inline]
+    pub fn new(source: &'a str, skipped_bytes: usize) -> Self {
         let mut inner = logos::Lexer::new(source);
-        inner.bump(skip);
+        inner.bump(skipped_bytes);
         Lexer { inner }
     }
 
-    pub fn display(&self, span: Span) -> &str {
+    #[inline]
+    pub fn inner_span_str(&self, span: Span) -> &str {
         &self.inner.source()[span.range()]
     }
 
+    /// Returns amount of *bytes* processed.
+    #[inline]
     pub fn progress(&self) -> usize {
         self.inner.source().len() - self.inner.remainder().len()
     }
 
-    pub fn finished(&self) -> bool {
+    #[inline]
+    pub fn is_finished(&self) -> bool {
         self.inner.remainder().len() == 0
     }
 
+    #[inline]
     pub fn next(&mut self) -> Token {
         let kind = self.inner.next().unwrap_or(TokenKind::Eof);
         let span = Span::new(self.inner.span());
 
         Token { kind, span }
-    }
-
-    pub fn reveal_lines(&self, span: Span) -> Span {
-        span.reveal_lines(self.inner.source())
     }
 }
 
