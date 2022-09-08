@@ -1,7 +1,6 @@
 use std::ops::IndexMut;
 
 use crate::*;
-use diags::*;
 use lexing_t::*;
 use storage::*;
 
@@ -72,14 +71,6 @@ pub trait StorageExt<K>: IndexMut<VRef<K>, Output = K> {
         Self::Output: Located,
     {
         self[target].loc()
-    }
-
-    #[inline]
-    fn diag_locate(&self, target: VRef<K>, interner: &Interner) -> Maybe<DiagLoc>
-    where
-        Self::Output: Located,
-    {
-        DiagLoc::new(self.locate(target), interner)
     }
 
     #[inline]

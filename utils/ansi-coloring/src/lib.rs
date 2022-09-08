@@ -13,8 +13,8 @@ pub struct Style<'a> {
     pub info: &'a str,
     pub weak: &'a str,
     pub highlight: &'a str,
-
     pub end: &'a str,
+    pub tab_width: usize,
 }
 
 impl<'a> Style<'a> {
@@ -26,6 +26,7 @@ impl<'a> Style<'a> {
         weak: WEAK,
         highlight: HIGHLIGHT,
         end: END,
+        tab_width: 4,
     };
 
     pub const NONE: Self = Self {
@@ -36,5 +37,6 @@ impl<'a> Style<'a> {
         weak: "",
         highlight: "",
         end: "",
+        tab_width: 4,
     };
 }

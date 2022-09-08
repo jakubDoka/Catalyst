@@ -57,6 +57,18 @@ name = "errors"
 version = "0.1.0"
 
 [[package]]
+name = "fmt"
+version = "0.1.0"
+dependencies = [
+ "diags",
+ "lexing-t",
+ "parsing",
+ "parsing-t",
+ "scope",
+ "storage",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -340,6 +352,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sippet_display"
+version = "0.1.0"
+
+[[package]]
 name = "state"
 version = "0.1.0"
 dependencies = [
@@ -377,7 +393,9 @@ version = "0.1.0"
 dependencies = [
  "ansi-coloring",
  "diags",
+ "fmt",
  "packaging-t",
+ "storage",
 ]
 
 [[package]]

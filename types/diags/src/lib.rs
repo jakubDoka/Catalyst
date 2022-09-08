@@ -1,456 +1,197 @@
 #![feature(let_else)]
 #![feature(default_free_fn)]
 
-//! Crate defines all diagnostic structures and macros for constructing them.
-
-pub extern crate lexing_t as inner_lexing;
-pub extern crate lsp_types as raw;
-
-/// macro produces '[`storage::Maybe`]<[`Location`]>'.
-///
-/// # Examples
-/// ```
-///
-/// use lexing_t::*;
-/// use diags::*;
-/// use storage::*;
-///
-/// let mut interner = Interner::new();
-/// let source = interner.intern_str("a.ctl");
-/// let span = Span::new(0..0);
-/// let value = Maybe::some(Loc {
-///     span: Maybe::some(span),
-///     source,
-/// });
-///
-/// assert_eq!(location!(none), Maybe::<Loc>::none());
-/// assert_eq!(location!(exp value), value);
-/// assert_eq!(location!(span, source), value);
-/// assert_eq!(location!(source), Maybe::some(Loc {
-///     span: Maybe::none(),
-///     source,
-/// }));
-/// ```
 #[macro_export]
-macro_rules! location {
-    (none) => {
-        Maybe::none()
-    };
-    (exp $value:expr) => {
-        $value.into()
-    };
-    ($source:expr $(,)?) => {{
-        assert!($source != Ident::EMPTY);
-        Maybe::some($crate::DiagLoc {
-            span: Maybe::none(),
-            source: $source,
-        })
-    }};
-    ($span:expr, $source:expr $(,)?) => {{
-        assert!($source != Ident::EMPTY);
-        Maybe::some($crate::DiagLoc {
-            span: $span.into(),
-            source: $source,
-        })
-    }};
-}
-
-/// macro offers shorthand for [`raw::DiagnosticSeverity`].
-///
-/// # Examples
-/// ```
-/// use diags::*;
-/// use diags::raw::*;
-///
-/// assert_eq!(severity!(), DiagnosticSeverity::ERROR);
-/// assert_eq!(severity!(error), DiagnosticSeverity::ERROR);
-/// assert_eq!(severity!(warning), DiagnosticSeverity::WARNING);
-/// assert_eq!(severity!(information), DiagnosticSeverity::INFORMATION);
-/// assert_eq!(severity!(hint), DiagnosticSeverity::HINT);
-/// ```
-#[macro_export]
-macro_rules! severity {
-    () => {
-        $crate::raw::DiagnosticSeverity::ERROR
-    };
-    (error) => {
-        $crate::severity!()
+macro_rules! annotation_type {
+    (err) => {
+        $crate::AnnotationType::Error
     };
     (warn) => {
-        $crate::raw::DiagnosticSeverity::WARNING
+        $crate::AnnotationType::Warning
     };
     (info) => {
-        $crate::raw::DiagnosticSeverity::INFORMATION
+        $crate::AnnotationType::Info
     };
-    (hint) => {
-        $crate::raw::DiagnosticSeverity::HINT
+    (note) => {
+        $crate::AnnotationType::Note
+    };
+    (help) => {
+        $crate::AnnotationType::Help
     };
 }
 
-/// macro offers shorthand for '[`Vec`]<[`DiagRel`]>' with formatted messages
-/// and optional locations.
-///
-/// # Examples
-/// ```
-/// use diags::*;
-/// use diags::raw::*;
-/// use storage::*;
-/// use lexing_t::*;
-///
-/// let mut interner = Interner::new();
-/// let source = interner.intern_str("a.ctl");
-/// let span = Span::new(0..0);
-///
-///
-/// let diags = related!(
-///     (none) => "no location",
-///     (span, source) => "located here",
-///     (source) => "parametrized {}" { 10 },
-/// );
-///
-/// let result = vec![
-///     DiagRel {
-///         loc: location!(none),
-///         message: "no location".into(),
-///     },
-///     DiagRel {
-///         loc: location!(span, source),
-///         message: "located here".into(),
-///     },
-///     DiagRel {
-///         loc: location!(source),
-///         message: "parametrized 10".into(),
-///     },
-/// ];
-///
-/// assert_eq!(diags, result);
-/// ```
 #[macro_export]
-macro_rules! related {
-    (
-        $(
-            ($($loc:tt)*) => $message:literal $({
-                $($message_arg:expr),* $(,)?
-            })? $(,)?
-        )*
-    ) => {
+macro_rules! format_message {
+    () => {
+        None
+    };
+    (($($tokens:tt)*)) => {
+        Some(format!($($tokens)*).into())
+    };
+    ($string:expr) => {
+        Some($string.into())
+    };
+}
+
+#[macro_export]
+macro_rules! annotation {
+    ($annotation_type:ident$([$id:expr])?$(: $label:tt)?) => {
+        (|| Some($crate::Annotation {
+            id: $crate::format_message!($($id)?),
+            label: $crate::format_message!($($label)?),
+            annotation_type: annotation_type!($annotation_type),
+        }))()
+    };
+}
+
+#[macro_export]
+macro_rules! slice_origin {
+    () => {
+        None.into()
+    };
+    ($origin:expr) => {
+        $origin.into()
+    };
+}
+
+#[macro_export]
+macro_rules! slice {
+    (($span:expr $(, $($origin:tt)+)?) $({$($annotations:tt)*})?) => {
+        (|| Some($crate::Slice {
+            span: $span,
+            origin: $crate::slice_origin!($($($origin)+)?),
+            annotations: $crate::source_annotations!($($($annotations)*)?),
+            fold: true,
+        }))()
+    };
+}
+
+#[macro_export]
+macro_rules! source_annotation {
+    ($annotation_type:ident$([$span:expr])?$(: $label:tt)?) => {
+        (|| Some($crate::SourceAnnotation {
+            $(range: $span)?,
+            label: $crate::format_message!($($label)?),
+            annotation_type: annotation_type!($annotation_type),
+            ..Default::default()
+        }))()
+    };
+}
+
+#[macro_export]
+macro_rules! source_annotations {
+    ($($annotation_type:ident$([$span:expr])?$(: $label:tt)?;)*) => {
         vec![
-            $(
-                $crate::DiagRel {
-                    loc: $crate::location!($($loc)*),
-                    message: format!($message $(, $($message_arg),*)?),
-                },
-            )*
+            $($crate::source_annotation!($annotation_type$([$span])?$(: $label)?)),*
         ]
     };
 }
 
-/// macro shorthand for [`Diag`] with formatted messages, optional
-/// location and relations.
-///
-/// # Examples
-/// ```
-/// use diags::*;
-/// use diags::raw::*;
-/// use storage::*;
-/// use lexing_t::*;
-///
-/// let mut interner = Interner::new();
-/// let source = interner.intern_str("a.ctl");
-/// let span = Span::new(0..0);
-/// let span2 = Span::new(10..11);
-///
-/// let diag = diag!(
-///     (span, source) warning => "{} code to {}" { "unpleasant", "loot at" },
-///     (none) => "i mean it",
-///     (source) => "this file",
-/// );
-///
-/// let result = Diag {
-///     severity: severity!(warning),
-///     loc: location!(span, source),
-///     message: "unpleasant code to loot at".into(),
-///     related: related!(
-///         (none) => "i mean it",
-///         (source) => "this file",
-///     ),
-/// };
-///
-/// assert_eq!(diag, result);
-/// ```
 #[macro_export]
-macro_rules! diag {
-    (
-        ($($loc:tt)*) $($severity:ident)? => $message:literal $({
-            $($message_arg:expr),* $(,)?
-        })?
-
-        $(, $($related:tt)*)?
-    ) => {
-        $crate::Diag {
-            severity: $crate::severity!($($severity)?),
-            loc: $crate::location!($($loc)*),
-            message: format!($message $(, $($message_arg),*)?),
-            related: $crate::related!($($($related)*)?),
+macro_rules! sippet {
+    {
+        $title_type:ident$([$title_id:expr])?$(: $title_label:tt)?;
+        $($footer_type:ident$([$footer_id:expr])?$(: $footer_label:tt)?;)*
+        $(($span:expr $(, $($origin:tt)+)?) $({$($annotations:tt)*})?)*
+        $(opt: $opt:expr)?
+    } => {
+        Sippet {
+            title: $crate::annotation!($title_type$([$title_id])?$(: $title_label)?),
+            footer: vec![
+                $($crate::annotation!($footer_type$([$footer_id])?$(: $footer_label)?)),*
+            ],
+            slices: vec![
+                $($crate::slice!(($span $(, $($origin)+)?) $({$($annotations)*})?)),*
+            ],
+            $(opt: $opt,)?
+            ..Default::default()
         }
     };
 }
 
-pub use types::{Diag, DiagLoc, DiagPackages, DiagRel, Doc, Workspace};
-
-pub mod types {
-    use std::{default::default, fmt::Write, path::Path};
-
-    use ansi_coloring::*;
-    use inner_lexing::*;
-    use storage::*;
-
-    pub trait DiagPackages {
-        fn line_info(&self, module: Ident, pos: Option<usize>) -> (&Path, Option<(usize, usize)>);
-        fn content_of(&self, module: Ident) -> &str;
-    }
-
-    /// Represents diagnostic state of compiled project.
-    #[derive(Default)]
-    pub struct Workspace {
-        files: Map<Ident, Doc>,
-        global_diags: Vec<Diag>,
-        error_count: usize,
-    }
-
-    impl Workspace {
-        pub fn new() -> Self {
-            Self::default()
+#[macro_export]
+macro_rules! gen_error_fn {
+    {
+        push $name:ident($self:ident, $($param:ident: $param_ty:ty),* $(,)?) {
+            $($body:tt)*
         }
+    } => {
+        pub fn $name(&mut $self, $($param: $param_ty),*) {
+            $self.workspace.push($crate::sippet! {
+                $($body)*
+            })
+        }
+    };
 
-        pub fn push(&mut self, diag: Diag) {
-            self.error_count += (diag.severity == raw::DiagnosticSeverity::ERROR) as usize;
-            if let Some(loc) = diag.loc.expand() {
-                if self.files.get(&loc.source).is_none() {
-                    self.files.insert(loc.source, Doc::new());
+    {
+        $name:ident($($param:ident: $param_ty:ty),* $(,)?) {
+            $($body:tt)*
+        }
+    } => {
+        pub fn $name($($param: $param_ty),*) -> $crate::Sippet {
+            $crate::sippet! {
+                $($body)*
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! gen_error_fns {
+    (
+        $(
+            $prefix:ident $($name:ident)? ($($params:tt)*) {
+                $($body:tt)*
+            }
+        )*
+    ) => {
+        $(
+            $crate::gen_error_fn!(
+                $prefix $($name)? ($($params)*) {
+                    $($body)*
                 }
+            );
+        )*
+    };
+}
 
-                if loc.span.is_some() {
-                    self.files
-                        .entry(loc.source)
-                        .or_default()
-                        .code_diags
-                        .push(diag);
-                } else {
-                    self.files
-                        .entry(loc.source)
-                        .or_default()
-                        .global_diags
-                        .push(diag);
+mod items;
+
+pub use items::{
+    Annotation, AnnotationType, FormatOptions, Margin, Sippet, Slice, SourceAnnotation, Str,
+    Workspace,
+};
+
+#[allow(unused)]
+#[cfg(test)]
+mod tests {
+    use lexing_t::Span;
+
+    use super::*;
+
+    #[test]
+    fn test() {
+        drop(sippet! {
+            err["id"]: "hello";
+            err: "world";
+            (Span::new(0..0)) {
+                err[Span::new(0..0)]: "world";
+            }
+        });
+    }
+
+    struct A {
+        workspace: Workspace,
+    }
+
+    impl A {
+        gen_error_fns! {
+            push test_err(self, span: Span, a: i32, b: i32) {
+                err["goo"]: ("hello {} {}", a, b);
+                (span) {
+                    err[span]: "world";
                 }
-            } else {
-                self.global_diags.push(diag);
             }
-        }
-
-        pub fn log(&self, packages: &dyn DiagPackages, style: &Style) {
-            let mut to = String::new();
-            self.display(packages, &mut to, style).unwrap();
-            println!("{}", to);
-        }
-
-        pub fn display(
-            &self,
-            packages: &dyn DiagPackages,
-            to: &mut dyn Write,
-            style: &Style,
-        ) -> std::fmt::Result {
-            for diag in &self.global_diags {
-                diag.display(packages, to, style)?;
-            }
-
-            for doc in self.files.values() {
-                doc.display(packages, to, style)?;
-            }
-
-            Ok(())
-        }
-
-        pub fn error_count(&self) -> ErrorCount {
-            ErrorCount(self.error_count)
-        }
-
-        pub fn changed_since(&self, error_count: ErrorCount) -> bool {
-            self.error_count > error_count.0
-        }
-    }
-
-    #[derive(Clone, Copy)]
-    pub struct ErrorCount(usize);
-
-    impl ErrorCount {
-        pub fn has_errors(&mut self) -> bool {
-            self.0 > 0
-        }
-    }
-
-    /// Represents diagnostic state of source file.
-    #[derive(Default)]
-    pub struct Doc {
-        pub code_diags: Vec<Diag>,
-        pub global_diags: Vec<Diag>,
-    }
-
-    impl Doc {
-        pub fn new() -> Self {
-            Self::default()
-        }
-
-        pub fn display(
-            &self,
-            packages: &dyn DiagPackages,
-            to: &mut dyn Write,
-            style: &Style,
-        ) -> std::fmt::Result {
-            for diag in &self.global_diags {
-                diag.display(packages, to, style)?;
-            }
-
-            for diag in &self.code_diags {
-                diag.display(packages, to, style)?;
-            }
-
-            Ok(())
-        }
-    }
-
-    /// Represents singular error.
-    #[derive(Debug, PartialEq, Eq)]
-    pub struct Diag {
-        pub severity: raw::DiagnosticSeverity,
-        pub loc: Maybe<DiagLoc>,
-        pub message: String,
-        pub related: Vec<DiagRel>,
-    }
-
-    impl Diag {
-        pub fn display(
-            &self,
-            packages: &dyn DiagPackages,
-            to: &mut dyn Write,
-            style: &Style,
-        ) -> std::fmt::Result {
-            let color = color_of(self.severity, style);
-            if let Some(loc) = self.loc.expand() {
-                loc.display(color, packages, to, style)?;
-            } else {
-                write!(to, "| ")?;
-            }
-            writeln!(to, "{color}{}{}", self.message, style.end)?;
-
-            for rel in &self.related {
-                rel.display(packages, to, style)?;
-            }
-
-            writeln!(to)?;
-
-            Ok(())
-        }
-    }
-
-    /// Represents additional information about [`Diag`].
-    #[derive(Debug, PartialEq, Eq)]
-    pub struct DiagRel {
-        pub loc: Maybe<DiagLoc>,
-        pub message: String,
-    }
-
-    impl DiagRel {
-        pub fn display(
-            &self,
-            packages: &dyn DiagPackages,
-            to: &mut dyn Write,
-            style: &Style,
-        ) -> std::fmt::Result {
-            let color = style.weak;
-            if let Some(loc) = self.loc.expand() {
-                loc.display(color, packages, to, style)?;
-            } else {
-                write!(to, "| ")?;
-            }
-            writeln!(to, "{color}{}{}", self.message, style.end)?;
-
-            Ok(())
-        }
-    }
-
-    /// Represents location of [`Diag`].
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct DiagLoc {
-        pub span: Maybe<Span>,
-        pub source: Ident,
-    }
-
-    impl DiagLoc {
-        pub fn new(loc: Loc, interner: &Interner) -> Maybe<Self> {
-            let Some(file) = loc.file.expand() else {
-                return default();
-            };
-
-            assert!(file != Ident::EMPTY);
-
-            let Some(pos) = loc.pos.expand() else {
-                return DiagLoc {
-                    span: default(),
-                    source: file,
-                }.into();
-            };
-
-            let len = interner[loc.name].len();
-            let span = pos.to_span(len);
-
-            DiagLoc {
-                span: span.into(),
-                source: file,
-            }
-            .into()
-        }
-
-        pub fn display(
-            &self,
-            color: &str,
-            packages: &dyn DiagPackages,
-            to: &mut dyn Write,
-            style: &Style,
-        ) -> std::fmt::Result {
-            let (path, line_col) =
-                packages.line_info(self.source, self.span.expand().map(|s| s.start as usize));
-
-            if let (Some((line, col)), Some(span)) = (line_col, self.span.expand()) {
-                writeln!(to, "| {}:{}:{}", path.display(), line, col)?;
-                span.underline(color, "^", packages.content_of(self.source), to, style)?;
-                write!(to, " ")
-            } else {
-                write!(to, "| {}: ", path.display())
-            }
-        }
-    }
-
-    impl Invalid for DiagLoc {
-        unsafe fn invalid() -> Self {
-            DiagLoc {
-                span: Maybe::default(),
-                source: Ident::invalid(),
-            }
-        }
-
-        fn is_invalid(&self) -> bool {
-            self.source.is_invalid()
-        }
-    }
-
-    fn color_of<'a>(severity: raw::DiagnosticSeverity, style: &'a Style) -> &'a str {
-        match severity {
-            raw::DiagnosticSeverity::ERROR => style.err,
-            raw::DiagnosticSeverity::WARNING => style.warn,
-            raw::DiagnosticSeverity::INFORMATION => style.info,
-            raw::DiagnosticSeverity::HINT => style.weak,
-            _ => unreachable!(),
         }
     }
 }

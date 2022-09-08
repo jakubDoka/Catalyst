@@ -1,17 +1,8 @@
 [package]
-name = "catalyst"
+name = "sippet_display"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[workspace]
-members = [
-    "stages/*",
-    "tests/*",
-    "types/*",
-    "utils/*",
-    "subcommands/*"
-]
 
 [dependencies]

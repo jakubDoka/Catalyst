@@ -66,7 +66,14 @@ impl Parser<'_> {
                     LeftBracket => self.index_expr()?,
                     LeftParen => self.call_expr()?,
                     Dot => self.dot_expr()?,
-                    _ => break,
+                    _ => {
+                        if self.reduce_repetition(TokenKind::NewLine) && self.next(TokenKind::Dot) {
+                            self.advance();
+                            self.dot_expr()?;
+                        } else {
+                            break;
+                        }
+                    },
                 }};
             }
         }

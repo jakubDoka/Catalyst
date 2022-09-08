@@ -1,4 +1,4 @@
-use std::iter::once;
+use std::{iter::once, ops::Range};
 
 #[derive(Debug)]
 pub struct LineMapping {
@@ -43,6 +43,24 @@ impl LineMapping {
             pos + 1,
             (index - self.indices[pos]).checked_sub(1).unwrap_or(0),
         )
+    }
+
+    pub fn clear(&mut self) {
+        self.indices.clear();
+    }
+
+    pub fn width(&self, range: Range<usize>) -> usize {
+        let (start_line, start_col) = self.line_info_at(range.start);
+        let (end_line, end_col) = self.line_info_at(range.end);
+
+        if start_line == end_line {
+            return end_col - start_col;
+        }
+
+        (start_line - 1..end_line - 1)
+            .map(|i| self.indices[i + 1] - self.indices[i])
+            .max()
+            .unwrap_or(end_col)
     }
 }
 

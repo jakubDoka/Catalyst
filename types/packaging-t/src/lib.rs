@@ -8,31 +8,13 @@ macro_rules! span_str {
 #[macro_export]
 macro_rules! insert_scope_item {
     () => {
-        pub fn insert_scope_item(&mut self, item: ModItem) {
+        pub fn insert_scope_item(&mut self, item: $crate::ModItem, whole_span: lexing_t::Span) {
             $crate::insert_scope_item(
                 item,
                 &mut self.scope,
                 self.current_file,
                 &mut self.interner,
                 &mut self.packages,
-                &mut self.workspace,
-            );
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! duplicate_definition {
-    () => {
-        fn duplicate_definition(
-            &mut self,
-            duplicate: lexing_t::Span,
-            because: impl Into<Maybe<diags::DiagLoc>>,
-        ) {
-            $crate::duplicate_definition(
-                duplicate,
-                because.into(),
-                self.current_file,
                 &mut self.workspace,
             );
         }
@@ -48,7 +30,7 @@ pub use util::{duplicate_definition, insert_scope_item};
 mod util {
     use crate::*;
     use diags::*;
-    use inner_lexing::*;
+    use lexing_t::*;
     use scope::*;
     use storage::*;
 
@@ -60,12 +42,14 @@ mod util {
         packages: &mut Packages,
         workspace: &mut Workspace,
     ) {
-        if let Err(span) = scope.insert(current_file, item.to_scope_item(current_file), interner) {
-            let loc = DiagLoc {
-                source: current_file,
-                span,
-            };
-            duplicate_definition(item.span, loc.into(), current_file, workspace);
+        if let Err(spans) = scope.insert(current_file, item.to_scope_item(current_file), interner) {
+            workspace.push(duplicate_definition(
+                item.whole_span,
+                item.span,
+                spans,
+                current_file,
+            ));
+            return;
         }
 
         packages
@@ -75,22 +59,18 @@ mod util {
             .add_item(item);
     }
 
-    pub fn duplicate_definition(
+    gen_error_fn!(duplicate_definition(
         duplicate: Span,
-        because: Maybe<DiagLoc>,
-        current_file: Ident,
-        workspace: &mut Workspace,
+        duplicate_name: Span,
+        existing: Option<(Span, Span)>,
+        file: Ident,
     ) {
-        if let Some(because) = because.expand() {
-            workspace.push(diag! {
-                (duplicate, current_file) error => "duplicate definition",
-                (exp because) => "previous definition",
-            })
-        } else {
-            workspace.push(diag! {
-                (duplicate, current_file) error => "duplicate definition",
-                (none) => "collision with builtin item"
-            })
+        err: "duplicate definition";
+        (duplicate, file) {
+            info[duplicate_name]: "this name";
         }
-    }
+        (existing?.0, file) {
+            info[existing?.1]: "matches this already existing item";
+        }
+    });
 }

@@ -30,6 +30,10 @@ impl<'a> Lexer<'a> {
 
         Token { kind, span }
     }
+
+    pub fn reveal_lines(&self, span: Span) -> Span {
+        span.reveal_lines(self.inner.source())
+    }
 }
 
 impl Iterator for Lexer<'_> {

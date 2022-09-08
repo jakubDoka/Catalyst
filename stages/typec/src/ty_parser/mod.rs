@@ -3,7 +3,7 @@ use std::{
     default::default,
 };
 
-use diags::diag;
+use diags::*;
 use lexing_t::Span;
 use packaging_t::span_str;
 use parsing_t::*;
@@ -35,6 +35,7 @@ impl TyParser<'_> {
                 self.scope.push(ScopeItem::new(
                     name_ident,
                     param,
+                    ast_name.span,
                     ast_name.span,
                     self.current_file,
                     Vis::Priv,
@@ -195,11 +196,12 @@ impl TyParser<'_> {
 
     pub fn handle_scope_error<T: ScopeLookup>(&mut self, err: ScopeError, sym: Ident, span: Span) {
         self.workspace.push(match err {
-            ScopeError::NotFound => diag! {
-                (span, self.current_file) => "{} not found (queried '{}')" {
-                    T::ITEM_NAME,
-                    &self.interner[sym],
-                },
+            ScopeError::NotFound => sippet! {
+                err: ("{} not found", T::ITEM_NAME);
+                info: ("queried '{}'", &self.interner[sym]);
+                (span, self.current_file) {
+                    err[span]: "this does not exist";
+                }
             },
             ScopeError::Collision => {
                 let suggestions = self
@@ -217,24 +219,27 @@ impl TyParser<'_> {
                             .ok()
                             .and(Some(ident))
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .into_iter()
                     .map(|ident| &self.interner[ident])
-                    .collect::<Vec<_>>()
+                    .collect::<BumpVec<_>>()
                     .join(", ");
 
-                diag! {
-                    (span, self.current_file) => "`{}` is ambiguous" { &self.interner[sym] },
-                    (none) => "you have to specify module from which the item is imported",
-                    (none) => "suggestions: {}" { suggestions },
+                sippet! {
+                    err: ("'{}' is ambiguous", &self.interner[sym]);
+                    help: ("try to specify module from which the item is imported");
+                    help: ("suggestions: {}", suggestions);
+                    (span, self.current_file) {
+                        err[span]: "this is ambiguous";
+                    }
                 }
             }
-            ScopeError::TypeMismatch(found) => diag! {
-                (span, self.current_file) => "`{}` is not a {}" {
-                    &self.interner[sym],
-                    T::ITEM_NAME,
-                },
-                (none) => "found type: {}" { T::project(found).unwrap_or("todo: unknown") },
+            ScopeError::TypeMismatch(found) => sippet! {
+                err: ("'{}' is not a {}", &self.interner[sym], T::ITEM_NAME);
+                info: ("found type: {}", T::project(found).unwrap_or("todo: unknown"));
+                (span, self.current_file) {
+                    err[span]: "this is of incorrect type";
+                }
             },
         });
     }

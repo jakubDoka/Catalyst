@@ -1,4 +1,3 @@
-use diags::DiagPackages;
 use lexing_t::*;
 use scope::*;
 use std::{any::Any, path::*};
@@ -16,6 +15,10 @@ pub struct Packages {
 impl Packages {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn reveal_span_lines(&self, file: Ident, span: Span) -> Span {
+        self.modules.get(&file).unwrap().reveal_span_lines(span)
     }
 
     pub fn span_str(&self, file: Ident, span: Span) -> &str {
@@ -53,20 +56,6 @@ impl Packages {
     }
 }
 
-impl DiagPackages for Packages {
-    fn line_info(&self, module: Ident, pos: Option<usize>) -> (&Path, Option<(usize, usize)>) {
-        let module = self.modules.get(&module).unwrap();
-        (
-            module.path.as_path(),
-            pos.map(|pos| module.line_mapping.line_info_at(pos)),
-        )
-    }
-
-    fn content_of(&self, module: Ident) -> &str {
-        self.modules.get(&module).unwrap().content.as_str()
-    }
-}
-
 #[derive(Default, Debug)]
 pub struct Mod {
     pub path: PathBuf,
@@ -78,11 +67,7 @@ pub struct Mod {
 
 impl Mod {
     pub fn span_str(&self, span: Span) -> &str {
-        unsafe {
-            std::str::from_utf8_unchecked(
-                &self.content.as_bytes()[span.start as usize..span.end as usize],
-            )
-        }
+        &self.content[span.start as usize..span.end as usize]
     }
 
     pub fn add_item(&mut self, item: ModItem) {
@@ -92,6 +77,10 @@ impl Mod {
             unreachable!()
         }
     }
+
+    fn reveal_span_lines(&self, span: Span) -> Span {
+        span.reveal_lines(&self.content)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -99,15 +88,17 @@ pub struct ModItem {
     pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Span,
+    pub whole_span: Span,
     pub vis: Vis,
 }
 
 impl ModItem {
-    pub fn new(id: Ident, ptr: VRef<impl Any>, span: Span, vis: Vis) -> Self {
+    pub fn new(id: Ident, ptr: VRef<impl Any>, span: Span, whole_span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ScopePtr::new(ptr),
             span,
+            whole_span,
             vis,
         }
     }
@@ -117,6 +108,7 @@ impl ModItem {
             id: self.id,
             ptr: self.ptr,
             span: self.span,
+            whole_span: self.whole_span,
             vis: self.vis,
             module,
         }

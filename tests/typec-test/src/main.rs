@@ -53,20 +53,14 @@ impl Testable for TestState {
 
                 item_collector!(ts, module).types(items, &mut types);
 
+                println!("{types:?}");
+                println!("{items:?}");
+
                 if finished {
                     break;
                 }
             }
         }
-
-        ts.workspace.push(diag! {
-            (none) info => "types:\n\t{}" {
-                types.iter().map(|&(_ast, t)| {
-                    let ty = &ts.typec.types[t];
-                    format!("struct {}", &ts.interner[ty.loc.name])
-                }).collect::<Vec<_>>().join("\n\t")
-            },
-        });
 
         (ts.workspace, ts.packages)
     }

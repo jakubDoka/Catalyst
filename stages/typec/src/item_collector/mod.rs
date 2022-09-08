@@ -21,7 +21,7 @@ impl ItemCollector<'_> {
                 continue;
             };
 
-            self.insert_scope_item(item);
+            self.insert_scope_item(item, ast.span);
             passed_data.push((ast, ty));
         }
     }
@@ -44,11 +44,11 @@ impl ItemCollector<'_> {
             }
             .into(),
             flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: Loc::new(ast_name.span, self.current_file, name_ident),
+            loc: Loc::new(name_ident, self.current_file, ast_name.span, ast.span),
         };
-        let id = self.typec.types.insert_unique(key, ty);
+        let (id, _) = self.typec.types.insert(key, ty);
 
-        let item = ModItem::new(name_ident, id, ast_name.span, vis);
+        let item = ModItem::new(name_ident, id, ast_name.span, ast.span, vis);
 
         Ok((item, id))
     }

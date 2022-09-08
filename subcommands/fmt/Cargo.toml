@@ -1,0 +1,14 @@
+[package]
+name = "fmt"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+diags = { version = "0.1.0", path = "../../types/diags" }
+lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+parsing = { version = "0.1.0", path = "../../stages/parsing" }
+parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+scope = { version = "0.1.0", path = "../../utils/scope" }
+storage = { version = "0.1.0", path = "../../utils/storage" }

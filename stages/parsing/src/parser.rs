@@ -204,6 +204,18 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn reduce_repetition(&mut self, tok: TokenKind) -> bool {
+        if !self.at(tok) {
+            return false;
+        }
+
+        while self.next(tok) {
+            self.advance();
+        }
+
+        true
+    }
+
     fn expect<P>(&mut self, kinds: P) -> errors::Result
     where
         P: IntoIterator<Item = TokenKind> + Clone,
@@ -280,32 +292,35 @@ impl<'a> Parser<'a> {
         self.state.next.kind == kind
     }
 
-    fn expect_error(&mut self, kinds: impl IntoIterator<Item = TokenKind>) {
-        self.workspace.push(diag! {
-            (self.state.current.span, self.state.path)
-            error => "expected {} but got {}" {
+    gen_error_fns! {
+        push expect_error(self, kinds: impl IntoIterator<Item = TokenKind> + Clone) {
+            err: (
+                "expected {} but got {}",
                 kinds.into_iter().map(|k| k.as_str()).collect::<BumpVec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
-            },
-        });
-    }
+            );
+            (self.state.current.span, self.state.path) {
+                err[self.state.current.span]: "token located here";
+            }
+        }
 
-    fn expect_str_error(&mut self, strings: &[&str]) {
-        self.workspace.push(diag! {
-            (self.state.current.span, self.state.path)
-            error => "expected '{}' but got {}" {
+        push expect_str_error(self, strings: &[&str]) {
+            err: (
+                "expected '{}' but got {}",
                 strings.join("' | '"),
-                self.current_token_str()
-            },
-        });
-    }
+                self.current_token_str(),
+            );
+            (self.state.current.span, self.state.path) {
+                err[self.state.current.span]: "token located here";
+            }
+        }
 
-    fn unmatched_paren(&mut self, kind: TokenKind, span: Span) {
-        self.workspace.push(diag! {
-            (self.state.current.span, self.state.path)
-            error => "unmatched paren {}" { kind.as_str() },
-            (span, self.state.path) => "the starting paren",
-        });
+        push unmatched_paren(self, kind: TokenKind, span: Span) {
+            err: ("unmatched paren {}", kind.as_str());
+            (span.joined(self.state.current.span), self.state.path) {
+                err[span]: "the starting paren";
+            }
+        }
     }
 
     fn ctx_keyword(&mut self, keyword: &str) -> bool {

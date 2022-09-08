@@ -1,3 +1,5 @@
+#![feature(closure_lifetime_binder)]
+
 #[macro_export]
 macro_rules! gen_test {
     (
@@ -90,8 +92,10 @@ pub use items::Testable;
 pub mod items {
     use ansi_coloring::*;
     use diags::*;
+    use fmt::Fmt;
     use packaging_t::*;
     use std::{path::*, thread::Scope};
+    use storage::{Ident, Interner};
 
     pub trait Testable {
         fn run(name: &str) -> (Workspace, Packages);
@@ -106,7 +110,7 @@ pub mod items {
             let (ws, packages) = test_code(name);
 
             let mut out = String::new();
-            ws.display(&packages, &mut out, &Style::NONE).unwrap();
+            //ws.display(&packages, &mut out, &Style::NONE).unwrap();
 
             let path = format!("{}/{}.txt", "test_out", name);
             if !Path::new("test_out").exists() {
@@ -139,27 +143,44 @@ pub mod items {
             }
         }
 
-        pub fn create(&mut self) {
+        pub fn create(&mut self) -> Workspace {
+            let mut fmt = Fmt::new();
             let path = PathBuf::from(&self.name);
-            self.create_recur(&path);
+            let mut interner = Interner::new();
+            self.create_recur(&path, &mut fmt, &mut interner);
             self.global_path = Some(path);
+            fmt.into_workspace()
         }
 
-        fn create_recur(&self, path: &Path) {
+        fn create_recur(&self, path: &Path, fmt: &mut Fmt, interner: &mut Interner) {
             let self_path = path;
             if !path.exists() {
                 std::fs::create_dir(&self_path).unwrap();
             }
             for (name, content) in &self.files {
-                std::fs::write(
-                    self_path.join(name),
-                    content.replace('\n', " ").replace("::", "`"),
-                )
-                .unwrap();
+                let formatter = if name.ends_with(".ctl") {
+                    Fmt::source
+                //} else if name.ends_with(".ctlm") {
+                // TODO
+                } else {
+                    for<'a> |_: &'a mut Fmt, s: String, _: Ident| -> (Option<&'a str>, String) {
+                        (None, s)
+                    }
+                };
+
+                let path = self_path.join(name);
+                let path_ident = interner.intern_str(path.to_str().unwrap());
+
+                let c = content.replace('\n', " ").replace("::", "`");
+                let (res, c) = formatter(fmt, c, path_ident);
+
+                let res = res.unwrap_or(&c);
+
+                std::fs::write(path, res).unwrap();
             }
 
             for folder in &self.folders {
-                folder.create_recur(&path.join(&folder.name));
+                folder.create_recur(&path.join(&folder.name), fmt, interner);
             }
         }
     }

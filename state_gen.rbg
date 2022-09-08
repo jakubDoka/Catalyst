@@ -18,7 +18,7 @@ file "stages/packaging/src/state_gen.rs" {
         mut Packages
         mut Workspace
         mut Interner
-        mut PackageGraph
+        mut PackageGraph        
     }
 }
 

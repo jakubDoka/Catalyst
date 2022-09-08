@@ -18,8 +18,9 @@ pub const FILE_EXTENSION: &str = "ctl";
 pub const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
 pub const DEFAULT_DEP_ROOT: &str = "deps";
 
-type PackageFrontier = BumpVec<(Ident, PathBuf, Maybe<DiagLoc>)>;
-type ModuleFrontier = BumpVec<(Ident, Ident, PathBuf, Maybe<DiagLoc>)>;
+type DiagLoc = Option<(Ident, Span)>;
+type PackageFrontier = BumpVec<(Ident, PathBuf, DiagLoc)>;
+type ModuleFrontier = BumpVec<(Ident, Ident, PathBuf, DiagLoc)>;
 
 impl PackageLoader<'_> {
     pub fn load(&mut self, root: &Path) -> errors::Result {
@@ -41,7 +42,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        if self.workspace.error_count().has_errors() {
+        if self.workspace.has_errors() {
             return Err(());
         }
 
@@ -169,17 +170,8 @@ impl PackageLoader<'_> {
             let version_span = (version.kind != AstKind::None).then(|| version.span.shrink(1));
             let version = version_span.map(|span| &content[span.range()]);
 
-            let version_loc = DiagLoc {
-                source: id,
-                span: version_span.into(),
-            }
-            .into();
-
-            let current_loc = DiagLoc {
-                source: id,
-                span: path_span.into(),
-            }
-            .into();
+            let version_loc = version_span.map(|span| (id, span));
+            let current_loc = Some((id, path_span));
 
             let path_result = if use_git {
                 self.download_package(project_path, current_loc, version_loc, version, path_str)
@@ -225,11 +217,7 @@ impl PackageLoader<'_> {
     ) -> errors::Result<Ident> {
         let id = self.intern_path(path)?;
 
-        let loc = DiagLoc {
-            source: package,
-            span: loc,
-        }
-        .into();
+        let loc = loc.expand().map(|loc| (package, loc));
 
         let path = path
             .with_extension(FILE_EXTENSION)
@@ -328,18 +316,8 @@ impl PackageLoader<'_> {
                 .or_else(|| (package == ".").then_some(package_id));
 
             let Some(external_package_id) = maybe_package else {
-                self.workspace.push(diag! {
-                    (path_span.sliced(..package.len()), id)
-                    error => "cannot find this package in manifest",
-                    (none) => "available packages: '{}'" { 
-                        self.packages.conns[package_ent.deps]
-                            .iter()
-                            .map(|dep| &package_ent.content[dep.name.range()])
-                            .chain(std::iter::once("."))
-                            .collect::<BumpVec<_>>()
-                            .join("', '")
-                    },
-                });
+                let sippet = Self::unknown_package(self, path_span.sliced(..package.len()), id, &package_ent);
+                self.workspace.push(sippet);
                 continue;
             };
 
@@ -350,11 +328,7 @@ impl PackageLoader<'_> {
             let mut path = root_module.with_extension("").join(module_name);
             path.set_extension(FILE_EXTENSION);
 
-            let import_loc = DiagLoc {
-                source: id,
-                span: path_span.into(),
-            }
-            .into();
+            let import_loc = Some((id, path_span));
 
             path = path.canonicalize().map_err(|err| {
                 self.file_error(import_loc, &path, "cannot canonicalize module path", err)
@@ -379,17 +353,15 @@ impl PackageLoader<'_> {
     fn download_package(
         &mut self,
         project_path: &Path,
-        loc: Maybe<DiagLoc>,
-        version_loc: Maybe<DiagLoc>,
+        loc: DiagLoc,
+        version_loc: DiagLoc,
         version: Option<&str>,
         url: &str,
     ) -> errors::Result<PathBuf> {
         let full_url = &format!("https://{}", url);
         let rev_owned = self.resolve_version(version_loc, version, &full_url)?;
         if version.is_some() && rev_owned.is_none() {
-            self.workspace.push(diag! {
-                (exp version_loc) warn => "cannot find this version, using main branch instead",
-            })
+            self.invalid_version(version_loc);
         }
         let rev = rev_owned.as_ref().map(|v| v.as_str());
 
@@ -436,7 +408,7 @@ impl PackageLoader<'_> {
 
     fn resolve_version(
         &mut self,
-        loc: Maybe<DiagLoc>,
+        loc: DiagLoc,
         version: Option<&str>,
         url: &str,
     ) -> errors::Result<Option<String>> {
@@ -463,32 +435,22 @@ impl PackageLoader<'_> {
             .map(|(major, minor, patch)| format!("v{}.{}.{}", major, minor, patch)))
     }
 
-    fn execute_git<'a>(
+    fn execute_git(
         &mut self,
-        loc: Maybe<DiagLoc>,
+        loc: DiagLoc,
         quiet: bool,
-        args: impl IntoIterator<Item = &'a str> + Clone,
+        args: impl IntoIterator<Item = &str> + Clone,
     ) -> errors::Result<String> {
         if !quiet {
-            self.workspace.push(diag! {
-                (exp loc) hint => "executing: git {}" {
-                    args.clone().into_iter().collect::<BumpVec<_>>().join(" ")
-                }
-            });
+            self.git_info(loc, args.clone());
         }
 
-        let output = Command::new("git").args(args).output();
-        let output = output.map_err(|err| {
-            self.workspace.push(diag! {
-                (exp loc) error => "cannot execute git",
-                (none) => "error: {}" { err }
-            })
-        })?;
+        let output = Command::new("git").args(args.clone()).output();
+        let output = output.map_err(|err| self.git_exec_error(loc, args.clone(), err))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            self.workspace
-                .push(diag!((exp loc) error => "git error:\n{}" { stderr }));
+            let output = String::from_utf8_lossy(&output.stderr);
+            self.git_exit_error(loc, args, output.as_ref());
             return Err(());
         }
 
@@ -533,30 +495,82 @@ impl PackageLoader<'_> {
             .copied()
     }
 
-    fn file_error(&mut self, loc: Maybe<DiagLoc>, path: &Path, message: &str, err: std::io::Error) {
-        self.workspace.push(diag! {
-            (exp loc) error => "{}" { message },
-            (none) => "related path: {}" { path.display() },
-            (none) => "trace: {}" { err },
-        });
-    }
+    gen_error_fns! {
+        push file_error(self, loc: DiagLoc, path: &Path, message: &str, err: std::io::Error) {
+            err["id"]: ("{}", message);
+            info: ("related path: {}", path.display());
+            info: ("trace: {}", err);
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                err[loc?.1]: "caused by this";
+            }
+        }
 
-    fn invalid_path_encoding(&mut self, loc: Maybe<DiagLoc>, path: &Path, kind: &str) {
-        self.workspace.push(diag! {
-            (exp loc) error => "invalid {} path encoding" { kind },
-            (none) => "path: {}" { path.display() },
-        });
-    }
+        push invalid_path_encoding(self, loc: DiagLoc, path: &Path, kind: &str) {
+            err: ("invalid {} path encoding", kind);
+            info: ("related path: {}", path.display());
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                err[loc?.1]: "caused by this";
+            }
+        }
 
-    fn dependency_cycle(&mut self, cycle: Vec<u32>) {
-        self.workspace.push(diag! {
-            (none) error => "dependency cycle detected",
-            (none) => "cycle:\n\t{}" {
-                cycle.into_iter()
-                    .map(|id| &self.interner[unsafe { Ident::new(id as usize) }])
+        push dependency_cycle(self, cycle: Vec<u32>) {
+            err: "dependency cycle detected";
+            info: (
+                "cycle:\n\t{}",
+                cycle
+                    .iter()
+                    .map(|&id| &self.interner[unsafe { Ident::new(id as usize) }])
                     .collect::<BumpVec<_>>()
-                    .join("\n\t")
-            },
-        });
+                    .join("\n\t"),
+            );
+        }
+
+        push git_info(self, loc: DiagLoc, args: impl IntoIterator<Item = &str>) {
+            info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                info[loc?.1]: "invocation declared here";
+            }
+        }
+
+        push git_exec_error(self, loc: DiagLoc, args: impl IntoIterator<Item = &str>, err: std::io::Error) {
+            err: "git execution failed";
+            info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
+            info: ("trace: {}", err);
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                info[loc?.1]: "invocation declared here";
+            }
+        }
+
+        push git_exit_error(self, loc: DiagLoc, args: impl IntoIterator<Item = &str>, output: &str) {
+            err: "git execution failed";
+            info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
+            info: ("output:\n{}", output);
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                info[loc?.1]: "invocation declared here";
+            }
+        }
+
+        push invalid_version(self, loc: DiagLoc) {
+            warn: "invalid version";
+            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+                info[loc?.1]: "version is specified here";
+            }
+        }
+
+        unknown_package(s: &Self, span: Span, id: Ident, package: &Mod) {
+            err: "cannot find this package in manifest";
+            info: (
+                "available packages: '{}'",
+                s.packages.conns[package.deps]
+                    .iter()
+                    .map(|dep| &package.content[dep.name.range()])
+                    .chain(std::iter::once("."))
+                    .collect::<BumpVec<_>>()
+                    .join("', '")
+            );
+            (s.packages.reveal_span_lines(id, span), id) {
+                err[span]: "invalid package prefix used here";
+            }
+        }
     }
 }

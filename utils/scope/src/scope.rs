@@ -1,6 +1,8 @@
+use core::fmt;
 use std::{
     any::{Any, TypeId},
     default::default,
+    fmt::{Display, Formatter},
 };
 
 use lexing_t::*;
@@ -72,9 +74,7 @@ impl Scope {
             Item {
                 id,
                 ptr: ScopePtr::new(ptr),
-                span: Maybe::none(),
-                module: Maybe::none(),
-                vis: Vis::None,
+                ..default()
             }
             .into(),
         );
@@ -84,7 +84,7 @@ impl Scope {
         &mut self,
         item: ScopeItem,
         interner: &mut Interner,
-    ) -> Result<(), Maybe<Span>> {
+    ) -> Result<(), Option<(Span, Span)>> {
         self.insert(item.module, item, interner)
     }
 
@@ -93,7 +93,7 @@ impl Scope {
         current_module: Ident,
         item: ScopeItem,
         interner: &mut Interner,
-    ) -> Result<(), Maybe<Span>> {
+    ) -> Result<(), Option<(Span, Span)>> {
         if item.module != current_module {
             let id = interner.intern(scoped_ident!(item.module, item.id));
             self.data.insert(id, item.into());
@@ -103,7 +103,7 @@ impl Scope {
             && let Some(existing) = existing_option.as_mut_option()
         {
             if existing.module == item.module.into() || existing.module.is_none() {
-                return Err(existing.span);
+                return Err(existing.spans());
             }
 
             if item.module == current_module {
@@ -140,13 +140,25 @@ pub enum ScopeError {
     TypeMismatch(TypeId),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Item {
     pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Maybe<Span>,
+    pub whole_span: Maybe<Span>,
     pub module: Maybe<Ident>,
     pub vis: Vis,
+}
+
+impl Item {
+    /// returns (self.whole_span, self.span)
+    fn spans(&self) -> Option<(Span, Span)> {
+        self.span.expand().and_then(|span| {
+            self.whole_span
+                .expand()
+                .map(|whole_span| (whole_span, span))
+        })
+    }
 }
 
 impl Invalid for Item {
@@ -155,6 +167,7 @@ impl Invalid for Item {
             id: Ident::invalid(),
             ptr: ScopePtr::invalid(),
             span: Maybe::none(),
+            whole_span: Maybe::none(),
             module: Maybe::none(),
             vis: Vis::None,
         }
@@ -170,16 +183,25 @@ pub struct ScopeItem {
     pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Span,
+    pub whole_span: Span,
     pub module: Ident,
     pub vis: Vis,
 }
 
 impl ScopeItem {
-    pub fn new(id: Ident, ptr: impl Into<ScopePtr>, span: Span, module: Ident, vis: Vis) -> Self {
+    pub fn new(
+        id: Ident,
+        ptr: impl Into<ScopePtr>,
+        span: Span,
+        whole_span: Span,
+        module: Ident,
+        vis: Vis,
+    ) -> Self {
         Self {
             id,
             ptr: ptr.into(),
             span,
+            whole_span,
             module,
             vis,
         }
@@ -192,6 +214,7 @@ impl Into<Item> for ScopeItem {
             id: self.id,
             ptr: self.ptr,
             span: Maybe::some(self.span),
+            whole_span: Maybe::some(self.whole_span),
             module: Maybe::some(self.module),
             vis: self.vis,
         }
@@ -244,6 +267,15 @@ impl Invalid for ScopePtr {
     }
 }
 
+impl Default for ScopePtr {
+    fn default() -> Self {
+        Self {
+            id: TypeId::of::<()>(),
+            ptr: 0,
+        }
+    }
+}
+
 struct InvalidItem;
 
 impl<T: 'static> From<VRef<T>> for ScopePtr {
@@ -264,6 +296,16 @@ impl Vis {
         match other {
             Vis::None => self,
             _ => other,
+        }
+    }
+}
+
+impl Display for Vis {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Vis::Pub => write!(f, "pub "),
+            Vis::Priv => write!(f, "priv "),
+            Vis::None => write!(f, ""),
         }
     }
 }
