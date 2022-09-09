@@ -1,7 +1,6 @@
-| dependency cycle detected
-| cycle:
-	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a\b.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
-
+error: dependency cycle detected
+ = info: cycle:
+         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
+         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
+         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a\b.ctl
+         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
