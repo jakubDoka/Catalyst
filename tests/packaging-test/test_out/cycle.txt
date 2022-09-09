@@ -4,3 +4,4 @@ error: dependency cycle detected
          \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
          \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a\b.ctl
          \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
+
