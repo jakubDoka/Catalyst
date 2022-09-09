@@ -34,6 +34,16 @@ macro_rules! format_message {
 }
 
 #[macro_export]
+macro_rules! format_required_message {
+    (($($tokens:tt)*)) => {
+        format!($($tokens)*).into()
+    };
+    ($string:expr) => {
+        $string.into()
+    };
+}
+
+#[macro_export]
 macro_rules! annotation {
     ($annotation_type:ident$([$id:expr])?$(: $label:tt)?) => {
         (|| Some($crate::Annotation {
@@ -56,23 +66,22 @@ macro_rules! slice_origin {
 
 #[macro_export]
 macro_rules! slice {
-    (($span:expr $(, $($origin:tt)+)?) $({$($annotations:tt)*})?) => {
+    (($span:expr, $origin:expr) $({$($annotations:tt)*})?) => {
         (|| Some($crate::Slice {
             span: $span,
-            origin: $crate::slice_origin!($($($origin)+)?),
+            origin: $origin,
             annotations: $crate::source_annotations!($($($annotations)*)?),
-            fold: true,
         }))()
     };
 }
 
 #[macro_export]
 macro_rules! source_annotation {
-    ($annotation_type:ident$([$span:expr])?$(: $label:tt)?) => {
+    ($annotation_type:ident$([$span:expr])?: $label:tt) => {
         (|| Some($crate::SourceAnnotation {
             $(range: $span)?,
-            label: $crate::format_message!($($label)?),
-            annotation_type: annotation_type!($annotation_type),
+            label: $crate::format_required_message!($label),
+            annotation_type: $crate::annotation_type!($annotation_type),
             ..Default::default()
         }))()
     };
@@ -80,9 +89,9 @@ macro_rules! source_annotation {
 
 #[macro_export]
 macro_rules! source_annotations {
-    ($($annotation_type:ident$([$span:expr])?$(: $label:tt)?;)*) => {
+    ($($annotation_type:ident$([$span:expr])?: $label:tt;)*) => {
         vec![
-            $($crate::source_annotation!($annotation_type$([$span])?$(: $label)?)),*
+            $($crate::source_annotation!($annotation_type$([$span])?: $label)),*
         ]
     };
 }
@@ -92,19 +101,17 @@ macro_rules! sippet {
     {
         $title_type:ident$([$title_id:expr])?$(: $title_label:tt)?;
         $($footer_type:ident$([$footer_id:expr])?$(: $footer_label:tt)?;)*
-        $(($span:expr $(, $($origin:tt)+)?) $({$($annotations:tt)*})?)*
+        $(($span:expr, $origin:expr) $({$($annotations:tt)*})?)*
         $(opt: $opt:expr)?
     } => {
-        Sippet {
+        $crate::Snippet {
             title: $crate::annotation!($title_type$([$title_id])?$(: $title_label)?),
             footer: vec![
                 $($crate::annotation!($footer_type$([$footer_id])?$(: $footer_label)?)),*
             ],
             slices: vec![
-                $($crate::slice!(($span $(, $($origin)+)?) $({$($annotations)*})?)),*
+                $($crate::slice!(($span, $origin) $({$($annotations)*})?)),*
             ],
-            $(opt: $opt,)?
-            ..Default::default()
         }
     };
 }
@@ -124,11 +131,23 @@ macro_rules! gen_error_fn {
     };
 
     {
+        print $name:ident($self:ident, $($param:ident: $param_ty:ty),* $(,)?) {
+            $($body:tt)*
+        }
+    } => {
+        pub fn $name(&mut $self, $($param: $param_ty),*) {
+            $self.workspace.push_or_display(&$self.packages, $crate::sippet! {
+                $($body)*
+            })
+        }
+    };
+
+    {
         $name:ident($($param:ident: $param_ty:ty),* $(,)?) {
             $($body:tt)*
         }
     } => {
-        pub fn $name($($param: $param_ty),*) -> $crate::Sippet {
+        pub fn $name($($param: $param_ty),*) -> $crate::Snippet {
             $crate::sippet! {
                 $($body)*
             }
@@ -158,7 +177,7 @@ macro_rules! gen_error_fns {
 mod items;
 
 pub use items::{
-    Annotation, AnnotationType, FormatOptions, Margin, Sippet, Slice, SourceAnnotation, Str,
+    Annotation, AnnotationType, ErrorCount, Slice, Snippet, SnippetDisplay, SourceAnnotation, Str,
     Workspace,
 };
 
@@ -166,6 +185,7 @@ pub use items::{
 #[cfg(test)]
 mod tests {
     use lexing_t::Span;
+    use storage::Ident;
 
     use super::*;
 
@@ -174,7 +194,7 @@ mod tests {
         drop(sippet! {
             err["id"]: "hello";
             err: "world";
-            (Span::new(0..0)) {
+            (Span::new(0..0), Ident::EMPTY) {
                 err[Span::new(0..0)]: "world";
             }
         });
@@ -188,7 +208,7 @@ mod tests {
         gen_error_fns! {
             push test_err(self, span: Span, a: i32, b: i32) {
                 err["goo"]: ("hello {} {}", a, b);
-                (span) {
+                (span, Ident::EMPTY) {
                     err[span]: "world";
                 }
             }

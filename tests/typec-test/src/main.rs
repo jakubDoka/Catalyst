@@ -28,9 +28,7 @@ impl Testable for TestState {
     fn run(name: &str) -> (Workspace, Packages) {
         let mut ts = TestState::default();
 
-        if package_loader!(ts).load(Path::new(name)).is_err() {
-            return (ts.workspace, ts.packages);
-        }
+        package_loader!(ts).load(Path::new(name));
 
         let mut parse_state = ParserState::new();
         let mut types = vec![];

@@ -21,7 +21,7 @@ impl ItemCollector<'_> {
                 continue;
             };
 
-            self.insert_scope_item(item, ast.span);
+            self.insert_scope_item(item);
             passed_data.push((ast, ty));
         }
     }

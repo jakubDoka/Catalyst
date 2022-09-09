@@ -78,8 +78,12 @@ impl Mod {
         }
     }
 
-    fn reveal_span_lines(&self, span: Span) -> Span {
+    pub fn reveal_span_lines(&self, span: Span) -> Span {
         span.reveal_lines(&self.content)
+    }
+
+    pub fn is_module(&self) -> bool {
+        self.kind.is_module()
     }
 }
 
@@ -127,6 +131,12 @@ pub enum ModKind {
         items: Vec<ModItem>,
     },
     Default,
+}
+
+impl ModKind {
+    pub fn is_module(&self) -> bool {
+        matches!(self, Self::Module { .. })
+    }
 }
 
 impl Default for ModKind {

@@ -14,7 +14,7 @@ impl LineMapping {
         }
     }
 
-    /// Returns line number anc column number of the given index inside mapped file.
+    /// Returns line number and column number of the given index inside mapped file.
     ///
     /// # Examples
     /// ```

@@ -11,3 +11,4 @@ packaging-t = { path = "../../types/packaging-t" }
 ansi-coloring = { path = "../../utils/ansi-coloring" }
 fmt = { path = "../../subcommands/fmt" }
 storage = { path = "../../utils/storage" }
+snippet-display = { path = "../../utils/snippet-display" }

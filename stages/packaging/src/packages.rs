@@ -13,50 +13,43 @@ use parsing::*;
 use parsing_t::*;
 use storage::*;
 
-pub const MANIFEST_EXTENSION: &str = "ctlm";
-pub const FILE_EXTENSION: &str = "ctl";
-pub const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
-pub const DEFAULT_DEP_ROOT: &str = "deps";
-
 type DiagLoc = Option<(Ident, Span)>;
 type PackageFrontier = BumpVec<(Ident, PathBuf, DiagLoc)>;
 type ModuleFrontier = BumpVec<(Ident, Ident, PathBuf, DiagLoc)>;
 
 impl PackageLoader<'_> {
-    pub fn load(&mut self, root: &Path) -> errors::Result {
-        let mut path = root.to_owned();
+    /// Loads the project into graph of manifests and source files.
+    pub fn load(&mut self, root: &Path) {
+        drop(self.load_low(root))
+    }
+
+    fn load_low(&mut self, root: &Path) -> errors::Result {
+        // setup
+        let mut path = root
+            .canonicalize()
+            .map_err(|err| self.file_error(None, root, "manifest is missing", err))?;
         path.push("package");
         path.set_extension(MANIFEST_EXTENSION);
         let id = self.intern_path(&path)?;
         path.pop();
-
         let mut frontier = bumpvec![(id, path, default())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
-        loop {
-            if let Ok(true) =
-                self.load_package(&mut ast_data, &mut parser_state, &mut frontier, root)
-            {
-                break;
-            }
-        }
+        // load packages
+        while !self.load_package(&mut ast_data, &mut parser_state, &mut frontier, root)? {}
 
-        if self.workspace.has_errors() {
-            return Err(());
-        }
-
+        // load modules
         let Some(&ModKind::Package { ref root_module, span }) = self.packages.modules.get(&id).map(|m| &m.kind) else {
             unreachable!();
         };
-
         let path = root_module.to_owned();
         let module_id = self.load_modules(&path, id, span)?;
 
+        // prepare cycle detection, we are doing packages and modules in one go
         self.package_graph.clear();
         self.package_graph
             .load_nodes(self.packages.modules.keys().map(|id| id.index() as u32));
-
         for (k, module) in self.packages.modules.iter() {
             self.package_graph.new_node(k.index() as u32).add_edges(
                 self.packages.conns[module.deps]
@@ -65,21 +58,27 @@ impl PackageLoader<'_> {
             );
         }
 
+        // detect cycles and build ordering
         let roots = [id.index() as u32, module_id.index() as u32];
         let mut ordering = bumpvec![cap self.packages.modules.len()];
         self.package_graph
             .ordering(roots, &mut ordering)
             .map_err(|cycle| self.dependency_cycle(cycle))?;
 
+        // `SAFETY`: We previously supplied Ident internals into the graph
+        // so it is safe to construct them from what graph gave us
         self.packages.module_order.extend(
             ordering
                 .into_iter()
-                .map(|i| unsafe { Ident::new(i as usize) }),
+                .map(|i| unsafe { Ident::new(i as usize) })
+                .filter(|id| self.packages.modules.get(&id).unwrap().is_module()),
         );
 
         Ok(())
     }
 
+    /// Loads one package and pushes its dependencies to frontier.
+    /// Downloads packages if needed.
     fn load_package(
         &mut self,
         ast_data: &mut AstData,
@@ -87,36 +86,37 @@ impl PackageLoader<'_> {
         frontier: &mut PackageFrontier,
         project_path: &Path,
     ) -> errors::Result<bool> {
-        let Some((id, mut path, loc)) = frontier.pop() else {
+        let Some((id, mut tmp_path, loc)) = frontier.pop() else {
             return Ok(true);
         };
 
-        path.push("package");
-        path.set_extension(MANIFEST_EXTENSION);
+        // load content
+        tmp_path.push("package");
+        tmp_path.set_extension(MANIFEST_EXTENSION);
+        let content = read_to_string(&tmp_path)
+            .map_err(|err| self.file_error(loc, &tmp_path, "cannot load manifest", err))?;
+        let path = tmp_path.clone();
+        tmp_path.pop();
 
-        let content = read_to_string(&path)
-            .map_err(|err| self.file_error(loc, &path, "cannot load manifest", err))?;
-
-        path.pop();
-
+        // parse
         ast_data.clear();
         parser_state.start(&content, id);
         let fields = Parser::new(&content, parser_state, ast_data, self.workspace).parse_manifest();
 
+        // retrieve data from ast
         let (mut root_module, span) = {
             let (root_module, span) = self
                 .find_field_value("root", fields, &content, ast_data)
                 .unwrap_or(("root", default()));
-            (path.join(root_module), span)
+            (tmp_path.join(root_module), span)
         };
         root_module.set_extension("");
-
         let deps =
             self.find_field("deps", fields, &content, ast_data)
                 .map_or(default(), |deps_ast| {
-                    self.load_package_deps(
+                    self.push_package_deps(
                         id,
-                        &mut path,
+                        &mut tmp_path,
                         deps_ast,
                         &content,
                         ast_data,
@@ -125,6 +125,7 @@ impl PackageLoader<'_> {
                     )
                 });
 
+        // save
         let package = Mod {
             path,
             line_mapping: LineMapping::new(&content),
@@ -137,7 +138,8 @@ impl PackageLoader<'_> {
         Ok(false)
     }
 
-    fn load_package_deps(
+    /// Function will find and optionally download all direct dependencies.
+    fn push_package_deps(
         &mut self,
         id: Ident,
         temp_path: &mut PathBuf,
@@ -149,6 +151,7 @@ impl PackageLoader<'_> {
     ) -> VSlice<Dep> {
         self.packages.conns.start_cache();
         for dep in &ast_data[ast_data[deps_ast.children][1].children] {
+            // retrieve data from ast
             let &Ast { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
                 unreachable!("{:?}", dep.kind);
             };
@@ -159,7 +162,6 @@ impl PackageLoader<'_> {
 
             let path_span = path.span.shrink(1);
             let path_str = &content[path_span.range()];
-
             let name = if name.kind.is_none() {
                 let start = path_str.rfind("/").map(|i| i + 1).unwrap_or(0);
                 path_span.sliced(start..)
@@ -169,16 +171,16 @@ impl PackageLoader<'_> {
 
             let version_span = (version.kind != AstKind::None).then(|| version.span.shrink(1));
             let version = version_span.map(|span| &content[span.range()]);
-
             let version_loc = version_span.map(|span| (id, span));
             let current_loc = Some((id, path_span));
 
+            // find the path of the dependency
             let path_result = if use_git {
                 self.download_package(project_path, current_loc, version_loc, version, path_str)
             } else {
                 let to_pop = Path::new(path_str).components().count();
                 temp_path.push(path_str);
-                let p = temp_path.canonicalize().map_err(|err| {
+                let path = temp_path.canonicalize().map_err(|err| {
                     self.file_error(
                         current_loc,
                         temp_path,
@@ -187,7 +189,7 @@ impl PackageLoader<'_> {
                     )
                 });
                 assert!((0..to_pop).fold(true, |acc, _| acc & temp_path.pop()));
-                p
+                path
             };
 
             let Ok(path) = path_result else {
@@ -198,6 +200,7 @@ impl PackageLoader<'_> {
                 continue;
             };
 
+            // save
             let dep = Dep { name, ptr };
             self.packages.conns.cache(dep);
 
@@ -209,14 +212,13 @@ impl PackageLoader<'_> {
         self.packages.conns.bump_cached()
     }
 
+    /// Only reachable modules are loaded.
     fn load_modules(
         &mut self,
         path: &Path,
         package: Ident,
         loc: Maybe<Span>,
     ) -> errors::Result<Ident> {
-        let id = self.intern_path(path)?;
-
         let loc = loc.expand().map(|loc| (package, loc));
 
         let path = path
@@ -226,19 +228,18 @@ impl PackageLoader<'_> {
                 self.file_error(loc, path, "cannot canonicalize root module path", err)
             })?;
 
+        let id = self.intern_path(&path)?;
+
         let mut frontier = bumpvec![(id, package, path, default())];
         let mut ast_data = AstData::new();
         let mut parser_state = ParserState::new();
 
-        loop {
-            if let Ok(true) = self.load_module(&mut ast_data, &mut parser_state, &mut frontier) {
-                break;
-            }
-        }
+        while !self.load_module(&mut ast_data, &mut parser_state, &mut frontier)? {}
 
         Ok(id)
     }
 
+    /// Returns true when last module was already loaded.
     fn load_module(
         &mut self,
         ast_data: &mut AstData,
@@ -305,8 +306,10 @@ impl PackageLoader<'_> {
 
             let path_span = path.span.shrink(1);
             let path_str = &content[path_span.range()];
-            let (package, module_name) = path_str.split_once('/').unwrap_or((path_str, ""));
+            // $package$(/$module_path)?
+            let (package, module_path) = path_str.split_once('/').unwrap_or((path_str, ""));
 
+            // Try to find package mentioned by import, '.' is a self reference.
             let package_ent = &self.packages.modules.get(&package_id).unwrap();
             let maybe_package = self.packages.conns[package_ent.deps]
                 .iter()
@@ -314,25 +317,30 @@ impl PackageLoader<'_> {
                     (&package_ent.content[dep.name.range()] == package).then_some(dep.ptr)
                 })
                 .or_else(|| (package == ".").then_some(package_id));
-
             let Some(external_package_id) = maybe_package else {
                 let sippet = Self::unknown_package(self, path_span.sliced(..package.len()), id, &package_ent);
                 self.workspace.push(sippet);
                 continue;
             };
 
+            // All submodules of a package are expected to be in subdirectory with same name and level as
+            // root module.
             let external_package = &self.packages.modules.get(&external_package_id).unwrap();
             let ModKind::Package { ref root_module, .. } = external_package.kind else {
                 unreachable!();
             };
-            let mut path = root_module.with_extension("").join(module_name);
+            let mut path = root_module.with_extension("").join(module_path);
             path.set_extension(FILE_EXTENSION);
 
             let import_loc = Some((id, path_span));
 
-            path = path.canonicalize().map_err(|err| {
-                self.file_error(import_loc, &path, "cannot canonicalize module path", err)
-            })?;
+            let path = match path.canonicalize() {
+                Ok(path) => path,
+                Err(err) => {
+                    self.file_error(import_loc, &path, "cannot canonicalize module path", err);
+                    continue;
+                }
+            };
 
             let import_id = self.intern_path(&path)?;
 
@@ -342,14 +350,17 @@ impl PackageLoader<'_> {
             };
             self.packages.conns.cache(dep);
 
-            if self.packages.modules.get(&import_id).is_none() {
-                frontier.push((import_id, external_package_id, path, import_loc));
+            if self.packages.modules.contains_key(&import_id) {
+                continue;
             }
+
+            frontier.push((import_id, external_package_id, path, import_loc));
         }
 
         Ok(self.packages.conns.bump_cached())
     }
 
+    /// git is invoked and package may be downloaded into `%CATALYST_CACHE%/url/(version || 'main')`
     fn download_package(
         &mut self,
         project_path: &Path,
@@ -376,11 +387,9 @@ impl PackageLoader<'_> {
 
         create_dir_all(&dep_root)
             .map_err(|err| self.file_error(loc, &dep_root, "cannot create directory", err))?;
-
         let install_path = dep_root.canonicalize().map_err(|err| {
             self.file_error(loc, &dep_root, "cannot canonicalize installation path", err)
         })?;
-
         if exists {
             return Ok(install_path);
         }
@@ -500,7 +509,7 @@ impl PackageLoader<'_> {
             err: ("{}", message);
             info: ("related path: {}", path.display());
             info: ("trace: {}", err);
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 err[loc?.1]: "caused by this";
             }
         }
@@ -508,7 +517,7 @@ impl PackageLoader<'_> {
         push invalid_path_encoding(self, loc: DiagLoc, path: &Path, kind: &str) {
             err: ("invalid {} path encoding", kind);
             info: ("related path: {}", path.display());
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 err[loc?.1]: "caused by this";
             }
         }
@@ -516,18 +525,18 @@ impl PackageLoader<'_> {
         push dependency_cycle(self, cycle: Vec<u32>) {
             err: "dependency cycle detected";
             info: (
-                "cycle:\n\t{}",
+                "cycle:\n{}",
                 cycle
                     .iter()
                     .map(|&id| &self.interner[unsafe { Ident::new(id as usize) }])
                     .collect::<BumpVec<_>>()
-                    .join("\n\t"),
+                    .join("\n"),
             );
         }
 
-        push git_info(self, loc: DiagLoc, args: impl IntoIterator<Item = &str>) {
+        print git_info(self, loc: DiagLoc, args: impl IntoIterator<Item = &str>) {
             info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 info[loc?.1]: "invocation declared here";
             }
         }
@@ -536,7 +545,7 @@ impl PackageLoader<'_> {
             err: "git execution failed";
             info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
             info: ("trace: {}", err);
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 info[loc?.1]: "invocation declared here";
             }
         }
@@ -545,14 +554,14 @@ impl PackageLoader<'_> {
             err: "git execution failed";
             info: ("executing git: {}", args.into_iter().collect::<BumpVec<_>>().join(" "));
             info: ("output:\n{}", output);
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 info[loc?.1]: "invocation declared here";
             }
         }
 
         push invalid_version(self, loc: DiagLoc) {
             warn: "invalid version";
-            (self.packages.reveal_span_lines(loc?.0, loc?.1), loc?.0) {
+            (loc?.1, loc?.0) {
                 info[loc?.1]: "version is specified here";
             }
         }

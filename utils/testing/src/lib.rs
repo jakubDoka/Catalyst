@@ -90,10 +90,10 @@ mod tests {
 pub use items::Testable;
 
 pub mod items {
-    use ansi_coloring::*;
     use diags::*;
     use fmt::Fmt;
     use packaging_t::*;
+    use snippet_display::SnippetDisplay;
     use std::{path::*, thread::Scope};
     use storage::{Ident, Interner};
 
@@ -107,10 +107,9 @@ pub mod items {
         test_code: fn(&str) -> (Workspace, Packages),
     ) {
         let runner = move || {
-            let (ws, packages) = test_code(name);
+            let (mut ws, packages) = test_code(name);
 
-            let mut out = String::new();
-            //ws.display(&packages, &mut out, &Style::NONE).unwrap();
+            let out = ws.display(&packages, &mut SnippetDisplay::default());
 
             let path = format!("{}/{}.txt", "test_out", name);
             if !Path::new("test_out").exists() {

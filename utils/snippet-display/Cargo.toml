@@ -1,0 +1,13 @@
+[package]
+name = "snippet-display"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+annotate-snippets = "0.9.1"
+diags = { version = "0.1.0", path = "../../types/diags" }
+packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+storage = { version = "0.1.0", path = "../storage" }

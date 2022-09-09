@@ -1,12 +1,18 @@
 use std::borrow::Cow;
 
-use lexing_t::Span;
-use storage::{Ident, Maybe};
+use lexing_t::*;
+use packaging_t::Packages;
+use storage::*;
+
+pub trait SnippetDisplay {
+    fn display_snippet(&mut self, packages: &Packages, snippet: &Snippet) -> String;
+}
 
 #[derive(Default)]
 pub struct Workspace {
-    sippets: Vec<Sippet>,
+    sippets: Vec<Snippet>,
     error_count: usize,
+    display: Option<Box<dyn SnippetDisplay>>,
 }
 
 impl Workspace {
@@ -14,7 +20,33 @@ impl Workspace {
         Self::default()
     }
 
-    pub fn push(&mut self, sippet: Sippet) {
+    pub fn display<'a>(
+        &'a mut self,
+        packages: &Packages,
+        display: &'a mut dyn SnippetDisplay,
+    ) -> String {
+        let display: &'a mut _ = if let Some(ref mut display) = self.display {
+            &mut **display
+        } else {
+            display
+        };
+        self.sippets
+            .iter()
+            .map(|s| display.display_snippet(packages, s))
+            .flat_map(|s| [s, "\n\n".to_string()])
+            .collect()
+    }
+
+    pub fn push_or_display(&mut self, packages: &Packages, snippet: Snippet) {
+        if let Some(ref mut display) = self.display {
+            let out = display.display_snippet(packages, &snippet);
+            println!("{}", out);
+        } else {
+            self.push(snippet);
+        }
+    }
+
+    pub fn push(&mut self, sippet: Snippet) {
         self.error_count += sippet
             .title
             .as_ref()
@@ -48,11 +80,10 @@ impl ErrorCount {
 pub type Str = Cow<'static, str>;
 
 #[derive(Default)]
-pub struct Sippet {
+pub struct Snippet {
     pub title: Option<Annotation>,
     pub footer: Vec<Option<Annotation>>,
     pub slices: Vec<Option<Slice>>,
-    pub opt: FormatOptions,
 }
 
 #[derive(Default)]
@@ -65,32 +96,14 @@ pub struct Annotation {
 #[derive(Default)]
 pub struct Slice {
     pub span: Span,
-    pub origin: Maybe<Ident>,
+    pub origin: Ident,
     pub annotations: Vec<Option<SourceAnnotation>>,
-    pub fold: bool,
-}
-
-#[derive(Default)]
-pub struct FormatOptions {
-    pub color: bool,
-    pub anonymized_line_numbers: bool,
-    pub margin: Option<Margin>,
-}
-
-#[derive(Default)]
-pub struct Margin {
-    pub whitespace_left: usize,
-    pub span_left: usize,
-    pub span_right: usize,
-    pub label_right: usize,
-    pub column_width: usize,
-    pub max_line_len: usize,
 }
 
 #[derive(Default)]
 pub struct SourceAnnotation {
     pub range: Span,
-    pub label: Option<Str>,
+    pub label: Str,
     pub annotation_type: AnnotationType,
 }
 
