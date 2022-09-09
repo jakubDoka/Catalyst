@@ -1,5 +1,5 @@
-| dependency cycle detected
-| cycle:
-	\\?\C:\src\rust\catalyst\tests\packaging-test\self-import\root.ctl
-	\\?\C:\src\rust\catalyst\tests\packaging-test\self-import\root.ctl
+error: dependency cycle detected
+ = info: cycle:
+         \\?\C:\src\rust\catalyst\tests\packaging-test\self-import\root.ctl
+         \\?\C:\src\rust\catalyst\tests\packaging-test\self-import\root.ctl
 
