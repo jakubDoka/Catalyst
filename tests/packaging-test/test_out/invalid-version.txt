@@ -1,8 +1,14 @@
-| invalid-version:1:46
-| deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
-|                                                ^^^^^^^^^^^^^^^^^ cannot find this version, using main branch instead
+warning: invalid version
+ --> invalid-version:1:48
+  |
+1 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
+  |                                                ----------------- info: version is specified here
+  |
 
-| invalid-version:1:17
-| deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
-|                   ^^^^^^^^^^^^^^^^^^^^^^^^^^ executing: git clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\deps\github.com\jakubDoka\water\main
+info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\deps\github.com\jakubDoka\water\main
+ --> invalid-version:1:19
+  |
+1 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
+  |                   -------------------------- info: invocation declared here
+  |
 
