@@ -1,7 +1,24 @@
-error: expected 'fn' | 'struct' | 'bound' | 'impl' but got 'pub'
+info: parsing analysis
  --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:1
   |
-1 | pub struct RichStruct {     pub mut use field : Something [Very, Complex], other_field : SimpleStuff,     priv pointer : ^ mut ^ int, }
-  | ^^^ token located here
+1 | struct pub RichStruct {     pub use mut field : Something [Very, Complex] ; other_field : SimpleStuff     ; priv pointer : ^ mut ^ int ; }
+  | -------------------------------------------------------------------------------------------------------------------------------------- info: Struct { vis: Pub }
+  |            ---------- info: Generics
+  |            ---------- info: Ident
+  |                       ---------------------------------------------------------------------------------------------------------------- info: StructBody
+  |                             -------------------------------------------- info: StructField { vis: Pub, mutable: true, exported: true }
+  |                                         ----- info: Ident
+  |                                                 ------------------------ info: TyInstance
+  |                                                 --------- info: Ident
+  |                                                            ---- info: Ident
+  |                                                                  ------- info: Ident
+  |                                                                             ------------------------- info: StructField { vis: None, mutable: false, exported: false }
+  |                                                                             ----------- info: Ident
+  |                                                                                           ----------- info: Ident
+  |                                                                                                             -------------------------- info: StructField { vis: Priv, mutable: false, exported: false }
+  |                                                                                                                  ------- info: Ident
+  |                                                                                                                            ----------- info: PointerTy
+  |                                                                                                                              --- info: PointerMut
+  |                                                                                                                                    --- info: Ident
   |
 
