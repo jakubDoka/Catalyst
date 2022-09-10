@@ -87,4 +87,4 @@ macro_rules! branch {
 
 mod parser;
 
-pub use parser::{Parser, ParserState};
+pub use parser::{to_snippet, Parser, ParserState};

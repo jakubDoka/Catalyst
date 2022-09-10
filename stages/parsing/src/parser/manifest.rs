@@ -6,11 +6,11 @@ impl Parser<'_> {
     }
 
     fn take_manifest(&mut self) -> errors::Result {
-        list!(self, none, NewLine, Eof, manifest_field)
+        list!(self, none, NewLine, Eof, manifest_field).map(|_| ())
     }
 
     fn manifest_field(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         let name = self.state.current.span;
         self.expect(TokenKind::Ident)?;
         self.capture(AstKind::Ident);
@@ -19,7 +19,7 @@ impl Parser<'_> {
                 self.advance();
                 self.expect(TokenKind::String)?;
                 self.capture(AstKind::String);
-                self.finish(AstKind::ManifestField);
+                self.finish_last(AstKind::ManifestField, start);
             },
             LeftCurly => {
                 let parser = match self.lexer.inner_span_str(name) {
@@ -27,17 +27,17 @@ impl Parser<'_> {
                     _ => Self::manifest_field,
                 };
                 self.start();
-                list!(self, LeftCurly, NewLine, RightCurly, exp parser)?;
-                self.finish(AstKind::ManifestSection);
+                let span = list!(self, LeftCurly, NewLine, RightCurly, exp parser)?;
+                self.finish_last(AstKind::ManifestSection, span);
 
-                self.finish(AstKind::ManifestImports);
+                self.finish_last(AstKind::ManifestImports, start);
             },
         }}
         Ok(())
     }
 
     fn dep(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.optional(TokenKind::Ident, |s| Ok(s.capture(AstKind::Ident)))?;
         let use_git = self.ctx_keyword("git");
         self.expect(TokenKind::String)?;
@@ -49,7 +49,7 @@ impl Parser<'_> {
             self.ast_data.cache(Ast::none());
         }
 
-        self.finish(AstKind::ManifestImport { use_git });
+        self.finish_last(AstKind::ManifestImport { use_git }, start);
         Ok(())
     }
 }

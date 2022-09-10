@@ -195,8 +195,8 @@ gen_kind!(
     }
 
     skipped {
-        Space = r"[ \r\t]+",
         Comment = r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)",
+        Space = r"[ \r\t]+",
     }
 
     operators {

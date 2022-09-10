@@ -41,8 +41,8 @@ impl Fmt {
 
         self.source = source;
 
-        if !self.imports() {
-            return (None, mem::take(&mut self.buffer));
+        if self.imports() {
+            return (None, mem::take(&mut self.source));
         };
 
         loop {
@@ -112,7 +112,7 @@ impl Fmt {
 
     fn clear(&mut self, source: &str, path: Ident) {
         self.buffer.clear();
-        self.parse_state.start(source, path);
+        self.parse_state.start(source, path, false);
         self.line_mapping = LineMapping::new(source);
     }
 
@@ -132,12 +132,14 @@ impl Fmt {
                 // AstKind::Func { vis } => todo!(),
                 kind => unimplemented!("{:?}", kind),
             }
+
+            write!(self, "\n\n");
         }
     }
 
     fn struct_decl(&mut self, item: Ast, vis: Vis) {
-        self.vis(vis);
-        write!(self, "struct");
+        write!(self, "struct ");
+        self.vis(vis, false, true);
 
         let [generics, name, body] = self.ast_data[item.children] else {
             unreachable!()
@@ -160,9 +162,9 @@ impl Fmt {
             unreachable!()
         };
 
-        self.vis(vis);
-        self.mutable(mutable);
+        self.vis(vis, false, true);
         self.exported(exported);
+        self.mutable(mutable);
 
         let [name, ty] = self.ast_data[field.children] else {
             unreachable!()
@@ -175,7 +177,10 @@ impl Fmt {
 
     fn generics(&mut self, generics: Ast) {
         let list = &self.ast_data.clone()[generics.children];
-        self.list(list, " [", "] ", ",", |s, node| s.generic(node))
+        if list.is_empty() {
+            return;
+        }
+        self.list(list, "[", "] ", ",", |s, node| s.generic(node))
     }
 
     fn generic(&mut self, item: Ast) {
@@ -208,8 +213,26 @@ impl Fmt {
         match ty.kind {
             AstKind::Ident | AstKind::IdentChain => self.ident(ty),
             AstKind::TyInstance => self.ty_instance(ty),
+            AstKind::PointerTy => self.ty_pointer(ty),
+            AstKind::PointerMut => write!(self, "mut"),
             kind => unimplemented!("{:?}", kind),
         }
+    }
+
+    fn ty_pointer(&mut self, ty: Ast) {
+        let [mutability, base] = self.ast_data[ty.children] else {
+            unreachable!()
+        };
+
+        write!(self, "^");
+
+        if mutability.kind != AstKind::None {
+            self.ty(mutability);
+            write!(self, " ");
+        }
+
+        println!("{:?}", &self.source[base.span.range()]);
+        self.ty(base);
     }
 
     fn ty_instance(&mut self, ty: Ast) {
@@ -258,8 +281,8 @@ impl Fmt {
         if let [first, ref rest @ ..] = ast {
             f(self, *first);
             for node in rest {
-                write!(self, "{}", sep);
                 if wrap {
+                    write!(self, "{}", sep);
                     self.newline();
                     self.write_indent();
                 } else {
@@ -311,8 +334,16 @@ impl Fmt {
         self.buffer.len() - self.last_newline > Self::LINE_LENGTH
     }
 
-    fn vis(&mut self, vis: Vis) {
-        write!(self, "{}", vis);
+    fn vis(&mut self, vis: Vis, prev: bool, next: bool) {
+        if vis != Vis::None {
+            if prev {
+                write!(self, " ");
+            }
+            write!(self, "{}", vis);
+            if next {
+                write!(self, " ");
+            }
+        }
     }
 
     fn mutable(&mut self, mutable: bool) {

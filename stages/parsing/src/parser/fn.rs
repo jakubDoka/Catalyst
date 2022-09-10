@@ -4,18 +4,18 @@ use super::*;
 
 impl Parser<'_> {
     pub fn r#fn(&mut self) -> errors::Result {
+        let start = self.state.current.span;
         let vis = self.signature_unfinished()?;
 
         if self.at(TokenKind::Extern) {
-            self.advance();
-            self.ast_data.cache(Ast::none());
+            self.capture(AstKind::None);
         } else {
             self.start();
-            list!(self, LeftCurly, NewLine, RightCurly, expr)?;
-            self.finish(AstKind::FuncBody);
+            let span = list!(self, LeftCurly, NewLine, RightCurly, expr)?;
+            self.finish(AstKind::FuncBody, span);
         }
 
-        self.finish(AstKind::Func { vis });
+        self.finish_last(AstKind::Func { vis }, start);
 
         Ok(())
     }
@@ -38,8 +38,9 @@ impl Parser<'_> {
     }
 
     pub fn signature(&mut self) -> errors::Result {
+        let start = self.state.current.span;
         let vis = self.signature_unfinished()?;
-        self.finish(AstKind::FuncSignature { vis });
+        self.finish_last(AstKind::FuncSignature { vis }, start);
         Ok(())
     }
 
@@ -52,13 +53,13 @@ impl Parser<'_> {
     }
 
     fn fn_arg(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         let mutable = self.advance_if(TokenKind::Mut);
         self.ident()?;
         self.expect(TokenKind::Colon)?;
         self.advance();
         self.ty()?;
-        self.finish(AstKind::FuncArg { mutable });
+        self.finish_last(AstKind::FuncArg { mutable }, start);
         Ok(())
     }
 }

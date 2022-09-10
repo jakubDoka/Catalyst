@@ -1,0 +1,18 @@
+[package]
+name = "parsing-test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+diags = { version = "0.1.0", path = "../../types/diags" }
+lexing = { version = "0.1.0", path = "../../stages/lexing" }
+lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+packaging = { version = "0.1.0", path = "../../stages/packaging" }
+packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+parsing = { version = "0.1.0", path = "../../stages/parsing" }
+parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+snippet-display = { version = "0.1.0", path = "../../utils/snippet-display" }
+storage = { version = "0.1.0", path = "../../utils/storage" }
+testing = { version = "0.1.0", path = "../../utils/testing" }

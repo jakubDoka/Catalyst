@@ -18,37 +18,35 @@ impl Parser<'_> {
     }
 
     fn field_ty(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.capture(AstKind::Ident);
         self.advance();
         self.ty()?;
-        self.finish(AstKind::FieldTy);
+        self.finish_last(AstKind::FieldTy, start);
         Ok(())
     }
 
     fn pointer_ty(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         if self.at(TokenKind::Mut) {
             self.capture(AstKind::PointerMut);
-            self.advance();
         } else if self.at(TokenKind::Use) {
-            self.advance();
             self.ty()?;
         } else {
             self.ast_data.cache(Ast::none());
         }
         self.ty()?;
-        self.finish(AstKind::PointerTy);
+        self.finish_last(AstKind::PointerTy, start);
         Ok(())
     }
 
     fn ident_ty(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.ident_chain()?;
         if self.at(TokenKind::LeftBracket) {
             let mut has_fields = false;
-            list!(
+            let end = list!(
                 self,
                 LeftBracket,
                 Comma,
@@ -56,9 +54,9 @@ impl Parser<'_> {
                 exp | s | s.ty_low().map(|val| has_fields |= val)
             )?;
             if has_fields {
-                self.finish(AstKind::BoundInstance);
+                self.finish(AstKind::BoundInstance, start.joined(end));
             } else {
-                self.finish(AstKind::TyInstance);
+                self.finish(AstKind::TyInstance, start.joined(end));
             }
         } else {
             self.join_frames();

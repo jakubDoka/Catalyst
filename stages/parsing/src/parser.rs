@@ -33,7 +33,7 @@ impl<'a> Parser<'a> {
     ) -> Self {
         Self {
             lexer: Lexer::new(source, state.progress),
-            state: state,
+            state,
             ast_data,
             workspace,
         }
@@ -69,19 +69,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn start(&mut self) {
-        self.state.start.push(self.state.current.span);
+    fn start(&mut self) -> Span {
         self.ast_data.start_cache();
+        self.state.current.span
     }
 
-    fn start_with(&mut self, amount: usize) {
-        self.state
-            .start
-            .push(self.ast_data.split_cache_at(amount).span);
+    fn start_with(&mut self, amount: usize) -> Span {
+        self.ast_data.split_cache_at(amount).span
     }
 
     fn join_frames(&mut self) {
-        self.state.start.pop().unwrap();
         self.ast_data.join_cache_frames();
     }
 
@@ -89,16 +86,20 @@ impl<'a> Parser<'a> {
         self.ast_data.bump_cached()
     }
 
-    fn finish(&mut self, kind: AstKind) {
-        let span = self.total_span();
+    fn finish(&mut self, kind: AstKind, span: Span) {
         let ast = self.close();
         self.ast_data.cache(Ast::new(kind, ast, span));
     }
 
-    fn total_span(&mut self) -> Span {
-        let start = self.state.start.pop().unwrap();
-        let end = self.ast_data.cached().last().map_or(start, |n| n.span);
-        start.joined(end)
+    fn finish_last(&mut self, kind: AstKind, span: Span) {
+        let span = self
+            .ast_data
+            .cached()
+            .last()
+            .map(|ast| span.joined(ast.span))
+            .unwrap_or(span);
+        let ast = self.close();
+        self.ast_data.cache(Ast::new(kind, ast, span));
     }
 
     fn at<P>(&self, kind: P) -> bool
@@ -108,7 +109,13 @@ impl<'a> Parser<'a> {
         contains(kind, self.state.current.kind)
     }
 
-    fn opt_list<L, S, R, M>(&mut self, left: L, sep: S, right: R, method: M) -> errors::Result
+    fn opt_list<L, S, R, M>(
+        &mut self,
+        left: L,
+        sep: S,
+        right: R,
+        method: M,
+    ) -> errors::Result<Option<Span>>
     where
         L: IntoIterator<Item = TokenKind> + Clone,
         L::IntoIter: Clone,
@@ -119,13 +126,13 @@ impl<'a> Parser<'a> {
         M: Fn(&mut Self) -> errors::Result,
     {
         if self.at(left.clone()) {
-            self.list(left, sep, right, method)?;
+            Ok(Some(self.list(left, sep, right, method)?))
+        } else {
+            Ok(None)
         }
-
-        Ok(())
     }
 
-    fn list<L, S, R, M>(&mut self, left: L, sep: S, right: R, mut method: M) -> errors::Result
+    fn list<L, S, R, M>(&mut self, left: L, sep: S, right: R, mut method: M) -> errors::Result<Span>
     where
         L: IntoIterator<Item = TokenKind> + Clone,
         L::IntoIter: Clone,
@@ -135,6 +142,10 @@ impl<'a> Parser<'a> {
         R::IntoIter: Clone,
         M: FnMut(&mut Self) -> errors::Result,
     {
+        let mut total_span: Option<Span> = None;
+        let mut include =
+            |span| total_span = total_span.map(|start| start.joined(span)).or(Some(span));
+
         let right = move || right.clone();
         let sep = move || sep.clone();
 
@@ -143,10 +154,11 @@ impl<'a> Parser<'a> {
             (None, None)
         ));
 
-        let frame_count = self.ast_data.chace_frame_count();
+        let frame_count = self.ast_data.cache_frame_count();
 
         if non_empty(left.clone()) {
             self.expect(left)?;
+            include(self.state.current.span);
             self.advance();
             self.skip_newlines();
         }
@@ -155,6 +167,7 @@ impl<'a> Parser<'a> {
 
         loop {
             if self.at(right()) {
+                include(self.state.current.span);
                 self.advance();
                 break;
             }
@@ -169,6 +182,7 @@ impl<'a> Parser<'a> {
 
             if non_empty(right()) {
                 if self.at(right()) {
+                    include(self.state.current.span);
                     self.advance();
                     break;
                 }
@@ -185,7 +199,8 @@ impl<'a> Parser<'a> {
                 }
             } else if non_empty(sep()) {
                 if !self.at(sep()) {
-                    return Ok(());
+                    self.ast_data.cached().last().map(|ast| include(ast.span));
+                    return Ok(total_span.unwrap());
                 }
                 self.advance();
             } else {
@@ -195,7 +210,9 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
         }
 
-        Ok(())
+        println!("{}", self.lexer.inner_span_str(total_span.unwrap()));
+
+        Ok(total_span.unwrap())
     }
 
     fn skip_newlines(&mut self) {
@@ -233,7 +250,7 @@ impl<'a> Parser<'a> {
         terminals: impl IntoIterator<Item = TokenKind> + Clone,
         frame_count: usize,
     ) -> errors::Result<TokenKind> {
-        while frame_count < self.ast_data.chace_frame_count() {
+        while frame_count < self.ast_data.cache_frame_count() {
             drop(self.ast_data.discard_cache());
         }
 
@@ -270,7 +287,7 @@ impl<'a> Parser<'a> {
     }
 
     fn ident_chain(&mut self) -> errors::Result {
-        self.start();
+        let span = self.start();
         self.expect(TokenKind::Ident)?;
         self.capture(AstKind::Ident);
 
@@ -282,7 +299,7 @@ impl<'a> Parser<'a> {
         if self.ast_data.cached().len() == 1 {
             self.join_frames();
         } else {
-            self.finish(AstKind::IdentChain);
+            self.finish_last(AstKind::IdentChain, span);
         }
 
         Ok(())
@@ -332,7 +349,7 @@ impl<'a> Parser<'a> {
     }
 
     fn generics(&mut self) -> errors::Result {
-        self.start();
+        let span = self.start();
 
         self.opt_list(
             TokenKind::LeftBracket,
@@ -341,13 +358,13 @@ impl<'a> Parser<'a> {
             Self::generic_bounded_param,
         )?;
 
-        self.finish(AstKind::Generics);
+        self.finish(AstKind::Generics, span);
 
         Ok(())
     }
 
     fn generic_bounded_param(&mut self) -> errors::Result {
-        self.start();
+        let span = self.start();
         self.expect(TokenKind::Ident)?;
         self.capture(AstKind::Ident);
 
@@ -362,7 +379,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.finish(AstKind::GenericParam);
+        self.finish_last(AstKind::GenericParam, span);
 
         Ok(())
     }
@@ -419,11 +436,11 @@ fn contains(iter: impl IntoIterator<Item = TokenKind>, kind: TokenKind) -> bool 
 
 #[derive(Default)]
 pub struct ParserState {
-    start: Vec<Span>,
     current: Token,
     next: Token,
     progress: usize,
     path: Ident,
+    is_formatting: bool,
 }
 
 impl ParserState {
@@ -431,11 +448,40 @@ impl ParserState {
         Self::default()
     }
 
-    pub fn start(&mut self, source: &str, path: Ident) {
+    pub fn start(&mut self, source: &str, path: Ident, is_formatting: bool) {
         let mut lexer = Lexer::new(source, 0);
         self.current = lexer.next();
         self.next = lexer.next();
         self.progress = lexer.progress();
         self.path = path;
+        self.is_formatting = is_formatting;
+    }
+}
+
+pub fn to_snippet(ast: Ast, ast_data: &AstData, origin: Ident) -> diags::Snippet {
+    diags::Snippet {
+        title: annotation!(info: "parsing analysis"),
+        slices: vec![Some(diags::Slice {
+            span: ast.span,
+            origin,
+            annotations: {
+                fn walk(root: Ast, ast_data: &AstData, fun: &mut impl FnMut(Ast)) {
+                    fun(root);
+                    for &child in &ast_data[root.children] {
+                        if child.kind == AstKind::None {
+                            continue;
+                        }
+                        walk(child, ast_data, fun);
+                    }
+                }
+
+                let mut vec = vec![];
+                walk(ast, ast_data, &mut |ast| {
+                    vec.push(source_annotation!(info[ast.span]: ("{:?}", ast.kind)));
+                });
+                vec
+            },
+        })],
+        ..Default::default()
     }
 }

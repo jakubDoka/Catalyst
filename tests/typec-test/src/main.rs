@@ -37,7 +37,7 @@ impl Testable for TestState {
             ts.build_scope(module);
 
             let mod_ent = ts.packages.modules.get(&module).unwrap();
-            parse_state.start(&mod_ent.content, module);
+            parse_state.start(&mod_ent.content, module, false);
             loop {
                 ts.ast_data.clear();
                 let mod_ent = ts.packages.modules.get(&module).unwrap();
@@ -50,9 +50,7 @@ impl Testable for TestState {
                 .parse_items();
 
                 item_collector!(ts, module).types(items, &mut types);
-
-                println!("{types:?}");
-                println!("{items:?}");
+                ty_builder!(ts, module).types(&mut types);
 
                 if finished {
                     break;

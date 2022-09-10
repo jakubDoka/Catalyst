@@ -13,6 +13,7 @@ impl Parser<'_> {
             [TokenKind::Break, TokenKind::Eof],
             Self::item,
         )
+        .map(|_| ())
     }
 
     pub fn item(&mut self) -> errors::Result {

@@ -20,6 +20,7 @@
         "peekable",
         "repr",
         "rfind",
+        "Struct",
         "Typec",
         "Uninit"
     ],

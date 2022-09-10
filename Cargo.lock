@@ -200,6 +200,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "parsing-test"
+version = "0.1.0"
+dependencies = [
+ "diags",
+ "lexing",
+ "lexing-t",
+ "packaging",
+ "packaging-t",
+ "parsing",
+ "parsing-t",
+ "snippet-display",
+ "storage",
+ "testing",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

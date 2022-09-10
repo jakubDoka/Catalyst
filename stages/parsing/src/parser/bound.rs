@@ -2,15 +2,17 @@ use super::*;
 
 impl Parser<'_> {
     pub fn bound(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         let vis = self.visibility();
         self.generics()?;
         self.ident()?;
+
         self.start();
-        list!(self, LeftCurly, NewLine, RightCurly, bound_item)?;
-        self.finish(AstKind::BoundBody);
-        self.finish(AstKind::Bound { vis });
+        let end = list!(self, LeftCurly, NewLine, RightCurly, bound_item)?;
+        self.finish(AstKind::BoundBody, end);
+
+        self.finish(AstKind::Bound { vis }, start.joined(end));
         Ok(())
     }
 
@@ -23,19 +25,19 @@ impl Parser<'_> {
     }
 
     fn bound_type(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         let vis = self.visibility();
         self.generics()?;
         self.ident()?;
 
-        self.finish(AstKind::BoundType { vis });
+        self.finish_last(AstKind::BoundType { vis }, start);
 
         Ok(())
     }
 
     pub fn r#impl(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         let vis = self.visibility();
         self.generics()?;
@@ -49,14 +51,18 @@ impl Parser<'_> {
         }
 
         self.start();
-        opt_list!(self, LeftCurly, NewLine, RightCurly, impl_item)?;
-        self.finish(AstKind::ImplBody);
-
-        if is_bound_impl {
-            self.finish(AstKind::BoundImpl { vis });
+        if let Some(span) = opt_list!(self, LeftCurly, NewLine, RightCurly, impl_item)? {
+            self.finish(AstKind::ImplBody, span);
         } else {
-            self.finish(AstKind::Impl { vis });
+            self.ast_data.cache(Ast::none());
         }
+
+        let kind = if is_bound_impl {
+            AstKind::BoundImpl { vis }
+        } else {
+            AstKind::Impl { vis }
+        };
+        self.finish_last(kind, start);
 
         Ok(())
     }
@@ -71,7 +77,7 @@ impl Parser<'_> {
     }
 
     fn impl_type(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         self.generics()?;
         self.ident()?;
@@ -80,19 +86,19 @@ impl Parser<'_> {
 
         self.ty()?;
 
-        self.finish(AstKind::ImplType);
+        self.finish_last(AstKind::ImplType, start);
 
         Ok(())
     }
 
     fn impl_use(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
         self.ty()?;
         self.expect(TokenKind::As)?;
         self.advance();
         self.ident()?;
-        self.finish(AstKind::ImplUse);
+        self.finish_last(AstKind::ImplUse, start);
 
         Ok(())
     }

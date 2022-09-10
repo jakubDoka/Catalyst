@@ -25,22 +25,22 @@ impl Parser<'_> {
     }
 
     fn imports(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         self.advance();
-        list!(self, LeftCurly, NewLine, RightCurly, import)?;
-        self.finish(AstKind::Imports);
+        let end = list!(self, LeftCurly, NewLine, RightCurly, import)?;
+        self.finish(AstKind::Imports, start.joined(end));
         Ok(())
     }
 
     fn import(&mut self) -> errors::Result {
-        self.start();
+        let start = self.start();
         if self.state.current.kind == TokenKind::Ident {
             self.capture(AstKind::Ident);
         } else {
             self.ast_data.cache(Ast::none());
         }
         self.capture(AstKind::String);
-        self.finish(AstKind::Import);
+        self.finish_last(AstKind::Import, start);
         Ok(())
     }
 }

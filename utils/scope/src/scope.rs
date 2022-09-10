@@ -303,8 +303,8 @@ impl Vis {
 impl Display for Vis {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Vis::Pub => write!(f, "pub "),
-            Vis::Priv => write!(f, "priv "),
+            Vis::Pub => write!(f, "pub"),
+            Vis::Priv => write!(f, "priv"),
             Vis::None => write!(f, ""),
         }
     }

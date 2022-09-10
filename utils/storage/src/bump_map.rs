@@ -65,7 +65,7 @@ impl<T> BumpMap<T, Frames<T>> {
     }
 
     /// Returns amount of frames in cache.
-    pub fn chace_frame_count(&self) -> usize {
+    pub fn cache_frame_count(&self) -> usize {
         self.frames.len()
     }
 

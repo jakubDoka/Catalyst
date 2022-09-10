@@ -100,7 +100,7 @@ impl PackageLoader<'_> {
 
         // parse
         ast_data.clear();
-        parser_state.start(&content, id);
+        parser_state.start(&content, id, false);
         let fields = Parser::new(&content, parser_state, ast_data, self.workspace).parse_manifest();
 
         // retrieve data from ast
@@ -254,7 +254,7 @@ impl PackageLoader<'_> {
             .map_err(|err| self.file_error(loc, &path, "cannot load source file", err))?;
 
         ast_data.clear();
-        parser_state.start(&content, id);
+        parser_state.start(&content, id, false);
         let imports =
             Parser::new(&content, parser_state, ast_data, &mut self.workspace).parse_imports();
 
