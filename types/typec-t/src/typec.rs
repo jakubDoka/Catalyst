@@ -9,6 +9,7 @@ pub struct Typec {
     pub types: Types,
     pub bounds: Bounds,
     pub funcs: Funcs,
+    pub fields: Fields,
 
     pub ty_slices: TySlices,
     pub bound_slices: BoundSlices,

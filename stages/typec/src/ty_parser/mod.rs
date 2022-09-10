@@ -15,38 +15,40 @@ use typec_t::*;
 use crate::*;
 
 impl TyParser<'_> {
-    pub fn generics(
-        &mut self,
-        generic_ast: Ast,
-        offset: usize,
-        on_type: bool,
-        insert_params: bool,
-    ) -> VRefSlice<Bound> {
+    pub fn generics(&mut self, generic_ast: Ast) -> VRefSlice<Bound> {
         let mut generics = bumpvec!(cap self.ast_data[generic_ast.children].len());
-        for (i, &ast) in self.ast_data[generic_ast.children].iter().enumerate() {
-            let [ast_name, ref bounds @ ..] = self.ast_data[ast.children] else {
+        for &ast in &self.ast_data[generic_ast.children] {
+            let [_, ref bounds @ ..] = self.ast_data[ast.children] else {
                 unreachable!();
             };
-
-            if insert_params {
-                let name = span_str!(self, ast_name.span);
-                let name_ident = self.interner.intern_str(name);
-                let param = ty_utils!(self).nth_param(i + offset, on_type);
-                self.scope.push(ScopeItem::new(
-                    name_ident,
-                    param,
-                    ast_name.span,
-                    ast_name.span,
-                    self.current_file,
-                    Vis::Priv,
-                ));
-            }
-
             let bound = self.bound_sum(bounds).unwrap_or_default();
             generics.push(bound);
         }
-
         self.typec.bound_slices.bump(generics)
+    }
+
+    pub fn insert_generics(&mut self, generics_ast: Ast, offset: usize, on_type: bool) {
+        for (i, &ast) in self.ast_data[generics_ast.children].iter().enumerate() {
+            let [name, ..] = self.ast_data[ast.children] else {
+                unreachable!();
+            };
+
+            self.insert_param(offset + i, name.span, on_type)
+        }
+    }
+
+    fn insert_param(&mut self, index: usize, span: Span, on_type: bool) {
+        let name = span_str!(self, span);
+        let name_ident = self.interner.intern_str(name);
+        let param = ty_utils!(self).nth_param(index, on_type);
+        self.scope.push(ScopeItem::new(
+            name_ident,
+            param,
+            span,
+            span,
+            self.current_file,
+            Vis::Priv,
+        ));
     }
 
     pub fn ty(&mut self, ty_ast: Ast) -> errors::Result<VRef<Ty>> {
@@ -59,10 +61,11 @@ impl TyParser<'_> {
     }
 
     pub fn bound_sum(&mut self, bounds: &[Ast]) -> errors::Result<VRef<Bound>> {
-        let bounds = bounds
+        let mut bounds = bounds
             .iter()
             .map(|&ast| self.bound(ast))
             .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+        bounds.sort_unstable_by_key(|b| b.index());
 
         let segments = self.typec.bound_sum_id(&bounds);
         let key = self.interner.intern(segments);

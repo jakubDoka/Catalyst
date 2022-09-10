@@ -1,5 +1,7 @@
 #![feature(default_free_fn)]
 
+use std::convert::TryInto;
+
 #[macro_export]
 macro_rules! gen_kind {
     (
@@ -18,23 +20,49 @@ macro_rules! gen_kind {
         }
 
         impl $name {
-            pub fn try_cast<T: TryFrom<Self>>(self) -> Option<T> {
+            pub fn try_cast<T>(self) -> Option<T> where Self: TryInto<T> {
                 self.try_into().ok()
             }
 
-            pub fn cast<T: TryFrom<Self>>(self) -> T {
+            pub fn try_cast_mut<'a, T>(&'a mut self) -> Option<&'a mut T>
+            where
+                &'a mut Self: TryInto<&'a mut T> {
+                self.try_into().ok()
+            }
+
+            pub fn try_cast_ref<'a, T>(&'a self) -> Option<&'a T>
+            where
+                &'a Self: TryInto<&'a T> {
+                self.try_into().ok()
+            }
+
+            pub fn cast<T>(self) -> T where Self: TryInto<T> {
                 self.try_cast().unwrap()
+            }
+
+            pub fn cast_ref<'a, T>(&'a self) -> &'a T
+            where
+                &'a Self: TryInto<&'a T> {
+                self.try_cast_ref().unwrap()
+            }
+
+            pub fn cast_mut<'a, T>(&'a mut self) -> &'a mut T
+            where
+                &'a mut Self: TryInto<&'a mut T> {
+                self.try_cast_mut().unwrap()
             }
         }
 
         $(
-            $($(
-                #[derive(Copy, Clone, Default)]
-                pub struct $struct {
-                    $(
-                        pub $field: $ty,
-                    )*
-                }
+            $(
+                $(
+                    #[derive(Copy, Clone, Default)]
+                    pub struct $struct {
+                        $(
+                            pub $field: $ty,
+                        )*
+                    }
+                )?
 
                 impl From<$struct> for $name {
                     fn from(value: $struct) -> Self {
@@ -74,7 +102,7 @@ macro_rules! gen_kind {
                         }
                     }
                 }
-            )?)?
+            )?
         )*
     };
 }
@@ -133,8 +161,8 @@ pub use {
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
     ty::{
-        Field, FieldFlags, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer, TySlices,
-        TyStruct, Types,
+        Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
+        TySlices, TyStruct, Types,
     },
     typec::{Flagged, Located, StorageExt, Typec, Variadic},
 };

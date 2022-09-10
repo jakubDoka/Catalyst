@@ -9,8 +9,10 @@ use typec_t::*;
 
 use crate::*;
 
+pub type PassedData = Vec<(Ast, VRef<Ty>)>;
+
 impl ItemCollector<'_> {
-    pub fn types(&mut self, ast: VSlice<Ast>, passed_data: &mut Vec<(Ast, VRef<Ty>)>) {
+    pub fn types(&mut self, ast: VSlice<Ast>, passed_data: &mut PassedData) {
         for &ast in &self.ast_data[ast] {
             let res = match ast.kind {
                 AstKind::Struct { vis } => self.r#struct(ast, vis),
@@ -31,7 +33,7 @@ impl ItemCollector<'_> {
             unreachable!();
         };
 
-        let generics = ty_parser!(self, self.current_file).generics(generics, 0, true, false);
+        let generics = ty_parser!(self, self.current_file).generics(generics);
 
         let name = span_str!(self, ast_name.span);
         let name_ident = self.interner.intern_str(name);

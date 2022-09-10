@@ -46,6 +46,7 @@ macro_rules! insert_scope_item {
 
 mod item_collector;
 mod state_gen;
+mod ty_builder;
 mod ty_parser;
 
 pub use util::{duplicate_definition, insert_scope_item};

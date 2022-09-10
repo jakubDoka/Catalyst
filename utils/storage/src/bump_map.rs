@@ -393,10 +393,7 @@ impl<T, CACHE> BumpMap<T, CACHE> {
     /// # Panics
     ///
     /// Panics if `reserved` is already filled.
-    pub fn push_to_reserved(&mut self, reserved: &mut Reserved<T>, value: T) -> VRef<T>
-    where
-        T: Clone,
-    {
+    pub fn push_to_reserved(&mut self, reserved: &mut Reserved<T>, value: T) -> VRef<T> {
         assert_ne!(reserved.end, reserved.start);
         self.data[reserved.start] = MaybeUninit::new(value);
         let key = unsafe { VRef::new(reserved.start) };

@@ -4,6 +4,7 @@ use storage::*;
 
 pub type Types = OrderedMap<Ident, Ty>;
 pub type TySlices = PoolBumpMap<VRef<Ty>>;
+pub type Fields = PoolBumpMap<Field>;
 
 pub struct Ty {
     pub kind: TyKind,
@@ -52,6 +53,7 @@ gen_kind!(TyKind
     Inferred,
 );
 
+#[derive(Clone, Copy, Default)]
 pub struct Field {
     pub ty: VRef<Ty>,
     pub flags: FieldFlags,
