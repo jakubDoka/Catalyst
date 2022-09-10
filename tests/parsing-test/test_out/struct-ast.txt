@@ -1,45 +1,30 @@
-error: expected Ident | Operator but got '\n' | ';'
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:4:27
-  |
-4 |     priv pointer: ^mut int
-  |                           ^ token located here
-  |
-
 info: parsing analysis
  --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:12
   |
-1 | struct pub RichStruct {
-  |            ---------- info: Generics
-  |
-
-info: parsing analysis
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:12
-  |
-1 | struct pub RichStruct {
-  |            ---------- info: Ident
-  |
-
-info: parsing analysis
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:23
-  |
-1 |   struct pub RichStruct {
-  |  _______________________-
-2 | |     pub use mut field: Something[Very, Complex]
-  |       ------------------------------------------ info: StructField { vis: Pub, mutable: true, exported: true }
-  |                   ----- info: Ident
-  |                          ----------------------- info: TyInstance
-  |                          --------- info: Ident
-  |                                    ---- info: Ident
-  |                                          ------- info: Ident
-3 | |     other_field: SimpleStuff
-  |       ------------------------ info: StructField { vis: None, mutable: false, exported: false }
-  |       ----------- info: Ident
-  |                    ----------- info: Ident
-4 | |     priv pointer: ^mut int
-  | |______________________- info: Struct { vis: Pub }
-  |       ------------------ info: StructBody
-  |            ------- info: Ident
-  |                     ---- info: StructField { vis: Priv, mutable: false, exported: false }
-  |                      --- info: PointerMut
+1 |    struct pub RichStruct {
+  |               ---------- info: Generics
+  |               ---------- info: Ident
+  |  /_______________________-
+2 |        pub use mut field: Something[Very, Complex]
+  |                    ----- info: Ident
+  |                           --------- info: Ident
+  |                                     ---- info: Ident
+  |                                           ------- info: Ident
+  |                           ------------------------ info: TyInstance
+  | ||     ------------------------------------------- info: StructField { vis: Pub, mutable: true, exported: true }
+3 |        other_field: SimpleStuff
+  |        ----------- info: Ident
+  |                     ----------- info: Ident
+  | ||     ------------------------ info: StructField { vis: None, mutable: false, exported: false }
+4 |        priv pointer: ^mut ^int
+  |             ------- info: Ident
+  |                       --- info: PointerMut
+  |                            --- info: Ident
+  |                           ---- info: PointerTy
+  |                      --------- info: PointerTy
+  | ||     ----------------------- info: StructField { vis: Priv, mutable: false, exported: false }
+5 |  | }
+  | ||_- info: StructBody
+  |  |_- info: Struct { vis: Pub }
   |
 
