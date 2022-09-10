@@ -1,0 +1,7 @@
+error: expected 'fn' | 'struct' | 'bound' | 'impl' but got 'pub'
+ --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:1
+  |
+1 | pub struct RichStruct {     pub mut use field : Something [Very, Complex], other_field : SimpleStuff,     priv pointer : ^ mut ^ int, }
+  | ^^^ token located here
+  |
+
