@@ -1,30 +1,30 @@
 info: parsing analysis
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:12
+ --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl:1:1
   |
-1 |    struct pub RichStruct {
+1 |  / struct pub RichStruct {
   |               ---------- info: Generics
   |               ---------- info: Ident
-  |  /_______________________-
-2 |        pub use mut field: Something[Very, Complex]
+  |   _______________________-
+2 | ||     pub use mut field: Something[Very, Complex]
+  |        ------------------------------------------- info: StructField { vis: Pub, mutable: true, exported: true }
   |                    ----- info: Ident
+  |                           ------------------------ info: TyInstance
   |                           --------- info: Ident
   |                                     ---- info: Ident
   |                                           ------- info: Ident
-  |                           ------------------------ info: TyInstance
-  | ||     ------------------------------------------- info: StructField { vis: Pub, mutable: true, exported: true }
-3 |        other_field: SimpleStuff
+3 | ||     other_field: SimpleStuff
+  |        ------------------------ info: StructField { vis: None, mutable: false, exported: false }
   |        ----------- info: Ident
   |                     ----------- info: Ident
-  | ||     ------------------------ info: StructField { vis: None, mutable: false, exported: false }
-4 |        priv pointer: ^mut ^int
+4 | ||     priv pointer: ^mut ^int
+  |        ----------------------- info: StructField { vis: Priv, mutable: false, exported: false }
   |             ------- info: Ident
-  |                       --- info: PointerMut
-  |                            --- info: Ident
-  |                           ---- info: PointerTy
   |                      --------- info: PointerTy
-  | ||     ----------------------- info: StructField { vis: Priv, mutable: false, exported: false }
+  |                       --- info: PointerMut
+  |                           ---- info: PointerTy
+  |                            --- info: Ident
 5 |  | }
-  | ||_- info: StructBody
-  |  |_- info: Struct { vis: Pub }
+  | ||_- info: Struct { vis: Pub }
+  |  |_- info: StructBody
   |
 
