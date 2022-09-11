@@ -98,6 +98,7 @@ pub struct Slice {
     pub span: Span,
     pub origin: Ident,
     pub annotations: Vec<Option<SourceAnnotation>>,
+    pub fold: bool,
 }
 
 #[derive(Default)]

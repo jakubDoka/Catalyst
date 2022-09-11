@@ -3,8 +3,10 @@ use lexing_t::*;
 use parsing::*;
 use parsing_t::*;
 use scope::*;
-use std::{fmt::Write, mem, rc::Rc};
+use std::{fmt::Write, mem, ops::Range, rc::Rc};
 use storage::*;
+
+use crate::Lexer;
 
 #[derive(Default)]
 pub struct Fmt {
@@ -14,9 +16,9 @@ pub struct Fmt {
     buffer: String,
     source: String,
     line_mapping: LineMapping,
-    checkpoints: Vec<usize>,
+    checkpoints: Vec<(usize, usize)>,
     last_newline: usize,
-    ident: usize,
+    indent: usize,
     wrap: bool,
 }
 
@@ -50,19 +52,19 @@ impl Fmt {
 
             ast_data.clear();
             let errors = self.workspace.error_count();
-            let (items, finished) = Parser::new(
+            let (items, span, finished) = Parser::new(
                 &self.source,
                 &mut self.parse_state,
                 ast_data,
                 &mut self.workspace,
             )
-            .parse_items();
+            .parse_items_spanned();
 
             if self.workspace.got_errors_since(errors) {
                 break (None, mem::take(&mut self.source));
             }
 
-            self.items(items);
+            self.items(items, span);
 
             if finished {
                 break (Some(&self.buffer), mem::take(&mut self.source));
@@ -94,7 +96,16 @@ impl Fmt {
     fn imports_ast(&mut self, imports: Ast) {
         write!(self, "use ");
         let imports_slice = &self.ast_data.clone()[imports.children];
-        self.list_low(imports_slice, "{", "}", "", true, Self::import);
+        self.list_low(
+            imports.span,
+            imports_slice,
+            "{",
+            "}",
+            "",
+            true,
+            true,
+            Self::import,
+        );
     }
 
     fn import(&mut self, ast: Ast) {
@@ -120,20 +131,21 @@ impl Fmt {
         self.workspace
     }
 
-    fn items(&mut self, items: VSlice<Ast>) {
-        for &item in &self.ast_data.clone()[items] {
-            match item.kind {
-                AstKind::Struct { vis } => self.struct_decl(item, vis),
+    fn items(&mut self, items: VSlice<Ast>, span: Span) {
+        let list = &self.ast_data.clone()[items];
+        self.list_low(span, list, "", "", "", true, false, Self::item);
+    }
 
-                // AstKind::Bound { vis } => todo!(),
-                // AstKind::BoundType { vis } => todo!(),
-                // AstKind::BoundImpl { vis } => todo!(),
-                // AstKind::Impl { vis } => todo!(),
-                // AstKind::Func { vis } => todo!(),
-                kind => unimplemented!("{:?}", kind),
-            }
+    fn item(&mut self, item: Ast) {
+        match item.kind {
+            AstKind::Struct { vis } => self.struct_decl(item, vis),
 
-            write!(self, "\n\n");
+            // AstKind::Bound { vis } => todo!(),
+            // AstKind::BoundType { vis } => todo!(),
+            // AstKind::BoundImpl { vis } => todo!(),
+            // AstKind::Impl { vis } => todo!(),
+            // AstKind::Func { vis } => todo!(),
+            kind => unimplemented!("{:?}", kind),
         }
     }
 
@@ -154,7 +166,16 @@ impl Fmt {
 
     fn struct_body(&mut self, body: Ast) {
         let fields = &self.ast_data.clone()[body.children];
-        self.list_low(fields, " {", "}", "", true, Self::struct_field);
+        self.list_low(
+            body.span,
+            fields,
+            " {",
+            "}",
+            "",
+            true,
+            true,
+            Self::struct_field,
+        );
     }
 
     fn struct_field(&mut self, field: Ast) {
@@ -180,7 +201,9 @@ impl Fmt {
         if list.is_empty() {
             return;
         }
-        self.list(list, "[", "] ", ",", |s, node| s.generic(node))
+        self.list(generics.span, list, "[", "] ", ",", |s, node| {
+            s.generic(node)
+        })
     }
 
     fn generic(&mut self, item: Ast) {
@@ -191,9 +214,11 @@ impl Fmt {
         self.checkpoint();
 
         self.ident(name);
+        let span = Span::new(name.span.end()..item.span.end());
         self.switch(
-            |s| s.list_low(bounds, ": ", "", " + ", false, Self::bound),
-            |s| s.list_low(bounds, ":", "", " +", true, Self::bound),
+            span,
+            |s| s.list_low(span, bounds, ": ", "", " + ", false, false, Self::bound),
+            |s| s.list_low(span, bounds, ":", "", " +", true, true, Self::bound),
         );
     }
 
@@ -231,7 +256,6 @@ impl Fmt {
             write!(self, " ");
         }
 
-        println!("{:?}", &self.source[base.span.range()]);
         self.ty(base);
     }
 
@@ -241,7 +265,14 @@ impl Fmt {
         };
 
         self.ident(name);
-        self.list(args, "[", "]", ",", Self::ty);
+        self.list(
+            Span::new(name.span.end()..ty.span.end()),
+            args,
+            "[",
+            "]",
+            ",",
+            Self::ty,
+        );
     }
 
     fn ident(&mut self, item: Ast) {
@@ -250,6 +281,7 @@ impl Fmt {
 
     fn list(
         &mut self,
+        span: Span,
         ast: &[Ast],
         start: &str,
         end: &str,
@@ -257,57 +289,91 @@ impl Fmt {
         f: impl Fn(&mut Self, Ast) + Copy,
     ) {
         self.switch(
-            |s| s.list_low(ast, start, end, sep, false, f),
-            |s| s.list_low(ast, start, end, sep, true, f),
+            span,
+            |s| s.list_low(span, ast, start, end, sep, false, false, f),
+            |s| s.list_low(span, ast, start, end, sep, true, true, f),
         )
     }
 
     fn list_low(
         &mut self,
+        span: Span,
         ast: &[Ast],
         start: &str,
         end: &str,
         sep: &str,
         wrap: bool,
+        indent: bool,
         f: impl Fn(&mut Self, Ast),
     ) {
+        let prev_wrap = self.wrap;
+        self.wrap = wrap;
+        let [first, ref rest @ ..] = ast else {
+            write!(self, "{}", start);
+            self.between(span.range());
+            write!(self, "{}", end);
+            return;
+        };
+
         write!(self, "{}", start);
-        if wrap {
+        if wrap && indent {
             self.indent();
+        }
+
+        if wrap && self.between(span.start()..first.span.start()) {
             self.newline();
             self.write_indent();
         }
 
-        if let [first, ref rest @ ..] = ast {
-            f(self, *first);
-            for node in rest {
-                if wrap {
-                    write!(self, "{}", sep);
+        f(self, *first);
+
+        let mut prev = first.span;
+        for node in rest {
+            if wrap {
+                write!(self, "{}", sep);
+                if self.between(prev.end()..node.span.start()) {
                     self.newline();
                     self.write_indent();
-                } else {
-                    write!(self, "{} ", sep);
                 }
-                f(self, *node);
+            } else {
+                write!(self, "{} ", sep);
+                self.between(prev.end()..node.span.start());
+            }
+            f(self, *node);
+            prev = node.span;
+        }
+
+        if wrap {
+            write!(self, "{}", sep);
+            let should_newline = self.between(prev.end()..span.end());
+            if indent {
+                self.unindent();
+            }
+            if should_newline {
+                self.newline();
+                self.write_indent();
+            } else {
+                self.buffer.pop().unwrap();
             }
         }
 
-        if wrap {
-            self.unindent();
-            self.newline();
-            self.write_indent();
-        }
-
         write!(self, "{}", end);
+        self.wrap = prev_wrap;
     }
 
-    fn switch(&mut self, linear: impl Fn(&mut Self), wrapped: impl Fn(&mut Self)) {
+    fn switch(&mut self, region: Span, linear: impl Fn(&mut Self), wrapped: impl Fn(&mut Self)) {
         self.checkpoint();
         let prev = self.wrap;
-        self.wrap = false;
-        linear(self);
+        let contains_line_comments =
+            Lexer::new(&self.source[region.range()]).contains_line_comments();
+        self.wrap = contains_line_comments;
+        if self.wrap {
+            wrapped(self);
+        } else {
+            linear(self);
+        }
         self.wrap = prev;
-        if self.wrap && self.too_far() {
+        if self.wrap && self.too_far() && !contains_line_comments {
             self.revert();
             self.wrap = true;
             wrapped(self);
@@ -317,8 +383,22 @@ impl Fmt {
         }
     }
 
+    fn between(&mut self, range: Range<usize>) -> bool {
+        let str = &self.source[range];
+        let lexer = Lexer::new(str);
+        let prev_newline = self.last_newline;
+        lexer.translate(
+            &mut self.buffer,
+            &mut self.last_newline,
+            self.indent,
+            self.wrap,
+        );
+        self.last_newline == prev_newline
+    }
+
     fn checkpoint(&mut self) {
-        self.checkpoints.push(self.buffer.len());
+        self.checkpoints
+            .push((self.buffer.len(), self.last_newline));
     }
 
     fn discard_checkpoint(&mut self) {
@@ -326,8 +406,9 @@ impl Fmt {
     }
 
     fn revert(&mut self) {
-        let checkpoint = self.checkpoints.pop().unwrap();
+        let (checkpoint, last_newline) = self.checkpoints.pop().unwrap();
         self.buffer.truncate(checkpoint);
+        self.last_newline = last_newline;
     }
 
     fn too_far(&self) -> bool {
@@ -359,15 +440,15 @@ impl Fmt {
     }
 
     fn indent(&mut self) {
-        self.ident += 1;
+        self.indent += 1;
     }
 
     fn unindent(&mut self) {
-        self.ident -= 1;
+        self.indent -= 1;
     }
 
     fn write_indent(&mut self) {
-        for _ in 0..self.ident {
+        for _ in 0..self.indent {
             self.buffer.push('\t');
         }
     }

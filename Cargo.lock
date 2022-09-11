@@ -71,6 +71,7 @@ version = "0.1.0"
 dependencies = [
  "diags",
  "lexing-t",
+ "logos",
  "parsing",
  "parsing-t",
  "scope",

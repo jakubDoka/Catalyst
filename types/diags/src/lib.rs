@@ -71,6 +71,7 @@ macro_rules! slice {
             span: $span,
             origin: $origin,
             annotations: $crate::source_annotations!($($($annotations)*)?),
+            fold: true,
         }))()
     };
 }

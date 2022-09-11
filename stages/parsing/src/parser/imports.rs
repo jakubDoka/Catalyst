@@ -10,6 +10,7 @@ impl Parser<'_> {
             {
                 self.advance();
             }
+            self.state.last_break = Some(self.state.current.span.end());
             self.advance();
         }
     }
@@ -29,6 +30,7 @@ impl Parser<'_> {
         self.advance();
         let end = list!(self, LeftCurly, NewLine, RightCurly, import)?;
         self.finish(AstKind::Imports, start.joined(end));
+        self.state.last_break = Some(end.end());
         Ok(())
     }
 

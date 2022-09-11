@@ -92,7 +92,7 @@ impl SnippetDisplay {
                 .filter_map(|i| i.as_ref())
                 .map(|i| self.source_annotation(span.start(), source, i))
                 .collect(),
-            fold: true,
+            fold: slice.fold,
         }
     }
 

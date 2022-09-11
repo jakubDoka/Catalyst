@@ -69,9 +69,22 @@ fn main() {
     gen_test! {
         TestState,
         true,
-        simple "struct-ast" {
-            struct pub RichStruct {
-                pub use mut field: Something[Very, Complex];
+        simple "struct-ast" r"
+            // comment
+            struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+                // comment
+                pub /* comment */ use /* comment */ mut /* comment */ field: Something[
+                    Very, // uuu
+                    Complex,
+                ] //comment  
+                // comment
+                other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
+                // comment
+            } // comment
+        "
+        simple "one-line-struct" {
+            struct pub OneLineStruct {
+                pub use mut filed: Trough;
                 other_field: SimpleStuff;
                 priv pointer: ^mut^int;
             }

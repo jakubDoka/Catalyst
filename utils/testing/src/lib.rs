@@ -5,9 +5,7 @@ macro_rules! gen_test {
     (
         $test_struct:ty,
         $parallel:literal,
-        $($($type:ident)? $name:literal {
-            $($structure:tt)*
-        })*
+        $($($type:ident)? $name:literal $structure:tt)*
     ) => {
         std::thread::scope(|h| {
             fn testable<T: $crate::items::Testable>() {}
@@ -15,7 +13,7 @@ macro_rules! gen_test {
             $(
                 let value = $parallel.then_some(h);
                 $crate::items::test_case($name, value, |name| {
-                    gen_test!(__inner__ name $($type)? $($structure)*);
+                    gen_test!(__inner__ name $($type)? $structure);
 
                     <$test_struct>::run(name)
                 });
@@ -23,18 +21,16 @@ macro_rules! gen_test {
         });
     };
 
-    (__inner__ $name:ident simple $($structure:tt)*) => {
+    (__inner__ $name:ident simple $structure:tt) => {
         $crate::quick_file_system!(
             ($name)
-            file "root.ctl" {
-                $($structure)*
-            }
+            file "root.ctl" $structure
             file "package.ctlm" {}
         )
     };
 
-    (__inner__ $name:ident $($structure:tt)*) => {
-        quick_file_system!(
+    (__inner__ $name:ident {$($structure:tt)*}) => {
+        $crate::quick_file_system!(
             ($name)
             $($structure)*
         )
@@ -52,19 +48,27 @@ macro_rules! quick_file_system {
         };
     };
 
-    (__recur__ ($parent:expr) $($key:ident $name:literal {$($content:tt)*})*) => {
+    (__recur__ ($parent:expr) $($key:ident $name:literal $content:tt)*) => {
         $(
-            $crate::quick_file_system!(__item__ ($parent) $key $name {$($content)*});
+            $crate::quick_file_system!(__item__ ($parent) $key $name $content);
         )*
     };
 
-    (__item__ ($parent:expr) file $name:literal {$($content:tt)*}) => {
-        $parent.files.push(($name.to_string(), stringify!($($content)*).to_string()));
+    (__item__ ($parent:expr) file $name:literal $content:tt) => {
+        $parent.files.push(($name.to_string(), $crate::quick_file_system!(__file_content__ $content)));
+    };
+
+    (__file_content__ $content:literal) => {
+        (false, $content.to_string())
+    };
+
+    (__file_content__ { $($content:tt)* }) => {
+        (true, stringify!($($content)*).to_string())
     };
 
     (__item__ ($parent:expr) dir $name:literal {$($content:tt)*}) => {
         let mut __dir = $crate::items::Folder::new($name);
-        quick_file_system!(__recur__ (__dir) $($content)*);
+        $crate::quick_file_system!(__recur__ (__dir) $($content)*);
         $parent.folders.push(__dir);
     };
 }
@@ -127,7 +131,7 @@ pub mod items {
 
     pub struct Folder {
         pub name: String,
-        pub files: Vec<(String, String)>,
+        pub files: Vec<(String, (bool, String))>,
         pub folders: Vec<Folder>,
         global_path: Option<PathBuf>,
     }
@@ -156,7 +160,7 @@ pub mod items {
             if !path.exists() {
                 std::fs::create_dir(&self_path).unwrap();
             }
-            for (name, content) in &self.files {
+            for (name, (replace, content)) in &self.files {
                 let formatter = if name.ends_with(".ctl") {
                     Fmt::source
                 //} else if name.ends_with(".ctlm") {
@@ -170,7 +174,11 @@ pub mod items {
                 let path = self_path.join(name);
                 let path_ident = interner.intern_str(path.to_str().unwrap());
 
-                let c = content.replace('\n', " ").replace("::", "`");
+                let c = if *replace {
+                    content.replace('\n', " ").replace("::", "`")
+                } else {
+                    content.clone()
+                };
                 let (res, c) = formatter(fmt, c, path_ident);
 
                 let res = res.unwrap_or(&c);

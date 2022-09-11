@@ -14,7 +14,7 @@ use diags::*;
 use lexing::*;
 use lexing_t::*;
 use parsing_t::*;
-use scope::Vis;
+use scope::*;
 use storage::*;
 
 pub struct Parser<'a> {
@@ -210,9 +210,7 @@ impl<'a> Parser<'a> {
             self.skip_newlines();
         }
 
-        println!("{}", self.lexer.inner_span_str(total_span.unwrap()));
-
-        Ok(total_span.unwrap())
+        total_span.ok_or(())
     }
 
     fn skip_newlines(&mut self) {
@@ -441,6 +439,7 @@ pub struct ParserState {
     progress: usize,
     path: Ident,
     is_formatting: bool,
+    last_break: Option<usize>,
 }
 
 impl ParserState {
@@ -481,6 +480,7 @@ pub fn to_snippet(ast: Ast, ast_data: &AstData, origin: Ident) -> diags::Snippet
                 });
                 vec
             },
+            fold: false,
         })],
         ..Default::default()
     }
