@@ -5,28 +5,29 @@ info: parsing analysis
    |               ---------- info: Generics
    |               ---------- info: Ident
    |   _______________________-
- 4 | ||     // comment
- 5 | ||     pub use mut field: Something[Very, Complex] //comment
+ 4 | ||     /* comment */
+ 5 | ||     // comment
+ 6 | ||     pub use mut field: Something[Very, Complex] //comment
    |        ------------------------------------------- info: StructField { vis: Pub, mutable: true, exported: true }
    |                    ----- info: Ident
    |                           ------------------------ info: TyInstance
    |                           --------- info: Ident
    |                                     ---- info: Ident
    |                                           ------- info: Ident
- 6 | ||     // comment
- 7 | ||     other_field: SimpleStuff
+ 7 | ||     // comment
+ 8 | ||     other_field: SimpleStuff
    |        ------------------------ info: StructField { vis: None, mutable: false, exported: false }
    |        ----------- info: Ident
    |                     ----------- info: Ident
- 8 | ||     priv pointer: ^mut ^int
+ 9 | ||     priv pointer: ^mut ^int
    |        ----------------------- info: StructField { vis: Priv, mutable: false, exported: false }
    |             ------- info: Ident
    |                      --------- info: PointerTy
    |                       --- info: PointerMut
    |                           ---- info: PointerTy
    |                            --- info: Ident
- 9 | ||     // comment
-10 |  | } // comment
+10 | ||     // comment
+11 |  | } // comment
    | ||_- info: Struct { vis: Pub }
    |  |_- info: StructBody
    |
