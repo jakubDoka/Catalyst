@@ -1,39 +1,39 @@
   --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
    |
- 1 | struct
- 2 |             // comm
+ 1 | pub
+ 2 |             // c
  3 |             // comment
- 4 |             st
+ 4 |             pu
  5 |             // comment
- 6 |             struct /* comment */ pub /*
+ 6 |             pub /* comment */ struct /*
  7 |             // comment
- 8 |             struct /* comment */ pub /* comment */ R
+ 8 |             pub /* comment */ struct /* comment */ R
  9 | 
 10 |     
 11 |             // comment
-12 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { /
+12 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { /
 13 | 
 14 |     
 15 |             // comment
-16 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+16 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 17 |                 // comme
 18 |             // comment
-19 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+19 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 20 |                 // comment
 21 |                
 22 |             // comment
-23 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+23 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 24 |                 // comment
 25 |                 pub /* comment */
 26 |     
 27 |             // comment
-28 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+28 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 29 |                 // comment
 30 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Somethi
 31 | 
 32 |     
 33 |             // comment
-34 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+34 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 35 |                 // comment
 36 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
 37 |                     Very, // uuu
@@ -41,7 +41,7 @@
 39 | 
 40 |     
 41 |             // comment
-42 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+42 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 43 |                 // comment
 44 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
 45 |                     Very, // uuu
@@ -50,7 +50,7 @@
 48 | 
 49 |     
 50 |             // comment
-51 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+51 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 52 |                 // comment
 53 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
 54 |                     Very, // uuu
@@ -60,7 +60,7 @@
 58 |                 other
 59 |     
 60 |             // comment
-61 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+61 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 62 |                 // comment
 63 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
 64 |                     Very, // uuu
@@ -71,7 +71,7 @@
 69 | 
 70 |     
 71 |             // comment
-72 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+72 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
 73 |                 // comment
 74 |                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
 75 |                     Very, // uuu
