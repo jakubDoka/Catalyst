@@ -1,21 +1,21 @@
 error: expected Ident but got 'struct'
  --> one-line-struct\root.ctl:1:5
   |
-1 | pub struct OneLineStruct
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
   |     ^^^^^^ token located here
   |
 
 error: expected String but got 'struct'
  --> one-line-struct\root.ctl:1:5
   |
-1 | pub struct OneLineStruct
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
   |     ^^^^^^ token located here
   |
 
 error: expected '\n' | ';' | ']' but got <eof>
- --> one-line-struct\root.ctl:1:2
+ --> one-line-struct\root.ctl:1:123
   |
-1 | }
-  |   token located here
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
+  |                                                                                                                            token located here
   |
 
