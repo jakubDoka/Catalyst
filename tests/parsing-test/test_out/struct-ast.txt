@@ -19,9 +19,8 @@
 17 |             // comment
 18 |             pub
 19 | 
-20 |     other_field: SimpleStuff[Hell,]
+20 |     other_field: SimpleStuff[Hell]
 21 |     priv pointer: ^mut ^int
 22 |    }
-23 | 
    |
 
