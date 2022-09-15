@@ -22,5 +22,6 @@
 20 |     other_field: SimpleStuff[Hell]
 21 |     priv pointer: ^mut ^int
 22 |    }
+23 | 
    |
 
