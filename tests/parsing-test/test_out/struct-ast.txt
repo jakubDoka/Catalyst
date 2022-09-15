@@ -1,8 +1,30 @@
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
-  |
-1 | 
-2 |     pub struct RichStruct
-3 | 
-4 |    
-  |
+  --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
+   |
+ 1 | pub struct RichStruct{
+ 2 |           
+ 3 | 
+ 4 |     
+ 5 |             // comment
+ 6 |             pu
+ 7 | 
+ 8 |     pub use mut field: Something
+ 9 |     
+10 |             // comment
+11 |           
+12 | 
+13 |     
+14 |             // comment
+15 |             pub /* comment */ struct /* comment */ RichStruct /* comm
+16 | 
+17 |     
+18 |             // comment
+19 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
+20 |        
+21 | 
+22 |     other_field: SimpleStuff
+23 |             // c
+24 |     priv pointer: ^mut^intint
+25 |    }
+26 | 
+   |
 
