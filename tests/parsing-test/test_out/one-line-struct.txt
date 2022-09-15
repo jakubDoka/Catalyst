@@ -1,5 +1,8 @@
  --> \\?\C:\src\rust\catalyst\tests\parsing-test\one-line-struct\root.ctl
   |
-1 | pub
+1 | 
+2 |     pub struct OneLineStruct
+3 | 
+4 |    
   |
 
