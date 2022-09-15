@@ -1,4 +1,8 @@
---> \\?\C:\src\rust\catalyst\tests\parsing-test\one-line-struct\root.ctl
- |
- |
+error: expected Ident but got 'pub'
+ --> \\?\C:\src\rust\catalyst\tests\parsing-test\one-line-struct\package.ctlm:1:1
+  |
+1 | pub
+  | ^^^ token located here
+  |
+  = info: manifest -> manifest field -> name
 
