@@ -1,8 +1,0 @@
-error: expected Ident but got 'pub'
- --> struct-ast\root.ctl:1:13
-  |
-1 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
-  |             ^^^ token located here
-  |
-  = info: list -> item -> struct -> name
-
