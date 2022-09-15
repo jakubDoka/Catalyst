@@ -1,8 +1,6 @@
  --> \\?\C:\src\rust\catalyst\tests\parsing-test\one-line-struct\root.ctl
   |
-1 | 
-2 |     pub struct OneLineStruct
-3 | 
-4 |    
+1 | pub struct OneLineStruct{pub use mut filed: Troughother_field: SimpleStuffpriv pointer: ^mut^intint}
+2 | 
   |
 
