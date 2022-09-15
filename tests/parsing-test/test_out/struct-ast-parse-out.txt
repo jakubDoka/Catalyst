@@ -4,6 +4,7 @@ error: expected Ident but got 'struct'
 1 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
   |             ^^^^^^ token located here
   |
+  = info: list -> import -> name
 
 error: expected String but got 'struct'
  --> struct-ast\root.ctl:1:13
@@ -11,6 +12,7 @@ error: expected String but got 'struct'
 1 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
   |             ^^^^^^ token located here
   |
+  = info: list -> import
 
 error: expected Ident but got <eof>
  --> struct-ast\root.ctl:1:9
@@ -18,6 +20,7 @@ error: expected Ident but got <eof>
 1 |         
   |          token located here
   |
+  = info: list -> import -> name
 
 error: expected String but got <eof>
  --> struct-ast\root.ctl:1:9
@@ -25,6 +28,7 @@ error: expected String but got <eof>
 1 |         
   |          token located here
   |
+  = info: list -> import
 
 error: expected '\n' | ';' | ']' but got <eof>
  --> struct-ast\root.ctl:1:9
@@ -32,4 +36,5 @@ error: expected '\n' | ';' | ']' but got <eof>
 1 |         
   |          token located here
   |
+  = info: list
 
