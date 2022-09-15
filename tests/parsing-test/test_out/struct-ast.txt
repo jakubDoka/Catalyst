@@ -7,24 +7,21 @@
  5 |             // comment
  6 |             pu
  7 | 
- 8 |     pub use mut field: Something
- 9 |     
-10 |             // comment
-11 |           
-12 | 
-13 |     
-14 |             // comment
-15 |             pub /* comment */ struct /* comment */ RichStruct /* comm
-16 | 
-17 |     
-18 |             // comment
-19 |             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
-20 |        
-21 | 
-22 |     other_field: SimpleStuff
-23 |             // c
-24 |     priv pointer: ^mut^intint
-25 |    }
-26 | 
+ 8 |     pub use mut field: Something[
+ 9 |         Very,
+10 |       
+11 | 
+12 |         Complex,
+13 |        ]
+14 |            
+15 | 
+16 |     
+17 |             // comment
+18 |             pub
+19 | 
+20 |     other_field: SimpleStuff[Hell,]
+21 |     priv pointer: ^mut^int
+22 |    }
+23 | 
    |
 
