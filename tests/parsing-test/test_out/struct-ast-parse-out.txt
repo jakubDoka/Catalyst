@@ -1,0 +1,35 @@
+error: expected Ident but got 'struct'
+ --> struct-ast\root.ctl:1:13
+  |
+1 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+  |             ^^^^^^ token located here
+  |
+
+error: expected String but got 'struct'
+ --> struct-ast\root.ctl:1:13
+  |
+1 |             struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+  |             ^^^^^^ token located here
+  |
+
+error: expected Ident but got <eof>
+ --> struct-ast\root.ctl:1:9
+  |
+1 |         
+  |          token located here
+  |
+
+error: expected String but got <eof>
+ --> struct-ast\root.ctl:1:9
+  |
+1 |         
+  |          token located here
+  |
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> struct-ast\root.ctl:1:9
+  |
+1 |         
+  |          token located here
+  |
+
