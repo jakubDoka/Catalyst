@@ -1,6 +1,6 @@
   --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
    |
- 1 | pub struct RichStruct{
+ 1 | pub struct RichStruct {
  2 |           
  3 | 
  4 |     
