@@ -5,5 +5,4 @@ error: expected Ident but got 'pub'
   |                                  ^^^ token located here
   |
   = info: list -> item -> struct -> name
-  = info: Error originated from: types\parsing-t\src\ctx.rs:157
 
