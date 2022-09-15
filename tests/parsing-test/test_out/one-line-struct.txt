@@ -3,7 +3,7 @@
 1 | pub struct OneLineStruct{
 2 |     pub use mut filed: Trough
 3 |     other_field: SimpleStuff
-4 |     priv pointer: ^mut^intint
+4 |     priv pointer: ^mut ^int
 5 |    }
 6 | 
   |
