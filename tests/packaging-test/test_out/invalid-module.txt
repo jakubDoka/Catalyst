@@ -1,8 +1,8 @@
 error: cannot canonicalize module path
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-module\root\a.ctl:2:6
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-module\root\a.ctl:1:7
   |
-2 |     "./a/b"
-  |      ^^^^^ caused by this
+1 | use {"./a/b"}
+  |       ^^^^^ caused by this
   |
   = info: related path: \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-module\root\a\b.ctl
   = info: trace: The system cannot find the path specified. (os error 3)
