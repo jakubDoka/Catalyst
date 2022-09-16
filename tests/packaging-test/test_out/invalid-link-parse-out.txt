@@ -1,0 +1,24 @@
+error: expected Ident but got '{'
+ --> invalid-link\package.ctlm:1:6
+  |
+1 | deps { water git "github.com/jakubDoka/water-kun" }
+  |      ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency -> name
+
+error: expected String but got '{'
+ --> invalid-link\package.ctlm:1:6
+  |
+1 | deps { water git "github.com/jakubDoka/water-kun" }
+  |      ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> invalid-link\package.ctlm:1:52
+  |
+1 | deps { water git "github.com/jakubDoka/water-kun" }
+  |                                                     token located here
+  |
+  = info: manifest -> list
+
