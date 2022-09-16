@@ -1,15 +1,15 @@
 info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water-kun \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\deps\github.com\jakubDoka\water-kun\main
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\package.ctlm:1:19
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\package.ctlm:3:10
   |
-1 | deps { water git "github.com/jakubDoka/water-kun" }
-  |                   ------------------------------ info: invocation declared here
+3 |     git "github.com/jakubDoka/water-kun"
+  |          ------------------------------ info: invocation declared here
   |
 
 error: git execution failed
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\package.ctlm:1:19
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\package.ctlm:3:10
   |
-1 | deps { water git "github.com/jakubDoka/water-kun" }
-  |                   ------------------------------ info: invocation declared here
+3 |     git "github.com/jakubDoka/water-kun"
+  |          ------------------------------ info: invocation declared here
   |
   = info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water-kun \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-link\deps\github.com\jakubDoka\water-kun\main
   = info: output:
