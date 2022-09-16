@@ -1,17 +1,17 @@
   --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
    |
  1 | 
- 2 |     pub struct RichStruct { // comment // comment
- 3 |         pub use mut field: Something[
- 4 |             Very, // uuu
- 5 |             Complex,
- 6 |         ] //comment
- 7 |         // comment
- 8 |         other_field: SimpleStuff[Hell /* gear */ ]
- 9 |         priv pointer: ^mut ^int
-10 |         // comment
-11 |     }
+ 2 | pub struct RichStruct { // comment // comment
+ 3 |     pub use mut field: Something[
+ 4 |         Very, // uuu
+ 5 |         Complex,
+ 6 |     ] //comment
+ 7 |     // comment
+ 8 |     other_field: SimpleStuff[Hell /* gear */ ]
+ 9 |     priv pointer: ^mut ^int
+10 |     // comment
+11 | }
 12 | 
-13 |     // comment
+13 | // comment
    |
 
