@@ -1,14 +1,14 @@
 warning: invalid version
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:1:48
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:3:39
   |
-1 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
-  |                                                ----------------- info: version is specified here
+3 |     git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
+  |                                       ----------------- info: version is specified here
   |
 
 info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\deps\github.com\jakubDoka\water\main
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:1:19
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:3:10
   |
-1 | deps { water git "github.com/jakubDoka/water" "ajdakjshdkajshdka" }
-  |                   -------------------------- info: invocation declared here
+3 |     git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
+  |          -------------------------- info: invocation declared here
   |
 
