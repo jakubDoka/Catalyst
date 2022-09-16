@@ -1,7 +1,7 @@
 info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\github\deps\github.com\jakubDoka\water\v0 --branch v0.0.1
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\github\package.ctlm:1:19
+ --> \\?\C:\src\rust\catalyst\tests\packaging-test\github\package.ctlm:3:16
   |
-1 | deps { water git "github.com/jakubDoka/water" "v0.*.*" ; a "a" ; b "b" }
-  |                   -------------------------- info: invocation declared here
+3 |     git water "github.com/jakubDoka/water" "v0.*.*"
+  |                -------------------------- info: invocation declared here
   |
 
