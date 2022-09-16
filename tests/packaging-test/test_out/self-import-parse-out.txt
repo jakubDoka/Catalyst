@@ -1,0 +1,24 @@
+error: expected Ident but got '{'
+ --> self-import\root.ctl:1:5
+  |
+1 | use { "." }
+  |     ^ token located here
+  |
+  = info: use -> list -> import -> name
+
+error: expected String but got '{'
+ --> self-import\root.ctl:1:5
+  |
+1 | use { "." }
+  |     ^ token located here
+  |
+  = info: use -> list -> import
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> self-import\root.ctl:1:12
+  |
+1 | use { "." }
+  |             token located here
+  |
+  = info: use -> list
+
