@@ -2,6 +2,7 @@
 #![feature(associated_type_defaults)]
 #![feature(const_type_id)]
 #![feature(default_free_fn)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {

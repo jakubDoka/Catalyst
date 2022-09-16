@@ -8,21 +8,15 @@ use std::{
 use lexing_t::*;
 use storage::*;
 
+#[derive(Default)]
 pub struct Scope {
     data: Map<Ident, Maybe<Item>>,
     frames: Frames<(Ident, Maybe<Item>)>,
-    pub self_alias: Maybe<Ident>,
 }
 
 impl Scope {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn project(&self, str: &str) -> Option<Ident> {
-        self.self_alias
-            .expand()
-            .and_then(|s| (str == "Self").then_some(s))
     }
 
     pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
@@ -121,16 +115,6 @@ impl Scope {
     pub fn clear(&mut self) {
         self.data.clear();
         self.frames.clear();
-    }
-}
-
-impl Default for Scope {
-    fn default() -> Self {
-        Self {
-            data: default(),
-            frames: Frames::new(),
-            self_alias: Maybe::none(),
-        }
     }
 }
 

@@ -2,28 +2,22 @@ use std::default::default;
 
 use lexing_t::*;
 use packaging_t::*;
+use parsing::{StructAst, StructBodyAst, StructFieldAst};
 use parsing_t::*;
 use scope::*;
 use storage::*;
 use typec_t::*;
 
-use crate::{item_collector::PassedData, *};
+use crate::{item_collector::Structs, *};
 
 impl TyBuilder<'_> {
-    pub fn types(&mut self, types: &mut PassedData) {
+    pub fn types(&mut self, types: &mut Structs) {
         for (ast, ty) in types.drain(..) {
-            match ast.kind {
-                AstKind::Struct { .. } => self.r#struct(ty, ast),
-                kind => unimplemented!("{:?}", kind),
-            }
+            self.r#struct(ty, ast);
         }
     }
 
-    fn r#struct(&mut self, ty: VRef<Ty>, ast: Ast) {
-        let [generics, .., body] = self.ast_data[ast.children] else {
-            unreachable!();
-        };
-
+    fn r#struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
         self.scope.start_frame();
 
         ty_parser!(self, self.current_file).insert_generics(generics, 0, true);
@@ -33,36 +27,32 @@ impl TyBuilder<'_> {
         self.scope.end_frame();
     }
 
-    fn struct_fields(&mut self, ty: VRef<Ty>, body: Ast) -> VSlice<Field> {
+    fn struct_fields(&mut self, ty: VRef<Ty>, body: StructBodyAst) -> VSlice<Field> {
         let loc = self.typec.types[ty].loc;
-        let mut fields = self
-            .typec
-            .fields
-            .reserve(self.ast_data[body.children].len());
-        for &ast_field in &self.ast_data[body.children] {
-            let [ast_name, ast_ty] = self.ast_data[ast_field.children] else {
-                unreachable!();
-            };
-            let AstKind::StructField { vis, mutable, exported } = ast_field.kind else {
-                unreachable!();
-            };
+        let mut fields = self.typec.fields.reserve(body.len());
+        for ast_field @ &StructFieldAst {
+            vis,
+            used,
+            mutable,
+            name,
+            ty,
+            ..
+        } in body.iter()
+        {
+            let scope_id = self.interner.intern(scoped_ident!(loc.name, name.ident));
 
-            let name = span_str!(self, ast_name.span);
-            let name_ident = self.interner.intern_str(name);
-            let scope_id = self.interner.intern(scoped_ident!(loc.name, name_ident));
-
-            let Ok(ty) = ty_parser!(self, self.current_file).ty(ast_ty) else {
+            let Ok(ty) = ty_parser!(self, self.current_file).ty(ty) else {
                 continue;
             };
 
             let field = Field {
                 ty,
-                flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & exported,
-                loc: Loc::new(name_ident, self.current_file, ast_name.span, ast_field.span),
+                flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
+                loc: Loc::new(name.ident, self.current_file, name.span, ast_field.span()),
             };
             let field_id = self.typec.fields.push_to_reserved(&mut fields, field);
 
-            let item = ModItem::new(scope_id, field_id, ast_name.span, ast_field.span, vis);
+            let item = ModItem::new(scope_id, field_id, name.span, ast_field.span(), vis);
             self.insert_scope_item(item);
         }
         self.typec.fields.fill_reserved(fields, default())

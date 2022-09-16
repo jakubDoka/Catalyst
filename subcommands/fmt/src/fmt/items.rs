@@ -5,8 +5,6 @@ impl<'a> FmtAst for ItemAst<'a> {
         match *self {
             ItemAst::Struct(s) => s.display(fmt),
         }
-        fmt.newline();
-        fmt.newline();
     }
 }
 

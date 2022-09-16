@@ -74,7 +74,7 @@ impl<'a> Lexer<'a> {
         let mut last_multi_comment = false;
         for (t, span) in self.inner.spanned() {
             match t {
-                Token::NewLine if !fold => {
+                Token::NewLine if fold => {
                     let newline_count = fmt.buffer.chars().rev().take_while(|&c| c == '\n').count();
 
                     if newline_count < 2 {

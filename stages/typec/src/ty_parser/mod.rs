@@ -5,7 +5,6 @@ use std::{
 
 use diags::*;
 use lexing_t::Span;
-use packaging_t::span_str;
 use parsing::*;
 use parsing_t::*;
 use scope::*;
@@ -17,53 +16,45 @@ use crate::*;
 
 impl TyParser<'_> {
     pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Bound> {
-        let mut generics = bumpvec!(cap self.ast_data[generic_ast.children].len());
-        for &ast in &self.ast_data[generic_ast.children] {
-            let [_, ref bounds @ ..] = self.ast_data[ast.children] else {
-                unreachable!();
-            };
-            let bound = self.bound_sum(bounds).unwrap_or_default();
+        let mut generics = bumpvec!(cap generic_ast.len());
+        for &GenericParamAst { bounds, .. } in generic_ast.iter() {
+            let bound = self.bound_sum(bounds.iter()).unwrap_or_default();
             generics.push(bound);
         }
         self.typec.bound_slices.bump(generics)
     }
 
     pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize, on_type: bool) {
-        for (i, &ast) in self.ast_data[generics_ast.children].iter().enumerate() {
-            let [name, ..] = self.ast_data[ast.children] else {
-                unreachable!();
-            };
-
-            self.insert_param(offset + i, name.span, on_type)
+        for (i, &GenericParamAst { name, .. }) in generics_ast.iter().enumerate() {
+            self.insert_param(offset + i, name, on_type)
         }
     }
 
-    fn insert_param(&mut self, index: usize, span: Span, on_type: bool) {
-        let name = span_str!(self, span);
-        let name_ident = self.interner.intern_str(name);
+    fn insert_param(&mut self, index: usize, name: NameAst, on_type: bool) {
         let param = ty_utils!(self).nth_param(index, on_type);
         self.scope.push(ScopeItem::new(
-            name_ident,
+            name.ident,
             param,
-            span,
-            span,
+            name.span,
+            name.span,
             self.current_file,
             Vis::Priv,
         ));
     }
 
     pub fn ty(&mut self, ty_ast: TyAst) -> errors::Result<VRef<Ty>> {
-        match ty_ast.kind {
-            AstKind::Ident | AstKind::IdentChain => self.ident::<TyLookup>(ty_ast),
-            AstKind::TyInstance => self.instance(ty_ast),
-            AstKind::PointerTy => self.pointer(ty_ast),
-            kind => unimplemented!("{:?}", kind),
+        match ty_ast {
+            TyAst::Ident(ident) => self.ident::<TyLookup>(ident),
+            TyAst::Instance(instance) => self.instance(instance),
+            TyAst::Pointer(pointer) => self.pointer(*pointer),
         }
     }
 
-    pub fn bound_sum(&mut self, bounds: &[BoundExprAst]) -> errors::Result<VRef<Bound>> {
+    pub fn bound_sum<'a>(
+        &mut self,
+        bounds: impl Iterator<Item = &'a BoundExprAst<'a>>,
+    ) -> errors::Result<VRef<Bound>> {
         let mut bounds = bounds
-            .iter()
             .map(|&ast| self.bound(ast))
             .nsc_collect::<errors::Result<BumpVec<_>>>()?;
         bounds.sort_unstable_by_key(|b| b.index());
@@ -85,18 +76,16 @@ impl TyParser<'_> {
     }
 
     pub fn bound(&mut self, bound_ast: BoundExprAst) -> errors::Result<VRef<Bound>> {
-        match bound_ast.kind {
-            AstKind::Ident | AstKind::IdentChain => self.ident::<BoundLookup>(bound_ast),
-            kind => unimplemented!("{:?}", kind),
+        match bound_ast {
+            BoundExprAst::Ident(ident) => self.ident::<BoundLookup>(ident),
         }
     }
 
-    fn pointer(&mut self, pointer_ast: TyPointerAst) -> errors::Result<VRef<Ty>> {
-        let [mutability, base] = self.ast_data[pointer_ast.children] else {
-            unreachable!();
-        };
-
-        let base = self.ty(base)?;
+    fn pointer(
+        &mut self,
+        TyPointerAst { mutability, ty, .. }: TyPointerAst,
+    ) -> errors::Result<VRef<Ty>> {
+        let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
         let depth = self
             .typec
@@ -121,11 +110,11 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(id, fallback))
     }
 
-    fn mutability(&mut self, mutability_ast: TyAst) -> errors::Result<VRef<Ty>> {
-        Ok(match mutability_ast.kind {
-            AstKind::PointerMut => Ty::MUTABLE,
-            AstKind::None => Ty::IMMUTABLE,
-            _ => return self.ty(mutability_ast),
+    fn mutability(&mut self, mutability_ast: MutabilityAst) -> errors::Result<VRef<Ty>> {
+        Ok(match mutability_ast {
+            MutabilityAst::Mut(..) => Ty::MUTABLE,
+            MutabilityAst::None => Ty::IMMUTABLE,
+            MutabilityAst::Ident(.., ident) => return self.ident::<TyLookup>(ident),
         })
     }
 
@@ -134,17 +123,16 @@ impl TyParser<'_> {
         ident_ast: IdentChainAst,
     ) -> errors::Result<VRef<T::Output>> {
         let ident = self.intern_ident(ident_ast);
-        self.lookup_typed::<T>(ident, ident_ast.span)
+        self.lookup_typed::<T>(ident, ident_ast.span())
     }
 
-    fn instance(&mut self, instance_ast: Ast) -> errors::Result<VRef<Ty>> {
-        let [base, ref args @ ..] = self.ast_data[instance_ast.children] else {
-            unreachable!();
-        };
+    fn instance(
+        &mut self,
+        TyInstanceAst { ident, params }: TyInstanceAst,
+    ) -> errors::Result<VRef<Ty>> {
+        let base = self.ident::<TyLookup>(ident)?;
 
-        let base = self.ident::<TyLookup>(base)?;
-
-        let args = args
+        let args = params
             .iter()
             .map(|&p| self.ty(p))
             .nsc_collect::<errors::Result<BumpVec<_>>>()?;
@@ -164,23 +152,8 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn intern_ident(&mut self, ident: Ast) -> Ident {
-        match ident.kind {
-            AstKind::Ident => self
-                .scope
-                .project(span_str!(self, ident.span))
-                .unwrap_or_else(|| self.interner.intern_str(span_str!(self, ident.span))),
-            AstKind::IdentChain => self.interner.intern(ident_join(
-                "`",
-                self.ast_data[ident.children].iter().copied().map(|i| {
-                    self.scope
-                        .project(span_str!(self, i.span))
-                        .map(InternedSegment::Ident)
-                        .unwrap_or_else(|| InternedSegment::String(span_str!(self, i.span)))
-                }),
-            )),
-            kind => unimplemented!("{:?}", kind),
-        }
+    fn intern_ident(&mut self, ident: IdentChainAst) -> Ident {
+        todo!();
     }
 
     pub fn lookup_typed<T: ScopeLookup>(
@@ -219,8 +192,7 @@ impl TyParser<'_> {
                     .unwrap()
                     .iter()
                     .filter_map(|dep| {
-                        let name = self.interner.intern_str(span_str!(self, dep.name));
-                        let ident = self.interner.intern(scoped_ident!(name, sym));
+                        let ident = dep.name;
                         self.scope
                             .get_typed::<T::Output>(ident)
                             .ok()

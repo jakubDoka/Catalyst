@@ -1,4 +1,5 @@
 use diags::*;
+use lexing::TokenKind;
 use lexing_t::*;
 use parsing::*;
 use parsing_t::*;
@@ -86,18 +87,19 @@ impl<'a> FmtAst for IdentChainAst<'a> {
 
 impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, T, META> {
     fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        let is_top_list = META::END.contains(&TokenKind::Eof.into());
         if self.elements.is_empty() && META::OPTIONAL {
             return;
         }
 
         fmt.write_span(self.start);
-        if fold {
+        if fold && !is_top_list {
             fmt.indent();
         }
         fmt.write_between(fold, self.first_gap());
 
         if self.elements.is_empty() {
-            if fold {
+            if fold && !is_top_list {
                 fmt.unindent();
                 fmt.optional_newline();
             }
@@ -113,6 +115,7 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
             let is_last = self.elements.last().filter(|&e| ptr::eq(e, elem)).is_some();
             elem.value.display(fmt);
             fmt.write_between(fold, elem.after_value.range());
+
             if let Some(after) = elem.after_delim.expand() {
                 // unless we are folding, trailing separator is unwanted
                 if !is_last || fold {
@@ -129,7 +132,7 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
             }
         }
 
-        if fold {
+        if fold && !is_top_list {
             fmt.unindent();
             fmt.optional_newline();
         }

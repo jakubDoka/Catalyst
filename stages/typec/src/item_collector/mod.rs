@@ -2,42 +2,44 @@ use std::default::default;
 
 use lexing_t::Loc;
 use packaging_t::*;
-use parsing_t::*;
+use parsing::{ItemAst, ItemsAst, StructAst};
 use scope::*;
 use storage::*;
 use typec_t::*;
 
 use crate::*;
 
-pub type PassedData = Vec<(Ast, VRef<Ty>)>;
+pub type Structs<'a> = Vec<(StructAst<'a>, VRef<Ty>)>;
 
 impl ItemCollector<'_> {
-    pub fn types(&mut self, ast: VSlice<Ast>, passed_data: &mut PassedData) {
-        for &ast in &self.ast_data[ast] {
-            let res = match ast.kind {
-                AstKind::Struct { vis } => self.r#struct(ast, vis),
-                _ => continue,
+    pub fn types<'a>(&mut self, items: ItemsAst<'a>, structs: &mut Structs<'a>) {
+        for &item in items.iter() {
+            let res = match item {
+                ItemAst::Struct(r#struct) => self.r#struct(*r#struct, structs),
             };
 
-            let Ok((item, ty)) = res else {
+            let Ok(item) = res else {
                 continue;
             };
 
             self.insert_scope_item(item);
-            passed_data.push((ast, ty));
         }
     }
 
-    fn r#struct(&mut self, ast: Ast, vis: Vis) -> errors::Result<(ModItem, VRef<Ty>)> {
-        let [generics, ast_name, _body] = self.ast_data[ast.children] else {
-            unreachable!();
-        };
-
+    fn r#struct<'a>(
+        &mut self,
+        r#struct @ StructAst {
+            vis,
+            generics,
+            name,
+            span,
+            ..
+        }: StructAst<'a>,
+        structs: &mut Structs<'a>,
+    ) -> errors::Result<ModItem> {
         let generics = ty_parser!(self, self.current_file).generics(generics);
 
-        let name = span_str!(self, ast_name.span);
-        let name_ident = self.interner.intern_str(name);
-        let key = intern_scoped_ident!(self, name_ident);
+        let key = intern_scoped_ident!(self, name.ident);
 
         let ty = Ty {
             kind: TyStruct {
@@ -46,13 +48,17 @@ impl ItemCollector<'_> {
             }
             .into(),
             flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: Loc::new(name_ident, self.current_file, ast_name.span, ast.span),
+            loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
-        let (id, _) = self.typec.types.insert(key, ty);
+        let (id, shadow) = self.typec.types.insert(key, ty);
 
-        let item = ModItem::new(name_ident, id, ast_name.span, ast.span, vis);
+        if shadow.is_some() {
+            return Err(());
+        }
 
-        Ok((item, id))
+        structs.push((r#struct, id));
+
+        Ok(ModItem::new(name.ident, id, name.span, span, vis))
     }
 
     insert_scope_item!();
