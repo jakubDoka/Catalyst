@@ -1,0 +1,120 @@
+error: expected Ident but got '{'
+ --> github\root.ctl:1:5
+  |
+1 | use { "water" ; "a" ; "b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import -> name
+
+error: expected String but got '{'
+ --> github\root.ctl:1:5
+  |
+1 | use { "water" ; "a" ; "b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> github\root.ctl:1:28
+  |
+1 | use { "water" ; "a" ; "b" }
+  |                             token located here
+  |
+  = info: use -> list
+
+error: expected Ident but got '{'
+ --> github\package.ctlm:1:6
+  |
+1 | deps { water git "github.com/jakubDoka/water" "v0.*.*" ; a "a" ; b "b" }
+  |      ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency -> name
+
+error: expected String but got '{'
+ --> github\package.ctlm:1:6
+  |
+1 | deps { water git "github.com/jakubDoka/water" "v0.*.*" ; a "a" ; b "b" }
+  |      ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> github\package.ctlm:1:73
+  |
+1 | deps { water git "github.com/jakubDoka/water" "v0.*.*" ; a "a" ; b "b" }
+  |                                                                          token located here
+  |
+  = info: manifest -> list
+
+error: expected Ident but got '{'
+ --> github\a\foo.ctl:1:5
+  |
+1 | use { b "b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import -> name
+
+error: expected String but got '{'
+ --> github\a\foo.ctl:1:5
+  |
+1 | use { b "b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> github\a\foo.ctl:1:14
+  |
+1 | use { b "b" }
+  |               token located here
+  |
+  = info: use -> list
+
+error: expected Ident but got '{'
+ --> github\a\package.ctlm:1:25
+  |
+1 | root : "foo.ctl" ; deps { b "../b" }
+  |                         ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency -> name
+
+error: expected String but got '{'
+ --> github\a\package.ctlm:1:25
+  |
+1 | root : "foo.ctl" ; deps { b "../b" }
+  |                         ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> github\a\package.ctlm:1:37
+  |
+1 | root : "foo.ctl" ; deps { b "../b" }
+  |                                      token located here
+  |
+  = info: manifest -> list
+
+error: expected Ident but got '{'
+ --> github\b\package.ctlm:1:25
+  |
+1 | root : "bar.ctl" ; deps { water git "github.com/jakubDoka/water" "v0.*.*" }
+  |                         ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency -> name
+
+error: expected String but got '{'
+ --> github\b\package.ctlm:1:25
+  |
+1 | root : "bar.ctl" ; deps { water git "github.com/jakubDoka/water" "v0.*.*" }
+  |                         ^ token located here
+  |
+  = info: manifest -> list -> manifest dependency
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> github\b\package.ctlm:1:76
+  |
+1 | root : "bar.ctl" ; deps { water git "github.com/jakubDoka/water" "v0.*.*" }
+  |                                                                             token located here
+  |
+  = info: manifest -> list
+
