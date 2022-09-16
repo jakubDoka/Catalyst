@@ -9,7 +9,7 @@ use crate::*;
 pub struct ParsingCtx<'a, 'b> {
     pub lexer: Lexer<'a>,
     pub state: &'a mut ParsingState,
-    pub ast_data: &'b AstData,
+    pub arena: &'b AstData,
     pub workspace: &'a mut Workspace,
     pub interner: &'a mut Interner,
 }
@@ -25,7 +25,7 @@ impl<'a, 'b> ParsingCtx<'a, 'b> {
         Self {
             lexer: Lexer::new(source, state.progress),
             state,
-            ast_data,
+            arena: ast_data,
             workspace,
             interner,
         }
@@ -38,7 +38,7 @@ impl Drop for ParsingCtx<'_, '_> {
     }
 }
 
-impl ParsingCtx<'_, '_> {
+impl<'a> ParsingCtx<'_, 'a> {
     pub fn visibility(&mut self) -> Vis {
         let res = match self.state.current.kind {
             TokenKind::Pub => Vis::Pub,
@@ -51,6 +51,17 @@ impl ParsingCtx<'_, '_> {
         }
 
         res
+    }
+
+    pub fn parse<T: Ast<'a>>(&mut self) -> Result<T, ()>
+    where
+        T::Args: Default,
+    {
+        T::parse(self)
+    }
+
+    pub fn parse_args<T: Ast<'a>>(&mut self, args: T::Args) -> Result<T, ()> {
+        T::parse_args(self, args)
     }
 
     pub fn advance(&mut self) -> Token {
@@ -158,6 +169,10 @@ impl ParsingCtx<'_, '_> {
 
     pub fn current_token_str(&self) -> &str {
         self.lexer.inner_span_str(self.state.current.span)
+    }
+
+    pub fn name_unchecked(&mut self) -> NameAst {
+        NameAst::new(self, self.state.current.span)
     }
 
     gen_error_fns! {

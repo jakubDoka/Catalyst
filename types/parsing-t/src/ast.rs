@@ -187,7 +187,6 @@ where
             let mut after_delim = Maybe::none();
 
             let has_sep = ctx.at(META::SEP);
-            dbg!(ctx.state.current.kind, META::SEP);
             if has_sep {
                 after_value = after_value.joined(ctx.state.current.span.sliced(..0));
                 after_delim =
@@ -222,7 +221,7 @@ where
             }
         }
 
-        let elements = ctx.ast_data.alloc_slice(&elements);
+        let elements = ctx.arena.alloc_slice(&elements);
 
         Ok(Self {
             start,

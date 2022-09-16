@@ -1,173 +1,116 @@
 use std::{
-    fmt::Debug,
-    mem::MaybeUninit,
+    alloc::AllocError,
+    cell::Cell,
+    mem,
+    num::NonZeroUsize,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
-const BUMP_ALLOC_FRAME: usize = 1 << 14;
+use crate::Allocator;
 
 thread_local! {
-    static BUMP_ALLOC: BumpAlloc = BumpAlloc::new(BUMP_ALLOC_FRAME);
+    static BUMP_ALLOC: BumpAlloc = BumpAlloc::default();
 }
 
-pub struct BumpAlloc {
-    inner: NonNull<BumpAllocInner>,
-}
+pub struct BumpAllocRef;
 
-impl Debug for BumpAlloc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", unsafe { self.inner.as_ref() })
-    }
-}
-
-impl BumpAlloc {
-    fn new(frame_size: usize) -> Self {
-        let inner = Box::into_raw(Box::new(BumpAllocInner::new(frame_size)));
-        Self {
-            inner: unsafe { NonNull::new_unchecked(inner) },
-        }
-    }
-
-    fn make_ref(&self) -> BumpAllocRef {
-        unsafe {
-            self.inner.clone().as_mut().refs += 1;
-        }
-        BumpAllocRef { inner: self.inner }
-    }
-}
-
-impl Drop for BumpAlloc {
+impl Drop for BumpAllocRef {
     fn drop(&mut self) {
-        let s = unsafe { self.inner.as_mut() };
-        s.not_owned = true;
-        if s.should_drop() {
-            unsafe { Box::from_raw(self.inner.as_ptr()) };
-        }
+        BUMP_ALLOC.with(|alloc| alloc.drop_ref(self));
     }
 }
 
-pub struct BumpAllocRef {
-    inner: NonNull<BumpAllocInner>,
-}
+impl !Send for BumpAllocRef {}
+impl !Sync for BumpAllocRef {}
 
 unsafe impl std::alloc::Allocator for BumpAllocRef {
-    fn allocate(
-        &self,
-        layout: std::alloc::Layout,
-    ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
-        if layout.size() == 0 {
-            return Err(std::alloc::AllocError);
-        }
-
+    fn allocate(&self, layout: std::alloc::Layout) -> Result<NonNull<[u8]>, AllocError> {
         let size = layout
-            .align_to(std::mem::align_of::<usize>())
-            .map_err(|_| std::alloc::AllocError)?
+            .align_to(mem::align_of::<usize>())
+            .map_err(|_| AllocError)?
             .pad_to_align()
             .size();
 
-        let s = unsafe { self.inner.clone().as_mut() };
+        let Some(size) = NonZeroUsize::new(size / mem::size_of::<usize>()) else {
+            return Err(AllocError);
+        };
 
-        let len = size / std::mem::size_of::<usize>();
+        let alloc = BUMP_ALLOC.with(|alloc| alloc.allocator.alloc(size));
 
-        let chunk = s.get_fitting_chunk(len);
-        let ptr = unsafe { chunk.as_mut_ptr().add(chunk.len()) };
-
-        let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size) };
-        unsafe { chunk.set_len(chunk.len() + len) };
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                alloc.as_ptr() as *mut u8,
+                size.get() * mem::size_of::<usize>(),
+            )
+        };
 
         Ok(unsafe { NonNull::new_unchecked(slice) })
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: std::alloc::Layout) {
-        let size = layout
+        let size = compute_layout_size(layout);
+
+        BUMP_ALLOC.with(|alloc| alloc.allocator.try_free(ptr.cast(), size));
+    }
+
+    unsafe fn grow(
+        &self,
+        ptr: NonNull<u8>,
+        old_layout: std::alloc::Layout,
+        new_layout: std::alloc::Layout,
+    ) -> Result<NonNull<[u8]>, AllocError> {
+        debug_assert!(
+            new_layout.size() >= old_layout.size(),
+            "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
+        );
+
+        let previous_size = compute_layout_size(old_layout);
+        let new_size = compute_layout_size(new_layout);
+
+        let alloc =
+            BUMP_ALLOC.with(|alloc| alloc.allocator.grow(ptr.cast(), previous_size, new_size));
+
+        let slice = unsafe {
+            std::slice::from_raw_parts_mut(
+                alloc.as_ptr() as *mut u8,
+                new_size.get() * mem::size_of::<usize>(),
+            )
+        };
+
+        Ok(unsafe { NonNull::new_unchecked(slice) })
+    }
+}
+
+unsafe fn compute_layout_size(layout: std::alloc::Layout) -> NonZeroUsize {
+    NonZeroUsize::new_unchecked(
+        layout
             .align_to(std::mem::align_of::<usize>())
             .unwrap_unchecked()
             .pad_to_align()
-            .size();
-        let len = size / std::mem::size_of::<usize>();
-
-        let s = self.inner.clone().as_mut();
-        let chunk = s.chunks.last_mut().unwrap_unchecked();
-        let chunk_ptr = unsafe { chunk.as_mut_ptr().add(chunk.len()).sub(len) };
-
-        if chunk_ptr as usize == ptr.as_ptr() as usize {
-            unsafe { chunk.set_len(chunk.len() - len) };
-        }
-    }
+            .size()
+            / std::mem::size_of::<usize>(),
+    )
 }
 
-impl Drop for BumpAllocRef {
-    fn drop(&mut self) {
-        let s = unsafe { self.inner.as_mut() };
-        s.refs -= 1;
-        if s.should_drop() {
-            #[cold]
-            fn cold_drop(s: &mut BumpAllocRef) {
-                unsafe { drop(Box::from_raw(s.inner.as_ptr())) };
+#[derive(Default)]
+struct BumpAlloc {
+    refs: Cell<usize>,
+    allocator: Allocator,
+}
+
+impl BumpAlloc {
+    fn create_ref(&self) -> BumpAllocRef {
+        self.refs.set(self.refs.get() + 1);
+        BumpAllocRef
+    }
+
+    fn drop_ref(&self, _: &mut BumpAllocRef) {
+        if self.refs.replace(self.refs.get() - 1) == 1 {
+            unsafe {
+                (*(&self.allocator as *const Allocator as *mut Allocator)).clear();
             }
-            cold_drop(self);
-        } else if s.refs == 0 {
-            s.clear();
         }
-    }
-}
-
-#[derive(Default, Debug)]
-struct BumpAllocInner {
-    chunks: Vec<Vec<MaybeUninit<usize>>>,
-    refs: usize,
-    not_owned: bool,
-    frame_size: usize,
-}
-
-impl BumpAllocInner {
-    fn new(frame_size: usize) -> Self {
-        Self {
-            frame_size,
-            chunks: vec![Vec::with_capacity(frame_size)],
-            ..Default::default()
-        }
-    }
-
-    fn get_fitting_chunk(&mut self, size: usize) -> &mut Vec<MaybeUninit<usize>> {
-        let frame_size = self.frame_size.max(size);
-        let last_chunk = unsafe { self.chunks.last_mut().unwrap_unchecked() };
-
-        if last_chunk.capacity() - last_chunk.len() >= size {
-            unsafe { self.chunks.last_mut().unwrap_unchecked() }
-        } else {
-            self.find_chunk(size, frame_size)
-        }
-    }
-
-    #[cold]
-    fn find_chunk(&mut self, size: usize, frame_size: usize) -> &mut Vec<MaybeUninit<usize>> {
-        let full_chunk = unsafe { self.chunks.pop().unwrap_unchecked() };
-        let len = full_chunk.len();
-        let new_pos = self
-            .chunks
-            .iter()
-            .position(|chunk| chunk.len() > len)
-            .unwrap_or(0);
-
-        self.chunks.insert(new_pos, full_chunk);
-
-        let new_last_chunk = unsafe { self.chunks.last().unwrap_unchecked() };
-        if new_last_chunk.capacity() - new_last_chunk.len() < size {
-            self.chunks.push(Vec::with_capacity(frame_size));
-        }
-        unsafe { self.chunks.last_mut().unwrap_unchecked() }
-    }
-
-    fn clear(&mut self) {
-        self.chunks.iter_mut().for_each(|chunk| unsafe {
-            chunk.set_len(0);
-        });
-    }
-
-    fn should_drop(&self) -> bool {
-        self.refs == 0 && self.not_owned
     }
 }
 
@@ -178,13 +121,13 @@ pub struct BumpVec<T> {
 impl<T> BumpVec<T> {
     pub fn new() -> Self {
         Self {
-            inner: Vec::new_in(BUMP_ALLOC.with(|b| b.make_ref())),
+            inner: Vec::new_in(BUMP_ALLOC.with(|b| b.create_ref())),
         }
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            inner: Vec::with_capacity_in(capacity, BUMP_ALLOC.with(|b| b.make_ref())),
+            inner: Vec::with_capacity_in(capacity, BUMP_ALLOC.with(|b| b.create_ref())),
         }
     }
 }

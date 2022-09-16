@@ -67,13 +67,18 @@ mod parser;
 
 pub use parser::{
     bound::BoundExprAst,
+    expr::ExprAst,
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
     items::{ItemAst, ItemsAst, ItemsMeta},
     manifest::{
         DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,
         ManifestListMeta, ManifestObjectAst, ManifestObjectMeta, ManifestValueAst,
     },
-    r#struct::{StructAst, StructBodyAst, StructBodyMeta, StructFieldAst},
+    r#struct::{
+        StructAst, StructBodyAst, StructBodyMeta, StructConstructorFieldAst, StructFieldAst,
+    },
     ty::{MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst},
-    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, IdentChainAst, ParamBoundsAst,
+    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamBoundsAst, PathAst,
+    PathSegmentAst, StructConstructorAst, StructConstructorMeta, TupleConstructorAst,
+    TupleConstructorMeta,
 };

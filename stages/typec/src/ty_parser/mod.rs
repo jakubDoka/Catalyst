@@ -118,10 +118,7 @@ impl TyParser<'_> {
         })
     }
 
-    fn ident<T: ScopeLookup>(
-        &mut self,
-        ident_ast: IdentChainAst,
-    ) -> errors::Result<VRef<T::Output>> {
+    fn ident<T: ScopeLookup>(&mut self, ident_ast: PathAst) -> errors::Result<VRef<T::Output>> {
         let ident = self.intern_ident(ident_ast);
         self.lookup_typed::<T>(ident, ident_ast.span())
     }
@@ -152,7 +149,7 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn intern_ident(&mut self, ident: IdentChainAst) -> Ident {
+    fn intern_ident(&mut self, ident: PathAst) -> Ident {
         todo!();
     }
 

@@ -61,7 +61,7 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
             vis: ctx.visibility(),
             used: ctx.try_advance(TokenKind::Use),
             mutable: ctx.try_advance(TokenKind::Mut),
-            name: Ast::parse(ctx)?,
+            name: ctx.parse()?,
             ty: {
                 ctx.expect_advance(TokenKind::Colon)?;
                 TyAst::parse(ctx)?
@@ -74,44 +74,29 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
     }
 }
 
-// impl Parser<'_> {
-//     pub fn r#struct(&mut self) -> errors::Result {
-//         let start = self.start();
-//         self.advance();
-//         let vis = self.visibility();
-//         self.generics()?;
-//         self.ident()?;
+#[derive(Clone, Copy, Debug)]
+pub struct StructConstructorFieldAst<'a> {
+    pub name: NameAst,
+    pub expr: Option<ExprAst<'a>>,
+}
 
-//         self.start();
-//         if let Some(span) = opt_list!(self, LeftCurly, NewLine, RightCurly, struct_field)? {
-//             self.finish(AstKind::StructBody, span);
-//         } else {
-//             self.ast_data.cache(Ast::none());
-//             self.join_frames();
-//         }
+impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
+    type Args = ();
 
-//         self.finish_last(AstKind::Struct { vis }, start);
+    const NAME: &'static str = "struct constructor field";
 
-//         Ok(())
-//     }
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+        let name = ctx.parse()?;
+        let expr = if ctx.try_advance(TokenKind::Colon) {
+            Some(ctx.parse()?)
+        } else {
+            None
+        };
 
-//     pub fn struct_field(&mut self) -> errors::Result {
-//         let start = self.start();
-//         let vis = self.visibility();
-//         let exported = self.advance_if(TokenKind::Use);
-//         let mutable = self.advance_if(TokenKind::Mut);
-//         self.ident()?;
-//         self.expect(TokenKind::Colon)?;
-//         self.advance();
-//         self.ty()?;
-//         self.finish_last(
-//             AstKind::StructField {
-//                 vis,
-//                 mutable,
-//                 exported,
-//             },
-//             start,
-//         );
-//         Ok(())
-//     }
-// }
+        Ok(StructConstructorFieldAst { name, expr })
+    }
+
+    fn span(&self) -> Span {
+        todo!()
+    }
+}

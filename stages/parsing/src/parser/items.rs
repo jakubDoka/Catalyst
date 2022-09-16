@@ -18,7 +18,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
         let vis = ctx.visibility();
         branch! { ctx => {
             Struct => StructAst::parse_args(ctx, (vis, start))
-                .map(|s| ctx.ast_data.alloc(s))
+                .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Struct),
         }}
     }

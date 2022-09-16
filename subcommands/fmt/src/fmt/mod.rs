@@ -66,10 +66,10 @@ impl<'a> FmtAst for BoundExprAst<'a> {
     }
 }
 
-impl<'a> FmtAst for IdentChainAst<'a> {
+impl<'a> FmtAst for PathAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.write_span(self.first);
-        for &(_, ident) in self.others {
+        for &(_, ident) in self.segments {
             write!(fmt, "`");
             fmt.write_span(ident);
         }
@@ -78,7 +78,7 @@ impl<'a> FmtAst for IdentChainAst<'a> {
     fn len(&self, _: &Fmt) -> usize {
         self.first.len()
             + self
-                .others
+                .segments
                 .iter()
                 .map(|(_, ident)| 1 + ident.len())
                 .sum::<usize>()
@@ -199,7 +199,7 @@ impl Fmt {
                     &mut self.workspace,
                     &mut self.interner,
                 );
-                dbg!(ItemsAst::parse(&mut ctx))
+                ItemsAst::parse(&mut ctx)
             };
 
             let Ok(items) = items else {
@@ -233,7 +233,7 @@ impl Fmt {
                 &mut self.workspace,
                 &mut self.interner,
             );
-            dbg!(ManifestAst::parse(&mut ctx))
+            ManifestAst::parse(&mut ctx)
         };
 
         let Ok(manifest) = manifest else {

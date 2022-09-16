@@ -51,7 +51,7 @@ impl<'a> Ast<'a> for ManifestAst<'a> {
         }
 
         Ok(Self {
-            fields: ctx.ast_data.alloc_slice(&fields),
+            fields: ctx.arena.alloc_slice(&fields),
             deps_span: deps_span.into(),
             deps: deps.unwrap_or_default(),
         })
@@ -75,7 +75,7 @@ impl<'a> Ast<'a> for ManifestFieldAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         Ok(ManifestFieldAst {
-            name: Ast::parse(ctx)?,
+            name: ctx.parse()?,
             value: {
                 ctx.expect_advance(TokenKind::Colon)?;
                 ManifestValueAst::parse(ctx)?
@@ -103,8 +103,8 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         branch! {ctx => {
             String => Ok(ManifestValueAst::String(ctx.advance().span)),
-            LeftBracket => Ast::parse(ctx).map(ManifestValueAst::Array),
-            LeftCurly => Ast::parse(ctx).map(ManifestValueAst::Object),
+            LeftBracket => ctx.parse().map(ManifestValueAst::Array),
+            LeftCurly => ctx.parse().map(ManifestValueAst::Object),
         }}
     }
 
@@ -130,7 +130,7 @@ impl<'a> Ast<'a> for ManifestDepAst {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         let start = ctx.state.current.span;
         let git = ctx.optional_advance("git").is_some();
-        let name = Ast::parse(ctx).ok();
+        let name = ctx.parse().ok();
         let path = ctx.expect_advance(TokenKind::String)?.span;
         let version = ctx.optional_advance(TokenKind::String).map(|t| t.span);
         let span = start.joined(version.unwrap_or(path));

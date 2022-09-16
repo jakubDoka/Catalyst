@@ -1,9 +1,14 @@
 #![feature(allocator_api)]
 #![feature(new_uninit)]
+#![feature(negative_impls)]
 #![feature(let_else)]
 
+mod allocator;
 mod arena;
 mod bump_alloc;
 
-pub use crate::arena::{Allocator, Arena};
-pub use crate::bump_alloc::{BumpVec, ToBumpVec};
+pub use {
+    crate::bump_alloc::{BumpVec, ToBumpVec},
+    allocator::Allocator,
+    arena::Arena,
+};
