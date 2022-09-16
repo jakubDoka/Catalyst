@@ -1,5 +1,7 @@
 use logos::Logos;
 
+use crate::Fmt;
+
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, Token>,
 }
@@ -52,9 +54,68 @@ impl<'a> Lexer<'a> {
             }
         }
     }
+
+    pub fn folded_len_between(self, line_length: usize) -> usize {
+        let len = self
+            .inner
+            .spanned()
+            .map(|(t, span)| match t {
+                Token::MultiComment => span.len(),
+                Token::LineComment => line_length,
+                _ => 0,
+            })
+            .intersperse(1)
+            .sum::<usize>();
+        len + 2 * (len != 0) as usize
+    }
+
+    pub fn write_between(self, fmt: &mut Fmt, fold: bool, pos: usize) {
+        let source = self.inner.source();
+        let mut last_multi_comment = false;
+        for (t, span) in self.inner.spanned() {
+            match t {
+                Token::NewLine if !fold => {
+                    let newline_count = fmt.buffer.chars().rev().take_while(|&c| c == '\n').count();
+
+                    if newline_count < 2 {
+                        fmt.newline();
+                    }
+                }
+                Token::MultiComment => {
+                    if fmt.buffer.ends_with('\n') {
+                        fmt.write_indent();
+                    } else {
+                        fmt.buffer.push(' ');
+                    }
+
+                    let last_new_line = source[..span.end].rfind('\n').map_or(0, |i| i + pos);
+                    fmt.last_newline = last_new_line;
+                    fmt.buffer.push_str(&source[span]);
+                }
+                Token::LineComment if !fold => unreachable!(),
+                Token::LineComment => {
+                    if fmt.buffer.ends_with('\n') {
+                        fmt.write_indent();
+                    } else {
+                        fmt.buffer.push(' ');
+                    }
+
+                    fmt.buffer.push_str(source[span].trim_end());
+                }
+                _ => (),
+            }
+
+            last_multi_comment =
+                (t == Token::MultiComment && !fold) || (last_multi_comment && t == Token::NewLine);
+        }
+
+        if last_multi_comment {
+            fmt.buffer.push(' ');
+        }
+    }
 }
 
-#[derive(Logos, PartialEq, Eq)]
+#[derive(Logos, PartialEq, Eq, Clone, Copy)]
 enum Token {
     #[token("\n")]
     NewLine,
@@ -62,8 +123,6 @@ enum Token {
     MultiComment,
     #[regex(r"//[^\n]*")]
     LineComment,
-    #[regex(r".", logos::skip)]
-    Stuff,
 
     #[error]
     Error,

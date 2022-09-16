@@ -44,6 +44,7 @@ macro_rules! quick_file_system {
             let mut __dir = $crate::items::Folder::new($root);
             $crate::quick_file_system!(__recur__ (__dir) $($tokens)*);
             __dir.create();
+
             __dir
         };
     };
@@ -146,25 +147,35 @@ pub mod items {
             }
         }
 
-        pub fn create(&mut self) -> Workspace {
-            let mut fmt = Fmt::new();
+        pub fn create(&mut self) {
+            let mut fmt = Fmt::default();
+            let mut packages = Packages::default();
             let path = PathBuf::from(&self.name);
             let mut interner = Interner::new();
-            self.create_recur(&path, &mut fmt, &mut interner);
+            self.create_recur(&path, &mut fmt, &mut interner, &mut packages);
             self.global_path = Some(path);
-            fmt.into_workspace()
+            let str = fmt
+                .workspace
+                .display(&packages, &mut SnippetDisplay::default());
+            std::fs::write(format!("test_out/{}-parse-out.txt", self.name), str).unwrap();
         }
 
-        fn create_recur(&self, path: &Path, fmt: &mut Fmt, interner: &mut Interner) {
+        fn create_recur(
+            &self,
+            path: &Path,
+            fmt: &mut Fmt,
+            interner: &mut Interner,
+            packages: &mut Packages,
+        ) {
             let self_path = path;
             if !path.exists() {
                 std::fs::create_dir(&self_path).unwrap();
             }
             for (name, (replace, content)) in &self.files {
-                let formatter = if name.ends_with(".ctl") {
+                let formatter = if name.ends_with(".ctlm") {
+                    Fmt::manifest
+                } else if name.ends_with(".ctl") {
                     Fmt::source
-                //} else if name.ends_with(".ctlm") {
-                // TODO
                 } else {
                     for<'a> |_: &'a mut Fmt, s: String, _: Ident| -> (Option<&'a str>, String) {
                         (None, s)
@@ -179,15 +190,23 @@ pub mod items {
                 } else {
                     content.clone()
                 };
+
                 let (res, c) = formatter(fmt, c, path_ident);
 
                 let res = res.unwrap_or(&c);
 
-                std::fs::write(path, res).unwrap();
+                std::fs::write(&path, res).unwrap();
+
+                let module = Mod {
+                    path,
+                    content: c,
+                    ..Default::default()
+                };
+                packages.modules.insert(path_ident, module);
             }
 
             for folder in &self.folders {
-                folder.create_recur(&path.join(&folder.name), fmt, interner);
+                folder.create_recur(&path.join(&folder.name), fmt, interner, packages);
             }
         }
     }

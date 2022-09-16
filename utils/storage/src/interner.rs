@@ -38,6 +38,14 @@ impl Interner {
         s
     }
 
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.indices.clear();
+        self.indices.push(0);
+        self.data.clear();
+        assert_eq!(self.intern_str(""), Ident::EMPTY);
+    }
+
     /// Interns a string
     pub fn intern_str(&mut self, s: &str) -> Ident {
         self.intern(ident!(s))

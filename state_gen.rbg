@@ -1,14 +1,3 @@
-file "types/parsing-t/src/state_gen.rs" {
-    use "crate";
-    use "storage";
-
-    struct AstDisplay {
-        ast: `VRef<Ast>`
-        AstData
-        str
-    }
-}
-
 file "stages/packaging/src/state_gen.rs" {
     use "packaging_t"
     use "diags"

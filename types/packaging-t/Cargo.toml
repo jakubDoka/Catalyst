@@ -10,5 +10,3 @@ storage = { path = "../../utils/storage" }
 graphs = { path = "../../utils/graphs" }
 scope = { path = "../../utils/scope" }
 lexing-t = { path = "../lexing-t" }
-parsing-t = { version = "0.1.0", path = "../parsing-t" }
-#diags = { version = "0.1.0", path = "../diags" }

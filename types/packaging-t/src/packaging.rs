@@ -147,6 +147,7 @@ impl Default for ModKind {
 
 #[derive(Default, Clone, Copy)]
 pub struct Dep {
-    pub name: Span,
+    pub name_span: Span,
+    pub name: Ident,
     pub ptr: Ident,
 }

@@ -173,7 +173,7 @@ gen_kind!(
         DoubleColon = "::",
         Hash = "#",
         DoubleHash = "##",
-        Tick = "`",
+        BackSlash = "\\",
     }
 
     paren_pairs {

@@ -98,7 +98,7 @@ macro_rules! source_annotations {
 }
 
 #[macro_export]
-macro_rules! sippet {
+macro_rules! snippet {
     {
         $title_type:ident$([$title_id:expr])?$(: $title_label:tt)?;
         $($footer_type:ident$([$footer_id:expr])?$(: $footer_label:tt)?;)*
@@ -108,11 +108,13 @@ macro_rules! sippet {
         $crate::Snippet {
             title: $crate::annotation!($title_type$([$title_id])?$(: $title_label)?),
             footer: vec![
-                $($crate::annotation!($footer_type$([$footer_id])?$(: $footer_label)?)),*
+
+                $($crate::annotation!($footer_type$([$footer_id])?$(: $footer_label)?),)*
             ],
             slices: vec![
                 $($crate::slice!(($span, $origin) $({$($annotations)*})?)),*
             ],
+            origin: format!("Error originated from '{}:{}'", file!(), line!()),
         }
     };
 }
@@ -125,7 +127,7 @@ macro_rules! gen_error_fn {
         }
     } => {
         pub fn $name(&mut $self, $($param: $param_ty),*) {
-            $self.workspace.push($crate::sippet! {
+            $self.workspace.push($crate::snippet! {
                 $($body)*
             })
         }
@@ -137,7 +139,7 @@ macro_rules! gen_error_fn {
         }
     } => {
         pub fn $name(&mut $self, $($param: $param_ty),*) {
-            $self.workspace.push_or_display(&$self.packages, $crate::sippet! {
+            $self.workspace.push_or_display(&$self.packages, $crate::snippet! {
                 $($body)*
             })
         }
@@ -149,7 +151,7 @@ macro_rules! gen_error_fn {
         }
     } => {
         pub fn $name($($param: $param_ty),*) -> $crate::Snippet {
-            $crate::sippet! {
+            $crate::snippet! {
                 $($body)*
             }
         }
@@ -192,7 +194,7 @@ mod tests {
 
     #[test]
     fn test() {
-        drop(sippet! {
+        drop(snippet! {
             err["id"]: "hello";
             err: "world";
             (Span::new(0..0), Ident::EMPTY) {

@@ -1,10 +1,11 @@
-use std::path::Path;
+#![feature(default_free_fn)]
+
+use std::{default::default, path::Path};
 
 use diags::*;
+use lexing_t::*;
 use packaging::*;
 use packaging_t::*;
-use parsing::*;
-use parsing_t::*;
 use storage::*;
 use testing::*;
 
@@ -22,43 +23,18 @@ impl Testable for TestState {
 
         package_loader!(ts).load(Path::new(name));
 
-        let mut ast_data = AstData::new();
-        let mut parse_state = ParserState::new();
-
         for module in ts.packages.module_order.to_vec() {
             let module_ent = ts.packages.modules.get(&module).unwrap();
-            parse_state.start(&module_ent.content, module, false);
-            let imports = Parser::new(
-                &module_ent.content,
-                &mut parse_state,
-                &mut ast_data,
-                &mut ts.workspace,
-            )
-            .parse_imports();
-            if let Some(imports) = imports {
-                let snippet = parsing::to_snippet(imports, &ast_data, module);
-                ts.workspace.push(snippet);
-            }
 
-            loop {
-                ast_data.clear();
-                let (items, finished) = Parser::new(
-                    &module_ent.content,
-                    &mut parse_state,
-                    &mut ast_data,
-                    &mut ts.workspace,
-                )
-                .parse_items();
-
-                for &item in &ast_data[items] {
-                    let snippet = parsing::to_snippet(item, &ast_data, module);
-                    ts.workspace.push(snippet);
+            ts.workspace.push(Snippet {
+                slices: vec![Slice {
+                    span: Span::new(0..module_ent.content.len()),
+                    origin: module,
+                    ..default()
                 }
-
-                if finished {
-                    break;
-                }
-            }
+                .into()],
+                ..default()
+            })
         }
 
         (ts.workspace, ts.packages)
@@ -68,10 +44,10 @@ impl Testable for TestState {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "struct-ast" r"
             // comment
-            struct /* comment */ pub /* comment */ RichStruct /* comment */ { // comment
+            pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
                 // comment
                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
                     Very, // uuu
@@ -83,7 +59,7 @@ fn main() {
             } // comment
         "
         simple "one-line-struct" {
-            struct pub OneLineStruct {
+            pub struct OneLineStruct {
                 pub use mut filed: Trough;
                 other_field: SimpleStuff;
                 priv pointer: ^mut^int;

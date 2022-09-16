@@ -7,5 +7,9 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../../utils/storage" }
-lexing-t = { path = "../../types/lexing-t" }
 scope = { path = "../../utils/scope" }
+
+lexing = { path = "../../stages/lexing"}
+
+lexing-t = { path = "../lexing-t" }
+diags = { path = "../diags" }

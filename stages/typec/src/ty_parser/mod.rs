@@ -6,6 +6,7 @@ use std::{
 use diags::*;
 use lexing_t::Span;
 use packaging_t::span_str;
+use parsing::*;
 use parsing_t::*;
 use scope::*;
 use storage::*;
@@ -15,7 +16,7 @@ use typec_t::*;
 use crate::*;
 
 impl TyParser<'_> {
-    pub fn generics(&mut self, generic_ast: Ast) -> VRefSlice<Bound> {
+    pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Bound> {
         let mut generics = bumpvec!(cap self.ast_data[generic_ast.children].len());
         for &ast in &self.ast_data[generic_ast.children] {
             let [_, ref bounds @ ..] = self.ast_data[ast.children] else {
@@ -27,7 +28,7 @@ impl TyParser<'_> {
         self.typec.bound_slices.bump(generics)
     }
 
-    pub fn insert_generics(&mut self, generics_ast: Ast, offset: usize, on_type: bool) {
+    pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize, on_type: bool) {
         for (i, &ast) in self.ast_data[generics_ast.children].iter().enumerate() {
             let [name, ..] = self.ast_data[ast.children] else {
                 unreachable!();
@@ -51,7 +52,7 @@ impl TyParser<'_> {
         ));
     }
 
-    pub fn ty(&mut self, ty_ast: Ast) -> errors::Result<VRef<Ty>> {
+    pub fn ty(&mut self, ty_ast: TyAst) -> errors::Result<VRef<Ty>> {
         match ty_ast.kind {
             AstKind::Ident | AstKind::IdentChain => self.ident::<TyLookup>(ty_ast),
             AstKind::TyInstance => self.instance(ty_ast),
@@ -60,7 +61,7 @@ impl TyParser<'_> {
         }
     }
 
-    pub fn bound_sum(&mut self, bounds: &[Ast]) -> errors::Result<VRef<Bound>> {
+    pub fn bound_sum(&mut self, bounds: &[BoundExprAst]) -> errors::Result<VRef<Bound>> {
         let mut bounds = bounds
             .iter()
             .map(|&ast| self.bound(ast))
@@ -83,14 +84,14 @@ impl TyParser<'_> {
         Ok(self.typec.bounds.get_or_insert(key, fallback))
     }
 
-    pub fn bound(&mut self, bound_ast: Ast) -> errors::Result<VRef<Bound>> {
+    pub fn bound(&mut self, bound_ast: BoundExprAst) -> errors::Result<VRef<Bound>> {
         match bound_ast.kind {
             AstKind::Ident | AstKind::IdentChain => self.ident::<BoundLookup>(bound_ast),
             kind => unimplemented!("{:?}", kind),
         }
     }
 
-    fn pointer(&mut self, pointer_ast: Ast) -> errors::Result<VRef<Ty>> {
+    fn pointer(&mut self, pointer_ast: TyPointerAst) -> errors::Result<VRef<Ty>> {
         let [mutability, base] = self.ast_data[pointer_ast.children] else {
             unreachable!();
         };
@@ -120,7 +121,7 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(id, fallback))
     }
 
-    fn mutability(&mut self, mutability_ast: Ast) -> errors::Result<VRef<Ty>> {
+    fn mutability(&mut self, mutability_ast: TyAst) -> errors::Result<VRef<Ty>> {
         Ok(match mutability_ast.kind {
             AstKind::PointerMut => Ty::MUTABLE,
             AstKind::None => Ty::IMMUTABLE,
@@ -128,7 +129,10 @@ impl TyParser<'_> {
         })
     }
 
-    fn ident<T: ScopeLookup>(&mut self, ident_ast: Ast) -> errors::Result<VRef<T::Output>> {
+    fn ident<T: ScopeLookup>(
+        &mut self,
+        ident_ast: IdentChainAst,
+    ) -> errors::Result<VRef<T::Output>> {
         let ident = self.intern_ident(ident_ast);
         self.lookup_typed::<T>(ident, ident_ast.span)
     }
@@ -199,7 +203,7 @@ impl TyParser<'_> {
 
     pub fn handle_scope_error<T: ScopeLookup>(&mut self, err: ScopeError, sym: Ident, span: Span) {
         self.workspace.push(match err {
-            ScopeError::NotFound => sippet! {
+            ScopeError::NotFound => snippet! {
                 err: ("{} not found", T::ITEM_NAME);
                 info: ("queried '{}'", &self.interner[sym]);
                 (span, self.current_file) {
@@ -228,7 +232,7 @@ impl TyParser<'_> {
                     .collect::<BumpVec<_>>()
                     .join(", ");
 
-                sippet! {
+                snippet! {
                     err: ("'{}' is ambiguous", &self.interner[sym]);
                     help: ("try to specify module from which the item is imported");
                     help: ("suggestions: {}", suggestions);
@@ -237,7 +241,7 @@ impl TyParser<'_> {
                     }
                 }
             }
-            ScopeError::TypeMismatch(found) => sippet! {
+            ScopeError::TypeMismatch(found) => snippet! {
                 err: ("'{}' is not a {}", &self.interner[sym], T::ITEM_NAME);
                 info: ("found type: {}", T::project(found).unwrap_or("todo: unknown"));
                 (span, self.current_file) {

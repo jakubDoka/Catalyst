@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+parsing = { path = "../parsing" }
+
 storage = { path = "../../utils/storage" }
 scope = { path = "../../utils/scope" }
 errors = { path = "../../utils/errors" }

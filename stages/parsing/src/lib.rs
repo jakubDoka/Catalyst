@@ -13,28 +13,6 @@ macro_rules! token {
 }
 
 #[macro_export]
-macro_rules! list {
-    ($self:expr, $start:ident, $sep:ident, $end:ident, exp $func:expr) => {
-        $self.list(token!($start), token!($sep), token!($end), $func)
-    };
-
-    ($self:expr, $start:ident, $sep:ident, $end:ident, $func:ident) => {
-        list!($self, $start, $sep, $end, exp Self::$func)
-    };
-}
-
-#[macro_export]
-macro_rules! opt_list {
-    ($self:expr, $start:ident, $sep:ident, $end:ident, exp $func:expr) => {
-        $self.opt_list(TokenKind::$start, token!($sep), token!($end), $func)
-    };
-
-    ($self:expr, $start:ident, $sep:ident, $end:ident, $func:ident) => {
-        opt_list!($self, $start, $sep, $end, exp Self::$func)
-    };
-}
-
-#[macro_export]
 macro_rules! branch {
     (
         $self:expr => {
@@ -43,7 +21,7 @@ macro_rules! branch {
         }
     ) => {
         match $self.state.current.kind {
-            $(TokenKind::$cond$(($($value),*))? => {$res;},)*
+            $(TokenKind::$cond$(($($value),*))? => $res,)*
             _ => {
                 branch!(__default_branch__ $self, ($($cond$(($($value = $default),*))?),*) $($default_branch)?)
             },
@@ -52,8 +30,8 @@ macro_rules! branch {
 
     (__default_branch__ $self:expr, ($($cond:ident$(($($value:pat = $default:expr),*))?),*)) => {
         {
-            let terminals = [
-                $(TokenKind::$cond$(($($default),*))?),*
+            let terminals: &[TokenPattern] = &[
+                $(TokenPattern::Kind(TokenKind::$cond$(($($default),*))?)),*
             ];
             $self.expect_error(terminals);
             return Err(())
@@ -73,7 +51,7 @@ macro_rules! branch {
         }
     ) => {
         match $self.current_token_str() {
-            $($str => drop($res),)*
+            $($str => $res,)*
             _ => {
                 let terminals = [
                     $($str),*
@@ -87,4 +65,15 @@ macro_rules! branch {
 
 mod parser;
 
-pub use parser::{to_snippet, Parser, ParserState};
+pub use parser::{
+    bound::BoundExprAst,
+    imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
+    items::{ItemAst, ItemsAst, ItemsMeta},
+    manifest::{
+        DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,
+        ManifestListMeta, ManifestObjectAst, ManifestObjectMeta, ManifestValueAst,
+    },
+    r#struct::{StructAst, StructBodyAst, StructBodyMeta, StructFieldAst},
+    ty::{MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst},
+    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, IdentChainAst, ParamBoundsAst,
+};

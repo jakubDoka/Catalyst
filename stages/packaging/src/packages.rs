@@ -34,7 +34,7 @@ impl PackageLoader<'_> {
         path.pop();
         let mut frontier = bumpvec![(id, path, default())];
         let mut ast_data = AstData::new();
-        let mut parser_state = ParserState::new();
+        let mut parser_state = ParsingState::new();
 
         // load packages
         while !self.load_package(&mut ast_data, &mut parser_state, &mut frontier, root)? {}
@@ -82,7 +82,7 @@ impl PackageLoader<'_> {
     fn load_package(
         &mut self,
         ast_data: &mut AstData,
-        parser_state: &mut ParserState,
+        parser_state: &mut ParsingState,
         frontier: &mut PackageFrontier,
         project_path: &Path,
     ) -> errors::Result<bool> {
@@ -100,30 +100,51 @@ impl PackageLoader<'_> {
 
         // parse
         ast_data.clear();
-        parser_state.start(&content, id, false);
-        let fields = Parser::new(&content, parser_state, ast_data, self.workspace).parse_manifest();
+        parser_state.start(&content, id);
+        let manifest = {
+            let mut ctx = ParsingCtx::new(
+                &content,
+                parser_state,
+                ast_data,
+                self.workspace,
+                self.interner,
+            );
+            ManifestAst::parse(&mut ctx)
+        };
+        let Ok(manifest) = manifest else {
+            let package = Mod {
+                path,
+                line_mapping: LineMapping::new(&content),
+                content,
+                ..default()
+            };
+            self.packages.modules.insert(id, package);
+            return Err(());
+        };
 
         // retrieve data from ast
         let (mut root_module, span) = {
-            let (root_module, span) = self
-                .find_field_value("root", fields, &content, ast_data)
-                .unwrap_or(("root", default()));
-            (tmp_path.join(root_module), span)
+            let root_ident = self.interner.intern_str("root");
+            let (span, root_module) = manifest
+                .find_field(root_ident)
+                .and_then(|field| match field.value {
+                    ManifestValueAst::String(span) => {
+                        Some((span, &content[span.shrink(1).range()]))
+                    }
+                    _ => None,
+                })
+                .unwrap_or((default(), "root"));
+            (tmp_path.join(root_module), span.into())
         };
         root_module.set_extension("");
-        let deps =
-            self.find_field("deps", fields, &content, ast_data)
-                .map_or(default(), |deps_ast| {
-                    self.push_package_deps(
-                        id,
-                        &mut tmp_path,
-                        deps_ast,
-                        &content,
-                        ast_data,
-                        frontier,
-                        project_path,
-                    )
-                });
+        let deps = self.push_package_deps(
+            id,
+            &mut tmp_path,
+            manifest.deps,
+            &content,
+            frontier,
+            project_path,
+        );
 
         // save
         let package = Mod {
@@ -143,39 +164,28 @@ impl PackageLoader<'_> {
         &mut self,
         id: Ident,
         temp_path: &mut PathBuf,
-        deps_ast: Ast,
+        deps_ast: ManifestDepsAst,
         content: &str,
-        ast_data: &AstData,
         frontier: &mut PackageFrontier,
         project_path: &Path,
     ) -> VSlice<Dep> {
         self.packages.conns.start_cache();
-        for dep in &ast_data[ast_data[deps_ast.children][1].children] {
-            // retrieve data from ast
-            let &Ast { kind: AstKind::ManifestImport { use_git }, children, .. } = dep else {
-                unreachable!("{:?}", dep.kind);
-            };
+        for &ManifestDepAst {
+            name,
+            git,
+            path,
+            version,
+            ..
+        } in deps_ast.iter()
+        {
+            let path_str = &content[path.range()];
 
-            let [name, path, version] = &ast_data[children] else {
-                unreachable!();
-            };
-
-            let path_span = path.span.shrink(1);
-            let path_str = &content[path_span.range()];
-            let name = if name.kind.is_none() {
-                let start = path_str.rfind("/").map(|i| i + 1).unwrap_or(0);
-                path_span.sliced(start..)
-            } else {
-                name.span
-            };
-
-            let version_span = (version.kind != AstKind::None).then(|| version.span.shrink(1));
-            let version = version_span.map(|span| &content[span.range()]);
-            let version_loc = version_span.map(|span| (id, span));
-            let current_loc = Some((id, path_span));
+            let version_loc = version.expand().map(|span| (id, span));
+            let version = version.expand().map(|span| &content[span.range()]);
+            let current_loc = Some((id, path));
 
             // find the path of the dependency
-            let path_result = if use_git {
+            let path_result = if git {
                 self.download_package(project_path, current_loc, version_loc, version, path_str)
             } else {
                 let to_pop = Path::new(path_str).components().count();
@@ -201,7 +211,11 @@ impl PackageLoader<'_> {
             };
 
             // save
-            let dep = Dep { name, ptr };
+            let dep = Dep {
+                name: name.ident,
+                name_span: name.span,
+                ptr,
+            };
             self.packages.conns.cache(dep);
 
             if self.packages.modules.get(&ptr).is_none() {
@@ -232,7 +246,7 @@ impl PackageLoader<'_> {
 
         let mut frontier = bumpvec![(id, package, path, default())];
         let mut ast_data = AstData::new();
-        let mut parser_state = ParserState::new();
+        let mut parser_state = ParsingState::new();
 
         while !self.load_module(&mut ast_data, &mut parser_state, &mut frontier)? {}
 
@@ -243,7 +257,7 @@ impl PackageLoader<'_> {
     fn load_module(
         &mut self,
         ast_data: &mut AstData,
-        parser_state: &mut ParserState,
+        parser_state: &mut ParsingState,
         frontier: &mut ModuleFrontier,
     ) -> errors::Result<bool> {
         let Some((id, package_id, path, loc)) = frontier.pop() else {
@@ -254,12 +268,20 @@ impl PackageLoader<'_> {
             .map_err(|err| self.file_error(loc, &path, "cannot load source file", err))?;
 
         ast_data.clear();
-        parser_state.start(&content, id, false);
-        let imports =
-            Parser::new(&content, parser_state, ast_data, &mut self.workspace).parse_imports();
+        parser_state.start(&content, id);
+        let imports = {
+            let mut ctx = ParsingCtx::new(
+                &content,
+                parser_state,
+                ast_data,
+                &mut self.workspace,
+                self.interner,
+            );
+            UseAst::parse(&mut ctx).ok()
+        };
 
         let deps = if let Some(imports) = imports {
-            self.load_module_deps(id, package_id, imports, &content, ast_data, frontier)
+            self.load_module_deps(id, package_id, imports, &content, frontier)
                 .unwrap_or(default())
         } else {
             default()
@@ -285,40 +307,26 @@ impl PackageLoader<'_> {
         &mut self,
         id: Ident,
         package_id: Ident,
-        imports: Ast,
+        imports: UseAst,
         content: &str,
-        ast_data: &AstData,
         frontier: &mut ModuleFrontier,
     ) -> errors::Result<VSlice<Dep>> {
         self.packages.conns.start_cache();
 
-        for import in &ast_data[imports.children] {
-            let [mut name, path] = &ast_data[import.children] else {
-                unreachable!();
-            };
-
-            // name defaults to last segment of module path
-            if name.kind.is_none() {
-                let span = path.span.shrink(1);
-                let start = content[span.range()].rfind('/').map(|i| i + 1).unwrap_or(0);
-                name.span = span.sliced(start..);
-            }
-
-            let path_span = path.span.shrink(1);
-            let path_str = &content[path_span.range()];
+        for &ImportAst { name, path, .. } in imports.items.iter() {
+            let path_str = &content[path.range()];
             // $package$(/$module_path)?
             let (package, module_path) = path_str.split_once('/').unwrap_or((path_str, ""));
+            let package_ident = self.interner.intern_str(package);
 
             // Try to find package mentioned by import, '.' is a self reference.
             let package_ent = &self.packages.modules.get(&package_id).unwrap();
             let maybe_package = self.packages.conns[package_ent.deps]
                 .iter()
-                .find_map(|dep| {
-                    (&package_ent.content[dep.name.range()] == package).then_some(dep.ptr)
-                })
+                .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
                 .or_else(|| (package == ".").then_some(package_id));
             let Some(external_package_id) = maybe_package else {
-                let sippet = Self::unknown_package(self, path_span.sliced(..package.len()), id, &package_ent);
+                let sippet = Self::unknown_package(self, path.sliced(..package.len()), id, &package_ent);
                 self.workspace.push(sippet);
                 continue;
             };
@@ -329,15 +337,20 @@ impl PackageLoader<'_> {
             let ModKind::Package { ref root_module, .. } = external_package.kind else {
                 unreachable!();
             };
-            let mut path = root_module.with_extension("").join(module_path);
-            path.set_extension(FILE_EXTENSION);
+            let mut module_path = root_module.with_extension("").join(module_path);
+            module_path.set_extension(FILE_EXTENSION);
 
-            let import_loc = Some((id, path_span));
+            let import_loc = Some((id, path));
 
-            let path = match path.canonicalize() {
+            let path = match module_path.canonicalize() {
                 Ok(path) => path,
                 Err(err) => {
-                    self.file_error(import_loc, &path, "cannot canonicalize module path", err);
+                    self.file_error(
+                        import_loc,
+                        &module_path,
+                        "cannot canonicalize module path",
+                        err,
+                    );
                     continue;
                 }
             };
@@ -345,7 +358,8 @@ impl PackageLoader<'_> {
             let import_id = self.intern_path(&path)?;
 
             let dep = Dep {
-                name: name.span,
+                name: name.ident,
+                name_span: name.span,
                 ptr: import_id,
             };
             self.packages.conns.cache(dep);
@@ -479,31 +493,6 @@ impl PackageLoader<'_> {
         project_path.join(var)
     }
 
-    fn find_field_value<'a>(
-        &self,
-        name: &str,
-        fields: VSlice<Ast>,
-        content: &'a str,
-        ast_data: &AstData,
-    ) -> Option<(&'a str, Maybe<Span>)> {
-        self.find_field(name, fields, content, ast_data)
-            .map(|ast| ast_data[ast.children][1].span.shrink(1))
-            .map(|span| (&content[span.range()], Maybe::some(span)))
-    }
-
-    fn find_field(
-        &self,
-        name: &str,
-        fields: VSlice<Ast>,
-        content: &str,
-        ast_data: &AstData,
-    ) -> Option<Ast> {
-        ast_data[fields]
-            .iter()
-            .find(|field| &content[ast_data[field.children][0].span.range()] == name)
-            .copied()
-    }
-
     gen_error_fns! {
         push file_error(self, loc: DiagLoc, path: &Path, message: &str, err: std::io::Error) {
             err: ("{}", message);
@@ -572,7 +561,7 @@ impl PackageLoader<'_> {
                 "available packages: '{}'",
                 s.packages.conns[package.deps]
                     .iter()
-                    .map(|dep| &package.content[dep.name.range()])
+                    .map(|dep| &package.content[dep.name_span.range()])
                     .chain(std::iter::once("."))
                     .collect::<BumpVec<_>>()
                     .join("', '")

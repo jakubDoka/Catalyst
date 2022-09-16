@@ -20,6 +20,11 @@ impl Span {
         }
     }
 
+    #[inline]
+    pub fn within(&self, other: Span) -> bool {
+        self.start >= other.start && self.end <= other.end
+    }
+
     /// Simply start as usize but less wordy.
     #[inline]
     pub fn start(&self) -> usize {

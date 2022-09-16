@@ -17,9 +17,11 @@
         "insts",
         "interner",
         "lalrpop",
+        "nonoverlapping",
         "peekable",
         "repr",
         "rfind",
+        "rsplit",
         "Struct",
         "Typec",
         "Uninit"

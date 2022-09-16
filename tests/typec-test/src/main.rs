@@ -30,7 +30,7 @@ impl Testable for TestState {
 
         package_loader!(ts).load(Path::new(name));
 
-        let mut parse_state = ParserState::new();
+        let mut parse_state = ParsingState::new();
         let mut types = vec![];
 
         for module in ts.packages.module_order.to_vec() {
@@ -41,7 +41,7 @@ impl Testable for TestState {
             loop {
                 ts.ast_data.clear();
                 let mod_ent = ts.packages.modules.get(&module).unwrap();
-                let (items, finished) = Parser::new(
+                let (items, finished) = ParsingCtx::new(
                     &mod_ent.content,
                     &mut parse_state,
                     &mut ts.ast_data,
