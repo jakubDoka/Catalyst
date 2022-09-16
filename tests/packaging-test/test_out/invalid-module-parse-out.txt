@@ -1,0 +1,48 @@
+error: expected Ident but got '{'
+ --> invalid-module\root.ctl:1:5
+  |
+1 | use { "./a" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import -> name
+
+error: expected String but got '{'
+ --> invalid-module\root.ctl:1:5
+  |
+1 | use { "./a" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> invalid-module\root.ctl:1:14
+  |
+1 | use { "./a" }
+  |               token located here
+  |
+  = info: use -> list
+
+error: expected Ident but got '{'
+ --> invalid-module\root\a.ctl:1:5
+  |
+1 | use { "./a/b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import -> name
+
+error: expected String but got '{'
+ --> invalid-module\root\a.ctl:1:5
+  |
+1 | use { "./a/b" }
+  |     ^ token located here
+  |
+  = info: use -> list -> import
+
+error: expected '\n' | ';' | ']' but got <eof>
+ --> invalid-module\root\a.ctl:1:16
+  |
+1 | use { "./a/b" }
+  |                 token located here
+  |
+  = info: use -> list
+
