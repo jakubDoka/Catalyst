@@ -2,7 +2,7 @@ use crate::*;
 use lexing_t::*;
 use storage::*;
 
-pub type Funcs = OrderedMap<Ident, Func>;
+pub type Funcs = OrderedMap<VRef<str>, Func>;
 pub type FuncSlices = PoolBumpMap<VRef<Func>>;
 
 #[derive(Clone, Copy, Default)]
@@ -24,7 +24,7 @@ bitflags! {
 
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
-    pub cc: Maybe<Ident>,
+    pub cc: Maybe<VRef<str>>,
     pub args: VRefSlice<Ty>,
     pub ret: Maybe<VRef<Ty>>,
 }

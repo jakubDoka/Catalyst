@@ -90,12 +90,10 @@ impl<'a> ParsingCtx<'_, 'a> {
         }
     }
 
-    pub fn try_advance(&mut self, kind: TokenKind) -> bool {
-        let can = self.state.current.kind == kind;
-        if can {
-            self.advance();
-        }
-        can
+    pub fn try_advance(&mut self, kind: TokenKind) -> Result<Token, ()> {
+        (self.state.current.kind == kind)
+            .then(|| self.advance())
+            .ok_or(())
     }
 
     pub fn skip(&mut self, tok: TokenKind) {
@@ -224,7 +222,7 @@ pub struct ParsingState {
     pub current: Token,
     pub next: Token,
     pub progress: usize,
-    pub path: Ident,
+    pub path: VRef<str>,
     pub parse_stack: Vec<&'static str>,
 }
 
@@ -233,7 +231,7 @@ impl ParsingState {
         Self::default()
     }
 
-    pub fn start(&mut self, source: &str, path: Ident) {
+    pub fn start(&mut self, source: &str, path: VRef<str>) {
         let mut lexer = Lexer::new(source, 0);
         self.current = lexer.next();
         self.next = lexer.next();

@@ -12,7 +12,7 @@ pub struct PartialOrderedMap<K: SpecialHash, V> {
     data: PoolMap<V, (Maybe<K>, V)>,
 }
 
-impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
+impl<K: SpecialHash + Invalid, V> PartialOrderedMap<K, V> {
     pub fn redirect_insert(&mut self, key: K, value: V) -> VRef<V> {
         let index = self.data.push((key.into(), value));
         self.index.insert(key, index);

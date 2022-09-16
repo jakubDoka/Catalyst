@@ -2,20 +2,20 @@ use std::{collections::HashMap, hash::*};
 
 use crate::*;
 
-pub trait SpecialHash: Eq + Hash + Copy + Invalid {
+pub trait SpecialHash: Eq + Hash + Copy {
     type BuildHasher: BuildHasher + Default;
 }
 
 pub type Map<K, V> = HashMap<K, V, <K as SpecialHash>::BuildHasher>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IdentPair(pub Ident, pub Ident);
+pub struct IdentPair(pub VRef<str>, pub VRef<str>);
 
 impl SpecialHash for IdentPair {
     type BuildHasher = PairHasherFactory;
 }
 
-impl SpecialHash for Ident {
+impl SpecialHash for VRef<str> {
     type BuildHasher = SimpleHasherFactory;
 }
 
@@ -29,7 +29,7 @@ impl Hash for IdentPair {
 
 impl Invalid for IdentPair {
     unsafe fn invalid() -> Self {
-        IdentPair(Ident::invalid(), Ident::invalid())
+        IdentPair(VRef::invalid(), VRef::invalid())
     }
     fn is_invalid(&self) -> bool {
         self.0.is_invalid()

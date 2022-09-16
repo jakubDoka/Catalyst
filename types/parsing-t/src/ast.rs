@@ -14,7 +14,7 @@ use crate::*;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NameAst {
-    pub ident: Ident,
+    pub ident: VRef<str>,
     pub span: Span,
 }
 
@@ -35,12 +35,19 @@ impl NameAst {
 }
 
 impl<'a> Ast<'a> for NameAst {
-    type Args = ();
+    type Args = (bool,);
 
     const NAME: &'static str = "name";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        let span = ctx.expect_advance(TokenKind::Ident)?.span;
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a>,
+        (just_try,): Self::Args,
+    ) -> Result<Self, ()> {
+        let span = if just_try {
+            ctx.try_advance(TokenKind::Ident)?.span
+        } else {
+            ctx.expect_advance(TokenKind::Ident)?.span
+        };
         Ok(Self::new(ctx, span))
     }
 

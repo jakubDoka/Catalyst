@@ -3,16 +3,16 @@ use storage::*;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Loc {
-    pub name: Ident,
-    pub file: Maybe<Ident>,
+    pub name: VRef<str>,
+    pub file: Maybe<VRef<str>>,
     pub span: Maybe<Span>,
     pub whole_span: Maybe<Span>,
 }
 
 impl Loc {
     pub fn new(
-        name: Ident,
-        file: impl Into<Maybe<Ident>>,
+        name: VRef<str>,
+        file: impl Into<Maybe<VRef<str>>>,
         span: impl Into<Maybe<Span>>,
         whole_span: impl Into<Maybe<Span>>,
     ) -> Self {
@@ -28,7 +28,7 @@ impl Loc {
 impl Invalid for Loc {
     unsafe fn invalid() -> Self {
         Self {
-            name: Ident::invalid(),
+            name: VRef::invalid(),
             file: Maybe::none(),
             span: Maybe::none(),
             whole_span: Maybe::none(),

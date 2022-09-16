@@ -100,7 +100,7 @@ pub mod items {
     use packaging_t::*;
     use snippet_display::SnippetDisplay;
     use std::{path::*, thread::Scope};
-    use storage::{Ident, Interner};
+    use storage::{Interner, VRef};
 
     pub trait Testable {
         fn run(name: &str) -> (Workspace, Packages);
@@ -177,7 +177,7 @@ pub mod items {
                 } else if name.ends_with(".ctl") {
                     Fmt::source
                 } else {
-                    for<'a> |_: &'a mut Fmt, s: String, _: Ident| -> (Option<&'a str>, String) {
+                    for<'a> |_: &'a mut Fmt, s: String, _: VRef<str>| -> (Option<&'a str>, String) {
                         (None, s)
                     }
                 };

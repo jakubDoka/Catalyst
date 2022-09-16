@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::Invalid;
+use crate::{VRef, VRefDefault};
 
 pub fn ident_join<'a, T: Into<InternedSegment<'a>>>(
     sep: &'a str,
@@ -21,12 +21,14 @@ pub fn ident_join<'a, T: Into<InternedSegment<'a>>>(
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
-    map: HashMap<InternerEntry, Ident, InternerBuildHasher>,
+    map: HashMap<InternerEntry, VRef<str>, InternerBuildHasher>,
     indices: Vec<usize>,
     data: Box<String>,
 }
 
 impl Interner {
+    pub const EMPTY: VRef<str> = unsafe { VRef::new(1) };
+
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
         let mut s = Interner {
@@ -34,7 +36,7 @@ impl Interner {
             indices: vec![0],
             data: Box::default(),
         };
-        assert_eq!(s.intern_str(""), Ident::EMPTY);
+        assert_eq!(s.intern_str(""), Self::EMPTY);
         s
     }
 
@@ -43,24 +45,24 @@ impl Interner {
         self.indices.clear();
         self.indices.push(0);
         self.data.clear();
-        assert_eq!(self.intern_str(""), Ident::EMPTY);
+        assert_eq!(self.intern_str(""), Self::EMPTY);
     }
 
     /// Interns a string
-    pub fn intern_str(&mut self, s: &str) -> Ident {
+    pub fn intern_str(&mut self, s: &str) -> VRef<str> {
         self.intern(ident!(s))
     }
 
     /// Interns a composite ident. This avoids allocating memory for string.
     /// See [`ident!`] macro for ease of use and [`InternedSegment`] for more info.
-    pub fn intern(&mut self, components: impl IntoIterator<Item = InternedSegment>) -> Ident {
+    pub fn intern(&mut self, components: impl IntoIterator<Item = InternedSegment>) -> VRef<str> {
         self.intern_low(components).0
     }
 
     fn intern_low(
         &mut self,
         components: impl IntoIterator<Item = InternedSegment>,
-    ) -> (Ident, bool) {
+    ) -> (VRef<str>, bool) {
         let prev = self.data.len();
         let entry = self.push_segments(components);
         let entry = self.map.entry(entry);
@@ -72,7 +74,7 @@ impl Interner {
                 .or_insert_with(|| {
                     let index = self.indices.len();
                     self.indices.push(self.data.len());
-                    unsafe { Ident::new(index) }
+                    unsafe { VRef::new(index) }
                 }),
             vacant,
         )
@@ -98,7 +100,7 @@ impl Interner {
         InternerEntry::new(&*self.data, start..end)
     }
 
-    fn range_of(&self, ident: Ident) -> Range<usize> {
+    fn range_of(&self, ident: VRef<str>) -> Range<usize> {
         let index = ident.index();
         let start = self.indices[index - 1];
         let end = self.indices[index];
@@ -112,10 +114,10 @@ impl Default for Interner {
     }
 }
 
-impl Index<Ident> for Interner {
+impl Index<VRef<str>> for Interner {
     type Output = str;
 
-    fn index(&self, ident: Ident) -> &str {
+    fn index(&self, ident: VRef<str>) -> &str {
         let range = self.range_of(ident);
         &self.data[range]
     }
@@ -184,15 +186,15 @@ impl<'a> Deserialize<'a> for Interner {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InternedSegment<'a> {
     /// string already interned
-    Ident(Ident),
+    Ident(VRef<str>),
     /// string that may be interned
     String(&'a str),
     /// integer that will be displayed with [`std::fmt::Display`]
     Int(u32),
 }
 
-impl From<Ident> for InternedSegment<'_> {
-    fn from(ident: Ident) -> Self {
+impl From<VRef<str>> for InternedSegment<'_> {
+    fn from(ident: VRef<str>) -> Self {
         InternedSegment::Ident(ident)
     }
 }
@@ -211,7 +213,7 @@ impl From<u32> for InternedSegment<'_> {
 
 #[derive(Deserialize, Serialize)]
 struct RawInterner {
-    map: Vec<(u32, u32, Ident)>,
+    map: Vec<(u32, u32, VRef<str>)>,
     indices: Vec<usize>,
     data: Box<String>,
 }
@@ -282,36 +284,42 @@ impl Hasher for InternerHasher {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Ident(u32);
-
-impl Ident {
-    pub const EMPTY: Self = Self(1);
-
-    pub unsafe fn new(index: usize) -> Self {
-        Ident(index as u32)
-    }
-
-    pub const fn index(self) -> usize {
-        self.0 as usize
+impl VRefDefault for str {
+    fn default_state() -> VRef<Self> {
+        Interner::EMPTY
     }
 }
 
-impl Default for Ident {
-    fn default() -> Self {
-        Self::EMPTY
-    }
-}
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// pub struct Ident(u32);
 
-impl Invalid for Ident {
-    unsafe fn invalid() -> Self {
-        Self(0)
-    }
+// impl Ident {
+//     pub const EMPTY: Self = Self(1);
 
-    fn is_invalid(&self) -> bool {
-        self.0 == 0
-    }
-}
+//     pub unsafe fn new(index: usize) -> Self {
+//         Ident(index as u32)
+//     }
+
+//     pub const fn index(self) -> usize {
+//         self.0 as usize
+//     }
+// }
+
+// impl Default for Ident {
+//     fn default() -> Self {
+//         Self::EMPTY
+//     }
+// }
+
+// impl Invalid for Ident {
+//     unsafe fn invalid() -> Self {
+//         Self(0)
+//     }
+
+//     fn is_invalid(&self) -> bool {
+//         self.0 == 0
+//     }
+// }
 
 #[cfg(test)]
 mod test {

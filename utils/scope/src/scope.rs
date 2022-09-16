@@ -10,8 +10,8 @@ use storage::*;
 
 #[derive(Default)]
 pub struct Scope {
-    data: Map<Ident, Maybe<Item>>,
-    frames: Frames<(Ident, Maybe<Item>)>,
+    data: Map<VRef<str>, Maybe<Item>>,
+    frames: Frames<(VRef<str>, Maybe<Item>)>,
 }
 
 impl Scope {
@@ -19,7 +19,7 @@ impl Scope {
         Self::default()
     }
 
-    pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
+    pub fn get(&self, ident: VRef<str>) -> Result<Item, ScopeError> {
         self.data
             .get(&ident)
             .map(|option| option.as_ref_option().ok_or(ScopeError::Collision))
@@ -28,7 +28,7 @@ impl Scope {
             .cloned()
     }
 
-    pub fn get_typed<T: 'static>(&self, ident: Ident) -> Result<(VRef<T>, Item), ScopeError> {
+    pub fn get_typed<T: 'static>(&self, ident: VRef<str>) -> Result<(VRef<T>, Item), ScopeError> {
         let item = self.get(ident)?;
         Ok((
             item.ptr
@@ -62,7 +62,7 @@ impl Scope {
         }
     }
 
-    pub fn insert_builtin(&mut self, id: Ident, ptr: VRef<impl Any>) {
+    pub fn insert_builtin(&mut self, id: VRef<str>, ptr: VRef<impl Any>) {
         self.data.insert(
             id,
             Item {
@@ -84,7 +84,7 @@ impl Scope {
 
     pub fn insert(
         &mut self,
-        current_module: Ident,
+        current_module: VRef<str>,
         item: ScopeItem,
         interner: &mut Interner,
     ) -> Result<(), Option<(Span, Span)>> {
@@ -126,11 +126,11 @@ pub enum ScopeError {
 
 #[derive(Clone, Copy, Default)]
 pub struct Item {
-    pub id: Ident,
+    pub id: VRef<str>,
     pub ptr: ScopePtr,
     pub span: Maybe<Span>,
     pub whole_span: Maybe<Span>,
-    pub module: Maybe<Ident>,
+    pub module: Maybe<VRef<str>>,
     pub vis: Vis,
 }
 
@@ -148,7 +148,7 @@ impl Item {
 impl Invalid for Item {
     unsafe fn invalid() -> Self {
         Item {
-            id: Ident::invalid(),
+            id: VRef::invalid(),
             ptr: ScopePtr::invalid(),
             span: Maybe::none(),
             whole_span: Maybe::none(),
@@ -164,21 +164,21 @@ impl Invalid for Item {
 
 #[derive(Clone, Copy)]
 pub struct ScopeItem {
-    pub id: Ident,
+    pub id: VRef<str>,
     pub ptr: ScopePtr,
     pub span: Span,
     pub whole_span: Span,
-    pub module: Ident,
+    pub module: VRef<str>,
     pub vis: Vis,
 }
 
 impl ScopeItem {
     pub fn new(
-        id: Ident,
+        id: VRef<str>,
         ptr: impl Into<ScopePtr>,
         span: Span,
         whole_span: Span,
-        module: Ident,
+        module: VRef<str>,
         vis: Vis,
     ) -> Self {
         Self {
@@ -258,6 +258,39 @@ impl Default for ScopePtr {
             ptr: 0,
         }
     }
+}
+
+#[macro_export]
+macro_rules! match_scope_ptr {
+    ($ptr:expr =>
+        $(
+            $binding:ident: $ty:ty => $expr:expr,
+        )*
+        _ => $default:expr,
+    ) => {
+        {
+            let ptr = $ptr;
+            $(
+                if let Some($binding) = ptr.try_read::<$ty>() {
+                    $expr
+                } else
+            )*
+            {
+                $default
+            }
+        }
+    };
+}
+
+#[cfg(test)]
+#[test]
+fn test_match_scope_ptr() {
+    let res = match_scope_ptr! {ScopePtr::default() =>
+        _a: () => 1,
+        _ => 0,
+    };
+
+    assert!(res == 1);
 }
 
 struct InvalidItem;

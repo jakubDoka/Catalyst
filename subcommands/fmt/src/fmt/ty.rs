@@ -9,11 +9,11 @@ impl<'a> FmtAst for TyAst<'a> {
         }
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
+    fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            TyAst::Ident(ident) => ident.len(fmt),
-            TyAst::Instance(instance) => instance.len(fmt),
-            TyAst::Pointer(pointer) => pointer.len(fmt),
+            TyAst::Ident(ident) => ident.flat_len(fmt),
+            TyAst::Instance(instance) => instance.flat_len(fmt),
+            TyAst::Pointer(pointer) => pointer.flat_len(fmt),
         }
     }
 }
@@ -24,8 +24,8 @@ impl<'a> FmtAst for TyInstanceAst<'a> {
         self.params.display(fmt);
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
-        self.ident.len(fmt) + self.params.len(fmt)
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.ident.flat_len(fmt) + self.params.flat_len(fmt)
     }
 }
 
@@ -36,8 +36,8 @@ impl<'a> FmtAst for TyPointerAst<'a> {
         self.ty.display(fmt);
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
-        1 + self.mutability.len(fmt) + self.ty.len(fmt)
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        1 + self.mutability.flat_len(fmt) + self.ty.flat_len(fmt)
     }
 }
 
@@ -53,11 +53,11 @@ impl<'a> FmtAst for MutabilityAst<'a> {
         }
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
+    fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
             MutabilityAst::Mut(span) => span.len(),
             MutabilityAst::None => 0,
-            MutabilityAst::Ident(.., ident) => "use ".len() + ident.len(fmt),
+            MutabilityAst::Ident(.., ident) => "use ".len() + ident.flat_len(fmt),
         }
     }
 }

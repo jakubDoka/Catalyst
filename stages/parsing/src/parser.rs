@@ -56,6 +56,12 @@ pub struct PathAst<'a> {
     pub span: Span,
 }
 
+impl PathAst<'_> {
+    pub fn needs_front_slash(&self) -> bool {
+        false
+    }
+}
+
 impl<'a> Ast<'a> for PathAst<'a> {
     type Args = ();
 
@@ -85,7 +91,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        self.span
     }
 }
 
@@ -112,6 +118,11 @@ impl<'a> Ast<'a> for PathSegmentAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        match self {
+            Self::Name(name) => name.span(),
+            Self::Generics(generics) => generics.span(),
+            Self::Tuple(tuple) => tuple.span(),
+            Self::Struct(r#struct) => r#struct.span(),
+        }
     }
 }

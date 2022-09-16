@@ -1,7 +1,7 @@
 use super::*;
 
 impl FmtAst for NameAst {
-    fn len(&self, _: &Fmt) -> usize {
+    fn flat_len(&self, _: &Fmt) -> usize {
         self.span.len()
     }
 
@@ -11,11 +11,11 @@ impl FmtAst for NameAst {
 }
 
 impl<'a> FmtAst for ManifestValueAst<'a> {
-    fn len(&self, fmt: &Fmt) -> usize {
+    fn flat_len(&self, fmt: &Fmt) -> usize {
         match self {
             ManifestValueAst::String(span) => span.len(),
-            ManifestValueAst::Object(list) => list.len(fmt),
-            ManifestValueAst::Array(list) => list.len(fmt),
+            ManifestValueAst::Object(list) => list.flat_len(fmt),
+            ManifestValueAst::Array(list) => list.flat_len(fmt),
         }
     }
 
@@ -35,8 +35,8 @@ impl<'a> FmtAst for ManifestFieldAst<'a> {
         self.value.display(fmt);
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
-        self.name.len(fmt) + ": ".len() + self.value.len(fmt)
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.name.flat_len(fmt) + ": ".len() + self.value.flat_len(fmt)
     }
 }
 

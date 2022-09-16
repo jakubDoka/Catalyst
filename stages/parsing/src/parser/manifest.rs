@@ -1,9 +1,9 @@
 use super::*;
 
-list_meta!(DepsMeta LeftBracket NewLine RightBracket);
+list_meta!(DepsMeta LeftCurly NewLine RightCurly);
 pub type ManifestDepsAst<'a> = ListAst<'a, ManifestDepAst, DepsMeta>;
 
-list_meta!(ManifestObjectMeta LeftBracket NewLine RightBracket);
+list_meta!(ManifestObjectMeta LeftCurly NewLine RightCurly);
 pub type ManifestObjectAst<'a> = ListAst<'a, ManifestFieldAst<'a>, ManifestObjectMeta>;
 
 list_meta!(ManifestListMeta LeftBracket Comma RightBracket);
@@ -17,7 +17,7 @@ pub struct ManifestAst<'a> {
 }
 
 impl ManifestAst<'_> {
-    pub fn find_field(&self, name: Ident) -> Option<ManifestFieldAst> {
+    pub fn find_field(&self, name: VRef<str>) -> Option<ManifestFieldAst> {
         self.fields
             .iter()
             .find(|field| field.name.ident == name)
@@ -130,7 +130,7 @@ impl<'a> Ast<'a> for ManifestDepAst {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         let start = ctx.state.current.span;
         let git = ctx.optional_advance("git").is_some();
-        let name = ctx.parse().ok();
+        let name = ctx.parse_args((true,)).ok();
         let path = ctx.expect_advance(TokenKind::String)?.span;
         let version = ctx.optional_advance(TokenKind::String).map(|t| t.span);
         let span = start.joined(version.unwrap_or(path));

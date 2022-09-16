@@ -119,7 +119,7 @@ impl TyParser<'_> {
     }
 
     fn ident<T: ScopeLookup>(&mut self, ident_ast: PathAst) -> errors::Result<VRef<T::Output>> {
-        let ident = self.intern_ident(ident_ast);
+        let ident = self.intern_ident(ident_ast)?;
         self.lookup_typed::<T>(ident, ident_ast.span())
     }
 
@@ -149,13 +149,31 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn intern_ident(&mut self, ident: PathAst) -> Ident {
+    fn intern_ident(&mut self, ident: PathAst) -> errors::Result<VRef<str>> {
+        let mut iter = ident.segments.iter();
+
+        let Some(first) = iter.next() else {
+            unreachable!();
+        };
+
+        let PathSegmentAst::Name(name) = first else {
+            self.invalid_path_start(first);
+            return Err(());
+        };
+
+        let item = self.lookup::<FirstTySegmentLookup>(name.ident, name.span)?;
+
+        match_scope_ptr!(item =>
+            module: ModId => {},
+            _ => (),
+        );
+
         todo!();
     }
 
     pub fn lookup_typed<T: ScopeLookup>(
         &mut self,
-        sym: Ident,
+        sym: VRef<str>,
         span: Span,
     ) -> errors::Result<VRef<T::Output>> {
         match self.scope.get_typed::<T::Output>(sym) {
@@ -164,14 +182,32 @@ impl TyParser<'_> {
         }
     }
 
-    pub fn lookup<T: ScopeLookup>(&mut self, sym: Ident, span: Span) -> errors::Result<ScopePtr> {
+    pub fn lookup<T: ScopeLookup>(
+        &mut self,
+        sym: VRef<str>,
+        span: Span,
+    ) -> errors::Result<ScopePtr> {
         match self.scope.get(sym) {
             Ok(key) => Ok(key.ptr),
             Err(err) => Err(self.handle_scope_error::<T>(err, sym, span)),
         }
     }
 
-    pub fn handle_scope_error<T: ScopeLookup>(&mut self, err: ScopeError, sym: Ident, span: Span) {
+    gen_error_fns! {
+        push invalid_path_start(self, segment: &PathSegmentAst) {
+            err: "invalid path start";
+            (segment.span(), self.current_file) {
+                info[segment.span()]: "expected a name";
+            }
+        }
+    }
+
+    pub fn handle_scope_error<T: ScopeLookup>(
+        &mut self,
+        err: ScopeError,
+        sym: VRef<str>,
+        span: Span,
+    ) {
         self.workspace.push(match err {
             ScopeError::NotFound => snippet! {
                 err: ("{} not found", T::ITEM_NAME);
@@ -241,4 +277,5 @@ gen_scope_lookup! {
     BoundLookup<"bound", Bound> {
         Ty => "type",
     }
+    FirstTySegmentLookup<"type"> {}
 }

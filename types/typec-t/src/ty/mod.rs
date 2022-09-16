@@ -2,7 +2,7 @@ use crate::*;
 use lexing_t::*;
 use storage::*;
 
-pub type Types = OrderedMap<Ident, Ty>;
+pub type Types = OrderedMap<VRef<str>, Ty>;
 pub type TySlices = PoolBumpMap<VRef<Ty>>;
 pub type Fields = PoolBumpMap<Field>;
 

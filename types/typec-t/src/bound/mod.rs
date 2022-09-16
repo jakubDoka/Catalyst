@@ -4,7 +4,7 @@ use crate::*;
 use lexing_t::*;
 use storage::*;
 
-pub type Bounds = OrderedMap<Ident, Bound>;
+pub type Bounds = OrderedMap<VRef<str>, Bound>;
 pub type BoundFuncs = PoolBumpMap<BoundFunc>;
 pub type BoundSlices = PoolBumpMap<VRef<Bound>>;
 

@@ -188,7 +188,7 @@ pub use items::{
 #[cfg(test)]
 mod tests {
     use lexing_t::Span;
-    use storage::Ident;
+    use storage::*;
 
     use super::*;
 
@@ -197,7 +197,7 @@ mod tests {
         drop(snippet! {
             err["id"]: "hello";
             err: "world";
-            (Span::new(0..0), Ident::EMPTY) {
+            (Span::new(0..0), Interner::EMPTY) {
                 err[Span::new(0..0)]: "world";
             }
         });
@@ -211,7 +211,7 @@ mod tests {
         gen_error_fns! {
             push test_err(self, span: Span, a: i32, b: i32) {
                 err["goo"]: ("hello {} {}", a, b);
-                (span, Ident::EMPTY) {
+                (span, Interner::EMPTY) {
                     err[span]: "world";
                 }
             }

@@ -1,6 +1,6 @@
 use super::*;
 
-list_meta!(ImportsMeta LeftBracket NewLine RightBracket);
+list_meta!(ImportsMeta LeftCurly NewLine RightCurly);
 pub type ImportsAst<'a> = ListAst<'a, ImportAst, ImportsMeta>;
 
 #[derive(Clone, Copy, Debug)]
@@ -72,7 +72,7 @@ impl<'a> Ast<'a> for ImportAst {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
-        let name = NameAst::parse(ctx).ok();
+        let name = ctx.parse_args((true,)).ok();
         let path = ctx.expect_advance(TokenKind::String)?.span;
         let span = start.joined(path);
         let path = path.shrink(1);

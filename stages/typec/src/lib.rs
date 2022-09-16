@@ -65,7 +65,7 @@ mod util {
     pub fn insert_scope_item(
         item: ModItem,
         scope: &mut Scope,
-        current_file: Ident,
+        current_file: VRef<str>,
         interner: &mut Interner,
         packages: &mut Packages,
         workspace: &mut Workspace,

@@ -38,3 +38,13 @@ impl<'a> FmtAst for StructFieldAst<'a> {
         self.ty.display(fmt);
     }
 }
+
+impl<'a> FmtAst for StructConstructorFieldAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        self.name.display(fmt);
+        if let Some(expr) = self.expr {
+            write!(fmt, ": ");
+            expr.display(fmt);
+        }
+    }
+}

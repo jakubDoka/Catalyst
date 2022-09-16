@@ -24,19 +24,20 @@ macro_rules! write {
     };
 }
 
+mod expr;
 mod imports;
 mod items;
 mod manifest;
 mod ty;
 
 pub trait FmtAst {
-    fn len(&self, _: &Fmt) -> usize {
+    fn flat_len(&self, _: &Fmt) -> usize {
         1 >> 10
     }
     fn display_low(&self, _: bool, fmt: &mut Fmt);
 
     fn display(&self, fmt: &mut Fmt) {
-        let fold = self.len(fmt) + fmt.line_progress() > fmt.line_length;
+        let fold = self.flat_len(fmt) + fmt.line_progress() > fmt.line_length;
         self.display_low(fold, fmt);
     }
 }
@@ -47,8 +48,8 @@ impl<'a> FmtAst for GenericParamAst<'a> {
         self.bounds.display(fmt);
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
-        self.name.len(fmt) + self.bounds.len(fmt)
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.name.flat_len(fmt) + self.bounds.flat_len(fmt)
     }
 }
 
@@ -59,29 +60,51 @@ impl<'a> FmtAst for BoundExprAst<'a> {
         }
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
+    fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            BoundExprAst::Ident(ident) => ident.len(fmt),
+            BoundExprAst::Ident(ident) => ident.flat_len(fmt),
         }
     }
 }
 
 impl<'a> FmtAst for PathAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        fmt.write_span(self.first);
-        for &(_, ident) in self.segments {
-            write!(fmt, "`");
-            fmt.write_span(ident);
+        let mut do_not_write_slash = !self.needs_front_slash();
+        for segment in self.segments.iter() {
+            if !do_not_write_slash {
+                write!(fmt, "\\");
+                do_not_write_slash = true;
+            }
+            segment.display(fmt);
         }
     }
 
-    fn len(&self, _: &Fmt) -> usize {
-        self.first.len()
-            + self
-                .segments
-                .iter()
-                .map(|(_, ident)| 1 + ident.len())
-                .sum::<usize>()
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.segments
+            .iter()
+            .map(|ident| 1 + ident.flat_len(fmt))
+            .sum::<usize>()
+            - !self.needs_front_slash() as usize
+    }
+}
+
+impl<'a> FmtAst for PathSegmentAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            PathSegmentAst::Name(name) => name.display(fmt),
+            PathSegmentAst::Generics(generics) => generics.display(fmt),
+            PathSegmentAst::Tuple(tuple) => tuple.display(fmt),
+            PathSegmentAst::Struct(r#struct) => r#struct.display(fmt),
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        match *self {
+            PathSegmentAst::Name(name) => name.flat_len(fmt),
+            PathSegmentAst::Generics(generics) => generics.flat_len(fmt),
+            PathSegmentAst::Tuple(tuple) => tuple.flat_len(fmt),
+            PathSegmentAst::Struct(r#struct) => r#struct.flat_len(fmt),
+        }
     }
 }
 
@@ -140,7 +163,7 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         fmt.write_span(self.end);
     }
 
-    fn len(&self, fmt: &Fmt) -> usize {
+    fn flat_len(&self, fmt: &Fmt) -> usize {
         self.start.len()
             + fmt.folded_len_between(self.first_gap())
             + self.end.len()
@@ -171,7 +194,7 @@ impl Fmt {
         self.workspace
     }
 
-    fn clear(&mut self, source: &str, path: Ident) {
+    fn clear(&mut self, source: &str, path: VRef<str>) {
         self.buffer.clear();
         self.last_newline = 0;
         self.indent = 0;
@@ -181,7 +204,7 @@ impl Fmt {
         self.line_mapping = LineMapping::new(source);
     }
 
-    pub fn source(&mut self, source: String, path: Ident) -> (Option<&str>, String) {
+    pub fn source(&mut self, source: String, path: VRef<str>) -> (Option<&str>, String) {
         self.clear(&source, path);
 
         *Rc::get_mut(&mut self.source).unwrap() = source;
@@ -220,7 +243,7 @@ impl Fmt {
         }
     }
 
-    pub fn manifest(&mut self, source: String, path: Ident) -> (Option<&str>, String) {
+    pub fn manifest(&mut self, source: String, path: VRef<str>) -> (Option<&str>, String) {
         self.clear(&source, path);
 
         Rc::get_mut(&mut self.ast_data).unwrap().clear();
@@ -289,7 +312,7 @@ impl Fmt {
     }
 
     pub fn list_element_len<T: FmtAst>(&self, element: &ListElement<T>) -> usize {
-        element.value.len(self)
+        element.value.flat_len(self)
             + self.folded_len_between(element.after_value.range())
             + element.after_delim.expand().map_or(0, |s| {
                 self.folded_len_between(s.range()) + s.start() - element.after_value.end()

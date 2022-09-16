@@ -30,7 +30,7 @@ fn main() {
             file "root.ctl" { use { "water"; "a"; "b" } }
             file "package.ctlm" {
                 deps {
-                    water git "github.com/jakubDoka/water" "v0.*.*";
+                    git water "github.com/jakubDoka/water" "v0.*.*";
                     a "a";
                     b "b"
                 }
@@ -47,7 +47,7 @@ fn main() {
                 file "package.ctlm" {
                     root: "bar.ctl";
                     deps {
-                        water git "github.com/jakubDoka/water" "v0.*.*"
+                        git "github.com/jakubDoka/water" "v0.*.*"
                     }
                 }
             }
@@ -77,7 +77,7 @@ fn main() {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    water git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
+                    git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
                 }
             }
         }
@@ -85,7 +85,7 @@ fn main() {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    water git "github.com/jakubDoka/water-kun"
+                    git "github.com/jakubDoka/water-kun"
                 }
             }
         }

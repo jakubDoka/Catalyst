@@ -31,24 +31,33 @@ impl Testable for TestState {
         package_loader!(ts).load(Path::new(name));
 
         let mut parse_state = ParsingState::new();
-        let mut types = vec![];
 
         for module in ts.packages.module_order.to_vec() {
             ts.build_scope(module);
 
             let mod_ent = ts.packages.modules.get(&module).unwrap();
-            parse_state.start(&mod_ent.content, module, false);
+            parse_state.start(&mod_ent.content, module);
             loop {
                 ts.ast_data.clear();
                 let mod_ent = ts.packages.modules.get(&module).unwrap();
-                let (items, finished) = ParsingCtx::new(
-                    &mod_ent.content,
-                    &mut parse_state,
-                    &mut ts.ast_data,
-                    &mut ts.workspace,
-                )
-                .parse_items();
+                let items = {
+                    let mut parser = ParsingCtx::new(
+                        &mod_ent.content,
+                        &mut parse_state,
+                        &ts.ast_data,
+                        &mut ts.workspace,
+                        &mut ts.interner,
+                    );
+                    ItemsAst::parse(&mut parser)
+                };
 
+                let Ok(items) = items else {
+                    break;
+                };
+
+                let finished = items.end.len() == 0;
+
+                let mut types = vec![];
                 item_collector!(ts, module).types(items, &mut types);
                 ty_builder!(ts, module).types(&mut types);
 
@@ -63,7 +72,7 @@ impl Testable for TestState {
 }
 
 impl TestState {
-    fn build_scope(&mut self, module: Ident) {
+    fn build_scope(&mut self, module: VRef<str>) {
         self.scope.clear();
 
         let mod_ent = self.packages.modules.get(&module).unwrap();

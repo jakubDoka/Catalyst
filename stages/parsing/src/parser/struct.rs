@@ -59,8 +59,8 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
         Ok(StructFieldAst {
             start: ctx.state.current.span,
             vis: ctx.visibility(),
-            used: ctx.try_advance(TokenKind::Use),
-            mutable: ctx.try_advance(TokenKind::Mut),
+            used: ctx.try_advance(TokenKind::Use).is_ok(),
+            mutable: ctx.try_advance(TokenKind::Mut).is_ok(),
             name: ctx.parse()?,
             ty: {
                 ctx.expect_advance(TokenKind::Colon)?;
@@ -87,7 +87,7 @@ impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         let name = ctx.parse()?;
-        let expr = if ctx.try_advance(TokenKind::Colon) {
+        let expr = if ctx.try_advance(TokenKind::Colon).is_ok() {
             Some(ctx.parse()?)
         } else {
             None

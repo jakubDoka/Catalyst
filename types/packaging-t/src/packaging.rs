@@ -7,9 +7,9 @@ pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
 pub struct Packages {
-    pub modules: Map<Ident, Mod>,
+    pub modules: Map<VRef<str>, Mod>,
     pub conns: CacheBumpMap<Dep>,
-    pub module_order: Vec<Ident>,
+    pub module_order: Vec<VRef<str>>,
 }
 
 impl Packages {
@@ -17,18 +17,33 @@ impl Packages {
         Self::default()
     }
 
-    pub fn reveal_span_lines(&self, file: Ident, span: Span) -> Span {
-        self.modules.get(&file).unwrap().reveal_span_lines(span)
+    pub fn ident_as_mod(&self, ident: VRef<str>) -> VRef<Mod> {
+        unsafe { ident.cast() }
     }
 
-    pub fn span_str(&self, file: Ident, span: Span) -> &str {
+    pub fn mod_as_ident(&self, module: VRef<Mod>) -> VRef<str> {
+        unsafe { module.cast() }
+    }
+
+    pub fn reveal_span_lines(&self, file: VRef<str>, span: Span) -> Option<Span> {
+        self.modules
+            .get(&file)
+            .map(|package| package.reveal_span_lines(span))
+    }
+
+    pub fn span_str(&self, file: VRef<str>, span: Span) -> &str {
         self.modules
             .get(&file)
             .map(|file| file.span_str(span))
             .unwrap_or_default()
     }
 
-    pub fn check_vis(&self, item_module: Ident, module: Ident, vis: Vis) -> Result<(), Vis> {
+    pub fn check_vis(
+        &self,
+        item_module: VRef<str>,
+        module: VRef<str>,
+        vis: Vis,
+    ) -> Result<(), Vis> {
         match vis {
             Vis::Pub => Ok(()),
             _ if item_module == module => Ok(()),
@@ -89,7 +104,7 @@ impl Mod {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ModItem {
-    pub id: Ident,
+    pub id: VRef<str>,
     pub ptr: ScopePtr,
     pub span: Span,
     pub whole_span: Span,
@@ -97,7 +112,7 @@ pub struct ModItem {
 }
 
 impl ModItem {
-    pub fn new(id: Ident, ptr: VRef<impl Any>, span: Span, whole_span: Span, vis: Vis) -> Self {
+    pub fn new(id: VRef<str>, ptr: VRef<impl Any>, span: Span, whole_span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ScopePtr::new(ptr),
@@ -107,7 +122,7 @@ impl ModItem {
         }
     }
 
-    pub fn to_scope_item(&self, module: Ident) -> ScopeItem {
+    pub fn to_scope_item(&self, module: VRef<str>) -> ScopeItem {
         ScopeItem {
             id: self.id,
             ptr: self.ptr,
@@ -126,7 +141,7 @@ pub enum ModKind {
         span: Maybe<Span>,
     },
     Module {
-        package: Ident,
+        package: VRef<str>,
         ordering: usize,
         items: Vec<ModItem>,
     },
@@ -148,6 +163,9 @@ impl Default for ModKind {
 #[derive(Default, Clone, Copy)]
 pub struct Dep {
     pub name_span: Span,
-    pub name: Ident,
-    pub ptr: Ident,
+    pub name: VRef<str>,
+    pub ptr: VRef<str>,
 }
+
+#[derive(Default, Clone, Copy)]
+pub struct ModId(pub VRef<str>);

@@ -4,7 +4,7 @@ impl<'a> FmtAst for UseAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.write_span(self.use_span);
         write!(fmt, " ");
-        self.items.display(fmt);
+        self.items.display_low(true, fmt);
     }
 }
 

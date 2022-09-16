@@ -24,7 +24,11 @@ impl Testable for TestState {
         package_loader!(ts).load(Path::new(name));
 
         for module in ts.packages.module_order.to_vec() {
-            let module_ent = ts.packages.modules.get(&module).unwrap();
+            let module_ent = ts
+                .packages
+                .modules
+                .get(&module)
+                .expect("module should exist since it is in module order");
 
             ts.workspace.push(Snippet {
                 slices: vec![Slice {

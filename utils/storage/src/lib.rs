@@ -180,7 +180,7 @@ pub use {
     bump_map::{BumpMap, CacheBumpMap, Reserved},
     clear::Clear,
     frames::Frames,
-    interner::{ident_join, Ident, InternedSegment, Interner},
+    interner::{ident_join, InternedSegment, Interner},
     invalid::{Invalid, Maybe},
     map::{IdentPair, Map, SpecialHash},
     ordered_map::OrderedMap,

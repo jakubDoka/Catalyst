@@ -13,9 +13,9 @@ use parsing::*;
 use parsing_t::*;
 use storage::*;
 
-type DiagLoc = Option<(Ident, Span)>;
-type PackageFrontier = BumpVec<(Ident, PathBuf, DiagLoc)>;
-type ModuleFrontier = BumpVec<(Ident, Ident, PathBuf, DiagLoc)>;
+type DiagLoc = Option<(VRef<str>, Span)>;
+type PackageFrontier = BumpVec<(VRef<str>, PathBuf, DiagLoc)>;
+type ModuleFrontier = BumpVec<(VRef<str>, VRef<str>, PathBuf, DiagLoc)>;
 
 impl PackageLoader<'_> {
     /// Loads the project into graph of manifests and source files.
@@ -162,7 +162,7 @@ impl PackageLoader<'_> {
     /// Function will find and optionally download all direct dependencies.
     fn push_package_deps(
         &mut self,
-        id: Ident,
+        id: VRef<str>,
         temp_path: &mut PathBuf,
         deps_ast: ManifestDepsAst,
         content: &str,
@@ -230,9 +230,9 @@ impl PackageLoader<'_> {
     fn load_modules(
         &mut self,
         path: &Path,
-        package: Ident,
+        package: VRef<str>,
         loc: Maybe<Span>,
-    ) -> errors::Result<Ident> {
+    ) -> errors::Result<VRef<str>> {
         let loc = loc.expand().map(|loc| (package, loc));
 
         let path = path
@@ -282,7 +282,7 @@ impl PackageLoader<'_> {
 
         let deps = if let Some(imports) = imports {
             self.load_module_deps(id, package_id, imports, &content, frontier)
-                .unwrap_or(default())
+                .unwrap_or_default()
         } else {
             default()
         };
@@ -305,8 +305,8 @@ impl PackageLoader<'_> {
 
     fn load_module_deps(
         &mut self,
-        id: Ident,
-        package_id: Ident,
+        id: VRef<str>,
+        package_id: VRef<str>,
         imports: UseAst,
         content: &str,
         frontier: &mut ModuleFrontier,
@@ -480,7 +480,7 @@ impl PackageLoader<'_> {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    fn intern_path(&mut self, path: &Path) -> errors::Result<Ident> {
+    fn intern_path(&mut self, path: &Path) -> errors::Result<VRef<str>> {
         let Some(str_path) = path.to_str() else {
             self.invalid_path_encoding(default(), path, "manifest");
             return Err(());

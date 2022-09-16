@@ -1,3 +1,6 @@
+#![feature(let_else)]
+#![feature(default_free_fn)]
+
 use annotate_snippets::{
     display_list::{DisplayList, FormatOptions},
     snippet::*,
@@ -17,7 +20,9 @@ impl diags::SnippetDisplay for SnippetDisplay {
             self.tab_width = 4;
         }
         let mut buffer = String::new();
-        let snippet = self.snippet(&mut buffer, packages, snippet);
+        let Some(snippet) = self.snippet(&mut buffer, packages, snippet) else {
+            unreachable!("snippet display failed, snipped: {snippet:#?}");
+        };
         let d_list: DisplayList = snippet.into();
         d_list.to_string()
     }
@@ -29,16 +34,22 @@ impl SnippetDisplay {
         buffer: &'a mut String,
         packages: &'a Packages,
         snippet: &'a diags::Snippet,
-    ) -> Snippet<'a> {
+    ) -> Option<Snippet<'a>> {
         let slices = snippet
             .slices
             .iter()
             .filter_map(|s| s.as_ref())
-            .map(|s| (s, packages.reveal_span_lines(s.origin, s.span)))
+            .filter_map(|s| Some((s, packages.reveal_span_lines(s.origin, s.span)?)))
             .map(|(s, span)| (span, packages.span_str(s.origin, span)))
-            .map(|(s, str)| (self.replace_tabs_with_spaces(buffer, str), s))
+            .map(|(s, str)| (s, self.replace_tabs_with_spaces(buffer, str)))
             .collect::<Vec<_>>();
-        Snippet {
+
+        // means something was wrong at least with one span reveal.
+        if slices.len() != snippet.slices.iter().filter(|o| o.is_some()).count() {
+            return None;
+        }
+
+        Some(Snippet {
             title: snippet.title.as_ref().map(|s| self.annotation(s)),
             footer: snippet
                 .footer
@@ -54,7 +65,7 @@ impl SnippetDisplay {
                 .map(|(s, (str, span))| self.slice(packages, str, span, buffer, s))
                 .collect(),
             opt: self.opts,
-        }
+        })
     }
 
     fn annotation<'a>(&'a self, s: &'a diags::Annotation) -> Annotation<'a> {

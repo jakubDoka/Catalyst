@@ -97,7 +97,7 @@ pub struct Annotation {
 #[derive(Default, Debug)]
 pub struct Slice {
     pub span: Span,
-    pub origin: Ident,
+    pub origin: VRef<str>,
     pub annotations: Vec<Option<SourceAnnotation>>,
     pub fold: bool,
 }
