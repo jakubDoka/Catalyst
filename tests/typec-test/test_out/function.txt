@@ -1,8 +1,0 @@
-error: type not found
- --> function\root.ctl:1:12
-  |
-1 | fn main -> unit {}
-  |            ^^^^ this does not exist
-  |
-  = info: queried 'unit'
-
