@@ -1,14 +1,9 @@
-warning: invalid version
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:3:39
+error: git execution failed
+ --> invalid-version\package.ctlm:3:39
   |
 3 |     git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
-  |                                       ----------------- info: version is specified here
+  |                                       ----------------- info: invocation declared here
   |
-
-info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\deps\github.com\jakubDoka\water\main
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-version\package.ctlm:3:10
-  |
-3 |     git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
-  |          -------------------------- info: invocation declared here
-  |
+  = info: executing git: ls-remote https://github.com/jakubDoka/water refs/tags/ajdakjshdkajshdka
+  = info: trace: Expected subcommand: ls-files | clone
 
