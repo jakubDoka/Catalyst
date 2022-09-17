@@ -1,9 +1,9 @@
-error: cannot canonicalize module path
- --> \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-module\root\a.ctl:2:6
+error: cannot load source file
+ --> invalid-module\root\a.ctl:2:6
   |
 2 |     "./a/b"
   |      ^^^^^ caused by this
   |
-  = info: related path: \\?\C:\src\rust\catalyst\tests\packaging-test\invalid-module\root\a\b.ctl
-  = info: trace: The system cannot find the path specified. (os error 3)
+  = info: related path: invalid-module\root\a\b.ctl
+  = info: trace: file not found
 
