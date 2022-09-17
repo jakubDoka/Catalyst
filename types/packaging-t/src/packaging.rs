@@ -17,8 +17,9 @@ impl Packages {
         Self::default()
     }
 
-    pub fn ident_as_mod(&self, ident: VRef<str>) -> VRef<Mod> {
-        unsafe { ident.cast() }
+    pub fn ident_as_mod(&self, ident: VRef<str>) -> Option<VRef<Mod>> {
+        self.modules.get(&ident)?;
+        Some(unsafe { ident.cast() })
     }
 
     pub fn mod_as_ident(&self, module: VRef<Mod>) -> VRef<str> {

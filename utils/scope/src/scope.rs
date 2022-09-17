@@ -74,28 +74,23 @@ impl Scope {
         );
     }
 
-    pub fn insert_current(
-        &mut self,
-        item: ScopeItem,
-        interner: &mut Interner,
-    ) -> Result<(), Option<(Span, Span)>> {
-        self.insert(item.module, item, interner)
+    pub fn insert_current(&mut self, item: ScopeItem) -> Result<(), Option<(Span, Span)>> {
+        self.insert(item.module, item)
     }
 
     pub fn insert(
         &mut self,
         current_module: VRef<str>,
         item: ScopeItem,
-        interner: &mut Interner,
     ) -> Result<(), Option<(Span, Span)>> {
-        if item.module != current_module {
-            let id = interner.intern(scoped_ident!(item.module, item.id));
-            self.data.insert(id, item.into());
-        }
+        if let Some(existing_option) = self.data.get_mut(&item.id) {
+            let Some(existing) = existing_option.as_mut_option() else {
+                if current_module == item.module {
+                    *existing_option = item.into();
+                }
+                return Ok(());
+            };
 
-        if let Some(existing_option) = self.data.get_mut(&item.id)
-            && let Some(existing) = existing_option.as_mut_option()
-        {
             if existing.module == item.module.into() || existing.module.is_none() {
                 return Err(existing.spans());
             }

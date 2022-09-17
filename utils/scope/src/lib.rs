@@ -1,5 +1,6 @@
 #![feature(result_flattening)]
 #![feature(default_free_fn)]
+#![feature(let_else)]
 
 #[macro_export]
 macro_rules! scoped_ident {

@@ -43,7 +43,6 @@ macro_rules! insert_scope_item {
                 item,
                 &mut self.scope,
                 self.current_file,
-                &mut self.interner,
                 &mut self.packages,
                 &mut self.workspace,
             );
@@ -72,11 +71,10 @@ mod util {
         item: ModItem,
         scope: &mut Scope,
         current_file: VRef<str>,
-        interner: &mut Interner,
         packages: &mut Packages,
         workspace: &mut Workspace,
     ) {
-        if let Err(spans) = scope.insert(current_file, item.to_scope_item(current_file), interner) {
+        if let Err(spans) = scope.insert(current_file, item.to_scope_item(current_file)) {
             workspace.push(duplicate_definition(
                 item.whole_span,
                 item.span,

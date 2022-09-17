@@ -18,7 +18,7 @@ impl_flagged!(Func, FuncFlags);
 
 bitflags! {
     FuncFlags: u8 {
-        GENERIC
+
     }
 }
 
@@ -26,5 +26,5 @@ bitflags! {
 pub struct Signature {
     pub cc: Maybe<VRef<str>>,
     pub args: VRefSlice<Ty>,
-    pub ret: Maybe<VRef<Ty>>,
+    pub ret: VRef<Ty>,
 }

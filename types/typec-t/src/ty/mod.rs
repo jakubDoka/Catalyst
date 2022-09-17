@@ -20,6 +20,7 @@ impl Ty {
     gen_v_ref_constants!(
         INFERRED
         MUTABLE IMMUTABLE
+        UNIT
     );
 }
 

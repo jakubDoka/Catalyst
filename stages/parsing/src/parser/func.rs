@@ -8,7 +8,7 @@ pub type FuncArgsAst<'a> = ListAst<'a, FuncArgAst<'a>, FuncArgMeta>;
 #[derive(Clone, Copy, Debug)]
 pub struct FuncDefAst<'a> {
     pub vis: Vis,
-    pub sig: FuncSigAst<'a>,
+    pub signature: FuncSigAst<'a>,
     pub body: FuncBodyAst<'a>,
     pub span: Span,
 }
@@ -22,13 +22,13 @@ impl<'a> Ast<'a> for FuncDefAst<'a> {
         ctx: &mut ParsingCtx<'_, 'a>,
         (vis, start): Self::Args,
     ) -> Result<Self, ()> {
-        let sig = ctx.parse()?;
+        let signature = ctx.parse()?;
         let body = ctx.parse::<FuncBodyAst>()?;
         let span = start.joined(body.span());
 
         Ok(Self {
             vis,
-            sig,
+            signature,
             body,
             span,
         })
@@ -42,6 +42,7 @@ impl<'a> Ast<'a> for FuncDefAst<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct FuncSigAst<'a> {
     pub fn_span: Span,
+    pub cc: Option<NameAst>,
     pub generics: GenericsAst<'a>,
     pub name: NameAst,
     pub args: FuncArgsAst<'a>,
@@ -56,6 +57,10 @@ impl<'a> Ast<'a> for FuncSigAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         Ok(Self {
             fn_span: ctx.advance().span,
+            cc: ctx
+                .try_advance(TokenKind::String)
+                .map(|tok| NameAst::new(ctx, tok.span.shrink(1)))
+                .ok(),
             generics: ctx.parse()?,
             name: ctx.parse()?,
             args: ctx.parse()?,

@@ -57,8 +57,10 @@ impl Testable for TestState {
 
                 let finished = items.end.len() == 0;
 
-                let mut types = vec![];
+                let mut types = bumpvec![];
+                let mut funcs = bumpvec![];
                 item_collector!(ts, module).types(items, &mut types);
+                item_collector!(ts, module).funcs(items, &mut funcs);
                 ty_builder!(ts, module).types(&mut types);
 
                 if finished {
@@ -76,15 +78,19 @@ impl TestState {
         self.scope.clear();
 
         let mod_ent = self.packages.modules.get(&module).unwrap();
-        let iter = self.packages.conns[mod_ent.deps].iter().map(|dep| dep.ptr);
-        for dep in iter {
-            let mod_ent = self.packages.modules.get(&dep).unwrap();
+        for dep in &self.packages.conns[mod_ent.deps] {
+            let mod_ent = self.packages.modules.get(&dep.ptr).unwrap();
             let ModKind::Module { ref items, .. } = mod_ent.kind else {
                 unreachable!();
             };
+            let r#mod = self.packages.ident_as_mod(dep.ptr).unwrap();
+            let item = ModItem::new(dep.name, r#mod, dep.name_span, dep.name_span, Vis::Priv);
+            self.scope
+                .insert_current(item.to_scope_item(dep.ptr))
+                .unwrap();
             for &item in items {
                 self.scope
-                    .insert(module, item.to_scope_item(dep), &mut self.interner)
+                    .insert(module, item.to_scope_item(dep.ptr))
                     .unwrap();
             }
         }
