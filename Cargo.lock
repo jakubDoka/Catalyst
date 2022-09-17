@@ -348,6 +348,7 @@ dependencies = [
  "ansi-coloring",
  "diags",
  "fmt",
+ "packaging",
  "packaging-t",
  "snippet-display",
  "storage",

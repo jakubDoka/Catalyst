@@ -18,19 +18,17 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn run(name: &str) -> (Workspace, Packages) {
-        let mut ts = Self::default();
+    fn exec(mut self, name: &str) -> (Workspace, Packages) {
+        package_loader!(self).load(Path::new(name));
 
-        package_loader!(ts).load(Path::new(name));
-
-        for module in ts.packages.module_order.to_vec() {
-            let module_ent = ts
+        for module in self.packages.module_order.to_vec() {
+            let module_ent = self
                 .packages
                 .modules
                 .get(&module)
                 .expect("module should exist since it is in module order");
 
-            ts.workspace.push(Snippet {
+            self.workspace.push(Snippet {
                 slices: vec![Slice {
                     span: Span::new(0..module_ent.content.len()),
                     origin: module,
@@ -41,7 +39,11 @@ impl Testable for TestState {
             })
         }
 
-        (ts.workspace, ts.packages)
+        (self.workspace, self.packages)
+    }
+
+    fn set_packages(&mut self, packages: Packages) {
+        self.packages = packages;
     }
 }
 

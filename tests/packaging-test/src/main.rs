@@ -15,10 +15,13 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn run(name: &str) -> (Workspace, Packages) {
-        let mut ts = TestState::default();
-        drop(package_loader!(ts).load(Path::new(name)));
-        (ts.workspace, ts.packages)
+    fn exec(mut self, name: &str) -> (Workspace, Packages) {
+        drop(package_loader!(self).load(Path::new(name)));
+        (self.workspace, self.packages)
+    }
+
+    fn set_packages(&mut self, packages: Packages) {
+        self.packages = packages;
     }
 }
 

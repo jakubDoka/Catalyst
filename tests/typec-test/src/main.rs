@@ -25,28 +25,26 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn run(name: &str) -> (Workspace, Packages) {
-        let mut ts = TestState::default();
-
-        package_loader!(ts).load(Path::new(name));
+    fn exec(mut self, name: &str) -> (Workspace, Packages) {
+        package_loader!(self).load(Path::new(name));
 
         let mut parse_state = ParsingState::new();
 
-        for module in ts.packages.module_order.to_vec() {
-            ts.build_scope(module);
+        for module in self.packages.module_order.to_vec() {
+            self.build_scope(module);
 
-            let mod_ent = ts.packages.modules.get(&module).unwrap();
+            let mod_ent = self.packages.modules.get(&module).unwrap();
             parse_state.start(&mod_ent.content, module);
             loop {
-                ts.ast_data.clear();
-                let mod_ent = ts.packages.modules.get(&module).unwrap();
+                self.ast_data.clear();
+                let mod_ent = self.packages.modules.get(&module).unwrap();
                 let items = {
                     let mut parser = ParsingCtx::new(
                         &mod_ent.content,
                         &mut parse_state,
-                        &ts.ast_data,
-                        &mut ts.workspace,
-                        &mut ts.interner,
+                        &self.ast_data,
+                        &mut self.workspace,
+                        &mut self.interner,
                     );
                     ItemsAst::parse(&mut parser)
                 };
@@ -60,7 +58,7 @@ impl Testable for TestState {
                 {
                     let mut structs = bumpvec![];
                     let mut funcs = bumpvec![];
-                    ty_checker!(ts, module)
+                    ty_checker!(self, module)
                         .collect_structs(items, &mut structs)
                         .collect_funcs(items, &mut funcs)
                         .build_structs(&mut structs);
@@ -72,7 +70,11 @@ impl Testable for TestState {
             }
         }
 
-        (ts.workspace, ts.packages)
+        (self.workspace, self.packages)
+    }
+
+    fn set_packages(&mut self, packages: Packages) {
+        self.packages = packages;
     }
 }
 

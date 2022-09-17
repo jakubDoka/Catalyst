@@ -12,7 +12,7 @@ mod packaging;
 mod resources;
 
 pub use packaging::{Dep, Mod, ModItem, ModKind, PackageGraph, Packages};
-pub use resources::{OsResources, Resources, TestResources};
+pub use resources::{OsResources, Resources};
 
 pub const MANIFEST_EXTENSION: &str = "ctlm";
 pub const FILE_EXTENSION: &str = "ctl";
