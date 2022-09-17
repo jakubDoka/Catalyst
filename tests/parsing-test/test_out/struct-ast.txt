@@ -1,4 +1,4 @@
-  --> \\?\C:\src\rust\catalyst\tests\parsing-test\struct-ast\root.ctl
+  --> struct-ast\root.ctl
    |
  1 | 
  2 | pub struct RichStruct { // comment
