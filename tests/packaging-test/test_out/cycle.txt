@@ -1,7 +1,7 @@
 error: dependency cycle detected
  = info: cycle:
-         cycle/root.ctl
-         cycle/root/a.ctl
-         cycle/root/a/b.ctl
-         cycle/root.ctl
+         cycle\root.ctl
+         cycle\root\a.ctl
+         cycle\root\a\b.ctl
+         cycle\root.ctl
 
