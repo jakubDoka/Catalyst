@@ -1,4 +1,4 @@
- --> \\?\C:\src\rust\catalyst\tests\parsing-test\one-line-struct\root.ctl
+ --> one-line-struct\root.ctl
   |
 1 | pub struct OneLineStruct {
 2 |     pub use mut filed: Trough
