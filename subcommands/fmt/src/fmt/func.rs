@@ -4,7 +4,6 @@ impl<'a> FmtAst for FuncDefAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.vis(self.vis);
         self.signature.display(fmt);
-        write!(fmt, " ");
         self.body.display(fmt);
     }
 }

@@ -41,13 +41,13 @@ macro_rules! gen_derives {
             }
         }
 
-        impl<T: ?Sized> PartialEq for $ident<T> {
+        impl<T: ?Sized> const PartialEq for $ident<T> {
             fn eq(&self, other: &Self) -> bool {
                 self.0 == other.0
             }
         }
 
-        impl<T: ?Sized> Eq for $ident<T> {}
+        impl<T: ?Sized> const Eq for $ident<T> {}
 
         impl<T: ?Sized> std::hash::Hash for $ident<T> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {

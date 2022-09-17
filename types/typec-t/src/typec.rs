@@ -1,4 +1,4 @@
-use std::ops::IndexMut;
+use std::{default::default, ops::IndexMut};
 
 use crate::*;
 use lexing_t::*;
@@ -18,7 +18,64 @@ pub struct Typec {
     pub bound_funcs: BoundFuncs,
 }
 
+macro_rules! assert_init {
+    (
+        ($self:expr, $interner:expr)
+        $(
+            $name:ident {
+                $($body:tt)*
+            }
+        )*
+    ) => {
+        const _: () = {
+            let mut index = 0;
+            $(
+                assert!(Ty::$name.index() == Ty::ALL[index].index());
+                index += 1;
+            )*
+            _ = index;
+        };
+
+        $(
+            let name = if Ty::$name == Ty::UNIT {
+                "()"
+            } else if Ty::$name == Ty::INFERRED {
+                "{unknown}"
+            } else {
+                stringify!($name)
+            };
+
+            $self.add_builtin_ty(name, Ty {
+                $($body)*
+                ..Default::default()
+            }, $interner);
+        )*
+    };
+}
+
 impl Typec {
+    pub fn init_builtin_types(&mut self, interner: &mut Interner) {
+        assert_init! {
+            (self, interner)
+            INFERRED {}
+            MUTABLE {}
+            IMMUTABLE {}
+            UNIT {
+                kind: TyKind::Struct(default()),
+            }
+            UINT {
+                kind: TyKind::Integer(default()),
+            }
+        }
+    }
+
+    pub fn add_builtin_ty(&mut self, name: &str, mut ty: Ty, interner: &mut Interner) {
+        let lower_name = name.to_lowercase();
+        let ident = interner.intern_str(lower_name.as_str());
+        ty.loc = Loc::new(ident, None, None, None);
+        self.types.insert(ident, ty);
+    }
+
     pub fn pointer_id(
         &self,
         mutability: VRef<Ty>,

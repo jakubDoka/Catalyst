@@ -23,7 +23,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
                 .map(ItemAst::Struct),
             Func => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Struct),
+                .map(ItemAst::Func),
         }}
     }
 

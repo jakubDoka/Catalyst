@@ -6,6 +6,7 @@ pub type Types = OrderedMap<VRef<str>, Ty>;
 pub type TySlices = PoolBumpMap<VRef<Ty>>;
 pub type Fields = PoolBumpMap<Field>;
 
+#[derive(Default)]
 pub struct Ty {
     pub kind: TyKind,
     pub flags: TyFlags,
@@ -21,6 +22,7 @@ impl Ty {
         INFERRED
         MUTABLE IMMUTABLE
         UNIT
+        UINT
     );
 }
 
@@ -53,6 +55,12 @@ gen_kind!(TyKind
     Bool,
     Inferred,
 );
+
+impl Default for TyKind {
+    fn default() -> Self {
+        Self::Inferred
+    }
+}
 
 #[derive(Clone, Copy, Default)]
 pub struct Field {

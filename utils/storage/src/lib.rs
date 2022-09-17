@@ -4,6 +4,7 @@
 #![feature(let_else)]
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
+#![feature(const_trait_impl)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten

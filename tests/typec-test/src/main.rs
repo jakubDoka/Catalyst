@@ -82,6 +82,13 @@ impl TestState {
     fn build_scope(&mut self, module: VRef<str>) {
         self.scope.clear();
 
+        self.typec.init_builtin_types(&mut self.interner);
+
+        for &ty in Ty::ALL {
+            let id = self.typec.types.id(ty);
+            self.scope.insert_builtin(id, ty);
+        }
+
         let mod_ent = self.packages.modules.get(&module).unwrap();
         for dep in &self.packages.conns[mod_ent.deps] {
             let mod_ent = self.packages.modules.get(&dep.ptr).unwrap();
@@ -112,6 +119,12 @@ fn main() {
             struct C {
                 a: A;
                 b: B
+            }
+        }
+
+        simple "function" {
+            fn "default" main() -> unit {
+                return 0
             }
         }
     }
