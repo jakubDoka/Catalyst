@@ -5,7 +5,8 @@ error: git execution failed
   |                                             ------ info: invocation declared here
   |
   = info: executing git: ls-remote https://github.com/jakubDoka/water refs/tags/v0.*.*
-  = info: trace: Expected subcommand: ls-files | clone
+  = info: output:
+          fatal: repository 'https://github.com/jakubDoka/water' not found
 
 error: git execution failed
  --> github\b\package.ctlm:3:39
@@ -14,7 +15,8 @@ error: git execution failed
   |                                       ------ info: invocation declared here
   |
   = info: executing git: ls-remote https://github.com/jakubDoka/water refs/tags/v0.*.*
-  = info: trace: Expected subcommand: ls-files | clone
+  = info: output:
+          fatal: repository 'https://github.com/jakubDoka/water' not found
 
 error: cannot find this package in manifest
  --> github\root.ctl:2:6
