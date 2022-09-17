@@ -1,0 +1,8 @@
+error: expected Ident but got String
+ --> function\root.ctl:1:4
+  |
+1 | fn "default" main() -> unit {}
+  |    ^^^^^^^^^ token located here
+  |
+  = info: list -> item -> struct -> name
+
