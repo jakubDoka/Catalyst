@@ -1,8 +1,16 @@
-error: expected Ident | '\' | 'return' but got Int
- --> function\root.ctl:1:38
+error: expected Ident | Operator but got '('
+ --> function\root.ctl:1:24
   |
-1 | fn "default" main() -> unit { return 0 }
-  |                                      ^ token located here
+1 | fn "default" main() -> () { return 0 }
+  |                        ^ token located here
   |
-  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr -> return -> expr -> unit expr
+  = info: list -> item -> function definition -> function signature -> type
+
+error: expected '=>' | '{' | 'extern' but got '('
+ --> function\root.ctl:1:24
+  |
+1 | fn "default" main() -> () { return 0 }
+  |                        ^ token located here
+  |
+  = info: list -> item -> function definition -> function body
 
