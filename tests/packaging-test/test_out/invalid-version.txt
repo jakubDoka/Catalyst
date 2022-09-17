@@ -1,9 +1,10 @@
 error: git execution failed
  --> invalid-version\package.ctlm:3:39
   |
-3 |     git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
-  |                                       ----------------- info: invocation declared here
+3 |     git "github.com/jakubDoka/water" "non existent version"
+  |                                       -------------------- info: invocation declared here
   |
-  = info: executing git: ls-remote https://github.com/jakubDoka/water refs/tags/ajdakjshdkajshdka
-  = info: trace: Expected subcommand: ls-files | clone
+  = info: executing git: ls-remote https://github.com/jakubDoka/water refs/tags/non existent version
+  = info: output:
+          fatal: repository 'https://github.com/jakubDoka/water' not found
 
