@@ -12,5 +12,6 @@ error: git execution failed
   |          ------------------------------ info: invocation declared here
   |
   = info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water-kun invalid-link\deps\github.com\jakubDoka\water-kun\main
-  = info: trace: Expected subcommand: ls-files | clone
+  = info: output:
+          fatal: repository 'https://github.com/jakubDoka/water-kun#main' not found
 
