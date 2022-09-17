@@ -1,9 +1,4 @@
-use std::{
-    default::default,
-    fs::{create_dir_all, read_to_string},
-    path::*,
-    process::Command,
-};
+use std::{default::default, path::*, process::Command};
 
 use crate::*;
 use diags::*;
@@ -25,8 +20,10 @@ impl PackageLoader<'_> {
 
     fn load_low(&mut self, root: &Path) -> errors::Result {
         // setup
-        let mut path = root
-            .canonicalize()
+        let mut path = self
+            .packages
+            .resources
+            .canonicalize(root)
             .map_err(|err| self.file_error(None, root, "manifest is missing", err))?;
         path.push("package");
         path.set_extension(MANIFEST_EXTENSION);
@@ -93,7 +90,10 @@ impl PackageLoader<'_> {
         // load content
         tmp_path.push("package");
         tmp_path.set_extension(MANIFEST_EXTENSION);
-        let content = read_to_string(&tmp_path)
+        let content = self
+            .packages
+            .resources
+            .read_to_string(&tmp_path)
             .map_err(|err| self.file_error(loc, &tmp_path, "cannot load manifest", err))?;
         let path = tmp_path.clone();
         tmp_path.pop();
@@ -190,14 +190,18 @@ impl PackageLoader<'_> {
             } else {
                 let to_pop = Path::new(path_str).components().count();
                 temp_path.push(path_str);
-                let path = temp_path.canonicalize().map_err(|err| {
-                    self.file_error(
-                        current_loc,
-                        temp_path,
-                        "cannot canonicalize local package path",
-                        err,
-                    )
-                });
+                let path = self
+                    .packages
+                    .resources
+                    .canonicalize(&temp_path)
+                    .map_err(|err| {
+                        self.file_error(
+                            current_loc,
+                            temp_path,
+                            "cannot canonicalize local package path",
+                            err,
+                        )
+                    });
                 assert!((0..to_pop).fold(true, |acc, _| acc & temp_path.pop()));
                 path
             };
@@ -235,12 +239,12 @@ impl PackageLoader<'_> {
     ) -> errors::Result<VRef<str>> {
         let loc = loc.expand().map(|loc| (package, loc));
 
-        let path = path
-            .with_extension(FILE_EXTENSION)
-            .canonicalize()
-            .map_err(|err| {
-                self.file_error(loc, path, "cannot canonicalize root module path", err)
-            })?;
+        let path = self
+            .packages
+            .resources
+            .canonicalize(path)
+            .map_err(|err| self.file_error(loc, path, "cannot canonicalize root module path", err))?
+            .with_extension(FILE_EXTENSION);
 
         let id = self.intern_path(&path)?;
 
@@ -264,7 +268,10 @@ impl PackageLoader<'_> {
             return Ok(true);
         };
 
-        let content = read_to_string(&path)
+        let content = self
+            .packages
+            .resources
+            .read_to_string(&path)
             .map_err(|err| self.file_error(loc, &path, "cannot load source file", err))?;
 
         ast_data.clear();
@@ -342,7 +349,7 @@ impl PackageLoader<'_> {
 
             let import_loc = Some((id, path));
 
-            let path = match module_path.canonicalize() {
+            let path = match self.packages.resources.canonicalize(&module_path) {
                 Ok(path) => path,
                 Err(err) => {
                     self.file_error(
@@ -399,11 +406,17 @@ impl PackageLoader<'_> {
 
         let exists = dep_root.exists();
 
-        create_dir_all(&dep_root)
+        self.packages
+            .resources
+            .create_dir_all(&dep_root)
             .map_err(|err| self.file_error(loc, &dep_root, "cannot create directory", err))?;
-        let install_path = dep_root.canonicalize().map_err(|err| {
-            self.file_error(loc, &dep_root, "cannot canonicalize installation path", err)
-        })?;
+        let install_path = self
+            .packages
+            .resources
+            .canonicalize(&dep_root)
+            .map_err(|err| {
+                self.file_error(loc, &dep_root, "cannot canonicalize installation path", err)
+            })?;
         if exists {
             return Ok(install_path);
         }
@@ -462,7 +475,9 @@ impl PackageLoader<'_> {
             self.git_info(loc, args.clone());
         }
 
-        let output = Command::new("git").args(args.clone()).output();
+        let mut command = Command::new("git");
+        command.args(args.clone());
+        let output = self.packages.resources.command(&mut command);
         let output = output.map_err(|err| self.git_exec_error(loc, args.clone(), err))?;
 
         if !output.status.success() {
@@ -483,7 +498,11 @@ impl PackageLoader<'_> {
     }
 
     fn get_dep_root(&mut self, project_path: &Path) -> PathBuf {
-        let var = std::env::var(DEP_ROOT_VAR).unwrap_or(DEFAULT_DEP_ROOT.into());
+        let var = self
+            .packages
+            .resources
+            .var(DEP_ROOT_VAR)
+            .unwrap_or(DEFAULT_DEP_ROOT.into());
         project_path.join(var)
     }
 

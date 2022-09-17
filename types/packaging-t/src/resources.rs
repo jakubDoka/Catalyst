@@ -10,9 +10,10 @@ pub trait Resources {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
-    fn command(&mut self, command: Command) -> io::Result<Output>;
+    fn command(&mut self, command: &mut Command) -> io::Result<Output>;
     fn read_to_string(&self, path: &Path) -> io::Result<String>;
     fn var(&self, key: &str) -> Result<String, VarError>;
+    fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 }
 
 pub struct OsResources;
@@ -30,7 +31,7 @@ impl Resources for OsResources {
         path.canonicalize()
     }
 
-    fn command(&mut self, mut command: Command) -> io::Result<Output> {
+    fn command(&mut self, command: &mut Command) -> io::Result<Output> {
         command.output()
     }
 
@@ -40,6 +41,10 @@ impl Resources for OsResources {
 
     fn var(&self, key: &str) -> Result<String, VarError> {
         env::var(key)
+    }
+
+    fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        fs::create_dir_all(path)
     }
 }
 
@@ -120,7 +125,7 @@ impl TestResources {
 impl Resources for TestResources {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         self.binary_files
-            .get(path)
+            .get(self.canonicalize(path)?.as_path())
             .map(|v| v.clone())
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
     }
@@ -141,7 +146,7 @@ impl Resources for TestResources {
             .into())
     }
 
-    fn command(&mut self, command: Command) -> io::Result<Output> {
+    fn command(&mut self, command: &mut Command) -> io::Result<Output> {
         match command.get_program().to_str() {
             Some("git") => self.execute_git(command.get_args()),
             _ => Err(io::Error::new(io::ErrorKind::NotFound, "command not found")),
@@ -150,7 +155,7 @@ impl Resources for TestResources {
 
     fn read_to_string(&self, path: &Path) -> io::Result<String> {
         self.files
-            .get(path)
+            .get(self.canonicalize(path)?.as_path())
             .map(|v| v.clone())
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
     }
@@ -160,5 +165,15 @@ impl Resources for TestResources {
             .get(key)
             .map(|v| v.clone())
             .ok_or_else(|| VarError::NotPresent)
+    }
+
+    fn create_dir_all(&self, _: &Path) -> io::Result<()> {
+        Ok(()) // nothing
+    }
+}
+
+impl Default for Box<dyn Resources> {
+    fn default() -> Self {
+        Box::new(OsResources)
     }
 }

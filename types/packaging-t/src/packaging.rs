@@ -3,6 +3,8 @@ use scope::*;
 use std::{any::Any, path::*};
 use storage::*;
 
+use crate::*;
+
 pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
@@ -10,11 +12,19 @@ pub struct Packages {
     pub modules: Map<VRef<str>, Mod>,
     pub conns: CacheBumpMap<Dep>,
     pub module_order: Vec<VRef<str>>,
+    pub resources: Box<dyn Resources>,
 }
 
 impl Packages {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_resources(resources: impl Resources + 'static) -> Self {
+        Self {
+            resources: Box::new(resources),
+            ..Default::default()
+        }
     }
 
     pub fn ident_as_mod(&self, ident: VRef<str>) -> Option<VRef<Mod>> {
