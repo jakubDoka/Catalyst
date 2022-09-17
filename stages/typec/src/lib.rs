@@ -37,17 +37,7 @@ macro_rules! gen_scope_lookup {
 
 #[macro_export]
 macro_rules! insert_scope_item {
-    () => {
-        pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
-            $crate::insert_scope_item(
-                item,
-                &mut self.scope,
-                self.current_file,
-                &mut self.packages,
-                &mut self.workspace,
-            );
-        }
-    };
+    () => {};
 }
 
 mod item_collector;
@@ -57,7 +47,7 @@ mod ty_parser;
 
 pub use util::{duplicate_definition, insert_scope_item};
 
-pub use state_gen::{ItemCollector, TyBuilder, TyParser};
+pub use state_gen::TyChecker;
 pub use ty_parser::{ScopeLookup, TyLookup};
 
 mod util {
@@ -66,6 +56,20 @@ mod util {
     use packaging_t::*;
     use scope::*;
     use storage::*;
+
+    use crate::TyChecker;
+
+    impl TyChecker<'_> {
+        pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
+            crate::insert_scope_item(
+                item,
+                &mut self.scope,
+                self.current_file,
+                &mut self.packages,
+                &mut self.workspace,
+            );
+        }
+    }
 
     pub fn insert_scope_item(
         item: ModItem,

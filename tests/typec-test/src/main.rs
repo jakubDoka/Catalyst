@@ -57,11 +57,14 @@ impl Testable for TestState {
 
                 let finished = items.end.len() == 0;
 
-                let mut types = bumpvec![];
-                let mut funcs = bumpvec![];
-                item_collector!(ts, module).types(items, &mut types);
-                item_collector!(ts, module).funcs(items, &mut funcs);
-                ty_builder!(ts, module).types(&mut types);
+                {
+                    let mut structs = bumpvec![];
+                    let mut funcs = bumpvec![];
+                    ty_checker!(ts, module)
+                        .collect_structs(items, &mut structs)
+                        .collect_funcs(items, &mut funcs)
+                        .build_structs(&mut structs);
+                }
 
                 if finished {
                     break;

@@ -39,32 +39,8 @@ file "stages/typec/src/state_gen.rs" {
     use "parsing_t"
     use "packaging_t"
 
-    struct ItemCollector {
-        owned current_file: Ident
-
-        mut Interner
-        mut Scope
-        mut Typec
-        mut Workspace
-        mut Packages
-
-        AstData
-    }
-
-    struct TyBuilder {
-        owned current_file: Ident
-
-        mut Interner
-        mut Scope
-        mut Typec
-        mut Workspace
-        mut Packages
-
-        AstData
-    }
-
-    struct TyParser {
-        owned current_file: Ident
+    struct TyChecker {
+        owned current_file: `VRef<str>`
 
         mut Interner
         mut Scope

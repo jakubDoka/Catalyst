@@ -10,17 +10,19 @@ use typec_t::*;
 
 use crate::{item_collector::Structs, *};
 
-impl TyBuilder<'_> {
-    pub fn types(&mut self, types: &mut Structs) {
+impl TyChecker<'_> {
+    pub fn build_structs(&mut self, types: &mut Structs) -> &mut Self {
         for (ast, ty) in types.drain(..) {
-            self.r#struct(ty, ast);
+            self.build_struct(ty, ast);
         }
+
+        self
     }
 
-    fn r#struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
+    fn build_struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
         self.scope.start_frame();
 
-        ty_parser!(self, self.current_file).insert_generics(generics, 0, true);
+        self.insert_generics(generics, 0, true);
         let fields = self.struct_fields(ty, body);
         self.typec.types[ty].kind.cast_mut::<TyStruct>().fields = fields;
 
@@ -41,7 +43,7 @@ impl TyBuilder<'_> {
         {
             let scope_id = self.interner.intern(scoped_ident!(loc.name, name.ident));
 
-            let Ok(ty) = ty_parser!(self, self.current_file).ty(ty) else {
+            let Ok(ty) = self.ty(ty) else {
                 continue;
             };
 

@@ -12,11 +12,15 @@ use crate::*;
 pub type Structs<'a> = BumpVec<(StructAst<'a>, VRef<Ty>)>;
 pub type FuncDefs<'a> = BumpVec<(FuncDefAst<'a>, VRef<Func>)>;
 
-impl ItemCollector<'_> {
-    pub fn funcs<'a>(&mut self, items: ItemsAst<'a>, funcs: &mut FuncDefs<'a>) {
+impl TyChecker<'_> {
+    pub fn collect_funcs<'a>(
+        &mut self,
+        items: ItemsAst<'a>,
+        funcs: &mut FuncDefs<'a>,
+    ) -> &mut Self {
         for &item in items.iter() {
             let res = match item {
-                ItemAst::Func(&func) => self.func(func, funcs),
+                ItemAst::Func(&func) => self.collect_func(func, funcs),
                 ItemAst::Struct(..) => continue,
             };
 
@@ -26,12 +30,18 @@ impl ItemCollector<'_> {
 
             self.insert_scope_item(item);
         }
+
+        self
     }
 
-    pub fn types<'a>(&mut self, items: ItemsAst<'a>, structs: &mut Structs<'a>) {
+    pub fn collect_structs<'a>(
+        &mut self,
+        items: ItemsAst<'a>,
+        structs: &mut Structs<'a>,
+    ) -> &mut Self {
         for &item in items.iter() {
             let res = match item {
-                ItemAst::Struct(&r#struct) => self.r#struct(r#struct, structs),
+                ItemAst::Struct(&r#struct) => self.collect_struct(r#struct, structs),
                 ItemAst::Func(..) => continue,
             };
 
@@ -41,9 +51,11 @@ impl ItemCollector<'_> {
 
             self.insert_scope_item(item);
         }
+
+        self
     }
 
-    fn func<'a>(
+    fn collect_func<'a>(
         &mut self,
         func_ast @ FuncDefAst {
             vis,
@@ -61,16 +73,14 @@ impl ItemCollector<'_> {
         }: FuncDefAst<'a>,
         funcs: &mut FuncDefs<'a>,
     ) -> errors::Result<ModItem> {
-        let generics = ty_parser!(self, self.current_file).generics(generics);
+        let generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
         let args = args
             .iter()
-            .map(|arg| ty_parser!(self, self.current_file).ty(arg.ty))
+            .map(|arg| self.ty(arg.ty))
             .nsc_collect::<errors::Result<BumpVec<_>>>()?;
-        let ret = ret
-            .map(|ret| ty_parser!(self, self.current_file).ty(ret))
-            .unwrap_or(Ok(Ty::UNIT))?;
+        let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Ok(Ty::UNIT))?;
 
         let signature = Signature {
             cc: cc.map(|cc| cc.ident).into(),
@@ -93,7 +103,7 @@ impl ItemCollector<'_> {
         Ok(ModItem::new(name.ident, func, name.span, span, vis))
     }
 
-    fn r#struct<'a>(
+    fn collect_struct<'a>(
         &mut self,
         r#struct @ StructAst {
             vis,
@@ -104,7 +114,7 @@ impl ItemCollector<'_> {
         }: StructAst<'a>,
         structs: &mut Structs<'a>,
     ) -> errors::Result<ModItem> {
-        let generics = ty_parser!(self, self.current_file).generics(generics);
+        let generics = self.generics(generics);
 
         let key = intern_scoped_ident!(self, name.ident);
 
@@ -125,6 +135,4 @@ impl ItemCollector<'_> {
 
         Ok(ModItem::new(name.ident, id, name.span, span, vis))
     }
-
-    insert_scope_item!();
 }
