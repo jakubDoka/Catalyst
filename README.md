@@ -27,7 +27,7 @@ I will address this project as a compiler for sanity reasons but Catalyst is not
 
 ## Contribution
 
-Is not recommended, code is not documented and changes quickly. I want to improve this as state of project stabilizes. On the other hand open critics on my code is welcomed and can be performed trough issues.
+Is not recommended, code is not documented and changes quickly. I want to improve this as state of project stabilizes. On the other hand open critics on my code are welcomed and can be performed trough issues.
 
 ### How to run Tests
 
