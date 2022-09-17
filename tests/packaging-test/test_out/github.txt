@@ -24,8 +24,3 @@ error: cannot find this package in manifest
   |
   = info: available packages: 'a', 'b', '.'
 
-error: dependency cycle detected
- = info: cycle:
-         github\a
-         github\a
-
