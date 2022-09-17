@@ -123,7 +123,7 @@ fn main() {
         }
 
         simple "function" {
-            fn "default" main() -> unit {
+            fn "default" main() -> () {
                 return 0
             }
         }

@@ -132,6 +132,12 @@ impl<T> BumpVec<T> {
     }
 }
 
+impl<T> Default for BumpVec<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> IntoIterator for BumpVec<T> {
     type Item = T;
 

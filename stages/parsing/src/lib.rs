@@ -67,7 +67,7 @@ mod parser;
 
 pub use parser::{
     bound::BoundExprAst,
-    expr::{BinaryExprAst, BlockAst, BlockMeta, ExprAst, UnitExprAst},
+    expr::{BinaryExprAst, BlockAst, BlockMeta, ExprAst, ReturnExprAst, UnitExprAst},
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
     items::{ItemAst, ItemsAst, ItemsMeta},
@@ -78,7 +78,10 @@ pub use parser::{
     r#struct::{
         StructAst, StructBodyAst, StructBodyMeta, StructConstructorFieldAst, StructFieldAst,
     },
-    ty::{MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst},
+    ty::{
+        MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst,
+        TyTupleAst,
+    },
     BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamBoundsAst, PathAst,
     PathSegmentAst, StructConstructorAst, StructConstructorMeta, TupleConstructorAst,
     TupleConstructorMeta,

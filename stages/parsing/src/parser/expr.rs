@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use super::*;
 
 list_meta!(BlockMeta LeftCurly NewLine RightCurly);
@@ -84,6 +86,8 @@ impl<'a> Ast<'a> for BinaryExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum UnitExprAst<'a> {
     Path(PathAst<'a>),
+    Return(ReturnExprAst<'a>),
+    Int(Span),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -93,15 +97,47 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         branch!(ctx => {
-            Ident => PathAst::parse(ctx).map(Self::Path),
-            BackSlash => PathAst::parse(ctx).map(Self::Path),
+            Ident => ctx.parse().map(Self::Path),
+            BackSlash => ctx.parse().map(Self::Path),
+            Return => ctx.parse().map(Self::Return),
+            Int => Ok(Self::Int(ctx.advance().span)),
         })
     }
 
     fn span(&self) -> Span {
         match *self {
             UnitExprAst::Path(path) => path.span(),
+            UnitExprAst::Return(ret) => ret.span(),
+            UnitExprAst::Int(span) => span,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReturnExprAst<'a> {
+    pub return_span: Span,
+    pub expr: Option<ExprAst<'a>>,
+}
+
+impl<'a> Ast<'a> for ReturnExprAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "return";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+        Ok(Self {
+            return_span: ctx.advance().span,
+            expr: ctx
+                .at_tok(TokenKind::NewLine)
+                .not()
+                .then(|| ctx.parse())
+                .transpose()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.expr
+            .map_or(self.return_span, |e| self.return_span.joined(e.span()))
     }
 }
 

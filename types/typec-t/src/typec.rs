@@ -116,6 +116,17 @@ impl Typec {
     ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
         ident_join(" + ", bounds.iter().map(|&b| self.bounds.id(b)))
     }
+
+    pub fn tuple_id<'a>(
+        &'a self,
+        tys: &'a [VRef<Ty>],
+    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
+        let start = ident!("(");
+        let body = ident_join(", ", tys.iter().map(|&t| self.types.id(t)));
+        let end = ident!(")");
+
+        start.into_iter().chain(body).chain(end)
+    }
 }
 
 impl<K: SpecialHash, V> StorageExt<V> for OrderedMap<K, V> {}

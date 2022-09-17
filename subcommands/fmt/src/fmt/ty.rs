@@ -6,14 +6,16 @@ impl<'a> FmtAst for TyAst<'a> {
             TyAst::Path(ident) => ident.display(fmt),
             TyAst::Instance(instance) => instance.display(fmt),
             TyAst::Pointer(pointer) => pointer.display(fmt),
+            TyAst::Tuple(tuple) => tuple.display(fmt),
         }
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
-        match *self {
+        match self {
             TyAst::Path(ident) => ident.flat_len(fmt),
             TyAst::Instance(instance) => instance.flat_len(fmt),
             TyAst::Pointer(pointer) => pointer.flat_len(fmt),
+            TyAst::Tuple(tuple) => tuple.flat_len(fmt),
         }
     }
 }

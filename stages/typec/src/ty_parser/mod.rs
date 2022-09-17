@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     default::default,
+    ops::Deref,
 };
 
 use diags::*;
@@ -48,7 +49,39 @@ impl TyChecker<'_> {
             TyAst::Path(ident) => self.ty_path::<TyLookup>(ident),
             TyAst::Instance(instance) => self.instance(instance),
             TyAst::Pointer(pointer) => self.pointer(*pointer),
+            TyAst::Tuple(tuple) => self.tuple(tuple),
         }
+    }
+
+    pub fn tuple(&mut self, tuple_ast: TyTupleAst) -> errors::Result<VRef<Ty>> {
+        let types = tuple_ast
+            .iter()
+            .map(|&ty_ast| self.ty(ty_ast))
+            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+
+        match (types.as_slice(), tuple_ast.deref()) {
+            ([], _) => return Ok(Ty::UNIT),
+            (&[ty], [ty_ast]) if ty_ast.after_delim.is_none() => return Ok(ty),
+            _ => (),
+        }
+
+        let id = self.interner.intern(self.typec.tuple_id(types.as_slice()));
+
+        let tuple = |_: &mut Types| Ty {
+            kind: TyStruct {
+                fields: self.typec.fields.bump(types.into_iter().map(|ty| Field {
+                    vis: Vis::Pub,
+                    ty,
+                    flags: FieldFlags::MUTABLE,
+                    ..default()
+                })),
+                ..default()
+            }
+            .into(),
+            ..default()
+        };
+
+        Ok(self.typec.types.get_or_insert(id, tuple))
     }
 
     pub fn bound_sum<'a>(

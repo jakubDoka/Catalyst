@@ -1,5 +1,6 @@
 use crate::*;
 use lexing_t::*;
+use scope::Vis;
 use storage::*;
 
 pub type Types = OrderedMap<VRef<str>, Ty>;
@@ -64,6 +65,7 @@ impl Default for TyKind {
 
 #[derive(Clone, Copy, Default)]
 pub struct Field {
+    pub vis: Vis,
     pub ty: VRef<Ty>,
     pub flags: FieldFlags,
     pub loc: Loc,

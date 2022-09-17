@@ -3,11 +3,15 @@ use super::*;
 list_meta!(TyGenericsMeta ? LeftBracket Comma RightBracket);
 pub type TyGenericsAst<'a> = ListAst<'a, TyAst<'a>, TyGenericsMeta>;
 
+list_meta!(TyTupleMeta LeftParen Comma RightParen);
+pub type TyTupleAst<'a> = ListAst<'a, TyAst<'a>, TyTupleMeta>;
+
 #[derive(Clone, Copy, Debug)]
 pub enum TyAst<'a> {
     Path(PathAst<'a>),
     Instance(TyInstanceAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
+    Tuple(TyTupleAst<'a>),
 }
 
 impl<'a> Ast<'a> for TyAst<'a> {
@@ -26,6 +30,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
                     ident.map(TyAst::Path)
                 }
             },
+            LeftParen => ctx.parse().map(TyAst::Tuple),
             Operator(_ = 0) => branch!(str ctx => {
                 "^" => ctx.parse()
                     .map(|p| ctx.arena.alloc(p))
@@ -39,6 +44,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
             TyAst::Path(ident) => ident.span(),
             TyAst::Instance(instance) => instance.span(),
             TyAst::Pointer(pointer) => pointer.span(),
+            TyAst::Tuple(tuple) => tuple.span(),
         }
     }
 }
