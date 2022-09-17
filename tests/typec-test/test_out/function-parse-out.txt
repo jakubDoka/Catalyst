@@ -1,8 +1,8 @@
-error: expected Ident | '\' but got 'return'
- --> function\root.ctl:1:31
+error: expected Ident | '\' | 'return' but got Int
+ --> function\root.ctl:1:38
   |
 1 | fn "default" main() -> unit { return 0 }
-  |                               ^^^^^^ token located here
+  |                                      ^ token located here
   |
-  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr
+  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr -> return -> expr -> unit expr
 
