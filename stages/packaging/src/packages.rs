@@ -410,19 +410,13 @@ impl PackageLoader<'_> {
 
         let id = self.intern_path(install_path.as_path())?;
 
-        let fixed_args = [
-            "clone",
-            "--depth",
-            "1",
-            "--filter",
-            "blob:none",
-            &full_url,
-            &self.interner[id].to_owned(),
-        ];
+        let fixed_args = ["clone", "--depth", "1", "--filter", "blob:none"];
+        let paths = [full_url.as_str(), &self.interner[id].to_owned()];
         let optional_args = rev.map(|rev| ["--branch", rev]);
         let args = fixed_args
             .into_iter()
-            .chain(optional_args.into_iter().flatten());
+            .chain(optional_args.into_iter().flatten())
+            .chain(paths.into_iter());
 
         self.execute_git(loc, false, args)?;
 

@@ -1,3 +1,6 @@
+#![feature(let_else)]
+#![feature(iter_intersperse)]
+
 #[macro_export]
 macro_rules! span_str {
     ($self:expr, $span:expr) => {
@@ -6,6 +9,7 @@ macro_rules! span_str {
 }
 
 mod packaging;
+mod resources;
 
 pub use packaging::{Dep, Mod, ModItem, ModKind, PackageGraph, Packages};
 
