@@ -16,6 +16,7 @@ impl ItemCollector<'_> {
         for &item in items.iter() {
             let res = match item {
                 ItemAst::Struct(r#struct) => self.r#struct(*r#struct, structs),
+                ItemAst::Func(..) => continue,
             };
 
             let Ok(item) = res else {

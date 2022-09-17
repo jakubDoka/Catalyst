@@ -4,6 +4,7 @@ impl<'a> FmtAst for ItemAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
             ItemAst::Struct(s) => s.display(fmt),
+            ItemAst::Func(func) => func.display(fmt),
         }
     }
 }

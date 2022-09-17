@@ -6,6 +6,7 @@ pub type ItemsAst<'a> = ListAst<'a, ItemAst<'a>, ItemsMeta>;
 #[derive(Clone, Copy, Debug)]
 pub enum ItemAst<'a> {
     Struct(&'a StructAst<'a>),
+    Func(&'a FuncDefAst<'a>),
 }
 
 impl<'a> Ast<'a> for ItemAst<'a> {
@@ -17,7 +18,10 @@ impl<'a> Ast<'a> for ItemAst<'a> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
-            Struct => StructAst::parse_args(ctx, (vis, start))
+            Struct => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Struct),
+            Func => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Struct),
         }}
@@ -26,6 +30,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
     fn span(&self) -> Span {
         match self {
             ItemAst::Struct(s) => s.span(),
+            ItemAst::Func(f) => f.span(),
         }
     }
 }

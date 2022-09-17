@@ -1,9 +1,12 @@
 use super::*;
 
+list_meta!(BlockMeta LeftCurly NewLine RightCurly);
+pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
+
 #[derive(Debug, Clone, Copy)]
 pub enum ExprAst<'a> {
-    Unit(UnitExprAst<'a>),
-    Binary(BinaryExprAst<'a>),
+    Unit(&'a UnitExprAst<'a>),
+    Binary(&'a BinaryExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for ExprAst<'a> {
@@ -12,10 +15,11 @@ impl<'a> Ast<'a> for ExprAst<'a> {
     const NAME: &'static str = "expr";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        let unit = UnitExprAst::parse(ctx).map(ExprAst::Unit);
+        let unit = ctx.parse_alloc().map(ExprAst::Unit);
         if let TokenKind::Operator(precedence) = ctx.state.current.kind {
             let op = ctx.name_unchecked();
-            Ast::parse_args(ctx, (unit?, op, precedence)).map(Self::Binary)
+            ctx.parse_args_alloc((unit?, op, precedence))
+                .map(Self::Binary)
         } else {
             unit
         }
@@ -31,23 +35,14 @@ impl<'a> Ast<'a> for ExprAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct BinaryExprAst<'a> {
-    pub lhs: &'a ExprAst<'a>,
+    pub lhs: ExprAst<'a>,
     pub op: NameAst,
-    pub rhs: &'a ExprAst<'a>,
+    pub rhs: ExprAst<'a>,
 }
 
 impl<'a> BinaryExprAst<'a> {
-    pub fn new(
-        ctx: &mut ParsingCtx<'_, 'a>,
-        lhs: ExprAst<'a>,
-        op: NameAst,
-        rhs: ExprAst<'a>,
-    ) -> Self {
-        Self {
-            lhs: ctx.arena.alloc(lhs),
-            op,
-            rhs: ctx.arena.alloc(rhs),
-        }
+    pub fn new(lhs: ExprAst<'a>, op: NameAst, rhs: ExprAst<'a>) -> Self {
+        Self { lhs, op, rhs }
     }
 }
 
@@ -61,20 +56,22 @@ impl<'a> Ast<'a> for BinaryExprAst<'a> {
         (mut lhs, mut op, mut precedence): Self::Args,
     ) -> Result<Self, ()> {
         Ok(loop {
-            let rhs = UnitExprAst::parse(ctx).map(ExprAst::Unit)?;
+            let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
 
             let TokenKind::Operator(next_precedence) = ctx.state.current.kind else {
-                break Self::new(ctx, lhs, op, rhs);
+                break Self::new(lhs, op, rhs);
             };
 
             if precedence < next_precedence {
-                lhs = ExprAst::Binary(Self::new(ctx, lhs, op, rhs));
+                lhs = ExprAst::Binary(ctx.arena.alloc(Self::new(lhs, op, rhs)));
                 op = ctx.name_unchecked();
                 precedence = next_precedence;
             } else {
                 let op = ctx.name_unchecked();
-                let rhs = Self::parse_args(ctx, (rhs, op, next_precedence)).map(ExprAst::Binary)?;
-                break Self::new(ctx, lhs, op, rhs);
+                let rhs = ctx
+                    .parse_args_alloc((rhs, op, next_precedence))
+                    .map(ExprAst::Binary)?;
+                break Self::new(lhs, op, rhs);
             }
         })
     }

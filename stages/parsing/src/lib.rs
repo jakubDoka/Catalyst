@@ -67,7 +67,8 @@ mod parser;
 
 pub use parser::{
     bound::BoundExprAst,
-    expr::ExprAst,
+    expr::{BinaryExprAst, BlockAst, BlockMeta, ExprAst, UnitExprAst},
+    func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
     items::{ItemAst, ItemsAst, ItemsMeta},
     manifest::{

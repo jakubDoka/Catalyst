@@ -1,6 +1,6 @@
 pub mod bound;
 pub mod expr;
-// pub mod r#fn;
+pub mod func;
 pub mod imports;
 pub mod items;
 pub mod manifest;

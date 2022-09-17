@@ -1,8 +1,3 @@
-use diags::*;
-use lexing::TokenKind;
-use lexing_t::*;
-use parsing::*;
-use parsing_t::*;
 use std::{
     fmt::{Debug, Write},
     iter, mem,
@@ -10,6 +5,12 @@ use std::{
     ptr,
     rc::Rc,
 };
+
+use diags::*;
+use lexing::TokenKind;
+use lexing_t::*;
+use parsing::*;
+use parsing_t::*;
 use storage::*;
 
 use crate::*;
@@ -25,6 +26,7 @@ macro_rules! write {
 }
 
 mod expr;
+mod func;
 mod imports;
 mod items;
 mod manifest;

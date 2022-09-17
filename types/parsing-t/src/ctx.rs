@@ -60,8 +60,19 @@ impl<'a> ParsingCtx<'_, 'a> {
         T::parse(self)
     }
 
+    pub fn parse_alloc<T: Ast<'a>>(&mut self) -> Result<&'a T, ()>
+    where
+        T::Args: Default,
+    {
+        self.parse().map(|t| self.arena.alloc(t))
+    }
+
     pub fn parse_args<T: Ast<'a>>(&mut self, args: T::Args) -> Result<T, ()> {
         T::parse_args(self, args)
+    }
+
+    pub fn parse_args_alloc<T: Ast<'a>>(&mut self, args: T::Args) -> Result<&'a T, ()> {
+        self.parse_args(args).map(|t| self.arena.alloc(t))
     }
 
     pub fn advance(&mut self) -> Token {
