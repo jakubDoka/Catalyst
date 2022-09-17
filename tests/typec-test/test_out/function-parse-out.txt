@@ -1,8 +1,8 @@
-error: expected Ident but got String
- --> function\root.ctl:1:4
+error: expected Ident | '\' but got 'return'
+ --> function\root.ctl:1:31
   |
-1 | fn "default" main() -> unit {}
-  |    ^^^^^^^^^ token located here
+1 | fn "default" main() -> unit { return 0 }
+  |                               ^^^^^^ token located here
   |
-  = info: list -> item -> struct -> name
+  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr
 
