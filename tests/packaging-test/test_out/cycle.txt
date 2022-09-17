@@ -1,7 +1,7 @@
 error: dependency cycle detected
  = info: cycle:
-         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
-         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a.ctl
-         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root\a\b.ctl
-         \\?\C:\src\rust\catalyst\tests\packaging-test\cycle\root.ctl
+         cycle/root.ctl
+         cycle/root/a.ctl
+         cycle/root/a/b.ctl
+         cycle/root.ctl
 
