@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoundExprAst<'a> {
-    Ident(PathAst<'a>),
+    Path(PathAst<'a>),
 }
 
 impl<'a> Ast<'a> for BoundExprAst<'a> {
@@ -12,7 +12,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         let chain = PathAst::parse(ctx)?;
-        Ok(Self::Ident(chain))
+        Ok(Self::Path(chain))
     }
 
     fn span(&self) -> Span {

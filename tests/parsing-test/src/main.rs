@@ -56,7 +56,7 @@ fn main() {
                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
                     Very, // uuu
                     Complex,
-                ] //comment  
+                ] // comment  
                 // comment
                 other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
                 // comment

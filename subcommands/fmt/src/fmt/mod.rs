@@ -56,13 +56,13 @@ impl<'a> FmtAst for GenericParamAst<'a> {
 impl<'a> FmtAst for BoundExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
-            BoundExprAst::Ident(ident) => ident.display(fmt),
+            BoundExprAst::Path(ident) => ident.display(fmt),
         }
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            BoundExprAst::Ident(ident) => ident.flat_len(fmt),
+            BoundExprAst::Path(ident) => ident.flat_len(fmt),
         }
     }
 }
@@ -214,17 +214,15 @@ impl Fmt {
         loop {
             Rc::get_mut(&mut self.ast_data).unwrap().clear();
             let ast_data = self.ast_data.clone();
-            let items = {
-                let mut ctx = ParsingCtx::new(
-                    &self.source,
-                    &mut self.parse_state,
-                    &ast_data,
-                    &mut self.workspace,
-                    &mut self.interner,
-                );
-                ItemsAst::parse(&mut ctx)
-            };
 
+            let items = ParsingCtx::new(
+                &self.source,
+                &mut self.parse_state,
+                &ast_data,
+                &mut self.workspace,
+                &mut self.interner,
+            )
+            .parse::<ItemsAst>();
             let Ok(items) = items else {
                 break (None, mem::take(Rc::get_mut(&mut self.source).unwrap()));
             };

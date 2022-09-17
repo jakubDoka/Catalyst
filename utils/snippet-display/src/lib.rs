@@ -62,7 +62,7 @@ impl SnippetDisplay {
                 .iter()
                 .filter_map(|i| i.as_ref())
                 .zip(slices)
-                .map(|(s, (str, span))| self.slice(packages, str, span, buffer, s))
+                .map(|(s, (span, str))| self.slice(packages, str, span, buffer, s))
                 .collect(),
             opt: self.opts,
         })

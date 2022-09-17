@@ -8,7 +8,7 @@
 macro_rules! gen_scope_lookup {
     (
         $(
-            $name:ident<$item_name:literal $(, $output:ty)?> {
+            $name:ident<$item_name:literal $(, $output:ty $(, $field:ident)?)?> {
                 $($id:ty => $ty_name:literal,)*
             }
         )*
@@ -24,6 +24,12 @@ macro_rules! gen_scope_lookup {
                         (TypeId::of::<$id>(), $ty_name),
                     )*
                 ];
+
+                $($(
+                    fn index(typec: &Typec, id: VRef<str>) -> Option<VRef<Self::Output>> {
+                        typec.$field.index(id)
+                    }
+                )?)?
             }
         )*
     };
@@ -91,7 +97,7 @@ mod util {
         duplicate: Span,
         duplicate_name: Span,
         existing: Option<(Span, Span)>,
-        file: Ident,
+        file: VRef<str>,
     ) {
         err: "duplicate definition";
         (duplicate, file) {

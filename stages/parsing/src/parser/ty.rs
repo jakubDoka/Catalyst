@@ -5,7 +5,7 @@ pub type TyGenericsAst<'a> = ListAst<'a, TyAst<'a>, TyGenericsMeta>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TyAst<'a> {
-    Ident(PathAst<'a>),
+    Path(PathAst<'a>),
     Instance(TyInstanceAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
 }
@@ -19,10 +19,11 @@ impl<'a> Ast<'a> for TyAst<'a> {
         branch! {ctx => {
             Ident => {
                 let ident = ctx.parse();
+
                 if ctx.at_tok(TokenKind::LeftBracket) {
                     Ast::parse_args(ctx, (ident?,)).map(TyAst::Instance)
                 } else {
-                    ident.map(TyAst::Ident)
+                    ident.map(TyAst::Path)
                 }
             },
             Operator(_ = 0) => branch!(str ctx => {
@@ -35,7 +36,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
     fn span(&self) -> Span {
         match *self {
-            TyAst::Ident(ident) => ident.span(),
+            TyAst::Path(ident) => ident.span(),
             TyAst::Instance(instance) => instance.span(),
             TyAst::Pointer(pointer) => pointer.span(),
         }
@@ -94,7 +95,7 @@ impl<'a> Ast<'a> for TyPointerAst<'a> {
 pub enum MutabilityAst<'a> {
     Mut(Span),
     None,
-    Ident(Span, PathAst<'a>),
+    Generic(Span, PathAst<'a>),
 }
 
 impl<'a> Ast<'a> for MutabilityAst<'a> {
@@ -105,7 +106,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
         branch! {ctx => {
             Mut => Ok(Self::Mut(ctx.advance().span)),
-            Use => Ok(Self::Ident(ctx.advance().span, ctx.parse()?)),
+            Use => Ok(Self::Generic(ctx.advance().span, ctx.parse()?)),
             _ => Ok(Self::None),
         }}
     }

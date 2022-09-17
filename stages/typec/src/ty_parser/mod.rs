@@ -5,6 +5,7 @@ use std::{
 
 use diags::*;
 use lexing_t::Span;
+use packaging_t::Mod;
 use parsing::*;
 use parsing_t::*;
 use scope::*;
@@ -44,7 +45,7 @@ impl TyParser<'_> {
 
     pub fn ty(&mut self, ty_ast: TyAst) -> errors::Result<VRef<Ty>> {
         match ty_ast {
-            TyAst::Ident(ident) => self.ident::<TyLookup>(ident),
+            TyAst::Path(ident) => self.ty_path::<TyLookup>(ident),
             TyAst::Instance(instance) => self.instance(instance),
             TyAst::Pointer(pointer) => self.pointer(*pointer),
         }
@@ -77,7 +78,7 @@ impl TyParser<'_> {
 
     pub fn bound(&mut self, bound_ast: BoundExprAst) -> errors::Result<VRef<Bound>> {
         match bound_ast {
-            BoundExprAst::Ident(ident) => self.ident::<BoundLookup>(ident),
+            BoundExprAst::Path(ident) => self.ty_path::<BoundLookup>(ident),
         }
     }
 
@@ -114,20 +115,15 @@ impl TyParser<'_> {
         Ok(match mutability_ast {
             MutabilityAst::Mut(..) => Ty::MUTABLE,
             MutabilityAst::None => Ty::IMMUTABLE,
-            MutabilityAst::Ident(.., ident) => return self.ident::<TyLookup>(ident),
+            MutabilityAst::Generic(.., path) => return self.ty_path::<TyLookup>(path),
         })
-    }
-
-    fn ident<T: ScopeLookup>(&mut self, ident_ast: PathAst) -> errors::Result<VRef<T::Output>> {
-        let ident = self.intern_ident(ident_ast)?;
-        self.lookup_typed::<T>(ident, ident_ast.span())
     }
 
     fn instance(
         &mut self,
         TyInstanceAst { ident, params }: TyInstanceAst,
     ) -> errors::Result<VRef<Ty>> {
-        let base = self.ident::<TyLookup>(ident)?;
+        let base = self.ty_path::<TyLookup>(ident)?;
 
         let args = params
             .iter()
@@ -149,26 +145,25 @@ impl TyParser<'_> {
         Ok(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn intern_ident(&mut self, ident: PathAst) -> errors::Result<VRef<str>> {
-        let mut iter = ident.segments.iter();
+    fn ty_path<T: ScopeLookup>(&mut self, path: PathAst) -> errors::Result<VRef<T::Output>> {
+        use PathSegmentAst::*;
+        match *path.segments {
+            [Name(ty)] => self.lookup_typed::<T>(ty.ident, ty.span),
+            [Name(module), Name(ty)] => {
+                let module = self.lookup_typed::<ModLookup>(module.ident, module.span)?;
+                let id = self
+                    .interner
+                    .intern(scoped_ident!(module.index() as u32, ty.ident));
 
-        let Some(first) = iter.next() else {
-            unreachable!();
-        };
+                let Some(ty) = T::index(self.typec, id) else {
+                    self.handle_scope_error::<T>(ScopeError::NotFound, ty.ident, ty.span);
+                    return Err(());
+                };
 
-        let PathSegmentAst::Name(name) = first else {
-            self.invalid_path_start(first);
-            return Err(());
-        };
-
-        let item = self.lookup::<FirstTySegmentLookup>(name.ident, name.span)?;
-
-        match_scope_ptr!(item =>
-            module: ModId => {},
-            _ => (),
-        );
-
-        todo!();
+                Ok(ty)
+            }
+            _ => Err(self.invalid_ty_path(path)),
+        }
     }
 
     pub fn lookup_typed<T: ScopeLookup>(
@@ -194,10 +189,11 @@ impl TyParser<'_> {
     }
 
     gen_error_fns! {
-        push invalid_path_start(self, segment: &PathSegmentAst) {
-            err: "invalid path start";
+        push invalid_ty_path(self, segment: PathAst) {
+            err: "invalid type path composition";
+            info: "valid forms: `Ty` | `mod\\Ty`";
             (segment.span(), self.current_file) {
-                info[segment.span()]: "expected a name";
+                info[segment.span()]: "malformed path encountered here";
             }
         }
     }
@@ -268,14 +264,21 @@ pub trait ScopeLookup {
             .iter()
             .find_map(|&(oid, name)| (id == oid).then_some(name))
     }
+
+    fn index(_: &Typec, _: VRef<str>) -> Option<VRef<Self::Output>> {
+        unimplemented!()
+    }
 }
 
 gen_scope_lookup! {
-    TyLookup<"type", Ty> {
+    TyLookup<"type", Ty, types> {
         Bound => "bound",
     }
-    BoundLookup<"bound", Bound> {
+    BoundLookup<"bound", Bound, bounds> {
         Ty => "type",
     }
-    FirstTySegmentLookup<"type"> {}
+    ModLookup<"module", Mod> {
+        Bound => "bound",
+        Ty => "type",
+    }
 }

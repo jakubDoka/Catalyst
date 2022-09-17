@@ -170,7 +170,8 @@ impl<'a> ParsingCtx<'_, 'a> {
     }
 
     pub fn name_unchecked(&mut self) -> NameAst {
-        NameAst::new(self, self.state.current.span)
+        let span = self.advance().span;
+        NameAst::new(self, span)
     }
 
     gen_error_fns! {

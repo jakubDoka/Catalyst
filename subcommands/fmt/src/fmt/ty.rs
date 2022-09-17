@@ -3,7 +3,7 @@ use super::*;
 impl<'a> FmtAst for TyAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match self {
-            TyAst::Ident(ident) => ident.display(fmt),
+            TyAst::Path(ident) => ident.display(fmt),
             TyAst::Instance(instance) => instance.display(fmt),
             TyAst::Pointer(pointer) => pointer.display(fmt),
         }
@@ -11,7 +11,7 @@ impl<'a> FmtAst for TyAst<'a> {
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            TyAst::Ident(ident) => ident.flat_len(fmt),
+            TyAst::Path(ident) => ident.flat_len(fmt),
             TyAst::Instance(instance) => instance.flat_len(fmt),
             TyAst::Pointer(pointer) => pointer.flat_len(fmt),
         }
@@ -46,7 +46,7 @@ impl<'a> FmtAst for MutabilityAst<'a> {
         match *self {
             MutabilityAst::Mut(..) => write!(fmt, "mut "),
             MutabilityAst::None => (),
-            MutabilityAst::Ident(.., ident) => {
+            MutabilityAst::Generic(.., ident) => {
                 write!(fmt, "use ");
                 ident.display(fmt)
             }
@@ -57,7 +57,7 @@ impl<'a> FmtAst for MutabilityAst<'a> {
         match *self {
             MutabilityAst::Mut(span) => span.len(),
             MutabilityAst::None => 0,
-            MutabilityAst::Ident(.., ident) => "use ".len() + ident.flat_len(fmt),
+            MutabilityAst::Generic(.., ident) => "use ".len() + ident.flat_len(fmt),
         }
     }
 }

@@ -70,7 +70,7 @@ impl PackageLoader<'_> {
         self.packages.module_order.extend(
             ordering
                 .into_iter()
-                .map(|i| unsafe { Ident::new(i as usize) })
+                .map(|i| unsafe { VRef::new(i as usize) })
                 .filter(|id| self.packages.modules.get(&id).unwrap().is_module()),
         );
 
@@ -517,7 +517,7 @@ impl PackageLoader<'_> {
                 "cycle:\n{}",
                 cycle
                     .iter()
-                    .map(|&id| &self.interner[unsafe { Ident::new(id as usize) }])
+                    .map(|&id| &self.interner[unsafe { VRef::<str>::new(id as usize) }])
                     .collect::<BumpVec<_>>()
                     .join("\n"),
             );
@@ -555,7 +555,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        unknown_package(s: &Self, span: Span, id: Ident, package: &Mod) {
+        unknown_package(s: &Self, span: Span, id: VRef<str>, package: &Mod) {
             err: "cannot find this package in manifest";
             info: (
                 "available packages: '{}'",
@@ -566,7 +566,7 @@ impl PackageLoader<'_> {
                     .collect::<BumpVec<_>>()
                     .join("', '")
             );
-            (s.packages.reveal_span_lines(id, span), id) {
+            (span, id) {
                 err[span]: "invalid package prefix used here";
             }
         }
