@@ -186,10 +186,17 @@ pub mod items {
                 &mut packages,
                 &mut resources,
             );
+
             let str = fmt
                 .workspace
                 .display(&packages, &mut SnippetDisplay::default());
-            std::fs::write(format!("test_out/{}-parse-out.txt", path.display()), str).unwrap();
+            let path = format!("test_out/{}-parse-out.txt", path.display());
+
+            if str.trim() != "" {
+                std::fs::write(path, str).unwrap();
+            } else if Path::new(&path).exists() {
+                std::fs::remove_file(path).unwrap();
+            }
 
             resources
         }
@@ -291,12 +298,16 @@ pub mod items {
                     io::Error::new(io::ErrorKind::InvalidInput, "Invalid arguments encoding")
                 })?;
 
-            let subcommand_index = 1;
+            let subcommand_index = 0;
             match args.get(subcommand_index).copied() {
                 Some("clone") => {
-                    let &[ref others @ .., repository, destination] = args.as_slice() else {
+                    let &[ref others @ .., mut repository, destination] = args.as_slice() else {
                         return Err(io::Error::new(io::ErrorKind::InvalidInput, "expected arguments: <destination> <repository>"));
                     };
+
+                    repository = repository.strip_prefix("https://").ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "expected https:// repository")
+                    })?;
 
                     let branch = others
                         .iter()
@@ -324,20 +335,48 @@ pub mod items {
                         let path = self.canonicalize(&destination.join(path))?;
                         self.binary_files.insert(path, file.clone());
                     }
+                    Ok(Output {
+                        status: new_exist_status(0),
+                        stderr: Vec::new(),
+                        stdout: "Repository downloaded".to_string().into(),
+                    })
                 }
-                _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "Expected subcommand: ls-files | clone",
-                    ))
-                }
-            }
+                Some("ls-remote") => {
+                    let &[_, mut repository, _] = args.as_slice() else {
+                        return Err(io::Error::new(io::ErrorKind::InvalidInput, "expected arguments: <repository> <pattern>"));
+                    };
 
-            Ok(Output {
-                status: new_exist_status(0),
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-            })
+                    repository = repository.strip_prefix("https://").ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "expected https:// repository")
+                    })?;
+
+                    let res = self
+                        .repositories
+                        .keys()
+                        .filter_map(|key| key.strip_prefix(&format!("{repository}#")))
+                        .map(|branch| format!("9821309128301928302193\trefs/tags/{}\n", branch))
+                        .collect::<String>();
+
+                    if res.is_empty() {
+                        return Ok(Output {
+                            status: new_exist_status(128),
+                            stdout: Vec::new(),
+                            stderr: format!("fatal: repository '{}' not found", repository)
+                                .into_bytes(),
+                        });
+                    }
+
+                    Ok(Output {
+                        status: new_exist_status(0),
+                        stderr: Vec::new(),
+                        stdout: res.into(),
+                    })
+                }
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Expected subcommand: ls-remote | clone",
+                )),
+            }
         }
     }
 
@@ -354,17 +393,24 @@ pub mod items {
         }
 
         fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
-            Ok(path
-                .to_str()
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "Invalid path encoding")
-                })?
-                .replace('\\', "/")
-                .split('/')
-                .filter(|s| !s.is_empty())
-                .intersperse("/")
-                .collect::<String>()
-                .into())
+            let mut canon_path = PathBuf::with_capacity(path.as_os_str().len());
+            let mut iter = path.components().peekable();
+            loop {
+                let Some(current) = iter.next() else {
+                    break Ok(canon_path);
+                };
+
+                let Some(next) = iter.peek() else {
+                    canon_path.push(current);
+                    break Ok(canon_path);
+                };
+
+                if next.as_os_str() == Path::new("..") {
+                    iter.next();
+                } else {
+                    canon_path.push(current);
+                }
+            }
         }
 
         fn command(&mut self, command: &mut Command) -> io::Result<Output> {

@@ -54,6 +54,12 @@ fn main() {
                     }
                 }
             }
+            remote_dir "github.com/jakubDoka/water#v0.1.0" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    root: "water.ctl";
+                }
+            }
         }
         "self-import" {
             file "root.ctl" { use { "." } }
@@ -80,7 +86,13 @@ fn main() {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    git "github.com/jakubDoka/water" "ajdakjshdkajshdka"
+                    git "github.com/jakubDoka/water" "non existent version"
+                }
+            }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    root: "water.ctl";
                 }
             }
         }
