@@ -108,7 +108,7 @@ impl BumpAlloc {
     fn drop_ref(&self, _: &mut BumpAllocRef) {
         if self.refs.replace(self.refs.get() - 1) == 1 {
             unsafe {
-                (*(&self.allocator as *const Allocator as *mut Allocator)).clear();
+                self.allocator.clear_unsafe();
             }
         }
     }

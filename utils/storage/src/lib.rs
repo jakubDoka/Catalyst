@@ -1,6 +1,5 @@
 #![feature(string_extend_from_within)]
 #![feature(int_log)]
-#![feature(result_into_ok_or_err)]
 #![feature(let_else)]
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]

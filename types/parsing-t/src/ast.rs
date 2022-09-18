@@ -116,12 +116,7 @@ impl<'a, T: Debug, META: ListAstMeta> ListAst<'a, T, META> {
 
 impl<'a, T, META: ListAstMeta> Clone for ListAst<'a, T, META> {
     fn clone(&self) -> Self {
-        Self {
-            start: self.start.clone(),
-            elements: self.elements.clone(),
-            end: self.end.clone(),
-            _ph: std::marker::PhantomData,
-        }
+        *self
     }
 }
 

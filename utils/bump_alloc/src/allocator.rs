@@ -102,6 +102,9 @@ impl Allocator {
         new
     }
 
+    /// try to free the memory at `ptr` if it is the last allocation in the current chunk
+    /// # Safety
+    /// Size mush match the size of the last allocation.
     pub unsafe fn try_free(&self, ptr: NonNull<MaybeUninit<usize>>, size: NonZeroUsize) -> bool {
         let current = self.current.get();
         if current != ptr.as_ptr() {
@@ -114,17 +117,30 @@ impl Allocator {
         true
     }
 
+    /// Clears the allocator for reuse.
     pub fn clear(&mut self) {
-        self.garbage.get_mut().append(self.chunks.get_mut());
-        self.garbage
-            .get_mut()
-            .sort_unstable_by_key(|check| check.len());
+        unsafe { self.clear_unsafe() }
+    }
+
+    /// Clears the allocator for reuse.
+    /// # Safety
+    /// Function can be called only if no references to allocated data exist.
+    pub unsafe fn clear_unsafe(&self) {
+        let mut chunks = self.chunks.take();
+        let mut garbage = self.garbage.take();
+
+        garbage.append(&mut chunks);
+        garbage.sort_unstable_by_key(|check| check.len());
+
         // SAFETY: Garbage is never empty at this point, since appended chunks are never empty
-        let last = unsafe { self.garbage.get_mut().pop().unwrap_unchecked() };
+        let last = unsafe { garbage.pop().unwrap_unchecked() };
         let range = last.range();
-        self.chunks.get_mut().push(last);
+        chunks.push(last);
         self.current.set(range.end as *mut _);
         self.start.set(range.start as *mut _);
+
+        self.chunks.set(chunks);
+        self.garbage.set(garbage);
     }
 }
 

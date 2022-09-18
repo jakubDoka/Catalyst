@@ -4,6 +4,7 @@
 #![feature(associated_type_defaults)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(iter_intersperse)]
+#![feature(let_chains)]
 
 mod ast;
 mod ctx;

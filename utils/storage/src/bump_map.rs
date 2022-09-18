@@ -352,7 +352,7 @@ impl<T, CACHE> BumpMap<T, CACHE> {
             .indices
             .binary_search(&(index as u32))
             .map(|i| i + 1)
-            .into_ok_or_err();
+            .unwrap_or_else(|i| i);
         unsafe { VSlice::new(result) }
     }
 

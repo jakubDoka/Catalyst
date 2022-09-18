@@ -1,6 +1,7 @@
 #![feature(default_free_fn)]
 #![feature(let_else)]
 #![feature(type_alias_impl_trait)]
+#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! token {

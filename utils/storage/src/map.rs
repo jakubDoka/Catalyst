@@ -19,6 +19,7 @@ impl SpecialHash for VRef<str> {
     type BuildHasher = SimpleHasherFactory;
 }
 
+#[allow(clippy::derive_hash_xor_eq)]
 impl Hash for IdentPair {
     fn hash<H: Hasher>(&self, state: &mut H) {
         unsafe {

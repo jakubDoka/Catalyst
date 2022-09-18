@@ -15,7 +15,7 @@ type ModuleFrontier = BumpVec<(VRef<str>, VRef<str>, PathBuf, DiagLoc)>;
 impl PackageLoader<'_> {
     /// Loads the project into graph of manifests and source files.
     pub fn load(&mut self, root: &Path) {
-        drop(self.load_low(root))
+        _ = self.load_low(root)
     }
 
     fn load_low(&mut self, root: &Path) -> errors::Result {
@@ -68,7 +68,7 @@ impl PackageLoader<'_> {
             ordering
                 .into_iter()
                 .map(|i| unsafe { VRef::new(i as usize) })
-                .filter(|id| self.packages.modules.get(&id).unwrap().is_module()),
+                .filter(|id| self.packages.modules.get(id).unwrap().is_module()),
         );
 
         Ok(())
@@ -193,7 +193,7 @@ impl PackageLoader<'_> {
                 let path = self
                     .packages
                     .resources
-                    .canonicalize(&temp_path)
+                    .canonicalize(temp_path)
                     .map_err(|err| {
                         self.file_error(
                             current_loc,
@@ -281,7 +281,7 @@ impl PackageLoader<'_> {
                 &content,
                 parser_state,
                 ast_data,
-                &mut self.workspace,
+                self.workspace,
                 self.interner,
             );
             UseAst::parse(&mut ctx).ok()
