@@ -97,7 +97,7 @@ impl Interner {
             }
         }
         let end = self.data.len();
-        InternerEntry::new(&*self.data, start..end)
+        InternerEntry::new(&self.data, start..end)
     }
 
     fn range_of(&self, ident: VRef<str>) -> Range<usize> {

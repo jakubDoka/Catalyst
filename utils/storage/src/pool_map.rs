@@ -57,16 +57,14 @@ impl<K, V> PoolMap<K, V> {
     ///
     /// ```
     pub fn push(&mut self, value: V) -> VRef<K> {
-        let key = if let Some(key) = self.free.pop() {
+        if let Some(key) = self.free.pop() {
             assert!(self.free_lookup.remove(key.index()));
             self[key] = value;
             key
         } else {
             self.data.push(MaybeUninit::new(value));
             unsafe { VRef::new(self.data.len() - 1) }
-        };
-
-        key
+        }
     }
 
     /// Pushes new value to map and returns it's key. Value of key is deterministic

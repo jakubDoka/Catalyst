@@ -16,7 +16,7 @@ struct TestState {
 
 impl Testable for TestState {
     fn exec(mut self, name: &str) -> (Workspace, Packages) {
-        drop(package_loader!(self).load(Path::new(name)));
+        package_loader!(self).load(Path::new(name));
         (self.workspace, self.packages)
     }
 

@@ -18,15 +18,12 @@ impl<'a> Ast<'a> for FuncDefAst<'a> {
 
     const NAME: &'static str = "function definition";
 
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a>,
-        (vis, start): Self::Args,
-    ) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
         let signature = ctx.parse()?;
         let body = ctx.parse::<FuncBodyAst>()?;
         let span = start.joined(body.span());
 
-        Ok(Self {
+        Some(Self {
             vis,
             signature,
             body,
@@ -54,20 +51,18 @@ impl<'a> Ast<'a> for FuncSigAst<'a> {
 
     const NAME: &'static str = "function signature";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(Self {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
             fn_span: ctx.advance().span,
             cc: ctx
                 .try_advance(TokenKind::String)
-                .map(|tok| NameAst::new(ctx, tok.span.shrink(1)))
-                .ok(),
+                .map(|tok| NameAst::new(ctx, tok.span.shrink(1))),
             generics: ctx.parse()?,
             name: ctx.parse()?,
             args: ctx.parse()?,
             ret: ctx
                 .try_advance(TokenKind::RightArrow)
-                .and_then(|_| ctx.parse())
-                .ok(),
+                .and_then(|_| ctx.parse()),
         })
     }
 
@@ -89,8 +84,8 @@ impl<'a> Ast<'a> for FuncArgAst<'a> {
 
     const NAME: &'static str = "function argument";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(Self {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
             name: ctx.parse()?,
             ty: {
                 ctx.expect_advance(TokenKind::Colon)?;
@@ -116,7 +111,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 
     const NAME: &'static str = "function body";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             ThickRightArrow => {
                 let arrow = ctx.advance().span;
@@ -124,7 +119,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
                 ctx.parse().map(|e| Self::Arrow(arrow, e))
             },
             LeftCurly => ctx.parse().map(Self::Block),
-            Extern => Ok(Self::Exported(ctx.advance().span)),
+            Extern => Some(Self::Exported(ctx.advance().span)),
         }}
     }
 
@@ -138,7 +133,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 }
 
 // impl Parser<'_> {
-//     pub fn r#fn(&mut self) -> errors::Result {
+//     pub fn r#fn(&mut self) -> Option<()> {
 //         let start = self.state.current.span;
 //         let vis = self.signature_unfinished()?;
 
@@ -155,7 +150,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 //         Ok(())
 //     }
 
-//     fn signature_unfinished(&mut self) -> errors::Result<Vis> {
+//     fn signature_unfinished(&mut self) -> Option<Vis> {
 //         self.start();
 //         self.advance();
 //         let vis = self.visibility();
@@ -172,7 +167,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 //         Ok(vis)
 //     }
 
-//     pub fn signature(&mut self) -> errors::Result {
+//     pub fn signature(&mut self) -> Option<()> {
 //         let start = self.state.current.span;
 //         let vis = self.signature_unfinished()?;
 //         self.finish_last(AstKind::FuncSignature { vis }, start);
@@ -187,7 +182,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 //         }
 //     }
 
-//     fn fn_arg(&mut self) -> errors::Result {
+//     fn fn_arg(&mut self) -> Option<()> {
 //         let start = self.start();
 //         let mutable = self.advance_if(TokenKind::Mut);
 //         self.ident()?;

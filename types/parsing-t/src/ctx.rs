@@ -53,58 +53,56 @@ impl<'a> ParsingCtx<'_, 'a> {
         res
     }
 
-    pub fn parse<T: Ast<'a>>(&mut self) -> Result<T, ()>
+    pub fn parse<T: Ast<'a>>(&mut self) -> Option<T>
     where
         T::Args: Default,
     {
         T::parse(self)
     }
 
-    pub fn parse_alloc<T: Ast<'a>>(&mut self) -> Result<&'a T, ()>
+    pub fn parse_alloc<T: Ast<'a>>(&mut self) -> Option<&'a T>
     where
         T::Args: Default,
     {
         self.parse().map(|t| self.arena.alloc(t))
     }
 
-    pub fn parse_args<T: Ast<'a>>(&mut self, args: T::Args) -> Result<T, ()> {
+    pub fn parse_args<T: Ast<'a>>(&mut self, args: T::Args) -> Option<T> {
         T::parse_args(self, args)
     }
 
-    pub fn parse_args_alloc<T: Ast<'a>>(&mut self, args: T::Args) -> Result<&'a T, ()> {
+    pub fn parse_args_alloc<T: Ast<'a>>(&mut self, args: T::Args) -> Option<&'a T> {
         self.parse_args(args).map(|t| self.arena.alloc(t))
     }
 
     pub fn advance(&mut self) -> Token {
         let current = self.state.current;
         self.state.current = self.state.next;
-        self.state.next = self.lexer.next();
+        self.state.next = self.lexer.next_tok();
         current
     }
 
-    pub fn expect_advance(&mut self, kind: TokenKind) -> Result<Token, ()> {
+    pub fn expect_advance(&mut self, kind: TokenKind) -> Option<Token> {
         let current = self.state.current;
         if current.kind == kind {
-            Ok(self.advance())
+            Some(self.advance())
         } else {
             let terminals = [TokenPattern::Kind(kind)];
             self.expect_error(&terminals);
-            Err(())
+            None
         }
     }
 
     pub fn optional_advance(&mut self, kind: impl Into<TokenPattern>) -> Option<Token> {
-        if self.at(&[kind.into()]) {
+        if self.at([kind.into()]) {
             Some(self.advance())
         } else {
             None
         }
     }
 
-    pub fn try_advance(&mut self, kind: TokenKind) -> Result<Token, ()> {
-        (self.state.current.kind == kind)
-            .then(|| self.advance())
-            .ok_or(())
+    pub fn try_advance(&mut self, kind: TokenKind) -> Option<Token> {
+        (self.state.current.kind == kind).then(|| self.advance())
     }
 
     pub fn skip(&mut self, tok: TokenKind) {
@@ -116,7 +114,7 @@ impl<'a> ParsingCtx<'_, 'a> {
     pub fn recover(
         &mut self,
         terminals: impl IntoIterator<Item = impl AsRef<TokenPattern>> + Clone,
-    ) -> Result<Token, ()> {
+    ) -> Option<Token> {
         let mut pair_stack: BumpVec<(Span, TokenKind)> = bumpvec![];
         loop {
             if let Some(complement) = self.state.current.kind.complement() {
@@ -128,7 +126,7 @@ impl<'a> ParsingCtx<'_, 'a> {
                     pair_stack.pop();
                 } else if self.state.current.kind.is_closing() {
                     self.unmatched_paren(kind, span);
-                    return Err(());
+                    return None;
                 }
                 self.advance();
                 continue;
@@ -137,12 +135,12 @@ impl<'a> ParsingCtx<'_, 'a> {
             if self.matches(terminals.clone(), self.state.current) {
                 let cur = self.state.current;
                 self.advance();
-                return Ok(cur);
+                return Some(cur);
             }
 
             if self.at_tok(TokenKind::Eof) {
                 self.expect_error(terminals);
-                return Err(());
+                return None;
             }
 
             self.advance();
@@ -245,8 +243,8 @@ impl ParsingState {
 
     pub fn start(&mut self, source: &str, path: VRef<str>) {
         let mut lexer = Lexer::new(source, 0);
-        self.current = lexer.next();
-        self.next = lexer.next();
+        self.current = lexer.next_tok();
+        self.next = lexer.next_tok();
         self.progress = lexer.progress();
         self.path = path;
     }

@@ -32,7 +32,7 @@ impl CliInput {
     /// assert_eq!(input.value("field2"), Some("string arg 2"));
     /// assert_eq!(input.enabled("flag"), true);
     /// ```
-    pub fn from_str(str: &str) -> Result<Self, CliError> {
+    pub fn from_string(str: &str) -> Result<Self, CliError> {
         Self::new_low(str.split(' ').map(|s| s.to_string()))
     }
 
@@ -93,7 +93,7 @@ impl CliInput {
         self.flags
             .get(flag)
             .and_then(|v| v.as_ref())
-            .and_then(|v| Some(v.as_str()))
+            .map(|v| v.as_str())
     }
 
     /// Returns working directory.

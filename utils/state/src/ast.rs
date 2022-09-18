@@ -44,7 +44,7 @@ impl Call {
         lexer.advance();
 
         lexer.expect(TokKind::String);
-        let path = lexer.current().span.clone();
+        let path = lexer.current().span;
         lexer.advance();
 
         Call {
@@ -65,7 +65,7 @@ impl File {
         lexer.advance();
 
         lexer.expect(TokKind::String);
-        let path = lexer.current().span.clone();
+        let path = lexer.current().span;
         lexer.advance();
 
         let (structs, imports) = Self::parse_content(lexer);
@@ -132,7 +132,7 @@ impl Import {
         lexer.advance();
 
         lexer.expect(TokKind::String);
-        let path = lexer.current().span.clone();
+        let path = lexer.current().span;
         lexer.advance();
 
         Self {
@@ -157,7 +157,7 @@ impl Struct {
         lexer.expect(TokKind::Struct);
         lexer.advance();
         lexer.expect(TokKind::Ident);
-        let name = lexer.current().span.clone();
+        let name = lexer.current().span;
         lexer.advance();
         let fields = Struct::parse_fields(lexer);
         Struct {

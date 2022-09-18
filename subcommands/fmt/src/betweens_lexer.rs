@@ -14,7 +14,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn contains_line_comments(mut self) -> bool {
-        self.inner.find(|t| t == &Token::LineComment).is_some()
+        self.inner.any(|t| t == Token::LineComment)
     }
 
     pub fn translate(
@@ -48,7 +48,7 @@ impl<'a> Lexer<'a> {
                     {
                         buffer.push(' ');
                     }
-                    buffer.push_str(&str[span].trim_end());
+                    buffer.push_str(str[span].trim_end());
                 }
                 _ => (),
             }

@@ -10,9 +10,9 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 
     const NAME: &'static str = "bound expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let chain = PathAst::parse(ctx)?;
-        Ok(Self::Path(chain))
+        Some(Self::Path(chain))
     }
 
     fn span(&self) -> Span {
@@ -21,7 +21,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 }
 
 // impl Parser<'_> {
-//     pub fn bound(&mut self) -> errors::Result {
+//     pub fn bound(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         let vis = self.visibility();
@@ -36,7 +36,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn bound_item(&mut self) -> errors::Result {
+//     fn bound_item(&mut self) -> Option<()> {
 //         branch! { self => {
 //             Func => self.signature()?,
 //             Type => self.bound_type()?,
@@ -44,7 +44,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn bound_type(&mut self) -> errors::Result {
+//     fn bound_type(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         let vis = self.visibility();
@@ -56,7 +56,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     pub fn r#impl(&mut self) -> errors::Result {
+//     pub fn r#impl(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         let vis = self.visibility();
@@ -87,7 +87,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn impl_item(&mut self) -> errors::Result {
+//     fn impl_item(&mut self) -> Option<()> {
 //         branch! { self => {
 //             Func => self.r#fn()?,
 //             Type => self.impl_type()?,
@@ -96,7 +96,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn impl_type(&mut self) -> errors::Result {
+//     fn impl_type(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         self.generics()?;
@@ -111,7 +111,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn impl_use(&mut self) -> errors::Result {
+//     fn impl_use(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         self.ty()?;

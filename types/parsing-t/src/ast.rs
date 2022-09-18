@@ -39,16 +39,13 @@ impl<'a> Ast<'a> for NameAst {
 
     const NAME: &'static str = "name";
 
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a>,
-        (just_try,): Self::Args,
-    ) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (just_try,): Self::Args) -> Option<Self> {
         let span = if just_try {
             ctx.try_advance(TokenKind::Ident)?.span
         } else {
             ctx.expect_advance(TokenKind::Ident)?.span
         };
-        Ok(Self::new(ctx, span))
+        Some(Self::new(ctx, span))
     }
 
     fn span(&self) -> Span {
@@ -61,17 +58,17 @@ pub trait Ast<'a>: Copy {
 
     const NAME: &'static str;
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Result<Self, ()>;
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Option<Self>;
     fn span(&self) -> Span;
 
-    fn parse(ctx: &mut ParsingCtx<'_, 'a>) -> Result<Self, ()>
+    fn parse(ctx: &mut ParsingCtx<'_, 'a>) -> Option<Self>
     where
         Self::Args: Default,
     {
         Self::parse_args(ctx, Default::default())
     }
 
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Result<Self, ()> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Option<Self> {
         ctx.state.parse_stack.push(Self::NAME);
         let res = Self::parse_args_internal(ctx, args);
         ctx.state.parse_stack.pop().unwrap();
@@ -110,7 +107,7 @@ impl<'a, T: Debug, META: ListAstMeta> ListAst<'a, T, META> {
                 .elements
                 .first()
                 .map(|f| f.value.span().start())
-                .unwrap_or(self.end.start())
+                .unwrap_or_else(|| self.end.start())
     }
 }
 
@@ -139,11 +136,11 @@ where
 {
     const NAME: &'static str = "list";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let on_delim = ctx.at(META::START);
         let pos = ctx.state.current.span.sliced(..0);
         if META::OPTIONAL && !on_delim && !META::START.is_empty() {
-            return Ok(Self {
+            return Some(Self {
                 start: pos,
                 elements: &[],
                 end: pos,
@@ -168,7 +165,7 @@ where
                 break ctx.advance().span;
             }
 
-            let Ok(element) = T::parse(ctx) else {
+            let Some(element) = T::parse(ctx) else {
                 if let Some(span) = META::recover(ctx)? {
                     break span;
                 } else {
@@ -225,7 +222,7 @@ where
 
         let elements = ctx.arena.alloc_slice(&elements);
 
-        Ok(Self {
+        Some(Self {
             start,
             elements,
             end,
@@ -259,9 +256,9 @@ pub trait ListAstMeta {
     const END: &'static [TokenPattern<'static>];
     const OPTIONAL: bool;
 
-    fn recover(ctx: &mut ParsingCtx) -> Result<Option<Span>, ()> {
+    fn recover(ctx: &mut ParsingCtx) -> Option<Option<Span>> {
         let ending = ctx.recover(Self::SEP.iter().chain(Self::END))?;
-        Ok(ctx.matches(Self::END, ending).then_some(ending.span))
+        Some(ctx.matches(Self::END, ending).then_some(ending.span))
     }
 }
 
@@ -317,15 +314,15 @@ pub enum TokenPattern<'a> {
     Kind(TokenKind),
 }
 
-impl<'a> Into<TokenPattern<'a>> for TokenKind {
-    fn into(self) -> TokenPattern<'a> {
-        TokenPattern::Kind(self)
+impl<'a> From<TokenKind> for TokenPattern<'a> {
+    fn from(t: TokenKind) -> Self {
+        Self::Kind(t)
     }
 }
 
-impl<'a> Into<TokenPattern<'a>> for &'a str {
-    fn into(self) -> TokenPattern<'a> {
-        TokenPattern::Str(self)
+impl<'a> From<&'a str> for TokenPattern<'a> {
+    fn from(t: &'a str) -> Self {
+        Self::Str(t)
     }
 }
 

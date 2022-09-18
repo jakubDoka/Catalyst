@@ -28,11 +28,11 @@ impl<'a> Lexer<'a> {
 
     #[inline]
     pub fn is_finished(&self) -> bool {
-        self.inner.remainder().len() == 0
+        self.inner.remainder().is_empty()
     }
 
     #[inline]
-    pub fn next(&mut self) -> Token {
+    pub fn next_tok(&mut self) -> Token {
         let kind = self.inner.next().unwrap_or(TokenKind::Eof);
         let span = Span::new(self.inner.span());
 
@@ -45,6 +45,6 @@ impl Iterator for Lexer<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        Some(self.next())
+        Some(self.next_tok())
     }
 }

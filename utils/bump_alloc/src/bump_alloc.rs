@@ -274,7 +274,7 @@ mod test {
 
         fn summary(self, name: &str) {
             let start = self.from.unwrap();
-            let end = self.to.unwrap_or_else(|| std::time::Instant::now());
+            let end = self.to.unwrap_or_else(std::time::Instant::now);
             println!("{name} {:?}", end.duration_since(start));
         }
     }

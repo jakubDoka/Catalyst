@@ -19,7 +19,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
     const NAME: &'static str = "type";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             Ident => {
                 let ident = ctx.parse();
@@ -60,8 +60,8 @@ impl<'a> Ast<'a> for TyInstanceAst<'a> {
 
     const NAME: &'static str = "type instance";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ident,): Self::Args) -> Result<Self, ()> {
-        Ok(TyInstanceAst {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ident,): Self::Args) -> Option<Self> {
+        Some(TyInstanceAst {
             ident,
             params: ctx.parse()?,
         })
@@ -84,8 +84,8 @@ impl<'a> Ast<'a> for TyPointerAst<'a> {
 
     const NAME: &'static str = "pointer type";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(TyPointerAst {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(TyPointerAst {
             carrot: ctx.advance().span,
             mutability: ctx.parse()?,
             ty: ctx.parse()?,
@@ -109,12 +109,12 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 
     const NAME: &'static str = "mutability";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        branch! {ctx => {
-            Mut => Ok(Self::Mut(ctx.advance().span)),
-            Use => Ok(Self::Generic(ctx.advance().span, ctx.parse()?)),
-            _ => Ok(Self::None),
-        }}
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(branch! {ctx => {
+            Mut => Self::Mut(ctx.advance().span),
+            Use => Self::Generic(ctx.advance().span, ctx.parse()?),
+            _ => Self::None,
+        }})
     }
 
     fn span(&self) -> Span {
@@ -123,13 +123,13 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 }
 
 // impl Parser<'_> {
-//     pub fn ty(&mut self) -> errors::Result {
+//     pub fn ty(&mut self) -> Option<()> {
 //         self.ty_low().map(|_| ())
 //     }
 
-//     pub fn ty_low(&mut self) -> errors::Result<bool> {
+//     pub fn ty_low(&mut self) -> Option<bool> {
 //         branch! { self => {
-//             Ident => if self.next(TokenKind::Colon) { self.field_ty()?; return Ok(true) }
+//             Ident => if self.next(TokenKind::Colon) { self.field_ty()?; return Some(true) }
 //                 else { self.ident_ty()? },
 //             Operator(_ = 0) => branch!{str self => {
 //                 "^" => self.pointer_ty(),
@@ -139,7 +139,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 //         Ok(false)
 //     }
 
-//     fn field_ty(&mut self) -> errors::Result {
+//     fn field_ty(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.capture(AstKind::Ident);
 //         self.advance();
@@ -148,7 +148,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 //         Ok(())
 //     }
 
-//     fn pointer_ty(&mut self) -> errors::Result {
+//     fn pointer_ty(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         if self.at(TokenKind::Mut) {
@@ -163,7 +163,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 //         Ok(())
 //     }
 
-//     fn ident_ty(&mut self) -> errors::Result {
+//     fn ident_ty(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.ident_chain()?;
 //         if self.at(TokenKind::LeftBracket) {

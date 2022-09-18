@@ -17,7 +17,7 @@ fn main() {
         println!("loading {}", path.display());
         let source = std::fs::read_to_string(&path).expect("could not read file");
         let mut lexer = Lexer::new(&source);
-        let ast = SourceCode::new(&mut lexer, PathBuf::from(path));
+        let ast = SourceCode::new(&mut lexer, path);
         for file in ast.files {
             println!("generating {}", file.path.display());
             std::fs::write(&file.path, format!("{}", file)).expect("could not write file");

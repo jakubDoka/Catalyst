@@ -77,7 +77,7 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
     }
 
     pub fn index(&self, key: K) -> Option<VRef<V>> {
-        self.index.get(&key).map(|&index| index)
+        self.index.get(&key).copied()
     }
 
     pub fn id(&self, key: VRef<V>) -> K {

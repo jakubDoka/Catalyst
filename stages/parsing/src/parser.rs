@@ -38,8 +38,8 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
 
     const NAME: &'static str = "generic param";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(Self {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
             name: ctx.parse()?,
             bounds: ctx.parse()?,
         })
@@ -67,7 +67,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
 
     const NAME: &'static str = "ident chain";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         if ctx.at_tok(TokenKind::BackSlash) {
             ctx.advance();
@@ -87,7 +87,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
         let segments = ctx.arena.alloc_slice(&segments);
         let span = start.joined(segments.last().unwrap().span());
 
-        Ok(Self { segments, span })
+        Some(Self { segments, span })
     }
 
     fn span(&self) -> Span {
@@ -108,9 +108,9 @@ impl<'a> Ast<'a> for PathSegmentAst<'a> {
 
     const NAME: &'static str = "ident chain segment";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
-            Ident => Ok(Self::Name(ctx.name_unchecked())),
+            Ident => Some(Self::Name(ctx.name_unchecked())),
             LeftBracket => ctx.parse().map(Self::Generics),
             LeftParen => ctx.parse().map(Self::Tuple),
             LeftCurly => ctx.parse().map(Self::Struct),

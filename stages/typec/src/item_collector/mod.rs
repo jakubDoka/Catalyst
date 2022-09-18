@@ -24,7 +24,7 @@ impl TyChecker<'_> {
                 ItemAst::Struct(..) => continue,
             };
 
-            let Ok(item) = res else {
+            let Some(item) = res else {
                 continue;
             };
 
@@ -45,7 +45,7 @@ impl TyChecker<'_> {
                 ItemAst::Func(..) => continue,
             };
 
-            let Ok(item) = res else {
+            let Some(item) = res else {
                 continue;
             };
 
@@ -72,15 +72,15 @@ impl TyChecker<'_> {
             ..
         }: FuncDefAst<'a>,
         funcs: &mut FuncDefs<'a>,
-    ) -> errors::Result<ModItem> {
+    ) -> Option<ModItem> {
         let generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
         let args = args
             .iter()
             .map(|arg| self.ty(arg.ty))
-            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
-        let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Ok(Ty::UNIT))?;
+            .nsc_collect::<Option<BumpVec<_>>>()?;
+        let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Some(Ty::UNIT))?;
 
         let signature = Signature {
             cc: cc.map(|cc| cc.ident).into(),
@@ -100,7 +100,7 @@ impl TyChecker<'_> {
             funcs.push((func_ast, func));
         }
 
-        Ok(ModItem::new(name.ident, func, name.span, span, vis))
+        Some(ModItem::new(name.ident, func, name.span, span, vis))
     }
 
     fn collect_struct<'a>(
@@ -113,7 +113,7 @@ impl TyChecker<'_> {
             ..
         }: StructAst<'a>,
         structs: &mut Structs<'a>,
-    ) -> errors::Result<ModItem> {
+    ) -> Option<ModItem> {
         let generics = self.generics(generics);
 
         let key = intern_scoped_ident!(self, name.ident);
@@ -133,6 +133,6 @@ impl TyChecker<'_> {
             structs.push((r#struct, id));
         }
 
-        Ok(ModItem::new(name.ident, id, name.span, span, vis))
+        Some(ModItem::new(name.ident, id, name.span, span, vis))
     }
 }

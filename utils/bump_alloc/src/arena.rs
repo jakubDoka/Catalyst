@@ -79,11 +79,11 @@ mod test {
         let arena = Arena::new();
 
         let a = arena.alloc(1);
-        let b = arena.alloc(&*a);
+        let b = arena.alloc(a);
 
         let other_arena = Arena::new();
 
-        let c = other_arena.alloc(&*b);
+        let c = other_arena.alloc(b);
 
         assert_eq!(***c, 1);
     }

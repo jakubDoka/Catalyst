@@ -35,7 +35,7 @@ macro_rules! branch {
                 $(TokenPattern::Kind(TokenKind::$cond$(($($default),*))?)),*
             ];
             $self.expect_error(terminals);
-            return Err(())
+            return None
         }
     };
 
@@ -58,7 +58,7 @@ macro_rules! branch {
                     $($str),*
                 ];
                 $self.expect_str_error(&terminals);
-                return Err(())
+                return None
             },
         }
     };

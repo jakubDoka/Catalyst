@@ -37,7 +37,7 @@ impl TyChecker<'_> {
                      ty,
                      ..
                  }| {
-                    Ok(Field {
+                    Some(Field {
                         vis,
                         ty: self.ty(ty)?,
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
@@ -45,7 +45,7 @@ impl TyChecker<'_> {
                     })
                 },
             )
-            .nsc_collect::<errors::Result<BumpVec<_>>>()
+            .nsc_collect::<Option<BumpVec<_>>>()
             .unwrap_or_default();
         self.typec.fields.bump(fields)
     }

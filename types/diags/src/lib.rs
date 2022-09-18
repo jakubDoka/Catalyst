@@ -1,5 +1,7 @@
 #![feature(let_else)]
 #![feature(default_free_fn)]
+#![feature(stmt_expr_attributes)]
+#![allow(clippy::redundant_closure_call)]
 
 #[macro_export]
 macro_rules! annotation_type {
@@ -79,12 +81,15 @@ macro_rules! slice {
 #[macro_export]
 macro_rules! source_annotation {
     ($annotation_type:ident$([$span:expr])?: $label:tt) => {
-        (|| Some($crate::SourceAnnotation {
-            $(range: $span)?,
-            label: $crate::format_required_message!($label),
-            annotation_type: $crate::annotation_type!($annotation_type),
-            ..Default::default()
-        }))()
+        #[allow(clippy::needless_update)]
+        {
+            (|| Some($crate::SourceAnnotation {
+                $(range: $span)?,
+                label: $crate::format_required_message!($label),
+                annotation_type: $crate::annotation_type!($annotation_type),
+                ..Default::default()
+            }))()
+        }
     };
 }
 

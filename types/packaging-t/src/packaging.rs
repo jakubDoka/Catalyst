@@ -74,7 +74,11 @@ impl Packages {
                     }),
                 ) => (package == item_package)
                     .then_some(())
-                    .ok_or((kind == Vis::None).then_some(Vis::Pub).unwrap_or(Vis::None)),
+                    .ok_or(if kind == Vis::None {
+                        Vis::Pub
+                    } else {
+                        Vis::None
+                    }),
                 (_, None) => Ok(()),
                 _ => unreachable!(),
             },

@@ -14,7 +14,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
 
     const NAME: &'static str = "item";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
@@ -50,7 +50,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
 //         (items, Span::new(start..end), finished)
 //     }
 
-//     pub fn take_items(&mut self) -> errors::Result {
+//     pub fn take_items(&mut self) -> Option<()> {
 //         self.skip_newlines();
 //         self.list(
 //             None,
@@ -61,7 +61,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
 //         .map(|span| self.state.last_break = Some(span.end()))
 //     }
 
-//     pub fn item(&mut self) -> errors::Result {
+//     pub fn item(&mut self) -> Option<()> {
 //         branch! { self => {
 //             Func => self.r#fn()?,
 //             Struct => self.r#struct()?,

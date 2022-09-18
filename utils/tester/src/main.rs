@@ -18,7 +18,7 @@ fn main() {
         println!("Compiling test case: {}", name);
         Command::new("cargo")
             .current_dir(path)
-            .args(&["build"])
+            .args(["build"])
             .status()
             .unwrap();
     }
@@ -92,7 +92,7 @@ fn confirm(message: &str, default_to_yes: bool) -> bool {
 
 fn cmd<'a>(command: &str, wd: &Path, args: impl IntoIterator<Item = &'a str> + Clone) -> usize {
     let out = Command::new(command)
-        .args(args.clone())
+        .args(args)
         .current_dir(wd)
         .output()
         .expect("failed to execute process");

@@ -225,7 +225,7 @@ impl Fmt {
                 &mut self.interner,
             )
             .parse::<ItemsAst>();
-            let Ok(items) = items else {
+            let Some(items) = items else {
                 break (None, mem::take(Rc::get_mut(&mut self.source).unwrap()));
             };
 
@@ -259,7 +259,7 @@ impl Fmt {
             ManifestAst::parse(&mut ctx)
         };
 
-        let Ok(manifest) = manifest else {
+        let Some(manifest) = manifest else {
             return (None, source);
         };
 
@@ -285,7 +285,7 @@ impl Fmt {
             UseAst::parse(&mut ctx)
         };
 
-        let Ok(imports) = imports else {
+        let Some(imports) = imports else {
             return;
         };
 

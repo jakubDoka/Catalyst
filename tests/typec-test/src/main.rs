@@ -49,7 +49,7 @@ impl Testable for TestState {
                     ItemsAst::parse(&mut parser)
                 };
 
-                let Ok(items) = items else {
+                let Some(items) = items else {
                     break;
                 };
 

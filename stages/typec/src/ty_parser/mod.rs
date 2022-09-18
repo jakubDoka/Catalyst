@@ -44,7 +44,7 @@ impl TyChecker<'_> {
         ));
     }
 
-    pub fn ty(&mut self, ty_ast: TyAst) -> errors::Result<VRef<Ty>> {
+    pub fn ty(&mut self, ty_ast: TyAst) -> Option<VRef<Ty>> {
         match ty_ast {
             TyAst::Path(ident) => self.ty_path::<TyLookup>(ident),
             TyAst::Instance(instance) => self.instance(instance),
@@ -53,15 +53,15 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn tuple(&mut self, tuple_ast: TyTupleAst) -> errors::Result<VRef<Ty>> {
+    pub fn tuple(&mut self, tuple_ast: TyTupleAst) -> Option<VRef<Ty>> {
         let types = tuple_ast
             .iter()
             .map(|&ty_ast| self.ty(ty_ast))
-            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+            .nsc_collect::<Option<BumpVec<_>>>()?;
 
         match (types.as_slice(), tuple_ast.deref()) {
-            ([], _) => return Ok(Ty::UNIT),
-            (&[ty], [ty_ast]) if ty_ast.after_delim.is_none() => return Ok(ty),
+            ([], _) => return Some(Ty::UNIT),
+            (&[ty], [ty_ast]) if ty_ast.after_delim.is_none() => return Some(ty),
             _ => (),
         }
 
@@ -81,16 +81,16 @@ impl TyChecker<'_> {
             ..default()
         };
 
-        Ok(self.typec.types.get_or_insert(id, tuple))
+        Some(self.typec.types.get_or_insert(id, tuple))
     }
 
     pub fn bound_sum<'a>(
         &mut self,
         bounds: impl Iterator<Item = &'a BoundExprAst<'a>>,
-    ) -> errors::Result<VRef<Bound>> {
+    ) -> Option<VRef<Bound>> {
         let mut bounds = bounds
             .map(|&ast| self.bound(ast))
-            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+            .nsc_collect::<Option<BumpVec<_>>>()?;
         bounds.sort_unstable_by_key(|b| b.index());
 
         let segments = self.typec.bound_sum_id(&bounds);
@@ -106,19 +106,16 @@ impl TyChecker<'_> {
             ..default()
         };
 
-        Ok(self.typec.bounds.get_or_insert(key, fallback))
+        Some(self.typec.bounds.get_or_insert(key, fallback))
     }
 
-    pub fn bound(&mut self, bound_ast: BoundExprAst) -> errors::Result<VRef<Bound>> {
+    pub fn bound(&mut self, bound_ast: BoundExprAst) -> Option<VRef<Bound>> {
         match bound_ast {
             BoundExprAst::Path(ident) => self.ty_path::<BoundLookup>(ident),
         }
     }
 
-    fn pointer(
-        &mut self,
-        TyPointerAst { mutability, ty, .. }: TyPointerAst,
-    ) -> errors::Result<VRef<Ty>> {
+    fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<VRef<Ty>> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
         let depth = self
@@ -141,27 +138,24 @@ impl TyChecker<'_> {
             loc: s.locate(base),
         };
 
-        Ok(self.typec.types.get_or_insert(id, fallback))
+        Some(self.typec.types.get_or_insert(id, fallback))
     }
 
-    fn mutability(&mut self, mutability_ast: MutabilityAst) -> errors::Result<VRef<Ty>> {
-        Ok(match mutability_ast {
+    fn mutability(&mut self, mutability_ast: MutabilityAst) -> Option<VRef<Ty>> {
+        Some(match mutability_ast {
             MutabilityAst::Mut(..) => Ty::MUTABLE,
             MutabilityAst::None => Ty::IMMUTABLE,
             MutabilityAst::Generic(.., path) => return self.ty_path::<TyLookup>(path),
         })
     }
 
-    fn instance(
-        &mut self,
-        TyInstanceAst { ident, params }: TyInstanceAst,
-    ) -> errors::Result<VRef<Ty>> {
+    fn instance(&mut self, TyInstanceAst { ident, params }: TyInstanceAst) -> Option<VRef<Ty>> {
         let base = self.ty_path::<TyLookup>(ident)?;
 
         let args = params
             .iter()
             .map(|&p| self.ty(p))
-            .nsc_collect::<errors::Result<BumpVec<_>>>()?;
+            .nsc_collect::<Option<BumpVec<_>>>()?;
 
         let generic = args.iter().any(|&arg| self.typec.types.is_generic(arg));
         let segments = self.typec.instance_id(base, &args);
@@ -175,10 +169,10 @@ impl TyChecker<'_> {
             loc: s.locate(base),
         };
 
-        Ok(self.typec.types.get_or_insert(key, fallback))
+        Some(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn ty_path<T: ScopeLookup>(&mut self, path: PathAst) -> errors::Result<VRef<T::Output>> {
+    fn ty_path<T: ScopeLookup>(&mut self, path: PathAst) -> Option<VRef<T::Output>> {
         use PathSegmentAst::*;
         match *path.segments {
             [Name(ty)] => self.lookup_typed::<T>(ty.ident, ty.span),
@@ -190,12 +184,15 @@ impl TyChecker<'_> {
 
                 let Some(ty) = T::index(self.typec, id) else {
                     self.handle_scope_error::<T>(ScopeError::NotFound, ty.ident, ty.span);
-                    return Err(());
+                    return None;
                 };
 
-                Ok(ty)
+                Some(ty)
             }
-            _ => Err(self.invalid_ty_path(path)),
+            _ => {
+                self.invalid_ty_path(path);
+                None
+            }
         }
     }
 
@@ -203,21 +200,23 @@ impl TyChecker<'_> {
         &mut self,
         sym: VRef<str>,
         span: Span,
-    ) -> errors::Result<VRef<T::Output>> {
+    ) -> Option<VRef<T::Output>> {
         match self.scope.get_typed::<T::Output>(sym) {
-            Ok((key, _)) => Ok(key),
-            Err(err) => Err(self.handle_scope_error::<T>(err, sym, span)),
+            Ok((key, _)) => Some(key),
+            Err(err) => {
+                self.handle_scope_error::<T>(err, sym, span);
+                None
+            }
         }
     }
 
-    pub fn lookup<T: ScopeLookup>(
-        &mut self,
-        sym: VRef<str>,
-        span: Span,
-    ) -> errors::Result<ScopePtr> {
+    pub fn lookup<T: ScopeLookup>(&mut self, sym: VRef<str>, span: Span) -> Option<ScopePtr> {
         match self.scope.get(sym) {
-            Ok(key) => Ok(key.ptr),
-            Err(err) => Err(self.handle_scope_error::<T>(err, sym, span)),
+            Ok(key) => Some(key.ptr),
+            Err(err) => {
+                self.handle_scope_error::<T>(err, sym, span);
+                None
+            }
         }
     }
 

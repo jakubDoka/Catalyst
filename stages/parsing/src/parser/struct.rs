@@ -17,16 +17,13 @@ impl<'a> Ast<'a> for StructAst<'a> {
 
     const NAME: &'static str = "struct";
 
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a>,
-        (vis, start): Self::Args,
-    ) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
         ctx.advance();
         let generics = GenericsAst::parse(ctx)?;
         let name = NameAst::parse(ctx)?;
         let body = StructBodyAst::parse(ctx)?;
 
-        Ok(StructAst {
+        Some(StructAst {
             vis,
             generics,
             name,
@@ -55,12 +52,12 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
 
     const NAME: &'static str = "struct field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(StructFieldAst {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(StructFieldAst {
             start: ctx.state.current.span,
             vis: ctx.visibility(),
-            used: ctx.try_advance(TokenKind::Use).is_ok(),
-            mutable: ctx.try_advance(TokenKind::Mut).is_ok(),
+            used: ctx.try_advance(TokenKind::Use).is_some(),
+            mutable: ctx.try_advance(TokenKind::Mut).is_some(),
             name: ctx.parse()?,
             ty: {
                 ctx.expect_advance(TokenKind::Colon)?;
@@ -85,15 +82,15 @@ impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
 
     const NAME: &'static str = "struct constructor field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let name = ctx.parse()?;
-        let expr = if ctx.try_advance(TokenKind::Colon).is_ok() {
+        let expr = if ctx.try_advance(TokenKind::Colon).is_some() {
             Some(ctx.parse()?)
         } else {
             None
         };
 
-        Ok(StructConstructorFieldAst { name, expr })
+        Some(StructConstructorFieldAst { name, expr })
     }
 
     fn span(&self) -> Span {

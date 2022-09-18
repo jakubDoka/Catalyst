@@ -211,7 +211,7 @@ pub mod items {
         ) {
             let self_path = path;
             if !path.exists() {
-                resources.create_dir_all(&self_path).unwrap();
+                resources.create_dir_all(self_path).unwrap();
             }
             for (name, (replace, content)) in self.files.drain(..) {
                 let formatter = if name.ends_with(".ctlm") {
@@ -312,8 +312,7 @@ pub mod items {
                     let branch = others
                         .iter()
                         .skip_while(|arg| arg != &&"--branch")
-                        .skip(1)
-                        .next()
+                        .nth(1)
                         .copied()
                         .unwrap_or("main");
                     let repository = format!("{}#{}", repository, branch);
@@ -384,7 +383,7 @@ pub mod items {
         fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
             self.binary_files
                 .get(self.canonicalize(path)?.as_path())
-                .map(|v| v.clone())
+                .cloned()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
         }
 
@@ -423,15 +422,12 @@ pub mod items {
         fn read_to_string(&self, path: &Path) -> io::Result<String> {
             self.files
                 .get(self.canonicalize(path)?.as_path())
-                .map(|v| v.clone())
+                .cloned()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
         }
 
         fn var(&self, key: &str) -> Result<String, VarError> {
-            self.env
-                .get(key)
-                .map(|v| v.clone())
-                .ok_or_else(|| VarError::NotPresent)
+            self.env.get(key).cloned().ok_or(VarError::NotPresent)
         }
 
         fn create_dir_all(&self, _: &Path) -> io::Result<()> {

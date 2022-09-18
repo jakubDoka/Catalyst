@@ -63,10 +63,10 @@ mod util {
         pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
             crate::insert_scope_item(
                 item,
-                &mut self.scope,
+                self.scope,
                 self.current_file,
-                &mut self.packages,
-                &mut self.workspace,
+                self.packages,
+                self.workspace,
             );
         }
     }

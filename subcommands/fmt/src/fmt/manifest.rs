@@ -40,7 +40,7 @@ impl<'a> FmtAst for ManifestFieldAst<'a> {
     }
 }
 
-impl<'a> FmtAst for ManifestDepAst {
+impl FmtAst for ManifestDepAst {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         if self.git {
             write!(fmt, "git ");

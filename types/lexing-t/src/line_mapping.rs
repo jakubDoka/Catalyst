@@ -39,10 +39,7 @@ impl LineMapping {
         let pos = self.indices.binary_search(&index).unwrap_or_else(|i| i);
         let pos = pos.checked_sub(1).unwrap_or(pos);
 
-        (
-            pos + 1,
-            (index - self.indices[pos]).checked_sub(1).unwrap_or(0),
-        )
+        (pos + 1, (index - self.indices[pos]).saturating_sub(1))
     }
 
     pub fn clear(&mut self) {

@@ -11,15 +11,15 @@ impl<'a> Ast<'a> for UseAstSkip {
 
     const NAME: &'static str = "use skip";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
         if !ctx.at_tok(TokenKind::Use) {
-            return Ok(UseAstSkip);
+            return Some(UseAstSkip);
         }
 
         while matches!(ctx.advance().kind, TokenKind::RightCurly | TokenKind::Eof) {}
 
-        Ok(UseAstSkip)
+        Some(UseAstSkip)
     }
 
     fn span(&self) -> Span {
@@ -38,14 +38,14 @@ impl<'a> Ast<'a> for UseAst<'a> {
 
     const NAME: &'static str = "use";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
 
         if !ctx.at_tok(TokenKind::Use) {
-            return Err(());
+            return None;
         }
 
-        Ok(UseAst {
+        Some(UseAst {
             use_span: ctx.advance().span,
             items: ImportsAst::parse(ctx)?,
         })
@@ -69,15 +69,15 @@ impl<'a> Ast<'a> for ImportAst {
 
     const NAME: &'static str = "import";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
-        let name = ctx.parse_args((true,)).ok();
+        let name = ctx.parse_args((true,));
         let path = ctx.expect_advance(TokenKind::String)?.span;
         let span = start.joined(path);
         let path = path.shrink(1);
         let name = name.unwrap_or_else(|| NameAst::from_path(ctx, path));
-        Ok(ImportAst {
+        Some(ImportAst {
             vis,
             name,
             path,
@@ -110,12 +110,12 @@ impl<'a> Ast<'a> for ImportAst {
 //         self.ast_data.get(list).last().copied()
 //     }
 
-//     pub(crate) fn take_imports(&mut self) -> errors::Result {
+//     pub(crate) fn take_imports(&mut self) -> Option<()> {
 //         self.skip_newlines();
 //         self.optional(TokenKind::Use, Self::imports)
 //     }
 
-//     fn imports(&mut self) -> errors::Result {
+//     fn imports(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         let end = list!(self, LeftCurly, NewLine, RightCurly, import)?;
@@ -124,7 +124,7 @@ impl<'a> Ast<'a> for ImportAst {
 //         Ok(())
 //     }
 
-//     fn import(&mut self) -> errors::Result {
+//     fn import(&mut self) -> Option<()> {
 //         let start = self.start();
 //         if self.state.current.kind == TokenKind::Ident {
 //             self.capture(AstKind::Ident);

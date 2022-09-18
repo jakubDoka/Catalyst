@@ -18,13 +18,14 @@ impl PackageLoader<'_> {
         _ = self.load_low(root)
     }
 
-    fn load_low(&mut self, root: &Path) -> errors::Result {
+    fn load_low(&mut self, root: &Path) -> Option<()> {
         // setup
         let mut path = self
             .packages
             .resources
             .canonicalize(root)
-            .map_err(|err| self.file_error(None, root, "manifest is missing", err))?;
+            .map_err(|err| self.file_error(None, root, "manifest is missing", err))
+            .ok()?;
         path.push("package");
         path.set_extension(MANIFEST_EXTENSION);
         let id = self.intern_path(&path)?;
@@ -60,7 +61,8 @@ impl PackageLoader<'_> {
         let mut ordering = bumpvec![cap self.packages.modules.len()];
         self.package_graph
             .ordering(roots, &mut ordering)
-            .map_err(|cycle| self.dependency_cycle(cycle))?;
+            .map_err(|cycle| self.dependency_cycle(cycle))
+            .ok()?;
 
         // `SAFETY`: We previously supplied Ident internals into the graph
         // so it is safe to construct them from what graph gave us
@@ -71,7 +73,7 @@ impl PackageLoader<'_> {
                 .filter(|id| self.packages.modules.get(id).unwrap().is_module()),
         );
 
-        Ok(())
+        Some(())
     }
 
     /// Loads one package and pushes its dependencies to frontier.
@@ -82,9 +84,9 @@ impl PackageLoader<'_> {
         parser_state: &mut ParsingState,
         frontier: &mut PackageFrontier,
         project_path: &Path,
-    ) -> errors::Result<bool> {
+    ) -> Option<bool> {
         let Some((id, mut tmp_path, loc)) = frontier.pop() else {
-            return Ok(true);
+            return Some(true);
         };
 
         // load content
@@ -94,7 +96,8 @@ impl PackageLoader<'_> {
             .packages
             .resources
             .read_to_string(&tmp_path)
-            .map_err(|err| self.file_error(loc, &tmp_path, "cannot load manifest", err))?;
+            .map_err(|err| self.file_error(loc, &tmp_path, "cannot load manifest", err))
+            .ok()?;
         let path = tmp_path.clone();
         tmp_path.pop();
 
@@ -111,7 +114,7 @@ impl PackageLoader<'_> {
             );
             ManifestAst::parse(&mut ctx)
         };
-        let Ok(manifest) = manifest else {
+        let Some(manifest) = manifest else {
             let package = Mod {
                 path,
                 line_mapping: LineMapping::new(&content),
@@ -119,7 +122,7 @@ impl PackageLoader<'_> {
                 ..default()
             };
             self.packages.modules.insert(id, package);
-            return Err(());
+            return None;
         };
 
         // retrieve data from ast
@@ -156,7 +159,7 @@ impl PackageLoader<'_> {
         };
         self.packages.modules.insert(id, package);
 
-        Ok(false)
+        Some(false)
     }
 
     /// Function will find and optionally download all direct dependencies.
@@ -203,14 +206,14 @@ impl PackageLoader<'_> {
                         )
                     });
                 assert!((0..to_pop).fold(true, |acc, _| acc & temp_path.pop()));
-                path
+                path.ok()
             };
 
-            let Ok(path) = path_result else {
+            let Some(path) = path_result else {
                 continue;
             };
 
-            let Ok(ptr) = self.intern_path(path.as_path()) else {
+            let Some(ptr) = self.intern_path(path.as_path()) else {
                 continue;
             };
 
@@ -236,14 +239,15 @@ impl PackageLoader<'_> {
         path: &Path,
         package: VRef<str>,
         loc: Maybe<Span>,
-    ) -> errors::Result<VRef<str>> {
+    ) -> Option<VRef<str>> {
         let loc = loc.expand().map(|loc| (package, loc));
 
         let path = self
             .packages
             .resources
             .canonicalize(path)
-            .map_err(|err| self.file_error(loc, path, "cannot canonicalize root module path", err))?
+            .map_err(|err| self.file_error(loc, path, "cannot canonicalize root module path", err))
+            .ok()?
             .with_extension(FILE_EXTENSION);
 
         let id = self.intern_path(&path)?;
@@ -254,7 +258,7 @@ impl PackageLoader<'_> {
 
         while !self.load_module(&mut ast_data, &mut parser_state, &mut frontier)? {}
 
-        Ok(id)
+        Some(id)
     }
 
     /// Returns true when last module was already loaded.
@@ -263,16 +267,17 @@ impl PackageLoader<'_> {
         ast_data: &mut AstData,
         parser_state: &mut ParsingState,
         frontier: &mut ModuleFrontier,
-    ) -> errors::Result<bool> {
+    ) -> Option<bool> {
         let Some((id, package_id, path, loc)) = frontier.pop() else {
-            return Ok(true);
+            return Some(true);
         };
 
         let content = self
             .packages
             .resources
             .read_to_string(&path)
-            .map_err(|err| self.file_error(loc, &path, "cannot load source file", err))?;
+            .map_err(|err| self.file_error(loc, &path, "cannot load source file", err))
+            .ok()?;
 
         ast_data.clear();
         parser_state.start(&content, id);
@@ -284,7 +289,7 @@ impl PackageLoader<'_> {
                 self.workspace,
                 self.interner,
             );
-            UseAst::parse(&mut ctx).ok()
+            UseAst::parse(&mut ctx)
         };
 
         let deps = if let Some(imports) = imports {
@@ -307,7 +312,7 @@ impl PackageLoader<'_> {
         };
         self.packages.modules.insert(id, module);
 
-        Ok(false)
+        Some(false)
     }
 
     fn load_module_deps(
@@ -317,7 +322,7 @@ impl PackageLoader<'_> {
         imports: UseAst,
         content: &str,
         frontier: &mut ModuleFrontier,
-    ) -> errors::Result<VSlice<Dep>> {
+    ) -> Option<VSlice<Dep>> {
         self.packages.conns.start_cache();
 
         for &ImportAst { name, path, .. } in imports.items.iter() {
@@ -333,7 +338,7 @@ impl PackageLoader<'_> {
                 .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
                 .or_else(|| (package == ".").then_some(package_id));
             let Some(external_package_id) = maybe_package else {
-                let sippet = Self::unknown_package(self, path.sliced(..package.len()), id, &package_ent);
+                let sippet = Self::unknown_package(self, path.sliced(..package.len()), id, package_ent);
                 self.workspace.push(sippet);
                 continue;
             };
@@ -378,7 +383,7 @@ impl PackageLoader<'_> {
             frontier.push((import_id, external_package_id, path, import_loc));
         }
 
-        Ok(self.packages.conns.bump_cached())
+        Some(self.packages.conns.bump_cached())
     }
 
     /// git is invoked and package may be downloaded into `%CATALYST_CACHE%/url/(version || 'main')`
@@ -389,13 +394,13 @@ impl PackageLoader<'_> {
         version_loc: DiagLoc,
         version: Option<&str>,
         url: &str,
-    ) -> errors::Result<PathBuf> {
+    ) -> Option<PathBuf> {
         let full_url = &format!("https://{}", url);
-        let rev_owned = self.resolve_version(version_loc, version, &full_url)?;
+        let rev_owned = self.resolve_version(version_loc, version, full_url)?;
         if version.is_some() && rev_owned.is_none() {
             self.invalid_version(version_loc);
         }
-        let rev = rev_owned.as_ref().map(|v| v.as_str());
+        let rev = rev_owned.as_deref();
 
         let mut dep_root = self.get_dep_root(project_path);
         dep_root.push(url);
@@ -409,22 +414,25 @@ impl PackageLoader<'_> {
         self.packages
             .resources
             .create_dir_all(&dep_root)
-            .map_err(|err| self.file_error(loc, &dep_root, "cannot create directory", err))?;
+            .map_err(|err| self.file_error(loc, &dep_root, "cannot create directory", err))
+            .ok()?;
         let install_path = self
             .packages
             .resources
             .canonicalize(&dep_root)
             .map_err(|err| {
                 self.file_error(loc, &dep_root, "cannot canonicalize installation path", err)
-            })?;
+            })
+            .ok()?;
         if exists {
-            return Ok(install_path);
+            return Some(install_path);
         }
 
         let id = self.intern_path(install_path.as_path())?;
 
         let fixed_args = ["clone", "--depth", "1", "--filter", "blob:none"];
-        let paths = [full_url.as_str(), &self.interner[id].to_owned()];
+        let str = self.interner[id].to_string();
+        let paths = [full_url.as_str(), &str];
         let optional_args = rev.map(|rev| ["--branch", rev]);
         let args = fixed_args
             .into_iter()
@@ -433,7 +441,7 @@ impl PackageLoader<'_> {
 
         self.execute_git(loc, false, args)?;
 
-        Ok(install_path)
+        Some(install_path)
     }
 
     fn resolve_version(
@@ -441,28 +449,30 @@ impl PackageLoader<'_> {
         loc: DiagLoc,
         version: Option<&str>,
         url: &str,
-    ) -> errors::Result<Option<String>> {
+    ) -> Option<Option<String>> {
         let Some(version) = version else {
-            return Ok(None);
+            return Some(None);
         };
 
         let args = ["ls-remote", url, &format!("refs/tags/{}", version)];
 
         let output = self.execute_git(loc, true, args)?;
 
-        Ok(output
-            .lines()
-            .filter_map(|line| line.split_whitespace().nth(1))
-            .filter_map(|path| path.strip_prefix("refs/tags/"))
-            .map(|version| {
-                version[1..]
-                    .split('.')
-                    .take(3)
-                    .filter_map(|component| component.parse::<u32>().ok())
-            })
-            .filter_map(|mut comps| Some((comps.next()?, comps.next()?, comps.next()?)))
-            .max()
-            .map(|(major, minor, patch)| format!("v{}.{}.{}", major, minor, patch)))
+        Some(
+            output
+                .lines()
+                .filter_map(|line| line.split_whitespace().nth(1))
+                .filter_map(|path| path.strip_prefix("refs/tags/"))
+                .map(|version| {
+                    version[1..]
+                        .split('.')
+                        .take(3)
+                        .filter_map(|component| component.parse::<u32>().ok())
+                })
+                .filter_map(|mut comps| Some((comps.next()?, comps.next()?, comps.next()?)))
+                .max()
+                .map(|(major, minor, patch)| format!("v{}.{}.{}", major, minor, patch)),
+        )
     }
 
     fn execute_git(
@@ -470,7 +480,7 @@ impl PackageLoader<'_> {
         loc: DiagLoc,
         quiet: bool,
         args: impl IntoIterator<Item = &str> + Clone,
-    ) -> errors::Result<String> {
+    ) -> Option<String> {
         if !quiet {
             self.git_info(loc, args.clone());
         }
@@ -478,23 +488,25 @@ impl PackageLoader<'_> {
         let mut command = Command::new("git");
         command.args(args.clone());
         let output = self.packages.resources.command(&mut command);
-        let output = output.map_err(|err| self.git_exec_error(loc, args.clone(), err))?;
+        let output = output
+            .map_err(|err| self.git_exec_error(loc, args.clone(), err))
+            .ok()?;
 
         if !output.status.success() {
             let output = String::from_utf8_lossy(&output.stderr);
             self.git_exit_error(loc, args, output.as_ref());
-            return Err(());
+            return None;
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    fn intern_path(&mut self, path: &Path) -> errors::Result<VRef<str>> {
+    fn intern_path(&mut self, path: &Path) -> Option<VRef<str>> {
         let Some(str_path) = path.to_str() else {
             self.invalid_path_encoding(default(), path, "manifest");
-            return Err(());
+            return None;
         };
-        Ok(self.interner.intern_str(str_path))
+        Some(self.interner.intern_str(str_path))
     }
 
     fn get_dep_root(&mut self, project_path: &Path) -> PathBuf {
@@ -502,7 +514,7 @@ impl PackageLoader<'_> {
             .packages
             .resources
             .var(DEP_ROOT_VAR)
-            .unwrap_or(DEFAULT_DEP_ROOT.into());
+            .unwrap_or_else(|_| DEFAULT_DEP_ROOT.into());
         project_path.join(var)
     }
 

@@ -16,7 +16,7 @@ impl<'a> Ast<'a> for ExprAst<'a> {
 
     const NAME: &'static str = "expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let unit = ctx.parse_alloc().map(ExprAst::Unit);
         if let TokenKind::Operator(precedence) = ctx.state.current.kind {
             let op = ctx.name_unchecked();
@@ -56,8 +56,8 @@ impl<'a> Ast<'a> for BinaryExprAst<'a> {
     fn parse_args_internal(
         ctx: &mut ParsingCtx<'_, 'a>,
         (mut lhs, mut op, mut precedence): Self::Args,
-    ) -> Result<Self, ()> {
-        Ok(loop {
+    ) -> Option<Self> {
+        Some(loop {
             let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
 
             let TokenKind::Operator(next_precedence) = ctx.state.current.kind else {
@@ -95,12 +95,12 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
 
     const NAME: &'static str = "unit expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch!(ctx => {
             Ident => ctx.parse().map(Self::Path),
             BackSlash => ctx.parse().map(Self::Path),
             Return => ctx.parse().map(Self::Return),
-            Int => Ok(Self::Int(ctx.advance().span)),
+            Int => Some(Self::Int(ctx.advance().span)),
         })
     }
 
@@ -124,14 +124,10 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 
     const NAME: &'static str = "return";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Result<Self, ()> {
-        Ok(Self {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
             return_span: ctx.advance().span,
-            expr: ctx
-                .at_tok(TokenKind::NewLine)
-                .not()
-                .then(|| ctx.parse())
-                .transpose()?,
+            expr: ctx.at_tok(TokenKind::NewLine).not().then(|| ctx.parse())?,
         })
     }
 
@@ -142,7 +138,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 }
 
 // impl Parser<'_> {
-//     pub fn expr(&mut self) -> errors::Result {
+//     pub fn expr(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.unit_expr()?;
 //         if let TokenKind::Operator(precedence) = self.state.current.kind {
@@ -155,7 +151,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     pub fn binary_expr(&mut self, precedence: u8, start: Span) -> errors::Result {
+//     pub fn binary_expr(&mut self, precedence: u8, start: Span) -> Option<()> {
 //         loop {
 //             self.expr()?;
 
@@ -179,7 +175,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn unit_expr(&mut self) -> errors::Result {
+//     fn unit_expr(&mut self) -> Option<()> {
 //         branch! { self => {
 //             Return => self.r#return()?,
 //             Int => self.capture(AstKind::Int),
@@ -189,7 +185,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn ident_expr(&mut self, has_tail: bool) -> errors::Result {
+//     fn ident_expr(&mut self, has_tail: bool) -> Option<()> {
 //         self.ident_chain()?;
 
 //         if self.at(TokenKind::Tick) && self.next(TokenKind::LeftBracket) {
@@ -199,7 +195,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         if has_tail {
 //             if self.at(TokenKind::Tick) && self.next(TokenKind::LeftCurly) {
 //                 self.struct_expr()?;
-//                 return Ok(());
+//                 return Some(());
 //             }
 
 //             loop {
@@ -222,7 +218,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn dot_expr(&mut self) -> errors::Result {
+//     fn dot_expr(&mut self) -> Option<()> {
 //         let start = self.start_with(1);
 //         self.advance();
 //         self.ident_expr(false)?;
@@ -231,7 +227,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn call_expr(&mut self) -> errors::Result {
+//     fn call_expr(&mut self) -> Option<()> {
 //         let start = self.start_with(1);
 //         let end = list!(self, LeftParen, Comma, RightParen, expr)?;
 //         self.finish(AstKind::Call, start.joined(end));
@@ -239,7 +235,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn index_expr(&mut self) -> errors::Result {
+//     fn index_expr(&mut self) -> Option<()> {
 //         let start = self.start_with(1);
 //         self.advance();
 //         self.expr()?;
@@ -250,14 +246,14 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn instance_expr(&mut self) -> errors::Result {
+//     fn instance_expr(&mut self) -> Option<()> {
 //         let start = self.start_with(1);
 //         let end = list!(self, LeftBracket, Comma, RightBracket, ty)?;
 //         self.finish(AstKind::InstanceExpr, start.joined(end));
 //         Ok(())
 //     }
 
-//     fn struct_expr(&mut self) -> errors::Result {
+//     fn struct_expr(&mut self) -> Option<()> {
 //         let start = self.start_with(1);
 //         let end = list!(self, LeftBracket, Comma, RightBracket, struct_expr_field)?;
 //         self.finish(AstKind::StructExprBody, end);
@@ -265,7 +261,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn struct_expr_field(&mut self) -> errors::Result {
+//     fn struct_expr_field(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.ident()?;
 //         self.expect(TokenKind::Colon)?;
@@ -275,7 +271,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     fn r#return(&mut self) -> errors::Result {
+//     fn r#return(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.advance();
 //         if self.at(TokenKind::NewLine) {
@@ -288,7 +284,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 //         Ok(())
 //     }
 
-//     pub fn op(&mut self) -> errors::Result {
+//     pub fn op(&mut self) -> Option<()> {
 //         let start = self.start();
 //         self.capture(AstKind::Operator);
 //         if self.at(TokenKind::Tick) {
