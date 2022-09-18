@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 diags = { version = "0.1.0", path = "../../types/diags" }
-errors = { version = "0.1.0", path = "../../utils/errors" }
 packaging = { version = "0.1.0", path = "../../stages/packaging" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }

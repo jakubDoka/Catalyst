@@ -62,10 +62,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "errors"
-version = "0.1.0"
-
-[[package]]
 name = "fmt"
 version = "0.1.0"
 dependencies = [
@@ -97,7 +93,6 @@ name = "lexing"
 version = "0.1.0"
 dependencies = [
  "ansi-coloring",
- "errors",
  "lexing-t",
  "logos",
  "storage",
@@ -148,7 +143,6 @@ name = "packaging"
 version = "0.1.0"
 dependencies = [
  "diags",
- "errors",
  "lexing-t",
  "packaging-t",
  "parsing",
@@ -182,7 +176,6 @@ name = "parsing"
 version = "0.1.0"
 dependencies = [
  "diags",
- "errors",
  "lexing",
  "lexing-t",
  "logos",
@@ -360,7 +353,6 @@ version = "0.1.0"
 dependencies = [
  "ansi-coloring",
  "diags",
- "errors",
  "lexing-t",
  "packaging-t",
  "parsing",
@@ -397,7 +389,6 @@ name = "typec-test"
 version = "0.1.0"
 dependencies = [
  "diags",
- "errors",
  "packaging",
  "packaging-t",
  "parsing",

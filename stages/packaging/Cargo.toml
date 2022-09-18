@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../../utils/storage" }
-errors = { path = "../../utils/errors" }
 
 parsing = { path = "../parsing" }
 
