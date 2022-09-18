@@ -2,6 +2,7 @@
 #![feature(new_uninit)]
 #![feature(negative_impls)]
 #![feature(let_else)]
+#![feature(inline_const)]
 
 mod allocator;
 mod arena;

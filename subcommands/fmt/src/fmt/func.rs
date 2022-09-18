@@ -44,7 +44,7 @@ impl<'a> FmtAst for FuncBodyAst<'a> {
                 write!(fmt, " ");
                 block.display_low(false, fmt);
             }
-            FuncBodyAst::Exported(span) => {
+            FuncBodyAst::Extern(span) => {
                 write!(fmt, " ");
                 fmt.write_span(*span);
             }
@@ -55,7 +55,7 @@ impl<'a> FmtAst for FuncBodyAst<'a> {
         match self {
             FuncBodyAst::Block(block) => " ".len() + block.flat_len(fmt),
             FuncBodyAst::Arrow(.., expr) => " => ".len() + expr.flat_len(fmt),
-            FuncBodyAst::Exported(span) => " ".len() + span.len(),
+            FuncBodyAst::Extern(span) => " ".len() + span.len(),
         }
     }
 }

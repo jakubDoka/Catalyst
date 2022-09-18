@@ -76,6 +76,14 @@ impl Typec {
         self.types.insert(ident, ty);
     }
 
+    pub fn binary_op_id(
+        &self,
+        op: Ident,
+        lhs: VRef<Ty>,
+        rhs: VRef<Ty>,
+    ) -> impl Iterator<Item = InternedSegment<'static>> {
+    }
+
     pub fn pointer_id(
         &self,
         mutability: VRef<Ty>,

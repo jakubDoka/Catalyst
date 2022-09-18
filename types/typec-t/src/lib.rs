@@ -12,7 +12,7 @@ macro_rules! gen_kind {
                 })?)?,
             )*
     ) => {
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, PartialEq, Eq)]
         pub enum $name {
             $(
                 $kind$(($struct))?,
@@ -56,7 +56,7 @@ macro_rules! gen_kind {
         $(
             $(
                 $(
-                    #[derive(Copy, Clone, Default)]
+                    #[derive(Copy, Clone, Default, PartialEq, Eq)]
                     pub struct $struct {
                         $(
                             pub $field: $ty,
@@ -151,6 +151,7 @@ macro_rules! impl_flagged {
 
 mod bound;
 mod func;
+mod tir;
 mod ty;
 mod typec;
 
@@ -160,6 +161,10 @@ pub use {
         BoundSlices, Bounds,
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
+    tir::{
+        Block, BlockInputTir, BlockTir, BodyTir, BodyTirBuilder, BranchTir, CallTir,
+        ControlFlowTir, FuncTir, InstTir, JumpTir, ValueTir, Var,
+    },
     ty::{
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
         TySlices, TyStruct, Types,
@@ -172,7 +177,7 @@ pub use {
 mod test {
     use super::*;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct Int;
 
     gen_kind!(TestKind

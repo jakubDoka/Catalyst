@@ -103,7 +103,7 @@ impl<'a> Ast<'a> for FuncArgAst<'a> {
 pub enum FuncBodyAst<'a> {
     Arrow(Span, ExprAst<'a>),
     Block(BlockAst<'a>),
-    Exported(Span),
+    Extern(Span),
 }
 
 impl<'a> Ast<'a> for FuncBodyAst<'a> {
@@ -119,7 +119,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
                 ctx.parse().map(|e| Self::Arrow(arrow, e))
             },
             LeftCurly => ctx.parse().map(Self::Block),
-            Extern => Some(Self::Exported(ctx.advance().span)),
+            Extern => Some(Self::Extern(ctx.advance().span)),
         }}
     }
 
@@ -127,7 +127,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
         match self {
             Self::Arrow(span, expr) => span.joined(expr.span()),
             Self::Block(block) => block.span(),
-            Self::Exported(span) => *span,
+            Self::Extern(span) => *span,
         }
     }
 }

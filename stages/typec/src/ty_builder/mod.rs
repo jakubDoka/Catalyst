@@ -6,7 +6,7 @@ use typec_t::*;
 
 use crate::{item_collector::Structs, *};
 
-impl TyChecker<'_, '_> {
+impl TyChecker<'_> {
     pub fn build_structs(&mut self, types: &mut Structs) -> &mut Self {
         for (ast, ty) in types.drain(..) {
             self.build_struct(ty, ast);

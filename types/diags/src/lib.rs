@@ -51,7 +51,7 @@ macro_rules! annotation {
         (|| Some($crate::Annotation {
             id: $crate::format_message!($($id)?),
             label: $crate::format_message!($($label)?),
-            annotation_type: annotation_type!($annotation_type),
+            annotation_type: $crate::annotation_type!($annotation_type),
         }))()
     };
 }

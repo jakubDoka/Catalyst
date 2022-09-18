@@ -3,6 +3,7 @@
 #![feature(const_type_id)]
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
+#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
@@ -60,7 +61,7 @@ mod util {
 
     use crate::TyChecker;
 
-    impl TyChecker<'_, '_> {
+    impl TyChecker<'_> {
         pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
             crate::insert_scope_item(
                 item,

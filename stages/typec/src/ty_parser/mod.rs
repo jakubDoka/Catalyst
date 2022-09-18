@@ -16,7 +16,50 @@ use typec_t::*;
 
 use crate::*;
 
-impl TyChecker<'_, '_> {
+impl TyChecker<'_> {
+    pub fn type_diff(&self, pattern: VRef<Ty>, value: VRef<Ty>) -> String {
+        let mut buffer = String::new();
+        self.type_diff_recurse(pattern, value, &mut buffer);
+        buffer
+    }
+
+    fn type_diff_recurse(&self, pattern: VRef<Ty>, value: VRef<Ty>, buffer: &mut String) {
+        if pattern == value {
+            buffer.push('_');
+            return;
+        }
+
+        match (self.typec.types[pattern].kind, self.typec.types[value].kind) {
+            (a, b) if a == b => buffer.push('_'),
+            (TyKind::Pointer(pattern), TyKind::Pointer(value)) => {
+                buffer.push('^');
+                self.type_diff_recurse(pattern.mutability, value.mutability, buffer);
+                if pattern.mutability != Ty::IMMUTABLE {
+                    buffer.push(' ');
+                }
+                self.type_diff_recurse(pattern.base, value.base, buffer);
+            }
+            (TyKind::Instance(pattern), TyKind::Instance(value)) => {
+                self.type_diff_recurse(pattern.base, value.base, buffer);
+                let Some((&pattern_first, pattern_others)) = self.typec.ty_slices[pattern.args].split_first() else {
+                    return;
+                };
+                let Some((&value_first, value_others)) = self.typec.ty_slices[value.args].split_first() else {
+                    return;
+                };
+
+                buffer.push('[');
+                self.type_diff_recurse(pattern_first, value_first, buffer);
+                for (&pattern, &value) in pattern_others.iter().zip(value_others) {
+                    buffer.push_str(", ");
+                    self.type_diff_recurse(pattern, value, buffer);
+                }
+                buffer.push(']');
+            }
+            _ => buffer.push_str(&self.interner[self.typec.types.id(pattern)]),
+        }
+    }
+
     pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Bound> {
         let mut generics = bumpvec!(cap generic_ast.len());
         for &GenericParamAst { bounds, .. } in generic_ast.iter() {

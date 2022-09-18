@@ -21,7 +21,8 @@ impl Arena {
         Self { allocator }
     }
 
-    pub fn alloc<T: Copy>(&self, value: T) -> &T {
+    pub fn alloc<T>(&self, value: T) -> &T {
+        const { assert!(!mem::needs_drop::<T>()) };
         let size = Layout::new::<T>()
             .align_to(mem::align_of::<usize>())
             .unwrap()
@@ -40,7 +41,8 @@ impl Arena {
         }
     }
 
-    pub fn alloc_slice<T: Copy>(&self, value: &[T]) -> &[T] {
+    pub fn alloc_slice<T>(&self, value: &[T]) -> &[T] {
+        const { assert!(!mem::needs_drop::<T>()) };
         let size = Layout::array::<T>(value.len())
             .unwrap()
             .align_to(mem::align_of::<usize>())
@@ -50,7 +52,7 @@ impl Arena {
             / mem::size_of::<usize>();
 
         let Some(size) = NonZeroUsize::new(size) else {
-            return &[];
+            return &mut [];
         };
 
         let ptr = self.allocator.alloc(size);
@@ -79,11 +81,11 @@ mod test {
         let arena = Arena::new();
 
         let a = arena.alloc(1);
-        let b = arena.alloc(a);
+        let b = arena.alloc(a as &i32);
 
         let other_arena = Arena::new();
 
-        let c = other_arena.alloc(b);
+        let c = other_arena.alloc(b as &&i32);
 
         assert_eq!(***c, 1);
     }

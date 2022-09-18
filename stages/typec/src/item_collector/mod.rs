@@ -12,7 +12,7 @@ use crate::*;
 pub type Structs<'a> = BumpVec<(StructAst<'a>, VRef<Ty>)>;
 pub type FuncDefs<'a> = BumpVec<(FuncDefAst<'a>, VRef<Func>)>;
 
-impl TyChecker<'_, '_> {
+impl TyChecker<'_> {
     pub fn collect_funcs<'a>(
         &mut self,
         items: ItemsAst<'a>,
