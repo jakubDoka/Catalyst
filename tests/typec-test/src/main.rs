@@ -30,7 +30,7 @@ impl Testable for TestState {
 
         let mut parse_state = ParsingState::new();
 
-        for module in self.packages.module_order.to_vec() {
+        for module in self.packages.module_order.clone() {
             self.build_scope(module);
 
             let mod_ent = self.packages.modules.get(&module).unwrap();
@@ -53,7 +53,7 @@ impl Testable for TestState {
                     break;
                 };
 
-                let finished = items.end.len() == 0;
+                let finished = items.end.is_empty();
 
                 {
                     let mut structs = bumpvec![];

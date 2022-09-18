@@ -81,7 +81,7 @@ impl SnippetDisplay {
         packages: &'a Packages,
         str: Span,
         span: Span,
-        buffer: &'a String,
+        buffer: &'a str,
         slice: &'a diags::Slice,
     ) -> Slice<'a> {
         let source = packages.span_str(slice.origin, span);

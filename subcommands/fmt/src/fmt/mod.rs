@@ -231,7 +231,7 @@ impl Fmt {
 
             items.display(self);
 
-            if items.end.len() == 0 {
+            if items.end.is_empty() {
                 break (
                     Some(&self.buffer),
                     mem::take(Rc::get_mut(&mut self.source).unwrap()),

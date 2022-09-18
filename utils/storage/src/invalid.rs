@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub trait Invalid: Sized {
     /// invalid value constructor, it is unsafe
     /// to prevent accidental misuse.
+    /// # Safety
+    /// Its only safe to use returned value in [`Maybe`] struct.
     unsafe fn invalid() -> Self;
 
     /// checks if the value is invalid. This should be

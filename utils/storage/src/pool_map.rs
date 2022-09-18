@@ -97,7 +97,7 @@ impl<K, V> PoolMap<K, V> {
         self.free
             .last()
             .copied()
-            .unwrap_or(unsafe { VRef::new(self.data.len()) })
+            .unwrap_or_else(|| unsafe { VRef::new(self.data.len()) })
     }
 
     pub fn size_hint(&self) -> usize {

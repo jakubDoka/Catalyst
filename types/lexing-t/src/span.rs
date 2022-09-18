@@ -43,6 +43,12 @@ impl Span {
         (self.end - self.start) as usize
     }
 
+    /// Returns true if the span is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+
     /// Opposite of [`Self::new`].
     #[inline]
     pub fn range(&self) -> Range<usize> {

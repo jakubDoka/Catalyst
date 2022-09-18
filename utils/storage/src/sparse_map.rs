@@ -104,6 +104,10 @@ impl<T, V> SparseMap<T, V> {
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn size_hint(&self) -> usize {
         self.mapping.len()
     }

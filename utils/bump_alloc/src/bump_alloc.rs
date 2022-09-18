@@ -279,7 +279,9 @@ mod test {
         }
     }
 
-    fn bench(task: &[(&str, fn(&mut Timer))]) {
+    type BenchTasks<'a> = &'a [(&'a str, fn(&mut Timer))];
+
+    fn bench(task: BenchTasks) {
         std::thread::scope(|s| {
             for (name, f) in task {
                 s.spawn(|| {

@@ -293,7 +293,7 @@ impl<T, CACHE> BumpMap<T, CACHE> {
         unsafe { transmute(self.get_mut_uninit(key)) }
     }
 
-    pub unsafe fn get_mut_uninit(&mut self, key: VSlice<T>) -> &mut [MaybeUninit<T>] {
+    pub(crate) unsafe fn get_mut_uninit(&mut self, key: VSlice<T>) -> &mut [MaybeUninit<T>] {
         let range = self.range_of(key);
         &mut self.data[range]
     }

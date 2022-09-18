@@ -72,6 +72,9 @@ pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
 gen_derives!(VRef);
 
 impl<T: ?Sized> VRef<T> {
+    /// Creates new VRef from index.
+    /// # Safety
+    /// The index must be valid for using collection.
     #[inline(always)]
     pub const unsafe fn new(id: usize) -> Self {
         Self(id as u32, PhantomData)
@@ -82,6 +85,11 @@ impl<T: ?Sized> VRef<T> {
         self.0 as usize
     }
 
+    /// Casts VRef to VRef of another type.
+    /// # Safety
+    /// The index must be valid for using collection or cannot
+    /// be used in any collection.
+    #[inline(always)]
     pub unsafe fn cast<V: ?Sized>(self) -> VRef<V> {
         std::mem::transmute(self)
     }
@@ -121,6 +129,9 @@ impl<'de, T: ?Sized> Deserialize<'de> for VRef<T> {
 pub struct VSlice<T: ?Sized>(u32, PhantomData<*const T>);
 
 impl<T> VSlice<T> {
+    /// Creates new VSlice from index.
+    /// # Safety
+    /// The index must be valid for using collection.
     #[inline(always)]
     pub unsafe fn new(id: usize) -> Self {
         Self(id as u32, PhantomData)

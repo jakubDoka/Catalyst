@@ -44,7 +44,7 @@ impl Scope {
             item.id,
             self.data
                 .insert(item.id, item.into())
-                .unwrap_or(Maybe::none()),
+                .unwrap_or_else(Maybe::none),
         ));
     }
 
@@ -187,22 +187,22 @@ impl ScopeItem {
     }
 }
 
-impl Into<Item> for ScopeItem {
-    fn into(self) -> Item {
+impl From<ScopeItem> for Item {
+    fn from(item: ScopeItem) -> Self {
         Item {
-            id: self.id,
-            ptr: self.ptr,
-            span: Maybe::some(self.span),
-            whole_span: Maybe::some(self.whole_span),
-            module: Maybe::some(self.module),
-            vis: self.vis,
+            id: item.id,
+            ptr: item.ptr,
+            span: Maybe::some(item.span),
+            whole_span: Maybe::some(item.whole_span),
+            module: Maybe::some(item.module),
+            vis: item.vis,
         }
     }
 }
 
-impl Into<Maybe<Item>> for ScopeItem {
-    fn into(self) -> Maybe<Item> {
-        Maybe::some(self.into())
+impl From<ScopeItem> for Maybe<Item> {
+    fn from(item: ScopeItem) -> Self {
+        Maybe::some(item.into())
     }
 }
 

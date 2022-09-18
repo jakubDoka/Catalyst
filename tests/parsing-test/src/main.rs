@@ -21,7 +21,7 @@ impl Testable for TestState {
     fn exec(mut self, name: &str) -> (Workspace, Packages) {
         package_loader!(self).load(Path::new(name));
 
-        for module in self.packages.module_order.to_vec() {
+        for &module in &self.packages.module_order {
             let module_ent = self
                 .packages
                 .modules

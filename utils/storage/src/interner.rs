@@ -23,7 +23,7 @@ pub fn ident_join<'a, T: Into<InternedSegment<'a>>>(
 pub struct Interner {
     map: HashMap<InternerEntry, VRef<str>, InternerBuildHasher>,
     indices: Vec<usize>,
-    data: Box<String>,
+    data: String,
 }
 
 impl Interner {
@@ -34,7 +34,7 @@ impl Interner {
         let mut s = Interner {
             map: HashMap::with_hasher(InternerBuildHasher),
             indices: vec![0],
-            data: Box::default(),
+            data: String::new(),
         };
         assert_eq!(s.intern_str(""), Self::EMPTY);
         s
@@ -162,7 +162,7 @@ impl<'a> Deserialize<'a> for Interner {
             .map(|(start, end, ident)| {
                 (
                     InternerEntry {
-                        str: &*raw.data as *const String,
+                        str: &raw.data as *const String,
                         start,
                         end,
                     },
@@ -215,7 +215,7 @@ impl From<u32> for InternedSegment<'_> {
 struct RawInterner {
     map: Vec<(u32, u32, VRef<str>)>,
     indices: Vec<usize>,
-    data: Box<String>,
+    data: String,
 }
 
 #[derive(Clone, Copy)]

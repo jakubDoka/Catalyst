@@ -82,6 +82,8 @@ impl Allocator {
         unsafe { NonNull::new_unchecked(range.start as *mut _) }
     }
 
+    /// # Safety
+    /// `previous_size` must be the size of the allocation at `ptr`.
     pub unsafe fn grow(
         &self,
         ptr: NonNull<MaybeUninit<usize>>,
@@ -104,7 +106,7 @@ impl Allocator {
 
     /// try to free the memory at `ptr` if it is the last allocation in the current chunk
     /// # Safety
-    /// Size mush match the size of the last allocation.
+    /// `size` mush match the size of the allocation at `ptr`.
     pub unsafe fn try_free(&self, ptr: NonNull<MaybeUninit<usize>>, size: NonZeroUsize) -> bool {
         let current = self.current.get();
         if current != ptr.as_ptr() {
