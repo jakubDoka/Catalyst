@@ -16,7 +16,7 @@ use typec_t::*;
 
 use crate::*;
 
-impl TyChecker<'_> {
+impl TyChecker<'_, '_> {
     pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Bound> {
         let mut generics = bumpvec!(cap generic_ast.len());
         for &GenericParamAst { bounds, .. } in generic_ast.iter() {

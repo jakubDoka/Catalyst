@@ -150,6 +150,7 @@ impl Display for Import {
 pub struct Struct {
     pub name: String,
     pub fields: Vec<Field>,
+    pub unique: usize,
 }
 
 impl Struct {
@@ -159,20 +160,22 @@ impl Struct {
         lexer.expect(TokKind::Ident);
         let name = lexer.current().span;
         lexer.advance();
-        let fields = Struct::parse_fields(lexer);
+        let mut unique = 0;
+        let fields = Struct::parse_fields(lexer, &mut unique);
         Struct {
             name: lexer.show(name).to_string(),
             fields,
+            unique,
         }
     }
 
-    pub fn parse_fields(lexer: &mut Lexer) -> Vec<Field> {
+    pub fn parse_fields(lexer: &mut Lexer, unique: &mut usize) -> Vec<Field> {
         let mut fields = Vec::new();
         lexer.expect(TokKind::LBrace);
         lexer.advance();
         lexer.skip_newlines();
         while lexer.current().kind != TokKind::RBrace && lexer.current().kind != TokKind::Eof {
-            fields.push(Field::new(lexer));
+            fields.push(Field::new(lexer, unique));
             lexer.skip_newlines();
         }
         lexer.advance();
@@ -180,7 +183,14 @@ impl Struct {
     }
 
     fn write_constructor(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(f, "impl<'a> {}<'a> {{", &self.name)?;
+        writeln!(
+            f,
+            "impl<{}> {}<{}> {{",
+            self.lifetimes(),
+            &self.name,
+            self.lifetimes()
+        )?;
+        writeln!(f, "\t#[allow(clippy::too_many_arguments)]")?;
         writeln!(f, "\tpub fn new(")?;
         for field in self.fields.iter().filter(|f| f.is_argument()) {
             writeln!(f, "\t\t{},", field)?;
@@ -221,11 +231,18 @@ impl Struct {
         writeln!(f, "\t}};")?;
         writeln!(f, "}}")
     }
+
+    pub fn lifetimes(&self) -> String {
+        (0..=self.unique)
+            .map(|i| format!("'a{}", i))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 impl Display for Struct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "pub struct {}<'a> {{", self.name)?;
+        writeln!(f, "pub struct {}<{}> {{", self.name, self.lifetimes())?;
         for field in &self.fields {
             writeln!(f, "\tpub {},", field)?;
         }
@@ -238,13 +255,18 @@ pub struct Field {
     pub passed: bool,
     pub mutable: bool,
     pub owned: bool,
+    pub unique: usize,
     pub ty: String,
     pub name: String,
     pub default: Option<String>,
 }
 
 impl Field {
-    pub fn new(lexer: &mut Lexer) -> Self {
+    pub fn new(lexer: &mut Lexer, unique_counter: &mut usize) -> Self {
+        let unique = lexer.current().kind == TokKind::Unique;
+        if unique {
+            lexer.advance();
+        }
         let passed = lexer.current().kind == TokKind::Passed;
         if passed {
             lexer.advance();
@@ -286,6 +308,14 @@ impl Field {
         };
 
         Field {
+            unique: {
+                if unique {
+                    *unique_counter += 1;
+                    *unique_counter
+                } else {
+                    0
+                }
+            },
             passed,
             mutable,
             owned,
@@ -299,7 +329,7 @@ impl Field {
         if !self.owned {
             write!(f, "&")?;
             if def {
-                write!(f, "'a ")?;
+                write!(f, "'a{} ", self.unique)?;
             }
             if self.mutable {
                 write!(f, "mut ")?;

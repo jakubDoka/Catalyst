@@ -22,6 +22,7 @@ struct TestState {
     packages: Packages,
     package_graph: PackageGraph,
     ast_data: AstData,
+    arena: Arena,
 }
 
 impl Testable for TestState {
@@ -56,12 +57,15 @@ impl Testable for TestState {
                 let finished = items.end.is_empty();
 
                 {
+                    self.arena.clear();
                     let mut structs = bumpvec![];
                     let mut funcs = bumpvec![];
-                    ty_checker!(self, module)
+                    let mut type_checked_funcs = bumpvec![];
+                    ty_checker!(self, module, &self.arena)
                         .collect_structs(items, &mut structs)
                         .collect_funcs(items, &mut funcs)
-                        .build_structs(&mut structs);
+                        .build_structs(&mut structs)
+                        .build_funcs(&mut funcs, &mut type_checked_funcs);
                 }
 
                 if finished {

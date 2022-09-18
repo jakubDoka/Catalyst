@@ -40,6 +40,7 @@ macro_rules! insert_scope_item {
     () => {};
 }
 
+mod func_builder;
 mod item_collector;
 mod state_gen;
 mod ty_builder;
@@ -59,7 +60,7 @@ mod util {
 
     use crate::TyChecker;
 
-    impl TyChecker<'_> {
+    impl TyChecker<'_, '_> {
         pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
             crate::insert_scope_item(
                 item,

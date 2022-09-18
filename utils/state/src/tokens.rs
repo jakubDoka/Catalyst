@@ -112,10 +112,12 @@ pub enum TokKind {
     Owned,
     #[regex("passed")]
     Passed,
+    #[regex("unique")]
+    Unique,
 
     #[regex("`[^`]*`")]
     EscapedIdent,
-    #[regex("[a-zA-Z]\\w*")]
+    #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
 
     #[regex("\\{")]
