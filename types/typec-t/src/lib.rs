@@ -162,8 +162,8 @@ pub use {
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
     tir::{
-        Block, BlockInputTir, BlockTir, BodyTir, BodyTirBuilder, BranchTir, CallTir,
-        ControlFlowTir, FuncTir, InstTir, JumpTir, ValueTir, Var,
+        Block, BlockInputTir, BlockTir, BodyTir, BranchTir, CallTir, ControlFlowTir, FuncTir,
+        InstTir, JumpTir, TirBuilder, TirBuilderCtx, ValueTir, Var,
     },
     ty::{
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,

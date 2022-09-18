@@ -2,6 +2,7 @@
 #![feature(default_free_fn)]
 #![feature(stmt_expr_attributes)]
 #![allow(clippy::redundant_closure_call)]
+#![feature(never_type)]
 
 #[macro_export]
 macro_rules! annotation_type {
@@ -131,10 +132,11 @@ macro_rules! gen_error_fn {
             $($body:tt)*
         }
     } => {
-        pub fn $name(&mut $self, $($param: $param_ty),*) {
+        pub fn $name(&mut $self, $($param: $param_ty),*) -> Option<!> {
             $self.workspace.push($crate::snippet! {
                 $($body)*
-            })
+            });
+            None
         }
     };
 
@@ -143,10 +145,11 @@ macro_rules! gen_error_fn {
             $($body:tt)*
         }
     } => {
-        pub fn $name(&mut $self, $($param: $param_ty),*) {
+        pub fn $name(&mut $self, $($param: $param_ty),*) -> Option<!> {
             $self.workspace.push_or_display(&$self.packages, $crate::snippet! {
                 $($body)*
-            })
+            });
+            None
         }
     };
 

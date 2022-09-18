@@ -4,6 +4,7 @@
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(let_chains)]
+#![feature(never_type)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
@@ -20,7 +21,7 @@ macro_rules! gen_scope_lookup {
             impl $crate::ScopeLookup for $name {
                 $(type Output = $output;)?
                 const ITEM_NAME: &'static str = $item_name;
-                const TYPE_MISMATCH_MAPPING: &'static [(TypeId, &'static str)] = &[
+                const TYPE_MISMATCH_MAPPING: &'static [(std::any::TypeId, &'static str)] = &[
                     $(
                         (TypeId::of::<$id>(), $ty_name),
                     )*

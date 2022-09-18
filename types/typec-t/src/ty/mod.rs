@@ -24,7 +24,18 @@ impl Ty {
         MUTABLE IMMUTABLE
         UNIT
         UINT
+        TERMINAL
     );
+
+    gen_v_ref_const_group!(
+        INTEGERS = [UINT];
+        UNSIGNED_INTEGER = [UINT];
+    );
+
+    #[inline(always)]
+    pub fn compatible(expected: VRef<Self>, inferred: VRef<Self>) -> bool {
+        expected == inferred || inferred == Self::TERMINAL
+    }
 }
 
 impl VRefDefault for Ty {

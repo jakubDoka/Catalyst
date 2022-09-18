@@ -78,10 +78,11 @@ impl Typec {
 
     pub fn binary_op_id(
         &self,
-        op: Ident,
+        op: VRef<str>,
         lhs: VRef<Ty>,
         rhs: VRef<Ty>,
     ) -> impl Iterator<Item = InternedSegment<'static>> {
+        ident!(self.types.id(lhs), " ", op, " ", self.types.id(rhs)).into_iter()
     }
 
     pub fn pointer_id(
