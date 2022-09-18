@@ -23,7 +23,8 @@ pub fn ident_join<'a, T: Into<InternedSegment<'a>>>(
 pub struct Interner {
     map: HashMap<InternerEntry, VRef<str>, InternerBuildHasher>,
     indices: Vec<usize>,
-    data: String,
+    #[allow(clippy::box_collection)]
+    data: Box<String>,
 }
 
 impl Interner {
@@ -34,7 +35,7 @@ impl Interner {
         let mut s = Interner {
             map: HashMap::with_hasher(InternerBuildHasher),
             indices: vec![0],
-            data: String::new(),
+            data: Box::default(),
         };
         assert_eq!(s.intern_str(""), Self::EMPTY);
         s
@@ -162,7 +163,7 @@ impl<'a> Deserialize<'a> for Interner {
             .map(|(start, end, ident)| {
                 (
                     InternerEntry {
-                        str: &raw.data as *const String,
+                        str: &*raw.data as *const String,
                         start,
                         end,
                     },
@@ -215,7 +216,8 @@ impl From<u32> for InternedSegment<'_> {
 struct RawInterner {
     map: Vec<(u32, u32, VRef<str>)>,
     indices: Vec<usize>,
-    data: String,
+    #[allow(clippy::box_collection)]
+    data: Box<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -228,7 +230,9 @@ struct InternerEntry {
 impl Hash for InternerEntry {
     fn hash<H: Hasher>(&self, state: &mut H) {
         unsafe {
-            (*self.str)[self.start as usize..self.end as usize].hash(state);
+            (*self.str)
+                .get_unchecked(self.start as usize..self.end as usize)
+                .hash(state);
         }
     }
 }
@@ -236,8 +240,8 @@ impl Hash for InternerEntry {
 impl PartialEq<Self> for InternerEntry {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            (*self.str)[self.start as usize..self.end as usize]
-                == (*other.str)[other.start as usize..other.end as usize]
+            (*self.str).get_unchecked(self.start as usize..self.end as usize)
+                == (*other.str).get_unchecked(other.start as usize..other.end as usize)
         }
     }
 }
