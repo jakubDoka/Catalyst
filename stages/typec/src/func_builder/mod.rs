@@ -1,4 +1,4 @@
-use std::{cell::Cell, default::default};
+use std::default::default;
 
 use diags::*;
 use lexing_t::*;
@@ -59,11 +59,53 @@ impl TyChecker<'_> {
             FuncBodyAst::Arrow(span, expr) => {
                 self.r#return(Some(expr), span, &mut active_builder)?
             }
-            FuncBodyAst::Block(_block) => todo!(), //self.block(block, Inference::Known(signature.ret), builder),
+            FuncBodyAst::Block(body) => {
+                self.body(body, Some(signature.ret), &mut active_builder)?
+            } //self.block(block, Inference::Known(signature.ret), builder),
             FuncBodyAst::Extern(..) => return None,
         };
 
         Some(active_builder.build())
+    }
+
+    fn body<'a>(
+        &mut self,
+        body: BlockAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> Option<ValueTir<'a>> {
+        let value = self.block(body, inference, builder)?;
+        let span = body.span();
+
+        if value == ValueTir::TERMINAL {
+            return Some(value);
+        }
+
+        self.return_low(Some(value), span, builder)
+    }
+
+    fn block<'a>(
+        &mut self,
+        block: BlockAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> Option<ValueTir<'a>> {
+        let Some((last, other)) = block.elements.split_last() else {
+            return Some(ValueTir::UNIT);
+        };
+
+        self.scope.start_frame();
+
+        let has_error = other
+            .iter()
+            .map(|elem| self.expr(elem.value, None, builder))
+            .map(|value| value.is_none() as usize)
+            .sum::<usize>();
+
+        let last = self.expr(last.value, inference, builder);
+        self.scope.end_frame();
+
+        last.filter(|_| has_error == 0)
     }
 
     fn r#return<'a>(
@@ -79,12 +121,22 @@ impl TyChecker<'_> {
         };
 
         let span = expr.map_or(span, |expr| span.joined(expr.span()));
-        self.type_check(builder.ret, value.map_or(Ty::UNIT, |v| v.ty.get()), span)?;
+
+        self.return_low(value, span, builder)
+    }
+
+    fn return_low<'a>(
+        &mut self,
+        value: Option<ValueTir<'a>>,
+        span: Span,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> Option<ValueTir<'a>> {
+        self.type_check(builder.ret, value.map_or(Ty::UNIT, |v| v.ty), span)?;
 
         let ret = ControlFlowTir::Return(value);
         builder.close_block(ret);
 
-        Some(builder.terminal())
+        Some(ValueTir::TERMINAL)
     }
 
     fn expr<'a>(
@@ -99,7 +151,7 @@ impl TyChecker<'_> {
         }?;
 
         if let Some(ty) = inference {
-            self.type_check(ty, value.ty.get(), expr.span())?;
+            self.type_check(ty, value.ty, expr.span())?;
         }
 
         Some(value)
@@ -160,9 +212,7 @@ impl TyChecker<'_> {
         let lhs = self.expr(lhs, None, builder)?;
         let rhs = self.expr(rhs, None, builder)?;
 
-        let id = self
-            .typec
-            .binary_op_id(op.ident, lhs.ty.get(), rhs.ty.get());
+        let id = self.typec.binary_op_id(op.ident, lhs.ty, rhs.ty);
         let id = self.interner.intern(id);
         let func = self.lookup_typed::<OpLookup>(id, op.span)?;
 
@@ -184,7 +234,6 @@ impl TyChecker<'_> {
     ) -> &'a [ValueTir<'a>] {
         let mut values = bumpvec![cap args.len()];
         for (&ty, &arg) in self.typec.ty_slices[types].iter().zip(args.iter()) {
-            let ty = arena.alloc(Cell::new(ty));
             let value = ValueTir { inst: None, ty };
             values.push(value);
 

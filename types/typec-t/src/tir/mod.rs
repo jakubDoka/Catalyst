@@ -40,7 +40,6 @@ impl<'a, 'b> TirBuilder<'a, 'b> {
         self.builder.blocks[self.current_block.index()]
             .stmts
             .push(inst);
-        let ty = self.ty(ty);
         ValueTir {
             inst: Some(inst),
             ty,
@@ -53,13 +52,6 @@ impl<'a, 'b> TirBuilder<'a, 'b> {
 
     pub fn close_block(&mut self, control_flow: ControlFlowTir<'a>) {
         self.builder.blocks[self.current_block.index()].control_flow = Some(control_flow);
-    }
-
-    pub fn terminal(&mut self) -> ValueTir<'a> {
-        ValueTir {
-            inst: None,
-            ty: self.ty(Ty::TERMINAL),
-        }
     }
 }
 
@@ -198,7 +190,7 @@ pub enum BlockInputTir<'a> {
     FuncArgs(&'a [ValueTir<'a>]),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstTir<'a> {
     Int(Span),
     Call(&'a CallTir<'a>),
@@ -209,14 +201,14 @@ impl_inst_input! {
     'a InstTir<'a> |self, _arena| self;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CallTir<'a> {
     pub func: FuncTir<'a>,
     pub params: &'a [VRef<Ty>],
     pub args: &'a [ValueTir<'a>],
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FuncTir<'a> {
     Concrete(VRef<Func>),
     Virtual(VRef<BoundFunc>),
@@ -232,7 +224,7 @@ pub enum ControlFlowTir<'a> {
 
 impl<'a> ControlFlowTir<'a> {
     pub fn ret(value: ValueTir<'a>) -> Self {
-        Self::Return((value.ty.get() != Ty::UNIT).then_some(value))
+        Self::Return((value.ty != Ty::UNIT).then_some(value))
     }
 }
 
@@ -255,8 +247,27 @@ pub struct JumpTir<'a> {
     pub value: Option<ValueTir<'a>>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ValueTir<'a> {
     pub inst: Option<InstTir<'a>>,
-    pub ty: &'a Cell<VRef<Ty>>,
+    pub ty: VRef<Ty>,
+}
+
+macro_rules! gen_ty_value_constants {
+    (
+        $($ident:ident)*
+    ) => {
+        $(
+            pub const $ident: Self = Self {
+                inst: None,
+                ty: Ty::$ident,
+            };
+        )*
+    };
+}
+
+impl<'a> ValueTir<'a> {
+    gen_ty_value_constants! {
+        UNIT TERMINAL
+    }
 }
