@@ -1,0 +1,8 @@
+error: type mismatch
+ --> function\root.ctl:2:12
+  |
+2 |     return 0
+  |            ^ mismatch occurred here
+  |
+  = info: expected () but got uint
+
