@@ -61,7 +61,7 @@ impl TyChecker<'_> {
             }
             FuncBodyAst::Block(body) => {
                 self.body(body, Some(signature.ret), &mut active_builder)?
-            } //self.block(block, Inference::Known(signature.ret), builder),
+            }
             FuncBodyAst::Extern(..) => return None,
         };
 
@@ -134,7 +134,7 @@ impl TyChecker<'_> {
         self.type_check(builder.ret, value.map_or(Ty::UNIT, |v| v.ty), span)?;
 
         let ret = ControlFlowTir::Return(value);
-        builder.close_block(ret);
+        self.close_block(ret, span, builder);
 
         Some(ValueTir::TERMINAL)
     }
@@ -199,14 +199,14 @@ impl TyChecker<'_> {
             .iter()
             .find(|&&ty| span_str.ends_with(&self.interner[self.typec.types.id(ty)]))
             .copied()
-            .or(inference)
+            .or_else(|| inference.filter(|ty| Ty::INTEGERS.contains(ty)))
             .unwrap_or(Ty::UINT);
-        Some(builder.inst(ty, InstTir::Int(span)))
+        self.inst(ty, InstTir::Int(span), span, builder)
     }
 
     fn binary_expr<'a>(
         &mut self,
-        BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
+        binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<ValueTir<'a>> {
         let lhs = self.expr(lhs, None, builder)?;
@@ -222,7 +222,7 @@ impl TyChecker<'_> {
             args: builder.arena.alloc_slice(&[lhs, rhs]),
         };
         let ty = self.typec.funcs[func].signature.ret;
-        Some(builder.inst(ty, call))
+        self.inst(ty, call, binary_ast.span(), builder)
     }
 
     fn args<'a>(
@@ -252,16 +252,61 @@ impl TyChecker<'_> {
     }
 
     fn type_check(&mut self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) -> Option<()> {
+        self.type_check_detailed(expected, got, |s| {
+            s.generic_ty_mismatch(expected, got, span)
+        })
+    }
+
+    fn type_check_detailed<A>(
+        &mut self,
+        expected: VRef<Ty>,
+        got: VRef<Ty>,
+        display: impl Fn(&mut Self) -> A,
+    ) -> Option<()> {
         if Ty::compatible(expected, got) {
             return Some(());
         }
 
-        self.ty_mismatch(expected, got, span);
+        display(self);
 
         None
     }
 
+    fn inst<'a>(
+        &mut self,
+        ty: VRef<Ty>,
+        inst: impl InstInput<'a>,
+        span: Span,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> Option<ValueTir<'a>> {
+        builder
+            .inst(ty, inst, span)
+            .map_err(|err| self.unreachable_expr(err, span))
+            .ok()
+    }
+
+    fn close_block<'a>(
+        &mut self,
+        ret: ControlFlowTir<'a>,
+        span: Span,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> Option<()> {
+        let Some(because) = builder.close_block(ret, span) else {
+            return Some(());
+        };
+
+        self.unreachable_expr(span, because)?
+    }
+
     gen_error_fns! {
+        push unreachable_expr(self, span: Span, because: Span) {
+            warn: "unreachable expression";
+            (span, self.current_file) {
+                info[span]: "this is unreachable";
+                info[because]: "because of this";
+            }
+        }
+
         push incomplete_tir(self, func: FuncDefAst) {
             err: "not all blocks were closed when typechecking function";
             info: "this is a bug in the compiler, please report it";
@@ -270,7 +315,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push ty_mismatch(self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) {
+        push generic_ty_mismatch(self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) {
             err: "type mismatch";
             info: ("expected {} but got {}", self.type_diff(expected, got), self.type_diff(got, expected));
             (span, self.current_file) {

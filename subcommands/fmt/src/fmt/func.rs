@@ -42,7 +42,7 @@ impl<'a> FmtAst for FuncBodyAst<'a> {
             }
             FuncBodyAst::Block(block) => {
                 write!(fmt, " ");
-                block.display_low(false, fmt);
+                block.display_low(true, fmt);
             }
             FuncBodyAst::Extern(span) => {
                 write!(fmt, " ");

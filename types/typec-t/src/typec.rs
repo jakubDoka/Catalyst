@@ -66,6 +66,7 @@ impl Typec {
             UINT {
                 kind: TyKind::Integer(default()),
             }
+            TERMINAL {}
         }
     }
 

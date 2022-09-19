@@ -3,6 +3,7 @@
 #![feature(negative_impls)]
 #![feature(let_else)]
 #![feature(inline_const)]
+#![feature(let_chains)]
 
 mod allocator;
 mod arena;

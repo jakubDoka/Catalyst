@@ -1,6 +1,7 @@
 use std::{
     alloc::AllocError,
     cell::Cell,
+    fmt::Debug,
     mem,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
@@ -116,6 +117,12 @@ impl BumpAlloc {
 
 pub struct BumpVec<T> {
     inner: Vec<T, BumpAllocRef>,
+}
+
+impl<T: Debug> Debug for BumpVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.inner.iter()).finish()
+    }
 }
 
 impl<T> BumpVec<T> {

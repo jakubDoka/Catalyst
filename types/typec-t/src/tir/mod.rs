@@ -35,23 +35,40 @@ impl<'a, 'b> TirBuilder<'a, 'b> {
         self.arena.alloc(Cell::new(ty))
     }
 
-    pub fn inst(&mut self, ty: VRef<Ty>, inst: impl InstInput<'a>) -> ValueTir<'a> {
+    pub fn inst(
+        &mut self,
+        ty: VRef<Ty>,
+        inst: impl InstInput<'a>,
+        span: Span,
+    ) -> Result<ValueTir<'a>, Span> {
+        let block = &mut self.builder.blocks[self.current_block.index()];
+
+        if let Some((.., span)) = block.control_flow {
+            return Err(span);
+        }
+
         let inst = inst.convert(self.arena);
-        self.builder.blocks[self.current_block.index()]
-            .stmts
-            .push(inst);
-        ValueTir {
+        block.stmts.push((inst, span));
+        Ok(ValueTir {
             inst: Some(inst),
             ty,
-        }
+        })
     }
 
     pub fn build(&mut self) -> Option<BodyTir<'a>> {
         self.builder.build(self.arena)
     }
 
-    pub fn close_block(&mut self, control_flow: ControlFlowTir<'a>) {
-        self.builder.blocks[self.current_block.index()].control_flow = Some(control_flow);
+    pub fn close_block(&mut self, control_flow: ControlFlowTir<'a>, span: Span) -> Option<Span> {
+        let block = &mut self.builder.blocks[self.current_block.index()];
+
+        if let Some((_, span)) = block.control_flow {
+            return Some(span);
+        }
+
+        block.control_flow = Some((control_flow, span));
+
+        None
     }
 }
 
@@ -122,10 +139,6 @@ impl<'a> TirBuilderCtx<'a> {
         unsafe { VRef::new(id) }
     }
 
-    pub fn close_block(&mut self, block: VRef<Block>, control_flow: ControlFlowTir<'a>) {
-        self.blocks[block.index()].control_flow = Some(control_flow);
-    }
-
     pub fn create_var(&mut self, value: ValueTir<'a>) -> VRef<Var> {
         let id = self.vars.len();
         self.vars.push(value);
@@ -144,16 +157,16 @@ impl<'a> Index<VRef<Var>> for TirBuilderCtx<'a> {
 #[derive(Default)]
 struct IntermediateBlockTir<'a> {
     input: BlockInputTir<'a>,
-    stmts: BumpVec<InstTir<'a>>,
-    control_flow: Option<ControlFlowTir<'a>>,
+    stmts: BumpVec<(InstTir<'a>, Span)>,
+    control_flow: Option<(ControlFlowTir<'a>, Span)>,
 }
 
 impl<'a> IntermediateBlockTir<'a> {
     fn build(self, arena: &'a Arena) -> Option<BlockTir<'a>> {
         Some(BlockTir {
             input: self.input,
-            stmts: arena.alloc_slice(self.stmts.as_slice()),
-            control_flow: self.control_flow?,
+            stmts: arena.alloc_iter(self.stmts.into_iter().map(|(inst, ..)| inst)),
+            control_flow: self.control_flow?.0,
         })
     }
 }

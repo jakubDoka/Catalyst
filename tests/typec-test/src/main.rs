@@ -66,6 +66,8 @@ impl Testable for TestState {
                         .collect_funcs(items, &mut funcs)
                         .build_structs(&mut structs)
                         .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs);
+
+                    //dbg!(type_checked_funcs);
                 }
 
                 if finished {
@@ -127,9 +129,11 @@ fn main() {
         }
 
         simple "function" {
-            fn "default" main() -> () {
+            fn "default" main() -> uint {
                 return 0
-            }
+            };
+
+            fn "default" pass(a: uint) -> uint => a
         }
     }
 }
