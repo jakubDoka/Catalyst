@@ -4,10 +4,24 @@ use typec_t::*;
 
 pub struct FunctionMir {
     pub blocks_insts: BumpMap<VRef<InstMir>>,
+    pub blocks: PushMap<BlockTir>,
+    pub insts: PushMap<IntTir>,
+    pub values: PushMap<ValueMir>,
+    pub value_args: BumpMap<VRef<ValueMir>>,
+}
+
+pub struct BlockTir {
+    pub args: VSlice<ValueMir>,
+    pub insts: VRefSlice<InstMir>,
+    pub control_flow: ControlFlow,
+}
+
+pub enum ControlFlow {
+    Return(Maybe<VRef<ValueMir>>),
 }
 
 pub struct DebugData {
-    instr_spans: ShadowMap<InstMir, Span>,
+    pub instr_spans: ShadowMap<InstMir, Span>,
 }
 
 pub struct InstMir {
@@ -15,7 +29,9 @@ pub struct InstMir {
     pub value: Maybe<VRef<ValueMir>>,
 }
 
-pub enum InstKind {}
+pub enum InstKind {
+    Int(Span),
+}
 
 pub struct ValueMir {
     pub ty: VRef<Ty>,
