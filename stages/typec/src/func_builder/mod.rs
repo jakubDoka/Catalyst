@@ -11,7 +11,6 @@ use typec_t::*;
 
 use crate::{item_collector::FuncDefs, *};
 
-pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, Option<TirNode<'a>>)>;
 pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
 impl TyChecker<'_> {
@@ -246,12 +245,8 @@ impl TyChecker<'_> {
     }
 
     fn args(&mut self, types: VSlice<VRef<Ty>>, args: FuncArgsAst, builder: &mut TirBuilder) {
-        for (i, (&ty, &arg)) in self.typec.ty_slices[types]
-            .iter()
-            .zip(args.iter())
-            .enumerate()
-        {
-            let param = TirNode::Param(i);
+        for (&ty, &arg) in self.typec.ty_slices[types].iter().zip(args.iter()) {
+            let param = TirNode::Param(builder.next_var());
             let value = builder.node(param);
 
             let var = builder.create_var(value, ty);

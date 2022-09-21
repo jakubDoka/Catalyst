@@ -5,6 +5,7 @@ use std::{
 
 use crate::VRef;
 
+#[derive(Clone)]
 pub struct PushMap<T> {
     data: Vec<T>,
 }

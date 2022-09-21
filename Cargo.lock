@@ -132,6 +132,14 @@ dependencies = [
 [[package]]
 name = "mir"
 version = "0.1.0"
+dependencies = [
+ "diags",
+ "lexing-t",
+ "mir-t",
+ "packaging-t",
+ "storage",
+ "typec-t",
+]
 
 [[package]]
 name = "mir-t"

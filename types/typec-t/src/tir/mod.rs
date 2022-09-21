@@ -3,6 +3,8 @@ use storage::*;
 
 use crate::{BoundFunc, Func, Ty};
 
+pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, Option<TirNode<'a>>)>;
+
 pub struct TirBuilder<'a> {
     pub arena: &'a Arena,
     pub ret: VRef<Ty>,
@@ -38,6 +40,10 @@ impl<'a> TirBuilder<'a> {
         let index = self.vars.len();
         self.vars.push(TypedTirNode { node, ty });
         unsafe { VRef::new(index) }
+    }
+
+    pub fn next_var(&self) -> VRef<Var> {
+        unsafe { VRef::new(self.vars.len()) }
     }
 
     pub fn get_var(&self, var: VRef<Var>) -> TypedTirNode<'a> {
@@ -96,7 +102,7 @@ pub struct TypedTirNode<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TirNode<'a> {
-    Param(usize),
+    Param(VRef<Var>),
     Int(Span),
     Block(&'a BlockTir<'a>),
     Return(&'a ReturnTir<'a>),

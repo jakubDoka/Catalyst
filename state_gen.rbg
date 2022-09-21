@@ -36,7 +36,6 @@ file "stages/typec/src/state_gen.rs" {
     use "diags"
     use "scope"
     use "typec_t"
-    use "parsing_t"
     use "packaging_t"
 
     struct TyChecker {
@@ -47,7 +46,22 @@ file "stages/typec/src/state_gen.rs" {
         mut Typec
         mut Workspace
         mut Packages
+    }
+}
 
-        AstData
+file "stages/mir/src/state_gen.rs" {
+    use "storage"
+    use "diags"
+    use "typec_t"
+    use "packaging_t"
+
+
+    struct MirChecker {
+        owned current_file: `VRef<str>`
+
+        mut Interner
+        mut Typec
+        mut Workspace
+        mut Packages
     }
 }

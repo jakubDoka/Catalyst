@@ -1,3 +1,8 @@
+#![feature(let_else)]
+
 mod mir;
 
-pub use mir::{BlockTir, ControlFlow, DebugData, FunctionMir, InstKind, InstMir, ValueMir};
+pub use mir::{
+    builder::{MirBuilder, MirBuilderCtx},
+    BlockMir, ControlFlowMir, DebugData, FuncMir, InstKind, InstMir, ValueMir,
+};
