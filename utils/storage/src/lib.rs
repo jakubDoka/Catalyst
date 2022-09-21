@@ -168,6 +168,7 @@ mod pool_bump_map;
 mod pool_map;
 /// Trait representing virtual pointer.
 mod primitives;
+mod push_map;
 /// Storage that can map additional info for existing map.
 mod shadow_map;
 /// Similar to shadow map, but lot more memory efficient when storing big structures
@@ -188,6 +189,7 @@ pub use {
     pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
     pool_map::PoolMap,
     primitives::{NoShortCircuitCollect, VRef, VRefDefault, VRefSlice, VSlice},
+    push_map::PushMap,
     shadow_map::ShadowMap,
     sparse_map::SparseMap,
 };
