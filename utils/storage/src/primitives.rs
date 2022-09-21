@@ -59,7 +59,7 @@ macro_rules! gen_derives {
 
 use serde::{Deserialize, Serialize};
 
-use crate::Invalid;
+use crate::{Invalid, Maybe};
 
 pub type VRefSlice<T> = VSlice<VRef<T>>;
 
@@ -80,6 +80,14 @@ impl<T: ?Sized> VRef<T> {
         Self(id as u32, PhantomData)
     }
 
+    /// Rarely needed method to construct invalid version.
+    /// # Safety
+    /// It is incorrect to call [`Maybe::some`] with returned value.
+    #[inline(always)]
+    pub const unsafe fn invalid() -> Self {
+        Self(u32::MAX, PhantomData)
+    }
+
     #[inline(always)]
     pub const fn index(self) -> usize {
         self.0 as usize
@@ -93,12 +101,16 @@ impl<T: ?Sized> VRef<T> {
     pub unsafe fn cast<V: ?Sized>(self) -> VRef<V> {
         std::mem::transmute(self)
     }
+
+    pub const fn none() -> Maybe<Self> {
+        Maybe::some(unsafe { Self::invalid() })
+    }
 }
 
 impl<T: ?Sized> Invalid for VRef<T> {
     #[inline(always)]
     unsafe fn invalid() -> Self {
-        Self(u32::MAX, PhantomData)
+        Self::invalid()
     }
 
     #[inline(always)]

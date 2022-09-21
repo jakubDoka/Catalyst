@@ -67,7 +67,7 @@ impl Testable for TestState {
                         .build_structs(&mut structs)
                         .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs);
 
-                    //dbg!(type_checked_funcs);
+                    dbg!(type_checked_funcs);
                 }
 
                 if finished {

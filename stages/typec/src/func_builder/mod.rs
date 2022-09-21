@@ -11,7 +11,8 @@ use typec_t::*;
 
 use crate::{item_collector::FuncDefs, *};
 
-pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, Option<BodyTir<'a>>)>;
+pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, Option<TirNode<'a>>)>;
+pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
 impl TyChecker<'_> {
     pub fn build_funcs<'a>(
@@ -20,9 +21,8 @@ impl TyChecker<'_> {
         funcs: &mut FuncDefs,
         compiled_funcs: &mut TypeCheckedFuncs<'a>,
     ) {
-        let mut builder = TirBuilderCtx::new();
         for (ast, func) in funcs.drain(..) {
-            let Some(res) = self.build_func(ast, func, arena, &mut builder) else {
+            let Some(res) = self.build_func(ast, func, arena) else {
                 compiled_funcs.push((func, None));
                 continue;
             };
@@ -37,83 +37,78 @@ impl TyChecker<'_> {
     pub fn build_func<'a>(
         &mut self,
         FuncDefAst {
-            signature: FuncSigAst { generics, args, .. },
+            signature:
+                FuncSigAst {
+                    generics,
+                    args,
+                    ret,
+                    ..
+                },
             body,
             ..
         }: FuncDefAst,
         func: VRef<Func>,
         arena: &'a Arena,
-        builder: &mut TirBuilderCtx<'a>,
-    ) -> Option<Option<BodyTir<'a>>> {
+    ) -> Option<Option<TirNode<'a>>> {
         self.scope.start_frame();
         let Func { signature, .. } = self.typec.funcs[func];
+        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()).into());
 
         self.insert_generics(generics, 0, false);
-        let args = self.args(signature.args, args, arena, builder);
+        self.args(signature.args, args, &mut builder);
 
-        let root_block = builder.create_block(BlockInputTir::FuncArgs(args));
-
-        let mut active_builder = TirBuilder::new(arena, builder, signature.ret, root_block);
-
-        match body {
-            FuncBodyAst::Arrow(span, expr) => {
-                self.r#return(Some(expr), span, &mut active_builder)?
-            }
-            FuncBodyAst::Block(body) => {
-                self.body(body, Some(signature.ret), &mut active_builder)?
-            }
+        let body = match body {
+            FuncBodyAst::Arrow(span, expr) => self.r#return(Some(expr), span, &mut builder),
+            FuncBodyAst::Block(body) => self.block(body, Some(signature.ret), &mut builder),
             FuncBodyAst::Extern(..) => return None,
         };
 
-        Some(active_builder.build())
-    }
-
-    fn body<'a>(
-        &mut self,
-        body: BlockAst,
-        inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
-        let value = self.block(body, inference, builder)?;
-        let span = body.span();
-
-        if value == ValueTir::TERMINAL {
-            return Some(value);
-        }
-
-        self.return_low(Some(value), span, builder)
+        Some(body.map(|b| b.node))
     }
 
     fn block<'a>(
         &mut self,
         block: BlockAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
-        let Some((last, other)) = block.elements.split_last() else {
-            return Some(ValueTir::UNIT);
-        };
-
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        builder.start_frame();
         self.scope.start_frame();
 
-        let has_error = other
-            .iter()
-            .map(|elem| self.expr(elem.value, None, builder))
-            .map(|value| value.is_none() as usize)
-            .sum::<usize>();
+        let Some((last, other)) = block.elements.split_last() else {
+            return self.node(Ty::UNIT, BlockTir { nodes: &[], span: block.span() }, builder)
+        };
 
-        let last = self.expr(last.value, inference, builder);
+        let mut store = bumpvec![cap block.len()];
+        store.extend(
+            other
+                .iter()
+                .filter_map(|expr| self.expr(expr.value, None, builder))
+                .map(|expr| expr.node),
+        );
+        let last = self.expr(last.value, inference, builder)?;
+        store.push(last.node);
+
         self.scope.end_frame();
+        builder.end_frame();
 
-        last.filter(|_| has_error == 0)
+        let nodes = builder.arena.alloc_slice(&store);
+        self.node(
+            last.ty,
+            BlockTir {
+                nodes,
+                span: block.span(),
+            },
+            builder,
+        )
     }
 
     fn r#return<'a>(
         &mut self,
         expr: Option<ExprAst>,
         span: Span,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         let value = if let Some(expr) = expr {
             Some(self.expr(expr, Some(builder.ret), builder)?)
         } else {
@@ -127,24 +122,26 @@ impl TyChecker<'_> {
 
     fn return_low<'a>(
         &mut self,
-        value: Option<ValueTir<'a>>,
+        value: ExprRes<'a>,
         span: Span,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
-        self.type_check(builder.ret, value.map_or(Ty::UNIT, |v| v.ty), span)?;
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        self.type_check(builder.ret, value.map_or(Ty::UNIT, |value| value.ty), span)?;
 
-        let ret = ControlFlowTir::Return(value);
-        self.close_block(ret, span, builder);
+        let ret = ReturnTir {
+            val: value.map(|val| val.node),
+            span,
+        };
 
-        Some(ValueTir::TERMINAL)
+        self.node(builder.ret, ret, builder)
     }
 
     fn expr<'a>(
         &mut self,
         expr: ExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         let value = match expr {
             ExprAst::Unit(&unit) => self.unit_expr(unit, inference, builder),
             ExprAst::Binary(&binary) => self.binary_expr(binary, builder),
@@ -161,8 +158,8 @@ impl TyChecker<'_> {
         &mut self,
         unit_ast: UnitExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         match unit_ast {
             UnitExprAst::Path(path) => self.path(path, inference, builder),
             UnitExprAst::Return(ReturnExprAst { return_span, expr }) => {
@@ -176,13 +173,24 @@ impl TyChecker<'_> {
         &mut self,
         path: PathAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         use PathSegmentAst::*;
         match *path.segments {
             [Name(name)] => self
                 .lookup_typed::<VarLookup>(name.ident, name.span)
-                .map(|var| builder[var]),
+                .map(|var| (var, builder.get_var(var)))
+                .and_then(|(var, typed)| {
+                    self.node(
+                        typed.ty,
+                        AccessTir {
+                            node: typed.node,
+                            span: path.span(),
+                            var,
+                        },
+                        builder,
+                    )
+                }),
             [] => unreachable!("handled in parsing stage"),
             _ => self.invalid_expr_path(path.span())?,
         }
@@ -192,8 +200,8 @@ impl TyChecker<'_> {
         &mut self,
         span: Span,
         inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         let span_str = span_str!(self, span);
         let ty = Ty::INTEGERS
             .iter()
@@ -201,14 +209,14 @@ impl TyChecker<'_> {
             .copied()
             .or_else(|| inference.filter(|ty| Ty::INTEGERS.contains(ty)))
             .unwrap_or(Ty::UINT);
-        self.inst(ty, InstTir::Int(span), span, builder)
+        self.node(ty, TirNode::Int(span), builder)
     }
 
     fn binary_expr<'a>(
         &mut self,
         binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
         let lhs = self.expr(lhs, None, builder)?;
         let rhs = self.expr(rhs, None, builder)?;
 
@@ -217,27 +225,36 @@ impl TyChecker<'_> {
         let func = self.lookup_typed::<OpLookup>(id, op.span)?;
 
         let call = CallTir {
-            func: FuncTir::Concrete(func),
+            func: CallableTir::Func(func),
             params: default(),
-            args: builder.arena.alloc_slice(&[lhs, rhs]),
+            args: builder.arena.alloc_slice(&[lhs.node, rhs.node]),
+            func_span: op.span,
+            span: binary_ast.span(),
         };
         let ty = self.typec.funcs[func].signature.ret;
-        self.inst(ty, call, binary_ast.span(), builder)
+        self.node(ty, call, builder)
     }
 
-    fn args<'a>(
+    fn node<'a>(
         &mut self,
-        types: VSlice<VRef<Ty>>,
-        args: FuncArgsAst,
-        arena: &'a Arena,
-        builder: &mut TirBuilderCtx<'a>,
-    ) -> &'a [ValueTir<'a>] {
-        let mut values = bumpvec![cap args.len()];
-        for (&ty, &arg) in self.typec.ty_slices[types].iter().zip(args.iter()) {
-            let value = ValueTir { inst: None, ty };
-            values.push(value);
+        ty: VRef<Ty>,
+        node: impl NodeInput<'a>,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<TypedTirNode<'a>> {
+        let node = builder.node(node);
+        Some(TypedTirNode { node, ty })
+    }
 
-            let var = builder.create_var(value);
+    fn args(&mut self, types: VSlice<VRef<Ty>>, args: FuncArgsAst, builder: &mut TirBuilder) {
+        for (i, (&ty, &arg)) in self.typec.ty_slices[types]
+            .iter()
+            .zip(args.iter())
+            .enumerate()
+        {
+            let param = TirNode::Param(i);
+            let value = builder.node(param);
+
+            let var = builder.create_var(value, ty);
             let item = ScopeItem::new(
                 arg.name.ident,
                 var,
@@ -248,7 +265,6 @@ impl TyChecker<'_> {
             );
             self.scope.push(item);
         }
-        arena.alloc_slice(&values)
     }
 
     fn type_check(&mut self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) -> Option<()> {
@@ -270,32 +286,6 @@ impl TyChecker<'_> {
         display(self);
 
         None
-    }
-
-    fn inst<'a>(
-        &mut self,
-        ty: VRef<Ty>,
-        inst: impl InstInput<'a>,
-        span: Span,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<ValueTir<'a>> {
-        builder
-            .inst(ty, inst, span)
-            .map_err(|err| self.unreachable_expr(err, span))
-            .ok()
-    }
-
-    fn close_block<'a>(
-        &mut self,
-        ret: ControlFlowTir<'a>,
-        span: Span,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<()> {
-        let Some(because) = builder.close_block(ret, span) else {
-            return Some(());
-        };
-
-        self.unreachable_expr(span, because)?
     }
 
     gen_error_fns! {

@@ -23,8 +23,7 @@ impl<T: Invalid> Maybe<T> {
     /// # Panics
     ///
     /// Panics if the value is invalid.
-    pub fn some(value: T) -> Self {
-        assert!(!value.is_invalid());
+    pub const fn some(value: T) -> Self {
         Maybe(value)
     }
 

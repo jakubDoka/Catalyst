@@ -20,8 +20,8 @@ impl Default for Allocator {
 }
 
 impl Allocator {
-    const CHUNK_SIZE: usize = 1024;
-    const MAX_CHUNK_SIZE: usize = 1024 * 1024 * 2;
+    /// Since allocator is always reused small startup penalty is acceptable.
+    const CHUNK_SIZE: usize = (1024 * 1024 * 2) / mem::size_of::<usize>();
 
     pub fn new() -> Self {
         let chunk = Chunk::new(Self::CHUNK_SIZE);
@@ -63,9 +63,7 @@ impl Allocator {
             // SAFETY: Branch implies that garbage contains something.
             unsafe { garbage.pop().unwrap_unchecked() }
         } else {
-            let size =
-                unsafe { chunks.last().unwrap_unchecked().len() * 2 }.min(Self::MAX_CHUNK_SIZE);
-            Chunk::new(size)
+            Chunk::new(Self::CHUNK_SIZE.max(size))
         };
 
         let mut range = new.range();
@@ -131,13 +129,11 @@ impl Allocator {
         let mut chunks = self.chunks.take();
         let mut garbage = self.garbage.take();
 
-        garbage.append(&mut chunks);
-        garbage.sort_unstable_by_key(|check| check.len());
+        garbage.extend(chunks.drain(1..));
 
-        // SAFETY: Garbage is never empty at this point, since appended chunks are never empty
-        let last = unsafe { garbage.pop().unwrap_unchecked() };
+        // SAFETY: Chunks are never empty
+        let last = unsafe { chunks.last_mut().unwrap_unchecked() };
         let range = last.range();
-        chunks.push(last);
         self.current.set(range.end as *mut _);
         self.start.set(range.start as *mut _);
 

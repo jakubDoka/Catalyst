@@ -1,4 +1,7 @@
 #![feature(default_free_fn)]
+#![allow(incomplete_features)]
+#![feature(specialization)]
+#![feature(option_result_contains)]
 
 use std::convert::TryInto;
 
@@ -162,8 +165,8 @@ pub use {
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
     tir::{
-        Block, BlockInputTir, BlockTir, BodyTir, BranchTir, CallTir, ControlFlowTir, FuncTir,
-        InstInput, InstTir, JumpTir, TirBuilder, TirBuilderCtx, ValueTir, Var,
+        AccessTir, BlockTir, CallTir, CallableTir, IntTir, NodeInput, ReturnTir, TirBuilder,
+        TirNode, TypedTirNode, Var,
     },
     ty::{
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
