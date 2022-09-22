@@ -71,11 +71,11 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        builder.start_frame();
+        let frame = builder.start_frame();
         self.scope.start_frame();
 
         let Some((last, other)) = block.elements.split_last() else {
-            return self.node(Ty::UNIT, BlockTir { nodes: &[], span: block.span() }, builder)
+            return self.node(Ty::UNIT, BlockTir { nodes: &[], ty: Ty::UINT, span: block.span() }, builder)
         };
 
         let mut store = bumpvec![cap block.len()];
@@ -85,17 +85,19 @@ impl TyChecker<'_> {
                 .filter_map(|expr| self.expr(expr.value, None, builder))
                 .map(|expr| expr.node),
         );
-        let last = self.expr(last.value, inference, builder)?;
+        let last = self.expr(last.value, inference, builder);
+        builder.end_frame(frame);
+        let last = last?;
         store.push(last.node);
 
         self.scope.end_frame();
-        builder.end_frame();
 
         let nodes = builder.arena.alloc_slice(&store);
         self.node(
             last.ty,
             BlockTir {
                 nodes,
+                ty: last.ty,
                 span: block.span(),
             },
             builder,
@@ -178,12 +180,12 @@ impl TyChecker<'_> {
         match *path.segments {
             [Name(name)] => self
                 .lookup_typed::<VarLookup>(name.ident, name.span)
-                .map(|var| (var, builder.get_var(var)))
-                .and_then(|(var, typed)| {
+                .map(|var| (var, builder.get_var(var).ty))
+                .and_then(|(var, ty)| {
                     self.node(
-                        typed.ty,
+                        ty,
                         AccessTir {
-                            node: typed.node,
+                            ty,
                             span: path.span(),
                             var,
                         },
@@ -208,7 +210,7 @@ impl TyChecker<'_> {
             .copied()
             .or_else(|| inference.filter(|ty| Ty::INTEGERS.contains(ty)))
             .unwrap_or(Ty::UINT);
-        self.node(ty, TirNode::Int(span), builder)
+        self.node(ty, IntLit { span, ty }, builder)
     }
 
     fn binary_expr<'a>(
@@ -216,21 +218,23 @@ impl TyChecker<'_> {
         binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        let lhs = self.expr(lhs, None, builder)?;
-        let rhs = self.expr(rhs, None, builder)?;
+        let lhs = self.expr(lhs, None, builder);
+        let rhs = self.expr(rhs, None, builder);
+        let (lhs, rhs) = (lhs?, rhs?); // recovery
 
         let id = self.typec.binary_op_id(op.ident, lhs.ty, rhs.ty);
         let id = self.interner.intern(id);
         let func = self.lookup_typed::<OpLookup>(id, op.span)?;
 
+        let ty = self.typec.funcs[func].signature.ret;
         let call = CallTir {
             func: CallableTir::Func(func),
             params: default(),
             args: builder.arena.alloc_slice(&[lhs.node, rhs.node]),
+            ty,
             func_span: op.span,
             span: binary_ast.span(),
         };
-        let ty = self.typec.funcs[func].signature.ret;
         self.node(ty, call, builder)
     }
 
@@ -246,7 +250,11 @@ impl TyChecker<'_> {
 
     fn args(&mut self, types: VSlice<VRef<Ty>>, args: FuncArgsAst, builder: &mut TirBuilder) {
         for (&ty, &arg) in self.typec.ty_slices[types].iter().zip(args.iter()) {
-            let param = TirNode::Param(builder.next_var());
+            let param = Variable {
+                value: None,
+                ty,
+                span: arg.span(),
+            };
             let value = builder.node(param);
 
             let var = builder.create_var(value, ty);

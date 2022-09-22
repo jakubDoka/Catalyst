@@ -165,8 +165,8 @@ pub use {
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
     tir::{
-        AccessTir, BlockTir, CallTir, CallableTir, IntTir, NodeInput, ReturnTir, TirBuilder,
-        TirNode, TypeCheckedFuncs, TypedTirNode, Var,
+        AccessTir, BlockTir, CallTir, CallableTir, IntLit, IntTir, NodeInput, ReturnTir,
+        TirBuilder, TirNode, TypeCheckedFuncs, TypedTirNode, Var, Variable,
     },
     ty::{
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,

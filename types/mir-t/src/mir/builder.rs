@@ -19,15 +19,9 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-    pub fn inst(
-        &mut self,
-        kind: InstKind,
-        ty: Option<VRef<Ty>>,
-        span: Span,
-    ) -> Option<Option<VRef<ValueMir>>> {
+    pub fn inst(&mut self, kind: InstKind, ty: VRef<Ty>, span: Span) -> Option<VRef<ValueMir>> {
         self.current_block?;
-
-        let value = ty.map(|ty| self.ctx.func.values.push(ValueMir { ty }));
+        let value = self.ctx.func.values.push(ValueMir { ty });
         self.ctx.insts.push((
             InstMir {
                 kind,
@@ -38,12 +32,25 @@ impl<'a> MirBuilder<'a> {
         Some(value)
     }
 
-    pub fn dump(&mut self, control_flow: ControlFlowMir) -> bool {
+    pub fn valueless_inst(&mut self, kind: InstKind, span: Span) -> Option<()> {
+        self.current_block?;
+        self.ctx.insts.push((
+            InstMir {
+                kind,
+                value: None.into(),
+            },
+            span,
+        ));
+        Some(())
+    }
+
+    pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {
         let Some(current_block) = self.current_block else {
             return true;
         };
 
-        self.ctx.dump(current_block, control_flow);
+        self.ctx.close_block(current_block, control_flow);
+        self.ctx.dd.block_closers[current_block] = span;
 
         false
     }
@@ -67,7 +74,11 @@ impl MirBuilderCtx {
         self.func.blocks.push(BlockMir::default())
     }
 
-    pub fn dump(&mut self, id: VRef<BlockMir>, control_flow: ControlFlowMir) {
+    pub fn get_var(&self, var: VRef<Var>) -> VRef<ValueMir> {
+        self.vars[var.index()]
+    }
+
+    pub fn close_block(&mut self, id: VRef<BlockMir>, control_flow: ControlFlowMir) {
         let block = BlockMir {
             args: self.func.value_args.bump(self.args.drain(..)),
             insts: self
@@ -92,4 +103,14 @@ impl MirBuilderCtx {
         self.func.clear();
         cln
     }
+
+    pub fn start_frame(&self) -> MirFrame {
+        MirFrame(self.vars.len())
+    }
+
+    pub fn end_frame(&mut self, frame: MirFrame) {
+        self.vars.truncate(frame.0);
+    }
 }
+
+pub struct MirFrame(usize);

@@ -28,6 +28,10 @@ impl<T> PushMap<T> {
     pub fn get(&self, index: VRef<T>) -> Option<&T> {
         self.data.get(index.index())
     }
+
+    pub fn truncate(&mut self, len: usize) {
+        self.data.truncate(len);
+    }
 }
 
 impl<T> Index<VRef<T>> for PushMap<T> {

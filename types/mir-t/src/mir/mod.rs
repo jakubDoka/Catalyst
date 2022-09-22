@@ -4,7 +4,7 @@ use typec_t::*;
 
 pub mod builder;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct FuncMir {
     pub blocks: PushMap<BlockMir>,
     pub insts: BumpMap<InstMir>,
@@ -16,8 +16,24 @@ impl FuncMir {
     pub fn clear(&mut self) {
         self.blocks.clear();
         self.insts.clear();
-        self.values.clear();
+        self.values.truncate(ValueMir::TERMINAL.index() + 1);
         self.value_args.clear();
+    }
+}
+
+impl Default for FuncMir {
+    fn default() -> Self {
+        Self {
+            blocks: Default::default(),
+            insts: Default::default(),
+            values: {
+                let mut values = PushMap::new();
+                values.push(ValueMir { ty: Ty::UNIT });
+                values.push(ValueMir { ty: Ty::TERMINAL });
+                values
+            },
+            value_args: Default::default(),
+        }
     }
 }
 
@@ -42,6 +58,7 @@ impl Default for ControlFlowMir {
 #[derive(Default)]
 pub struct DebugData {
     pub instr_spans: ShadowMap<InstMir, Span>,
+    pub block_closers: ShadowMap<BlockMir, Span>,
 }
 
 #[derive(Clone, Copy)]
@@ -53,9 +70,17 @@ pub struct InstMir {
 #[derive(Clone, Copy)]
 pub enum InstKind {
     Int(Span),
+    Access(VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]
 pub struct ValueMir {
     pub ty: VRef<Ty>,
+}
+
+impl ValueMir {
+    gen_increasing_constants!(
+        UNIT
+        TERMINAL
+    );
 }
