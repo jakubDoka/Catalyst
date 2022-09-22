@@ -6,7 +6,6 @@ use diags::*;
 use packaging::*;
 use packaging_t::*;
 use parsing::*;
-use parsing_t::*;
 use scope::*;
 use storage::*;
 use testing::*;
@@ -21,65 +20,47 @@ struct TestState {
     workspace: Workspace,
     packages: Packages,
     package_graph: PackageGraph,
-    ast_data: AstData,
     arena: Arena,
+    functions: String,
+}
+
+impl Scheduler for TestState {
+    fn resources(&mut self) -> PackageLoader {
+        package_loader!(self)
+    }
+
+    fn init(&mut self) {
+        self.typec.init_builtin_types(&mut self.interner);
+    }
+
+    fn before_parsing(&mut self, module: VRef<str>) {
+        typec::build_scope(module, &mut self.scope, &self.packages, &self.typec);
+    }
+
+    fn parse_segment(&mut self, module: VRef<str>, items: ItemsAst) {
+        self.arena.clear();
+        let mut structs = bumpvec![];
+        let mut funcs = bumpvec![];
+        let mut type_checked_funcs = bumpvec![];
+        ty_checker!(self, module)
+            .collect_structs(items, &mut structs)
+            .collect_funcs(items, &mut funcs)
+            .build_structs(&mut structs)
+            .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs)
+            .display_funcs(&type_checked_funcs, &mut self.functions)
+            .unwrap();
+    }
+
+    fn finally(&mut self) {
+        self.workspace.push(snippet! {
+            info: ("tir repr of functions:\n {}", self.functions);
+        });
+    }
 }
 
 impl Testable for TestState {
     fn exec(mut self, name: &str) -> (Workspace, Packages) {
-        package_loader!(self).load(Path::new(name));
-
-        let mut parse_state = ParsingState::new();
-
-        let mut functions = String::new();
-        for module in self.packages.module_order.clone() {
-            self.build_scope(module);
-
-            let mod_ent = self.packages.modules.get(&module).unwrap();
-            parse_state.start(&mod_ent.content, module);
-            loop {
-                self.ast_data.clear();
-                let mod_ent = self.packages.modules.get(&module).unwrap();
-                let items = {
-                    let mut parser = ParsingCtx::new(
-                        &mod_ent.content,
-                        &mut parse_state,
-                        &self.ast_data,
-                        &mut self.workspace,
-                        &mut self.interner,
-                    );
-                    ItemsAst::parse(&mut parser)
-                };
-
-                let Some(items) = items else {
-                    break;
-                };
-
-                let finished = items.end.is_empty();
-
-                {
-                    self.arena.clear();
-                    let mut structs = bumpvec![];
-                    let mut funcs = bumpvec![];
-                    let mut type_checked_funcs = bumpvec![];
-                    ty_checker!(self, module)
-                        .collect_structs(items, &mut structs)
-                        .collect_funcs(items, &mut funcs)
-                        .build_structs(&mut structs)
-                        .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs)
-                        .display_funcs(&type_checked_funcs, &mut functions)
-                        .unwrap();
-                }
-
-                if finished {
-                    break;
-                }
-            }
-        }
-
-        self.workspace.push(snippet! {
-            info: ("generated tir:\n{}", functions);
-        });
+        self.execute(Path::new(name));
 
         (self.workspace, self.packages)
     }
@@ -89,36 +70,7 @@ impl Testable for TestState {
     }
 }
 
-impl TestState {
-    fn build_scope(&mut self, module: VRef<str>) {
-        self.scope.clear();
-
-        self.typec.init_builtin_types(&mut self.interner);
-
-        for &ty in Ty::ALL {
-            let id = self.typec.types.id(ty);
-            self.scope.insert_builtin(id, ty);
-        }
-
-        let mod_ent = self.packages.modules.get(&module).unwrap();
-        for dep in &self.packages.conns[mod_ent.deps] {
-            let mod_ent = self.packages.modules.get(&dep.ptr).unwrap();
-            let ModKind::Module { ref items, .. } = mod_ent.kind else {
-                unreachable!();
-            };
-            let r#mod = self.packages.ident_as_mod(dep.ptr).unwrap();
-            let item = ModItem::new(dep.name, r#mod, dep.name_span, dep.name_span, Vis::Priv);
-            self.scope
-                .insert_current(item.to_scope_item(dep.ptr))
-                .unwrap();
-            for &item in items {
-                self.scope
-                    .insert(module, item.to_scope_item(dep.ptr))
-                    .unwrap();
-            }
-        }
-    }
-}
+impl TestState {}
 
 fn main() {
     gen_test! {

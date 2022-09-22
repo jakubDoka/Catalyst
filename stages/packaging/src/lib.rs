@@ -6,6 +6,7 @@
 #![feature(never_type)]
 
 mod packages;
+mod scheduler;
 mod state_gen;
 
-pub use state_gen::PackageLoader;
+pub use {scheduler::Scheduler, state_gen::PackageLoader};

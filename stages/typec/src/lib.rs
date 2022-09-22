@@ -50,7 +50,7 @@ mod tir_display;
 mod ty_builder;
 mod ty_parser;
 
-pub use util::{duplicate_definition, insert_scope_item};
+pub use util::{build_scope, duplicate_definition, insert_scope_item};
 
 pub use state_gen::TyChecker;
 pub use ty_parser::{ScopeLookup, TyLookup};
@@ -61,6 +61,30 @@ mod util {
     use packaging_t::*;
     use scope::*;
     use storage::*;
+    use typec_t::*;
+
+    pub fn build_scope(module: VRef<str>, scope: &mut Scope, packages: &Packages, typec: &Typec) {
+        scope.clear();
+
+        for &ty in Ty::ALL {
+            let id = typec.types.id(ty);
+            scope.insert_builtin(id, ty);
+        }
+
+        let mod_ent = packages.modules.get(&module).unwrap();
+        for dep in &packages.conns[mod_ent.deps] {
+            let mod_ent = packages.modules.get(&dep.ptr).unwrap();
+            let ModKind::Module { ref items, .. } = mod_ent.kind else {
+                unreachable!();
+            };
+            let r#mod = packages.ident_as_mod(dep.ptr).unwrap();
+            let item = ModItem::new(dep.name, r#mod, dep.name_span, dep.name_span, Vis::Priv);
+            scope.insert_current(item.to_scope_item(dep.ptr)).unwrap();
+            for &item in items {
+                scope.insert(module, item.to_scope_item(dep.ptr)).unwrap();
+            }
+        }
+    }
 
     use crate::TyChecker;
 
