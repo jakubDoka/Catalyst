@@ -1,4 +1,9 @@
-use std::{fs::*, path::*, process::*, thread::scope};
+use std::{
+    fs::{self, *},
+    path::*,
+    process::*,
+    thread::scope,
+};
 
 fn main() {
     println!("Initiating catalyst test!");
@@ -38,6 +43,9 @@ fn main() {
 
     for (path, _) in dirs_ctor() {
         let dir_path = path.join("test_out");
+        if !dir_path.exists() {
+            fs::create_dir(&dir_path).unwrap();
+        }
         let files = read_dir(&dir_path)
             .unwrap()
             .filter_map(|file| file.ok())

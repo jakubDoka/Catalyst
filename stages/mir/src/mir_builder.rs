@@ -106,7 +106,8 @@ impl MirChecker<'_> {
         let builder = MirBuilder::new(block, ctx);
 
         for &ty in &self.typec.ty_slices[args] {
-            let val = builder.ctx.func.values.push(ValueMir { ty });
+            let mir_ty = builder.ctx.project_ty(ty);
+            let val = builder.ctx.func.values.push(ValueMir { ty: mir_ty });
             builder.ctx.vars.push(val);
             builder.ctx.args.push(val);
         }

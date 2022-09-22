@@ -10,6 +10,7 @@ pub struct FuncMir {
     pub insts: BumpMap<InstMir>,
     pub values: PushMap<ValueMir>,
     pub value_args: BumpMap<VRef<ValueMir>>,
+    pub dependant_types: PushMap<MirTy>,
 }
 
 impl FuncMir {
@@ -28,12 +29,32 @@ impl Default for FuncMir {
             insts: Default::default(),
             values: {
                 let mut values = PushMap::new();
-                values.push(ValueMir { ty: Ty::UNIT });
-                values.push(ValueMir { ty: Ty::TERMINAL });
+                values.push(ValueMir { ty: MirTy::UNIT });
+                values.push(ValueMir {
+                    ty: MirTy::TERMINAL,
+                });
                 values
             },
             value_args: Default::default(),
+            dependant_types: {
+                let mut values = PushMap::new();
+                values.push(MirTy { ty: Ty::UNIT });
+                values.push(MirTy { ty: Ty::TERMINAL });
+                values
+            },
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct MirTy {
+    pub ty: VRef<Ty>,
+}
+
+impl MirTy {
+    gen_increasing_constants! {
+        UNIT
+        TERMINAL
     }
 }
 
@@ -75,7 +96,7 @@ pub enum InstKind {
 
 #[derive(Clone, Copy)]
 pub struct ValueMir {
-    pub ty: VRef<Ty>,
+    pub ty: VRef<MirTy>,
 }
 
 impl ValueMir {

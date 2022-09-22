@@ -21,6 +21,7 @@ impl<'a> MirBuilder<'a> {
 
     pub fn inst(&mut self, kind: InstKind, ty: VRef<Ty>, span: Span) -> Option<VRef<ValueMir>> {
         self.current_block?;
+        let ty = self.ctx.project_ty(ty);
         let value = self.ctx.func.values.push(ValueMir { ty });
         self.ctx.insts.push((
             InstMir {
@@ -67,6 +68,7 @@ pub struct MirBuilderCtx {
     pub vars: Vec<VRef<ValueMir>>,
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
+    pub used_types: ShadowMap<Ty, Maybe<VRef<MirTy>>>,
 }
 
 impl MirBuilderCtx {
@@ -76,6 +78,17 @@ impl MirBuilderCtx {
 
     pub fn get_var(&self, var: VRef<Var>) -> VRef<ValueMir> {
         self.vars[var.index()]
+    }
+
+    pub fn project_ty(&mut self, ty: VRef<Ty>) -> VRef<MirTy> {
+        if let Some(ty) = self.used_types[ty].expand() {
+            return ty;
+        }
+
+        let mir_ty = self.func.dependant_types.push(MirTy { ty });
+        self.used_types[ty] = mir_ty.into();
+
+        mir_ty
     }
 
     pub fn close_block(&mut self, id: VRef<BlockMir>, control_flow: ControlFlowMir) {
