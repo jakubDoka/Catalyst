@@ -1,0 +1,7 @@
+ --> binary-operators\root.ctl
+  |
+1 | fn do_something(a: uint,b: uint) -> uint {
+2 |     a - b * a / b % a % b & a ^ b << a >> b >> a
+3 | }
+  |
+
