@@ -1,0 +1,9 @@
+info: generated tir:
+fn [todo] 4`main() -> uint {
+    return 0
+}
+
+fn [todo] 4`pass(var0: uint) -> uint return var0
+
+
+
