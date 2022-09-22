@@ -1,13 +1,11 @@
  --> binary-operators\root.ctl
   |
 1 | fn do_something(a: uint,b: uint) -> uint {
-2 |     (((((((((((((a + (b * a)) + (b * a)) + (b * a)) + (b * a)) + (b * a)) + (b *
-3 |         a)) + (b * a)) + (b * a)) +
-4 |         (b * a)) +
-5 |         (b * a)) +
-6 |         (b * a)) +
-7 |         b) +
-8 |         a)
-9 | }
+2 |     a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a +
+3 |         b * a +
+4 |         b * a +
+5 |         b +
+6 |         a
+7 | }
   |
 
