@@ -5,6 +5,7 @@
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(let_chains)]
 #![feature(never_type)]
+#![feature(iter_intersperse)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
@@ -45,6 +46,7 @@ macro_rules! insert_scope_item {
 mod func_builder;
 mod item_collector;
 mod state_gen;
+mod tir_display;
 mod ty_builder;
 mod ty_parser;
 

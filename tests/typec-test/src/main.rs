@@ -31,6 +31,7 @@ impl Testable for TestState {
 
         let mut parse_state = ParsingState::new();
 
+        let mut functions = String::new();
         for module in self.packages.module_order.clone() {
             self.build_scope(module);
 
@@ -65,9 +66,9 @@ impl Testable for TestState {
                         .collect_structs(items, &mut structs)
                         .collect_funcs(items, &mut funcs)
                         .build_structs(&mut structs)
-                        .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs);
-
-                    dbg!(type_checked_funcs);
+                        .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs)
+                        .display_funcs(&type_checked_funcs, &mut functions)
+                        .unwrap();
                 }
 
                 if finished {
@@ -75,6 +76,10 @@ impl Testable for TestState {
                 }
             }
         }
+
+        self.workspace.push(snippet! {
+            info: ("generated tir:\n{}", functions);
+        });
 
         (self.workspace, self.packages)
     }
@@ -133,7 +138,7 @@ fn main() {
                 return 0
             };
 
-            fn "default" pass(a: uint) -> uint => a
+            fn pass(a: uint) -> uint => a;
         }
     }
 }

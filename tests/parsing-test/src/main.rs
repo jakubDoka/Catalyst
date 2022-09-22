@@ -71,5 +71,11 @@ fn main() {
                 priv pointer: ^mut^int;
             }
         }
+
+        simple "binary-operators" {
+            fn do_something(a: uint, b: uint) -> uint {
+                a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b + a
+            }
+        }
     }
 }

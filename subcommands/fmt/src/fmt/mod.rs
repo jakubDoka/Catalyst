@@ -148,6 +148,9 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
                     if fmt.buffer.ends_with(['\n', ';'][fold as usize]) {
                         fmt.buffer.pop().unwrap();
                     }
+                    if !fold {
+                        fmt.buffer.push(' ');
+                    }
                 }
                 fmt.write_between(fold, after.range());
             }

@@ -19,7 +19,7 @@ impl TyChecker<'_> {
         arena: &'a Arena,
         funcs: &mut FuncDefs,
         compiled_funcs: &mut TypeCheckedFuncs<'a>,
-    ) {
+    ) -> &mut Self {
         for (ast, func) in funcs.drain(..) {
             let Some(res) = self.build_func(ast, func, arena) else {
                 compiled_funcs.push((func, None));
@@ -31,6 +31,7 @@ impl TyChecker<'_> {
             };
             compiled_funcs.push((func, Some(body)));
         }
+        self
     }
 
     pub fn build_func<'a>(

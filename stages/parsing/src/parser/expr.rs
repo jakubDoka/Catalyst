@@ -17,14 +17,8 @@ impl<'a> Ast<'a> for ExprAst<'a> {
     const NAME: &'static str = "expr";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
-        let unit = ctx.parse_alloc().map(ExprAst::Unit);
-        if let TokenKind::Operator(precedence) = ctx.state.current.kind {
-            let op = ctx.name_unchecked();
-            ctx.parse_args_alloc((unit?, op, precedence))
-                .map(Self::Binary)
-        } else {
-            unit
-        }
+        let unit = ctx.parse_alloc().map(ExprAst::Unit)?;
+        BinaryExprAst::try_parse_binary(ctx, unit, u8::MAX)
     }
 
     fn span(&self) -> Span {
@@ -46,39 +40,29 @@ impl<'a> BinaryExprAst<'a> {
     pub fn new(lhs: ExprAst<'a>, op: NameAst, rhs: ExprAst<'a>) -> Self {
         Self { lhs, op, rhs }
     }
-}
 
-impl<'a> Ast<'a> for BinaryExprAst<'a> {
-    type Args = (ExprAst<'a>, NameAst, u8);
-
-    const NAME: &'static str = "binary expr";
-
-    fn parse_args_internal(
+    fn try_parse_binary(
         ctx: &mut ParsingCtx<'_, 'a>,
-        (mut lhs, mut op, mut precedence): Self::Args,
-    ) -> Option<Self> {
+        mut lhs: ExprAst<'a>,
+        prev_precedence: u8,
+    ) -> Option<ExprAst<'a>> {
         Some(loop {
-            let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
-
-            let TokenKind::Operator(next_precedence) = ctx.state.current.kind else {
-                break Self::new(lhs, op, rhs);
+            let TokenKind::Operator(precedence) = ctx.state.current.kind else {
+                break lhs;
             };
 
-            if precedence < next_precedence {
-                lhs = ExprAst::Binary(ctx.arena.alloc(Self::new(lhs, op, rhs)));
-                op = ctx.name_unchecked();
-                precedence = next_precedence;
-            } else {
+            if prev_precedence > precedence {
                 let op = ctx.name_unchecked();
-                let rhs = ctx
-                    .parse_args_alloc((rhs, op, next_precedence))
-                    .map(ExprAst::Binary)?;
-                break Self::new(lhs, op, rhs);
+                let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
+                let rhs = Self::try_parse_binary(ctx, rhs, precedence)?;
+                lhs = ExprAst::Binary(ctx.arena.alloc(Self::new(lhs, op, rhs)));
+            } else {
+                break lhs;
             }
         })
     }
 
-    fn span(&self) -> Span {
+    pub fn span(&self) -> Span {
         self.lhs.span().joined(self.rhs.span())
     }
 }
