@@ -106,9 +106,10 @@ pub use items::Testable;
 pub mod items {
     use diags::*;
     use fmt::Fmt;
+    use packaging::Scheduler;
     use packaging_t::*;
     use snippet_display::SnippetDisplay;
-    use std::thread::Scope;
+    use std::{mem, thread::Scope};
     use storage::{Interner, VRef};
 
     use std::{
@@ -118,6 +119,21 @@ pub mod items {
         path::{Path, PathBuf},
         process::{Command, CommandArgs, ExitStatus, Output},
     };
+
+    impl<T: Scheduler + Default> Testable for T {
+        fn exec(mut self, name: &str) -> (Workspace, Packages) {
+            self.execute(Path::new(name));
+
+            (
+                mem::take(self.resources().workspace),
+                mem::take(self.resources().packages),
+            )
+        }
+
+        fn set_packages(&mut self, packages: Packages) {
+            *self.resources().packages = packages;
+        }
+    }
 
     pub trait Testable: Default {
         fn exec(self, name: &str) -> (Workspace, Packages);

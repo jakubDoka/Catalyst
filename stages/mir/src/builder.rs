@@ -13,12 +13,14 @@ impl MirChecker<'_> {
         ctx: &mut MirBuilderCtx,
         input: &mut TypeCheckedFuncs,
         out: &mut MirFuncs,
-    ) {
+    ) -> &mut Self {
         out.extend(
             input
                 .drain(..)
                 .filter_map(|(func, body)| body.map(|b| (func, self.func(func, b, ctx)))),
-        )
+        );
+
+        self
     }
 
     fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMir {

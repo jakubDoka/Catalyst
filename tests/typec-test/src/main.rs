@@ -1,7 +1,5 @@
 #![feature(let_else)]
 
-use std::path::Path;
-
 use diags::*;
 use packaging::*;
 use packaging_t::*;
@@ -57,20 +55,6 @@ impl Scheduler for TestState {
         });
     }
 }
-
-impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, Packages) {
-        self.execute(Path::new(name));
-
-        (self.workspace, self.packages)
-    }
-
-    fn set_packages(&mut self, packages: Packages) {
-        self.packages = packages;
-    }
-}
-
-impl TestState {}
 
 fn main() {
     gen_test! {

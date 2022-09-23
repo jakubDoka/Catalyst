@@ -32,6 +32,10 @@ impl<T> PushMap<T> {
     pub fn truncate(&mut self, len: usize) {
         self.data.truncate(len);
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
+    }
 }
 
 impl<T> Index<VRef<T>> for PushMap<T> {

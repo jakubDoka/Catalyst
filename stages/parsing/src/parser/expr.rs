@@ -53,6 +53,7 @@ impl<'a> BinaryExprAst<'a> {
 
             if prev_precedence > precedence {
                 let op = ctx.name_unchecked();
+                ctx.skip(TokenKind::NewLine);
                 let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
                 let rhs = Self::try_parse_binary(ctx, rhs, precedence)?;
                 lhs = ExprAst::Binary(ctx.arena.alloc(Self::new(lhs, op, rhs)));

@@ -52,5 +52,7 @@ pub trait Scheduler {
                 }
             }
         }
+
+        self.finally();
     }
 }

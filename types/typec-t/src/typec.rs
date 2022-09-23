@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{default::default, ops::IndexMut};
 
 use crate::*;
@@ -54,6 +55,33 @@ macro_rules! assert_init {
 }
 
 impl Typec {
+    pub fn display_sig(
+        &self,
+        func: VRef<Func>,
+        interner: &Interner,
+        buffer: &mut String,
+    ) -> fmt::Result {
+        let Func { signature, .. } = self.funcs[func];
+        use fmt::Write;
+        write!(
+            buffer,
+            "fn {}[todo] {}({}) -> {} ",
+            signature
+                .cc
+                .expand()
+                .map(|cc| &interner[cc])
+                .map_or(default(), |cc| format!("\"{}\" ", cc)),
+            &interner[self.funcs.id(func)],
+            self.ty_slices[signature.args]
+                .iter()
+                .map(|&ty| &interner[self.types.id(ty)])
+                .enumerate()
+                .map(|(i, str)| format!("var{}: {}", i, str))
+                .intersperse(String::from(", "))
+                .collect::<String>(),
+            &interner[self.types.id(signature.ret)],
+        )
+    }
     pub fn init_builtin_types(&mut self, interner: &mut Interner) {
         assert_init! {
             (self, interner)

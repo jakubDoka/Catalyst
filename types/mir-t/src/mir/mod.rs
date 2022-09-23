@@ -14,6 +14,10 @@ pub struct FuncMir {
 }
 
 impl FuncMir {
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> VRef<Ty> {
+        self.dependant_types[self.values[value].ty].ty
+    }
+
     pub fn clear(&mut self) {
         self.blocks.clear();
         self.insts.clear();

@@ -153,6 +153,20 @@ dependencies = [
 [[package]]
 name = "mir-test"
 version = "0.1.0"
+dependencies = [
+ "diags",
+ "mir",
+ "mir-t",
+ "packaging",
+ "packaging-t",
+ "parsing",
+ "parsing-t",
+ "scope",
+ "storage",
+ "testing",
+ "typec",
+ "typec-t",
+]
 
 [[package]]
 name = "num-traits"

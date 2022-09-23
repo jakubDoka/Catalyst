@@ -1,5 +1,4 @@
 use std::{
-    default::default,
     fmt::{self, Write},
     iter,
 };
@@ -26,27 +25,10 @@ impl TyChecker<'_> {
         tir: Option<TirNode>,
         buffer: &mut String,
     ) -> fmt::Result {
-        let Func { signature, .. } = self.typec.funcs[func];
-        write!(
-            buffer,
-            "fn {}[todo] {}({}) -> {} ",
-            signature
-                .cc
-                .expand()
-                .map(|cc| &self.interner[cc])
-                .map_or(default(), |cc| format!("\"{}\" ", cc)),
-            &self.interner[self.typec.funcs.id(func)],
-            self.typec.ty_slices[signature.args]
-                .iter()
-                .map(|&ty| &self.interner[self.typec.types.id(ty)])
-                .enumerate()
-                .map(|(i, str)| format!("var{}: {}", i, str))
-                .intersperse(String::from(", "))
-                .collect::<String>(),
-            &self.interner[self.typec.types.id(signature.ret)],
-        )?;
+        self.typec.display_sig(func, self.interner, buffer)?;
 
         if let Some(tir) = tir {
+            let Func { signature, .. } = self.typec.funcs[func];
             self.display_tir(
                 tir,
                 buffer,

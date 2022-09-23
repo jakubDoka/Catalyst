@@ -1,6 +1,6 @@
 #![feature(default_free_fn)]
 
-use std::{default::default, path::Path};
+use std::default::default;
 
 use diags::*;
 use lexing_t::*;
@@ -17,33 +17,27 @@ struct TestState {
     package_graph: PackageGraph,
 }
 
-impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, Packages) {
-        package_loader!(self).load(Path::new(name));
-
-        for &module in &self.packages.module_order {
-            let module_ent = self
-                .packages
-                .modules
-                .get(&module)
-                .expect("module should exist since it is in module order");
-
-            self.workspace.push(Snippet {
-                slices: vec![Slice {
-                    span: Span::new(0..module_ent.content.len()),
-                    origin: module,
-                    ..default()
-                }
-                .into()],
-                ..default()
-            })
-        }
-
-        (self.workspace, self.packages)
+impl Scheduler for TestState {
+    fn resources(&mut self) -> PackageLoader {
+        package_loader!(self)
     }
 
-    fn set_packages(&mut self, packages: Packages) {
-        self.packages = packages;
+    fn before_parsing(&mut self, module: VRef<str>) {
+        let module_ent = self
+            .packages
+            .modules
+            .get(&module)
+            .expect("module should exist since it is in module order");
+
+        self.workspace.push(Snippet {
+            slices: vec![Slice {
+                span: Span::new(0..module_ent.content.len()),
+                origin: module,
+                ..default()
+            }
+            .into()],
+            ..default()
+        })
     }
 }
 

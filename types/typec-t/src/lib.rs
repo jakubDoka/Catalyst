@@ -2,6 +2,7 @@
 #![allow(incomplete_features)]
 #![feature(specialization)]
 #![feature(option_result_contains)]
+#![feature(iter_intersperse)]
 
 use std::convert::TryInto;
 
