@@ -1,7 +1,6 @@
 use std::{
     intrinsics::transmute,
-    iter::repeat,
-    mem::MaybeUninit,
+    mem::{self, MaybeUninit},
     ops::{Index, IndexMut, Not, Range},
 };
 
@@ -20,7 +19,6 @@ pub struct BumpMap<T, CACHE = ()> {
     data: Vec<MaybeUninit<T>>,
     indices: Vec<u32>,
     frames: CACHE,
-    reserves_in_progress: usize,
 }
 
 impl<T, CACHE: Default> BumpMap<T, CACHE> {
@@ -30,7 +28,6 @@ impl<T, CACHE: Default> BumpMap<T, CACHE> {
             data: Vec::new(),
             indices: vec![0],
             frames: CACHE::default(),
-            reserves_in_progress: 0,
         }
     }
 
@@ -214,13 +211,11 @@ impl<T> BumpMap<T, Frames<T>> {
     where
         T: Clone,
     {
-        assert_eq!(self.reserves_in_progress, 0);
         BumpMap {
             // SAFETY: this is safe since bump map in not in gc mode.
             data: unsafe { transmute(transmute::<_, &Vec<T>>(&self.data).clone()) },
             indices: self.indices.clone(),
             frames: (),
-            reserves_in_progress: 0,
         }
     }
 }
@@ -356,23 +351,6 @@ impl<T, CACHE> BumpMap<T, CACHE> {
         unsafe { VSlice::new(result) }
     }
 
-    /// Reserves a slice of uninitialized memory that is supposed to be filled later.
-    pub fn reserve(&mut self, size: usize) -> Reserved<T>
-    where
-        T: Clone,
-    {
-        let start = self.data.len();
-        self.data
-            .extend(repeat(()).map(|_| MaybeUninit::uninit()).take(size));
-        let id = self.close_frame();
-        self.reserves_in_progress += 1;
-        Reserved {
-            start,
-            end: start + size,
-            id,
-        }
-    }
-
     pub fn indexed(&self, key: VSlice<T>) -> impl Iterator<Item = (VRef<T>, &T)> {
         key.is_empty()
             .not()
@@ -387,68 +365,14 @@ impl<T, CACHE> BumpMap<T, CACHE> {
             .into_iter()
             .flatten()
     }
-
-    /// Pushes one element to reserved slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `reserved` is already filled.
-    pub fn push_to_reserved(&mut self, reserved: &mut Reserved<T>, value: T) -> VRef<T> {
-        assert_ne!(reserved.end, reserved.start);
-        self.data[reserved.start] = MaybeUninit::new(value);
-        let key = unsafe { VRef::new(reserved.start) };
-        reserved.start += 1;
-        key
-    }
-
-    pub fn reserve_len(&self, reserved: &Reserved<T>) -> usize {
-        self[reserved.id].len() - (reserved.end - reserved.start)
-    }
-
-    /// Finalizes the reserved slice and return valid [`VPtr`] to it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `reserved` is not filled.
-    pub fn finish_reserved(&mut self, reserved: Reserved<T>) -> VSlice<T> {
-        assert_eq!(reserved.end, reserved.start);
-        self.reserves_in_progress -= 1;
-        reserved.id
-    }
-
-    /// Other way of finalizing a reserved slice if filling all itr remaining elements with [`Clone`] value.
-    pub fn fill_reserved(&mut self, mut reserved: Reserved<T>, value: T) -> VSlice<T>
-    where
-        T: Clone,
-    {
-        self.data[reserved.start..reserved.end]
-            .iter_mut()
-            .for_each(|i| *i = MaybeUninit::new(value.clone()));
-        reserved.start = reserved.end;
-        self.finish_reserved(reserved)
-    }
-
-    pub fn reserved_view(&self, reserved: &Reserved<T>) -> &[T] {
-        &self[reserved.id][..reserved.start]
-    }
 }
 
-impl<T: Clone> Clone for BumpMap<T> {
+impl<T: Clone, CACHE: Clone> Clone for BumpMap<T, CACHE> {
     fn clone(&self) -> Self {
-        assert_eq!(self.reserves_in_progress, 0);
         Self {
-            data: unsafe { transmute(transmute::<_, &Vec<T>>(&self.data).clone()) },
+            data: unsafe { mem::transmute(mem::transmute::<_, &Vec<T>>(&self.data).clone()) },
             indices: self.indices.clone(),
-            frames: (),
-            reserves_in_progress: 0,
-        }
-    }
-}
-
-impl<T, CACHE> Drop for BumpMap<T, CACHE> {
-    fn drop(&mut self) {
-        if !std::thread::panicking() {
-            assert_eq!(self.reserves_in_progress, 0);
+            frames: self.frames.clone(),
         }
     }
 }
@@ -492,7 +416,6 @@ impl<T: Serialize, CACHE> Serialize for BumpMap<T, CACHE> {
     where
         S: serde::Serializer,
     {
-        assert_eq!(self.reserves_in_progress, 0);
         unsafe { transmute::<_, &SerializableBumpMap<T, CACHE>>(self) }.serialize(serializer)
     }
 }
@@ -506,7 +429,6 @@ impl<'de, T: Deserialize<'de>, CACHE: Default> Deserialize<'de> for BumpMap<T, C
             data: unsafe { transmute(s.data) },
             indices: s.indices,
             frames: CACHE::default(),
-            reserves_in_progress: 0,
         })
     }
 }
@@ -518,16 +440,4 @@ struct SerializableBumpMap<T, CACHE = ()> {
     #[serde(skip)]
     _frames: CACHE,
     _padding: usize,
-}
-
-pub struct Reserved<T> {
-    start: usize,
-    end: usize,
-    id: VSlice<T>,
-}
-
-impl<T> Reserved<T> {
-    pub fn finished(&self) -> bool {
-        self.start == self.end
-    }
 }

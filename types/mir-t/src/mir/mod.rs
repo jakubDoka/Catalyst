@@ -10,6 +10,7 @@ pub struct FuncMir {
     pub insts: BumpMap<InstMir>,
     pub values: PushMap<ValueMir>,
     pub value_args: BumpMap<VRef<ValueMir>>,
+    pub ty_params: BumpMap<VRef<MirTy>>,
     pub dependant_types: PushMap<MirTy>,
 }
 
@@ -40,6 +41,7 @@ impl Default for FuncMir {
                 values
             },
             value_args: Default::default(),
+            ty_params: Default::default(),
             dependant_types: {
                 let mut values = PushMap::new();
                 values.push(MirTy { ty: Ty::UNIT });
@@ -96,6 +98,21 @@ pub struct InstMir {
 pub enum InstKind {
     Int(Span),
     Access(VRef<ValueMir>),
+    Call(CallMir),
+}
+
+#[derive(Clone, Copy)]
+pub struct CallMir {
+    pub callable: CallableMir,
+    pub params: VRefSlice<MirTy>,
+    pub args: VRefSlice<ValueMir>,
+}
+
+#[derive(Clone, Copy)]
+pub enum CallableMir {
+    Func(VRef<Func>),
+    BoundFunc(VRef<BoundFunc>),
+    Pointer(VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

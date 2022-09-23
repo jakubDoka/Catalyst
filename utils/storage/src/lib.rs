@@ -178,7 +178,7 @@ mod sparse_map;
 pub use {
     bit_set::BitSet,
     bump_alloc::*,
-    bump_map::{BumpMap, CacheBumpMap, Reserved},
+    bump_map::{BumpMap, CacheBumpMap},
     clear::Clear,
     frames::Frames,
     interner::{ident_join, InternedSegment, Interner},

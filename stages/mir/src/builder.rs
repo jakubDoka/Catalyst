@@ -79,8 +79,39 @@ impl MirChecker<'_> {
         Some(var)
     }
 
-    fn call(&mut self, CallTir { .. }: CallTir, _builder: &mut MirBuilder) -> NodeRes {
-        todo!()
+    fn call(
+        &mut self,
+        CallTir {
+            func,
+            params,
+            args,
+            ty,
+            span,
+            ..
+        }: CallTir,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let callable = match func {
+            CallableTir::Func(func) => CallableMir::Func(func),
+            CallableTir::BoundFunc(bound_func) => CallableMir::BoundFunc(bound_func),
+            CallableTir::Pointer(expr) => CallableMir::Pointer(self.node(expr, builder)?),
+        };
+
+        let params = builder.ctx.project_ty_slice(params);
+
+        let args = args
+            .iter()
+            .map(|&arg| self.node(arg, builder))
+            .collect::<Option<BumpVec<_>>>()?;
+        let args = builder.ctx.func.value_args.bump(args);
+
+        let call = InstKind::Call(CallMir {
+            callable,
+            params,
+            args,
+        });
+
+        builder.inst(call, ty, span)
     }
 
     fn int(&mut self, int: IntLit, builder: &mut MirBuilder) -> NodeRes {

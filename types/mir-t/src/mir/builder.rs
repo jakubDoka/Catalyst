@@ -80,13 +80,27 @@ impl MirBuilderCtx {
         self.vars[var.index()]
     }
 
+    pub fn project_ty_slice(&mut self, ty_slice: &[VRef<Ty>]) -> VRefSlice<MirTy> {
+        self.func.ty_params.bump(ty_slice.iter().map(|&ty| {
+            Self::project_ty_low(ty, &mut self.used_types, &mut self.func.dependant_types)
+        }))
+    }
+
     pub fn project_ty(&mut self, ty: VRef<Ty>) -> VRef<MirTy> {
-        if let Some(ty) = self.used_types[ty].expand() {
+        Self::project_ty_low(ty, &mut self.used_types, &mut self.func.dependant_types)
+    }
+
+    pub fn project_ty_low(
+        ty: VRef<Ty>,
+        used_types: &mut ShadowMap<Ty, Maybe<VRef<MirTy>>>,
+        dependant_types: &mut PushMap<MirTy>,
+    ) -> VRef<MirTy> {
+        if let Some(ty) = used_types[ty].expand() {
             return ty;
         }
 
-        let mir_ty = self.func.dependant_types.push(MirTy { ty });
-        self.used_types[ty] = mir_ty.into();
+        let mir_ty = dependant_types.push(MirTy { ty });
+        used_types[ty] = mir_ty.into();
 
         mir_ty
     }

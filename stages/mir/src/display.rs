@@ -84,7 +84,7 @@ impl MirChecker<'_> {
         Ok(())
     }
 
-    fn display_inst(&self, inst: InstMir, _func: &FuncMir, buffer: &mut String) -> fmt::Result {
+    fn display_inst(&self, inst: InstMir, func: &FuncMir, buffer: &mut String) -> fmt::Result {
         if let Some(value) = inst.value.expand() {
             write!(buffer, "var{} = ", value.index())?;
         }
@@ -95,6 +95,54 @@ impl MirChecker<'_> {
             }
             InstKind::Access(access) => {
                 write!(buffer, "access var{}", access.index())?;
+            }
+            InstKind::Call(CallMir {
+                callable,
+                params,
+                args,
+            }) => {
+                match callable {
+                    CallableMir::Func(func) => {
+                        buffer.push_str(&self.interner[self.typec.funcs.id(func)])
+                    }
+                    CallableMir::BoundFunc(bound_func) => {
+                        let BoundFunc { loc, parent, .. } = self.typec.bound_funcs[bound_func];
+                        let bound_id = self.typec.bounds.id(parent);
+                        write!(
+                            buffer,
+                            "{}\\{}",
+                            &self.interner[bound_id], &self.interner[loc.name]
+                        )?;
+                    }
+                    CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
+                }
+
+                if !params.is_empty() {
+                    buffer.push('[');
+
+                    let iter = func.ty_params[params]
+                        .iter()
+                        .map(|&ty| func.dependant_types[ty].ty)
+                        .map(|ty| self.typec.types.id(ty))
+                        .map(|ident| &self.interner[ident])
+                        .intersperse(", ")
+                        .flat_map(str::chars);
+                    buffer.extend(iter);
+
+                    buffer.push(']');
+                }
+
+                buffer.push('(');
+
+                if let Some((first, others)) = func.value_args[args].split_first() {
+                    write!(buffer, "val{}", first.index())?;
+
+                    for &other in others {
+                        write!(buffer, ", val{}", other.index())?;
+                    }
+                }
+
+                buffer.push(')');
             }
         }
 

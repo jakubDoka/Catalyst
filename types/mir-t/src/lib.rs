@@ -4,5 +4,6 @@ mod mir;
 
 pub use mir::{
     builder::{MirBuilder, MirBuilderCtx},
-    BlockMir, ControlFlowMir, DebugData, FuncMir, InstKind, InstMir, MirTy, ValueMir,
+    BlockMir, CallMir, CallableMir, ControlFlowMir, DebugData, FuncMir, InstKind, InstMir, MirTy,
+    ValueMir,
 };

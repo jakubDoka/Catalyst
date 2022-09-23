@@ -51,6 +51,7 @@ pub struct BoundFunc {
     pub generics: VRefSlice<Bound>,
     pub signature: Signature,
     pub loc: Loc,
+    pub parent: VRef<Bound>,
 }
 
 bitflags! {
