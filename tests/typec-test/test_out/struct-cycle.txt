@@ -1,10 +1,13 @@
-error: type not found
- --> struct-cycle\root.ctl:2:8
+error: infinitely sized type detected between defined types
+ --> struct-cycle\root.ctl:3:11
   |
+1 | struct A {
+  |        - info: this type is part of cycle
 2 |     b: B
-  |        ^ this does not exist
+3 | }; struct B {
+  |           - info: this type is part of cycle
   |
-  = info: queried 'B'
+  = info: cycle: 4\A -> 4\B -> 4\A
 
 info: tir repr of functions:
  
