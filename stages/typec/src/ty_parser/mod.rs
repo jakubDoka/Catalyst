@@ -69,14 +69,14 @@ impl TyChecker<'_> {
         self.typec.bound_slices.bump(generics)
     }
 
-    pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize, on_type: bool) {
+    pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
         for (i, &GenericParamAst { name, .. }) in generics_ast.iter().enumerate() {
-            self.insert_param(offset + i, name, on_type)
+            self.insert_param(offset + i, name)
         }
     }
 
-    fn insert_param(&mut self, index: usize, name: NameAst, on_type: bool) {
-        let param = ty_utils!(self).nth_param(index, on_type);
+    fn insert_param(&mut self, index: usize, name: NameAst) {
+        let param = ty_utils!(self).nth_param(index);
         self.scope.push(ScopeItem::new(
             name.ident,
             param,

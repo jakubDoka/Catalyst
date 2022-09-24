@@ -19,7 +19,7 @@ impl TyChecker<'_> {
     fn build_struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
         self.scope.start_frame();
 
-        self.insert_generics(generics, 0, true);
+        self.insert_generics(generics, 0);
         let fields = self.struct_fields(body);
         self.typec.types[ty].kind.cast_mut::<TyStruct>().fields = fields;
 
