@@ -1,3 +1,5 @@
+use std::mem;
+
 use mir_t::*;
 use packaging_t::span_str;
 use storage::*;
@@ -5,21 +7,17 @@ use typec_t::*;
 
 use crate::*;
 
-pub type MirFuncs = BumpVec<(VRef<Func>, FuncMir)>;
 pub type NodeRes = Option<VRef<ValueMir>>;
 
 impl MirChecker<'_> {
-    pub fn funcs(
-        &mut self,
-        ctx: &mut MirBuilderCtx,
-        input: &mut TypeCheckedFuncs,
-        out: &mut MirFuncs,
-    ) -> &mut Self {
+    pub fn funcs(&mut self, ctx: &mut MirBuilderCtx, input: &[(VRef<Func>, TirNode)]) -> &mut Self {
+        let mut out = mem::take(&mut ctx.mir_funcs);
         out.extend(
             input
-                .drain(..)
-                .map(|(func, body)| (func, self.func(func, body, ctx))),
+                .iter()
+                .map(|&(func, body)| (func, self.func(func, body, ctx))),
         );
+        ctx.mir_funcs = out;
 
         self
     }

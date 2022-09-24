@@ -7,11 +7,11 @@ use mir_t::*;
 use storage::*;
 use typec_t::*;
 
-use crate::{builder::MirFuncs, *};
+use crate::*;
 
 impl MirChecker<'_> {
-    pub fn display_funcs(&self, funcs: &MirFuncs, buffer: &mut String) -> fmt::Result {
-        for &(func, ref mir) in funcs.iter() {
+    pub fn display_funcs(&self, ctx: &MirBuilderCtx, buffer: &mut String) -> fmt::Result {
+        for &(func, ref mir) in ctx.mir_funcs.iter() {
             self.display_func(func, mir, buffer)?;
             buffer.push_str("\n\n");
         }

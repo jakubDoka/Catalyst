@@ -69,6 +69,7 @@ pub struct MirBuilderCtx {
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
     pub used_types: ShadowMap<Ty, Maybe<VRef<MirTy>>>,
+    pub mir_funcs: Vec<(VRef<Func>, FuncMir)>,
 }
 
 impl MirBuilderCtx {

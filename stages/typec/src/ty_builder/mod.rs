@@ -1,14 +1,19 @@
 use lexing_t::*;
-use parsing::{StructAst, StructBodyAst, StructFieldAst};
+use parsing::*;
 use parsing_t::*;
 use storage::*;
 use typec_t::*;
 
-use crate::{item_collector::Structs, *};
+use crate::*;
 
 impl TyChecker<'_> {
-    pub fn build_structs(&mut self, types: &mut Structs) -> &mut Self {
-        for (ast, ty) in types.drain(..) {
+    pub fn build_structs(
+        &mut self,
+        items: &[StructAst],
+        types: &mut Vec<(usize, VRef<Ty>)>,
+    ) -> &mut Self {
+        for (i, ty) in types.drain(..) {
+            let ast = items[i];
             self.build_struct(ty, ast);
         }
 

@@ -9,55 +9,29 @@ use typec_t::*;
 
 use crate::*;
 
-pub type Structs<'a> = BumpVec<(StructAst<'a>, VRef<Ty>)>;
-pub type FuncDefs<'a> = BumpVec<(FuncDefAst<'a>, VRef<Func>)>;
-
+#[allow(clippy::type_complexity)]
 impl TyChecker<'_> {
-    pub fn collect_funcs<'a>(
+    pub fn collect<T: CollectGroup>(
         &mut self,
-        items: ItemsAst<'a>,
-        funcs: &mut FuncDefs<'a>,
+        items: &[T],
+        collector: fn(&mut Self, T) -> Option<(ModItem, VRef<T::Output>)>,
+        out: &mut TypecOutput<T::Output>,
     ) -> &mut Self {
-        for &item in items.iter() {
-            let res = match item {
-                ItemAst::Func(&func) => self.collect_func(func, funcs),
-                ItemAst::Struct(..) => continue,
-            };
-
-            let Some(item) = res else {
+        for (i, &item) in items.iter().enumerate() {
+            let Some((item, id)) = collector(self, item) else {
                 continue;
             };
 
             self.insert_scope_item(item);
+            out.push((i, id));
         }
 
         self
     }
 
-    pub fn collect_structs<'a>(
+    pub fn collect_func(
         &mut self,
-        items: ItemsAst<'a>,
-        structs: &mut Structs<'a>,
-    ) -> &mut Self {
-        for &item in items.iter() {
-            let res = match item {
-                ItemAst::Struct(&r#struct) => self.collect_struct(r#struct, structs),
-                ItemAst::Func(..) => continue,
-            };
-
-            let Some(item) = res else {
-                continue;
-            };
-
-            self.insert_scope_item(item);
-        }
-
-        self
-    }
-
-    fn collect_func<'a>(
-        &mut self,
-        func_ast @ FuncDefAst {
+        FuncDefAst {
             vis,
             signature:
                 FuncSigAst {
@@ -70,9 +44,8 @@ impl TyChecker<'_> {
                 },
             span,
             ..
-        }: FuncDefAst<'a>,
-        funcs: &mut FuncDefs<'a>,
-    ) -> Option<ModItem> {
+        }: FuncDefAst,
+    ) -> Option<(ModItem, VRef<Func>)> {
         let generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
@@ -88,37 +61,32 @@ impl TyChecker<'_> {
             ret,
         };
 
-        let func = Func {
+        let func = |_: &mut Funcs| Func {
             generics,
             signature,
             flags: FuncFlags::empty(),
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
-        let (func, shadow) = self.typec.funcs.insert(id, func);
+        let id = self.typec.funcs.get_or_insert(id, func);
 
-        if shadow.is_none() {
-            funcs.push((func_ast, func));
-        }
-
-        Some(ModItem::new(name.ident, func, name.span, span, vis))
+        Some((ModItem::new(name.ident, id, name.span, span, vis), id))
     }
 
-    fn collect_struct<'a>(
+    pub fn collect_struct(
         &mut self,
-        r#struct @ StructAst {
+        StructAst {
             vis,
             generics,
             name,
             span,
             ..
-        }: StructAst<'a>,
-        structs: &mut Structs<'a>,
-    ) -> Option<ModItem> {
+        }: StructAst,
+    ) -> Option<(ModItem, VRef<Ty>)> {
         let generics = self.generics(generics);
 
         let key = intern_scoped_ident!(self, name.ident);
 
-        let ty = Ty {
+        let ty = |_: &mut Types| Ty {
             kind: TyStruct {
                 generics,
                 ..default()
@@ -127,12 +95,20 @@ impl TyChecker<'_> {
             flags: TyFlags::GENERIC & !generics.is_empty(),
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
-        let (id, shadow) = self.typec.types.insert(key, ty);
+        let id = self.typec.types.get_or_insert(key, ty);
 
-        if shadow.is_none() {
-            structs.push((r#struct, id));
-        }
-
-        Some(ModItem::new(name.ident, id, name.span, span, vis))
+        Some((ModItem::new(name.ident, id, name.span, span, vis), id))
     }
+}
+
+pub trait CollectGroup: Copy {
+    type Output;
+}
+
+impl CollectGroup for FuncDefAst<'_> {
+    type Output = Func;
+}
+
+impl CollectGroup for StructAst<'_> {
+    type Output = Ty;
 }

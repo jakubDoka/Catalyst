@@ -3,6 +3,7 @@ use mir::*;
 use mir_t::*;
 use packaging::*;
 use packaging_t::*;
+use parsing::GroupedItemsAst;
 use scope::*;
 use storage::*;
 use testing::*;
@@ -17,7 +18,8 @@ struct TestState {
     workspace: Workspace,
     packages: Packages,
     package_graph: PackageGraph,
-    arena: Arena,
+    typec_ctx: TyCheckerCtx,
+    mir_ctx: MirBuilderCtx,
     functions: String,
 }
 
@@ -34,28 +36,13 @@ impl Scheduler for TestState {
         typec::build_scope(module, &mut self.scope, &self.packages, &self.typec);
     }
 
-    fn parse_segment(&mut self, module: storage::VRef<str>, items: parsing::ItemsAst) {
-        self.arena.clear();
-        let mut structs = bumpvec![];
-        let mut funcs = bumpvec![];
-        let mut type_checked_funcs = bumpvec![];
-        let mut extern_funcs = bumpvec![];
-        ty_checker!(self, module)
-            .collect_structs(items, &mut structs)
-            .collect_funcs(items, &mut funcs)
-            .build_structs(&mut structs)
-            .build_funcs(
-                &self.arena,
-                &mut funcs,
-                &mut type_checked_funcs,
-                &mut extern_funcs,
-            );
+    fn parse_segment(&mut self, module: storage::VRef<str>, items: GroupedItemsAst) {
+        let mut type_checked_funcs: &[_] = &[];
+        ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);
 
-        let mut out = bumpvec![];
-        let mut ctx = MirBuilderCtx::default();
         mir_checker!(self, module)
-            .funcs(&mut ctx, &mut type_checked_funcs, &mut out)
-            .display_funcs(&out, &mut self.functions)
+            .funcs(&mut self.mir_ctx, type_checked_funcs)
+            .display_funcs(&self.mir_ctx, &mut self.functions)
             .unwrap();
     }
 

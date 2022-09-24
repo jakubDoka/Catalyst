@@ -9,29 +9,38 @@ use scope::*;
 use storage::*;
 use typec_t::*;
 
-use crate::{item_collector::FuncDefs, *};
+use crate::*;
 
 pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
 impl TyChecker<'_> {
     pub fn build_funcs<'a>(
         &mut self,
+        items: &[FuncDefAst],
         arena: &'a Arena,
-        funcs: &mut FuncDefs,
-        compiled_funcs: &mut TypeCheckedFuncs<'a>,
-        extern_funcs: &mut BumpVec<VRef<Func>>,
+        input: &mut Vec<(usize, VRef<Func>)>,
+        compiled_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
+        extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
-        for (ast, func) in funcs.drain(..) {
-            let Some(res) = self.build_func(ast, func, arena) else {
-                extern_funcs.push(func);
-                continue;
-            };
-            let Some(body) = res else {
-                self.incomplete_tir(ast);
-                continue;
-            };
-            compiled_funcs.push((func, body));
-        }
+        let iter = input
+            .drain(..)
+            .map(|(i, func)| (items[i], func))
+            .filter_map(|(ast, func)| {
+                let Some(res) = self.build_func(ast, func, arena) else {
+                    extern_funcs.push(func);
+                    return None;
+                };
+
+                let Some(body) = res else {
+                    self.incomplete_tir(ast);
+                    return None;
+                };
+
+                Some((func, body))
+            });
+
+        *compiled_funcs = arena.alloc_iter(iter);
+
         self
     }
 

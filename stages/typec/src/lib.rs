@@ -50,8 +50,9 @@ mod tir_display;
 mod ty_builder;
 mod ty_parser;
 
-pub use util::{build_scope, duplicate_definition, insert_scope_item};
+pub use util::{build_scope, duplicate_definition, insert_scope_item, TyCheckerCtx};
 
+pub use item_collector::CollectGroup;
 pub use state_gen::TyChecker;
 pub use ty_parser::{ScopeLookup, TyLookup};
 
@@ -59,9 +60,39 @@ mod util {
     use diags::*;
     use lexing_t::*;
     use packaging_t::*;
+    use parsing::*;
     use scope::*;
     use storage::*;
     use typec_t::*;
+
+    #[derive(Default)]
+    pub struct TyCheckerCtx {
+        pub structs: TypecOutput<Ty>,
+        pub funcs: TypecOutput<Func>,
+        pub tir_arena: Arena,
+        pub extern_funcs: Vec<VRef<Func>>,
+    }
+
+    impl TyChecker<'_> {
+        pub fn execute<'a>(
+            &mut self,
+            items: GroupedItemsAst,
+            ctx: &'a mut TyCheckerCtx,
+            type_checked_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
+        ) -> &mut Self {
+            ctx.tir_arena.clear();
+            self.collect(items.structs, Self::collect_struct, &mut ctx.structs)
+                .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
+                .build_structs(items.structs, &mut ctx.structs)
+                .build_funcs(
+                    items.funcs,
+                    &ctx.tir_arena,
+                    &mut ctx.funcs,
+                    type_checked_funcs,
+                    &mut ctx.extern_funcs,
+                )
+        }
+    }
 
     pub fn build_scope(module: VRef<str>, scope: &mut Scope, packages: &Packages, typec: &Typec) {
         scope.clear();

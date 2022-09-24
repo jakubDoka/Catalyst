@@ -18,7 +18,7 @@ struct TestState {
     workspace: Workspace,
     packages: Packages,
     package_graph: PackageGraph,
-    arena: Arena,
+    typec_ctx: TyCheckerCtx,
     functions: String,
 }
 
@@ -35,23 +35,11 @@ impl Scheduler for TestState {
         typec::build_scope(module, &mut self.scope, &self.packages, &self.typec);
     }
 
-    fn parse_segment(&mut self, module: VRef<str>, items: ItemsAst) {
-        self.arena.clear();
-        let mut structs = bumpvec![];
-        let mut funcs = bumpvec![];
-        let mut type_checked_funcs = bumpvec![];
-        let mut extern_funcs = bumpvec![];
+    fn parse_segment(&mut self, module: VRef<str>, items: GroupedItemsAst) {
+        let mut type_checked_funcs: &[_] = &[];
         ty_checker!(self, module)
-            .collect_structs(items, &mut structs)
-            .collect_funcs(items, &mut funcs)
-            .build_structs(&mut structs)
-            .build_funcs(
-                &self.arena,
-                &mut funcs,
-                &mut type_checked_funcs,
-                &mut extern_funcs,
-            )
-            .display_funcs(&type_checked_funcs, &mut self.functions)
+            .execute(items, &mut self.typec_ctx, &mut type_checked_funcs)
+            .display_funcs(type_checked_funcs, &mut self.functions)
             .unwrap();
     }
 

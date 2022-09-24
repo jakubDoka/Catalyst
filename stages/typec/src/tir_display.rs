@@ -3,14 +3,18 @@ use std::{
     iter,
 };
 
-use packaging_t::span_str;
-use storage::VRef;
-use typec_t::{AccessTir, BlockTir, Func, ReturnTir, TirNode, TypeCheckedFuncs, Variable};
+use packaging_t::*;
+use storage::*;
+use typec_t::*;
 
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn display_funcs(&self, funcs: &TypeCheckedFuncs, buffer: &mut String) -> fmt::Result {
+    pub fn display_funcs(
+        &self,
+        funcs: &[(VRef<Func>, TirNode)],
+        buffer: &mut String,
+    ) -> fmt::Result {
         for &(func, tir) in funcs.iter() {
             self.display_func(func, tir, buffer)?;
             buffer.push_str("\n\n");

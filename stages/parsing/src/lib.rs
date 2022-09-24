@@ -71,7 +71,7 @@ pub use parser::{
     expr::{BinaryExprAst, BlockAst, BlockMeta, ExprAst, ReturnExprAst, UnitExprAst},
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
-    items::{ItemAst, ItemsAst, ItemsMeta},
+    items::{GroupedItemsAst, ItemAst, ItemsAst, ItemsMeta},
     manifest::{
         DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,
         ManifestListMeta, ManifestObjectAst, ManifestObjectMeta, ManifestValueAst,

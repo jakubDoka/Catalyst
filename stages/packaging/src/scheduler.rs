@@ -1,16 +1,16 @@
 use std::{mem, path::Path};
 
-use parsing::ItemsAst;
-use parsing_t::{AstData, ParsingCtx, ParsingState};
-use storage::VRef;
+use parsing::*;
+use parsing_t::*;
+use storage::*;
 
-use crate::PackageLoader;
+use crate::*;
 
 pub trait Scheduler {
     fn resources(&mut self) -> PackageLoader;
     fn init(&mut self) {}
     fn before_parsing(&mut self, _module: VRef<str>) {}
-    fn parse_segment(&mut self, _module: VRef<str>, _items: ItemsAst) {}
+    fn parse_segment(&mut self, _module: VRef<str>, _items: GroupedItemsAst) {}
     fn finally(&mut self) {}
 
     fn execute(&mut self, path: &Path) {
@@ -37,17 +37,15 @@ pub trait Scheduler {
                     res.workspace,
                     res.interner,
                 )
-                .parse::<ItemsAst>();
+                .parse::<GroupedItemsAst>();
 
                 let Some(items) = items else {
                     break;
                 };
 
-                let finished = items.end.is_empty();
-
                 self.parse_segment(module, items);
 
-                if finished {
+                if items.last {
                     break;
                 }
             }

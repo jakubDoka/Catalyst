@@ -4,8 +4,6 @@
 #![feature(option_result_contains)]
 #![feature(iter_intersperse)]
 
-use std::convert::TryInto;
-
 #[macro_export]
 macro_rules! gen_kind {
     (
@@ -167,7 +165,7 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
     tir::{
         AccessTir, BlockTir, CallTir, CallableTir, IntLit, IntTir, NodeInput, ReturnTir,
-        TirBuilder, TirNode, TypeCheckedFuncs, TypedTirNode, Var, Variable,
+        TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,
     },
     ty::{
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
