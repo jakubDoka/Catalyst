@@ -1,0 +1,19 @@
+error: 'infinity' is not a variable
+ --> recursion\root.ctl:2:25
+  |
+2 | fn infinity(a: uint) => infinity
+  |                         ^^^^^^^^ this is of incorrect type
+  |
+  = info: found type: todo: unknown
+
+error: not all blocks were closed when typechecking function
+ --> recursion\root.ctl:2:4
+  |
+2 | fn infinity(a: uint) => infinity
+  |    -------- info: happened in this function
+  |
+  = info: this is a bug in the compiler, please report it
+
+info: mir repr of functions:
+
+
