@@ -1,5 +1,5 @@
 info: mir repr of functions:
- function u0:0() -> i64 fast {
+function u0:0() -> i64 fast {
 }
 
 
