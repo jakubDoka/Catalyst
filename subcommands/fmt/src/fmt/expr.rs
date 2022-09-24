@@ -44,6 +44,7 @@ impl<'a> FmtAst for BinaryExprAst<'a> {
 impl<'a> FmtAst for UnitExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
+            UnitExprAst::Call(call) => call.display(fmt),
             UnitExprAst::Path(path) => path.display(fmt),
             UnitExprAst::Return(ret) => ret.display(fmt),
             UnitExprAst::Int(int) => fmt.write_span(int),
@@ -52,10 +53,22 @@ impl<'a> FmtAst for UnitExprAst<'a> {
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
+            UnitExprAst::Call(call) => call.flat_len(fmt),
             UnitExprAst::Path(path) => path.flat_len(fmt),
             UnitExprAst::Return(ret) => ret.flat_len(fmt),
             UnitExprAst::Int(int) => int.len(),
         }
+    }
+}
+
+impl<'a> FmtAst for CallExprAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        self.callable.display(fmt);
+        self.args.display(fmt);
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.callable.flat_len(fmt) + self.args.flat_len(fmt)
     }
 }
 

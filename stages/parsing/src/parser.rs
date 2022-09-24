@@ -51,78 +51,30 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PathAst<'a> {
-    pub segments: &'a [PathSegmentAst<'a>],
-    pub span: Span,
+pub struct PathExprAst<'a> {
+    pub start: NameAst,
+    pub segments: &'a [NameAst],
 }
 
-impl PathAst<'_> {
-    pub fn needs_front_slash(&self) -> bool {
-        false
-    }
-}
-
-impl<'a> Ast<'a> for PathAst<'a> {
+impl<'a> Ast<'a> for PathExprAst<'a> {
     type Args = ();
 
     const NAME: &'static str = "ident chain";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
-        let start = ctx.state.current.span;
-        if ctx.at_tok(TokenKind::BackSlash) {
-            ctx.advance();
-        }
-
+        let start = ctx.name_unchecked();
         let mut segments = bumpvec![];
-        loop {
-            let segment = PathSegmentAst::parse(ctx)?;
-            segments.push(segment);
-
-            if !ctx.at_tok(TokenKind::BackSlash) {
-                break;
-            }
-
+        while ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::Ident) {
+            segments.push(ctx.name_unchecked());
             ctx.advance();
         }
         let segments = ctx.arena.alloc_slice(&segments);
-        let span = start.joined(segments.last().unwrap().span());
-
-        Some(Self { segments, span })
+        Some(Self { start, segments })
     }
 
     fn span(&self) -> Span {
-        self.span
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum PathSegmentAst<'a> {
-    Name(NameAst),
-    Generics(TyGenericsAst<'a>),
-    Tuple(TupleConstructorAst<'a>),
-    Struct(StructConstructorAst<'a>),
-}
-
-impl<'a> Ast<'a> for PathSegmentAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "ident chain segment";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
-        branch! {ctx => {
-            Ident => Some(Self::Name(ctx.name_unchecked())),
-            LeftBracket => ctx.parse().map(Self::Generics),
-            LeftParen => ctx.parse().map(Self::Tuple),
-            LeftCurly => ctx.parse().map(Self::Struct),
-        }}
-    }
-
-    fn span(&self) -> Span {
-        match self {
-            Self::Name(name) => name.span(),
-            Self::Generics(generics) => generics.span(),
-            Self::Tuple(tuple) => tuple.span(),
-            Self::Struct(r#struct) => r#struct.span(),
-        }
+        self.segments.last().map_or(self.start.span(), |last| {
+            self.start.span().joined(last.span())
+        })
     }
 }

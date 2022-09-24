@@ -11,6 +11,24 @@ use typec_t::*;
 
 use crate::*;
 
+macro_rules! dispatch_item {
+    ($lookup:ident $self:expr, $id:expr, $span:expr =>
+        $(
+            $value:ident: $ty:ty => $expr:expr,
+        )*
+    ) => {
+        {
+            let item = $self.lookup::<$lookup>($id, $span)?;
+            match_scope_ptr!(item =>
+                $(
+                    $value: $ty => $expr,
+                )*
+                _ => $self.handle_scope_error::<$lookup>(ScopeError::TypeMismatch(item.id), $id, $span)?,
+            )
+        }
+    };
+}
+
 pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
 impl TyChecker<'_> {
@@ -173,37 +191,92 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         match unit_ast {
-            UnitExprAst::Path(path) => self.path(path, inference, builder),
+            UnitExprAst::Path(path) => self.value_path(path, inference, builder),
             UnitExprAst::Return(ReturnExprAst { return_span, expr }) => {
                 self.r#return(expr, return_span, builder)
             }
             UnitExprAst::Int(span) => self.int(span, inference, builder),
+            UnitExprAst::Call(&call) => self.call(call, inference, builder),
         }
     }
 
-    fn path<'a>(
+    fn call<'a>(
         &mut self,
-        path: PathAst,
+        call @ CallExprAst { callable, args }: CallExprAst,
         _inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        use PathSegmentAst::*;
-        match *path.segments {
-            [Name(name)] => self
-                .lookup_typed::<VarLookup>(name.ident, name.span)
-                .map(|var| (var, builder.get_var(var).ty))
-                .and_then(|(var, ty)| {
-                    self.node(
-                        ty,
-                        AccessTir {
-                            ty,
-                            span: path.span(),
-                            var,
-                        },
-                        builder,
-                    )
-                }),
-            [] => unreachable!("handled in parsing stage"),
+        match callable {
+            UnitExprAst::Path(path) => {
+                let func = self.func_path(path, builder)?;
+                match func {
+                    Ok(direct) => self.direct_concrete_call(direct, args, call.span(), builder),
+                    Err(_pointer) => todo!(),
+                }
+            }
+            UnitExprAst::Return(..) | UnitExprAst::Call(..) | UnitExprAst::Int(..) => {
+                todo!()
+            }
+        }
+    }
+
+    fn direct_concrete_call<'a>(
+        &mut self,
+        func: VRef<Func>,
+        ast_args: CallArgsAst,
+        span: Span,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let Func { signature, .. } = self.typec.funcs[func];
+
+        let types = self.typec.ty_slices[signature.args].to_bumpvec();
+        let args = ast_args
+            .iter()
+            .zip(types)
+            .map(|(&arg, ty)| self.expr(arg, Some(ty), builder).map(|arg| arg.node))
+            .collect::<Option<BumpVec<_>>>()?;
+        let args = builder.arena.alloc_slice(&args);
+
+        let call = CallTir {
+            func: CallableTir::Func(func),
+            args,
+            span,
+            params: &[],
+            ty: signature.ret,
+        };
+
+        self.node(signature.ret, call, builder)
+    }
+
+    fn func_path<'a>(
+        &mut self,
+        path @ PathExprAst { start, segments }: PathExprAst,
+        _builder: &mut TirBuilder<'a>,
+    ) -> Option<Result<VRef<Func>, TirNode<'a>>> {
+        match *segments {
+            [] => dispatch_item!(FuncLookup self, start.ident, start.span =>
+                func: Func => Some(Ok(func)),
+                _var: Var => todo!(),
+            ),
+            _ => self.invalid_expr_path(path.span())?,
+        }
+    }
+
+    fn value_path<'a>(
+        &mut self,
+        path @ PathExprAst { start, segments }: PathExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        match *segments {
+            [] => dispatch_item!(ValueLookup self, start.ident, start.span =>
+                var: Var => self.node(builder.get_var(var).ty, AccessTir {
+                    span: path.span(),
+                    ty: builder.get_var(var).ty,
+                    var
+                }, builder),
+                _func: Func => todo!(),
+            ),
             _ => self.invalid_expr_path(path.span())?,
         }
     }
@@ -254,7 +327,6 @@ impl TyChecker<'_> {
             params: default(),
             args: builder.arena.alloc_slice(&[lhs.node, rhs.node]),
             ty,
-            func_span: op.span,
             span: binary_ast.span(),
         };
         self.node(ty, call, builder)
@@ -352,5 +424,6 @@ pub type Inference = Option<VRef<Ty>>;
 
 gen_scope_lookup!(
     OpLookup<"operator", Func> {}
-    VarLookup<"variable", Var> {}
+    ValueLookup<"variable or function"> {}
+    FuncLookup<"function or variable"> {}
 );

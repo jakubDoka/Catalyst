@@ -87,5 +87,9 @@ fn main() {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
         }
+
+        simple "recursion" {
+            fn infinity(a: uint) => infinity(a);
+        }
     }
 }

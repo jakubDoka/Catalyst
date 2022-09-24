@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoundExprAst<'a> {
-    Path(PathAst<'a>),
+    Path(PathExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for BoundExprAst<'a> {
@@ -11,7 +11,7 @@ impl<'a> Ast<'a> for BoundExprAst<'a> {
     const NAME: &'static str = "bound expr";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
-        let chain = PathAst::parse(ctx)?;
+        let chain = PathExprAst::parse(ctx)?;
         Some(Self::Path(chain))
     }
 

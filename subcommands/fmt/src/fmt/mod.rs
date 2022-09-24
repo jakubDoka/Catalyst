@@ -69,14 +69,11 @@ impl<'a> FmtAst for BoundExprAst<'a> {
     }
 }
 
-impl<'a> FmtAst for PathAst<'a> {
+impl<'a> FmtAst for PathExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        let mut do_not_write_slash = !self.needs_front_slash();
+        self.start.display(fmt);
         for segment in self.segments.iter() {
-            if !do_not_write_slash {
-                write!(fmt, "\\");
-                do_not_write_slash = true;
-            }
+            write!(fmt, "\\");
             segment.display(fmt);
         }
     }
@@ -84,29 +81,9 @@ impl<'a> FmtAst for PathAst<'a> {
     fn flat_len(&self, fmt: &Fmt) -> usize {
         self.segments
             .iter()
-            .map(|ident| 1 + ident.flat_len(fmt))
+            .map(|ident| ident.flat_len(fmt))
+            .intersperse(1)
             .sum::<usize>()
-            - !self.needs_front_slash() as usize
-    }
-}
-
-impl<'a> FmtAst for PathSegmentAst<'a> {
-    fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        match *self {
-            PathSegmentAst::Name(name) => name.display(fmt),
-            PathSegmentAst::Generics(generics) => generics.display(fmt),
-            PathSegmentAst::Tuple(tuple) => tuple.display(fmt),
-            PathSegmentAst::Struct(r#struct) => r#struct.display(fmt),
-        }
-    }
-
-    fn flat_len(&self, fmt: &Fmt) -> usize {
-        match *self {
-            PathSegmentAst::Name(name) => name.flat_len(fmt),
-            PathSegmentAst::Generics(generics) => generics.flat_len(fmt),
-            PathSegmentAst::Tuple(tuple) => tuple.flat_len(fmt),
-            PathSegmentAst::Struct(r#struct) => r#struct.flat_len(fmt),
-        }
     }
 }
 

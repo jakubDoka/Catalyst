@@ -8,7 +8,7 @@ pub type TyTupleAst<'a> = ListAst<'a, TyAst<'a>, TyTupleMeta>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TyAst<'a> {
-    Path(PathAst<'a>),
+    Path(PathExprAst<'a>),
     Instance(TyInstanceAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
     Tuple(TyTupleAst<'a>),
@@ -51,12 +51,12 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TyInstanceAst<'a> {
-    pub ident: PathAst<'a>,
+    pub ident: PathExprAst<'a>,
     pub params: TyGenericsAst<'a>,
 }
 
 impl<'a> Ast<'a> for TyInstanceAst<'a> {
-    type Args = (PathAst<'a>,);
+    type Args = (PathExprAst<'a>,);
 
     const NAME: &'static str = "type instance";
 
@@ -101,7 +101,7 @@ impl<'a> Ast<'a> for TyPointerAst<'a> {
 pub enum MutabilityAst<'a> {
     Mut(Span),
     None,
-    Generic(Span, PathAst<'a>),
+    Generic(Span, PathExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for MutabilityAst<'a> {

@@ -85,7 +85,6 @@ pub struct CallTir<'a> {
     pub params: &'a [VRef<Ty>],
     pub args: &'a [TirNode<'a>],
     pub ty: VRef<Ty>,
-    pub func_span: Span,
     pub span: Span,
 }
 

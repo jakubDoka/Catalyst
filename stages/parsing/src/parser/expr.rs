@@ -5,6 +5,9 @@ use super::*;
 list_meta!(BlockMeta LeftCurly NewLine RightCurly);
 pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
 
+list_meta!(CallArgsMeta LeftParen NewLine RightParen);
+pub type CallArgsAst<'a> = ListAst<'a, ExprAst<'a>, CallArgsMeta>;
+
 #[derive(Debug, Clone, Copy)]
 pub enum ExprAst<'a> {
     Unit(&'a UnitExprAst<'a>),
@@ -70,7 +73,8 @@ impl<'a> BinaryExprAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnitExprAst<'a> {
-    Path(PathAst<'a>),
+    Call(&'a CallExprAst<'a>),
+    Path(PathExprAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
 }
@@ -81,20 +85,53 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
     const NAME: &'static str = "unit expr";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
-        branch!(ctx => {
+        let mut unit = branch!(ctx => {
             Ident => ctx.parse().map(Self::Path),
             BackSlash => ctx.parse().map(Self::Path),
             Return => ctx.parse().map(Self::Return),
             Int => Some(Self::Int(ctx.advance().span)),
-        })
+        });
+
+        loop {
+            unit = branch!(ctx => {
+                LeftParen => ctx.parse_args((unit?, ))
+                    .map(|call| ctx.arena.alloc(call))
+                    .map(Self::Call),
+                _ => break unit,
+            });
+        }
     }
 
     fn span(&self) -> Span {
         match *self {
+            UnitExprAst::Call(call) => call.span(),
             UnitExprAst::Path(path) => path.span(),
             UnitExprAst::Return(ret) => ret.span(),
             UnitExprAst::Int(span) => span,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CallExprAst<'a> {
+    pub callable: UnitExprAst<'a>,
+    pub args: CallArgsAst<'a>,
+}
+
+impl<'a> Ast<'a> for CallExprAst<'a> {
+    type Args = (UnitExprAst<'a>,);
+
+    const NAME: &'static str = "call";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (callable,): Self::Args) -> Option<Self> {
+        Some(Self {
+            callable,
+            args: ctx.parse_args(())?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.callable.span().joined(self.args.span())
     }
 }
 

@@ -215,12 +215,14 @@ impl TyChecker<'_> {
         Some(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn ty_path<T: ScopeLookup>(&mut self, path: PathAst) -> Option<VRef<T::Output>> {
-        use PathSegmentAst::*;
-        match *path.segments {
-            [Name(ty)] => self.lookup_typed::<T>(ty.ident, ty.span),
-            [Name(module), Name(ty)] => {
-                let module = self.lookup_typed::<ModLookup>(module.ident, module.span)?;
+    fn ty_path<T: ScopeLookup>(
+        &mut self,
+        path @ PathExprAst { start, segments }: PathExprAst,
+    ) -> Option<VRef<T::Output>> {
+        match *segments {
+            [] => self.lookup_typed::<T>(start.ident, start.span),
+            [ty] => {
+                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
                 let id = self
                     .interner
                     .intern(scoped_ident!(module.index() as u32, ty.ident));
@@ -264,7 +266,7 @@ impl TyChecker<'_> {
     }
 
     gen_error_fns! {
-        push invalid_ty_path(self, segment: PathAst) {
+        push invalid_ty_path(self, segment: PathExprAst) {
             err: "invalid type path composition";
             info: "valid forms: `Ty` | `mod\\Ty`";
             (segment.span(), self.current_file) {
@@ -278,7 +280,7 @@ impl TyChecker<'_> {
         err: ScopeError,
         sym: VRef<str>,
         span: Span,
-    ) {
+    ) -> Option<!> {
         self.workspace.push(match err {
             ScopeError::NotFound => snippet! {
                 err: ("{} not found", T::ITEM_NAME);
@@ -325,6 +327,8 @@ impl TyChecker<'_> {
                 }
             },
         });
+
+        None
     }
 }
 
