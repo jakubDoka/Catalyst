@@ -1,8 +1,7 @@
 use std::fmt::Write;
 
-use cranelift_codegen::{ir::Function, isa, settings};
+use cranelift_codegen::ir::{types, Function};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use target_lexicon::Triple;
 
 use diags::*;
 use gen::*;
@@ -50,19 +49,11 @@ impl Scheduler for TestState {
 
         mir_checker!(self, module).funcs(&mut self.mir_ctx, type_checked_funcs);
 
-        let shared_builder = settings::builder();
-        let shared_flags = settings::Flags::new(shared_builder);
-
-        let isa = isa::lookup(Triple::host())
-            .unwrap()
-            .finish(shared_flags)
-            .unwrap();
-
         let mut builder_ctx = FunctionBuilderContext::new();
         let mut function = Function::new();
 
         for &(func, ref body) in &self.mir_ctx.mir_funcs {
-            generator!(self, *isa, &mut self.gen_ctx).generate(
+            generator!(self, types::I64, &mut self.gen_ctx).generate(
                 func,
                 body,
                 &mut FunctionBuilder::new(&mut function, &mut builder_ctx),
@@ -85,7 +76,7 @@ fn main() {
         true,
         simple "functions" {
             fn main -> uint => 0;
-            fn pass(a: uint) -> uint { return a };
+            fn pass(a: uint) -> uint { return; a };
         }
 
         simple "recursion" {

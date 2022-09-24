@@ -3,6 +3,7 @@
         "allocs",
         "bitand",
         "bitflags",
+        "bruh",
         "bumpvec",
         "bytecode",
         "canonicalize",

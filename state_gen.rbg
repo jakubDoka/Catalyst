@@ -71,11 +71,11 @@ file "stages/gen/src/state_gen.rs" {
     use "storage"
     use "typec_t"
     use "packaging_t"
-    use "cranelift_codegen::isa"
+    use "cranelift_codegen::ir"
 
 
     struct Generator {
-        passed isa: `dyn TargetIsa`
+        owned ptr_ty: Type
         passed mut ctx: `GeneratorCtx`
 
         mut Interner

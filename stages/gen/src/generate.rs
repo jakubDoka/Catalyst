@@ -1,8 +1,11 @@
 use cranelift_codegen::{
-    ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
+    entity::EntityRef,
+    ir::{
+        self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalNameRef,
+    },
     isa::CallConv,
     packed_option::PackedOption,
-    MachReloc,
+    Context, MachReloc,
 };
 use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
@@ -164,13 +167,6 @@ impl Generator<'_> {
             });
         }
 
-        let name = builder
-            .func
-            .declare_imported_user_function(UserExternalName {
-                namespace: 0,
-                index: id.index() as u32,
-            });
-
         let mut signature = ir::Signature::new(CallConv::SystemV);
         let Func {
             signature: sig,
@@ -181,7 +177,7 @@ impl Generator<'_> {
         let signature = builder.import_signature(signature);
 
         let func_ref = builder.import_function(ExtFuncData {
-            name: ExternalName::User(name),
+            name: ExternalName::User(UserExternalNameRef::new(id.index())),
             signature,
             colocated: flags.contains(FuncFlags::EXTERN),
         });
@@ -209,7 +205,7 @@ impl Generator<'_> {
         }
     }
 
-    fn load_signature(&mut self, signature: Signature, target: &mut ir::Signature) {
+    pub fn load_signature(&mut self, signature: Signature, target: &mut ir::Signature) {
         let cc = self.cc(signature.cc);
 
         target.clear(cc);
@@ -269,10 +265,10 @@ impl Generator<'_> {
                 }
             }
             TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
-                repr: self.isa.pointer_type(),
+                repr: self.ptr_ty,
                 offsets: VSlice::empty(),
-                align: self.isa.pointer_bytes() as u8,
-                size: self.isa.pointer_bytes() as u32,
+                align: self.ptr_ty.bytes() as u8,
+                size: self.ptr_ty.bytes() as u32,
             },
             TyKind::Integer(int) => Layout {
                 size: int.size as u32,
@@ -319,7 +315,6 @@ impl Generator<'_> {
 
 pub type Offset = u32;
 
-#[derive(Default)]
 pub struct GeneratorCtx {
     // persistent
     pub compiled_funcs: Map<VRef<str>, CompiledFunc>,
@@ -332,6 +327,23 @@ pub struct GeneratorCtx {
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
+    pub ctx: Context,
+}
+
+impl Default for GeneratorCtx {
+    fn default() -> Self {
+        Self {
+            compiled_funcs: Default::default(),
+            compile_requests: Default::default(),
+            local_ty_slices: Default::default(),
+            layouts: Default::default(),
+            offsets: Default::default(),
+            blocks: Default::default(),
+            values: Default::default(),
+            func_imports: Default::default(),
+            ctx: Context::new(), // bruh
+        }
+    }
 }
 
 impl GeneratorCtx {
@@ -377,7 +389,9 @@ impl Invalid for Layout {
 pub struct CompiledFunc {
     pub func: VRef<Func>,
     pub native_bytecode: Vec<u8>,
+    pub native_alignment: u64,
     pub target_bytecode: Option<Vec<u8>>,
+    pub target_alignment: Option<u64>,
     pub relocs: Vec<MachReloc>,
 }
 
