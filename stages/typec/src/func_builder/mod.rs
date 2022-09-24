@@ -18,13 +18,13 @@ impl TyChecker<'_> {
         &mut self,
         items: &[FuncDefAst],
         arena: &'a Arena,
-        input: &mut Vec<(usize, VRef<Func>)>,
+        input: &TypecOutput<Func>,
         compiled_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
         let iter = input
-            .drain(..)
-            .map(|(i, func)| (items[i], func))
+            .iter()
+            .map(|&(i, func)| (items[i], func))
             .filter_map(|(ast, func)| {
                 let Some(res) = self.build_func(ast, func, arena) else {
                     extern_funcs.push(func);

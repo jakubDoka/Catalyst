@@ -163,6 +163,7 @@ pub use {
         BoundSlices, Bounds,
     },
     func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
+    graphs::ProjectedCycleDetector as TyGraph,
     tir::{
         AccessTir, BlockTir, CallTir, CallableTir, IntLit, IntTir, NodeInput, ReturnTir,
         TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,

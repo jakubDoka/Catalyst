@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use cranelift_codegen::{
     ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
@@ -244,11 +246,32 @@ pub struct GeneratorCtx {
     pub compiled_funcs: Map<VRef<str>, CompiledFunc>,
     pub compile_requests: Vec<CompileRequest>,
     pub local_ty_slices: BumpMap<VRef<Ty>>,
+    pub layouts: ShadowMap<Ty, Maybe<Layout>>,
 
     // temp
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
+}
+
+pub struct Layout {
+    pub size: u32,
+    pub align: NonZeroU32,
+    pub repr: Type,
+}
+
+impl Invalid for Layout {
+    unsafe fn invalid() -> Self {
+        Self {
+            size: 0,
+            align: NonZeroU32::new_unchecked(1),
+            repr: types::INVALID,
+        }
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.repr == types::INVALID
+    }
 }
 
 pub struct CompiledFunc {

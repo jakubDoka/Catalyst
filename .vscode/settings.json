@@ -29,6 +29,7 @@
         "Reloc",
         "relocs",
         "repr",
+        "reprs",
         "rfind",
         "rsplit",
         "Struct",

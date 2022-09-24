@@ -3,7 +3,7 @@ use mir::*;
 use mir_t::*;
 use packaging::*;
 use packaging_t::*;
-use parsing::GroupedItemsAst;
+use parsing::*;
 use scope::*;
 use storage::*;
 use testing::*;

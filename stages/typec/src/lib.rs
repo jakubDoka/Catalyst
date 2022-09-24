@@ -6,6 +6,7 @@
 #![feature(let_chains)]
 #![feature(never_type)]
 #![feature(iter_intersperse)]
+#![feature(try_blocks)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
@@ -71,6 +72,17 @@ mod util {
         pub funcs: TypecOutput<Func>,
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
+        pub ty_graph: TyGraph,
+    }
+
+    impl TyCheckerCtx {
+        pub fn clear(&mut self) {
+            self.structs.clear();
+            self.funcs.clear();
+            self.tir_arena.clear();
+            self.extern_funcs.clear();
+            self.ty_graph.clear();
+        }
     }
 
     impl TyChecker<'_> {
@@ -80,17 +92,90 @@ mod util {
             ctx: &'a mut TyCheckerCtx,
             type_checked_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
         ) -> &mut Self {
-            ctx.tir_arena.clear();
+            ctx.clear();
             self.collect(items.structs, Self::collect_struct, &mut ctx.structs)
                 .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
-                .build_structs(items.structs, &mut ctx.structs)
+                .build_structs(items.structs, &ctx.structs)
+                .detect_infinite_types(ctx)
                 .build_funcs(
                     items.funcs,
                     &ctx.tir_arena,
-                    &mut ctx.funcs,
+                    &ctx.funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
                 )
+        }
+
+        pub fn detect_infinite_types(&mut self, ctx: &mut TyCheckerCtx) -> &mut Self {
+            let all_new_types = ctx.structs.iter().map(|&(_, ty)| ty);
+
+            let nodes = all_new_types.clone().map(|ty| ty.index() as u32);
+
+            ctx.ty_graph.load_nodes(nodes.clone());
+
+            for ty in all_new_types {
+                let Ty { kind, .. } = self.typec.types[ty];
+                match kind {
+                    TyKind::Struct(s) => {
+                        ctx.ty_graph.new_node(ty.index() as u32).add_edges(
+                            self.typec.fields[s.fields]
+                                .iter()
+                                .map(|field| self.typec.types.base(field.ty).index() as u32),
+                        );
+                    }
+
+                    TyKind::Instance(..)
+                    | TyKind::Pointer(..)
+                    | TyKind::Param(..)
+                    | TyKind::Integer(..)
+                    | TyKind::Bool
+                    | TyKind::SelfBound
+                    | TyKind::Inferred => (),
+                }
+            }
+
+            if let Err(cycle) = ctx.ty_graph.ordering(nodes, &mut bumpvec![]) {
+                let types = cycle
+                    .into_iter()
+                    .map(|i| unsafe { VRef::new(i as usize) })
+                    .collect::<BumpVec<_>>();
+
+                let cycle_chart = types
+                    .iter()
+                    .map(|&ty| self.typec.types.id(ty))
+                    .map(|id| &self.interner[id])
+                    .intersperse(" -> ")
+                    .collect::<String>();
+
+                let slice = try {
+                    diags::Slice {
+                        span: types
+                            .iter()
+                            .filter_map(|&ty| self.typec.types.locate(ty).whole_span.expand())
+                            .reduce(|a, b| a.joined(b))?,
+                        origin: self.current_file,
+                        annotations: types
+                            .iter()
+                            .filter_map(|&ty| self.typec.types.locate(ty).span.expand())
+                            .map(
+                                |span| source_annotation!(info[span]: "this type is part of cycle"),
+                            )
+                            .collect(),
+                        fold: true,
+                    }
+                };
+
+                let snippet = Snippet {
+                    title: annotation!(err: "infinitely sized type detected between defined types"),
+                    footer: vec![annotation!(info: ("cycle: {}", cycle_chart))],
+                    slices: vec![slice],
+                    origin: format!("{}:{}", file!(), line!()),
+                };
+
+                self.workspace.push(snippet);
+            };
+
+            self
         }
     }
 

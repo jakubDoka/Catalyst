@@ -605,6 +605,7 @@ name = "typec-t"
 version = "0.1.0"
 dependencies = [
  "diags",
+ "graphs",
  "lexing-t",
  "packaging-t",
  "parsing-t",

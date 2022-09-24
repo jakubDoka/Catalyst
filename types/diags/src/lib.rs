@@ -82,8 +82,8 @@ macro_rules! slice {
 #[macro_export]
 macro_rules! source_annotation {
     ($annotation_type:ident$([$span:expr])?: $label:tt) => {
-        #[allow(clippy::needless_update)]
         {
+            #[allow(clippy::needless_update)]
             (|| Some($crate::SourceAnnotation {
                 $(range: $span)?,
                 label: $crate::format_required_message!($label),

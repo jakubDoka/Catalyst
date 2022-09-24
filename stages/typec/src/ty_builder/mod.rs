@@ -7,12 +7,8 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn build_structs(
-        &mut self,
-        items: &[StructAst],
-        types: &mut Vec<(usize, VRef<Ty>)>,
-    ) -> &mut Self {
-        for (i, ty) in types.drain(..) {
+    pub fn build_structs(&mut self, items: &[StructAst], types: &TypecOutput<Ty>) -> &mut Self {
+        for &(i, ty) in types {
             let ast = items[i];
             self.build_struct(ty, ast);
         }
