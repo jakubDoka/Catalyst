@@ -69,6 +69,7 @@ pub struct BlockMir {
     pub args: VRefSlice<ValueMir>,
     pub insts: VSlice<InstMir>,
     pub control_flow: ControlFlowMir,
+    pub ref_count: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -89,16 +90,10 @@ pub struct DebugData {
 }
 
 #[derive(Clone, Copy)]
-pub struct InstMir {
-    pub kind: InstKind,
-    pub value: Maybe<VRef<ValueMir>>,
-}
-
-#[derive(Clone, Copy)]
-pub enum InstKind {
-    Int(Span),
+pub enum InstMir {
+    Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>),
-    Call(CallMir),
+    Call(CallMir, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

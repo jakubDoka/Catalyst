@@ -36,6 +36,10 @@ impl<T> PushMap<T> {
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.data.iter()
     }
+
+    pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {
+        (0..self.data.len()).map(|i| unsafe { VRef::new(i) })
+    }
 }
 
 impl<T> Index<VRef<T>> for PushMap<T> {

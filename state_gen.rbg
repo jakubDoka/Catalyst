@@ -65,3 +65,21 @@ file "stages/mir/src/state_gen.rs" {
         mut Packages
     }
 }
+
+file "stages/gen/src/state_gen.rs" {
+    use "crate"
+    use "storage"
+    use "typec_t"
+    use "packaging_t"
+    use "cranelift_codegen::isa"
+
+
+    struct Generator {
+        passed isa: `dyn TargetIsa`
+        passed mut ctx: `GeneratorCtx`
+
+        mut Interner
+        mut Typec
+        mut Packages
+    }
+}

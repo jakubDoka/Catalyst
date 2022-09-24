@@ -15,6 +15,13 @@ impl<T, V: Default> ShadowMap<T, V> {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn clear(&mut self)
+    where
+        V: Clone,
+    {
+        self.data.fill(self.default.clone());
+    }
 }
 
 impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {

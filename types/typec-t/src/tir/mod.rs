@@ -3,7 +3,7 @@ use storage::*;
 
 use crate::{BoundFunc, Func, Ty};
 
-pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, Option<TirNode<'a>>)>;
+pub type TypeCheckedFuncs<'a> = BumpVec<(VRef<Func>, TirNode<'a>)>;
 
 pub struct TirBuilder<'a> {
     pub arena: &'a Arena,

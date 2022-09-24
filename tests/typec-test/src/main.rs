@@ -40,11 +40,17 @@ impl Scheduler for TestState {
         let mut structs = bumpvec![];
         let mut funcs = bumpvec![];
         let mut type_checked_funcs = bumpvec![];
+        let mut extern_funcs = bumpvec![];
         ty_checker!(self, module)
             .collect_structs(items, &mut structs)
             .collect_funcs(items, &mut funcs)
             .build_structs(&mut structs)
-            .build_funcs(&self.arena, &mut funcs, &mut type_checked_funcs)
+            .build_funcs(
+                &self.arena,
+                &mut funcs,
+                &mut type_checked_funcs,
+                &mut extern_funcs,
+            )
             .display_funcs(&type_checked_funcs, &mut self.functions)
             .unwrap();
     }

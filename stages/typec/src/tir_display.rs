@@ -19,27 +19,16 @@ impl TyChecker<'_> {
         Ok(())
     }
 
-    fn display_func(
-        &self,
-        func: VRef<Func>,
-        tir: Option<TirNode>,
-        buffer: &mut String,
-    ) -> fmt::Result {
+    fn display_func(&self, func: VRef<Func>, tir: TirNode, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
 
-        if let Some(tir) = tir {
-            let Func { signature, .. } = self.typec.funcs[func];
-            self.display_tir(
-                tir,
-                buffer,
-                0,
-                &mut self.typec.ty_slices[signature.args].len(),
-            )?;
-        } else {
-            buffer.push_str("extern");
-        }
-
-        Ok(())
+        let Func { signature, .. } = self.typec.funcs[func];
+        self.display_tir(
+            tir,
+            buffer,
+            0,
+            &mut self.typec.ty_slices[signature.args].len(),
+        )
     }
 
     pub fn display_tir(

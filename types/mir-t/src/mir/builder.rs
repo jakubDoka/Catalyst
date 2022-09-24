@@ -19,30 +19,22 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-    pub fn inst(&mut self, kind: InstKind, ty: VRef<Ty>, span: Span) -> Option<VRef<ValueMir>> {
+    pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {
         self.current_block?;
-        let ty = self.ctx.project_ty(ty);
-        let value = self.ctx.func.values.push(ValueMir { ty });
-        self.ctx.insts.push((
-            InstMir {
-                kind,
-                value: value.into(),
-            },
-            span,
-        ));
-        Some(value)
+        self.ctx.insts.push((kind, span));
+        Some(())
     }
 
-    pub fn valueless_inst(&mut self, kind: InstKind, span: Span) -> Option<()> {
-        self.current_block?;
-        self.ctx.insts.push((
-            InstMir {
-                kind,
-                value: None.into(),
-            },
-            span,
-        ));
-        Some(())
+    pub fn value(&mut self, ty: VRef<Ty>) -> VRef<ValueMir> {
+        if ty == Ty::UNIT {
+            return ValueMir::UNIT;
+        }
+        if ty == Ty::TERMINAL {
+            return ValueMir::TERMINAL;
+        }
+
+        let ty = self.ctx.project_ty(ty);
+        self.ctx.func.values.push(ValueMir { ty })
     }
 
     pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {
@@ -50,10 +42,18 @@ impl<'a> MirBuilder<'a> {
             return true;
         };
 
+        self.increment_block_refcount(control_flow);
+
         self.ctx.close_block(current_block, control_flow);
         self.ctx.dd.block_closers[current_block] = span;
 
         false
+    }
+
+    fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
+        match control_flow {
+            ControlFlowMir::Return(..) => {}
+        }
     }
 
     pub fn select_block(&mut self, block: VRef<BlockMir>) -> bool {
@@ -113,6 +113,8 @@ impl MirBuilderCtx {
                 .insts
                 .bump(self.insts.iter().map(|&(inst, ..)| inst)),
             control_flow,
+
+            ..self.func.blocks[id] // inherit ref_count
         };
 
         self.func

@@ -4,7 +4,6 @@ use std::{
 };
 
 use mir_t::*;
-use packaging_t::span_str;
 use storage::*;
 use typec_t::*;
 
@@ -85,22 +84,25 @@ impl MirChecker<'_> {
     }
 
     fn display_inst(&self, inst: InstMir, func: &FuncMir, buffer: &mut String) -> fmt::Result {
-        if let Some(value) = inst.value.expand() {
-            write!(buffer, "var{} = ", value.index())?;
-        }
-
-        match inst.kind {
-            InstKind::Int(span) => {
-                write!(buffer, "int {}", span_str!(self, span))?;
+        match inst {
+            InstMir::Int(value, ret) => {
+                write!(buffer, "var{} = int {}", ret.index(), value)?;
             }
-            InstKind::Access(access) => {
+            InstMir::Access(access) => {
                 write!(buffer, "access var{}", access.index())?;
             }
-            InstKind::Call(CallMir {
-                callable,
-                params,
-                args,
-            }) => {
+            InstMir::Call(
+                CallMir {
+                    callable,
+                    params,
+                    args,
+                },
+                ret,
+            ) => {
+                if ret != ValueMir::UNIT {
+                    write!(buffer, "var{} = ", ret.index())?;
+                }
+
                 match callable {
                     CallableMir::Func(func) => {
                         buffer.push_str(&self.interner[self.typec.funcs.id(func)])

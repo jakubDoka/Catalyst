@@ -19,17 +19,18 @@ impl TyChecker<'_> {
         arena: &'a Arena,
         funcs: &mut FuncDefs,
         compiled_funcs: &mut TypeCheckedFuncs<'a>,
+        extern_funcs: &mut BumpVec<VRef<Func>>,
     ) -> &mut Self {
         for (ast, func) in funcs.drain(..) {
             let Some(res) = self.build_func(ast, func, arena) else {
-                compiled_funcs.push((func, None));
+                extern_funcs.push(func);
                 continue;
             };
             let Some(body) = res else {
                 self.incomplete_tir(ast);
                 continue;
             };
-            compiled_funcs.push((func, Some(body)));
+            compiled_funcs.push((func, body));
         }
         self
     }
@@ -205,13 +206,24 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let span_str = span_str!(self, span);
-        let ty = Ty::INTEGERS
+        let (ty, postfix_len) = Ty::INTEGERS
             .iter()
-            .find(|&&ty| span_str.ends_with(&self.interner[self.typec.types.id(ty)]))
-            .copied()
-            .or_else(|| inference.filter(|ty| Ty::INTEGERS.contains(ty)))
-            .unwrap_or(Ty::UINT);
-        self.node(ty, IntLit { span, ty }, builder)
+            .map(|&ty| (ty, &self.interner[self.typec.types.id(ty)]))
+            .find_map(|(ty, str)| span_str.ends_with(str).then_some((ty, str.len())))
+            .or_else(|| {
+                inference
+                    .filter(|ty| Ty::INTEGERS.contains(ty))
+                    .map(|ty| (ty, 0))
+            })
+            .unwrap_or((Ty::UINT, 0));
+        self.node(
+            ty,
+            IntLit {
+                span: span.sliced(..span.len() - postfix_len),
+                ty,
+            },
+            builder,
+        )
     }
 
     fn binary_expr<'a>(

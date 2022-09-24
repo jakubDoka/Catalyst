@@ -1,4 +1,5 @@
 use mir_t::*;
+use packaging_t::span_str;
 use storage::*;
 use typec_t::*;
 
@@ -17,7 +18,7 @@ impl MirChecker<'_> {
         out.extend(
             input
                 .drain(..)
-                .filter_map(|(func, body)| body.map(|b| (func, self.func(func, b, ctx)))),
+                .map(|(func, body)| (func, self.func(func, body, ctx))),
         );
 
         self
@@ -75,7 +76,7 @@ impl MirChecker<'_> {
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let var = builder.ctx.get_var(var);
-        builder.valueless_inst(InstKind::Access(var), span);
+        builder.inst(InstMir::Access(var), span);
         Some(var)
     }
 
@@ -105,17 +106,26 @@ impl MirChecker<'_> {
             .collect::<Option<BumpVec<_>>>()?;
         let args = builder.ctx.func.value_args.bump(args);
 
-        let call = InstKind::Call(CallMir {
-            callable,
-            params,
-            args,
-        });
-
-        builder.inst(call, ty, span)
+        let value = builder.value(ty);
+        let call = InstMir::Call(
+            CallMir {
+                callable,
+                params,
+                args,
+            },
+            value,
+        );
+        builder.inst(call, span);
+        Some(value)
     }
 
     fn int(&mut self, int: IntLit, builder: &mut MirBuilder) -> NodeRes {
-        builder.inst(InstKind::Int(int.span), int.ty, int.span)
+        let value = builder.value(int.ty);
+        let lit = span_str!(self, int.span)
+            .parse()
+            .expect("Lexer should have validated this.");
+        builder.inst(InstMir::Int(lit, value), int.span);
+        Some(value)
     }
 
     fn r#return(

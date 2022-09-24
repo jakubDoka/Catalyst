@@ -1,0 +1,16 @@
+[package]
+name = "gen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cranelift-codegen = "0.88.0"
+cranelift-frontend = "0.88.0"
+cranelift-module = "0.88.0"
+lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+mir-t = { version = "0.1.0", path = "../../types/mir-t" }
+packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+storage = { version = "0.1.0", path = "../../utils/storage" }
+typec-t = { version = "0.1.0", path = "../../types/typec-t" }
