@@ -207,6 +207,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "gen-test"
+version = "0.1.0"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "diags",
+ "gen",
+ "mir",
+ "mir-t",
+ "packaging",
+ "packaging-t",
+ "parsing",
+ "parsing-t",
+ "scope",
+ "storage",
+ "target-lexicon",
+ "testing",
+ "typec",
+ "typec-t",
+]
+
+[[package]]
 name = "gimli"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

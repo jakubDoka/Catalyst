@@ -13,6 +13,9 @@ use crate::*;
 
 impl Generator<'_> {
     pub fn generate(&mut self, func_id: VRef<Func>, func: &FuncMir, builder: &mut FunctionBuilder) {
+        builder.func.clear();
+        self.ctx.clear();
+
         let Func { signature, .. } = self.typec.funcs[func_id];
 
         self.load_signature(signature, &mut builder.func.signature);
@@ -23,7 +26,11 @@ impl Generator<'_> {
             .next()
             .expect("function must have at least one completed block");
 
+        println!("Generating function block {}", root.index());
+
         self.block(root, func, builder);
+
+        builder.finalize();
     }
 
     fn block(
@@ -49,11 +56,12 @@ impl Generator<'_> {
             return block.id;
         }
 
-        let block = builder.create_block();
+        let ir_block = builder.create_block();
+        builder.switch_to_block(ir_block);
 
         for &arg in &func.value_args[args] {
             let ty = self.ty_repr(func.value_ty(arg));
-            self.ctx.values[arg] = builder.append_block_param(block, ty).into();
+            self.ctx.values[arg] = builder.append_block_param(ir_block, ty).into();
         }
 
         for &inst in &func.insts[insts] {
@@ -63,9 +71,17 @@ impl Generator<'_> {
         self.control_flow(control_flow, func, builder);
 
         let visit_count = 0;
-        if ref_count == visit_count {}
+        if ref_count == visit_count {
+            builder.seal_block(ir_block);
+        }
 
-        todo!()
+        self.ctx.blocks[block] = GenBlock {
+            id: ir_block,
+            visit_count,
+        }
+        .into();
+
+        ir_block
     }
 
     fn inst(&mut self, inst: InstMir, func: &FuncMir, builder: &mut FunctionBuilder) {
@@ -318,6 +334,14 @@ pub struct GeneratorCtx {
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
 }
 
+impl GeneratorCtx {
+    pub fn clear(&mut self) {
+        self.blocks.clear();
+        self.values.clear();
+        self.func_imports.clear();
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Layout {
     pub size: u32,
@@ -363,14 +387,6 @@ pub struct CompileRequest {
     pub params: VRefSlice<Ty>,
 }
 
-impl GeneratorCtx {
-    pub fn clear(&mut self) {
-        self.blocks.clear();
-        self.values.clear();
-        self.func_imports.clear();
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct GenBlock {
     pub id: ir::Block,
@@ -381,7 +397,7 @@ impl Invalid for GenBlock {
     unsafe fn invalid() -> Self {
         Self {
             id: ir::Block::from_u32(0),
-            visit_count: 0,
+            visit_count: u32::MAX,
         }
     }
 

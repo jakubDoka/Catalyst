@@ -1,0 +1,25 @@
+[package]
+name = "gen-test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+diags = { version = "0.1.0", path = "../../types/diags" }
+gen = { version = "0.1.0", path = "../../stages/gen" }
+mir = { version = "0.1.0", path = "../../stages/mir" }
+mir-t = { version = "0.1.0", path = "../../types/mir-t" }
+packaging = { version = "0.1.0", path = "../../stages/packaging" }
+packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+parsing = { version = "0.1.0", path = "../../stages/parsing" }
+parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
+scope = { version = "0.1.0", path = "../../utils/scope" }
+storage = { version = "0.1.0", path = "../../utils/storage" }
+testing = { version = "0.1.0", path = "../../utils/testing" }
+typec = { version = "0.1.0", path = "../../stages/typec" }
+typec-t = { version = "0.1.0", path = "../../types/typec-t" }
+cranelift-codegen = "0.88.0"
+cranelift-frontend = "0.88.0"
+cranelift-module = "0.88.0"
+target-lexicon = "0.12.4"
