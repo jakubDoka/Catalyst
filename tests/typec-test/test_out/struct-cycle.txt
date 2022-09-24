@@ -1,11 +1,11 @@
 error: infinitely sized type detected between defined types
- --> struct-cycle\root.ctl:3:11
+ --> struct-cycle\root.ctl:3:8
   |
-1 | struct A {
+2 | struct A {
   |        - info: this type is part of cycle
-2 |     b: B
-3 | }; struct B {
-  |           - info: this type is part of cycle
+...
+5 | struct B {
+  |        - info: this type is part of cycle
   |
   = info: cycle: 4\A -> 4\B -> 4\A
 
