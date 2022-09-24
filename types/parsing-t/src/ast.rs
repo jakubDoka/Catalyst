@@ -204,6 +204,7 @@ where
                     break element_span.sliced(element_span.end()..);
                 }
 
+                ctx.expect_error(META::SEP);
                 if let Some(span) = META::recover(ctx)? {
                     break span;
                 } else {

@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use cranelift_codegen::{
     ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
@@ -195,7 +193,7 @@ impl Generator<'_> {
         }
     }
 
-    fn load_signature(&self, signature: Signature, target: &mut ir::Signature) {
+    fn load_signature(&mut self, signature: Signature, target: &mut ir::Signature) {
         let cc = self.cc(signature.cc);
 
         target.clear(cc);
@@ -217,28 +215,93 @@ impl Generator<'_> {
         self.interner[cc].parse().unwrap_or(CallConv::Fast)
     }
 
-    fn ty_repr(&self, ty: VRef<Ty>) -> Type {
-        match self.typec.types[ty].kind {
-            TyKind::Pointer(..) => self.isa.pointer_type(),
-            TyKind::Integer(int) => match (int.width, int.signed) {
-                (64, true) => types::I64,
-                (64, false) => types::I64,
-                (32, true) => types::I32,
-                (32, false) => types::I32,
-                (16, true) => types::I16,
-                (16, false) => types::I16,
-                (8, true) => types::I8,
-                (8, false) => types::I8,
-                _ => self.isa.pointer_type(),
-            },
-            TyKind::Bool => types::B1,
+    fn ty_repr(&mut self, ty: VRef<Ty>) -> Type {
+        self.ty_layout(ty, &[]).repr
+    }
 
-            TyKind::Struct(..) => todo!(),
-            TyKind::Instance(..) => todo!(),
-            TyKind::Param(..) | TyKind::SelfBound | TyKind::Inferred => unreachable!(),
+    fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>]) -> Layout {
+        if let Some(layout) = self.ctx.layouts[ty].expand() {
+            return layout;
+        }
+
+        let res = match self.typec.types[ty].kind {
+            TyKind::Struct(s) => {
+                let mut offsets = bumpvec![cap self.typec.fields[s.fields].len()];
+
+                let layouts = self.typec.fields[s.fields]
+                    .iter()
+                    .map(|field| self.ty_layout(field.ty, params));
+
+                let mut align = 1;
+                let mut size = 0;
+                for layout in layouts {
+                    align = align.max(layout.align);
+
+                    offsets.push(size);
+
+                    let padding =
+                        (layout.align - (size as u8 & (layout.align - 1))) & (layout.align - 1);
+                    size += padding as u32;
+                    size += layout.size;
+                }
+
+                Layout {
+                    repr: Self::repr_for_size(size),
+                    offsets: self.ctx.offsets.bump(offsets),
+                    align,
+                    size,
+                }
+            }
+            TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
+                repr: self.isa.pointer_type(),
+                offsets: VSlice::empty(),
+                align: self.isa.pointer_bytes() as u8,
+                size: self.isa.pointer_bytes() as u32,
+            },
+            TyKind::Integer(int) => Layout {
+                size: int.size as u32,
+                offsets: VSlice::empty(),
+                align: int.size,
+                repr: Self::repr_for_size(int.size as u32),
+            },
+            TyKind::Param(index) => self.ty_layout(params[index as usize], &[]),
+            TyKind::Bool => Layout {
+                repr: types::B1,
+                offsets: VSlice::empty(),
+                align: 1,
+                size: 1,
+            },
+            TyKind::Instance(inst) => {
+                // remap the instance parameters so we can compute the layout correctly
+                let params = self.typec.ty_slices[inst.args]
+                    .iter()
+                    .map(|&ty| match self.typec.types[ty].kind {
+                        TyKind::Param(index) => params[index as usize],
+                        _ => ty,
+                    })
+                    .collect::<BumpVec<_>>();
+                self.ty_layout(inst.base, &params)
+            }
+
+            TyKind::Inferred | TyKind::SelfBound => unreachable!(),
+        };
+
+        self.ctx.layouts[ty] = res.into();
+
+        res
+    }
+
+    fn repr_for_size(size: u32) -> Type {
+        match size {
+            8.. => types::I64,
+            4.. => types::I32,
+            2.. => types::I16,
+            0.. => types::I8,
         }
     }
 }
+
+pub type Offset = u32;
 
 #[derive(Default)]
 pub struct GeneratorCtx {
@@ -247,6 +310,7 @@ pub struct GeneratorCtx {
     pub compile_requests: Vec<CompileRequest>,
     pub local_ty_slices: BumpMap<VRef<Ty>>,
     pub layouts: ShadowMap<Ty, Maybe<Layout>>,
+    pub offsets: BumpMap<Offset>,
 
     // temp
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
@@ -254,23 +318,35 @@ pub struct GeneratorCtx {
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
 }
 
+#[derive(Clone, Copy)]
 pub struct Layout {
     pub size: u32,
-    pub align: NonZeroU32,
+    pub offsets: VSlice<Offset>,
+    pub align: u8,
     pub repr: Type,
+}
+
+impl Layout {
+    pub const EMPTY: Self = Self {
+        size: 0,
+        align: 1,
+        offsets: VSlice::empty(),
+        repr: types::INVALID,
+    };
 }
 
 impl Invalid for Layout {
     unsafe fn invalid() -> Self {
         Self {
             size: 0,
-            align: NonZeroU32::new_unchecked(1),
+            align: 0,
+            offsets: VSlice::empty(),
             repr: types::INVALID,
         }
     }
 
     fn is_invalid(&self) -> bool {
-        self.repr == types::INVALID
+        self.align == 0
     }
 }
 

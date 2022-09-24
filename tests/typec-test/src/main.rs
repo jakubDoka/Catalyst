@@ -56,10 +56,20 @@ fn main() {
         true,
         simple "struct-decl" {
             struct A;
-            struct B;
             struct C {
                 a: A;
                 b: B
+            };
+            struct B;
+        }
+
+        simple "struct-cycle" {
+            struct A {
+                b: B
+            };
+
+            struct B {
+                a: A
             }
         }
 

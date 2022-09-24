@@ -232,7 +232,7 @@ impl Fmt {
                 break (None, mem::take(Rc::get_mut(&mut self.source).unwrap()));
             };
 
-            items.display(self);
+            items.display_low(true, self);
 
             if items.end.is_empty() {
                 break (

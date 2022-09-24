@@ -160,7 +160,7 @@ impl<T> VSlice<T> {
     }
 
     #[inline(always)]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self(u32::MAX, PhantomData)
     }
 }

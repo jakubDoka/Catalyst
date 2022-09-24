@@ -60,7 +60,7 @@ gen_kind!(TyKind
         depth: u32,
     },
     Integer = TyInteger {
-        width: u8,
+        size: u8,
         signed: bool,
     },
     Param = u32,

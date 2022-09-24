@@ -109,6 +109,10 @@ mod util {
         pub fn detect_infinite_types(&mut self, ctx: &mut TyCheckerCtx) -> &mut Self {
             let all_new_types = ctx.structs.iter().map(|&(_, ty)| ty);
 
+            if all_new_types.clone().next().is_none() {
+                return self;
+            }
+
             let nodes = all_new_types.clone().map(|ty| ty.index() as u32);
 
             ctx.ty_graph.load_nodes(nodes.clone());
@@ -156,6 +160,7 @@ mod util {
                         origin: self.current_file,
                         annotations: types
                             .iter()
+                            .skip(1)
                             .filter_map(|&ty| self.typec.types.locate(ty).span.expand())
                             .map(
                                 |span| source_annotation!(info[span]: "this type is part of cycle"),

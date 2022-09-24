@@ -79,7 +79,7 @@ file "stages/gen/src/state_gen.rs" {
         passed mut ctx: `GeneratorCtx`
 
         mut Interner
-        mut Typec
-        mut Packages
+        Typec
+        Packages
     }
 }
