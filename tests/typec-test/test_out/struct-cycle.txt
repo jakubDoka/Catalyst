@@ -1,0 +1,11 @@
+error: type not found
+ --> struct-cycle\root.ctl:2:8
+  |
+2 |     b: B
+  |        ^ this does not exist
+  |
+  = info: queried 'B'
+
+info: tir repr of functions:
+ 
+
