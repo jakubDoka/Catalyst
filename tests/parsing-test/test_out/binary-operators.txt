@@ -2,11 +2,8 @@
   |
 1 | 
 2 | fn do_something(a: uint, b: uint) -> uint {
-3 |     a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a +
-4 |         b * a +
-5 |         b * a +
-6 |         b +
-7 |         a
-8 | }
+3 |     a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b *
+4 |         a + b * a + b + a
+5 | }
   |
 
