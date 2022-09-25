@@ -7,6 +7,12 @@ block0:
 
 
 function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    return v0
+}
+
+
+function u0:0(i64) -> i64 fast {
 block0:
     return
 }
