@@ -13,8 +13,8 @@ block0(v0: i64):
 
 
 function u0:0(i64) -> i64 fast {
-block0:
-    return
+block0(v0: i64):
+    return v0
 }
 
 
