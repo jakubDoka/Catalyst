@@ -26,7 +26,10 @@ struct TestState {
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     mir_ctx: MirBuilderCtx,
-    gen_ctx: GeneratorCtx,
+    gen: Gen,
+    gen_resources: GenResources,
+    gen_layouts: GenLayouts,
+    compile_requests: CompileRequests,
     functions: String,
 }
 
@@ -53,7 +56,7 @@ impl Scheduler for TestState {
         let mut function = Function::new();
 
         for &(func, ref body) in &self.mir_ctx.mir_funcs {
-            generator!(self, types::I64, &mut self.gen_ctx).generate(
+            generator!(self, types::I64).generate(
                 func,
                 body,
                 &mut FunctionBuilder::new(&mut function, &mut builder_ctx),
@@ -76,7 +79,8 @@ fn main() {
         true,
         simple "functions" {
             fn main -> uint => 0;
-            fn pass(a: uint) -> uint { return; a };
+            fn pass(a: uint) -> uint { return a };
+            fn pass_with_implicit_return(a: uint) -> uint { a };
         }
 
         simple "recursion" {

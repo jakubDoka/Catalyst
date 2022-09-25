@@ -85,13 +85,23 @@ impl TyChecker<'_> {
         self.insert_generics(generics, 0);
         self.args(signature.args, args, &mut builder);
 
-        let body = match body {
-            FuncBodyAst::Arrow(span, expr) => self.r#return(Some(expr), span, &mut builder),
+        let tir_body = match body {
+            FuncBodyAst::Arrow(.., expr) => self.expr(expr, Some(signature.ret), &mut builder),
             FuncBodyAst::Block(body) => self.block(body, Some(signature.ret), &mut builder),
             FuncBodyAst::Extern(..) => return None,
         };
 
-        Some(body.map(|b| b.node))
+        Some(
+            tir_body
+                .and_then(|tir_body| {
+                    if tir_body.ty == Ty::TERMINAL {
+                        Some(tir_body)
+                    } else {
+                        self.return_low(Some(tir_body), body.span(), &mut builder)
+                    }
+                })
+                .map(|tir_body| tir_body.node),
+        )
     }
 
     fn block<'a>(
@@ -140,7 +150,7 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let value = if let Some(expr) = expr {
-            Some(self.expr(expr, Some(builder.ret), builder)?)
+            Some(self.expr(expr, Some(builder.ret), builder).unwrap())
         } else {
             None
         };

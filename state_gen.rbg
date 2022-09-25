@@ -76,9 +76,13 @@ file "stages/gen/src/state_gen.rs" {
 
     struct Generator {
         owned ptr_ty: Type
-        passed mut ctx: `GeneratorCtx`
 
+        mut CompileRequests
+        mut GenLayouts
+        mut Gen
+        mut GenResources
         mut Interner
+        
         Typec
         Packages
     }

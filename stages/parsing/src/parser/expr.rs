@@ -1,5 +1,3 @@
-use std::ops::Not;
-
 use super::*;
 
 list_meta!(BlockMeta LeftCurly NewLine RightCurly);
@@ -149,7 +147,11 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         Some(Self {
             return_span: ctx.advance().span,
-            expr: ctx.at_tok(TokenKind::NewLine).not().then(|| ctx.parse())?,
+            expr: if ctx.at_tok(TokenKind::NewLine) {
+                None
+            } else {
+                Some(ctx.parse()?)
+            },
         })
     }
 

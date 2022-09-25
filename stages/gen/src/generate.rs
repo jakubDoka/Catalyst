@@ -1,11 +1,6 @@
 use cranelift_codegen::{
-    entity::EntityRef,
-    ir::{
-        self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalNameRef,
-    },
+    ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
-    packed_option::PackedOption,
-    Context, MachReloc,
 };
 use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
@@ -15,9 +10,11 @@ use typec_t::*;
 use crate::*;
 
 impl Generator<'_> {
+    pub const FUNC_NAMESPACE: u32 = 0;
+
     pub fn generate(&mut self, func_id: VRef<Func>, func: &FuncMir, builder: &mut FunctionBuilder) {
         builder.func.clear();
-        self.ctx.clear();
+        self.gen_resources.clear();
 
         let Func { signature, .. } = self.typec.funcs[func_id];
 
@@ -28,8 +25,6 @@ impl Generator<'_> {
             .keys()
             .next()
             .expect("function must have at least one completed block");
-
-        println!("Generating function block {}", root.index());
 
         self.block(root, func, builder);
 
@@ -49,7 +44,7 @@ impl Generator<'_> {
             ref_count,
         } = func.blocks[block];
 
-        if let Some(block) = self.ctx.blocks[block].as_mut_option() {
+        if let Some(block) = self.gen_resources.blocks[block].as_mut_option() {
             block.visit_count += 1;
 
             if block.visit_count == ref_count {
@@ -64,7 +59,7 @@ impl Generator<'_> {
 
         for &arg in &func.value_args[args] {
             let ty = self.ty_repr(func.value_ty(arg));
-            self.ctx.values[arg] = builder.append_block_param(ir_block, ty).into();
+            self.gen_resources.values[arg] = builder.append_block_param(ir_block, ty).into();
         }
 
         for &inst in &func.insts[insts] {
@@ -78,7 +73,7 @@ impl Generator<'_> {
             builder.seal_block(ir_block);
         }
 
-        self.ctx.blocks[block] = GenBlock {
+        self.gen_resources.blocks[block] = GenBlock {
             id: ir_block,
             visit_count,
         }
@@ -92,7 +87,7 @@ impl Generator<'_> {
             InstMir::Int(value, ret) => {
                 let ty = self.ty_repr(func.value_ty(ret));
                 let value = builder.ins().iconst(ty, value);
-                self.ctx.values[ret] = value.into();
+                self.gen_resources.values[ret] = value.into();
             }
             InstMir::Access(..) => (),
             InstMir::Call(call, ret) => self.call(call, ret, func, builder),
@@ -115,13 +110,13 @@ impl Generator<'_> {
                 let func_ref = self.instantiate(func_id, params, func, builder);
                 let args = func.value_args[args]
                     .iter()
-                    .map(|&arg| self.ctx.values[arg].expand())
+                    .map(|&arg| self.gen_resources.values[arg].expand())
                     .collect::<Option<BumpVec<_>>>()
                     .expect("All arguments should be declared.");
 
                 let inst = builder.ins().call(func_ref, &args);
                 if let Some(&value) = builder.inst_results(inst).first() {
-                    self.ctx.values[ret] = value.into();
+                    self.gen_resources.values[ret] = value.into();
                 }
             }
             CallableMir::BoundFunc(_) => todo!(),
@@ -151,21 +146,24 @@ impl Generator<'_> {
             self.interner.intern(segments)
         };
 
-        if let Some(&imported) = self.ctx.func_imports.get(&id) {
+        if let Some(&imported) = self.gen_resources.func_imports.get(&id) {
             return imported;
         }
 
-        if self.ctx.compiled_funcs.index(id).is_none() {
-            self.ctx.compile_requests.push(CompileRequest {
-                id,
-                func: func_id,
-                params: self.ctx.local_ty_slices.bump(
-                    func.ty_params[params]
-                        .iter()
-                        .map(|&ty| func.dependant_types[ty].ty),
-                ),
-            });
-        }
+        let func = self.gen.compiled_funcs.get_or_insert(id, |s| {
+            let params = func.ty_params[params]
+                .iter()
+                .map(|&ty| func.dependant_types[ty].ty);
+            self.compile_requests.add_request(s.next(), func_id, params);
+            CompiledFunc::new(func_id)
+        });
+
+        let name = builder
+            .func
+            .declare_imported_user_function(UserExternalName::new(
+                Self::FUNC_NAMESPACE,
+                func.index() as u32,
+            ));
 
         let mut signature = ir::Signature::new(CallConv::SystemV);
         let Func {
@@ -177,12 +175,12 @@ impl Generator<'_> {
         let signature = builder.import_signature(signature);
 
         let func_ref = builder.import_function(ExtFuncData {
-            name: ExternalName::User(UserExternalNameRef::new(id.index())),
+            name: ExternalName::User(name),
             signature,
             colocated: flags.contains(FuncFlags::EXTERN),
         });
 
-        self.ctx.func_imports.insert(id, func_ref);
+        self.gen_resources.func_imports.insert(id, func_ref);
 
         func_ref
     }
@@ -196,7 +194,7 @@ impl Generator<'_> {
         match control_flow {
             ControlFlowMir::Return(ret) => {
                 if let Some(ret) = ret.expand() {
-                    let ret = self.ctx.values[ret].expect("value mut be defined");
+                    let ret = self.gen_resources.values[ret].expect("value mut be defined");
                     builder.ins().return_(&[ret]);
                 } else {
                     builder.ins().return_(&[]);
@@ -232,7 +230,7 @@ impl Generator<'_> {
     }
 
     fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>]) -> Layout {
-        if let Some(layout) = self.ctx.layouts[ty].expand() {
+        if let Some(layout) = self.gen_layouts.mapping[ty].expand() {
             return layout;
         }
 
@@ -259,7 +257,7 @@ impl Generator<'_> {
 
                 Layout {
                     repr: Self::repr_for_size(size),
-                    offsets: self.ctx.offsets.bump(offsets),
+                    offsets: self.gen_layouts.offsets.bump(offsets),
                     align,
                     size,
                 }
@@ -298,7 +296,7 @@ impl Generator<'_> {
             TyKind::Inferred | TyKind::SelfBound => unreachable!(),
         };
 
-        self.ctx.layouts[ty] = res.into();
+        self.gen_layouts.mapping[ty] = res.into();
 
         res
     }
