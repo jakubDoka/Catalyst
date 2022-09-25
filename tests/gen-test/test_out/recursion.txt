@@ -1,7 +1,7 @@
 info: mir repr of functions:
 function u0:0(i64) -> i8 fast {
     sig0 = (i64) -> i8 fast
-    fn0 = u0:13 sig0
+    fn0 = u0:0 sig0
 
 block0(v0: i64):
     v1 = call fn0(v0)
