@@ -1,12 +1,12 @@
 #![feature(let_else)]
 
+mod context;
 mod generate;
-mod module_packing;
+mod native;
 
 mod state_gen;
 
 pub use {
-    generate::{CompileRequest, CompiledFunc, GenBlock, GeneratorCtx, Layout, Offset},
-    module_packing::{DATA_NAMESPACE, FUNC_NAMESPACE},
+    context::{CompileRequest, CompiledFunc, GenBlock, GeneratorCtx, Layout, Offset},
     state_gen::Generator,
 };
