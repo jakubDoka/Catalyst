@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got '('
- --> recursion\root.ctl:1:34
-  |
-1 | fn infinity(a : uint) => infinity(a) ;
-  |                                  ^ token located here
-  |
-  = info: list
-
