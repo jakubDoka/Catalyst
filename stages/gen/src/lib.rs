@@ -2,14 +2,16 @@
 
 mod context;
 mod generate;
-mod native;
+mod jit;
+mod object;
 
 mod state_gen;
 
 pub use {
     context::{
-        CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock, GenItemName, GenLayouts,
-        GenReloc, GenResources, Layout, Offset,
+        perform_jit_relocations, CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock,
+        GenItemName, GenLayouts, GenReloc, GenResources, Layout, Offset,
     },
+    jit::JitContext,
     state_gen::Generator,
 };

@@ -116,6 +116,17 @@ impl<K, V> PoolMap<K, V> {
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.iter().map(|(_, v)| v)
     }
+
+    pub fn clear(&mut self) {
+        self.free.clear();
+        for (i, mut elem) in self.data.drain(..).enumerate() {
+            if !self.free_lookup.contains(i) {
+                // SAFETY: If implies that element was initialized
+                unsafe { elem.assume_init_drop() };
+            }
+        }
+        self.free_lookup.clear();
+    }
 }
 
 impl<K, V> Serialize for PoolMap<K, V>
@@ -137,6 +148,12 @@ where
             map.serialize_entry::<usize, V>(&k, unsafe { &*v.as_ptr() })?;
         }
         map.end()
+    }
+}
+
+impl<K, V> Drop for PoolMap<K, V> {
+    fn drop(&mut self) {
+        self.clear();
     }
 }
 

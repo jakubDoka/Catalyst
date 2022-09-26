@@ -2,8 +2,6 @@ use std::{
     alloc::AllocError,
     cell::Cell,
     fmt::Debug,
-    mem,
-    num::NonZeroUsize,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -27,32 +25,11 @@ impl !Sync for BumpAllocRef {}
 
 unsafe impl std::alloc::Allocator for BumpAllocRef {
     fn allocate(&self, layout: std::alloc::Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let size = layout
-            .align_to(mem::align_of::<usize>())
-            .map_err(|_| AllocError)?
-            .pad_to_align()
-            .size();
-
-        let Some(size) = NonZeroUsize::new(size / mem::size_of::<usize>()) else {
-            return Err(AllocError);
-        };
-
-        let alloc = BUMP_ALLOC.with(|alloc| alloc.allocator.alloc(size));
-
-        let slice = unsafe {
-            std::slice::from_raw_parts_mut(
-                alloc.as_ptr() as *mut u8,
-                size.get() * mem::size_of::<usize>(),
-            )
-        };
-
-        Ok(unsafe { NonNull::new_unchecked(slice) })
+        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator.alloc(layout)))
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: std::alloc::Layout) {
-        let size = compute_layout_size(layout);
-
-        BUMP_ALLOC.with(|alloc| alloc.allocator.try_free(ptr.cast(), size));
+        BUMP_ALLOC.with(|alloc| alloc.allocator.try_free(ptr, layout));
     }
 
     unsafe fn grow(
@@ -66,32 +43,8 @@ unsafe impl std::alloc::Allocator for BumpAllocRef {
             "`new_layout.size()` must be greater than or equal to `old_layout.size()`"
         );
 
-        let previous_size = compute_layout_size(old_layout);
-        let new_size = compute_layout_size(new_layout);
-
-        let alloc =
-            BUMP_ALLOC.with(|alloc| alloc.allocator.grow(ptr.cast(), previous_size, new_size));
-
-        let slice = unsafe {
-            std::slice::from_raw_parts_mut(
-                alloc.as_ptr() as *mut u8,
-                new_size.get() * mem::size_of::<usize>(),
-            )
-        };
-
-        Ok(unsafe { NonNull::new_unchecked(slice) })
+        Ok(BUMP_ALLOC.with(|alloc| alloc.allocator.grow(ptr.cast(), old_layout, new_layout)))
     }
-}
-
-unsafe fn compute_layout_size(layout: std::alloc::Layout) -> NonZeroUsize {
-    NonZeroUsize::new_unchecked(
-        layout
-            .align_to(std::mem::align_of::<usize>())
-            .unwrap_unchecked()
-            .pad_to_align()
-            .size()
-            / std::mem::size_of::<usize>(),
-    )
 }
 
 #[derive(Default)]
@@ -109,7 +62,7 @@ impl BumpAlloc {
     fn drop_ref(&self, _: &mut BumpAllocRef) {
         if self.refs.replace(self.refs.get() - 1) == 1 {
             unsafe {
-                self.allocator.clear_unsafe();
+                self.allocator.clear();
             }
         }
     }

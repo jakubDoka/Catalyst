@@ -3,7 +3,6 @@ use core::slice;
 use std::{
     alloc::Layout,
     mem::{self, MaybeUninit},
-    num::NonZeroUsize,
     ptr::{copy_nonoverlapping, NonNull},
 };
 
@@ -24,18 +23,13 @@ impl Arena {
     pub fn alloc<T>(&self, value: T) -> &T {
         const { assert!(!mem::needs_drop::<T>()) };
 
-        let size = Layout::new::<T>()
-            .align_to(mem::align_of::<usize>())
-            .unwrap()
-            .pad_to_align()
-            .size()
-            / mem::size_of::<usize>();
+        let layout = Layout::new::<T>();
 
-        let Some(size) = NonZeroUsize::new(size) else {
+        if layout.size() == 0 {
             return unsafe { &mut *NonNull::dangling().as_ptr() };
         };
 
-        let ptr = self.allocator.alloc(size);
+        let ptr = self.allocator.alloc(layout);
         unsafe {
             (ptr.as_ptr() as *mut T).write(value);
             &*(ptr.as_ptr() as *const T)
@@ -45,64 +39,46 @@ impl Arena {
     pub fn alloc_slice<T>(&self, value: &[T]) -> &[T] {
         const { assert!(!mem::needs_drop::<T>()) };
 
-        let Some(size) = Self::array_size::<T>(value.len()) else {
+        // SAFETY: layout is of existing slice, must be valid
+        let layout = unsafe { Layout::array::<T>(value.len()).unwrap_unchecked() };
+
+        if layout.size() == 0 {
             return &[];
         };
 
-        let ptr = self.allocator.alloc(size);
+        let ptr = self.allocator.alloc(layout);
         unsafe {
             copy_nonoverlapping(value.as_ptr(), ptr.as_ptr() as *mut _, value.len());
             slice::from_raw_parts(ptr.as_ptr() as *const _, value.len())
         }
     }
 
-    pub fn alloc_iter<T, I: IntoIterator<Item = T>>(&self, iter: I) -> &[T] {
+    pub fn alloc_iter<T, I>(&self, iter: I) -> &[T]
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: ExactSizeIterator,
+    {
         const { assert!(!mem::needs_drop::<T>()) };
 
         let iter = iter.into_iter();
+        let len = iter.len();
+        let layout = Layout::array::<T>(len).expect("layout of resulting allocation is invalid");
 
-        if let (low, Some(high)) = iter.size_hint() && low == high {
-            let Some(size) = Self::array_size::<T>(low) else {
-                return &[];
-            };
+        let ptr = self.allocator.alloc(layout);
+        // SAFETY: layout should represent valid slice
+        let slice = unsafe { slice::from_raw_parts_mut(ptr.as_ptr() as *mut MaybeUninit<T>, len) };
 
-            let ptr = self.allocator.alloc(size);
-            // SAFETY: ptr points to allocation with size >= low * size_of::<T>, memory is 
-            // uninitialized
-            let slice = unsafe {
-                slice::from_raw_parts_mut(ptr.as_ptr() as *mut MaybeUninit<T>, low)
-            };
+        slice.iter_mut().zip(iter).for_each(|(slot, value)| {
+            slot.write(value);
+        });
 
-            slice
-                .iter_mut()
-                .zip(iter)
-                .for_each(|(slot, value)| { slot.write(value); });
-
-            // SAFETY: slice was just initialized from iterator
-            unsafe {
-                return mem::transmute(slice);
-            }
-        }
-
-        let data = iter.collect::<BumpVec<_>>();
-
-        self.alloc_slice(&data)
-    }
-
-    fn array_size<T>(len: usize) -> Option<NonZeroUsize> {
-        NonZeroUsize::new(
-            Layout::array::<T>(len)
-                .unwrap()
-                .align_to(mem::align_of::<usize>())
-                .unwrap()
-                .pad_to_align()
-                .size()
-                / mem::size_of::<usize>(),
-        )
+        // SAFETY: slice was just initialized from iterator
+        unsafe { mem::transmute(slice) }
     }
 
     pub fn clear(&mut self) {
-        self.allocator.clear();
+        // unique access means there is no valid reference eto this
+        unsafe { self.allocator.clear() };
     }
 
     pub fn into_allocator(mut self) -> Allocator {

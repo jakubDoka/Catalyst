@@ -57,7 +57,7 @@ impl TyChecker<'_> {
                 Some((func, body))
             });
 
-        *compiled_funcs = arena.alloc_iter(iter);
+        *compiled_funcs = arena.alloc_iter(iter.collect::<BumpVec<_>>());
 
         self
     }
@@ -173,7 +173,7 @@ impl TyChecker<'_> {
             span,
         };
 
-        self.node(builder.ret, ret, builder)
+        self.node(Ty::TERMINAL, ret, builder)
     }
 
     fn expr<'a>(

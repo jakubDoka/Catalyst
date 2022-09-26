@@ -111,4 +111,9 @@ impl BitSet {
     pub fn size_hint(&self) -> usize {
         self.len
     }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.len = 0;
+    }
 }

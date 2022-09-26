@@ -33,7 +33,8 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
                         .filter_map(|&item| match item {
                             ItemAst::$name(&item) => Some(item),
                             _ => None,
-                        }));
+                        })
+                        .collect::<BumpVec<_>>());
                 )*
 
                 Some(Self {

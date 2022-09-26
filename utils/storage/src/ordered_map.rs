@@ -91,6 +91,11 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.data.values().map(|(_, value)| value)
     }
+
+    pub fn clear(&mut self) {
+        self.index.clear();
+        self.data.clear();
+    }
 }
 
 impl<K: SpecialHash, V> Index<VRef<V>> for OrderedMap<K, V> {
