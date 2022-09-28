@@ -40,11 +40,11 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: storage::VRef<str>, items: GroupedItemsAst) {
-        let mut type_checked_funcs: &[_] = &[];
+        let mut type_checked_funcs = vec![];
         ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);
 
         mir_checker!(self, module)
-            .funcs(&mut self.mir_ctx, type_checked_funcs)
+            .funcs(&mut self.mir_ctx, &mut type_checked_funcs)
             .display_funcs(&self.mir_ctx.just_compiled, &mut self.functions)
             .unwrap();
 

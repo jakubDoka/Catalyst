@@ -1,8 +1,10 @@
 use std::default::default;
 
+use diags::gen_error_fns;
 use lexing_t::*;
 use packaging_t::*;
 use parsing::*;
+use parsing_t::Ast;
 use scope::*;
 use storage::*;
 use typec_t::*;
@@ -31,7 +33,7 @@ impl TyChecker<'_> {
 
     pub fn collect_func(
         &mut self,
-        FuncDefAst {
+        func @ FuncDefAst {
             vis,
             signature:
                 FuncSigAst {
@@ -48,7 +50,7 @@ impl TyChecker<'_> {
         }: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Func>)> {
-        let generics = self.generics(generics);
+        let parsed_generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
         let args = args
@@ -65,7 +67,12 @@ impl TyChecker<'_> {
 
         let entry = attributes
             .iter()
-            .any(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::Entry(..)));
+            .find(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::Entry(..)));
+
+        if let Some(entry) = entry && !parsed_generics.is_empty() {
+            self.generic_entry(generics.span(), entry.span(), func.span());
+            return None;
+        }
 
         let visibility = if let FuncBodyAst::Extern(..) = body {
             FuncVisibility::Imported
@@ -76,9 +83,9 @@ impl TyChecker<'_> {
         };
 
         let func = |_: &mut Funcs| Func {
-            generics,
+            generics: parsed_generics,
             signature,
-            flags: FuncFlags::ENTRY & entry,
+            flags: FuncFlags::ENTRY & entry.is_some(),
             visibility,
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
@@ -114,6 +121,17 @@ impl TyChecker<'_> {
         let id = self.typec.types.get_or_insert(key, ty);
 
         Some((ModItem::new(name.ident, id, name.span, span, vis), id))
+    }
+
+    gen_error_fns! {
+        push generic_entry(self, generics: Span, entry: Span, func: Span) {
+            err: "generic entry functions are not allowed";
+            help: "you can wrap concrete instance of this function in a non-generic entry function";
+            (func, self.current_file) {
+                err[entry]: "caused by this entry attribute";
+                info[generics]: "generics located here";
+            }
+        }
     }
 }
 

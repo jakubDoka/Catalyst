@@ -90,7 +90,7 @@ mod util {
             &mut self,
             items: GroupedItemsAst,
             ctx: &'a mut TyCheckerCtx,
-            type_checked_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
+            type_checked_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
             self.collect(items.structs, Self::collect_struct, &mut ctx.structs)

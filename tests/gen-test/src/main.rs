@@ -1,7 +1,7 @@
 #![feature(let_else)]
 #![feature(fs_try_exists)]
 
-use std::{fmt::Write, fs, path::Path, process::Command};
+use std::{fmt::Write, fs, path::Path, process::Command, vec};
 
 use cranelift_codegen::{
     isa::{self, TargetIsa},
@@ -48,6 +48,42 @@ struct TestState {
     functions: String,
     later_init: Option<LaterInit>,
     mir: Mir,
+    entry_points: Vec<VRef<CompiledFunc>>,
+}
+
+impl TestState {
+    fn get_init_later(&mut self) -> LaterInit {
+        self.later_init.take().unwrap_or_else(|| {
+            let flag_builder = settings::builder();
+            let builder = isa::lookup(Triple::host()).unwrap();
+            let isa = builder.finish(Flags::new(flag_builder)).unwrap();
+            let object_context = ObjectContext::new(&*isa).unwrap();
+            LaterInit {
+                isa,
+                object_context,
+                context: Context::new(),
+                func_ctx: FunctionBuilderContext::new(),
+            }
+        })
+    }
+
+    fn collect_entry_points(&mut self) -> Vec<VRef<CompiledFunc>> {
+        let entry_points = self
+            .mir_ctx
+            .just_compiled
+            .drain(..)
+            .filter(|&func| self.typec.funcs[func].flags.contains(FuncFlags::ENTRY))
+            .map(|func| {
+                self.gen
+                    .compiled_funcs
+                    .insert_unique(self.typec.funcs.id(func), CompiledFunc::new(func))
+            })
+            .collect::<Vec<_>>();
+
+        self.entry_points.extend(&entry_points);
+
+        entry_points
+    }
 }
 
 impl Scheduler for TestState {
@@ -64,39 +100,14 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: storage::VRef<str>, items: GroupedItemsAst) {
-        let mut later_init = self.later_init.take().unwrap_or_else(|| {
-            let flag_builder = settings::builder();
-            let builder = isa::lookup(Triple::host()).unwrap();
-            let isa = builder.finish(Flags::new(flag_builder)).unwrap();
-            let object_context = ObjectContext::new(&*isa).unwrap();
-            LaterInit {
-                isa,
-                object_context,
-                context: Context::new(),
-                func_ctx: FunctionBuilderContext::new(),
-            }
-        });
+        let mut later_init = self.get_init_later();
 
-        let mut type_checked_funcs: &[_] = &[];
+        let mut type_checked_funcs = vec![];
         ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);
-
-        mir_checker!(self, module).funcs(&mut self.mir_ctx, type_checked_funcs);
-
-        let main = self.interner.intern_str("main");
-        let mut compile_queue = self
-            .mir_ctx
-            .just_compiled
-            .drain(..)
-            .find(|&func| self.typec.funcs[func].loc.name == main)
-            .map(|func| {
-                self.gen
-                    .compiled_funcs
-                    .insert_unique(main, CompiledFunc::new(func))
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
+        mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
 
         let mut compiled_funcs = vec![];
+        let mut compile_queue = self.collect_entry_points();
 
         while let Some(current_func) = compile_queue.pop() {
             let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
@@ -139,11 +150,16 @@ impl Scheduler for TestState {
             info: ("mir repr of functions:\n{}", self.functions);
         });
 
+        if self.entry_points.is_empty() {
+            self.workspace.push(snippet! {
+                err: "no entry points found";
+                help: "add '#[entry]' to a function that should take this role";
+            });
+        }
+
         if self.workspace.has_errors() {
             return;
         }
-
-        return;
 
         let Some(ref mut later_init) = self.later_init else {
             return;

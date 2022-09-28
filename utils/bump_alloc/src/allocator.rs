@@ -7,6 +7,8 @@ use std::{
     slice,
 };
 
+pub type Allocator = AllocatorLow<false>;
+
 pub struct ProtectedAllocator {
     protection: region::Protection,
     protected: usize,
@@ -83,7 +85,7 @@ impl ProtectedAllocator {
     }
 }
 
-pub struct Allocator {
+pub struct AllocatorLow<const WRITE_PADDING: bool> {
     free: Cell<Vec<Chunk>>,
     chunks: Cell<Vec<Chunk>>,
     current: Cell<*mut u8>,
@@ -91,13 +93,13 @@ pub struct Allocator {
     chunk_size: usize,
 }
 
-impl Default for Allocator {
+impl<const WRITE_PADDING: bool> Default for AllocatorLow<WRITE_PADDING> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Allocator {
+impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
     /// Since allocator is always reused small startup penalty is acceptable.
     const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024 * 2;
 
@@ -127,7 +129,9 @@ impl Allocator {
             self.alloc_new(layout)
         } else {
             // SAFETY: We just checked that the current chunk has enough space
-            Self::write_padding(current, padding);
+            if WRITE_PADDING {
+                Self::write_padding(current, padding);
+            }
             let new = unsafe { current.sub(size) };
             self.current.set(new);
             // SAFETY: Allocation with address range range 0..n should never happen
@@ -200,6 +204,27 @@ impl Allocator {
         size + region::page::size() - size % region::page::size()
     }
 
+    /// Clears the allocator for reuse.
+    /// # Safety
+    /// Function can be called only if no references to allocated data exist.
+    pub unsafe fn clear(&self) {
+        let mut chunks = self.chunks.take();
+        let mut free = self.free.take();
+
+        free.extend(chunks.drain(1..));
+
+        // SAFETY: Chunks are never empty
+        let last = unsafe { chunks.last_mut().unwrap_unchecked() };
+        let range = last.range();
+        self.current.set(range.end as *mut _);
+        self.start.set(range.start as *mut _);
+
+        self.chunks.set(chunks);
+        self.free.set(free);
+    }
+}
+
+impl AllocatorLow<true> {
     /// # Safety
     /// `previous_size` must be the size of the allocation at `ptr`.
     pub unsafe fn grow(
@@ -241,25 +266,6 @@ impl Allocator {
         self.current.set(restored);
 
         true
-    }
-
-    /// Clears the allocator for reuse.
-    /// # Safety
-    /// Function can be called only if no references to allocated data exist.
-    pub unsafe fn clear(&self) {
-        let mut chunks = self.chunks.take();
-        let mut free = self.free.take();
-
-        free.extend(chunks.drain(1..));
-
-        // SAFETY: Chunks are never empty
-        let last = unsafe { chunks.last_mut().unwrap_unchecked() };
-        let range = last.range();
-        self.current.set(range.end as *mut _);
-        self.start.set(range.start as *mut _);
-
-        self.chunks.set(chunks);
-        self.free.set(free);
     }
 }
 

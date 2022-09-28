@@ -38,10 +38,10 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: VRef<str>, items: GroupedItemsAst) {
-        let mut type_checked_funcs: &[_] = &[];
+        let mut type_checked_funcs = vec![];
         ty_checker!(self, module)
             .execute(items, &mut self.typec_ctx, &mut type_checked_funcs)
-            .display_funcs(type_checked_funcs, &mut self.functions)
+            .display_funcs(&type_checked_funcs, &mut self.functions)
             .unwrap();
     }
 

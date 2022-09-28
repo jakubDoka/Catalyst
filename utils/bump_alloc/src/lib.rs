@@ -13,6 +13,6 @@ mod bump_vec;
 
 pub use {
     crate::bump_vec::{BumpVec, ToBumpVec},
-    allocator::{Allocator, ProtectedAllocator},
+    allocator::{Allocator, AllocatorLow, ProtectedAllocator},
     arena::Arena,
 };

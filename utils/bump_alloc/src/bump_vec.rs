@@ -6,7 +6,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::Allocator;
+use crate::*;
 
 thread_local! {
     static BUMP_ALLOC: BumpAlloc = BumpAlloc::default();
@@ -50,7 +50,7 @@ unsafe impl std::alloc::Allocator for BumpAllocRef {
 #[derive(Default)]
 struct BumpAlloc {
     refs: Cell<usize>,
-    allocator: Allocator,
+    allocator: AllocatorLow<true>,
 }
 
 impl BumpAlloc {

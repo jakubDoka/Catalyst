@@ -8,8 +8,12 @@ use crate::*;
 pub type NodeRes = Option<VRef<ValueMir>>;
 
 impl MirChecker<'_> {
-    pub fn funcs(&mut self, ctx: &mut MirBuilderCtx, input: &[(VRef<Func>, TirNode)]) -> &mut Self {
-        for &(func, body) in input {
+    pub fn funcs(
+        &mut self,
+        ctx: &mut MirBuilderCtx,
+        input: &mut Vec<(VRef<Func>, TirNode)>,
+    ) -> &mut Self {
+        for (func, body) in input.drain(..) {
             let body = self.func(func, body, ctx);
             self.mir.bodies[func] = Some(body);
             ctx.just_compiled.push(func);

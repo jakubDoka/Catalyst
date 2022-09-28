@@ -37,7 +37,7 @@ impl TyChecker<'_> {
         items: GroupedItemSlice<FuncDefAst>,
         arena: &'a Arena,
         input: &TypecOutput<Func>,
-        compiled_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
+        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
         let iter =
@@ -58,7 +58,7 @@ impl TyChecker<'_> {
                     Some((func, body))
                 });
 
-        *compiled_funcs = arena.alloc_iter(iter.collect::<BumpVec<_>>());
+        compiled_funcs.extend(iter);
 
         self
     }
