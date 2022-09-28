@@ -1,22 +1,8 @@
 info: mir repr of functions:
-function u0:0() -> i8 fast {
-    sig0 = (i64) -> i8 fast
-    fn0 = colocated u0:1 sig0
-
+function u0:0() -> i64 fast {
 block0:
     v0 = iconst.i64 0
-    v1 = call fn0(v0)  ; v0 = 0
-    return v1
-}
-
-
-function u0:0(i64) -> i8 fast {
-    sig0 = (i64) -> i8 fast
-    fn0 = colocated u0:1 sig0
-
-block0(v0: i64):
-    v1 = call fn0(v0)
-    return v1
+    return v0  ; v0 = 0
 }
 
 
