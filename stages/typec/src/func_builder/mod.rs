@@ -34,28 +34,29 @@ pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 impl TyChecker<'_> {
     pub fn build_funcs<'a>(
         &mut self,
-        items: &[FuncDefAst],
+        items: GroupedItemSlice<FuncDefAst>,
         arena: &'a Arena,
         input: &TypecOutput<Func>,
         compiled_funcs: &mut &'a [(VRef<Func>, TirNode<'a>)],
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
-        let iter = input
-            .iter()
-            .map(|&(i, func)| (items[i], func))
-            .filter_map(|(ast, func)| {
-                let Some(res) = self.build_func(ast, func, arena) else {
+        let iter =
+            input
+                .iter()
+                .map(|&(i, func)| (items[i], func))
+                .filter_map(|((ast, ..), func)| {
+                    let Some(res) = self.build_func(ast, func, arena) else {
                     extern_funcs.push(func);
                     return None;
                 };
 
-                let Some(body) = res else {
+                    let Some(body) = res else {
                     self.incomplete_tir(ast);
                     return None;
                 };
 
-                Some((func, body))
-            });
+                    Some((func, body))
+                });
 
         *compiled_funcs = arena.alloc_iter(iter.collect::<BumpVec<_>>());
 

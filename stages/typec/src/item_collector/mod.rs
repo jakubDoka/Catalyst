@@ -13,12 +13,12 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
-        items: &[T],
-        collector: fn(&mut Self, GroupedItemsSlice<T>) -> Option<(ModItem, VRef<T::Output>)>,
+        items: GroupedItemSlice<T>,
+        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<(ModItem, VRef<T::Output>)>,
         out: &mut TypecOutput<T::Output>,
     ) -> &mut Self {
-        for (i, &item) in items.iter().enumerate() {
-            let Some((item, id)) = collector(self, item) else {
+        for (i, &(item, attributes)) in items.iter().enumerate() {
+            let Some((item, id)) = collector(self, item, attributes) else {
                 continue;
             };
 
@@ -46,6 +46,7 @@ impl TyChecker<'_> {
             body,
             ..
         }: FuncDefAst,
+        attributes: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Func>)> {
         let generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
@@ -62,18 +63,22 @@ impl TyChecker<'_> {
             ret,
         };
 
+        let entry = attributes
+            .iter()
+            .any(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::Entry(..)));
+
         let visibility = if let FuncBodyAst::Extern(..) = body {
             FuncVisibility::Imported
-        } else {
-            // TODO: whe should use Local unless
-            // function is explicitly exported
+        } else if cc.is_some() {
             FuncVisibility::Exported
+        } else {
+            FuncVisibility::Local
         };
 
         let func = |_: &mut Funcs| Func {
             generics,
             signature,
-            flags: FuncFlags::empty(),
+            flags: FuncFlags::ENTRY & entry,
             visibility,
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
@@ -91,6 +96,7 @@ impl TyChecker<'_> {
             span,
             ..
         }: StructAst,
+        _: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Ty>)> {
         let generics = self.generics(generics);
 
