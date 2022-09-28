@@ -1,0 +1,8 @@
+error: expected 'struct' | 'fn' but got '#'
+ --> recursion\root.ctl:1:1
+  |
+1 | #[entry] fn main -> uint => 0 ; fn infinity(a : uint) => infinity(a) ;
+  | ^ token located here
+  |
+  = info: list -> item
+
