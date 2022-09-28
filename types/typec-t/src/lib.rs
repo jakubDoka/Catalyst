@@ -162,7 +162,7 @@ pub use {
         Bound, BoundBase, BoundExt, BoundFlags, BoundFunc, BoundFuncs, BoundInstance, BoundKind,
         BoundSlices, Bounds,
     },
-    func::{Func, FuncFlags, FuncSlices, Funcs, Signature},
+    func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
     tir::{
         AccessTir, BlockTir, CallTir, CallableTir, IntLit, IntTir, NodeInput, ReturnTir,

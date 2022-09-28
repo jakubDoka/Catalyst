@@ -82,12 +82,11 @@ impl<'a> ParsingCtx<'_, 'a> {
         current
     }
 
-    pub fn expect_advance(&mut self, kind: TokenKind) -> Option<Token> {
-        let current = self.state.current;
-        if current.kind == kind {
+    pub fn expect_advance(&mut self, expected: impl Into<TokenPattern> + Clone) -> Option<Token> {
+        if self.at(expected.clone().into()) {
             Some(self.advance())
         } else {
-            let terminals = [TokenPattern::Kind(kind)];
+            let terminals = [expected.into()];
             self.expect_error(&terminals);
             None
         }

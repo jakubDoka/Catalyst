@@ -3,8 +3,8 @@ use std::convert::TryInto;
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{self, types, Type},
+    isa::CallConv,
     packed_option::PackedOption,
-    Context,
 };
 
 use mir_t::*;
@@ -18,7 +18,7 @@ pub struct Gen {
 
 pub struct CompiledFunc {
     pub func: VRef<Func>,
-    pub signature: Signature,
+    pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
@@ -28,7 +28,7 @@ impl CompiledFunc {
     pub fn new(func: VRef<Func>) -> Self {
         Self {
             func,
-            signature: Signature::default(),
+            signature: ir::Signature::new(CallConv::Fast),
             bytecode: Vec::new(),
             alignment: 0,
             relocs: Vec::new(),
@@ -79,7 +79,6 @@ pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
-    pub ctx: Context,
 }
 
 impl GenResources {
@@ -88,7 +87,6 @@ impl GenResources {
             blocks: ShadowMap::new(),
             values: ShadowMap::new(),
             func_imports: Map::default(),
-            ctx: Context::new(),
         }
     }
 
@@ -96,7 +94,6 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
-        self.ctx.clear();
     }
 }
 

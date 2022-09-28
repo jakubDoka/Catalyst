@@ -10,8 +10,11 @@ use typec_t::*;
 use crate::*;
 
 impl MirChecker<'_> {
-    pub fn display_funcs(&self, ctx: &MirBuilderCtx, buffer: &mut String) -> fmt::Result {
-        for &(func, ref mir) in ctx.mir_funcs.iter() {
+    pub fn display_funcs(&self, funcs: &[VRef<Func>], buffer: &mut String) -> fmt::Result {
+        for &func in funcs {
+            let mir = self.mir.bodies[func]
+                .as_ref()
+                .expect("Expected body to be present");
             self.display_func(func, mir, buffer)?;
             buffer.push_str("\n\n");
         }

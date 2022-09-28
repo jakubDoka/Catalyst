@@ -13,6 +13,34 @@ use lexing::TokenKind;
 use crate::*;
 
 #[derive(Clone, Copy, Debug)]
+pub struct WrappedAst<T> {
+    pub start: Span,
+    pub value: T,
+    pub end: Span,
+}
+
+impl<'a, T: Ast<'a>> Ast<'a> for WrappedAst<T>
+where
+    T::Args: Default,
+{
+    type Args = (TokenPattern<'static>, TokenPattern<'static>);
+
+    const NAME: &'static str = "wrapped";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (start, end): Self::Args) -> Option<Self> {
+        Some(Self {
+            start: ctx.expect_advance(start)?.span,
+            value: ctx.parse()?,
+            end: ctx.expect_advance(end)?.span,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.start.joined(self.end)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct NameAst {
     pub ident: VRef<str>,
     pub span: Span,
@@ -313,6 +341,15 @@ macro_rules! list_meta {
 pub enum TokenPattern<'a> {
     Str(&'a str),
     Kind(TokenKind),
+}
+
+impl<'a> IntoIterator for TokenPattern<'a> {
+    type Item = TokenPattern<'a>;
+    type IntoIter = std::iter::Once<TokenPattern<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(self)
+    }
 }
 
 impl<'a> From<TokenKind> for TokenPattern<'a> {

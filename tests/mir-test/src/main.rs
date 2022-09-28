@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use diags::*;
 use mir::*;
 use mir_t::*;
@@ -21,6 +23,7 @@ struct TestState {
     typec_ctx: TyCheckerCtx,
     mir_ctx: MirBuilderCtx,
     functions: String,
+    mir: Mir,
 }
 
 impl Scheduler for TestState {
@@ -28,7 +31,7 @@ impl Scheduler for TestState {
         package_loader!(self)
     }
 
-    fn init(&mut self) {
+    fn init(&mut self, _: &Path) {
         self.typec.init_builtin_types(&mut self.interner);
     }
 
@@ -42,8 +45,10 @@ impl Scheduler for TestState {
 
         mir_checker!(self, module)
             .funcs(&mut self.mir_ctx, type_checked_funcs)
-            .display_funcs(&self.mir_ctx, &mut self.functions)
+            .display_funcs(&self.mir_ctx.just_compiled, &mut self.functions)
             .unwrap();
+
+        self.mir_ctx.just_compiled.clear();
     }
 
     fn finally(&mut self) {

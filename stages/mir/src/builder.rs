@@ -1,5 +1,3 @@
-use std::mem;
-
 use mir_t::*;
 use packaging_t::span_str;
 use storage::*;
@@ -11,13 +9,11 @@ pub type NodeRes = Option<VRef<ValueMir>>;
 
 impl MirChecker<'_> {
     pub fn funcs(&mut self, ctx: &mut MirBuilderCtx, input: &[(VRef<Func>, TirNode)]) -> &mut Self {
-        let mut out = mem::take(&mut ctx.mir_funcs);
-        out.extend(
-            input
-                .iter()
-                .map(|&(func, body)| (func, self.func(func, body, ctx))),
-        );
-        ctx.mir_funcs = out;
+        for &(func, body) in input {
+            let body = self.func(func, body, ctx);
+            self.mir.bodies[func] = Some(body);
+            ctx.just_compiled.push(func);
+        }
 
         self
     }

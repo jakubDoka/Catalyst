@@ -14,7 +14,7 @@ impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
         items: &[T],
-        collector: fn(&mut Self, T) -> Option<(ModItem, VRef<T::Output>)>,
+        collector: fn(&mut Self, GroupedItemsSlice<T>) -> Option<(ModItem, VRef<T::Output>)>,
         out: &mut TypecOutput<T::Output>,
     ) -> &mut Self {
         for (i, &item) in items.iter().enumerate() {
@@ -43,6 +43,7 @@ impl TyChecker<'_> {
                     ..
                 },
             span,
+            body,
             ..
         }: FuncDefAst,
     ) -> Option<(ModItem, VRef<Func>)> {
@@ -61,10 +62,19 @@ impl TyChecker<'_> {
             ret,
         };
 
+        let visibility = if let FuncBodyAst::Extern(..) = body {
+            FuncVisibility::Imported
+        } else {
+            // TODO: whe should use Local unless
+            // function is explicitly exported
+            FuncVisibility::Exported
+        };
+
         let func = |_: &mut Funcs| Func {
             generics,
             signature,
             flags: FuncFlags::empty(),
+            visibility,
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
         let id = self.typec.funcs.get_or_insert(id, func);

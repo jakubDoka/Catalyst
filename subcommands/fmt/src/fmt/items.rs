@@ -5,6 +5,36 @@ impl<'a> FmtAst for ItemAst<'a> {
         match *self {
             ItemAst::Struct(s) => s.display(fmt),
             ItemAst::Func(func) => func.display(fmt),
+            ItemAst::Attribute(attr) => attr.display(fmt),
+        }
+    }
+}
+
+impl FmtAst for TopLevelAttributeAst {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.hash);
+        self.value.display(fmt);
+    }
+}
+
+impl FmtAst for TopLevelAttributeKindAst {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            TopLevelAttributeKindAst::Entry(span) => fmt.write_span(span),
+            TopLevelAttributeKindAst::Inline(mode) => {
+                write!(fmt, "inline");
+                if let Some(mode) = mode {
+                    mode.display(fmt);
+                }
+            }
+        }
+    }
+}
+
+impl FmtAst for InlineModeAst {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            InlineModeAst::Always(span) | InlineModeAst::Never(span) => fmt.write_span(span),
         }
     }
 }

@@ -4,6 +4,11 @@ use typec_t::*;
 
 pub mod builder;
 
+#[derive(Default)]
+pub struct Mir {
+    pub bodies: ShadowMap<Func, Option<FuncMir>>,
+}
+
 #[derive(Clone)]
 pub struct FuncMir {
     pub blocks: PushMap<BlockMir>,

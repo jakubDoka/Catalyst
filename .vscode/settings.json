@@ -1,6 +1,8 @@
 {
     "cSpell.words": [
+        "Aarch",
         "allocs",
+        "binemit",
         "bitand",
         "bitflags",
         "bruh",
@@ -15,6 +17,7 @@
         "ctlm",
         "deps",
         "Doka",
+        "Endianness",
         "ents",
         "Funcs",
         "GOTPC",
@@ -26,6 +29,7 @@
         "interner",
         "jakub",
         "lalrpop",
+        "msvc",
         "nonoverlapping",
         "peekable",
         "Reloc",

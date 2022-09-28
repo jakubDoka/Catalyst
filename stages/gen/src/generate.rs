@@ -1,6 +1,7 @@
 use cranelift_codegen::{
     ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
+    Context,
 };
 use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
@@ -11,6 +12,44 @@ use crate::*;
 
 impl Generator<'_> {
     pub const FUNC_NAMESPACE: u32 = 0;
+
+    pub fn save_compiled_code(&mut self, id: VRef<CompiledFunc>, ctx: &Context) {
+        let cc = ctx
+            .compiled_code()
+            .expect("Expected code already compiled.");
+        let relocs = cc
+            .buffer
+            .relocs()
+            .iter()
+            .map(|rel| GenReloc {
+                offset: rel.offset,
+                kind: rel.kind,
+                name: match rel.name {
+                    ExternalName::User(user) => match &ctx.func.params.user_named_funcs()[user] {
+                        &UserExternalName {
+                            namespace: Self::FUNC_NAMESPACE,
+                            index,
+                        } => GenItemName::Func(unsafe { VRef::new(index as usize) }),
+                        name => unreachable!("Unexpected name: {:?}", name),
+                    },
+                    ExternalName::TestCase(_)
+                    | ExternalName::LibCall(_)
+                    | ExternalName::KnownSymbol(_) => todo!(),
+                },
+                addend: rel.addend.try_into().expect("Reloc addend too large."),
+            })
+            .collect::<Vec<_>>();
+
+        let func = CompiledFunc {
+            signature: ctx.func.signature.clone(),
+            bytecode: cc.buffer.data().to_vec(),
+            alignment: cc.alignment as u64,
+            relocs,
+            ..self.gen.compiled_funcs[id]
+        };
+
+        self.gen.compiled_funcs[id] = func;
+    }
 
     pub fn generate(&mut self, func_id: VRef<Func>, func: &FuncMir, builder: &mut FunctionBuilder) {
         builder.func.clear();
@@ -168,7 +207,7 @@ impl Generator<'_> {
         let mut signature = ir::Signature::new(CallConv::SystemV);
         let Func {
             signature: sig,
-            flags,
+            visibility,
             ..
         } = self.typec.funcs[func_id];
         self.load_signature(sig, &mut signature);
@@ -177,7 +216,7 @@ impl Generator<'_> {
         let func_ref = builder.import_function(ExtFuncData {
             name: ExternalName::User(name),
             signature,
-            colocated: flags.contains(FuncFlags::EXTERN),
+            colocated: visibility != FuncVisibility::Imported,
         });
 
         self.gen_resources.func_imports.insert(id, func_ref);

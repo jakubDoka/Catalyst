@@ -44,6 +44,32 @@ pub trait FmtAst {
     }
 }
 
+impl<T: FmtAst> FmtAst for WrappedAst<T> {
+    fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.start);
+
+        if fold {
+            fmt.newline();
+            fmt.indent();
+            fmt.write_indent();
+        }
+
+        self.value.display(fmt);
+
+        if fold {
+            fmt.newline();
+            fmt.unindent();
+            fmt.write_indent();
+        }
+
+        fmt.write_span(self.end);
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.start.len() + self.end.len() + self.value.flat_len(fmt)
+    }
+}
+
 impl<'a> FmtAst for GenericParamAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.write_span(self.name.span);

@@ -8,7 +8,7 @@ use crate::*;
 
 pub trait Scheduler {
     fn resources(&mut self) -> PackageLoader;
-    fn init(&mut self) {}
+    fn init(&mut self, _: &Path) {}
     fn before_parsing(&mut self, _module: VRef<str>) {}
     fn parse_segment(&mut self, _module: VRef<str>, _items: GroupedItemsAst) {}
     fn finally(&mut self) {}
@@ -17,7 +17,7 @@ pub trait Scheduler {
         let mut res = self.resources();
         res.load(path);
         let order = mem::take(&mut res.packages.module_order);
-        self.init();
+        self.init(path);
 
         let mut parse_state = ParsingState::new();
         let mut ast_data = AstData::new();

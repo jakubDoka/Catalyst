@@ -8,9 +8,6 @@ edition = "2021"
 [dependencies]
 cranelift-codegen = "0.88.0"
 cranelift-frontend = "0.88.0"
-cranelift-module = "0.88.0"
-cranelift-object = "0.88.0"
-cranelift-jit = "0.88.0"
 lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
@@ -18,3 +15,5 @@ storage = { version = "0.1.0", path = "../../utils/storage" }
 target-lexicon = "0.12.4"
 typec-t = { version = "0.1.0", path = "../../types/typec-t" }
 region = "3.0.0"
+object = { version = "0.29.0", default-features = false, features = ["write"] }
+cc = "1.0.73"

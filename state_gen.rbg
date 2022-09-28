@@ -54,11 +54,13 @@ file "stages/mir/src/state_gen.rs" {
     use "diags"
     use "typec_t"
     use "packaging_t"
+    use "mir_t"
 
 
     struct MirChecker {
         owned current_file: `VRef<str>`
 
+        mut Mir
         mut Interner
         mut Typec
         mut Workspace

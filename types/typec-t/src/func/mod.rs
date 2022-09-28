@@ -10,6 +10,7 @@ pub struct Func {
     pub generics: VRefSlice<Bound>,
     pub signature: Signature,
     pub flags: FuncFlags,
+    pub visibility: FuncVisibility,
     pub loc: Loc,
 }
 
@@ -18,8 +19,16 @@ impl_flagged!(Func, FuncFlags);
 
 bitflags! {
     FuncFlags: u8 {
-        EXTERN
+        ENTRY
     }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum FuncVisibility {
+    #[default]
+    Local,
+    Exported,
+    Imported,
 }
 
 #[derive(Clone, Copy, Default)]

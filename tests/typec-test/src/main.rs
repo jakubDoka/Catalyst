@@ -1,5 +1,7 @@
 #![feature(let_else)]
 
+use std::path::Path;
+
 use diags::*;
 use packaging::*;
 use packaging_t::*;
@@ -27,7 +29,7 @@ impl Scheduler for TestState {
         package_loader!(self)
     }
 
-    fn init(&mut self) {
+    fn init(&mut self, _: &Path) {
         self.typec.init_builtin_types(&mut self.interner);
     }
 
