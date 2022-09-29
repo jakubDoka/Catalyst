@@ -1,3 +1,19 @@
+error: function or variable not found
+ --> compile-time\root.ctl:7:20
+  |
+7 | fn main -> uint => constsub(1)
+  |                    ^^^^^^^^ this does not exist
+  |
+  = info: queried 'constsub'
+
+error: not all blocks were closed when typechecking function
+ --> compile-time\root.ctl:7:4
+  |
+7 | fn main -> uint => constsub(1)
+  |    ---- info: happened in this function
+  |
+  = info: this is a bug in the compiler, please report it
+
 info: mir repr of functions:
 
 
