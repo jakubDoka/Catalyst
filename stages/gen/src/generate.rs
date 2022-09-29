@@ -51,19 +51,19 @@ impl Generator<'_> {
         self.gen.compiled_funcs[id] = func;
     }
 
-    pub fn generate(&mut self, func_id: VRef<Func>, func: &FuncMir, builder: &mut FunctionBuilder) {
+    pub fn generate(
+        &mut self,
+        func_id: VRef<Func>,
+        func: &FuncMir,
+        root: VRef<BlockMir>,
+        builder: &mut FunctionBuilder,
+    ) {
         builder.func.clear();
         self.gen_resources.clear();
 
         let Func { signature, .. } = self.typec.funcs[func_id];
 
         self.load_signature(signature, &mut builder.func.signature);
-
-        let root = func
-            .blocks
-            .keys()
-            .next()
-            .expect("function must have at least one completed block");
 
         self.block(root, func, builder);
 
@@ -130,7 +130,26 @@ impl Generator<'_> {
             }
             InstMir::Access(..) => (),
             InstMir::Call(call, ret) => self.call(call, ret, func, builder),
+            InstMir::Const(id, ret) => self.r#const(id, ret, func, builder),
         }
+    }
+
+    fn r#const(
+        &mut self,
+        id: VRef<FuncConstMir>,
+        ret: VRef<ValueMir>,
+        func: &FuncMir,
+        builder: &mut FunctionBuilder,
+    ) {
+        let value = self.gen_resources.func_constants[id]
+            .expect("Constant should be computed before function compilation.");
+        let ty = self.ty_repr(func.value_ty(ret));
+
+        let value = match value {
+            GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
+        };
+
+        self.gen_resources.values[ret] = value.into();
     }
 
     fn call(

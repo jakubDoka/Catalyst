@@ -1,5 +1,3 @@
-use std::mem;
-
 use mir_t::*;
 use packaging_t::span_str;
 use storage::*;
@@ -47,13 +45,28 @@ impl MirChecker<'_> {
     }
 
     fn r#const(&mut self, r#const: ConstTir, builder: &mut MirBuilder) -> NodeRes {
-        let prev_func = mem::take(&mut builder.ctx.func);
-        let prev_block = mem::take(&mut builder.current_block);
+        let ConstTir { value, .. } = r#const;
 
-        let const_func = mem::replace(&mut builder.ctx.func, prev_func);
-        builder.current_block = prev_block;
+        let const_block = builder.ctx.create_block();
+        let Some(prev_block) = builder.current_block.replace(const_block) else {
+            builder.current_block.take();
+            return None;
+        };
 
-        todo!()
+        let value = self.node(value, builder);
+        builder.close_block(r#const.span, ControlFlowMir::Return(value.into()));
+        builder.select_block(prev_block);
+
+        let const_mir = FuncConstMir {
+            block: const_block,
+            ty: builder.ctx.func.values[value?].ty,
+        };
+
+        let value = builder.ctx.func.values.push(ValueMir { ty: const_mir.ty });
+        let const_mir_id = builder.ctx.func.constants.push(const_mir);
+        builder.inst(InstMir::Const(const_mir_id, value), r#const.span);
+
+        Some(value)
     }
 
     fn block(&mut self, BlockTir { nodes, .. }: BlockTir, builder: &mut MirBuilder) -> NodeRes {

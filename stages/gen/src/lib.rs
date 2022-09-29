@@ -11,7 +11,7 @@ pub use {
     crate::object::{ObjectContext, ObjectCreationError},
     context::{
         perform_jit_relocations, CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock,
-        GenItemName, GenLayouts, GenReloc, GenResources, Layout, Offset,
+        GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, Layout, Offset,
     },
     jit::JitContext,
     state_gen::Generator,

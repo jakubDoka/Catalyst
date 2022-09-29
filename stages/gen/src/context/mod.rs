@@ -9,6 +9,7 @@ use cranelift_codegen::{
 
 use mir_t::*;
 use storage::*;
+use target_lexicon::Triple;
 use typec_t::*;
 
 #[derive(Default)]
@@ -22,6 +23,11 @@ pub struct CompiledFunc {
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
+}
+
+#[test]
+fn test() {
+    panic!("{}", std::mem::size_of::<Triple>());
 }
 
 impl CompiledFunc {
@@ -79,6 +85,7 @@ pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
+    pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
 }
 
 impl GenResources {
@@ -87,6 +94,7 @@ impl GenResources {
             blocks: ShadowMap::new(),
             values: ShadowMap::new(),
             func_imports: Map::default(),
+            func_constants: ShadowMap::new(),
         }
     }
 
@@ -94,6 +102,7 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
+        self.func_constants.clear();
     }
 }
 
@@ -101,6 +110,11 @@ impl Default for GenResources {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Clone, Copy)]
+pub enum GenFuncConstant {
+    Int(u64),
 }
 
 #[derive(Clone, Copy)]

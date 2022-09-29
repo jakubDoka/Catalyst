@@ -33,12 +33,16 @@ impl<T> PushMap<T> {
         self.data.truncate(len);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn values(&self) -> impl Iterator<Item = &T> {
         self.data.iter()
     }
 
     pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {
         (0..self.data.len()).map(|i| unsafe { VRef::new(i) })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> {
+        self.keys().zip(self.values())
     }
 }
 

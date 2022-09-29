@@ -9,6 +9,12 @@ pub struct Mir {
     pub bodies: ShadowMap<Func, Option<FuncMir>>,
 }
 
+#[derive(Clone, Copy)]
+pub struct FuncConstMir {
+    pub ty: VRef<MirTy>,
+    pub block: VRef<BlockMir>,
+}
+
 #[derive(Clone)]
 pub struct FuncMir {
     pub blocks: PushMap<BlockMir>,
@@ -17,6 +23,7 @@ pub struct FuncMir {
     pub value_args: BumpMap<VRef<ValueMir>>,
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub dependant_types: PushMap<MirTy>,
+    pub constants: PushMap<FuncConstMir>,
 }
 
 impl FuncMir {
@@ -53,6 +60,7 @@ impl Default for FuncMir {
                 values.push(MirTy { ty: Ty::TERMINAL });
                 values
             },
+            constants: Default::default(),
         }
     }
 }
@@ -99,6 +107,7 @@ pub enum InstMir {
     Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>),
     Call(CallMir, VRef<ValueMir>),
+    Const(VRef<FuncConstMir>, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

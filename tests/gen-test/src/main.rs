@@ -50,6 +50,7 @@ struct TestState {
     later_init: Option<LaterInit>,
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
+    jit_context: JitContext,
 }
 
 impl TestState {
@@ -135,6 +136,16 @@ impl TestState {
             &self.interner,
         )
     }
+
+    fn compute_func_constant(
+        &self,
+        const_block: FuncConstMir,
+        func: VRef<Func>,
+        body: &FuncMir,
+        later_init: &mut LaterInit,
+    ) -> GenFuncConstant {
+        todo!()
+    }
 }
 
 impl Scheduler for TestState {
@@ -165,9 +176,20 @@ impl Scheduler for TestState {
             let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
             let body = self.mir.bodies[func].as_ref().expect("should be generated");
 
+            for (id, &const_block) in body.constants.iter() {
+                let constant = self.compute_func_constant(const_block, func, body, &mut later_init);
+                self.gen_resources.func_constants[id] = Some(constant);
+            }
+
+            let root_block = body
+                .blocks
+                .keys()
+                .next()
+                .expect("function without blocks is invalid");
             generator!(self, later_init.isa.pointer_type()).generate(
                 func,
                 body,
+                root_block,
                 &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
             );
 
@@ -290,7 +312,7 @@ fn main() {
             break;
 
             #[entry];
-            fn main -> uint => run! sub(1, 1);
+            fn main -> uint => const sub(1, 1);
         }
     }
 }

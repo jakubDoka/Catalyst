@@ -150,6 +150,10 @@ impl TyChecker<'_> {
         span: Span,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
+        if let Some((span, ..)) = builder.runner {
+            self.control_flow_in_const(span, span);
+        }
+
         let value = if let Some(expr) = expr {
             Some(self.expr(expr, Some(builder.ret), builder).unwrap())
         } else {
@@ -500,6 +504,15 @@ impl TyChecker<'_> {
             (r#const.joined(value), self.current_file) {
                 err[r#const]: "this is what makes access const";
                 info[value]: "this is a runtime value, outsize of 'const' context";
+            }
+        }
+
+        push control_flow_in_const(self, r#const: Span, control_flow: Span) {
+            err: ("cannot '{}' in 'const' context", span_str!(self, control_flow));
+            info: "jump produced by this call would cross const/runtime boundary";
+            (r#const.joined(control_flow), self.current_file) {
+                err[r#const]: "this is what defines const context";
+                info[control_flow]: "this is the control flow keyword that is not allowed in const context";
             }
         }
     }

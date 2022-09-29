@@ -26,7 +26,7 @@ impl MirChecker<'_> {
         self.typec.display_sig(func, self.interner, buffer)?;
         buffer.push_str(" {\n");
 
-        for (i, block) in mir.blocks.iter().enumerate() {
+        for (i, block) in mir.blocks.values().enumerate() {
             self.display_block(i, mir, block, buffer)?;
             write!(buffer, "\n\n")?;
         }
@@ -148,6 +148,9 @@ impl MirChecker<'_> {
                 }
 
                 buffer.push(')');
+            }
+            InstMir::Const(r#const, value) => {
+                write!(buffer, "var{} = const {}", value.index(), r#const.index())?;
             }
         }
 
