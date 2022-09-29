@@ -166,6 +166,9 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         if fold && !is_top_list {
             fmt.unindent();
             fmt.optional_newline();
+        } else if is_top_list && !self.end.is_empty() {
+            fmt.newline();
+            fmt.newline();
         }
 
         fmt.write_span(self.end);

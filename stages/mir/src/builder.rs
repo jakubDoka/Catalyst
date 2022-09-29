@@ -1,3 +1,5 @@
+use std::mem;
+
 use mir_t::*;
 use packaging_t::span_str;
 use storage::*;
@@ -40,7 +42,18 @@ impl MirChecker<'_> {
             TirNode::Call(&call) => self.call(call, builder),
             TirNode::Access(&access) => self.access(access, builder),
             TirNode::Return(&ret) => self.r#return(ret, builder),
+            TirNode::Const(&r#const) => self.r#const(r#const, builder),
         }
+    }
+
+    fn r#const(&mut self, r#const: ConstTir, builder: &mut MirBuilder) -> NodeRes {
+        let prev_func = mem::take(&mut builder.ctx.func);
+        let prev_block = mem::take(&mut builder.current_block);
+
+        let const_func = mem::replace(&mut builder.ctx.func, prev_func);
+        builder.current_block = prev_block;
+
+        todo!()
     }
 
     fn block(&mut self, BlockTir { nodes, .. }: BlockTir, builder: &mut MirBuilder) -> NodeRes {

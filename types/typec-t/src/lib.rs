@@ -165,7 +165,7 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
     tir::{
-        AccessTir, BlockTir, CallTir, CallableTir, IntLit, IntTir, NodeInput, ReturnTir,
+        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, IntLit, IntTir, NodeInput, ReturnTir,
         TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,
     },
     ty::{

@@ -71,6 +71,7 @@ pub enum UnitExprAst<'a> {
     Path(PathExprAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
+    Const(ConstAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -84,6 +85,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             BackSlash => ctx.parse().map(Self::Path),
             Return => ctx.parse().map(Self::Return),
             Int => Some(Self::Int(ctx.advance().span)),
+            Const => ctx.parse().map(Self::Const),
         });
 
         loop {
@@ -102,7 +104,31 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             UnitExprAst::Path(path) => path.span(),
             UnitExprAst::Return(ret) => ret.span(),
             UnitExprAst::Int(span) => span,
+            UnitExprAst::Const(run) => run.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ConstAst<'a> {
+    pub r#const: Span,
+    pub value: ExprAst<'a>,
+}
+
+impl<'a> Ast<'a> for ConstAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "comp time run";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#const: ctx.advance().span,
+            value: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.r#const.joined(self.value.span())
     }
 }
 

@@ -48,6 +48,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Path(path) => path.display(fmt),
             UnitExprAst::Return(ret) => ret.display(fmt),
             UnitExprAst::Int(int) => fmt.write_span(int),
+            UnitExprAst::Const(run) => run.display(fmt),
         }
     }
 
@@ -57,7 +58,19 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Path(path) => path.flat_len(fmt),
             UnitExprAst::Return(ret) => ret.flat_len(fmt),
             UnitExprAst::Int(int) => int.len(),
+            UnitExprAst::Const(run) => run.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for ConstAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#const);
+        self.value.display(fmt);
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.r#const.len() + " ".len() + self.value.flat_len(fmt)
     }
 }
 

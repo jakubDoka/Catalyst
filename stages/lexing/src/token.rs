@@ -162,6 +162,7 @@ gen_kind!(
         Match = "match",
         Pub = "pub",
         Priv = "priv",
+        Const = "const",
     }
 
     punctuation {

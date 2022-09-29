@@ -9,7 +9,8 @@ pub struct TirBuilder<'a> {
     pub arena: &'a Arena,
     pub ret: VRef<Ty>,
     pub ret_span: Maybe<Span>,
-    pub vars: BumpVec<TypedTirNode<'a>>,
+    pub vars: Vec<VarTir<'a>>,
+    pub runner: Option<(Span, TirFrame)>,
 }
 
 impl<'a> TirBuilder<'a> {
@@ -18,7 +19,8 @@ impl<'a> TirBuilder<'a> {
             arena,
             ret,
             ret_span,
-            vars: BumpVec::new(),
+            vars: Vec::new(),
+            runner: None,
         }
     }
 
@@ -34,9 +36,9 @@ impl<'a> TirBuilder<'a> {
         self.vars.truncate(frame.0);
     }
 
-    pub fn create_var(&mut self, node: TirNode<'a>, ty: VRef<Ty>) -> VRef<Var> {
+    pub fn create_var(&mut self, node: TirNode<'a>, ty: VRef<Ty>, span: Span) -> VRef<Var> {
         let index = self.vars.len();
-        self.vars.push(TypedTirNode { node, ty });
+        self.vars.push(VarTir { node, ty, span });
         unsafe { VRef::new(index) }
     }
 
@@ -44,12 +46,25 @@ impl<'a> TirBuilder<'a> {
         unsafe { VRef::new(self.vars.len()) }
     }
 
-    pub fn get_var(&self, var: VRef<Var>) -> TypedTirNode<'a> {
+    pub fn get_var(&self, var: VRef<Var>) -> VarTir<'a> {
         self.vars[var.index()]
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VarTir<'a> {
+    pub node: TirNode<'a>,
+    pub ty: VRef<Ty>,
+    pub span: Span,
+}
+
 pub struct TirFrame(usize);
+
+impl TirFrame {
+    pub fn contains(&self, var: VRef<Var>) -> bool {
+        var.index() >= self.0
+    }
+}
 
 pub struct Var;
 
@@ -122,6 +137,13 @@ pub enum TirNode<'a> {
     Return(&'a ReturnTir<'a>),
     Call(&'a CallTir<'a>),
     Access(&'a AccessTir),
+    Const(&'a ConstTir<'a>),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ConstTir<'a> {
+    pub value: TirNode<'a>,
+    pub span: Span,
 }
 
 pub trait NodeInput<'a> {
@@ -158,4 +180,5 @@ impl_node_input! {
     'a AccessTir => Access,
     'a BlockTir<'a> => Block,
     'a ReturnTir<'a> => Return,
+    'a ConstTir<'a> => Const,
 }

@@ -283,5 +283,14 @@ fn main() {
             #[entry];
             fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
         }
+
+        simple "compile-time" {
+            fn sub(a: uint, b: uint) -> uint => a - b;
+
+            break;
+
+            #[entry];
+            fn main -> uint => run! sub(1, 1);
+        }
     }
 }

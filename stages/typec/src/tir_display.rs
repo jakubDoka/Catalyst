@@ -71,9 +71,44 @@ impl TyChecker<'_> {
                     self.display_tir(val, buffer, indent, var_count)?;
                 }
             }
-            TirNode::Call(_) => todo!(),
+            TirNode::Call(CallTir {
+                func, params, args, ..
+            }) => {
+                match *func {
+                    CallableTir::Func(func) => {
+                        write!(buffer, "{}", &self.interner[self.typec.funcs.id(func)])?
+                    }
+                    CallableTir::BoundFunc(_) => todo!(),
+                    CallableTir::Pointer(val) => {
+                        self.display_tir(val, buffer, indent, var_count)?
+                    }
+                };
+
+                if let Some((&first, others)) = params.split_first() {
+                    write!(buffer, "[")?;
+                    write!(buffer, "{}", &self.interner[self.typec.types.id(first)])?;
+                    for &other in others {
+                        write!(buffer, ", {}", &self.interner[self.typec.types.id(other)])?;
+                    }
+                    write!(buffer, "]")?;
+                }
+
+                write!(buffer, "(")?;
+                if let Some((&first, others)) = args.split_first() {
+                    self.display_tir(first, buffer, indent, var_count)?;
+                    for &other in others {
+                        write!(buffer, ", ")?;
+                        self.display_tir(other, buffer, indent, var_count)?;
+                    }
+                }
+                write!(buffer, ")")?;
+            }
             TirNode::Access(AccessTir { var, .. }) => {
                 write!(buffer, "var{}", var.index())?;
+            }
+            TirNode::Const(ConstTir { value, .. }) => {
+                write!(buffer, "const ")?;
+                self.display_tir(*value, buffer, indent, var_count)?;
             }
         }
 

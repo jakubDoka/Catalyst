@@ -208,7 +208,35 @@ impl TyChecker<'_> {
             }
             UnitExprAst::Int(span) => self.int(span, inference, builder),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
+            UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
         }
+    }
+
+    fn const_expr<'a>(
+        &mut self,
+        run: ConstAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        if let Some((runner, ..)) = builder.runner {
+            self.nested_runner(runner, run.span())?
+        }
+
+        let frame = builder.start_frame();
+        builder.runner = Some((run.r#const, frame));
+        let expr = self.expr(run.value, inference, builder);
+        let (.., frame) = builder
+            .runner
+            .take()
+            .expect("runner should be present since nesting is impossible");
+        builder.end_frame(frame);
+
+        let run = ConstTir {
+            value: expr?.node,
+            span: run.span(),
+        };
+
+        self.node(expr?.ty, run, builder)
     }
 
     fn call<'a>(
@@ -225,7 +253,10 @@ impl TyChecker<'_> {
                     Err(_pointer) => todo!(),
                 }
             }
-            UnitExprAst::Return(..) | UnitExprAst::Call(..) | UnitExprAst::Int(..) => {
+            UnitExprAst::Return(..)
+            | UnitExprAst::Call(..)
+            | UnitExprAst::Int(..)
+            | UnitExprAst::Const(..) => {
                 todo!()
             }
         }
@@ -281,11 +312,17 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         match *segments {
             [] => dispatch_item!(ValueLookup self, start.ident, start.span =>
-                var: Var => self.node(builder.get_var(var).ty, AccessTir {
-                    span: path.span(),
-                    ty: builder.get_var(var).ty,
-                    var
-                }, builder),
+                var: Var => {
+                    if let Some((runner, ref frame)) = builder.runner && !frame.contains(var) {
+                        self.const_runtime_access(runner, builder.get_var(var).span)?
+                    }
+
+                    self.node(builder.get_var(var).ty, AccessTir {
+                        span: path.span(),
+                        ty: builder.get_var(var).ty,
+                        var
+                    }, builder)
+                },
                 _func: Func => todo!(),
             ),
             _ => self.invalid_expr_path(path.span())?,
@@ -372,7 +409,7 @@ impl TyChecker<'_> {
             };
             let value = builder.node(param);
 
-            let var = builder.create_var(value, ty);
+            let var = builder.create_var(value, ty, arg.name.span);
             let item = ScopeItem::new(
                 arg.name.ident,
                 var,
@@ -444,6 +481,25 @@ impl TyChecker<'_> {
             info: "expected format: <op> | <op>\\<module>";
             (span, self.current_file) {
                 err[span]: "found here";
+            }
+        }
+
+        push nested_runner(self, previous: Span, current: Span) {
+            err: "'const' cannot be directly nested";
+            help: "removing 'const' should result in equivalent code";
+            (previous.joined(current), self.current_file) {
+                err[current]: "nesting happens here";
+                info[previous]: "operation is already performed at compile time because of this";
+            }
+        }
+
+        push const_runtime_access(self, r#const: Span, value: Span) {
+            err: "cannot access runtime value in 'const'";
+            help: "try moving the access to a non-const function";
+            help: "or declaring the variable as constant";
+            (r#const.joined(value), self.current_file) {
+                err[r#const]: "this is what makes access const";
+                info[value]: "this is a runtime value, outsize of 'const' context";
             }
         }
     }

@@ -7,6 +7,7 @@
 #![feature(never_type)]
 #![feature(iter_intersperse)]
 #![feature(try_blocks)]
+#![feature(if_let_guard)]
 
 #[macro_export]
 macro_rules! gen_scope_lookup {
