@@ -33,15 +33,11 @@ impl<'a> Ast<'a> for ExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct BinaryExprAst<'a> {
     pub lhs: ExprAst<'a>,
-    pub op: NameAst,
+    pub op: PathExprAst<'a>,
     pub rhs: ExprAst<'a>,
 }
 
 impl<'a> BinaryExprAst<'a> {
-    pub fn new(lhs: ExprAst<'a>, op: NameAst, rhs: ExprAst<'a>) -> Self {
-        Self { lhs, op, rhs }
-    }
-
     fn try_parse_binary(
         ctx: &mut ParsingCtx<'_, 'a>,
         mut lhs: ExprAst<'a>,
@@ -53,11 +49,11 @@ impl<'a> BinaryExprAst<'a> {
             };
 
             if prev_precedence > precedence {
-                let op = ctx.name_unchecked();
+                let op = ctx.parse::<PathExprAst>()?;
                 ctx.skip(TokenKind::NewLine);
                 let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
                 let rhs = Self::try_parse_binary(ctx, rhs, precedence)?;
-                lhs = ExprAst::Binary(ctx.arena.alloc(Self::new(lhs, op, rhs)));
+                lhs = ExprAst::Binary(ctx.arena.alloc(Self { lhs, op, rhs }));
             } else {
                 break lhs;
             }

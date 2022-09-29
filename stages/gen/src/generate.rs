@@ -197,6 +197,18 @@ impl Generator<'_> {
             CompiledFunc::new(func_id)
         });
 
+        let func_ref = self.import_compiled_func(func, builder);
+
+        self.gen_resources.func_imports.insert(id, func_ref);
+
+        func_ref
+    }
+
+    pub fn import_compiled_func(
+        &mut self,
+        func: VRef<CompiledFunc>,
+        builder: &mut FunctionBuilder,
+    ) -> ir::FuncRef {
         let name = builder
             .func
             .declare_imported_user_function(UserExternalName::new(
@@ -204,24 +216,22 @@ impl Generator<'_> {
                 func.index() as u32,
             ));
 
-        let mut signature = ir::Signature::new(CallConv::SystemV);
+        let func_id = self.gen.compiled_funcs[func].func;
         let Func {
             signature: sig,
             visibility,
             ..
         } = self.typec.funcs[func_id];
+
+        let mut signature = ir::Signature::new(CallConv::SystemV);
         self.load_signature(sig, &mut signature);
         let signature = builder.import_signature(signature);
 
-        let func_ref = builder.import_function(ExtFuncData {
+        builder.import_function(ExtFuncData {
             name: ExternalName::User(name),
             signature,
             colocated: visibility != FuncVisibility::Imported,
-        });
-
-        self.gen_resources.func_imports.insert(id, func_ref);
-
-        func_ref
+        })
     }
 
     fn control_flow(

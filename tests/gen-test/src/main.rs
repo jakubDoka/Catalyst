@@ -4,6 +4,7 @@
 use std::{fmt::Write, fs, path::Path, process::Command, vec};
 
 use cranelift_codegen::{
+    ir::InstBuilder,
     isa::{self, TargetIsa},
     settings::{self, Flags},
     Context,
@@ -84,6 +85,56 @@ impl TestState {
 
         entry_points
     }
+
+    fn compile_func(&mut self, current_func: VRef<CompiledFunc>, later_init: &mut LaterInit) {
+        later_init.context.compile(&*later_init.isa).unwrap();
+
+        generator!(self, later_init.isa.pointer_type())
+            .save_compiled_code(current_func, &later_init.context);
+    }
+
+    fn generate_entry_point(&mut self, later_init: &mut LaterInit) {
+        let default_cc = later_init.isa.default_call_conv();
+
+        later_init.context.clear();
+        later_init.context.func.signature.clear(default_cc);
+
+        let mut builder =
+            FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx);
+
+        let entry_point = builder.create_block();
+        builder.append_block_params_for_function_params(entry_point);
+        builder.switch_to_block(entry_point);
+
+        for func in self.entry_points.drain(..) {
+            let func_ref = generator!(self, later_init.isa.pointer_type())
+                .import_compiled_func(func, &mut builder);
+            builder.ins().call(func_ref, &[]);
+            builder.ins().return_(&[]);
+        }
+
+        let id = self.interner.intern_str(gen::ENTRY_POINT_NAME);
+        let func_id = self.typec.funcs.insert_unique(
+            id,
+            Func {
+                visibility: FuncVisibility::Exported,
+                ..Default::default()
+            },
+        );
+        let entry_point = self
+            .gen
+            .compiled_funcs
+            .insert_unique(id, CompiledFunc::new(func_id));
+
+        self.compile_func(entry_point, later_init);
+
+        later_init.object_context.load_functions(
+            &[entry_point],
+            &self.gen,
+            &self.typec,
+            &self.interner,
+        )
+    }
 }
 
 impl Scheduler for TestState {
@@ -121,17 +172,15 @@ impl Scheduler for TestState {
 
             write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
 
-            later_init.context.compile(&*later_init.isa).unwrap();
-
-            generator!(self, later_init.isa.pointer_type())
-                .save_compiled_code(current_func, &later_init.context);
-            compiled_funcs.push(current_func);
+            self.compile_func(current_func, &mut later_init);
 
             let next_iter = self
                 .compile_requests
                 .queue
                 .drain(..)
                 .map(|request| request.id);
+
+            compiled_funcs.push(current_func);
             compile_queue.extend(next_iter);
         }
 
@@ -161,9 +210,11 @@ impl Scheduler for TestState {
             return;
         }
 
-        let Some(ref mut later_init) = self.later_init else {
+        let Some(mut later_init) = self.later_init.take() else {
             return;
         };
+
+        self.generate_entry_point(&mut later_init);
 
         let emitted = later_init.object_context.emit().unwrap();
         let path = Path::new("o.obj");
@@ -179,7 +230,12 @@ impl Scheduler for TestState {
             .get_compiler();
 
         let args = if compiler.is_like_msvc() {
-            vec![format!("-link /ENTRY:{}", gen::ENTRY_POINT_NAME)]
+            let subsystem = later_init.isa.triple().operating_system.to_string();
+            vec![format!(
+                "-link /ENTRY:{} /SUBSYSTEM:{}",
+                gen::ENTRY_POINT_NAME,
+                subsystem
+            )]
         } else if compiler.is_like_clang() {
             todo!()
         } else if compiler.is_like_gnu() {
@@ -209,14 +265,14 @@ fn main() {
         TestState,
         false,
         simple "functions" {
-            #[entry]
+            #[entry];
             fn main -> uint => pass(0);
             fn pass(a: uint) -> uint { return a };
             fn pass_with_implicit_return(a: uint) -> uint { a };
         }
 
         simple "recursion" {
-            #[entry]
+            #[entry];
             fn main -> uint => 0;
 
             fn infinity(a: uint) => infinity(a);

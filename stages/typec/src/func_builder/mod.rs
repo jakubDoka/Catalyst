@@ -2,14 +2,14 @@ use std::default::default;
 
 use diags::*;
 use lexing_t::*;
-use packaging_t::span_str;
+use packaging_t::*;
 use parsing::*;
 use parsing_t::*;
 use scope::*;
 use storage::*;
 use typec_t::*;
 
-use crate::*;
+use crate::{ty_parser::ModLookup, *};
 
 macro_rules! dispatch_item {
     ($lookup:ident $self:expr, $id:expr, $span:expr =>
@@ -328,9 +328,19 @@ impl TyChecker<'_> {
         let rhs = self.expr(rhs, None, builder);
         let (lhs, rhs) = (lhs?, rhs?); // recovery
 
-        let id = self.typec.binary_op_id(op.ident, lhs.ty, rhs.ty);
+        let base_id = match *op.segments {
+            [] => op.start.ident,
+            [name] => {
+                let module = self.lookup_typed::<ModLookup>(name.ident, name.span)?;
+                let id = self.packages.mod_as_ident(module);
+                self.interner.intern(scoped_ident!(id, op.start.ident))
+            }
+            _ => self.invalid_op_expr_path(op.span())?,
+        };
+
+        let id = self.typec.binary_op_id(base_id, lhs.ty, rhs.ty);
         let id = self.interner.intern(id);
-        let func = self.lookup_typed::<OpLookup>(id, op.span)?;
+        let func = self.lookup_typed::<OpLookup>(id, op.span())?;
 
         let ty = self.typec.funcs[func].signature.ret;
         let call = CallTir {
@@ -424,6 +434,14 @@ impl TyChecker<'_> {
         push invalid_expr_path(self, span: Span) {
             err: "invalid expression path";
             info: "expected format: <ident> |";
+            (span, self.current_file) {
+                err[span]: "found here";
+            }
+        }
+
+        push invalid_op_expr_path(self, span: Span) {
+            err: "invalid operator expression path";
+            info: "expected format: <op> | <op>\\<module>";
             (span, self.current_file) {
                 err[span]: "found here";
             }
