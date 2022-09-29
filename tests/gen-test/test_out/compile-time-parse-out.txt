@@ -1,8 +1,8 @@
-error: expected Ident | '\' | 'return' | Int but got 'run!'
- --> compile-time\root.ctl:1:85
+error: expected '\n' | ';' but got ','
+ --> compile-time\root.ctl:1:96
   |
-1 | fn sub(a : uint, b : uint) -> uint => a - b ; break ; #[entry] ; fn main -> uint => run! sub(1, 1) ;
-  |                                                                                     ^^^^ token located here
+1 | fn sub(a : uint, b : uint) -> uint => a - b ; break ; #[entry] ; fn main -> uint => const sub(1, 1) ;
+  |                                                                                                ^ token located here
   |
-  = info: list -> item -> function definition -> function body -> expr -> unit expr
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> comp time run -> expr -> unit expr -> call -> list
 
