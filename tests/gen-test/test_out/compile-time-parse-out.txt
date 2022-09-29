@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got <error>
+ --> compile-time\root.ctl:1:88
+  |
+1 | fn sub(a : uint, b : uint) -> uint => a - b ; break ; #[entry] ; fn main -> uint => run! sub(1, 1) ;
+  |                                                                                        ^ token located here
+  |
+  = info: list
+
