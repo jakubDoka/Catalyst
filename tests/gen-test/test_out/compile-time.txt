@@ -1,31 +1,15 @@
 error: variable or function not found
- --> compile-time\root.ctl:2:41
+ --> compile-time\root.ctl:7:20
   |
-2 | fn sub(a: uint, b: uint) -> uint => a - bbreak
-  |                                         ^^^^^^ this does not exist
-  |
-  = info: queried 'bbreak'
-
-error: not all blocks were closed when typechecking function
- --> compile-time\root.ctl:2:4
-  |
-2 | fn sub(a: uint, b: uint) -> uint => a - bbreak
-  |    --- info: happened in this function
-  |
-  = info: this is a bug in the compiler, please report it
-
-error: variable or function not found
- --> compile-time\root.ctl:5:20
-  |
-5 | fn main -> uint => run
+7 | fn main -> uint => run
   |                    ^^^ this does not exist
   |
   = info: queried 'run'
 
 error: not all blocks were closed when typechecking function
- --> compile-time\root.ctl:5:4
+ --> compile-time\root.ctl:7:4
   |
-5 | fn main -> uint => run
+7 | fn main -> uint => run
   |    ---- info: happened in this function
   |
   = info: this is a bug in the compiler, please report it
