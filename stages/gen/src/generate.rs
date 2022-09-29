@@ -146,12 +146,18 @@ impl Generator<'_> {
     ) {
         match callable {
             CallableMir::Func(func_id) => {
-                let func_ref = self.instantiate(func_id, params, func, builder);
                 let args = func.value_args[args]
                     .iter()
                     .map(|&arg| self.gen_resources.values[arg].expand())
                     .collect::<Option<BumpVec<_>>>()
                     .expect("All arguments should be declared.");
+
+                if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
+                    self.builtin_call(func_id, args, ret, builder);
+                    return;
+                }
+
+                let func_ref = self.instantiate(func_id, params, func, builder);
 
                 let inst = builder.ins().call(func_ref, &args);
                 if let Some(&value) = builder.inst_results(inst).first() {
@@ -161,6 +167,38 @@ impl Generator<'_> {
             CallableMir::BoundFunc(_) => todo!(),
             CallableMir::Pointer(_) => todo!(),
         }
+    }
+
+    fn builtin_call(
+        &mut self,
+        func_id: VRef<Func>,
+        args: BumpVec<ir::Value>,
+        ret: VRef<ValueMir>,
+        builder: &mut FunctionBuilder,
+    ) {
+        let Func { signature, loc, .. } = self.typec.funcs[func_id];
+        let op_str = &self.interner[loc.name];
+        let signed = self.typec.types.is_signed(signature.ret);
+
+        macro_rules! helper {
+            (ints) => {
+                ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64
+            };
+        }
+
+        let value = match *args.as_slice() {
+            [a, b] => match (builder.func.dfg.value_type(a), op_str) {
+                (helper!(ints), "+") => builder.ins().iadd(a, b),
+                (helper!(ints), "-") => builder.ins().isub(a, b),
+                (helper!(ints), "*") => builder.ins().imul(a, b),
+                (helper!(ints), "/") if signed => builder.ins().sdiv(a, b),
+                (helper!(ints), "/") => builder.ins().udiv(a, b),
+                _ => unimplemented!(),
+            },
+            _ => unimplemented!(),
+        };
+
+        self.gen_resources.values[ret] = value.into();
     }
 
     fn instantiate(

@@ -17,6 +17,8 @@ pub struct Typec {
     pub func_slices: FuncSlices,
 
     pub bound_funcs: BoundFuncs,
+
+    pub builtin_funcs: Vec<VRef<Func>>,
 }
 
 macro_rules! assert_init {
@@ -82,6 +84,7 @@ impl Typec {
             &interner[self.types.id(signature.ret)],
         )
     }
+
     pub fn init_builtin_types(&mut self, interner: &mut Interner) {
         assert_init! {
             (self, interner)
@@ -95,6 +98,36 @@ impl Typec {
                 kind: TyKind::Integer(default()),
             }
             TERMINAL {}
+        }
+    }
+
+    pub fn init_builtin_funcs(&mut self, interner: &mut Interner) {
+        let int_bin_ops = "+ - / *".split_whitespace();
+
+        for op in int_bin_ops {
+            for &ty in Ty::INTEGERS {
+                let op = interner.intern_str(op);
+                let segments = self.binary_op_id(op, ty, ty);
+                let id = interner.intern(segments);
+
+                let signature = Signature {
+                    cc: default(),
+                    args: self.ty_slices.bump([ty, ty]),
+                    ret: ty,
+                };
+
+                let func = self.funcs.insert_unique(
+                    id,
+                    Func {
+                        signature,
+                        flags: FuncFlags::BUILTIN,
+                        loc: Loc::new(op, None, None, None),
+                        ..default()
+                    },
+                );
+
+                self.builtin_funcs.push(func);
+            }
         }
     }
 

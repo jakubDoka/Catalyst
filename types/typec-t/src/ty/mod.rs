@@ -102,6 +102,11 @@ impl TyExt for Types {}
 
 pub trait TyExt: StorageExt<Ty> {
     #[inline]
+    fn is_signed(&self, ty: VRef<Ty>) -> bool {
+        matches!(self[ty].kind, TyKind::Integer(TyInteger { signed, .. }) if signed)
+    }
+
+    #[inline]
     fn generics(&self, target: VRef<Ty>) -> Option<VRefSlice<Bound>> {
         let target = self.base(target);
         Some(match self[target].kind {

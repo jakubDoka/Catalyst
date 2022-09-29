@@ -192,6 +192,11 @@ mod util {
             scope.insert_builtin(id, ty);
         }
 
+        for &func in &typec.builtin_funcs {
+            let id = typec.funcs.id(func);
+            scope.insert_builtin(id, func);
+        }
+
         let mod_ent = packages.modules.get(&module).unwrap();
         for dep in &packages.conns[mod_ent.deps] {
             let mod_ent = packages.modules.get(&dep.ptr).unwrap();

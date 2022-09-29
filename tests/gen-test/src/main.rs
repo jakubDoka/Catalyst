@@ -144,6 +144,7 @@ impl Scheduler for TestState {
 
     fn init(&mut self, _: &Path) {
         self.typec.init_builtin_types(&mut self.interner);
+        self.typec.init_builtin_funcs(&mut self.interner);
     }
 
     fn before_parsing(&mut self, module: storage::VRef<str>) {
@@ -276,6 +277,11 @@ fn main() {
             fn main -> uint => 0;
 
             fn infinity(a: uint) => infinity(a);
+        }
+
+        simple "operators" {
+            #[entry];
+            fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
         }
     }
 }

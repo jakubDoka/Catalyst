@@ -20,6 +20,7 @@ impl_flagged!(Func, FuncFlags);
 bitflags! {
     FuncFlags: u8 {
         ENTRY
+        BUILTIN
     }
 }
 
