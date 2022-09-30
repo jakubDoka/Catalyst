@@ -1,8 +1,11 @@
+use std::ops::{Deref, DerefMut};
+
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
-    ir::{self, types, Type},
-    isa::CallConv,
+    ir::{self, types, ExternalName, Type, UserExternalName},
+    isa::{self, CallConv, LookupError, TargetIsa},
     packed_option::PackedOption,
+    settings, CodegenError, Context,
 };
 
 use mir_t::*;
@@ -13,6 +16,59 @@ use typec_t::*;
 #[derive(Default)]
 pub struct Gen {
     pub compiled_funcs: OrderedMap<VRef<str>, CompiledFunc>,
+}
+
+impl Gen {
+    pub const FUNC_NAMESPACE: u32 = 0;
+
+    pub fn save_compiled_code(
+        &mut self,
+        id: VRef<CompiledFunc>,
+        ctx: &Context,
+    ) -> Result<(), CodeSaveError> {
+        let cc = ctx.compiled_code().ok_or(CodeSaveError::MissingCode)?;
+
+        let relocs = cc
+            .buffer
+            .relocs()
+            .iter()
+            .map(|rel| {
+                Ok(GenReloc {
+                    offset: rel.offset,
+                    kind: rel.kind,
+                    name: match rel.name {
+                        ExternalName::User(user) => match &ctx.func.params.user_named_funcs()[user]
+                        {
+                            &UserExternalName {
+                                namespace: Self::FUNC_NAMESPACE,
+                                index,
+                            } => GenItemName::Func(unsafe { VRef::new(index as usize) }),
+                            name => unreachable!("Unexpected name: {:?}", name),
+                        },
+                        ExternalName::TestCase(_)
+                        | ExternalName::LibCall(_)
+                        | ExternalName::KnownSymbol(_) => todo!(),
+                    },
+                    addend: rel
+                        .addend
+                        .try_into()
+                        .map_err(|_| CodeSaveError::AddendOverflow)?,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let func = CompiledFunc {
+            signature: ctx.func.signature.clone(),
+            bytecode: cc.buffer.data().to_vec(),
+            alignment: cc.alignment as u64,
+            relocs,
+            ..self.compiled_funcs[id]
+        };
+
+        self.compiled_funcs[id] = func;
+
+        Ok(())
+    }
 }
 
 pub struct CompiledFunc {
@@ -35,6 +91,12 @@ impl CompiledFunc {
             temp: false,
         }
     }
+}
+
+#[derive(Debug)]
+pub enum CodeSaveError {
+    MissingCode,
+    AddendOverflow,
 }
 
 //////////////////////////////////
@@ -189,7 +251,67 @@ pub struct GenReloc {
     pub addend: isize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum GenItemName {
     Func(VRef<CompiledFunc>),
+}
+
+//////////////////////////////////
+/// Isa
+//////////////////////////////////
+
+pub struct Isa {
+    pub triple: VRef<str>,
+    pub pointer_ty: Type,
+    pub inner: Box<dyn TargetIsa>,
+}
+
+impl Isa {
+    pub fn new(
+        triple: Triple,
+        flags: settings::Flags,
+        interner: &mut Interner,
+    ) -> Result<Self, IsaCreationError> {
+        let triple_str = interner.intern_str(&triple.to_string());
+        isa::lookup(triple)
+            .map_err(IsaCreationError::Lookup)?
+            .finish(flags)
+            .map_err(IsaCreationError::Codegen)
+            .map(|isa| Self {
+                triple: triple_str,
+                pointer_ty: isa.pointer_type(),
+                inner: isa,
+            })
+    }
+}
+
+impl Deref for Isa {
+    type Target = dyn TargetIsa;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.inner
+    }
+}
+
+impl DerefMut for Isa {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.inner
+    }
+}
+
+#[derive(Debug)]
+pub enum IsaCreationError {
+    Lookup(LookupError),
+    Codegen(CodegenError),
+}
+
+impl std::error::Error for IsaCreationError {}
+
+impl std::fmt::Display for IsaCreationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            IsaCreationError::Lookup(e) => write!(f, "Lookup error: {}", e),
+            IsaCreationError::Codegen(e) => write!(f, "Codegen error: {}", e),
+        }
+    }
 }

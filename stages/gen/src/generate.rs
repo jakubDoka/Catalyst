@@ -1,7 +1,6 @@
 use cranelift_codegen::{
     ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
-    Context,
 };
 use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
@@ -12,46 +11,6 @@ use typec_t::*;
 use crate::*;
 
 impl Generator<'_> {
-    pub const FUNC_NAMESPACE: u32 = 0;
-
-    pub fn save_compiled_code(&mut self, id: VRef<CompiledFunc>, ctx: &Context) {
-        let cc = ctx
-            .compiled_code()
-            .expect("Expected code already compiled.");
-        let relocs = cc
-            .buffer
-            .relocs()
-            .iter()
-            .map(|rel| GenReloc {
-                offset: rel.offset,
-                kind: rel.kind,
-                name: match rel.name {
-                    ExternalName::User(user) => match &ctx.func.params.user_named_funcs()[user] {
-                        &UserExternalName {
-                            namespace: Self::FUNC_NAMESPACE,
-                            index,
-                        } => GenItemName::Func(unsafe { VRef::new(index as usize) }),
-                        name => unreachable!("Unexpected name: {:?}", name),
-                    },
-                    ExternalName::TestCase(_)
-                    | ExternalName::LibCall(_)
-                    | ExternalName::KnownSymbol(_) => todo!(),
-                },
-                addend: rel.addend.try_into().expect("Reloc addend too large."),
-            })
-            .collect::<Vec<_>>();
-
-        let func = CompiledFunc {
-            signature: ctx.func.signature.clone(),
-            bytecode: cc.buffer.data().to_vec(),
-            alignment: cc.alignment as u64,
-            relocs,
-            ..self.gen.compiled_funcs[id]
-        };
-
-        self.gen.compiled_funcs[id] = func;
-    }
-
     pub fn generate(
         &mut self,
         func_id: VRef<Func>,
@@ -304,7 +263,7 @@ impl Generator<'_> {
         let name = builder
             .func
             .declare_imported_user_function(UserExternalName::new(
-                Self::FUNC_NAMESPACE,
+                Gen::FUNC_NAMESPACE,
                 func.index() as u32,
             ));
 

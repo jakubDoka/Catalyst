@@ -10,10 +10,11 @@ mod state_gen;
 pub use {
     crate::object_context::{ObjectContext, ObjectCreationError},
     context::{
-        CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock, GenFuncConstant, GenItemName,
-        GenLayouts, GenReloc, GenResources, Layout, Offset,
+        CodeSaveError, CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock,
+        GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, Isa, IsaCreationError,
+        Layout, Offset,
     },
-    jit_context::JitContext,
+    jit_context::{JitContext, JitRelocError},
     state_gen::Generator,
 };
 

@@ -3,12 +3,7 @@
 
 use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
-use cranelift_codegen::{
-    ir::InstBuilder,
-    isa,
-    settings::{self, Flags},
-    Context,
-};
+use cranelift_codegen::{ir::InstBuilder, settings, Context};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 
 use diags::*;
@@ -29,6 +24,7 @@ struct LaterInit {
     object_context: ObjectContext,
     context: Context,
     func_ctx: FunctionBuilderContext,
+    jit_context: JitContext,
 }
 
 #[derive(Default)]
@@ -49,21 +45,29 @@ struct TestState {
     later_init: Option<LaterInit>,
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
-    jit_context: JitContext,
     const_counter: usize,
 }
 
 impl TestState {
     fn get_init_later(&mut self) -> LaterInit {
         self.later_init.take().unwrap_or_else(|| {
-            let flag_builder = settings::builder();
-            let builder = isa::lookup(Triple::host()).unwrap();
-            let isa = builder.finish(Flags::new(flag_builder)).unwrap();
-            let object_context = ObjectContext::new(isa).unwrap();
+            let object_isa = Isa::new(
+                Triple::host(),
+                settings::Flags::new(settings::builder()),
+                &mut self.interner,
+            )
+            .unwrap();
+            let jit_isa = Isa::new(
+                Triple::host(),
+                settings::Flags::new(settings::builder()),
+                &mut self.interner,
+            )
+            .unwrap();
             LaterInit {
-                object_context,
+                object_context: ObjectContext::new(object_isa).unwrap(),
                 context: Context::new(),
                 func_ctx: FunctionBuilderContext::new(),
+                jit_context: JitContext::new(jit_isa),
             }
         })
     }
@@ -92,8 +96,9 @@ impl TestState {
             .compile(&*later_init.object_context.isa)
             .unwrap();
 
-        generator!(self, later_init.object_context.isa.pointer_type())
-            .save_compiled_code(current_func, &later_init.context);
+        self.gen
+            .save_compiled_code(current_func, &later_init.context)
+            .unwrap();
     }
 
     fn generate_entry_point(&mut self, later_init: &mut LaterInit) {
@@ -223,17 +228,20 @@ impl TestState {
             compile_queue.extend(next_iter);
         }
 
-        self.jit_context
-            .load_functions(compiled_funcs, &self.gen, false);
-        self.jit_context
-            .load_functions(iter::once(current_func), &self.gen, true);
+        later_init
+            .jit_context
+            .load_functions(compiled_funcs, &self.gen, false)
+            .unwrap();
+        later_init
+            .jit_context
+            .load_functions(iter::once(current_func), &self.gen, true)
+            .unwrap();
 
-        self.jit_context.prepare_for_execution();
+        later_init.jit_context.prepare_for_execution();
 
-        let fn_ptr = self.jit_context.get_function(current_func).unwrap();
+        let fn_ptr = later_init.jit_context.get_function(current_func).unwrap();
         if body.dependant_types[const_mir.ty].ty == Ty::UINT {
             let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
-
             GenFuncConstant::Int(func() as u64)
         } else {
             todo!()
@@ -257,6 +265,9 @@ impl Scheduler for TestState {
 
     fn parse_segment(&mut self, module: storage::VRef<str>, items: GroupedItemsAst) {
         let mut later_init = self.get_init_later();
+        unsafe {
+            later_init.jit_context.clear_temp();
+        }
 
         let mut type_checked_funcs = vec![];
         ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);

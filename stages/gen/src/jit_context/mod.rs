@@ -1,32 +1,24 @@
 use std::alloc;
 use std::ptr::{slice_from_raw_parts_mut, NonNull};
 
-use cranelift_codegen::{
-    binemit::Reloc,
-    isa::{self, LookupError, TargetIsa},
-    settings, CodegenError,
-};
+use cranelift_codegen::binemit::Reloc;
 use storage::*;
-use target_lexicon::Triple;
 
-use crate::{CompiledFunc, Gen, GenItemName, GenReloc};
+use crate::{context::Isa, CompiledFunc, Gen, GenItemName, GenReloc};
 
 pub struct JitContext {
     functions: ShadowMap<CompiledFunc, Option<JitFunction>>,
     resources: JitResources,
-    pub isa: Box<dyn TargetIsa>,
+    pub isa: Isa,
 }
 
 impl JitContext {
-    pub fn new(config: &settings::Flags) -> Result<Self, JitCreationError> {
-        Ok(Self {
+    pub fn new(isa: Isa) -> Self {
+        Self {
             functions: ShadowMap::new(),
             resources: JitResources::new(),
-            isa: isa::lookup(Triple::host())
-                .map_err(JitCreationError::Lookup)?
-                .finish(config.clone())
-                .map_err(JitCreationError::Codegen)?,
-        })
+            isa,
+        }
     }
 
     pub fn get_function(&self, func: VRef<CompiledFunc>) -> Option<&[u8]> {
@@ -100,7 +92,7 @@ impl JitContext {
                     GenItemName::Func(func) => self.get_function(func).map(|code| code.as_ptr()),
                 },
                 |_| todo!("get got entry"),
-                |_| todo!("get ptr entry"),
+                |_| todo!("get plt entry"),
             )?;
         }
 
@@ -123,7 +115,7 @@ impl JitContext {
             addend,
         } in relocs
         {
-            if (offset as usize) < region.len() {
+            if (offset as usize) >= region.len() {
                 return Err(JitRelocError::OffsetOutOfBounds);
             }
 
@@ -302,11 +294,7 @@ impl Default for JitResources {
     }
 }
 
-pub enum JitCreationError {
-    Lookup(LookupError),
-    Codegen(CodegenError),
-}
-
+#[derive(Debug)]
 pub enum JitRelocError {
     MissingSymbol(GenItemName),
     OffsetOverflow,

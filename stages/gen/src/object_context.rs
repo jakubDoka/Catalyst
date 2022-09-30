@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use ::object::{RelocationEncoding, RelocationKind, SymbolScope};
-use cranelift_codegen::{binemit::Reloc, isa::TargetIsa};
+use cranelift_codegen::binemit::Reloc;
 use object::{
     write::{Object, Relocation, SectionId, StandardSection, Symbol, SymbolId, SymbolSection},
     Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind,
@@ -9,7 +9,7 @@ use object::{
 use storage::*;
 use typec_t::*;
 
-use crate::*;
+use crate::{context::Isa, *};
 
 #[derive(Clone, Copy)]
 struct ObjectFunction {
@@ -20,11 +20,11 @@ pub struct ObjectContext {
     functions: ShadowMap<CompiledFunc, Option<ObjectFunction>>,
     text_section: SectionId,
     object: Object<'static>,
-    pub isa: Box<dyn TargetIsa>,
+    pub isa: Isa,
 }
 
 impl ObjectContext {
-    pub fn new(isa: Box<dyn TargetIsa>) -> Result<Self, ObjectCreationError> {
+    pub fn new(isa: Isa) -> Result<Self, ObjectCreationError> {
         let triple = isa.triple();
         let binary_format = match triple.binary_format {
             target_lexicon::BinaryFormat::Elf => BinaryFormat::Elf,
