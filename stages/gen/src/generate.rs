@@ -6,6 +6,7 @@ use cranelift_codegen::{
 use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
 use storage::*;
+use target_lexicon::Triple;
 use typec_t::*;
 
 use crate::*;
@@ -57,9 +58,11 @@ impl Generator<'_> {
         func: &FuncMir,
         root: VRef<BlockMir>,
         builder: &mut FunctionBuilder,
+        triple: &Triple,
+        jit: bool,
     ) {
         builder.func.clear();
-        self.gen_resources.clear();
+        self.gen_resources.clear(triple, jit);
 
         let Func { signature, .. } = self.typec.funcs[func_id];
 
@@ -141,12 +144,37 @@ impl Generator<'_> {
         func: &FuncMir,
         builder: &mut FunctionBuilder,
     ) {
-        let value = self.gen_resources.func_constants[id]
-            .expect("Constant should be computed before function compilation.");
-        let ty = self.ty_repr(func.value_ty(ret));
+        let value = if self.gen_resources.jit {
+            // since this si already compile time, we inline the constant
+            // expression
 
-        let value = match value {
-            GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
+            let block_id = func.constants[id].block;
+            let BlockMir {
+                insts,
+                control_flow,
+                ..
+            } = func.blocks[block_id];
+
+            for &inst in &func.insts[insts] {
+                self.inst(inst, func, builder);
+            }
+
+            #[allow(irrefutable_let_patterns)]
+            let ControlFlowMir::Return(ret) = control_flow else {
+                unreachable!()
+            };
+
+            ret.expand().map(|ret| {
+                self.gen_resources.values[ret].expect("Value should exist at this point")
+            })
+        } else {
+            let value = self.gen_resources.func_constants[id]
+                .expect("Constant should be computed before function compilation.");
+            let ty = self.ty_repr(func.value_ty(ret));
+
+            Some(match value {
+                GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
+            })
         };
 
         self.gen_resources.values[ret] = value.into();
@@ -228,9 +256,16 @@ impl Generator<'_> {
         builder: &mut FunctionBuilder,
     ) -> ir::FuncRef {
         let id = if params.is_empty() {
-            self.typec.funcs.id(func_id)
+            let id = self.typec.funcs.id(func_id);
+            self.interner
+                .intern(ident!(self.gen_resources.triple.as_str(), "&", id))
         } else {
-            let start = ident!(self.typec.funcs.id(func_id), "[");
+            let start = ident!(
+                self.gen_resources.triple.as_str(),
+                "&",
+                self.typec.funcs.id(func_id),
+                "["
+            );
             let params = ident_join(
                 ", ",
                 func.ty_params[params]

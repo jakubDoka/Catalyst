@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{self, types, Type},
@@ -23,11 +21,6 @@ pub struct CompiledFunc {
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
-}
-
-#[test]
-fn test() {
-    panic!("{}", std::mem::size_of::<Triple>());
 }
 
 impl CompiledFunc {
@@ -81,38 +74,35 @@ pub struct CompileRequest {
 // Resources
 //////////////////////////////////
 
+#[derive(Default)]
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
+    pub triple: String,
+    pub jit: bool,
 }
 
 impl GenResources {
     pub fn new() -> Self {
-        Self {
-            blocks: ShadowMap::new(),
-            values: ShadowMap::new(),
-            func_imports: Map::default(),
-            func_constants: ShadowMap::new(),
-        }
+        Self::default()
     }
 
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self, next_triplet: &Triple, jit: bool) {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
-        self.func_constants.clear();
+        // self.func_constants.clear();
+        self.triple.clear();
+
+        use std::fmt::Write;
+        write!(self.triple, "{}", next_triplet).unwrap();
+        self.jit = jit;
     }
 }
 
-impl Default for GenResources {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum GenFuncConstant {
     Int(u64),
 }
@@ -220,37 +210,64 @@ pub fn perform_jit_relocations(
     {
         assert!((offset as usize) < region.len());
 
-        // SAFETY: we checked that the offset is in bounds.
-        let at = unsafe { region.as_ptr().add(offset as usize) };
-
-        let base = match kind {
-            Reloc::Abs4
-            | Reloc::Abs8
-            | Reloc::X86PCRel4
-            | Reloc::X86CallPCRel4
-            | Reloc::S390xPCRel32Dbl
-            | Reloc::S390xPLTRel32Dbl
-            | Reloc::Arm64Call => get_address(name),
-
-            Reloc::X86CallPLTRel4 => get_plt_entry(name),
-            Reloc::X86GOTPCRel4 => get_got_entry(name),
-
-            kind => unimplemented!("{kind:?}"),
-        };
-
-        let what = match kind {
-            Reloc::Abs4
-            | Reloc::Abs8
-            | Reloc::X86PCRel4
-            | Reloc::X86CallPCRel4
-            | Reloc::S390xPCRel32Dbl
-            | Reloc::S390xPLTRel32Dbl
-            | Reloc::X86CallPLTRel4
-            | Reloc::X86GOTPCRel4 => unsafe { base.offset(addend) },
-
+        let at = unsafe { region.as_ptr().offset(isize::try_from(offset).unwrap()) };
+        match kind {
+            Reloc::Abs4 => {
+                let base = get_address(name);
+                let what = unsafe { base.offset(addend) };
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut u32, u32::try_from(what as usize).unwrap())
+                };
+            }
+            Reloc::Abs8 => {
+                let base = get_address(name);
+                let what = unsafe { base.offset(addend) };
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut u64, u64::try_from(what as usize).unwrap())
+                };
+            }
+            Reloc::X86PCRel4 | Reloc::X86CallPCRel4 => {
+                let base = get_address(name);
+                let what = unsafe { base.offset(addend) };
+                let pcrel = i32::try_from((what as isize) - (at as isize)).unwrap();
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut i32, pcrel)
+                };
+            }
+            Reloc::X86GOTPCRel4 => {
+                let base = get_got_entry(name);
+                let what = unsafe { base.offset(addend) };
+                let pcrel = i32::try_from((what as isize) - (at as isize)).unwrap();
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut i32, pcrel)
+                };
+            }
+            Reloc::X86CallPLTRel4 => {
+                let base = get_plt_entry(name);
+                let what = unsafe { base.offset(addend) };
+                let pcrel = i32::try_from((what as isize) - (at as isize)).unwrap();
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut i32, pcrel)
+                };
+            }
+            Reloc::S390xPCRel32Dbl | Reloc::S390xPLTRel32Dbl => {
+                let base = get_address(name);
+                let what = unsafe { base.offset(addend) };
+                let pcrel = i32::try_from(((what as isize) - (at as isize)) >> 1).unwrap();
+                #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+                unsafe {
+                    write_unaligned(at as *mut i32, pcrel)
+                };
+            }
             Reloc::Arm64Call => {
+                let base = get_address(name);
                 // The instruction is 32 bits long.
-                let instruction_ptr = at as *mut u32;
+                let iptr = at as *mut u32;
                 // The offset encoded in the `bl` instruction is the
                 // number of bytes divided by 4.
                 let diff = ((base as isize) - (at as isize)) >> 2;
@@ -263,48 +280,99 @@ pub fn perform_jit_relocations(
                 // immediate offset argument.
                 let chop = 32 - 26;
                 let imm26 = (diff as u32) << chop >> chop;
-                let ins = unsafe { instruction_ptr.read_unaligned() } | imm26;
+                let ins = unsafe { iptr.read_unaligned() } | imm26;
                 unsafe {
-                    instruction_ptr.write_unaligned(ins);
+                    iptr.write_unaligned(ins);
                 }
-                return;
             }
-
-            _ => unimplemented!("{kind:?}"),
-        };
-
-        let pc_relocation_addr = match kind {
-            Reloc::X86PCRel4
-            | Reloc::X86CallPCRel4
-            | Reloc::X86GOTPCRel4
-            | Reloc::X86CallPLTRel4
-            | Reloc::S390xPCRel32Dbl
-            | Reloc::S390xPLTRel32Dbl => unsafe { what.sub(at as usize) },
-
-            Reloc::Abs4 | Reloc::Abs8 => what,
-
-            _ => unimplemented!("{kind:?}"),
-        };
-
-        match kind {
-            Reloc::Abs8 => unsafe { write_unaligned(at as *mut u64, pc_relocation_addr as u64) },
-
-            Reloc::Abs4
-            | Reloc::X86PCRel4
-            | Reloc::X86CallPCRel4
-            | Reloc::X86GOTPCRel4
-            | Reloc::X86CallPLTRel4
-            | Reloc::S390xPCRel32Dbl
-            | Reloc::S390xPLTRel32Dbl => unsafe {
-                write_unaligned(
-                    at as *mut u32,
-                    (pc_relocation_addr as usize)
-                        .try_into()
-                        .expect("relocation overflow"),
-                )
-            },
-
-            _ => unimplemented!("{kind:?}"),
+            _ => unimplemented!(),
         }
+
+        // // SAFETY: we checked that the offset is in bounds.
+        // let at = unsafe { region.as_ptr().add(offset as usize) };
+
+        // let base = match kind {
+        //     Reloc::Abs4
+        //     | Reloc::Abs8
+        //     | Reloc::X86PCRel4
+        //     | Reloc::X86CallPCRel4
+        //     | Reloc::S390xPCRel32Dbl
+        //     | Reloc::S390xPLTRel32Dbl
+        //     | Reloc::Arm64Call => get_address(name),
+
+        //     Reloc::X86CallPLTRel4 => get_plt_entry(name),
+        //     Reloc::X86GOTPCRel4 => get_got_entry(name),
+
+        //     kind => unimplemented!("{kind:?}"),
+        // };
+
+        // let what = match kind {
+        //     Reloc::Abs4
+        //     | Reloc::Abs8
+        //     | Reloc::X86PCRel4
+        //     | Reloc::X86CallPCRel4
+        //     | Reloc::S390xPCRel32Dbl
+        //     | Reloc::S390xPLTRel32Dbl
+        //     | Reloc::X86CallPLTRel4
+        //     | Reloc::X86GOTPCRel4 => unsafe { base.offset(addend) },
+
+        //     Reloc::Arm64Call => {
+        //         // The instruction is 32 bits long.
+        //         let instruction_ptr = at as *mut u32;
+        //         // The offset encoded in the `bl` instruction is the
+        //         // number of bytes divided by 4.
+        //         let diff = ((base as isize) - (at as isize)) >> 2;
+        //         // Sign propagating right shift disposes of the
+        //         // included bits, so the result is expected to be
+        //         // either all sign bits or 0, depending on if the original
+        //         // value was negative or positive.
+        //         assert!((diff >> 26 == -1) || (diff >> 26 == 0));
+        //         // The lower 26 bits of the `bl` instruction form the
+        //         // immediate offset argument.
+        //         let chop = 32 - 26;
+        //         let imm26 = (diff as u32) << chop >> chop;
+        //         let ins = unsafe { instruction_ptr.read_unaligned() } | imm26;
+        //         unsafe {
+        //             instruction_ptr.write_unaligned(ins);
+        //         }
+        //         return;
+        //     }
+
+        //     _ => unimplemented!("{kind:?}"),
+        // };
+
+        // let pc_relocation_addr = match kind {
+        //     Reloc::X86PCRel4
+        //     | Reloc::X86CallPCRel4
+        //     | Reloc::X86GOTPCRel4
+        //     | Reloc::X86CallPLTRel4
+        //     | Reloc::S390xPCRel32Dbl
+        //     | Reloc::S390xPLTRel32Dbl => unsafe { what.sub(at as usize) },
+
+        //     Reloc::Abs4 | Reloc::Abs8 => what,
+
+        //     _ => unimplemented!("{kind:?}"),
+        // };
+
+        // match kind {
+        //     Reloc::Abs8 => unsafe { write_unaligned(at as *mut u64, pc_relocation_addr as u64) },
+
+        //     Reloc::Abs4
+        //     | Reloc::X86PCRel4
+        //     | Reloc::X86CallPCRel4
+        //     | Reloc::X86GOTPCRel4
+        //     | Reloc::X86CallPLTRel4
+        //     | Reloc::S390xPCRel32Dbl
+        //     | Reloc::S390xPLTRel32Dbl => unsafe {
+        //         write_unaligned(
+        //             at as *mut u32,
+        //             (pc_relocation_addr as usize)
+        //                 .try_into()
+        //                 .expect("relocation overflow"),
+        //         )
+        //     },
+
+        //     _ => unimplemented!("{kind:?}"),
+        // }
     }
 }

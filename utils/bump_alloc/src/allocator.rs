@@ -35,7 +35,7 @@ impl ProtectedAllocator {
         }
     }
 
-    pub fn prepare(&mut self) {
+    pub fn seal(&mut self) {
         for chunk in self.inner.chunks.get_mut().iter_mut().skip(self.protected) {
             chunk.set_memory_protection(self.protection);
         }
@@ -85,6 +85,14 @@ impl ProtectedAllocator {
     }
 }
 
+impl Drop for ProtectedAllocator {
+    fn drop(&mut self) {
+        unsafe {
+            self.clear();
+        }
+    }
+}
+
 pub struct AllocatorLow<const WRITE_PADDING: bool> {
     free: Cell<Vec<Chunk>>,
     chunks: Cell<Vec<Chunk>>,
@@ -108,7 +116,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
     }
 
     pub fn with_chunk_size(chunk_size: usize) -> Self {
-        let chunk = Chunk::new(Self::compute_size_for(chunk_size, 0));
+        let mut chunk = Chunk::new(chunk_size);
         let range = chunk.range();
         Self {
             free: Cell::new(Vec::new()),
@@ -178,11 +186,11 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
             // SAFETY: Branch implies that garbage contains something.
             unsafe { garbage.pop().unwrap_unchecked() }
         } else {
-            Chunk::new(Self::compute_size_for(self.chunk_size, min_size))
+            Chunk::new(self.chunk_size.max(min_size))
         };
 
         // SAFETY: we are the unique owner of the chunk
-        let Range { start, end } = unsafe { new_chunk.data.as_mut().as_mut_ptr_range() };
+        let Range { start, end } = new_chunk.range();
         let padding = Self::compute_padding(end, layout);
         Self::write_padding(end, padding);
         let size = layout.size() + padding;
@@ -197,11 +205,6 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
 
         // SAFETY: Allocation with address range range 0..n should never happen
         unsafe { NonNull::new_unchecked(slice::from_raw_parts_mut(new, size)) }
-    }
-
-    fn compute_size_for(chunk_size: usize, size: usize) -> usize {
-        let size = chunk_size.max(size);
-        size + region::page::size() - size % region::page::size()
     }
 
     /// Clears the allocator for reuse.
@@ -270,42 +273,33 @@ impl AllocatorLow<true> {
 }
 
 struct Chunk {
-    data: NonNull<[u8]>,
+    data: region::Allocation,
 }
 
 impl Chunk {
     fn new(cap: usize) -> Self {
         // SAFETY: even if `cap` is 0, we still get a
         // dangling pointer which is not zero.
-        unsafe {
-            Chunk {
-                data: NonNull::new_unchecked(Box::into_raw(
-                    Box::new_uninit_slice(cap).assume_init(),
-                )),
-            }
+        Chunk {
+            data: region::alloc(cap, region::Protection::READ_WRITE)
+                .expect("Failed to allocate memory"),
         }
     }
 
     fn len(&self) -> usize {
-        unsafe { self.data.as_ref().len() }
+        self.data.len()
     }
 
-    fn range(&self) -> Range<*const u8> {
-        unsafe { self.data.as_ref().as_ptr_range() }
+    fn range(&mut self) -> Range<*mut u8> {
+        self.data.as_mut_ptr_range()
     }
 
-    fn set_memory_protection(&self, protection: region::Protection) {
+    fn set_memory_protection(&mut self, protection: region::Protection) {
         let range = self.range();
         let size = range.end as usize - range.start as usize;
         unsafe {
             region::protect(range.start, size, protection)
                 .expect("Failed to set memory protection");
         }
-    }
-}
-
-impl Drop for Chunk {
-    fn drop(&mut self) {
-        unsafe { Box::from_raw(self.data.as_ptr()) };
     }
 }

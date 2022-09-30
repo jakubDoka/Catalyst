@@ -102,6 +102,10 @@ impl Typec {
     }
 
     pub fn init_builtin_funcs(&mut self, interner: &mut Interner) {
+        let anon_temp = interner.intern_str("anon_temp");
+        let anon_temp = self.funcs.insert_unique(anon_temp, Default::default());
+        assert!(anon_temp == Func::ANON_TEMP);
+
         let int_bin_ops = "+ - / *".split_whitespace();
 
         for op in int_bin_ops {

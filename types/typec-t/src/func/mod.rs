@@ -14,6 +14,10 @@ pub struct Func {
     pub loc: Loc,
 }
 
+impl Func {
+    gen_increasing_constants!(ANON_TEMP);
+}
+
 impl_located!(Func);
 impl_flagged!(Func, FuncFlags);
 

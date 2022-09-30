@@ -43,14 +43,17 @@ impl JitContext {
     pub fn load_functions(&mut self, funcs: &[VRef<CompiledFunc>], gen: &Gen) {
         let filtered_funcs = funcs
             .iter()
-            .filter_map(|&func| self.functions[func].map(|_| func))
+            .filter_map(|&func| self.functions[func].is_none().then_some(func))
             .collect::<BumpVec<_>>();
 
         for &func in filtered_funcs.iter() {
             let func_ent = &gen.compiled_funcs[func];
             let body = &func_ent.bytecode;
             // SAFETY: Since layout is identical to Vectors allocation layout, this must be valid.
-            let layout = unsafe { alloc::Layout::array::<u8>(body.len()).unwrap_unchecked() };
+            let layout = alloc::Layout::array::<u8>(body.len())
+                .unwrap()
+                .align_to(func_ent.alignment as usize)
+                .unwrap();
             let mut code = self.resources.executable.alloc(layout);
 
             // SAFETY: `code` has the same layout and only we own it.
@@ -65,11 +68,10 @@ impl JitContext {
 
         for func in filtered_funcs {
             let func_ent = &gen.compiled_funcs[func];
-            // SAFETY: We just inserted the very function.
-            let jit_reloc = unsafe { self.functions[func].as_ref().unwrap_unchecked() };
+            let jit_func = self.functions[func].as_ref().unwrap();
             perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
-                unsafe { jit_reloc.code.as_ref() },
+                unsafe { jit_func.code.as_ref() },
                 &func_ent.relocs,
                 |name| match name {
                     GenItemName::Func(func) => self
@@ -90,6 +92,10 @@ impl JitContext {
     pub unsafe fn clear(&mut self) {
         self.functions.clear();
         self.resources.clear();
+    }
+
+    pub fn prepare_for_execution(&mut self) {
+        self.resources.seal();
     }
 }
 
@@ -114,9 +120,13 @@ impl JitResources {
         self.readonly.clear();
         self.executable.clear();
     }
-}
 
-impl JitResources {
+    pub fn seal(&mut self) {
+        self.writable.seal();
+        self.readonly.seal();
+        self.executable.seal();
+    }
+
     const WRITABLE_CHUNK_SIZE: usize = 1 << 12;
     const READONLY_CHUNK_SIZE: usize = 1 << 12;
     const EXECUTABLE_CHUNK_SIZE: usize = 1 << 14;

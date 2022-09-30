@@ -3,7 +3,7 @@ use super::*;
 list_meta!(BlockMeta LeftCurly NewLine RightCurly);
 pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
 
-list_meta!(CallArgsMeta LeftParen NewLine RightParen);
+list_meta!(CallArgsMeta LeftParen Comma RightParen);
 pub type CallArgsAst<'a> = ListAst<'a, ExprAst<'a>, CallArgsMeta>;
 
 #[derive(Debug, Clone, Copy)]

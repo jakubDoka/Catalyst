@@ -66,6 +66,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
 impl<'a> FmtAst for ConstAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.write_span(self.r#const);
+        write!(fmt, " ");
         self.value.display(fmt);
     }
 
