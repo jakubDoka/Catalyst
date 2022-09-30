@@ -152,6 +152,7 @@ pub mod items {
         scope: Option<&'a Scope<'b, 'c>>,
         test_code: fn(&str) -> (Workspace, Packages),
     ) {
+        println!("Running sub test: {}", name);
         let runner = move || {
             let (mut ws, packages) = test_code(name);
 

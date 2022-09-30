@@ -45,7 +45,6 @@ struct TestState {
     later_init: Option<LaterInit>,
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
-    const_counter: usize,
 }
 
 impl TestState {
@@ -162,11 +161,12 @@ impl TestState {
         let mut compiled_funcs = vec![];
         let mut compile_queue = vec![];
 
-        let current_func = self.gen.compiled_funcs.insert_unique(
-            self.interner
-                .intern(ident!("anon_const", self.const_counter as u32)),
-            CompiledFunc::new(Func::ANON_TEMP),
-        );
+        let current_func = self
+            .gen
+            .compiled_funcs
+            .get_or_insert(self.interner.intern_str("anon_const"), |_| {
+                CompiledFunc::new(Func::ANON_TEMP)
+            });
 
         let signature = Signature {
             cc: self.interner.intern_str("windows_fastcall").into(),
@@ -306,7 +306,7 @@ impl Scheduler for TestState {
                 .expect("function without blocks is invalid");
 
             let mut builder = GenBuilder::new(
-                &later_init.jit_context.isa,
+                &later_init.object_context.isa,
                 &body,
                 &mut later_init.context.func,
                 &mut later_init.func_ctx,

@@ -19,6 +19,7 @@
         "Doka",
         "Endianness",
         "ents",
+        "fastcall",
         "Funcs",
         "GDCALL",
         "GOTPC",
