@@ -18,14 +18,6 @@ error: cannot access runtime value in 'const'
   = help: try moving the access to a non-const function
   = help: or declaring the variable as constant
 
-error: not all blocks were closed when typechecking function
- --> compile-time\root.ctl:2:4
-  |
-2 | fn sub(a: uint, b: uint) -> uint => const a - b
-  |    --- info: happened in this function
-  |
-  = info: this is a bug in the compiler, please report it
-
 info: mir repr of functions:
 
 
