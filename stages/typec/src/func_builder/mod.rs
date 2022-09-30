@@ -46,14 +46,13 @@ impl TyChecker<'_> {
                 .map(|&(i, func)| (items[i], func))
                 .filter_map(|((ast, ..), func)| {
                     let Some(res) = self.build_func(ast, func, arena) else {
-                    extern_funcs.push(func);
-                    return None;
-                };
+                        extern_funcs.push(func);
+                        return None;
+                    };
 
                     let Some(body) = res else {
-                    self.incomplete_tir(ast);
-                    return None;
-                };
+                        return None;
+                    };
 
                     Some((func, body))
                 });

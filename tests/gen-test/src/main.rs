@@ -229,7 +229,7 @@ impl TestState {
 
             let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
 
-            dbg!(GenFuncConstant::Int(func() as u64))
+            GenFuncConstant::Int(func() as u64)
         } else {
             todo!()
         }
@@ -256,6 +256,10 @@ impl Scheduler for TestState {
         let mut type_checked_funcs = vec![];
         ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);
         mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
+
+        if self.workspace.has_errors() {
+            return;
+        }
 
         let mut compiled_funcs = vec![];
         let mut compile_queue = self.collect_entry_points();
@@ -406,7 +410,7 @@ fn main() {
             break;
 
             #[entry];
-            fn main -> uint => const 1 - 1;
+            fn main -> uint => const sub(1, 1);
         }
     }
 }
