@@ -21,6 +21,7 @@ pub struct CompiledFunc {
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
+    pub temp: bool,
 }
 
 impl CompiledFunc {
@@ -31,6 +32,7 @@ impl CompiledFunc {
             bytecode: Vec::new(),
             alignment: 0,
             relocs: Vec::new(),
+            temp: false,
         }
     }
 }

@@ -105,10 +105,12 @@ impl ObjectContext {
                 &ent.bytecode,
                 ent.alignment,
             );
+
+            self.functions[func] = Some(ObjectFunction { symbol });
         }
 
         // add relocations
-        for (func, symbol, offset) in funcs {
+        for (func, _, offset) in funcs {
             let ent = &gen.compiled_funcs[func];
             for &record in &ent.relocs {
                 let reloc = self.process_reloc(record, offset)?;
@@ -116,8 +118,6 @@ impl ObjectContext {
                     .add_relocation(self.text_section, reloc)
                     .map_err(ObjectRelocationError::AddRelocation)?;
             }
-
-            self.functions[func] = Some(ObjectFunction { symbol });
         }
 
         Ok(())

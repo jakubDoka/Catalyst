@@ -1,11 +1,11 @@
 #![feature(let_else)]
 #![feature(fs_try_exists)]
 
-use std::{fmt::Write, fs, mem, path::Path, process::Command, vec};
+use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
 use cranelift_codegen::{
     ir::InstBuilder,
-    isa::{self, TargetIsa},
+    isa,
     settings::{self, Flags},
     Context,
 };
@@ -27,7 +27,6 @@ use typec_t::*;
 
 struct LaterInit {
     object_context: ObjectContext,
-    isa: Box<dyn TargetIsa>,
     context: Context,
     func_ctx: FunctionBuilderContext,
 }
@@ -60,9 +59,8 @@ impl TestState {
             let flag_builder = settings::builder();
             let builder = isa::lookup(Triple::host()).unwrap();
             let isa = builder.finish(Flags::new(flag_builder)).unwrap();
-            let object_context = ObjectContext::new(&*isa).unwrap();
+            let object_context = ObjectContext::new(isa).unwrap();
             LaterInit {
-                isa,
                 object_context,
                 context: Context::new(),
                 func_ctx: FunctionBuilderContext::new(),
@@ -89,14 +87,17 @@ impl TestState {
     }
 
     fn compile_func(&mut self, current_func: VRef<CompiledFunc>, later_init: &mut LaterInit) {
-        later_init.context.compile(&*later_init.isa).unwrap();
+        later_init
+            .context
+            .compile(&*later_init.object_context.isa)
+            .unwrap();
 
-        generator!(self, later_init.isa.pointer_type())
+        generator!(self, later_init.object_context.isa.pointer_type())
             .save_compiled_code(current_func, &later_init.context);
     }
 
     fn generate_entry_point(&mut self, later_init: &mut LaterInit) {
-        let default_cc = later_init.isa.default_call_conv();
+        let default_cc = later_init.object_context.isa.default_call_conv();
 
         later_init.context.clear();
         later_init.context.func.signature.clear(default_cc);
@@ -109,7 +110,7 @@ impl TestState {
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let func_ref = generator!(self, later_init.isa.pointer_type())
+            let func_ref = generator!(self, later_init.object_context.isa.pointer_type())
                 .import_compiled_func(func, &mut builder);
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
@@ -130,12 +131,15 @@ impl TestState {
 
         self.compile_func(entry_point, later_init);
 
-        later_init.object_context.load_functions(
-            &[entry_point],
-            &self.gen,
-            &self.typec,
-            &self.interner,
-        )
+        later_init
+            .object_context
+            .load_functions(
+                iter::once(entry_point),
+                &self.gen,
+                &self.typec,
+                &self.interner,
+            )
+            .unwrap();
     }
 
     fn compute_func_constant(
@@ -158,12 +162,12 @@ impl TestState {
         func_ent.signature.cc = self.interner.intern_str("windows_fastcall").into();
 
         let root_block = const_mir.block;
-        generator!(self, later_init.isa.pointer_type()).generate(
+        generator!(self, later_init.object_context.isa.pointer_type()).generate(
             Func::ANON_TEMP,
             body,
             root_block,
             &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-            later_init.isa.triple(),
+            later_init.object_context.isa.triple(),
             true,
         );
 
@@ -183,7 +187,6 @@ impl TestState {
             .map(|request| request.id);
 
         compile_queue.extend(next_iter);
-        compiled_funcs.push(current_func);
 
         while let Some(current_func) = compile_queue.pop() {
             let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
@@ -195,12 +198,12 @@ impl TestState {
                 .next()
                 .expect("function without blocks is invalid");
 
-            generator!(self, later_init.isa.pointer_type()).generate(
+            generator!(self, later_init.object_context.isa.pointer_type()).generate(
                 func,
                 &body,
                 root_block,
                 &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-                later_init.isa.triple(),
+                later_init.object_context.isa.triple(),
                 true,
             );
 
@@ -220,13 +223,15 @@ impl TestState {
             compile_queue.extend(next_iter);
         }
 
-        self.jit_context.load_functions(&compiled_funcs, &self.gen);
+        self.jit_context
+            .load_functions(compiled_funcs, &self.gen, false);
+        self.jit_context
+            .load_functions(iter::once(current_func), &self.gen, true);
 
         self.jit_context.prepare_for_execution();
 
+        let fn_ptr = self.jit_context.get_function(current_func).unwrap();
         if body.dependant_types[const_mir.ty].ty == Ty::UINT {
-            let fn_ptr = self.jit_context.get_function(current_func).unwrap();
-
             let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
 
             GenFuncConstant::Int(func() as u64)
@@ -279,12 +284,12 @@ impl Scheduler for TestState {
                 .next()
                 .expect("function without blocks is invalid");
 
-            generator!(self, later_init.isa.pointer_type()).generate(
+            generator!(self, later_init.object_context.isa.pointer_type()).generate(
                 func,
                 &body,
                 root_block,
                 &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-                later_init.isa.triple(),
+                later_init.object_context.isa.triple(),
                 false,
             );
 
@@ -304,12 +309,10 @@ impl Scheduler for TestState {
             compile_queue.extend(next_iter);
         }
 
-        later_init.object_context.load_functions(
-            &compiled_funcs,
-            &self.gen,
-            &self.typec,
-            &self.interner,
-        );
+        later_init
+            .object_context
+            .load_functions(compiled_funcs, &self.gen, &self.typec, &self.interner)
+            .unwrap();
 
         self.later_init = Some(later_init);
     }
@@ -341,7 +344,7 @@ impl Scheduler for TestState {
         fs::write(path, emitted).unwrap();
 
         let host = Triple::host().to_string();
-        let target = later_init.isa.triple().to_string();
+        let target = later_init.object_context.isa.triple().to_string();
 
         let compiler = cc::Build::new()
             .opt_level(0)
@@ -351,7 +354,12 @@ impl Scheduler for TestState {
             .get_compiler();
 
         let args = if compiler.is_like_msvc() {
-            let subsystem = later_init.isa.triple().operating_system.to_string();
+            let subsystem = later_init
+                .object_context
+                .isa
+                .triple()
+                .operating_system
+                .to_string();
             vec![format!(
                 "-link /ENTRY:{} /SUBSYSTEM:{}",
                 gen::ENTRY_POINT_NAME,

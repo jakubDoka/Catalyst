@@ -40,38 +40,48 @@ impl JitContext {
     /// Used for loading batch of functions that are currently needed to execute.
     /// Functions can depend on each other. If some function already has implementation
     /// it is ignored.
-    pub fn load_functions(&mut self, funcs: &[VRef<CompiledFunc>], gen: &Gen) {
+    pub fn load_functions(
+        &mut self,
+        funcs: impl IntoIterator<Item = VRef<CompiledFunc>>,
+        gen: &Gen,
+        temp: bool,
+    ) {
         let filtered_funcs = funcs
-            .iter()
-            .filter_map(|&func| self.functions[func].is_none().then_some(func))
+            .into_iter()
+            .filter_map(|func| self.functions[func].is_none().then_some(func))
+            .map(|func| {
+                let func_ent = &gen.compiled_funcs[func];
+                let body = &func_ent.bytecode;
+
+                let layout = alloc::Layout::for_value(body.as_slice())
+                    .align_to(func_ent.alignment as usize)
+                    .unwrap();
+                let mut code = if temp {
+                    self.resources.temp_executable.alloc(layout)
+                } else {
+                    self.resources.executable.alloc(layout)
+                };
+
+                // SAFETY: `code` has the same layout and only we own it.
+                unsafe {
+                    code.as_mut()
+                        .as_mut_ptr()
+                        .copy_from_nonoverlapping(body.as_ptr(), body.len());
+                }
+
+                (func, code)
+            })
             .collect::<BumpVec<_>>();
 
-        for &func in filtered_funcs.iter() {
-            let func_ent = &gen.compiled_funcs[func];
-            let body = &func_ent.bytecode;
-            // SAFETY: Since layout is identical to Vectors allocation layout, this must be valid.
-            let layout = alloc::Layout::array::<u8>(body.len())
-                .unwrap()
-                .align_to(func_ent.alignment as usize)
-                .unwrap();
-            let mut code = self.resources.executable.alloc(layout);
-
-            // SAFETY: `code` has the same layout and only we own it.
-            unsafe {
-                code.as_mut()
-                    .as_mut_ptr()
-                    .copy_from_nonoverlapping(body.as_ptr(), body.len());
-            }
-
-            self.functions[func] = Some(JitFunction { code })
+        for &(func, code) in filtered_funcs.iter() {
+            self.functions[func] = Some(JitFunction { code });
         }
 
-        for func in filtered_funcs {
+        for (func, code) in filtered_funcs {
             let func_ent = &gen.compiled_funcs[func];
-            let jit_func = self.functions[func].as_ref().unwrap();
             perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
-                unsafe { jit_func.code.as_ref() },
+                unsafe { code.as_ref() },
                 &func_ent.relocs,
                 |name| match name {
                     GenItemName::Func(func) => self
@@ -97,6 +107,14 @@ impl JitContext {
     pub fn prepare_for_execution(&mut self) {
         self.resources.seal();
     }
+
+    /// # Safety
+    /// Caller must ensure no function pointers from
+    /// jit context are used after this. This applies to
+    /// functions that are declared as temporary.
+    pub unsafe fn clear_temp(&mut self) {
+        self.resources.clear_temp();
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +126,7 @@ struct JitResources {
     writable: ProtectedAllocator,
     readonly: ProtectedAllocator,
     executable: ProtectedAllocator,
+    temp_executable: ProtectedAllocator,
 }
 
 impl JitResources {
@@ -119,12 +138,18 @@ impl JitResources {
         self.writable.clear();
         self.readonly.clear();
         self.executable.clear();
+        self.temp_executable.clear();
+    }
+
+    unsafe fn clear_temp(&mut self) {
+        self.temp_executable.clear();
     }
 
     pub fn seal(&mut self) {
         self.writable.seal();
         self.readonly.seal();
         self.executable.seal();
+        self.temp_executable.seal();
     }
 
     const WRITABLE_CHUNK_SIZE: usize = 1 << 12;
@@ -143,6 +168,10 @@ impl JitResources {
             ),
             executable: ProtectedAllocator::with_chunk_size(
                 Self::EXECUTABLE_CHUNK_SIZE,
+                region::Protection::READ_EXECUTE,
+            ),
+            temp_executable: ProtectedAllocator::with_chunk_size(
+                Self::EXECUTABLE_CHUNK_SIZE >> 2,
                 region::Protection::READ_EXECUTE,
             ),
         }
