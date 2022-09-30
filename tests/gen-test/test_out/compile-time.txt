@@ -1,29 +1,34 @@
+error: cannot access runtime value in 'const'
+ --> compile-time\root.ctl:2:37
+  |
+2 | fn sub(a: uint, b: uint) -> uint => const a - b
+  |                                     ^^^^^ this is what makes access const
+  |        - info: this is a runtime value, outsize of 'const' context
+  |
+  = help: try moving the access to a non-const function
+  = help: or declaring the variable as constant
+
+error: cannot access runtime value in 'const'
+ --> compile-time\root.ctl:2:37
+  |
+2 | fn sub(a: uint, b: uint) -> uint => const a - b
+  |                                     ^^^^^ this is what makes access const
+  |                 - info: this is a runtime value, outsize of 'const' context
+  |
+  = help: try moving the access to a non-const function
+  = help: or declaring the variable as constant
+
+error: not all blocks were closed when typechecking function
+ --> compile-time\root.ctl:2:4
+  |
+2 | fn sub(a: uint, b: uint) -> uint => const a - b
+  |    --- info: happened in this function
+  |
+  = info: this is a bug in the compiler, please report it
+
 info: mir repr of functions:
-const function u0:0() -> i64 windows_fastcall {
-    sig0 = (i64, i64) -> i64 fast
-    fn0 = colocated u0:2 sig0
-
-block0:
-    v0 = iconst.i64 1
-    v1 = iconst.i64 1
-    v2 = call fn0(v0, v1)  ; v0 = 1, v1 = 1
-    return v2
-}
 
 
-function u0:0(i64, i64) -> i64 fast {
-block0(v0: i64, v1: i64):
-    v2 = isub v0, v1
-    return v2
-}
-
-
-function u0:0() -> i64 fast {
-block0:
-    v0 = iconst.i64 0
-    return v0  ; v0 = 0
-}
-
-
-
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
 
