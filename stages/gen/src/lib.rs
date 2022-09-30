@@ -2,18 +2,18 @@
 
 mod context;
 mod generate;
-mod jit;
-mod object;
+mod jit_context;
+mod object_context;
 
 mod state_gen;
 
 pub use {
-    crate::object::{ObjectContext, ObjectCreationError},
+    crate::object_context::{ObjectContext, ObjectCreationError},
     context::{
         perform_jit_relocations, CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock,
         GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, Layout, Offset,
     },
-    jit::JitContext,
+    jit_context::JitContext,
     state_gen::Generator,
 };
 

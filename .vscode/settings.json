@@ -20,6 +20,7 @@
         "Endianness",
         "ents",
         "Funcs",
+        "GDCALL",
         "GOTPC",
         "Hasher",
         "iadd",
@@ -43,6 +44,7 @@
         "rsplit",
         "sdiv",
         "Struct",
+        "TLSGD",
         "Typec",
         "udiv",
         "Uninit"
