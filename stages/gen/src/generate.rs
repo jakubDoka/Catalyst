@@ -2,10 +2,8 @@ use cranelift_codegen::{
     ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
     isa::CallConv,
 };
-use cranelift_frontend::FunctionBuilder;
 use mir_t::*;
 use storage::*;
-use target_lexicon::Triple;
 use typec_t::*;
 
 use crate::*;
@@ -13,37 +11,28 @@ use crate::*;
 impl Generator<'_> {
     pub fn generate(
         &mut self,
-        func_id: VRef<Func>,
-        func: &FuncMir,
+        signature: Signature,
         root: VRef<BlockMir>,
-        builder: &mut FunctionBuilder,
-        triple: &Triple,
-        jit: bool,
+        builder: &mut GenBuilder,
     ) {
         builder.func.clear();
-        self.gen_resources.clear(triple, jit);
+        self.gen_resources.clear();
 
-        let Func { signature, .. } = self.typec.funcs[func_id];
+        let ptr_ty = builder.ptr_ty();
+        self.populate_signature(signature, &mut builder.func.signature, ptr_ty);
 
-        self.load_signature(signature, &mut builder.func.signature);
-
-        self.block(root, func, builder);
+        self.block(root, builder);
 
         builder.finalize();
     }
 
-    fn block(
-        &mut self,
-        block: VRef<BlockMir>,
-        func: &FuncMir,
-        builder: &mut FunctionBuilder,
-    ) -> ir::Block {
+    fn block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
         let BlockMir {
             args,
             insts,
             control_flow,
             ref_count,
-        } = func.blocks[block];
+        } = builder.body.blocks[block];
 
         if let Some(block) = self.gen_resources.blocks[block].as_mut_option() {
             block.visit_count += 1;
@@ -58,16 +47,16 @@ impl Generator<'_> {
         let ir_block = builder.create_block();
         builder.switch_to_block(ir_block);
 
-        for &arg in &func.value_args[args] {
-            let ty = self.ty_repr(func.value_ty(arg));
+        for &arg in &builder.body.value_args[args] {
+            let ty = self.ty_repr(builder.body.value_ty(arg), builder.ptr_ty());
             self.gen_resources.values[arg] = builder.append_block_param(ir_block, ty).into();
         }
 
-        for &inst in &func.insts[insts] {
-            self.inst(inst, func, builder);
+        for &inst in &builder.body.insts[insts] {
+            self.inst(inst, builder);
         }
 
-        self.control_flow(control_flow, func, builder);
+        self.control_flow(control_flow, builder);
 
         let visit_count = 0;
         if ref_count == visit_count {
@@ -83,39 +72,33 @@ impl Generator<'_> {
         ir_block
     }
 
-    fn inst(&mut self, inst: InstMir, func: &FuncMir, builder: &mut FunctionBuilder) {
+    fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder) {
         match inst {
             InstMir::Int(value, ret) => {
-                let ty = self.ty_repr(func.value_ty(ret));
+                let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
                 let value = builder.ins().iconst(ty, value);
                 self.gen_resources.values[ret] = value.into();
             }
             InstMir::Access(..) => (),
-            InstMir::Call(call, ret) => self.call(call, ret, func, builder),
-            InstMir::Const(id, ret) => self.r#const(id, ret, func, builder),
+            InstMir::Call(call, ret) => self.call(call, ret, builder),
+            InstMir::Const(id, ret) => self.r#const(id, ret, builder),
         }
     }
 
-    fn r#const(
-        &mut self,
-        id: VRef<FuncConstMir>,
-        ret: VRef<ValueMir>,
-        func: &FuncMir,
-        builder: &mut FunctionBuilder,
-    ) {
-        let value = if self.gen_resources.jit {
+    fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
+        let value = if builder.isa.jit {
             // since this si already compile time, we inline the constant
             // expression
 
-            let block_id = func.constants[id].block;
+            let block_id = builder.body.constants[id].block;
             let BlockMir {
                 insts,
                 control_flow,
                 ..
-            } = func.blocks[block_id];
+            } = builder.body.blocks[block_id];
 
-            for &inst in &func.insts[insts] {
-                self.inst(inst, func, builder);
+            for &inst in &builder.body.insts[insts] {
+                self.inst(inst, builder);
             }
 
             #[allow(irrefutable_let_patterns)]
@@ -129,7 +112,7 @@ impl Generator<'_> {
         } else {
             let value = self.gen_resources.func_constants[id]
                 .expect("Constant should be computed before function compilation.");
-            let ty = self.ty_repr(func.value_ty(ret));
+            let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
 
             Some(match value {
                 GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
@@ -147,12 +130,11 @@ impl Generator<'_> {
             args,
         }: CallMir,
         ret: VRef<ValueMir>,
-        func: &FuncMir,
-        builder: &mut FunctionBuilder,
+        builder: &mut GenBuilder,
     ) {
         match callable {
             CallableMir::Func(func_id) => {
-                let args = func.value_args[args]
+                let args = builder.body.value_args[args]
                     .iter()
                     .map(|&arg| self.gen_resources.values[arg].expand())
                     .collect::<Option<BumpVec<_>>>()
@@ -163,7 +145,7 @@ impl Generator<'_> {
                     return;
                 }
 
-                let func_ref = self.instantiate(func_id, params, func, builder);
+                let func_ref = self.instantiate(func_id, params, builder);
 
                 let inst = builder.ins().call(func_ref, &args);
                 if let Some(&value) = builder.inst_results(inst).first() {
@@ -180,7 +162,7 @@ impl Generator<'_> {
         func_id: VRef<Func>,
         args: BumpVec<ir::Value>,
         ret: VRef<ValueMir>,
-        builder: &mut FunctionBuilder,
+        builder: &mut GenBuilder,
     ) {
         let Func { signature, loc, .. } = self.typec.funcs[func_id];
         let op_str = &self.interner[loc.name];
@@ -211,25 +193,24 @@ impl Generator<'_> {
         &mut self,
         func_id: VRef<Func>,
         params: VRefSlice<MirTy>,
-        func: &FuncMir,
-        builder: &mut FunctionBuilder,
+        builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let id = if params.is_empty() {
             let id = self.typec.funcs.id(func_id);
             self.interner
-                .intern(ident!(self.gen_resources.triple.as_str(), "&", id))
+                .intern(ident!(builder.isa.triple.index() as u32, "&", id))
         } else {
             let start = ident!(
-                self.gen_resources.triple.as_str(),
+                builder.isa.triple.index() as u32,
                 "&",
                 self.typec.funcs.id(func_id),
                 "["
             );
             let params = ident_join(
                 ", ",
-                func.ty_params[params]
+                builder.body.ty_params[params]
                     .iter()
-                    .map(|&ty| self.typec.types.id(func.dependant_types[ty].ty)),
+                    .map(|&ty| self.typec.types.id(builder.body.dependant_types[ty].ty)),
             );
             let end = ident!("]");
             let segments = start.into_iter().chain(params).chain(end);
@@ -241,9 +222,9 @@ impl Generator<'_> {
         }
 
         let func = self.gen.compiled_funcs.get_or_insert(id, |s| {
-            let params = func.ty_params[params]
+            let params = builder.body.ty_params[params]
                 .iter()
-                .map(|&ty| func.dependant_types[ty].ty);
+                .map(|&ty| builder.body.dependant_types[ty].ty);
             self.compile_requests.add_request(s.next(), func_id, params);
             CompiledFunc::new(func_id)
         });
@@ -258,7 +239,7 @@ impl Generator<'_> {
     pub fn import_compiled_func(
         &mut self,
         func: VRef<CompiledFunc>,
-        builder: &mut FunctionBuilder,
+        builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let name = builder
             .func
@@ -269,13 +250,12 @@ impl Generator<'_> {
 
         let func_id = self.gen.compiled_funcs[func].func;
         let Func {
-            signature: sig,
+            signature,
             visibility,
             ..
         } = self.typec.funcs[func_id];
 
-        let mut signature = ir::Signature::new(CallConv::SystemV);
-        self.load_signature(sig, &mut signature);
+        let signature = self.load_signature(signature, builder.ptr_ty());
         let signature = builder.import_signature(signature);
 
         builder.import_function(ExtFuncData {
@@ -285,12 +265,7 @@ impl Generator<'_> {
         })
     }
 
-    fn control_flow(
-        &mut self,
-        control_flow: ControlFlowMir,
-        _func: &FuncMir,
-        builder: &mut FunctionBuilder,
-    ) {
+    fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
                 if let Some(ret) = ret.expand() {
@@ -303,17 +278,28 @@ impl Generator<'_> {
         }
     }
 
-    pub fn load_signature(&mut self, signature: Signature, target: &mut ir::Signature) {
+    pub fn load_signature(&mut self, signature: Signature, ptr_ty: Type) -> ir::Signature {
+        let mut sig = ir::Signature::new(CallConv::Fast);
+        self.populate_signature(signature, &mut sig, ptr_ty);
+        sig
+    }
+
+    pub fn populate_signature(
+        &mut self,
+        signature: Signature,
+        target: &mut ir::Signature,
+        ptr_ty: Type,
+    ) {
         let cc = self.cc(signature.cc);
 
         target.clear(cc);
         let args = self.typec.ty_slices[signature.args]
             .iter()
-            .map(|&ty| self.ty_repr(ty))
+            .map(|&ty| self.ty_repr(ty, ptr_ty))
             .map(AbiParam::new);
         target.params.extend(args);
 
-        let ret = self.ty_repr(signature.ret);
+        let ret = self.ty_repr(signature.ret, ptr_ty);
         target.returns.push(AbiParam::new(ret));
     }
 
@@ -325,11 +311,11 @@ impl Generator<'_> {
         self.interner[cc].parse().unwrap_or(CallConv::Fast)
     }
 
-    fn ty_repr(&mut self, ty: VRef<Ty>) -> Type {
-        self.ty_layout(ty, &[]).repr
+    fn ty_repr(&mut self, ty: VRef<Ty>, ptr_ty: Type) -> Type {
+        self.ty_layout(ty, &[], ptr_ty).repr
     }
 
-    fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>]) -> Layout {
+    fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>], ptr_ty: Type) -> Layout {
         if let Some(layout) = self.gen_layouts.mapping[ty].expand() {
             return layout;
         }
@@ -340,7 +326,7 @@ impl Generator<'_> {
 
                 let layouts = self.typec.fields[s.fields]
                     .iter()
-                    .map(|field| self.ty_layout(field.ty, params));
+                    .map(|field| self.ty_layout(field.ty, params, ptr_ty));
 
                 let mut align = 1;
                 let mut size = 0;
@@ -363,10 +349,10 @@ impl Generator<'_> {
                 }
             }
             TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
-                repr: self.ptr_ty,
+                repr: ptr_ty,
                 offsets: VSlice::empty(),
-                align: self.ptr_ty.bytes() as u8,
-                size: self.ptr_ty.bytes() as u32,
+                align: ptr_ty.bytes() as u8,
+                size: ptr_ty.bytes() as u32,
             },
             TyKind::Integer(int) => Layout {
                 size: int.size as u32,
@@ -374,7 +360,7 @@ impl Generator<'_> {
                 align: int.size,
                 repr: Self::repr_for_size(int.size as u32),
             },
-            TyKind::Param(index) => self.ty_layout(params[index as usize], &[]),
+            TyKind::Param(index) => self.ty_layout(params[index as usize], &[], ptr_ty),
             TyKind::Bool => Layout {
                 repr: types::B1,
                 offsets: VSlice::empty(),
@@ -390,7 +376,7 @@ impl Generator<'_> {
                         _ => ty,
                     })
                     .collect::<BumpVec<_>>();
-                self.ty_layout(inst.base, &params)
+                self.ty_layout(inst.base, &params, ptr_ty)
             }
 
             TyKind::Inferred | TyKind::SelfBound => unreachable!(),

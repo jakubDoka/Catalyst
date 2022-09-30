@@ -7,7 +7,7 @@ file "stages/packaging/src/state_gen.rs" {
         mut Packages
         mut Workspace
         mut Interner
-        mut PackageGraph        
+        mut PackageGraph
     }
 }
 
@@ -73,18 +73,14 @@ file "stages/gen/src/state_gen.rs" {
     use "storage"
     use "typec_t"
     use "packaging_t"
-    use "cranelift_codegen::ir"
-
 
     struct Generator {
-        owned ptr_ty: Type
-
         mut CompileRequests
         mut GenLayouts
         mut Gen
         mut GenResources
         mut Interner
-        
+
         Typec
         Packages
     }

@@ -8,6 +8,7 @@ use cranelift_codegen::{
     settings, CodegenError, Context,
 };
 
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use mir_t::*;
 use storage::*;
 use target_lexicon::Triple;
@@ -144,8 +145,6 @@ pub struct GenResources {
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
-    pub triple: String,
-    pub jit: bool,
 }
 
 impl GenResources {
@@ -153,16 +152,11 @@ impl GenResources {
         Self::default()
     }
 
-    pub fn clear(&mut self, next_triplet: &Triple, jit: bool) {
+    pub fn clear(&mut self) {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
         // self.func_constants.clear();
-        self.triple.clear();
-
-        use std::fmt::Write;
-        write!(self.triple, "{}", next_triplet).unwrap();
-        self.jit = jit;
     }
 }
 
@@ -264,12 +258,14 @@ pub struct Isa {
     pub triple: VRef<str>,
     pub pointer_ty: Type,
     pub inner: Box<dyn TargetIsa>,
+    pub jit: bool,
 }
 
 impl Isa {
     pub fn new(
         triple: Triple,
         flags: settings::Flags,
+        jit: bool,
         interner: &mut Interner,
     ) -> Result<Self, IsaCreationError> {
         let triple_str = interner.intern_str(&triple.to_string());
@@ -281,6 +277,7 @@ impl Isa {
                 triple: triple_str,
                 pointer_ty: isa.pointer_type(),
                 inner: isa,
+                jit,
             })
     }
 }
@@ -313,5 +310,48 @@ impl std::fmt::Display for IsaCreationError {
             IsaCreationError::Lookup(e) => write!(f, "Lookup error: {}", e),
             IsaCreationError::Codegen(e) => write!(f, "Codegen error: {}", e),
         }
+    }
+}
+
+//////////////////////////////////
+/// Function builder
+//////////////////////////////////
+
+pub struct GenBuilder<'a, 'b> {
+    pub isa: &'a Isa,
+    pub body: &'a FuncMir,
+    inner: FunctionBuilder<'b>,
+}
+
+impl<'a, 'b> GenBuilder<'a, 'b> {
+    pub fn new(
+        isa: &'a Isa,
+        body: &'a FuncMir,
+        func: &'b mut ir::Function,
+        ctx: &'b mut FunctionBuilderContext,
+    ) -> Self {
+        Self {
+            isa,
+            body,
+            inner: FunctionBuilder::new(func, ctx),
+        }
+    }
+
+    pub fn ptr_ty(&self) -> Type {
+        self.isa.pointer_ty
+    }
+}
+
+impl<'b> Deref for GenBuilder<'_, 'b> {
+    type Target = FunctionBuilder<'b>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for GenBuilder<'_, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

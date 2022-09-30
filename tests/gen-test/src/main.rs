@@ -4,7 +4,7 @@
 use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
 use cranelift_codegen::{ir::InstBuilder, settings, Context};
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_frontend::FunctionBuilderContext;
 
 use diags::*;
 use gen::*;
@@ -54,12 +54,14 @@ impl TestState {
             let object_isa = Isa::new(
                 Triple::host(),
                 settings::Flags::new(settings::builder()),
+                false,
                 &mut self.interner,
             )
             .unwrap();
             let jit_isa = Isa::new(
                 Triple::host(),
                 settings::Flags::new(settings::builder()),
+                true,
                 &mut self.interner,
             )
             .unwrap();
@@ -107,16 +109,20 @@ impl TestState {
         later_init.context.clear();
         later_init.context.func.signature.clear(default_cc);
 
-        let mut builder =
-            FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx);
+        let dummy = FuncMir::default();
+        let mut builder = GenBuilder::new(
+            &later_init.jit_context.isa,
+            &dummy,
+            &mut later_init.context.func,
+            &mut later_init.func_ctx,
+        );
 
         let entry_point = builder.create_block();
         builder.append_block_params_for_function_params(entry_point);
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let func_ref = generator!(self, later_init.object_context.isa.pointer_type())
-                .import_compiled_func(func, &mut builder);
+            let func_ref = generator!(self).import_compiled_func(func, &mut builder);
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
         }
@@ -162,19 +168,21 @@ impl TestState {
             CompiledFunc::new(Func::ANON_TEMP),
         );
 
-        let func_ent = &mut self.typec.funcs[Func::ANON_TEMP];
-        func_ent.signature.ret = body.dependant_types[const_mir.ty].ty;
-        func_ent.signature.cc = self.interner.intern_str("windows_fastcall").into();
+        let signature = Signature {
+            cc: self.interner.intern_str("windows_fastcall").into(),
+            ret: body.dependant_types[const_mir.ty].ty,
+            ..Default::default()
+        };
+
+        let mut builder = GenBuilder::new(
+            &later_init.jit_context.isa,
+            body,
+            &mut later_init.context.func,
+            &mut later_init.func_ctx,
+        );
 
         let root_block = const_mir.block;
-        generator!(self, later_init.object_context.isa.pointer_type()).generate(
-            Func::ANON_TEMP,
-            body,
-            root_block,
-            &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-            later_init.object_context.isa.triple(),
-            true,
-        );
+        generator!(self).generate(signature, root_block, &mut builder);
 
         write!(
             self.functions,
@@ -195,6 +203,7 @@ impl TestState {
 
         while let Some(current_func) = compile_queue.pop() {
             let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
+            let Func { signature, .. } = self.typec.funcs[func];
             let body = self.mir.bodies[func].take().expect("should be generated");
 
             let root_block = body
@@ -203,14 +212,14 @@ impl TestState {
                 .next()
                 .expect("function without blocks is invalid");
 
-            generator!(self, later_init.object_context.isa.pointer_type()).generate(
-                func,
+            let mut builder = GenBuilder::new(
+                &later_init.jit_context.isa,
                 &body,
-                root_block,
-                &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-                later_init.object_context.isa.triple(),
-                true,
+                &mut later_init.context.func,
+                &mut later_init.func_ctx,
             );
+
+            generator!(self).generate(signature, root_block, &mut builder);
 
             self.mir.bodies[func].replace(body);
 
@@ -282,6 +291,7 @@ impl Scheduler for TestState {
 
         while let Some(current_func) = compile_queue.pop() {
             let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
+            let signature = self.typec.funcs[func].signature;
             let body = self.mir.bodies[func].take().expect("should be generated");
 
             for (id, &const_block) in body.constants.iter() {
@@ -295,14 +305,14 @@ impl Scheduler for TestState {
                 .next()
                 .expect("function without blocks is invalid");
 
-            generator!(self, later_init.object_context.isa.pointer_type()).generate(
-                func,
+            let mut builder = GenBuilder::new(
+                &later_init.jit_context.isa,
                 &body,
-                root_block,
-                &mut FunctionBuilder::new(&mut later_init.context.func, &mut later_init.func_ctx),
-                later_init.object_context.isa.triple(),
-                false,
+                &mut later_init.context.func,
+                &mut later_init.func_ctx,
             );
+
+            generator!(self).generate(signature, root_block, &mut builder);
 
             self.mir.bodies[func].replace(body);
 
