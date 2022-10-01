@@ -19,13 +19,29 @@ impl TyUtils<'_> {
     }
 
     pub fn instantiate(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>]) -> VRef<Ty> {
-        match self.typec.types[ty].kind {
+        unsafe { self.instantiate_low::<false>(ty, params).unwrap_unchecked() }
+    }
+
+    pub fn try_instantiate(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>]) -> Option<VRef<Ty>> {
+        self.instantiate_low::<true>(ty, params)
+    }
+
+    pub fn instantiate_low<const CAN_FAIL: bool>(
+        &mut self,
+        ty: VRef<Ty>,
+        params: &[VRef<Ty>],
+    ) -> Option<VRef<Ty>> {
+        if CAN_FAIL && ty == Ty::INFERRED {
+            return None;
+        }
+
+        Some(match self.typec.types[ty].kind {
             TyKind::Instance(TyInstance { base, args }) => {
                 let params = self.typec.ty_slices[args]
                     .to_bumpvec()
                     .into_iter()
-                    .map(|arg| self.instantiate(arg, params))
-                    .collect::<BumpVec<_>>();
+                    .map(|arg| self.instantiate_low::<CAN_FAIL>(arg, params))
+                    .collect::<Option<BumpVec<_>>>()?;
 
                 let generic = params.iter().any(|&arg| self.typec.types.is_generic(arg));
 
@@ -48,8 +64,8 @@ impl TyUtils<'_> {
                 mutability,
                 depth,
             }) => {
-                let base = self.instantiate(base, params);
-                let mutability = self.instantiate(mutability, params);
+                let base = self.instantiate_low::<CAN_FAIL>(base, params)?;
+                let mutability = self.instantiate_low::<CAN_FAIL>(mutability, params)?;
                 let generic =
                     self.typec.types.is_generic(base) | self.typec.types.is_generic(mutability);
 
@@ -73,6 +89,6 @@ impl TyUtils<'_> {
             TyKind::Struct(_) | TyKind::Integer(_) | TyKind::Bool => ty,
 
             TyKind::Inferred | TyKind::SelfBound => unreachable!(),
-        }
+        })
     }
 }

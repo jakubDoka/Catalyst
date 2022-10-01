@@ -7,6 +7,7 @@ use parsing::*;
 use parsing_t::*;
 use scope::*;
 use storage::*;
+use typec_shared::*;
 use typec_t::*;
 
 use crate::{ty_parser::ModLookup, *};
@@ -253,7 +254,10 @@ impl TyChecker<'_> {
             UnitExprAst::Path(path) => {
                 let func = self.func_path(path, builder)?;
                 match func {
-                    Ok(direct) => self.direct_concrete_call(direct, args, call.span(), builder),
+                    Ok(direct) if self.typec.funcs[direct].generics.is_empty() => {
+                        self.direct_concrete_call(direct, args, call.span(), builder)
+                    }
+                    Ok(direct) => self.direct_generic_call(direct, args, call.span(), builder),
                     Err(_pointer) => todo!(),
                 }
             }
@@ -265,6 +269,97 @@ impl TyChecker<'_> {
                 todo!()
             }
         }
+    }
+
+    fn direct_generic_call<'a>(
+        &mut self,
+        func: VRef<Func>,
+        args: CallArgsAst,
+        span: Span,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let Func {
+            generics,
+            signature,
+            ..
+        } = self.typec.funcs[func];
+
+        let mut params = bumpvec![Ty::INFERRED; self.typec.bound_slices[generics].len()];
+
+        let args = args
+            .iter()
+            .zip(self.typec.ty_slices[signature.args].to_bumpvec())
+            .map(|(&arg, ty)| {
+                let inferred = ty_utils!(self).try_instantiate(ty, &params);
+                let expr = self.expr(arg, inferred, builder)?;
+
+                if inferred.is_none() {
+                    self.infer_params(&mut params, expr.ty, ty, arg.span())?;
+                }
+
+                Some(expr.node)
+            })
+            .nsc_collect::<Option<BumpVec<_>>>()?;
+
+        if params.contains(&Ty::INFERRED) {
+            todo!()
+        }
+
+        let args = builder.arena.alloc_iter(args);
+        let params = builder.arena.alloc_iter(params);
+        let ty = ty_utils!(self).instantiate(signature.ret, params);
+
+        let call = CallTir {
+            func: CallableTir::Func(func),
+            args,
+            span,
+            params,
+            ty,
+        };
+
+        self.node(ty, call, builder)
+    }
+
+    fn infer_params(
+        &mut self,
+        params: &mut [VRef<Ty>],
+        reference: VRef<Ty>,
+        template: VRef<Ty>,
+        span: Span,
+    ) -> Option<()> {
+        let mut stack = bumpvec![(reference, template)];
+
+        while let Some((reference, template)) = stack.pop() {
+            if reference == template {
+                continue;
+            }
+
+            match (
+                self.typec.types[reference].kind,
+                self.typec.types[template].kind,
+            ) {
+                (TyKind::Pointer(reference), TyKind::Pointer(template)) => {
+                    stack.push((reference.base, template.base));
+                    stack.push((reference.mutability, template.mutability));
+                }
+                (TyKind::Instance(reference), TyKind::Instance(template)) => {
+                    self.type_check(template.base, reference.base, span)?;
+                    stack.extend(
+                        self.typec.ty_slices[reference.args]
+                            .iter()
+                            .copied()
+                            .zip(self.typec.ty_slices[template.args].iter().copied()),
+                    );
+                }
+                (_, TyKind::Param(index)) if params[index as usize] == Ty::INFERRED => todo!(),
+                (_, TyKind::Param(index)) => {
+                    self.type_check(params[index as usize], reference, span)?;
+                }
+                _ => self.generic_ty_mismatch(reference, template, span)?,
+            }
+        }
+
+        Some(())
     }
 
     fn direct_concrete_call<'a>(
