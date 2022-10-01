@@ -1,0 +1,8 @@
+error: expected ',' but got Ident
+ --> generic\root.ctl:1:76
+  |
+1 | fn [T] pass(value : T) -> T => value ; #[entry] ; fn main -> u32 => pass(0uint) ;
+  |                                                                            ^^^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> call -> list
+
