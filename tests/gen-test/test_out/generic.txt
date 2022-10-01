@@ -1,0 +1,22 @@
+error: type not found
+ --> generic\root.ctl:2:20
+  |
+2 | fn [T] pass(value: T) -> T => value
+  |                    ^ this does not exist
+  |
+  = info: queried 'T'
+
+error: function or variable not found
+ --> generic\root.ctl:4:20
+  |
+4 | fn main -> uint => pass(0)
+  |                    ^^^^ this does not exist
+  |
+  = info: queried 'pass'
+
+info: mir repr of functions:
+
+
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
+
