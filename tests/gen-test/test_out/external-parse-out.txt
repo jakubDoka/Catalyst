@@ -1,0 +1,16 @@
+error: expected '=>' | '{' | 'extern' but got '\n' | ';'
+ --> external\root.ctl:1:38
+  |
+1 | fn "default" putchar(c : u32) -> u32 ; #[entry] ; fn main -> uint => { putchar(92) ; putchar(12) ; 0 } ;
+  |                                      ^ token located here
+  |
+  = info: list -> item -> function definition -> function body
+
+error: expected Ident | '\' | 'return' | Int | 'const' but got '{'
+ --> external\root.ctl:1:70
+  |
+1 | fn "default" putchar(c : u32) -> u32 ; #[entry] ; fn main -> uint => { putchar(92) ; putchar(12) ; 0 } ;
+  |                                                                      ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr
+
