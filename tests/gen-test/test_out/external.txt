@@ -1,14 +1,22 @@
-error: function or variable not found
- --> external\root.ctl:6:5
-  |
-6 |     putchar('\n')
-  |     ^^^^^^^ this does not exist
-  |
-  = info: queried 'putchar'
-
 info: mir repr of functions:
+const function u0:0() -> i64 windows_fastcall {
+    sig0 = (i64) -> i64 windows_fastcall
+    fn0 = u0:2 sig0
+
+block0:
+    v0 = iconst.i64 1
+    v1 = call fn0(v0)  ; v0 = 1
+    return v1
+}
 
 
-error: no entry points found
- = help: add '#[entry]' to a function that should take this role
+function u0:0() -> i64 fast {
+block0:
+    v0 = iconst.i64 0x0198_94b4_0c80
+    v1 = iconst.i64 0
+    return v1  ; v1 = 0
+}
+
+
+
 
