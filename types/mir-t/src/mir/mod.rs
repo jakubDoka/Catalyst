@@ -1,5 +1,6 @@
 use lexing_t::*;
 use storage::*;
+use typec_shared::TyUtils;
 use typec_t::*;
 
 pub mod builder;
@@ -15,8 +16,36 @@ pub struct FuncConstMir {
     pub block: VRef<BlockMir>,
 }
 
+#[derive(Default)]
+pub struct MirTypeSwapper {
+    swapped: Vec<VRef<Ty>>,
+}
+
+impl MirTypeSwapper {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn swap(&mut self, func: &mut FuncMir, params: &[VRef<Ty>], ty_utils: &mut TyUtils) {
+        for &mir_ty in &func.ty_params[func.generics] {
+            let ty = func.dependant_types[mir_ty].ty;
+            let new_ty = ty_utils.instantiate(ty, params);
+            func.dependant_types[mir_ty].ty = new_ty;
+            self.swapped.push(ty);
+        }
+    }
+
+    pub fn swap_back(&mut self, func: &mut FuncMir) {
+        for (ty, &mir_ty) in self.swapped.drain(..).zip(&func.ty_params[func.generics]) {
+            func.dependant_types[mir_ty].ty = ty;
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct FuncMir {
+    pub ret: VRef<MirTy>,
+    pub generics: VRefSlice<MirTy>,
     pub blocks: PushMap<BlockMir>,
     pub insts: BumpMap<InstMir>,
     pub values: PushMap<ValueMir>,
@@ -42,6 +71,8 @@ impl FuncMir {
 impl Default for FuncMir {
     fn default() -> Self {
         Self {
+            ret: MirTy::UNIT,
+            generics: Default::default(),
             blocks: Default::default(),
             insts: Default::default(),
             values: {

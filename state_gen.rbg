@@ -80,8 +80,8 @@ file "stages/gen/src/state_gen.rs" {
         mut Gen
         mut GenResources
         mut Interner
-
-        Typec
+        mut Typec
+        
         Packages
     }
 }

@@ -11,7 +11,7 @@ use storage::*;
 #[derive(Default)]
 pub struct Scope {
     data: Map<VRef<str>, Maybe<Item>>,
-    frames: Frames<(VRef<str>, Maybe<Item>)>,
+    pushed: Vec<(VRef<str>, Maybe<Item>)>,
 }
 
 impl Scope {
@@ -40,7 +40,7 @@ impl Scope {
 
     pub fn push(&mut self, item: impl Into<Item>) {
         let item: Item = item.into();
-        self.frames.push((
+        self.pushed.push((
             item.id,
             self.data
                 .insert(item.id, item.into())
@@ -48,12 +48,12 @@ impl Scope {
         ));
     }
 
-    pub fn start_frame(&mut self) {
-        self.frames.mark();
+    pub fn start_frame(&mut self) -> ScopeFrame {
+        ScopeFrame(self.pushed.len())
     }
 
-    pub fn end_frame(&mut self) {
-        for (id, item) in self.frames.pop() {
+    pub fn end_frame(&mut self, frame: ScopeFrame) {
+        for (id, item) in self.pushed.drain(frame.0..) {
             if let Some(item) = item.expand() {
                 self.data.insert(id, item.into());
             } else {
@@ -109,9 +109,11 @@ impl Scope {
 
     pub fn clear(&mut self) {
         self.data.clear();
-        self.frames.clear();
+        self.pushed.clear();
     }
 }
+
+pub struct ScopeFrame(usize);
 
 pub enum ScopeError {
     NotFound,

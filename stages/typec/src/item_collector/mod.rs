@@ -53,11 +53,14 @@ impl TyChecker<'_> {
         let parsed_generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
+        let frame = self.scope.start_frame();
+        self.insert_generics(generics, 0);
         let args = args
             .iter()
             .map(|arg| self.ty(arg.ty))
             .nsc_collect::<Option<BumpVec<_>>>()?;
         let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Some(Ty::UNIT))?;
+        self.scope.end_frame(frame);
 
         let signature = Signature {
             cc: cc.map(|cc| cc.ident).into(),

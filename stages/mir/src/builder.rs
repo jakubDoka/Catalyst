@@ -124,7 +124,7 @@ impl MirChecker<'_> {
             CallableTir::Pointer(expr) => CallableMir::Pointer(self.node(expr, builder)?),
         };
 
-        let params = builder.ctx.project_ty_slice(params);
+        let params = builder.ctx.project_ty_slice(params, self.typec);
 
         let args = args
             .iter()
@@ -132,7 +132,7 @@ impl MirChecker<'_> {
             .collect::<Option<BumpVec<_>>>()?;
         let args = builder.ctx.func.value_args.bump(args);
 
-        let value = builder.value(ty);
+        let value = builder.value(ty, self.typec);
         let call = InstMir::Call(
             CallMir {
                 callable,
@@ -146,7 +146,7 @@ impl MirChecker<'_> {
     }
 
     fn int(&mut self, int: IntLit, builder: &mut MirBuilder) -> NodeRes {
-        let value = builder.value(int.ty);
+        let value = builder.value(int.ty, self.typec);
         let lit = span_str!(self, int.span)
             .parse()
             .expect("Lexer should have validated this.");
@@ -155,7 +155,7 @@ impl MirChecker<'_> {
     }
 
     fn char(&mut self, span: Span, builder: &mut MirBuilder) -> NodeRes {
-        let value = builder.value(Ty::CHAR);
+        let value = builder.value(Ty::CHAR, self.typec);
         let lit = Self::parse_char(span_str!(self, span).chars().by_ref())
             .expect("Lexer should have validated this.");
         builder.inst(InstMir::Int(lit as i64, value), span);
@@ -174,7 +174,6 @@ impl MirChecker<'_> {
         };
 
         builder.close_block(span, ControlFlowMir::Return(ret_val.into()));
-
         None
     }
 
@@ -183,7 +182,7 @@ impl MirChecker<'_> {
         let builder = MirBuilder::new(block, ctx);
 
         for &ty in &self.typec.ty_slices[args] {
-            let mir_ty = builder.ctx.project_ty(ty);
+            let mir_ty = builder.ctx.project_ty(ty, self.typec);
             let val = builder.ctx.func.values.push(ValueMir { ty: mir_ty });
             builder.ctx.vars.push(val);
             builder.ctx.args.push(val);

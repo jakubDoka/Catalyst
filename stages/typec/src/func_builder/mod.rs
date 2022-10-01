@@ -111,7 +111,7 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let frame = builder.start_frame();
-        self.scope.start_frame();
+        let scope_frame = self.scope.start_frame();
 
         let Some((last, other)) = block.elements.split_last() else {
             return self.node(Ty::UNIT, BlockTir { nodes: &[], ty: Ty::UINT, span: block.span() }, builder)
@@ -129,7 +129,7 @@ impl TyChecker<'_> {
         let last = last?;
         store.push(last.node);
 
-        self.scope.end_frame();
+        self.scope.end_frame(scope_frame);
 
         let nodes = builder.arena.alloc_slice(&store);
         self.node(
@@ -471,7 +471,7 @@ impl TyChecker<'_> {
 
         push generic_ty_mismatch(self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) {
             err: "type mismatch";
-            info: ("expected {} but got {}", self.type_diff(expected, got), self.type_diff(got, expected));
+            info: ("expected '{}' but got '{}'", self.type_diff(expected, got), self.type_diff(got, expected));
             (span, self.current_file) {
                 err[span]: "mismatch occurred here";
             }

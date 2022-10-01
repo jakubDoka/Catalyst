@@ -127,6 +127,7 @@ impl CompileRequests {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct CompileRequest {
     pub id: VRef<CompiledFunc>,
     pub func: VRef<Func>,

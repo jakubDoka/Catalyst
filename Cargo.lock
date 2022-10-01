@@ -235,6 +235,7 @@ dependencies = [
  "region",
  "storage",
  "target-lexicon",
+ "typec-shared",
  "typec-t",
  "windows-sys",
 ]
@@ -260,6 +261,7 @@ dependencies = [
  "target-lexicon",
  "testing",
  "typec",
+ "typec-shared",
  "typec-t",
 ]
 
@@ -398,6 +400,7 @@ version = "0.1.0"
 dependencies = [
  "lexing-t",
  "storage",
+ "typec-shared",
  "typec-t",
 ]
 

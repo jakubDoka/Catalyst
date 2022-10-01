@@ -6,6 +6,7 @@ use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
 use cranelift_codegen::{ir::InstBuilder, settings, Context};
 use cranelift_frontend::FunctionBuilderContext;
+use target_lexicon::Triple;
 
 use diags::*;
 use gen::*;
@@ -16,9 +17,9 @@ use packaging_t::*;
 use parsing::*;
 use scope::*;
 use storage::*;
-use target_lexicon::Triple;
 use testing::*;
 use typec::*;
+use typec_shared::*;
 use typec_t::*;
 
 struct LaterInit {
@@ -46,6 +47,7 @@ struct TestState {
     later_init: Option<LaterInit>,
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
+    mir_type_swapper: MirTypeSwapper,
 }
 
 impl TestState {
@@ -74,7 +76,7 @@ impl TestState {
         })
     }
 
-    fn collect_entry_points(&mut self, triple: VRef<str>) -> Vec<VRef<CompiledFunc>> {
+    fn collect_entry_points(&mut self, triple: VRef<str>) -> Vec<CompileRequest> {
         let entry_points = self
             .mir_ctx
             .just_compiled
@@ -84,13 +86,20 @@ impl TestState {
                 let id = self
                     .interner
                     .intern(ident!(triple, "&", self.typec.funcs.id(func)));
-                self.gen
+                let id = self
+                    .gen
                     .compiled_funcs
-                    .insert_unique(id, CompiledFunc::new(func))
+                    .insert_unique(id, CompiledFunc::new(func));
+                CompileRequest {
+                    id,
+                    func,
+                    params: Default::default(),
+                }
             })
             .collect::<Vec<_>>();
 
-        self.entry_points.extend(&entry_points);
+        self.entry_points
+            .extend(entry_points.iter().map(|req| req.id));
 
         entry_points
     }
@@ -125,7 +134,8 @@ impl TestState {
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let func_ref = generator!(self).import_compiled_func(func, &mut builder);
+            let func_ref =
+                generator!(self).import_compiled_func(func, VSlice::empty(), &mut builder);
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
         }
@@ -156,7 +166,7 @@ impl TestState {
             .unwrap();
     }
 
-    fn compute_func_constant(
+    fn compute_func_constants(
         &mut self,
         target_func: VRef<CompiledFunc>,
         later_init: &mut LaterInit,
@@ -189,6 +199,9 @@ impl TestState {
         };
 
         for (key, const_mir) in body.constants.iter() {
+            let root_block = const_mir.block;
+            signature.ret = body.dependant_types[const_mir.ty].ty;
+
             let mut builder = GenBuilder::new(
                 &later_init.jit_context.isa,
                 &body,
@@ -196,9 +209,7 @@ impl TestState {
                 &mut later_init.func_ctx,
             );
 
-            let root_block = const_mir.block;
-            signature.ret = body.dependant_types[const_mir.ty].ty;
-            generator!(self).generate(signature, root_block, &mut builder);
+            generator!(self).generate(signature, &[], root_block, &mut builder);
 
             write!(
                 self.functions,
@@ -252,7 +263,7 @@ impl TestState {
                     &mut later_init.func_ctx,
                 );
 
-                generator!(self).generate(signature, root_block, &mut builder);
+                generator!(self).generate(signature, &[], root_block, &mut builder);
 
                 write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
 
@@ -339,29 +350,39 @@ impl Scheduler for TestState {
         let mut compiled_funcs = vec![];
         let mut compile_queue = self.collect_entry_points(later_init.object_context.isa.triple);
 
-        while let Some(current_func) = compile_queue.pop() {
-            compiled_funcs.push(current_func);
+        while let Some(request) = compile_queue.pop() {
+            compiled_funcs.push(request);
 
-            let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
             let Func {
                 signature,
                 visibility,
                 ..
-            } = self.typec.funcs[func];
+            } = self.typec.funcs[request.func];
 
             if visibility == FuncVisibility::Imported {
                 continue;
             }
 
-            self.compute_func_constant(current_func, &mut later_init);
+            self.compute_func_constants(request.id, &mut later_init);
 
-            let body = self.mir.bodies[func].as_ref().expect("should be generated");
+            let body = self.mir.bodies[request.func]
+                .as_mut()
+                .expect("should be generated");
+
+            let mut ty_utils = ty_utils!(self);
+            self.mir_type_swapper.swap(
+                body,
+                &self.compile_requests.ty_slices[request.params],
+                &mut ty_utils,
+            );
 
             let root_block = body
                 .blocks
                 .keys()
                 .next()
                 .expect("function without blocks is invalid");
+
+            let params = self.compile_requests.ty_slices[request.params].to_vec();
 
             let mut builder = GenBuilder::new(
                 &later_init.object_context.isa,
@@ -370,24 +391,27 @@ impl Scheduler for TestState {
                 &mut later_init.func_ctx,
             );
 
-            generator!(self).generate(signature, root_block, &mut builder);
+            generator!(self).generate(signature, &params, root_block, &mut builder);
+
+            self.mir_type_swapper.swap_back(body);
 
             write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
 
-            self.compile_func(current_func, &mut later_init);
+            self.compile_func(request.id, &mut later_init);
 
-            let next_iter = self
-                .compile_requests
-                .queue
-                .drain(..)
-                .map(|request| request.id);
+            let next_iter = self.compile_requests.queue.drain(..);
 
             compile_queue.extend(next_iter);
         }
 
         later_init
             .object_context
-            .load_functions(compiled_funcs, &self.gen, &self.typec, &self.interner)
+            .load_functions(
+                compiled_funcs.iter().map(|r| r.id),
+                &self.gen,
+                &self.typec,
+                &self.interner,
+            )
             .unwrap();
 
         self.later_init = Some(later_init);
@@ -501,10 +525,17 @@ fn main() {
 
             #[entry];
             fn main -> uint {
-                const putchar('a');
+                const putchar('a'); // compile time print
                 putchar('\n');
                 0
             };
+        }
+
+        simple "generic" {
+            fn [T] pass(value: T) -> T => value;
+
+            #[entry];
+            fn main -> uint => pass(0);
         }
     }
 }

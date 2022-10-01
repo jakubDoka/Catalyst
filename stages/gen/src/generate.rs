@@ -4,6 +4,7 @@ use cranelift_codegen::{
 };
 use mir_t::*;
 use storage::*;
+use typec_shared::*;
 use typec_t::*;
 
 use crate::*;
@@ -12,15 +13,22 @@ impl Generator<'_> {
     pub fn generate(
         &mut self,
         signature: Signature,
+        params: &[VRef<Ty>],
         root: VRef<BlockMir>,
         builder: &mut GenBuilder,
     ) {
         builder.func.clear();
         self.gen_resources.clear();
 
-        let ptr_ty = builder.ptr_ty();
-        let system_cc = builder.system_cc();
-        self.populate_signature(signature, &mut builder.func.signature, system_cc, ptr_ty);
+        let system_cc = builder.isa.default_call_conv();
+        let ptr_ty = builder.isa.pointer_ty;
+        self.populate_signature(
+            signature,
+            params,
+            &mut builder.func.signature,
+            system_cc,
+            ptr_ty,
+        );
 
         self.block(root, builder);
 
@@ -232,7 +240,7 @@ impl Generator<'_> {
             CompiledFunc::new(func_id)
         });
 
-        let func_ref = self.import_compiled_func(func, builder);
+        let func_ref = self.import_compiled_func(func, params, builder);
 
         self.gen_resources.func_imports.insert(id, func_ref);
 
@@ -242,6 +250,7 @@ impl Generator<'_> {
     pub fn import_compiled_func(
         &mut self,
         func: VRef<CompiledFunc>,
+        params: VRefSlice<MirTy>,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let name = builder
@@ -258,7 +267,13 @@ impl Generator<'_> {
             ..
         } = self.typec.funcs[func_id];
 
-        let signature = self.load_signature(signature, builder.system_cc(), builder.ptr_ty());
+        let params = builder.body.ty_params[params]
+            .iter()
+            .map(|&ty| builder.body.dependant_types[ty].ty)
+            .collect::<BumpVec<_>>();
+
+        let signature =
+            self.load_signature(signature, &params, builder.system_cc(), builder.ptr_ty());
         let signature = builder.import_signature(signature);
 
         builder.import_function(ExtFuncData {
@@ -284,17 +299,19 @@ impl Generator<'_> {
     pub fn load_signature(
         &mut self,
         signature: Signature,
+        params: &[VRef<Ty>],
         system_cc: CallConv,
         ptr_ty: Type,
     ) -> ir::Signature {
         let mut sig = ir::Signature::new(CallConv::Fast);
-        self.populate_signature(signature, &mut sig, system_cc, ptr_ty);
+        self.populate_signature(signature, params, &mut sig, system_cc, ptr_ty);
         sig
     }
 
     pub fn populate_signature(
         &mut self,
         signature: Signature,
+        params: &[VRef<Ty>],
         target: &mut ir::Signature,
         system_cc: CallConv,
         ptr_ty: Type,
@@ -303,12 +320,17 @@ impl Generator<'_> {
 
         target.clear(cc);
         let args = self.typec.ty_slices[signature.args]
-            .iter()
-            .map(|&ty| self.ty_repr(ty, ptr_ty))
+            .to_bumpvec()
+            .into_iter()
+            .map(|ty| {
+                let instance = ty_utils!(self).instantiate(ty, params);
+                self.ty_repr(instance, ptr_ty)
+            })
             .map(AbiParam::new);
         target.params.extend(args);
 
-        let ret = self.ty_repr(signature.ret, ptr_ty);
+        let instance = ty_utils!(self).instantiate(signature.ret, params);
+        let ret = self.ty_repr(instance, ptr_ty);
         target.returns.push(AbiParam::new(ret));
     }
 
@@ -338,7 +360,8 @@ impl Generator<'_> {
                 let mut offsets = bumpvec![cap self.typec.fields[s.fields].len()];
 
                 let layouts = self.typec.fields[s.fields]
-                    .iter()
+                    .to_bumpvec()
+                    .into_iter()
                     .map(|field| self.ty_layout(field.ty, params, ptr_ty));
 
                 let mut align = 1;
@@ -383,11 +406,9 @@ impl Generator<'_> {
             TyKind::Instance(inst) => {
                 // remap the instance parameters so we can compute the layout correctly
                 let params = self.typec.ty_slices[inst.args]
-                    .iter()
-                    .map(|&ty| match self.typec.types[ty].kind {
-                        TyKind::Param(index) => params[index as usize],
-                        _ => ty,
-                    })
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|ty| ty_utils!(self).instantiate(ty, params))
                     .collect::<BumpVec<_>>();
                 self.ty_layout(inst.base, &params, ptr_ty)
             }
