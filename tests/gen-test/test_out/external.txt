@@ -1,0 +1,6 @@
+info: mir repr of functions:
+
+
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
+
