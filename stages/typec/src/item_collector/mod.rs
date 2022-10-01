@@ -63,7 +63,7 @@ impl TyChecker<'_> {
         self.scope.end_frame(frame);
 
         let signature = Signature {
-            cc: cc.map(|cc| cc.ident).into(),
+            cc: cc.map(|cc| cc.ident),
             args: self.typec.ty_slices.bump(args),
             ret,
         };

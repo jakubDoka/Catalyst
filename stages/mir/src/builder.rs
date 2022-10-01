@@ -56,7 +56,7 @@ impl MirChecker<'_> {
         };
 
         let value = self.node(value, builder);
-        builder.close_block(r#const.span, ControlFlowMir::Return(value.into()));
+        builder.close_block(r#const.span, ControlFlowMir::Return(value));
         builder.select_block(prev_block);
 
         let const_mir = FuncConstMir {
@@ -173,7 +173,7 @@ impl MirChecker<'_> {
             None
         };
 
-        builder.close_block(span, ControlFlowMir::Return(ret_val.into()));
+        builder.close_block(span, ControlFlowMir::Return(ret_val));
         None
     }
 

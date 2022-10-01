@@ -153,7 +153,7 @@ impl ModItem {
 pub enum ModKind {
     Package {
         root_module: PathBuf,
-        span: Maybe<Span>,
+        span: Option<Span>,
     },
     Module {
         package: VRef<str>,

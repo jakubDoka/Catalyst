@@ -38,7 +38,7 @@ pub enum FuncVisibility {
 
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
-    pub cc: Maybe<VRef<str>>,
+    pub cc: Option<VRef<str>>,
     pub args: VRefSlice<Ty>,
     pub ret: VRef<Ty>,
 }

@@ -12,7 +12,7 @@ pub type ManifestListAst<'a> = ListAst<'a, ManifestValueAst<'a>, ManifestListMet
 #[derive(Clone, Copy, Debug)]
 pub struct ManifestAst<'a> {
     pub fields: &'a [ManifestFieldAst<'a>],
-    pub deps_span: Maybe<Span>,
+    pub deps_span: Option<Span>,
     pub deps: ManifestDepsAst<'a>,
 }
 
@@ -52,7 +52,7 @@ impl<'a> Ast<'a> for ManifestAst<'a> {
 
         Some(Self {
             fields: ctx.arena.alloc_slice(&fields),
-            deps_span: deps_span.into(),
+            deps_span,
             deps: deps.unwrap_or_default(),
         })
     }
@@ -118,7 +118,7 @@ pub struct ManifestDepAst {
     pub git: bool,
     pub name: NameAst,
     pub path: Span,
-    pub version: Maybe<Span>,
+    pub version: Option<Span>,
     pub span: Span,
 }
 
@@ -135,7 +135,7 @@ impl<'a> Ast<'a> for ManifestDepAst {
         let version = ctx.optional_advance(TokenKind::String).map(|t| t.span);
         let span = start.joined(version.unwrap_or(path));
         let path = path.shrink(1);
-        let version = version.map(|v| v.shrink(1)).into();
+        let version = version.map(|v| v.shrink(1));
         let name = name.unwrap_or_else(|| NameAst::from_path(ctx, path));
 
         Some(Self {

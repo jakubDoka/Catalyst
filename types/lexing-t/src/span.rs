@@ -1,7 +1,5 @@
 use std::ops::{Bound, Range, RangeBounds};
 
-use storage::*;
-
 /// Identical to [`std::ops::Range`]<[`u32`]> but a lot more ergonomic
 /// since it is defined here.
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,18 +105,5 @@ impl Span {
         let end = source[end..].find('\n').map_or(source.len(), |i| i + end);
 
         Span::new(start..end)
-    }
-}
-
-impl Invalid for Span {
-    unsafe fn invalid() -> Self {
-        Span {
-            start: u32::MAX,
-            end: u32::MAX,
-        }
-    }
-
-    fn is_invalid(&self) -> bool {
-        self.start == u32::MAX && self.end == u32::MAX
     }
 }

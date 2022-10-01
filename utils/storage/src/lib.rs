@@ -4,6 +4,7 @@
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(const_trait_impl)]
+#![feature(rustc_attrs)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten
@@ -153,9 +154,6 @@ mod clear;
 mod frames;
 /// String to uid mapping.
 mod interner;
-/// Trait representing invalid value and wrapper [`Maybe`] struct for
-/// representing optional values without memory costs.
-mod invalid;
 /// HashMap wrapper to work with [`Ident`].
 mod map;
 /// Map with addressable values. (by [`VPtr`])
@@ -182,7 +180,6 @@ pub use {
     clear::Clear,
     frames::Frames,
     interner::{ident_join, InternedSegment, Interner},
-    invalid::{Invalid, Maybe},
     map::{IdentPair, Map, SpecialHash},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,

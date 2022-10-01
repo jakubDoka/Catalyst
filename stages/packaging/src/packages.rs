@@ -183,8 +183,8 @@ impl PackageLoader<'_> {
         {
             let path_str = &content[path.range()];
 
-            let version_loc = version.expand().map(|span| (id, span));
-            let version = version.expand().map(|span| &content[span.range()]);
+            let version_loc = version.map(|span| (id, span));
+            let version = version.map(|span| &content[span.range()]);
             let current_loc = Some((id, path));
 
             // find the path of the dependency
@@ -238,9 +238,9 @@ impl PackageLoader<'_> {
         &mut self,
         path: &Path,
         package: VRef<str>,
-        loc: Maybe<Span>,
+        loc: Option<Span>,
     ) -> Option<VRef<str>> {
-        let loc = loc.expand().map(|loc| (package, loc));
+        let loc = loc.map(|loc| (package, loc));
 
         let path = self
             .packages

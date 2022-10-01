@@ -144,7 +144,7 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
             elem.value.display(fmt);
             fmt.write_between(fold, elem.after_value.range());
 
-            if let Some(after) = elem.after_delim.expand() {
+            if let Some(after) = elem.after_delim {
                 // unless we are folding, trailing separator is unwanted
                 if !is_last || fold {
                     fmt.write_span(Span::new(elem.after_value.end()..after.start()));
@@ -324,7 +324,7 @@ impl Fmt {
     pub fn list_element_len<T: FmtAst>(&self, element: &ListElement<T>) -> usize {
         element.value.flat_len(self)
             + self.folded_len_between(element.after_value.range())
-            + element.after_delim.expand().map_or(0, |s| {
+            + element.after_delim.map_or(0, |s| {
                 self.folded_len_between(s.range()) + s.start() - element.after_value.end()
             })
     }

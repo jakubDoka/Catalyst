@@ -70,7 +70,6 @@ impl Typec {
             "fn {}[todo] {}({}) -> {} ",
             signature
                 .cc
-                .expand()
                 .map(|cc| &interner[cc])
                 .map_or(default(), |cc| format!("\"{}\" ", cc)),
             &interner[self.funcs.id(func)],

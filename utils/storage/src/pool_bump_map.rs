@@ -9,7 +9,7 @@ pub type CachedPoolBumpMap<T> = PoolBumpMap<T, Frames<T>>;
 
 struct FreeSlot<T> {
     id: VSlice<T>,
-    next: Maybe<VRef<FreeSlot<T>>>,
+    next: Option<VRef<FreeSlot<T>>>,
 }
 
 /// Struct is similar to [`PoolMap`] as it allows removing elements
@@ -18,7 +18,7 @@ struct FreeSlot<T> {
 /// [`Deref`] or [`DerefMut`] on this struct.
 pub struct PoolBumpMap<T, CACHE = ()> {
     inner: BumpMap<T, CACHE>,
-    heads: Vec<Maybe<VRef<FreeSlot<T>>>>,
+    heads: Vec<Option<VRef<FreeSlot<T>>>>,
     freed: PoolMap<FreeSlot<T>>,
     free_lookup: BitSet,
     tmp: Vec<T>,
@@ -68,7 +68,7 @@ impl<T, CACHE> PoolBumpMap<T, CACHE> {
     }
 
     fn bump_prepared(&mut self) -> VSlice<T> {
-        if let Some(Some(head)) = self.heads.get(self.tmp.len()).map(|v| v.expand()) {
+        if let Some(&Some(head)) = self.heads.get(self.tmp.len()) {
             let FreeSlot { id, next } = self.freed.remove(head);
             assert!(self.free_lookup.remove(id.index()));
             self.heads[self.tmp.len()] = next;
@@ -130,13 +130,13 @@ impl<T, CACHE> PoolBumpMap<T, CACHE> {
 
         let size = self.get(key).len();
         let new_size = self.heads.len().max(size + 1);
-        self.heads.resize(new_size, Maybe::none());
+        self.heads.resize(new_size, None);
 
         let freed = self.freed.push(FreeSlot {
             id: key,
             next: self.heads[size],
         });
-        self.heads[size] = Maybe::some(freed);
+        self.heads[size] = Some(freed);
 
         unsafe {
             Some(

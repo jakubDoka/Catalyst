@@ -53,7 +53,7 @@ impl FmtAst for ManifestDepAst {
 
         fmt.write_wrapped_span(self.path, '"');
 
-        if let Some(version) = self.version.expand() {
+        if let Some(version) = self.version {
             write!(fmt, " ");
             fmt.write_wrapped_span(version, '"');
         }
@@ -64,7 +64,7 @@ impl<'a> FmtAst for ManifestAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         self.fields.iter().for_each(|a| a.display_low(false, fmt));
         fmt.optional_newline();
-        if let Some(deps_span) = self.deps_span.expand() {
+        if let Some(deps_span) = self.deps_span {
             fmt.write_span(deps_span);
             self.deps.display_low(true, fmt);
         }

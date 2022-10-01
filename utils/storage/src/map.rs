@@ -28,15 +28,6 @@ impl Hash for IdentPair {
     }
 }
 
-impl Invalid for IdentPair {
-    unsafe fn invalid() -> Self {
-        IdentPair(VRef::invalid(), VRef::invalid())
-    }
-    fn is_invalid(&self) -> bool {
-        self.0.is_invalid()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SimpleHasherFactory;
 

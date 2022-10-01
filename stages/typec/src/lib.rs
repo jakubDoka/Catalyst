@@ -156,13 +156,13 @@ mod util {
                     diags::Slice {
                         span: types
                             .iter()
-                            .filter_map(|&ty| self.typec.types.locate(ty).whole_span.expand())
+                            .filter_map(|&ty| self.typec.types.locate(ty).whole_span)
                             .reduce(|a, b| a.joined(b))?,
                         origin: self.current_file,
                         annotations: types
                             .iter()
                             .skip(1)
-                            .filter_map(|&ty| self.typec.types.locate(ty).span.expand())
+                            .filter_map(|&ty| self.typec.types.locate(ty).span)
                             .map(
                                 |span| source_annotation!(info[span]: "this type is part of cycle"),
                             )

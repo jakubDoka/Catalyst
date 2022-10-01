@@ -81,7 +81,7 @@ impl TyChecker<'_> {
     ) -> Option<Option<TirNode<'a>>> {
         self.scope.start_frame();
         let Func { signature, .. } = self.typec.funcs[func];
-        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()).into());
+        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()));
 
         self.insert_generics(generics, 0);
         self.args(signature.args, args, &mut builder);

@@ -68,7 +68,7 @@ pub struct MirBuilderCtx {
     pub vars: Vec<VRef<ValueMir>>,
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
-    pub used_types: ShadowMap<Ty, Maybe<VRef<MirTy>>>,
+    pub used_types: ShadowMap<Ty, Option<VRef<MirTy>>>,
     pub just_compiled: Vec<VRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
 }
@@ -106,12 +106,12 @@ impl MirBuilderCtx {
 
     pub fn project_ty_low(
         ty: VRef<Ty>,
-        used_types: &mut ShadowMap<Ty, Maybe<VRef<MirTy>>>,
+        used_types: &mut ShadowMap<Ty, Option<VRef<MirTy>>>,
         dependant_types: &mut PushMap<MirTy>,
         generic_types: &mut Vec<VRef<MirTy>>,
         typec: &Typec,
     ) -> VRef<MirTy> {
-        if let Some(ty) = used_types[ty].expand() {
+        if let Some(ty) = used_types[ty] {
             return ty;
         }
 

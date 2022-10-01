@@ -10,8 +10,8 @@ use storage::*;
 
 #[derive(Default)]
 pub struct Scope {
-    data: Map<VRef<str>, Maybe<Item>>,
-    pushed: Vec<(VRef<str>, Maybe<Item>)>,
+    data: Map<VRef<str>, Option<Item>>,
+    pushed: Vec<(VRef<str>, Option<Item>)>,
 }
 
 impl Scope {
@@ -22,7 +22,7 @@ impl Scope {
     pub fn get(&self, ident: VRef<str>) -> Result<Item, ScopeError> {
         self.data
             .get(&ident)
-            .map(|option| option.as_ref_option().ok_or(ScopeError::Collision))
+            .map(|option| option.as_ref().ok_or(ScopeError::Collision))
             .ok_or(ScopeError::NotFound)
             .flatten()
             .cloned()
@@ -40,12 +40,8 @@ impl Scope {
 
     pub fn push(&mut self, item: impl Into<Item>) {
         let item: Item = item.into();
-        self.pushed.push((
-            item.id,
-            self.data
-                .insert(item.id, item.into())
-                .unwrap_or_else(Maybe::none),
-        ));
+        self.pushed
+            .push((item.id, self.data.insert(item.id, item.into()).flatten()));
     }
 
     pub fn start_frame(&mut self) -> ScopeFrame {
@@ -54,7 +50,7 @@ impl Scope {
 
     pub fn end_frame(&mut self, frame: ScopeFrame) {
         for (id, item) in self.pushed.drain(frame.0..) {
-            if let Some(item) = item.expand() {
+            if let Some(item) = item {
                 self.data.insert(id, item.into());
             } else {
                 self.data.remove(&id);
@@ -84,7 +80,7 @@ impl Scope {
         item: ScopeItem,
     ) -> Result<(), Option<(Span, Span)>> {
         if let Some(existing_option) = self.data.get_mut(&item.id) {
-            let Some(existing) = existing_option.as_mut_option() else {
+            let Some(existing) = existing_option.as_mut() else {
                 if current_module == item.module {
                     *existing_option = item.into();
                 }
@@ -125,37 +121,17 @@ pub enum ScopeError {
 pub struct Item {
     pub id: VRef<str>,
     pub ptr: ScopePtr,
-    pub span: Maybe<Span>,
-    pub whole_span: Maybe<Span>,
-    pub module: Maybe<VRef<str>>,
+    pub span: Option<Span>,
+    pub whole_span: Option<Span>,
+    pub module: Option<VRef<str>>,
     pub vis: Vis,
 }
 
 impl Item {
     /// returns (self.whole_span, self.span)
     fn spans(&self) -> Option<(Span, Span)> {
-        self.span.expand().and_then(|span| {
-            self.whole_span
-                .expand()
-                .map(|whole_span| (whole_span, span))
-        })
-    }
-}
-
-impl Invalid for Item {
-    unsafe fn invalid() -> Self {
-        Item {
-            id: VRef::invalid(),
-            ptr: ScopePtr::invalid(),
-            span: Maybe::none(),
-            whole_span: Maybe::none(),
-            module: Maybe::none(),
-            vis: Vis::None,
-        }
-    }
-
-    fn is_invalid(&self) -> bool {
-        self.id.is_invalid()
+        self.span
+            .and_then(|span| self.whole_span.map(|whole_span| (whole_span, span)))
     }
 }
 
@@ -194,17 +170,17 @@ impl From<ScopeItem> for Item {
         Item {
             id: item.id,
             ptr: item.ptr,
-            span: Maybe::some(item.span),
-            whole_span: Maybe::some(item.whole_span),
-            module: Maybe::some(item.module),
+            span: Some(item.span),
+            whole_span: Some(item.whole_span),
+            module: Some(item.module),
             vis: item.vis,
         }
     }
 }
 
-impl From<ScopeItem> for Maybe<Item> {
+impl From<ScopeItem> for Option<Item> {
     fn from(item: ScopeItem) -> Self {
-        Maybe::some(item.into())
+        Some(item.into())
     }
 }
 
@@ -232,19 +208,6 @@ impl ScopePtr {
 
     pub fn read<T: 'static>(&self) -> VRef<T> {
         self.try_read::<T>().unwrap()
-    }
-}
-
-impl Invalid for ScopePtr {
-    unsafe fn invalid() -> Self {
-        ScopePtr {
-            id: TypeId::of::<InvalidItem>(),
-            ptr: u32::MAX as usize,
-        }
-    }
-
-    fn is_invalid(&self) -> bool {
-        self.id == TypeId::of::<InvalidItem>()
     }
 }
 
@@ -289,8 +252,6 @@ fn test_match_scope_ptr() {
 
     assert!(res == 1);
 }
-
-struct InvalidItem;
 
 impl<T: 'static> From<VRef<T>> for ScopePtr {
     fn from(value: VRef<T>) -> Self {

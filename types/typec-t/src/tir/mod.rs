@@ -8,13 +8,13 @@ pub type TypecOutput<T> = Vec<(usize, VRef<T>)>;
 pub struct TirBuilder<'a> {
     pub arena: &'a Arena,
     pub ret: VRef<Ty>,
-    pub ret_span: Maybe<Span>,
+    pub ret_span: Option<Span>,
     pub vars: Vec<VarTir<'a>>,
     pub runner: Option<(Span, TirFrame)>,
 }
 
 impl<'a> TirBuilder<'a> {
-    pub fn new(arena: &'a Arena, ret: VRef<Ty>, ret_span: Maybe<Span>) -> Self {
+    pub fn new(arena: &'a Arena, ret: VRef<Ty>, ret_span: Option<Span>) -> Self {
         Self {
             arena,
             ret,

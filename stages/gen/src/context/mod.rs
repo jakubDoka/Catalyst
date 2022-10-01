@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    num::NonZeroU8,
+    ops::{Deref, DerefMut},
+};
 
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
@@ -140,7 +143,7 @@ pub struct CompileRequest {
 
 #[derive(Default)]
 pub struct GenResources {
-    pub blocks: ShadowMap<BlockMir, Maybe<GenBlock>>,
+    pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
@@ -170,26 +173,13 @@ pub struct GenBlock {
     pub visit_count: u32,
 }
 
-impl Invalid for GenBlock {
-    unsafe fn invalid() -> Self {
-        Self {
-            id: ir::Block::from_u32(0),
-            visit_count: u32::MAX,
-        }
-    }
-
-    fn is_invalid(&self) -> bool {
-        self.visit_count == u32::MAX
-    }
-}
-
 //////////////////////////////////
 // Layout
 //////////////////////////////////
 
 #[derive(Default)]
 pub struct GenLayouts {
-    pub mapping: ShadowMap<Ty, Maybe<Layout>>,
+    pub mapping: ShadowMap<Ty, Option<Layout>>,
     pub offsets: BumpMap<Offset>,
 }
 
@@ -199,32 +189,17 @@ pub type Offset = u32;
 pub struct Layout {
     pub size: u32,
     pub offsets: VSlice<Offset>,
-    pub align: u8,
+    pub align: NonZeroU8,
     pub repr: Type,
 }
 
 impl Layout {
     pub const EMPTY: Self = Self {
         size: 0,
-        align: 1,
+        align: unsafe { NonZeroU8::new_unchecked(1) },
         offsets: VSlice::empty(),
         repr: types::INVALID,
     };
-}
-
-impl Invalid for Layout {
-    unsafe fn invalid() -> Self {
-        Self {
-            size: 0,
-            align: 0,
-            offsets: VSlice::empty(),
-            repr: types::INVALID,
-        }
-    }
-
-    fn is_invalid(&self) -> bool {
-        self.align == 0
-    }
 }
 
 //////////////////////////////////

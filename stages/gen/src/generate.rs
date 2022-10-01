@@ -43,7 +43,7 @@ impl Generator<'_> {
             ref_count,
         } = builder.body.blocks[block];
 
-        if let Some(block) = self.gen_resources.blocks[block].as_mut_option() {
+        if let Some(block) = self.gen_resources.blocks[block].as_mut() {
             block.visit_count += 1;
 
             if block.visit_count == ref_count {
@@ -115,9 +115,7 @@ impl Generator<'_> {
                 unreachable!()
             };
 
-            ret.expand().map(|ret| {
-                self.gen_resources.values[ret].expect("Value should exist at this point")
-            })
+            ret.map(|ret| self.gen_resources.values[ret].expect("Value should exist at this point"))
         } else {
             let value = self.gen_resources.func_constants[id]
                 .expect("Constant should be computed before function compilation.");
@@ -286,7 +284,7 @@ impl Generator<'_> {
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
-                if let Some(ret) = ret.expand() {
+                if let Some(ret) = ret {
                     let ret = self.gen_resources.values[ret].expect("value mut be defined");
                     builder.ins().return_(&[ret]);
                 } else {
@@ -334,8 +332,8 @@ impl Generator<'_> {
         target.returns.push(AbiParam::new(ret));
     }
 
-    fn cc(&self, cc: Maybe<VRef<str>>, system_cc: CallConv) -> CallConv {
-        let Some(cc) = cc.expand() else {
+    fn cc(&self, cc: Option<VRef<str>>, system_cc: CallConv) -> CallConv {
+        let Some(cc) = cc else {
             return CallConv::Fast;
         };
 
@@ -351,7 +349,7 @@ impl Generator<'_> {
     }
 
     fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>], ptr_ty: Type) -> Layout {
-        if let Some(layout) = self.gen_layouts.mapping[ty].expand() {
+        if let Some(layout) = self.gen_layouts.mapping[ty] {
             return layout;
         }
 
@@ -367,12 +365,12 @@ impl Generator<'_> {
                 let mut align = 1;
                 let mut size = 0;
                 for layout in layouts {
-                    align = align.max(layout.align);
+                    align = align.max(layout.align.get());
 
                     offsets.push(size);
 
-                    let padding =
-                        (layout.align - (size as u8 & (layout.align - 1))) & (layout.align - 1);
+                    let padding = (layout.align.get() - (size as u8 & (layout.align.get() - 1)))
+                        & (layout.align.get() - 1);
                     size += padding as u32;
                     size += layout.size;
                 }
@@ -380,27 +378,27 @@ impl Generator<'_> {
                 Layout {
                     repr: Self::repr_for_size(size),
                     offsets: self.gen_layouts.offsets.bump(offsets),
-                    align,
+                    align: align.try_into().unwrap(),
                     size,
                 }
             }
             TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
                 repr: ptr_ty,
                 offsets: VSlice::empty(),
-                align: ptr_ty.bytes() as u8,
+                align: (ptr_ty.bytes() as u8).try_into().unwrap(),
                 size: ptr_ty.bytes() as u32,
             },
             TyKind::Integer(int) => Layout {
                 size: int.size as u32,
                 offsets: VSlice::empty(),
-                align: int.size,
+                align: int.size.max(1).try_into().unwrap(),
                 repr: Self::repr_for_size(int.size as u32),
             },
             TyKind::Param(index) => self.ty_layout(params[index as usize], &[], ptr_ty),
             TyKind::Bool => Layout {
                 repr: types::B1,
                 offsets: VSlice::empty(),
-                align: 1,
+                align: 1.try_into().unwrap(),
                 size: 1,
             },
             TyKind::Instance(inst) => {

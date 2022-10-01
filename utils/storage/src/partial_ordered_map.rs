@@ -9,17 +9,17 @@ use crate::*;
 /// values by [`VPtr`]
 pub struct PartialOrderedMap<K: SpecialHash, V> {
     index: Map<K, VRef<V>>,
-    data: PoolMap<V, (Maybe<K>, V)>,
+    data: PoolMap<V, (Option<K>, V)>,
 }
 
-impl<K: SpecialHash + Invalid, V> PartialOrderedMap<K, V> {
+impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
     pub fn redirect_insert(&mut self, key: K, value: V) -> VRef<V> {
         let index = self.data.push((key.into(), value));
         self.index.insert(key, index);
         index
     }
 
-    /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.   
+    /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.
     pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {
         let index = self.data.push((key.into(), value));
         let shadow = self.index.insert(key, index);
@@ -27,7 +27,7 @@ impl<K: SpecialHash + Invalid, V> PartialOrderedMap<K, V> {
     }
 
     pub fn push(&mut self, value: V) -> VRef<V> {
-        self.data.push((Maybe::none(), value))
+        self.data.push((None, value))
     }
 
     /// Inserts a new value, panicking on shadow and returning [`VPtr`] to it.
@@ -40,13 +40,13 @@ impl<K: SpecialHash + Invalid, V> PartialOrderedMap<K, V> {
     pub fn remove(&mut self, key: K) -> Option<V> {
         let index = self.index.remove(&key)?;
         let (found_key, value) = self.data.remove(index);
-        assert!(found_key == Maybe::some(key));
+        assert!(found_key == Some(key));
         Some(value)
     }
 
-    pub fn remove_index(&mut self, index: VRef<V>) -> (Maybe<K>, V) {
+    pub fn remove_index(&mut self, index: VRef<V>) -> (Option<K>, V) {
         let (key, value) = self.data.remove(index);
-        if let Some(key) = key.expand() {
+        if let Some(key) = key {
             self.index
                 .remove(&key)
                 .expect("index should be present as long as value is present");
@@ -66,7 +66,7 @@ impl<K: SpecialHash + Invalid, V> PartialOrderedMap<K, V> {
         self.index.get(&key).copied()
     }
 
-    pub fn id(&self, key: VRef<V>) -> Maybe<K> {
+    pub fn id(&self, key: VRef<V>) -> Option<K> {
         self.data[key].0
     }
 

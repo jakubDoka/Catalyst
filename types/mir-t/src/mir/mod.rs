@@ -123,12 +123,12 @@ pub struct BlockMir {
 
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
-    Return(Maybe<VRef<ValueMir>>),
+    Return(Option<VRef<ValueMir>>),
 }
 
 impl Default for ControlFlowMir {
     fn default() -> Self {
-        Self::Return(None.into())
+        Self::Return(None)
     }
 }
 

@@ -23,7 +23,7 @@ macro_rules! gen_derives {
     ($ident:ident) => {
         impl<T: ?Sized> Clone for $ident<T> {
             fn clone(&self) -> Self {
-                Self(self.0, PhantomData)
+                *self
             }
         }
 
@@ -59,14 +59,14 @@ macro_rules! gen_derives {
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Invalid, Maybe};
-
 pub type VRefSlice<T> = VSlice<VRef<T>>;
 
 pub trait VRefDefault {
     fn default_state() -> VRef<Self>;
 }
 
+#[rustc_layout_scalar_valid_range_end(4294967294)]
+#[repr(transparent)]
 pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
 
 gen_derives!(VRef);
@@ -78,14 +78,6 @@ impl<T: ?Sized> VRef<T> {
     #[inline(always)]
     pub const unsafe fn new(id: usize) -> Self {
         Self(id as u32, PhantomData)
-    }
-
-    /// Rarely needed method to construct invalid version.
-    /// # Safety
-    /// It is incorrect to call [`Maybe::some`] with returned value.
-    #[inline(always)]
-    pub const unsafe fn invalid() -> Self {
-        Self(u32::MAX, PhantomData)
     }
 
     #[inline(always)]
@@ -100,22 +92,6 @@ impl<T: ?Sized> VRef<T> {
     #[inline(always)]
     pub unsafe fn cast<V: ?Sized>(self) -> VRef<V> {
         std::mem::transmute(self)
-    }
-
-    pub const fn none() -> Maybe<Self> {
-        Maybe::some(unsafe { Self::invalid() })
-    }
-}
-
-impl<T: ?Sized> Invalid for VRef<T> {
-    #[inline(always)]
-    unsafe fn invalid() -> Self {
-        Self::invalid()
-    }
-
-    #[inline(always)]
-    fn is_invalid(&self) -> bool {
-        self.0 == u32::MAX
     }
 }
 

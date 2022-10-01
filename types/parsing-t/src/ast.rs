@@ -203,7 +203,7 @@ where
             let element_span = element.span();
 
             if let Some(last) = elements.last_mut() && !META::SEP.is_empty() {
-                if let Some(after_delim) = last.after_delim.as_mut_option() {
+                if let Some(after_delim) = last.after_delim.as_mut() {
                     after_delim.end = element_span.start;
                 } else {
                     last.after_value.end = element_span.start;
@@ -211,7 +211,7 @@ where
             }
 
             let mut after_value = Span::new(element_span.end()..element_span.end());
-            let mut after_delim = Maybe::none();
+            let mut after_delim = None;
 
             let has_sep = ctx.at(META::SEP);
             if has_sep {
@@ -242,7 +242,7 @@ where
         };
 
         if let Some(elem) = elements.last_mut() && !META::END.is_empty() {
-            if let Some(after_delim) = elem.after_delim.as_mut_option() {
+            if let Some(after_delim) = elem.after_delim.as_mut() {
                 after_delim.end = end.start;
             } else {
                 elem.after_value.end = end.start;
@@ -276,7 +276,7 @@ impl<'a, T, META: ListAstMeta> Deref for ListAst<'a, T, META> {
 pub struct ListElement<T> {
     pub value: T,
     pub after_value: Span,
-    pub after_delim: Maybe<Span>,
+    pub after_delim: Option<Span>,
 }
 
 pub trait ListAstMeta {

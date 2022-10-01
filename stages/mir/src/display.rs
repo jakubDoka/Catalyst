@@ -73,7 +73,7 @@ impl MirChecker<'_> {
                 buffer.extend(ident.clone());
                 buffer.extend(ident.clone());
                 write!(buffer, "return")?;
-                if let Some(ret) = ret.expand() {
+                if let Some(ret) = ret {
                     write!(buffer, " var{}", ret.index())?;
                 }
             }
