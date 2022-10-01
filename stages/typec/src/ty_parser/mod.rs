@@ -11,7 +11,7 @@ use parsing::*;
 use parsing_t::*;
 use scope::*;
 use storage::*;
-use typec_shared::*;
+
 use typec_t::*;
 
 use crate::*;
@@ -75,7 +75,7 @@ impl TyChecker<'_> {
     }
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
-        let param = ty_utils!(self).nth_param(index);
+        let param = self.typec.nth_param(index, self.interner);
         self.scope.push(ScopeItem::new(
             name.ident,
             param,

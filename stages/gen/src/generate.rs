@@ -4,7 +4,7 @@ use cranelift_codegen::{
 };
 use mir_t::*;
 use storage::*;
-use typec_shared::*;
+
 use typec_t::*;
 
 use crate::*;
@@ -323,13 +323,13 @@ impl Generator<'_> {
             .to_bumpvec()
             .into_iter()
             .map(|ty| {
-                let instance = ty_utils!(self).instantiate(ty, params);
+                let instance = self.typec.instantiate(ty, params, self.interner);
                 self.ty_repr(instance, ptr_ty)
             })
             .map(AbiParam::new);
         target.params.extend(args);
 
-        let instance = ty_utils!(self).instantiate(signature.ret, params);
+        let instance = self.typec.instantiate(signature.ret, params, self.interner);
         let ret = self.ty_repr(instance, ptr_ty);
         target.returns.push(AbiParam::new(ret));
     }
@@ -408,7 +408,7 @@ impl Generator<'_> {
                 let params = self.typec.ty_slices[inst.args]
                     .to_bumpvec()
                     .into_iter()
-                    .map(|ty| ty_utils!(self).instantiate(ty, params))
+                    .map(|ty| self.typec.instantiate(ty, params, self.interner))
                     .collect::<BumpVec<_>>();
                 self.ty_layout(inst.base, &params, ptr_ty)
             }

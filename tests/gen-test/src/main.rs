@@ -19,7 +19,7 @@ use scope::*;
 use storage::*;
 use testing::*;
 use typec::*;
-use typec_shared::*;
+
 use typec_t::*;
 
 struct LaterInit {
@@ -369,11 +369,11 @@ impl Scheduler for TestState {
                 .as_mut()
                 .expect("should be generated");
 
-            let mut ty_utils = ty_utils!(self);
             self.mir_type_swapper.swap(
                 body,
                 &self.compile_requests.ty_slices[request.params],
-                &mut ty_utils,
+                &mut self.typec,
+                &mut self.interner,
             );
 
             let root_block = body

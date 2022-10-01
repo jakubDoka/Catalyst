@@ -23,10 +23,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ansi-coloring"
-version = "0.1.0"
-
-[[package]]
 name = "anyhow"
 version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -186,7 +182,6 @@ dependencies = [
 name = "diags"
 version = "0.1.0"
 dependencies = [
- "ansi-coloring",
  "lexing-t",
  "packaging-t",
  "storage",
@@ -235,7 +230,6 @@ dependencies = [
  "region",
  "storage",
  "target-lexicon",
- "typec-shared",
  "typec-t",
  "windows-sys",
 ]
@@ -261,7 +255,6 @@ dependencies = [
  "target-lexicon",
  "testing",
  "typec",
- "typec-shared",
  "typec-t",
 ]
 
@@ -315,7 +308,6 @@ dependencies = [
 name = "lexing"
 version = "0.1.0"
 dependencies = [
- "ansi-coloring",
  "lexing-t",
  "logos",
  "storage",
@@ -325,7 +317,6 @@ dependencies = [
 name = "lexing-t"
 version = "0.1.0"
 dependencies = [
- "ansi-coloring",
  "storage",
 ]
 
@@ -400,7 +391,6 @@ version = "0.1.0"
 dependencies = [
  "lexing-t",
  "storage",
- "typec-shared",
  "typec-t",
 ]
 
@@ -691,7 +681,6 @@ version = "0.1.0"
 name = "testing"
 version = "0.1.0"
 dependencies = [
- "ansi-coloring",
  "diags",
  "fmt",
  "packaging",
@@ -704,23 +693,12 @@ dependencies = [
 name = "typec"
 version = "0.1.0"
 dependencies = [
- "ansi-coloring",
  "diags",
  "lexing-t",
  "packaging-t",
  "parsing",
  "parsing-t",
  "scope",
- "storage",
- "typec-shared",
- "typec-t",
-]
-
-[[package]]
-name = "typec-shared"
-version = "0.1.0"
-dependencies = [
- "packaging-t",
  "storage",
  "typec-t",
 ]

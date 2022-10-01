@@ -7,12 +7,9 @@ IF ERRORLEVEL 1 (
 
 set STATE_GEN="target\release\state.exe"
 
-where /q %STATE_GEN%
-if ERRORLEVEL 1 (
-    cd utils/state
-    cargo build --release
-    cd ../..
-)
+cd utils/state
+cargo build --release
+cd ../..
 
 set TESTER="target\release\tester.exe"
 
@@ -21,3 +18,4 @@ cargo build --release
 cd ../..
 
 %STATE_GEN% state_gen.rbg
+%TESTER% %1

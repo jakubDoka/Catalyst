@@ -208,6 +208,104 @@ impl Typec {
 
         start.into_iter().chain(body).chain(end)
     }
+
+    pub fn nth_param(&mut self, index: usize, interner: &mut Interner) -> VRef<Ty> {
+        let key = interner.intern(ident!("param ", index as u32));
+
+        let fallback = |_: &mut Types| Ty {
+            kind: TyKind::Param(index as u32),
+            flags: TyFlags::GENERIC,
+            loc: default(),
+        };
+
+        self.types.get_or_insert(key, fallback)
+    }
+
+    pub fn instantiate(
+        &mut self,
+        ty: VRef<Ty>,
+        params: &[VRef<Ty>],
+        interner: &mut Interner,
+    ) -> VRef<Ty> {
+        unsafe {
+            self.instantiate_low::<false>(ty, params, interner)
+                .unwrap_unchecked()
+        }
+    }
+
+    pub fn try_instantiate(
+        &mut self,
+        ty: VRef<Ty>,
+        params: &[VRef<Ty>],
+        interner: &mut Interner,
+    ) -> Option<VRef<Ty>> {
+        self.instantiate_low::<true>(ty, params, interner)
+    }
+
+    pub fn instantiate_low<const CAN_FAIL: bool>(
+        &mut self,
+        ty: VRef<Ty>,
+        params: &[VRef<Ty>],
+        interner: &mut Interner,
+    ) -> Option<VRef<Ty>> {
+        Some(match self.types[ty].kind {
+            TyKind::Instance(TyInstance { base, args }) => {
+                let params = self.ty_slices[args]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|arg| self.instantiate_low::<CAN_FAIL>(arg, params, interner))
+                    .collect::<Option<BumpVec<_>>>()?;
+
+                let generic = params.iter().any(|&arg| self.types.is_generic(arg));
+
+                let segments = self.instance_id(base, &params);
+                let id = interner.intern(segments);
+
+                let fallback = |types: &mut Types| Ty {
+                    kind: TyKind::Instance(TyInstance {
+                        base,
+                        args: self.ty_slices.bump(params),
+                    }),
+                    flags: TyFlags::GENERIC & generic,
+                    ..types[ty]
+                };
+
+                self.types.get_or_insert(id, fallback)
+            }
+            TyKind::Pointer(TyPointer {
+                base,
+                mutability,
+                depth,
+            }) => {
+                let base = self.instantiate_low::<CAN_FAIL>(base, params, interner)?;
+                let mutability = self.instantiate_low::<CAN_FAIL>(mutability, params, interner)?;
+                let generic = self.types.is_generic(base) | self.types.is_generic(mutability);
+
+                let segments = self.pointer_id(base, mutability);
+                let id = interner.intern(segments);
+
+                let fallback = |types: &mut Types| Ty {
+                    kind: TyKind::Pointer(TyPointer {
+                        base,
+                        mutability,
+                        depth,
+                    }),
+                    flags: TyFlags::GENERIC & generic,
+                    ..types[ty]
+                };
+
+                self.types.get_or_insert(id, fallback)
+            }
+            TyKind::Param(index) if CAN_FAIL && params[index as usize] == Ty::INFERRED => {
+                return None
+            }
+            TyKind::Param(index) => params[index as usize],
+
+            TyKind::Struct(_) | TyKind::Integer(_) | TyKind::Bool => ty,
+
+            TyKind::Inferred | TyKind::SelfBound => unreachable!(),
+        })
+    }
 }
 
 impl<K: SpecialHash, V> StorageExt<V> for OrderedMap<K, V> {}

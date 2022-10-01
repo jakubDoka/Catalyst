@@ -7,7 +7,7 @@ use parsing::*;
 use parsing_t::*;
 use scope::*;
 use storage::*;
-use typec_shared::*;
+
 use typec_t::*;
 
 use crate::{ty_parser::ModLookup, *};
@@ -297,7 +297,7 @@ impl TyChecker<'_> {
             .iter()
             .zip(self.typec.ty_slices[signature.args].to_bumpvec())
             .map(|(&arg, ty)| {
-                let inferred = ty_utils!(self).try_instantiate(ty, &params);
+                let inferred = self.typec.try_instantiate(ty, &params, self.interner);
                 let expr = self.expr(arg, inferred, builder)?;
 
                 if inferred.is_none() {
@@ -314,7 +314,7 @@ impl TyChecker<'_> {
 
         let args = builder.arena.alloc_iter(args);
         let params = builder.arena.alloc_iter(params);
-        let ty = ty_utils!(self).instantiate(signature.ret, params);
+        let ty = self.typec.instantiate(signature.ret, params, self.interner);
 
         let call = CallTir {
             func: CallableTir::Func(func),

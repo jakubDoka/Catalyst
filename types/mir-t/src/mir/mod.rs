@@ -1,6 +1,5 @@
 use lexing_t::*;
 use storage::*;
-use typec_shared::TyUtils;
 use typec_t::*;
 
 pub mod builder;
@@ -26,10 +25,16 @@ impl MirTypeSwapper {
         Self::default()
     }
 
-    pub fn swap(&mut self, func: &mut FuncMir, params: &[VRef<Ty>], ty_utils: &mut TyUtils) {
+    pub fn swap(
+        &mut self,
+        func: &mut FuncMir,
+        params: &[VRef<Ty>],
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) {
         for &mir_ty in &func.ty_params[func.generics] {
             let ty = func.dependant_types[mir_ty].ty;
-            let new_ty = ty_utils.instantiate(ty, params);
+            let new_ty = typec.instantiate(ty, params, interner);
             func.dependant_types[mir_ty].ty = new_ty;
             self.swapped.push(ty);
         }

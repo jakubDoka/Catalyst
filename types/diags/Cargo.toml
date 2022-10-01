@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../../utils/storage" }
-ansi-coloring = { path = "../../utils/ansi-coloring" }
+
 lexing-t = { path = "../lexing-t" }
 packaging-t = { path = "../packaging-t" }

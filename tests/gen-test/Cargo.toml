@@ -24,4 +24,4 @@ cranelift-frontend = "0.88.0"
 cranelift-module = "0.88.0"
 target-lexicon = "0.12.4"
 cc = "1.0.73"
-typec-shared = { version = "0.1.0", path = "../../utils/typec-shared" }
+
