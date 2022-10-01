@@ -247,7 +247,7 @@ impl TyChecker<'_> {
     fn call<'a>(
         &mut self,
         call @ CallExprAst { callable, args }: CallExprAst,
-        _inference: Inference,
+        inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         match callable {
@@ -257,7 +257,9 @@ impl TyChecker<'_> {
                     Ok(direct) if self.typec.funcs[direct].generics.is_empty() => {
                         self.direct_concrete_call(direct, args, call.span(), builder)
                     }
-                    Ok(direct) => self.direct_generic_call(direct, args, call.span(), builder),
+                    Ok(direct) => {
+                        self.direct_generic_call(direct, args, call.span(), inference, builder)
+                    }
                     Err(_pointer) => todo!(),
                 }
             }
@@ -276,6 +278,7 @@ impl TyChecker<'_> {
         func: VRef<Func>,
         args: CallArgsAst,
         span: Span,
+        inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let Func {
@@ -285,6 +288,10 @@ impl TyChecker<'_> {
         } = self.typec.funcs[func];
 
         let mut params = bumpvec![Ty::INFERRED; self.typec.bound_slices[generics].len()];
+
+        if let Some(inference) = inference {
+            self.infer_params(&mut params, inference, signature.ret, span)?;
+        }
 
         let args = args
             .iter()
@@ -351,7 +358,9 @@ impl TyChecker<'_> {
                             .zip(self.typec.ty_slices[template.args].iter().copied()),
                     );
                 }
-                (_, TyKind::Param(index)) if params[index as usize] == Ty::INFERRED => todo!(),
+                (_, TyKind::Param(index)) if params[index as usize] == Ty::INFERRED => {
+                    params[index as usize] = reference;
+                }
                 (_, TyKind::Param(index)) => {
                     self.type_check(params[index as usize], reference, span)?;
                 }
@@ -449,8 +458,8 @@ impl TyChecker<'_> {
         self.node(
             ty,
             IntLit {
-                span: span.sliced(..span.len() - postfix_len),
-                ty,
+                span: span.sliced(..span.len() - dbg!(postfix_len)),
+                ty: dbg!(ty),
             },
             builder,
         )

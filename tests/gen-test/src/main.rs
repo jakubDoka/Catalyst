@@ -526,7 +526,7 @@ fn main() {
             #[entry];
             fn main -> uint {
                 const putchar('a'); // compile time print
-                putchar('\n');
+                const putchar('\n');
                 0
             };
         }
@@ -535,7 +535,7 @@ fn main() {
             fn [T] pass(value: T) -> T => value;
 
             #[entry];
-            fn main -> uint => pass(0);
+            fn main -> u32 => pass(0uint);
         }
     }
 }

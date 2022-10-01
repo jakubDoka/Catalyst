@@ -31,10 +31,6 @@ impl TyUtils<'_> {
         ty: VRef<Ty>,
         params: &[VRef<Ty>],
     ) -> Option<VRef<Ty>> {
-        if CAN_FAIL && ty == Ty::INFERRED {
-            return None;
-        }
-
         Some(match self.typec.types[ty].kind {
             TyKind::Instance(TyInstance { base, args }) => {
                 let params = self.typec.ty_slices[args]
@@ -83,6 +79,9 @@ impl TyUtils<'_> {
                 };
 
                 self.typec.types.get_or_insert(id, fallback)
+            }
+            TyKind::Param(index) if CAN_FAIL && params[index as usize] == Ty::INFERRED => {
+                return None
             }
             TyKind::Param(index) => params[index as usize],
 

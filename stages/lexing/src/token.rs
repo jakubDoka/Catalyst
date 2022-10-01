@@ -189,7 +189,7 @@ gen_kind!(
     literal {
         Label = "'[a-zA-Z0-9_]+",
         Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
-        Int = "[0-9]+((i|u)(8|16|32|64)?)?",
+        Int = "[0-9]+((u)(32)|uint)?",
         String = r#""(\\"|[^"])*""#,
         Bool = "(true|false)",
         Char = r"'(.|\\(n|r|t|\\|'))'",
