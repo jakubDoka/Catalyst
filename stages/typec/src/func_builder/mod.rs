@@ -458,8 +458,8 @@ impl TyChecker<'_> {
         self.node(
             ty,
             IntLit {
-                span: span.sliced(..span.len() - dbg!(postfix_len)),
-                ty: dbg!(ty),
+                span: span.sliced(..span.len() - postfix_len),
+                ty,
             },
             builder,
         )

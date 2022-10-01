@@ -147,7 +147,7 @@ impl MirChecker<'_> {
 
     fn int(&mut self, int: IntLit, builder: &mut MirBuilder) -> NodeRes {
         let value = builder.value(int.ty, self.typec);
-        let lit = dbg!(span_str!(self, int.span))
+        let lit = span_str!(self, int.span)
             .parse()
             .expect("Lexer should have validated this.");
         builder.inst(InstMir::Int(lit, value), int.span);
