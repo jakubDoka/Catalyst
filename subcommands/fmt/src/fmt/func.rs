@@ -11,6 +11,12 @@ impl<'a> FmtAst for FuncDefAst<'a> {
 impl<'a> FmtAst for FuncSigAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         write!(fmt, "fn ");
+        if let Some(cc) = self.cc {
+            write!(fmt, "\"");
+            cc.display(fmt);
+            write!(fmt, "\"");
+            write!(fmt, " ");
+        }
         self.generics.display(fmt);
         if !self.generics.is_empty() {
             write!(fmt, " ");

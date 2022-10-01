@@ -71,6 +71,7 @@ pub enum UnitExprAst<'a> {
     Path(PathExprAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
+    Char(Span),
     Const(ConstAst<'a>),
 }
 
@@ -85,6 +86,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             BackSlash => ctx.parse().map(Self::Path),
             Return => ctx.parse().map(Self::Return),
             Int => Some(Self::Int(ctx.advance().span)),
+            Char => Some(Self::Char(ctx.advance().span)),
             Const => ctx.parse().map(Self::Const),
         });
 
@@ -103,7 +105,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             UnitExprAst::Call(call) => call.span(),
             UnitExprAst::Path(path) => path.span(),
             UnitExprAst::Return(ret) => ret.span(),
-            UnitExprAst::Int(span) => span,
+            UnitExprAst::Int(span) | UnitExprAst::Char(span) => span,
             UnitExprAst::Const(run) => run.span(),
         }
     }

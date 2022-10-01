@@ -1,3 +1,4 @@
+use lexing_t::Span;
 use mir_t::*;
 use packaging_t::span_str;
 use storage::*;
@@ -37,6 +38,7 @@ impl MirChecker<'_> {
             TirNode::Block(&block) => self.block(block, builder),
             TirNode::Var(&var) => self.var(var, builder),
             TirNode::Int(&int) => self.int(int, builder),
+            TirNode::Char(span) => self.char(span, builder),
             TirNode::Call(&call) => self.call(call, builder),
             TirNode::Access(&access) => self.access(access, builder),
             TirNode::Return(&ret) => self.r#return(ret, builder),
@@ -152,6 +154,14 @@ impl MirChecker<'_> {
         Some(value)
     }
 
+    fn char(&mut self, span: Span, builder: &mut MirBuilder) -> NodeRes {
+        let value = builder.value(Ty::CHAR);
+        let lit = Self::parse_char(span_str!(self, span).chars().by_ref())
+            .expect("Lexer should have validated this.");
+        builder.inst(InstMir::Int(lit as i64, value), span);
+        Some(value)
+    }
+
     fn r#return(
         &mut self,
         ReturnTir { val, span }: ReturnTir,
@@ -180,5 +190,17 @@ impl MirChecker<'_> {
         }
 
         builder
+    }
+
+    fn parse_char(repr: &mut impl Iterator<Item = char>) -> Option<char> {
+        let char = repr.next()?;
+
+        Some(match char {
+            '\\' => match repr.next()? {
+                'n' => '\n',
+                _ => return None,
+            },
+            c => c,
+        })
     }
 }

@@ -51,6 +51,9 @@ impl TyChecker<'_> {
             TirNode::Int(int) => {
                 buffer.push_str(span_str!(self, int.span));
             }
+            TirNode::Char(span) => {
+                write!(buffer, "'{}'", span_str!(self, span))?;
+            }
             TirNode::Block(BlockTir { nodes, .. }) => {
                 let prev_var_count = *var_count;
                 writeln!(buffer, "{{")?;

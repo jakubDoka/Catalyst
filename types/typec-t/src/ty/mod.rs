@@ -24,12 +24,14 @@ impl Ty {
         MUTABLE IMMUTABLE
         UNIT
         UINT
+        U32
+        CHAR
         TERMINAL
     );
 
     gen_v_ref_const_group!(
-        INTEGERS = [UINT];
-        UNSIGNED_INTEGER = [UINT];
+        INTEGERS = [UINT U32];
+        UNSIGNED_INTEGER = [UINT U32];
     );
 
     #[inline(always)]

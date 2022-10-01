@@ -19,7 +19,8 @@ impl Generator<'_> {
         self.gen_resources.clear();
 
         let ptr_ty = builder.ptr_ty();
-        self.populate_signature(signature, &mut builder.func.signature, ptr_ty);
+        let system_cc = builder.system_cc();
+        self.populate_signature(signature, &mut builder.func.signature, system_cc, ptr_ty);
 
         self.block(root, builder);
 
@@ -195,12 +196,14 @@ impl Generator<'_> {
         params: VRefSlice<MirTy>,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
+        let prefix = if builder.isa.jit { "jit-" } else { "native-" };
         let id = if params.is_empty() {
             let id = self.typec.funcs.id(func_id);
             self.interner
-                .intern(ident!(builder.isa.triple.index() as u32, "&", id))
+                .intern(ident!(prefix, builder.isa.triple.index() as u32, "&", id))
         } else {
             let start = ident!(
+                prefix,
                 builder.isa.triple.index() as u32,
                 "&",
                 self.typec.funcs.id(func_id),
@@ -255,7 +258,7 @@ impl Generator<'_> {
             ..
         } = self.typec.funcs[func_id];
 
-        let signature = self.load_signature(signature, builder.ptr_ty());
+        let signature = self.load_signature(signature, builder.system_cc(), builder.ptr_ty());
         let signature = builder.import_signature(signature);
 
         builder.import_function(ExtFuncData {
@@ -278,9 +281,14 @@ impl Generator<'_> {
         }
     }
 
-    pub fn load_signature(&mut self, signature: Signature, ptr_ty: Type) -> ir::Signature {
+    pub fn load_signature(
+        &mut self,
+        signature: Signature,
+        system_cc: CallConv,
+        ptr_ty: Type,
+    ) -> ir::Signature {
         let mut sig = ir::Signature::new(CallConv::Fast);
-        self.populate_signature(signature, &mut sig, ptr_ty);
+        self.populate_signature(signature, &mut sig, system_cc, ptr_ty);
         sig
     }
 
@@ -288,9 +296,10 @@ impl Generator<'_> {
         &mut self,
         signature: Signature,
         target: &mut ir::Signature,
+        system_cc: CallConv,
         ptr_ty: Type,
     ) {
-        let cc = self.cc(signature.cc);
+        let cc = self.cc(signature.cc, system_cc);
 
         target.clear(cc);
         let args = self.typec.ty_slices[signature.args]
@@ -303,10 +312,14 @@ impl Generator<'_> {
         target.returns.push(AbiParam::new(ret));
     }
 
-    fn cc(&self, cc: Maybe<VRef<str>>) -> CallConv {
+    fn cc(&self, cc: Maybe<VRef<str>>, system_cc: CallConv) -> CallConv {
         let Some(cc) = cc.expand() else {
             return CallConv::Fast;
         };
+
+        if &self.interner[cc] == "default" {
+            return system_cc;
+        }
 
         self.interner[cc].parse().unwrap_or(CallConv::Fast)
     }

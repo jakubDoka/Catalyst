@@ -97,6 +97,12 @@ impl Typec {
             UINT {
                 kind: TyKind::Integer(default()),
             }
+            U32 {
+                kind: TyKind::Integer(TyInteger { size: 4, signed: false }),
+            }
+            CHAR {
+                kind: TyKind::Integer(TyInteger { size: 4, signed: false }),
+            }
             TERMINAL {}
         }
     }

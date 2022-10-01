@@ -75,10 +75,15 @@ impl ObjectContext {
                 let ent = &gen.compiled_funcs[func];
 
                 let id = gen.compiled_funcs.id(func);
-                let name = &interner[id];
 
                 let meta = &typec.funcs[ent.func];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
+
+                let name = if scope == SymbolScope::Unknown {
+                    &interner[meta.loc.name]
+                } else {
+                    &interner[id]
+                };
 
                 let symbol = self.object.add_symbol(Symbol {
                     name: name.as_bytes().to_vec(),
@@ -91,12 +96,18 @@ impl ObjectContext {
                     flags: SymbolFlags::None,
                 });
 
-                (func, symbol, 0) // preallocate space for offset
+                (func, symbol, 0, scope == SymbolScope::Unknown) // preallocate space for offset
             })
             .collect::<BumpVec<_>>();
 
+        // filter out extern functions and insert symbols
+        funcs.retain(|&(func, symbol, _, is_extern)| {
+            self.functions[func] = Some(ObjectFunction { symbol });
+            !is_extern
+        });
+
         // add function bodies and fill offsets
-        for &mut (func, symbol, ref mut offset) in funcs.iter_mut() {
+        for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
             let ent = &gen.compiled_funcs[func];
 
             *offset = self.object.add_symbol_data(
@@ -105,12 +116,10 @@ impl ObjectContext {
                 &ent.bytecode,
                 ent.alignment,
             );
-
-            self.functions[func] = Some(ObjectFunction { symbol });
         }
 
         // add relocations
-        for (func, _, offset) in funcs {
+        for (func, _, offset, ..) in funcs {
             let ent = &gen.compiled_funcs[func];
             for &record in &ent.relocs {
                 let reloc = self.process_reloc(record, offset)?;

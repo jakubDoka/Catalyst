@@ -47,7 +47,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Call(call) => call.display(fmt),
             UnitExprAst::Path(path) => path.display(fmt),
             UnitExprAst::Return(ret) => ret.display(fmt),
-            UnitExprAst::Int(int) => fmt.write_span(int),
+            UnitExprAst::Int(span) | UnitExprAst::Char(span) => fmt.write_span(span),
             UnitExprAst::Const(run) => run.display(fmt),
         }
     }
@@ -57,7 +57,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Call(call) => call.flat_len(fmt),
             UnitExprAst::Path(path) => path.flat_len(fmt),
             UnitExprAst::Return(ret) => ret.flat_len(fmt),
-            UnitExprAst::Int(int) => int.len(),
+            UnitExprAst::Int(int) | UnitExprAst::Char(int) => int.len(),
             UnitExprAst::Const(run) => run.flat_len(fmt),
         }
     }

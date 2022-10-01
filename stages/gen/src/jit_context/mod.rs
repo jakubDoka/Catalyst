@@ -1,14 +1,19 @@
 use std::alloc;
-use std::ptr::{slice_from_raw_parts_mut, NonNull};
+use std::{
+    ffi::CStr,
+    ptr::{slice_from_raw_parts_mut, NonNull},
+};
 
 use cranelift_codegen::binemit::Reloc;
 use storage::*;
+use typec_t::{Func, FuncVisibility, Typec};
 
 use crate::{context::Isa, CompiledFunc, Gen, GenItemName, GenReloc};
 
 pub struct JitContext {
     functions: ShadowMap<CompiledFunc, Option<JitFunction>>,
     resources: JitResources,
+    runtime_lookup: RuntimeFunctionLookup,
     pub isa: Isa,
 }
 
@@ -17,6 +22,7 @@ impl JitContext {
         Self {
             functions: ShadowMap::new(),
             resources: JitResources::new(),
+            runtime_lookup: RuntimeFunctionLookup::new(),
             isa,
         }
     }
@@ -49,17 +55,35 @@ impl JitContext {
         &mut self,
         funcs: impl IntoIterator<Item = VRef<CompiledFunc>>,
         gen: &Gen,
+        typec: &Typec,
+        interner: &Interner,
         temp: bool,
     ) -> Result<(), JitRelocError> {
         let filtered_funcs = funcs
             .into_iter()
             .filter_map(|func| self.functions[func].is_none().then_some(func))
             .map(|func| {
-                let func_ent = &gen.compiled_funcs[func];
-                let body = &func_ent.bytecode;
+                let &CompiledFunc {
+                    func: parent_func,
+                    bytecode: ref body,
+                    alignment,
+                    ..
+                } = &gen.compiled_funcs[func];
+                let Func {
+                    visibility, loc, ..
+                } = typec.funcs[parent_func];
+
+                if visibility == FuncVisibility::Imported {
+                    let code = self
+                        .runtime_lookup
+                        .lookup(&interner[loc.name])
+                        .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?;
+                    let slice = slice_from_raw_parts_mut(code as *mut _, 0);
+                    return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
+                }
 
                 let layout = alloc::Layout::for_value(body.as_slice())
-                    .align_to(func_ent.alignment as usize)
+                    .align_to(alignment as usize)
                     .unwrap();
                 let mut code = if temp {
                     self.resources.temp_executable.alloc(layout)
@@ -74,9 +98,9 @@ impl JitContext {
                         .copy_from_nonoverlapping(body.as_ptr(), body.len());
                 }
 
-                (func, code)
+                Ok((func, code))
             })
-            .collect::<BumpVec<_>>();
+            .collect::<Result<BumpVec<_>, _>>()?;
 
         for &(func, code) in filtered_funcs.iter() {
             self.functions[func] = Some(JitFunction { code });
@@ -300,4 +324,64 @@ pub enum JitRelocError {
     OffsetOverflow,
     OffsetOutOfBounds,
     UnsupportedReloc(Reloc),
+}
+
+pub struct RuntimeFunctionLookup {
+    tmp_name: String,
+    #[cfg(windows)]
+    ucrtbase: std::os::windows::io::RawHandle,
+}
+
+impl RuntimeFunctionLookup {
+    fn new() -> Self {
+        Self {
+            tmp_name: String::new(),
+            #[cfg(windows)]
+            ucrtbase: unsafe {
+                windows_sys::Win32::System::LibraryLoader::GetModuleHandleA(
+                    "ucrtbase.dll\0".as_ptr() as _,
+                ) as _
+            },
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn lookup(name: &str) -> Option<*const u8> {
+        let c_str = self.load_cstr(name).as_ptr();
+        let sym = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_str) };
+        if sym.is_null() {
+            None
+        } else {
+            Some(sym as *const u8)
+        }
+    }
+
+    #[cfg(windows)]
+    fn lookup(&mut self, name: &str) -> Option<*const u8> {
+        use std::ptr;
+        use windows_sys::Win32::Foundation::HINSTANCE;
+        use windows_sys::Win32::System::LibraryLoader;
+
+        let c_str = self.load_cstr(name).as_ptr().cast();
+
+        unsafe {
+            [ptr::null_mut(), self.ucrtbase]
+                .into_iter()
+                .find_map(|handle| LibraryLoader::GetProcAddress(handle as HINSTANCE, c_str))
+                .map(|ptr| ptr as *const u8)
+        }
+    }
+
+    fn load_cstr(&mut self, name: &str) -> &CStr {
+        self.tmp_name.clear();
+        self.tmp_name.push_str(name);
+        self.tmp_name.push('\0');
+        unsafe { CStr::from_bytes_with_nul_unchecked(self.tmp_name.as_bytes()) }
+    }
+}
+
+impl Default for RuntimeFunctionLookup {
+    fn default() -> Self {
+        Self::new()
+    }
 }

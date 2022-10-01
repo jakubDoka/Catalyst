@@ -15,6 +15,10 @@ impl<T> PushMap<T> {
         Self::default()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn push(&mut self, value: T) -> VRef<T> {
         let id = self.data.len();
         self.data.push(value);

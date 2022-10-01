@@ -210,6 +210,7 @@ impl TyChecker<'_> {
                 self.r#return(expr, return_span, builder)
             }
             UnitExprAst::Int(span) => self.int(span, inference, builder),
+            UnitExprAst::Char(span) => self.char(span, builder),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
             UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
         }
@@ -259,6 +260,7 @@ impl TyChecker<'_> {
             UnitExprAst::Return(..)
             | UnitExprAst::Call(..)
             | UnitExprAst::Int(..)
+            | UnitExprAst::Char(..)
             | UnitExprAst::Const(..) => {
                 todo!()
             }
@@ -357,6 +359,10 @@ impl TyChecker<'_> {
             },
             builder,
         )
+    }
+
+    fn char<'a>(&mut self, span: Span, builder: &mut TirBuilder<'a>) -> ExprRes<'a> {
+        self.node(Ty::CHAR, TirNode::Char(span.shrink(1)), builder)
     }
 
     fn binary_expr<'a>(

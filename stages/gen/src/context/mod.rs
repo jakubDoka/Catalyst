@@ -78,7 +78,6 @@ pub struct CompiledFunc {
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
-    pub temp: bool,
 }
 
 impl CompiledFunc {
@@ -89,7 +88,6 @@ impl CompiledFunc {
             bytecode: Vec::new(),
             alignment: 0,
             relocs: Vec::new(),
-            temp: false,
         }
     }
 }
@@ -339,6 +337,10 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
 
     pub fn ptr_ty(&self) -> Type {
         self.isa.pointer_ty
+    }
+
+    pub fn system_cc(&self) -> CallConv {
+        self.isa.default_call_conv()
     }
 }
 

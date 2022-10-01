@@ -133,6 +133,7 @@ pub struct IntLit {
 pub enum TirNode<'a> {
     Var(&'a Variable<'a>),
     Int(&'a IntLit),
+    Char(Span),
     Block(&'a BlockTir<'a>),
     Return(&'a ReturnTir<'a>),
     Call(&'a CallTir<'a>),

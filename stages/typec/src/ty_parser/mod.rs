@@ -30,7 +30,6 @@ impl TyChecker<'_> {
         }
 
         match (self.typec.types[pattern].kind, self.typec.types[value].kind) {
-            (a, b) if a == b => buffer.push('_'),
             (TyKind::Pointer(pattern), TyKind::Pointer(value)) => {
                 buffer.push('^');
                 self.type_diff_recurse(pattern.mutability, value.mutability, buffer);

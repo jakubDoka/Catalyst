@@ -1,5 +1,6 @@
 #![feature(let_else)]
 #![feature(fs_try_exists)]
+#![feature(thread_id_value)]
 
 use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
@@ -73,16 +74,19 @@ impl TestState {
         })
     }
 
-    fn collect_entry_points(&mut self) -> Vec<VRef<CompiledFunc>> {
+    fn collect_entry_points(&mut self, triple: VRef<str>) -> Vec<VRef<CompiledFunc>> {
         let entry_points = self
             .mir_ctx
             .just_compiled
             .drain(..)
             .filter(|&func| self.typec.funcs[func].flags.contains(FuncFlags::ENTRY))
             .map(|func| {
+                let id = self
+                    .interner
+                    .intern(ident!(triple, "&", self.typec.funcs.id(func)));
                 self.gen
                     .compiled_funcs
-                    .insert_unique(self.typec.funcs.id(func), CompiledFunc::new(func))
+                    .insert_unique(id, CompiledFunc::new(func))
             })
             .collect::<Vec<_>>();
 
@@ -154,64 +158,37 @@ impl TestState {
 
     fn compute_func_constant(
         &mut self,
-        const_mir: FuncConstMir,
-        body: &FuncMir,
+        target_func: VRef<CompiledFunc>,
         later_init: &mut LaterInit,
-    ) -> GenFuncConstant {
-        let mut compiled_funcs = vec![];
+    ) {
+        let target_func = self.gen.compiled_funcs[target_func].func;
+
+        if self.mir.bodies[target_func]
+            .as_ref()
+            .map_or(false, |body| body.constants.is_empty())
+        {
+            return;
+        }
+
+        let body = self.mir.bodies[target_func]
+            .take()
+            .expect("Should be generated.");
+
         let mut compile_queue = vec![];
 
-        let current_func = self
+        let root_func = self
             .gen
             .compiled_funcs
             .get_or_insert(self.interner.intern_str("anon_const"), |_| {
                 CompiledFunc::new(Func::ANON_TEMP)
             });
 
-        let signature = Signature {
+        let mut signature = Signature {
             cc: self.interner.intern_str("windows_fastcall").into(),
-            ret: body.dependant_types[const_mir.ty].ty,
             ..Default::default()
         };
 
-        let mut builder = GenBuilder::new(
-            &later_init.jit_context.isa,
-            body,
-            &mut later_init.context.func,
-            &mut later_init.func_ctx,
-        );
-
-        let root_block = const_mir.block;
-        generator!(self).generate(signature, root_block, &mut builder);
-
-        write!(
-            self.functions,
-            "const {}\n\n",
-            later_init.context.func.display()
-        )
-        .unwrap();
-
-        self.compile_func(current_func, later_init);
-
-        let next_iter = self
-            .compile_requests
-            .queue
-            .drain(..)
-            .map(|request| request.id);
-
-        compile_queue.extend(next_iter);
-
-        while let Some(current_func) = compile_queue.pop() {
-            let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
-            let Func { signature, .. } = self.typec.funcs[func];
-            let body = self.mir.bodies[func].take().expect("should be generated");
-
-            let root_block = body
-                .blocks
-                .keys()
-                .next()
-                .expect("function without blocks is invalid");
-
+        for (key, const_mir) in body.constants.iter() {
             let mut builder = GenBuilder::new(
                 &later_init.jit_context.isa,
                 &body,
@@ -219,13 +196,18 @@ impl TestState {
                 &mut later_init.func_ctx,
             );
 
+            let root_block = const_mir.block;
+            signature.ret = body.dependant_types[const_mir.ty].ty;
             generator!(self).generate(signature, root_block, &mut builder);
 
-            self.mir.bodies[func].replace(body);
+            write!(
+                self.functions,
+                "const {}\n\n",
+                later_init.context.func.display()
+            )
+            .unwrap();
 
-            write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
-
-            self.compile_func(current_func, later_init);
+            self.compile_func(root_func, later_init);
 
             let next_iter = self
                 .compile_requests
@@ -233,28 +215,96 @@ impl TestState {
                 .drain(..)
                 .map(|request| request.id);
 
-            compiled_funcs.push(current_func);
             compile_queue.extend(next_iter);
+
+            let mut compiled_funcs = vec![];
+
+            while let Some(current_func) = compile_queue.pop() {
+                compiled_funcs.push(current_func);
+
+                let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
+                let Func {
+                    signature,
+                    visibility,
+                    ..
+                } = self.typec.funcs[func];
+
+                if visibility == FuncVisibility::Imported {
+                    continue;
+                }
+
+                let fall_back = (func == target_func).then_some(&body);
+                let body = self.mir.bodies[func]
+                    .as_ref()
+                    .or(fall_back)
+                    .expect("should be generated");
+
+                let root_block = body
+                    .blocks
+                    .keys()
+                    .next()
+                    .expect("function without blocks is invalid");
+
+                let mut builder = GenBuilder::new(
+                    &later_init.jit_context.isa,
+                    body,
+                    &mut later_init.context.func,
+                    &mut later_init.func_ctx,
+                );
+
+                generator!(self).generate(signature, root_block, &mut builder);
+
+                write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
+
+                self.compile_func(current_func, later_init);
+
+                let next_iter = self
+                    .compile_requests
+                    .queue
+                    .drain(..)
+                    .map(|request| request.id);
+
+                compile_queue.extend(next_iter);
+            }
+
+            later_init
+                .jit_context
+                .load_functions(
+                    compiled_funcs,
+                    &self.gen,
+                    &self.typec,
+                    &self.interner,
+                    false,
+                )
+                .unwrap();
+            later_init
+                .jit_context
+                .load_functions(
+                    iter::once(root_func),
+                    &self.gen,
+                    &self.typec,
+                    &self.interner,
+                    true,
+                )
+                .unwrap();
+
+            later_init.jit_context.prepare_for_execution();
+
+            let fn_ptr = later_init.jit_context.get_function(root_func).unwrap();
+            let constant = if body.dependant_types[const_mir.ty].ty == Ty::UINT {
+                let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
+                GenFuncConstant::Int(func() as u64)
+            } else if body.dependant_types[const_mir.ty].ty == Ty::U32 {
+                let func: extern "C" fn() -> u32 = unsafe { mem::transmute(fn_ptr.as_ptr()) };
+                GenFuncConstant::Int(func() as u64)
+            } else {
+                todo!()
+            };
+
+            self.gen_resources.func_constants[key] = constant.into();
         }
 
-        later_init
-            .jit_context
-            .load_functions(compiled_funcs, &self.gen, false)
-            .unwrap();
-        later_init
-            .jit_context
-            .load_functions(iter::once(current_func), &self.gen, true)
-            .unwrap();
-
-        later_init.jit_context.prepare_for_execution();
-
-        let fn_ptr = later_init.jit_context.get_function(current_func).unwrap();
-        if body.dependant_types[const_mir.ty].ty == Ty::UINT {
-            let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
-            GenFuncConstant::Int(func() as u64)
-        } else {
-            todo!()
-        }
+        self.mir.bodies[target_func] = Some(body);
     }
 }
 
@@ -287,17 +337,25 @@ impl Scheduler for TestState {
         }
 
         let mut compiled_funcs = vec![];
-        let mut compile_queue = self.collect_entry_points();
+        let mut compile_queue = self.collect_entry_points(later_init.object_context.isa.triple);
 
         while let Some(current_func) = compile_queue.pop() {
-            let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
-            let signature = self.typec.funcs[func].signature;
-            let body = self.mir.bodies[func].take().expect("should be generated");
+            compiled_funcs.push(current_func);
 
-            for (id, &const_block) in body.constants.iter() {
-                let constant = self.compute_func_constant(const_block, &body, &mut later_init);
-                self.gen_resources.func_constants[id] = Some(constant);
+            let CompiledFunc { func, .. } = self.gen.compiled_funcs[current_func];
+            let Func {
+                signature,
+                visibility,
+                ..
+            } = self.typec.funcs[func];
+
+            if visibility == FuncVisibility::Imported {
+                continue;
             }
+
+            self.compute_func_constant(current_func, &mut later_init);
+
+            let body = self.mir.bodies[func].as_ref().expect("should be generated");
 
             let root_block = body
                 .blocks
@@ -307,14 +365,12 @@ impl Scheduler for TestState {
 
             let mut builder = GenBuilder::new(
                 &later_init.object_context.isa,
-                &body,
+                body,
                 &mut later_init.context.func,
                 &mut later_init.func_ctx,
             );
 
             generator!(self).generate(signature, root_block, &mut builder);
-
-            self.mir.bodies[func].replace(body);
 
             write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
 
@@ -326,7 +382,6 @@ impl Scheduler for TestState {
                 .drain(..)
                 .map(|request| request.id);
 
-            compiled_funcs.push(current_func);
             compile_queue.extend(next_iter);
         }
 
@@ -360,9 +415,12 @@ impl Scheduler for TestState {
 
         self.generate_entry_point(&mut later_init);
 
+        let thread_id = std::thread::current().id().as_u64().to_string();
+        let exe_path = format!("o-{}.exe", thread_id);
+        let obj_path = format!("o-{}.obj", thread_id);
+
         let emitted = later_init.object_context.emit().unwrap();
-        let path = Path::new("o.obj");
-        fs::write(path, emitted).unwrap();
+        fs::write(&obj_path, emitted).unwrap();
 
         let host = Triple::host().to_string();
         let target = later_init.object_context.isa.triple().to_string();
@@ -375,17 +433,10 @@ impl Scheduler for TestState {
             .get_compiler();
 
         let args = if compiler.is_like_msvc() {
-            let subsystem = later_init
-                .object_context
-                .isa
-                .triple()
-                .operating_system
-                .to_string();
-            vec![format!(
-                "-link /ENTRY:{} /SUBSYSTEM:{}",
-                gen::ENTRY_POINT_NAME,
-                subsystem
-            )]
+            vec![
+                "ucrt.lib".into(),
+                format!("-link /ENTRY:{} /SUBSYSTEM:CONSOLE", gen::ENTRY_POINT_NAME,),
+            ]
         } else if compiler.is_like_clang() {
             todo!()
         } else if compiler.is_like_gnu() {
@@ -394,19 +445,24 @@ impl Scheduler for TestState {
             unimplemented!("unknown compiler");
         };
 
-        compiler.to_command().arg(path).args(args).output().unwrap();
+        compiler
+            .to_command()
+            .arg(&obj_path)
+            .args(args)
+            .status()
+            .unwrap();
 
-        let path = Path::new("o.exe").canonicalize().unwrap();
+        let path = Path::new(&exe_path).canonicalize().unwrap();
 
         let output = Command::new(path)
             .current_dir(std::env::current_dir().unwrap())
-            .output()
+            .status()
             .unwrap();
 
-        fs::remove_file("o.obj").unwrap();
-        fs::remove_file("o.exe").unwrap();
+        fs::remove_file(obj_path).unwrap();
+        fs::remove_file(exe_path).unwrap();
 
-        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.code(), Some(0), "{:x?}", output.code().unwrap());
     }
 }
 
@@ -436,10 +492,19 @@ fn main() {
         simple "compile-time" {
             fn sub(a: uint, b: uint) -> uint => a - b;
 
-            break;
-
             #[entry];
             fn main -> uint => const sub(1, 1);
+        }
+
+        simple "external" {
+            fn "default" putchar(c: char) -> u32 extern;
+
+            #[entry];
+            fn main -> uint {
+                const putchar('a');
+                putchar('\n');
+                0
+            };
         }
     }
 }
