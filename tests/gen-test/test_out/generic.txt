@@ -1,18 +1,10 @@
-error: type not found
- --> generic\root.ctl:2:20
-  |
-2 | fn [T] pass(value: T) -> T => value
-  |                    ^ this does not exist
-  |
-  = info: queried 'T'
-
-error: function or variable not found
- --> generic\root.ctl:4:20
+error: type mismatch
+ --> generic\root.ctl:4:25
   |
 4 | fn main -> uint => pass(0)
-  |                    ^^^^ this does not exist
+  |                         ^ mismatch occurred here
   |
-  = info: queried 'pass'
+  = info: expected 'param 0' but got 'uint'
 
 info: mir repr of functions:
 
