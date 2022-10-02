@@ -44,6 +44,8 @@ impl<'a> FmtAst for BinaryExprAst<'a> {
 impl<'a> FmtAst for UnitExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
+            UnitExprAst::StructConstructor(ctor) => ctor.display(fmt),
+            UnitExprAst::DotExpr(dot) => dot.display(fmt),
             UnitExprAst::Call(call) => call.display(fmt),
             UnitExprAst::Path(path) => path.display(fmt),
             UnitExprAst::Return(ret) => ret.display(fmt),
@@ -54,12 +56,46 @@ impl<'a> FmtAst for UnitExprAst<'a> {
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
+            UnitExprAst::StructConstructor(ctor) => ctor.flat_len(fmt),
+            UnitExprAst::DotExpr(dot) => dot.flat_len(fmt),
             UnitExprAst::Call(call) => call.flat_len(fmt),
             UnitExprAst::Path(path) => path.flat_len(fmt),
             UnitExprAst::Return(ret) => ret.flat_len(fmt),
             UnitExprAst::Int(int) | UnitExprAst::Char(int) => int.len(),
             UnitExprAst::Const(run) => run.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for StructConstructorAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        if let Some(path) = self.path {
+            path.display(fmt);
+        }
+        if let Some(generics) = self.generics {
+            write!(fmt, "\\");
+            generics.display(fmt);
+        }
+        fmt.write_span(self.slash);
+        self.body.display(fmt);
+    }
+}
+
+impl<'a> FmtAst for DotExprAst<'a> {
+    fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        self.lhs.display_low(fold, fmt);
+        if fold {
+            fmt.newline();
+            fmt.indent();
+            fmt.write_indent();
+            fmt.unindent();
+        }
+        fmt.write_span(self.dot);
+        self.rhs.display(fmt);
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.lhs.flat_len(fmt) + ".".len() + self.rhs.flat_len(fmt)
     }
 }
 

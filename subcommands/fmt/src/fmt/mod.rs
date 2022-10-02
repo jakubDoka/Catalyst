@@ -115,6 +115,12 @@ impl<'a> FmtAst for PathExprAst<'a> {
 
 impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, T, META> {
     fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        let delimiter_spacing = META::START.iter().any(|t| {
+            matches!(
+                t,
+                TokenPattern::Kind(TokenKind::Colon | TokenKind::LeftCurly)
+            )
+        });
         let is_top_list = META::END.contains(&TokenKind::Eof.into());
         if self.elements.is_empty() && META::OPTIONAL {
             return;
@@ -123,6 +129,8 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         fmt.write_span(self.start);
         if fold && !is_top_list {
             fmt.indent();
+        } else if !fold && delimiter_spacing {
+            write!(fmt, " ");
         }
         fmt.write_between(fold, self.first_gap());
 
@@ -169,6 +177,8 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         } else if is_top_list && !self.end.is_empty() {
             fmt.newline();
             fmt.newline();
+        } else if !fold && delimiter_spacing && !self.end.is_empty() {
+            write!(fmt, " ");
         }
 
         fmt.write_span(self.end);

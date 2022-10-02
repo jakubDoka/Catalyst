@@ -70,7 +70,8 @@ pub use parser::{
     bound::SpecExprAst,
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
-        ExprAst, ReturnExprAst, UnitExprAst,
+        DotExprAst, ExprAst, ReturnExprAst, StructConstructorAst, StructConstructorBodyAst,
+        UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
@@ -91,5 +92,5 @@ pub use parser::{
         TyTupleAst,
     },
     BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamBoundsAst, PathExprAst,
-    StructConstructorAst, StructConstructorMeta, TupleConstructorAst, TupleConstructorMeta,
+    TupleConstructorAst, TupleConstructorMeta,
 };

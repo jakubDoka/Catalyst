@@ -214,6 +214,8 @@ impl TyChecker<'_> {
             UnitExprAst::Char(span) => self.char(span, builder),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
             UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
+            UnitExprAst::StructConstructor(_) => todo!(),
+            UnitExprAst::DotExpr(_) => todo!(),
         }
     }
 
@@ -267,6 +269,8 @@ impl TyChecker<'_> {
             | UnitExprAst::Call(..)
             | UnitExprAst::Int(..)
             | UnitExprAst::Char(..)
+            | UnitExprAst::StructConstructor(_)
+            | UnitExprAst::DotExpr(_)
             | UnitExprAst::Const(..) => {
                 todo!()
             }

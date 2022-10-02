@@ -94,6 +94,7 @@ impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        self.expr
+            .map_or(self.name.span(), |e| self.name.span().joined(e.span()))
     }
 }

@@ -214,6 +214,18 @@ impl<'a> ParsingCtx<'_, 'a> {
                 err[span]: "the starting paren";
             }
         }
+
+        push invalid_struct_constructor_type(self, span: Span) {
+            err: "invalid struct constructor type";
+            help: ("{}", concat!(
+                "this part of the constructor has same syntax as type, with a little",
+                " difference which is a '\\' between path and generic parameters"
+            ));
+            info: ("{}", self.display_parse_stack());
+            (span, self.state.path) {
+                err[span]: "this is invalid";
+            }
+        }
     }
 
     pub fn display_parse_stack(&self) -> String {

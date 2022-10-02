@@ -6,6 +6,8 @@ pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
 list_meta!(CallArgsMeta LeftParen Comma RightParen);
 pub type CallArgsAst<'a> = ListAst<'a, ExprAst<'a>, CallArgsMeta>;
 
+pub type StructConstructorBodyAst<'a> = ListAst<'a, StructConstructorFieldAst<'a>, BlockMeta>;
+
 #[derive(Debug, Clone, Copy)]
 pub enum ExprAst<'a> {
     Unit(&'a UnitExprAst<'a>),
@@ -67,6 +69,8 @@ impl<'a> BinaryExprAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnitExprAst<'a> {
+    StructConstructor(StructConstructorAst<'a>),
+    DotExpr(&'a DotExprAst<'a>),
     Call(&'a CallExprAst<'a>),
     Path(PathExprAst<'a>),
     Return(ReturnExprAst<'a>),
@@ -95,19 +99,93 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                 LeftParen => ctx.parse_args((unit?, ))
                     .map(|call| ctx.arena.alloc(call))
                     .map(Self::Call),
+                Dot => ctx.parse_args((unit?, ))
+                    .map(|path| ctx.arena.alloc(path))
+                    .map(Self::DotExpr),
+                BackSlash => {
+                    let slash = ctx.advance().span;
+                    branch!(ctx => {
+                        LeftCurly => ctx.parse_args((Some(unit?), slash))
+                            .map(Self::StructConstructor),
+                    })
+                },
                 _ => break unit,
             });
         }
     }
 
     fn span(&self) -> Span {
+        use UnitExprAst::*;
         match *self {
-            UnitExprAst::Call(call) => call.span(),
-            UnitExprAst::Path(path) => path.span(),
-            UnitExprAst::Return(ret) => ret.span(),
-            UnitExprAst::Int(span) | UnitExprAst::Char(span) => span,
-            UnitExprAst::Const(run) => run.span(),
+            StructConstructor(block) => block.span(),
+            DotExpr(dot) => dot.span(),
+            Call(call) => call.span(),
+            Path(path) => path.span(),
+            Return(ret) => ret.span(),
+            Int(span) | Char(span) => span,
+            Const(run) => run.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StructConstructorAst<'a> {
+    pub path: Option<PathExprAst<'a>>,
+    pub generics: Option<GenericsAst<'a>>,
+    pub slash: Span,
+    pub body: StructConstructorBodyAst<'a>,
+}
+
+impl<'a> Ast<'a> for StructConstructorAst<'a> {
+    type Args = (Option<UnitExprAst<'a>>, Span);
+
+    const NAME: &'static str = "struct constructor";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ty, slash): Self::Args) -> Option<Self> {
+        let (path, generics) = match ty {
+            Some(UnitExprAst::Path(path)) => (Some(path), None),
+            None => (None, None),
+            Some(ty) => ctx.invalid_struct_constructor_type(ty.span())?,
+        };
+
+        Some(Self {
+            path,
+            generics,
+            slash,
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.path
+            .map(|ty| ty.span())
+            .unwrap_or(self.slash)
+            .joined(self.body.span())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DotExprAst<'a> {
+    pub lhs: UnitExprAst<'a>,
+    pub dot: Span,
+    pub rhs: PathExprAst<'a>,
+}
+
+impl<'a> Ast<'a> for DotExprAst<'a> {
+    type Args = (UnitExprAst<'a>,);
+
+    const NAME: &'static str = "dot expr";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (lhs,): Self::Args) -> Option<Self> {
+        Some(Self {
+            lhs,
+            dot: ctx.advance().span,
+            rhs: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.lhs.span().joined(self.rhs.span())
     }
 }
 

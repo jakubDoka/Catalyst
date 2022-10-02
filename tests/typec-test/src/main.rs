@@ -90,5 +90,11 @@ fn main() {
                 c: C
             }
         }
+
+        simple "impl-block" {
+            impl uint {
+                fn pass(s: Self) -> uint => s;
+            };
+        }
     }
 }

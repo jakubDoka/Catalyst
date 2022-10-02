@@ -31,6 +31,14 @@ impl TyChecker<'_> {
         self
     }
 
+    pub fn collect_impl(
+        &mut self,
+        ImplAst { .. }: ImplAst,
+        _: &[TopLevelAttributeAst],
+    ) -> Option<(ModItem, VRef<()>)> {
+        todo!()
+    }
+
     pub fn collect_spec(
         &mut self,
         spec @ SpecAst { vis, name, .. }: SpecAst,
@@ -53,6 +61,14 @@ impl TyChecker<'_> {
 
     pub fn collect_func(
         &mut self,
+        func: FuncDefAst,
+        attributes: &[TopLevelAttributeAst],
+    ) -> Option<(ModItem, VRef<Func>)> {
+        self.collect_func_low(func, attributes, default(), 0)
+    }
+
+    fn collect_func_low(
+        &mut self,
         func @ FuncDefAst {
             vis,
             signature: sig @ FuncSigAst {
@@ -63,10 +79,12 @@ impl TyChecker<'_> {
             ..
         }: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
+        upper_generics: VRefSlice<Spec>,
+        offset: usize,
     ) -> Option<(ModItem, VRef<Func>)> {
         let id = intern_scoped_ident!(self, name.ident);
 
-        let (signature, parsed_generics) = self.collect_signature(sig, 0)?;
+        let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
         let entry = attributes
             .iter()
@@ -90,6 +108,7 @@ impl TyChecker<'_> {
 
         let func = |_: &mut Funcs| Func {
             generics: parsed_generics,
+            upper_generics,
             signature,
             flags: FuncFlags::ENTRY & entry.is_some(),
             visibility,
@@ -190,4 +209,8 @@ impl CollectGroup for StructAst<'_> {
 
 impl CollectGroup for SpecAst<'_> {
     type Output = Spec;
+}
+
+impl CollectGroup for ImplAst<'_> {
+    type Output = ();
 }

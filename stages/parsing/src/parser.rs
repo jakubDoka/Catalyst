@@ -23,10 +23,6 @@ pub type ParamBoundsAst<'a> = ListAst<'a, SpecExprAst<'a>, BoundsMeta>;
 list_meta!(TupleConstructorMeta ? LeftParen Comma RightParen);
 pub type TupleConstructorAst<'a> = ListAst<'a, ExprAst<'a>, TupleConstructorMeta>;
 
-list_meta!(StructConstructorMeta ? LeftCurly Comma RightCurly);
-pub type StructConstructorAst<'a> =
-    ListAst<'a, StructConstructorFieldAst<'a>, StructConstructorMeta>;
-
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParamAst<'a> {
     pub name: NameAst,
