@@ -61,8 +61,8 @@ impl<'a> Ast<'a> for PathExprAst<'a> {
         let start = ctx.name_unchecked();
         let mut segments = bumpvec![];
         while ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::Ident) {
-            segments.push(ctx.name_unchecked());
             ctx.advance();
+            segments.push(ctx.name_unchecked());
         }
         let segments = ctx.arena.alloc_slice(&segments);
         Some(Self { start, segments })

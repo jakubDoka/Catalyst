@@ -283,28 +283,39 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let args = args.iter().copied();
-        let (func_res, caller) = match callable {
-            UnitExprAst::Path(path) => (self.func_path(path, builder)?, None),
-            UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
-                let lhs = self.unit_expr(lhs, None, builder)?;
-                let func = self.method_path(lhs.ty, rhs, builder)?;
-                (func, Some(lhs))
-            }
-            kind @ (UnitExprAst::Return(..)
-            | UnitExprAst::Call(..)
-            | UnitExprAst::Int(..)
-            | UnitExprAst::Char(..)
-            | UnitExprAst::StructConstructor(..)
-            | UnitExprAst::Const(..)) => {
-                todo!("{kind:?}")
+        let res = try {
+            match callable {
+                UnitExprAst::Path(path) => (self.func_path(path, builder)?, None),
+                UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
+                    let lhs = self.unit_expr(lhs, None, builder)?;
+                    let func = self.method_path(lhs.ty, rhs, builder)?;
+                    (func, Some(lhs))
+                }
+                kind @ (UnitExprAst::Return(..)
+                | UnitExprAst::Call(..)
+                | UnitExprAst::Int(..)
+                | UnitExprAst::Char(..)
+                | UnitExprAst::StructConstructor(..)
+                | UnitExprAst::Const(..)) => {
+                    todo!("{kind:?}")
+                }
             }
         };
 
+        let Some((func_res, caller)) = res else {
+            // more diagnostics
+            for arg in args {
+                self.expr(arg, None, builder);
+            }
+
+            return None;
+        };
+
         match func_res {
-            FuncLookupResult::Func(func, true) => {
+            FuncLookupResult::Func(func, false) => {
                 self.direct_generic_call(func, caller, args, call.span(), inference, builder)
             }
-            FuncLookupResult::Func(func, false) => {
+            FuncLookupResult::Func(func, true) => {
                 self.direct_concrete_call(func, caller, args, call.span(), builder)
             }
             FuncLookupResult::Var(_) => todo!(),
@@ -322,11 +333,13 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         let Func {
             generics,
+            upper_generics,
             signature,
             ..
         } = self.typec.funcs[func];
 
-        let mut params = bumpvec![None; self.typec.spec_slices[generics].len()];
+        let mut params = bumpvec![None; self.typec.spec_slices[generics].len()
+            + self.typec.spec_slices[upper_generics].len()];
 
         if let Some(inference) = inference {
             self.infer_params(&mut params, inference, signature.ret, span)?;
@@ -460,7 +473,7 @@ impl TyChecker<'_> {
     fn func_path<'a>(
         &mut self,
         path @ PathExprAst { start, segments }: PathExprAst,
-        _builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
         match *segments {
             [] => dispatch_item!(FuncLookup self, start.ident, start.span =>
@@ -468,7 +481,38 @@ impl TyChecker<'_> {
                     self.typec.funcs[func].generics.is_empty())),
                 _var: Var => todo!(),
             ),
-            _ => self.invalid_expr_path(path.span())?,
+            [name] => {
+                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
+                let mod_id = self.packages.mod_as_ident(module);
+                let id = self
+                    .interner
+                    .intern(scoped_ident!(mod_id.index() as u32, name.ident));
+                match self.typec.funcs.index(id) {
+                    Some(func) => Some(FuncLookupResult::Func(
+                        func,
+                        self.typec.funcs[func].generics.is_empty(),
+                    )),
+                    None => self.handle_scope_error::<FuncLookup>(
+                        ScopeError::NotFound,
+                        id,
+                        path.span(),
+                    )?,
+                }
+            }
+            [ty, name, ref others @ ..] => {
+                let ty = self.ty_path::<TyLookup>(PathExprAst {
+                    start,
+                    segments: &[ty],
+                })?;
+                self.method_path(
+                    ty,
+                    PathExprAst {
+                        start: name,
+                        segments: others,
+                    },
+                    builder,
+                )
+            }
         }
     }
 
@@ -487,6 +531,26 @@ impl TyChecker<'_> {
                         self.typec.funcs[func].generics.is_empty())),
                     _var: Var => todo!(),
                 )
+            }
+            [name] => {
+                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
+                let mod_id = self.packages.mod_as_ident(module);
+                let method_id = self
+                    .interner
+                    .intern(scoped_ident!(mod_id.index() as u32, name.ident));
+                let ty_id = self.typec.types.id(ty);
+                let id = self.interner.intern(scoped_ident!(ty_id, method_id));
+                match self.typec.funcs.index(id) {
+                    Some(func) => Some(FuncLookupResult::Func(
+                        func,
+                        self.typec.funcs[func].generics.is_empty(),
+                    )),
+                    None => self.handle_scope_error::<FuncLookup>(
+                        ScopeError::NotFound,
+                        id,
+                        path.span(),
+                    )?,
+                }
             }
             _ => self.invalid_expr_path(path.span())?,
         }

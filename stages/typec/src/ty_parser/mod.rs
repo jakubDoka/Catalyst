@@ -214,7 +214,7 @@ impl TyChecker<'_> {
         Some(self.typec.types.get_or_insert(key, fallback))
     }
 
-    fn ty_path<T: ScopeLookup>(
+    pub fn ty_path<T: ScopeLookup>(
         &mut self,
         path @ PathExprAst { start, segments }: PathExprAst,
     ) -> Option<VRef<T::Output>> {
@@ -296,23 +296,22 @@ impl TyChecker<'_> {
                     .map(|m| &self.packages.conns[m.deps])
                     .unwrap()
                     .iter()
-                    .filter_map(|dep| {
-                        let ident = dep.name;
-                        self.scope
-                            .get_typed::<T::Output>(ident)
-                            .ok()
-                            .and(Some(ident))
+                    .filter(|dep| {
+                        self.packages.modules[&dep.ptr]
+                            .items()
+                            .iter()
+                            .any(|i| i.id == sym)
                     })
-                    .collect::<BumpVec<_>>()
-                    .into_iter()
-                    .map(|ident| &self.interner[ident])
-                    .collect::<BumpVec<_>>()
-                    .join(", ");
+                    .map(|dep| &self.interner[dep.name])
+                    .intersperse(", ")
+                    .collect::<String>();
 
                 snippet! {
                     err: ("'{}' is ambiguous", &self.interner[sym]);
                     help: ("try to specify module from which the item is imported");
                     help: ("suggestions: {}", suggestions);
+                    help: ("syntax for specifying module: `<mod>\\<item>`");
+                    help: ("syntax for specifying method module: `<expr>.<mod>\\<item>`");
                     (span, self.current_file) {
                         err[span]: "this is ambiguous";
                     }

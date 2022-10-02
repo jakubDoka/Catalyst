@@ -85,6 +85,7 @@ mod util {
             self.tir_arena.clear();
             self.extern_funcs.clear();
             self.ty_graph.clear();
+            self.impl_funcs.clear();
         }
     }
 
@@ -141,7 +142,7 @@ mod util {
                         );
                     }
 
-                    TyKind::Instance(..)
+                    TyKind::Instance(..) // FIXME: We still don't catch all cycles
                     | TyKind::Pointer(..)
                     | TyKind::Param(..)
                     | TyKind::Integer(..)

@@ -100,7 +100,7 @@ fn main() {
         }
 
         "cross-module-item-access" {
-            file "project.ctlm" {}
+            file "package.ctlm" {}
             dir "root" {
                 file "a.ctl" {
                     impl uint {
@@ -117,11 +117,11 @@ fn main() {
             }
             file "root.ctl" {
                 use {
-                    "a"
-                    "b"
-                }
+                    "./a";
+                    "./b"
+                };
 
-                fn main() -> uint => pass(0.pass());
+                fn main() -> uint => a::pass(uint::a::pass(0.b::pass()));
             }
         }
     }

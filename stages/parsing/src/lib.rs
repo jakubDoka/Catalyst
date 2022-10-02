@@ -74,7 +74,7 @@ pub use parser::{
         UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
-    imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
+    imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},
     items::{
         GroupedItemSlice, GroupedItemsAst, ImplAst, ImplBodyAst, ImplBodyMeta, ImplItemAst,
         ImplTarget, InlineModeAst, ItemAst, ItemsAst, ItemsMeta, SpecAst, SpecBodyAst,

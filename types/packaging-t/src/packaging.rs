@@ -96,6 +96,13 @@ pub struct Mod {
 }
 
 impl Mod {
+    pub fn items(&self) -> &[ModItem] {
+        match &self.kind {
+            ModKind::Module { items, .. } => items,
+            ModKind::Package { .. } | ModKind::Default => &[],
+        }
+    }
+
     pub fn span_str(&self, span: Span) -> &str {
         &self.content[span.start as usize..span.end as usize]
     }

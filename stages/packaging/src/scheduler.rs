@@ -24,12 +24,22 @@ pub trait Scheduler {
         for module in order {
             self.before_parsing(module);
 
-            let mod_ent = self.resources().packages.modules.get(&module).unwrap();
+            let res = self.resources();
+            let mod_ent = &res.packages.modules[&module];
             parse_state.start(&mod_ent.content, module);
+            ParsingCtx::new(
+                &mod_ent.content,
+                &mut parse_state,
+                &ast_data,
+                res.workspace,
+                res.interner,
+            )
+            .parse::<UseAstSkip>();
+
             loop {
                 let res = self.resources();
                 ast_data.clear();
-                let mod_ent = res.packages.modules.get(&module).unwrap();
+                let mod_ent = &res.packages.modules[&module];
                 let items = ParsingCtx::new(
                     &mod_ent.content,
                     &mut parse_state,

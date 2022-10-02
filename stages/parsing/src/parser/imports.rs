@@ -17,7 +17,7 @@ impl<'a> Ast<'a> for UseAstSkip {
             return Some(UseAstSkip);
         }
 
-        while matches!(ctx.advance().kind, TokenKind::RightCurly | TokenKind::Eof) {}
+        while !matches!(ctx.advance().kind, TokenKind::RightCurly | TokenKind::Eof) {}
 
         Some(UseAstSkip)
     }
