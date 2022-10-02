@@ -1,4 +1,6 @@
---> bound\root.ctl
- |
- |
+ --> bound\root.ctl
+  |
+1 | 
+2 | pub spec [T] Some {fn new -> Self; fn get(s: ^Self) -> T; fn [D] set(s: ^mut Self, v: D, t: T)}
+  |
 
