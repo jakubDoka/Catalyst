@@ -1,0 +1,8 @@
+error: expected '*' but got '^'
+ --> one-line-struct\root.ctl:1:104
+  |
+1 | pub struct OneLineStruct {     pub use mut filed : Trough ; other_field : SimpleStuff ; priv pointer : ^     mut ^ int ; }
+  |                                                                                                        ^ token located here
+  |
+  = info: list -> item -> struct -> list -> struct field -> type
+
