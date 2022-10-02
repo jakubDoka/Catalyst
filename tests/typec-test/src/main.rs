@@ -82,5 +82,9 @@ fn main() {
 
             fn pass(a: uint) -> uint => a;
         }
+
+        simple "spec" {
+            priv spec Clay;
+        }
     }
 }

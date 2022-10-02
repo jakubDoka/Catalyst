@@ -9,15 +9,15 @@ use storage::*;
 #[derive(Default)]
 pub struct Typec {
     pub types: Types,
-    pub bounds: Bounds,
+    pub specs: Specs,
     pub funcs: Funcs,
     pub fields: Fields,
 
     pub ty_slices: TySlices,
-    pub bound_slices: BoundSlices,
+    pub spec_slices: SpecSlices,
     pub func_slices: FuncSlices,
 
-    pub bound_funcs: BoundFuncs,
+    pub spec_funcs: SpecFuncs,
 
     pub builtin_funcs: Vec<VRef<Func>>,
 }
@@ -178,11 +178,11 @@ impl Typec {
 
     pub fn bound_instance_id<'a>(
         &'a self,
-        base: VRef<Bound>,
+        base: VRef<Spec>,
         params: &'a [VRef<Ty>],
         assoc_types: &'a [VRef<Ty>],
     ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        let prefix = ident!(self.bounds.id(base), "[").into_iter();
+        let prefix = ident!(self.specs.id(base), "[").into_iter();
         let params = ident_join(
             ", ",
             params.iter().chain(assoc_types).map(|&p| self.types.id(p)),
@@ -193,9 +193,9 @@ impl Typec {
 
     pub fn bound_sum_id<'a>(
         &'a self,
-        bounds: &'a [VRef<Bound>],
+        bounds: &'a [VRef<Spec>],
     ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        ident_join(" + ", bounds.iter().map(|&b| self.bounds.id(b)))
+        ident_join(" + ", bounds.iter().map(|&b| self.specs.id(b)))
     }
 
     pub fn tuple_id<'a>(

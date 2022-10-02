@@ -18,7 +18,7 @@ list_meta!(GenericsMeta ? LeftBracket Comma RightBracket);
 pub type GenericsAst<'a> = ListAst<'a, GenericParamAst<'a>, GenericsMeta>;
 
 list_meta!(BoundsMeta ? Colon "+" none);
-pub type ParamBoundsAst<'a> = ListAst<'a, BoundExprAst<'a>, BoundsMeta>;
+pub type ParamBoundsAst<'a> = ListAst<'a, SpecExprAst<'a>, BoundsMeta>;
 
 list_meta!(TupleConstructorMeta ? LeftParen Comma RightParen);
 pub type TupleConstructorAst<'a> = ListAst<'a, ExprAst<'a>, TupleConstructorMeta>;

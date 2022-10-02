@@ -156,7 +156,7 @@ pub struct CallMir {
 #[derive(Clone, Copy)]
 pub enum CallableMir {
     Func(VRef<Func>),
-    BoundFunc(VRef<BoundFunc>),
+    SpecFunc(VRef<SpecFunc>),
     Pointer(VRef<ValueMir>),
 }
 

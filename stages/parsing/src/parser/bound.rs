@@ -1,11 +1,11 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug)]
-pub enum BoundExprAst<'a> {
+pub enum SpecExprAst<'a> {
     Path(PathExprAst<'a>),
 }
 
-impl<'a> Ast<'a> for BoundExprAst<'a> {
+impl<'a> Ast<'a> for SpecExprAst<'a> {
     type Args = ();
 
     const NAME: &'static str = "bound expr";

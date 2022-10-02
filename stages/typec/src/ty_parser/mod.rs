@@ -59,13 +59,13 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Bound> {
+    pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Spec> {
         let mut generics = bumpvec!(cap generic_ast.len());
         for &GenericParamAst { bounds, .. } in generic_ast.iter() {
             let bound = self.bound_sum(bounds.iter()).unwrap_or_default();
             generics.push(bound);
         }
-        self.typec.bound_slices.bump(generics)
+        self.typec.spec_slices.bump(generics)
     }
 
     pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
@@ -128,8 +128,8 @@ impl TyChecker<'_> {
 
     pub fn bound_sum<'a>(
         &mut self,
-        bounds: impl Iterator<Item = &'a BoundExprAst<'a>>,
-    ) -> Option<VRef<Bound>> {
+        bounds: impl Iterator<Item = &'a SpecExprAst<'a>>,
+    ) -> Option<VRef<Spec>> {
         let mut bounds = bounds
             .map(|&ast| self.bound(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
@@ -137,10 +137,10 @@ impl TyChecker<'_> {
 
         let segments = self.typec.bound_sum_id(&bounds);
         let key = self.interner.intern(segments);
-        let inherits = self.typec.bound_slices.bump(bounds);
+        let inherits = self.typec.spec_slices.bump(bounds);
 
-        let fallback = |_: &mut Bounds| Bound {
-            kind: BoundBase {
+        let fallback = |_: &mut Specs| Spec {
+            kind: SpecBase {
                 inherits,
                 ..default()
             }
@@ -148,12 +148,12 @@ impl TyChecker<'_> {
             ..default()
         };
 
-        Some(self.typec.bounds.get_or_insert(key, fallback))
+        Some(self.typec.specs.get_or_insert(key, fallback))
     }
 
-    pub fn bound(&mut self, bound_ast: BoundExprAst) -> Option<VRef<Bound>> {
+    pub fn bound(&mut self, bound_ast: SpecExprAst) -> Option<VRef<Spec>> {
         match bound_ast {
-            BoundExprAst::Path(ident) => self.ty_path::<BoundLookup>(ident),
+            SpecExprAst::Path(ident) => self.ty_path::<BoundLookup>(ident),
         }
     }
 
@@ -350,13 +350,13 @@ pub trait ScopeLookup {
 
 gen_scope_lookup! {
     TyLookup<"type", Ty, types> {
-        Bound => "bound",
+        Spec => "bound",
     }
-    BoundLookup<"bound", Bound, bounds> {
+    BoundLookup<"bound", Spec, specs> {
         Ty => "type",
     }
     ModLookup<"module", Mod> {
-        Bound => "bound",
+        Spec => "bound",
         Ty => "type",
     }
 }

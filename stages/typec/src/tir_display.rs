@@ -81,7 +81,7 @@ impl TyChecker<'_> {
                     CallableTir::Func(func) => {
                         write!(buffer, "{}", &self.interner[self.typec.funcs.id(func)])?
                     }
-                    CallableTir::BoundFunc(_) => todo!(),
+                    CallableTir::SpecFunc(_) => todo!(),
                     CallableTir::Pointer(val) => {
                         self.display_tir(val, buffer, indent, var_count)?
                     }

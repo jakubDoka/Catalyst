@@ -151,19 +151,19 @@ macro_rules! impl_flagged {
     };
 }
 
-mod bound;
 mod func;
+mod spec;
 mod tir;
 mod ty;
 mod typec;
 
 pub use {
-    bound::{
-        Bound, BoundBase, BoundExt, BoundFlags, BoundFunc, BoundFuncs, BoundInstance, BoundKind,
-        BoundSlices, Bounds,
-    },
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
+    spec::{
+        BoundExt, BoundFlags, BoundKind, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance,
+        SpecSlices, Specs,
+    },
     tir::{
         AccessTir, BlockTir, CallTir, CallableTir, ConstTir, IntLit, IntTir, NodeInput, ReturnTir,
         TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,

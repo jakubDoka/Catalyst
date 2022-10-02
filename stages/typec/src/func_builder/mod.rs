@@ -287,7 +287,7 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let mut params = bumpvec![Ty::INFERRED; self.typec.bound_slices[generics].len()];
+        let mut params = bumpvec![Ty::INFERRED; self.typec.spec_slices[generics].len()];
 
         if let Some(inference) = inference {
             self.infer_params(&mut params, inference, signature.ret, span)?;

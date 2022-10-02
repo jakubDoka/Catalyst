@@ -31,53 +31,56 @@ impl TyChecker<'_> {
         self
     }
 
+    pub fn collect_spec(
+        &mut self,
+        spec @ SpecAst { vis, name, .. }: SpecAst,
+        _: &[TopLevelAttributeAst],
+    ) -> Option<(ModItem, VRef<Spec>)> {
+        let id = intern_scoped_ident!(self, name.ident);
+
+        let fallback = |_: &mut Specs| Spec {
+            kind: BoundKind::Base(default()),
+            flags: default(),
+            loc: Loc::new(name.ident, self.current_file, name.span, spec.span()),
+        };
+        let id = self.typec.specs.get_or_insert(id, fallback);
+
+        Some((
+            ModItem::new(name.ident, id, name.span, spec.span(), vis),
+            id,
+        ))
+    }
+
     pub fn collect_func(
         &mut self,
         func @ FuncDefAst {
             vis,
-            signature:
-                FuncSigAst {
-                    generics,
-                    cc,
-                    name,
-                    args,
-                    ret,
-                    ..
-                },
+            signature: sig @ FuncSigAst {
+                generics, cc, name, ..
+            },
             span,
             body,
             ..
         }: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Func>)> {
-        let parsed_generics = self.generics(generics);
         let id = intern_scoped_ident!(self, name.ident);
 
-        let frame = self.scope.start_frame();
-        self.insert_generics(generics, 0);
-        let args = args
-            .iter()
-            .map(|arg| self.ty(arg.ty))
-            .nsc_collect::<Option<BumpVec<_>>>()?;
-        let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Some(Ty::UNIT))?;
-        self.scope.end_frame(frame);
-
-        let signature = Signature {
-            cc: cc.map(|cc| cc.ident),
-            args: self.typec.ty_slices.bump(args),
-            ret,
-        };
+        let (signature, parsed_generics) = self.collect_signature(sig, 0)?;
 
         let entry = attributes
             .iter()
             .find(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::Entry(..)));
 
         if let Some(entry) = entry && !parsed_generics.is_empty() {
-            self.generic_entry(generics.span(), entry.span(), func.span());
-            return None;
+            self.generic_entry(generics.span(), entry.span(), func.span())?;
         }
 
         let visibility = if let FuncBodyAst::Extern(..) = body {
+            if !parsed_generics.is_empty() {
+                self.generic_extern(generics.span(), body.span(), func.span())?;
+            }
+
             FuncVisibility::Imported
         } else if cc.is_some() {
             FuncVisibility::Exported
@@ -97,6 +100,38 @@ impl TyChecker<'_> {
         Some((ModItem::new(name.ident, id, name.span, span, vis), id))
     }
 
+    pub fn collect_signature(
+        &mut self,
+        FuncSigAst {
+            cc,
+            generics,
+            args,
+            ret,
+            ..
+        }: FuncSigAst,
+        offset: usize,
+    ) -> Option<(Signature, VRefSlice<Spec>)> {
+        let frame = self.scope.start_frame();
+
+        self.insert_generics(generics, offset);
+        let args = args
+            .iter()
+            .map(|arg| self.ty(arg.ty))
+            .nsc_collect::<Option<BumpVec<_>>>()?;
+        let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Some(Ty::UNIT))?;
+
+        let signature = Signature {
+            cc: cc.map(|cc| cc.ident),
+            args: self.typec.ty_slices.bump(args),
+            ret,
+        };
+        let parsed_generics = self.generics(generics);
+
+        self.scope.end_frame(frame);
+
+        Some((signature, parsed_generics))
+    }
+
     pub fn collect_struct(
         &mut self,
         StructAst {
@@ -108,16 +143,10 @@ impl TyChecker<'_> {
         }: StructAst,
         _: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Ty>)> {
-        let generics = self.generics(generics);
-
         let key = intern_scoped_ident!(self, name.ident);
 
         let ty = |_: &mut Types| Ty {
-            kind: TyStruct {
-                generics,
-                ..default()
-            }
-            .into(),
+            kind: TyStruct::default().into(),
             flags: TyFlags::GENERIC & !generics.is_empty(),
             loc: Loc::new(name.ident, self.current_file, name.span, span),
         };
@@ -127,6 +156,15 @@ impl TyChecker<'_> {
     }
 
     gen_error_fns! {
+        push generic_extern(self, generics: Span, body: Span, func: Span) {
+            err: "function with extern body cannot be generic";
+            help: "remove generic parameters from function signature";
+            (func, self.current_file) {
+                err[generics]: "this mean function is generic";
+                info[body]: "function is extern because of this";
+            }
+        }
+
         push generic_entry(self, generics: Span, entry: Span, func: Span) {
             err: "generic entry functions are not allowed";
             help: "you can wrap concrete instance of this function in a non-generic entry function";
@@ -148,4 +186,8 @@ impl CollectGroup for FuncDefAst<'_> {
 
 impl CollectGroup for StructAst<'_> {
     type Output = Ty;
+}
+
+impl CollectGroup for SpecAst<'_> {
+    type Output = Spec;
 }

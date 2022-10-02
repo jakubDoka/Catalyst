@@ -73,7 +73,7 @@ fn main() {
             }
         }
 
-        simple "bound" {
+        simple "spec" {
             pub spec [T] Some {
                 fn new() -> Self;
                 fn get(s: ^Self) -> T;

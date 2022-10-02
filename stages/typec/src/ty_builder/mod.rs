@@ -1,3 +1,5 @@
+use std::default::default;
+
 use lexing_t::*;
 use parsing::*;
 use parsing_t::*;
@@ -7,25 +9,72 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn build_structs(
+    pub fn build_items<T: CollectGroup>(
         &mut self,
-        items: GroupedItemSlice<StructAst>,
-        types: &TypecOutput<Ty>,
+        items: GroupedItemSlice<T>,
+        builder: fn(&mut Self, VRef<T::Output>, T),
+        types: &TypecOutput<T::Output>,
     ) -> &mut Self {
         for &(i, ty) in types {
             let (ast, ..) = items[i];
-            self.build_struct(ty, ast);
+            builder(self, ty, ast);
         }
 
         self
     }
 
-    fn build_struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
+    pub fn build_spec(&mut self, spec: VRef<Spec>, SpecAst { generics, body, .. }: SpecAst) {
+        let frame = self.scope.start_frame();
+
+        self.insert_generics(generics, 0);
+        let methods = self.build_spec_methods(spec, body, generics.len());
+        let generics = self.generics(generics);
+        self.typec.specs[spec].kind = SpecBase {
+            inherits: default(),
+            generics,
+            methods,
+        }
+        .into();
+
+        self.scope.end_frame(frame);
+    }
+
+    fn build_spec_methods(
+        &mut self,
+        parent: VRef<Spec>,
+        body: SpecBodyAst,
+        offset: usize,
+    ) -> VSlice<SpecFunc> {
+        let mut methods = bumpvec![cap body.len()];
+        for &func in body.iter() {
+            let Some((signature, generics)) = self.collect_signature(func, offset) else {
+                continue;
+            };
+
+            let func = SpecFunc {
+                generics,
+                signature,
+                loc: Loc::new(
+                    func.name.ident,
+                    self.current_file,
+                    func.name.span,
+                    func.span(),
+                ),
+                parent,
+            };
+
+            methods.push(func);
+        }
+        self.typec.spec_funcs.bump(methods)
+    }
+
+    pub fn build_struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
         let fields = self.struct_fields(body);
-        self.typec.types[ty].kind.cast_mut::<TyStruct>().fields = fields;
+        let generics = self.generics(generics);
+        self.typec.types[ty].kind = TyStruct { generics, fields }.into();
 
         self.scope.end_frame(frame);
     }

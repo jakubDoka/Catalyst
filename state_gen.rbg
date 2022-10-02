@@ -11,26 +11,6 @@ file "stages/packaging/src/state_gen.rs" {
     }
 }
 
-file "utils/typec-shared/src/state_gen.rs" {
-    use "typec_t";
-    use "storage";
-
-    struct TyUtils {
-        mut Typec
-        mut Interner
-    }
-
-    struct BoundUtils {
-        mut Typec
-        mut Interner
-    }
-
-    struct BuiltinUtils {
-        mut Typec
-        mut Interner
-    }
-}
-
 file "stages/typec/src/state_gen.rs" {
     use "storage"
     use "diags"

@@ -81,16 +81,16 @@ impl<'a> FmtAst for GenericParamAst<'a> {
     }
 }
 
-impl<'a> FmtAst for BoundExprAst<'a> {
+impl<'a> FmtAst for SpecExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
-            BoundExprAst::Path(ident) => ident.display(fmt),
+            SpecExprAst::Path(ident) => ident.display(fmt),
         }
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            BoundExprAst::Path(ident) => ident.flat_len(fmt),
+            SpecExprAst::Path(ident) => ident.flat_len(fmt),
         }
     }
 }

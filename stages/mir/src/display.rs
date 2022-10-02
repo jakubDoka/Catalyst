@@ -110,9 +110,9 @@ impl MirChecker<'_> {
                     CallableMir::Func(func) => {
                         buffer.push_str(&self.interner[self.typec.funcs.id(func)])
                     }
-                    CallableMir::BoundFunc(bound_func) => {
-                        let BoundFunc { loc, parent, .. } = self.typec.bound_funcs[bound_func];
-                        let bound_id = self.typec.bounds.id(parent);
+                    CallableMir::SpecFunc(bound_func) => {
+                        let SpecFunc { loc, parent, .. } = self.typec.spec_funcs[bound_func];
+                        let bound_id = self.typec.specs.id(parent);
                         write!(
                             buffer,
                             "{}\\{}",

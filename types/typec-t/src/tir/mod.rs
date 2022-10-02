@@ -1,7 +1,7 @@
 use lexing_t::*;
 use storage::*;
 
-use crate::{BoundFunc, Func, Ty};
+use crate::{Func, SpecFunc, Ty};
 
 pub type TypecOutput<T> = Vec<(usize, VRef<T>)>;
 
@@ -106,7 +106,7 @@ pub struct CallTir<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum CallableTir<'a> {
     Func(VRef<Func>),
-    BoundFunc(VRef<BoundFunc>),
+    SpecFunc(VRef<SpecFunc>),
     Pointer(TirNode<'a>),
 }
 

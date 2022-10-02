@@ -71,6 +71,7 @@ mod util {
     pub struct TyCheckerCtx {
         pub structs: TypecOutput<Ty>,
         pub funcs: TypecOutput<Func>,
+        pub specs: TypecOutput<Spec>,
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub ty_graph: TyGraph,
@@ -94,9 +95,11 @@ mod util {
             type_checked_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
-            self.collect(items.structs, Self::collect_struct, &mut ctx.structs)
+            self.collect(items.specs, Self::collect_spec, &mut ctx.specs)
+                .collect(items.structs, Self::collect_struct, &mut ctx.structs)
                 .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
-                .build_structs(items.structs, &ctx.structs)
+                .build_items(items.specs, Self::build_spec, &ctx.specs)
+                .build_items(items.structs, Self::build_struct, &ctx.structs)
                 .detect_infinite_types(ctx)
                 .build_funcs(
                     items.funcs,

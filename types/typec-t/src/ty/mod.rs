@@ -53,7 +53,7 @@ gen_kind!(TyKind
         args: VRefSlice<Ty>,
     },
     Struct = TyStruct {
-        generics: VRefSlice<Bound>,
+        generics: VRefSlice<Spec>,
         fields: VSlice<Field>,
     },
     Pointer = TyPointer {
@@ -109,7 +109,7 @@ pub trait TyExt: StorageExt<Ty> {
     }
 
     #[inline]
-    fn generics(&self, target: VRef<Ty>) -> Option<VRefSlice<Bound>> {
+    fn generics(&self, target: VRef<Ty>) -> Option<VRefSlice<Spec>> {
         let target = self.base(target);
         Some(match self[target].kind {
             TyKind::Struct(s) => s.generics,

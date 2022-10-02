@@ -159,7 +159,7 @@ impl Generator<'_> {
                     self.gen_resources.values[ret] = value.into();
                 }
             }
-            CallableMir::BoundFunc(_) => todo!(),
+            CallableMir::SpecFunc(_) => todo!(),
             CallableMir::Pointer(_) => todo!(),
         }
     }

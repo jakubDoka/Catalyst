@@ -120,7 +120,7 @@ impl MirChecker<'_> {
     ) -> NodeRes {
         let callable = match func {
             CallableTir::Func(func) => CallableMir::Func(func),
-            CallableTir::BoundFunc(bound_func) => CallableMir::BoundFunc(bound_func),
+            CallableTir::SpecFunc(bound_func) => CallableMir::SpecFunc(bound_func),
             CallableTir::Pointer(expr) => CallableMir::Pointer(self.node(expr, builder)?),
         };
 
