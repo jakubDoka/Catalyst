@@ -1,7 +1,7 @@
-error: expected 'struct' | 'fn' | '#' but got 'bound'
+error: expected 'struct' | 'fn' | '#' but got Ident
  --> bound\root.ctl:1:5
   |
-1 | pub bound [T] Some {     fn new() -> Self ; fn get(s : ^ Self) -> T ; fn [D]     set(s : ^ mut Self, v : D, t : T) ; }
+1 | pub trait [T] Some {     fn new() -> Self ; fn get(s : ^ Self) -> T ; fn [D]     set(s : ^ mut Self, v : D, t : T) ; }
   |     ^^^^^ token located here
   |
   = info: list -> item
