@@ -1,24 +1,24 @@
 error: expected '\n' | ';' but got '\'
  --> impl-block\root.ctl:1:86
   |
-1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(s : * Self)     -> uint => self.field ; } ;
   |                                                                                      ^ token located here
   |
   = info: list -> item -> impl -> list
 
-error: expected Ident but got Operator
- --> impl-block\root.ctl:1:114
+error: expected '^' but got *
+ --> impl-block\root.ctl:1:118
   |
-1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
-  |                                                                                                                  ^ token located here
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(s : * Self)     -> uint => self.field ; } ;
+  |                                                                                                                      ^ token located here
   |
-  = info: list -> item -> impl -> list -> impl item -> function definition -> function signature -> list -> function argument -> name
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function signature -> list -> function argument -> type
 
 error: expected '\n' | ';' but got '.'
- --> impl-block\root.ctl:1:141
+ --> impl-block\root.ctl:1:145
   |
-1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
-  |                                                                                                                                             ^ token located here
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(s : * Self)     -> uint => self.field ; } ;
+  |                                                                                                                                                 ^ token located here
   |
   = info: list -> item -> impl -> list
 
