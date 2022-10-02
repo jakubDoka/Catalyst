@@ -1,7 +1,19 @@
-error: cannot load manifest
- = info: related path: cross-module-item-access\package.ctlm
- = info: trace: file not found
+error: invalid expression path
+ --> cross-module-item-access\root.ctl:6:29
+  |
+6 | fn main -> uint => a\pass(0.b\pass())
+  |                             ^^^^^^ found here
+  |
+  = info: expected format: <ident> |
 
 info: tir repr of functions:
- 
+ fn [todo] 8\pass(var0: param 0) -> param 0 return var0
+
+fn [todo] uint\8\pass(var0: uint) -> uint return var0
+
+fn [todo] 9\pass(var0: param 0) -> param 0 return var0
+
+fn [todo] uint\9\pass(var0: uint) -> uint return var0
+
+
 
