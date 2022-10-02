@@ -229,7 +229,7 @@ where
 
             if !META::SEP.is_empty() && !has_sep && !ctx.at(META::END) {
                 if META::END.is_empty() {
-                    break element_span.sliced(element_span.end()..);
+                    break Span::new(element_span.end()..element_span.end());
                 }
 
                 ctx.expect_error(META::SEP);

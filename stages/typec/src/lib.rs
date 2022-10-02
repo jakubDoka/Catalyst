@@ -97,8 +97,8 @@ mod util {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut ctx.specs)
                 .collect(items.structs, Self::collect_struct, &mut ctx.structs)
-                .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
                 .build_items(items.specs, Self::build_spec, &ctx.specs)
+                .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
                 .build_items(items.structs, Self::build_struct, &ctx.structs)
                 .detect_infinite_types(ctx)
                 .build_funcs(

@@ -85,6 +85,10 @@ fn main() {
 
         simple "spec" {
             priv spec Clay;
+
+            priv struct [C: Clay] AnyClay {
+                c: C
+            }
         }
     }
 }

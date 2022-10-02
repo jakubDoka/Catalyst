@@ -16,6 +16,8 @@ impl<'a> Ast<'a> for SpecExprAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        match self {
+            SpecExprAst::Path(p) => p.span(),
+        }
     }
 }

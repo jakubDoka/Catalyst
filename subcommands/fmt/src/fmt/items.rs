@@ -60,11 +60,11 @@ impl FmtAst for InlineModeAst {
 impl<'a> FmtAst for StructAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.vis(self.vis);
+        write!(fmt, "struct ");
         self.generics.display(fmt);
         if !self.generics.is_empty() {
             write!(fmt, " ");
         }
-        write!(fmt, "struct ");
         fmt.write_span(self.name.span);
         if !self.body.elements.is_empty() {
             write!(fmt, " ");
