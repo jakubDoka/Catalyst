@@ -1,0 +1,7 @@
+error: cannot load manifest
+ = info: related path: cross-module-item-access\package.ctlm
+ = info: trace: file not found
+
+info: tir repr of functions:
+ 
+
