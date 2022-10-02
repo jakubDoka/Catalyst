@@ -1,0 +1,8 @@
+ --> impl-block\root.ctl
+  |
+1 | 
+2 | struct Struct {
+3 |     field: u32
+4 | }
+  |
+
