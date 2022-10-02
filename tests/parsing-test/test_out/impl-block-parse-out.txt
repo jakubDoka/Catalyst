@@ -1,0 +1,8 @@
+error: expected 'struct' | 'fn' | 'spec' | '#' but got 'impl'
+ --> impl-block\root.ctl:1:35
+  |
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self ` { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
+  |                                   ^^^^ token located here
+  |
+  = info: list -> item
+
