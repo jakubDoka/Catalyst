@@ -1,4 +1,5 @@
 use core::fmt;
+use std::hash::Hash;
 use std::{default::default, ops::IndexMut};
 
 use crate::*;
@@ -307,7 +308,7 @@ impl Typec {
     }
 }
 
-impl<K: SpecialHash, V> StorageExt<V> for OrderedMap<K, V> {}
+impl<K: Hash + Eq, V> StorageExt<V> for OrderedMap<K, V> {}
 impl<V, CACHE> StorageExt<V> for BumpMap<V, CACHE> {}
 impl<V, CACHE> StorageExt<V> for PoolBumpMap<V, CACHE> {}
 

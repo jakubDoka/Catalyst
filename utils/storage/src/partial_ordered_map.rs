@@ -1,5 +1,6 @@
 use std::{
     default::default,
+    hash::Hash,
     ops::{Index, IndexMut},
 };
 
@@ -7,21 +8,21 @@ use crate::*;
 
 /// Has access complexity of an ordinary map, but it allows addressing
 /// values by [`VPtr`]
-pub struct PartialOrderedMap<K: SpecialHash, V> {
+pub struct PartialOrderedMap<K: Hash + Eq, V> {
     index: Map<K, VRef<V>>,
     data: PoolMap<V, (Option<K>, V)>,
 }
 
-impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
+impl<K: Hash + Eq + Clone, V> PartialOrderedMap<K, V> {
     pub fn redirect_insert(&mut self, key: K, value: V) -> VRef<V> {
-        let index = self.data.push((key.into(), value));
+        let index = self.data.push((key.clone().into(), value));
         self.index.insert(key, index);
         index
     }
 
     /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.
     pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {
-        let index = self.data.push((key.into(), value));
+        let index = self.data.push((key.clone().into(), value));
         let shadow = self.index.insert(key, index);
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
     }
@@ -46,9 +47,9 @@ impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
 
     pub fn remove_index(&mut self, index: VRef<V>) -> (Option<K>, V) {
         let (key, value) = self.data.remove(index);
-        if let Some(key) = key {
+        if let Some(ref key) = key {
             self.index
-                .remove(&key)
+                .remove(key)
                 .expect("index should be present as long as value is present");
         }
         (key, value)
@@ -67,7 +68,7 @@ impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
     }
 
     pub fn id(&self, key: VRef<V>) -> Option<K> {
-        self.data[key].0
+        self.data[key].0.clone()
     }
 
     pub fn values(&self) -> impl Iterator<Item = &V> {
@@ -75,7 +76,7 @@ impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> Index<VRef<V>> for PartialOrderedMap<K, V> {
+impl<K: Hash + Eq, V> Index<VRef<V>> for PartialOrderedMap<K, V> {
     type Output = V;
 
     fn index(&self, index: VRef<V>) -> &Self::Output {
@@ -83,13 +84,13 @@ impl<K: SpecialHash, V> Index<VRef<V>> for PartialOrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> IndexMut<VRef<V>> for PartialOrderedMap<K, V> {
+impl<K: Hash + Eq, V> IndexMut<VRef<V>> for PartialOrderedMap<K, V> {
     fn index_mut(&mut self, index: VRef<V>) -> &mut Self::Output {
         &mut self.data[index].1
     }
 }
 
-impl<K: SpecialHash, V> Default for PartialOrderedMap<K, V> {
+impl<K: Hash + Eq, V> Default for PartialOrderedMap<K, V> {
     fn default() -> Self {
         Self {
             index: default(),
@@ -98,7 +99,7 @@ impl<K: SpecialHash, V> Default for PartialOrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> PartialOrderedMap<K, V> {
+impl<K: Hash + Eq, V> PartialOrderedMap<K, V> {
     pub fn new() -> Self {
         Self::default()
     }

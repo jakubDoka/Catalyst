@@ -1,6 +1,7 @@
 use std::{
     collections::hash_map::Entry,
     default::default,
+    hash::Hash,
     ops::{Index, IndexMut},
 };
 
@@ -8,15 +9,15 @@ use crate::*;
 
 /// Has access complexity of an ordinary map, but it allows addressing
 /// values by [`VPtr`]
-pub struct OrderedMap<K: SpecialHash, V> {
+pub struct OrderedMap<K, V> {
     index: Map<K, VRef<V>>,
     data: PoolMap<V, (K, V)>,
 }
 
-impl<K: SpecialHash, V> OrderedMap<K, V> {
-    /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.   
+impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
+    /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.
     pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {
-        let index = self.data.push((key, value));
+        let index = self.data.push((key.clone(), value));
         let shadow = self.index.insert(key, index);
         (index, shadow.map(|shadow| self.data.remove(shadow).1))
     }
@@ -30,7 +31,7 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
             index
         } else {
             let value = fallback(self);
-            let index = self.data.push((key, value));
+            let index = self.data.push((key.clone(), value));
             self.index.insert(key, index);
             index
         }
@@ -85,7 +86,7 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
     }
 
     pub fn id(&self, key: VRef<V>) -> K {
-        self.data[key].0
+        self.data[key].0.clone()
     }
 
     pub fn values(&self) -> impl Iterator<Item = &V> {
@@ -98,7 +99,7 @@ impl<K: SpecialHash, V> OrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> Index<VRef<V>> for OrderedMap<K, V> {
+impl<K: Hash + Eq, V> Index<VRef<V>> for OrderedMap<K, V> {
     type Output = V;
 
     fn index(&self, index: VRef<V>) -> &Self::Output {
@@ -106,13 +107,13 @@ impl<K: SpecialHash, V> Index<VRef<V>> for OrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> IndexMut<VRef<V>> for OrderedMap<K, V> {
+impl<K: Hash + Eq, V> IndexMut<VRef<V>> for OrderedMap<K, V> {
     fn index_mut(&mut self, index: VRef<V>) -> &mut Self::Output {
         &mut self.data[index].1
     }
 }
 
-impl<K: SpecialHash, V> Default for OrderedMap<K, V> {
+impl<K: Hash + Eq, V> Default for OrderedMap<K, V> {
     fn default() -> Self {
         Self {
             index: default(),
@@ -121,7 +122,7 @@ impl<K: SpecialHash, V> Default for OrderedMap<K, V> {
     }
 }
 
-impl<K: SpecialHash, V> OrderedMap<K, V> {
+impl<K: Hash + Eq, V> OrderedMap<K, V> {
     pub fn new() -> Self {
         Self::default()
     }
