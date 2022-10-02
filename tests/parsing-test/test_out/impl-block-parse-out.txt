@@ -6,11 +6,3 @@ error: expected '\n' | ';' but got '\'
   |
   = info: list -> item -> impl -> list
 
-error: expected '\n' | ';' but got '.'
- --> impl-block\root.ctl:1:145
-  |
-1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self \ { field : 0 } ; fn method(s : * Self)     -> uint => self.field ; } ;
-  |                                                                                                                                                 ^ token located here
-  |
-  = info: list -> item -> impl -> list
-
