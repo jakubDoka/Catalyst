@@ -1,0 +1,16 @@
+error: expected '*' but got '^'
+ --> spec\root.ctl:1:55
+  |
+1 | pub spec [T] Some {     fn new() -> Self ; fn get(s : ^ Self) -> T ; fn [D]     set(s : ^ mut Self, v : D, t : T) ; }
+  |                                                       ^ token located here
+  |
+  = info: list -> item -> spec -> list -> function signature -> list -> function argument -> type
+
+error: expected '*' but got '^'
+ --> spec\root.ctl:1:89
+  |
+1 | pub spec [T] Some {     fn new() -> Self ; fn get(s : ^ Self) -> T ; fn [D]     set(s : ^ mut Self, v : D, t : T) ; }
+  |                                                                                         ^ token located here
+  |
+  = info: list -> item -> spec -> list -> function signature -> list -> function argument -> type
+
