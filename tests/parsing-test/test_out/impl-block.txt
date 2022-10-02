@@ -4,5 +4,9 @@
 2 | struct Struct {
 3 |     field: u32
 4 | }
+5 | impl Struct{
+6 |     fn constructor -> Self => Self
+7 |     fn method -> uint => self
+8 | }
   |
 
