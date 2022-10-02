@@ -95,6 +95,8 @@ fn main() {
             impl uint {
                 fn pass(s: Self) -> uint => s;
             };
+
+            fn main() -> uint => 0.pass();
         }
     }
 }
