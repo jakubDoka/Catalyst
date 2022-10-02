@@ -267,10 +267,10 @@ pub enum Vis {
 }
 
 impl Vis {
-    pub fn merge(self, other: Self) -> Self {
-        match other {
-            Vis::None => self,
-            _ => other,
+    pub fn or(self, other: Self) -> Self {
+        match (self, other) {
+            (Vis::None, vis) => vis,
+            (vis, ..) => vis,
         }
     }
 }

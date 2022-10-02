@@ -33,6 +33,36 @@ macro_rules! dispatch_item {
 pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
 impl TyChecker<'_> {
+    pub fn build_impl_funcs<'a>(
+        &mut self,
+        items: GroupedItemSlice<ImplAst>,
+        arena: &'a Arena,
+        input: &[(usize, usize, VRef<Func>)],
+        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+        extern_funcs: &mut Vec<VRef<Func>>,
+    ) -> &mut Self {
+        let iter = input
+            .iter()
+            .map(|&(i, j, func)| (items[i].0.body[j].value, func))
+            .filter_map(|(ast, func)| {
+                let ImplItemAst::Func(&ast) = ast;
+                let Some(res) = self.build_func(ast, func, arena) else {
+                        extern_funcs.push(func);
+                        return None;
+                    };
+
+                let Some(body) = res else {
+                        return None;
+                    };
+
+                Some((func, body))
+            });
+
+        compiled_funcs.extend(iter);
+
+        self
+    }
+
     pub fn build_funcs<'a>(
         &mut self,
         items: GroupedItemSlice<FuncDefAst>,

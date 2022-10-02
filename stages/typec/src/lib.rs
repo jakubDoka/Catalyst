@@ -75,6 +75,7 @@ mod util {
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub ty_graph: TyGraph,
+        pub impl_funcs: Vec<(usize, usize, VRef<Func>)>,
     }
 
     impl TyCheckerCtx {
@@ -97,14 +98,22 @@ mod util {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut ctx.specs)
                 .collect(items.structs, Self::collect_struct, &mut ctx.structs)
-                .build_items(items.specs, Self::build_spec, &ctx.specs)
+                .build(items.specs, Self::build_spec, &ctx.specs)
                 .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
-                .build_items(items.structs, Self::build_struct, &ctx.structs)
+                .collect_impls(items.impls, ctx)
+                .build(items.structs, Self::build_struct, &ctx.structs)
                 .detect_infinite_types(ctx)
                 .build_funcs(
                     items.funcs,
                     &ctx.tir_arena,
                     &ctx.funcs,
+                    type_checked_funcs,
+                    &mut ctx.extern_funcs,
+                )
+                .build_impl_funcs(
+                    items.impls,
+                    &ctx.tir_arena,
+                    &ctx.impl_funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
                 )

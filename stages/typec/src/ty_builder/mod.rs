@@ -9,7 +9,7 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn build_items<T: CollectGroup>(
+    pub fn build<T: CollectGroup>(
         &mut self,
         items: GroupedItemSlice<T>,
         builder: fn(&mut Self, VRef<T::Output>, T),

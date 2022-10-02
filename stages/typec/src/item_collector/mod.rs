@@ -31,12 +31,81 @@ impl TyChecker<'_> {
         self
     }
 
+    pub fn collect_impls(
+        &mut self,
+        items: GroupedItemSlice<ImplAst>,
+        ctx: &mut TyCheckerCtx,
+    ) -> &mut Self {
+        for (i, &(item, attributes)) in items.iter().enumerate() {
+            self.collect_impl(i, item, attributes, ctx);
+        }
+
+        self
+    }
+
     pub fn collect_impl(
         &mut self,
-        ImplAst { .. }: ImplAst,
+        i: usize,
+        r#impl @ ImplAst { target, .. }: ImplAst,
+        attrs: &[TopLevelAttributeAst],
+        ctx: &mut TyCheckerCtx,
+    ) -> Option<()> {
+        match target {
+            ImplTarget::Direct(ty) => self.collect_direct_impl(i, ty, r#impl, attrs, ctx),
+            ImplTarget::Spec(_, _, _) => todo!(),
+        }
+    }
+
+    pub fn collect_direct_impl(
+        &mut self,
+        i: usize,
+        ty: TyAst,
+        ImplAst {
+            vis,
+            generics,
+            body,
+            ..
+        }: ImplAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModItem, VRef<()>)> {
-        todo!()
+        ctx: &mut TyCheckerCtx,
+    ) -> Option<()> {
+        let frame = self.scope.start_frame();
+        self.insert_generics(generics, 0);
+        let parsed_generics = self.generics(generics);
+        let parsed_ty = self.ty(ty)?;
+
+        self.scope.push(Item {
+            id: self.interner.intern_str("Self"),
+            ptr: parsed_ty.into(),
+            span: ty.span().into(),
+            whole_span: None,
+            module: self.current_file.into(),
+            vis,
+        });
+
+        let func_iter = body.iter().enumerate().map(|(i, &item)| match item {
+            ImplItemAst::Func(&func) => (i, func),
+        });
+
+        let scope_data = ScopeData {
+            offset: generics.len(),
+            upper_generics: parsed_generics,
+            owner: Some(self.typec.types.id(parsed_ty)),
+            upper_vis: vis,
+        };
+
+        for (j, func) in func_iter {
+            let Some((item, id)) = self.collect_func_low(func, &[], scope_data) else {
+                continue;
+            };
+
+            self.insert_scope_item(item);
+
+            ctx.impl_funcs.push((i, j, id));
+        }
+
+        self.scope.end_frame(frame);
+        Some(())
     }
 
     pub fn collect_spec(
@@ -64,7 +133,7 @@ impl TyChecker<'_> {
         func: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<(ModItem, VRef<Func>)> {
-        self.collect_func_low(func, attributes, default(), 0)
+        self.collect_func_low(func, attributes, default())
     }
 
     fn collect_func_low(
@@ -79,10 +148,15 @@ impl TyChecker<'_> {
             ..
         }: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
-        upper_generics: VRefSlice<Spec>,
-        offset: usize,
+        ScopeData {
+            offset,
+            upper_generics,
+            owner,
+            upper_vis,
+        }: ScopeData,
     ) -> Option<(ModItem, VRef<Func>)> {
         let id = intern_scoped_ident!(self, name.ident);
+        let id = owner.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
 
         let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
@@ -116,7 +190,11 @@ impl TyChecker<'_> {
         };
         let id = self.typec.funcs.get_or_insert(id, func);
 
-        Some((ModItem::new(name.ident, id, name.span, span, vis), id))
+        let vis = vis.or(upper_vis);
+        let local_id = owner.map_or(name.ident, |owner| {
+            self.interner.intern(scoped_ident!(owner, name.ident))
+        });
+        Some((ModItem::new(local_id, id, name.span, span, vis), id))
     }
 
     pub fn collect_signature(
@@ -193,6 +271,14 @@ impl TyChecker<'_> {
             }
         }
     }
+}
+
+#[derive(Default, Clone, Copy)]
+struct ScopeData {
+    offset: usize,
+    upper_generics: VRefSlice<Spec>,
+    owner: Option<VRef<str>>,
+    upper_vis: Vis,
 }
 
 pub trait CollectGroup: Copy {
