@@ -6,7 +6,57 @@ impl<'a> FmtAst for ItemAst<'a> {
             ItemAst::Struct(s) => s.display(fmt),
             ItemAst::Func(func) => func.display(fmt),
             ItemAst::Spec(spec) => spec.display(fmt),
+            ItemAst::Impl(r#impl) => r#impl.display(fmt),
             ItemAst::Attribute(attr) => attr.display(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for ImplAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.vis(self.vis);
+        fmt.write_span(self.r#impl);
+        write!(fmt, " ");
+        self.generics.display(fmt);
+        if !self.generics.is_empty() {
+            write!(fmt, " ");
+        }
+        self.target.display(fmt);
+        self.body.display_low(true, fmt);
+    }
+}
+
+impl<'a> FmtAst for ImplTarget<'a> {
+    fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        if fold {
+            fmt.newline();
+        }
+        match *self {
+            ImplTarget::Direct(ty) => ty.display(fmt),
+            ImplTarget::Spec(ty, r#as, spec) => {
+                ty.display(fmt);
+                write!(fmt, " ");
+                fmt.write_span(r#as);
+                write!(fmt, " ");
+                spec.display(fmt);
+            }
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        match *self {
+            ImplTarget::Direct(ty) => ty.flat_len(fmt),
+            ImplTarget::Spec(ty, r#as, spec) => {
+                ty.flat_len(fmt) + " ".len() + r#as.len() + " ".len() + spec.flat_len(fmt)
+            }
+        }
+    }
+}
+
+impl<'a> FmtAst for ImplItemAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            ImplItemAst::Func(func) => func.display(fmt),
         }
     }
 }

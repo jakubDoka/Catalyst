@@ -5,12 +5,15 @@ pub type ItemsAst<'a> = ListAst<'a, ItemAst<'a>, ItemsMeta>;
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
 list_meta!(SpecBodyMeta ?LeftCurly NewLine RightCurly);
 pub type SpecBodyAst<'a> = ListAst<'a, FuncSigAst<'a>, SpecBodyMeta>;
+list_meta!(ImplBodyMeta ?LeftCurly NewLine RightCurly);
+pub type ImplBodyAst<'a> = ListAst<'a, ImplItemAst<'a>, SpecBodyMeta>;
 
 #[derive(Clone, Copy)]
 pub struct GroupedItemsAst<'a> {
     pub structs: GroupedItemSlice<'a, StructAst<'a>>,
     pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,
     pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
+    pub impls: GroupedItemSlice<'a, ImplAst<'a>>,
     pub last: bool,
     pub span: Span,
 }
@@ -26,27 +29,46 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
         let last = items.end.is_empty();
         let span = items.span();
 
-        let mut attrs = bumpvec![];
-        let mut funcs = bumpvec![];
-        let mut specs = bumpvec![];
-        let mut structs = bumpvec![];
+        macro_rules! gen_groups {
+            (
+                $(
+                    $name:ident: $enum_name:ident,
+                )*
+            ) => {
+                let mut attrs = bumpvec![];
+                $(
+                    let mut $name = bumpvec![];
+                )*
 
-        for &item in items.iter() {
-            match item {
-                ItemAst::Struct(&s) => structs.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
-                ItemAst::Func(&f) => funcs.push((f, ctx.arena.alloc_iter(attrs.drain(..)))),
-                ItemAst::Spec(&s) => specs.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
-                ItemAst::Attribute(&a) => attrs.push(a),
-            }
+                for &item in items.iter() {
+                    match item {
+                        $(
+                            ItemAst::$enum_name(&s) => $name.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
+                        )*
+                        ItemAst::Attribute(&a) => attrs.push(a),
+                    }
+                }
+
+                $(
+                    let $name = ctx.arena.alloc_slice($name.as_slice());
+                )*
+
+                Some(Self {
+                    $(
+                        $name,
+                    )*
+                    last,
+                    span,
+                })
+            };
         }
 
-        Some(Self {
-            structs: ctx.arena.alloc_slice(structs.as_slice()),
-            funcs: ctx.arena.alloc_slice(funcs.as_slice()),
-            specs: ctx.arena.alloc_slice(specs.as_slice()),
-            last,
-            span,
-        })
+        gen_groups! {
+            structs: Struct,
+            funcs: Func,
+            specs: Spec,
+            impls: Impl,
+        }
     }
 
     fn span(&self) -> Span {
@@ -59,6 +81,7 @@ pub enum ItemAst<'a> {
     Struct(&'a StructAst<'a>),
     Func(&'a FuncDefAst<'a>),
     Spec(&'a SpecAst<'a>),
+    Impl(&'a ImplAst<'a>),
     Attribute(&'a TopLevelAttributeAst),
 }
 
@@ -80,6 +103,9 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             Spec => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Spec),
+            Impl => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Impl),
             Hash => ctx.parse()
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Attribute),
@@ -91,7 +117,95 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             ItemAst::Struct(s) => s.span(),
             ItemAst::Func(f) => f.span(),
             ItemAst::Spec(s) => s.span(),
+            ItemAst::Impl(i) => i.span(),
             ItemAst::Attribute(a) => a.span(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ImplAst<'a> {
+    pub start: Span,
+    pub vis: Vis,
+    pub r#impl: Span,
+    pub generics: GenericsAst<'a>,
+    pub target: ImplTarget<'a>,
+    pub body: ImplBodyAst<'a>,
+}
+
+impl<'a> Ast<'a> for ImplAst<'a> {
+    type Args = (Vis, Span);
+
+    const NAME: &'static str = "impl";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+        Some(Self {
+            start,
+            vis,
+            r#impl: ctx.advance().span,
+            generics: ctx.parse()?,
+            target: ctx.parse()?,
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.start.joined(self.body.span())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ImplTarget<'a> {
+    Direct(TyAst<'a>),
+    Spec(TyAst<'a>, Span, SpecExprAst<'a>),
+}
+
+impl<'a> Ast<'a> for ImplTarget<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "impl target";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        ctx.skip(TokenKind::NewLine);
+        let ty = ctx.parse()?;
+        if let Some(tok) = ctx.try_advance(TokenKind::As) {
+            Some(Self::Spec(ty, tok.span, ctx.parse()?))
+        } else {
+            Some(Self::Direct(ty))
+        }
+    }
+
+    fn span(&self) -> Span {
+        match self {
+            ImplTarget::Direct(ty) => ty.span(),
+            ImplTarget::Spec(ty, .., spec) => ty.span().joined(spec.span()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ImplItemAst<'a> {
+    Func(&'a FuncDefAst<'a>),
+}
+
+impl<'a> Ast<'a> for ImplItemAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "impl item";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        let start = ctx.state.current.span;
+        let vis = ctx.visibility();
+        branch! { ctx => {
+            Func => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ImplItemAst::Func),
+        }}
+    }
+
+    fn span(&self) -> Span {
+        match self {
+            ImplItemAst::Func(f) => f.span(),
         }
     }
 }

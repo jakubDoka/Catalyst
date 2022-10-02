@@ -80,5 +80,19 @@ fn main() {
                 fn [D] set(s: ^mut Self, v: D, t: T);
             }
         }
+
+        simple "impl-block" {
+            struct Struct {
+                field: u32;
+            };
+
+            impl Struct {
+                fn constructor() -> Self =>
+                    Self::{ field: 0 };
+
+                fn method(&self) -> uint =>
+                    self.field;
+            };
+        }
     }
 }
