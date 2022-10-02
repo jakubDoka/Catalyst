@@ -5,7 +5,25 @@ impl<'a> FmtAst for ItemAst<'a> {
         match *self {
             ItemAst::Struct(s) => s.display(fmt),
             ItemAst::Func(func) => func.display(fmt),
+            ItemAst::Spec(spec) => spec.display(fmt),
             ItemAst::Attribute(attr) => attr.display(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for SpecAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.vis(self.vis);
+        fmt.write_span(self.spec);
+        if !self.generics.is_empty() {
+            write!(fmt, " ");
+        }
+        self.generics.display(fmt);
+        write!(fmt, " ");
+        self.name.display(fmt);
+        if !self.body.is_empty() {
+            write!(fmt, " ");
+            self.body.display_low(true, fmt);
         }
     }
 }

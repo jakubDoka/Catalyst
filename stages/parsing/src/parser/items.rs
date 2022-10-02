@@ -3,11 +3,14 @@ use super::*;
 list_meta!(ItemsMeta none NewLine [Break Eof]);
 pub type ItemsAst<'a> = ListAst<'a, ItemAst<'a>, ItemsMeta>;
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
+list_meta!(SpecBodyMeta ?LeftCurly NewLine RightCurly);
+pub type SpecBodyAst<'a> = ListAst<'a, FuncSigAst<'a>, SpecBodyMeta>;
 
 #[derive(Clone, Copy)]
 pub struct GroupedItemsAst<'a> {
     pub structs: GroupedItemSlice<'a, StructAst<'a>>,
     pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,
+    pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
     pub last: bool,
     pub span: Span,
 }
@@ -25,12 +28,14 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
 
         let mut attrs = bumpvec![];
         let mut funcs = bumpvec![];
+        let mut specs = bumpvec![];
         let mut structs = bumpvec![];
 
         for &item in items.iter() {
             match item {
                 ItemAst::Struct(&s) => structs.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
                 ItemAst::Func(&f) => funcs.push((f, ctx.arena.alloc_iter(attrs.drain(..)))),
+                ItemAst::Spec(&s) => specs.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
                 ItemAst::Attribute(&a) => attrs.push(a),
             }
         }
@@ -38,6 +43,7 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
         Some(Self {
             structs: ctx.arena.alloc_slice(structs.as_slice()),
             funcs: ctx.arena.alloc_slice(funcs.as_slice()),
+            specs: ctx.arena.alloc_slice(specs.as_slice()),
             last,
             span,
         })
@@ -52,6 +58,7 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
 pub enum ItemAst<'a> {
     Struct(&'a StructAst<'a>),
     Func(&'a FuncDefAst<'a>),
+    Spec(&'a SpecAst<'a>),
     Attribute(&'a TopLevelAttributeAst),
 }
 
@@ -70,6 +77,9 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             Func => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Func),
+            Spec => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Spec),
             Hash => ctx.parse()
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Attribute),
@@ -80,8 +90,40 @@ impl<'a> Ast<'a> for ItemAst<'a> {
         match self {
             ItemAst::Struct(s) => s.span(),
             ItemAst::Func(f) => f.span(),
+            ItemAst::Spec(s) => s.span(),
             ItemAst::Attribute(a) => a.span(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SpecAst<'a> {
+    pub start: Span,
+    pub vis: Vis,
+    pub spec: Span,
+    pub generics: GenericsAst<'a>,
+    pub name: NameAst,
+    pub body: SpecBodyAst<'a>,
+}
+
+impl<'a> Ast<'a> for SpecAst<'a> {
+    type Args = (Vis, Span);
+
+    const NAME: &'static str = "spec";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+        Some(Self {
+            start,
+            vis,
+            spec: ctx.advance().span,
+            generics: ctx.parse()?,
+            name: ctx.parse()?,
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.start.joined(self.body.span())
     }
 }
 

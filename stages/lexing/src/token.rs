@@ -154,7 +154,7 @@ gen_kind!(
         Continue = "continue",
         Let = "let",
         Struct = "struct",
-        Bound = "bound",
+        Spec = "spec",
         Enum = "enum",
         Mut = "mut",
         Impl = "impl",

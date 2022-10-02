@@ -75,8 +75,8 @@ pub use parser::{
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst},
     items::{
-        GroupedItemSlice, GroupedItemsAst, InlineModeAst, ItemAst, ItemsAst, ItemsMeta,
-        TopLevelAttributeAst, TopLevelAttributeKindAst,
+        GroupedItemSlice, GroupedItemsAst, InlineModeAst, ItemAst, ItemsAst, ItemsMeta, SpecAst,
+        SpecBodyAst, SpecBodyMeta, TopLevelAttributeAst, TopLevelAttributeKindAst,
     },
     manifest::{
         DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,

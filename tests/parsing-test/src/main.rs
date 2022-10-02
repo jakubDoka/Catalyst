@@ -52,7 +52,7 @@ fn main() {
                 pub /* comment */ use /* comment */ mut /* comment */ field: Something[
                     Very, // uuu
                     Complex,
-                ] // comment  
+                ] // comment
                 // comment
                 other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
                 // comment
@@ -68,7 +68,16 @@ fn main() {
 
         simple "binary-operators" {
             fn do_something(a: uint, b: uint) -> uint {
-                a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b + a
+                a + b * a + b * a + b * a + b * a + b * a + b *
+                a + b * a + b * a + b * a + b * a + b * a + b + a
+            }
+        }
+
+        simple "bound" {
+            pub spec [T] Some {
+                fn new() -> Self;
+                fn get(s: ^Self) -> T;
+                fn [D] set(s: ^mut Self, v: D, t: T);
             }
         }
     }
