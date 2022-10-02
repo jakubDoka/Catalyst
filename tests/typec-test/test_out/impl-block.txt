@@ -1,5 +1,7 @@
 info: tir repr of functions:
- fn [todo] uint\4\pass(var0: uint) -> uint return var0
+ fn [todo] 4\main() -> uint return uint\4\pass(0)
+
+fn [todo] uint\4\pass(var0: uint) -> uint return var0
 
 
 
