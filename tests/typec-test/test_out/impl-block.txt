@@ -1,3 +1,5 @@
 info: tir repr of functions:
- 
+ fn [todo] uint\4\pass(var0: uint) -> uint return var0
+
+
 
