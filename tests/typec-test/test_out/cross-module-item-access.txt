@@ -1,10 +1,10 @@
-error: invalid expression path
- --> cross-module-item-access\root.ctl:6:29
+error: type mismatch
+ --> cross-module-item-access\root.ctl:6:27
   |
 6 | fn main -> uint => a\pass(0.b\pass())
-  |                             ^^^^^^ found here
+  |                           ^^^^^^^^^^ mismatch occurred here
   |
-  = info: expected format: <ident> |
+  = info: expected 'param 0' but got 'uint'
 
 info: tir repr of functions:
  fn [todo] 8\pass(var0: param 0) -> param 0 return var0
