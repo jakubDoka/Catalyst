@@ -1,8 +1,24 @@
-error: expected 'struct' | 'fn' | 'spec' | '#' but got 'impl'
- --> impl-block\root.ctl:1:35
+error: expected '\n' | ';' but got <error>
+ --> impl-block\root.ctl:1:86
   |
 1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self ` { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
-  |                                   ^^^^ token located here
+  |                                                                                      ^ token located here
   |
-  = info: list -> item
+  = info: list -> item -> impl -> list
+
+error: expected Ident but got Operator
+ --> impl-block\root.ctl:1:114
+  |
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self ` { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
+  |                                                                                                                  ^ token located here
+  |
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function signature -> list -> function argument -> name
+
+error: expected '\n' | ';' but got '.'
+ --> impl-block\root.ctl:1:141
+  |
+1 | struct Struct { field : u32 ; } ; impl Struct {     fn constructor() -> Self => Self ` { field : 0 } ; fn method(& self) ->     uint => self.field ; } ;
+  |                                                                                                                                             ^ token located here
+  |
+  = info: list -> item -> impl -> list
 
