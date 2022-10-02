@@ -6,7 +6,7 @@
 4 | }
 5 | impl Struct {
 6 |     fn constructor -> Self => Self
-7 |     fn method(s: *Self) -> uint => self
+7 |     fn method(s: *Self) -> uint => self.field
 8 | }
   |
 
