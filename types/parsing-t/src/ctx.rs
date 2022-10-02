@@ -197,7 +197,7 @@ impl<'a> ParsingCtx<'_, 'a> {
 
         push expect_str_error(self, strings: &[&str]) {
             err: (
-                "expected '{}' but got {}",
+                "expected '{}' but got '{}'",
                 strings.join("' | '"),
                 self.current_token_str(),
             );

@@ -22,6 +22,9 @@ impl<'a> FmtAst for ImplAst<'a> {
             write!(fmt, " ");
         }
         self.target.display(fmt);
+        if !self.body.is_empty() {
+            write!(fmt, " ");
+        }
         self.body.display_low(true, fmt);
     }
 }

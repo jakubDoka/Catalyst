@@ -54,7 +54,7 @@ fn main() {
                     Complex,
                 ] // comment
                 // comment
-                other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
+                other_field: SimpleStuff[Hell, /* gear */]; priv pointer: *mut*int
                 // comment
             } // comment
         "
@@ -62,7 +62,7 @@ fn main() {
             pub struct OneLineStruct {
                 pub use mut filed: Trough;
                 other_field: SimpleStuff;
-                priv pointer: ^mut^int;
+                priv pointer: *mut*int;
             }
         }
 
@@ -76,8 +76,8 @@ fn main() {
         simple "spec" {
             pub spec [T] Some {
                 fn new() -> Self;
-                fn get(s: ^Self) -> T;
-                fn [D] set(s: ^mut Self, v: D, t: T);
+                fn get(s: *Self) -> T;
+                fn [D] set(s: *mut Self, v: D, t: T);
             }
         }
 
@@ -90,7 +90,7 @@ fn main() {
                 fn constructor() -> Self =>
                     Self::{ field: 0 };
 
-                fn method(&self) -> uint =>
+                fn method(s: *Self) -> uint =>
                     self.field;
             };
         }

@@ -245,7 +245,7 @@ pub mod items {
                 let path_ident = interner.intern_str(path.to_str().unwrap());
 
                 let c = if replace {
-                    content.replace('\n', " ").replace("::", "`")
+                    content.replace('\n', " ").replace("::", "\\")
                 } else {
                     content
                 };
