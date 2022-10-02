@@ -1,6 +1,6 @@
 use core::fmt;
-use std::hash::Hash;
 use std::{default::default, ops::IndexMut};
+use std::{hash::Hash, mem};
 
 use crate::*;
 use lexing_t::*;
@@ -43,8 +43,6 @@ macro_rules! assert_init {
         $(
             let name = if Ty::$name == Ty::UNIT {
                 "()"
-            } else if Ty::$name == Ty::INFERRED {
-                "{unknown}"
             } else {
                 stringify!($name)
             };
@@ -88,7 +86,6 @@ impl Typec {
     pub fn init_builtin_types(&mut self, interner: &mut Interner) {
         assert_init! {
             (self, interner)
-            INFERRED {}
             MUTABLE {}
             IMMUTABLE {}
             UNIT {
@@ -228,7 +225,7 @@ impl Typec {
         interner: &mut Interner,
     ) -> VRef<Ty> {
         unsafe {
-            self.instantiate_low::<false>(ty, params, interner)
+            self.instantiate_low(ty, mem::transmute(params), interner)
                 .unwrap_unchecked()
         }
     }
@@ -236,16 +233,16 @@ impl Typec {
     pub fn try_instantiate(
         &mut self,
         ty: VRef<Ty>,
-        params: &[VRef<Ty>],
+        params: &[Option<VRef<Ty>>],
         interner: &mut Interner,
     ) -> Option<VRef<Ty>> {
-        self.instantiate_low::<true>(ty, params, interner)
+        self.instantiate_low(ty, params, interner)
     }
 
-    pub fn instantiate_low<const CAN_FAIL: bool>(
+    pub fn instantiate_low(
         &mut self,
         ty: VRef<Ty>,
-        params: &[VRef<Ty>],
+        params: &[Option<VRef<Ty>>],
         interner: &mut Interner,
     ) -> Option<VRef<Ty>> {
         Some(match self.types[ty].kind {
@@ -253,7 +250,7 @@ impl Typec {
                 let params = self.ty_slices[args]
                     .to_bumpvec()
                     .into_iter()
-                    .map(|arg| self.instantiate_low::<CAN_FAIL>(arg, params, interner))
+                    .map(|arg| self.instantiate_low(arg, params, interner))
                     .collect::<Option<BumpVec<_>>>()?;
 
                 let generic = params.iter().any(|&arg| self.types.is_generic(arg));
@@ -277,8 +274,8 @@ impl Typec {
                 mutability,
                 depth,
             }) => {
-                let base = self.instantiate_low::<CAN_FAIL>(base, params, interner)?;
-                let mutability = self.instantiate_low::<CAN_FAIL>(mutability, params, interner)?;
+                let base = self.instantiate_low(base, params, interner)?;
+                let mutability = self.instantiate_low(mutability, params, interner)?;
                 let generic = self.types.is_generic(base) | self.types.is_generic(mutability);
 
                 let segments = self.pointer_id(base, mutability);
@@ -296,14 +293,8 @@ impl Typec {
 
                 self.types.get_or_insert(id, fallback)
             }
-            TyKind::Param(index) if CAN_FAIL && params[index as usize] == Ty::INFERRED => {
-                return None
-            }
-            TyKind::Param(index) => params[index as usize],
-
+            TyKind::Param(index) => return params[index as usize],
             TyKind::Struct(_) | TyKind::Integer(_) | TyKind::Bool => ty,
-
-            TyKind::Inferred | TyKind::SelfBound => unreachable!(),
         })
     }
 }

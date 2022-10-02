@@ -410,8 +410,6 @@ impl Generator<'_> {
                     .collect::<BumpVec<_>>();
                 self.ty_layout(inst.base, &params, ptr_ty)
             }
-
-            TyKind::Inferred | TyKind::SelfBound => unreachable!(),
         };
 
         self.gen_layouts.mapping[ty] = res.into();

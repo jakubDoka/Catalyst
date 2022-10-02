@@ -145,9 +145,7 @@ mod util {
                     | TyKind::Pointer(..)
                     | TyKind::Param(..)
                     | TyKind::Integer(..)
-                    | TyKind::Bool
-                    | TyKind::SelfBound
-                    | TyKind::Inferred => (),
+                    | TyKind::Bool => (),
                 }
             }
 

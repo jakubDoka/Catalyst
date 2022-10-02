@@ -1,3 +1,5 @@
+use std::default::default;
+
 use crate::*;
 use lexing_t::*;
 use scope::Vis;
@@ -20,7 +22,6 @@ impl_flagged!(Ty, TyFlags);
 
 impl Ty {
     gen_v_ref_constants!(
-        INFERRED
         MUTABLE IMMUTABLE
         UNIT
         UINT
@@ -42,12 +43,11 @@ impl Ty {
 
 impl VRefDefault for Ty {
     fn default_state() -> VRef<Self> {
-        Self::INFERRED
+        Self::UNIT
     }
 }
 
 gen_kind!(TyKind
-    SelfBound,
     Instance = TyInstance {
         base: VRef<Ty>,
         args: VRefSlice<Ty>,
@@ -67,12 +67,11 @@ gen_kind!(TyKind
     },
     Param = u32,
     Bool,
-    Inferred,
 );
 
 impl Default for TyKind {
     fn default() -> Self {
-        Self::Inferred
+        Self::Struct(default())
     }
 }
 

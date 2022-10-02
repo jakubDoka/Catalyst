@@ -98,5 +98,31 @@ fn main() {
 
             fn main() -> uint => 0.pass();
         }
+
+        "cross-module-item-access" {
+            file "project.ctlm" {}
+            dir "root" {
+                file "a.ctl" {
+                    impl uint {
+                        fn pass(s: Self) -> uint => s;
+                    };
+                    fn [T] pass(v: T) -> T => v;
+                }
+                file "b.ctl" {
+                    impl uint {
+                        fn pass(s: Self) -> uint => s;
+                    };
+                    fn [T] pass(v: T) -> T => v;
+                }
+            }
+            file "root.ctl" {
+                use {
+                    "a"
+                    "b"
+                }
+
+                fn main() -> uint => pass(0.pass());
+            }
+        }
     }
 }

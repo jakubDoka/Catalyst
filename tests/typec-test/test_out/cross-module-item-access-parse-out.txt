@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got String
+ --> cross-module-item-access\root.ctl:1:11
+  |
+1 | use { "a" "b" } fn main() -> uint => pass(0.pass()) ;
+  |           ^^^ token located here
+  |
+  = info: use -> list
+

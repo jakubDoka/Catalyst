@@ -326,7 +326,7 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let mut params = bumpvec![Ty::INFERRED; self.typec.spec_slices[generics].len()];
+        let mut params = bumpvec![None; self.typec.spec_slices[generics].len()];
 
         if let Some(inference) = inference {
             self.infer_params(&mut params, inference, signature.ret, span)?;
@@ -357,9 +357,9 @@ impl TyChecker<'_> {
             .chain(args)
             .nsc_collect::<Option<BumpVec<_>>>()?;
 
-        if params.contains(&Ty::INFERRED) {
+        let Some(params) = params.iter().copied().nsc_collect::<Option<BumpVec<_>>>() else {
             todo!()
-        }
+        };
 
         let args = builder.arena.alloc_iter(args);
         let params = builder.arena.alloc_iter(params);
@@ -378,7 +378,7 @@ impl TyChecker<'_> {
 
     fn infer_params(
         &mut self,
-        params: &mut [VRef<Ty>],
+        params: &mut [Option<VRef<Ty>>],
         reference: VRef<Ty>,
         template: VRef<Ty>,
         span: Span,
@@ -407,12 +407,10 @@ impl TyChecker<'_> {
                             .zip(self.typec.ty_slices[template.args].iter().copied()),
                     );
                 }
-                (_, TyKind::Param(index)) if params[index as usize] == Ty::INFERRED => {
-                    params[index as usize] = reference;
+                (_, TyKind::Param(index)) if let Some(inferred) = params[index as usize] => {
+                    self.type_check(inferred, reference, span)?;
                 }
-                (_, TyKind::Param(index)) => {
-                    self.type_check(params[index as usize], reference, span)?;
-                }
+                (_, TyKind::Param(index)) => params[index as usize] = Some(reference),
                 _ => self.generic_ty_mismatch(reference, template, span)?,
             }
         }
@@ -718,5 +716,6 @@ gen_scope_lookup!(
 
 enum FuncLookupResult<'a> {
     Func(VRef<Func>, bool),
+    #[allow(dead_code)]
     Var(TypedTirNode<'a>),
 }
