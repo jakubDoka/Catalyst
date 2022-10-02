@@ -1,11 +1,3 @@
-error: type mismatch
- --> cross-module-item-access\root.ctl:6:27
-  |
-6 | fn main -> uint => a\pass(0.b\pass())
-  |                           ^^^^^^^^^^ mismatch occurred here
-  |
-  = info: expected 'param 0' but got 'uint'
-
 info: tir repr of functions:
  fn [todo] 8\pass(var0: param 0) -> param 0 return var0
 
@@ -14,6 +6,8 @@ fn [todo] uint\8\pass(var0: uint) -> uint return var0
 fn [todo] 9\pass(var0: param 0) -> param 0 return var0
 
 fn [todo] uint\9\pass(var0: uint) -> uint return var0
+
+fn [todo] 4\main() -> uint return 8\pass[uint](uint\9\pass(0))
 
 
 
