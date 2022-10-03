@@ -8,119 +8,43 @@ use crate::*;
 pub type PackageGraph = graphs::ProjectedCycleDetector;
 
 #[derive(Default)]
-pub struct Packages {
-    pub modules: Map<VRef<str>, Mod>,
-    pub conns: CacheBumpMap<Dep>,
+pub struct Resources {
+    pub sources: PushMap<Source>,
+    pub packages: OrderedMap<VRef<str>, Package>,
+    pub modules: OrderedMap<VRef<str>, Module>,
+    pub package_deps: BumpMap<Dep<Package>>,
+    pub module_deps: BumpMap<Dep<Module>>,
     pub module_order: Vec<VRef<str>>,
-    pub resources: Box<dyn Resources>,
+    pub resources: Box<dyn ResourceDb>,
 }
 
-impl Packages {
+impl Resources {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_resources(resources: impl Resources + 'static) -> Self {
+    pub fn with_resources(resources: impl ResourceDb + 'static) -> Self {
         Self {
             resources: Box::new(resources),
             ..Default::default()
         }
     }
-
-    pub fn ident_as_mod(&self, ident: VRef<str>) -> Option<VRef<Mod>> {
-        self.modules.get(&ident)?;
-        Some(unsafe { ident.cast() })
-    }
-
-    pub fn mod_as_ident(&self, module: VRef<Mod>) -> VRef<str> {
-        unsafe { module.cast() }
-    }
-
-    pub fn reveal_span_lines(&self, file: VRef<str>, span: Span) -> Option<Span> {
-        self.modules
-            .get(&file)
-            .map(|package| package.reveal_span_lines(span))
-    }
-
-    pub fn span_str(&self, file: VRef<str>, span: Span) -> &str {
-        self.modules
-            .get(&file)
-            .map(|file| file.span_str(span))
-            .unwrap_or_default()
-    }
-
-    pub fn check_vis(
-        &self,
-        item_module: VRef<str>,
-        module: VRef<str>,
-        vis: Vis,
-    ) -> Result<(), Vis> {
-        match vis {
-            Vis::Pub => Ok(()),
-            _ if item_module == module => Ok(()),
-            kind => match (self.modules.get(&module), self.modules.get(&item_module)) {
-                (
-                    Some(Mod {
-                        kind: ModKind::Module { package, .. },
-                        ..
-                    }),
-                    Some(Mod {
-                        kind:
-                            ModKind::Module {
-                                package: item_package,
-                                ..
-                            },
-                        ..
-                    }),
-                ) => (package == item_package)
-                    .then_some(())
-                    .ok_or(if kind == Vis::None {
-                        Vis::Pub
-                    } else {
-                        Vis::None
-                    }),
-                (_, None) => Ok(()),
-                _ => unreachable!(),
-            },
-        }
-    }
 }
 
 #[derive(Default, Debug)]
-pub struct Mod {
+pub struct Source {
     pub path: PathBuf,
-    pub deps: VSlice<Dep>,
     pub content: String,
-    pub kind: ModKind,
     pub line_mapping: LineMapping,
 }
 
-impl Mod {
-    pub fn items(&self) -> &[ModItem] {
-        match &self.kind {
-            ModKind::Module { items, .. } => items,
-            ModKind::Package { .. } | ModKind::Default => &[],
-        }
-    }
-
+impl Source {
     pub fn span_str(&self, span: Span) -> &str {
         &self.content[span.start as usize..span.end as usize]
     }
 
-    pub fn add_item(&mut self, item: ModItem) {
-        if let ModKind::Module { ref mut items, .. } = self.kind {
-            items.push(item);
-        } else {
-            unreachable!()
-        }
-    }
-
     pub fn reveal_span_lines(&self, span: Span) -> Span {
         span.reveal_lines(&self.content)
-    }
-
-    pub fn is_module(&self) -> bool {
-        self.kind.is_module()
     }
 }
 
@@ -156,38 +80,32 @@ impl ModItem {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ModKind {
-    Package {
-        root_module: PathBuf,
-        span: Option<Span>,
-    },
-    Module {
-        package: VRef<str>,
-        ordering: usize,
-        items: Vec<ModItem>,
-    },
-    Default,
+#[derive(Clone)]
+pub struct Package {
+    pub root_module: PathBuf,
+    pub span: Option<Span>,
+    pub deps: VSlice<Dep<Package>>,
+    pub source: Option<VRef<Source>>,
 }
 
-impl ModKind {
-    pub fn is_module(&self) -> bool {
-        matches!(self, Self::Module { .. })
-    }
+#[derive(Clone, Copy)]
+pub struct Module {
+    pub package: VRef<Package>,
+    pub ordering: usize,
+    pub deps: VSlice<Dep<Module>>,
+    pub source: Option<VRef<Source>>,
 }
 
-impl Default for ModKind {
-    fn default() -> Self {
-        ModKind::Default
-    }
-}
-
-#[derive(Default, Clone, Copy)]
-pub struct Dep {
+pub struct Dep<T> {
     pub name_span: Span,
     pub name: VRef<str>,
-    pub ptr: VRef<str>,
+    pub ptr: VRef<T>,
 }
 
-#[derive(Default, Clone, Copy)]
-pub struct ModId(pub VRef<str>);
+impl<T> Clone for Dep<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for Dep<T> {}

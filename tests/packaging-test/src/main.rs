@@ -9,18 +9,18 @@ use testing::*;
 #[derive(Default)]
 struct TestState {
     workspace: Workspace,
-    packages: Packages,
+    packages: resources,
     interner: Interner,
     package_graph: PackageGraph,
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, Packages) {
+    fn exec(mut self, name: &str) -> (Workspace, resources) {
         package_loader!(self).load(Path::new(name));
         (self.workspace, self.packages)
     }
 
-    fn set_packages(&mut self, packages: Packages) {
+    fn set_packages(&mut self, packages: resources) {
         self.packages = packages;
     }
 }

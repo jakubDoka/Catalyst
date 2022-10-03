@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
 use lexing_t::*;
-use packaging_t::Packages;
+use packaging_t::{Resources, Source};
 use storage::*;
 
 pub trait SnippetDisplay {
-    fn display_snippet(&mut self, packages: &Packages, snippet: &Snippet) -> String;
+    fn display_snippet(&mut self, packages: &Resources, snippet: &Snippet) -> String;
 }
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ impl Workspace {
 
     pub fn display<'a>(
         &'a mut self,
-        packages: &Packages,
+        packages: &Resources,
         display: &'a mut dyn SnippetDisplay,
     ) -> String {
         let display: &'a mut _ = if let Some(ref mut display) = self.display {
@@ -37,7 +37,7 @@ impl Workspace {
             .collect()
     }
 
-    pub fn push_or_display(&mut self, packages: &Packages, snippet: Snippet) {
+    pub fn push_or_display(&mut self, packages: &Resources, snippet: Snippet) {
         if let Some(ref mut display) = self.display {
             let out = display.display_snippet(packages, &snippet);
             println!("{}", out);
@@ -79,7 +79,6 @@ impl ErrorCount {
 
 pub type Str = Cow<'static, str>;
 
-#[derive(Default, Debug)]
 pub struct Snippet {
     pub title: Option<Annotation>,
     pub footer: Vec<Option<Annotation>>,
@@ -87,22 +86,19 @@ pub struct Snippet {
     pub origin: String,
 }
 
-#[derive(Default, Debug)]
 pub struct Annotation {
     pub id: Option<Str>,
     pub label: Option<Str>,
     pub annotation_type: AnnotationType,
 }
 
-#[derive(Default, Debug)]
 pub struct Slice {
     pub span: Span,
-    pub origin: VRef<str>,
+    pub origin: VRef<Source>,
     pub annotations: Vec<Option<SourceAnnotation>>,
     pub fold: bool,
 }
 
-#[derive(Default, Debug)]
 pub struct SourceAnnotation {
     pub range: Span,
     pub label: Str,

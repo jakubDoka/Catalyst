@@ -6,7 +6,7 @@ use std::{
 
 use diags::*;
 use lexing_t::Span;
-use packaging_t::Mod;
+use packaging_t::Source;
 use parsing::*;
 use parsing_t::*;
 use scope::*;
@@ -354,7 +354,7 @@ gen_scope_lookup! {
     BoundLookup<"bound", Spec, specs> {
         Ty => "type",
     }
-    ModLookup<"module", Mod> {
+    ModLookup<"module", Source> {
         Spec => "bound",
         Ty => "type",
     }

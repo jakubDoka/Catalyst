@@ -196,7 +196,7 @@ mod util {
         }
     }
 
-    pub fn build_scope(module: VRef<str>, scope: &mut Scope, packages: &Packages, typec: &Typec) {
+    pub fn build_scope(module: VRef<str>, scope: &mut Scope, packages: &resources, typec: &Typec) {
         scope.clear();
 
         for &ty in Ty::ALL {
@@ -242,7 +242,7 @@ mod util {
         item: ModItem,
         scope: &mut Scope,
         current_file: VRef<str>,
-        packages: &mut Packages,
+        packages: &mut resources,
         workspace: &mut Workspace,
     ) {
         if let Err(spans) = scope.insert(current_file, item.to_scope_item(current_file)) {

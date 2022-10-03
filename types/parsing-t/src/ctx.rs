@@ -1,6 +1,7 @@
 use diags::*;
 use lexing::*;
 use lexing_t::*;
+use packaging_t::Source;
 use scope::*;
 use storage::*;
 
@@ -12,22 +13,25 @@ pub struct ParsingCtx<'a, 'b> {
     pub arena: &'b AstData,
     pub workspace: &'a mut Workspace,
     pub interner: &'a mut Interner,
+    pub source: VRef<Source>,
 }
 
 impl<'a, 'b> ParsingCtx<'a, 'b> {
     pub fn new(
-        source: &'a str,
+        source_code: &'a str,
         state: &'a mut ParsingState,
         ast_data: &'b AstData,
         workspace: &'a mut Workspace,
         interner: &'a mut Interner,
+        source: VRef<Source>,
     ) -> Self {
         Self {
-            lexer: Lexer::new(source, state.progress),
+            lexer: Lexer::new(source_code, state.progress),
             state,
             arena: ast_data,
             workspace,
             interner,
+            source,
         }
     }
 }
@@ -190,7 +194,7 @@ impl<'a> ParsingCtx<'_, 'a> {
                 self.state.current.kind.as_str(),
             );
             info: ("{}", self.display_parse_stack());
-            (self.state.current.span, self.state.path) {
+            (self.state.current.span, self.source) {
                 err[self.state.current.span]: "token located here";
             }
         }
@@ -202,7 +206,7 @@ impl<'a> ParsingCtx<'_, 'a> {
                 self.current_token_str(),
             );
             info: ("{}", self.display_parse_stack());
-            (self.state.current.span, self.state.path) {
+            (self.state.current.span, self.source) {
                 err[self.state.current.span]: "token located here";
             }
         }
@@ -210,7 +214,7 @@ impl<'a> ParsingCtx<'_, 'a> {
         push unmatched_paren(self, kind: TokenKind, span: Span) {
             err: ("unmatched paren {}", kind.as_str());
             info: ("{}", self.display_parse_stack());
-            (span.joined(self.state.current.span), self.state.path) {
+            (span.joined(self.state.current.span), self.source) {
                 err[span]: "the starting paren";
             }
         }
@@ -222,7 +226,7 @@ impl<'a> ParsingCtx<'_, 'a> {
                 " difference which is a '\\' between path and generic parameters"
             ));
             info: ("{}", self.display_parse_stack());
-            (span, self.state.path) {
+            (span, self.source) {
                 err[span]: "this is invalid";
             }
         }
@@ -243,7 +247,6 @@ pub struct ParsingState {
     pub current: Token,
     pub next: Token,
     pub progress: usize,
-    pub path: VRef<str>,
     pub parse_stack: Vec<&'static str>,
 }
 
@@ -252,11 +255,10 @@ impl ParsingState {
         Self::default()
     }
 
-    pub fn start(&mut self, source: &str, path: VRef<str>) {
+    pub fn start(&mut self, source: &str) {
         let mut lexer = Lexer::new(source, 0);
         self.current = lexer.next_tok();
         self.next = lexer.next_tok();
         self.progress = lexer.progress();
-        self.path = path;
     }
 }

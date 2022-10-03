@@ -6,7 +6,7 @@ use annotate_snippets::{
     snippet::*,
 };
 use lexing_t::Span;
-use packaging_t::Packages;
+use packaging_t::Resources;
 
 #[derive(Default)]
 pub struct SnippetDisplay {
@@ -15,14 +15,12 @@ pub struct SnippetDisplay {
 }
 
 impl diags::SnippetDisplay for SnippetDisplay {
-    fn display_snippet(&mut self, packages: &Packages, snippet: &diags::Snippet) -> String {
+    fn display_snippet(&mut self, packages: &Resources, snippet: &diags::Snippet) -> String {
         if self.tab_width == 0 {
             self.tab_width = 4;
         }
         let mut buffer = String::new();
-        let Some(snippet) = self.snippet(&mut buffer, packages, snippet) else {
-            unreachable!("snippet display failed, snipped: {snippet:#?}");
-        };
+        let snippet = self.snippet(&mut buffer, packages, snippet);
         let d_list: DisplayList = snippet.into();
         d_list.to_string()
     }
@@ -32,24 +30,19 @@ impl SnippetDisplay {
     pub fn snippet<'a>(
         &'a self,
         buffer: &'a mut String,
-        packages: &'a Packages,
+        packages: &'a Resources,
         snippet: &'a diags::Snippet,
-    ) -> Option<Snippet<'a>> {
+    ) -> Snippet<'a> {
         let slices = snippet
             .slices
             .iter()
             .filter_map(|s| s.as_ref())
-            .filter_map(|s| Some((s, packages.reveal_span_lines(s.origin, s.span)?)))
-            .map(|(s, span)| (span, packages.span_str(s.origin, span)))
+            .map(|s| (s, packages.sources[s.origin].reveal_span_lines(s.span)))
+            .map(|(s, span)| (span, packages.sources[s.origin].span_str(span)))
             .map(|(s, str)| (s, self.replace_tabs_with_spaces(buffer, str)))
             .collect::<Vec<_>>();
 
-        // means something was wrong at least with one span reveal.
-        if slices.len() != snippet.slices.iter().filter(|o| o.is_some()).count() {
-            return None;
-        }
-
-        Some(Snippet {
+        Snippet {
             title: snippet.title.as_ref().map(|s| self.annotation(s)),
             footer: snippet
                 .footer
@@ -65,7 +58,7 @@ impl SnippetDisplay {
                 .map(|(s, (span, str))| self.slice(packages, str, span, buffer, s))
                 .collect(),
             opt: self.opts,
-        })
+        }
     }
 
     fn annotation<'a>(&'a self, s: &'a diags::Annotation) -> Annotation<'a> {
@@ -78,30 +71,22 @@ impl SnippetDisplay {
 
     fn slice<'a>(
         &'a self,
-        packages: &'a Packages,
+        packages: &'a Resources,
         str: Span,
         span: Span,
         buffer: &'a str,
         slice: &'a diags::Slice,
     ) -> Slice<'a> {
-        let source = packages.span_str(slice.origin, span);
+        let source = &packages.sources[slice.origin];
         Slice {
             source: &buffer[str.range()],
-            line_start: packages.modules.get(&slice.origin).map_or(0, |module| {
-                module.line_mapping.line_info_at(slice.span.start()).0
-            }),
-            origin: Some(
-                packages
-                    .modules
-                    .get(&slice.origin)
-                    .and_then(|m| m.path.to_str())
-                    .unwrap_or("unknown/location"),
-            ),
+            line_start: source.line_mapping.line_info_at(slice.span.start()).0,
+            origin: Some(source.path.to_str().unwrap_or("<invalid path>")),
             annotations: slice
                 .annotations
                 .iter()
                 .filter_map(|i| i.as_ref())
-                .map(|i| self.source_annotation(span.start(), source, i))
+                .map(|i| self.source_annotation(span.start(), &source.content, i))
                 .collect(),
             fold: slice.fold,
         }

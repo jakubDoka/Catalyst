@@ -5,7 +5,7 @@ use std::{
     process::{Command, Output},
 };
 
-pub trait Resources {
+pub trait ResourceDb {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
@@ -17,7 +17,7 @@ pub trait Resources {
 
 pub struct OsResources;
 
-impl Resources for OsResources {
+impl ResourceDb for OsResources {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         fs::read(path)
     }
@@ -47,7 +47,7 @@ impl Resources for OsResources {
     }
 }
 
-impl Default for Box<dyn Resources> {
+impl Default for Box<dyn ResourceDb> {
     fn default() -> Self {
         Box::new(OsResources)
     }

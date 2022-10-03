@@ -121,7 +121,7 @@ pub mod items {
     };
 
     impl<T: Scheduler + Default> Testable for T {
-        fn exec(mut self, name: &str) -> (Workspace, Packages) {
+        fn exec(mut self, name: &str) -> (Workspace, resources) {
             self.execute(Path::new(name));
 
             (
@@ -130,18 +130,18 @@ pub mod items {
             )
         }
 
-        fn set_packages(&mut self, packages: Packages) {
+        fn set_packages(&mut self, packages: resources) {
             *self.resources().packages = packages;
         }
     }
 
     pub trait Testable: Default {
-        fn exec(self, name: &str) -> (Workspace, Packages);
-        fn set_packages(&mut self, packages: Packages);
+        fn exec(self, name: &str) -> (Workspace, resources);
+        fn set_packages(&mut self, packages: resources);
 
         fn new(resources: TestResources) -> Self {
             let mut this = Self::default();
-            let packages = Packages::with_resources(resources);
+            let packages = resources::with_resources(resources);
             this.set_packages(packages);
             this
         }
@@ -150,7 +150,7 @@ pub mod items {
     pub fn test_case<'a: 'b, 'b, 'c>(
         name: &'static str,
         scope: Option<&'a Scope<'b, 'c>>,
-        test_code: fn(&str) -> (Workspace, Packages),
+        test_code: fn(&str) -> (Workspace, resources),
     ) {
         println!("Running sub test: {}", name);
         let runner = move || {
@@ -191,7 +191,7 @@ pub mod items {
 
         pub fn create(self) -> TestResources {
             let mut resources = TestResources::default();
-            let mut packages = Packages::default();
+            let mut packages = resources::default();
             let mut interner = Interner::new();
 
             let mut fmt = Fmt::default();
@@ -223,7 +223,7 @@ pub mod items {
             path: &Path,
             fmt: &mut Fmt,
             interner: &mut Interner,
-            packages: &mut Packages,
+            packages: &mut resources,
             resources: &mut TestResources,
         ) {
             let self_path = path;
@@ -256,7 +256,7 @@ pub mod items {
 
                 resources.add_file(&path, res.to_string());
 
-                let module = Mod {
+                let module = Source {
                     path,
                     content: c,
                     ..Default::default()
@@ -396,7 +396,7 @@ pub mod items {
         }
     }
 
-    impl Resources for TestResources {
+    impl ResourceDb for TestResources {
         fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
             self.binary_files
                 .get(self.canonicalize(path)?.as_path())

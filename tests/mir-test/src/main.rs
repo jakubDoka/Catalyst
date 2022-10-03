@@ -18,7 +18,7 @@ struct TestState {
     scope: Scope,
     typec: Typec,
     workspace: Workspace,
-    packages: Packages,
+    packages: resources,
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     mir_ctx: MirBuilderCtx,

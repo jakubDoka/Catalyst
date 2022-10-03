@@ -12,4 +12,5 @@ scope = { path = "../../utils/scope" }
 lexing = { path = "../../stages/lexing"}
 
 lexing-t = { path = "../lexing-t" }
+packaging-t = { path = "../packaging-t" }
 diags = { path = "../diags" }

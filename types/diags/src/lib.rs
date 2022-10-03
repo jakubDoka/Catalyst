@@ -58,7 +58,7 @@ macro_rules! annotation {
 }
 
 #[macro_export]
-macro_rules! slice_origin {
+macro_rules! optional {
     () => {
         None.into()
     };
@@ -85,10 +85,9 @@ macro_rules! source_annotation {
         {
             #[allow(clippy::needless_update)]
             (|| Some($crate::SourceAnnotation {
-                $(range: $span)?,
+                range: $crate::optional!($($span)?),
                 label: $crate::format_required_message!($label),
                 annotation_type: $crate::annotation_type!($annotation_type),
-                ..Default::default()
             }))()
         }
     };
@@ -205,7 +204,7 @@ mod tests {
         drop(snippet! {
             err["id"]: "hello";
             err: "world";
-            (Span::new(0..0), Interner::EMPTY) {
+            (Span::new(0..0), unsafe { std::mem::zeroed() }) {
                 err[Span::new(0..0)]: "world";
             }
         });
@@ -219,7 +218,7 @@ mod tests {
         gen_error_fns! {
             push test_err(self, span: Span, a: i32, b: i32) {
                 err["goo"]: ("hello {} {}", a, b);
-                (span, Interner::EMPTY) {
+                (span, unsafe { std::mem::zeroed() }) {
                     err[span]: "world";
                 }
             }

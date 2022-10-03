@@ -115,7 +115,7 @@ impl PackageLoader<'_> {
             ManifestAst::parse(&mut ctx)
         };
         let Some(manifest) = manifest else {
-            let package = Mod {
+            let package = Source {
                 path,
                 line_mapping: LineMapping::new(&content),
                 content,
@@ -150,12 +150,10 @@ impl PackageLoader<'_> {
         );
 
         // save
-        let package = Mod {
+        let package = Source {
             path,
             line_mapping: LineMapping::new(&content),
             content,
-            kind: ModKind::Package { root_module, span },
-            deps,
         };
         self.packages.modules.insert(id, package);
 
@@ -299,16 +297,10 @@ impl PackageLoader<'_> {
             default()
         };
 
-        let module = Mod {
+        let module = Source {
             path,
             line_mapping: LineMapping::new(&content),
             content,
-            kind: ModKind::Module {
-                package: package_id,
-                ordering: 0,
-                items: vec![],
-            },
-            deps,
         };
         self.packages.modules.insert(id, module);
 
@@ -580,7 +572,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        unknown_package(s: &Self, span: Span, id: VRef<str>, package: &Mod) {
+        unknown_package(s: &Self, span: Span, id: VRef<str>, package: &Source) {
             err: "cannot find this package in manifest";
             info: (
                 "available packages: '{}'",

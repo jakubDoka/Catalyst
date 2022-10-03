@@ -492,6 +492,7 @@ dependencies = [
  "diags",
  "lexing",
  "lexing-t",
+ "packaging-t",
  "scope",
  "storage",
 ]
