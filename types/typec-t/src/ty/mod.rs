@@ -1,8 +1,8 @@
 use std::default::default;
 
 use crate::*;
+use ::scope::Vis;
 use lexing_t::*;
-use scope::Vis;
 use storage::*;
 
 pub type Types = OrderedMap<VRef<str>, Ty>;

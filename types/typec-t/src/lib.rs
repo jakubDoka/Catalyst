@@ -3,6 +3,7 @@
 #![feature(specialization)]
 #![feature(option_result_contains)]
 #![feature(iter_intersperse)]
+#![feature(result_flattening)]
 
 #[macro_export]
 macro_rules! gen_kind {
@@ -152,6 +153,7 @@ macro_rules! impl_flagged {
 }
 
 mod func;
+mod scope;
 mod spec;
 mod tir;
 mod ty;

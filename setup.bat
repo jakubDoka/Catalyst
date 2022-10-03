@@ -7,13 +7,13 @@ IF ERRORLEVEL 1 (
 
 set STATE_GEN="target\release\state.exe"
 
-cd utils/state
+cd scripts/state
 cargo build --release
 cd ../..
 
 set TESTER="target\release\tester.exe"
 
-cd utils/tester
+cd scripts/tester
 cargo build --release
 cd ../..
 
