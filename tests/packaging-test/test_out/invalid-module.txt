@@ -1,9 +1,9 @@
-error: cannot load source file
- --> invalid-module\root\a.ctl:2:6
+error: failed to read source file
+ --> invalid-module\root\a.ctl:2:5
   |
 2 |     "./a/b"
-  |      ^^^^^ caused by this
+  |     ^^^^^^^ declared here
   |
-  = info: related path: invalid-module\root\a\b.ctl
+  = info: path: `invalid-module\root\a/b.ctl`
   = info: trace: file not found
 
