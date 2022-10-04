@@ -1,5 +1,5 @@
 info: mir repr of functions:
- fn [todo] 4\main() -> uint  {
+ fn [todo] 0\main() -> uint  {
     block0() {
         var2 = int 0
         return var2
@@ -7,7 +7,7 @@ info: mir repr of functions:
 
 }
 
-fn [todo] 4\pass(var0: uint) -> uint  {
+fn [todo] 0\pass(var0: uint) -> uint  {
     block0(var2: uint) {
         access var2
         return var2
