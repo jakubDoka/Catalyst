@@ -1,19 +1,7 @@
-error: 'uint' is not a module
- --> cross-module-item-access\root.ctl:6:27
-  |
-6 | fn main -> uint => a\pass(uint\a\pass(0.b\pass()))
-  |                           ^^^^ this is of incorrect type
-  |
-  = info: found type: type
-
 info: tir repr of functions:
- fn [todo] 8\pass(var0: param 0) -> param 0 return var0
+ fn [todo] 0\pass(var0: param 0) -> param 0 return var0
 
-fn [todo] uint\8\pass(var0: uint) -> uint return var0
-
-fn [todo] 9\pass(var0: param 0) -> param 0 return var0
-
-fn [todo] uint\9\pass(var0: uint) -> uint return var0
+fn [todo] uint\0\pass(var0: uint) -> uint return var0
 
 
 
