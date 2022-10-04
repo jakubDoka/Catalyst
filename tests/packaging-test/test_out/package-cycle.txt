@@ -1,0 +1,6 @@
+error: package cycle detected
+ = info: cycle:
+         package-cycle\package.ctlm
+         package-cycle\a\package.ctlm
+         package-cycle\package.ctlm
+
