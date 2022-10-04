@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got 'as'
+ --> package-cycle\a\package.ctlm:1:13
+  |
+1 | deps { ".." as }
+  |             ^^ token located here
+  |
+  = info: manifest -> list
+
