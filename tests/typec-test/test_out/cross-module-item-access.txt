@@ -1,5 +1,17 @@
+error: invalid symbol type
+ --> cross-module-item-access\root.ctl:6:27
+  |
+6 | fn main -> uint => a\pass(uint\a\pass(0.b\pass()))
+  |                           ---- info: symbol used here
+  |
+  = info: expected function or module but got Ty
+
 info: tir repr of functions:
- fn [todo] 0\pass(var0: param 0) -> param 0 return var0
+ fn [todo] 2\pass(var0: param 0) -> param 0 return var0
+
+fn [todo] uint\2\pass(var0: uint) -> uint return var0
+
+fn [todo] 0\pass(var0: param 0) -> param 0 return var0
 
 fn [todo] uint\0\pass(var0: uint) -> uint return var0
 
