@@ -11,7 +11,7 @@ macro_rules! span_str {
 mod packaging;
 mod resources;
 
-pub use packaging::{Dep, ModItem, Module, Package, PackageGraph, Resources, Source};
+pub use packaging::{Dep, Module, Package, PackageGraph, Resources, Source};
 pub use resources::{OsResources, ResourceDb};
 
 pub const MANIFEST_EXTENSION: &str = "ctlm";

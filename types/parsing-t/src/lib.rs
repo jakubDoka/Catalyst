@@ -11,4 +11,4 @@ mod ast;
 mod ctx;
 
 pub use ast::{Ast, AstData, ListAst, ListAstMeta, ListElement, NameAst, TokenPattern, WrappedAst};
-pub use ctx::{ParsingCtx, ParsingState};
+pub use ctx::{ParsingCtx, ParsingState, Vis};

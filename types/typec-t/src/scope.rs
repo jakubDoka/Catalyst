@@ -1,6 +1,5 @@
-use std::fmt;
-
 use lexing_t::*;
+use packaging_t::Module;
 use parsing_t::*;
 use storage::*;
 
@@ -52,7 +51,7 @@ impl Scope {
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
 
-    pub fn insert_current(&mut self, item: ModItem) -> Result<(), Option<(Span, Span)>> {
+    pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), Option<(Span, Span)>> {
         self.data
             .insert(item.id, ScopeRecord::CurrentItem { item })
             .filter(|record| record.is_strong())
@@ -63,9 +62,9 @@ impl Scope {
 
     pub fn insert(
         &mut self,
-        current_module: VRef<str>,
-        foreign_module: VRef<str>,
-        item: ModItem,
+        current_module: VRef<Module>,
+        foreign_module: VRef<Module>,
+        item: ModuleItem,
     ) -> Result<(), Option<(Span, Span)>> {
         debug_assert!(current_module != foreign_module);
 
@@ -107,10 +106,20 @@ pub enum ScopeError {
 
 #[derive(Clone, Copy)]
 pub enum ScopeRecord {
-    ImportedItem { module: VRef<str>, item: ModItem },
-    CurrentItem { item: ModItem },
-    Builtin { kind: ScopeItem },
-    Pushed { kind: ScopeItem, span: Span },
+    ImportedItem {
+        module: VRef<Module>,
+        item: ModuleItem,
+    },
+    CurrentItem {
+        item: ModuleItem,
+    },
+    Builtin {
+        kind: ScopeItem,
+    },
+    Pushed {
+        kind: ScopeItem,
+        span: Span,
+    },
     Collision,
 }
 
@@ -143,7 +152,7 @@ impl ScopeRecord {
 }
 
 #[derive(Clone, Copy)]
-pub struct ModItem {
+pub struct ModuleItem {
     pub id: VRef<str>,
     pub ptr: ScopeItem,
     pub span: Span,
@@ -157,7 +166,7 @@ pub enum ScopeItem {
     Ty(VRef<Ty>),
     Spec(VRef<Spec>),
     Var(VRef<Var>),
-    Mod(VRef<str>),
+    Module(VRef<Module>),
 }
 
 macro_rules! gen_scope_item {
@@ -169,39 +178,15 @@ macro_rules! gen_scope_item {
                 }
             }
         )*
-    }
-}
 
-gen_scope_item!(Func, Ty, Spec, Var);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Vis {
-    Pub,
-    None,
-    Priv,
-}
-
-impl Vis {
-    pub fn or(self, other: Self) -> Self {
-        match (self, other) {
-            (Vis::None, vis) => vis,
-            (vis, ..) => vis,
+        impl ScopeItem {
+           pub fn what(&self) -> &'static str {
+                match *self {
+                    $(Self::$name(..) => stringify!($name),)*
+                }
+            }
         }
     }
 }
 
-impl fmt::Display for Vis {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Vis::Pub => write!(f, "pub"),
-            Vis::Priv => write!(f, "priv"),
-            Vis::None => write!(f, ""),
-        }
-    }
-}
-
-impl Default for Vis {
-    fn default() -> Self {
-        Vis::None
-    }
-}
+gen_scope_item!(Func, Ty, Spec, Var, Module);

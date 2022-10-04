@@ -198,7 +198,6 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
- "scope",
  "storage",
 ]
 
@@ -251,7 +250,6 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
- "scope",
  "storage",
  "target-lexicon",
  "testing",
@@ -406,7 +404,6 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
- "scope",
  "storage",
  "testing",
  "typec",
@@ -458,7 +455,6 @@ version = "0.1.0"
 dependencies = [
  "graphs",
  "lexing-t",
- "scope",
  "storage",
 ]
 
@@ -482,7 +478,6 @@ dependencies = [
  "lexing-t",
  "logos",
  "parsing-t",
- "scope",
  "storage",
 ]
 
@@ -494,7 +489,6 @@ dependencies = [
  "lexing",
  "lexing-t",
  "packaging-t",
- "scope",
  "storage",
 ]
 
@@ -701,7 +695,6 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
- "scope",
  "storage",
  "typec-t",
 ]
@@ -715,7 +708,6 @@ dependencies = [
  "lexing-t",
  "packaging-t",
  "parsing-t",
- "scope",
  "storage",
 ]
 
@@ -728,7 +720,6 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
- "scope",
  "storage",
  "testing",
  "typec",

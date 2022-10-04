@@ -1,6 +1,5 @@
 use lexing_t::*;
-use scope::*;
-use std::{any::Any, path::*};
+use std::path::*;
 use storage::*;
 
 use crate::*;
@@ -47,39 +46,6 @@ impl Source {
         span.reveal_lines(&self.content)
     }
 }
-
-#[derive(Clone, Copy, Debug)]
-pub struct ModItem {
-    pub id: VRef<str>,
-    pub ptr: ScopePtr,
-    pub span: Span,
-    pub whole_span: Span,
-    pub vis: Vis,
-}
-
-impl ModItem {
-    pub fn new(id: VRef<str>, ptr: VRef<impl Any>, span: Span, whole_span: Span, vis: Vis) -> Self {
-        Self {
-            id,
-            ptr: ScopePtr::new(ptr),
-            span,
-            whole_span,
-            vis,
-        }
-    }
-
-    pub fn to_scope_item(&self, module: VRef<str>) -> ScopeItem {
-        ScopeItem {
-            id: self.id,
-            ptr: self.ptr,
-            span: self.span,
-            whole_span: self.whole_span,
-            vis: self.vis,
-            module,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct Package {
     pub root_module: PathBuf,

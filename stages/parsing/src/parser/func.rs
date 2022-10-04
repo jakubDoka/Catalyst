@@ -1,5 +1,3 @@
-use scope::Vis;
-
 use super::*;
 
 list_meta!(FuncArgMeta ? LeftParen Comma RightParen);

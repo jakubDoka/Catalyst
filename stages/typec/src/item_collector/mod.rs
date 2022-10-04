@@ -5,7 +5,7 @@ use lexing_t::*;
 use packaging_t::*;
 use parsing::*;
 use parsing_t::Ast;
-use scope::*;
+
 use storage::*;
 use typec_t::*;
 
@@ -16,7 +16,11 @@ impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
         items: GroupedItemSlice<T>,
-        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<(ModItem, VRef<T::Output>)>,
+        collector: fn(
+            &mut Self,
+            T,
+            &[TopLevelAttributeAst],
+        ) -> Option<(ModuleItem, VRef<T::Output>)>,
         out: &mut TypecOutput<T::Output>,
     ) -> &mut Self {
         for (i, &(item, attributes)) in items.iter().enumerate() {
@@ -112,7 +116,7 @@ impl TyChecker<'_> {
         &mut self,
         spec @ SpecAst { vis, name, .. }: SpecAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModItem, VRef<Spec>)> {
+    ) -> Option<(ModuleItem, VRef<Spec>)> {
         let id = intern_scoped_ident!(self, name.ident);
 
         let fallback = |_: &mut Specs| Spec {
@@ -123,7 +127,7 @@ impl TyChecker<'_> {
         let id = self.typec.specs.get_or_insert(id, fallback);
 
         Some((
-            ModItem::new(name.ident, id, name.span, spec.span(), vis),
+            ModuleItem::new(name.ident, id, name.span, spec.span(), vis),
             id,
         ))
     }
@@ -132,7 +136,7 @@ impl TyChecker<'_> {
         &mut self,
         func: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<(ModItem, VRef<Func>)> {
+    ) -> Option<(ModuleItem, VRef<Func>)> {
         self.collect_func_low(func, attributes, default())
     }
 
@@ -154,7 +158,7 @@ impl TyChecker<'_> {
             owner,
             upper_vis,
         }: ScopeData,
-    ) -> Option<(ModItem, VRef<Func>)> {
+    ) -> Option<(ModuleItem, VRef<Func>)> {
         let id = intern_scoped_ident!(self, name.ident);
         let id = owner.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
 
@@ -194,7 +198,7 @@ impl TyChecker<'_> {
         let local_id = owner.map_or(name.ident, |owner| {
             self.interner.intern(scoped_ident!(owner, name.ident))
         });
-        Some((ModItem::new(local_id, id, name.span, span, vis), id))
+        Some((ModuleItem::new(local_id, id, name.span, span, vis), id))
     }
 
     pub fn collect_signature(
@@ -239,7 +243,7 @@ impl TyChecker<'_> {
             ..
         }: StructAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModItem, VRef<Ty>)> {
+    ) -> Option<(ModuleItem, VRef<Ty>)> {
         let key = intern_scoped_ident!(self, name.ident);
 
         let ty = |_: &mut Types| Ty {
@@ -249,7 +253,7 @@ impl TyChecker<'_> {
         };
         let id = self.typec.types.get_or_insert(key, ty);
 
-        Some((ModItem::new(name.ident, id, name.span, span, vis), id))
+        Some((ModuleItem::new(name.ident, id, name.span, span, vis), id))
     }
 
     gen_error_fns! {

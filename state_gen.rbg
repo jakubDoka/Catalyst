@@ -14,12 +14,12 @@ file "stages/packaging/src/state_gen.rs" {
 file "stages/typec/src/state_gen.rs" {
     use "storage"
     use "diags"
-    use "scope"
     use "typec_t"
     use "packaging_t"
 
     struct TyChecker {
         owned source: `VRef<Source>`
+        owned module: `VRef<Module>`
 
         mut Interner
         mut Scope
@@ -39,6 +39,7 @@ file "stages/mir/src/state_gen.rs" {
 
     struct MirChecker {
         owned source: `VRef<Source>`
+        owned module: `VRef<Module>`
 
         mut Mir
         mut Interner

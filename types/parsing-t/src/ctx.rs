@@ -1,8 +1,10 @@
+use std::fmt;
+
 use diags::*;
 use lexing::*;
 use lexing_t::*;
 use packaging_t::Source;
-use scope::*;
+
 use storage::*;
 
 use crate::*;
@@ -260,5 +262,37 @@ impl ParsingState {
         self.current = lexer.next_tok();
         self.next = lexer.next_tok();
         self.progress = lexer.progress();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vis {
+    Pub,
+    None,
+    Priv,
+}
+
+impl Vis {
+    pub fn or(self, other: Self) -> Self {
+        match (self, other) {
+            (Vis::None, vis) => vis,
+            (vis, ..) => vis,
+        }
+    }
+}
+
+impl fmt::Display for Vis {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Vis::Pub => write!(f, "pub"),
+            Vis::Priv => write!(f, "priv"),
+            Vis::None => write!(f, ""),
+        }
+    }
+}
+
+impl Default for Vis {
+    fn default() -> Self {
+        Vis::None
     }
 }

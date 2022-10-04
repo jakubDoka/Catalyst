@@ -5,7 +5,7 @@ use lexing_t::*;
 use packaging_t::*;
 use parsing::*;
 use parsing_t::*;
-use scope::*;
+
 use storage::*;
 
 use typec_t::*;

@@ -372,11 +372,11 @@ impl Fmt {
         self.buffer.len() - self.last_newline
     }
 
-    pub fn vis(&mut self, vis: scope::Vis) {
+    pub fn vis(&mut self, vis: Vis) {
         match vis {
-            scope::Vis::Pub => write!(self, "pub "),
-            scope::Vis::None => (),
-            scope::Vis::Priv => write!(self, "priv "),
+            Vis::Pub => write!(self, "pub "),
+            Vis::None => (),
+            Vis::Priv => write!(self, "priv "),
         }
     }
 

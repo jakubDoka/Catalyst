@@ -1,15 +1,10 @@
-use std::{
-    any::{Any, TypeId},
-    default::default,
-    ops::Deref,
-};
+use std::{default::default, ops::Deref};
 
 use diags::*;
 use lexing_t::Span;
-use packaging_t::Source;
 use parsing::*;
 use parsing_t::*;
-use scope::*;
+
 use storage::*;
 
 use typec_t::*;
@@ -76,19 +71,12 @@ impl TyChecker<'_> {
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
         let param = self.typec.nth_param(index, self.interner);
-        self.scope.push(ScopeItem::new(
-            name.ident,
-            param,
-            name.span,
-            name.span,
-            self.source,
-            Vis::Priv,
-        ));
+        self.scope.push(name.ident, param, name.span);
     }
 
     pub fn ty(&mut self, ty_ast: TyAst) -> Option<VRef<Ty>> {
         match ty_ast {
-            TyAst::Path(ident) => self.ty_path::<TyLookup>(ident),
+            TyAst::Path(ident) => self.ty_path(ident),
             TyAst::Instance(instance) => self.instance(instance),
             TyAst::Pointer(pointer) => self.pointer(*pointer),
             TyAst::Tuple(tuple) => self.tuple(tuple),
@@ -153,7 +141,7 @@ impl TyChecker<'_> {
 
     pub fn bound(&mut self, bound_ast: SpecExprAst) -> Option<VRef<Spec>> {
         match bound_ast {
-            SpecExprAst::Path(ident) => self.ty_path::<BoundLookup>(ident),
+            SpecExprAst::Path(ident) => self.spec_path(ident),
         }
     }
 
@@ -187,12 +175,12 @@ impl TyChecker<'_> {
         Some(match mutability_ast {
             MutabilityAst::Mut(..) => Ty::MUTABLE,
             MutabilityAst::None => Ty::IMMUTABLE,
-            MutabilityAst::Generic(.., path) => return self.ty_path::<TyLookup>(path),
+            MutabilityAst::Generic(.., path) => return self.ty_path(path),
         })
     }
 
     fn instance(&mut self, TyInstanceAst { ident, params }: TyInstanceAst) -> Option<VRef<Ty>> {
-        let base = self.ty_path::<TyLookup>(ident)?;
+        let base = self.ty_path(ident)?;
 
         let args = params
             .iter()
@@ -214,54 +202,57 @@ impl TyChecker<'_> {
         Some(self.typec.types.get_or_insert(key, fallback))
     }
 
-    pub fn ty_path<T: ScopeLookup>(
+    pub fn ty_path(
         &mut self,
         path @ PathExprAst { start, segments }: PathExprAst,
-    ) -> Option<VRef<T::Output>> {
-        match *segments {
-            [] => self.lookup_typed::<T>(start.ident, start.span),
-            [ty] => {
-                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
-                let id = self
-                    .interner
-                    .intern(scoped_ident!(module.as_u32(), ty.ident));
-
-                let Some(ty) = T::index(self.typec, id) else {
-                    self.handle_scope_error::<T>(ScopeError::NotFound, ty.ident, ty.span);
+    ) -> Option<VRef<Ty>> {
+        let item = self.lookup(start.ident, start.span, TY_OR_MOD)?;
+        match item {
+            ScopeItem::Ty(ty) => Some(ty),
+            ScopeItem::Module(module) => {
+                let Some(ty) = path.segments.first() else {
+                    self.invalid_ty_path(path);
                     return None;
                 };
-
-                Some(ty)
+                let segments = scoped_ident!(module.as_u32(), ty.ident);
+                let id = self.interner.intern(segments);
+                self.typec
+                    .types
+                    .index(id)
+                    .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)
             }
-            _ => {
-                self.invalid_ty_path(path);
-                None
-            }
+            item => self.invalid_symbol_type(item, start.span, TY_OR_MOD)?,
         }
     }
 
-    pub fn lookup_typed<T: ScopeLookup>(
+    pub fn spec_path(
         &mut self,
-        sym: VRef<str>,
-        span: Span,
-    ) -> Option<VRef<T::Output>> {
-        match self.scope.get_typed::<T::Output>(sym) {
-            Ok((key, _)) => Some(key),
-            Err(err) => {
-                self.handle_scope_error::<T>(err, sym, span);
-                None
+        path @ PathExprAst { start, segments }: PathExprAst,
+    ) -> Option<VRef<Spec>> {
+        let item = self.lookup(start.ident, start.span, SPEC_OR_MOD)?;
+        match item {
+            ScopeItem::Spec(ty) => Some(ty),
+            ScopeItem::Module(module) => {
+                let Some(ty) = path.segments.first() else {
+                    self.invalid_ty_path(path);
+                    return None;
+                };
+                let segments = scoped_ident!(module.as_u32(), ty.ident);
+                let id = self.interner.intern(segments);
+                self.typec
+                    .specs
+                    .index(id)
+                    .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), SPEC)?)
             }
+            item => self.invalid_symbol_type(item, start.span, SPEC_OR_MOD)?,
         }
     }
 
-    pub fn lookup<T: ScopeLookup>(&mut self, sym: VRef<str>, span: Span) -> Option<ScopePtr> {
-        match self.scope.get(sym) {
-            Ok(key) => Some(key.ptr),
-            Err(err) => {
-                self.handle_scope_error::<T>(err, sym, span);
-                None
-            }
-        }
+    pub fn lookup(&mut self, sym: VRef<str>, span: Span, what: &str) -> Option<ScopeItem> {
+        self.scope
+            .get(sym)
+            .map_err(|err| self.scope_error(err, sym, span, what))
+            .ok()
     }
 
     gen_error_fns! {
@@ -272,36 +263,36 @@ impl TyChecker<'_> {
                 info[segment.span()]: "malformed path encountered here";
             }
         }
+
+        push invalid_symbol_type(self, item: ScopeItem, span: Span, what: &str) {
+            err: "invalid symbol type";
+            info: ("expected {} but got {}", what, item.what());
+            (span, self.source) {
+                info[span]: "symbol used here";
+            }
+        }
     }
 
-    pub fn handle_scope_error<T: ScopeLookup>(
+    pub fn scope_error(
         &mut self,
         err: ScopeError,
         sym: VRef<str>,
         span: Span,
+        what: &str,
     ) -> Option<!> {
         self.workspace.push(match err {
             ScopeError::NotFound => snippet! {
-                err: ("{} not found", T::ITEM_NAME);
+                err: ("{} not found", what);
                 info: ("queried '{}'", &self.interner[sym]);
                 (span, self.source) {
                     err[span]: "this does not exist";
                 }
             },
             ScopeError::Collision => {
-                let suggestions = self
-                    .resources
-                    .modules
-                    .get(&self.source)
-                    .map(|m| &self.resources.conns[m.deps])
-                    .unwrap()
+                let suggestions = self.resources.module_deps
+                    [self.resources.modules[self.module].deps]
                     .iter()
-                    .filter(|dep| {
-                        self.resources.modules[&dep.ptr]
-                            .items()
-                            .iter()
-                            .any(|i| i.id == sym)
-                    })
+                    .filter(|dep| self.typec.module_items[dep.ptr].iter().any(|i| i.id == sym))
                     .map(|dep| &self.interner[dep.name])
                     .intersperse(", ")
                     .collect::<String>();
@@ -317,45 +308,8 @@ impl TyChecker<'_> {
                     }
                 }
             }
-            ScopeError::TypeMismatch(found) => snippet! {
-                err: ("'{}' is not a {}", &self.interner[sym], T::ITEM_NAME);
-                info: ("found type: {}", T::project(found).unwrap_or("todo: unknown"));
-                (span, self.source) {
-                    err[span]: "this is of incorrect type";
-                }
-            },
         });
 
         None
-    }
-}
-
-pub trait ScopeLookup {
-    type Output: Any = ();
-
-    const ITEM_NAME: &'static str;
-    const TYPE_MISMATCH_MAPPING: &'static [(TypeId, &'static str)];
-
-    fn project(id: TypeId) -> Option<&'static str> {
-        Self::TYPE_MISMATCH_MAPPING
-            .iter()
-            .find_map(|&(oid, name)| (id == oid).then_some(name))
-    }
-
-    fn index(_: &Typec, _: VRef<str>) -> Option<VRef<Self::Output>> {
-        unimplemented!()
-    }
-}
-
-gen_scope_lookup! {
-    TyLookup<"type", Ty, types> {
-        Spec => "bound",
-    }
-    BoundLookup<"bound", Spec, specs> {
-        Ty => "type",
-    }
-    ModLookup<"module", Source> {
-        Spec => "bound",
-        Ty => "type",
     }
 }

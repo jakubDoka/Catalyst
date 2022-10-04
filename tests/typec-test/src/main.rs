@@ -6,7 +6,7 @@ use diags::*;
 use packaging::*;
 use packaging_t::*;
 use parsing::*;
-use scope::*;
+
 use storage::*;
 use testing::*;
 use typec::*;
@@ -18,7 +18,7 @@ struct TestState {
     scope: Scope,
     typec: Typec,
     workspace: Workspace,
-    packages: resources,
+    packages: Resources,
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     functions: String,

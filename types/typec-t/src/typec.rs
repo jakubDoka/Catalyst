@@ -4,6 +4,7 @@ use std::{hash::Hash, mem};
 
 use crate::*;
 use lexing_t::*;
+use packaging_t::Module;
 use storage::*;
 
 #[derive(Default)]
@@ -20,6 +21,8 @@ pub struct Typec {
     pub spec_funcs: SpecFuncs,
 
     pub builtin_funcs: Vec<VRef<Func>>,
+
+    pub module_items: ShadowMap<Module, Vec<ModuleItem>>,
 }
 
 macro_rules! assert_init {

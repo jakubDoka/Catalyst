@@ -14,7 +14,7 @@ packaging = { version = "0.1.0", path = "../../stages/packaging" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
 parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
-scope = { version = "0.1.0", path = "../../utils/scope" }
+
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }
 typec = { version = "0.1.0", path = "../../stages/typec" }

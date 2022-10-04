@@ -162,6 +162,7 @@ mod typec;
 pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
+    scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     spec::{
         BoundExt, BoundFlags, BoundKind, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance,
         SpecSlices, Specs,

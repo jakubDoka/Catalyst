@@ -11,7 +11,7 @@ use crate::*;
 use lexing::*;
 use lexing_t::*;
 use parsing_t::*;
-use scope::*;
+
 use storage::*;
 
 list_meta!(GenericsMeta ? LeftBracket Comma RightBracket);

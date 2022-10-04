@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 storage = { path = "../../utils/storage" }
-scope = { path = "../../utils/scope" }
+
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
 
 lexing-t = { path = "../lexing-t" }

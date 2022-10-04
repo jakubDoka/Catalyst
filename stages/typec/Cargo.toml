@@ -9,7 +9,7 @@ edition = "2021"
 parsing = { path = "../parsing" }
 
 storage = { path = "../../utils/storage" }
-scope = { path = "../../utils/scope" }
+
 
 diags = { path = "../../types/diags" }
 typec-t = { path = "../../types/typec-t" }

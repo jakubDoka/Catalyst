@@ -12,6 +12,6 @@ lexing = { version = "0.1.0", path = "../../stages/lexing" }
 logos = "0.12.1"
 parsing = { version = "0.1.0", path = "../../stages/parsing" }
 parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
-scope = { version = "0.1.0", path = "../../utils/scope" }
+
 storage = { version = "0.1.0", path = "../../utils/storage" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }

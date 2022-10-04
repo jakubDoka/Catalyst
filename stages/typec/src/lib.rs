@@ -9,34 +9,14 @@
 #![feature(try_blocks)]
 #![feature(if_let_guard)]
 
-#[macro_export]
-macro_rules! gen_scope_lookup {
-    (
-        $(
-            $name:ident<$item_name:literal $(, $output:ty $(, $field:ident)?)?> {
-                $($id:ty => $ty_name:literal,)*
-            }
-        )*
-    ) => {
-        $(
-            pub struct $name;
+const TY: &str = "type";
+const SPEC: &str = "spec";
+const TY_OR_MOD: &str = "type or module";
+const SPEC_OR_MOD: &str = "spec or module";
 
-            impl $crate::ScopeLookup for $name {
-                $(type Output = $output;)?
-                const ITEM_NAME: &'static str = $item_name;
-                const TYPE_MISMATCH_MAPPING: &'static [(std::any::TypeId, &'static str)] = &[
-                    $(
-                        (TypeId::of::<$id>(), $ty_name),
-                    )*
-                ];
-
-                $($(
-                    fn index(typec: &Typec, id: VRef<str>) -> Option<VRef<Self::Output>> {
-                        typec.$field.index(id)
-                    }
-                )?)?
-            }
-        )*
+macro_rules! scoped_ident {
+    ($scope:expr, $name:expr) => {
+        ident!($scope, "\\", $name)
     };
 }
 
@@ -52,18 +32,16 @@ mod tir_display;
 mod ty_builder;
 mod ty_parser;
 
-pub use util::{build_scope, duplicate_definition, insert_scope_item, TyCheckerCtx};
+pub use util::{build_scope, TyCheckerCtx};
 
 pub use item_collector::CollectGroup;
 pub use state_gen::TyChecker;
-pub use ty_parser::{ScopeLookup, TyLookup};
 
 mod util {
     use diags::*;
     use lexing_t::*;
     use packaging_t::*;
     use parsing::*;
-    use scope::*;
     use storage::*;
     use typec_t::*;
 
@@ -196,7 +174,12 @@ mod util {
         }
     }
 
-    pub fn build_scope(module: VRef<str>, scope: &mut Scope, packages: &resources, typec: &Typec) {
+    pub fn build_scope(
+        module: VRef<Module>,
+        scope: &mut Scope,
+        packages: &Resources,
+        typec: &Typec,
+    ) {
         scope.clear();
 
         for &ty in Ty::ALL {
@@ -209,17 +192,12 @@ mod util {
             scope.insert_builtin(id, func);
         }
 
-        let mod_ent = packages.modules.get(&module).unwrap();
-        for dep in &packages.conns[mod_ent.deps] {
-            let mod_ent = packages.modules.get(&dep.ptr).unwrap();
-            let ModKind::Module { ref items, .. } = mod_ent.kind else {
-                unreachable!();
-            };
-            let r#mod = packages.ident_as_mod(dep.ptr).unwrap();
-            let item = ModItem::new(dep.name, r#mod, dep.name_span, dep.name_span, Vis::Priv);
-            scope.insert_current(item.to_scope_item(dep.ptr)).unwrap();
+        let mod_ent = &packages.modules[module];
+        for dep in &packages.module_deps[mod_ent.deps] {
+            let items = &typec.module_items[dep.ptr];
+            scope.push(dep.name, dep.ptr, dep.name_span);
             for &item in items {
-                scope.insert(module, item.to_scope_item(dep.ptr)).unwrap();
+                scope.insert(module, dep.ptr, item);
             }
         }
     }
@@ -227,53 +205,31 @@ mod util {
     use crate::TyChecker;
 
     impl TyChecker<'_> {
-        pub fn insert_scope_item(&mut self, item: packaging_t::ModItem) {
-            crate::insert_scope_item(
-                item,
-                self.scope,
-                self.source,
-                self.resources,
-                self.workspace,
-            );
+        pub fn insert_scope_item(&mut self, item: ModuleItem) {
+            if let Err(spans) = self.scope.insert_current(item) {
+                self.duplicate_definition(item.whole_span, item.span, spans, self.source);
+                return;
+            }
+
+            self.typec.module_items[self.module].push(item);
+        }
+
+        gen_error_fns! {
+            push duplicate_definition(
+                self,
+                duplicate: Span,
+                duplicate_name: Span,
+                existing: Option<(Span, Span)>,
+                file: VRef<Source>,
+            ) {
+                err: "duplicate definition";
+                (duplicate, file) {
+                    info[duplicate_name]: "this name";
+                }
+                (existing?.0, file) {
+                    info[existing?.1]: "matches this already existing item";
+                }
+            }
         }
     }
-
-    pub fn insert_scope_item(
-        item: ModItem,
-        scope: &mut Scope,
-        current_file: VRef<str>,
-        packages: &mut resources,
-        workspace: &mut Workspace,
-    ) {
-        if let Err(spans) = scope.insert(current_file, item.to_scope_item(current_file)) {
-            workspace.push(duplicate_definition(
-                item.whole_span,
-                item.span,
-                spans,
-                current_file,
-            ));
-            return;
-        }
-
-        packages
-            .modules
-            .get_mut(&current_file)
-            .unwrap()
-            .add_item(item);
-    }
-
-    gen_error_fn!(duplicate_definition(
-        duplicate: Span,
-        duplicate_name: Span,
-        existing: Option<(Span, Span)>,
-        file: VRef<str>,
-    ) {
-        err: "duplicate definition";
-        (duplicate, file) {
-            info[duplicate_name]: "this name";
-        }
-        (existing?.0, file) {
-            info[existing?.1]: "matches this already existing item";
-        }
-    });
 }
