@@ -190,7 +190,7 @@ impl Generator<'_> {
                 (helper!(ints), "*") => builder.ins().imul(a, b),
                 (helper!(ints), "/") if signed => builder.ins().sdiv(a, b),
                 (helper!(ints), "/") => builder.ins().udiv(a, b),
-                _ => unimplemented!(),
+                val => unimplemented!("{:?}", val),
             },
             _ => unimplemented!(),
         };

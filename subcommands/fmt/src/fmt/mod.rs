@@ -317,6 +317,10 @@ impl Fmt {
             return;
         };
 
+        if imports.span() == Span::new(0..0) {
+            return;
+        }
+
         imports.display(self);
         self.newline();
         self.newline();

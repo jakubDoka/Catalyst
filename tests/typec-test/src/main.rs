@@ -55,7 +55,7 @@ impl Scheduler for TestState {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "struct-decl" {
             struct A;
             struct C {

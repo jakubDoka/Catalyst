@@ -164,6 +164,7 @@ impl Typec {
                         signature,
                         flags: FuncFlags::BUILTIN,
                         loc: Loc::Builtin(op),
+                        name: op,
                         ..default()
                     },
                 );

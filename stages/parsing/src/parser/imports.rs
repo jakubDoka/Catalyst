@@ -42,12 +42,15 @@ impl<'a> Ast<'a> for UseAst<'a> {
         ctx.skip(TokenKind::NewLine);
 
         if !ctx.at_tok(TokenKind::Use) {
-            return None;
+            return Some(UseAst {
+                use_span: Span::default(),
+                items: ImportsAst::default(),
+            });
         }
 
         Some(UseAst {
             use_span: ctx.advance().span,
-            items: ImportsAst::parse(ctx)?,
+            items: ctx.parse()?,
         })
     }
 

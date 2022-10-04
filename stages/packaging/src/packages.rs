@@ -37,6 +37,7 @@ struct DummyPackage {
     ordering: usize,
 }
 
+#[derive(Debug)]
 struct DummyModule {
     package: VRef<Package>,
     deps: BumpVec<(NameAst, PathBuf)>,
@@ -179,7 +180,7 @@ impl PackageLoader<'_> {
         )
         .parse::<UseAst>()?;
 
-        let deps = self.resolve_module_deps(imports, package, source, ctx)?;
+        let deps = self.resolve_module_deps(imports, package, source, ctx);
 
         let dummy_module = DummyModule {
             package,
@@ -198,7 +199,7 @@ impl PackageLoader<'_> {
         package_id: VRef<Package>,
         source: VRef<Source>,
         ctx: &mut Context,
-    ) -> Option<BumpVec<(NameAst, PathBuf)>> {
+    ) -> BumpVec<(NameAst, PathBuf)> {
         let mut deps = bumpvec![cap imports.items.len()];
         for &ImportAst {
             name, path, span, ..
@@ -237,7 +238,7 @@ impl PackageLoader<'_> {
             }
             deps.push((name, dep_path));
         }
-        Some(deps)
+        deps
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {

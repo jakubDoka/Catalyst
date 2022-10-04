@@ -252,8 +252,8 @@ pub mod items {
 
                 packages.sources.push(Source {
                     path,
-                    line_mapping: LineMapping::new(&c),
-                    content: c,
+                    line_mapping: LineMapping::new(res),
+                    content: res.to_string(),
                 });
             }
 

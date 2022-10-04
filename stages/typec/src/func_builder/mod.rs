@@ -460,6 +460,12 @@ impl TyChecker<'_> {
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
             ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
             ScopeItem::Module(module) => module,
+            ScopeItem::Ty(ty) => {
+                let (&start, segments) = segments
+                    .split_first()
+                    .or_else(|| self.invalid_expr_path(path.span())?)?;
+                return self.method_path(ty, PathExprAst { start, segments }, builder);
+            }
             item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
         };
 
@@ -480,18 +486,11 @@ impl TyChecker<'_> {
             .index(id)
             .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)?;
 
-        let (&first, others) = segments
+        let (&start, segments) = segments
             .split_first()
             .or_else(|| self.invalid_expr_path(path.span())?)?;
 
-        self.method_path(
-            ty,
-            PathExprAst {
-                start: first,
-                segments: others,
-            },
-            builder,
-        )
+        self.method_path(ty, PathExprAst { start, segments }, builder)
     }
 
     fn method_path<'a>(
