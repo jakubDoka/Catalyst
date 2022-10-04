@@ -79,7 +79,7 @@ impl TyChecker<'_> {
             ptr: parsed_ty.into(),
             span: ty.span().into(),
             whole_span: None,
-            module: self.current_file.into(),
+            module: self.source.into(),
             vis,
         });
 
@@ -118,7 +118,7 @@ impl TyChecker<'_> {
         let fallback = |_: &mut Specs| Spec {
             kind: BoundKind::Base(default()),
             flags: default(),
-            loc: Loc::new(name.ident, self.current_file, name.span, spec.span()),
+            loc: Loc::new(name.ident, self.source, name.span, spec.span()),
         };
         let id = self.typec.specs.get_or_insert(id, fallback);
 
@@ -186,7 +186,7 @@ impl TyChecker<'_> {
             signature,
             flags: FuncFlags::ENTRY & entry.is_some(),
             visibility,
-            loc: Loc::new(name.ident, self.current_file, name.span, span),
+            loc: Loc::new(name.ident, self.source, name.span, span),
         };
         let id = self.typec.funcs.get_or_insert(id, func);
 
@@ -245,7 +245,7 @@ impl TyChecker<'_> {
         let ty = |_: &mut Types| Ty {
             kind: TyStruct::default().into(),
             flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: Loc::new(name.ident, self.current_file, name.span, span),
+            loc: Loc::new(name.ident, self.source, name.span, span),
         };
         let id = self.typec.types.get_or_insert(key, ty);
 
@@ -256,7 +256,7 @@ impl TyChecker<'_> {
         push generic_extern(self, generics: Span, body: Span, func: Span) {
             err: "function with extern body cannot be generic";
             help: "remove generic parameters from function signature";
-            (func, self.current_file) {
+            (func, self.source) {
                 err[generics]: "this mean function is generic";
                 info[body]: "function is extern because of this";
             }
@@ -265,7 +265,7 @@ impl TyChecker<'_> {
         push generic_entry(self, generics: Span, entry: Span, func: Span) {
             err: "generic entry functions are not allowed";
             help: "you can wrap concrete instance of this function in a non-generic entry function";
-            (func, self.current_file) {
+            (func, self.source) {
                 err[entry]: "caused by this entry attribute";
                 info[generics]: "generics located here";
             }

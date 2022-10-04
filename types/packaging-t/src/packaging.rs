@@ -10,12 +10,12 @@ pub type PackageGraph = graphs::ProjectedCycleDetector;
 #[derive(Default)]
 pub struct Resources {
     pub sources: PushMap<Source>,
-    pub packages: OrderedMap<VRef<str>, Package>,
-    pub modules: OrderedMap<VRef<str>, Module>,
+    pub packages: PushMap<Package>,
+    pub modules: PushMap<Module>,
     pub package_deps: BumpMap<Dep<Package>>,
     pub module_deps: BumpMap<Dep<Module>>,
     pub module_order: Vec<VRef<str>>,
-    pub resources: Box<dyn ResourceDb>,
+    pub db: Box<dyn ResourceDb>,
 }
 
 impl Resources {
@@ -25,7 +25,7 @@ impl Resources {
 
     pub fn with_resources(resources: impl ResourceDb + 'static) -> Self {
         Self {
-            resources: Box::new(resources),
+            db: Box::new(resources),
             ..Default::default()
         }
     }
@@ -85,7 +85,7 @@ pub struct Package {
     pub root_module: PathBuf,
     pub span: Option<Span>,
     pub deps: VSlice<Dep<Package>>,
-    pub source: Option<VRef<Source>>,
+    pub source: VRef<Source>,
 }
 
 #[derive(Clone, Copy)]
@@ -93,19 +93,19 @@ pub struct Module {
     pub package: VRef<Package>,
     pub ordering: usize,
     pub deps: VSlice<Dep<Module>>,
-    pub source: Option<VRef<Source>>,
+    pub source: VRef<Source>,
 }
 
-pub struct Dep<T> {
+pub struct Dep<T: ?Sized> {
     pub name_span: Span,
     pub name: VRef<str>,
     pub ptr: VRef<T>,
 }
 
-impl<T> Clone for Dep<T> {
+impl<T: ?Sized> Clone for Dep<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Copy for Dep<T> {}
+impl<T: ?Sized> Copy for Dep<T> {}

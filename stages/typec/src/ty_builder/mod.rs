@@ -54,12 +54,7 @@ impl TyChecker<'_> {
             let func = SpecFunc {
                 generics,
                 signature,
-                loc: Loc::new(
-                    func.name.ident,
-                    self.current_file,
-                    func.name.span,
-                    func.span(),
-                ),
+                loc: Loc::new(func.name.ident, self.source, func.name.span, func.span()),
                 parent,
             };
 
@@ -95,7 +90,7 @@ impl TyChecker<'_> {
                         vis,
                         ty: self.ty(ty)?,
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
-                        loc: Loc::new(name.ident, self.current_file, name.span, field.span()),
+                        loc: Loc::new(name.ident, self.source, name.span, field.span()),
                     })
                 },
             )

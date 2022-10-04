@@ -9,6 +9,7 @@ use std::{
 use diags::*;
 use lexing::TokenKind;
 use lexing_t::*;
+use packaging_t::Source;
 use parsing::*;
 use parsing_t::*;
 use storage::*;
@@ -215,22 +216,22 @@ impl Fmt {
         self.workspace
     }
 
-    fn clear(&mut self, source: &str, path: VRef<str>) {
+    fn clear(&mut self, source: &str) {
         self.buffer.clear();
         self.last_newline = 0;
         self.indent = 0;
         self.line_length = 80;
         self.interner.clear();
-        self.parse_state.start(source, path);
+        self.parse_state.start(source);
         self.line_mapping = LineMapping::new(source);
     }
 
-    pub fn source(&mut self, source: String, path: VRef<str>) -> (Option<&str>, String) {
-        self.clear(&source, path);
+    pub fn source(&mut self, source_code: String, source: VRef<Source>) -> (Option<&str>, String) {
+        self.clear(&source_code);
 
-        *Rc::get_mut(&mut self.source).unwrap() = source;
+        *Rc::get_mut(&mut self.source).unwrap() = source_code;
 
-        self.imports();
+        self.imports(source);
 
         loop {
             Rc::get_mut(&mut self.ast_data).unwrap().clear();
@@ -242,6 +243,7 @@ impl Fmt {
                 &ast_data,
                 &mut self.workspace,
                 &mut self.interner,
+                source,
             )
             .parse::<ItemsAst>();
 
@@ -263,27 +265,32 @@ impl Fmt {
         }
     }
 
-    pub fn manifest(&mut self, source: String, path: VRef<str>) -> (Option<&str>, String) {
-        self.clear(&source, path);
+    pub fn manifest(
+        &mut self,
+        source_code: String,
+        source: VRef<Source>,
+    ) -> (Option<&str>, String) {
+        self.clear(&source_code);
 
         Rc::get_mut(&mut self.ast_data).unwrap().clear();
         let ast_data = self.ast_data.clone();
         let manifest = {
             let mut ctx = ParsingCtx::new(
-                &source,
+                &source_code,
                 &mut self.parse_state,
                 &ast_data,
                 &mut self.workspace,
                 &mut self.interner,
+                source,
             );
             ManifestAst::parse(&mut ctx)
         };
 
         let Some(manifest) = manifest else {
-            return (None, source);
+            return (None, source_code);
         };
 
-        *Rc::get_mut(&mut self.source).unwrap() = source;
+        *Rc::get_mut(&mut self.source).unwrap() = source_code;
 
         manifest.display(self);
 
@@ -291,7 +298,7 @@ impl Fmt {
         (Some(&self.buffer), source)
     }
 
-    pub fn imports(&mut self) {
+    pub fn imports(&mut self, source: VRef<Source>) {
         Rc::get_mut(&mut self.ast_data).unwrap().clear();
         let ast_data = self.ast_data.clone();
         let imports = {
@@ -301,6 +308,7 @@ impl Fmt {
                 &ast_data,
                 &mut self.workspace,
                 &mut self.interner,
+                source,
             );
             UseAst::parse(&mut ctx)
         };

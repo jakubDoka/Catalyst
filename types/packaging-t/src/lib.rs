@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! span_str {
     ($self:expr, $span:expr) => {
-        $self.packages.span_str($self.current_file, $span)
+        $self.resources.sources[$self.source].span_str($span)
     };
 }
 

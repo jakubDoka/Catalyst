@@ -126,12 +126,12 @@ pub mod items {
 
             (
                 mem::take(self.resources().workspace),
-                mem::take(self.resources().packages),
+                mem::take(self.resources().resources),
             )
         }
 
         fn set_packages(&mut self, packages: resources) {
-            *self.resources().packages = packages;
+            *self.resources().resources = packages;
         }
     }
 

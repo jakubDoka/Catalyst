@@ -169,7 +169,7 @@ mod util {
                             .iter()
                             .filter_map(|&ty| self.typec.types.locate(ty).whole_span)
                             .reduce(|a, b| a.joined(b))?,
-                        origin: self.current_file,
+                        origin: self.source,
                         annotations: types
                             .iter()
                             .skip(1)
@@ -231,8 +231,8 @@ mod util {
             crate::insert_scope_item(
                 item,
                 self.scope,
-                self.current_file,
-                self.packages,
+                self.source,
+                self.resources,
                 self.workspace,
             );
         }

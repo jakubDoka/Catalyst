@@ -81,7 +81,7 @@ impl TyChecker<'_> {
             param,
             name.span,
             name.span,
-            self.current_file,
+            self.source,
             Vis::Priv,
         ));
     }
@@ -268,7 +268,7 @@ impl TyChecker<'_> {
         push invalid_ty_path(self, segment: PathExprAst) {
             err: "invalid type path composition";
             info: "valid forms: `Ty` | `mod\\Ty`";
-            (segment.span(), self.current_file) {
+            (segment.span(), self.source) {
                 info[segment.span()]: "malformed path encountered here";
             }
         }
@@ -284,20 +284,20 @@ impl TyChecker<'_> {
             ScopeError::NotFound => snippet! {
                 err: ("{} not found", T::ITEM_NAME);
                 info: ("queried '{}'", &self.interner[sym]);
-                (span, self.current_file) {
+                (span, self.source) {
                     err[span]: "this does not exist";
                 }
             },
             ScopeError::Collision => {
                 let suggestions = self
-                    .packages
+                    .resources
                     .modules
-                    .get(&self.current_file)
-                    .map(|m| &self.packages.conns[m.deps])
+                    .get(&self.source)
+                    .map(|m| &self.resources.conns[m.deps])
                     .unwrap()
                     .iter()
                     .filter(|dep| {
-                        self.packages.modules[&dep.ptr]
+                        self.resources.modules[&dep.ptr]
                             .items()
                             .iter()
                             .any(|i| i.id == sym)
@@ -312,7 +312,7 @@ impl TyChecker<'_> {
                     help: ("suggestions: {}", suggestions);
                     help: ("syntax for specifying module: `<mod>\\<item>`");
                     help: ("syntax for specifying method module: `<expr>.<mod>\\<item>`");
-                    (span, self.current_file) {
+                    (span, self.source) {
                         err[span]: "this is ambiguous";
                     }
                 }
@@ -320,7 +320,7 @@ impl TyChecker<'_> {
             ScopeError::TypeMismatch(found) => snippet! {
                 err: ("'{}' is not a {}", &self.interner[sym], T::ITEM_NAME);
                 info: ("found type: {}", T::project(found).unwrap_or("todo: unknown"));
-                (span, self.current_file) {
+                (span, self.source) {
                     err[span]: "this is of incorrect type";
                 }
             },

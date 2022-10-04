@@ -4,7 +4,7 @@ file "stages/packaging/src/state_gen.rs" {
     use "storage"
 
     struct PackageLoader {
-        mut Packages
+        mut Resources
         mut Workspace
         mut Interner
         mut PackageGraph
@@ -19,13 +19,13 @@ file "stages/typec/src/state_gen.rs" {
     use "packaging_t"
 
     struct TyChecker {
-        owned current_file: `VRef<str>`
+        owned source: `VRef<Source>`
 
         mut Interner
         mut Scope
         mut Typec
         mut Workspace
-        mut Packages
+        mut Resources
     }
 }
 
@@ -38,13 +38,13 @@ file "stages/mir/src/state_gen.rs" {
 
 
     struct MirChecker {
-        owned current_file: `VRef<str>`
+        owned source: `VRef<Source>`
 
         mut Mir
         mut Interner
         mut Typec
         mut Workspace
-        mut Packages
+        mut Resources
     }
 }
 
@@ -62,6 +62,6 @@ file "stages/gen/src/state_gen.rs" {
         mut Interner
         mut Typec
         
-        Packages
+        Resources
     }
 }

@@ -483,7 +483,7 @@ impl TyChecker<'_> {
             ),
             [name] => {
                 let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
-                let mod_id = self.packages.mod_as_ident(module);
+                let mod_id = self.resources.mod_as_ident(module);
                 let id = self
                     .interner
                     .intern(scoped_ident!(mod_id.index() as u32, name.ident));
@@ -534,7 +534,7 @@ impl TyChecker<'_> {
             }
             [name] => {
                 let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
-                let mod_id = self.packages.mod_as_ident(module);
+                let mod_id = self.resources.mod_as_ident(module);
                 let method_id = self
                     .interner
                     .intern(scoped_ident!(mod_id.index() as u32, name.ident));
@@ -625,7 +625,7 @@ impl TyChecker<'_> {
             [] => op.start.ident,
             [name] => {
                 let module = self.lookup_typed::<ModLookup>(name.ident, name.span)?;
-                let id = self.packages.mod_as_ident(module);
+                let id = self.resources.mod_as_ident(module);
                 self.interner.intern(scoped_ident!(id, op.start.ident))
             }
             _ => self.invalid_op_expr_path(op.span())?,
@@ -671,7 +671,7 @@ impl TyChecker<'_> {
                 var,
                 arg.name.span,
                 arg.name.span,
-                self.current_file,
+                self.source,
                 Vis::Priv,
             );
             self.scope.push(item);
@@ -702,7 +702,7 @@ impl TyChecker<'_> {
     gen_error_fns! {
         push unreachable_expr(self, span: Span, because: Span) {
             warn: "unreachable expression";
-            (span, self.current_file) {
+            (span, self.source) {
                 info[span]: "this is unreachable";
                 info[because]: "because of this";
             }
@@ -711,7 +711,7 @@ impl TyChecker<'_> {
         push incomplete_tir(self, func: FuncDefAst) {
             err: "not all blocks were closed when typechecking function";
             info: "this is a bug in the compiler, please report it";
-            (func.span(), self.current_file) {
+            (func.span(), self.source) {
                 info[func.signature.name.span]: "happened in this function";
             }
         }
@@ -719,7 +719,7 @@ impl TyChecker<'_> {
         push generic_ty_mismatch(self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) {
             err: "type mismatch";
             info: ("expected '{}' but got '{}'", self.type_diff(expected, got), self.type_diff(got, expected));
-            (span, self.current_file) {
+            (span, self.source) {
                 err[span]: "mismatch occurred here";
             }
         }
@@ -727,7 +727,7 @@ impl TyChecker<'_> {
         push invalid_expr_path(self, span: Span) {
             err: "invalid expression path";
             info: "expected format: <ident> |";
-            (span, self.current_file) {
+            (span, self.source) {
                 err[span]: "found here";
             }
         }
@@ -735,7 +735,7 @@ impl TyChecker<'_> {
         push invalid_op_expr_path(self, span: Span) {
             err: "invalid operator expression path";
             info: "expected format: <op> | <op>\\<module>";
-            (span, self.current_file) {
+            (span, self.source) {
                 err[span]: "found here";
             }
         }
@@ -743,7 +743,7 @@ impl TyChecker<'_> {
         push nested_runner(self, previous: Span, current: Span) {
             err: "'const' cannot be directly nested";
             help: "removing 'const' should result in equivalent code";
-            (previous.joined(current), self.current_file) {
+            (previous.joined(current), self.source) {
                 err[current]: "nesting happens here";
                 info[previous]: "operation is already performed at compile time because of this";
             }
@@ -753,7 +753,7 @@ impl TyChecker<'_> {
             err: "cannot access runtime value in 'const'";
             help: "try moving the access to a non-const function";
             help: "or declaring the variable as constant";
-            (r#const.joined(value), self.current_file) {
+            (r#const.joined(value), self.source) {
                 err[r#const]: "this is what makes access const";
                 info[value]: "this is a runtime value, outsize of 'const' context";
             }
@@ -762,7 +762,7 @@ impl TyChecker<'_> {
         push control_flow_in_const(self, r#const: Span, control_flow: Span) {
             err: ("cannot '{}' in 'const' context", span_str!(self, control_flow));
             info: "jump produced by this call would cross const/runtime boundary";
-            (r#const.joined(control_flow), self.current_file) {
+            (r#const.joined(control_flow), self.source) {
                 err[r#const]: "this is what defines const context";
                 info[control_flow]: "this is the control flow keyword that is not allowed in const context";
             }

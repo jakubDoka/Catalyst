@@ -195,6 +195,7 @@ dependencies = [
  "lexing",
  "lexing-t",
  "logos",
+ "packaging-t",
  "parsing",
  "parsing-t",
  "scope",

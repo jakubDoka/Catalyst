@@ -14,7 +14,7 @@ macro_rules! intern_scoped_ident {
     ($self:expr, $str:expr) => {
         $self
             .interner
-            .intern(scoped_ident!(($self.current_file.index() as u32), $str))
+            .intern(scoped_ident!(($self.source.index() as u32), $str))
     };
 }
 
