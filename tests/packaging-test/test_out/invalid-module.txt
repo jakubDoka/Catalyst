@@ -4,6 +4,6 @@ error: failed to read source file
 2 |     "./a/b"
   |     ^^^^^^^ declared here
   |
-  = info: path: `invalid-module\root\a/b.ctl`
+  = info: path: `invalid-module\root\a\b.ctl`
   = info: trace: file not found
 
