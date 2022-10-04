@@ -210,7 +210,7 @@ impl TyChecker<'_> {
         match item {
             ScopeItem::Ty(ty) => Some(ty),
             ScopeItem::Module(module) => {
-                let Some(ty) = path.segments.first() else {
+                let Some(ty) = segments.first() else {
                     self.invalid_ty_path(path);
                     return None;
                 };
@@ -233,7 +233,7 @@ impl TyChecker<'_> {
         match item {
             ScopeItem::Spec(ty) => Some(ty),
             ScopeItem::Module(module) => {
-                let Some(ty) = path.segments.first() else {
+                let Some(ty) = segments.first() else {
                     self.invalid_ty_path(path);
                     return None;
                 };
@@ -292,7 +292,11 @@ impl TyChecker<'_> {
                 let suggestions = self.resources.module_deps
                     [self.resources.modules[self.module].deps]
                     .iter()
-                    .filter(|dep| self.typec.module_items[dep.ptr].iter().any(|i| i.id == sym))
+                    .filter(|dep| {
+                        self.typec.module_items[dep.ptr]
+                            .values()
+                            .any(|i| i.id == sym)
+                    })
                     .map(|dep| &self.interner[dep.name])
                     .intersperse(", ")
                     .collect::<String>();

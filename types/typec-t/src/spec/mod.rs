@@ -1,7 +1,7 @@
 use std::default::default;
 
 use crate::*;
-use lexing_t::*;
+use lexing_t::Span;
 use storage::*;
 
 pub type Specs = OrderedMap<VRef<str>, Spec>;
@@ -50,7 +50,8 @@ impl Default for BoundKind {
 pub struct SpecFunc {
     pub generics: VRefSlice<Spec>,
     pub signature: Signature,
-    pub loc: Loc,
+    pub name: VRef<str>,
+    pub span: Option<Span>,
     pub parent: VRef<Spec>,
 }
 

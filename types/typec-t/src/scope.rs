@@ -51,11 +51,11 @@ impl Scope {
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
 
-    pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), Option<(Span, Span)>> {
+    pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), Option<Span>> {
         self.data
             .insert(item.id, ScopeRecord::CurrentItem { item })
             .filter(|record| record.is_strong())
-            .map(|record| Result::<(), _>::Err(record.spans()))
+            .map(|record| Result::<(), _>::Err(record.span()))
             .transpose()
             .map(|_| ())
     }
@@ -65,19 +65,18 @@ impl Scope {
         current_module: VRef<Module>,
         foreign_module: VRef<Module>,
         item: ModuleItem,
-    ) -> Result<(), Option<(Span, Span)>> {
+    ) {
         debug_assert!(current_module != foreign_module);
 
         if let Some(existing_option) = self.data.get_mut(&item.id) {
             match existing_option {
                 ScopeRecord::ImportedItem { .. } => {
                     *existing_option = ScopeRecord::Collision;
-                    Ok(())
                 }
                 ScopeRecord::CurrentItem { .. }
                 | ScopeRecord::Builtin { .. }
-                | ScopeRecord::Pushed { .. } => Err(existing_option.spans()),
-                ScopeRecord::Collision => Ok(()),
+                | ScopeRecord::Pushed { .. }
+                | ScopeRecord::Collision => (),
             }
         } else {
             self.data.insert(
@@ -87,7 +86,6 @@ impl Scope {
                     item,
                 },
             );
-            Ok(())
         }
     }
 
@@ -126,19 +124,17 @@ pub enum ScopeRecord {
 impl ScopeRecord {
     pub fn scope_item(&self) -> Option<ScopeItem> {
         match *self {
-            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.ptr),
+            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.item),
             Self::Builtin { kind } | Self::Pushed { kind, .. } => Some(kind),
             Self::Collision => None,
         }
     }
 
-    pub fn spans(&self) -> Option<(Span, Span)> {
+    pub fn span(&self) -> Option<Span> {
         match *self {
-            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => {
-                Some((item.span, item.whole_span))
-            }
+            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.span),
             Self::Builtin { .. } => None,
-            Self::Pushed { span, .. } => Some((span, span)),
+            Self::Pushed { span, .. } => Some(span),
             Self::Collision => None,
         }
     }
@@ -154,10 +150,20 @@ impl ScopeRecord {
 #[derive(Clone, Copy)]
 pub struct ModuleItem {
     pub id: VRef<str>,
-    pub ptr: ScopeItem,
+    pub item: ScopeItem,
     pub span: Span,
-    pub whole_span: Span,
     pub vis: Vis,
+}
+
+impl ModuleItem {
+    pub fn new(id: VRef<str>, ptr: impl Into<ScopeItem>, span: Span, vis: Vis) -> Self {
+        Self {
+            id,
+            item: ptr.into(),
+            span,
+            vis,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

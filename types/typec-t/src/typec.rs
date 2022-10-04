@@ -1,9 +1,12 @@
 use core::fmt;
-use std::{default::default, ops::IndexMut};
+use std::{
+    default::default,
+    ops::{Index, IndexMut},
+};
 use std::{hash::Hash, mem};
 
 use crate::*;
-use lexing_t::*;
+use lexing_t::Span;
 use packaging_t::Module;
 use storage::*;
 
@@ -22,7 +25,36 @@ pub struct Typec {
 
     pub builtin_funcs: Vec<VRef<Func>>,
 
-    pub module_items: ShadowMap<Module, Vec<ModuleItem>>,
+    pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
+}
+
+macro_rules! gen_index {
+    (
+        $($ty:ty => $storage:ident)*
+    ) => {
+        $(
+            impl Index<VRef<$ty>> for Typec {
+                type Output = $ty;
+
+                fn index(&self, index: VRef<$ty>) -> &Self::Output {
+                    &self.$storage[index]
+                }
+            }
+
+            impl IndexMut<VRef<$ty>> for Typec {
+                fn index_mut(&mut self, index: VRef<$ty>) -> &mut Self::Output {
+                    &mut self.$storage[index]
+                }
+            }
+        )*
+    };
+}
+
+gen_index! {
+    Ty => types
+    Spec => specs
+    Func => funcs
+    Field => fields
 }
 
 macro_rules! assert_init {
@@ -131,7 +163,7 @@ impl Typec {
                     Func {
                         signature,
                         flags: FuncFlags::BUILTIN,
-                        loc: Loc::new(op, None, None, None),
+                        loc: Loc::Builtin(op),
                         ..default()
                     },
                 );
@@ -144,7 +176,7 @@ impl Typec {
     pub fn add_builtin_ty(&mut self, name: &str, mut ty: Ty, interner: &mut Interner) {
         let lower_name = name.to_lowercase();
         let ident = interner.intern_str(lower_name.as_str());
-        ty.loc = Loc::new(ident, None, None, None);
+        ty.loc = Loc::Builtin(ident);
         self.types.insert(ident, ty);
     }
 
@@ -230,6 +262,16 @@ impl Typec {
         unsafe {
             self.instantiate_low(ty, mem::transmute(params), interner)
                 .unwrap_unchecked()
+        }
+    }
+
+    pub fn span<T: Located>(&self, target: VRef<T>) -> Option<Span>
+    where
+        Self: Index<VRef<T>, Output = T>,
+    {
+        match self[target].loc() {
+            Loc::Module { module, item } => Some(self.module_items[module][item].span),
+            Loc::Builtin(..) => None,
         }
     }
 
@@ -383,4 +425,19 @@ pub trait Flagged: 'static {
 
 pub trait Located {
     fn loc(&self) -> Loc;
+}
+
+#[derive(Clone, Copy)]
+pub enum Loc {
+    Module {
+        module: VRef<Module>,
+        item: VRef<ModuleItem>,
+    },
+    Builtin(VRef<str>),
+}
+
+impl Default for Loc {
+    fn default() -> Self {
+        Loc::Builtin(VRef::default())
+    }
 }

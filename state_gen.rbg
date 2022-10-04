@@ -18,8 +18,8 @@ file "stages/typec/src/state_gen.rs" {
     use "packaging_t"
 
     struct TyChecker {
-        owned source: `VRef<Source>`
         owned module: `VRef<Module>`
+        owned source: `VRef<Source>` = "resources.modules[module].source"
 
         mut Interner
         mut Scope
@@ -38,8 +38,8 @@ file "stages/mir/src/state_gen.rs" {
 
 
     struct MirChecker {
-        owned source: `VRef<Source>`
         owned module: `VRef<Module>`
+        owned source: `VRef<Source>` = "resources.modules[module].source"
 
         mut Mir
         mut Interner

@@ -80,7 +80,7 @@ impl ObjectContext {
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
 
                 let name = if scope == SymbolScope::Unknown {
-                    &interner[meta.loc.name]
+                    &interner[meta.name]
                 } else {
                     &interner[id]
                 };

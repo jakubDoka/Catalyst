@@ -10,25 +10,7 @@ use storage::*;
 
 use typec_t::*;
 
-use crate::{ty_parser::ModLookup, *};
-
-macro_rules! dispatch_item {
-    ($lookup:ident $self:expr, $id:expr, $span:expr =>
-        $(
-            $value:ident: $ty:ty => $expr:expr,
-        )*
-    ) => {
-        {
-            let item = $self.lookup::<$lookup>($id, $span)?;
-            match_scope_ptr!(item =>
-                $(
-                    $value: $ty => $expr,
-                )*
-                _ => $self.handle_scope_error::<$lookup>(ScopeError::TypeMismatch(item.id), $id, $span)?,
-            )
-        }
-    };
-}
+use crate::*;
 
 pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 
@@ -312,10 +294,10 @@ impl TyChecker<'_> {
         };
 
         match func_res {
-            FuncLookupResult::Func(func, false) => {
+            FuncLookupResult::Func(func) if self.typec[func].is_generic() => {
                 self.direct_generic_call(func, caller, args, call.span(), inference, builder)
             }
-            FuncLookupResult::Func(func, true) => {
+            FuncLookupResult::Func(func) => {
                 self.direct_concrete_call(func, caller, args, call.span(), builder)
             }
             FuncLookupResult::Var(_) => todo!(),
@@ -475,45 +457,41 @@ impl TyChecker<'_> {
         path @ PathExprAst { start, segments }: PathExprAst,
         builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
-        match *segments {
-            [] => dispatch_item!(FuncLookup self, start.ident, start.span =>
-                func: Func => Some(FuncLookupResult::Func(func,
-                    self.typec.funcs[func].generics.is_empty())),
-                _var: Var => todo!(),
-            ),
-            [name] => {
-                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
-                let mod_id = self.resources.mod_as_ident(module);
-                let id = self
-                    .interner
-                    .intern(scoped_ident!(mod_id.as_u32(), name.ident));
-                match self.typec.funcs.index(id) {
-                    Some(func) => Some(FuncLookupResult::Func(
-                        func,
-                        self.typec.funcs[func].generics.is_empty(),
-                    )),
-                    None => self.handle_scope_error::<FuncLookup>(
-                        ScopeError::NotFound,
-                        id,
-                        path.span(),
-                    )?,
-                }
-            }
-            [ty, name, ref others @ ..] => {
-                let ty = self.ty_path::<TyLookup>(PathExprAst {
-                    start,
-                    segments: &[ty],
-                })?;
-                self.method_path(
-                    ty,
-                    PathExprAst {
-                        start: name,
-                        segments: others,
-                    },
-                    builder,
-                )
-            }
+        let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
+            ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
+            ScopeItem::Module(module) => module,
+            item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
+        };
+
+        let &func_or_type = segments
+            .first()
+            .or_else(|| self.invalid_expr_path(path.span())?)?;
+
+        let id = self
+            .interner
+            .intern(scoped_ident!(module.as_u32(), func_or_type.ident));
+        if let Some(index) = self.typec.funcs.index(id) {
+            return Some(FuncLookupResult::Func(index));
         }
+
+        let ty = self
+            .typec
+            .types
+            .index(id)
+            .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)?;
+
+        let (&first, others) = segments
+            .split_first()
+            .or_else(|| self.invalid_expr_path(path.span())?)?;
+
+        self.method_path(
+            ty,
+            PathExprAst {
+                start: first,
+                segments: others,
+            },
+            builder,
+        )
     }
 
     fn method_path<'a>(
@@ -526,30 +504,18 @@ impl TyChecker<'_> {
             [] => {
                 let ty_id = self.typec.types.id(ty);
                 let id = self.interner.intern(scoped_ident!(ty_id, start.ident));
-                dispatch_item!(FuncLookup self, id, start.span =>
-                    func: Func => Some(FuncLookupResult::Func(func,
-                        self.typec.funcs[func].generics.is_empty())),
-                    _var: Var => todo!(),
-                )
+                Some(FuncLookupResult::Func(lookup!(Func self, id, path.span())))
             }
             [name] => {
-                let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
-                let mod_id = self.resources.mod_as_ident(module);
+                let module = lookup!(Module self, start.ident, start.span);
                 let method_id = self
                     .interner
-                    .intern(scoped_ident!(mod_id.as_u32(), name.ident));
+                    .intern(scoped_ident!(module.as_u32(), name.ident));
                 let ty_id = self.typec.types.id(ty);
                 let id = self.interner.intern(scoped_ident!(ty_id, method_id));
                 match self.typec.funcs.index(id) {
-                    Some(func) => Some(FuncLookupResult::Func(
-                        func,
-                        self.typec.funcs[func].generics.is_empty(),
-                    )),
-                    None => self.handle_scope_error::<FuncLookup>(
-                        ScopeError::NotFound,
-                        id,
-                        path.span(),
-                    )?,
+                    Some(func) => Some(FuncLookupResult::Func(func)),
+                    None => self.scope_error(ScopeError::NotFound, id, path.span(), FUNC)?,
                 }
             }
             _ => self.invalid_expr_path(path.span())?,
@@ -558,27 +524,20 @@ impl TyChecker<'_> {
 
     fn value_path<'a>(
         &mut self,
-        path @ PathExprAst { start, segments }: PathExprAst,
+        path @ PathExprAst { start, .. }: PathExprAst,
         _inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        match *segments {
-            [] => dispatch_item!(ValueLookup self, start.ident, start.span =>
-                var: Var => {
-                    if let Some((runner, ref frame)) = builder.runner && !frame.contains(var) {
-                        self.const_runtime_access(runner, builder.get_var(var).span)?
-                    }
-
-                    self.node(builder.get_var(var).ty, AccessTir {
-                        span: path.span(),
-                        ty: builder.get_var(var).ty,
-                        var
-                    }, builder)
-                },
-                _func: Func => todo!(),
-            ),
-            _ => self.invalid_expr_path(path.span())?,
-        }
+        let var = lookup!(Var self, start.ident, start.span);
+        self.node(
+            builder.get_var(var).ty,
+            AccessTir {
+                span: path.span(),
+                ty: builder.get_var(var).ty,
+                var,
+            },
+            builder,
+        )
     }
 
     fn int<'a>(
@@ -624,16 +583,16 @@ impl TyChecker<'_> {
         let base_id = match *op.segments {
             [] => op.start.ident,
             [name] => {
-                let module = self.lookup_typed::<ModLookup>(name.ident, name.span)?;
-                let id = self.resources.mod_as_ident(module);
-                self.interner.intern(scoped_ident!(id, op.start.ident))
+                let module = lookup!(Module self, name.ident, name.span);
+                self.interner
+                    .intern(scoped_ident!(module.as_u32(), op.start.ident))
             }
             _ => self.invalid_op_expr_path(op.span())?,
         };
 
         let id = self.typec.binary_op_id(base_id, lhs.ty, rhs.ty);
         let id = self.interner.intern(id);
-        let func = self.lookup_typed::<OpLookup>(id, op.span())?;
+        let func = lookup!(Func self, id, op.span());
 
         let ty = self.typec.funcs[func].signature.ret;
         let call = CallTir {
@@ -666,15 +625,7 @@ impl TyChecker<'_> {
             let value = builder.node(param);
 
             let var = builder.create_var(value, ty, arg.name.span);
-            let item = ScopeItem::new(
-                arg.name.ident,
-                var,
-                arg.name.span,
-                arg.name.span,
-                self.source,
-                Vis::Priv,
-            );
-            self.scope.push(item);
+            self.scope.push(arg.name.ident, var, arg.name.span);
         }
     }
 
@@ -772,14 +723,8 @@ impl TyChecker<'_> {
 
 pub type Inference = Option<VRef<Ty>>;
 
-gen_scope_lookup!(
-    OpLookup<"operator", Func> {}
-    ValueLookup<"variable or function"> {}
-    FuncLookup<"function or variable"> {}
-);
-
 enum FuncLookupResult<'a> {
-    Func(VRef<Func>, bool),
+    Func(VRef<Func>),
     #[allow(dead_code)]
     Var(TypedTirNode<'a>),
 }

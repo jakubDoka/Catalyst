@@ -1,8 +1,6 @@
 use std::default::default;
 
-use lexing_t::*;
 use parsing::*;
-use parsing_t::*;
 use storage::*;
 use typec_t::*;
 
@@ -54,7 +52,8 @@ impl TyChecker<'_> {
             let func = SpecFunc {
                 generics,
                 signature,
-                loc: Loc::new(func.name.ident, self.source, func.name.span, func.span()),
+                name: func.name.ident,
+                span: func.name.span.into(),
                 parent,
             };
 
@@ -78,7 +77,7 @@ impl TyChecker<'_> {
         let fields = body
             .iter()
             .map(
-                |field @ &StructFieldAst {
+                |&StructFieldAst {
                      vis,
                      used,
                      mutable,
@@ -90,7 +89,7 @@ impl TyChecker<'_> {
                         vis,
                         ty: self.ty(ty)?,
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
-                        loc: Loc::new(name.ident, self.source, name.span, field.span()),
+                        span: name.span.into(),
                     })
                 },
             )
@@ -98,6 +97,4 @@ impl TyChecker<'_> {
             .unwrap_or_default();
         self.typec.fields.bump(fields)
     }
-
-    insert_scope_item!();
 }

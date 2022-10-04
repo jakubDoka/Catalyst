@@ -70,13 +70,13 @@ impl JitContext {
                     ..
                 } = &gen.compiled_funcs[func];
                 let Func {
-                    visibility, loc, ..
+                    visibility, name, ..
                 } = typec.funcs[parent_func];
 
                 if visibility == FuncVisibility::Imported {
                     let code = self
                         .runtime_lookup
-                        .lookup(&interner[loc.name])
+                        .lookup(&interner[name])
                         .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?;
                     let slice = slice_from_raw_parts_mut(code as *mut _, 0);
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));

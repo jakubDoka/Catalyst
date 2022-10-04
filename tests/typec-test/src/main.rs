@@ -18,7 +18,7 @@ struct TestState {
     scope: Scope,
     typec: Typec,
     workspace: Workspace,
-    packages: Resources,
+    resources: Resources,
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     functions: String,
@@ -33,11 +33,11 @@ impl Scheduler for TestState {
         self.typec.init_builtin_types(&mut self.interner);
     }
 
-    fn before_parsing(&mut self, module: VRef<str>) {
-        typec::build_scope(module, &mut self.scope, &self.packages, &self.typec);
+    fn before_parsing(&mut self, module: VRef<Module>) {
+        typec::build_scope(module, &mut self.scope, &self.resources, &self.typec);
     }
 
-    fn parse_segment(&mut self, module: VRef<str>, items: GroupedItemsAst) {
+    fn parse_segment(&mut self, module: VRef<Module>, items: GroupedItemsAst) {
         let mut type_checked_funcs = vec![];
         ty_checker!(self, module)
             .execute(items, &mut self.typec_ctx, &mut type_checked_funcs)

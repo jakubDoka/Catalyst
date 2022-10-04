@@ -171,8 +171,10 @@ impl Generator<'_> {
         ret: VRef<ValueMir>,
         builder: &mut GenBuilder,
     ) {
-        let Func { signature, loc, .. } = self.typec.funcs[func_id];
-        let op_str = &self.interner[loc.name];
+        let Func {
+            signature, name, ..
+        } = self.typec.funcs[func_id];
+        let op_str = &self.interner[name];
         let signed = self.typec.types.is_signed(signature.ret);
 
         macro_rules! helper {

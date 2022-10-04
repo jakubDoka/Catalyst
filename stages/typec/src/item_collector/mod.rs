@@ -2,9 +2,8 @@ use std::default::default;
 
 use diags::gen_error_fns;
 use lexing_t::*;
-use packaging_t::*;
 use parsing::*;
-use parsing_t::Ast;
+use parsing_t::{Ast, Vis};
 
 use storage::*;
 use typec_t::*;
@@ -78,14 +77,8 @@ impl TyChecker<'_> {
         let parsed_generics = self.generics(generics);
         let parsed_ty = self.ty(ty)?;
 
-        self.scope.push(Item {
-            id: self.interner.intern_str("Self"),
-            ptr: parsed_ty.into(),
-            span: ty.span().into(),
-            whole_span: None,
-            module: self.source.into(),
-            vis,
-        });
+        self.scope
+            .push(self.interner.intern_str("Self"), parsed_ty, ty.span());
 
         let func_iter = body.iter().enumerate().map(|(i, &item)| match item {
             ImplItemAst::Func(&func) => (i, func),
@@ -114,7 +107,7 @@ impl TyChecker<'_> {
 
     pub fn collect_spec(
         &mut self,
-        spec @ SpecAst { vis, name, .. }: SpecAst,
+        SpecAst { vis, name, .. }: SpecAst,
         _: &[TopLevelAttributeAst],
     ) -> Option<(ModuleItem, VRef<Spec>)> {
         let id = intern_scoped_ident!(self, name.ident);
@@ -122,14 +115,11 @@ impl TyChecker<'_> {
         let fallback = |_: &mut Specs| Spec {
             kind: BoundKind::Base(default()),
             flags: default(),
-            loc: Loc::new(name.ident, self.source, name.span, spec.span()),
+            loc: default(),
         };
         let id = self.typec.specs.get_or_insert(id, fallback);
 
-        Some((
-            ModuleItem::new(name.ident, id, name.span, spec.span(), vis),
-            id,
-        ))
+        Some((ModuleItem::new(name.ident, id, name.span, vis), id))
     }
 
     pub fn collect_func(
@@ -147,7 +137,6 @@ impl TyChecker<'_> {
             signature: sig @ FuncSigAst {
                 generics, cc, name, ..
             },
-            span,
             body,
             ..
         }: FuncDefAst,
@@ -190,7 +179,8 @@ impl TyChecker<'_> {
             signature,
             flags: FuncFlags::ENTRY & entry.is_some(),
             visibility,
-            loc: Loc::new(name.ident, self.source, name.span, span),
+            name: name.ident,
+            loc: default(),
         };
         let id = self.typec.funcs.get_or_insert(id, func);
 
@@ -198,7 +188,7 @@ impl TyChecker<'_> {
         let local_id = owner.map_or(name.ident, |owner| {
             self.interner.intern(scoped_ident!(owner, name.ident))
         });
-        Some((ModuleItem::new(local_id, id, name.span, span, vis), id))
+        Some((ModuleItem::new(local_id, id, name.span, vis), id))
     }
 
     pub fn collect_signature(
@@ -239,7 +229,6 @@ impl TyChecker<'_> {
             vis,
             generics,
             name,
-            span,
             ..
         }: StructAst,
         _: &[TopLevelAttributeAst],
@@ -249,11 +238,11 @@ impl TyChecker<'_> {
         let ty = |_: &mut Types| Ty {
             kind: TyStruct::default().into(),
             flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: Loc::new(name.ident, self.source, name.span, span),
+            loc: default(),
         };
         let id = self.typec.types.get_or_insert(key, ty);
 
-        Some((ModuleItem::new(name.ident, id, name.span, span, vis), id))
+        Some((ModuleItem::new(name.ident, id, name.span, vis), id))
     }
 
     gen_error_fns! {

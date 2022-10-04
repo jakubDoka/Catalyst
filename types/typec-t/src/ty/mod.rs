@@ -1,7 +1,7 @@
 use std::default::default;
 
 use crate::*;
-use lexing_t::*;
+use lexing_t::Span;
 use parsing_t::Vis;
 use storage::*;
 
@@ -80,10 +80,9 @@ pub struct Field {
     pub vis: Vis,
     pub ty: VRef<Ty>,
     pub flags: FieldFlags,
-    pub loc: Loc,
+    pub span: Option<Span>,
 }
 
-impl_located!(Field);
 impl_flagged!(Field, FieldFlags);
 
 bitflags! {

@@ -175,7 +175,7 @@ pub use {
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
         TySlices, TyStruct, Types,
     },
-    typec::{Flagged, Located, StorageExt, Typec, Variadic},
+    typec::{Flagged, Loc, Located, StorageExt, Typec, Variadic},
 };
 
 #[cfg(test)]

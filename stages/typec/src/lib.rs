@@ -11,8 +11,10 @@
 
 const TY: &str = "type";
 const SPEC: &str = "spec";
+const FUNC: &str = "function";
 const TY_OR_MOD: &str = "type or module";
 const SPEC_OR_MOD: &str = "spec or module";
+const FUNC_OR_MOD: &str = "function or module";
 
 macro_rules! scoped_ident {
     ($scope:expr, $name:expr) => {
@@ -20,9 +22,21 @@ macro_rules! scoped_ident {
     };
 }
 
-#[macro_export]
-macro_rules! insert_scope_item {
-    () => {};
+macro_rules! intern_scoped_ident {
+    ($self:expr, $name:expr) => {
+        $self
+            .interner
+            .intern(scoped_ident!($self.module.as_u32(), $name))
+    };
+}
+
+macro_rules! lookup {
+    ($what:ident $self:expr, $id:expr, $span:expr) => {
+        match $self.lookup($id, $span, stringify!($what))? {
+            ScopeItem::$what(func) => func,
+            item => $self.invalid_symbol_type(item, $span, stringify!($what))?,
+        }
+    };
 }
 
 mod func_builder;
@@ -145,13 +159,13 @@ mod util {
                     diags::Slice {
                         span: types
                             .iter()
-                            .filter_map(|&ty| self.typec.types.locate(ty).whole_span)
+                            .filter_map(|&ty| self.typec.span(ty))
                             .reduce(|a, b| a.joined(b))?,
                         origin: self.source,
                         annotations: types
                             .iter()
                             .skip(1)
-                            .filter_map(|&ty| self.typec.types.locate(ty).span)
+                            .filter_map(|&ty| self.typec.span(ty))
                             .map(
                                 |span| source_annotation!(info[span]: "this type is part of cycle"),
                             )
@@ -196,7 +210,7 @@ mod util {
         for dep in &packages.module_deps[mod_ent.deps] {
             let items = &typec.module_items[dep.ptr];
             scope.push(dep.name, dep.ptr, dep.name_span);
-            for &item in items {
+            for &item in items.values() {
                 scope.insert(module, dep.ptr, item);
             }
         }
@@ -207,7 +221,7 @@ mod util {
     impl TyChecker<'_> {
         pub fn insert_scope_item(&mut self, item: ModuleItem) {
             if let Err(spans) = self.scope.insert_current(item) {
-                self.duplicate_definition(item.whole_span, item.span, spans, self.source);
+                self.duplicate_definition(item.span, spans, self.source);
                 return;
             }
 
@@ -218,16 +232,15 @@ mod util {
             push duplicate_definition(
                 self,
                 duplicate: Span,
-                duplicate_name: Span,
-                existing: Option<(Span, Span)>,
+                existing: Option<Span>,
                 file: VRef<Source>,
             ) {
                 err: "duplicate definition";
                 (duplicate, file) {
-                    info[duplicate_name]: "this name";
+                    info[duplicate]: "this name";
                 }
-                (existing?.0, file) {
-                    info[existing?.1]: "matches this already existing item";
+                (existing?, file) {
+                    info[existing?]: "matches this already existing item";
                 }
             }
         }
