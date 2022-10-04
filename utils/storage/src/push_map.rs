@@ -15,6 +15,17 @@ impl<T> PushMap<T> {
         Self::default()
     }
 
+    /// # Safety
+    /// The id it self is not valid yet, it can be used after pushing
+    /// at least one element.
+    pub unsafe fn next(&mut self) -> VRef<T> {
+        VRef::new(self.data.len())
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -39,6 +50,10 @@ impl<T> PushMap<T> {
 
     pub fn values(&self) -> impl Iterator<Item = &T> {
         self.data.iter()
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.data.iter_mut()
     }
 
     pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {

@@ -106,11 +106,12 @@ pub use items::Testable;
 pub mod items {
     use diags::*;
     use fmt::Fmt;
+    use lexing_t::LineMapping;
     use packaging::Scheduler;
     use packaging_t::*;
     use snippet_display::SnippetDisplay;
     use std::{mem, thread::Scope};
-    use storage::{Interner, VRef};
+    use storage::*;
 
     use std::{
         collections::HashMap,
@@ -121,7 +122,7 @@ pub mod items {
     };
 
     impl<T: Scheduler + Default> Testable for T {
-        fn exec(mut self, name: &str) -> (Workspace, resources) {
+        fn exec(mut self, name: &str) -> (Workspace, Resources) {
             self.execute(Path::new(name));
 
             (
@@ -130,18 +131,18 @@ pub mod items {
             )
         }
 
-        fn set_packages(&mut self, packages: resources) {
+        fn set_packages(&mut self, packages: Resources) {
             *self.resources().resources = packages;
         }
     }
 
     pub trait Testable: Default {
-        fn exec(self, name: &str) -> (Workspace, resources);
-        fn set_packages(&mut self, packages: resources);
+        fn exec(self, name: &str) -> (Workspace, Resources);
+        fn set_packages(&mut self, packages: Resources);
 
         fn new(resources: TestResources) -> Self {
             let mut this = Self::default();
-            let packages = resources::with_resources(resources);
+            let packages = Resources::with_resources(resources);
             this.set_packages(packages);
             this
         }
@@ -150,7 +151,7 @@ pub mod items {
     pub fn test_case<'a: 'b, 'b, 'c>(
         name: &'static str,
         scope: Option<&'a Scope<'b, 'c>>,
-        test_code: fn(&str) -> (Workspace, resources),
+        test_code: fn(&str) -> (Workspace, Resources),
     ) {
         println!("Running sub test: {}", name);
         let runner = move || {
@@ -191,18 +192,10 @@ pub mod items {
 
         pub fn create(self) -> TestResources {
             let mut resources = TestResources::default();
-            let mut packages = resources::default();
-            let mut interner = Interner::new();
-
+            let mut packages = Resources::default();
             let mut fmt = Fmt::default();
             let path = PathBuf::from(&self.name);
-            self.create_recur(
-                &path,
-                &mut fmt,
-                &mut interner,
-                &mut packages,
-                &mut resources,
-            );
+            self.create_recur(&path, &mut fmt, &mut packages, &mut resources);
 
             let str = fmt
                 .workspace
@@ -222,8 +215,7 @@ pub mod items {
             mut self,
             path: &Path,
             fmt: &mut Fmt,
-            interner: &mut Interner,
-            packages: &mut resources,
+            packages: &mut Resources,
             resources: &mut TestResources,
         ) {
             let self_path = path;
@@ -236,13 +228,13 @@ pub mod items {
                 } else if name.ends_with(".ctl") {
                     Fmt::source
                 } else {
-                    for<'a> |_: &'a mut Fmt, s: String, _: VRef<str>| -> (Option<&'a str>, String) {
-                        (None, s)
-                    }
+                    for<'a> |_: &'a mut Fmt,
+                             s: String,
+                             _: VRef<Source>|
+                             -> (Option<&'a str>, String) { (None, s) }
                 };
 
                 let path = self_path.join(name);
-                let path_ident = interner.intern_str(path.to_str().unwrap());
 
                 let c = if replace {
                     content.replace('\n', " ").replace("::", "\\")
@@ -250,18 +242,19 @@ pub mod items {
                     content
                 };
 
-                let (res, c) = formatter(fmt, c, path_ident);
+                let source = unsafe { packages.sources.next() };
+
+                let (res, c) = formatter(fmt, c, source);
 
                 let res = res.unwrap_or(&c);
 
                 resources.add_file(&path, res.to_string());
 
-                let module = Source {
+                packages.sources.push(Source {
                     path,
+                    line_mapping: LineMapping::new(&c),
                     content: c,
-                    ..Default::default()
-                };
-                packages.modules.insert(path_ident, module);
+                });
             }
 
             for mut folder in self.folders.drain(..) {
@@ -271,7 +264,7 @@ pub mod items {
                     resources.add_remote(name, res);
                 } else {
                     let path = path.join(&folder.name);
-                    folder.create_recur(&path, fmt, interner, packages, resources);
+                    folder.create_recur(&path, fmt, packages, resources);
                 }
             }
         }

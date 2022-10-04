@@ -1,7 +1,5 @@
 #![feature(default_free_fn)]
 
-use std::default::default;
-
 use diags::*;
 use lexing_t::*;
 use packaging::*;
@@ -12,7 +10,7 @@ use testing::*;
 #[derive(Default)]
 struct TestState {
     workspace: Workspace,
-    packages: resources,
+    resources: Resources,
     interner: Interner,
     package_graph: PackageGraph,
 }
@@ -22,22 +20,22 @@ impl Scheduler for TestState {
         package_loader!(self)
     }
 
-    fn before_parsing(&mut self, module: VRef<str>) {
-        let module_ent = self
-            .packages
-            .modules
-            .get(&module)
-            .expect("module should exist since it is in module order");
+    fn before_parsing(&mut self, module: VRef<Module>) {
+        let module_ent = &self.resources.modules[module];
+        let content = &self.resources.sources[module_ent.source].content;
 
         self.workspace.push(Snippet {
             slices: vec![Slice {
-                span: Span::new(0..module_ent.content.len()),
-                origin: module,
-                ..default()
+                span: Span::new(0..content.len()),
+                origin: module_ent.source,
+                annotations: Default::default(),
+                fold: false,
             }
             .into()],
-            ..default()
-        })
+            title: Default::default(),
+            footer: Default::default(),
+            origin: Default::default(),
+        });
     }
 }
 

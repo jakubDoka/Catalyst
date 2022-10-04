@@ -685,6 +685,7 @@ version = "0.1.0"
 dependencies = [
  "diags",
  "fmt",
+ "lexing-t",
  "packaging",
  "packaging-t",
  "snippet-display",

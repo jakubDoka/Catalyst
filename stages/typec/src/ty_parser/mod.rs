@@ -224,7 +224,7 @@ impl TyChecker<'_> {
                 let module = self.lookup_typed::<ModLookup>(start.ident, start.span)?;
                 let id = self
                     .interner
-                    .intern(scoped_ident!(module.index() as u32, ty.ident));
+                    .intern(scoped_ident!(module.as_u32(), ty.ident));
 
                 let Some(ty) = T::index(self.typec, id) else {
                     self.handle_scope_error::<T>(ScopeError::NotFound, ty.ident, ty.span);

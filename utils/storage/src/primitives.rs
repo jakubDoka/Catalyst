@@ -85,6 +85,11 @@ impl<T: ?Sized> VRef<T> {
         self.0 as usize
     }
 
+    #[inline(always)]
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+
     /// Casts VRef to VRef of another type.
     /// # Safety
     /// The index must be valid for using collection or cannot

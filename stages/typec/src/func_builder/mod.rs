@@ -486,7 +486,7 @@ impl TyChecker<'_> {
                 let mod_id = self.resources.mod_as_ident(module);
                 let id = self
                     .interner
-                    .intern(scoped_ident!(mod_id.index() as u32, name.ident));
+                    .intern(scoped_ident!(mod_id.as_u32(), name.ident));
                 match self.typec.funcs.index(id) {
                     Some(func) => Some(FuncLookupResult::Func(
                         func,
@@ -537,7 +537,7 @@ impl TyChecker<'_> {
                 let mod_id = self.resources.mod_as_ident(module);
                 let method_id = self
                     .interner
-                    .intern(scoped_ident!(mod_id.index() as u32, name.ident));
+                    .intern(scoped_ident!(mod_id.as_u32(), name.ident));
                 let ty_id = self.typec.types.id(ty);
                 let id = self.interner.intern(scoped_ident!(ty_id, method_id));
                 match self.typec.funcs.index(id) {

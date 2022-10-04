@@ -206,11 +206,11 @@ impl Generator<'_> {
         let id = if params.is_empty() {
             let id = self.typec.funcs.id(func_id);
             self.interner
-                .intern(ident!(prefix, builder.isa.triple.index() as u32, "&", id))
+                .intern(ident!(prefix, builder.isa.triple.as_u32(), "&", id))
         } else {
             let start = ident!(
                 prefix,
-                builder.isa.triple.index() as u32,
+                builder.isa.triple.as_u32(),
                 "&",
                 self.typec.funcs.id(func_id),
                 "["
@@ -255,7 +255,7 @@ impl Generator<'_> {
             .func
             .declare_imported_user_function(UserExternalName::new(
                 Gen::FUNC_NAMESPACE,
-                func.index() as u32,
+                func.as_u32(),
             ));
 
         let func_id = self.gen.compiled_funcs[func].func;

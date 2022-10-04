@@ -5,7 +5,7 @@ use storage::*;
 
 use crate::*;
 
-pub type PackageGraph = graphs::ProjectedCycleDetector;
+pub type PackageGraph = graphs::CycleDetector;
 
 #[derive(Default)]
 pub struct Resources {
@@ -14,7 +14,7 @@ pub struct Resources {
     pub modules: PushMap<Module>,
     pub package_deps: BumpMap<Dep<Package>>,
     pub module_deps: BumpMap<Dep<Module>>,
-    pub module_order: Vec<VRef<str>>,
+    pub module_order: Vec<VRef<Module>>,
     pub db: Box<dyn ResourceDb>,
 }
 
@@ -83,7 +83,6 @@ impl ModItem {
 #[derive(Clone)]
 pub struct Package {
     pub root_module: PathBuf,
-    pub span: Option<Span>,
     pub deps: VSlice<Dep<Package>>,
     pub source: VRef<Source>,
 }

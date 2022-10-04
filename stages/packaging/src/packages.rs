@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     default::default,
     env::{self, VarError},
-    ffi::{OsStr, OsString},
-    io, iter,
+    ffi::OsStr,
+    io, iter, mem,
     path::*,
     process::Command,
 };
@@ -25,20 +25,40 @@ pub struct Context {
     dep_root: PathBuf,
 }
 
-pub struct DummyPackage {
-    pub root_module: PathBuf,
-    pub deps: Vec<(NameAst, PathBuf)>,
-    pub source: VRef<Source>,
+struct DummyPackage {
+    root_module: PathBuf,
+    deps: Vec<(NameAst, PathBuf)>,
+    source: VRef<Source>,
+    ordering: usize,
 }
 
 impl PackageLoader<'_> {
     /// Loads the project into graph of manifests and source files.
     pub fn load(&mut self, root_path: &Path, ctx: &mut Context) -> Option<()> {
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;
-        let root_path = self.resolve_root_path(root_path)?;
+        let root_path = self.resolve_package_path(root_path, None)?;
         let root_package = self.load_packages(root_path, ctx)?;
 
-        todo!()
+        self.package_graph.clear();
+        for package in self.resources.packages.values() {
+            let edges = self.resources.package_deps[package.deps]
+                .iter()
+                .map(|dep| dep.ptr.as_u32());
+            self.package_graph.new_node().add_edges(edges)
+        }
+
+        let mut buffer = bumpvec![cap self.resources.packages.len()];
+        self.package_graph
+            .ordering(iter::once(root_package.as_u32()), &mut buffer)
+            .map_err(|cycle| self.package_cycle(cycle))
+            .ok();
+
+        // let root_module_path = self.resources.packages[root_package]
+        //     .root_module.clone();
+
+        //let root_module = self.load_module(root_module_path, ctx)?;
+
+        Some(())
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {
@@ -68,31 +88,90 @@ impl PackageLoader<'_> {
     }
 
     fn load_packages(&mut self, root_path: PathBuf, ctx: &mut Context) -> Option<VRef<Package>> {
-        ctx.package_frontier.push(root_path);
+        ctx.package_frontier.push(root_path.clone());
+        let mut ast_data = mem::take(&mut ctx.ast_data);
         while let Some(path) = ctx.package_frontier.pop() {
-            self.load_package(path, ctx);
+            self.load_package(path, &mut ast_data, ctx);
+        }
+        ctx.ast_data = ast_data;
+
+        for package in ctx.packages.values_mut() {
+            let final_package = Package {
+                root_module: mem::take(&mut package.root_module),
+                deps: default(),
+                source: package.source,
+            };
+            package.ordering = self.resources.packages.push(final_package).index();
         }
 
-        todo!()
+        let iter = self
+            .resources
+            .packages
+            .values_mut()
+            .zip(ctx.packages.values());
+        for (package, dummy_package) in iter {
+            let deps_iter = dummy_package.deps.iter().filter_map(|(name, path)| {
+                let index = ctx.packages.get(path)?.ordering;
+                Some(Dep {
+                    name_span: name.span,
+                    name: name.ident,
+                    ptr: unsafe { VRef::<Package>::new(index) },
+                })
+            });
+            let deps = self.resources.package_deps.bump(deps_iter);
+            package.deps = deps;
+        }
+
+        let package = root_path.join("package").with_extension("ctlm");
+        let root_package = &ctx.packages.get(&package)?;
+        Some(unsafe { VRef::new(root_package.ordering) })
     }
 
-    fn load_package(&mut self, path: PathBuf, ctx: &mut Context) -> Option<()> {
+    fn load_package(
+        &mut self,
+        path: PathBuf,
+        ast_data: &mut AstData,
+        ctx: &mut Context,
+    ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
 
         let source_id = self.load_source(package_path)?;
-        let manifest = self.parse_manifest(source_id, ctx)?;
+
+        let source = &self.resources.sources[source_id];
+        ctx.parsing_state.start(&source.content);
+        ast_data.clear();
+
+        let manifest = ParsingCtx::new(
+            &source.content,
+            &mut ctx.parsing_state,
+            ast_data,
+            self.workspace,
+            self.interner,
+            source_id,
+        )
+        .parse::<ManifestAst>()?;
+
         let root_module_path = self.resolve_root_module_path(&path, source_id, manifest)?;
         let deps = self.resolve_manifest_deps(&path, source_id, manifest, ctx);
+
+        let package = DummyPackage {
+            root_module: root_module_path,
+            deps,
+            source: source_id,
+            ordering: 0,
+        };
+        ctx.packages
+            .insert(self.resources.sources[source_id].path.clone(), package);
 
         Some(())
     }
 
     fn resolve_manifest_deps(
         &mut self,
-        path: &Path,
+        root_path: &Path,
         source_id: VRef<Source>,
         manifest: ManifestAst,
-        ctx: &Context,
+        ctx: &mut Context,
     ) -> Vec<(NameAst, PathBuf)> {
         let mut deps = Vec::with_capacity(manifest.deps.len());
         for &ManifestDepAst {
@@ -100,14 +179,27 @@ impl PackageLoader<'_> {
             name,
             path,
             version,
-            ..
+            span,
         } in manifest.deps.iter()
         {
             let path = if git {
+                self.download_package(source_id, span, version, path, ctx)
             } else {
+                let path_content = self.resources.sources[source_id].span_str(path);
+                let package_path = root_path.join(path_content);
+                self.resolve_package_path(&package_path, Some((source_id, path)))
             };
-        }
 
+            let Some(path) = path else {
+                continue;
+            };
+
+            let manifest = path.join("package").with_extension("ctlm");
+            if !ctx.packages.contains_key(&manifest) {
+                ctx.package_frontier.push(path);
+            }
+            deps.push((name, manifest));
+        }
         deps
     }
 
@@ -132,28 +224,6 @@ impl PackageLoader<'_> {
         self.resolve_module_path(&full_path)
     }
 
-    fn parse_manifest<'a>(
-        &mut self,
-        source_id: VRef<Source>,
-        ctx: &'a mut Context,
-    ) -> Option<ManifestAst<'a>> {
-        let source = &self.resources.sources[source_id];
-        ctx.parsing_state.start(&source.content);
-        ctx.ast_data.clear();
-
-        let manifest = ParsingCtx::new(
-            &source.content,
-            &mut ctx.parsing_state,
-            &ctx.ast_data,
-            self.workspace,
-            self.interner,
-            source_id,
-        )
-        .parse::<ManifestAst>();
-
-        manifest
-    }
-
     fn load_source(&mut self, path: PathBuf) -> Option<VRef<Source>> {
         let content = self
             .resources
@@ -171,15 +241,15 @@ impl PackageLoader<'_> {
         Some(self.resources.sources.push(source))
     }
 
-    fn resolve_root_path(&mut self, root: &Path) -> Option<PathBuf> {
+    fn resolve_package_path(
+        &mut self,
+        root: &Path,
+        span: Option<(VRef<Source>, Span)>,
+    ) -> Option<PathBuf> {
         self.resources
             .db
             .canonicalize(root)
-            .map_err(|err| self.invalid_package_root(root, err))
-            .and_then(|root| match root.is_dir() {
-                true => Ok(root),
-                false => Err(self.non_dir_package_root(root)),
-            })
+            .map_err(|err| self.invalid_package_root(root, err, span))
             .ok()
     }
 
@@ -188,10 +258,6 @@ impl PackageLoader<'_> {
             .db
             .canonicalize(path)
             .map_err(|err| self.invalid_module_path(path, err))
-            .and_then(|path| match path.is_file() {
-                true => Ok(path),
-                false => Err(self.non_file_module_path(path)),
-            })
             .ok()
     }
 
@@ -201,9 +267,10 @@ impl PackageLoader<'_> {
         source: VRef<Source>,
         span: Span,
         version: Option<Span>,
-        url: &str,
+        url_span: Span,
         ctx: &Context,
     ) -> Option<PathBuf> {
+        let url = self.resources.sources[source].span_str(url_span);
         let full_url = &format!("https://{}", url);
         let versions = self.resolve_version(source, version, full_url)?;
         if let Some(version) = version && versions.is_empty() {
@@ -213,10 +280,11 @@ impl PackageLoader<'_> {
         let max_version = versions
             .iter()
             .max()
-            .map(|(major, minor, patch)| format!("{}.{}.{}", major, minor, patch))
-            .unwrap_or("main".to_string());
+            .map(|(major, minor, patch)| format!("v{}.{}.{}", major, minor, patch))
+            .unwrap_or_else(|| "main".to_string());
 
-        let download_root = ctx.dep_root.join(url).join(max_version);
+        let url = self.resources.sources[source].span_str(url_span);
+        let download_root = ctx.dep_root.join(url).join(&max_version);
 
         let exists = download_root.exists();
 
@@ -268,7 +336,8 @@ impl PackageLoader<'_> {
         };
 
         let version_str = &self.resources.sources[source].content[version.range()];
-        let args = ["ls-remote", url, &format!("refs/tags/{}", version_str)]
+        let tag_pattern = format!("refs/tags/{}", version_str);
+        let args = ["ls-remote", url, &tag_pattern]
             .into_iter()
             .map(|s| s.as_ref());
 
@@ -305,14 +374,14 @@ impl PackageLoader<'_> {
             .collect::<String>();
 
         if !quiet {
-            self.git_info(source, loc, command_str);
+            self.git_info(source, loc, command_str.clone());
         }
 
         let mut command = Command::new("git");
         command.args(args);
         let output = self.resources.db.command(&mut command);
         let output = output
-            .map_err(|err| self.git_exec_error(source, loc, command_str, err))
+            .map_err(|err| self.git_exec_error(source, loc, command_str.clone(), err))
             .ok()?;
 
         if !output.status.success() {
@@ -325,15 +394,13 @@ impl PackageLoader<'_> {
     }
 
     gen_error_fns! {
-        push invalid_package_root(self, root: &Path, err: io::Error) {
+        push invalid_package_root(self, root: &Path, err: io::Error, loc: Option<(VRef<Source>, Span)>) {
             err: "invalid root path";
             info: ("path: `{}`", root.display());
             info: ("trace: {}", err);
-        }
-
-        push non_dir_package_root(self, root: PathBuf) {
-            err: "root path is not a directory";
-            info: ("path: `{}`", root.display());
+            (loc?.1, loc?.0) {
+                err[loc?.1]: "declared here";
+            }
         }
 
         push unreachable_source(self, path: &Path, err: io::Error) {
@@ -346,11 +413,6 @@ impl PackageLoader<'_> {
             err: "invalid module path";
             info: ("path: `{}`", path.display());
             info: ("trace: {}", err);
-        }
-
-        push non_file_module_path(self, path: PathBuf) {
-            err: "module path is not a file";
-            info: ("path: `{}`", path.display());
         }
 
         push invalid_dep_root_encoding(self, err: env::VarError) {
@@ -415,6 +477,20 @@ impl PackageLoader<'_> {
             info: ("path: `{}`", path.display());
             info: ("trace: {}", err);
         }
+
+        push package_cycle(self, cycle: Vec<u32>) {
+            err: "package cycle detected";
+            info: (
+                "cycle:\n{}",
+                cycle
+                    .into_iter()
+                    .map(|id| unsafe { VRef::<Package>::new(id as usize) })
+                    .map(|package| self.resources.packages[package].source)
+                    .map(|source| self.resources.sources[source].path.to_string_lossy())
+                    .intersperse(Cow::Borrowed("\n"))
+                    .collect::<String>()
+            );
+        }
     }
 
     // fn load_low(&mut self, root: &Path, ctx: &mut Context) -> Option<()> {
@@ -446,17 +522,17 @@ impl PackageLoader<'_> {
     //     // prepare cycle detection, we are doing packages and modules in one go
     //     self.package_graph.clear();
     //     self.package_graph
-    //         .load_nodes(self.packages.modules.keys().map(|id| id.index() as u32));
+    //         .load_nodes(self.packages.modules.keys().map(|id| id.as_u32()));
     //     for (k, module) in self.packages.modules.iter() {
-    //         self.package_graph.new_node(k.index() as u32).add_edges(
+    //         self.package_graph.new_node(k.as_u32()).add_edges(
     //             self.packages.conns[module.deps]
     //                 .iter()
-    //                 .map(|dep| dep.ptr.index() as u32),
+    //                 .map(|dep| dep.ptr.as_u32()),
     //         );
     //     }
 
     //     // detect cycles and build ordering
-    //     let roots = [root_package_path.index() as u32, module_id.index() as u32];
+    //     let roots = [root_package_path.as_u32(), module_id.as_u32()];
     //     let mut ordering = bumpvec![cap self.packages.modules.len()];
     //     self.package_graph
     //         .ordering(roots, &mut ordering)

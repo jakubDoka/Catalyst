@@ -145,7 +145,7 @@ macro_rules! gen_error_fn {
         }
     } => {
         pub fn $name(&mut $self, $($param: $param_ty),*) -> Option<!> {
-            $self.workspace.push_or_display(&$self.packages, $crate::snippet! {
+            $self.workspace.push_or_display(&$self.resources, $crate::snippet! {
                 $($body)*
             });
             None

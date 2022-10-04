@@ -9,26 +9,27 @@ use testing::*;
 #[derive(Default)]
 struct TestState {
     workspace: Workspace,
-    packages: resources,
+    resources: Resources,
     interner: Interner,
     package_graph: PackageGraph,
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, resources) {
-        package_loader!(self).load(Path::new(name));
-        (self.workspace, self.packages)
+    fn exec(mut self, name: &str) -> (Workspace, Resources) {
+        let mut ctx = Default::default();
+        package_loader!(self).load(Path::new(name), &mut ctx);
+        (self.workspace, self.resources)
     }
 
-    fn set_packages(&mut self, packages: resources) {
-        self.packages = packages;
+    fn set_packages(&mut self, packages: Resources) {
+        self.resources = packages;
     }
 }
 
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         "github" {
             file "root.ctl" { use { "water"; "a"; "b" } }
             file "package.ctlm" {
@@ -101,6 +102,22 @@ fn main() {
             file "package.ctlm" {
                 deps {
                     git "github.com/jakubDoka/water-kun"
+                }
+            }
+        }
+        "package-cycle" {
+            file "root.ctl" {}
+            file "package.ctlm" {
+                deps {
+                    "a"
+                }
+            }
+            dir "a" {
+                file "root.ctl" {}
+                file "package.ctlm" {
+                    deps {
+                        ".."
+                    }
                 }
             }
         }

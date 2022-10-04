@@ -127,7 +127,7 @@ mod util {
                 return self;
             }
 
-            let nodes = all_new_types.clone().map(|ty| ty.index() as u32);
+            let nodes = all_new_types.clone().map(|ty| ty.as_u32());
 
             ctx.ty_graph.load_nodes(nodes.clone());
 
@@ -135,10 +135,10 @@ mod util {
                 let Ty { kind, .. } = self.typec.types[ty];
                 match kind {
                     TyKind::Struct(s) => {
-                        ctx.ty_graph.new_node(ty.index() as u32).add_edges(
+                        ctx.ty_graph.new_node(ty.as_u32()).add_edges(
                             self.typec.fields[s.fields]
                                 .iter()
-                                .map(|field| self.typec.types.base(field.ty).index() as u32),
+                                .map(|field| self.typec.types.base(field.ty).as_u32()),
                         );
                     }
 
