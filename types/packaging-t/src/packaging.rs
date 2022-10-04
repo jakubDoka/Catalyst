@@ -83,6 +83,7 @@ impl ModItem {
 #[derive(Clone)]
 pub struct Package {
     pub root_module: PathBuf,
+    pub root_module_span: Span,
     pub deps: VSlice<Dep<Package>>,
     pub source: VRef<Source>,
 }

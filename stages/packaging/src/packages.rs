@@ -16,10 +16,14 @@ use parsing::*;
 use parsing_t::*;
 use storage::*;
 
+type Loc = Option<(VRef<Source>, Span)>;
+
 #[derive(Default)]
 pub struct Context {
     packages: Map<PathBuf, DummyPackage>,
-    package_frontier: Vec<PathBuf>,
+    modules: Map<PathBuf, DummyModule>,
+    package_frontier: Vec<(PathBuf, Loc)>,
+    module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
     parsing_state: ParsingState,
     ast_data: AstData,
     dep_root: PathBuf,
@@ -27,7 +31,15 @@ pub struct Context {
 
 struct DummyPackage {
     root_module: PathBuf,
-    deps: Vec<(NameAst, PathBuf)>,
+    root_module_span: Span,
+    deps: BumpVec<(NameAst, PathBuf)>,
+    source: VRef<Source>,
+    ordering: usize,
+}
+
+struct DummyModule {
+    package: VRef<Package>,
+    deps: BumpVec<(NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
 }
@@ -39,6 +51,7 @@ impl PackageLoader<'_> {
         let root_path = self.resolve_package_path(root_path, None)?;
         let root_package = self.load_packages(root_path, ctx)?;
 
+        let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
         for package in self.resources.packages.values() {
             let edges = self.resources.package_deps[package.deps]
@@ -46,19 +59,185 @@ impl PackageLoader<'_> {
                 .map(|dep| dep.ptr.as_u32());
             self.package_graph.new_node().add_edges(edges)
         }
-
-        let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph
             .ordering(iter::once(root_package.as_u32()), &mut buffer)
             .map_err(|cycle| self.package_cycle(cycle))
             .ok();
+        buffer.clear();
 
-        // let root_module_path = self.resources.packages[root_package]
-        //     .root_module.clone();
+        let &Package {
+            ref root_module,
+            source,
+            root_module_span,
+            ..
+        } = &self.resources.packages[root_package];
+        let root_module_path = root_module.clone();
 
-        //let root_module = self.load_module(root_module_path, ctx)?;
+        let root_module = self.load_modules(
+            root_module_path,
+            root_package,
+            source,
+            root_module_span,
+            ctx,
+        )?;
+
+        self.package_graph.clear();
+        for module in self.resources.modules.values() {
+            let edges = self.resources.module_deps[module.deps]
+                .iter()
+                .map(|dep| dep.ptr.as_u32());
+            self.package_graph.new_node().add_edges(edges)
+        }
+        self.package_graph
+            .ordering(iter::once(root_module.as_u32()), &mut buffer)
+            .map_err(|cycle| self.module_cycle(cycle))
+            .ok();
+
+        self.resources
+            .module_order
+            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i as usize) }));
+        self.resources
+            .module_order
+            .iter()
+            .enumerate()
+            .for_each(|(i, &id)| self.resources.modules[id].ordering = i);
 
         Some(())
+    }
+
+    fn load_modules(
+        &mut self,
+        root_path: PathBuf,
+        root_package: VRef<Package>,
+        source: VRef<Source>,
+        span: Span,
+        ctx: &mut Context,
+    ) -> Option<VRef<Module>> {
+        ctx.module_frontier
+            .push((root_path.clone(), root_package, source, span));
+
+        let mut ast_data = mem::take(&mut ctx.ast_data);
+        while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
+            self.load_module(path, package, source, span, &mut ast_data, ctx);
+        }
+        ctx.ast_data = ast_data;
+
+        for module in ctx.modules.values_mut() {
+            let final_module = Module {
+                package: module.package,
+                ordering: 0,
+                deps: default(),
+                source: module.source,
+            };
+            module.ordering = self.resources.modules.push(final_module).index();
+        }
+
+        let iter = self
+            .resources
+            .modules
+            .values_mut()
+            .zip(ctx.modules.values());
+        for (module, dummy_module) in iter {
+            let deps_iter = dummy_module.deps.iter().filter_map(|(name, path)| {
+                let index = ctx.modules.get(path)?.ordering;
+                Some(Dep {
+                    name_span: name.span,
+                    name: name.ident,
+                    ptr: unsafe { VRef::<Module>::new(index) },
+                })
+            });
+            let deps = self.resources.module_deps.bump(deps_iter);
+            module.deps = deps;
+        }
+
+        let root_module = &ctx.modules.get(&root_path)?;
+        Some(unsafe { VRef::new(root_module.ordering) })
+    }
+
+    fn load_module(
+        &mut self,
+        path: PathBuf,
+        package: VRef<Package>,
+        source: VRef<Source>,
+        span: Span,
+        ast_data: &mut AstData,
+        ctx: &mut Context,
+    ) -> Option<()> {
+        let source = self.load_source(path.clone(), Some((source, span)))?;
+
+        let content = &self.resources.sources[source].content;
+        ctx.parsing_state.start(content);
+        ast_data.clear();
+
+        let imports = ParsingCtx::new(
+            content,
+            &mut ctx.parsing_state,
+            ast_data,
+            self.workspace,
+            self.interner,
+            source,
+        )
+        .parse::<UseAst>()?;
+
+        let deps = self.resolve_module_deps(imports, package, source, ctx)?;
+
+        let dummy_module = DummyModule {
+            package,
+            deps,
+            source,
+            ordering: 0,
+        };
+        ctx.modules.insert(path, dummy_module);
+
+        Some(())
+    }
+
+    fn resolve_module_deps(
+        &mut self,
+        imports: UseAst,
+        package_id: VRef<Package>,
+        source: VRef<Source>,
+        ctx: &mut Context,
+    ) -> Option<BumpVec<(NameAst, PathBuf)>> {
+        let mut deps = bumpvec![cap imports.items.len()];
+        for &ImportAst {
+            name, path, span, ..
+        } in imports.items.iter()
+        {
+            let path_content = self.resources.sources[source].span_str(path);
+            let (package, path_str) = path_content.split_once('/').unwrap_or((path_content, ""));
+
+            let package_ident = self.interner.intern_str(package);
+            let import_package = self.resources.package_deps
+                [self.resources.packages[package_id].deps]
+                .iter()
+                .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
+                .or_else(|| (package == ".").then_some(package_id));
+
+            let Some(import_package) = import_package else {
+                self.unknown_package(path.sliced(..package.len()), package_id);
+                continue;
+            };
+
+            let built_path = self.resources.packages[import_package]
+                .root_module
+                .with_extension("")
+                .join(path_str)
+                .with_extension("ctl");
+
+            let Some(dep_path) = self
+                .resources.db
+                .canonicalize(&built_path)
+                .map_err(|err| self.unknown_module(path, source, built_path, err))
+                .ok() else { continue };
+
+            if !ctx.modules.contains_key(&dep_path) {
+                ctx.module_frontier
+                    .push((dep_path.clone(), import_package, source, span));
+            }
+            deps.push((name, dep_path));
+        }
+        Some(deps)
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {
@@ -88,16 +267,17 @@ impl PackageLoader<'_> {
     }
 
     fn load_packages(&mut self, root_path: PathBuf, ctx: &mut Context) -> Option<VRef<Package>> {
-        ctx.package_frontier.push(root_path.clone());
+        ctx.package_frontier.push((root_path.clone(), None));
         let mut ast_data = mem::take(&mut ctx.ast_data);
-        while let Some(path) = ctx.package_frontier.pop() {
-            self.load_package(path, &mut ast_data, ctx);
+        while let Some((path, loc)) = ctx.package_frontier.pop() {
+            self.load_package(path, loc, &mut ast_data, ctx);
         }
         ctx.ast_data = ast_data;
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {
                 root_module: mem::take(&mut package.root_module),
+                root_module_span: package.root_module_span,
                 deps: default(),
                 source: package.source,
             };
@@ -130,12 +310,13 @@ impl PackageLoader<'_> {
     fn load_package(
         &mut self,
         path: PathBuf,
+        loc: Loc,
         ast_data: &mut AstData,
         ctx: &mut Context,
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
 
-        let source_id = self.load_source(package_path)?;
+        let source_id = self.load_source(package_path, loc)?;
 
         let source = &self.resources.sources[source_id];
         ctx.parsing_state.start(&source.content);
@@ -151,14 +332,16 @@ impl PackageLoader<'_> {
         )
         .parse::<ManifestAst>()?;
 
-        let root_module_path = self.resolve_root_module_path(&path, source_id, manifest)?;
+        let (root_module, root_module_span) =
+            self.resolve_root_module_path(&path, source_id, manifest)?;
         let deps = self.resolve_manifest_deps(&path, source_id, manifest, ctx);
 
         let package = DummyPackage {
-            root_module: root_module_path,
+            root_module,
             deps,
             source: source_id,
             ordering: 0,
+            root_module_span,
         };
         ctx.packages
             .insert(self.resources.sources[source_id].path.clone(), package);
@@ -172,8 +355,8 @@ impl PackageLoader<'_> {
         source_id: VRef<Source>,
         manifest: ManifestAst,
         ctx: &mut Context,
-    ) -> Vec<(NameAst, PathBuf)> {
-        let mut deps = Vec::with_capacity(manifest.deps.len());
+    ) -> BumpVec<(NameAst, PathBuf)> {
+        let mut deps = bumpvec![cap manifest.deps.len()];
         for &ManifestDepAst {
             git,
             name,
@@ -196,7 +379,7 @@ impl PackageLoader<'_> {
 
             let manifest = path.join("package").with_extension("ctlm");
             if !ctx.packages.contains_key(&manifest) {
-                ctx.package_frontier.push(path);
+                ctx.package_frontier.push((path, Some((source_id, span))));
             }
             deps.push((name, manifest));
         }
@@ -208,7 +391,7 @@ impl PackageLoader<'_> {
         root_path: &Path,
         source_id: VRef<Source>,
         manifest: ManifestAst,
-    ) -> Option<PathBuf> {
+    ) -> Option<(PathBuf, Span)> {
         let field_name = self.interner.intern_str("root");
         let value_span = manifest
             .find_field(field_name)
@@ -222,14 +405,15 @@ impl PackageLoader<'_> {
         let name = value_span.map_or("root", |str| &content[str.shrink(1).range()]);
         let full_path = root_path.join(name).with_extension("ctl");
         self.resolve_module_path(&full_path)
+            .map(|path| (path, value_span.unwrap_or_default()))
     }
 
-    fn load_source(&mut self, path: PathBuf) -> Option<VRef<Source>> {
+    fn load_source(&mut self, path: PathBuf, loc: Loc) -> Option<VRef<Source>> {
         let content = self
             .resources
             .db
             .read_to_string(&path)
-            .map_err(|err| self.unreachable_source(&path, err))
+            .map_err(|err| self.unreachable_source(&path, err, loc))
             .ok()?;
 
         let source = Source {
@@ -241,11 +425,7 @@ impl PackageLoader<'_> {
         Some(self.resources.sources.push(source))
     }
 
-    fn resolve_package_path(
-        &mut self,
-        root: &Path,
-        span: Option<(VRef<Source>, Span)>,
-    ) -> Option<PathBuf> {
+    fn resolve_package_path(&mut self, root: &Path, span: Loc) -> Option<PathBuf> {
         self.resources
             .db
             .canonicalize(root)
@@ -394,7 +574,7 @@ impl PackageLoader<'_> {
     }
 
     gen_error_fns! {
-        push invalid_package_root(self, root: &Path, err: io::Error, loc: Option<(VRef<Source>, Span)>) {
+        push invalid_package_root(self, root: &Path, err: io::Error, loc: Loc) {
             err: "invalid root path";
             info: ("path: `{}`", root.display());
             info: ("trace: {}", err);
@@ -403,10 +583,13 @@ impl PackageLoader<'_> {
             }
         }
 
-        push unreachable_source(self, path: &Path, err: io::Error) {
+        push unreachable_source(self, path: &Path, err: io::Error, loc: Loc) {
             err: "failed to read source file";
             info: ("path: `{}`", path.display());
             info: ("trace: {}", err);
+            (loc?.1, loc?.0) {
+                err[loc?.1]: "declared here";
+            }
         }
 
         push invalid_module_path(self, path: &Path, err: io::Error) {
@@ -478,6 +661,31 @@ impl PackageLoader<'_> {
             info: ("trace: {}", err);
         }
 
+        push unknown_module(self, path: Span, source: VRef<Source>, built_path: PathBuf, err: io::Error) {
+            err: "unknown module";
+            info: ("path: `{}`", built_path.display());
+            info: ("trace: {}", err);
+            (path, source) {
+                err[path]: "declared here";
+            }
+        }
+
+        push unknown_package(self, span: Span, package: VRef<Package>) {
+            err: "unknown package";
+            help: "to refer to current package use '.'";
+            help: (
+                "available packages: {}",
+                self.resources.package_deps[self.resources.packages[package].deps]
+                    .iter()
+                    .map(|dep| &self.interner[dep.name])
+                    .intersperse(", ")
+                    .collect::<String>()
+            );
+            (span, self.resources.packages[package].source) {
+                info[span]: "declared here";
+            }
+        }
+
         push package_cycle(self, cycle: Vec<u32>) {
             err: "package cycle detected";
             info: (
@@ -486,6 +694,20 @@ impl PackageLoader<'_> {
                     .into_iter()
                     .map(|id| unsafe { VRef::<Package>::new(id as usize) })
                     .map(|package| self.resources.packages[package].source)
+                    .map(|source| self.resources.sources[source].path.to_string_lossy())
+                    .intersperse(Cow::Borrowed("\n"))
+                    .collect::<String>()
+            );
+        }
+
+        push module_cycle(self, cycle: Vec<u32>) {
+            err: "module cycle detected";
+            info: (
+                "cycle:\n{}",
+                cycle
+                    .into_iter()
+                    .map(|id| unsafe { VRef::<Module>::new(id as usize) })
+                    .map(|package| self.resources.modules[package].source)
                     .map(|source| self.resources.sources[source].path.to_string_lossy())
                     .intersperse(Cow::Borrowed("\n"))
                     .collect::<String>()
