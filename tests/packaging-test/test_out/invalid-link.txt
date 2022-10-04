@@ -1,17 +1,17 @@
-info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water-kun invalid-link\deps\github.com\jakubDoka\water-kun\main
- --> invalid-link\package.ctlm:3:10
+info: executing git: clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link\deps\github.com/jakubDoka/water-kun\main
+ --> invalid-link\package.ctlm:3:5
   |
 3 |     git "github.com/jakubDoka/water-kun"
-  |          ------------------------------ info: invocation declared here
+  |     ------------------------------------ info: invocation declared here
   |
 
 error: git execution failed
- --> invalid-link\package.ctlm:3:10
+ --> invalid-link\package.ctlm:3:5
   |
 3 |     git "github.com/jakubDoka/water-kun"
-  |          ------------------------------ info: invocation declared here
+  |     ------------------------------------ info: invocation declared here
   |
-  = info: executing git: clone --depth 1 --filter blob:none https://github.com/jakubDoka/water-kun invalid-link\deps\github.com\jakubDoka\water-kun\main
+  = info: executing git: clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link\deps\github.com/jakubDoka/water-kun\main
   = info: output:
           fatal: repository 'github.com/jakubDoka/water-kun#main' not found
 
