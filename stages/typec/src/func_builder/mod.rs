@@ -460,8 +460,8 @@ impl TyChecker<'_> {
             item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
         };
 
-        let &func_or_type = segments
-            .first()
+        let (&func_or_type, segments) = segments
+            .split_first()
             .or_else(|| self.invalid_expr_path(path.span())?)?;
 
         let id = self
@@ -477,7 +477,7 @@ impl TyChecker<'_> {
             .index(id)
             .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)?;
 
-        let (&start, segments) = segments[1..]
+        let (&start, segments) = segments
             .split_first()
             .or_else(|| self.invalid_expr_path(path.span())?)?;
 

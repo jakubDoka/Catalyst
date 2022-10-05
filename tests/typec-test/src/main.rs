@@ -129,7 +129,9 @@ fn main() {
                     "./b"
                 };
 
+
                 fn main() -> uint => a::pass(uint::a::pass(a::A::a::pass(0).b::pass()));
+                fn other_main() -> uint => a::pass::[uint](0);
             }
         }
     }
