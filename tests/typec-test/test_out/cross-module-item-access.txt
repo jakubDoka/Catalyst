@@ -1,10 +1,10 @@
-error: invalid path for instance
+error: type mismatch
  --> cross-module-item-access\root.ctl:8:26
   |
-8 | fn third_main -> uint => b\Ab \ A \ [uint] \[uint]\b\pass(b\A\b\pass(0))
-  |                          ^^^^^^^^^^^^^^^^^ this is invalid
+8 | fn third_main -> uint => b\A\[uint]\b\pass(b\A\b\pass(0))
+  |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mismatch occurred here
   |
-  = help: valid syntax for path in instance is `<module>::<item> | <item>`
+  = info: expected 'uint' but got '0\A[uint]'
 
 info: tir repr of functions:
  fn [todo] 2\pass(var0: param 0) -> param 0 return var0
@@ -24,6 +24,8 @@ fn [todo] 0\A\0\pass(var0: param 0) -> param 0 return var0
 fn [todo] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(2\A\2\pass(0))))
 
 fn [todo] 1\other_main() -> uint return 2\pass[uint](uint\0\pass_other[uint](0, 0))
+
+fn [todo] 1\third_main() -> uint return 0\A\0\pass[uint](0\A\0\pass[uint](0))
 
 
 
