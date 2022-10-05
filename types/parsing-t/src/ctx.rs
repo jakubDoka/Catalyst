@@ -235,7 +235,15 @@ impl<'a> ParsingCtx<'_, 'a> {
 
         push invalid_instance_path(self, path: Span) {
             err: "invalid path for instance";
-            help: "only valid syntax for path in instance is `<module>::<item>`";
+            help: "valid syntax for path in instance is `<module>::<item> | <item>`";
+            (path, self.source) {
+                err[path]: "this is invalid";
+            }
+        }
+
+        push invalid_typed_path(self, path: Span) {
+            err: "invalid path for type";
+            help: "valid syntax for path in type is `<module>::<item>::[<generics>...] | <item>::[<generics>...]`";
             (path, self.source) {
                 err[path]: "this is invalid";
             }

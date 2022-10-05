@@ -24,12 +24,12 @@ impl<'a> FmtAst for TyAst<'a> {
 
 impl<'a> FmtAst for TyInstanceAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        self.ident.display(fmt);
+        self.path.display(fmt);
         self.params.display(fmt);
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
-        self.ident.flat_len(fmt) + self.params.flat_len(fmt)
+        self.path.flat_len(fmt) + self.params.flat_len(fmt)
     }
 }
 

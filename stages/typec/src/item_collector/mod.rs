@@ -84,10 +84,11 @@ impl TyChecker<'_> {
             ImplItemAst::Func(&func) => (i, func),
         });
 
+        let parsed_ty_base = self.typec.types.base(parsed_ty);
         let scope_data = ScopeData {
             offset: generics.len(),
             upper_generics: parsed_generics,
-            owner: Some(self.typec.types.id(parsed_ty)),
+            owner: Some(self.typec.types.id(parsed_ty_base)),
             upper_vis: vis,
         };
 

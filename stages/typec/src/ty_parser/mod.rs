@@ -179,7 +179,13 @@ impl TyChecker<'_> {
         })
     }
 
-    fn instance(&mut self, TyInstanceAst { ident, params }: TyInstanceAst) -> Option<VRef<Ty>> {
+    fn instance(
+        &mut self,
+        TyInstanceAst {
+            path: ident,
+            params,
+        }: TyInstanceAst,
+    ) -> Option<VRef<Ty>> {
         let base = self.ty_path(ident)?;
 
         let args = params

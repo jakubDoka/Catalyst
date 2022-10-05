@@ -74,6 +74,7 @@ pub enum UnitExprAst<'a> {
     Call(&'a CallExprAst<'a>),
     Path(PathExprAst<'a>),
     PathInstance(PathInstanceAst<'a>),
+    TypedPath(TypedPathAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
     Char(Span),
@@ -110,6 +111,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                             .map(Self::StructConstructor),
                         LeftBracket => ctx.parse_args((unit?, slash))
                             .map(Self::PathInstance),
+                        Ident => ctx.parse_args((unit?, slash))
+                            .map(Self::TypedPath),
                     })
                 },
                 _ => break unit,
@@ -128,7 +131,48 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Return(ret) => ret.span(),
             Int(span) | Char(span) => span,
             Const(run) => run.span(),
+            TypedPath(path) => path.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TypedPathAst<'a> {
+    pub ty: TyAst<'a>,
+    pub slash: Span,
+    pub path: Result<PathExprAst<'a>, PathInstanceAst<'a>>,
+}
+
+impl<'a> Ast<'a> for TypedPathAst<'a> {
+    type Args = (UnitExprAst<'a>, Span);
+
+    const NAME: &'static str = "typed path";
+
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a>,
+        (unit, slash): Self::Args,
+    ) -> Option<Self> {
+        let ty = match unit {
+            UnitExprAst::Path(path) => TyAst::Path(path),
+            UnitExprAst::PathInstance(PathInstanceAst { path, params, .. }) => {
+                TyAst::Instance(TyInstanceAst { path, params })
+            }
+            _ => ctx.invalid_typed_path(unit.span())?,
+        };
+
+        let path = ctx.parse()?;
+        let path = if ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::LeftBracket) {
+            let slash = ctx.advance().span;
+            Err(ctx.parse_args((UnitExprAst::Path(path), slash))?)
+        } else {
+            Ok(path)
+        };
+
+        Some(Self { ty, slash, path })
+    }
+
+    fn span(&self) -> Span {
+        self.ty.span().joined(self.slash)
     }
 }
 

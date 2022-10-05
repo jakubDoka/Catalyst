@@ -220,6 +220,7 @@ impl TyChecker<'_> {
             UnitExprAst::StructConstructor(_) => todo!(),
             UnitExprAst::DotExpr(_) => todo!(),
             UnitExprAst::PathInstance(_) => todo!(),
+            UnitExprAst::TypedPath(_) => todo!(),
         }
     }
 
@@ -263,6 +264,15 @@ impl TyChecker<'_> {
                 UnitExprAst::PathInstance(PathInstanceAst { path, params, .. }) => {
                     (self.func_path(path, builder)?, None, Some(params))
                 }
+                UnitExprAst::TypedPath(TypedPathAst { ty, path, .. }) => {
+                    let ty = self.ty(ty)?;
+                    let (path, params) = match path {
+                        Ok(path) => (path, None),
+                        Err(instance) => (instance.path, Some(instance.params)),
+                    };
+                    let func = self.method_path(ty, path, builder)?;
+                    (func, Some(Err(ty)), params)
+                }
                 UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
                     let lhs = self.unit_expr(lhs, None, builder)?;
                     let (path, params) = match rhs {
@@ -270,7 +280,7 @@ impl TyChecker<'_> {
                         Err(instance) => (instance.path, Some(instance.params)),
                     };
                     let func = self.method_path(lhs.ty, path, builder)?;
-                    (func, Some(lhs), params)
+                    (func, Some(Ok(lhs)), params)
                 }
                 kind @ (UnitExprAst::Return(..)
                 | UnitExprAst::Call(..)
@@ -314,7 +324,7 @@ impl TyChecker<'_> {
     fn direct_generic_call<'a>(
         &mut self,
         func: VRef<Func>,
-        caller: Option<TypedTirNode<'a>>,
+        caller: Option<Result<TypedTirNode<'a>, VRef<Ty>>>,
         params: Option<TyGenericsAst>,
         args: impl Iterator<Item = ExprAst>,
         span: Span,
@@ -328,14 +338,19 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let mut param_slots = bumpvec![None; self.typec.spec_slices[generics].len()
-            + self.typec.spec_slices[upper_generics].len()];
+        let upper_generics_count = self.typec.spec_slices[upper_generics].len();
+        let generics_count = self.typec.spec_slices[generics].len();
+        let mut param_slots = bumpvec![None; generics_count + upper_generics_count];
 
         if let Some(params) = params {
-            for (i, &param) in params.iter().enumerate() {
-                let index = self.typec.spec_slices[upper_generics].len() + i;
-                param_slots[index] = self.ty(param); // recovery
+            if params.len() > generics_count {
+                self.too_many_params(params, generics_count)?;
             }
+
+            params
+                .iter()
+                .zip(param_slots.iter_mut().skip(upper_generics_count))
+                .for_each(|(&param, slot)| *slot = self.ty(param));
         }
 
         if let Some(inference) = inference {
@@ -344,12 +359,16 @@ impl TyChecker<'_> {
 
         let types = self.typec.ty_slices[signature.args].to_bumpvec();
 
-        if let Some(caller) = caller && let Some(&first) = types.first() {
+        if let Some(Ok(caller)) = caller && let Some(&first) = types.first() {
             self.infer_params(&mut param_slots, caller.ty, first, span);
         }
 
         let args = args
-            .zip(types.into_iter().skip(caller.is_some() as usize))
+            .zip(
+                types
+                    .into_iter()
+                    .skip(caller.filter(Result::is_ok).is_some() as usize),
+            )
             .map(|(arg, ty)| {
                 let inferred = self.typec.try_instantiate(ty, &param_slots, self.interner);
                 let expr = self.expr(arg, inferred, builder)?;
@@ -361,6 +380,7 @@ impl TyChecker<'_> {
                 Some(expr.node)
             });
         let args = caller
+            .and_then(|caller| caller.ok())
             .map(|caller| caller.node)
             .into_iter()
             .map(Some)
@@ -431,7 +451,7 @@ impl TyChecker<'_> {
     fn direct_concrete_call<'a>(
         &mut self,
         func: VRef<Func>,
-        caller: Option<TypedTirNode<'a>>,
+        caller: Option<Result<TypedTirNode<'a>, VRef<Ty>>>,
         ast_args: impl Iterator<Item = ExprAst>,
         span: Span,
         builder: &mut TirBuilder<'a>,
@@ -440,15 +460,20 @@ impl TyChecker<'_> {
 
         let types = self.typec.ty_slices[signature.args].to_bumpvec();
 
-        if let Some(caller) = caller && let Some(&first) = types.first() {
+        if let Some(Ok(caller)) = caller && let Some(&first) = types.first() {
             // TODO: Auto deref or ref.
             self.type_check(first, caller.ty, span);
         }
 
         let args = ast_args
-            .zip(types.into_iter().skip(caller.is_some() as usize))
+            .zip(
+                types
+                    .into_iter()
+                    .skip(caller.filter(|c| c.is_ok()).is_some() as usize),
+            )
             .map(|(arg, ty)| self.expr(arg, Some(ty), builder).map(|arg| arg.node));
         let args = caller
+            .and_then(|caller| caller.ok())
             .map(|caller| caller.node)
             .into_iter()
             .map(Some)
@@ -514,6 +539,7 @@ impl TyChecker<'_> {
         path @ PathExprAst { start, segments }: PathExprAst,
         _builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
+        let ty = self.typec.types.base(ty);
         match *segments {
             [] => {
                 let ty_id = self.typec.types.id(ty);
@@ -730,6 +756,14 @@ impl TyChecker<'_> {
             (r#const.joined(control_flow), self.source) {
                 err[r#const]: "this is what defines const context";
                 info[control_flow]: "this is the control flow keyword that is not allowed in const context";
+            }
+        }
+
+        push too_many_params(self, params: TyGenericsAst, max: usize) {
+            err: "too many type parameters";
+            info: ("expected at most {} parameters", max);
+            (params.span(), self.source) {
+                err[params.span()]: "found here";
             }
         }
     }

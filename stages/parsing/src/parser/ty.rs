@@ -57,7 +57,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TyInstanceAst<'a> {
-    pub ident: PathExprAst<'a>,
+    pub path: PathExprAst<'a>,
     pub params: TyGenericsAst<'a>,
 }
 
@@ -68,13 +68,13 @@ impl<'a> Ast<'a> for TyInstanceAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ident,): Self::Args) -> Option<Self> {
         Some(TyInstanceAst {
-            ident,
+            path: ident,
             params: ctx.parse()?,
         })
     }
 
     fn span(&self) -> Span {
-        self.ident.span().joined(self.params.span())
+        self.path.span().joined(self.params.span())
     }
 }
 

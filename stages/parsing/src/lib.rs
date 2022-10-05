@@ -71,7 +71,7 @@ pub use parser::{
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
         DotExprAst, ExprAst, PathInstanceAst, ReturnExprAst, StructConstructorAst,
-        StructConstructorBodyAst, UnitExprAst,
+        StructConstructorBodyAst, TypedPathAst, UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},

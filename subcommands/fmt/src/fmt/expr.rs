@@ -52,6 +52,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Int(span) | UnitExprAst::Char(span) => fmt.write_span(span),
             UnitExprAst::Const(run) => run.display(fmt),
             UnitExprAst::PathInstance(path) => path.display(fmt),
+            UnitExprAst::TypedPath(path) => path.display(fmt),
         }
     }
 
@@ -65,7 +66,37 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Int(int) | UnitExprAst::Char(int) => int.len(),
             UnitExprAst::Const(run) => run.flat_len(fmt),
             UnitExprAst::PathInstance(path) => path.flat_len(fmt),
+            UnitExprAst::TypedPath(path) => path.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for TypedPathAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match self.ty {
+            TyAst::Path(path) => path.display(fmt),
+            TyAst::Instance(instance) => {
+                instance.path.display(fmt);
+                fmt.write_span(self.slash);
+                instance.params.display(fmt);
+            }
+            _ => unreachable!(),
+        };
+        fmt.write_span(self.slash);
+        match self.path {
+            Ok(path) => path.display(fmt),
+            Err(path) => path.display(fmt),
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.ty.flat_len(fmt)
+            + self.slash.len()
+            + self.slash.len()
+            + match self.path {
+                Ok(path) => path.flat_len(fmt),
+                Err(path) => path.flat_len(fmt),
+            }
     }
 }
 

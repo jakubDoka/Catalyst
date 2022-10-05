@@ -120,7 +120,7 @@ fn main() {
                     fn [T] pass(v: T) -> T => v;
                     struct [T] A;
                     impl [T] A[T] {
-                        fn pass(s: uint) -> uint => s;
+                        fn pass(s: T) -> T => s;
                     };
                 }
             }
@@ -130,9 +130,9 @@ fn main() {
                     "./b"
                 };
 
-
                 fn main() -> uint => a::pass(uint::a::pass(a::A::a::pass(0).b::pass()));
                 fn other_main() -> uint => a::pass::[uint](0.pass_other::[uint](0));
+                fn third_main() -> uint =>  b::A::[uint]::b::pass(b::A::b::pass(0));
             }
         }
     }
