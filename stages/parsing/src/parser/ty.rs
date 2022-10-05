@@ -12,6 +12,7 @@ pub enum TyAst<'a> {
     Instance(TyInstanceAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
     Tuple(TyTupleAst<'a>),
+    Wildcard(Span),
 }
 
 impl<'a> Ast<'a> for TyAst<'a> {
@@ -22,6 +23,10 @@ impl<'a> Ast<'a> for TyAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             Ident => {
+                if ctx.current_token_str() == "_" {
+                    return Some(Self::Wildcard(ctx.advance().span));
+                }
+
                 let ident = ctx.parse();
 
                 if ctx.at_tok(TokenKind::LeftBracket) {
@@ -45,6 +50,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
             TyAst::Instance(instance) => instance.span(),
             TyAst::Pointer(pointer) => pointer.span(),
             TyAst::Tuple(tuple) => tuple.span(),
+            TyAst::Wildcard(span) => span,
         }
     }
 }

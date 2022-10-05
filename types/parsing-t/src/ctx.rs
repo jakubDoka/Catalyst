@@ -232,6 +232,14 @@ impl<'a> ParsingCtx<'_, 'a> {
                 err[span]: "this is invalid";
             }
         }
+
+        push invalid_instance_path(self, path: Span) {
+            err: "invalid path for instance";
+            help: "only valid syntax for path in instance is `<module>::<item>`";
+            (path, self.source) {
+                err[path]: "this is invalid";
+            }
+        }
     }
 
     pub fn display_parse_stack(&self) -> String {

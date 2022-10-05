@@ -51,6 +51,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Return(ret) => ret.display(fmt),
             UnitExprAst::Int(span) | UnitExprAst::Char(span) => fmt.write_span(span),
             UnitExprAst::Const(run) => run.display(fmt),
+            UnitExprAst::PathInstance(path) => path.display(fmt),
         }
     }
 
@@ -63,7 +64,20 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::Return(ret) => ret.flat_len(fmt),
             UnitExprAst::Int(int) | UnitExprAst::Char(int) => int.len(),
             UnitExprAst::Const(run) => run.flat_len(fmt),
+            UnitExprAst::PathInstance(path) => path.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for PathInstanceAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        self.path.display(fmt);
+        fmt.write_span(self.slash);
+        self.params.display(fmt);
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.path.flat_len(fmt) + self.slash.len() + self.params.flat_len(fmt)
     }
 }
 
@@ -91,11 +105,19 @@ impl<'a> FmtAst for DotExprAst<'a> {
             fmt.unindent();
         }
         fmt.write_span(self.dot);
-        self.rhs.display(fmt);
+        match self.rhs {
+            Ok(rhs) => rhs.display(fmt),
+            Err(rhs) => rhs.display(fmt),
+        }
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
-        self.lhs.flat_len(fmt) + ".".len() + self.rhs.flat_len(fmt)
+        self.lhs.flat_len(fmt)
+            + ".".len()
+            + match self.rhs {
+                Ok(rhs) => rhs.flat_len(fmt),
+                Err(rhs) => rhs.flat_len(fmt),
+            }
     }
 }
 

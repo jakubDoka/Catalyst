@@ -115,6 +115,7 @@ fn main() {
                 file "b.ctl" {
                     impl uint {
                         fn pass(s: Self) -> uint => s;
+                        fn [T] pass_other(s: Self, p: T) -> T => p;
                     };
                     fn [T] pass(v: T) -> T => v;
                     struct A;
@@ -131,7 +132,7 @@ fn main() {
 
 
                 fn main() -> uint => a::pass(uint::a::pass(a::A::a::pass(0).b::pass()));
-                fn other_main() -> uint => a::pass::[uint](0);
+                fn other_main() -> uint => a::pass::[uint](0.pass_other::[uint](0));
             }
         }
     }

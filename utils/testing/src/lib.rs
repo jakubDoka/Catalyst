@@ -242,19 +242,17 @@ pub mod items {
                     content
                 };
 
-                let source = unsafe { packages.sources.next() };
+                let source = packages.sources.push(Source {
+                    path: path.clone(),
+                    line_mapping: LineMapping::new(&c),
+                    content: c.to_string(),
+                });
 
                 let (res, c) = formatter(fmt, c, source);
 
                 let res = res.unwrap_or(&c);
 
                 resources.add_file(&path, res.to_string());
-
-                packages.sources.push(Source {
-                    path,
-                    line_mapping: LineMapping::new(res),
-                    content: res.to_string(),
-                });
             }
 
             for mut folder in self.folders.drain(..) {

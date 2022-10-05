@@ -70,8 +70,8 @@ pub use parser::{
     bound::SpecExprAst,
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
-        DotExprAst, ExprAst, ReturnExprAst, StructConstructorAst, StructConstructorBodyAst,
-        UnitExprAst,
+        DotExprAst, ExprAst, PathInstanceAst, ReturnExprAst, StructConstructorAst,
+        StructConstructorBodyAst, UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},

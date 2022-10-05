@@ -219,6 +219,7 @@ impl TyChecker<'_> {
             UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
             UnitExprAst::StructConstructor(_) => todo!(),
             UnitExprAst::DotExpr(_) => todo!(),
+            UnitExprAst::PathInstance(_) => todo!(),
         }
     }
 
@@ -258,11 +259,18 @@ impl TyChecker<'_> {
         let args = args.iter().copied();
         let res = try {
             match callable {
-                UnitExprAst::Path(path) => (self.func_path(path, builder)?, None),
+                UnitExprAst::Path(path) => (self.func_path(path, builder)?, None, None),
+                UnitExprAst::PathInstance(PathInstanceAst { path, params, .. }) => {
+                    (self.func_path(path, builder)?, None, Some(params))
+                }
                 UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
                     let lhs = self.unit_expr(lhs, None, builder)?;
-                    let func = self.method_path(lhs.ty, rhs, builder)?;
-                    (func, Some(lhs))
+                    let (path, params) = match rhs {
+                        Ok(path) => (path, None),
+                        Err(instance) => (instance.path, Some(instance.params)),
+                    };
+                    let func = self.method_path(lhs.ty, path, builder)?;
+                    (func, Some(lhs), params)
                 }
                 kind @ (UnitExprAst::Return(..)
                 | UnitExprAst::Call(..)
@@ -275,7 +283,7 @@ impl TyChecker<'_> {
             }
         };
 
-        let Some((func_res, caller)) = res else {
+        let Some((func_res, caller, low_params)) = res else {
             // more diagnostics
             for arg in args {
                 self.expr(arg, None, builder);
@@ -285,9 +293,16 @@ impl TyChecker<'_> {
         };
 
         match func_res {
-            FuncLookupResult::Func(func) if self.typec[func].is_generic() => {
-                self.direct_generic_call(func, caller, args, call.span(), inference, builder)
-            }
+            FuncLookupResult::Func(func) if self.typec[func].is_generic() => self
+                .direct_generic_call(
+                    func,
+                    caller,
+                    low_params,
+                    args,
+                    call.span(),
+                    inference,
+                    builder,
+                ),
             FuncLookupResult::Func(func) => {
                 self.direct_concrete_call(func, caller, args, call.span(), builder)
             }
@@ -295,10 +310,12 @@ impl TyChecker<'_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn direct_generic_call<'a>(
         &mut self,
         func: VRef<Func>,
         caller: Option<TypedTirNode<'a>>,
+        params: Option<TyGenericsAst>,
         args: impl Iterator<Item = ExprAst>,
         span: Span,
         inference: Inference,
@@ -311,27 +328,34 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let mut params = bumpvec![None; self.typec.spec_slices[generics].len()
+        let mut param_slots = bumpvec![None; self.typec.spec_slices[generics].len()
             + self.typec.spec_slices[upper_generics].len()];
 
+        if let Some(params) = params {
+            for (i, &param) in params.iter().enumerate() {
+                let index = self.typec.spec_slices[upper_generics].len() + i;
+                param_slots[index] = self.ty(param); // recovery
+            }
+        }
+
         if let Some(inference) = inference {
-            self.infer_params(&mut params, inference, signature.ret, span)?;
+            self.infer_params(&mut param_slots, inference, signature.ret, span)?;
         }
 
         let types = self.typec.ty_slices[signature.args].to_bumpvec();
 
         if let Some(caller) = caller && let Some(&first) = types.first() {
-            self.infer_params(&mut params, caller.ty, first, span);
+            self.infer_params(&mut param_slots, caller.ty, first, span);
         }
 
         let args = args
             .zip(types.into_iter().skip(caller.is_some() as usize))
             .map(|(arg, ty)| {
-                let inferred = self.typec.try_instantiate(ty, &params, self.interner);
+                let inferred = self.typec.try_instantiate(ty, &param_slots, self.interner);
                 let expr = self.expr(arg, inferred, builder)?;
 
                 if inferred.is_none() {
-                    self.infer_params(&mut params, expr.ty, ty, arg.span())?;
+                    self.infer_params(&mut param_slots, expr.ty, ty, arg.span())?;
                 }
 
                 Some(expr.node)
@@ -343,7 +367,7 @@ impl TyChecker<'_> {
             .chain(args)
             .nsc_collect::<Option<BumpVec<_>>>()?;
 
-        let Some(params) = params.iter().copied().nsc_collect::<Option<BumpVec<_>>>() else {
+        let Some(params) = param_slots.iter().copied().nsc_collect::<Option<BumpVec<_>>>() else {
             todo!()
         };
 

@@ -80,6 +80,7 @@ impl TyChecker<'_> {
             TyAst::Instance(instance) => self.instance(instance),
             TyAst::Pointer(pointer) => self.pointer(*pointer),
             TyAst::Tuple(tuple) => self.tuple(tuple),
+            TyAst::Wildcard(..) => todo!(),
         }
     }
 

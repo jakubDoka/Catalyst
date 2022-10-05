@@ -73,6 +73,7 @@ pub enum UnitExprAst<'a> {
     DotExpr(&'a DotExprAst<'a>),
     Call(&'a CallExprAst<'a>),
     Path(PathExprAst<'a>),
+    PathInstance(PathInstanceAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
     Char(Span),
@@ -107,6 +108,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                     branch!(ctx => {
                         LeftCurly => ctx.parse_args((Some(unit?), slash))
                             .map(Self::StructConstructor),
+                        LeftBracket => ctx.parse_args((unit?, slash))
+                            .map(Self::PathInstance),
                     })
                 },
                 _ => break unit,
@@ -121,10 +124,42 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             DotExpr(dot) => dot.span(),
             Call(call) => call.span(),
             Path(path) => path.span(),
+            PathInstance(instance) => instance.span(),
             Return(ret) => ret.span(),
             Int(span) | Char(span) => span,
             Const(run) => run.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PathInstanceAst<'a> {
+    pub path: PathExprAst<'a>,
+    pub slash: Span,
+    pub params: TyGenericsAst<'a>,
+}
+
+impl<'a> Ast<'a> for PathInstanceAst<'a> {
+    type Args = (UnitExprAst<'a>, Span);
+
+    const NAME: &'static str = "path instance";
+
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a>,
+        (path, slash): Self::Args,
+    ) -> Option<Self> {
+        let UnitExprAst::Path(path) = path else {
+            ctx.invalid_instance_path(path.span())?;
+        };
+        Some(Self {
+            path,
+            slash,
+            params: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.path.span().joined(self.params.span())
     }
 }
 
@@ -168,7 +203,7 @@ impl<'a> Ast<'a> for StructConstructorAst<'a> {
 pub struct DotExprAst<'a> {
     pub lhs: UnitExprAst<'a>,
     pub dot: Span,
-    pub rhs: PathExprAst<'a>,
+    pub rhs: Result<PathExprAst<'a>, PathInstanceAst<'a>>,
 }
 
 impl<'a> Ast<'a> for DotExprAst<'a> {
@@ -180,12 +215,22 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
         Some(Self {
             lhs,
             dot: ctx.advance().span,
-            rhs: ctx.parse()?,
+            rhs: {
+                let path = ctx.parse()?;
+                if ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::LeftBracket) {
+                    let slash = ctx.advance().span;
+                    Err(ctx.parse_args((UnitExprAst::Path(path), slash))?)
+                } else {
+                    Ok(path)
+                }
+            },
         })
     }
 
     fn span(&self) -> Span {
-        self.lhs.span().joined(self.rhs.span())
+        self.lhs
+            .span()
+            .joined(self.rhs.map_or_else(|e| e.span(), |o| o.span()))
     }
 }
 
