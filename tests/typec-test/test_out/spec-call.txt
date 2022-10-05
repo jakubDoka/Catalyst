@@ -5,13 +5,6 @@ error: 'u32' does not implement '0\Clay'
    |                         ^^^^^^^ when calling this
    |
 
-error: '0\Foo[uint]' does not implement '0\Clay'
-  --> spec-call\root.ctl:11:30
-   |
-11 | fn last_main -> Foo[uint] => pass(Foo\{ a: 0 })
-   |                              ^^^^^^^^^^^^^^^^^^ when calling this
-   |
-
 info: tir repr of functions:
  fn [todo] 0\pass(var0: param 0) -> param 0 return var0
 
