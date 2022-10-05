@@ -3,11 +3,15 @@ info: tir repr of functions:
 
 fn [todo] uint\2\pass(var0: uint) -> uint return var0
 
+fn [todo] 2\A\2\pass(var0: uint) -> uint return var0
+
 fn [todo] 0\pass(var0: param 0) -> param 0 return var0
 
 fn [todo] uint\0\pass(var0: uint) -> uint return var0
 
-fn [todo] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(0)))
+fn [todo] 0\A\0\pass(var0: uint) -> uint return var0
+
+fn [todo] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(2\A\2\pass(0))))
 
 
 
