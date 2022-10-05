@@ -7,6 +7,7 @@ pub type FuncSlices = PoolBumpMap<VRef<Func>>;
 #[derive(Clone, Copy, Default)]
 pub struct Func {
     pub generics: VRefSlice<Spec>,
+    pub owner: Option<VRef<Ty>>,
     pub upper_generics: VRefSlice<Spec>,
     pub signature: Signature,
     pub flags: FuncFlags,

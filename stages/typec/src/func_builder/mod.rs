@@ -260,27 +260,27 @@ impl TyChecker<'_> {
         let args = args.iter().copied();
         let res = try {
             match callable {
-                UnitExprAst::Path(path) => (self.func_path(path, builder)?, None, None),
+                UnitExprAst::Path(path) => (self.func_path(path, builder)?, Caller::None, None),
                 UnitExprAst::PathInstance(PathInstanceAst { path, params, .. }) => {
-                    (self.func_path(path, builder)?, None, Some(params))
+                    (self.func_path(path, builder)?, Caller::None, params)
                 }
-                UnitExprAst::TypedPath(TypedPathAst { ty, path, .. }) => {
+                UnitExprAst::TypedPath(TypedPathAst {
+                    ty,
+                    path: PathInstanceAst { path, params },
+                    ..
+                }) => {
                     let ty = self.ty(ty)?;
-                    let (path, params) = match path {
-                        Ok(path) => (path, None),
-                        Err(instance) => (instance.path, Some(instance.params)),
-                    };
                     let func = self.method_path(ty, path, builder)?;
-                    (func, Some(Err(ty)), params)
+                    (func, Caller::Static(ty), params)
                 }
-                UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
+                UnitExprAst::DotExpr(&DotExprAst {
+                    lhs,
+                    rhs: PathInstanceAst { path, params },
+                    ..
+                }) => {
                     let lhs = self.unit_expr(lhs, None, builder)?;
-                    let (path, params) = match rhs {
-                        Ok(path) => (path, None),
-                        Err(instance) => (instance.path, Some(instance.params)),
-                    };
                     let func = self.method_path(lhs.ty, path, builder)?;
-                    (func, Some(Ok(lhs)), params)
+                    (func, Caller::Value(lhs), params)
                 }
                 kind @ (UnitExprAst::Return(..)
                 | UnitExprAst::Call(..)
@@ -307,7 +307,7 @@ impl TyChecker<'_> {
                 .direct_generic_call(
                     func,
                     caller,
-                    low_params,
+                    low_params.map(|(.., params)| params),
                     args,
                     call.span(),
                     inference,
@@ -324,7 +324,7 @@ impl TyChecker<'_> {
     fn direct_generic_call<'a>(
         &mut self,
         func: VRef<Func>,
-        caller: Option<Result<TypedTirNode<'a>, VRef<Ty>>>,
+        caller: Caller<'a>,
         params: Option<TyGenericsAst>,
         args: impl Iterator<Item = ExprAst>,
         span: Span,
@@ -335,6 +335,7 @@ impl TyChecker<'_> {
             generics,
             upper_generics,
             signature,
+            owner,
             ..
         } = self.typec.funcs[func];
 
@@ -359,16 +360,18 @@ impl TyChecker<'_> {
 
         let types = self.typec.ty_slices[signature.args].to_bumpvec();
 
-        if let Some(Ok(caller)) = caller && let Some(&first) = types.first() {
-            self.infer_params(&mut param_slots, caller.ty, first, span);
+        match caller {
+            Caller::Value(value) if let Some(&first) = types.first() => {
+                self.infer_params(&mut param_slots, value.ty, first, span);
+            },
+            Caller::Static(ty) if let Some(owner) = owner => {
+                self.infer_params(&mut param_slots, ty, owner, span);
+            },
+            _ => (),
         }
 
         let args = args
-            .zip(
-                types
-                    .into_iter()
-                    .skip(caller.filter(Result::is_ok).is_some() as usize),
-            )
+            .zip(types.into_iter().skip(caller.is_value() as usize))
             .map(|(arg, ty)| {
                 let inferred = self.typec.try_instantiate(ty, &param_slots, self.interner);
                 let expr = self.expr(arg, inferred, builder)?;
@@ -380,8 +383,7 @@ impl TyChecker<'_> {
                 Some(expr.node)
             });
         let args = caller
-            .and_then(|caller| caller.ok())
-            .map(|caller| caller.node)
+            .value()
             .into_iter()
             .map(Some)
             .chain(args)
@@ -451,7 +453,7 @@ impl TyChecker<'_> {
     fn direct_concrete_call<'a>(
         &mut self,
         func: VRef<Func>,
-        caller: Option<Result<TypedTirNode<'a>, VRef<Ty>>>,
+        caller: Caller<'a>,
         ast_args: impl Iterator<Item = ExprAst>,
         span: Span,
         builder: &mut TirBuilder<'a>,
@@ -460,21 +462,16 @@ impl TyChecker<'_> {
 
         let types = self.typec.ty_slices[signature.args].to_bumpvec();
 
-        if let Some(Ok(caller)) = caller && let Some(&first) = types.first() {
+        if let Caller::Value(caller) = caller && let Some(&first) = types.first() {
             // TODO: Auto deref or ref.
             self.type_check(first, caller.ty, span);
         }
 
         let args = ast_args
-            .zip(
-                types
-                    .into_iter()
-                    .skip(caller.filter(|c| c.is_ok()).is_some() as usize),
-            )
+            .zip(types.into_iter().skip(caller.is_value() as usize))
             .map(|(arg, ty)| self.expr(arg, Some(ty), builder).map(|arg| arg.node));
         let args = caller
-            .and_then(|caller| caller.ok())
-            .map(|caller| caller.node)
+            .value()
             .into_iter()
             .map(Some)
             .chain(args)
@@ -770,6 +767,25 @@ impl TyChecker<'_> {
 }
 
 pub type Inference = Option<VRef<Ty>>;
+
+enum Caller<'a> {
+    None,
+    Value(TypedTirNode<'a>),
+    Static(VRef<Ty>),
+}
+
+impl<'a> Caller<'a> {
+    fn is_value(&self) -> bool {
+        matches!(self, Caller::Value(..))
+    }
+
+    fn value(&self) -> Option<TirNode<'a>> {
+        match self {
+            Caller::Value(value) => Some(value.node),
+            _ => None,
+        }
+    }
+}
 
 enum FuncLookupResult<'a> {
     Func(VRef<Func>),

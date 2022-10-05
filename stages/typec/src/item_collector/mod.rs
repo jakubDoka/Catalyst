@@ -84,11 +84,10 @@ impl TyChecker<'_> {
             ImplItemAst::Func(&func) => (i, func),
         });
 
-        let parsed_ty_base = self.typec.types.base(parsed_ty);
         let scope_data = ScopeData {
             offset: generics.len(),
             upper_generics: parsed_generics,
-            owner: Some(self.typec.types.id(parsed_ty_base)),
+            owner: Some(parsed_ty),
             upper_vis: vis,
         };
 
@@ -149,8 +148,9 @@ impl TyChecker<'_> {
             upper_vis,
         }: ScopeData,
     ) -> Option<(ModuleItem, VRef<Func>)> {
+        let owner_id = owner.map(|owner| self.typec.types.id(self.typec.types.base(owner)));
         let id = intern_scoped_ident!(self, name.ident);
-        let id = owner.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
+        let id = owner_id.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
 
         let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
@@ -176,6 +176,7 @@ impl TyChecker<'_> {
 
         let func = |_: &mut Funcs| Func {
             generics: parsed_generics,
+            owner,
             upper_generics,
             signature,
             flags: FuncFlags::ENTRY & entry.is_some(),
@@ -186,7 +187,7 @@ impl TyChecker<'_> {
         let id = self.typec.funcs.get_or_insert(id, func);
 
         let vis = vis.or(upper_vis);
-        let local_id = owner.map_or(name.ident, |owner| {
+        let local_id = owner_id.map_or(name.ident, |owner| {
             self.interner.intern(scoped_ident!(owner, name.ident))
         });
         Some((ModuleItem::new(local_id, id, name.span, vis), id))
@@ -271,7 +272,7 @@ impl TyChecker<'_> {
 struct ScopeData {
     offset: usize,
     upper_generics: VRefSlice<Spec>,
-    owner: Option<VRef<str>>,
+    owner: Option<VRef<Ty>>,
     upper_vis: Vis,
 }
 
