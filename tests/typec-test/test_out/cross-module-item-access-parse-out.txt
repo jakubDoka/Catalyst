@@ -1,8 +1,8 @@
-error: expected '{' but got '['
- --> cross-module-item-access\root.ctl:1:144
+error: expected '{' | '[' but got Ident
+ --> cross-module-item-access\root.ctl:1:225
   |
-1 | use { "./a" ; "./b" } ; fn main() -> uint => a \ pass(uint \ a \ pass(a \ A \ a \ pass(0).b \ pass())) ; fn other_main() -> uint => a \ pass \ [uint] (0) ;
-  |                                                                                                                                                ^ token located here
+1 | use { "./a" ; "./b" } ; fn main() -> uint => a \ pass(uint \ a \ pass(a \ A \ a \ pass(0).b \ pass())) ; fn other_main() -> uint => a \ pass \ [uint] (0.pass_other \ [uint] (0)) ; fn third_main() -> uint => b \ A \ [uint] \ b \ pass(b \ A \ b \ pass(0)) ;
+  |                                                                                                                                                                                                                                 ^ token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr
 
