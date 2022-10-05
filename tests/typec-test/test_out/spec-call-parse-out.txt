@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got 'for'
+ --> spec-call\root.ctl:1:28
+  |
+1 | priv spec Clay ; impl Clay for uint fn [T : Clay] pass(v : T) -> T => v ; fn main() -> uint => pass(0) ; fn main() -> u32 => pass(0) ;
+  |                            ^^^ token located here
+  |
+  = info: list
+
