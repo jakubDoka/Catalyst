@@ -1,3 +1,19 @@
+error: expected '\n' | ';' but got '['
+ --> cross-module-item-access\root.ctl:8:29
+  |
+8 | fn third_main -> uint => b\A[uint]\b\pass(b\A\b\pass(0))
+  |                             ^ token located here
+  |
+  = info: grouped items -> list
+
+error: invalid symbol type
+ --> cross-module-item-access\root.ctl:8:26
+  |
+8 | fn third_main -> uint => b\A[uint]\b\pass(b\A\b\pass(0))
+  |                          - info: symbol used here
+  |
+  = info: expected Var but got Module
+
 info: tir repr of functions:
  fn [todo] 2\pass(var0: param 0) -> param 0 return var0
 
