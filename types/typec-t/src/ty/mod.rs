@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, ops::Index};
 
 use crate::*;
 use lexing_t::Span;
@@ -17,8 +17,6 @@ pub struct Ty {
 }
 
 impl_located!(Ty);
-impl_variadic!(Ty, TyKind);
-impl_flagged!(Ty, TyFlags);
 
 impl Ty {
     gen_v_ref_constants!(
@@ -83,8 +81,6 @@ pub struct Field {
     pub span: Option<Span>,
 }
 
-impl_flagged!(Field, FieldFlags);
-
 bitflags! {
     FieldFlags: u8 {
         MUTABLE
@@ -100,7 +96,7 @@ bitflags! {
 
 impl TyExt for Types {}
 
-pub trait TyExt: StorageExt<Ty> {
+pub trait TyExt: Index<VRef<Ty>, Output = Ty> {
     #[inline]
     fn is_signed(&self, ty: VRef<Ty>) -> bool {
         matches!(self[ty].kind, TyKind::Integer(TyInteger { signed, .. }) if signed)
@@ -117,14 +113,18 @@ pub trait TyExt: StorageExt<Ty> {
 
     #[inline]
     fn pointer_base(&self, target: VRef<Ty>) -> VRef<Ty> {
-        self.try_inner::<TyPointer>(target)
+        self[target]
+            .kind
+            .try_cast::<TyPointer>()
             .map(|ty| ty.base)
             .unwrap_or(target)
     }
 
     #[inline]
     fn instance_base(&self, target: VRef<Ty>) -> VRef<Ty> {
-        self.try_inner::<TyInstance>(target)
+        self[target]
+            .kind
+            .try_cast::<TyInstance>()
             .map(|ty| ty.base)
             .unwrap_or(target)
     }
@@ -136,6 +136,6 @@ pub trait TyExt: StorageExt<Ty> {
 
     #[inline]
     fn is_generic(&self, target: VRef<Ty>) -> bool {
-        self.flags(target).contains(TyFlags::GENERIC)
+        self[target].flags.contains(TyFlags::GENERIC)
     }
 }

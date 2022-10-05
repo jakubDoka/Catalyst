@@ -24,7 +24,6 @@ impl Func {
 }
 
 impl_located!(Func);
-impl_flagged!(Func, FuncFlags);
 
 bitflags! {
     FuncFlags: u8 {

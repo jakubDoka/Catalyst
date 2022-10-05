@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, ops::Index};
 
 use crate::*;
 use lexing_t::Span;
@@ -16,8 +16,6 @@ pub struct Spec {
 }
 
 impl_located!(Spec);
-impl_variadic!(Spec, BoundKind);
-impl_flagged!(Spec, BoundFlags);
 
 impl Spec {
     gen_v_ref_constants!(ANY);
@@ -63,10 +61,12 @@ bitflags! {
 
 impl BoundExt for Specs {}
 
-pub trait BoundExt: StorageExt<Spec> {
+pub trait BoundExt: Index<VRef<Spec>, Output = Spec> {
     #[inline]
     fn base(&self, bound: VRef<Spec>) -> VRef<Spec> {
-        self.try_inner::<SpecInstance>(bound)
+        self[bound]
+            .kind
+            .try_cast::<SpecInstance>()
             .map(|bound| bound.base)
             .unwrap_or(bound)
     }

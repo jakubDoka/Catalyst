@@ -149,10 +149,9 @@ impl TyChecker<'_> {
     fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<VRef<Ty>> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        let depth = self
-            .typec
-            .types
-            .try_inner::<TyPointer>(base)
+        let depth = self.typec.types[base]
+            .kind
+            .try_cast::<TyPointer>()
             .map_or(0, |p| p.depth)
             + 1;
         let segments = self.typec.pointer_id(mutability, base);
@@ -166,7 +165,7 @@ impl TyChecker<'_> {
             }
             .into(),
             flags: TyFlags::GENERIC & (s.is_generic(base) | s.is_generic(mutability)),
-            loc: s.locate(base),
+            loc: s[base].loc,
         };
 
         Some(self.typec.types.get_or_insert(id, fallback))
@@ -197,7 +196,7 @@ impl TyChecker<'_> {
         let fallback = |s: &mut Types| Ty {
             kind: TyInstance { base, args }.into(),
             flags: TyFlags::GENERIC & generic,
-            loc: s.locate(base),
+            loc: s[base].loc,
         };
 
         Some(self.typec.types.get_or_insert(key, fallback))

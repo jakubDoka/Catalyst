@@ -118,8 +118,8 @@ fn main() {
                         fn [T] pass_other(s: Self, p: T) -> T => p;
                     };
                     fn [T] pass(v: T) -> T => v;
-                    struct A;
-                    impl A {
+                    struct [T] A;
+                    impl [T] A[T] {
                         fn pass(s: uint) -> uint => s;
                     };
                 }

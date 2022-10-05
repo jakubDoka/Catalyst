@@ -1,9 +1,9 @@
 use core::fmt;
+use std::mem;
 use std::{
     default::default,
     ops::{Index, IndexMut},
 };
-use std::{hash::Hash, mem};
 
 use crate::*;
 use lexing_t::Span;
@@ -343,85 +343,6 @@ impl Typec {
             TyKind::Struct(_) | TyKind::Integer(_) | TyKind::Bool => ty,
         })
     }
-}
-
-impl<K: Hash + Eq, V> StorageExt<V> for OrderedMap<K, V> {}
-impl<V, CACHE> StorageExt<V> for BumpMap<V, CACHE> {}
-impl<V, CACHE> StorageExt<V> for PoolBumpMap<V, CACHE> {}
-
-pub trait StorageExt<K>: IndexMut<VRef<K>, Output = K> {
-    #[inline]
-    fn locate(&self, target: VRef<K>) -> Loc
-    where
-        Self::Output: Located,
-    {
-        self[target].loc()
-    }
-
-    #[inline]
-    fn try_inner<'a, T>(&'a self, target: VRef<K>) -> Option<&'a T>
-    where
-        K: Variadic,
-        &'a K::Kind: TryInto<&'a T>,
-    {
-        self[target].kind().try_into().ok()
-    }
-
-    #[inline]
-    fn try_inner_mut<'a, T>(&'a mut self, target: VRef<K>) -> Option<&'a mut T>
-    where
-        K: Variadic,
-        &'a mut K::Kind: TryInto<&'a mut T>,
-    {
-        self[target].kind_mut().try_into().ok()
-    }
-
-    #[inline]
-    fn inner<'a, T>(&'a self, target: VRef<K>) -> &'a T
-    where
-        K: Variadic,
-        &'a K::Kind: TryInto<&'a T>,
-    {
-        self.try_inner(target).unwrap()
-    }
-
-    #[inline]
-    fn inner_mut<'a, T>(&'a mut self, target: VRef<K>) -> &'a mut T
-    where
-        K: Variadic,
-        &'a mut K::Kind: TryInto<&'a mut T>,
-    {
-        self.try_inner_mut(target).unwrap()
-    }
-
-    #[inline]
-    fn flags(&self, target: VRef<K>) -> &<Self::Output as Flagged>::Flags
-    where
-        Self::Output: Flagged,
-    {
-        self[target].flags()
-    }
-
-    #[inline]
-    fn flags_mut(&mut self, target: VRef<K>) -> &mut <Self::Output as Flagged>::Flags
-    where
-        Self::Output: Flagged,
-    {
-        self[target].flags_mut()
-    }
-}
-
-pub trait Variadic: 'static {
-    type Kind: 'static;
-
-    fn kind(&self) -> &Self::Kind;
-    fn kind_mut(&mut self) -> &mut Self::Kind;
-}
-
-pub trait Flagged: 'static {
-    type Flags: 'static;
-    fn flags(&self) -> &Self::Flags;
-    fn flags_mut(&mut self) -> &mut Self::Flags;
 }
 
 pub trait Located {

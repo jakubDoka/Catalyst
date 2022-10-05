@@ -122,36 +122,6 @@ macro_rules! impl_located {
     };
 }
 
-#[macro_export]
-macro_rules! impl_variadic {
-    ($ty:ty, $kind:ty) => {
-        impl $crate::Variadic for $ty {
-            type Kind = $kind;
-            fn kind(&self) -> &Self::Kind {
-                &self.kind
-            }
-            fn kind_mut(&mut self) -> &mut Self::Kind {
-                &mut self.kind
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_flagged {
-    ($ty:ty, $flags:ty) => {
-        impl $crate::Flagged for $ty {
-            type Flags = $flags;
-            fn flags(&self) -> &Self::Flags {
-                &self.flags
-            }
-            fn flags_mut(&mut self) -> &mut Self::Flags {
-                &mut self.flags
-            }
-        }
-    };
-}
-
 mod func;
 mod scope;
 mod spec;
@@ -175,7 +145,7 @@ pub use {
         Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
         TySlices, TyStruct, Types,
     },
-    typec::{Flagged, Loc, Located, StorageExt, Typec, Variadic},
+    typec::{Loc, Located, Typec},
 };
 
 #[cfg(test)]
