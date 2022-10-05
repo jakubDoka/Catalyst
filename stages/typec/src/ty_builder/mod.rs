@@ -21,13 +21,13 @@ impl TyChecker<'_> {
         self
     }
 
-    pub fn build_spec(&mut self, spec: VRef<Spec>, SpecAst { generics, body, .. }: SpecAst) {
+    pub fn build_spec(&mut self, spec: VRef<Ty>, SpecAst { generics, body, .. }: SpecAst) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
         let methods = self.build_spec_methods(spec, body, generics.len());
         let generics = self.generics(generics);
-        self.typec.specs[spec].kind = SpecBase {
+        self.typec.types[spec].kind = TySpec {
             inherits: default(),
             generics,
             methods,
@@ -39,7 +39,7 @@ impl TyChecker<'_> {
 
     fn build_spec_methods(
         &mut self,
-        parent: VRef<Spec>,
+        parent: VRef<Ty>,
         body: SpecBodyAst,
         offset: usize,
     ) -> VSlice<SpecFunc> {

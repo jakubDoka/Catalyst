@@ -339,8 +339,8 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let upper_generics_count = self.typec.spec_slices[upper_generics].len();
-        let generics_count = self.typec.spec_slices[generics].len();
+        let upper_generics_count = self.typec.ty_slices[upper_generics].len();
+        let generics_count = self.typec.ty_slices[generics].len();
         let mut param_slots = bumpvec![None; generics_count + upper_generics_count];
 
         if let Some(params) = params {
@@ -415,39 +415,10 @@ impl TyChecker<'_> {
         template: VRef<Ty>,
         span: Span,
     ) -> Option<()> {
-        let mut stack = bumpvec![(reference, template)];
-
-        while let Some((reference, template)) = stack.pop() {
-            if reference == template {
-                continue;
-            }
-
-            match (
-                self.typec.types[reference].kind,
-                self.typec.types[template].kind,
-            ) {
-                (TyKind::Pointer(reference), TyKind::Pointer(template)) => {
-                    stack.push((reference.base, template.base));
-                    stack.push((reference.mutability, template.mutability));
-                }
-                (TyKind::Instance(reference), TyKind::Instance(template)) => {
-                    self.type_check(template.base, reference.base, span)?;
-                    stack.extend(
-                        self.typec.ty_slices[reference.args]
-                            .iter()
-                            .copied()
-                            .zip(self.typec.ty_slices[template.args].iter().copied()),
-                    );
-                }
-                (_, TyKind::Param(index)) if let Some(inferred) = params[index as usize] => {
-                    self.type_check(inferred, reference, span)?;
-                }
-                (_, TyKind::Param(index)) => params[index as usize] = Some(reference),
-                _ => self.generic_ty_mismatch(reference, template, span)?,
-            }
-        }
-
-        Some(())
+        self.typec
+            .compatible(params, reference, template)
+            .map_err(|(r, t)| self.generic_ty_mismatch(r, t, span))
+            .ok()
     }
 
     fn direct_concrete_call<'a>(

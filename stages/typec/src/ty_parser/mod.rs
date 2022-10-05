@@ -54,13 +54,13 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Spec> {
+    pub fn generics(&mut self, generic_ast: GenericsAst) -> VRefSlice<Ty> {
         let mut generics = bumpvec!(cap generic_ast.len());
         for &GenericParamAst { bounds, .. } in generic_ast.iter() {
-            let bound = self.bound_sum(bounds.iter()).unwrap_or_default();
+            let bound = self.spec_sum(bounds.iter()).unwrap_or_default();
             generics.push(bound);
         }
-        self.typec.spec_slices.bump(generics)
+        self.typec.ty_slices.bump(generics)
     }
 
     pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
@@ -115,21 +115,18 @@ impl TyChecker<'_> {
         Some(self.typec.types.get_or_insert(id, tuple))
     }
 
-    pub fn bound_sum<'a>(
-        &mut self,
-        bounds: impl Iterator<Item = &'a SpecExprAst<'a>>,
-    ) -> Option<VRef<Spec>> {
-        let mut bounds = bounds
-            .map(|&ast| self.bound(ast))
+    pub fn spec_sum<'a>(&mut self, specs: impl Iterator<Item = &'a TyAst<'a>>) -> Option<VRef<Ty>> {
+        let mut specs = specs
+            .map(|&ast| self.ty(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
-        bounds.sort_unstable_by_key(|b| b.index());
+        specs.sort_unstable_by_key(|b| b.index());
 
-        let segments = self.typec.bound_sum_id(&bounds);
+        let segments = self.typec.bound_sum_id(&specs);
         let key = self.interner.intern(segments);
-        let inherits = self.typec.spec_slices.bump(bounds);
+        let inherits = self.typec.ty_slices.bump(specs);
 
-        let fallback = |_: &mut Specs| Spec {
-            kind: SpecBase {
+        let fallback = |_: &mut Types| Ty {
+            kind: TySpec {
                 inherits,
                 ..default()
             }
@@ -137,13 +134,7 @@ impl TyChecker<'_> {
             ..default()
         };
 
-        Some(self.typec.specs.get_or_insert(key, fallback))
-    }
-
-    pub fn bound(&mut self, bound_ast: SpecExprAst) -> Option<VRef<Spec>> {
-        match bound_ast {
-            SpecExprAst::Path(ident) => self.spec_path(ident),
-        }
+        Some(self.typec.types.get_or_insert(key, fallback))
     }
 
     fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<VRef<Ty>> {
@@ -228,29 +219,6 @@ impl TyChecker<'_> {
                     .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)
             }
             item => self.invalid_symbol_type(item, start.span, TY_OR_MOD)?,
-        }
-    }
-
-    pub fn spec_path(
-        &mut self,
-        path @ PathExprAst { start, segments }: PathExprAst,
-    ) -> Option<VRef<Spec>> {
-        let item = self.lookup(start.ident, start.span, SPEC_OR_MOD)?;
-        match item {
-            ScopeItem::Spec(ty) => Some(ty),
-            ScopeItem::Module(module) => {
-                let Some(ty) = segments.first() else {
-                    self.invalid_ty_path(path);
-                    return None;
-                };
-                let segments = scoped_ident!(module.as_u32(), ty.ident);
-                let id = self.interner.intern(segments);
-                self.typec
-                    .specs
-                    .index(id)
-                    .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), SPEC)?)
-            }
-            item => self.invalid_symbol_type(item, start.span, SPEC_OR_MOD)?,
         }
     }
 

@@ -55,8 +55,34 @@ impl TyChecker<'_> {
     ) -> Option<()> {
         match target {
             ImplTarget::Direct(ty) => self.collect_direct_impl(i, ty, r#impl, attrs, ctx),
-            ImplTarget::Spec(_, _, _) => todo!(),
+            ImplTarget::Spec(target, .., spec) => {
+                self.collect_spec_impl(i, target, spec, r#impl, attrs, ctx)
+            }
         }
+    }
+
+    pub fn collect_spec_impl(
+        &mut self,
+        i: usize,
+        target: TyAst,
+        spec: TyAst,
+        ImplAst {
+            vis,
+            generics,
+            body,
+            ..
+        }: ImplAst,
+        _: &[TopLevelAttributeAst],
+        ctx: &mut TyCheckerCtx,
+    ) -> Option<()> {
+        let frame = self.scope.start_frame();
+        self.insert_generics(generics, 0);
+        let parsed_generics = self.generics(generics);
+        let parsed_ty = self.ty(target);
+        let parsed_spec = self.ty(spec);
+
+        self.scope.end_frame(frame);
+        todo!()
     }
 
     pub fn collect_direct_impl(
@@ -109,15 +135,15 @@ impl TyChecker<'_> {
         &mut self,
         SpecAst { vis, name, .. }: SpecAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModuleItem, VRef<Spec>)> {
+    ) -> Option<(ModuleItem, VRef<Ty>)> {
         let id = intern_scoped_ident!(self, name.ident);
 
-        let fallback = |_: &mut Specs| Spec {
-            kind: BoundKind::Base(default()),
+        let fallback = |_: &mut Types| Ty {
+            kind: TyKind::Spec(default()),
             flags: default(),
             loc: default(),
         };
-        let id = self.typec.specs.get_or_insert(id, fallback);
+        let id = self.typec.types.get_or_insert(id, fallback);
 
         Some((ModuleItem::new(name.ident, id, name.span, vis), id))
     }
@@ -203,7 +229,7 @@ impl TyChecker<'_> {
             ..
         }: FuncSigAst,
         offset: usize,
-    ) -> Option<(Signature, VRefSlice<Spec>)> {
+    ) -> Option<(Signature, VRefSlice<Ty>)> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, offset);
@@ -271,7 +297,7 @@ impl TyChecker<'_> {
 #[derive(Default, Clone, Copy)]
 struct ScopeData {
     offset: usize,
-    upper_generics: VRefSlice<Spec>,
+    upper_generics: VRefSlice<Ty>,
     owner: Option<VRef<Ty>>,
     upper_vis: Vis,
 }
@@ -289,7 +315,7 @@ impl CollectGroup for StructAst<'_> {
 }
 
 impl CollectGroup for SpecAst<'_> {
-    type Output = Spec;
+    type Output = Ty;
 }
 
 impl CollectGroup for ImplAst<'_> {

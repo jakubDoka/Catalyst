@@ -112,7 +112,7 @@ impl MirChecker<'_> {
                     }
                     CallableMir::SpecFunc(bound_func) => {
                         let SpecFunc { name, parent, .. } = self.typec.spec_funcs[bound_func];
-                        let bound_id = self.typec.specs.id(parent);
+                        let bound_id = self.typec.types.id(parent);
                         write!(
                             buffer,
                             "{}\\{}",

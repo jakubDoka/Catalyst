@@ -10,10 +10,8 @@
 #![feature(if_let_guard)]
 
 const TY: &str = "type";
-const SPEC: &str = "spec";
 const FUNC: &str = "function";
 const TY_OR_MOD: &str = "type or module";
-const SPEC_OR_MOD: &str = "spec or module";
 const FUNC_OR_MOD: &str = "function or module";
 
 macro_rules! scoped_ident {
@@ -63,7 +61,7 @@ mod util {
     pub struct TyCheckerCtx {
         pub structs: TypecOutput<Ty>,
         pub funcs: TypecOutput<Func>,
-        pub specs: TypecOutput<Spec>,
+        pub specs: TypecOutput<Ty>,
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub ty_graph: TyGraph,
@@ -138,6 +136,7 @@ mod util {
                     | TyKind::Pointer(..)
                     | TyKind::Param(..)
                     | TyKind::Integer(..)
+                    | TyKind::Spec(..)
                     | TyKind::Bool => (),
                 }
             }

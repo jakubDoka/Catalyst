@@ -157,7 +157,7 @@ impl<'a> Ast<'a> for ImplAst<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum ImplTarget<'a> {
     Direct(TyAst<'a>),
-    Spec(TyAst<'a>, Span, SpecExprAst<'a>),
+    Spec(TyAst<'a>, Span, TyAst<'a>),
 }
 
 impl<'a> Ast<'a> for ImplTarget<'a> {

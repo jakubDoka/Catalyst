@@ -170,7 +170,6 @@ impl ModuleItem {
 pub enum ScopeItem {
     Func(VRef<Func>),
     Ty(VRef<Ty>),
-    Spec(VRef<Spec>),
     Var(VRef<Var>),
     Module(VRef<Module>),
 }
@@ -195,4 +194,4 @@ macro_rules! gen_scope_item {
     }
 }
 
-gen_scope_item!(Func, Ty, Spec, Var, Module);
+gen_scope_item!(Func, Ty, Var, Module);

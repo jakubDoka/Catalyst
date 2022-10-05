@@ -4,6 +4,7 @@
 #![feature(option_result_contains)]
 #![feature(iter_intersperse)]
 #![feature(result_flattening)]
+#![feature(if_let_guard)]
 
 #[macro_export]
 macro_rules! gen_kind {
@@ -124,7 +125,6 @@ macro_rules! impl_located {
 
 mod func;
 mod scope;
-mod spec;
 mod tir;
 mod ty;
 mod typec;
@@ -133,17 +133,13 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
-    spec::{
-        BoundExt, BoundFlags, BoundKind, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance,
-        SpecSlices, Specs,
-    },
     tir::{
         AccessTir, BlockTir, CallTir, CallableTir, ConstTir, IntLit, IntTir, NodeInput, ReturnTir,
         TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,
     },
     ty::{
-        Field, FieldFlags, Fields, Ty, TyExt, TyFlags, TyInstance, TyInteger, TyKind, TyPointer,
-        TySlices, TyStruct, Types,
+        Field, FieldFlags, Fields, SpecFunc, SpecFuncs, Ty, TyExt, TyFlags, TyInstance, TyInteger,
+        TyKind, TyPointer, TySlices, TySpec, TyStruct, Types,
     },
     typec::{Loc, Located, Typec},
 };

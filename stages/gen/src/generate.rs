@@ -412,6 +412,7 @@ impl Generator<'_> {
                     .collect::<BumpVec<_>>();
                 self.ty_layout(inst.base, &params, ptr_ty)
             }
+            TyKind::Spec(..) => unreachable!(),
         };
 
         self.gen_layouts.mapping[ty] = res.into();

@@ -13,12 +13,10 @@ use storage::*;
 #[derive(Default)]
 pub struct Typec {
     pub types: Types,
-    pub specs: Specs,
     pub funcs: Funcs,
     pub fields: Fields,
 
     pub ty_slices: TySlices,
-    pub spec_slices: SpecSlices,
     pub func_slices: FuncSlices,
 
     pub spec_funcs: SpecFuncs,
@@ -52,7 +50,6 @@ macro_rules! gen_index {
 
 gen_index! {
     Ty => types
-    Spec => specs
     Func => funcs
     Field => fields
 }
@@ -209,26 +206,11 @@ impl Typec {
         prefix.chain(params).chain(suffix)
     }
 
-    pub fn bound_instance_id<'a>(
-        &'a self,
-        base: VRef<Spec>,
-        params: &'a [VRef<Ty>],
-        assoc_types: &'a [VRef<Ty>],
-    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        let prefix = ident!(self.specs.id(base), "[").into_iter();
-        let params = ident_join(
-            ", ",
-            params.iter().chain(assoc_types).map(|&p| self.types.id(p)),
-        );
-        let suffix = ident!("]");
-        prefix.chain(params).chain(suffix)
-    }
-
     pub fn bound_sum_id<'a>(
         &'a self,
-        bounds: &'a [VRef<Spec>],
+        bounds: &'a [VRef<Ty>],
     ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        ident_join(" + ", bounds.iter().map(|&b| self.specs.id(b)))
+        ident_join(" + ", bounds.iter().map(|&b| self.types.id(b)))
     }
 
     pub fn tuple_id<'a>(
@@ -274,6 +256,49 @@ impl Typec {
             Loc::Module { module, item } => Some(self.module_items[module][item].span),
             Loc::Builtin(..) => None,
         }
+    }
+
+    pub fn compatible(
+        &mut self,
+        params: &mut [Option<VRef<Ty>>],
+        reference: VRef<Ty>,
+        template: VRef<Ty>,
+    ) -> Result<(), (VRef<Ty>, VRef<Ty>)> {
+        let mut stack = bumpvec![(reference, template)];
+
+        let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
+
+        while let Some((reference, template)) = stack.pop() {
+            if reference == template {
+                continue;
+            }
+
+            match (
+                self.types[reference].kind,
+                self.types[template].kind,
+            ) {
+                (TyKind::Pointer(reference), TyKind::Pointer(template)) => {
+                    stack.push((reference.base, template.base));
+                    stack.push((reference.mutability, template.mutability));
+                }
+                (TyKind::Instance(reference), TyKind::Instance(template)) => {
+                    check(reference.base, template.base)?;
+                    stack.extend(
+                        self.ty_slices[reference.args]
+                            .iter()
+                            .copied()
+                            .zip(self.ty_slices[template.args].iter().copied()),
+                    );
+                }
+                (_, TyKind::Param(index)) if let Some(inferred) = params[index as usize] => {
+                    check(inferred, reference)?;
+                }
+                (_, TyKind::Param(index)) => params[index as usize] = Some(reference),
+                _ => return Err((reference, template)),
+            }
+        }
+
+        Ok(())
     }
 
     pub fn try_instantiate(
@@ -340,7 +365,7 @@ impl Typec {
                 self.types.get_or_insert(id, fallback)
             }
             TyKind::Param(index) => return params[index as usize],
-            TyKind::Struct(_) | TyKind::Integer(_) | TyKind::Bool => ty,
+            TyKind::Struct(..) | TyKind::Integer(..) | TyKind::Bool | TyKind::Spec(..) => ty,
         })
     }
 }

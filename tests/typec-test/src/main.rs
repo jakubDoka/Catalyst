@@ -132,8 +132,18 @@ fn main() {
 
                 fn main() -> uint => a::pass(uint::a::pass(a::A::a::pass(0).b::pass()));
                 fn other_main() -> uint => a::pass::[uint](0.pass_other::[uint](0));
-                fn third_main() -> uint =>  b::A::[uint]::b::pass(b::A::b::pass(0));
+                fn third_main() -> uint => b::A::[uint]::b::pass(b::A::b::pass(0));
             }
+        }
+
+        simple "spec-call" {
+            priv spec Clay {
+                fn kind() -> uint;
+            };
+
+            impl uint as Clay {
+                fn kind() -> uint => 0;
+            };
         }
     }
 }

@@ -8,6 +8,7 @@ use storage::*;
 pub type Types = OrderedMap<VRef<str>, Ty>;
 pub type TySlices = PoolBumpMap<VRef<Ty>>;
 pub type Fields = PoolBumpMap<Field>;
+pub type SpecFuncs = PoolBumpMap<SpecFunc>;
 
 #[derive(Default)]
 pub struct Ty {
@@ -51,7 +52,7 @@ gen_kind!(TyKind
         args: VRefSlice<Ty>,
     },
     Struct = TyStruct {
-        generics: VRefSlice<Spec>,
+        generics: VRefSlice<Ty>,
         fields: VSlice<Field>,
     },
     Pointer = TyPointer {
@@ -63,6 +64,11 @@ gen_kind!(TyKind
         size: u8,
         signed: bool,
     },
+    Spec = TySpec {
+        inherits: VRefSlice<Ty>,
+        generics: VRefSlice<Ty>,
+        methods: VSlice<SpecFunc>,
+    },
     Param = u32,
     Bool,
 );
@@ -70,6 +76,20 @@ gen_kind!(TyKind
 impl Default for TyKind {
     fn default() -> Self {
         Self::Struct(default())
+    }
+}
+
+pub struct SpecFunc {
+    pub generics: VRefSlice<Ty>,
+    pub signature: Signature,
+    pub name: VRef<str>,
+    pub span: Option<Span>,
+    pub parent: VRef<Ty>,
+}
+
+bitflags! {
+    BoundFlags: u8 {
+        GENERIC
     }
 }
 
@@ -103,7 +123,7 @@ pub trait TyExt: Index<VRef<Ty>, Output = Ty> {
     }
 
     #[inline]
-    fn generics(&self, target: VRef<Ty>) -> Option<VRefSlice<Spec>> {
+    fn generics(&self, target: VRef<Ty>) -> Option<VRefSlice<Ty>> {
         let target = self.base(target);
         Some(match self[target].kind {
             TyKind::Struct(s) => s.generics,

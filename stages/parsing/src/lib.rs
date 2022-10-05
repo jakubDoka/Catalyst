@@ -67,7 +67,6 @@ macro_rules! branch {
 mod parser;
 
 pub use parser::{
-    bound::SpecExprAst,
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
         DotExprAst, ExprAst, PathInstanceAst, ReturnExprAst, StructConstructorAst,
