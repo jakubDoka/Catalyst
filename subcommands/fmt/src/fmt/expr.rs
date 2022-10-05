@@ -113,10 +113,6 @@ impl<'a> FmtAst for StructConstructorAst<'a> {
         if let Some(path) = self.path {
             path.display(fmt);
         }
-        if let Some(generics) = self.generics {
-            write!(fmt, "\\");
-            generics.display(fmt);
-        }
         fmt.write_span(self.slash);
         self.body.display(fmt);
     }

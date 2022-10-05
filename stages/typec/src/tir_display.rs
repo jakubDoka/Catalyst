@@ -113,6 +113,17 @@ impl TyChecker<'_> {
                 write!(buffer, "const ")?;
                 self.display_tir(*value, buffer, indent, var_count)?;
             }
+            TirNode::Constructor(&ConstructorTir { ty, fields, .. }) => {
+                write!(buffer, "{}\\{{", &self.interner[self.typec.types.id(ty)])?;
+                if let Some((&first, others)) = fields.split_first() {
+                    self.display_tir(first, buffer, indent, var_count)?;
+                    for &val in others.iter() {
+                        write!(buffer, ", ")?;
+                        self.display_tir(val, buffer, indent, var_count)?;
+                    }
+                }
+                write!(buffer, "}}")?;
+            }
         }
 
         Ok(())

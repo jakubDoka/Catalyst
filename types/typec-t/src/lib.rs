@@ -4,6 +4,7 @@
 #![feature(option_result_contains)]
 #![feature(iter_intersperse)]
 #![feature(result_flattening)]
+#![feature(let_else)]
 #![feature(if_let_guard)]
 
 #[macro_export]
@@ -134,12 +135,13 @@ pub use {
     graphs::ProjectedCycleDetector as TyGraph,
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
-        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, IntLit, IntTir, NodeInput, ReturnTir,
-        TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var, Variable,
+        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, ConstructorTir, IntLit, IntTir,
+        NodeInput, ReturnTir, TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var,
+        VarTir, Variable,
     },
     ty::{
-        Field, FieldFlags, Fields, SpecFunc, SpecFuncs, Ty, TyExt, TyFlags, TyInstance, TyInteger,
-        TyKind, TyPointer, TySlices, TySpec, TyStruct, Types,
+        Field, FieldFlags, Fields, Impl, ImplLookup, Impls, SpecFunc, SpecFuncs, Ty, TyExt,
+        TyFlags, TyInstance, TyInteger, TyKind, TyPointer, TySlices, TySpec, TyStruct, Types,
     },
     typec::{Loc, Located, Typec},
 };

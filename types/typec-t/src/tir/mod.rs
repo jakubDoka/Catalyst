@@ -10,16 +10,23 @@ pub struct TirBuilder<'a> {
     pub ret: VRef<Ty>,
     pub ret_span: Option<Span>,
     pub vars: Vec<VarTir<'a>>,
+    pub generics: Vec<VRef<Ty>>,
     pub runner: Option<(Span, TirFrame)>,
 }
 
 impl<'a> TirBuilder<'a> {
-    pub fn new(arena: &'a Arena, ret: VRef<Ty>, ret_span: Option<Span>) -> Self {
+    pub fn new(
+        arena: &'a Arena,
+        ret: VRef<Ty>,
+        ret_span: Option<Span>,
+        generics: Vec<VRef<Ty>>,
+    ) -> Self {
         Self {
             arena,
             ret,
             ret_span,
             vars: Vec::new(),
+            generics,
             runner: None,
         }
     }
@@ -130,6 +137,13 @@ pub struct IntLit {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct ConstructorTir<'a> {
+    pub span: Span,
+    pub ty: VRef<Ty>,
+    pub fields: &'a [TirNode<'a>],
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum TirNode<'a> {
     Var(&'a Variable<'a>),
     Int(&'a IntLit),
@@ -139,6 +153,7 @@ pub enum TirNode<'a> {
     Call(&'a CallTir<'a>),
     Access(&'a AccessTir),
     Const(&'a ConstTir<'a>),
+    Constructor(&'a ConstructorTir<'a>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -182,4 +197,5 @@ impl_node_input! {
     'a BlockTir<'a> => Block,
     'a ReturnTir<'a> => Return,
     'a ConstTir<'a> => Const,
+    'a ConstructorTir<'a> => Constructor,
 }

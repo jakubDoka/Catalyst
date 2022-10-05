@@ -168,7 +168,7 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
         let ty = ctx.parse()?;
-        if let Some(tok) = ctx.try_advance(TokenKind::As) {
+        if let Some(tok) = ctx.try_advance(TokenKind::For) {
             Some(Self::Spec(ty, tok.span, ctx.parse()?))
         } else {
             Some(Self::Direct(ty))

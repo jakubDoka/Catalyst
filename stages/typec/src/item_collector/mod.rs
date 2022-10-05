@@ -55,18 +55,19 @@ impl TyChecker<'_> {
     ) -> Option<()> {
         match target {
             ImplTarget::Direct(ty) => self.collect_direct_impl(i, ty, r#impl, attrs, ctx),
-            ImplTarget::Spec(target, .., spec) => {
+            ImplTarget::Spec(spec, .., target) => {
                 self.collect_spec_impl(i, target, spec, r#impl, attrs, ctx)
             }
         }
     }
 
+    #[allow(unused)]
     pub fn collect_spec_impl(
         &mut self,
         i: usize,
         target: TyAst,
         spec: TyAst,
-        ImplAst {
+        r#impl @ ImplAst {
             vis,
             generics,
             body,
@@ -76,13 +77,41 @@ impl TyChecker<'_> {
         ctx: &mut TyCheckerCtx,
     ) -> Option<()> {
         let frame = self.scope.start_frame();
+
         self.insert_generics(generics, 0);
         let parsed_generics = self.generics(generics);
-        let parsed_ty = self.ty(target);
-        let parsed_spec = self.ty(spec);
+
+        let parsed_ty = self.ty(target)?;
+        let parsed_spec = self.ty(spec)?;
+
+        let parsed_ty_base = self.typec.types.base(parsed_ty);
+        let parsed_spec_base = self.typec.types.base(parsed_spec);
+
+        if let Some(already) = self.typec.implements(parsed_ty, parsed_spec) {
+            self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
+        }
+
+        let impl_ent = Impl {
+            generics: parsed_generics,
+            ty: parsed_ty,
+            spec: parsed_spec,
+            methods: default(),
+            next: self
+                .typec
+                .impl_lookup
+                .insert(
+                    (parsed_ty_base, parsed_spec_base),
+                    // SAFETY: We push right after this
+                    Some(unsafe { self.typec.impls.next() }),
+                )
+                .flatten(),
+            span: Some(r#impl.span()),
+        };
+        self.typec.impls.push(impl_ent);
 
         self.scope.end_frame(frame);
-        todo!()
+
+        Some(())
     }
 
     pub fn collect_direct_impl(
@@ -289,6 +318,17 @@ impl TyChecker<'_> {
             (func, self.source) {
                 err[entry]: "caused by this entry attribute";
                 info[generics]: "generics located here";
+            }
+        }
+
+        push colliding_impl(self, span: Option<Span>, ty: VRef<Ty>, spec: VRef<Ty>) {
+            err: (
+                "type '{}' already has an implementation for '{}'",
+                &self.interner[self.typec.types.id(ty)],
+                &self.interner[self.typec.types.id(spec)],
+            );
+            (span?, self.source) {
+                err[span?]: "this already satisfies both types";
             }
         }
     }

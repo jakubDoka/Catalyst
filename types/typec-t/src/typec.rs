@@ -15,14 +15,12 @@ pub struct Typec {
     pub types: Types,
     pub funcs: Funcs,
     pub fields: Fields,
-
+    pub impls: Impls,
+    pub impl_lookup: ImplLookup,
     pub ty_slices: TySlices,
     pub func_slices: FuncSlices,
-
     pub spec_funcs: SpecFuncs,
-
     pub builtin_funcs: Vec<VRef<Func>>,
-
     pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
 }
 
@@ -115,11 +113,31 @@ impl Typec {
         )
     }
 
-    pub fn init_builtin_types(&mut self, interner: &mut Interner) {
+    pub fn init(&mut self, interner: &mut Interner) {
+        self.init_builtin_types(interner);
+        self.init_builtin_funcs(interner);
+        self.init_builtin_impls(interner);
+    }
+
+    fn init_builtin_impls(&mut self, _interner: &mut Interner) {
+        self.impls.push(Impl {
+            generics: default(),
+            ty: Ty::UNIT,
+            spec: Ty::ANY,
+            methods: default(),
+            next: None,
+            span: None,
+        });
+    }
+
+    fn init_builtin_types(&mut self, interner: &mut Interner) {
         assert_init! {
             (self, interner)
             MUTABLE {}
             IMMUTABLE {}
+            ANY {
+                kind: TyKind::Spec(default()),
+            }
             UNIT {
                 kind: TyKind::Struct(default()),
             }
@@ -136,7 +154,7 @@ impl Typec {
         }
     }
 
-    pub fn init_builtin_funcs(&mut self, interner: &mut Interner) {
+    fn init_builtin_funcs(&mut self, interner: &mut Interner) {
         let anon_temp = interner.intern_str("anon_temp");
         let anon_temp = self.funcs.insert_unique(anon_temp, Default::default());
         assert!(anon_temp == Func::ANON_TEMP);
@@ -206,6 +224,24 @@ impl Typec {
         prefix.chain(params).chain(suffix)
     }
 
+    pub fn instance(
+        &mut self,
+        base: VRef<Ty>,
+        args: &[VRef<Ty>],
+        interner: &mut Interner,
+    ) -> VRef<Ty> {
+        let id = self.instance_id(base, args);
+        let id = interner.intern(id);
+        self.types.get_or_insert(id, |_| Ty {
+            kind: TyInstance {
+                base,
+                args: self.ty_slices.bump_slice(args),
+            }
+            .into(),
+            ..Default::default()
+        })
+    }
+
     pub fn bound_sum_id<'a>(
         &'a self,
         bounds: &'a [VRef<Ty>],
@@ -236,18 +272,6 @@ impl Typec {
         self.types.get_or_insert(key, fallback)
     }
 
-    pub fn instantiate(
-        &mut self,
-        ty: VRef<Ty>,
-        params: &[VRef<Ty>],
-        interner: &mut Interner,
-    ) -> VRef<Ty> {
-        unsafe {
-            self.instantiate_low(ty, mem::transmute(params), interner)
-                .unwrap_unchecked()
-        }
-    }
-
     pub fn span<T: Located>(&self, target: VRef<T>) -> Option<Span>
     where
         Self: Index<VRef<T>, Output = T>,
@@ -258,8 +282,59 @@ impl Typec {
         }
     }
 
+    pub fn implements(&mut self, ty: VRef<Ty>, spec: VRef<Ty>) -> Option<VRef<Impl>> {
+        if spec == Ty::ANY {
+            return Some(Impl::ANY);
+        }
+
+        let key = (ty, spec);
+
+        if let Some(&result) = self.impl_lookup.get(&key) {
+            return result;
+        }
+
+        let ty_base = self.types.base(ty);
+        let spec_base = self.types.base(spec);
+
+        let base_key = (ty_base, spec_base);
+
+        let Some(&(mut base_impl)) = self.impl_lookup.get(&base_key) else {
+            self.impl_lookup.insert(dbg!(key), None);
+            return None;
+        };
+
+        while let Some(current) = base_impl {
+            let impl_ent = self.impls[current];
+            base_impl = impl_ent.next;
+
+            let generics = self.ty_slices[impl_ent.generics].to_bumpvec();
+            let mut generic_slots = bumpvec![None; generics.len()];
+            let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.ty);
+            let ty_compatible = self.compatible(&mut generic_slots, spec, impl_ent.spec);
+
+            if ty_compatible.is_err() || spec_compatible.is_err() {
+                continue;
+            }
+
+            let implements = generics
+                .into_iter()
+                .zip(generic_slots.into_iter().map(|s| s.unwrap()))
+                .all(|(spec, ty)| self.implements(ty, spec).is_some());
+
+            if !implements {
+                continue;
+            }
+
+            self.impl_lookup.insert(key, Some(current));
+            return Some(current);
+        }
+
+        self.impl_lookup.insert(key, None);
+        None
+    }
+
     pub fn compatible(
-        &mut self,
+        &self,
         params: &mut [Option<VRef<Ty>>],
         reference: VRef<Ty>,
         template: VRef<Ty>,
@@ -299,6 +374,18 @@ impl Typec {
         }
 
         Ok(())
+    }
+
+    pub fn instantiate(
+        &mut self,
+        ty: VRef<Ty>,
+        params: &[VRef<Ty>],
+        interner: &mut Interner,
+    ) -> VRef<Ty> {
+        unsafe {
+            self.instantiate_low(ty, mem::transmute(params), interner)
+                .unwrap_unchecked()
+        }
     }
 
     pub fn try_instantiate(

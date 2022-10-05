@@ -95,6 +95,7 @@ impl Scope {
     }
 }
 
+#[must_use]
 pub struct ScopeFrame(usize);
 
 pub enum ScopeError {

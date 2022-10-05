@@ -25,10 +25,15 @@ impl TyChecker<'_> {
     ) -> &mut Self {
         let iter = input
             .iter()
-            .map(|&(i, j, func)| (items[i].0.body[j].value, func))
-            .filter_map(|(ast, func)| {
+            .map(|&(i, j, func)| (items[i].0, items[i].0.body[j].value, func))
+            .filter_map(|(block, ast, func)| {
+                let frame = self.scope.start_frame();
+                self.insert_generics(block.generics, 0);
+
                 let ImplItemAst::Func(&ast) = ast;
-                let res = self.build_func(ast, func, arena)?;
+                let res = self.build_func(ast, func, arena, block.generics.len());
+                self.scope.end_frame(frame);
+                let res = res?;
 
                 let Some(body) = res else {
                     extern_funcs.push(func);
@@ -56,7 +61,7 @@ impl TyChecker<'_> {
                 .iter()
                 .map(|&(i, func)| (items[i], func))
                 .filter_map(|((ast, ..), func)| {
-                    let res = self.build_func(ast, func, arena)?;
+                    let res = self.build_func(ast, func, arena, 0)?;
 
                     let Some(body) = res else {
                         extern_funcs.push(func);
@@ -86,12 +91,28 @@ impl TyChecker<'_> {
         }: FuncDefAst,
         func: VRef<Func>,
         arena: &'a Arena,
+        offset: usize,
     ) -> Option<Option<TirNode<'a>>> {
-        self.scope.start_frame();
-        let Func { signature, .. } = self.typec.funcs[func];
-        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()));
+        let frame = self.scope.start_frame();
+        let Func {
+            signature,
+            generics: self_generics,
+            upper_generics,
+            ..
+        } = self.typec.funcs[func];
+        let self_generics = self.typec.ty_slices[upper_generics]
+            .iter()
+            .chain(self.typec.ty_slices[self_generics].iter())
+            .copied()
+            .collect::<Vec<_>>();
+        let mut builder = TirBuilder::new(
+            arena,
+            signature.ret,
+            ret.map(|ret| ret.span()),
+            self_generics,
+        );
 
-        self.insert_generics(generics, 0);
+        self.insert_generics(generics, offset);
         self.args(signature.args, args, &mut builder);
 
         let tir_body = match body {
@@ -99,6 +120,8 @@ impl TyChecker<'_> {
             FuncBodyAst::Block(body) => self.block(body, Some(signature.ret), &mut builder),
             FuncBodyAst::Extern(..) => return Some(None),
         }?;
+
+        self.scope.end_frame(frame);
 
         Some(if tir_body.ty == Ty::TERMINAL {
             Some(tir_body.node)
@@ -217,11 +240,94 @@ impl TyChecker<'_> {
             UnitExprAst::Char(span) => self.char(span, builder),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
             UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
-            UnitExprAst::StructConstructor(_) => todo!(),
+            UnitExprAst::StructConstructor(struct_constructor) => {
+                self.struct_constructor(struct_constructor, inference, builder)
+            }
             UnitExprAst::DotExpr(_) => todo!(),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
+    }
+
+    fn struct_constructor<'a>(
+        &mut self,
+        ctor @ StructConstructorAst { path, body, .. }: StructConstructorAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let (ty, params) = if let Some(PathInstanceAst { path, params }) = path {
+            let ty = self.ty_path(path)?;
+            (ty, params.map(|(_, params)| params))
+        } else {
+            let ty = inference.or_else(|| self.cannot_infer(ctor.span())?)?;
+            (ty, None)
+        };
+
+        let struct_meta = self.typec.types[ty]
+            .kind
+            .try_cast::<TyStruct>()
+            .or_else(|| self.expected_struct(ty, ctor.span())?)?;
+
+        let mut param_slots = bumpvec![None; self.typec.ty_slices[struct_meta.generics].len()];
+
+        if let Some(params) = params {
+            if params.len() > param_slots.len() {
+                self.too_many_params(params, param_slots.len())?;
+            }
+
+            param_slots
+                .iter_mut()
+                .zip(params.iter().copied())
+                .for_each(|(slot, param)| *slot = self.ty(param))
+        }
+
+        let mut fields = bumpvec![None; body.len()];
+
+        for field_ast @ &StructConstructorFieldAst { name, expr } in body.iter() {
+            let (index, field) = self.typec.fields[struct_meta.fields]
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|(.., field)| field.name == name.ident)
+                .or_else(|| self.unknown_field(ty, struct_meta.fields, ctor.span())?)?;
+
+            let inference = self
+                .typec
+                .try_instantiate(field.ty, &param_slots, self.interner);
+            let Some(value) = self.expr(expr.unwrap_or_else(|| todo!()), inference, builder) else {
+                continue;
+            };
+
+            self.infer_params(&mut param_slots, value.ty, field.ty, field_ast.span());
+
+            if fields[index].replace(value).is_some() {
+                self.duplicate_field(name.span());
+            }
+        }
+
+        let Some(params) = param_slots.into_iter().collect::<Option<BumpVec<_>>>() else {
+            todo!()
+        };
+
+        let Some(fields) = fields.into_iter().collect::<Option<BumpVec<_>>>() else {
+            todo!()
+        };
+
+        let final_ty = if params.is_empty() {
+            ty
+        } else {
+            self.typec.instance(ty, &params, self.interner)
+        };
+
+        let node = ConstructorTir {
+            ty: final_ty,
+            fields: builder
+                .arena
+                .alloc_iter(fields.iter().map(|field| field.node)),
+            span: ctor.span(),
+        };
+
+        self.node(final_ty, node, builder)
     }
 
     fn const_expr<'a>(
@@ -339,8 +445,15 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let upper_generics_count = self.typec.ty_slices[upper_generics].len();
-        let generics_count = self.typec.ty_slices[generics].len();
+        let upper_generics = &self.typec.ty_slices[upper_generics];
+        let upper_generics_count = upper_generics.len();
+        let generics = &self.typec.ty_slices[generics];
+        let generics_count = generics.len();
+        let generics = upper_generics
+            .iter()
+            .chain(generics.iter())
+            .copied()
+            .collect::<BumpVec<_>>();
         let mut param_slots = bumpvec![None; generics_count + upper_generics_count];
 
         if let Some(params) = params {
@@ -392,6 +505,15 @@ impl TyChecker<'_> {
         let Some(params) = param_slots.iter().copied().nsc_collect::<Option<BumpVec<_>>>() else {
             todo!()
         };
+
+        for (&param, spec) in params.iter().zip(generics) {
+            let instance = self
+                .typec
+                .instantiate(param, &builder.generics, self.interner);
+            if self.typec.implements(instance, spec).is_none() {
+                self.missing_spec(instance, spec, span);
+            }
+        }
 
         let args = builder.arena.alloc_iter(args);
         let params = builder.arena.alloc_iter(params);
@@ -732,6 +854,55 @@ impl TyChecker<'_> {
             info: ("expected at most {} parameters", max);
             (params.span(), self.source) {
                 err[params.span()]: "found here";
+            }
+        }
+
+        push missing_spec(self, ty: VRef<Ty>, spec: VRef<Ty>, span: Span) {
+            err: (
+                "'{}' does not implement '{}'",
+                &self.interner[self.typec.types.id(ty)],
+                &self.interner[self.typec.types.id(spec)],
+            );
+            (span, self.source) {
+                err[span]: "when calling this";
+            }
+        }
+
+        push cannot_infer(self, span: Span) {
+            err: "cannot infer type";
+            (span, self.source) {
+                err[span]: "when type checking this";
+            }
+        }
+
+        push expected_struct(self, ty: VRef<Ty>, span: Span) {
+            err: "expected struct type";
+            info: ("found '{}'", &self.interner[self.typec.types.id(ty)]);
+            (span, self.source) {
+                err[span]: "when type checking this";
+            }
+        }
+
+        push unknown_field(self, ty: VRef<Ty>, fields: VSlice<Field>, span: Span) {
+            err: ("unknown field");
+            info: (
+                "available fields in '{}': {}",
+                &self.interner[self.typec.types.id(ty)],
+                self.typec.fields[fields]
+                    .iter()
+                    .map(|f| &self.interner[f.name])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            (span, self.source) {
+                err[span]: "occurred here";
+            }
+        }
+
+        push duplicate_field(self, span: Span) {
+            err: "duplicate field";
+            (span, self.source) {
+                err[span]: "this was already initialized";
             }
         }
     }

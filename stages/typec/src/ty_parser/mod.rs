@@ -119,6 +119,11 @@ impl TyChecker<'_> {
         let mut specs = specs
             .map(|&ast| self.ty(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
+
+        if specs.is_empty() {
+            return Some(Ty::ANY);
+        }
+
         specs.sort_unstable_by_key(|b| b.index());
 
         let segments = self.typec.bound_sum_id(&specs);

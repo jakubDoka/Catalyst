@@ -90,6 +90,7 @@ impl TyChecker<'_> {
                         ty: self.ty(ty)?,
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
                         span: name.span.into(),
+                        name: name.ident,
                     })
                 },
             )

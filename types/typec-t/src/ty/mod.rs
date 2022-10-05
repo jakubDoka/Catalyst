@@ -9,6 +9,22 @@ pub type Types = OrderedMap<VRef<str>, Ty>;
 pub type TySlices = PoolBumpMap<VRef<Ty>>;
 pub type Fields = PoolBumpMap<Field>;
 pub type SpecFuncs = PoolBumpMap<SpecFunc>;
+pub type ImplLookup = Map<(VRef<Ty>, VRef<Ty>), Option<VRef<Impl>>>;
+pub type Impls = PushMap<Impl>;
+
+#[derive(Clone, Copy)]
+pub struct Impl {
+    pub generics: VRefSlice<Ty>,
+    pub ty: VRef<Ty>,
+    pub spec: VRef<Ty>,
+    pub methods: VRefSlice<Func>,
+    pub next: Option<VRef<Impl>>,
+    pub span: Option<Span>,
+}
+
+impl Impl {
+    gen_increasing_constants!(ANY);
+}
 
 #[derive(Default)]
 pub struct Ty {
@@ -22,6 +38,7 @@ impl_located!(Ty);
 impl Ty {
     gen_v_ref_constants!(
         MUTABLE IMMUTABLE
+        ANY
         UNIT
         UINT
         U32
@@ -87,18 +104,13 @@ pub struct SpecFunc {
     pub parent: VRef<Ty>,
 }
 
-bitflags! {
-    BoundFlags: u8 {
-        GENERIC
-    }
-}
-
 #[derive(Clone, Copy, Default)]
 pub struct Field {
     pub vis: Vis,
     pub ty: VRef<Ty>,
     pub flags: FieldFlags,
     pub span: Option<Span>,
+    pub name: VRef<str>,
 }
 
 bitflags! {

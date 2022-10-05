@@ -220,8 +220,7 @@ impl<'a> Ast<'a> for PathInstanceAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct StructConstructorAst<'a> {
-    pub path: Option<PathExprAst<'a>>,
-    pub generics: Option<GenericsAst<'a>>,
+    pub path: Option<PathInstanceAst<'a>>,
     pub slash: Span,
     pub body: StructConstructorBodyAst<'a>,
 }
@@ -232,15 +231,15 @@ impl<'a> Ast<'a> for StructConstructorAst<'a> {
     const NAME: &'static str = "struct constructor";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ty, slash): Self::Args) -> Option<Self> {
-        let (path, generics) = match ty {
-            Some(UnitExprAst::Path(path)) => (Some(path), None),
-            None => (None, None),
+        let path = match ty {
+            Some(UnitExprAst::PathInstance(path)) => Some(path),
+            Some(UnitExprAst::Path(path)) => Some(PathInstanceAst { path, params: None }),
+            None => None,
             Some(ty) => ctx.invalid_struct_constructor_type(ty.span())?,
         };
 
         Some(Self {
             path,
-            generics,
             slash,
             body: ctx.parse()?,
         })

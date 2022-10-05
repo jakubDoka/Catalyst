@@ -30,7 +30,7 @@ impl Scheduler for TestState {
     }
 
     fn init(&mut self, _: &Path) {
-        self.typec.init_builtin_types(&mut self.interner);
+        self.typec.init(&mut self.interner);
     }
 
     fn before_parsing(&mut self, module: VRef<Module>) {
@@ -137,13 +137,21 @@ fn main() {
         }
 
         simple "spec-call" {
-            priv spec Clay {
-                fn kind() -> uint;
+            priv spec Clay;
+
+            impl Clay for uint;
+
+            struct [T] Foo {
+                a: T
             };
 
-            impl uint as Clay {
-                fn kind() -> uint => 0;
-            };
+            impl [T: Clay] Clay for Foo[T];
+
+            fn [T: Clay] pass(v: T) -> T => v;
+
+            fn main() -> uint => pass(0);
+            fn other_main() -> u32 => pass(0);
+            fn last_main() -> Foo[uint] => pass(Foo::{ a: 0 });
         }
     }
 }

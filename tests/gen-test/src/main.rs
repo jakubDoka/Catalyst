@@ -325,8 +325,7 @@ impl Scheduler for TestState {
     }
 
     fn init(&mut self, _: &Path) {
-        self.typec.init_builtin_types(&mut self.interner);
-        self.typec.init_builtin_funcs(&mut self.interner);
+        self.typec.init(&mut self.interner);
     }
 
     fn before_parsing(&mut self, module: storage::VRef<Module>) {
