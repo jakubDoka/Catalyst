@@ -28,12 +28,10 @@ impl TyChecker<'_> {
             .map(|&(i, j, func)| (items[i].0.body[j].value, func))
             .filter_map(|(ast, func)| {
                 let ImplItemAst::Func(&ast) = ast;
-                let Some(res) = self.build_func(ast, func, arena) else {
-                    extern_funcs.push(func);
-                    return None;
-                };
+                let res = self.build_func(ast, func, arena)?;
 
                 let Some(body) = res else {
+                    extern_funcs.push(func);
                     return None;
                 };
 
@@ -58,12 +56,10 @@ impl TyChecker<'_> {
                 .iter()
                 .map(|&(i, func)| (items[i], func))
                 .filter_map(|((ast, ..), func)| {
-                    let Some(res) = self.build_func(ast, func, arena) else {
-                        extern_funcs.push(func);
-                        return None;
-                    };
+                    let res = self.build_func(ast, func, arena)?;
 
                     let Some(body) = res else {
+                        extern_funcs.push(func);
                         return None;
                     };
 
@@ -101,20 +97,15 @@ impl TyChecker<'_> {
         let tir_body = match body {
             FuncBodyAst::Arrow(.., expr) => self.expr(expr, Some(signature.ret), &mut builder),
             FuncBodyAst::Block(body) => self.block(body, Some(signature.ret), &mut builder),
-            FuncBodyAst::Extern(..) => return None,
-        };
+            FuncBodyAst::Extern(..) => return Some(None),
+        }?;
 
-        Some(
-            tir_body
-                .and_then(|tir_body| {
-                    if tir_body.ty == Ty::TERMINAL {
-                        Some(tir_body)
-                    } else {
-                        self.return_low(Some(tir_body), body.span(), &mut builder)
-                    }
-                })
-                .map(|tir_body| tir_body.node),
-        )
+        Some(if tir_body.ty == Ty::TERMINAL {
+            Some(tir_body.node)
+        } else {
+            self.return_low(Some(tir_body), body.span(), &mut builder)
+                .map(|tir| tir.node)
+        })
     }
 
     fn block<'a>(
