@@ -1,3 +1,15 @@
+error: duplicate definition
+ --> cross-module-item-access\root\b.ctl:9:12
+  |
+9 |     fn [T] pass(s: T) -> T => s
+  |            ---- info: this name
+  |
+ ::: cross-module-item-access\root\b.ctl:8:8
+  |
+8 |     fn pass(s: uint) -> uint => s
+  |        ---- info: matches this already existing item
+  |
+
 info: tir repr of functions:
  fn [todo] 2\pass(var0: param 0) -> param 0 return var0
 
@@ -8,6 +20,8 @@ fn [todo] 2\A\2\pass(var0: uint) -> uint return var0
 fn [todo] 0\pass(var0: param 0) -> param 0 return var0
 
 fn [todo] uint\0\pass(var0: uint) -> uint return var0
+
+fn [todo] 0\A\0\pass(var0: uint) -> uint return var0
 
 fn [todo] 0\A\0\pass(var0: uint) -> uint return var0
 
