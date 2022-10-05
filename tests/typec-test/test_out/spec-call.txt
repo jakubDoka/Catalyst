@@ -1,31 +1,21 @@
 error: duplicate definition
- --> spec-call\root.ctl:5:4
+ --> spec-call\root.ctl:6:4
   |
-5 | fn main -> u32 => pass(0)
+6 | fn main -> u32 => pass(0)
   |    ---- info: this name
   |
- ::: spec-call\root.ctl:4:4
+ ::: spec-call\root.ctl:5:4
   |
-4 | fn main -> uint => pass(0)
+5 | fn main -> uint => pass(0)
   |    ---- info: matches this already existing item
   |
 
-error: function or module not found
- --> spec-call\root.ctl:4:20
-  |
-4 | fn main -> uint => pass(0)
-  |                    ^^^^ this does not exist
-  |
-  = info: queried 'pass'
-
-error: function or module not found
- --> spec-call\root.ctl:5:19
-  |
-5 | fn main -> u32 => pass(0)
-  |                   ^^^^ this does not exist
-  |
-  = info: queried 'pass'
-
 info: tir repr of functions:
- 
+ fn [todo] 0\pass(var0: param 0) -> param 0 return var0
+
+fn [todo] 0\main() -> uint return 0\pass[uint](0)
+
+fn [todo] 0\main() -> uint return 0\pass[uint](0)
+
+
 
