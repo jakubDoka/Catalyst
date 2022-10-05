@@ -1,9 +1,16 @@
 error: 'u32' does not implement '0\Clay'
- --> spec-call\root.ctl:6:25
-  |
-6 | fn other_main -> u32 => pass(0)
-  |                         ^^^^^^^ when calling this
-  |
+  --> spec-call\root.ctl:10:25
+   |
+10 | fn other_main -> u32 => pass(0)
+   |                         ^^^^^^^ when calling this
+   |
+
+error: '0\Foo[uint]' does not implement '0\Clay'
+  --> spec-call\root.ctl:11:30
+   |
+11 | fn last_main -> Foo[uint] => pass(Foo\{ a: 0 })
+   |                              ^^^^^^^^^^^^^^^^^^ when calling this
+   |
 
 info: tir repr of functions:
  fn [todo] 0\pass(var0: param 0) -> param 0 return var0
@@ -11,6 +18,8 @@ info: tir repr of functions:
 fn [todo] 0\main() -> uint return 0\pass[uint](0)
 
 fn [todo] 0\other_main() -> u32 return 0\pass[u32](0)
+
+fn [todo] 0\last_main() -> 0\Foo[uint] return 0\pass[0\Foo[uint]](0\Foo[uint]\{0})
 
 
 
