@@ -1,10 +1,10 @@
-error: Func not found
+error: function not found
  --> cross-module-item-access\root.ctl:8:30
   |
-8 | fn third_main -> uint => b\A\pass(0)
-  |                              ^^^^ this does not exist
+8 | fn third_main -> uint => b\A\b\pass(0)
+  |                              ^^^^^^ this does not exist
   |
-  = info: queried '0\A\pass'
+  = info: queried '0\A\0\pass'
 
 info: tir repr of functions:
  fn [todo] 2\pass(var0: param 0) -> param 0 return var0
