@@ -477,7 +477,7 @@ impl TyChecker<'_> {
             .index(id)
             .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)?;
 
-        let (&start, segments) = segments
+        let (&start, segments) = segments[1..]
             .split_first()
             .or_else(|| self.invalid_expr_path(path.span())?)?;
 

@@ -107,12 +107,20 @@ fn main() {
                         fn pass(s: Self) -> uint => s;
                     };
                     fn [T] pass(v: T) -> T => v;
+                    struct A;
+                    impl A {
+                        fn pass(s: uint) -> uint => s;
+                    };
                 }
                 file "b.ctl" {
                     impl uint {
                         fn pass(s: Self) -> uint => s;
                     };
                     fn [T] pass(v: T) -> T => v;
+                    struct A;
+                    impl A {
+                        fn pass(s: uint) -> uint => s;
+                    };
                 }
             }
             file "root.ctl" {
@@ -121,7 +129,7 @@ fn main() {
                     "./b"
                 };
 
-                fn main() -> uint => a::pass(uint::a::pass(0.b::pass()));
+                fn main() -> uint => a::pass(uint::a::pass(a::A::a::pass(0).b::pass()));
             }
         }
     }
