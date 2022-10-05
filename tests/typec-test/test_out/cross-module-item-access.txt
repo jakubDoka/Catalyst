@@ -1,11 +1,3 @@
-error: too many type parameters
- --> cross-module-item-access\root.ctl:8:37
-  |
-8 | fn third_main -> uint => b\A\b\pass\[uint](b\A\b\pass(0))
-  |                                     ^^^^^^ found here
-  |
-  = info: expected at most 0 parameters
-
 info: tir repr of functions:
  fn [todo] 2\pass(var0: param 0) -> param 0 return var0
 
