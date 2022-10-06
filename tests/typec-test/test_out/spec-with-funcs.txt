@@ -1,3 +1,7 @@
 info: tir repr of functions:
- 
+ fn [todo] uint\0\new() -> uint return 0
+
+fn [todo] uint\0\use_on(var0: uint, var1: param 0) -> 0\Glued[param 0] return 0\Glued[param 0]\{var1}
+
+
 
