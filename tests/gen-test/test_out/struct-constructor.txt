@@ -4,15 +4,21 @@ function u0:0() -> i64 fast {
 
 block0:
     v0 = iconst.i64 1
+    v1 = iconst.i64 2
     stack_store v0, ss0  ; v0 = 1
-    v1 = stack_addr.i64 ss0
-    v2 = iconst.i32 3
-    v3 = iconst.i64 0
-    v4 = uextend.i64 v2  ; v2 = 3
-    v5 = ishl_imm v4, 0
-    v6 = bor v3, v5  ; v3 = 0
-    v7 = iconst.i64 0
-    return v7  ; v7 = 0
+    stack_store v1, ss0+8  ; v1 = 2
+    v2 = stack_addr.i64 ss0
+    v3 = iconst.i32 3
+    v4 = iconst.i32 1
+    v5 = iconst.i64 0
+    v6 = uextend.i64 v3  ; v3 = 3
+    v7 = ishl_imm v6, 0
+    v8 = bor v5, v7  ; v5 = 0
+    v9 = uextend.i64 v4  ; v4 = 1
+    v10 = ishl_imm v9, 32
+    v11 = bor v8, v10
+    v12 = iconst.i64 0
+    return v12  ; v12 = 0
 }
 
 
