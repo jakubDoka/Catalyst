@@ -38,6 +38,7 @@ struct TestState {
     resources: Resources,
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
+    ast_transfer: AstTransfer<'static>,
     mir_ctx: MirBuilderCtx,
     gen: Gen,
     gen_resources: GenResources,
@@ -338,9 +339,16 @@ impl Scheduler for TestState {
             later_init.jit_context.clear_temp();
         }
 
-        let mut type_checked_funcs = vec![];
-        ty_checker!(self, module).execute(items, &mut self.typec_ctx, &mut type_checked_funcs);
-        mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
+        {
+            let mut type_checked_funcs = vec![];
+            ty_checker!(self, module).execute(
+                items,
+                &mut self.typec_ctx,
+                self.ast_transfer.activate(),
+                &mut type_checked_funcs,
+            );
+            mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
+        }
 
         if self.workspace.has_errors() {
             return;

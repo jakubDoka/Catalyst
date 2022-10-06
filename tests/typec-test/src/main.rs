@@ -21,6 +21,7 @@ struct TestState {
     resources: Resources,
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
+    ast_transfer: AstTransfer<'static>,
     functions: String,
 }
 
@@ -40,7 +41,12 @@ impl Scheduler for TestState {
     fn parse_segment(&mut self, module: VRef<Module>, items: GroupedItemsAst) {
         let mut type_checked_funcs = vec![];
         ty_checker!(self, module)
-            .execute(items, &mut self.typec_ctx, &mut type_checked_funcs)
+            .execute(
+                items,
+                &mut self.typec_ctx,
+                self.ast_transfer.activate(),
+                &mut type_checked_funcs,
+            )
             .display_funcs(&type_checked_funcs, &mut self.functions)
             .unwrap();
     }

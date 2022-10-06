@@ -3,7 +3,7 @@ use storage::*;
 
 use crate::{Func, SpecFunc, Ty};
 
-pub type TypecOutput<T> = Vec<(usize, VRef<T>)>;
+pub type TypecOutput<A, T> = Vec<(A, VRef<T>)>;
 
 pub struct TirBuilder<'a> {
     pub arena: &'a Arena,

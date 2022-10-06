@@ -44,12 +44,14 @@ mod tir_display;
 mod ty_builder;
 mod ty_parser;
 
-pub use util::{build_scope, TyCheckerCtx};
+pub use util::{build_scope, ActiveAstTransfer, AstTransfer, TyCheckerCtx};
 
 pub use item_collector::CollectGroup;
 pub use state_gen::TyChecker;
 
 mod util {
+    use std::mem;
+
     use diags::*;
     use lexing_t::*;
     use packaging_t::*;
@@ -59,9 +61,6 @@ mod util {
 
     #[derive(Default)]
     pub struct TyCheckerCtx {
-        pub structs: TypecOutput<Ty>,
-        pub funcs: TypecOutput<Func>,
-        pub specs: TypecOutput<Ty>,
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub ty_graph: TyGraph,
@@ -70,8 +69,6 @@ mod util {
 
     impl TyCheckerCtx {
         pub fn clear(&mut self) {
-            self.structs.clear();
-            self.funcs.clear();
             self.tir_arena.clear();
             self.extern_funcs.clear();
             self.ty_graph.clear();
@@ -79,25 +76,53 @@ mod util {
         }
     }
 
+    #[derive(Default)]
+    pub struct AstTransfer<'a> {
+        pub structs: TypecOutput<StructAst<'a>, Ty>,
+        pub funcs: TypecOutput<FuncDefAst<'a>, Func>,
+        pub specs: TypecOutput<SpecAst<'a>, Ty>,
+    }
+
+    impl AstTransfer<'_> {
+        pub fn activate<'a, 'b>(&'a mut self) -> ActiveAstTransfer<'a, 'b> {
+            ActiveAstTransfer(unsafe { mem::transmute(self) })
+        }
+
+        pub fn clear(&mut self) {
+            self.structs.clear();
+            self.funcs.clear();
+            self.specs.clear();
+        }
+    }
+
+    #[repr(transparent)]
+    pub struct ActiveAstTransfer<'a, 'b>(&'b mut AstTransfer<'a>);
+
+    impl Drop for ActiveAstTransfer<'_, '_> {
+        fn drop(&mut self) {
+            self.0.clear();
+        }
+    }
+
     impl TyChecker<'_> {
-        pub fn execute<'a>(
+        pub fn execute<'a, 'b>(
             &mut self,
-            items: GroupedItemsAst,
+            items: GroupedItemsAst<'b>,
             ctx: &'a mut TyCheckerCtx,
+            transfer: ActiveAstTransfer<'b, 'b>,
             type_checked_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
-            self.collect(items.specs, Self::collect_spec, &mut ctx.specs)
-                .collect(items.structs, Self::collect_struct, &mut ctx.structs)
-                .build(items.specs, Self::build_spec, &ctx.specs)
-                .collect(items.funcs, Self::collect_func, &mut ctx.funcs)
+            self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)
+                .collect(items.structs, Self::collect_struct, &mut transfer.0.structs)
+                .build(Self::build_spec, &transfer.0.specs)
+                .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
                 .collect_impls(items.impls, ctx)
-                .build(items.structs, Self::build_struct, &ctx.structs)
-                .detect_infinite_types(ctx)
+                .build(Self::build_struct, &transfer.0.structs)
+                .detect_infinite_types(ctx, &transfer)
                 .build_funcs(
-                    items.funcs,
                     &ctx.tir_arena,
-                    &ctx.funcs,
+                    &transfer.0.funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
                 )
@@ -110,8 +135,12 @@ mod util {
                 )
         }
 
-        pub fn detect_infinite_types(&mut self, ctx: &mut TyCheckerCtx) -> &mut Self {
-            let all_new_types = ctx.structs.iter().map(|&(_, ty)| ty);
+        pub fn detect_infinite_types(
+            &mut self,
+            ctx: &mut TyCheckerCtx,
+            transfer: &ActiveAstTransfer<'_, '_>,
+        ) -> &mut Self {
+            let all_new_types = transfer.0.structs.iter().map(|&(_, ty)| ty);
 
             if all_new_types.clone().next().is_none() {
                 return self;

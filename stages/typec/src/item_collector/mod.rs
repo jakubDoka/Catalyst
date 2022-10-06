@@ -20,15 +20,15 @@ impl TyChecker<'_> {
             T,
             &[TopLevelAttributeAst],
         ) -> Option<(ModuleItem, VRef<T::Output>)>,
-        out: &mut TypecOutput<T::Output>,
+        out: &mut TypecOutput<T, T::Output>,
     ) -> &mut Self {
-        for (i, &(item, attributes)) in items.iter().enumerate() {
-            let Some((item, id)) = collector(self, item, attributes) else {
+        for &(item_ast, attributes) in items.iter() {
+            let Some((item, id)) = collector(self, item_ast, attributes) else {
                 continue;
             };
 
             self.insert_scope_item(item);
-            out.push((i, id));
+            out.push((item_ast, id));
         }
 
         self
@@ -61,7 +61,6 @@ impl TyChecker<'_> {
         }
     }
 
-    #[allow(unused)]
     pub fn collect_spec_impl(
         &mut self,
         i: usize,

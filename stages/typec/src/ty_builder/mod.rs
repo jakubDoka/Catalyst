@@ -9,12 +9,10 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn build<T: CollectGroup>(
         &mut self,
-        items: GroupedItemSlice<T>,
         builder: fn(&mut Self, VRef<T::Output>, T),
-        types: &TypecOutput<T::Output>,
+        types: &TypecOutput<T, T::Output>,
     ) -> &mut Self {
-        for &(i, ty) in types {
-            let (ast, ..) = items[i];
+        for &(ast, ty) in types {
             builder(self, ty, ast);
         }
 
