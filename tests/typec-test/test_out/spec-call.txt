@@ -1,8 +1,8 @@
 error: 'u32' does not implement '0\Clay'
-  --> spec-call\root.ctl:10:25
+  --> spec-call\root.ctl:10:29
    |
 10 | fn other_main -> u32 => pass(0)
-   |                         ^^^^^^^ when calling this
+   |                             ^^^ when calling this
    |
 
 info: tir repr of functions:
