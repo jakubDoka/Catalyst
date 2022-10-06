@@ -1,3 +1,17 @@
+error: 'param 0' does not implement '0\Glue'
+  --> spec-with-funcs\root.ctl:14:10
+   |
+14 |     G\new().use_on(value)
+   |          ^^ when calling this
+   |
+
+error: cannot infer type of parameters[1]
+  --> spec-with-funcs\root.ctl:14:19
+   |
+14 |     G\new().use_on(value)
+   |                   ^^^^^^^ while instantiating this call
+   |
+
 info: tir repr of functions:
  fn [todo] uint\0\new() -> uint return 0
 
