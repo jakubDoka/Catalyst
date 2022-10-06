@@ -89,7 +89,11 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         let mut unit = branch!(ctx => {
             Ident => ctx.parse().map(Self::Path),
-            BackSlash => ctx.parse().map(Self::Path),
+            BackSlash => {
+                let slash = ctx.advance().span;
+                ctx.parse_args((None, slash))
+                    .map(Self::StructConstructor)
+            },
             Return => ctx.parse().map(Self::Return),
             Int => Some(Self::Int(ctx.advance().span)),
             Char => Some(Self::Char(ctx.advance().span)),

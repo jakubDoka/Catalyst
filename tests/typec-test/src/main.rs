@@ -151,7 +151,7 @@ fn main() {
 
             fn main() -> uint => pass(0);
             fn other_main() -> u32 => pass(0);
-            fn last_main() -> Foo[uint] => pass(Foo::{ a: 0 });
+            fn last_main() -> Foo[uint] => pass(::{ a: 0 });
         }
     }
 }

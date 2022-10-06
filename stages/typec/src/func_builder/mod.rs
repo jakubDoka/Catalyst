@@ -257,10 +257,22 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         let (ty, params) = if let Some(PathInstanceAst { path, params }) = path {
             let ty = self.ty_path(path)?;
-            (ty, params.map(|(_, params)| params))
+            (
+                ty,
+                params.and_then(|(_, params)| {
+                    params
+                        .iter()
+                        .map(|&param| self.ty(param))
+                        .nsc_collect::<Option<BumpVec<_>>>()
+                }),
+            )
         } else {
             let ty = inference.or_else(|| self.cannot_infer(ctor.span())?)?;
-            (ty, None)
+            self.typec.types[ty]
+                .kind
+                .try_cast::<TyInstance>()
+                .map(|ty| (ty.base, Some(self.typec.ty_slices[ty.args].to_bumpvec())))
+                .unwrap_or((ty, None))
         };
 
         let struct_meta = self.typec.types[ty]
@@ -271,14 +283,16 @@ impl TyChecker<'_> {
         let mut param_slots = bumpvec![None; self.typec.ty_slices[struct_meta.generics].len()];
 
         if let Some(params) = params {
-            if params.len() > param_slots.len() {
+            if let Some(PathInstanceAst { params: Some((.., params)), .. }) = path
+                && params.len() > param_slots.len()
+            {
                 self.too_many_params(params, param_slots.len())?;
             }
 
             param_slots
                 .iter_mut()
                 .zip(params.iter().copied())
-                .for_each(|(slot, param)| *slot = self.ty(param))
+                .for_each(|(slot, param)| *slot = Some(param))
         }
 
         let mut fields = bumpvec![None; body.len()];
