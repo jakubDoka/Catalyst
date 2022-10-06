@@ -1,23 +1,23 @@
 info: tir repr of functions:
- fn [todo] 2\pass(var0: param 0) -> param 0 return var0
+ fn [var0: any] 2\pass(var0: param 0) -> param 0 return var0
 
-fn [todo] uint\2\pass(var0: uint) -> uint return var0
+fn [] uint\2\pass(var0: uint) -> uint return var0
 
-fn [todo] 2\A\2\pass(var0: uint) -> uint return var0
+fn [] 2\A\2\pass(var0: uint) -> uint return var0
 
-fn [todo] 0\pass(var0: param 0) -> param 0 return var0
+fn [var0: any] 0\pass(var0: param 0) -> param 0 return var0
 
-fn [todo] uint\0\pass(var0: uint) -> uint return var0
+fn [] uint\0\pass(var0: uint) -> uint return var0
 
-fn [todo] uint\0\pass_other(var0: uint, var1: param 0) -> param 0 return var1
+fn [var0: any] uint\0\pass_other(var0: uint, var1: param 0) -> param 0 return var1
 
-fn [todo] 0\A\0\pass(var0: param 0) -> param 0 return var0
+fn [var0: any] 0\A\0\pass(var0: param 0) -> param 0 return var0
 
-fn [todo] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(2\A\2\pass(0))))
+fn [] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(2\A\2\pass(0))))
 
-fn [todo] 1\other_main() -> uint return 2\pass[uint](uint\0\pass_other[uint](0, 0))
+fn [] 1\other_main() -> uint return 2\pass[uint](uint\0\pass_other[uint](0, 0))
 
-fn [todo] 1\third_main() -> uint return 0\A\0\pass[uint](0\A\0\pass[uint](0))
+fn [] 1\third_main() -> uint return 0\A\0\pass[uint](0\A\0\pass[uint](0))
 
 
 
