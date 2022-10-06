@@ -1,7 +1,7 @@
 info: tir repr of functions:
- fn [todo] 0\main() -> uint return uint\0\pass(0)
+ fn [] 0\main() -> uint return uint\0\pass(0)
 
-fn [todo] uint\0\pass(var0: uint) -> uint return var0
+fn [] uint\0\pass(var0: uint) -> uint return var0
 
 
 
