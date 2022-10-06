@@ -165,6 +165,14 @@ impl MirChecker<'_> {
 
                 buffer.push('}');
             }
+            InstMir::PreAlloc(val) => {
+                write!(
+                    buffer,
+                    "var{} = pre-alloc {}",
+                    val.index(),
+                    &self.interner[self.typec.types.id(func.value_ty(val))]
+                )?;
+            }
         }
 
         Ok(())

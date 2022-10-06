@@ -536,5 +536,31 @@ fn main() {
             #[entry];
             fn main -> u32 => pass(0uint);
         }
+
+        simple "struct-constructor" {
+            struct OnStack {
+                a: uint;
+                b: uint
+            };
+
+            struct InRegister {
+                a: u32;
+                b: u32
+            };
+
+            struct [T, E] Generic {
+                a: T;
+                b: E
+            };
+
+            #[entry];
+            fn main -> uint {
+                Generic::{
+                    a: OnStack::{ a: 1; b: 2 };
+                    b: InRegister::{ a: 3; b: 1 }
+                };
+                0
+            };
+        }
     }
 }
