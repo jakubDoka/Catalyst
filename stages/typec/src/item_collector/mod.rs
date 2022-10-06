@@ -34,109 +34,71 @@ impl TyChecker<'_> {
         self
     }
 
-    pub fn collect_impls(
+    pub fn collect_impls<'a>(
         &mut self,
-        items: GroupedItemSlice<ImplAst>,
-        ctx: &mut TyCheckerCtx,
+        items: GroupedItemSlice<ImplAst<'a>>,
+        transfer: &mut AstTransfer<'a>,
     ) -> &mut Self {
-        for (i, &(item, attributes)) in items.iter().enumerate() {
-            self.collect_impl(i, item, attributes, ctx);
+        for &(item, attributes) in items.iter() {
+            self.collect_impl(item, attributes, transfer);
         }
 
         self
     }
 
-    pub fn collect_impl(
+    pub fn collect_impl<'a>(
         &mut self,
-        i: usize,
-        r#impl @ ImplAst { target, .. }: ImplAst,
-        attrs: &[TopLevelAttributeAst],
-        ctx: &mut TyCheckerCtx,
-    ) -> Option<()> {
-        match target {
-            ImplTarget::Direct(ty) => self.collect_direct_impl(i, ty, r#impl, attrs, ctx),
-            ImplTarget::Spec(spec, .., target) => {
-                self.collect_spec_impl(i, target, spec, r#impl, attrs, ctx)
-            }
-        }
-    }
-
-    pub fn collect_spec_impl(
-        &mut self,
-        i: usize,
-        target: TyAst,
-        spec: TyAst,
         r#impl @ ImplAst {
+            target,
             vis,
             generics,
             body,
             ..
-        }: ImplAst,
+        }: ImplAst<'a>,
         _: &[TopLevelAttributeAst],
-        ctx: &mut TyCheckerCtx,
+        transfer: &mut AstTransfer<'a>,
     ) -> Option<()> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
         let parsed_generics = self.generics(generics);
 
-        let parsed_ty = self.ty(target)?;
-        let parsed_spec = self.ty(spec)?;
-
-        let parsed_ty_base = self.typec.types.base(parsed_ty);
-        let parsed_spec_base = self.typec.types.base(parsed_spec);
-
-        if let Some(already) = self.typec.implements(parsed_ty, parsed_spec) {
-            self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
-        }
-
-        let impl_ent = Impl {
-            generics: parsed_generics,
-            ty: parsed_ty,
-            spec: parsed_spec,
-            methods: default(),
-            next: self
-                .typec
-                .impl_lookup
-                .insert(
-                    (parsed_ty_base, parsed_spec_base),
-                    // SAFETY: We push right after this
-                    Some(unsafe { self.typec.impls.next() }),
-                )
-                .flatten(),
-            span: Some(r#impl.span()),
+        let (parsed_ty, parsed_spec) = match target {
+            ImplTarget::Direct(ty) => (self.ty(ty)?, None),
+            ImplTarget::Spec(ty, .., spec) => (self.ty(ty)?, Some(self.ty(spec)?)),
         };
-        self.typec.impls.push(impl_ent);
-
-        self.scope.end_frame(frame);
-
-        Some(())
-    }
-
-    pub fn collect_direct_impl(
-        &mut self,
-        i: usize,
-        ty: TyAst,
-        ImplAst {
-            vis,
-            generics,
-            body,
-            ..
-        }: ImplAst,
-        _: &[TopLevelAttributeAst],
-        ctx: &mut TyCheckerCtx,
-    ) -> Option<()> {
-        let frame = self.scope.start_frame();
-        self.insert_generics(generics, 0);
-        let parsed_generics = self.generics(generics);
-        let parsed_ty = self.ty(ty)?;
 
         self.scope
-            .push(self.interner.intern_str("Self"), parsed_ty, ty.span());
+            .push(self.interner.intern_str("Self"), parsed_ty, target.span());
 
-        let func_iter = body.iter().enumerate().map(|(i, &item)| match item {
-            ImplItemAst::Func(&func) => (i, func),
-        });
+        let impl_id = if let Some(parsed_spec) = parsed_spec {
+            let parsed_ty_base = self.typec.types.base(parsed_ty);
+            let parsed_spec_base = self.typec.types.base(parsed_spec);
+
+            if let Some(already) = self.typec.implements(parsed_ty, parsed_spec) {
+                self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
+            }
+
+            let impl_ent = Impl {
+                generics: parsed_generics,
+                ty: parsed_ty,
+                spec: parsed_spec,
+                methods: default(),
+                next: self
+                    .typec
+                    .impl_lookup
+                    .insert(
+                        (parsed_ty_base, parsed_spec_base),
+                        // SAFETY: We push right after this
+                        Some(unsafe { self.typec.impls.next() }),
+                    )
+                    .flatten(),
+                span: Some(r#impl.span()),
+            };
+            Some(self.typec.impls.push(impl_ent))
+        } else {
+            None
+        };
 
         let scope_data = ScopeData {
             offset: generics.len(),
@@ -145,17 +107,24 @@ impl TyChecker<'_> {
             upper_vis: vis,
         };
 
-        for (j, func) in func_iter {
+        let func_iter = body.iter().map(|&item| match item {
+            ImplItemAst::Func(&func) => func,
+        });
+
+        for func in func_iter {
             let Some((item, id)) = self.collect_func_low(func, &[], scope_data) else {
                 continue;
             };
 
             self.insert_scope_item(item);
 
-            ctx.impl_funcs.push((i, j, id));
+            transfer.impl_funcs.push((func, id));
         }
 
+        transfer.close_impl_frame(r#impl, impl_id);
+
         self.scope.end_frame(frame);
+
         Some(())
     }
 

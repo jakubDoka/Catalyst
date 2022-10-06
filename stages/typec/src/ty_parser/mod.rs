@@ -1,4 +1,4 @@
-use std::{default::default, ops::Deref};
+use std::{default::default, iter, ops::Deref};
 
 use diags::*;
 use lexing_t::Span;
@@ -232,6 +232,35 @@ impl TyChecker<'_> {
             .get(sym)
             .map_err(|err| self.scope_error(err, sym, span, what))
             .ok()
+    }
+
+    pub fn pack_function_generics(&self, func: VRef<Func>) -> impl Iterator<Item = VRef<Ty>> + '_ {
+        let Func {
+            generics,
+            upper_generics,
+            ..
+        } = self.typec.funcs[func];
+        iter::empty()
+            .chain(&self.typec.ty_slices[generics])
+            .chain(&self.typec.ty_slices[upper_generics])
+            .copied()
+    }
+
+    pub fn pack_spec_function_generics(
+        &self,
+        func: SpecFunc,
+    ) -> impl Iterator<Item = VRef<Ty>> + '_ {
+        let SpecFunc {
+            generics, parent, ..
+        } = func;
+        let TySpec {
+            generics: upper_generics,
+            ..
+        } = self.typec.types[parent].kind.cast::<TySpec>();
+        iter::empty()
+            .chain(self.typec.ty_slices[generics].iter().copied())
+            .chain(iter::once(parent))
+            .chain(self.typec.ty_slices[upper_generics].iter().copied())
     }
 
     gen_error_fns! {

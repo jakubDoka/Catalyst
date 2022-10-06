@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, iter, vec};
 
 use diags::*;
 use lexing_t::*;
@@ -17,51 +17,142 @@ pub type ExprRes<'a> = Option<TypedTirNode<'a>>;
 impl TyChecker<'_> {
     pub fn build_impl_funcs<'a>(
         &mut self,
-        items: GroupedItemSlice<ImplAst>,
         arena: &'a Arena,
-        input: &[(usize, usize, VRef<Func>)],
+        transfer: &AstTransfer,
         compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
-        let iter = input
-            .iter()
-            .map(|&(i, j, func)| (items[i].0, items[i].0.body[j].value, func))
-            .filter_map(|(block, ast, func)| {
-                let frame = self.scope.start_frame();
-                self.insert_generics(block.generics, 0);
+        let iter = iter::once(0)
+            .chain(transfer.impl_frames.iter().map(|&(.., i)| i))
+            .zip(transfer.impl_frames.iter().copied());
 
-                let ImplItemAst::Func(&ast) = ast;
-                let res = self.build_func(ast, func, arena, block.generics.len());
-                self.scope.end_frame(frame);
-                let res = res?;
+        for (start, (impl_ast, impl_ref, end)) in iter {
+            let funcs = &transfer.impl_funcs[start..end];
 
-                let Some(body) = res else {
-                    extern_funcs.push(func);
-                    return None;
-                };
+            let frame = self.scope.start_frame();
 
-                Some((func, body))
-            });
+            let offset = impl_ast.generics.len();
+            self.insert_generics(impl_ast.generics, 0);
 
-        compiled_funcs.extend(iter);
+            if let Some(impl_ref) = impl_ref {
+                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, offset);
+            } else {
+                self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, offset);
+            }
+
+            self.scope.end_frame(frame);
+        }
 
         self
+    }
+
+    fn build_spec_impl<'a>(
+        &mut self,
+        arena: &'a Arena,
+        impl_ref: VRef<Impl>,
+        input: &[(FuncDefAst, VRef<Func>)],
+        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+        offset: usize,
+    ) {
+        let spec = self.typec.impls[impl_ref].spec;
+        let spec_base = self.typec.types.base(spec);
+        let spec_ent = self.typec.types[spec_base].kind.cast::<TySpec>();
+        let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
+        let mut methods = bumpvec![None; spec_methods.len()];
+        for &(ast, func) in input {
+            let Some(func_res) = self.build_func(ast, func, arena, offset) else { continue; };
+            let Some(body) = func_res else { todo!() };
+            compiled_funcs.push((func, body));
+
+            let Func { name, .. } = self.typec.funcs[func];
+            let Some((i, spec_func)) = spec_methods
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|&(_, SpecFunc { name: n, .. })| n == name)
+            else {
+                todo!()
+            };
+
+            self.check_impl_signature(spec_func, func, ast.signature.span());
+
+            methods[i] = Some(func);
+        }
+
+        let Some(methods) = methods.into_iter().collect::<Option<BumpVec<_>>>() else {
+            todo!()
+        };
+
+        self.typec.impls[impl_ref].methods = self.typec.func_slices.bump(methods);
+    }
+
+    pub fn check_impl_signature(&mut self, spec_func: SpecFunc, func_id: VRef<Func>, _span: Span) {
+        let func = self.typec.funcs[func_id];
+
+        let spec_func_params = self
+            .pack_spec_function_generics(spec_func)
+            .collect::<BumpVec<_>>();
+        let mut spec_func_slots = vec![None; spec_func_params.len()];
+        let func_params = self.pack_function_generics(func_id).collect::<BumpVec<_>>();
+
+        let spec_args = self.typec.ty_slices[spec_func.signature.args].to_bumpvec();
+        let func_args = self.typec.ty_slices[func.signature.args].to_bumpvec();
+
+        if spec_args.len() != func_args.len() {
+            todo!()
+        }
+
+        for (spec_arg, func_arg) in spec_args.into_iter().zip(func_args) {
+            let func_arg = self
+                .typec
+                .instantiate(func_arg, &func_params, self.interner);
+            if let Err((a, b)) = self
+                .typec
+                .compatible(&mut spec_func_slots, func_arg, spec_arg)
+            {
+                todo!("{a:?}, {b:?}")
+            }
+        }
+
+        let func_ret = self
+            .typec
+            .instantiate(func.signature.ret, &func_params, self.interner);
+        if let Err((a, b)) =
+            self.typec
+                .compatible(&mut spec_func_slots, func_ret, spec_func.signature.ret)
+        {
+            todo!("{a:?}, {b:?}")
+        }
+
+        let Some(spec_func_slots) = spec_func_slots.into_iter().collect::<Option<BumpVec<_>>>() else {
+            todo!()
+        };
+
+        let implements = spec_func_params
+            .into_iter()
+            .zip(spec_func_slots)
+            .all(|(spec, ty)| self.typec.implements(ty, spec).is_some());
+
+        if !implements {
+            todo!()
+        }
     }
 
     pub fn build_funcs<'a>(
         &mut self,
         arena: &'a Arena,
-        input: &TypecOutput<FuncDefAst, Func>,
+        input: &[(FuncDefAst, VRef<Func>)],
         compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
+        offset: usize,
     ) -> &mut Self {
         let iter = input.iter().filter_map(|&(ast, func)| {
-            let res = self.build_func(ast, func, arena, 0)?;
+            let res = self.build_func(ast, func, arena, offset)?;
 
             let Some(body) = res else {
-                        extern_funcs.push(func);
-                        return None;
-                    };
+                extern_funcs.push(func);
+                return None;
+            };
 
             Some((func, body))
         });

@@ -59,12 +59,13 @@ mod util {
     use storage::*;
     use typec_t::*;
 
+    pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<VRef<Impl>>, usize)>;
+
     #[derive(Default)]
     pub struct TyCheckerCtx {
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub ty_graph: TyGraph,
-        pub impl_funcs: Vec<(usize, usize, VRef<Func>)>,
     }
 
     impl TyCheckerCtx {
@@ -72,7 +73,6 @@ mod util {
             self.tir_arena.clear();
             self.extern_funcs.clear();
             self.ty_graph.clear();
-            self.impl_funcs.clear();
         }
     }
 
@@ -81,10 +81,12 @@ mod util {
         pub structs: TypecOutput<StructAst<'a>, Ty>,
         pub funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub specs: TypecOutput<SpecAst<'a>, Ty>,
+        pub impl_funcs: TypecOutput<FuncDefAst<'a>, Func>,
+        pub impl_frames: ImplFrames<'a>,
     }
 
-    impl AstTransfer<'_> {
-        pub fn activate<'a, 'b>(&'a mut self) -> ActiveAstTransfer<'a, 'b> {
+    impl<'a> AstTransfer<'a> {
+        pub fn activate<'c, 'b>(&'c mut self) -> ActiveAstTransfer<'c, 'b> {
             ActiveAstTransfer(unsafe { mem::transmute(self) })
         }
 
@@ -92,6 +94,12 @@ mod util {
             self.structs.clear();
             self.funcs.clear();
             self.specs.clear();
+            self.impl_funcs.clear();
+            self.impl_frames.clear();
+        }
+
+        pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<VRef<Impl>>) {
+            self.impl_frames.push((ast, r#impl, self.funcs.len()));
         }
     }
 
@@ -109,7 +117,7 @@ mod util {
             &mut self,
             items: GroupedItemsAst<'b>,
             ctx: &'a mut TyCheckerCtx,
-            transfer: ActiveAstTransfer<'b, 'b>,
+            transfer: ActiveAstTransfer<'b, '_>,
             type_checked_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
@@ -117,19 +125,19 @@ mod util {
                 .collect(items.structs, Self::collect_struct, &mut transfer.0.structs)
                 .build(Self::build_spec, &transfer.0.specs)
                 .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
-                .collect_impls(items.impls, ctx)
+                .collect_impls(items.impls, transfer.0)
                 .build(Self::build_struct, &transfer.0.structs)
-                .detect_infinite_types(ctx, &transfer)
+                .detect_infinite_types(ctx, transfer.0)
                 .build_funcs(
                     &ctx.tir_arena,
                     &transfer.0.funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
+                    0,
                 )
                 .build_impl_funcs(
-                    items.impls,
                     &ctx.tir_arena,
-                    &ctx.impl_funcs,
+                    transfer.0,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
                 )
@@ -138,9 +146,9 @@ mod util {
         pub fn detect_infinite_types(
             &mut self,
             ctx: &mut TyCheckerCtx,
-            transfer: &ActiveAstTransfer<'_, '_>,
+            transfer: &AstTransfer,
         ) -> &mut Self {
-            let all_new_types = transfer.0.structs.iter().map(|&(_, ty)| ty);
+            let all_new_types = transfer.structs.iter().map(|&(_, ty)| ty);
 
             if all_new_types.clone().next().is_none() {
                 return self;

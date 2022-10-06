@@ -96,6 +96,7 @@ impl Default for TyKind {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct SpecFunc {
     pub generics: VRefSlice<Ty>,
     pub signature: Signature,

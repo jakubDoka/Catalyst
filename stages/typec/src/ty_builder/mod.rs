@@ -19,11 +19,23 @@ impl TyChecker<'_> {
         self
     }
 
-    pub fn build_spec(&mut self, spec: VRef<Ty>, SpecAst { generics, body, .. }: SpecAst) {
+    pub fn build_spec(
+        &mut self,
+        spec: VRef<Ty>,
+        SpecAst {
+            generics,
+            body,
+            name,
+            ..
+        }: SpecAst,
+    ) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
-        let methods = self.build_spec_methods(spec, body, generics.len());
+        let self_param = self.typec.nth_param(generics.len(), self.interner);
+        self.scope
+            .push(self.interner.intern_str("Self"), self_param, name.span);
+        let methods = self.build_spec_methods(spec, body, generics.len() + 1);
         let generics = self.generics(generics);
         self.typec.types[spec].kind = TySpec {
             inherits: default(),
