@@ -29,10 +29,16 @@ impl TyChecker<'_> {
         for (start, (impl_ast, impl_ref, end)) in iter {
             let funcs = &transfer.impl_funcs[start..end];
 
+            let Some(&(.., first)) = funcs.first() else {
+                continue;
+            };
+
             let frame = self.scope.start_frame();
 
             let offset = impl_ast.generics.len();
+            let Func { generics, .. } = self.typec.funcs[first];
             self.insert_generics(impl_ast.generics, 0);
+            self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {
                 self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, offset);
@@ -90,10 +96,10 @@ impl TyChecker<'_> {
         let func = self.typec.funcs[func_id];
 
         let spec_func_params = self
-            .pack_spec_function_generics(spec_func)
+            .pack_spec_func_param_specs(spec_func)
             .collect::<BumpVec<_>>();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
-        let func_params = self.pack_function_generics(func_id).collect::<BumpVec<_>>();
+        let func_params = self.pack_func_param_specs(func_id).collect::<BumpVec<_>>();
 
         let spec_args = self.typec.ty_slices[spec_func.signature.args].to_bumpvec();
         let func_args = self.typec.ty_slices[func.signature.args].to_bumpvec();
@@ -183,22 +189,18 @@ impl TyChecker<'_> {
         let Func {
             signature,
             generics: self_generics,
-            upper_generics,
             ..
         } = self.typec.funcs[func];
-        let self_generics = self.typec.ty_slices[upper_generics]
-            .iter()
-            .chain(self.typec.ty_slices[self_generics].iter())
-            .copied()
-            .collect::<Vec<_>>();
+
         let mut builder = TirBuilder::new(
             arena,
             signature.ret,
             ret.map(|ret| ret.span()),
-            self_generics,
+            self.pack_func_param_specs(func).collect::<Vec<_>>(),
         );
 
         self.insert_generics(generics, offset);
+        self.insert_spec_functions(self_generics, offset);
         self.args(signature.args, args, &mut builder);
 
         let tir_body = match body {
@@ -459,175 +461,243 @@ impl TyChecker<'_> {
 
     fn call<'a>(
         &mut self,
-        call @ CallExprAst { callable, args }: CallExprAst,
+        call @ CallExprAst { callable, .. }: CallExprAst,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        let args = args.iter().copied();
-        let res = try {
-            match callable {
-                UnitExprAst::Path(path) => (self.func_path(path, builder)?, Caller::None, None),
-                UnitExprAst::PathInstance(PathInstanceAst { path, params, .. }) => {
-                    (self.func_path(path, builder)?, Caller::None, params)
-                }
-                UnitExprAst::TypedPath(TypedPathAst {
-                    ty,
-                    path: PathInstanceAst { path, params },
-                    ..
-                }) => {
-                    let ty = self.ty(ty)?;
-                    let func = self.method_path(ty, path, builder)?;
-                    (func, Caller::Static(ty), params)
-                }
-                UnitExprAst::DotExpr(&DotExprAst {
-                    lhs,
-                    rhs: PathInstanceAst { path, params },
-                    ..
-                }) => {
-                    let lhs = self.unit_expr(lhs, None, builder)?;
-                    let func = self.method_path(lhs.ty, path, builder)?;
-                    (func, Caller::Value(lhs), params)
-                }
-                kind @ (UnitExprAst::Return(..)
-                | UnitExprAst::Call(..)
-                | UnitExprAst::Int(..)
-                | UnitExprAst::Char(..)
-                | UnitExprAst::StructConstructor(..)
-                | UnitExprAst::Const(..)) => {
-                    todo!("{kind:?}")
+        match callable {
+            UnitExprAst::Path(path) => {
+                let func = self.func_path(path, builder)?;
+                match func {
+                    FuncLookupResult::Func(func) => {
+                        self.direct_call(func, iter::empty(), None, call, inference, builder)
+                    }
+                    FuncLookupResult::Var(..) => todo!(),
+                    FuncLookupResult::SpecFunc(func, caller) => self.direct_spec_call(
+                        func,
+                        iter::empty(),
+                        Ok(caller),
+                        call,
+                        inference,
+                        builder,
+                    ),
                 }
             }
-        };
-
-        let Some((func_res, caller, low_params)) = res else {
-            // more diagnostics
-            for arg in args {
-                self.expr(arg, None, builder);
+            UnitExprAst::PathInstance(path) => {
+                let func = self.func_path(path.path, builder)?;
+                let params = path.params();
+                match func {
+                    FuncLookupResult::Func(func) => {
+                        self.direct_call(func, params, None, call, inference, builder)
+                    }
+                    FuncLookupResult::Var(..) => todo!(),
+                    FuncLookupResult::SpecFunc(func, caller) => {
+                        self.direct_spec_call(func, params, Ok(caller), call, inference, builder)
+                    }
+                }
             }
-
-            return None;
-        };
-
-        match func_res {
-            FuncLookupResult::Func(func) if self.typec[func].is_generic() => self
-                .direct_generic_call(
-                    func,
-                    caller,
-                    low_params.map(|(.., params)| params),
-                    args,
-                    call.span(),
-                    inference,
-                    builder,
-                ),
-            FuncLookupResult::Func(func) => {
-                self.direct_concrete_call(func, caller, args, call.span(), builder)
+            UnitExprAst::TypedPath(TypedPathAst { ty, path, .. }) => {
+                let ty = self.ty(ty)?;
+                let func = self.method_path(ty, path.path, builder)?;
+                let params = path.params();
+                match func {
+                    FuncLookupResult::Func(func) => {
+                        self.direct_call(func, params, None, call, inference, builder)
+                    }
+                    FuncLookupResult::SpecFunc(func, ..) => {
+                        self.direct_spec_call(func, params, Ok(ty), call, inference, builder)
+                    }
+                    FuncLookupResult::Var(..) => todo!(),
+                }
             }
-            FuncLookupResult::Var(_) => todo!(),
+            UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
+                let lhs = self.unit_expr(lhs, None, builder)?;
+                let func = self.method_path(lhs.ty, rhs.path, builder)?;
+                let params = rhs.params();
+                match func {
+                    FuncLookupResult::Func(func) => {
+                        self.direct_call(func, params, Some(lhs), call, inference, builder)
+                    }
+                    FuncLookupResult::SpecFunc(func, ..) => {
+                        self.direct_spec_call(func, params, Err(lhs), call, inference, builder)
+                    }
+                    FuncLookupResult::Var(..) => todo!(),
+                }
+            }
+            kind @ (UnitExprAst::Return(..)
+            | UnitExprAst::Call(..)
+            | UnitExprAst::Int(..)
+            | UnitExprAst::Char(..)
+            | UnitExprAst::StructConstructor(..)
+            | UnitExprAst::Const(..)) => {
+                todo!("{kind:?}")
+            }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn direct_generic_call<'a>(
+    fn direct_call<'a>(
         &mut self,
         func: VRef<Func>,
-        caller: Caller<'a>,
-        params: Option<TyGenericsAst>,
-        args: impl Iterator<Item = ExprAst>,
-        span: Span,
+        params: impl Iterator<Item = TyAst>,
+        caller: Option<TypedTirNode<'a>>,
+        call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let Func {
-            generics,
-            upper_generics,
             signature,
-            owner,
+            upper_generics,
             ..
         } = self.typec.funcs[func];
 
-        let upper_generics = &self.typec.ty_slices[upper_generics];
-        let upper_generics_count = upper_generics.len();
-        let generics = &self.typec.ty_slices[generics];
-        let generics_count = generics.len();
-        let generics = upper_generics
-            .iter()
-            .chain(generics.iter())
-            .copied()
-            .collect::<BumpVec<_>>();
-        let mut param_slots = bumpvec![None; generics_count + upper_generics_count];
+        let param_specs = self.pack_func_param_specs(func).collect::<BumpVec<_>>();
+        let generic_start = self.typec.ty_slices[upper_generics].len();
 
-        if let Some(params) = params {
-            if params.len() > generics_count {
-                self.too_many_params(params, generics_count)?;
-            }
+        let mut param_slots = bumpvec![None; param_specs.len()];
+        param_slots
+            .iter_mut()
+            .skip(generic_start)
+            .zip(params)
+            .for_each(|(param_slot, param)| *param_slot = self.ty(param));
 
-            params
-                .iter()
-                .zip(param_slots.iter_mut().skip(upper_generics_count))
-                .for_each(|(&param, slot)| *slot = self.ty(param));
-        }
-
-        if let Some(inference) = inference {
-            self.infer_params(&mut param_slots, inference, signature.ret, span)?;
-        }
-
-        let types = self.typec.ty_slices[signature.args].to_bumpvec();
-
-        match caller {
-            Caller::Value(value) if let Some(&first) = types.first() => {
-                self.infer_params(&mut param_slots, value.ty, first, span);
-            },
-            Caller::Static(ty) if let Some(owner) = owner => {
-                self.infer_params(&mut param_slots, ty, owner, span);
-            },
-            _ => (),
-        }
-
-        let args = args
-            .zip(types.into_iter().skip(caller.is_value() as usize))
-            .map(|(arg, ty)| {
-                let inferred = self.typec.try_instantiate(ty, &param_slots, self.interner);
-                let expr = self.expr(arg, inferred, builder)?;
-
-                if inferred.is_none() {
-                    self.infer_params(&mut param_slots, expr.ty, ty, arg.span())?;
-                }
-
-                Some(expr.node)
-            });
-        let args = caller
-            .value()
-            .into_iter()
-            .map(Some)
-            .chain(args)
-            .nsc_collect::<Option<BumpVec<_>>>()?;
-
-        let Some(params) = param_slots.iter().copied().nsc_collect::<Option<BumpVec<_>>>() else {
-            todo!()
-        };
-
-        for (&param, spec) in params.iter().zip(generics) {
-            let instance = self
-                .typec
-                .instantiate(param, &builder.generics, self.interner);
-            if self.typec.implements(instance, spec).is_none() {
-                self.missing_spec(instance, spec, span);
-            }
-        }
-
-        let args = builder.arena.alloc_iter(args);
-        let params = builder.arena.alloc_iter(params);
-        let ty = self.typec.instantiate(signature.ret, params, self.interner);
+        let (args, params, ty) = self.call_internals(
+            param_specs.as_slice(),
+            &mut param_slots,
+            caller,
+            args,
+            signature,
+            inference,
+            builder,
+        )?;
 
         let call = CallTir {
             func: CallableTir::Func(func),
             args,
-            span,
+            span: call.span(),
             params,
             ty,
         };
 
         self.node(ty, call, builder)
+    }
+
+    fn direct_spec_call<'a>(
+        &mut self,
+        func: VRef<SpecFunc>,
+        params: impl Iterator<Item = TyAst>,
+        caller: Result<VRef<Ty>, TypedTirNode<'a>>,
+        call @ CallExprAst { args, .. }: CallExprAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let func_ent @ SpecFunc {
+            generics,
+            signature,
+            ..
+        } = self.typec.spec_funcs[func];
+
+        let param_specs = self
+            .pack_spec_func_param_specs(func_ent)
+            .collect::<BumpVec<_>>();
+        let mut param_slots = bumpvec![None; param_specs.len()];
+        let generic_start = param_slots.len() - self.typec.ty_slices[generics].len();
+        param_slots
+            .iter_mut()
+            .skip(generic_start)
+            .zip(params)
+            .for_each(|(param_slot, param)| *param_slot = self.ty(param));
+        param_slots[generic_start - 1] = Some(caller.map_or_else(|e| e.ty, |ty| ty));
+
+        let (args, params, ty) = self.call_internals(
+            param_specs.as_slice(),
+            &mut param_slots,
+            caller.err(),
+            args,
+            signature,
+            inference,
+            builder,
+        )?;
+
+        let call = CallTir {
+            func: CallableTir::SpecFunc(func),
+            args,
+            span: call.span(),
+            params,
+            ty,
+        };
+
+        self.node(ty, call, builder)
+    }
+
+    fn call_params<'a>(
+        &mut self,
+        params: impl Iterator<Item = Option<VRef<Ty>>> + Clone,
+        span: Span,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<&'a [VRef<Ty>]> {
+        let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() else {
+            let missing = params
+                .enumerate()
+                .filter_map(|(i, ty)| ty.is_none().then_some(i));
+
+            for missing in missing {
+                self.cannot_infer_param(span, missing);
+            }
+
+            return None;
+        };
+
+        Some(builder.arena.alloc_iter(params))
+    }
+
+    #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
+    fn call_internals<'a>(
+        &mut self,
+        generics: &[VRef<Ty>],
+        param_slots: &mut [Option<VRef<Ty>>],
+        caller: Option<TypedTirNode<'a>>,
+        args: CallArgsAst,
+        signature: Signature,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<(&'a [TirNode<'a>], &'a [VRef<Ty>], VRef<Ty>)> {
+        let arg_types =
+            self.typec.ty_slices[signature.args][caller.is_some() as usize..].to_bumpvec();
+        if let Some(inference) = inference {
+            self.infer_params(param_slots, inference, signature.ret, args.span());
+        }
+
+        let parsed_args = args
+            .iter()
+            .copied()
+            .zip(arg_types)
+            .map(|(arg, ty)| {
+                let instantiated = self.typec.try_instantiate(ty, param_slots, self.interner);
+                let parsed_arg = self.expr(arg, instantiated, builder);
+                if let Some(parsed_arg) = parsed_arg && instantiated.is_none() {
+                    self.infer_params(param_slots, parsed_arg.ty, ty, arg.span());
+                }
+                parsed_arg
+            })
+            .nsc_collect::<Option<BumpVec<_>>>()
+            .map(|args| caller.into_iter().chain(args).map(|a| a.node))
+            .map(|args| builder.arena.alloc_iter(args.collect::<BumpVec<_>>()))?;
+
+        let params = self.call_params(param_slots.iter().copied(), args.span(), builder)?;
+
+        for (&param, &spec) in params.iter().zip(generics) {
+            let param = self
+                .typec
+                .instantiate(param, &builder.generics, self.interner);
+            if self.typec.implements(param, spec).is_none() {
+                self.missing_spec(param, spec, args.span());
+            }
+        }
+
+        let ret = self.typec.instantiate(signature.ret, params, self.interner);
+
+        Some((parsed_args, params, ret))
     }
 
     fn infer_params(
@@ -641,45 +711,6 @@ impl TyChecker<'_> {
             .compatible(params, reference, template)
             .map_err(|(r, t)| self.generic_ty_mismatch(r, t, span))
             .ok()
-    }
-
-    fn direct_concrete_call<'a>(
-        &mut self,
-        func: VRef<Func>,
-        caller: Caller<'a>,
-        ast_args: impl Iterator<Item = ExprAst>,
-        span: Span,
-        builder: &mut TirBuilder<'a>,
-    ) -> ExprRes<'a> {
-        let Func { signature, .. } = self.typec.funcs[func];
-
-        let types = self.typec.ty_slices[signature.args].to_bumpvec();
-
-        if let Caller::Value(caller) = caller && let Some(&first) = types.first() {
-            // TODO: Auto deref or ref.
-            self.type_check(first, caller.ty, span);
-        }
-
-        let args = ast_args
-            .zip(types.into_iter().skip(caller.is_value() as usize))
-            .map(|(arg, ty)| self.expr(arg, Some(ty), builder).map(|arg| arg.node));
-        let args = caller
-            .value()
-            .into_iter()
-            .map(Some)
-            .chain(args)
-            .nsc_collect::<Option<BumpVec<_>>>()?;
-        let args = builder.arena.alloc_iter(args);
-
-        let call = CallTir {
-            func: CallableTir::Func(func),
-            args,
-            span,
-            params: &[],
-            ty: signature.ret,
-        };
-
-        self.node(signature.ret, call, builder)
     }
 
     fn func_path<'a>(
@@ -706,8 +737,8 @@ impl TyChecker<'_> {
         let id = self
             .interner
             .intern(scoped_ident!(module.as_u32(), func_or_type.ident));
-        if let Some(index) = self.typec.funcs.index(id) {
-            return Some(FuncLookupResult::Func(index));
+        if let Some(func) = self.typec.funcs.index(id) {
+            return Some(FuncLookupResult::Func(func));
         }
 
         let ty = self
@@ -734,7 +765,11 @@ impl TyChecker<'_> {
             [] => {
                 let ty_id = self.typec.types.id(ty);
                 let id = self.interner.intern(scoped_ident!(ty_id, start.ident));
-                Some(FuncLookupResult::Func(lookup!(Func self, id, path.span())))
+                match self.lookup(id, path.span(), FUNC)? {
+                    ScopeItem::Func(func) => Some(FuncLookupResult::Func(func)),
+                    ScopeItem::SpecFunc(func) => Some(FuncLookupResult::SpecFunc(func, ty)),
+                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
+                }
             }
             [name] => {
                 let module = lookup!(Module self, start.ident, start.span);
@@ -975,6 +1010,13 @@ impl TyChecker<'_> {
             }
         }
 
+        push cannot_infer_param(self, span: Span, index: usize) {
+            err: ("cannot infer type of parameters[{}]", index);
+            (span, self.source) {
+                err[span]: "while instantiating this call";
+            }
+        }
+
         push expected_struct(self, ty: VRef<Ty>, span: Span) {
             err: "expected struct type";
             info: ("found '{}'", &self.interner[self.typec.types.id(ty)]);
@@ -1010,27 +1052,9 @@ impl TyChecker<'_> {
 
 pub type Inference = Option<VRef<Ty>>;
 
-enum Caller<'a> {
-    None,
-    Value(TypedTirNode<'a>),
-    Static(VRef<Ty>),
-}
-
-impl<'a> Caller<'a> {
-    fn is_value(&self) -> bool {
-        matches!(self, Caller::Value(..))
-    }
-
-    fn value(&self) -> Option<TirNode<'a>> {
-        match self {
-            Caller::Value(value) => Some(value.node),
-            _ => None,
-        }
-    }
-}
-
 enum FuncLookupResult<'a> {
     Func(VRef<Func>),
+    SpecFunc(VRef<SpecFunc>, VRef<Ty>),
     #[allow(dead_code)]
     Var(TypedTirNode<'a>),
 }

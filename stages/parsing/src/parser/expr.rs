@@ -189,6 +189,16 @@ pub struct PathInstanceAst<'a> {
     pub params: Option<(Span, TyGenericsAst<'a>)>,
 }
 
+impl<'a> PathInstanceAst<'a> {
+    pub fn params(&self) -> impl Iterator<Item = TyAst<'a>> + '_ {
+        self.params
+            .as_ref()
+            .map(|(_, params)| params.iter().copied())
+            .into_iter()
+            .flatten()
+    }
+}
+
 impl<'a> Ast<'a> for PathInstanceAst<'a> {
     type Args = (UnitExprAst<'a>, Option<Span>);
 

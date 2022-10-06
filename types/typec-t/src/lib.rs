@@ -17,7 +17,7 @@ macro_rules! gen_kind {
                 })?)?,
             )*
     ) => {
-        #[derive(Copy, Clone, PartialEq, Eq)]
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
         pub enum $name {
             $(
                 $kind$(($struct))?,
@@ -42,7 +42,7 @@ macro_rules! gen_kind {
             }
 
             pub fn cast<T>(self) -> T where Self: TryInto<T> {
-                self.try_cast().unwrap()
+                self.try_cast().unwrap_or_else(|| unreachable!("invalid cast {:?}", self))
             }
 
             pub fn cast_ref<'a, T>(&'a self) -> &'a T
@@ -61,7 +61,7 @@ macro_rules! gen_kind {
         $(
             $(
                 $(
-                    #[derive(Copy, Clone, Default, PartialEq, Eq)]
+                    #[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
                     pub struct $struct {
                         $(
                             pub $field: $ty,
@@ -145,20 +145,3 @@ pub use {
     },
     typec::{Loc, Located, Typec},
 };
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod test {
-    use super::*;
-
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Int;
-
-    gen_kind!(TestKind
-        A = TestA {
-            a: u32,
-            b: u32,
-        },
-        C = Int,
-    );
-}

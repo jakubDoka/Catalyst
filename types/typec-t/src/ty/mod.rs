@@ -105,6 +105,12 @@ pub struct SpecFunc {
     pub parent: VRef<Ty>,
 }
 
+impl SpecFunc {
+    pub fn is_generic(&self) -> bool {
+        !self.generics.is_empty()
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct Field {
     pub vis: Vis,

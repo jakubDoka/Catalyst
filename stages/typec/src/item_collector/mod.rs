@@ -65,7 +65,7 @@ impl TyChecker<'_> {
 
         let (parsed_ty, parsed_spec) = match target {
             ImplTarget::Direct(ty) => (self.ty(ty)?, None),
-            ImplTarget::Spec(ty, .., spec) => (self.ty(ty)?, Some(self.ty(spec)?)),
+            ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.ty(spec)?)),
         };
 
         self.scope
@@ -130,14 +130,19 @@ impl TyChecker<'_> {
 
     pub fn collect_spec(
         &mut self,
-        SpecAst { vis, name, .. }: SpecAst,
+        SpecAst {
+            vis,
+            name,
+            generics,
+            ..
+        }: SpecAst,
         _: &[TopLevelAttributeAst],
     ) -> Option<(ModuleItem, VRef<Ty>)> {
         let id = intern_scoped_ident!(self, name.ident);
 
         let fallback = |_: &mut Types| Ty {
             kind: TyKind::Spec(default()),
-            flags: default(),
+            flags: TyFlags::GENERIC & !generics.is_empty(),
             loc: default(),
         };
         let id = self.typec.types.get_or_insert(id, fallback);

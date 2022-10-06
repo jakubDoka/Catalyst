@@ -92,15 +92,26 @@ impl Typec {
         interner: &Interner,
         buffer: &mut String,
     ) -> fmt::Result {
-        let Func { signature, .. } = self.funcs[func];
+        let Func {
+            signature,
+            generics,
+            upper_generics,
+            ..
+        } = self.funcs[func];
         use fmt::Write;
         write!(
             buffer,
-            "fn {}[todo] {}({}) -> {} ",
+            "fn {}[{}] {}({}) -> {} ",
             signature
                 .cc
                 .map(|cc| &interner[cc])
                 .map_or(default(), |cc| format!("\"{}\" ", cc)),
+            self.ty_slices[upper_generics]
+                .iter()
+                .chain(&self.ty_slices[generics])
+                .map(|&ty| &interner[self.types.id(ty)])
+                .intersperse(", ")
+                .collect::<String>(),
             &interner[self.funcs.id(func)],
             self.ty_slices[signature.args]
                 .iter()
@@ -283,7 +294,7 @@ impl Typec {
     }
 
     pub fn implements(&mut self, ty: VRef<Ty>, spec: VRef<Ty>) -> Option<VRef<Impl>> {
-        if spec == Ty::ANY {
+        if spec == Ty::ANY || ty == spec {
             return Some(Impl::ANY);
         }
 
@@ -344,7 +355,7 @@ impl Typec {
         let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
 
         while let Some((reference, template)) = stack.pop() {
-            if reference == template {
+            if reference == template && !matches!(self.types[template].kind, TyKind::Param(..)) {
                 continue;
             }
 

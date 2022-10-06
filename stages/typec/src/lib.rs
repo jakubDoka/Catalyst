@@ -99,7 +99,7 @@ mod util {
         }
 
         pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<VRef<Impl>>) {
-            self.impl_frames.push((ast, r#impl, self.funcs.len()));
+            self.impl_frames.push((ast, r#impl, self.impl_funcs.len()));
         }
     }
 

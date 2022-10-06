@@ -234,19 +234,19 @@ impl TyChecker<'_> {
             .ok()
     }
 
-    pub fn pack_function_generics(&self, func: VRef<Func>) -> impl Iterator<Item = VRef<Ty>> + '_ {
+    pub fn pack_func_param_specs(&self, func: VRef<Func>) -> impl Iterator<Item = VRef<Ty>> + '_ {
         let Func {
             generics,
             upper_generics,
             ..
         } = self.typec.funcs[func];
         iter::empty()
-            .chain(&self.typec.ty_slices[generics])
             .chain(&self.typec.ty_slices[upper_generics])
+            .chain(&self.typec.ty_slices[generics])
             .copied()
     }
 
-    pub fn pack_spec_function_generics(
+    pub fn pack_spec_func_param_specs(
         &self,
         func: SpecFunc,
     ) -> impl Iterator<Item = VRef<Ty>> + '_ {
@@ -258,9 +258,36 @@ impl TyChecker<'_> {
             ..
         } = self.typec.types[parent].kind.cast::<TySpec>();
         iter::empty()
-            .chain(self.typec.ty_slices[generics].iter().copied())
-            .chain(iter::once(parent))
             .chain(self.typec.ty_slices[upper_generics].iter().copied())
+            .chain(iter::once(parent))
+            .chain(self.typec.ty_slices[generics].iter().copied())
+    }
+
+    pub fn insert_spec_functions(&mut self, generics: VRefSlice<Ty>, offset: usize) {
+        for (i, generic) in self.typec.ty_slices[generics]
+            .to_bumpvec()
+            .into_iter()
+            .enumerate()
+        {
+            let index = i + offset;
+            let param = self.typec.nth_param(index, self.interner);
+            let id = self.typec.types.id(param);
+            self.insert_spec_functions_recur(id, generic);
+        }
+    }
+
+    fn insert_spec_functions_recur(&mut self, id: VRef<str>, generic: VRef<Ty>) {
+        let spec_base = self.typec.types.base(generic);
+        let spec = self.typec.types[spec_base].kind.cast::<TySpec>();
+
+        for super_spec in self.typec.ty_slices[spec.inherits].to_bumpvec() {
+            self.insert_spec_functions_recur(id, super_spec);
+        }
+
+        for (key, &func) in self.typec.spec_funcs.indexed(spec.methods) {
+            let id = self.interner.intern(scoped_ident!(id, func.name));
+            self.scope.push(id, key, func.span.unwrap_or_default());
+        }
     }
 
     gen_error_fns! {

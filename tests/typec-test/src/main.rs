@@ -159,5 +159,25 @@ fn main() {
             fn other_main() -> u32 => pass(0);
             fn last_main() -> Foo[uint] => pass(::{ a: 0 });
         }
+
+        simple "spec-with-funcs" {
+            struct [T] Glued {
+                inner: T
+            };
+
+            spec Glue {
+                fn new -> Self;
+                fn [T] use_on(s: Self, value: T) -> Glued[T];
+            };
+
+            impl Glue for uint {
+                fn new -> Self => 0;
+                fn [T] use_on(s: Self, value: T) -> Glued[T] => ::{ inner: value };
+            };
+
+            fn [G: Glue, T] glue_up(value: T) -> Glued[T] {
+                G::new().use_on(value)
+            }
+        }
     }
 }
