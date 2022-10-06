@@ -191,6 +191,7 @@ pub struct Layout {
     pub offsets: VSlice<Offset>,
     pub align: NonZeroU8,
     pub repr: Type,
+    pub on_stack: bool,
 }
 
 impl Layout {
@@ -199,6 +200,7 @@ impl Layout {
         align: unsafe { NonZeroU8::new_unchecked(1) },
         offsets: VSlice::empty(),
         repr: types::INVALID,
+        on_stack: false,
     };
 }
 

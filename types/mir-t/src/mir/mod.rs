@@ -144,6 +144,7 @@ pub enum InstMir {
     Access(VRef<ValueMir>),
     Call(CallMir, VRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
+    Constructor(VRefSlice<ValueMir>, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

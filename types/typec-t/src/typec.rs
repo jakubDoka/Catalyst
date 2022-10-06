@@ -299,7 +299,7 @@ impl Typec {
         let base_key = (ty_base, spec_base);
 
         let Some(&(mut base_impl)) = self.impl_lookup.get(&base_key) else {
-            self.impl_lookup.insert(dbg!(key), None);
+            self.impl_lookup.insert(key, None);
             return None;
         };
 

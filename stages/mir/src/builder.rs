@@ -43,7 +43,24 @@ impl MirChecker<'_> {
             TirNode::Access(&access) => self.access(access, builder),
             TirNode::Return(&ret) => self.r#return(ret, builder),
             TirNode::Const(&r#const) => self.r#const(r#const, builder),
+            TirNode::Constructor(&constructor) => self.constructor(constructor, builder),
         }
+    }
+
+    fn constructor(
+        &mut self,
+        ConstructorTir { span, ty, fields }: ConstructorTir,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let fields = fields
+            .iter()
+            .map(|&field| self.node(field, builder))
+            .collect::<Option<BumpVec<_>>>()?;
+        let fields = builder.ctx.func.value_args.bump(fields);
+
+        let value = builder.value(ty, self.typec);
+        builder.inst(InstMir::Constructor(fields, value), span);
+        Some(value)
     }
 
     fn r#const(&mut self, r#const: ConstTir, builder: &mut MirBuilder) -> NodeRes {

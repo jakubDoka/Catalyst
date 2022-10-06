@@ -1,5 +1,8 @@
 use cranelift_codegen::{
-    ir::{self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, Type, UserExternalName},
+    ir::{
+        self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, MemFlags, StackSlotData,
+        Type, UserExternalName,
+    },
     isa::CallConv,
 };
 use mir_t::*;
@@ -91,7 +94,93 @@ impl Generator<'_> {
             InstMir::Access(..) => (),
             InstMir::Call(call, ret) => self.call(call, ret, builder),
             InstMir::Const(id, ret) => self.r#const(id, ret, builder),
+            InstMir::Constructor(fields, ret) => self.constructor(fields, ret, builder),
         }
+    }
+
+    fn constructor(
+        &mut self,
+        fields: VRefSlice<ValueMir>,
+        ret: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) {
+        let layout = self.ty_layout(builder.body.value_ty(ret), &[], builder.ptr_ty());
+
+        let value = if layout.on_stack {
+            self.stack_constructor(fields, layout, builder)
+        } else {
+            self.register_constructor(fields, layout, builder)
+        };
+
+        self.gen_resources.values[ret] = value.into();
+    }
+
+    fn stack_constructor(
+        &mut self,
+        fields: VRefSlice<ValueMir>,
+        layout: Layout,
+        builder: &mut GenBuilder,
+    ) -> ir::Value {
+        let stack_slot = builder.create_sized_stack_slot(StackSlotData {
+            kind: ir::StackSlotKind::ExplicitSlot,
+            size: layout.size,
+        });
+        let ptr_ty = builder.ptr_ty();
+        let target_config = builder.isa.frontend_config();
+
+        let iter = builder.body.value_args[fields]
+            .iter()
+            .zip(self.gen_layouts.offsets[layout.offsets].to_bumpvec());
+        for (&field, offset) in iter {
+            let field_layout = self.ty_layout(builder.body.value_ty(field), &[], ptr_ty);
+            let value = self.gen_resources.values[field].expect("value should be computed");
+            if field_layout.on_stack {
+                let dest = builder.ins().stack_addr(ptr_ty, stack_slot, offset as i32);
+                builder.emit_small_memory_copy(
+                    target_config,
+                    dest,
+                    value,
+                    field_layout.size as u64,
+                    layout.align.get(),
+                    field_layout.align.get(),
+                    true,
+                    MemFlags::new(),
+                );
+            } else {
+                builder.ins().stack_store(value, stack_slot, offset as i32);
+            }
+        }
+
+        builder.ins().stack_addr(ptr_ty, stack_slot, 0)
+    }
+
+    fn register_constructor(
+        &mut self,
+        fields: VRefSlice<ValueMir>,
+        layout: Layout,
+        builder: &mut GenBuilder,
+    ) -> ir::Value {
+        let mut value = builder.ins().iconst(layout.repr, 0);
+
+        let iter = builder.body.value_args[fields]
+            .iter()
+            .zip(self.gen_layouts.offsets[layout.offsets].to_bumpvec());
+
+        for (&field, offset) in iter {
+            let mut field_value =
+                self.gen_resources.values[field].expect("value should be computed");
+            if layout.size
+                > self
+                    .ty_repr(builder.body.value_ty(field), builder.ptr_ty())
+                    .bytes()
+            {
+                field_value = builder.ins().uextend(layout.repr, field_value);
+            }
+            field_value = builder.ins().ishl_imm(field_value, offset as i64 * 8);
+            value = builder.ins().bor(value, field_value);
+        }
+
+        value
     }
 
     fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
@@ -377,11 +466,14 @@ impl Generator<'_> {
                     size += layout.size;
                 }
 
+                let (repr, on_stack) = Self::repr_for_size(size, ptr_ty);
+
                 Layout {
-                    repr: Self::repr_for_size(size),
+                    repr,
                     offsets: self.gen_layouts.offsets.bump(offsets),
                     align: align.try_into().unwrap(),
                     size,
+                    on_stack,
                 }
             }
             TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
@@ -389,19 +481,25 @@ impl Generator<'_> {
                 offsets: VSlice::empty(),
                 align: (ptr_ty.bytes() as u8).try_into().unwrap(),
                 size: ptr_ty.bytes() as u32,
+                on_stack: false,
             },
-            TyKind::Integer(int) => Layout {
-                size: int.size as u32,
-                offsets: VSlice::empty(),
-                align: int.size.max(1).try_into().unwrap(),
-                repr: Self::repr_for_size(int.size as u32),
-            },
-            TyKind::Param(index) => self.ty_layout(params[index as usize], &[], ptr_ty),
+            TyKind::Integer(int) => {
+                let (repr, on_stack) = Self::repr_for_size(int.size as u32, ptr_ty);
+                Layout {
+                    size: int.size as u32,
+                    offsets: VSlice::empty(),
+                    align: int.size.max(1).try_into().unwrap(),
+                    repr,
+                    on_stack,
+                }
+            }
+            TyKind::Param(index) => return self.ty_layout(params[index as usize], &[], ptr_ty),
             TyKind::Bool => Layout {
                 repr: types::B1,
                 offsets: VSlice::empty(),
                 align: 1.try_into().unwrap(),
                 size: 1,
+                on_stack: false,
             },
             TyKind::Instance(inst) => {
                 // remap the instance parameters so we can compute the layout correctly
@@ -410,7 +508,7 @@ impl Generator<'_> {
                     .into_iter()
                     .map(|ty| self.typec.instantiate(ty, params, self.interner))
                     .collect::<BumpVec<_>>();
-                self.ty_layout(inst.base, &params, ptr_ty)
+                return self.ty_layout(inst.base, &params, ptr_ty);
             }
             TyKind::Spec(..) => unreachable!(),
         };
@@ -420,12 +518,19 @@ impl Generator<'_> {
         res
     }
 
-    fn repr_for_size(size: u32) -> Type {
-        match size {
-            8.. => types::I64,
-            4.. => types::I32,
-            2.. => types::I16,
-            0.. => types::I8,
+    fn repr_for_size(size: u32, ptr_ty: Type) -> (Type, bool) {
+        if size > ptr_ty.bytes() as u32 {
+            return (ptr_ty, true);
         }
+
+        (
+            match size {
+                8.. => types::I64,
+                4.. => types::I32,
+                2.. => types::I16,
+                0.. => types::I8,
+            },
+            false,
+        )
     }
 }
