@@ -572,12 +572,21 @@ fn main() {
         }
         simple "auto-ref-deref" {
             impl uint {
-                fn reference(s: ^^Self) -> ^^Self => s;
+                fn reference(s: ^^^^^^^^^^^^Self) -> ^^^^^^^^^^^^Self => s;
                 fn dereference(s: Self) -> Self => s;
             };
 
             #[entry];
             fn main -> uint => 0.reference().dereference();
+        }
+
+        simple "additional-param-garbage" {
+            fn [T] pass(value: T) -> T => value;
+
+            struct B;
+
+            #[entry];
+            fn main -> uint => pass::[uint, B](0uint, 'h');
         }
     }
 }
