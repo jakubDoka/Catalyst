@@ -365,6 +365,11 @@ impl<T, CACHE> BumpMap<T, CACHE> {
             .into_iter()
             .flatten()
     }
+
+    pub fn local_index(&self, kdy: VSlice<T>, index: VRef<T>) -> usize {
+        let range = self.range_of(kdy);
+        index.index() - range.start
+    }
 }
 
 impl<T: Clone, CACHE: Clone> Clone for BumpMap<T, CACHE> {

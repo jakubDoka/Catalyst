@@ -135,8 +135,7 @@ impl TestState {
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let func_ref =
-                generator!(self).import_compiled_func(func, VSlice::empty(), &mut builder);
+            let func_ref = generator!(self).import_compiled_func(func, iter::empty(), &mut builder);
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
         }
@@ -587,6 +586,23 @@ fn main() {
 
             #[entry];
             fn main -> uint => pass::[uint, B](0uint, 'h');
+        }
+
+        simple "spec-test" {
+            spec Flood {
+                fn new -> uint;
+            };
+
+            struct Fool;
+
+            impl Flood for Fool {
+                fn new -> uint => 0;
+            };
+
+            fn [T: Flood] make_flood() -> uint => T::new();
+
+            #[entry];
+            fn main -> uint => make_flood::[Fool]();
         }
     }
 }

@@ -60,7 +60,7 @@ impl TyChecker<'_> {
         compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         offset: usize,
     ) {
-        let spec = self.typec.impls[impl_ref].spec;
+        let Impl { spec, ty, .. } = self.typec.impls[impl_ref];
         let spec_base = self.typec.types.base(spec);
         let spec_ent = self.typec.types[spec_base].kind.cast::<TySpec>();
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
@@ -86,7 +86,7 @@ impl TyChecker<'_> {
                 continue;
             };
 
-            self.check_impl_signature(spec_func, func, ast.signature.span());
+            self.check_impl_signature(ty, spec_func, func, ast.signature.span());
 
             methods[i] = Some(func);
         }
@@ -98,13 +98,21 @@ impl TyChecker<'_> {
         self.typec.impls[impl_ref].methods = self.typec.func_slices.bump(methods);
     }
 
-    pub fn check_impl_signature(&mut self, spec_func: SpecFunc, func_id: VRef<Func>, _span: Span) {
+    pub fn check_impl_signature(
+        &mut self,
+        implementor: VRef<Ty>,
+        spec_func: SpecFunc,
+        func_id: VRef<Func>,
+        _span: Span,
+    ) {
         let func = self.typec.funcs[func_id];
 
         let spec_func_params = self
             .pack_spec_func_param_specs(spec_func)
             .collect::<BumpVec<_>>();
+        let generic_start = spec_func_params.len() - self.typec.ty_slices[spec_func.generics].len();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
+        spec_func_slots[generic_start - 1] = Some(implementor);
         let func_params = self.pack_func_param_specs(func_id).collect::<BumpVec<_>>();
 
         let spec_args = self.typec.ty_slices[spec_func.signature.args].to_bumpvec();

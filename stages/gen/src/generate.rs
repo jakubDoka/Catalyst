@@ -236,25 +236,63 @@ impl Generator<'_> {
         }: CallMir,
         builder: &mut GenBuilder,
     ) -> Option<ir::Value> {
-        match callable {
-            CallableMir::Func(func_id) => {
-                let args = builder.body.value_args[args]
-                    .iter()
-                    .map(|&arg| self.load_value(arg, builder))
-                    .collect::<BumpVec<_>>();
+        let args = builder.body.value_args[args]
+            .iter()
+            .map(|&arg| self.load_value(arg, builder))
+            .collect::<BumpVec<_>>();
 
+        let params = builder.body.ty_params[params]
+            .iter()
+            .map(|&param| builder.body.dependant_types[param].ty)
+            .collect::<BumpVec<_>>();
+
+        let func_ref = match callable {
+            CallableMir::Func(func_id) => {
                 if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
                     return self.builtin_call(func_id, args, builder);
                 }
-
-                let func_ref = self.instantiate(func_id, params, builder);
-
-                let inst = builder.ins().call(func_ref, &args);
-                builder.inst_results(inst).first().copied()
+                self.instantiate(func_id, params.iter().copied(), builder)
             }
-            CallableMir::SpecFunc(_) => todo!(),
+            CallableMir::SpecFunc(func) => {
+                let SpecFunc {
+                    parent, generics, ..
+                } = self.typec.spec_funcs[func];
+                let TySpec { methods, .. } = self.typec.types[parent].kind.cast();
+                let index = self.typec.spec_funcs.local_index(methods, func);
+                let generic_count = params.len() - self.typec.ty_slices[generics].len();
+                let (upper, caller, lower) = (
+                    &params[..generic_count - 1],
+                    params[generic_count - 1],
+                    &params[generic_count..],
+                );
+                let used_spec = if upper.is_empty() {
+                    parent
+                } else {
+                    self.typec.instance(parent, upper, self.interner)
+                };
+                let r#impl = self.typec.implements(caller, used_spec).unwrap();
+                let Impl {
+                    generics,
+                    methods,
+                    ty,
+                    spec,
+                    ..
+                } = self.typec.impls[r#impl];
+                let func_id = self.typec.func_slices[methods][index];
+                let mut infer_slots = bumpvec![None; self.typec.ty_slices[generics].len()];
+                let _ = self.typec.compatible(&mut infer_slots, caller, ty);
+                let _ = self.typec.compatible(&mut infer_slots, used_spec, spec);
+                let params = infer_slots
+                    .iter()
+                    .map(|&slot| slot.unwrap())
+                    .chain(lower.iter().copied());
+                self.instantiate(func_id, params, builder)
+            }
             CallableMir::Pointer(_) => todo!(),
-        }
+        };
+
+        let inst = builder.ins().call(func_ref, &args);
+        builder.inst_results(inst).first().copied()
     }
 
     fn builtin_call(
@@ -293,11 +331,11 @@ impl Generator<'_> {
     fn instantiate(
         &mut self,
         func_id: VRef<Func>,
-        params: VRefSlice<MirTy>,
+        params: impl Iterator<Item = VRef<Ty>> + Clone,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let prefix = if builder.isa.jit { "jit-" } else { "native-" };
-        let id = if params.is_empty() {
+        let id = if params.clone().next().is_none() {
             let id = self.typec.funcs.id(func_id);
             self.interner
                 .intern(ident!(prefix, builder.isa.triple.as_u32(), "&", id))
@@ -309,12 +347,7 @@ impl Generator<'_> {
                 self.typec.funcs.id(func_id),
                 "["
             );
-            let params = ident_join(
-                ", ",
-                builder.body.ty_params[params]
-                    .iter()
-                    .map(|&ty| self.typec.types.id(builder.body.dependant_types[ty].ty)),
-            );
+            let params = ident_join(", ", params.clone().map(|ty| self.typec.types.id(ty)));
             let end = ident!("]");
             let segments = start.into_iter().chain(params).chain(end);
             self.interner.intern(segments)
@@ -325,10 +358,8 @@ impl Generator<'_> {
         }
 
         let func = self.gen.compiled_funcs.get_or_insert(id, |s| {
-            let params = builder.body.ty_params[params]
-                .iter()
-                .map(|&ty| builder.body.dependant_types[ty].ty);
-            self.compile_requests.add_request(s.next(), func_id, params);
+            self.compile_requests
+                .add_request(s.next(), func_id, params.clone());
             CompiledFunc::new(func_id)
         });
 
@@ -342,7 +373,7 @@ impl Generator<'_> {
     pub fn import_compiled_func(
         &mut self,
         func: VRef<CompiledFunc>,
-        params: VRefSlice<MirTy>,
+        params: impl Iterator<Item = VRef<Ty>>,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let name = builder
@@ -359,10 +390,7 @@ impl Generator<'_> {
             ..
         } = self.typec.funcs[func_id];
 
-        let params = builder.body.ty_params[params]
-            .iter()
-            .map(|&ty| builder.body.dependant_types[ty].ty)
-            .collect::<BumpVec<_>>();
+        let params = params.collect::<BumpVec<_>>();
 
         let signature =
             self.load_signature(signature, &params, builder.system_cc(), builder.ptr_ty());
