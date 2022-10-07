@@ -17,8 +17,7 @@ block0:
     v4 = load.i64 v3
     v5 = load.i64 v4
     v6 = call fn1(v5)
-    v7 = iconst.i64 0
-    return v7  ; v7 = 0
+    return v6
 }
 
 
