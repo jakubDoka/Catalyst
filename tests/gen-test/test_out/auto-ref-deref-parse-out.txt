@@ -1,0 +1,32 @@
+error: expected Ident | '(' | Operator but got <error>
+ --> auto-ref-deref\root.ctl:1:66
+  |
+1 | impl uint {     fn [a] reference(s : ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ mut ? a Self) -> ^ ^ ^ ^ ^ ^     ^ ^ ^ ^ ^ ^ mut ? a Self => s ; fn dereference(s : Self) -> Self => s ; } ; #[entry] ; fn main -> uint => ((^ mut 0).reference()).dereference() ;
+  |                                                                  ^ token located here
+  |
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function signature -> list -> function argument -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type
+
+error: expected Ident | '(' | Operator but got <error>
+ --> auto-ref-deref\root.ctl:1:111
+  |
+1 | impl uint {     fn [a] reference(s : ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ mut ? a Self) -> ^ ^ ^ ^ ^ ^     ^ ^ ^ ^ ^ ^ mut ? a Self => s ; fn dereference(s : Self) -> Self => s ; } ; #[entry] ; fn main -> uint => ((^ mut 0).reference()).dereference() ;
+  |                                                                                                               ^ token located here
+  |
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function signature -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type -> pointer type -> type
+
+error: expected '=>' | '{' | 'extern' but got <error>
+ --> auto-ref-deref\root.ctl:1:111
+  |
+1 | impl uint {     fn [a] reference(s : ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ mut ? a Self) -> ^ ^ ^ ^ ^ ^     ^ ^ ^ ^ ^ ^ mut ? a Self => s ; fn dereference(s : Self) -> Self => s ; } ; #[entry] ; fn main -> uint => ((^ mut 0).reference()).dereference() ;
+  |                                                                                                               ^ token located here
+  |
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function body
+
+error: expected Ident | '\' | 'return' | Int | Char | 'const' but got '('
+ --> auto-ref-deref\root.ctl:1:201
+  |
+1 | impl uint {     fn [a] reference(s : ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ mut ? a Self) -> ^ ^ ^ ^ ^ ^     ^ ^ ^ ^ ^ ^ mut ? a Self => s ; fn dereference(s : Self) -> Self => s ; } ; #[entry] ; fn main -> uint => ((^ mut 0).reference()).dereference() ;
+  |                                                                                                                                                                                                         ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr
+
