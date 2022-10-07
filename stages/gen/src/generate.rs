@@ -1,7 +1,7 @@
 use cranelift_codegen::{
     ir::{
         self, types, AbiParam, ExtFuncData, ExternalName, InstBuilder, MemFlags, StackSlotData,
-        Type, UserExternalName,
+        StackSlotKind, Type, UserExternalName,
     },
     isa::CallConv,
 };
@@ -85,16 +85,25 @@ impl Generator<'_> {
     }
 
     fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder) {
-        match inst {
+        let (ret, value) = match inst {
             InstMir::Int(value, ret) => {
                 let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
                 let value = builder.ins().iconst(ty, value);
-                self.gen_resources.values[ret] = value.into();
+                (ret, Some(value))
             }
-            InstMir::Access(..) => (),
-            InstMir::Call(call, ret) => self.call(call, ret, builder),
-            InstMir::Const(id, ret) => self.r#const(id, ret, builder),
-            InstMir::Constructor(fields, ret) => self.constructor(fields, ret, builder),
+            InstMir::Access(..) => return,
+            InstMir::Call(call, ret) => (ret, self.call(call, builder)),
+            InstMir::Const(id, ret) => (ret, self.r#const(id, ret, builder)),
+            InstMir::Constructor(fields, ret) => {
+                (ret, Some(self.constructor(fields, ret, builder)))
+            }
+            InstMir::Deref(target, ret) | InstMir::Ref(target, ret) => {
+                (ret, Some(self.load_value(target, builder)))
+            }
+        };
+
+        if let Some(value) = value {
+            self.save_value(ret, value, builder);
         }
     }
 
@@ -103,16 +112,14 @@ impl Generator<'_> {
         fields: VRefSlice<ValueMir>,
         ret: VRef<ValueMir>,
         builder: &mut GenBuilder,
-    ) {
+    ) -> ir::Value {
         let layout = self.ty_layout(builder.body.value_ty(ret), &[], builder.ptr_ty());
 
-        let value = if layout.on_stack {
+        if layout.on_stack {
             self.stack_constructor(fields, layout, builder)
         } else {
             self.register_constructor(fields, layout, builder)
-        };
-
-        self.gen_resources.values[ret] = value.into();
+        }
     }
 
     fn stack_constructor(
@@ -122,7 +129,7 @@ impl Generator<'_> {
         builder: &mut GenBuilder,
     ) -> ir::Value {
         let stack_slot = builder.create_sized_stack_slot(StackSlotData {
-            kind: ir::StackSlotKind::ExplicitSlot,
+            kind: StackSlotKind::ExplicitSlot,
             size: layout.size,
         });
         let ptr_ty = builder.ptr_ty();
@@ -133,7 +140,7 @@ impl Generator<'_> {
             .zip(self.gen_layouts.offsets[layout.offsets].to_bumpvec());
         for (&field, offset) in iter {
             let field_layout = self.ty_layout(builder.body.value_ty(field), &[], ptr_ty);
-            let value = self.gen_resources.values[field].expect("value should be computed");
+            let value = self.load_value(field, builder);
             if field_layout.on_stack {
                 let dest = builder.ins().stack_addr(ptr_ty, stack_slot, offset as i32);
                 builder.emit_small_memory_copy(
@@ -167,8 +174,7 @@ impl Generator<'_> {
             .zip(self.gen_layouts.offsets[layout.offsets].to_bumpvec());
 
         for (&field, offset) in iter {
-            let mut field_value =
-                self.gen_resources.values[field].expect("value should be computed");
+            let mut field_value = self.load_value(field, builder);
             if layout.size
                 > self
                     .ty_repr(builder.body.value_ty(field), builder.ptr_ty())
@@ -183,8 +189,13 @@ impl Generator<'_> {
         value
     }
 
-    fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        let value = if builder.isa.jit {
+    fn r#const(
+        &mut self,
+        id: VRef<FuncConstMir>,
+        ret: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) -> Option<ir::Value> {
+        if builder.isa.jit {
             // since this si already compile time, we inline the constant
             // expression
 
@@ -204,7 +215,7 @@ impl Generator<'_> {
                 unreachable!()
             };
 
-            ret.map(|ret| self.gen_resources.values[ret].expect("Value should exist at this point"))
+            ret.map(|ret| self.load_value(ret, builder))
         } else {
             let value = self.gen_resources.func_constants[id]
                 .expect("Constant should be computed before function compilation.");
@@ -213,9 +224,7 @@ impl Generator<'_> {
             Some(match value {
                 GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
             })
-        };
-
-        self.gen_resources.values[ret] = value.into();
+        }
     }
 
     fn call(
@@ -225,28 +234,23 @@ impl Generator<'_> {
             params,
             args,
         }: CallMir,
-        ret: VRef<ValueMir>,
         builder: &mut GenBuilder,
-    ) {
+    ) -> Option<ir::Value> {
         match callable {
             CallableMir::Func(func_id) => {
                 let args = builder.body.value_args[args]
                     .iter()
-                    .map(|&arg| self.gen_resources.values[arg].expand())
-                    .collect::<Option<BumpVec<_>>>()
-                    .expect("All arguments should be declared.");
+                    .map(|&arg| self.load_value(arg, builder))
+                    .collect::<BumpVec<_>>();
 
                 if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
-                    self.builtin_call(func_id, args, ret, builder);
-                    return;
+                    return self.builtin_call(func_id, args, builder);
                 }
 
                 let func_ref = self.instantiate(func_id, params, builder);
 
                 let inst = builder.ins().call(func_ref, &args);
-                if let Some(&value) = builder.inst_results(inst).first() {
-                    self.gen_resources.values[ret] = value.into();
-                }
+                builder.inst_results(inst).first().copied()
             }
             CallableMir::SpecFunc(_) => todo!(),
             CallableMir::Pointer(_) => todo!(),
@@ -257,9 +261,8 @@ impl Generator<'_> {
         &mut self,
         func_id: VRef<Func>,
         args: BumpVec<ir::Value>,
-        ret: VRef<ValueMir>,
         builder: &mut GenBuilder,
-    ) {
+    ) -> Option<ir::Value> {
         let Func {
             signature, name, ..
         } = self.typec.funcs[func_id];
@@ -284,7 +287,7 @@ impl Generator<'_> {
             _ => unimplemented!(),
         };
 
-        self.gen_resources.values[ret] = value.into();
+        Some(value)
     }
 
     fn instantiate(
@@ -376,7 +379,7 @@ impl Generator<'_> {
         match control_flow {
             ControlFlowMir::Return(ret) => {
                 if let Some(ret) = ret {
-                    let ret = self.gen_resources.values[ret].expect("value mut be defined");
+                    let ret = self.load_value(ret, builder);
                     builder.ins().return_(&[ret]);
                 } else {
                     builder.ins().return_(&[]);
@@ -516,6 +519,44 @@ impl Generator<'_> {
         self.gen_layouts.mapping[ty] = res.into();
 
         res
+    }
+
+    fn load_value(&mut self, target: VRef<ValueMir>, builder: &mut GenBuilder) -> ir::Value {
+        let loaded = builder.body.values[target]
+            .flags
+            .contains(ValueMirFlags::LOADED);
+        let value = self.gen_resources.values[target].expect("value must be computed by now");
+        if loaded {
+            let ptr_ty = builder.ptr_ty();
+            let layout = self.ty_layout(builder.body.value_ty(target), &[], ptr_ty);
+            builder.ins().load(layout.repr, MemFlags::new(), value, 0)
+        } else {
+            value
+        }
+    }
+
+    fn save_value(
+        &mut self,
+        target: VRef<ValueMir>,
+        mut value: ir::Value,
+        builder: &mut GenBuilder,
+    ) {
+        let referenced = builder.body.values[target]
+            .flags
+            .contains(ValueMirFlags::REFERENCED);
+        let ptr_ty = builder.ptr_ty();
+        let layout = self.ty_layout(builder.body.value_ty(target), &[], ptr_ty);
+        if referenced && !layout.on_stack {
+            let stack = builder.create_sized_stack_slot(StackSlotData {
+                kind: StackSlotKind::ExplicitSlot,
+                size: layout.size,
+            });
+
+            builder.ins().stack_store(value, stack, 0);
+            value = builder.ins().stack_addr(ptr_ty, stack, 0);
+        }
+
+        self.gen_resources.values[target] = value.into();
     }
 
     fn repr_for_size(size: u32, ptr_ty: Type) -> (Type, bool) {

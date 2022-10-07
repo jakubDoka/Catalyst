@@ -34,7 +34,10 @@ impl<'a> MirBuilder<'a> {
         }
 
         let ty = self.ctx.project_ty(ty, typec);
-        self.ctx.func.values.push(ValueMir { ty })
+        self.ctx.func.values.push(ValueMir {
+            ty,
+            ..Default::default()
+        })
     }
 
     pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {

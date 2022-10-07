@@ -89,7 +89,7 @@ impl MirChecker<'_> {
     fn display_inst(&self, inst: InstMir, func: &FuncMir, buffer: &mut String) -> fmt::Result {
         match inst {
             InstMir::Int(value, ret) => {
-                write!(buffer, "var{} = int {}", ret.index(), value)?;
+                write!(buffer, "var{} = {}", ret.index(), value)?;
             }
             InstMir::Access(access) => {
                 write!(buffer, "access var{}", access.index())?;
@@ -164,6 +164,12 @@ impl MirChecker<'_> {
                 }
 
                 buffer.push('}');
+            }
+            InstMir::Deref(target, value) => {
+                write!(buffer, "var{} = *var{}", value.index(), target.index())?;
+            }
+            InstMir::Ref(target, value) => {
+                write!(buffer, "var{} = &var{}", value.index(), target.index())?;
             }
         }
 

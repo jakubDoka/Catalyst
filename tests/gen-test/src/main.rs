@@ -570,5 +570,14 @@ fn main() {
                 0
             };
         }
+        simple "auto-ref-deref" {
+            impl uint {
+                fn reference(s: ^^Self) -> ^^Self => s;
+                fn dereference(s: Self) -> Self => s;
+            };
+
+            #[entry];
+            fn main -> uint => 0.reference().dereference();
+        }
     }
 }

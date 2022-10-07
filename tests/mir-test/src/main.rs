@@ -72,5 +72,13 @@ fn main() {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
         }
+        simple "auto-ref-deref" {
+            impl uint {
+                fn reference(s: ^^Self) -> ^^Self => s;
+                fn dereference(s: Self) -> Self => s;
+            };
+
+            fn main -> uint => 0.reference().dereference();
+        }
     }
 }

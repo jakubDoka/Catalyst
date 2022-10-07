@@ -44,9 +44,42 @@ impl MirChecker<'_> {
             TirKind::Return(ret) => self.r#return(ret, span, builder),
             TirKind::Const(&r#const) => self.r#const(r#const, ty, span, builder),
             TirKind::Constructor(fields) => self.constructor(fields, ty, span, builder),
-            TirKind::Deref(..) => todo!(),
-            TirKind::Ref(..) => todo!(),
+            TirKind::Deref(&node) => self.deref(node, ty, span, builder),
+            TirKind::Ref(&node) => self.r#ref(node, ty, span, builder),
         }
+    }
+
+    fn deref(
+        &mut self,
+        node: TirNode,
+        ty: VRef<Ty>,
+        span: Span,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let node = self.node(node, builder)?;
+
+        let value = builder.value(ty, self.typec);
+        builder.ctx.func.values[value]
+            .flags
+            .insert(ValueMirFlags::LOADED);
+        builder.inst(InstMir::Deref(node, value), span);
+        Some(value)
+    }
+
+    fn r#ref(
+        &mut self,
+        node: TirNode,
+        ty: VRef<Ty>,
+        span: Span,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let node = self.node(node, builder)?;
+        builder.ctx.func.values[node]
+            .flags
+            .insert(ValueMirFlags::REFERENCED);
+        let value = builder.value(ty, self.typec);
+        builder.inst(InstMir::Ref(node, value), span);
+        Some(value)
     }
 
     fn constructor(
@@ -91,7 +124,10 @@ impl MirChecker<'_> {
             ty,
         };
 
-        let value = builder.ctx.func.values.push(ValueMir { ty });
+        let value = builder.ctx.func.values.push(ValueMir {
+            ty,
+            ..Default::default()
+        });
         let const_mir_id = builder.ctx.func.constants.push(const_mir);
         builder.inst(InstMir::Const(const_mir_id, value), span);
 
@@ -199,7 +235,10 @@ impl MirChecker<'_> {
 
         for &ty in &self.typec.ty_slices[args] {
             let mir_ty = builder.ctx.project_ty(ty, self.typec);
-            let val = builder.ctx.func.values.push(ValueMir { ty: mir_ty });
+            let val = builder.ctx.func.values.push(ValueMir {
+                ty: mir_ty,
+                ..Default::default()
+            });
             builder.ctx.vars.push(val);
             builder.ctx.args.push(val);
         }

@@ -82,9 +82,13 @@ impl Default for FuncMir {
             insts: Default::default(),
             values: {
                 let mut values = PushMap::new();
-                values.push(ValueMir { ty: MirTy::UNIT });
+                values.push(ValueMir {
+                    ty: MirTy::UNIT,
+                    ..Default::default()
+                });
                 values.push(ValueMir {
                     ty: MirTy::TERMINAL,
+                    ..Default::default()
                 });
                 values
             },
@@ -110,6 +114,12 @@ impl MirTy {
     gen_increasing_constants! {
         UNIT
         TERMINAL
+    }
+}
+
+impl VRefDefault for MirTy {
+    fn default_state() -> VRef<Self> {
+        Self::UNIT
     }
 }
 
@@ -145,6 +155,8 @@ pub enum InstMir {
     Call(CallMir, VRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
     Constructor(VRefSlice<ValueMir>, VRef<ValueMir>),
+    Deref(VRef<ValueMir>, VRef<ValueMir>),
+    Ref(VRef<ValueMir>, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]
@@ -161,9 +173,16 @@ pub enum CallableMir {
     Pointer(VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
+    pub flags: ValueMirFlags,
+}
+
+bitflags! {
+    ValueMirFlags: u8 {
+        REFERENCED LOADED
+    }
 }
 
 impl ValueMir {
