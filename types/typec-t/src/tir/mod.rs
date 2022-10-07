@@ -144,6 +144,20 @@ pub struct ConstructorTir<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct DerefTir<'a> {
+    pub span: Span,
+    pub ty: VRef<Ty>,
+    pub expr: TirNode<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RefTir<'a> {
+    pub span: Span,
+    pub ty: VRef<Ty>,
+    pub expr: TirNode<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum TirNode<'a> {
     Var(&'a Variable<'a>),
     Int(&'a IntLit),
@@ -154,6 +168,26 @@ pub enum TirNode<'a> {
     Access(&'a AccessTir),
     Const(&'a ConstTir<'a>),
     Constructor(&'a ConstructorTir<'a>),
+    Deref(&'a DerefTir<'a>),
+    Ref(&'a RefTir<'a>),
+}
+
+impl<'a> TirNode<'a> {
+    pub fn span(&self) -> Span {
+        match self {
+            TirNode::Var(v) => v.span,
+            TirNode::Int(i) => i.span,
+            TirNode::Char(s) => *s,
+            TirNode::Block(b) => b.span,
+            TirNode::Return(r) => r.span,
+            TirNode::Call(c) => c.span,
+            TirNode::Access(a) => a.span,
+            TirNode::Const(c) => c.span,
+            TirNode::Constructor(c) => c.span,
+            TirNode::Deref(d) => d.span,
+            TirNode::Ref(r) => r.span,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -198,4 +232,6 @@ impl_node_input! {
     'a ReturnTir<'a> => Return,
     'a ConstTir<'a> => Const,
     'a ConstructorTir<'a> => Constructor,
+    'a DerefTir<'a> => Deref,
+    'a RefTir<'a> => Ref,
 }

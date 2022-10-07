@@ -216,6 +216,29 @@ impl Typec {
         ident!(self.types.id(lhs), " ", op, " ", self.types.id(rhs)).into_iter()
     }
 
+    pub fn pointer_to(
+        &mut self,
+        mutability: VRef<Ty>,
+        base: VRef<Ty>,
+        interner: &mut Interner,
+    ) -> VRef<Ty> {
+        let segments = self.pointer_id(mutability, base);
+        let id = interner.intern(segments);
+
+        let fallback = |types: &mut Types| Ty {
+            kind: TyPointer {
+                base,
+                mutability,
+                depth: types.pointer_depth(base) + 1,
+            }
+            .into(),
+            flags: TyFlags::GENERIC & (types.is_generic(base) || types.is_generic(mutability)),
+            loc: default(),
+        };
+
+        self.types.get_or_insert(id, fallback)
+    }
+
     pub fn pointer_id(
         &self,
         mutability: VRef<Ty>,

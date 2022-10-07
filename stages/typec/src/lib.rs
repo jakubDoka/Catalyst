@@ -255,13 +255,14 @@ mod util {
     use crate::TyChecker;
 
     impl TyChecker<'_> {
-        pub fn insert_scope_item(&mut self, item: ModuleItem) {
+        pub fn insert_scope_item(&mut self, item: ModuleItem) -> bool {
             if let Err(spans) = self.scope.insert_current(item) {
                 self.duplicate_definition(item.span, spans, self.source);
-                return;
+                return false;
             }
 
             self.typec.module_items[self.module].push(item);
+            true
         }
 
         gen_error_fns! {

@@ -135,9 +135,9 @@ pub use {
     graphs::ProjectedCycleDetector as TyGraph,
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
-        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, ConstructorTir, IntLit, IntTir,
-        NodeInput, ReturnTir, TirBuilder, TirFrame, TirNode, TypecOutput, TypedTirNode, Var,
-        VarTir, Variable,
+        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, ConstructorTir, DerefTir, IntLit,
+        IntTir, NodeInput, RefTir, ReturnTir, TirBuilder, TirFrame, TirNode, TypecOutput,
+        TypedTirNode, Var, VarTir, Variable,
     },
     ty::{
         Field, FieldFlags, Fields, Impl, ImplLookup, Impls, SpecFunc, SpecFuncs, Ty, TyExt,

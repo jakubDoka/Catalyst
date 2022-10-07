@@ -27,8 +27,9 @@ impl TyChecker<'_> {
                 continue;
             };
 
-            self.insert_scope_item(item);
-            out.push((item_ast, id));
+            if self.insert_scope_item(item) {
+                out.push((item_ast, id));
+            }
         }
 
         self
@@ -104,6 +105,7 @@ impl TyChecker<'_> {
             offset: generics.len(),
             upper_generics: parsed_generics,
             owner: Some(parsed_ty),
+            spec: impl_id,
             upper_vis: vis,
         };
 
@@ -116,9 +118,9 @@ impl TyChecker<'_> {
                 continue;
             };
 
-            self.insert_scope_item(item);
-
-            transfer.impl_funcs.push((func, id));
+            if impl_id.is_some() || self.insert_scope_item(item) {
+                transfer.impl_funcs.push((func, id));
+            }
         }
 
         transfer.close_impl_frame(r#impl, impl_id);
@@ -173,12 +175,16 @@ impl TyChecker<'_> {
             offset,
             upper_generics,
             owner,
+            spec,
             upper_vis,
         }: ScopeData,
     ) -> Option<(ModuleItem, VRef<Func>)> {
         let owner_id = owner.map(|owner| self.typec.types.id(self.typec.types.base(owner)));
         let id = intern_scoped_ident!(self, name.ident);
         let id = owner_id.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
+        let id = spec.map_or(id, |spec| {
+            self.interner.intern(scoped_ident!(spec.as_u32(), id))
+        });
 
         let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
@@ -312,6 +318,7 @@ struct ScopeData {
     offset: usize,
     upper_generics: VRefSlice<Ty>,
     owner: Option<VRef<Ty>>,
+    spec: Option<VRef<Impl>>,
     upper_vis: Vis,
 }
 

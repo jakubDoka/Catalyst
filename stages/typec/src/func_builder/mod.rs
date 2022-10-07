@@ -1,4 +1,4 @@
-use std::{default::default, iter, vec};
+use std::{cmp::Ordering, default::default, iter, vec};
 
 use diags::*;
 use lexing_t::*;
@@ -77,7 +77,13 @@ impl TyChecker<'_> {
                 .enumerate()
                 .find(|&(_, SpecFunc { name: n, .. })| n == name)
             else {
-                todo!()
+                let left_to_implement = spec_methods
+                    .iter()
+                    .zip(methods.as_slice())
+                    .filter_map(|(f, m)| m.is_none().then_some(f.name))
+                    .collect::<BumpVec<_>>();
+                self.unknown_spec_impl_func(ast.signature.name.span, left_to_implement.as_slice());
+                continue;
             };
 
             self.check_impl_signature(spec_func, func, ast.signature.span());
@@ -656,22 +662,29 @@ impl TyChecker<'_> {
         &mut self,
         generics: &[VRef<Ty>],
         param_slots: &mut [Option<VRef<Ty>>],
-        caller: Option<TypedTirNode<'a>>,
+        mut caller: Option<TypedTirNode<'a>>,
         args: CallArgsAst,
         signature: Signature,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> Option<(&'a [TirNode<'a>], &'a [VRef<Ty>], VRef<Ty>)> {
-        let arg_types =
-            self.typec.ty_slices[signature.args][caller.is_some() as usize..].to_bumpvec();
+        let arg_types = self.typec.ty_slices[signature.args].to_bumpvec();
+
         if let Some(inference) = inference {
-            self.infer_params(param_slots, inference, signature.ret, args.span());
+            // we don't want to report error twice so this one is ignored
+            let _ = self.typec.compatible(param_slots, inference, signature.ret);
+        }
+
+        if let Some(ref mut caller) = caller && let Some(&first) = arg_types.first() {
+            // TODO: do pointer correction
+            self.balance_pointers(caller, first, builder);
+            self.infer_params(param_slots, caller.ty, first, caller.node.span());
         }
 
         let parsed_args = args
             .iter()
             .copied()
-            .zip(arg_types)
+            .zip(arg_types.into_iter().skip(caller.is_some() as usize))
             .map(|(arg, ty)| {
                 let instantiated = self.typec.try_instantiate(ty, param_slots, self.interner);
                 let parsed_arg = self.expr(arg, instantiated, builder);
@@ -698,6 +711,42 @@ impl TyChecker<'_> {
         let ret = self.typec.instantiate(signature.ret, params, self.interner);
 
         Some((parsed_args, params, ret))
+    }
+
+    fn balance_pointers<'a>(
+        &mut self,
+        node: &mut TypedTirNode<'a>,
+        ty: VRef<Ty>,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<()> {
+        let desired_pointer_depth = self.typec.types.pointer_depth(ty);
+        loop {
+            let (current_pointed_depth, mutability) = self.typec.types[node.ty]
+                .kind
+                .try_cast::<TyPointer>()
+                .map_or((0, Ty::IMMUTABLE), |p| (p.depth, p.mutability));
+            match desired_pointer_depth.cmp(&current_pointed_depth) {
+                Ordering::Less => {
+                    let deref = DerefTir {
+                        expr: node.node,
+                        span: node.node.span(),
+                        ty: self.typec.types.deref(node.ty),
+                    };
+                    *node = self.node(deref.ty, deref, builder)?;
+                }
+                Ordering::Greater => {
+                    let addr = RefTir {
+                        expr: node.node,
+                        span: node.node.span(),
+                        ty: self.typec.pointer_to(mutability, node.ty, self.interner),
+                    };
+                    *node = self.node(addr.ty, addr, builder)?;
+                }
+                Ordering::Equal => break,
+            }
+        }
+
+        Some(())
     }
 
     fn infer_params(
@@ -1045,6 +1094,20 @@ impl TyChecker<'_> {
             err: "duplicate field";
             (span, self.source) {
                 err[span]: "this was already initialized";
+            }
+        }
+
+        push unknown_spec_impl_func(self, func_span: Span, left: &[VRef<str>]) {
+            err: "unknown spec function";
+            help: (
+                "functions that can be implemented: {}",
+                left.iter()
+                    .map(|&f| &self.interner[f])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            (func_span, self.source) {
+                err[func_span]: "this function does not belong to spec";
             }
         }
     }

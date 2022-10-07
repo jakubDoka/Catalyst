@@ -175,9 +175,15 @@ fn main() {
                 fn [T] use_on(s: Self, value: T) -> Glued[T] => ::{ inner: value };
             };
 
+            impl uint {
+                fn new {}
+            };
+
             fn [G: Glue, T] glue_up(value: T) -> Glued[T] {
                 G::new().use_on(value)
-            }
+            };
+
+            fn main() -> uint => uint::new();
         }
     }
 }

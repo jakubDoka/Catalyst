@@ -155,6 +155,24 @@ pub trait TyExt: Index<VRef<Ty>, Output = Ty> {
         self[target]
             .kind
             .try_cast::<TyPointer>()
+            .map(|ty| self.pointer_base(ty.base))
+            .unwrap_or(target)
+    }
+
+    #[inline]
+    fn pointer_depth(&self, target: VRef<Ty>) -> u32 {
+        self[target]
+            .kind
+            .try_cast::<TyPointer>()
+            .map(|ty| ty.depth)
+            .unwrap_or(0)
+    }
+
+    #[inline]
+    fn deref(&self, target: VRef<Ty>) -> VRef<Ty> {
+        self[target]
+            .kind
+            .try_cast::<TyPointer>()
             .map(|ty| ty.base)
             .unwrap_or(target)
     }

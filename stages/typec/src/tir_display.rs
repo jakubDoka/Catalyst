@@ -132,6 +132,14 @@ impl TyChecker<'_> {
                 }
                 write!(buffer, "}}")?;
             }
+            TirNode::Deref(DerefTir { expr, .. }) => {
+                write!(buffer, "*")?;
+                self.display_tir(*expr, buffer, indent, var_count)?;
+            }
+            TirNode::Ref(RefTir { expr, .. }) => {
+                write!(buffer, "&")?;
+                self.display_tir(*expr, buffer, indent, var_count)?;
+            }
         }
 
         Ok(())
