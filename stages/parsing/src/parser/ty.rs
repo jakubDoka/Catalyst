@@ -37,7 +37,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
             },
             LeftParen => ctx.parse().map(TyAst::Tuple),
             Operator(_ = 0) => branch!(str ctx => {
-                "*" => ctx.parse()
+                "^" => ctx.parse()
                     .map(|p| ctx.arena.alloc(p))
                     .map(TyAst::Pointer),
             }),

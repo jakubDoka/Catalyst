@@ -35,7 +35,7 @@ impl<'a> FmtAst for TyInstanceAst<'a> {
 
 impl<'a> FmtAst for TyPointerAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        write!(fmt, "*");
+        write!(fmt, "^");
         self.mutability.display(fmt);
         self.ty.display(fmt);
     }

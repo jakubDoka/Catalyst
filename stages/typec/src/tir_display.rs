@@ -135,7 +135,7 @@ impl TyChecker<'_> {
                 self.display_tir(*expr, buffer, indent, var_count)?;
             }
             TirKind::Ref(expr) => {
-                write!(buffer, "&")?;
+                write!(buffer, "^")?;
                 self.display_tir(*expr, buffer, indent, var_count)?;
             }
         }
