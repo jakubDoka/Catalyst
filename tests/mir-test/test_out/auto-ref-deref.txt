@@ -1,5 +1,19 @@
 info: mir repr of functions:
- fn [] uint\0\reference(var0: ^immutable ^immutable uint) -> ^immutable ^immutable uint  {
+ fn [] 0\main() -> uint  {
+    block0() {
+        var2 = int 0
+        var3 = &var2
+        var4 = &var3
+        var5 = uint\0\reference(val4)
+        var6 = *var5
+        var7 = *var6
+        var8 = uint\0\dereference(val7)
+        return var8
+    }
+
+}
+
+fn [] uint\0\reference(var0: ^immutable ^immutable uint) -> ^immutable ^immutable uint  {
     block0(var2: ^immutable ^immutable uint) {
         access var2
         return var2
