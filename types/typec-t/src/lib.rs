@@ -134,11 +134,7 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     graphs::ProjectedCycleDetector as TyGraph,
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
-    tir::{
-        AccessTir, BlockTir, CallTir, CallableTir, ConstTir, ConstructorTir, DerefTir, IntLit,
-        IntTir, NodeInput, RefTir, ReturnTir, TirBuilder, TirFrame, TirNode, TypecOutput,
-        TypedTirNode, Var, VarTir, Variable,
-    },
+    tir::{CallTir, CallableTir, TirBuilder, TirFrame, TirKind, TirNode, TypecOutput, Var, VarTir},
     ty::{
         Field, FieldFlags, Fields, Impl, ImplLookup, Impls, SpecFunc, SpecFuncs, Ty, TyExt,
         TyFlags, TyInstance, TyInteger, TyKind, TyPointer, TySlices, TySpec, TyStruct, Types,

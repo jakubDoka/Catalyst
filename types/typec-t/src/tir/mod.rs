@@ -31,10 +31,6 @@ impl<'a> TirBuilder<'a> {
         }
     }
 
-    pub fn node<T: NodeInput<'a>>(&mut self, node: T) -> TirNode<'a> {
-        node.convert(self.arena)
-    }
-
     pub fn start_frame(&mut self) -> TirFrame {
         TirFrame(self.vars.len())
     }
@@ -43,7 +39,7 @@ impl<'a> TirBuilder<'a> {
         self.vars.truncate(frame.0);
     }
 
-    pub fn create_var(&mut self, node: TirNode<'a>, ty: VRef<Ty>, span: Span) -> VRef<Var> {
+    pub fn create_var(&mut self, node: TirKind<'a>, ty: VRef<Ty>, span: Span) -> VRef<Var> {
         let index = self.vars.len();
         self.vars.push(VarTir { node, ty, span });
         unsafe { VRef::new(index) }
@@ -60,11 +56,12 @@ impl<'a> TirBuilder<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct VarTir<'a> {
-    pub node: TirNode<'a>,
+    pub node: TirKind<'a>,
     pub ty: VRef<Ty>,
     pub span: Span,
 }
 
+#[must_use]
 pub struct TirFrame(usize);
 
 impl TirFrame {
@@ -76,38 +73,10 @@ impl TirFrame {
 pub struct Var;
 
 #[derive(Clone, Copy, Debug)]
-pub struct AccessTir {
-    pub span: Span,
-    pub ty: VRef<Ty>,
-    pub var: VRef<Var>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct IntTir {
-    pub val: i64,
-    pub span: Span,
-}
-
-#[derive(Default, Clone, Copy, Debug)]
-pub struct BlockTir<'a> {
-    pub nodes: &'a [TirNode<'a>],
-    pub ty: VRef<Ty>,
-    pub span: Span,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ReturnTir<'a> {
-    pub val: Option<TirNode<'a>>,
-    pub span: Span,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub struct CallTir<'a> {
     pub func: CallableTir<'a>,
     pub params: &'a [VRef<Ty>],
     pub args: &'a [TirNode<'a>],
-    pub ty: VRef<Ty>,
-    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,120 +87,29 @@ pub enum CallableTir<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct TypedTirNode<'a> {
-    pub node: TirNode<'a>,
-    pub ty: VRef<Ty>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Variable<'a> {
-    pub value: Option<TirNode<'a>>,
+pub struct TirNode<'a> {
+    pub kind: TirKind<'a>,
     pub ty: VRef<Ty>,
     pub span: Span,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct IntLit {
-    pub span: Span,
-    pub ty: VRef<Ty>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ConstructorTir<'a> {
-    pub span: Span,
-    pub ty: VRef<Ty>,
-    pub fields: &'a [TirNode<'a>],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DerefTir<'a> {
-    pub span: Span,
-    pub ty: VRef<Ty>,
-    pub expr: TirNode<'a>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct RefTir<'a> {
-    pub span: Span,
-    pub ty: VRef<Ty>,
-    pub expr: TirNode<'a>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum TirNode<'a> {
-    Var(&'a Variable<'a>),
-    Int(&'a IntLit),
-    Char(Span),
-    Block(&'a BlockTir<'a>),
-    Return(&'a ReturnTir<'a>),
-    Call(&'a CallTir<'a>),
-    Access(&'a AccessTir),
-    Const(&'a ConstTir<'a>),
-    Constructor(&'a ConstructorTir<'a>),
-    Deref(&'a DerefTir<'a>),
-    Ref(&'a RefTir<'a>),
 }
 
 impl<'a> TirNode<'a> {
-    pub fn span(&self) -> Span {
-        match self {
-            TirNode::Var(v) => v.span,
-            TirNode::Int(i) => i.span,
-            TirNode::Char(s) => *s,
-            TirNode::Block(b) => b.span,
-            TirNode::Return(r) => r.span,
-            TirNode::Call(c) => c.span,
-            TirNode::Access(a) => a.span,
-            TirNode::Const(c) => c.span,
-            TirNode::Constructor(c) => c.span,
-            TirNode::Deref(d) => d.span,
-            TirNode::Ref(r) => r.span,
-        }
+    pub fn new(ty: VRef<Ty>, kind: TirKind<'a>, span: Span) -> Self {
+        Self { kind, ty, span }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ConstTir<'a> {
-    pub value: TirNode<'a>,
-    pub span: Span,
-}
-
-pub trait NodeInput<'a> {
-    fn convert(self, arena: &'a Arena) -> TirNode<'a>;
-}
-
-impl<'a> NodeInput<'a> for TirNode<'a> {
-    fn convert(self, _: &'a Arena) -> TirNode<'a> {
-        self
-    }
-}
-
-macro_rules! impl_node_input {
-    (
-        $(
-            $l:lifetime $ty:ty => $variant:ident,
-        )*
-    ) => {
-        $(
-            impl<$l> NodeInput<$l> for $ty {
-                #[inline]
-                fn convert(self, arena: &$l Arena) -> TirNode<$l> {
-                    TirNode::$variant(arena.alloc(self))
-                }
-            }
-        )*
-    };
-}
-
-impl_node_input! {
-    'a Variable<'a> => Var,
-    'a IntLit => Int,
-    'a CallTir<'a> => Call,
-    'a AccessTir => Access,
-    'a BlockTir<'a> => Block,
-    'a ReturnTir<'a> => Return,
-    'a ConstTir<'a> => Const,
-    'a ConstructorTir<'a> => Constructor,
-    'a DerefTir<'a> => Deref,
-    'a RefTir<'a> => Ref,
+pub enum TirKind<'a> {
+    Var(Option<&'a TirNode<'a>>),
+    Int,
+    Char,
+    Block(&'a [TirNode<'a>]),
+    Return(Option<&'a TirNode<'a>>),
+    Call(&'a CallTir<'a>),
+    Access(VRef<Var>),
+    Const(&'a TirNode<'a>),
+    Constructor(&'a [TirNode<'a>]),
+    Deref(&'a TirNode<'a>),
+    Ref(&'a TirNode<'a>),
 }

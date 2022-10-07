@@ -37,28 +37,28 @@ impl TyChecker<'_> {
 
     pub fn display_tir(
         &self,
-        tir: TirNode,
+        TirNode { kind, ty, span }: TirNode,
         buffer: &mut String,
         indent: usize,
         var_count: &mut usize,
     ) -> fmt::Result {
-        match tir {
-            TirNode::Var(Variable { value, .. }) => {
+        match kind {
+            TirKind::Var(value) => {
                 write!(buffer, "let var{} = ", *var_count)?;
                 *var_count += 1;
-                self.display_tir(value.unwrap(), buffer, indent, var_count)?;
+                self.display_tir(*value.unwrap(), buffer, indent, var_count)?;
             }
-            TirNode::Int(int) => {
-                buffer.push_str(span_str!(self, int.span));
+            TirKind::Int => {
+                buffer.push_str(span_str!(self, span));
             }
-            TirNode::Char(span) => {
+            TirKind::Char => {
                 write!(buffer, "'{}'", span_str!(self, span))?;
             }
-            TirNode::Block(BlockTir { nodes, .. }) => {
+            TirKind::Block(nodes) => {
                 let prev_var_count = *var_count;
                 writeln!(buffer, "{{")?;
                 let inner_ident = iter::repeat(' ').take((indent + 1) * 4);
-                for &node in *nodes {
+                for &node in nodes {
                     buffer.extend(inner_ident.clone());
                     self.display_tir(node, buffer, indent + 1, var_count)?;
                     buffer.push('\n');
@@ -67,16 +67,14 @@ impl TyChecker<'_> {
                 write!(buffer, "}}")?;
                 *var_count = prev_var_count;
             }
-            TirNode::Return(ReturnTir { val, .. }) => {
+            TirKind::Return(val) => {
                 write!(buffer, "return")?;
-                if let &Some(val) = val {
+                if let Some(&val) = val {
                     buffer.push(' ');
                     self.display_tir(val, buffer, indent, var_count)?;
                 }
             }
-            TirNode::Call(CallTir {
-                func, params, args, ..
-            }) => {
+            TirKind::Call(CallTir { func, params, args }) => {
                 match *func {
                     CallableTir::Func(func) => {
                         write!(buffer, "{}", &self.interner[self.typec.funcs.id(func)])?
@@ -114,14 +112,14 @@ impl TyChecker<'_> {
                 }
                 write!(buffer, ")")?;
             }
-            TirNode::Access(AccessTir { var, .. }) => {
+            TirKind::Access(var) => {
                 write!(buffer, "var{}", var.index())?;
             }
-            TirNode::Const(ConstTir { value, .. }) => {
+            TirKind::Const(value) => {
                 write!(buffer, "const ")?;
                 self.display_tir(*value, buffer, indent, var_count)?;
             }
-            TirNode::Constructor(&ConstructorTir { ty, fields, .. }) => {
+            TirKind::Constructor(fields) => {
                 write!(buffer, "{}\\{{", &self.interner[self.typec.types.id(ty)])?;
                 if let Some((&first, others)) = fields.split_first() {
                     self.display_tir(first, buffer, indent, var_count)?;
@@ -132,11 +130,11 @@ impl TyChecker<'_> {
                 }
                 write!(buffer, "}}")?;
             }
-            TirNode::Deref(DerefTir { expr, .. }) => {
+            TirKind::Deref(expr) => {
                 write!(buffer, "*")?;
                 self.display_tir(*expr, buffer, indent, var_count)?;
             }
-            TirNode::Ref(RefTir { expr, .. }) => {
+            TirKind::Ref(expr) => {
                 write!(buffer, "&")?;
                 self.display_tir(*expr, buffer, indent, var_count)?;
             }

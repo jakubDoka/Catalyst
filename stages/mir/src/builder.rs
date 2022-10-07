@@ -12,7 +12,7 @@ impl MirChecker<'_> {
     pub fn funcs(
         &mut self,
         ctx: &mut MirBuilderCtx,
-        input: &mut Vec<(VRef<Func>, TirNode)>,
+        input: &mut Vec<(VRef<Func>, TirKind)>,
     ) -> &mut Self {
         for (func, body) in input.drain(..) {
             let body = self.func(func, body, ctx);
@@ -23,7 +23,7 @@ impl MirChecker<'_> {
         self
     }
 
-    fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMir {
+    fn func(&mut self, func: VRef<Func>, body: TirKind, ctx: &mut MirBuilderCtx) -> FuncMir {
         let Func { signature, .. } = self.typec.funcs[func];
 
         let mut builder = self.push_args(signature.args, ctx);
@@ -33,17 +33,17 @@ impl MirChecker<'_> {
         ctx.clear()
     }
 
-    fn node(&mut self, node: TirNode, builder: &mut MirBuilder) -> NodeRes {
+    fn node(&mut self, node: TirKind, builder: &mut MirBuilder) -> NodeRes {
         match node {
-            TirNode::Block(&block) => self.block(block, builder),
-            TirNode::Var(&var) => self.var(var, builder),
-            TirNode::Int(&int) => self.int(int, builder),
-            TirNode::Char(span) => self.char(span, builder),
-            TirNode::Call(&call) => self.call(call, builder),
-            TirNode::Access(&access) => self.access(access, builder),
-            TirNode::Return(&ret) => self.r#return(ret, builder),
-            TirNode::Const(&r#const) => self.r#const(r#const, builder),
-            TirNode::Constructor(&constructor) => self.constructor(constructor, builder),
+            TirKind::Block(&block) => self.block(block, builder),
+            TirKind::Var(&var) => self.var(var, builder),
+            TirKind::Int(&int) => self.int(int, builder),
+            TirKind::Char(span) => self.char(span, builder),
+            TirKind::Call(&call) => self.call(call, builder),
+            TirKind::Access(&access) => self.access(access, builder),
+            TirKind::Return(&ret) => self.r#return(ret, builder),
+            TirKind::Const(&r#const) => self.r#const(r#const, builder),
+            TirKind::Constructor(&constructor) => self.constructor(constructor, builder),
         }
     }
 
