@@ -1,0 +1,22 @@
+error: type or module not found
+ --> spec-test\root.ctl:5:16
+  |
+5 | impl Flood for Fool {
+  |                ^^^^ this does not exist
+  |
+  = info: queried 'Fool'
+
+error: function or module not found
+ --> spec-test\root.ctl:9:20
+  |
+9 | fn main -> uint => make_flood\[Fool]()
+  |                    ^^^^^^^^^^ this does not exist
+  |
+  = info: queried 'make_flood'
+
+info: mir repr of functions:
+
+
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
+
