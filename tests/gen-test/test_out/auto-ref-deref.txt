@@ -15,9 +15,10 @@ block0:
     v2 = stack_addr.i64 ss1
     v3 = call fn0(v2)
     v4 = load.i64 v3
-    v5 = call fn1(v4)
-    v6 = iconst.i64 0
-    return v6  ; v6 = 0
+    v5 = load.i64 v4
+    v6 = call fn1(v5)
+    v7 = iconst.i64 0
+    return v7  ; v7 = 0
 }
 
 
