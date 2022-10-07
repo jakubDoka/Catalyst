@@ -1,7 +1,7 @@
 info: mir repr of functions:
  fn [] 0\main() -> uint  {
     block0() {
-        var2 = int 0
+        var2 = 0
         return var2
     }
 
