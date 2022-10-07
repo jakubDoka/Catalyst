@@ -2,6 +2,16 @@ info: mir repr of functions:
 function u0:0() -> i64 fast {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
+    ss2 = explicit_slot 8
+    ss3 = explicit_slot 8
+    ss4 = explicit_slot 8
+    ss5 = explicit_slot 8
+    ss6 = explicit_slot 8
+    ss7 = explicit_slot 8
+    ss8 = explicit_slot 8
+    ss9 = explicit_slot 8
+    ss10 = explicit_slot 8
+    ss11 = explicit_slot 8
     sig0 = (i64) -> i64 fast
     sig1 = (i64) -> i64 fast
     fn0 = colocated u0:1 sig0
@@ -13,11 +23,41 @@ block0:
     v1 = stack_addr.i64 ss0
     stack_store v1, ss1
     v2 = stack_addr.i64 ss1
-    v3 = call fn0(v2)
-    v4 = load.i64 v3
-    v5 = load.i64 v4
-    v6 = call fn1(v5)
-    return v6
+    stack_store v2, ss2
+    v3 = stack_addr.i64 ss2
+    stack_store v3, ss3
+    v4 = stack_addr.i64 ss3
+    stack_store v4, ss4
+    v5 = stack_addr.i64 ss4
+    stack_store v5, ss5
+    v6 = stack_addr.i64 ss5
+    stack_store v6, ss6
+    v7 = stack_addr.i64 ss6
+    stack_store v7, ss7
+    v8 = stack_addr.i64 ss7
+    stack_store v8, ss8
+    v9 = stack_addr.i64 ss8
+    stack_store v9, ss9
+    v10 = stack_addr.i64 ss9
+    stack_store v10, ss10
+    v11 = stack_addr.i64 ss10
+    stack_store v11, ss11
+    v12 = stack_addr.i64 ss11
+    v13 = call fn0(v12)
+    v14 = load.i64 v13
+    v15 = load.i64 v14
+    v16 = load.i64 v15
+    v17 = load.i64 v16
+    v18 = load.i64 v17
+    v19 = load.i64 v18
+    v20 = load.i64 v19
+    v21 = load.i64 v20
+    v22 = load.i64 v21
+    v23 = load.i64 v22
+    v24 = load.i64 v23
+    v25 = load.i64 v24
+    v26 = call fn1(v25)
+    return v26
 }
 
 
