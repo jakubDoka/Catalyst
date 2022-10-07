@@ -12,7 +12,7 @@ impl MirChecker<'_> {
     pub fn funcs(
         &mut self,
         ctx: &mut MirBuilderCtx,
-        input: &mut Vec<(VRef<Func>, TirKind)>,
+        input: &mut Vec<(VRef<Func>, TirNode)>,
     ) -> &mut Self {
         for (func, body) in input.drain(..) {
             let body = self.func(func, body, ctx);
@@ -23,7 +23,7 @@ impl MirChecker<'_> {
         self
     }
 
-    fn func(&mut self, func: VRef<Func>, body: TirKind, ctx: &mut MirBuilderCtx) -> FuncMir {
+    fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMir {
         let Func { signature, .. } = self.typec.funcs[func];
 
         let mut builder = self.push_args(signature.args, ctx);
@@ -33,23 +33,27 @@ impl MirChecker<'_> {
         ctx.clear()
     }
 
-    fn node(&mut self, node: TirKind, builder: &mut MirBuilder) -> NodeRes {
-        match node {
-            TirKind::Block(&block) => self.block(block, builder),
-            TirKind::Var(&var) => self.var(var, builder),
-            TirKind::Int(&int) => self.int(int, builder),
-            TirKind::Char(span) => self.char(span, builder),
-            TirKind::Call(&call) => self.call(call, builder),
-            TirKind::Access(&access) => self.access(access, builder),
-            TirKind::Return(&ret) => self.r#return(ret, builder),
-            TirKind::Const(&r#const) => self.r#const(r#const, builder),
-            TirKind::Constructor(&constructor) => self.constructor(constructor, builder),
+    fn node(&mut self, TirNode { kind, ty, span }: TirNode, builder: &mut MirBuilder) -> NodeRes {
+        match kind {
+            TirKind::Block(stmts) => self.block(stmts, builder),
+            TirKind::Var(var) => self.var(var, builder),
+            TirKind::Int => self.int(ty, span, builder),
+            TirKind::Char => self.char(span, builder),
+            TirKind::Call(&call) => self.call(call, ty, span, builder),
+            TirKind::Access(access) => self.access(access, span, builder),
+            TirKind::Return(ret) => self.r#return(ret, span, builder),
+            TirKind::Const(&r#const) => self.r#const(r#const, ty, span, builder),
+            TirKind::Constructor(fields) => self.constructor(fields, ty, span, builder),
+            TirKind::Deref(..) => todo!(),
+            TirKind::Ref(..) => todo!(),
         }
     }
 
     fn constructor(
         &mut self,
-        ConstructorTir { span, ty, fields }: ConstructorTir,
+        fields: &[TirNode],
+        ty: VRef<Ty>,
+        span: Span,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let fields = fields
@@ -63,9 +67,13 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn r#const(&mut self, r#const: ConstTir, builder: &mut MirBuilder) -> NodeRes {
-        let ConstTir { value, .. } = r#const;
-
+    fn r#const(
+        &mut self,
+        value: TirNode,
+        ty: VRef<Ty>,
+        span: Span,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
         let const_block = builder.ctx.create_block();
         let Some(prev_block) = builder.current_block.replace(const_block) else {
             builder.current_block.take();
@@ -73,22 +81,24 @@ impl MirChecker<'_> {
         };
 
         let value = self.node(value, builder);
-        builder.close_block(r#const.span, ControlFlowMir::Return(value));
+        builder.close_block(span, ControlFlowMir::Return(value));
         builder.select_block(prev_block);
+
+        let ty = builder.ctx.project_ty(ty, self.typec);
 
         let const_mir = FuncConstMir {
             block: const_block,
-            ty: builder.ctx.func.values[value?].ty,
+            ty,
         };
 
-        let value = builder.ctx.func.values.push(ValueMir { ty: const_mir.ty });
+        let value = builder.ctx.func.values.push(ValueMir { ty });
         let const_mir_id = builder.ctx.func.constants.push(const_mir);
-        builder.inst(InstMir::Const(const_mir_id, value), r#const.span);
+        builder.inst(InstMir::Const(const_mir_id, value), span);
 
         Some(value)
     }
 
-    fn block(&mut self, BlockTir { nodes, .. }: BlockTir, builder: &mut MirBuilder) -> NodeRes {
+    fn block(&mut self, nodes: &[TirNode], builder: &mut MirBuilder) -> NodeRes {
         let Some((&last, nodes)) = nodes.split_last() else {
             return Some(ValueMir::UNIT);
         };
@@ -106,18 +116,14 @@ impl MirChecker<'_> {
         res
     }
 
-    fn var(&mut self, Variable { value, .. }: Variable, builder: &mut MirBuilder) -> NodeRes {
-        let value = value.expect("Only func params have no value.");
+    fn var(&mut self, value: Option<&TirNode>, builder: &mut MirBuilder) -> NodeRes {
+        let &value = value.expect("Only func params have no value.");
         let value = self.node(value, builder)?;
         builder.ctx.vars.push(value);
         Some(ValueMir::UNIT)
     }
 
-    fn access(
-        &mut self,
-        AccessTir { span, var, .. }: AccessTir,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
+    fn access(&mut self, var: VRef<Var>, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let var = builder.ctx.get_var(var);
         builder.inst(InstMir::Access(var), span);
         Some(var)
@@ -126,13 +132,10 @@ impl MirChecker<'_> {
     fn call(
         &mut self,
         CallTir {
-            func,
-            params,
-            args,
-            ty,
-            span,
-            ..
+            func, params, args, ..
         }: CallTir,
+        ty: VRef<Ty>,
+        span: Span,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let callable = match func {
@@ -162,12 +165,12 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn int(&mut self, int: IntLit, builder: &mut MirBuilder) -> NodeRes {
-        let value = builder.value(int.ty, self.typec);
-        let lit = span_str!(self, int.span)
+    fn int(&mut self, ty: VRef<Ty>, span: Span, builder: &mut MirBuilder) -> NodeRes {
+        let value = builder.value(ty, self.typec);
+        let lit = span_str!(self, span)
             .parse()
             .expect("Lexer should have validated this.");
-        builder.inst(InstMir::Int(lit, value), int.span);
+        builder.inst(InstMir::Int(lit, value), span);
         Some(value)
     }
 
@@ -179,12 +182,8 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn r#return(
-        &mut self,
-        ReturnTir { val, span }: ReturnTir,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
-        let ret_val = if let Some(val) = val {
+    fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
+        let ret_val = if let Some(&val) = val {
             Some(self.node(val, builder)?)
         } else {
             None
