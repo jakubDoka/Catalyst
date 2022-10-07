@@ -1,6 +1,7 @@
 info: mir repr of functions:
 function u0:0() -> i64 fast {
     ss0 = explicit_slot 8
+    ss1 = explicit_slot 8
     sig0 = (i64) -> i64 fast
     sig1 = (i64) -> i64 fast
     fn0 = colocated u0:1 sig0
@@ -10,10 +11,12 @@ block0:
     v0 = iconst.i64 0
     stack_store v0, ss0  ; v0 = 0
     v1 = stack_addr.i64 ss0
-    v2 = call fn0(v1)
-    v3 = call fn1(v2)
-    v4 = iconst.i64 0
-    return v4  ; v4 = 0
+    stack_store v1, ss1
+    v2 = stack_addr.i64 ss1
+    v3 = call fn0(v2)
+    v4 = call fn1(v3)
+    v5 = iconst.i64 0
+    return v5  ; v5 = 0
 }
 
 
