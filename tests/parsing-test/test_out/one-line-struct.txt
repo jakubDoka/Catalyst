@@ -4,7 +4,7 @@
 2 | pub struct OneLineStruct {
 3 |     pub use mut filed: Trough
 4 |     other_field: SimpleStuff
-5 |     priv pointer: *mut *int
+5 |     priv pointer: ^mut ^int
 6 | }
   |
 
