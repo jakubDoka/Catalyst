@@ -1,0 +1,16 @@
+error: expected '\n' | ';' but got 'struct'
+ --> spec-test\root.ctl:1:33
+  |
+1 | spec Flood { fn new -> uint ; } struct Fool ; impl Flood for Fool { fn new -> uint => 0 ; } fn [T : Flood] make_flood() -> uint => T \ new() ; #[entry] ; fn main -> uint => make_flood \ [Fool] () ;
+  |                                 ^^^^^^ token located here
+  |
+  = info: list
+
+error: expected '\n' | ';' but got 'fn'
+ --> spec-test\root.ctl:1:93
+  |
+1 | spec Flood { fn new -> uint ; } struct Fool ; impl Flood for Fool { fn new -> uint => 0 ; } fn [T : Flood] make_flood() -> uint => T \ new() ; #[entry] ; fn main -> uint => make_flood \ [Fool] () ;
+  |                                                                                             ^^ token located here
+  |
+  = info: list
+
