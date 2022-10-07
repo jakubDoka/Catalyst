@@ -172,7 +172,7 @@ fn main() {
 
             impl Glue for uint {
                 fn new -> Self => 0;
-                fn [T] use_on(s: Self, value: T) -> Glued[T] => ::{ inner: value };
+                fn [T] use_on(s: ^Self, value: T) -> Glued[T] => ::{ inner: value };
             };
 
             impl uint {
