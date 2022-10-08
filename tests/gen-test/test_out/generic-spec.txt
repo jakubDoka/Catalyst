@@ -1,0 +1,13 @@
+error: 'uint' does not implement 'GenericSpec[param0]'
+ --> generic-spec\root.ctl:9:24
+  |
+9 | fn main -> uint => take(0)
+  |                        ^^^ when calling this
+  |
+
+info: mir repr of functions:
+
+
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
+
