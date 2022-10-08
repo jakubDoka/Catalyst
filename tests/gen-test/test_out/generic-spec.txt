@@ -1,4 +1,4 @@
-error: 'uint' does not implement 'GenericSpec[param0]'
+error: 'uint' does not implement 'GenericSpec[uint]'
  --> generic-spec\root.ctl:9:24
   |
 9 | fn main -> uint => take(0)
