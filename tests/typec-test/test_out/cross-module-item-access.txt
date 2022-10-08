@@ -1,23 +1,29 @@
+error: function not found
+ --> cross-module-item-access\root.ctl:8:37
+  |
+8 | fn third_main -> uint => b\A\[uint]\b\pass(b\A\b\pass(0))
+  |                                     ^^^^^^ this does not exist
+  |
+  = info: queried '0\struct1\pass'
+
 info: tir repr of functions:
- fn [any] 2\pass(var0: param 0) -> param 0 return var0
+ fn [] pass(var0: param0) -> param0 return var0
 
-fn [] uint\2\pass(var0: uint) -> uint return var0
+fn [] pass(var0: uint) -> uint return var0
 
-fn [] 2\A\2\pass(var0: uint) -> uint return var0
+fn [] pass(var0: uint) -> uint return var0
 
-fn [any] 0\pass(var0: param 0) -> param 0 return var0
+fn [] pass(var0: param0) -> param0 return var0
 
-fn [] uint\0\pass(var0: uint) -> uint return var0
+fn [] pass(var0: uint) -> uint return var0
 
-fn [any] uint\0\pass_other(var0: uint, var1: param 0) -> param 0 return var1
+fn [] pass_other(var0: uint, var1: param0) -> param0 return var1
 
-fn [any] 0\A\0\pass(var0: param 0) -> param 0 return var0
+fn [] pass(var0: param0) -> param0 return var0
 
-fn [] 1\main() -> uint return 2\pass[uint](uint\2\pass(uint\0\pass(2\A\2\pass(0))))
+fn [] main() -> uint return pass[uint](pass(pass(pass(0))))
 
-fn [] 1\other_main() -> uint return 2\pass[uint](uint\0\pass_other[uint](0, 0))
-
-fn [] 1\third_main() -> uint return 0\A\0\pass[uint](0\A\0\pass[uint](0))
+fn [] other_main() -> uint return pass[uint](pass_other[uint](0, 0))
 
 
 
