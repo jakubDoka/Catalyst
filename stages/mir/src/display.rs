@@ -55,7 +55,7 @@ impl MirChecker<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    &self.interner[self.typec.types.id(func.value_ty(arg))]
+                    self.typec.display_ty(func.value_ty(arg), self.interner)
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -108,16 +108,12 @@ impl MirChecker<'_> {
 
                 match callable {
                     CallableMir::Func(func) => {
-                        buffer.push_str(&self.interner[self.typec.funcs.id(func)])
+                        buffer.push_str(&self.interner[self.typec[func].name])
                     }
                     CallableMir::SpecFunc(bound_func) => {
                         let SpecFunc { name, parent, .. } = self.typec.spec_funcs[bound_func];
-                        let bound_id = self.typec.types.id(parent);
-                        write!(
-                            buffer,
-                            "{}\\{}",
-                            &self.interner[bound_id], &self.interner[name]
-                        )?;
+                        let bound_id = self.typec.display_spec(Spec::Base(parent), self.interner);
+                        write!(buffer, "{}\\{}", bound_id, &self.interner[name])?;
                     }
                     CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
                 }
@@ -128,11 +124,10 @@ impl MirChecker<'_> {
                     let iter = func.ty_params[params]
                         .iter()
                         .map(|&ty| func.dependant_types[ty].ty)
-                        .map(|ty| self.typec.types.id(ty))
-                        .map(|ident| &self.interner[ident])
-                        .intersperse(", ")
-                        .flat_map(str::chars);
-                    buffer.extend(iter);
+                        .map(|ty| self.typec.display_ty(ty, self.interner))
+                        .intersperse(", ".into())
+                        .collect::<String>();
+                    buffer.push_str(&iter);
 
                     buffer.push(']');
                 }

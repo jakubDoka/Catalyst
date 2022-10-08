@@ -12,11 +12,13 @@ use typec_t::*;
 
 use crate::*;
 
+use std::fmt::Write;
+
 impl Generator<'_> {
     pub fn generate(
         &mut self,
         signature: Signature,
-        params: &[VRef<Ty>],
+        params: &[Ty],
         root: VRef<BlockMir>,
         builder: &mut GenBuilder,
     ) {
@@ -254,34 +256,40 @@ impl Generator<'_> {
                 self.instantiate(func_id, params.iter().copied(), builder)
             }
             CallableMir::SpecFunc(func) => {
+                // TODO: I dislike how much can panic here, maybe improve this in the future
                 let SpecFunc {
                     parent, generics, ..
                 } = self.typec.spec_funcs[func];
-                let TySpec { methods, .. } = self.typec.types[parent].kind.cast();
+                let SpecBase { methods, .. } = self.typec[parent];
                 let index = self.typec.spec_funcs.local_index(methods, func);
-                let generic_count = params.len() - self.typec.ty_slices[generics].len();
+                let generic_count = params.len() - self.typec[generics].len();
                 let (upper, caller, lower) = (
                     &params[..generic_count - 1],
                     params[generic_count - 1],
                     &params[generic_count..],
                 );
                 let used_spec = if upper.is_empty() {
-                    parent
+                    Spec::Base(parent)
                 } else {
-                    self.typec.instance(parent, upper, self.interner)
+                    Spec::Instance(self.typec.spec_instance(parent, upper, self.interner))
                 };
-                let r#impl = self.typec.implements(caller, used_spec).unwrap();
+                let r#impl = self
+                    .typec
+                    .find_implementation(caller, used_spec, &[])
+                    .unwrap()
+                    .unwrap();
                 let Impl {
                     generics,
                     methods,
-                    ty,
-                    spec,
+                    key: ImplKey { ty, spec },
                     ..
                 } = self.typec.impls[r#impl];
                 let func_id = self.typec.func_slices[methods][index];
-                let mut infer_slots = bumpvec![None; self.typec.ty_slices[generics].len()];
+                let mut infer_slots = bumpvec![None; self.typec[generics].len()];
                 let _ = self.typec.compatible(&mut infer_slots, caller, ty);
-                let _ = self.typec.compatible(&mut infer_slots, used_spec, spec);
+                let _ = self
+                    .typec
+                    .compatible_spec(&mut infer_slots, used_spec, spec);
                 let params = infer_slots
                     .iter()
                     .map(|&slot| slot.unwrap())
@@ -304,8 +312,11 @@ impl Generator<'_> {
         let Func {
             signature, name, ..
         } = self.typec.funcs[func_id];
-        let op_str = &self.interner[name];
-        let signed = self.typec.types.is_signed(signature.ret);
+        let op_str = self.interner[name]
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or(&self.interner[name]);
+        let signed = signature.ret.is_signed();
 
         macro_rules! helper {
             (ints) => {
@@ -331,33 +342,23 @@ impl Generator<'_> {
     fn instantiate(
         &mut self,
         func_id: VRef<Func>,
-        params: impl Iterator<Item = VRef<Ty>> + Clone,
+        params: impl Iterator<Item = Ty> + Clone,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
-        let prefix = if builder.isa.jit { "jit-" } else { "native-" };
-        let id = if params.clone().next().is_none() {
-            let id = self.typec.funcs.id(func_id);
-            self.interner
-                .intern(ident!(prefix, builder.isa.triple.as_u32(), "&", id))
-        } else {
-            let start = ident!(
-                prefix,
-                builder.isa.triple.as_u32(),
-                "&",
-                self.typec.funcs.id(func_id),
-                "["
-            );
-            let params = ident_join(", ", params.clone().map(|ty| self.typec.types.id(ty)));
-            let end = ident!("]");
-            let segments = start.into_iter().chain(params).chain(end);
-            self.interner.intern(segments)
-        };
+        let name = Self::func_instance_name(
+            builder.isa.jit,
+            builder.isa.triple,
+            func_id,
+            params.clone(),
+            self.typec,
+            self.interner,
+        );
 
-        if let Some(&imported) = self.gen_resources.func_imports.get(&id) {
+        if let Some(&imported) = self.gen_resources.func_imports.get(&name) {
             return imported;
         }
 
-        let func = self.gen.compiled_funcs.get_or_insert(id, |s| {
+        let func = self.gen.compiled_funcs.get_or_insert(name, |s| {
             self.compile_requests
                 .add_request(s.next(), func_id, params.clone());
             CompiledFunc::new(func_id)
@@ -365,15 +366,40 @@ impl Generator<'_> {
 
         let func_ref = self.import_compiled_func(func, params, builder);
 
-        self.gen_resources.func_imports.insert(id, func_ref);
+        self.gen_resources.func_imports.insert(name, func_ref);
 
         func_ref
+    }
+
+    pub fn func_instance_name(
+        jit: bool,
+        triple: VRef<str>,
+        func_id: VRef<Func>,
+        mut params: impl Iterator<Item = Ty>,
+        typec: &Typec,
+        interner: &mut Interner,
+    ) -> VRef<str> {
+        let prefix = if jit { "jit-" } else { "native-" };
+        interner.intern_with(|s, t| {
+            t.push_str(prefix);
+            write!(t, "{}", triple.as_u32()).unwrap();
+            typec.func_name(func_id, t, s);
+            if let Some(first) = params.next() {
+                t.push('[');
+                typec.display_ty_to(first, t, s);
+                for ty in params.by_ref() {
+                    t.push_str(", ");
+                    typec.display_ty_to(ty, t, s);
+                }
+                t.push(']');
+            };
+        })
     }
 
     pub fn import_compiled_func(
         &mut self,
         func: VRef<CompiledFunc>,
-        params: impl Iterator<Item = VRef<Ty>>,
+        params: impl Iterator<Item = Ty>,
         builder: &mut GenBuilder,
     ) -> ir::FuncRef {
         let name = builder
@@ -419,7 +445,7 @@ impl Generator<'_> {
     pub fn load_signature(
         &mut self,
         signature: Signature,
-        params: &[VRef<Ty>],
+        params: &[Ty],
         system_cc: CallConv,
         ptr_ty: Type,
     ) -> ir::Signature {
@@ -431,7 +457,7 @@ impl Generator<'_> {
     pub fn populate_signature(
         &mut self,
         signature: Signature,
-        params: &[VRef<Ty>],
+        params: &[Ty],
         target: &mut ir::Signature,
         system_cc: CallConv,
         ptr_ty: Type,
@@ -439,7 +465,7 @@ impl Generator<'_> {
         let cc = self.cc(signature.cc, system_cc);
 
         target.clear(cc);
-        let args = self.typec.ty_slices[signature.args]
+        let args = self.typec.args[signature.args]
             .to_bumpvec()
             .into_iter()
             .map(|ty| {
@@ -466,20 +492,21 @@ impl Generator<'_> {
         self.interner[cc].parse().unwrap_or(CallConv::Fast)
     }
 
-    fn ty_repr(&mut self, ty: VRef<Ty>, ptr_ty: Type) -> Type {
+    fn ty_repr(&mut self, ty: Ty, ptr_ty: Type) -> Type {
         self.ty_layout(ty, &[], ptr_ty).repr
     }
 
-    fn ty_layout(&mut self, ty: VRef<Ty>, params: &[VRef<Ty>], ptr_ty: Type) -> Layout {
-        if let Some(layout) = self.gen_layouts.mapping[ty] {
+    fn ty_layout(&mut self, ty: Ty, params: &[Ty], ptr_ty: Type) -> Layout {
+        if let Some(&layout) = self.gen_layouts.mapping.get(&ty) {
             return layout;
         }
 
-        let res = match self.typec.types[ty].kind {
-            TyKind::Struct(s) => {
-                let mut offsets = bumpvec![cap self.typec.fields[s.fields].len()];
+        let res = match ty {
+            Ty::Struct(s) => {
+                let Struct { fields, .. } = self.typec.structs[s];
+                let mut offsets = bumpvec![cap self.typec.fields[fields].len()];
 
-                let layouts = self.typec.fields[s.fields]
+                let layouts = self.typec.fields[fields]
                     .to_bumpvec()
                     .into_iter()
                     .map(|field| self.ty_layout(field.ty, params, ptr_ty));
@@ -507,44 +534,45 @@ impl Generator<'_> {
                     on_stack,
                 }
             }
-            TyKind::Pointer(..) | TyKind::Integer(TyInteger { size: 0, .. }) => Layout {
+            Ty::Pointer(..) | Ty::Builtin(Builtin::Uint) => Layout {
                 repr: ptr_ty,
                 offsets: VSlice::empty(),
                 align: (ptr_ty.bytes() as u8).try_into().unwrap(),
                 size: ptr_ty.bytes() as u32,
                 on_stack: false,
             },
-            TyKind::Integer(int) => {
-                let (repr, on_stack) = Self::repr_for_size(int.size as u32, ptr_ty);
-                Layout {
-                    size: int.size as u32,
-                    offsets: VSlice::empty(),
-                    align: int.size.max(1).try_into().unwrap(),
-                    repr,
-                    on_stack,
-                }
-            }
-            TyKind::Param(index) => return self.ty_layout(params[index as usize], &[], ptr_ty),
-            TyKind::Bool => Layout {
+            Ty::Builtin(Builtin::Bool) => Layout {
                 repr: types::B1,
                 offsets: VSlice::empty(),
                 align: 1.try_into().unwrap(),
                 size: 1,
                 on_stack: false,
             },
-            TyKind::Instance(inst) => {
+            Ty::Builtin(b) => {
+                let size = b.size();
+                let (repr, on_stack) = Self::repr_for_size(size, ptr_ty);
+                Layout {
+                    size,
+                    offsets: VSlice::empty(),
+                    align: (size.max(1) as u8).try_into().unwrap(),
+                    repr,
+                    on_stack,
+                }
+            }
+            Ty::Param(index) => return self.ty_layout(params[index as usize], &[], ptr_ty),
+            Ty::Instance(inst) => {
+                let Instance { base, args } = self.typec[inst];
                 // remap the instance parameters so we can compute the layout correctly
-                let params = self.typec.ty_slices[inst.args]
+                let params = self.typec.args[args]
                     .to_bumpvec()
                     .into_iter()
                     .map(|ty| self.typec.instantiate(ty, params, self.interner))
                     .collect::<BumpVec<_>>();
-                return self.ty_layout(inst.base, &params, ptr_ty);
+                return self.ty_layout(base.as_ty(), &params, ptr_ty);
             }
-            TyKind::Spec(..) => unreachable!(),
         };
 
-        self.gen_layouts.mapping[ty] = res.into();
+        self.gen_layouts.mapping.insert(ty, res);
 
         res
     }

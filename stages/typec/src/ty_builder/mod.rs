@@ -1,5 +1,3 @@
-use std::default::default;
-
 use parsing::*;
 use storage::*;
 use typec_t::*;
@@ -21,7 +19,7 @@ impl TyChecker<'_> {
 
     pub fn build_spec(
         &mut self,
-        spec: VRef<Ty>,
+        spec: VRef<SpecBase>,
         SpecAst {
             generics,
             body,
@@ -32,24 +30,17 @@ impl TyChecker<'_> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
-        let self_param = self.typec.nth_param(generics.len(), self.interner);
         self.scope
-            .push(self.interner.intern_str("Self"), self_param, name.span);
-        let methods = self.build_spec_methods(spec, body, generics.len() + 1);
-        let generics = self.generics(generics);
-        self.typec.types[spec].kind = TySpec {
-            inherits: default(),
-            generics,
-            methods,
-        }
-        .into();
+            .push(Interner::SELF, Ty::Param(generics.len() as u16), name.span);
+        self.typec[spec].generics = self.generics(generics);
+        self.typec[spec].methods = self.build_spec_methods(spec, body, generics.len() + 1);
 
         self.scope.end_frame(frame);
     }
 
     fn build_spec_methods(
         &mut self,
-        parent: VRef<Ty>,
+        parent: VRef<SpecBase>,
         body: SpecBodyAst,
         offset: usize,
     ) -> VSlice<SpecFunc> {
@@ -72,13 +63,12 @@ impl TyChecker<'_> {
         self.typec.spec_funcs.bump(methods)
     }
 
-    pub fn build_struct(&mut self, ty: VRef<Ty>, StructAst { generics, body, .. }: StructAst) {
+    pub fn build_struct(&mut self, ty: VRef<Struct>, StructAst { generics, body, .. }: StructAst) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
-        let fields = self.struct_fields(body);
-        let generics = self.generics(generics);
-        self.typec.types[ty].kind = TyStruct { generics, fields }.into();
+        self.typec[ty].fields = self.struct_fields(body);
+        self.typec[ty].generics = self.generics(generics);
 
         self.scope.end_frame(frame);
     }

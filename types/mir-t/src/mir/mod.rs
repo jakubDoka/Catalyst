@@ -17,7 +17,7 @@ pub struct FuncConstMir {
 
 #[derive(Default)]
 pub struct MirTypeSwapper {
-    swapped: Vec<VRef<Ty>>,
+    swapped: Vec<Ty>,
 }
 
 impl MirTypeSwapper {
@@ -28,7 +28,7 @@ impl MirTypeSwapper {
     pub fn swap(
         &mut self,
         func: &mut FuncMir,
-        params: &[VRef<Ty>],
+        params: &[Ty],
         typec: &mut Typec,
         interner: &mut Interner,
     ) {
@@ -61,7 +61,7 @@ pub struct FuncMir {
 }
 
 impl FuncMir {
-    pub fn value_ty(&self, value: VRef<ValueMir>) -> VRef<Ty> {
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.dependant_types[self.values[value].ty].ty
     }
 
@@ -107,7 +107,7 @@ impl Default for FuncMir {
 
 #[derive(Clone, Copy)]
 pub struct MirTy {
-    pub ty: VRef<Ty>,
+    pub ty: Ty,
 }
 
 impl MirTy {

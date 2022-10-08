@@ -84,9 +84,14 @@ impl TestState {
             .drain(..)
             .filter(|&func| self.typec.funcs[func].flags.contains(FuncFlags::ENTRY))
             .map(|func| {
-                let id = self
-                    .interner
-                    .intern(ident!(triple, "&", self.typec.funcs.id(func)));
+                let id = Generator::func_instance_name(
+                    true,
+                    triple,
+                    func,
+                    iter::empty(),
+                    &self.typec,
+                    &mut self.interner,
+                );
                 let id = self
                     .gen
                     .compiled_funcs
@@ -140,18 +145,15 @@ impl TestState {
             builder.ins().return_(&[]);
         }
 
-        let id = self.interner.intern_str(gen::ENTRY_POINT_NAME);
-        let func_id = self.typec.funcs.insert_unique(
-            id,
-            Func {
-                visibility: FuncVisibility::Exported,
-                ..Default::default()
-            },
+        let func_id = self.typec.funcs.push(Func {
+            visibility: FuncVisibility::Exported,
+            name: self.interner.intern(gen::ENTRY_POINT_NAME),
+            ..Default::default()
+        });
+        let entry_point = self.gen.compiled_funcs.insert_unique(
+            self.interner.intern(gen::ENTRY_POINT_NAME),
+            CompiledFunc::new(func_id),
         );
-        let entry_point = self
-            .gen
-            .compiled_funcs
-            .insert_unique(id, CompiledFunc::new(func_id));
 
         self.compile_func(entry_point, later_init);
 
@@ -189,12 +191,12 @@ impl TestState {
         let root_func = self
             .gen
             .compiled_funcs
-            .get_or_insert(self.interner.intern_str("anon_const"), |_| {
+            .get_or_insert(self.interner.intern("anon_const"), |_| {
                 CompiledFunc::new(Func::ANON_TEMP)
             });
 
         let mut signature = Signature {
-            cc: self.interner.intern_str("windows_fastcall").into(),
+            cc: self.interner.intern("windows_fastcall").into(),
             ..Default::default()
         };
 
@@ -329,7 +331,13 @@ impl Scheduler for TestState {
     }
 
     fn before_parsing(&mut self, module: storage::VRef<Module>) {
-        typec::build_scope(module, &mut self.scope, &self.resources, &self.typec);
+        typec::build_scope(
+            module,
+            &mut self.scope,
+            &self.resources,
+            &self.typec,
+            &mut self.interner,
+        );
     }
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {

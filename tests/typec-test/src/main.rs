@@ -35,7 +35,13 @@ impl Scheduler for TestState {
     }
 
     fn before_parsing(&mut self, module: VRef<Module>) {
-        typec::build_scope(module, &mut self.scope, &self.resources, &self.typec);
+        typec::build_scope(
+            module,
+            &mut self.scope,
+            &self.resources,
+            &self.typec,
+            &mut self.interner,
+        );
     }
 
     fn parse_segment(&mut self, module: VRef<Module>, items: GroupedItemsAst) {

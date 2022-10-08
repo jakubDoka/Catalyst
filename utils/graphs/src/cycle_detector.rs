@@ -1,20 +1,25 @@
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
-use storage::BumpVec;
+use storage::{bumpvec, BumpVec, Map};
 
 /// Struct is wrapper around [`CycleDetector`] that provides allows for easy
 /// index projection.
-#[derive(Default)]
-pub struct ProjectedCycleDetector {
-    mapping: HashMap<(u32, bool), u32>,
-    nodes: Vec<u32>,
+pub struct ProjectedCycleDetector<T> {
+    mapping: Map<T, usize>,
+    nodes: Vec<T>,
+    node_cursor: usize,
     inner: CycleDetector,
 }
 
-impl ProjectedCycleDetector {
+impl<T: std::hash::Hash + Eq + Copy> ProjectedCycleDetector<T> {
     /// Will allocate little bit of memory.
     pub fn new() -> Self {
-        ProjectedCycleDetector::default()
+        Self {
+            mapping: Map::default(),
+            nodes: Vec::new(),
+            inner: CycleDetector::new(),
+            node_cursor: 0,
+        }
     }
 
     /// Pass an enumeration of all nodes relevant to cycle detection.
@@ -24,20 +29,16 @@ impl ProjectedCycleDetector {
     /// # Panics
     ///
     /// Panics if called twice without clear. Also when there are duplicates.
-    pub fn load_nodes(&mut self, nodes: impl Iterator<Item = u32>) {
-        assert!(
+    pub fn load_nodes(&mut self, nodes: impl Iterator<Item = T>) {
+        debug_assert!(
             self.nodes.is_empty(),
             "load_nodes called twice without clear"
         );
         self.nodes.extend(nodes.enumerate().map(|(i, n)| {
-            assert!(
-                self.mapping.insert((i as u32, false), n).is_none(),
-                "node already loaded"
-            );
-            self.mapping.insert((n, true), i as u32);
+            let res = self.mapping.insert(n, i);
+            debug_assert!(res.is_none(), "duplicate node");
             n
         }));
-        self.nodes.reverse();
     }
 
     /// Creates [`ProjectedCycleDetectorNode`] instance that will
@@ -48,11 +49,12 @@ impl ProjectedCycleDetector {
     ///
     /// Panics if index is not expected as next. Order of inserting must be consistent with
     /// what you passed to [`Self::load_nodes`].
-    pub fn new_node(&mut self, index: u32) -> ProjectedCycleDetectorNode {
-        assert!(
-            Some(index) == self.nodes.pop(),
-            "Incorrect ordering or node instantiation."
-        );
+    pub fn new_node(&mut self, index: T) -> ProjectedCycleDetectorNode<T> {
+        debug_assert!({
+            let res = self.nodes.get(self.node_cursor) == Some(&index);
+            self.node_cursor += 1;
+            res
+        });
         ProjectedCycleDetectorNode {
             mapping: &self.mapping,
             inner: self.inner.new_node(),
@@ -86,35 +88,26 @@ impl ProjectedCycleDetector {
     /// Panics if mapping is empty, otherwise this call would do effectively nothing.
     pub fn ordering(
         &mut self,
-        roots: impl IntoIterator<Item = u32>,
-        buffer: &mut BumpVec<u32>,
-    ) -> Result<(), Vec<u32>> {
+        roots: impl IntoIterator<Item = T>,
+        buffer: &mut BumpVec<T>,
+    ) -> Result<(), Vec<T>> {
         assert!(
             !self.mapping.is_empty(),
             "You must call `load_nodes` before calling `ordering`."
         );
 
+        let mut temp_buffer = bumpvec![];
+
         self.inner
             .ordering(
                 roots
                     .into_iter()
-                    .filter_map(|r| self.mapping.get(&(r, true)).copied()),
-                buffer,
+                    .filter_map(|r| self.mapping.get(&r).copied()),
+                &mut temp_buffer,
             )
-            .map_err(|mut e| {
-                e.iter_mut().for_each(|n| {
-                    if let Some(&mapped) = self.mapping.get(&(*n, false)) {
-                        *n = mapped;
-                    }
-                });
-                e
-            })?;
+            .map_err(|e| e.into_iter().map(|n| self.nodes[n]).collect::<Vec<_>>())?;
 
-        buffer.iter_mut().for_each(|n| {
-            if let Some(&mapped) = self.mapping.get(&(*n, false)) {
-                *n = mapped;
-            }
-        });
+        buffer.extend(temp_buffer.into_iter().map(|n| self.nodes[n]));
 
         Ok(())
     }
@@ -124,35 +117,40 @@ impl ProjectedCycleDetector {
         self.mapping.clear();
         self.nodes.clear();
         self.inner.clear();
+        self.node_cursor = 0;
+    }
+}
+
+impl<T: std::hash::Hash + Eq + Copy> Default for ProjectedCycleDetector<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 /// Struct is wrapper around [`CycleDetectorNode`] that just projects
 /// inputted edges.
-pub struct ProjectedCycleDetectorNode<'a> {
-    mapping: &'a HashMap<(u32, bool), u32>,
+pub struct ProjectedCycleDetectorNode<'a, T> {
+    mapping: &'a Map<T, usize>,
     inner: CycleDetectorNode<'a>,
 }
 
-impl ProjectedCycleDetectorNode<'_> {
-    pub fn add_edge(&mut self, to: u32) {
-        if let Some(&mapped) = self.mapping.get(&(to, true)) {
+impl<T: std::hash::Hash + Eq> ProjectedCycleDetectorNode<'_, T> {
+    pub fn add_edge(&mut self, to: T) {
+        if let Some(&mapped) = self.mapping.get(&to) {
             self.inner.add_edge(mapped);
         }
     }
 
-    pub fn add_edges(&mut self, to: impl IntoIterator<Item = u32>) {
-        self.inner.add_edges(
-            to.into_iter()
-                .filter_map(|t| self.mapping.get(&(t, true)).copied()),
-        );
+    pub fn add_edges(&mut self, to: impl IntoIterator<Item = T>) {
+        self.inner
+            .add_edges(to.into_iter().filter_map(|t| self.mapping.get(&t).copied()));
     }
 }
 
 pub struct CycleDetector {
     // graph repr
-    edges: Vec<u32>,
-    indices: Vec<u32>,
+    edges: Vec<usize>,
+    indices: Vec<usize>,
 
     // solving resources
     meta: Vec<NodeMeta>,
@@ -180,7 +178,7 @@ impl CycleDetector {
     }
 
     fn close_node(&mut self) {
-        self.indices.push(self.edges.len() as u32);
+        self.indices.push(self.edges.len());
     }
 
     fn len(&self) -> usize {
@@ -220,9 +218,9 @@ impl CycleDetector {
     /// ```
     pub fn ordering(
         &mut self,
-        roots: impl IntoIterator<Item = u32>,
-        buffer: &mut BumpVec<u32>,
-    ) -> Result<(), Vec<u32>> {
+        roots: impl IntoIterator<Item = usize>,
+        buffer: &mut BumpVec<usize>,
+    ) -> Result<(), Vec<usize>> {
         self.meta.clear();
         self.meta.resize(self.len(), NodeMeta::default());
 
@@ -233,25 +231,20 @@ impl CycleDetector {
         Ok(())
     }
 
-    fn sub_ordering(&mut self, root: u32, buffer: &mut BumpVec<u32>) -> Result<(), Vec<u32>> {
+    fn sub_ordering(&mut self, root: usize, buffer: &mut BumpVec<usize>) -> Result<(), Vec<usize>> {
         self.stack.push(StackFrame::new(
             root,
             Self::children_indices(&self.indices, root),
         ));
 
         while let Some(StackFrame { node, children }) = self.stack.last_mut() {
-            let node = *node as usize;
+            let node = *node;
             let NodeMeta { seen, is_recursive } = self.meta[node];
 
             if is_recursive {
                 return Err(self
                     .stack
-                    .drain(
-                        self.stack
-                            .iter()
-                            .position(|i| i.node == node as u32)
-                            .unwrap()..,
-                    )
+                    .drain(self.stack.iter().position(|i| i.node == node).unwrap()..)
                     .map(|i| i.node)
                     .collect());
             }
@@ -259,30 +252,30 @@ impl CycleDetector {
             if !seen {
                 if let Some(neighbor) = children.next() {
                     self.meta[node].is_recursive = true;
-                    let edge = self.edges[neighbor as usize];
+                    let edge = self.edges[neighbor];
                     self.stack.push(StackFrame::new(
                         edge,
                         Self::children_indices(&self.indices, edge),
                     ));
                     continue;
                 } else {
-                    buffer.push(node as u32);
+                    buffer.push(node);
                 }
             }
 
             self.meta[node].seen = true;
             self.stack.pop().unwrap();
             if let Some(&StackFrame { node, .. }) = self.stack.last() {
-                self.meta[node as usize].is_recursive = false;
+                self.meta[node].is_recursive = false;
             }
         }
 
         Ok(())
     }
 
-    fn children_indices(indices: &[u32], node: u32) -> Range<u32> {
-        let start = indices[node as usize];
-        let end = indices[node as usize + 1];
+    fn children_indices(indices: &[usize], node: usize) -> Range<usize> {
+        let start = indices[node];
+        let end = indices[node + 1];
         start..end
     }
 
@@ -295,12 +288,12 @@ impl CycleDetector {
 
 #[derive(Debug)]
 struct StackFrame {
-    node: u32,
-    children: Range<u32>,
+    node: usize,
+    children: Range<usize>,
 }
 
 impl StackFrame {
-    fn new(node: u32, children: Range<u32>) -> Self {
+    fn new(node: usize, children: Range<usize>) -> Self {
         Self { node, children }
     }
 }
@@ -316,11 +309,11 @@ pub struct CycleDetectorNode<'a> {
 }
 
 impl CycleDetectorNode<'_> {
-    pub fn add_edges(&mut self, edges: impl IntoIterator<Item = u32>) {
+    pub fn add_edges(&mut self, edges: impl IntoIterator<Item = usize>) {
         self.inner.edges.extend(edges);
     }
 
-    pub fn add_edge(&mut self, to: u32) {
+    pub fn add_edge(&mut self, to: usize) {
         self.inner.edges.push(to);
     }
 }

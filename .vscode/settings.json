@@ -36,6 +36,7 @@
         "imul",
         "insts",
         "interner",
+        "ishl",
         "isub",
         "jakub",
         "lalrpop",
@@ -62,6 +63,7 @@
         "UCRT",
         "ucrtbase",
         "udiv",
+        "uextend",
         "Uninit",
         "wldap"
     ],

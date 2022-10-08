@@ -27,12 +27,7 @@ impl TyChecker<'_> {
         self.typec.display_sig(func, self.interner, buffer)?;
 
         let Func { signature, .. } = self.typec.funcs[func];
-        self.display_tir(
-            tir,
-            buffer,
-            0,
-            &mut self.typec.ty_slices[signature.args].len(),
-        )
+        self.display_tir(tir, buffer, 0, &mut self.typec.args[signature.args].len())
     }
 
     pub fn display_tir(
@@ -77,14 +72,14 @@ impl TyChecker<'_> {
             TirKind::Call(CallTir { func, params, args }) => {
                 match *func {
                     CallableTir::Func(func) => {
-                        write!(buffer, "{}", &self.interner[self.typec.funcs.id(func)])?
+                        write!(buffer, "{}", &self.interner[self.typec[func].name])?
                     }
                     CallableTir::SpecFunc(func) => {
                         let SpecFunc { parent, name, .. } = self.typec.spec_funcs[func];
                         write!(
                             buffer,
                             "{}\\{}",
-                            &self.interner[self.typec.types.id(parent)],
+                            &self.typec.display_spec(Spec::Base(parent), self.interner),
                             &self.interner[name]
                         )?
                     }
@@ -95,9 +90,9 @@ impl TyChecker<'_> {
 
                 if let Some((&first, others)) = params.split_first() {
                     write!(buffer, "[")?;
-                    write!(buffer, "{}", &self.interner[self.typec.types.id(first)])?;
+                    write!(buffer, "{}", self.typec.display_ty(first, self.interner))?;
                     for &other in others {
-                        write!(buffer, ", {}", &self.interner[self.typec.types.id(other)])?;
+                        write!(buffer, ", {}", self.typec.display_ty(other, self.interner))?;
                     }
                     write!(buffer, "]")?;
                 }
@@ -120,7 +115,7 @@ impl TyChecker<'_> {
                 self.display_tir(*value, buffer, indent, var_count)?;
             }
             TirKind::Constructor(fields) => {
-                write!(buffer, "{}\\{{", &self.interner[self.typec.types.id(ty)])?;
+                write!(buffer, "{}\\{{", self.typec.display_ty(ty, self.interner))?;
                 if let Some((&first, others)) = fields.split_first() {
                     self.display_tir(first, buffer, indent, var_count)?;
                     for &val in others.iter() {

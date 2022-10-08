@@ -57,11 +57,11 @@ impl PackageLoader<'_> {
         for package in self.resources.packages.values() {
             let edges = self.resources.package_deps[package.deps]
                 .iter()
-                .map(|dep| dep.ptr.as_u32());
+                .map(|dep| dep.ptr.index());
             self.package_graph.new_node().add_edges(edges)
         }
         self.package_graph
-            .ordering(iter::once(root_package.as_u32()), &mut buffer)
+            .ordering(iter::once(root_package.index()), &mut buffer)
             .map_err(|cycle| self.package_cycle(cycle))
             .ok();
         buffer.clear();
@@ -86,11 +86,11 @@ impl PackageLoader<'_> {
         for module in self.resources.modules.values() {
             let edges = self.resources.module_deps[module.deps]
                 .iter()
-                .map(|dep| dep.ptr.as_u32());
+                .map(|dep| dep.ptr.index());
             self.package_graph.new_node().add_edges(edges)
         }
         self.package_graph
-            .ordering(iter::once(root_module.as_u32()), &mut buffer)
+            .ordering(iter::once(root_module.index()), &mut buffer)
             .map_err(|cycle| self.module_cycle(cycle))
             .ok();
 
@@ -208,7 +208,7 @@ impl PackageLoader<'_> {
             let path_content = self.resources.sources[source].span_str(path);
             let (package, path_str) = path_content.split_once('/').unwrap_or((path_content, ""));
 
-            let package_ident = self.interner.intern_str(package);
+            let package_ident = self.interner.intern(package);
             let import_package = self.resources.package_deps
                 [self.resources.packages[package_id].deps]
                 .iter()
@@ -393,7 +393,7 @@ impl PackageLoader<'_> {
         source_id: VRef<Source>,
         manifest: ManifestAst,
     ) -> Option<(PathBuf, Span)> {
-        let field_name = self.interner.intern_str("root");
+        let field_name = self.interner.intern("root");
         let value_span = manifest
             .find_field(field_name)
             .and_then(|root| match root.value {
@@ -687,13 +687,13 @@ impl PackageLoader<'_> {
             }
         }
 
-        push package_cycle(self, cycle: Vec<u32>) {
+        push package_cycle(self, cycle: Vec<usize>) {
             err: "package cycle detected";
             info: (
                 "cycle:\n{}",
                 cycle
                     .into_iter()
-                    .map(|id| unsafe { VRef::<Package>::new(id as usize) })
+                    .map(|id| unsafe { VRef::<Package>::new(id) })
                     .map(|package| self.resources.packages[package].source)
                     .map(|source| self.resources.sources[source].path.to_string_lossy())
                     .intersperse(Cow::Borrowed("\n"))
@@ -701,13 +701,13 @@ impl PackageLoader<'_> {
             );
         }
 
-        push module_cycle(self, cycle: Vec<u32>) {
+        push module_cycle(self, cycle: Vec<usize>) {
             err: "module cycle detected";
             info: (
                 "cycle:\n{}",
                 cycle
                     .into_iter()
-                    .map(|id| unsafe { VRef::<Module>::new(id as usize) })
+                    .map(|id| unsafe { VRef::<Module>::new(id) })
                     .map(|package| self.resources.modules[package].source)
                     .map(|source| self.resources.sources[source].path.to_string_lossy())
                     .intersperse(Cow::Borrowed("\n"))

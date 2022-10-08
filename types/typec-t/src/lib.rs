@@ -112,18 +112,6 @@ macro_rules! gen_kind {
     };
 }
 
-#[macro_export]
-macro_rules! impl_located {
-    ($ty:ty) => {
-        impl $crate::Located for $ty {
-            #[inline]
-            fn loc(&self) -> Loc {
-                self.loc
-            }
-        }
-    };
-}
-
 mod func;
 mod scope;
 mod tir;
@@ -132,12 +120,15 @@ mod typec;
 
 pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
-    graphs::ProjectedCycleDetector as TyGraph,
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{CallTir, CallableTir, TirBuilder, TirFrame, TirKind, TirNode, TypecOutput, Var, VarTir},
     ty::{
-        Field, FieldFlags, Fields, Impl, ImplLookup, Impls, SpecFunc, SpecFuncs, Ty, TyExt,
-        TyFlags, TyInstance, TyInteger, TyKind, TyPointer, TySlices, TySpec, TyStruct, Types,
+        ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Field, FieldFlags, Fields, GenericTy,
+        Generics, Impl, ImplKey, ImplLookup, Impls, Instance, Instances, Mutability, ParamSlices,
+        Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance, SpecInstances,
+        SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup,
     },
-    typec::{Loc, Located, Typec},
+    typec::{Loc, Typec},
 };
+
+pub type TyGraph = graphs::ProjectedCycleDetector<Ty>;

@@ -10,7 +10,7 @@ use storage::*;
 
 use typec_t::*;
 
-use crate::*;
+use crate::{ty_parser::TyPathResult, *};
 
 pub type ExprRes<'a> = Option<TirNode<'a>>;
 
@@ -60,9 +60,12 @@ impl TyChecker<'_> {
         compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
         offset: usize,
     ) {
-        let Impl { spec, ty, .. } = self.typec.impls[impl_ref];
-        let spec_base = self.typec.types.base(spec);
-        let spec_ent = self.typec.types[spec_base].kind.cast::<TySpec>();
+        let Impl {
+            key: ImplKey { ty, spec },
+            ..
+        } = self.typec.impls[impl_ref];
+        let spec_base = spec.base(self.typec);
+        let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
         let mut methods = bumpvec![None; spec_methods.len()];
         for &(ast, func) in input {
@@ -100,7 +103,7 @@ impl TyChecker<'_> {
 
     pub fn check_impl_signature(
         &mut self,
-        implementor: VRef<Ty>,
+        implementor: Ty,
         spec_func: SpecFunc,
         func_id: VRef<Func>,
         _span: Span,
@@ -108,24 +111,25 @@ impl TyChecker<'_> {
         let func = self.typec.funcs[func_id];
 
         let spec_func_params = self
+            .typec
             .pack_spec_func_param_specs(spec_func)
             .collect::<BumpVec<_>>();
-        let generic_start = spec_func_params.len() - self.typec.ty_slices[spec_func.generics].len();
+        let generic_start = spec_func_params.len() - self.typec[spec_func.generics].len();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
         spec_func_slots[generic_start - 1] = Some(implementor);
-        let func_params = self.pack_func_param_specs(func_id).collect::<BumpVec<_>>();
+        let func_params = self
+            .typec
+            .pack_func_param_specs(func_id)
+            .collect::<BumpVec<_>>();
 
-        let spec_args = self.typec.ty_slices[spec_func.signature.args].to_bumpvec();
-        let func_args = self.typec.ty_slices[func.signature.args].to_bumpvec();
+        let spec_args = self.typec.args[spec_func.signature.args].to_bumpvec();
+        let func_args = self.typec.args[func.signature.args].to_bumpvec();
 
         if spec_args.len() != func_args.len() {
             todo!()
         }
 
         for (spec_arg, func_arg) in spec_args.into_iter().zip(func_args) {
-            let func_arg = self
-                .typec
-                .instantiate(func_arg, &func_params, self.interner);
             if let Err((a, b)) = self
                 .typec
                 .compatible(&mut spec_func_slots, func_arg, spec_arg)
@@ -134,13 +138,11 @@ impl TyChecker<'_> {
             }
         }
 
-        let func_ret = self
-            .typec
-            .instantiate(func.signature.ret, &func_params, self.interner);
-        if let Err((a, b)) =
-            self.typec
-                .compatible(&mut spec_func_slots, func_ret, spec_func.signature.ret)
-        {
+        if let Err((a, b)) = self.typec.compatible(
+            &mut spec_func_slots,
+            func.signature.ret,
+            spec_func.signature.ret,
+        ) {
             todo!("{a:?}, {b:?}")
         }
 
@@ -151,7 +153,7 @@ impl TyChecker<'_> {
         let implements = spec_func_params
             .into_iter()
             .zip(spec_func_slots)
-            .all(|(spec, ty)| self.typec.implements(ty, spec).is_some());
+            .all(|(specs, ty)| self.typec.implements_sum(ty, specs, func_params.as_slice()));
 
         if !implements {
             todo!()
@@ -210,7 +212,7 @@ impl TyChecker<'_> {
             arena,
             signature.ret,
             ret.map(|ret| ret.span()),
-            self.pack_func_param_specs(func).collect::<Vec<_>>(),
+            self.typec.pack_func_param_specs(func).collect::<Vec<_>>(),
         );
 
         self.insert_generics(generics, offset);
@@ -349,7 +351,10 @@ impl TyChecker<'_> {
         let (ty, params) = if let Some(PathInstanceAst { path, params }) = path {
             let ty = self.ty_path(path)?;
             (
-                ty,
+                match ty {
+                    TyPathResult::Ty(ty) => ty.as_generic().or_else(|| todo!())?,
+                    _ => todo!(),
+                },
                 params.and_then(|(_, params)| {
                     params
                         .iter()
@@ -359,19 +364,20 @@ impl TyChecker<'_> {
             )
         } else {
             let ty = inference.or_else(|| self.cannot_infer(ctor.span())?)?;
-            self.typec.types[ty]
-                .kind
-                .try_cast::<TyInstance>()
-                .map(|ty| (ty.base, Some(self.typec.ty_slices[ty.args].to_bumpvec())))
-                .unwrap_or((ty, None))
+            match ty {
+                Ty::Instance(instance) => (
+                    self.typec[instance].base,
+                    Some(self.typec[self.typec[instance].args].to_bumpvec()),
+                ),
+                _ => (ty.as_generic().or_else(|| todo!())?, None),
+            }
         };
 
-        let struct_meta = self.typec.types[ty]
-            .kind
-            .try_cast::<TyStruct>()
-            .or_else(|| self.expected_struct(ty, ctor.span())?)?;
+        let struct_meta = match ty {
+            GenericTy::Struct(struct_meta) => self.typec[struct_meta],
+        };
 
-        let mut param_slots = bumpvec![None; self.typec.ty_slices[struct_meta.generics].len()];
+        let mut param_slots = bumpvec![None; self.typec[struct_meta.generics].len()];
 
         if let Some(params) = params {
             if let Some(PathInstanceAst { params: Some((.., params)), .. }) = path
@@ -394,7 +400,7 @@ impl TyChecker<'_> {
                 .copied()
                 .enumerate()
                 .find(|(.., field)| field.name == name.ident)
-                .or_else(|| self.unknown_field(ty, struct_meta.fields, ctor.span())?)?;
+                .or_else(|| self.unknown_field(ty.as_ty(), struct_meta.fields, ctor.span())?)?;
 
             let inference = self
                 .typec
@@ -419,9 +425,9 @@ impl TyChecker<'_> {
         };
 
         let final_ty = if params.is_empty() {
-            ty
+            ty.as_ty()
         } else {
-            self.typec.instance(ty, &params, self.interner)
+            Ty::Instance(self.typec.instance(ty, &params, self.interner))
         };
 
         Some(TirNode::new(
@@ -546,8 +552,11 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let param_specs = self.pack_func_param_specs(func).collect::<BumpVec<_>>();
-        let generic_start = self.typec.ty_slices[upper_generics].len();
+        let param_specs = self
+            .typec
+            .pack_func_param_specs(func)
+            .collect::<BumpVec<_>>();
+        let generic_start = self.typec[upper_generics].len();
 
         let mut param_slots = bumpvec![None; param_specs.len()];
         param_slots
@@ -583,7 +592,7 @@ impl TyChecker<'_> {
         &mut self,
         func: VRef<SpecFunc>,
         params: impl Iterator<Item = TyAst>,
-        caller: Result<VRef<Ty>, TirNode<'a>>,
+        caller: Result<Ty, TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
@@ -595,10 +604,11 @@ impl TyChecker<'_> {
         } = self.typec.spec_funcs[func];
 
         let param_specs = self
+            .typec
             .pack_spec_func_param_specs(func_ent)
             .collect::<BumpVec<_>>();
         let mut param_slots = bumpvec![None; param_specs.len()];
-        let generic_start = param_slots.len() - self.typec.ty_slices[generics].len();
+        let generic_start = param_slots.len() - self.typec[generics].len();
         param_slots
             .iter_mut()
             .skip(generic_start)
@@ -631,10 +641,10 @@ impl TyChecker<'_> {
 
     fn call_params<'a>(
         &mut self,
-        params: impl Iterator<Item = Option<VRef<Ty>>> + Clone,
+        params: impl Iterator<Item = Option<Ty>> + Clone,
         span: Span,
         builder: &mut TirBuilder<'a>,
-    ) -> Option<&'a [VRef<Ty>]> {
+    ) -> Option<&'a [Ty]> {
         let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() else {
             let missing = params
                 .enumerate()
@@ -654,15 +664,15 @@ impl TyChecker<'_> {
     #[allow(clippy::too_many_arguments)]
     fn call_internals<'a>(
         &mut self,
-        generics: &[VRef<Ty>],
-        param_slots: &mut [Option<VRef<Ty>>],
+        generics: &[VSlice<Spec>],
+        param_slots: &mut [Option<Ty>],
         mut caller: Option<TirNode<'a>>,
         args: CallArgsAst,
         signature: Signature,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
-    ) -> Option<(&'a [TirNode<'a>], &'a [VRef<Ty>], VRef<Ty>)> {
-        let arg_types = self.typec.ty_slices[signature.args].to_bumpvec();
+    ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
+        let arg_types = self.typec.args[signature.args].to_bumpvec();
 
         if let Some(inference) = inference {
             // we don't want to report error twice so this one is ignored
@@ -693,12 +703,15 @@ impl TyChecker<'_> {
 
         let params = self.call_params(param_slots.iter().copied(), args.span(), builder)?;
 
-        for (&param, &spec) in params.iter().zip(generics) {
-            let param = self
-                .typec
-                .instantiate(param, &builder.generics, self.interner);
-            if self.typec.implements(param, spec).is_none() {
-                self.missing_spec(param, spec, args.span());
+        for (&param, &specs) in params.iter().zip(generics) {
+            for spec in self.typec[specs].to_bumpvec() {
+                if self
+                    .typec
+                    .find_implementation(param, spec, generics)
+                    .is_none()
+                {
+                    self.missing_spec(param, spec, args.span());
+                }
             }
         }
 
@@ -710,23 +723,27 @@ impl TyChecker<'_> {
     fn balance_pointers<'a>(
         &mut self,
         node: &mut TirNode<'a>,
-        ty: VRef<Ty>,
+        ty: Ty,
         builder: &mut TirBuilder<'a>,
     ) -> Option<()> {
-        let desired_pointer_depth = self.typec.types.pointer_depth(ty);
+        let (desired_pointer_depth, mutability) = match ty {
+            Ty::Pointer(ptr) => (self.typec[ptr].depth, self.typec[ptr].mutability),
+            _ => (0, Mutability::Immutable),
+        };
         loop {
-            let (current_pointed_depth, mutability) = self.typec.types[node.ty]
-                .kind
-                .try_cast::<TyPointer>()
-                .map_or((0, Ty::IMMUTABLE), |p| (p.depth, p.mutability));
+            let current_pointed_depth = node.ty.ptr_depth(self.typec);
             match desired_pointer_depth.cmp(&current_pointed_depth) {
                 Ordering::Less => {
-                    let ty = self.typec.types.deref(node.ty);
+                    let ty = self.typec.deref(node.ty);
                     *node = TirNode::new(ty, TirKind::Deref(builder.arena.alloc(*node)), node.span);
                 }
                 Ordering::Greater => {
                     let ty = self.typec.pointer_to(mutability, node.ty, self.interner);
-                    *node = TirNode::new(ty, TirKind::Ref(builder.arena.alloc(*node)), node.span);
+                    *node = TirNode::new(
+                        Ty::Pointer(ty),
+                        TirKind::Ref(builder.arena.alloc(*node)),
+                        node.span,
+                    );
                 }
                 Ordering::Equal => break,
             }
@@ -737,9 +754,9 @@ impl TyChecker<'_> {
 
     fn infer_params(
         &mut self,
-        params: &mut [Option<VRef<Ty>>],
-        reference: VRef<Ty>,
-        template: VRef<Ty>,
+        params: &mut [Option<Ty>],
+        reference: Ty,
+        template: Ty,
         span: Span,
     ) -> Option<()> {
         self.typec
@@ -771,16 +788,12 @@ impl TyChecker<'_> {
 
         let id = self
             .interner
-            .intern(scoped_ident!(module.as_u32(), func_or_type.ident));
-        if let Some(func) = self.typec.funcs.index(id) {
-            return Some(FuncLookupResult::Func(func));
-        }
-
-        let ty = self
-            .typec
-            .types
-            .index(id)
-            .or_else(|| self.scope_error(ScopeError::NotFound, id, path.span(), TY)?)?;
+            .intern_scoped(module.as_u32(), func_or_type.ident);
+        let ty = match self.lookup(id, func_or_type.span, FUNC)? {
+            ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
+            ScopeItem::Ty(ty) => ty,
+            item => self.invalid_symbol_type(item, func_or_type.span, FUNC)?,
+        };
 
         let (&start, segments) = segments
             .split_first()
@@ -791,15 +804,14 @@ impl TyChecker<'_> {
 
     fn method_path<'a>(
         &mut self,
-        ty: VRef<Ty>,
+        ty: Ty,
         path @ PathExprAst { start, segments }: PathExprAst,
         _builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
-        let ty = self.typec.types.base(ty);
+        let ty = ty.caller(self.typec);
         match *segments {
             [] => {
-                let ty_id = self.typec.types.id(ty);
-                let id = self.interner.intern(scoped_ident!(ty_id, start.ident));
+                let id = self.interner.intern_scoped(ty, start.ident);
                 match self.lookup(id, path.span(), FUNC)? {
                     ScopeItem::Func(func) => Some(FuncLookupResult::Func(func)),
                     ScopeItem::SpecFunc(func) => Some(FuncLookupResult::SpecFunc(func, ty)),
@@ -807,15 +819,12 @@ impl TyChecker<'_> {
                 }
             }
             [name] => {
+                let id = self.interner.intern_scoped(ty, name.ident);
                 let module = lookup!(Module self, start.ident, start.span);
-                let method_id = self
-                    .interner
-                    .intern(scoped_ident!(module.as_u32(), name.ident));
-                let ty_id = self.typec.types.id(ty);
-                let id = self.interner.intern(scoped_ident!(ty_id, method_id));
-                match self.typec.funcs.index(id) {
-                    Some(func) => Some(FuncLookupResult::Func(func)),
-                    None => self.scope_error(ScopeError::NotFound, id, path.span(), FUNC)?,
+                let method_id = self.interner.intern_scoped(module.index(), id);
+                match self.lookup(method_id, path.span(), FUNC)? {
+                    ScopeItem::Func(func) => Some(FuncLookupResult::Func(func)),
+                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
                 }
             }
             _ => self.invalid_expr_path(path.span())?,
@@ -840,7 +849,15 @@ impl TyChecker<'_> {
         let span_str = span_str!(self, span);
         let (ty, postfix_len) = Ty::INTEGERS
             .iter()
-            .map(|&ty| (ty, &self.interner[self.typec.types.id(ty)]))
+            .map(|&ty| {
+                (
+                    ty,
+                    match ty {
+                        Ty::Builtin(b) => b.name(),
+                        _ => unreachable!(),
+                    },
+                )
+            })
             .find_map(|(ty, str)| span_str.ends_with(str).then_some((ty, str.len())))
             .or_else(|| {
                 inference
@@ -872,14 +889,14 @@ impl TyChecker<'_> {
             [] => op.start.ident,
             [name] => {
                 let module = lookup!(Module self, name.ident, name.span);
-                self.interner
-                    .intern(scoped_ident!(module.as_u32(), op.start.ident))
+                self.interner.intern_scoped(module.index(), op.start.ident)
             }
             _ => self.invalid_op_expr_path(op.span())?,
         };
 
-        let id = self.typec.binary_op_id(base_id, lhs.ty, rhs.ty);
-        let id = self.interner.intern(id);
+        let id = self
+            .interner
+            .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs.ty, rhs.ty, t, s));
         let func = lookup!(Func self, id, op.span());
 
         let ty = self.typec.funcs[func].signature.ret;
@@ -895,14 +912,14 @@ impl TyChecker<'_> {
         ))
     }
 
-    fn args(&mut self, types: VSlice<VRef<Ty>>, args: FuncArgsAst, builder: &mut TirBuilder) {
-        for (&ty, &arg) in self.typec.ty_slices[types].iter().zip(args.iter()) {
+    fn args(&mut self, types: VSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
+        for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
             let var = builder.create_var(TirKind::Var(None), ty, arg.name.span);
             self.scope.push(arg.name.ident, var, arg.name.span);
         }
     }
 
-    fn type_check(&mut self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) -> Option<()> {
+    fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
         self.type_check_detailed(expected, got, |s| {
             s.generic_ty_mismatch(expected, got, span)
         })
@@ -910,8 +927,8 @@ impl TyChecker<'_> {
 
     fn type_check_detailed<A>(
         &mut self,
-        expected: VRef<Ty>,
-        got: VRef<Ty>,
+        expected: Ty,
+        got: Ty,
         display: impl Fn(&mut Self) -> A,
     ) -> Option<()> {
         if Ty::compatible(expected, got) {
@@ -940,9 +957,13 @@ impl TyChecker<'_> {
             }
         }
 
-        push generic_ty_mismatch(self, expected: VRef<Ty>, got: VRef<Ty>, span: Span) {
+        push generic_ty_mismatch(self, expected: Ty, got: Ty, span: Span) {
             err: "type mismatch";
-            info: ("expected '{}' but got '{}'", self.type_diff(expected, got), self.type_diff(got, expected));
+            info: (
+                "expected '{}' but got '{}'",
+                self.typec.type_diff(expected, got, self.interner),
+                self.typec.type_diff(got, expected, self.interner),
+            );
             (span, self.source) {
                 err[span]: "mismatch occurred here";
             }
@@ -1000,11 +1021,11 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_spec(self, ty: VRef<Ty>, spec: VRef<Ty>, span: Span) {
+        push missing_spec(self, ty: Ty, spec: Spec, span: Span) {
             err: (
                 "'{}' does not implement '{}'",
-                &self.interner[self.typec.types.id(ty)],
-                &self.interner[self.typec.types.id(spec)],
+                self.typec.display_ty(ty, self.interner),
+                self.typec.display_spec(spec, self.interner),
             );
             (span, self.source) {
                 err[span]: "when calling this";
@@ -1025,19 +1046,19 @@ impl TyChecker<'_> {
             }
         }
 
-        push expected_struct(self, ty: VRef<Ty>, span: Span) {
+        push expected_struct(self, ty: Ty, span: Span) {
             err: "expected struct type";
-            info: ("found '{}'", &self.interner[self.typec.types.id(ty)]);
+            info: ("found '{}'", self.typec.display_ty(ty, self.interner));
             (span, self.source) {
                 err[span]: "when type checking this";
             }
         }
 
-        push unknown_field(self, ty: VRef<Ty>, fields: VSlice<Field>, span: Span) {
+        push unknown_field(self, ty: Ty, fields: VSlice<Field>, span: Span) {
             err: ("unknown field");
             info: (
                 "available fields in '{}': {}",
-                &self.interner[self.typec.types.id(ty)],
+                self.typec.display_ty(ty, self.interner),
                 self.typec.fields[fields]
                     .iter()
                     .map(|f| &self.interner[f.name])
@@ -1072,11 +1093,11 @@ impl TyChecker<'_> {
     }
 }
 
-pub type Inference = Option<VRef<Ty>>;
+pub type Inference = Option<Ty>;
 
 enum FuncLookupResult<'a> {
     Func(VRef<Func>),
-    SpecFunc(VRef<SpecFunc>, VRef<Ty>),
+    SpecFunc(VRef<SpecFunc>, Ty),
     #[allow(dead_code)]
     Var(TirNode<'a>),
 }

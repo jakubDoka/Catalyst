@@ -9,24 +9,9 @@
 #![feature(try_blocks)]
 #![feature(if_let_guard)]
 
-const TY: &str = "type";
 const FUNC: &str = "function";
 const TY_OR_MOD: &str = "type or module";
 const FUNC_OR_MOD: &str = "function or module";
-
-macro_rules! scoped_ident {
-    ($scope:expr, $name:expr) => {
-        ident!($scope, "\\", $name)
-    };
-}
-
-macro_rules! intern_scoped_ident {
-    ($self:expr, $name:expr) => {
-        $self
-            .interner
-            .intern(scoped_ident!($self.module.as_u32(), $name))
-    };
-}
 
 macro_rules! lookup {
     ($what:ident $self:expr, $id:expr, $span:expr) => {
@@ -78,9 +63,9 @@ mod util {
 
     #[derive(Default)]
     pub struct AstTransfer<'a> {
-        pub structs: TypecOutput<StructAst<'a>, Ty>,
+        pub structs: TypecOutput<StructAst<'a>, Struct>,
         pub funcs: TypecOutput<FuncDefAst<'a>, Func>,
-        pub specs: TypecOutput<SpecAst<'a>, Ty>,
+        pub specs: TypecOutput<SpecAst<'a>, SpecBase>,
         pub impl_funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub impl_frames: ImplFrames<'a>,
     }
@@ -154,54 +139,35 @@ mod util {
                 return self;
             }
 
-            let nodes = all_new_types.clone().map(|ty| ty.as_u32());
+            let nodes = all_new_types.clone().map(Ty::Struct);
 
             ctx.ty_graph.load_nodes(nodes.clone());
 
             for ty in all_new_types {
-                let Ty { kind, .. } = self.typec.types[ty];
-                match kind {
-                    TyKind::Struct(s) => {
-                        ctx.ty_graph.new_node(ty.as_u32()).add_edges(
-                            self.typec.fields[s.fields]
-                                .iter()
-                                .map(|field| self.typec.types.base(field.ty).as_u32()),
-                        );
-                    }
-
-                    TyKind::Instance(..) // FIXME: We still don't catch all cycles
-                    | TyKind::Pointer(..)
-                    | TyKind::Param(..)
-                    | TyKind::Integer(..)
-                    | TyKind::Spec(..)
-                    | TyKind::Bool => (),
-                }
+                let Struct { fields, .. } = self.typec[ty];
+                ctx.ty_graph
+                    .new_node(Ty::Struct(ty))
+                    .add_edges(self.typec[fields].iter().map(|field| field.ty));
             }
 
             if let Err(cycle) = ctx.ty_graph.ordering(nodes, &mut bumpvec![]) {
-                let types = cycle
-                    .into_iter()
-                    .map(|i| unsafe { VRef::new(i as usize) })
-                    .collect::<BumpVec<_>>();
-
-                let cycle_chart = types
+                let cycle_chart = cycle
                     .iter()
-                    .map(|&ty| self.typec.types.id(ty))
-                    .map(|id| &self.interner[id])
-                    .intersperse(" -> ")
+                    .map(|&ty| self.typec.display_ty(ty, self.interner))
+                    .intersperse(" -> ".into())
                     .collect::<String>();
 
                 let slice = try {
                     diags::Slice {
-                        span: types
+                        span: cycle
                             .iter()
-                            .filter_map(|&ty| self.typec.span(ty))
+                            .filter_map(|&ty| ty.span(self.typec))
                             .reduce(|a, b| a.joined(b))?,
                         origin: self.source,
-                        annotations: types
+                        annotations: cycle
                             .iter()
                             .skip(1)
-                            .filter_map(|&ty| self.typec.span(ty))
+                            .filter_map(|&ty| ty.span(self.typec))
                             .map(
                                 |span| source_annotation!(info[span]: "this type is part of cycle"),
                             )
@@ -219,7 +185,6 @@ mod util {
 
                 self.workspace.push(snippet);
             };
-
             self
         }
     }
@@ -229,16 +194,16 @@ mod util {
         scope: &mut Scope,
         packages: &Resources,
         typec: &Typec,
+        interner: &mut Interner,
     ) {
         scope.clear();
 
-        for &ty in Ty::ALL {
-            let id = typec.types.id(ty);
-            scope.insert_builtin(id, ty);
+        for ty in Builtin::ALL {
+            scope.insert_builtin(interner.intern(ty.name()), Ty::Builtin(ty));
         }
 
         for &func in &typec.builtin_funcs {
-            let id = typec.funcs.id(func);
+            let id = typec[func].name;
             scope.insert_builtin(id, func);
         }
 
@@ -247,7 +212,7 @@ mod util {
             let items = &typec.module_items[dep.ptr];
             scope.push(dep.name, dep.ptr, dep.name_span);
             for &item in items.values() {
-                scope.insert(module, dep.ptr, item);
+                scope.insert(module, dep.ptr, item, interner);
             }
         }
     }
@@ -255,14 +220,17 @@ mod util {
     use crate::TyChecker;
 
     impl TyChecker<'_> {
-        pub fn insert_scope_item(&mut self, item: ModuleItem) -> bool {
+        pub fn insert_scope_item(&mut self, item: ModuleItem) -> Option<Loc> {
             if let Err(spans) = self.scope.insert_current(item) {
                 self.duplicate_definition(item.span, spans, self.source);
-                return false;
+                return None;
             }
 
-            self.typec.module_items[self.module].push(item);
-            true
+            let item = self.typec.module_items[self.module].push(item);
+            Some(Loc {
+                module: self.module,
+                item,
+            })
         }
 
         gen_error_fns! {

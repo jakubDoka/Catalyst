@@ -108,7 +108,7 @@ pub enum CodeSaveError {
 #[derive(Default)]
 pub struct CompileRequests {
     pub queue: Vec<CompileRequest>,
-    pub ty_slices: BumpMap<VRef<Ty>>,
+    pub ty_slices: BumpMap<Ty>,
 }
 
 impl CompileRequests {
@@ -116,7 +116,7 @@ impl CompileRequests {
         &mut self,
         id: VRef<CompiledFunc>,
         func: VRef<Func>,
-        params: impl IntoIterator<Item = VRef<Ty>>,
+        params: impl IntoIterator<Item = Ty>,
     ) {
         self.queue.push(CompileRequest {
             id,
@@ -134,7 +134,7 @@ impl CompileRequests {
 pub struct CompileRequest {
     pub id: VRef<CompiledFunc>,
     pub func: VRef<Func>,
-    pub params: VRefSlice<Ty>,
+    pub params: VSlice<Ty>,
 }
 
 //////////////////////////////////
@@ -179,7 +179,7 @@ pub struct GenBlock {
 
 #[derive(Default)]
 pub struct GenLayouts {
-    pub mapping: ShadowMap<Ty, Option<Layout>>,
+    pub mapping: Map<Ty, Layout>,
     pub offsets: BumpMap<Offset>,
 }
 
@@ -244,7 +244,7 @@ impl Isa {
         jit: bool,
         interner: &mut Interner,
     ) -> Result<Self, IsaCreationError> {
-        let triple_str = interner.intern_str(&triple.to_string());
+        let triple_str = interner.intern(&triple.to_string());
         isa::lookup(triple)
             .map_err(IsaCreationError::Lookup)?
             .finish(flags)

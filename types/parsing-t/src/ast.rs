@@ -56,7 +56,7 @@ impl NameAst {
 
     pub fn new(ctx: &mut ParsingCtx<'_, '_>, span: Span) -> Self {
         Self {
-            ident: ctx.interner.intern_str(ctx.lexer.inner_span_str(span)),
+            ident: ctx.interner.intern(ctx.lexer.inner_span_str(span)),
             span,
         }
     }

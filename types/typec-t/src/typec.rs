@@ -1,23 +1,32 @@
 use core::fmt;
+use std::fmt::Write;
 use std::mem;
 use std::{
+    collections::hash_map::Entry,
     default::default,
+    iter,
     ops::{Index, IndexMut},
 };
 
 use crate::*;
-use lexing_t::Span;
 use packaging_t::Module;
 use storage::*;
 
 #[derive(Default)]
 pub struct Typec {
-    pub types: Types,
+    lookup: TypecLookup,
+    pub structs: Structs,
+    pub pointers: Pointers,
+    pub instances: Instances,
+    pub base_specs: BaseSpecs,
+    pub spec_instances: SpecInstances,
     pub funcs: Funcs,
     pub fields: Fields,
     pub impls: Impls,
+    pub params: ParamSlices,
+    pub spec_sums: SpecSums,
+    pub args: ArgSlices,
     pub impl_lookup: ImplLookup,
-    pub ty_slices: TySlices,
     pub func_slices: FuncSlices,
     pub spec_funcs: SpecFuncs,
     pub builtin_funcs: Vec<VRef<Func>>,
@@ -26,7 +35,12 @@ pub struct Typec {
 
 macro_rules! gen_index {
     (
-        $($ty:ty => $storage:ident)*
+        indexes {
+            $($ty:ty => $storage:ident)*
+        }
+        slices {
+            $($slice_ty:ty => $slice_storage:ident)*
+        }
     ) => {
         $(
             impl Index<VRef<$ty>> for Typec {
@@ -43,46 +57,43 @@ macro_rules! gen_index {
                 }
             }
         )*
+
+        $(
+            impl Index<VSlice<$slice_ty>> for Typec {
+                type Output = [$slice_ty];
+
+                fn index(&self, index: VSlice<$slice_ty>) -> &Self::Output {
+                    &self.$slice_storage[index]
+                }
+            }
+
+            impl IndexMut<VSlice<$slice_ty>> for Typec {
+                fn index_mut(&mut self, index: VSlice<$slice_ty>) -> &mut Self::Output {
+                    &mut self.$slice_storage[index]
+                }
+            }
+        )*
     };
 }
 
 gen_index! {
-    Ty => types
-    Func => funcs
-    Field => fields
-}
-
-macro_rules! assert_init {
-    (
-        ($self:expr, $interner:expr)
-        $(
-            $name:ident {
-                $($body:tt)*
-            }
-        )*
-    ) => {
-        const _: () = {
-            let mut index = 0;
-            $(
-                assert!(Ty::$name.index() == Ty::ALL[index].index());
-                index += 1;
-            )*
-            _ = index;
-        };
-
-        $(
-            let name = if Ty::$name == Ty::UNIT {
-                "()"
-            } else {
-                stringify!($name)
-            };
-
-            $self.add_builtin_ty(name, Ty {
-                $($body)*
-                ..Default::default()
-            }, $interner);
-        )*
-    };
+    indexes {
+        Struct => structs
+        Pointer => pointers
+        SpecBase => base_specs
+        SpecInstance => spec_instances
+        Func => funcs
+        Field => fields
+        Instance => instances
+    }
+    slices {
+        Field => fields
+        VSlice<Spec> => params
+        Spec => spec_sums
+        Ty => args
+        VRef<Func> => func_slices
+        SpecFunc => spec_funcs
+    }
 }
 
 impl Typec {
@@ -98,7 +109,6 @@ impl Typec {
             upper_generics,
             ..
         } = self.funcs[func];
-        use fmt::Write;
         write!(
             buffer,
             "fn {}[{}] {}({}) -> {} ",
@@ -106,231 +116,416 @@ impl Typec {
                 .cc
                 .map(|cc| &interner[cc])
                 .map_or(default(), |cc| format!("\"{}\" ", cc)),
-            self.ty_slices[upper_generics]
+            self[upper_generics]
                 .iter()
-                .chain(&self.ty_slices[generics])
-                .map(|&ty| &interner[self.types.id(ty)])
-                .intersperse(", ")
+                .chain(&self[generics])
+                .map(|&ty| self.display_spec_sum(ty, interner))
+                .intersperse(", ".into())
                 .collect::<String>(),
-            &interner[self.funcs.id(func)],
-            self.ty_slices[signature.args]
+            &interner[self[func].name],
+            self[signature.args]
                 .iter()
-                .map(|&ty| &interner[self.types.id(ty)])
+                .map(|&ty| self.display_ty(ty, interner))
                 .enumerate()
                 .map(|(i, str)| format!("var{}: {}", i, str))
-                .intersperse(String::from(", "))
+                .intersperse(", ".into())
                 .collect::<String>(),
-            &interner[self.types.id(signature.ret)],
+            self.display_ty(signature.ret, interner),
         )
     }
 
-    pub fn init(&mut self, interner: &mut Interner) {
-        self.init_builtin_types(interner);
-        self.init_builtin_funcs(interner);
-        self.init_builtin_impls(interner);
+    pub fn func_name(&self, func: VRef<Func>, to: &mut String, interner: &Interner) {
+        let Func {
+            name, loc, owner, ..
+        } = self.funcs[func];
+        if let Some(loc) = loc {
+            write!(to, "{}\\", loc.module.index()).unwrap();
+        }
+        if let Some(owner) = owner {
+            write!(to, "{}\\", owner).unwrap();
+        }
+        to.push_str(&interner[name]);
     }
 
-    fn init_builtin_impls(&mut self, _interner: &mut Interner) {
-        self.impls.push(Impl {
-            generics: default(),
-            ty: Ty::UNIT,
-            spec: Ty::ANY,
-            methods: default(),
-            next: None,
-            span: None,
-        });
+    pub fn display_ty(&self, ty: Ty, interner: &Interner) -> String {
+        let mut str = String::new();
+        self.display_ty_to(ty, &mut str, interner);
+        str
     }
 
-    fn init_builtin_types(&mut self, interner: &mut Interner) {
-        assert_init! {
-            (self, interner)
-            MUTABLE {}
-            IMMUTABLE {}
-            ANY {
-                kind: TyKind::Spec(default()),
+    pub fn display_ty_to(&self, ty: Ty, to: &mut String, interner: &Interner) {
+        match ty {
+            Ty::Struct(r#struct) => {
+                write!(to, "{}\\", self[r#struct].loc.module.index()).unwrap();
+                to.push_str(&interner[self[r#struct].name])
             }
-            UNIT {
-                kind: TyKind::Struct(default()),
+            Ty::Instance(instance) => {
+                let Instance { base, args } = self[instance];
+                self.instance_id(base, &self[args], to, interner);
             }
-            UINT {
-                kind: TyKind::Integer(default()),
+            Ty::Pointer(ptr) => {
+                let Pointer {
+                    base, mutability, ..
+                } = self[ptr];
+                self.pointer_id(mutability, base, to, interner);
             }
-            U32 {
-                kind: TyKind::Integer(TyInteger { size: 4, signed: false }),
-            }
-            CHAR {
-                kind: TyKind::Integer(TyInteger { size: 4, signed: false }),
-            }
-            TERMINAL {}
+            Ty::Param(i) => write!(to, "param{}", i).unwrap(),
+            Ty::Builtin(b) => to.push_str(b.name()),
         }
     }
 
+    pub fn display_spec(&self, spec: Spec, interner: &Interner) -> String {
+        let mut str = String::new();
+        self.display_spec_to(spec, &mut str, interner);
+        str
+    }
+
+    pub fn display_spec_to(&self, spec: Spec, to: &mut String, interner: &Interner) {
+        match spec {
+            Spec::Base(base) => to.push_str(&interner[self[base].name]),
+            Spec::Instance(instance) => {
+                let SpecInstance { base, args } = self[instance];
+                self.spec_instance_id(base, &self[args], to, interner)
+            }
+        }
+    }
+
+    pub fn display_spec_sum(&self, spec: VSlice<Spec>, interner: &Interner) -> String {
+        let mut str = String::new();
+        self.display_spec_sum_to(spec, &mut str, interner);
+        str
+    }
+
+    pub fn display_spec_sum_to(&self, spec: VSlice<Spec>, to: &mut String, interner: &Interner) {
+        if let Some((&last, spec)) = self[spec].split_last() {
+            for &spec in spec {
+                self.display_spec_to(spec, to, interner);
+                to.push_str(" + ");
+            }
+            self.display_spec_to(last, to, interner);
+        }
+    }
+
+    pub fn type_diff(&self, pattern: Ty, value: Ty, interner: &Interner) -> String {
+        let mut buffer = String::new();
+        self.type_diff_recurse(pattern, value, &mut buffer, interner);
+        buffer
+    }
+
+    fn type_diff_recurse(&self, pattern: Ty, value: Ty, to: &mut String, interner: &Interner) {
+        if pattern == value {
+            to.push('_');
+            return;
+        }
+
+        match (pattern, value) {
+            (Ty::Pointer(pattern), Ty::Pointer(value)) => {
+                to.push('^');
+                if self[pattern].mutability != self[value].mutability {
+                    write!(to, "{}", self[pattern].mutability).unwrap();
+                }
+                self.type_diff_recurse(self[pattern].base, self[value].base, to, interner);
+            }
+            (Ty::Instance(pattern), Ty::Instance(value)) => {
+                self.type_diff_recurse(
+                    self[pattern].base.as_ty(),
+                    self[value].base.as_ty(),
+                    to,
+                    interner,
+                );
+                let Some((&pattern_first, pattern_others)) = self[self[pattern].args].split_first() else {
+                    return;
+                };
+                let Some((&value_first, value_others)) = self[self[value].args].split_first() else {
+                    return;
+                };
+
+                to.push('[');
+                self.type_diff_recurse(pattern_first, value_first, to, interner);
+                for (&pattern, &value) in pattern_others.iter().zip(value_others) {
+                    to.push_str(", ");
+                    self.type_diff_recurse(pattern, value, to, interner);
+                }
+                to.push(']');
+            }
+            _ => self.display_ty_to(pattern, to, interner),
+        }
+    }
+
+    pub fn contains_params(&self, ty: Ty) -> bool {
+        match ty {
+            Ty::Instance(instance) => self[self[instance].args]
+                .iter()
+                .any(|&ty| self.contains_params(ty)),
+            Ty::Pointer(pointer) => {
+                self.contains_params(self[pointer].base)
+                    || matches!(self[pointer].mutability, Mutability::Param(..))
+            }
+            Ty::Param(..) => true,
+            Ty::Struct(..) | Ty::Builtin(..) => false,
+        }
+    }
+
+    pub fn init(&mut self, interner: &mut Interner) {
+        self.init_builtin_funcs(interner);
+    }
+
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
-        let anon_temp = interner.intern_str("anon_temp");
-        let anon_temp = self.funcs.insert_unique(anon_temp, Default::default());
-        assert!(anon_temp == Func::ANON_TEMP);
+        self.funcs.push(Default::default());
 
         let int_bin_ops = "+ - / *".split_whitespace();
 
         for op in int_bin_ops {
-            for &ty in Ty::INTEGERS {
-                let op = interner.intern_str(op);
-                let segments = self.binary_op_id(op, ty, ty);
-                let id = interner.intern(segments);
+            for ty in Ty::INTEGERS {
+                let op = interner.intern(op);
+                let id = interner.intern_with(|s, t| self.binary_op_id(op, ty, ty, t, s));
 
                 let signature = Signature {
                     cc: default(),
-                    args: self.ty_slices.bump([ty, ty]),
+                    args: self.args.bump([ty, ty]),
                     ret: ty,
                 };
 
-                let func = self.funcs.insert_unique(
-                    id,
-                    Func {
-                        signature,
-                        flags: FuncFlags::BUILTIN,
-                        loc: Loc::Builtin(op),
-                        name: op,
-                        ..default()
-                    },
-                );
+                let func = self.funcs.push(Func {
+                    signature,
+                    flags: FuncFlags::BUILTIN,
+                    name: id,
+                    ..default()
+                });
 
                 self.builtin_funcs.push(func);
             }
         }
     }
 
-    pub fn add_builtin_ty(&mut self, name: &str, mut ty: Ty, interner: &mut Interner) {
-        let lower_name = name.to_lowercase();
-        let ident = interner.intern_str(lower_name.as_str());
-        ty.loc = Loc::Builtin(ident);
-        self.types.insert(ident, ty);
+    pub fn pack_func_param_specs(
+        &self,
+        func: VRef<Func>,
+    ) -> impl Iterator<Item = VSlice<Spec>> + '_ {
+        let Func {
+            generics,
+            upper_generics,
+            ..
+        } = self[func];
+        iter::empty()
+            .chain(&self[upper_generics])
+            .chain(&self[generics])
+            .copied()
+    }
+
+    pub fn pack_spec_func_param_specs(
+        &self,
+        func: SpecFunc,
+    ) -> impl Iterator<Item = VSlice<Spec>> + '_ {
+        let SpecFunc {
+            generics, parent, ..
+        } = func;
+        let SpecBase {
+            generics: upper_generics,
+            ..
+        } = self[parent];
+        iter::empty()
+            .chain(self[upper_generics].iter().copied())
+            .chain(iter::once(VSlice::empty()))
+            .chain(self[generics].iter().copied())
     }
 
     pub fn binary_op_id(
         &self,
         op: VRef<str>,
-        lhs: VRef<Ty>,
-        rhs: VRef<Ty>,
-    ) -> impl Iterator<Item = InternedSegment<'static>> {
-        ident!(self.types.id(lhs), " ", op, " ", self.types.id(rhs)).into_iter()
+        lhs: Ty,
+        rhs: Ty,
+        to: &mut String,
+        interner: &Interner,
+    ) {
+        self.display_ty_to(lhs, to, interner);
+        to.push(' ');
+        to.push_str(&interner[op]);
+        to.push(' ');
+        self.display_ty_to(rhs, to, interner);
     }
 
     pub fn pointer_to(
         &mut self,
-        mutability: VRef<Ty>,
-        base: VRef<Ty>,
+        mutability: Mutability,
+        base: Ty,
         interner: &mut Interner,
-    ) -> VRef<Ty> {
-        let segments = self.pointer_id(mutability, base);
-        let id = interner.intern(segments);
+    ) -> VRef<Pointer> {
+        let id = interner.intern_with(|s, t| self.pointer_id(mutability, base, t, s));
+        let depth = base.ptr_depth(self) + 1;
 
-        let fallback = |types: &mut Types| Ty {
-            kind: TyPointer {
-                base,
-                mutability,
-                depth: types.pointer_depth(base) + 1,
+        match self.lookup.entry(id) {
+            Entry::Occupied(occ) => match occ.get() {
+                &ComputedTypecItem::Pointer(pointer) => pointer,
+                _ => unreachable!(),
+            },
+            Entry::Vacant(entry) => {
+                let pointer = Pointer {
+                    mutability,
+                    base,
+                    depth,
+                };
+                let ptr = self.pointers.push(pointer);
+                entry.insert(ComputedTypecItem::Pointer(ptr));
+                ptr
             }
-            .into(),
-            flags: TyFlags::GENERIC & (types.is_generic(base) || types.is_generic(mutability)),
-            loc: default(),
-        };
-
-        self.types.get_or_insert(id, fallback)
+        }
     }
 
     pub fn pointer_id(
         &self,
-        mutability: VRef<Ty>,
-        base: VRef<Ty>,
-    ) -> impl Iterator<Item = InternedSegment<'static>> {
-        ident!("^", self.types.id(mutability), " ", self.types.id(base)).into_iter()
+        mutability: Mutability,
+        base: Ty,
+        to: &mut String,
+        interner: &Interner,
+    ) {
+        to.push('^');
+        write!(to, "{}", mutability).unwrap();
+        self.display_ty_to(base, to, interner);
     }
 
     pub fn instance_id<'a>(
         &'a self,
-        base: VRef<Ty>,
-        params: &'a [VRef<Ty>],
-    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        let prefix = ident!(self.types.id(base), "[").into_iter();
-        let params = ident_join(", ", params.iter().map(|&p| self.types.id(p)));
-        let suffix = ident!("]");
-        prefix.chain(params).chain(suffix)
+        base: GenericTy,
+        params: &'a [Ty],
+        to: &'a mut String,
+        interner: &'a Interner,
+    ) {
+        self.display_ty_to(base.as_ty(), to, interner);
+        to.push('[');
+        if let Some((&last, params)) = params.split_last() {
+            for &param in params {
+                self.display_ty_to(param, to, interner);
+                to.push_str(", ");
+            }
+            self.display_ty_to(last, to, interner);
+        }
+        to.push(']');
     }
 
     pub fn instance(
         &mut self,
-        base: VRef<Ty>,
-        args: &[VRef<Ty>],
+        base: GenericTy,
+        args: &[Ty],
         interner: &mut Interner,
-    ) -> VRef<Ty> {
-        let id = self.instance_id(base, args);
-        let id = interner.intern(id);
-        self.types.get_or_insert(id, |_| Ty {
-            kind: TyInstance {
-                base,
-                args: self.ty_slices.bump_slice(args),
+    ) -> VRef<Instance> {
+        let id = interner.intern_with(|s, t| self.instance_id(base, args, t, s));
+        match self.lookup.entry(id) {
+            Entry::Occupied(occ) => match occ.get() {
+                &ComputedTypecItem::Instance(instance) => instance,
+                _ => unreachable!(),
+            },
+            Entry::Vacant(entry) => {
+                let instance = Instance {
+                    base,
+                    args: self.args.bump_slice(args),
+                };
+                let instance = self.instances.push(instance);
+                entry.insert(ComputedTypecItem::Instance(instance));
+                instance
             }
-            .into(),
-            ..Default::default()
-        })
-    }
-
-    pub fn bound_sum_id<'a>(
-        &'a self,
-        bounds: &'a [VRef<Ty>],
-    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        ident_join(" + ", bounds.iter().map(|&b| self.types.id(b)))
-    }
-
-    pub fn tuple_id<'a>(
-        &'a self,
-        tys: &'a [VRef<Ty>],
-    ) -> impl Iterator<Item = InternedSegment<'static>> + 'a {
-        let start = ident!("(");
-        let body = ident_join(", ", tys.iter().map(|&t| self.types.id(t)));
-        let end = ident!(")");
-
-        start.into_iter().chain(body).chain(end)
-    }
-
-    pub fn nth_param(&mut self, index: usize, interner: &mut Interner) -> VRef<Ty> {
-        let key = interner.intern(ident!("param ", index as u32));
-
-        let fallback = |_: &mut Types| Ty {
-            kind: TyKind::Param(index as u32),
-            flags: TyFlags::GENERIC,
-            loc: default(),
-        };
-
-        self.types.get_or_insert(key, fallback)
-    }
-
-    pub fn span<T: Located>(&self, target: VRef<T>) -> Option<Span>
-    where
-        Self: Index<VRef<T>, Output = T>,
-    {
-        match self[target].loc() {
-            Loc::Module { module, item } => Some(self.module_items[module][item].span),
-            Loc::Builtin(..) => None,
         }
     }
 
-    pub fn implements(&mut self, ty: VRef<Ty>, spec: VRef<Ty>) -> Option<VRef<Impl>> {
-        if spec == Ty::ANY || ty == spec {
-            return Some(Impl::ANY);
+    pub fn spec_instance(
+        &mut self,
+        base: VRef<SpecBase>,
+        args: &[Ty],
+        interner: &mut Interner,
+    ) -> VRef<SpecInstance> {
+        let id = interner.intern_with(|s, t| self.spec_instance_id(base, args, t, s));
+        match self.lookup.entry(id) {
+            Entry::Occupied(occ) => match occ.get() {
+                &ComputedTypecItem::SpecInstance(instance) => instance,
+                _ => unreachable!(),
+            },
+            Entry::Vacant(entry) => {
+                let instance = SpecInstance {
+                    base,
+                    args: self.args.bump_slice(args),
+                };
+                let instance = self.spec_instances.push(instance);
+                entry.insert(ComputedTypecItem::SpecInstance(instance));
+                instance
+            }
+        }
+    }
+
+    pub fn spec_instance_id(
+        &self,
+        base: VRef<SpecBase>,
+        args: &[Ty],
+        to: &mut String,
+        interner: &Interner,
+    ) {
+        self.display_spec_to(Spec::Base(base), to, interner);
+        to.push('[');
+        if let Some((&last, args)) = args.split_last() {
+            for &arg in args {
+                self.display_ty_to(arg, to, interner);
+                to.push_str(", ");
+            }
+            self.display_ty_to(last, to, interner);
+        }
+        to.push(']');
+    }
+
+    pub fn tuple_id(&self, tys: &[Ty], to: &mut String, interner: &Interner) {
+        to.push('(');
+        if let Some((&last, tys)) = tys.split_last() {
+            for &ty in tys {
+                self.display_ty_to(ty, to, interner);
+                to.push_str(", ");
+            }
+            self.display_ty_to(last, to, interner);
+        }
+        to.push(')');
+    }
+
+    pub fn implements_sum(&mut self, ty: Ty, sum: VSlice<Spec>, params: &[VSlice<Spec>]) -> bool {
+        self[sum]
+            .to_bumpvec()
+            .into_iter()
+            .all(|spec| self.find_implementation(ty, spec, params).is_some())
+    }
+
+    pub fn deref(&self, ty: Ty) -> Ty {
+        match ty {
+            Ty::Pointer(ptr) => self[ptr].base,
+            _ => ty,
+        }
+    }
+
+    pub fn find_implementation(
+        &mut self,
+        ty: Ty,
+        spec: Spec,
+        params: &[VSlice<Spec>],
+    ) -> Option<Option<VRef<Impl>>> {
+        if let Ty::Param(index) = ty {
+            let specs = params[index as usize];
+            return self[specs].contains(&spec).then_some(None);
         }
 
-        let key = (ty, spec);
+        let key = ImplKey { ty, spec };
 
         if let Some(&result) = self.impl_lookup.get(&key) {
-            return result;
+            return Some(result);
         }
 
-        let ty_base = self.types.base(ty);
-        let spec_base = self.types.base(spec);
+        let ty_base = match ty {
+            Ty::Instance(instance) => self[instance].base.as_ty(),
+            _ => ty,
+        };
+        let spec_base = match spec {
+            Spec::Instance(instance) => Spec::Base(self[instance].base),
+            _ => spec,
+        };
 
-        let base_key = (ty_base, spec_base);
+        let base_key = ImplKey {
+            ty: ty_base,
+            spec: spec_base,
+        };
 
         let Some(&(mut base_impl)) = self.impl_lookup.get(&base_key) else {
             self.impl_lookup.insert(key, None);
@@ -341,10 +536,10 @@ impl Typec {
             let impl_ent = self.impls[current];
             base_impl = impl_ent.next;
 
-            let generics = self.ty_slices[impl_ent.generics].to_bumpvec();
+            let generics = self[impl_ent.generics].to_bumpvec();
             let mut generic_slots = bumpvec![None; generics.len()];
-            let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.ty);
-            let ty_compatible = self.compatible(&mut generic_slots, spec, impl_ent.spec);
+            let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.key.ty);
+            let ty_compatible = self.compatible_spec(&mut generic_slots, spec, impl_ent.key.spec);
 
             if ty_compatible.is_err() || spec_compatible.is_err() {
                 continue;
@@ -353,56 +548,85 @@ impl Typec {
             let implements = generics
                 .into_iter()
                 .zip(generic_slots.into_iter().map(|s| s.unwrap()))
-                .all(|(spec, ty)| self.implements(ty, spec).is_some());
+                .all(|(specs, ty)| self.implements_sum(ty, specs, params));
 
             if !implements {
                 continue;
             }
 
             self.impl_lookup.insert(key, Some(current));
-            return Some(current);
+            return Some(Some(current));
         }
 
         self.impl_lookup.insert(key, None);
         None
     }
 
+    pub fn compatible_spec(
+        &self,
+        params: &mut [Option<Ty>],
+        reference: Spec,
+        template: Spec,
+    ) -> Result<(), SpecCmpError> {
+        match (reference, template) {
+            _ if reference == template => Ok(()),
+            (Spec::Instance(reference), Spec::Instance(template)) => {
+                let reference = self[reference];
+                let template = self[template];
+
+                if reference.base != template.base {
+                    return Err(SpecCmpError::Specs(
+                        Spec::Base(reference.base),
+                        Spec::Base(template.base),
+                    ));
+                }
+
+                self[reference.args]
+                    .iter()
+                    .zip(&self[template.args])
+                    .fold(Ok(()), |acc, (&reference, &template)| {
+                        acc.and(self.compatible(params, reference, template))
+                    })
+                    .map_err(|(a, b)| SpecCmpError::Args(a, b))?;
+
+                Ok(())
+            }
+            _ => Err(SpecCmpError::Specs(reference, template)),
+        }
+    }
+
     pub fn compatible(
         &self,
-        params: &mut [Option<VRef<Ty>>],
-        reference: VRef<Ty>,
-        template: VRef<Ty>,
-    ) -> Result<(), (VRef<Ty>, VRef<Ty>)> {
+        params: &mut [Option<Ty>],
+        reference: Ty,
+        template: Ty,
+    ) -> Result<(), (Ty, Ty)> {
         let mut stack = bumpvec![(reference, template)];
 
         let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
 
         while let Some((reference, template)) = stack.pop() {
-            if reference == template && !matches!(self.types[template].kind, TyKind::Param(..)) {
+            if reference == template && !matches!(template, Ty::Param(..)) {
                 continue;
             }
 
-            match (
-                self.types[reference].kind,
-                self.types[template].kind,
-            ) {
-                (TyKind::Pointer(reference), TyKind::Pointer(template)) => {
-                    stack.push((reference.base, template.base));
-                    stack.push((reference.mutability, template.mutability));
+            match (reference, template) {
+                (Ty::Pointer(reference), Ty::Pointer(template)) => {
+                    stack.push((self[reference].base, self[template].base));
                 }
-                (TyKind::Instance(reference), TyKind::Instance(template)) => {
-                    check(reference.base, template.base)?;
+                (Ty::Instance(reference), Ty::Instance(template)) => {
+                    check(self[reference].base.as_ty(), self[template].base.as_ty())?;
                     stack.extend(
-                        self.ty_slices[reference.args]
+                        self[self[reference].args]
                             .iter()
                             .copied()
-                            .zip(self.ty_slices[template.args].iter().copied()),
+                            .zip(self[self[template].args].iter().copied()),
                     );
                 }
-                (_, TyKind::Param(index)) if let Some(inferred) = params[index as usize] => {
+                (_, Ty::Param(index)) if let Some(inferred) = params[index as usize] => {
                     check(inferred, reference)?;
                 }
-                (_, TyKind::Param(index)) => params[index as usize] = Some(reference),
+                (_, Ty::Param(index)) => params[index as usize] = Some(reference),
                 _ => return Err((reference, template)),
             }
         }
@@ -410,12 +634,7 @@ impl Typec {
         Ok(())
     }
 
-    pub fn instantiate(
-        &mut self,
-        ty: VRef<Ty>,
-        params: &[VRef<Ty>],
-        interner: &mut Interner,
-    ) -> VRef<Ty> {
+    pub fn instantiate(&mut self, ty: Ty, params: &[Ty], interner: &mut Interner) -> Ty {
         unsafe {
             self.instantiate_low(ty, mem::transmute(params), interner)
                 .unwrap_unchecked()
@@ -424,88 +643,49 @@ impl Typec {
 
     pub fn try_instantiate(
         &mut self,
-        ty: VRef<Ty>,
-        params: &[Option<VRef<Ty>>],
+        ty: Ty,
+        params: &[Option<Ty>],
         interner: &mut Interner,
-    ) -> Option<VRef<Ty>> {
+    ) -> Option<Ty> {
         self.instantiate_low(ty, params, interner)
     }
 
     pub fn instantiate_low(
         &mut self,
-        ty: VRef<Ty>,
-        params: &[Option<VRef<Ty>>],
+        ty: Ty,
+        params: &[Option<Ty>],
         interner: &mut Interner,
-    ) -> Option<VRef<Ty>> {
-        Some(match self.types[ty].kind {
-            TyKind::Instance(TyInstance { base, args }) => {
-                let params = self.ty_slices[args]
+    ) -> Option<Ty> {
+        Some(match ty {
+            Ty::Instance(instance) => {
+                let Instance { base, args } = self[instance];
+                let args = self[args]
                     .to_bumpvec()
                     .into_iter()
                     .map(|arg| self.instantiate_low(arg, params, interner))
                     .collect::<Option<BumpVec<_>>>()?;
-
-                let generic = params.iter().any(|&arg| self.types.is_generic(arg));
-
-                let segments = self.instance_id(base, &params);
-                let id = interner.intern(segments);
-
-                let fallback = |types: &mut Types| Ty {
-                    kind: TyKind::Instance(TyInstance {
-                        base,
-                        args: self.ty_slices.bump(params),
-                    }),
-                    flags: TyFlags::GENERIC & generic,
-                    ..types[ty]
-                };
-
-                self.types.get_or_insert(id, fallback)
+                Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
-            TyKind::Pointer(TyPointer {
-                base,
-                mutability,
-                depth,
-            }) => {
+            Ty::Pointer(pointer) => {
+                let Pointer {
+                    base, mutability, ..
+                } = self[pointer];
                 let base = self.instantiate_low(base, params, interner)?;
-                let mutability = self.instantiate_low(mutability, params, interner)?;
-                let generic = self.types.is_generic(base) | self.types.is_generic(mutability);
-
-                let segments = self.pointer_id(base, mutability);
-                let id = interner.intern(segments);
-
-                let fallback = |types: &mut Types| Ty {
-                    kind: TyKind::Pointer(TyPointer {
-                        base,
-                        mutability,
-                        depth,
-                    }),
-                    flags: TyFlags::GENERIC & generic,
-                    ..types[ty]
-                };
-
-                self.types.get_or_insert(id, fallback)
+                Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
-            TyKind::Param(index) => return params[index as usize],
-            TyKind::Struct(..) | TyKind::Integer(..) | TyKind::Bool | TyKind::Spec(..) => ty,
+            Ty::Param(index) => return params[index as usize],
+            Ty::Struct(..) | Ty::Builtin(_) => ty,
         })
     }
 }
 
-pub trait Located {
-    fn loc(&self) -> Loc;
+pub enum SpecCmpError {
+    Specs(Spec, Spec),
+    Args(Ty, Ty),
 }
 
 #[derive(Clone, Copy)]
-pub enum Loc {
-    Module {
-        module: VRef<Module>,
-        item: VRef<ModuleItem>,
-    },
-    Builtin(VRef<str>),
-}
-
-impl Default for Loc {
-    fn default() -> Self {
-        Loc::Builtin(VRef::default())
-    }
+pub struct Loc {
+    pub module: VRef<Module>,
+    pub item: VRef<ModuleItem>,
 }

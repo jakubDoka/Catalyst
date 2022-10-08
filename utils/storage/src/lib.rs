@@ -5,6 +5,7 @@
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(const_trait_impl)]
 #![feature(rustc_attrs)]
+#![feature(new_uninit)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten
@@ -39,8 +40,12 @@ macro_rules! impl_flag_and_bool {
 #[macro_export]
 macro_rules! gen_constant_groups {
     ($($name:ident = [$($elem:ident)*];)*) => {
+        $crate::gen_constant_groups!(exp Self => $($name = [$($elem)*];)*);
+    };
+
+    (exp $ty:ty => $($name:ident = [$($elem:ident)*];)*) => {
         $(
-            pub const $name: &'static [VRef<Self>] = &[$(Self::$elem),*];
+            pub const $name: &'static [VRef<$ty>] = &[$(Self::$elem),*];
         )*
     };
 }
@@ -48,37 +53,19 @@ macro_rules! gen_constant_groups {
 #[macro_export]
 macro_rules! gen_increasing_constants {
     ($($ident:ident)*) => {
-        gen_increasing_constants!((0) $($ident)*);
-        gen_constant_groups!(ALL = [$($ident)*];);
+        $crate::gen_increasing_constants!(exp Self => $($ident)*);
     };
 
-    (($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
-        pub const $current: VRef<Self> = unsafe { VRef::new($prev) };
+    (exp $ty:ty => $($ident:ident)*) => {
+        $crate::gen_increasing_constants!($ty => (0) $($ident)*);
+        $crate::gen_constant_groups!(exp $ty => ALL = [$($ident)*];);
+    };
+
+    ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
+        pub const $current: VRef<$ty> = unsafe { VRef::new($prev) };
         $(
-            gen_increasing_constants!((Self::$current.index() + 1) $next $($others)*);
+            $crate::gen_increasing_constants!($ty => (Self::$current.index() + 1) $next $($others)*);
         )?
-    };
-}
-
-/// Macro makes it easy to construct '&[[`InternedSegment`]]'.
-///
-/// # Examples
-/// ```
-/// use storage::*;
-///
-/// let mut interner = Interner::new();
-///
-/// let a = interner.intern_str("a");
-///
-/// let usage = ident!("h", 10, a);
-/// let result: [InternedSegment; _] = ["h".into(), 10.into(), a.into()];
-///
-/// assert_eq!(usage, result);
-/// ```
-#[macro_export]
-macro_rules! ident {
-    ($($item:expr),* $(,)?) => {
-        [$(InternedSegment::from($item)),*]
     };
 }
 
@@ -179,13 +166,13 @@ pub use {
     bump_map::{BumpMap, CacheBumpMap},
     clear::Clear,
     frames::Frames,
-    interner::{ident_join, InternedSegment, Interner},
+    interner::Interner,
     map::Map,
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
     pool_map::PoolMap,
-    primitives::{NoShortCircuitCollect, VRef, VRefDefault, VRefSlice, VSlice},
+    primitives::{NoShortCircuitCollect, OptVRef, VRef, VRefDefault, VRefSlice, VSlice},
     push_map::PushMap,
     shadow_map::ShadowMap,
     sparse_map::SparseMap,

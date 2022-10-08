@@ -25,7 +25,7 @@ impl<'a> MirBuilder<'a> {
         Some(())
     }
 
-    pub fn value(&mut self, ty: VRef<Ty>, typec: &Typec) -> VRef<ValueMir> {
+    pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
         if ty == Ty::UNIT {
             return ValueMir::UNIT;
         }
@@ -71,7 +71,7 @@ pub struct MirBuilderCtx {
     pub vars: Vec<VRef<ValueMir>>,
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
-    pub used_types: ShadowMap<Ty, Option<VRef<MirTy>>>,
+    pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<VRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
 }
@@ -85,7 +85,7 @@ impl MirBuilderCtx {
         self.vars[var.index()]
     }
 
-    pub fn project_ty_slice(&mut self, ty_slice: &[VRef<Ty>], typec: &Typec) -> VRefSlice<MirTy> {
+    pub fn project_ty_slice(&mut self, ty_slice: &[Ty], typec: &Typec) -> VRefSlice<MirTy> {
         self.func.ty_params.bump(ty_slice.iter().map(|&ty| {
             Self::project_ty_low(
                 ty,
@@ -97,7 +97,7 @@ impl MirBuilderCtx {
         }))
     }
 
-    pub fn project_ty(&mut self, ty: VRef<Ty>, typec: &Typec) -> VRef<MirTy> {
+    pub fn project_ty(&mut self, ty: Ty, typec: &Typec) -> VRef<MirTy> {
         Self::project_ty_low(
             ty,
             &mut self.used_types,
@@ -108,20 +108,20 @@ impl MirBuilderCtx {
     }
 
     pub fn project_ty_low(
-        ty: VRef<Ty>,
-        used_types: &mut ShadowMap<Ty, Option<VRef<MirTy>>>,
+        ty: Ty,
+        used_types: &mut Map<Ty, VRef<MirTy>>,
         dependant_types: &mut PushMap<MirTy>,
         generic_types: &mut Vec<VRef<MirTy>>,
         typec: &Typec,
     ) -> VRef<MirTy> {
-        if let Some(ty) = used_types[ty] {
+        if let Some(&ty) = used_types.get(&ty) {
             return ty;
         }
 
         let mir_ty = dependant_types.push(MirTy { ty });
-        used_types[ty] = mir_ty.into();
+        used_types.insert(ty, mir_ty);
 
-        if typec.types[ty].flags.contains(TyFlags::GENERIC) {
+        if typec.contains_params(ty) {
             generic_types.push(mir_ty);
         }
 

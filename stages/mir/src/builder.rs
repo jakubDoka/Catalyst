@@ -49,13 +49,7 @@ impl MirChecker<'_> {
         }
     }
 
-    fn deref(
-        &mut self,
-        node: TirNode,
-        ty: VRef<Ty>,
-        span: Span,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
+    fn deref(&mut self, node: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let node = self.node(node, builder)?;
 
         let value = builder.value(ty, self.typec);
@@ -66,13 +60,7 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn r#ref(
-        &mut self,
-        node: TirNode,
-        ty: VRef<Ty>,
-        span: Span,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
+    fn r#ref(&mut self, node: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let node = self.node(node, builder)?;
         builder.ctx.func.values[node]
             .flags
@@ -85,7 +73,7 @@ impl MirChecker<'_> {
     fn constructor(
         &mut self,
         fields: &[TirNode],
-        ty: VRef<Ty>,
+        ty: Ty,
         span: Span,
         builder: &mut MirBuilder,
     ) -> NodeRes {
@@ -100,13 +88,7 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn r#const(
-        &mut self,
-        value: TirNode,
-        ty: VRef<Ty>,
-        span: Span,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
+    fn r#const(&mut self, value: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let const_block = builder.ctx.create_block();
         let Some(prev_block) = builder.current_block.replace(const_block) else {
             builder.current_block.take();
@@ -170,7 +152,7 @@ impl MirChecker<'_> {
         CallTir {
             func, params, args, ..
         }: CallTir,
-        ty: VRef<Ty>,
+        ty: Ty,
         span: Span,
         builder: &mut MirBuilder,
     ) -> NodeRes {
@@ -201,7 +183,7 @@ impl MirChecker<'_> {
         Some(value)
     }
 
-    fn int(&mut self, ty: VRef<Ty>, span: Span, builder: &mut MirBuilder) -> NodeRes {
+    fn int(&mut self, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let value = builder.value(ty, self.typec);
         let lit = span_str!(self, span)
             .parse()
@@ -229,11 +211,11 @@ impl MirChecker<'_> {
         None
     }
 
-    fn push_args<'a>(&mut self, args: VRefSlice<Ty>, ctx: &'a mut MirBuilderCtx) -> MirBuilder<'a> {
+    fn push_args<'a>(&mut self, args: VSlice<Ty>, ctx: &'a mut MirBuilderCtx) -> MirBuilder<'a> {
         let block = ctx.create_block();
         let builder = MirBuilder::new(block, ctx);
 
-        for &ty in &self.typec.ty_slices[args] {
+        for &ty in &self.typec[args] {
             let mir_ty = builder.ctx.project_ty(ty, self.typec);
             let val = builder.ctx.func.values.push(ValueMir {
                 ty: mir_ty,

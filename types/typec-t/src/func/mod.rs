@@ -1,19 +1,19 @@
 use crate::*;
 use storage::*;
 
-pub type Funcs = OrderedMap<VRef<str>, Func>;
-pub type FuncSlices = PoolBumpMap<VRef<Func>>;
+pub type Funcs = PushMap<Func>;
+pub type FuncSlices = BumpMap<VRef<Func>>;
 
 #[derive(Clone, Copy, Default)]
 pub struct Func {
-    pub generics: VRefSlice<Ty>,
-    pub owner: Option<VRef<Ty>>,
-    pub upper_generics: VRefSlice<Ty>,
+    pub generics: Generics,
+    pub owner: Option<Ty>,
+    pub upper_generics: Generics,
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
     pub name: VRef<str>,
-    pub loc: Loc,
+    pub loc: Option<Loc>,
 }
 
 impl Func {
@@ -23,8 +23,6 @@ impl Func {
         !self.generics.is_empty() || !self.upper_generics.is_empty()
     }
 }
-
-impl_located!(Func);
 
 bitflags! {
     FuncFlags: u8 {
@@ -44,6 +42,6 @@ pub enum FuncVisibility {
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
     pub cc: Option<VRef<str>>,
-    pub args: VRefSlice<Ty>,
-    pub ret: VRef<Ty>,
+    pub args: VSlice<Ty>,
+    pub ret: Ty,
 }

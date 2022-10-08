@@ -1,25 +1,25 @@
 use lexing_t::*;
 use storage::*;
 
-use crate::{Func, SpecFunc, Ty};
+use crate::*;
 
 pub type TypecOutput<A, T> = Vec<(A, VRef<T>)>;
 
 pub struct TirBuilder<'a> {
     pub arena: &'a Arena,
-    pub ret: VRef<Ty>,
+    pub ret: Ty,
     pub ret_span: Option<Span>,
     pub vars: Vec<VarTir<'a>>,
-    pub generics: Vec<VRef<Ty>>,
+    pub generics: Vec<VSlice<Spec>>,
     pub runner: Option<(Span, TirFrame)>,
 }
 
 impl<'a> TirBuilder<'a> {
     pub fn new(
         arena: &'a Arena,
-        ret: VRef<Ty>,
+        ret: Ty,
         ret_span: Option<Span>,
-        generics: Vec<VRef<Ty>>,
+        generics: Vec<VSlice<Spec>>,
     ) -> Self {
         Self {
             arena,
@@ -39,7 +39,7 @@ impl<'a> TirBuilder<'a> {
         self.vars.truncate(frame.0);
     }
 
-    pub fn create_var(&mut self, node: TirKind<'a>, ty: VRef<Ty>, span: Span) -> VRef<Var> {
+    pub fn create_var(&mut self, node: TirKind<'a>, ty: Ty, span: Span) -> VRef<Var> {
         let index = self.vars.len();
         self.vars.push(VarTir { node, ty, span });
         unsafe { VRef::new(index) }
@@ -57,7 +57,7 @@ impl<'a> TirBuilder<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct VarTir<'a> {
     pub node: TirKind<'a>,
-    pub ty: VRef<Ty>,
+    pub ty: Ty,
     pub span: Span,
 }
 
@@ -75,7 +75,7 @@ pub struct Var;
 #[derive(Clone, Copy, Debug)]
 pub struct CallTir<'a> {
     pub func: CallableTir<'a>,
-    pub params: &'a [VRef<Ty>],
+    pub params: &'a [Ty],
     pub args: &'a [TirNode<'a>],
 }
 
@@ -89,12 +89,12 @@ pub enum CallableTir<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct TirNode<'a> {
     pub kind: TirKind<'a>,
-    pub ty: VRef<Ty>,
+    pub ty: Ty,
     pub span: Span,
 }
 
 impl<'a> TirNode<'a> {
-    pub fn new(ty: VRef<Ty>, kind: TirKind<'a>, span: Span) -> Self {
+    pub fn new(ty: Ty, kind: TirKind<'a>, span: Span) -> Self {
         Self { kind, ty, span }
     }
 }

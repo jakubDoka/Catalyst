@@ -69,6 +69,8 @@ pub trait VRefDefault {
 #[repr(transparent)]
 pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
 
+pub type OptVRef<T> = Option<VRef<T>>;
+
 gen_derives!(VRef);
 
 impl<T: ?Sized> VRef<T> {

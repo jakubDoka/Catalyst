@@ -15,21 +15,15 @@ impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
         items: GroupedItemSlice<T>,
-        collector: fn(
-            &mut Self,
-            T,
-            &[TopLevelAttributeAst],
-        ) -> Option<(ModuleItem, VRef<T::Output>)>,
+        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<VRef<T::Output>>,
         out: &mut TypecOutput<T, T::Output>,
     ) -> &mut Self {
         for &(item_ast, attributes) in items.iter() {
-            let Some((item, id)) = collector(self, item_ast, attributes) else {
+            let Some(id) = collector(self, item_ast, attributes) else {
                 continue;
             };
 
-            if self.insert_scope_item(item) {
-                out.push((item_ast, id));
-            }
+            out.push((item_ast, id));
         }
 
         self
@@ -66,30 +60,42 @@ impl TyChecker<'_> {
 
         let (parsed_ty, parsed_spec) = match target {
             ImplTarget::Direct(ty) => (self.ty(ty)?, None),
-            ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.ty(spec)?)),
+            ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
         };
 
-        self.scope
-            .push(self.interner.intern_str("Self"), parsed_ty, target.span());
+        self.scope.push(Interner::SELF, parsed_ty, target.span());
 
         let impl_id = if let Some(parsed_spec) = parsed_spec {
-            let parsed_ty_base = self.typec.types.base(parsed_ty);
-            let parsed_spec_base = self.typec.types.base(parsed_spec);
+            let parsed_ty_base = parsed_ty.base(self.typec);
+            let parsed_spec_base = parsed_spec.base(self.typec);
 
-            if let Some(already) = self.typec.implements(parsed_ty, parsed_spec) {
-                self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
+            {
+                let generics = self.typec[parsed_generics].to_bumpvec();
+                if let Some(Some(already)) =
+                    self.typec
+                        .find_implementation(parsed_ty, parsed_spec, generics.as_slice())
+                {
+                    self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
+                }
             }
+
+            let key = ImplKey {
+                ty: parsed_ty,
+                spec: parsed_spec,
+            };
 
             let impl_ent = Impl {
                 generics: parsed_generics,
-                ty: parsed_ty,
-                spec: parsed_spec,
+                key,
                 methods: default(),
                 next: self
                     .typec
                     .impl_lookup
                     .insert(
-                        (parsed_ty_base, parsed_spec_base),
+                        ImplKey {
+                            ty: parsed_ty_base,
+                            spec: Spec::Base(parsed_spec_base),
+                        },
                         // SAFETY: We push right after this
                         Some(unsafe { self.typec.impls.next() }),
                     )
@@ -105,7 +111,7 @@ impl TyChecker<'_> {
             offset: generics.len(),
             upper_generics: parsed_generics,
             owner: Some(parsed_ty),
-            spec: impl_id,
+            not_in_scope: impl_id.is_some(),
             upper_vis: vis,
         };
 
@@ -114,13 +120,11 @@ impl TyChecker<'_> {
         });
 
         for func in func_iter {
-            let Some((item, id)) = self.collect_func_low(func, &[], scope_data) else {
+            let Some(id) = self.collect_func_low(func, &[], scope_data) else {
                 continue;
             };
 
-            if impl_id.is_some() || self.insert_scope_item(item) {
-                transfer.impl_funcs.push((func, id));
-            }
+            transfer.impl_funcs.push((func, id));
         }
 
         transfer.close_impl_frame(r#impl, impl_id);
@@ -132,31 +136,31 @@ impl TyChecker<'_> {
 
     pub fn collect_spec(
         &mut self,
-        SpecAst {
-            vis,
-            name,
-            generics,
-            ..
-        }: SpecAst,
+        SpecAst { vis, name, .. }: SpecAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModuleItem, VRef<Ty>)> {
-        let id = intern_scoped_ident!(self, name.ident);
-
-        let fallback = |_: &mut Types| Ty {
-            kind: TyKind::Spec(default()),
-            flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: default(),
+    ) -> Option<VRef<SpecBase>> {
+        let loc = {
+            // SAFETY: We push right after this, if item inset fails, id is forgotten.
+            let id = unsafe { self.typec.base_specs.next() };
+            let item = ModuleItem::new(name.ident, id, name.span, vis);
+            self.insert_scope_item(item)?
         };
-        let id = self.typec.types.get_or_insert(id, fallback);
+        let spec = SpecBase {
+            name: name.ident,
+            generics: default(),
+            methods: default(),
+            loc,
+        };
+        let id = self.typec.base_specs.push(spec);
 
-        Some((ModuleItem::new(name.ident, id, name.span, vis), id))
+        Some(id)
     }
 
     pub fn collect_func(
         &mut self,
         func: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<(ModuleItem, VRef<Func>)> {
+    ) -> Option<VRef<Func>> {
         self.collect_func_low(func, attributes, default())
     }
 
@@ -174,18 +178,11 @@ impl TyChecker<'_> {
         ScopeData {
             offset,
             upper_generics,
+            not_in_scope,
             owner,
-            spec,
             upper_vis,
         }: ScopeData,
-    ) -> Option<(ModuleItem, VRef<Func>)> {
-        let owner_id = owner.map(|owner| self.typec.types.id(self.typec.types.base(owner)));
-        let id = intern_scoped_ident!(self, name.ident);
-        let id = owner_id.map_or(id, |owner| self.interner.intern(scoped_ident!(owner, id)));
-        let id = spec.map_or(id, |spec| {
-            self.interner.intern(scoped_ident!(spec.as_u32(), id))
-        });
-
+    ) -> Option<VRef<Func>> {
         let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
         let entry = attributes
@@ -208,7 +205,20 @@ impl TyChecker<'_> {
             FuncVisibility::Local
         };
 
-        let func = |_: &mut Funcs| Func {
+        let loc = if not_in_scope {
+            None
+        } else {
+            // SAFETY: We push right after this, if item inset fails, id is forgotten.
+            let id = unsafe { self.typec.funcs.next() };
+            let vis = vis.or(upper_vis);
+            let local_id = owner.map_or(name.ident, |owner| {
+                self.interner.intern_scoped(owner, name.ident)
+            });
+            let item = ModuleItem::new(local_id, id, name.span, vis);
+            Some(self.insert_scope_item(item)?)
+        };
+
+        let func = Func {
             generics: parsed_generics,
             owner,
             upper_generics,
@@ -216,15 +226,9 @@ impl TyChecker<'_> {
             flags: FuncFlags::ENTRY & entry.is_some(),
             visibility,
             name: name.ident,
-            loc: default(),
+            loc,
         };
-        let id = self.typec.funcs.get_or_insert(id, func);
-
-        let vis = vis.or(upper_vis);
-        let local_id = owner_id.map_or(name.ident, |owner| {
-            self.interner.intern(scoped_ident!(owner, name.ident))
-        });
-        Some((ModuleItem::new(local_id, id, name.span, vis), id))
+        Some(self.typec.funcs.push(func))
     }
 
     pub fn collect_signature(
@@ -237,7 +241,7 @@ impl TyChecker<'_> {
             ..
         }: FuncSigAst,
         offset: usize,
-    ) -> Option<(Signature, VRefSlice<Ty>)> {
+    ) -> Option<(Signature, Generics)> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, offset);
@@ -249,7 +253,7 @@ impl TyChecker<'_> {
 
         let signature = Signature {
             cc: cc.map(|cc| cc.ident),
-            args: self.typec.ty_slices.bump(args),
+            args: self.typec.args.bump(args),
             ret,
         };
         let parsed_generics = self.generics(generics);
@@ -261,24 +265,22 @@ impl TyChecker<'_> {
 
     pub fn collect_struct(
         &mut self,
-        StructAst {
-            vis,
-            generics,
-            name,
-            ..
-        }: StructAst,
+        StructAst { vis, name, .. }: StructAst,
         _: &[TopLevelAttributeAst],
-    ) -> Option<(ModuleItem, VRef<Ty>)> {
-        let key = intern_scoped_ident!(self, name.ident);
-
-        let ty = |_: &mut Types| Ty {
-            kind: TyStruct::default().into(),
-            flags: TyFlags::GENERIC & !generics.is_empty(),
-            loc: default(),
+    ) -> Option<VRef<Struct>> {
+        let loc = {
+            // SAFETY: We push right after this, if item inset fails, id is forgotten.
+            let id = unsafe { self.typec.structs.next() };
+            let item = ModuleItem::new(name.ident, Ty::Struct(id), name.span, vis);
+            self.insert_scope_item(item)?
         };
-        let id = self.typec.types.get_or_insert(key, ty);
-
-        Some((ModuleItem::new(name.ident, id, name.span, vis), id))
+        let s = Struct {
+            generics: default(),
+            fields: default(),
+            name: name.ident,
+            loc,
+        };
+        Some(self.typec.structs.push(s))
     }
 
     gen_error_fns! {
@@ -300,11 +302,11 @@ impl TyChecker<'_> {
             }
         }
 
-        push colliding_impl(self, span: Option<Span>, ty: VRef<Ty>, spec: VRef<Ty>) {
+        push colliding_impl(self, span: Option<Span>, ty: Ty, spec: Spec) {
             err: (
                 "type '{}' already has an implementation for '{}'",
-                &self.interner[self.typec.types.id(ty)],
-                &self.interner[self.typec.types.id(spec)],
+                self.typec.display_ty(ty, self.interner),
+                self.typec.display_spec(spec, self.interner),
             );
             (span?, self.source) {
                 err[span?]: "this already satisfies both types";
@@ -316,9 +318,9 @@ impl TyChecker<'_> {
 #[derive(Default, Clone, Copy)]
 struct ScopeData {
     offset: usize,
-    upper_generics: VRefSlice<Ty>,
-    owner: Option<VRef<Ty>>,
-    spec: Option<VRef<Impl>>,
+    upper_generics: Generics,
+    owner: Option<Ty>,
+    not_in_scope: bool,
     upper_vis: Vis,
 }
 
@@ -331,13 +333,9 @@ impl CollectGroup for FuncDefAst<'_> {
 }
 
 impl CollectGroup for StructAst<'_> {
-    type Output = Ty;
+    type Output = Struct;
 }
 
 impl CollectGroup for SpecAst<'_> {
-    type Output = Ty;
-}
-
-impl CollectGroup for ImplAst<'_> {
-    type Output = ();
+    type Output = SpecBase;
 }

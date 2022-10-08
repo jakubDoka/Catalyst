@@ -65,8 +65,18 @@ impl Scope {
         current_module: VRef<Module>,
         foreign_module: VRef<Module>,
         item: ModuleItem,
+        interner: &mut Interner,
     ) {
         debug_assert!(current_module != foreign_module);
+
+        let scoped_id = interner.intern_scoped(foreign_module.index(), item.id);
+        self.data.insert(
+            scoped_id,
+            ScopeRecord::ImportedItem {
+                module: foreign_module,
+                item,
+            },
+        );
 
         if let Some(existing_option) = self.data.get_mut(&item.id) {
             match existing_option {
@@ -171,7 +181,8 @@ impl ModuleItem {
 pub enum ScopeItem {
     Func(VRef<Func>),
     SpecFunc(VRef<SpecFunc>),
-    Ty(VRef<Ty>),
+    Ty(Ty),
+    SpecBase(VRef<SpecBase>),
     Var(VRef<Var>),
     Module(VRef<Module>),
 }
@@ -190,10 +201,17 @@ macro_rules! gen_scope_item {
            pub fn what(&self) -> &'static str {
                 match *self {
                     $(Self::$name(..) => stringify!($name),)*
+                    Self::Ty(..) => "parameter",
                 }
             }
         }
     }
 }
 
-gen_scope_item!(SpecFunc, Func, Ty, Var, Module);
+gen_scope_item!(SpecFunc, Func, Var, Module, SpecBase);
+
+impl From<Ty> for ScopeItem {
+    fn from(item: Ty) -> Self {
+        Self::Ty(item)
+    }
+}
