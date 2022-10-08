@@ -6,7 +6,7 @@ use parsing_t::Vis;
 use storage::*;
 
 pub type TypecLookup = Map<VRef<str>, ComputedTypecItem>;
-pub type ImplLookup = Map<ImplKey, Option<VRef<Impl>>>;
+pub type ImplLookup = Map<ImplKey, VRef<Impl>>;
 
 pub type ParamSlices = BumpMap<VSlice<Spec>>;
 pub type SpecSums = BumpMap<Spec>;

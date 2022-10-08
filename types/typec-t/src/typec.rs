@@ -482,11 +482,17 @@ impl Typec {
         to.push(')');
     }
 
-    pub fn implements_sum(&mut self, ty: Ty, sum: VSlice<Spec>, params: &[VSlice<Spec>]) -> bool {
-        self[sum]
-            .to_bumpvec()
-            .into_iter()
-            .all(|spec| self.find_implementation(ty, spec, params).is_some())
+    pub fn implements_sum(
+        &mut self,
+        ty: Ty,
+        sum: VSlice<Spec>,
+        params: &[VSlice<Spec>],
+        missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
+    ) -> bool {
+        self[sum].to_bumpvec().into_iter().all(|spec| {
+            self.find_implementation(ty, spec, params, missing_keys)
+                .is_some()
+        })
     }
 
     pub fn deref(&self, ty: Ty) -> Ty {
@@ -501,6 +507,7 @@ impl Typec {
         ty: Ty,
         spec: Spec,
         params: &[VSlice<Spec>],
+        missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
     ) -> Option<Option<VRef<Impl>>> {
         if let Ty::Param(index) = ty {
             let specs = params[index as usize];
@@ -510,7 +517,7 @@ impl Typec {
         let key = ImplKey { ty, spec };
 
         if let Some(&result) = self.impl_lookup.get(&key) {
-            return Some(result);
+            return Some(Some(result));
         }
 
         let ty_base = match ty {
@@ -527,10 +534,7 @@ impl Typec {
             spec: spec_base,
         };
 
-        let Some(&(mut base_impl)) = self.impl_lookup.get(&base_key) else {
-            self.impl_lookup.insert(key, None);
-            return None;
-        };
+        let mut base_impl = self.impl_lookup.get(&base_key).copied();
 
         while let Some(current) = base_impl {
             let impl_ent = self.impls[current];
@@ -548,17 +552,18 @@ impl Typec {
             let implements = generics
                 .into_iter()
                 .zip(generic_slots.into_iter().map(|s| s.unwrap()))
-                .all(|(specs, ty)| self.implements_sum(ty, specs, params));
+                .all(|(specs, ty)| self.implements_sum(ty, specs, params, missing_keys));
 
             if !implements {
                 continue;
             }
 
-            self.impl_lookup.insert(key, Some(current));
             return Some(Some(current));
         }
 
-        self.impl_lookup.insert(key, None);
+        if let Some(v) = missing_keys {
+            v.push(key)
+        }
         None
     }
 

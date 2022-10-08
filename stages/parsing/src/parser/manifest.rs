@@ -58,7 +58,7 @@ impl<'a> Ast<'a> for ManifestAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        Span::default()
     }
 }
 
@@ -84,7 +84,7 @@ impl<'a> Ast<'a> for ManifestFieldAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        self.name.span().joined(self.value.span())
     }
 }
 
@@ -109,7 +109,11 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        match self {
+            ManifestValueAst::String(s) => *s,
+            ManifestValueAst::Object(o) => o.span(),
+            ManifestValueAst::Array(a) => a.span(),
+        }
     }
 }
 

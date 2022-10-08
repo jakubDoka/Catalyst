@@ -62,15 +62,20 @@ impl TyChecker<'_> {
     ) {
         let Impl {
             key: ImplKey { ty, spec },
+            span,
             ..
         } = self.typec.impls[impl_ref];
         let spec_base = spec.base(self.typec);
         let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
+
         let mut methods = bumpvec![None; spec_methods.len()];
         for &(ast, func) in input {
             let Some(func_res) = self.build_func(ast, func, arena, offset) else { continue; };
-            let Some(body) = func_res else { todo!() };
+            let Some(body) = func_res else {
+                self.extern_in_impl(ast.span);
+                continue;
+            };
             compiled_funcs.push((func, body));
 
             let Func { name, .. } = self.typec.funcs[func];
@@ -94,8 +99,14 @@ impl TyChecker<'_> {
             methods[i] = Some(func);
         }
 
-        let Some(methods) = methods.into_iter().collect::<Option<BumpVec<_>>>() else {
-            todo!()
+        let Some(methods) = methods.iter().copied().collect::<Option<BumpVec<_>>>() else {
+            let missing = spec_methods
+                .iter()
+                .zip(methods.as_slice())
+                .filter_map(|(f, m)| m.is_none().then_some(f.name))
+                .collect::<BumpVec<_>>();
+            self.missing_spec_impl_funcs(span, missing.as_slice());
+            return;
         };
 
         self.typec.impls[impl_ref].methods = self.typec.func_slices.bump(methods);
@@ -106,7 +117,7 @@ impl TyChecker<'_> {
         implementor: Ty,
         spec_func: SpecFunc,
         func_id: VRef<Func>,
-        _span: Span,
+        span: Span,
     ) {
         let func = self.typec.funcs[func_id];
 
@@ -126,15 +137,18 @@ impl TyChecker<'_> {
         let func_args = self.typec.args[func.signature.args].to_bumpvec();
 
         if spec_args.len() != func_args.len() {
-            todo!()
+            self.spec_arg_count_mismatch(span, spec_args.len(), func_args.len());
+            return;
         }
 
-        for (spec_arg, func_arg) in spec_args.into_iter().zip(func_args) {
+        let mut faulty = false;
+        for (i, (spec_arg, func_arg)) in spec_args.into_iter().zip(func_args).enumerate() {
             if let Err((a, b)) = self
                 .typec
                 .compatible(&mut spec_func_slots, func_arg, spec_arg)
             {
-                todo!("{a:?}, {b:?}")
+                self.spec_arg_mismatch(span, i, a, b);
+                faulty = true;
             }
         }
 
@@ -143,20 +157,30 @@ impl TyChecker<'_> {
             func.signature.ret,
             spec_func.signature.ret,
         ) {
-            todo!("{a:?}, {b:?}")
+            self.spec_ret_mismatch(span, a, b);
+            faulty = true;
+        }
+
+        if faulty {
+            return;
         }
 
         let Some(spec_func_slots) = spec_func_slots.into_iter().collect::<Option<BumpVec<_>>>() else {
-            todo!()
+            unimplemented!("hmmm lets see when this happens");
         };
 
-        let implements = spec_func_params
-            .into_iter()
-            .zip(spec_func_slots)
-            .all(|(specs, ty)| self.typec.implements_sum(ty, specs, func_params.as_slice()));
+        let mut missing_keys = bumpvec![];
+        for (specs, ty) in spec_func_params.into_iter().zip(spec_func_slots) {
+            self.typec.implements_sum(
+                ty,
+                specs,
+                func_params.as_slice(),
+                &mut Some(&mut missing_keys),
+            );
+        }
 
-        if !implements {
-            todo!()
+        for ImplKey { ty, spec } in missing_keys {
+            self.missing_spec(ty, spec, span);
         }
     }
 
@@ -703,16 +727,14 @@ impl TyChecker<'_> {
 
         let params = self.call_params(param_slots.iter().copied(), args.span(), builder)?;
 
+        let mut missing_keys = bumpvec![];
         for (&param, &specs) in params.iter().zip(generics) {
-            for spec in self.typec[specs].to_bumpvec() {
-                if self
-                    .typec
-                    .find_implementation(param, spec, generics)
-                    .is_none()
-                {
-                    self.missing_spec(param, spec, args.span());
-                }
-            }
+            self.typec
+                .implements_sum(param, specs, generics, &mut Some(&mut missing_keys));
+        }
+
+        for ImplKey { spec, ty } in missing_keys {
+            self.missing_spec(ty, spec, args.span());
         }
 
         let ret = self.typec.instantiate(signature.ret, params, self.interner);
@@ -1088,6 +1110,59 @@ impl TyChecker<'_> {
             );
             (func_span, self.source) {
                 err[func_span]: "this function does not belong to spec";
+            }
+        }
+
+        push missing_spec_impl_funcs(self, span: Option<Span>, missing: &[VRef<str>]) {
+            err: "missing spec functions";
+            help: (
+                "functions that are missing: {}",
+                missing.iter()
+                    .map(|&f| &self.interner[f])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            (span?, self.source) {
+                err[span?]: "this impl block does not implement all required functions";
+            }
+        }
+
+        push extern_in_impl(self, span: Span) {
+            err: "extern functions cannot be direct part of spec implementation";
+            (span, self.source) {
+                err[span]: "this function is extern";
+            }
+        }
+
+        push spec_arg_count_mismatch(self, span: Span, expected: usize, got: usize) {
+            err: "spec function argument count mismatch";
+            info: ("expected {} arguments but got {}", expected, got);
+            (span, self.source) {
+                err[span]: "this function takes different number of arguments";
+            }
+        }
+
+        push spec_arg_mismatch(self, span: Span, index: usize, expected: Ty, got: Ty) {
+            err: "spec function argument type mismatch";
+            info: (
+                "expected '{}' but found '{}'",
+                self.typec.display_ty(expected, self.interner),
+                self.typec.display_ty(got, self.interner),
+            );
+            (span, self.source) {
+                err[span]: ("this function takes different type as argument[{}]", index);
+            }
+        }
+
+        push spec_ret_mismatch(self, span: Span, expected: Ty, got: Ty) {
+            err: "spec function return type mismatch";
+            info: (
+                "expected '{}' but found '{}'",
+                self.typec.display_ty(expected, self.interner),
+                self.typec.display_ty(got, self.interner),
+            );
+            (span, self.source) {
+                err[span]: "this function returns different type";
             }
         }
     }

@@ -124,6 +124,10 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
     }
 
     fn span(&self) -> Span {
-        todo!()
+        match self {
+            MutabilityAst::Mut(span) => *span,
+            MutabilityAst::None => Span::default(),
+            MutabilityAst::Generic(span, _) => *span,
+        }
     }
 }
