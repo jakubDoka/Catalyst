@@ -1,9 +1,9 @@
 info: tir repr of functions:
- fn "default" [] 0\main() -> uint {
+ fn "default" [] main() -> uint {
     return 0
 }
 
-fn [] 0\pass(var0: uint) -> uint return var0
+fn [] pass(var0: uint) -> uint return var0
 
 
 
