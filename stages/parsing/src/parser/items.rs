@@ -157,7 +157,7 @@ impl<'a> Ast<'a> for ImplAst<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum ImplTarget<'a> {
     Direct(TyAst<'a>),
-    Spec(TyAst<'a>, Span, TyAst<'a>),
+    Spec(SpecExprAst<'a>, Span, TyAst<'a>),
 }
 
 impl<'a> Ast<'a> for ImplTarget<'a> {
@@ -169,7 +169,15 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
         ctx.skip(TokenKind::NewLine);
         let ty = ctx.parse()?;
         if let Some(tok) = ctx.try_advance(TokenKind::For) {
-            Some(Self::Spec(ty, tok.span, ctx.parse()?))
+            Some(Self::Spec(
+                match ty {
+                    TyAst::Path(path) => SpecExprAst::Path(path),
+                    TyAst::Instance(instance) => SpecExprAst::Instance(instance),
+                    _ => ctx.invalid_spec_syntax(ty.span())?,
+                },
+                tok.span,
+                ctx.parse()?,
+            ))
         } else {
             Some(Self::Direct(ty))
         }

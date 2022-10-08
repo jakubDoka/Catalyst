@@ -86,10 +86,11 @@ pub use parser::{
     r#struct::{
         StructAst, StructBodyAst, StructBodyMeta, StructConstructorFieldAst, StructFieldAst,
     },
+    spec::SpecExprAst,
     ty::{
         MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst,
         TyTupleAst,
     },
-    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamBoundsAst, PathExprAst,
+    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamSpecsAst, PathExprAst,
     TupleConstructorAst, TupleConstructorMeta,
 };

@@ -3,6 +3,7 @@ pub mod func;
 pub mod imports;
 pub mod items;
 pub mod manifest;
+pub mod spec;
 pub mod r#struct;
 pub mod ty;
 
@@ -17,7 +18,7 @@ list_meta!(GenericsMeta ? LeftBracket Comma RightBracket);
 pub type GenericsAst<'a> = ListAst<'a, GenericParamAst<'a>, GenericsMeta>;
 
 list_meta!(BoundsMeta ? Colon "+" none);
-pub type ParamBoundsAst<'a> = ListAst<'a, TyAst<'a>, BoundsMeta>;
+pub type ParamSpecsAst<'a> = ListAst<'a, SpecExprAst<'a>, BoundsMeta>;
 
 list_meta!(TupleConstructorMeta ? LeftParen Comma RightParen);
 pub type TupleConstructorAst<'a> = ListAst<'a, ExprAst<'a>, TupleConstructorMeta>;
@@ -25,7 +26,7 @@ pub type TupleConstructorAst<'a> = ListAst<'a, ExprAst<'a>, TupleConstructorMeta
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParamAst<'a> {
     pub name: NameAst,
-    pub bounds: ParamBoundsAst<'a>,
+    pub bounds: ParamSpecsAst<'a>,
 }
 
 impl<'a> Ast<'a> for GenericParamAst<'a> {

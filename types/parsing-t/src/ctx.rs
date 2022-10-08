@@ -248,6 +248,14 @@ impl<'a> ParsingCtx<'_, 'a> {
                 err[path]: "this is invalid";
             }
         }
+
+        push invalid_spec_syntax(self, span: Span) {
+            err: "invalid syntax for spec";
+            help: "valid syntax of spec is only `<path> | <path>[<type>, ..]";
+            (span, self.source) {
+                err[span]: "this is invalid";
+            }
+        }
     }
 
     pub fn display_parse_stack(&self) -> String {

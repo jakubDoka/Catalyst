@@ -61,7 +61,7 @@ impl TyChecker<'_> {
 
     pub fn spec_sum<'a>(
         &mut self,
-        specs: impl Iterator<Item = &'a TyAst<'a>>,
+        specs: impl Iterator<Item = &'a SpecExprAst<'a>>,
     ) -> Option<VSlice<Spec>> {
         let specs = specs
             .map(|&ast| self.spec(ast))
@@ -69,14 +69,13 @@ impl TyChecker<'_> {
         Some(self.typec.spec_sums.bump(specs))
     }
 
-    pub fn spec(&mut self, spec_ast: TyAst) -> Option<Spec> {
+    pub fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {
         match spec_ast {
-            TyAst::Path(ident) => match self.ty_path(ident)? {
+            SpecExprAst::Path(ident) => match self.ty_path(ident)? {
                 TyPathResult::Ty(..) => todo!(),
                 TyPathResult::Spec(spec) => Some(Spec::Base(spec)),
             },
-            TyAst::Instance(instance) => self.spec_instance(instance).map(Spec::Instance),
-            _ => todo!(),
+            SpecExprAst::Instance(instance) => self.spec_instance(instance).map(Spec::Instance),
         }
     }
 
