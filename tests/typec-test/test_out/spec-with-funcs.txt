@@ -7,14 +7,6 @@ error: type 'uint' already has an implementation for 'Glue'
    |
 
 error: function not found
-  --> spec-with-funcs\root.ctl:25:7
-   |
-25 |     G\new().use_on(value)
-   |       ^^^ this does not exist
-   |
-   = info: queried 'param0\new'
-
-error: function not found
   --> spec-with-funcs\root.ctl:33:48
    |
 33 | fn [B, T: GenericSpec[B]] take(t: T) -> B => T\take(t)
@@ -37,13 +29,13 @@ error: spec function return type mismatch
    |
    = info: expected '0\A' but found 'uint'
 
-error: type mismatch
+error: Var not found
   --> spec-with-funcs\root.ctl:18:54
    |
 18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: value }
-   |                                                      ^^^^^ mismatch occurred here
+   |                                                      ^^^^^ this does not exist
    |
-   = info: expected 'param0' but got '^uint'
+   = info: queried 'value'
 
 error: missing constructor fields
   --> spec-with-funcs\root.ctl:18:44
@@ -64,7 +56,11 @@ error: missing spec functions
    = help: functions that are missing: use_on
 
 info: tir repr of functions:
- fn [] new() -> uint return 0
+ fn [Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
+    Glue\use_on[param0, param1](^Glue\new[param0](), var0)
+}
+
+fn [] new() -> uint return 0
 
 fn [] use_on(var0: ^uint, var1: param0) -> 0\Glued[param0] return 0\Glued[param0]\{var1}
 
