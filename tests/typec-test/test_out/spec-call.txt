@@ -1,4 +1,4 @@
-error: 'u32' does not implement '0\Clay'
+error: 'u32' does not implement 'Clay'
   --> spec-call\root.ctl:10:29
    |
 10 | fn other_main -> u32 => pass(0)
@@ -6,13 +6,13 @@ error: 'u32' does not implement '0\Clay'
    |
 
 info: tir repr of functions:
- fn [0\Clay] 0\pass(var0: param 0) -> param 0 return var0
+ fn [Clay] pass(var0: param0) -> param0 return var0
 
-fn [] 0\main() -> uint return 0\pass[uint](0)
+fn [] main() -> uint return pass[uint](0)
 
-fn [] 0\other_main() -> u32 return 0\pass[u32](0)
+fn [] other_main() -> u32 return pass[u32](0)
 
-fn [] 0\last_main() -> 0\Foo[uint] return 0\pass[0\Foo[uint]](0\Foo[uint]\{0})
+fn [] last_main() -> 0\Foo[uint] return pass[0\Foo[uint]](0\Foo[uint]\{0})
 
 
 
