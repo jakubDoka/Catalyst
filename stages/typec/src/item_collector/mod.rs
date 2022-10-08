@@ -60,14 +60,7 @@ impl TyChecker<'_> {
 
         let (parsed_ty, parsed_spec) = match target {
             ImplTarget::Direct(ty) => (self.ty(ty)?, None),
-            ImplTarget::Spec(spec, .., ty) => (
-                self.ty(ty)?,
-                Some(match spec {
-                    TyAst::Path(path) => self.spec(SpecExprAst::Path(path))?,
-                    TyAst::Instance(_) => todo!(),
-                    _ => todo!(),
-                }),
-            ),
+            ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
         };
 
         self.scope.push(Interner::SELF, parsed_ty, target.span());

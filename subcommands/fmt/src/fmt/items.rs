@@ -56,6 +56,22 @@ impl<'a> FmtAst for ImplTarget<'a> {
     }
 }
 
+impl<'a> FmtAst for SpecExprAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            SpecExprAst::Path(p) => p.display(fmt),
+            SpecExprAst::Instance(i) => i.display(fmt),
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        match *self {
+            SpecExprAst::Path(p) => p.flat_len(fmt),
+            SpecExprAst::Instance(i) => i.flat_len(fmt),
+        }
+    }
+}
+
 impl<'a> FmtAst for ImplItemAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
