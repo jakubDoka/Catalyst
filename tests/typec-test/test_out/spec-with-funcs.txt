@@ -1,10 +1,52 @@
-error: type mismatch
-  --> spec-with-funcs\root.ctl:20:20
+error: type 'uint' already has an implementation for 'Glue'
+  --> spec-with-funcs\root.ctl:10:1
    |
-20 | fn main -> uint => uint\new()
+...  |
+12 | | }
+   | |_^ this already satisfies both types
+   |
+
+error: type mismatch
+  --> spec-with-funcs\root.ctl:27:20
+   |
+27 | fn main -> uint => uint\new()
    |                    ^^^^^^^^^^ mismatch occurred here
    |
    = info: expected 'uint' but got '()'
+
+error: spec function return type mismatch
+  --> spec-with-funcs\root.ctl:17:8
+   |
+17 |     fn new -> uint => 0
+   |        ^^^^^^^^^^^ this function returns different type
+   |
+   = info: expected '0\A' but found 'uint'
+
+error: type mismatch
+  --> spec-with-funcs\root.ctl:18:54
+   |
+18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: 0 }
+   |                                                      ^ mismatch occurred here
+   |
+   = info: expected 'param0' but got 'uint'
+
+error: missing constructor fields
+  --> spec-with-funcs\root.ctl:18:44
+   |
+18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: 0 }
+   |                                            ^^^^^^^^^^^^^ this constructor does not initialize all required fields
+   |
+   = help: fields that are missing: inner
+   = info: all fields must be initialized
+
+error: missing spec functions
+  --> spec-with-funcs\root.ctl:17:1
+   |
+...  |
+19 | | }
+   | |_^ this impl block does not implement all required functions
+   |
+   = help: functions that are missing: use_on
 
 info: tir repr of functions:
  fn [Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
@@ -14,6 +56,8 @@ info: tir repr of functions:
 fn [] new() -> uint return 0
 
 fn [] use_on(var0: ^uint, var1: param0) -> 0\Glued[param0] return 0\Glued[param0]\{var1}
+
+fn [] new() -> uint return 0
 
 fn [] new() -> () return {
 }
