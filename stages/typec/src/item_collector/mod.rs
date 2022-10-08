@@ -76,6 +76,7 @@ impl TyChecker<'_> {
                     parsed_spec,
                     generics.as_slice(),
                     &mut None,
+                    self.interner,
                 ) {
                     self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
                 }

@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::ops::Deref;
 
 use diags::*;
@@ -169,12 +168,11 @@ impl TyChecker<'_> {
     pub fn insert_spec_functions(&mut self, generics: Generics, offset: usize) {
         let specs = self.typec[generics]
             .iter()
-            .flat_map(|&spec| &self.typec[spec])
-            .copied()
+            .enumerate()
+            .flat_map(|(i, &spec)| self.typec[spec].iter().map(move |&spec| (offset + i, spec)))
             .collect::<BumpVec<_>>();
-        for (i, generic) in specs.into_iter().enumerate() {
-            let index = i + offset;
-            self.insert_spec_functions_recur(index, generic);
+        for (i, generic) in specs.into_iter() {
+            self.insert_spec_functions_recur(i, generic);
         }
     }
 
@@ -185,7 +183,8 @@ impl TyChecker<'_> {
         for (key, &func) in self.typec.spec_funcs.indexed(functions) {
             let id = self
                 .interner
-                .intern_with(|s, t| write!(t, "param{}\\{}", index, &s[func.name]).unwrap());
+                .intern_scoped(Ty::Param(index as u16), func.name);
+            dbg!(&self.interner[id]);
             self.scope.push(id, key, func.span.unwrap_or_default());
         }
     }

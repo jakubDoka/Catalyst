@@ -170,12 +170,14 @@ impl TyChecker<'_> {
         };
 
         let mut missing_keys = bumpvec![];
-        for (specs, ty) in spec_func_params.into_iter().zip(spec_func_slots) {
+        for (specs, &ty) in spec_func_params.into_iter().zip(spec_func_slots.iter()) {
             self.typec.implements_sum(
                 ty,
                 specs,
                 func_params.as_slice(),
+                &spec_func_slots,
                 &mut Some(&mut missing_keys),
+                self.interner,
             );
         }
 
@@ -444,8 +446,14 @@ impl TyChecker<'_> {
             todo!()
         };
 
-        let Some(fields) = fields.into_iter().collect::<Option<BumpVec<_>>>() else {
-            todo!()
+        let Some(fields) = fields.iter().copied().collect::<Option<BumpVec<_>>>() else {
+            let missing_fields = self.typec.fields[struct_meta.fields]
+                .iter()
+                .zip(fields.iter())
+                .filter_map(|(field, value)| value.is_none().then_some(field.name))
+                .collect::<BumpVec<_>>();
+
+            self.missing_constructor_fields(ctor.span(), missing_fields.as_slice())?;
         };
 
         let final_ty = if params.is_empty() {
@@ -729,8 +737,14 @@ impl TyChecker<'_> {
 
         let mut missing_keys = bumpvec![];
         for (&param, &specs) in params.iter().zip(generics) {
-            self.typec
-                .implements_sum(param, specs, generics, &mut Some(&mut missing_keys));
+            self.typec.implements_sum(
+                param,
+                specs,
+                generics,
+                params,
+                &mut Some(&mut missing_keys),
+                self.interner,
+            );
         }
 
         for ImplKey { spec, ty } in missing_keys {
@@ -1163,6 +1177,21 @@ impl TyChecker<'_> {
             );
             (span, self.source) {
                 err[span]: "this function returns different type";
+            }
+        }
+
+        push missing_constructor_fields(self, span: Span, missing: &[VRef<str>]) {
+            err: "missing constructor fields";
+            help: (
+                "fields that are missing: {}",
+                missing.iter()
+                    .map(|&f| &self.interner[f])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            info: "all fields must be initialized";
+            (span, self.source) {
+                err[span]: "this constructor does not initialize all required fields";
             }
         }
     }

@@ -1,84 +1,107 @@
+import bisect
 
-from gettext import find
+def dbg(x):
+    print(x)
+    return x
+
+def partition_ranges(ranges):
+    return sorted(set(sum(map(list, ranges), [])))
 
 
-CLONE = "clone"
-ARC   = "arc"
-U32   = "u32"
+assert partition_ranges(
+    ((1, 10), (2, 4), (5, 14))
+) == [1, 2, 4, 5, 10, 14]
 
-def dbg(val):
-    print(val)
-    return val
+def partition_pattern(pattern):
+    if len(pattern) == 0 or len(pattern[0]) == 0: return []
+    partition = partition_ranges(map(lambda x: x[0], pattern))
+    result = []
+    for ((s_start, r_end), *others) in pattern:
+        start = bisect.bisect_left(partition, s_start)
+        end = bisect.bisect_right(partition, r_end)
+        for i in range(start + 1, end):
+            span = (partition[i - 1], partition[i])
+            result.append((span, tuple(others)))
+    return result
 
-def compatible_types(a, b, mapping = None):
-    if mapping is None: mapping = {}
-    match (a, b):
-        case ([*a_elements], [*b_elements]):
-            return all(compatible_types(a, b, mapping) for a, b in zip(a_elements, b_elements))
-        case _ if isinstance(b, int):
-            if b in mapping:
-                return a == mapping[b]
-            else:
-                mapping[b] = a
-                return True
-        case _: return a == b
-
-assert compatible_types([U32], [U32])
-assert compatible_types([U32], 0)
-assert compatible_types([U32], [0])
-assert not compatible_types([U32], [CLONE])
-assert not compatible_types([U32], [ARC, [0]])
-assert compatible_types([ARC, [U32]], [ARC, [1]])
-
-def instantiate(type, mapping):
-    match type:
-        case [*types]:
-            return [instantiate(t, mapping) for t in types]
-        case _ if isinstance(type, int):
-            return mapping[type]
-        case _: return type
-
-assert instantiate([U32], {}) == [U32]
-assert instantiate([0], {0: U32}) == [U32]
-assert instantiate([ARC, [0]], {0: U32}) == [ARC, [U32]]
-
-def implements(impls, type, trait):
-    mapping = {}
-    matching = list(filter(lambda impl: compatible_types(type, impl[0], mapping) and compatible_types(trait, impl[1], mapping), impls))
-
-    if len(matching) == 0: return
-
-    matching_impl = list(filter(lambda cond: all(implements(impls, instantiate(type, mapping), trait) for (type, trait) in cond[2]), matching))
-
-    if not matching_impl: return
-
-    trait_instance = instantiate(matching_impl[0][1], mapping)
-
-    if trait_instance != trait: return
-
-    return True
-
-def collides(impl1, impl2):
-    mapping = {}
-    return compatible_types(impl1[0], impl2[0], mapping) and compatible_types(impl1[1], impl2[1], mapping)
-
-HASHMAP = "hashmap"
-HASH = "hash"
-EQ = "eq"
-INSERT = "insert"
-
-IMPLS = [
-    ([U32], [CLONE], []),
-    ([ARC, 0], [CLONE], [(0, [CLONE])]),
-    ([U32], [HASH], []),
-    ([U32], [EQ], []),
-    ([ARC, 0], [HASH], [(0, [HASH])]),
-    ([ARC, 0], [EQ], [(0, [EQ])]),
-    ([HASHMAP, 0, 1], [CLONE], [(0, [CLONE]), (1, [CLONE])]),
-    ([HASHMAP, 0, 1], [INSERT, 0, 1], [(0, [HASH]), (0, [EQ])]),
+assert partition_pattern(
+    [
+        ((0, 6), (0, 30)),
+        ((2, 50), (0, 64)),
+        ((50, 255), (0, 255)),
+    ],
+) == [
+    ((0, 2), ((0, 30),)),
+    ((2, 6), ((0, 30),)),
+    ((2, 6), ((0, 64),)),
+    ((6, 50), ((0, 64),)),
+    ((50, 255), ((0, 255),)),
 ]
 
-assert implements(IMPLS, [U32], [CLONE])
-assert implements(IMPLS, [ARC, [U32]], [CLONE])
-assert implements(IMPLS, [HASHMAP, [ARC, [U32]], [U32]], [CLONE])
-assert implements(IMPLS, [HASHMAP, [ARC, [U32]], [U32]], [INSERT, [ARC, [U32]], [U32]])
+def build_pattern_tree(pattern):
+    part_pattern = partition_pattern(pattern)
+    branches = {}
+    for (span, others) in part_pattern:
+        if span not in branches:
+            branches[span] = []
+        branches[span].append(others)
+    for span, others in branches.items():
+        branches[span] = build_pattern_tree(others)
+    return sorted(((k, v) for k, v in branches.items()))
+
+assert build_pattern_tree(
+    [
+        ((0, 6), (0, 30)),
+        ((2, 50), (0, 64)),
+        ((50, 255), (0, 255)),
+    ],
+) == [
+    ((0, 2), [((0, 30), [])]),
+    ((2, 6), [((0, 30), []), ((30, 64), [])]),
+    ((6, 50), [((0, 64), [])]),
+    ((50, 255), [((0, 255), [])]),
+]
+
+
+def is_exhaustive_tree(type, pattern_tree):
+    if len(type) == 0: return []
+    arr = []
+    (current, *others) = type
+    ranges = partition_ranges(list(map(lambda x: x[0], pattern_tree)) + [current])
+    for ((start, end), children) in pattern_tree:
+        missing = is_exhaustive_tree(others, children)
+        for m in missing: arr.append([(start, end)] + m)
+        front = ranges.pop(0)
+        if start != front:
+            arr.append([(front, start)])
+            assert start == ranges.pop(0)
+    if len(ranges) != 1:
+        arr.append([tuple(ranges)])
+    return arr
+
+def is_exhaustive(type, pattern):
+    pattern_tree = build_pattern_tree(pattern)
+    return is_exhaustive_tree(type, pattern_tree)
+
+
+assert is_exhaustive(
+    ((0, 255), (0, 255)),
+    [
+        ((0, 2), (0, 30)),
+        ((2, 50), (0, 64)),
+        ((0, 50), (30, 255)),
+        ((50, 255), (0, 255)),
+    ],
+) == []
+assert is_exhaustive(
+    ((0, 255), (0, 255)),
+    [
+        ((0, 2), (0, 30)),
+        ((5, 50), (0, 2)),
+    ],
+) == [
+    [(0, 2), (30, 255)],
+    [(5, 50), (2, 255)],
+    [(2, 5)],
+    [(50, 255)],
+]

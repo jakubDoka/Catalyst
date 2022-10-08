@@ -181,6 +181,17 @@ fn main() {
                 fn [T] use_on(s: ^Self, value: T) -> Glued[T] => ::{ inner: value };
             };
 
+            impl Glue for uint;
+
+            impl Glue for u32;
+
+            struct A;
+
+            impl Glue for A {
+                fn new -> uint => 0;
+                fn [T] use_on(s: ^uint) -> Glued[T] => ::{ inner: value };
+            };
+
             impl uint {
                 fn new {}
             };
@@ -189,7 +200,17 @@ fn main() {
                 G::new().use_on(value)
             };
 
-            fn main() -> uint => uint::new();
+            spec [T] GenericSpec {
+                fn take(t: T) -> Self;
+            };
+
+            impl GenericSpec[uint] for uint {
+                fn take(t: uint) -> Self => t;
+            };
+
+            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+
+            fn main() -> uint => uint::new() + take(0);
         }
     }
 }

@@ -487,10 +487,13 @@ impl Typec {
         ty: Ty,
         sum: VSlice<Spec>,
         params: &[VSlice<Spec>],
+        inferred: &[Ty],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
+        interner: &mut Interner,
     ) -> bool {
         self[sum].to_bumpvec().into_iter().all(|spec| {
-            self.find_implementation(ty, spec, params, missing_keys)
+            let spec = self.instantiate_spec(spec, inferred, interner);
+            self.find_implementation(ty, spec, params, missing_keys, interner)
                 .is_some()
         })
     }
@@ -508,6 +511,7 @@ impl Typec {
         spec: Spec,
         params: &[VSlice<Spec>],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
+        interner: &mut Interner,
     ) -> Option<Option<VRef<Impl>>> {
         if let Ty::Param(index) = ty {
             let specs = params[index as usize];
@@ -549,10 +553,14 @@ impl Typec {
                 continue;
             }
 
-            let implements = generics
+            let params = generic_slots
                 .into_iter()
-                .zip(generic_slots.into_iter().map(|s| s.unwrap()))
-                .all(|(specs, ty)| self.implements_sum(ty, specs, params, missing_keys));
+                .collect::<Option<BumpVec<_>>>()
+                .expect("generic slots should not be empty since we validate the implementation");
+
+            let implements = generics.iter().zip(params.iter()).all(|(&specs, &ty)| {
+                self.implements_sum(ty, specs, &generics, &params, missing_keys, interner)
+            });
 
             if !implements {
                 continue;
@@ -564,6 +572,7 @@ impl Typec {
         if let Some(v) = missing_keys {
             v.push(key)
         }
+
         None
     }
 
@@ -592,9 +601,7 @@ impl Typec {
                     .fold(Ok(()), |acc, (&reference, &template)| {
                         acc.and(self.compatible(params, reference, template))
                     })
-                    .map_err(|(a, b)| SpecCmpError::Args(a, b))?;
-
-                Ok(())
+                    .map_err(|(a, b)| SpecCmpError::Args(a, b))
             }
             _ => Err(SpecCmpError::Specs(reference, template)),
         }
@@ -641,21 +648,12 @@ impl Typec {
 
     pub fn instantiate(&mut self, ty: Ty, params: &[Ty], interner: &mut Interner) -> Ty {
         unsafe {
-            self.instantiate_low(ty, mem::transmute(params), interner)
+            self.try_instantiate(ty, mem::transmute(params), interner)
                 .unwrap_unchecked()
         }
     }
 
     pub fn try_instantiate(
-        &mut self,
-        ty: Ty,
-        params: &[Option<Ty>],
-        interner: &mut Interner,
-    ) -> Option<Ty> {
-        self.instantiate_low(ty, params, interner)
-    }
-
-    pub fn instantiate_low(
         &mut self,
         ty: Ty,
         params: &[Option<Ty>],
@@ -667,7 +665,7 @@ impl Typec {
                 let args = self[args]
                     .to_bumpvec()
                     .into_iter()
-                    .map(|arg| self.instantiate_low(arg, params, interner))
+                    .map(|arg| self.try_instantiate(arg, params, interner))
                     .collect::<Option<BumpVec<_>>>()?;
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
@@ -675,15 +673,43 @@ impl Typec {
                 let Pointer {
                     base, mutability, ..
                 } = self[pointer];
-                let base = self.instantiate_low(base, params, interner)?;
+                let base = self.try_instantiate(base, params, interner)?;
                 Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
             Ty::Param(index) => return params[index as usize],
             Ty::Struct(..) | Ty::Builtin(_) => ty,
         })
     }
+
+    pub fn instantiate_spec(&mut self, spec: Spec, params: &[Ty], interner: &mut Interner) -> Spec {
+        unsafe {
+            self.try_instantiate_spec(spec, mem::transmute(params), interner)
+                .unwrap_unchecked()
+        }
+    }
+
+    pub fn try_instantiate_spec(
+        &mut self,
+        spec: Spec,
+        params: &[Option<Ty>],
+        interner: &mut Interner,
+    ) -> Option<Spec> {
+        Some(match spec {
+            Spec::Base(..) => spec,
+            Spec::Instance(instance) => {
+                let SpecInstance { base, args } = self[instance];
+                let args = self[args]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|arg| self.try_instantiate(arg, params, interner))
+                    .collect::<Option<BumpVec<_>>>()?;
+                Spec::Instance(self.spec_instance(base, args.as_slice(), interner))
+            }
+        })
+    }
 }
 
+#[derive(Debug)]
 pub enum SpecCmpError {
     Specs(Spec, Spec),
     Args(Ty, Ty),

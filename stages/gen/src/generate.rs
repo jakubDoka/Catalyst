@@ -275,7 +275,7 @@ impl Generator<'_> {
                 };
                 let r#impl = self
                     .typec
-                    .find_implementation(caller, used_spec, &[], &mut None)
+                    .find_implementation(caller, used_spec, &[], &mut None, self.interner)
                     .unwrap()
                     .unwrap();
                 let Impl {

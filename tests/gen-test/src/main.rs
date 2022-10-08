@@ -612,5 +612,20 @@ fn main() {
             #[entry];
             fn main -> uint => make_flood::[Fool]();
         }
+
+        simple "generic-spec" {
+            spec [T] GenericSpec {
+                fn take(t: T) -> Self;
+            };
+
+            impl GenericSpec[uint] for uint {
+                fn take(t: uint) -> Self => t;
+            };
+
+            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+
+            #[entry];
+            fn main() -> uint => take(0);
+        }
     }
 }
