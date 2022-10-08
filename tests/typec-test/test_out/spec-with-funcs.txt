@@ -6,15 +6,7 @@ error: type 'uint' already has an implementation for 'Glue'
    | |_^ this already satisfies both types
    |
 
-error: function not found
-  --> spec-with-funcs\root.ctl:33:48
-   |
-33 | fn [B, T: GenericSpec[B]] take(t: T) -> B => T\take(t)
-   |                                                ^^^^ this does not exist
-   |
-   = info: queried 'param1\take'
-
-error: cannot infer type of parameters[0]
+error: cannot infer type of parameters[1]
   --> spec-with-funcs\root.ctl:34:37
    |
 34 | fn main -> uint => uint\new() + take(0)
@@ -59,6 +51,8 @@ info: tir repr of functions:
  fn [Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
     Glue\use_on[param0, param1](^Glue\new[param0](), var0)
 }
+
+fn [, GenericSpec[param0]] take(var0: param0) -> param1 return GenericSpec\take[param0, param1](var0)
 
 fn [] new() -> uint return 0
 
