@@ -1,11 +1,3 @@
-error: type or module not found
-  --> spec-with-funcs\root.ctl:33:38
-   |
-33 | fn [T: GenericSpec[B]] take(t: T) -> B => T\take(t)
-   |                                      ^ this does not exist
-   |
-   = info: queried 'B'
-
 error: type 'uint' already has an implementation for 'Glue'
   --> spec-with-funcs\root.ctl:10:1
    |
@@ -14,13 +6,20 @@ error: type 'uint' already has an implementation for 'Glue'
    | |_^ this already satisfies both types
    |
 
-error: function or module not found
-  --> spec-with-funcs\root.ctl:34:33
+error: function not found
+  --> spec-with-funcs\root.ctl:33:48
+   |
+33 | fn [B, T: GenericSpec[B]] take(t: T) -> B => T\take(t)
+   |                                                ^^^^ this does not exist
+   |
+   = info: queried 'param1\take'
+
+error: cannot infer type of parameters[0]
+  --> spec-with-funcs\root.ctl:34:37
    |
 34 | fn main -> uint => uint\new() + take(0)
-   |                                 ^^^^ this does not exist
+   |                                     ^^^ while instantiating this call
    |
-   = info: queried 'take'
 
 error: spec function return type mismatch
   --> spec-with-funcs\root.ctl:17:8
