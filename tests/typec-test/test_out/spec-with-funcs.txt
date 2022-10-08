@@ -7,9 +7,9 @@ error: type 'uint' already has an implementation for 'Glue'
    |
 
 error: type mismatch
-  --> spec-with-funcs\root.ctl:27:20
+  --> spec-with-funcs\root.ctl:33:20
    |
-27 | fn main -> uint => uint\new()
+33 | fn main -> uint => uint\new()
    |                    ^^^^^^^^^^ mismatch occurred here
    |
    = info: expected 'uint' but got '()'
@@ -22,19 +22,19 @@ error: spec function return type mismatch
    |
    = info: expected '0\A' but found 'uint'
 
-error: type mismatch
+error: Var not found
   --> spec-with-funcs\root.ctl:18:54
    |
-18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: 0 }
-   |                                                      ^ mismatch occurred here
+18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: value }
+   |                                                      ^^^^^ this does not exist
    |
-   = info: expected 'param0' but got 'uint'
+   = info: queried 'value'
 
 error: missing constructor fields
   --> spec-with-funcs\root.ctl:18:44
    |
-18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: 0 }
-   |                                            ^^^^^^^^^^^^^ this constructor does not initialize all required fields
+18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: value }
+   |                                            ^^^^^^^^^^^^^^^^^ this constructor does not initialize all required fields
    |
    = help: fields that are missing: inner
    = info: all fields must be initialized
@@ -61,6 +61,8 @@ fn [] new() -> uint return 0
 
 fn [] new() -> () return {
 }
+
+fn [] take(var0: uint) -> uint return var0
 
 
 
