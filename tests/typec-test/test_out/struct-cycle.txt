@@ -1,5 +1,13 @@
 error: infinitely sized type detected between defined types
- = info: cycle: 0\A -> 0\B -> 0\A
+ --> struct-cycle\root.ctl:3:8
+  |
+2 | struct A {
+  |        - info: this type is part of cycle
+...
+5 | struct B {
+  |        - info: this type is part of cycle
+  |
+  = info: cycle: 0\A -> 0\B -> 0\A
 
 info: tir repr of functions:
  
