@@ -8,3 +8,5 @@ block0:
 
 
 
+info: exit code: 0
+
