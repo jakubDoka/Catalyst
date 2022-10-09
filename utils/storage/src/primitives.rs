@@ -102,6 +102,18 @@ impl<T: ?Sized> VRef<T> {
     }
 }
 
+impl<T: ?Sized> Ord for VRef<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<T: ?Sized> PartialOrd for VRef<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl<T: VRefDefault + ?Sized> Default for VRef<T> {
     #[inline(always)]
     fn default() -> Self {
