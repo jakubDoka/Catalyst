@@ -28,3 +28,5 @@ block0(v0: i64):
 
 
 
+info: exit code: 0
+
