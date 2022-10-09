@@ -500,7 +500,9 @@ impl Scheduler for TestState {
         fs::remove_file(obj_path).unwrap();
         fs::remove_file(exe_path).unwrap();
 
-        assert_eq!(output.code(), Some(0), "{:x?}", output.code().unwrap());
+        self.workspace.push(snippet! {
+            info: ("exit code: {:x?}", output.code().unwrap());
+        });
     }
 }
 
@@ -626,6 +628,16 @@ fn main() {
 
             #[entry];
             fn main() -> uint => take(0);
+        }
+
+        simple "struct access" {
+            struct Foo {
+                a: uint;
+                b: uint;
+            };
+
+            #[entry];
+            fn main -> uint => Foo::{ a: 1; b: 0 }.b;
         }
     }
 }

@@ -9,7 +9,7 @@ pub struct TirBuilder<'a> {
     pub arena: &'a Arena,
     pub ret: Ty,
     pub ret_span: Option<Span>,
-    pub vars: Vec<VarTir<'a>>,
+    pub vars: Vec<Var>,
     pub generics: Vec<VSlice<Spec>>,
     pub runner: Option<(Span, TirFrame)>,
 }
@@ -39,24 +39,19 @@ impl<'a> TirBuilder<'a> {
         self.vars.truncate(frame.0);
     }
 
-    pub fn create_var(&mut self, node: TirKind<'a>, ty: Ty, span: Span) -> VRef<Var> {
+    pub fn create_var(&mut self, ty: Ty, span: Span) -> VRef<Var> {
         let index = self.vars.len();
-        self.vars.push(VarTir { node, ty, span });
+        self.vars.push(Var { ty, span });
         unsafe { VRef::new(index) }
     }
 
-    pub fn next_var(&self) -> VRef<Var> {
-        unsafe { VRef::new(self.vars.len()) }
-    }
-
-    pub fn get_var(&self, var: VRef<Var>) -> VarTir<'a> {
+    pub fn get_var(&self, var: VRef<Var>) -> Var {
         self.vars[var.index()]
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct VarTir<'a> {
-    pub node: TirKind<'a>,
+#[derive(Clone, Copy, Debug)]
+pub struct Var {
     pub ty: Ty,
     pub span: Span,
 }
@@ -70,8 +65,6 @@ impl TirFrame {
     }
 }
 
-pub struct Var;
-
 #[derive(Clone, Copy, Debug)]
 pub struct CallTir<'a> {
     pub func: CallableTir<'a>,
@@ -84,6 +77,44 @@ pub enum CallableTir<'a> {
     Func(VRef<Func>),
     SpecFunc(VRef<SpecFunc>),
     Pointer(TirNode<'a>),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MatchTir<'a> {
+    pub value: TirNode<'a>,
+    pub arms: &'a [MatchArmTir<'a>],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MatchArmTir<'a> {
+    pub pat: PatTir<'a>,
+    pub body: TirNode<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PatTir<'a> {
+    pub kind: PatKindTir<'a>,
+    pub span: Span,
+    pub ty: Ty,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PatKindTir<'a> {
+    Unit(&'a UnitKindPatTir<'a>),
+    Or(&'a [UnitKindPatTir<'a>]),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum UnitKindPatTir<'a> {
+    Struct { fields: &'a [PatTir<'a>] },
+    Binding,
+    Int,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FieldTir<'a> {
+    pub field: u32,
+    pub header: TirNode<'a>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -109,7 +140,9 @@ pub enum TirKind<'a> {
     Call(&'a CallTir<'a>),
     Access(VRef<Var>),
     Const(&'a TirNode<'a>),
-    Constructor(&'a [TirNode<'a>]),
+    Ctor(&'a [TirNode<'a>]),
     Deref(&'a TirNode<'a>),
     Ref(&'a TirNode<'a>),
+    Match(&'a MatchTir<'a>),
+    Field(&'a FieldTir<'a>),
 }

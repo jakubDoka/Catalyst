@@ -102,12 +102,9 @@ impl<'a> FmtAst for PathExprAst<'a> {
 
 impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, T, META> {
     fn display_low(&self, fold: bool, fmt: &mut Fmt) {
-        let delimiter_spacing = META::START.iter().any(|t| {
-            matches!(
-                t,
-                TokenPattern::Kind(TokenKind::Colon | TokenKind::LeftCurly)
-            )
-        });
+        let delimiter_spacing = META::START
+            .iter()
+            .any(|t| matches!(t, TokenPat::Kind(TokenKind::Colon | TokenKind::LeftCurly)));
         let is_top_list = META::END.contains(&TokenKind::Eof.into());
         if self.elements.is_empty() && META::OPTIONAL {
             return;

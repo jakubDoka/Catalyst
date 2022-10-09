@@ -2,13 +2,10 @@ use std::{hint::unreachable_unchecked, iter};
 
 use storage::*;
 
-pub struct PatternSolver;
+pub struct PatSolver;
 
-impl PatternSolver {
-    pub fn solve<'a>(
-        arena: &'a Arena,
-        input: &[Branch<'a>],
-    ) -> Result<PatternTree<'a>, PatternError> {
+impl PatSolver {
+    pub fn solve<'a>(arena: &'a Arena, input: &[Branch<'a>]) -> Result<PatTree<'a>, PatError> {
         let (intersected, mut sorted) = Self::intersect_branches(input.iter().copied());
         sorted.reverse();
 
@@ -23,9 +20,9 @@ impl PatternSolver {
                 Ok(..) => {
                     branch_buffer.clear();
                     branch_buffer.extend(group.iter().filter_map(|(_, res)| res.ok()));
-                    Self::solve(arena, &branch_buffer).map(PatternNodeChildren::More)
+                    Self::solve(arena, &branch_buffer).map(PatNodeChildren::More)
                 }
-                Err(branch) => Ok(PatternNodeChildren::End(branch)),
+                Err(branch) => Ok(PatNodeChildren::End(branch)),
             };
 
             let current = sorted.pop();
@@ -37,7 +34,7 @@ impl PatternSolver {
 
             let children = match children_res {
                 Ok(children) => children,
-                Err(PatternError { missing: others }) => {
+                Err(PatError { missing: others }) => {
                     missing.extend(
                         others
                             .into_iter()
@@ -47,7 +44,7 @@ impl PatternSolver {
                 }
             };
 
-            branches.push(PatternNode { range, children });
+            branches.push(PatNode { range, children });
         }
 
         if let (Some(UpperBound::Inside(start)), Some(end)) = (sorted.pop(), sorted.pop()) {
@@ -55,11 +52,11 @@ impl PatternSolver {
         }
 
         if missing.is_empty() {
-            Ok(PatternTree {
+            Ok(PatTree {
                 nodes: arena.alloc_iter(branches),
             })
         } else {
-            Err(PatternError { missing })
+            Err(PatError { missing })
         }
     }
 
@@ -114,24 +111,24 @@ impl PatternSolver {
 }
 
 #[derive(Debug)]
-pub struct PatternTree<'a> {
-    pub nodes: &'a [PatternNode<'a>],
+pub struct PatTree<'a> {
+    pub nodes: &'a [PatNode<'a>],
 }
 
 #[derive(Debug)]
-pub struct PatternNode<'a> {
+pub struct PatNode<'a> {
     pub range: Range,
-    pub children: PatternNodeChildren<'a>,
+    pub children: PatNodeChildren<'a>,
 }
 
 #[derive(Debug)]
-pub enum PatternNodeChildren<'a> {
+pub enum PatNodeChildren<'a> {
     End(usize),
-    More(PatternTree<'a>),
+    More(PatTree<'a>),
 }
 
 #[derive(Debug)]
-pub struct PatternError {
+pub struct PatError {
     pub missing: Vec<Vec<Range>>,
 }
 
@@ -282,7 +279,7 @@ mod test {
             ],
         );
 
-        let res = PatternSolver::solve(&arena, dbg!(branches));
+        let res = PatSolver::solve(&arena, dbg!(branches));
         println!("{:#?}", res)
     }
 }

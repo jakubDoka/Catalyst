@@ -43,19 +43,35 @@ impl MirChecker<'_> {
             TirKind::Access(access) => self.access(access, span, builder),
             TirKind::Return(ret) => self.r#return(ret, span, builder),
             TirKind::Const(&r#const) => self.r#const(r#const, ty, span, builder),
-            TirKind::Constructor(fields) => self.constructor(fields, ty, span, builder),
+            TirKind::Ctor(fields) => self.constructor(fields, ty, span, builder),
             TirKind::Deref(&node) => self.deref(node, ty, span, builder),
             TirKind::Ref(&node) => self.r#ref(node, ty, span, builder),
+            TirKind::Field(&field) => self.field(field, ty, span, builder),
+            TirKind::Match(..) => todo!(),
         }
+    }
+
+    fn field(
+        &mut self,
+        FieldTir { field, header }: FieldTir,
+        ty: Ty,
+        span: Span,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let node = self.node(header, builder)?;
+
+        let value = builder.value(ty, self.typec);
+
+        builder.ctx.func.values[value].flags = builder.ctx.func.values[node].flags;
+
+        builder.inst(InstMir::Field(node, field, value), span);
+        Some(value)
     }
 
     fn deref(&mut self, node: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let node = self.node(node, builder)?;
 
         let value = builder.value(ty, self.typec);
-        builder.ctx.func.values[value]
-            .flags
-            .insert(ValueMirFlags::LOADED);
         builder.inst(InstMir::Deref(node, value), span);
         Some(value)
     }
@@ -84,7 +100,7 @@ impl MirChecker<'_> {
         let fields = builder.ctx.func.value_args.bump(fields);
 
         let value = builder.value(ty, self.typec);
-        builder.inst(InstMir::Constructor(fields, value), span);
+        builder.inst(InstMir::Ctor(fields, value), span);
         Some(value)
     }
 

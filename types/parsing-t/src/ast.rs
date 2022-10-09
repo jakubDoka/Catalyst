@@ -23,7 +23,7 @@ impl<'a, T: Ast<'a>> Ast<'a> for WrappedAst<T>
 where
     T::Args: Default,
 {
-    type Args = (TokenPattern<'static>, TokenPattern<'static>);
+    type Args = (TokenPat<'static>, TokenPat<'static>);
 
     const NAME: &'static str = "wrapped";
 
@@ -280,9 +280,9 @@ pub struct ListElement<T> {
 }
 
 pub trait ListAstMeta {
-    const START: &'static [TokenPattern<'static>];
-    const SEP: &'static [TokenPattern<'static>];
-    const END: &'static [TokenPattern<'static>];
+    const START: &'static [TokenPat<'static>];
+    const SEP: &'static [TokenPat<'static>];
+    const END: &'static [TokenPat<'static>];
     const OPTIONAL: bool;
 
     fn recover(ctx: &mut ParsingCtx) -> Option<Option<Span>> {
@@ -304,9 +304,9 @@ macro_rules! list_meta {
     ($name:ident $optional:literal $start:tt $sep:tt $end:tt) => {
         pub struct $name;
         impl $crate::ListAstMeta for $name {
-            const START: &'static [$crate::TokenPattern<'static>] = $crate::list_meta!(__arg__ $start);
-            const SEP: &'static [$crate::TokenPattern<'static>] = $crate::list_meta!(__arg__ $sep);
-            const END: &'static [$crate::TokenPattern<'static>] = $crate::list_meta!(__arg__ $end);
+            const START: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $start);
+            const SEP: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $sep);
+            const END: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $end);
             const OPTIONAL: bool = $optional;
         }
         const _: () = {
@@ -328,49 +328,49 @@ macro_rules! list_meta {
     };
 
     (__element__ $elem:ident) => {
-        $crate::TokenPattern::Kind(lexing::TokenKind::$elem)
+        $crate::TokenPat::Kind(lexing::TokenKind::$elem)
     };
 
     (__element__ $elem:literal) => {
-        $crate::TokenPattern::Str($elem)
+        $crate::TokenPat::Str($elem)
     };
 
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum TokenPattern<'a> {
+pub enum TokenPat<'a> {
     Str(&'a str),
     Kind(TokenKind),
 }
 
-impl<'a> IntoIterator for TokenPattern<'a> {
-    type Item = TokenPattern<'a>;
-    type IntoIter = std::iter::Once<TokenPattern<'a>>;
+impl<'a> IntoIterator for TokenPat<'a> {
+    type Item = TokenPat<'a>;
+    type IntoIter = std::iter::Once<TokenPat<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         std::iter::once(self)
     }
 }
 
-impl<'a> From<TokenKind> for TokenPattern<'a> {
+impl<'a> From<TokenKind> for TokenPat<'a> {
     fn from(t: TokenKind) -> Self {
         Self::Kind(t)
     }
 }
 
-impl<'a> From<&'a str> for TokenPattern<'a> {
+impl<'a> From<&'a str> for TokenPat<'a> {
     fn from(t: &'a str) -> Self {
         Self::Str(t)
     }
 }
 
-impl<'a> AsRef<TokenPattern<'a>> for TokenPattern<'a> {
+impl<'a> AsRef<TokenPat<'a>> for TokenPat<'a> {
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
-impl TokenPattern<'_> {
+impl TokenPat<'_> {
     pub fn as_string(&self) -> String {
         match self {
             Self::Str(s) => format!("'{}'", s),

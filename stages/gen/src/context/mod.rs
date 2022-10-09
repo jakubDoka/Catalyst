@@ -145,6 +145,8 @@ pub struct CompileRequest {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
+    pub offsets: ShadowMap<ValueMir, i32>,
+    pub must_load: ShadowMap<ValueMir, bool>,
     pub func_imports: Map<VRef<str>, ir::FuncRef>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
 }
@@ -158,6 +160,7 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
+        self.offsets.clear();
         // self.func_constants.clear();
     }
 }

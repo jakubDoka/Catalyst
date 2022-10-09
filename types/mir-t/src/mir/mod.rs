@@ -154,9 +154,10 @@ pub enum InstMir {
     Access(VRef<ValueMir>),
     Call(CallMir, VRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
-    Constructor(VRefSlice<ValueMir>, VRef<ValueMir>),
+    Ctor(VRefSlice<ValueMir>, VRef<ValueMir>),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
+    Field(VRef<ValueMir>, u32, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]
@@ -181,7 +182,7 @@ pub struct ValueMir {
 
 bitflags! {
     ValueMirFlags: u8 {
-        REFERENCED LOADED
+        REFERENCED
     }
 }
 

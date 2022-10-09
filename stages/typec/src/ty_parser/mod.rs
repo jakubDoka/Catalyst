@@ -184,7 +184,6 @@ impl TyChecker<'_> {
             let id = self
                 .interner
                 .intern_scoped(Ty::Param(index as u16), func.name);
-            dbg!(&self.interner[id]);
             self.scope.push(id, key, func.span.unwrap_or_default());
         }
     }

@@ -92,5 +92,19 @@ fn main() {
                     self.field;
             };
         }
+
+        simple "match" {
+            struct B {
+                a: uint;
+                b: uint
+            };
+
+            fn main -> uint => match B::{ a: 0; b: 3 } {
+                ::{ a: 6, b: 7 } => 0;
+                ::{ a: 0, b: 3 } => 1;
+                ::{ a: 0, b } => b;
+                ::{ a, b } => a + b;
+            }
+        }
     }
 }

@@ -20,8 +20,8 @@ pub type GenericsAst<'a> = ListAst<'a, GenericParamAst<'a>, GenericsMeta>;
 list_meta!(BoundsMeta ? Colon "+" none);
 pub type ParamSpecsAst<'a> = ListAst<'a, SpecExprAst<'a>, BoundsMeta>;
 
-list_meta!(TupleConstructorMeta ? LeftParen Comma RightParen);
-pub type TupleConstructorAst<'a> = ListAst<'a, ExprAst<'a>, TupleConstructorMeta>;
+list_meta!(TupleCtorMeta ? LeftParen Comma RightParen);
+pub type TupleCtorAst<'a> = ListAst<'a, ExprAst<'a>, TupleCtorMeta>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParamAst<'a> {

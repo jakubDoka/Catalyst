@@ -96,17 +96,35 @@ impl Generator<'_> {
             InstMir::Access(..) => return,
             InstMir::Call(call, ret) => (ret, self.call(call, builder)),
             InstMir::Const(id, ret) => (ret, self.r#const(id, ret, builder)),
-            InstMir::Constructor(fields, ret) => {
-                (ret, Some(self.constructor(fields, ret, builder)))
-            }
+            InstMir::Ctor(fields, ret) => (ret, Some(self.constructor(fields, ret, builder))),
             InstMir::Deref(target, ret) | InstMir::Ref(target, ret) => {
                 (ret, Some(self.load_value(target, builder)))
+            }
+            InstMir::Field(header, field, ret) => {
+                self.field(header, field, ret, builder);
+                return;
             }
         };
 
         if let Some(value) = value {
             self.save_value(ret, value, builder);
         }
+    }
+
+    fn field(
+        &mut self,
+        header: VRef<ValueMir>,
+        field: u32,
+        ret: VRef<ValueMir>,
+        builder: &GenBuilder,
+    ) {
+        // field just changes offset
+        let base = self.gen_resources.offsets[header];
+        let header_ty = builder.body.value_ty(header);
+        let offsets = self.ty_layout(header_ty, &[], builder.ptr_ty()).offsets;
+        let field_offset = self.gen_layouts.offsets[offsets][field as usize];
+        self.gen_resources.offsets[ret] = base + field_offset as i32;
+        self.gen_resources.values[ret] = self.gen_resources.values[header];
     }
 
     fn constructor(
@@ -155,8 +173,6 @@ impl Generator<'_> {
                     true,
                     MemFlags::new(),
                 );
-            } else {
-                builder.ins().stack_store(value, stack_slot, offset as i32);
             }
         }
 
@@ -577,18 +593,41 @@ impl Generator<'_> {
         res
     }
 
-    fn load_value(&mut self, target: VRef<ValueMir>, builder: &mut GenBuilder) -> ir::Value {
-        let loaded = builder.body.values[target]
-            .flags
-            .contains(ValueMirFlags::LOADED);
-        let value = self.gen_resources.values[target].expect("value must be computed by now");
-        if loaded {
-            let ptr_ty = builder.ptr_ty();
-            let layout = self.ty_layout(builder.body.value_ty(target), &[], ptr_ty);
-            builder.ins().load(layout.repr, MemFlags::new(), value, 0)
-        } else {
-            value
+    fn store_value(
+        &mut self,
+        target: VRef<ValueMir>,
+        source: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) {
+        let ptr_ty = builder.ptr_ty();
+        let target_config = builder.isa.frontend_config();
+        let layout = self.ty_layout(builder.body.value_ty(target), &[], ptr_ty);
+        let target_ir = self.load_value(target, builder);
+        let source_ir = self.load_value(source, builder);
+        match (
+            self.gen_resources.must_load[target],
+            self.gen_resources.must_load[source],
+        ) {
+            (true, true) => {
+                builder.emit_small_memory_copy(
+                    target_config,
+                    target_ir,
+                    source_ir,
+                    layout.size as u64,
+                    layout.align.get(),
+                    layout.align.get(),
+                    true,
+                    MemFlags::new(),
+                );
+            }
+            (true, false) => todo!(),
+            (false, true) => todo!(),
+            (false, false) => todo!(),
         }
+    }
+
+    fn load_value(&mut self, target: VRef<ValueMir>, _builder: &mut GenBuilder) -> ir::Value {
+        self.gen_resources.values[target].expect("value must be computed by now")
     }
 
     fn save_value(

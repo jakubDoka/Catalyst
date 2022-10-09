@@ -88,7 +88,7 @@ impl<'a> ParsingCtx<'_, 'a> {
         current
     }
 
-    pub fn expect_advance(&mut self, expected: impl Into<TokenPattern> + Clone) -> Option<Token> {
+    pub fn expect_advance(&mut self, expected: impl Into<TokenPat> + Clone) -> Option<Token> {
         if self.at(expected.clone().into()) {
             Some(self.advance())
         } else {
@@ -98,7 +98,7 @@ impl<'a> ParsingCtx<'_, 'a> {
         }
     }
 
-    pub fn optional_advance(&mut self, kind: impl Into<TokenPattern>) -> Option<Token> {
+    pub fn optional_advance(&mut self, kind: impl Into<TokenPat>) -> Option<Token> {
         if self.at([kind.into()]) {
             Some(self.advance())
         } else {
@@ -118,7 +118,7 @@ impl<'a> ParsingCtx<'_, 'a> {
 
     pub fn recover(
         &mut self,
-        terminals: impl IntoIterator<Item = impl AsRef<TokenPattern>> + Clone,
+        terminals: impl IntoIterator<Item = impl AsRef<TokenPat>> + Clone,
     ) -> Option<Token> {
         let mut pair_stack: BumpVec<(Span, TokenKind)> = bumpvec![];
         loop {
@@ -154,12 +154,12 @@ impl<'a> ParsingCtx<'_, 'a> {
 
     pub fn matches(
         &self,
-        terminals: impl IntoIterator<Item = impl AsRef<TokenPattern>>,
+        terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>,
         token: Token,
     ) -> bool {
         terminals.into_iter().any(|pat| match *pat.as_ref() {
-            TokenPattern::Kind(kind) => kind == token.kind,
-            TokenPattern::Str(lit) => lit == self.lexer.inner_span_str(token.span),
+            TokenPat::Kind(kind) => kind == token.kind,
+            TokenPat::Str(lit) => lit == self.lexer.inner_span_str(token.span),
         })
     }
 
@@ -171,11 +171,11 @@ impl<'a> ParsingCtx<'_, 'a> {
         self.state.next.kind == tok
     }
 
-    pub fn at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPattern>>) -> bool {
+    pub fn at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>) -> bool {
         self.matches(terminals, self.state.current)
     }
 
-    pub fn next_at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPattern>>) -> bool {
+    pub fn next_at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>) -> bool {
         self.matches(terminals, self.state.next)
     }
 
@@ -189,7 +189,7 @@ impl<'a> ParsingCtx<'_, 'a> {
     }
 
     gen_error_fns! {
-        push expect_error(self, kinds: impl IntoIterator<Item = impl AsRef<TokenPattern>> + Clone) {
+        push expect_error(self, kinds: impl IntoIterator<Item = impl AsRef<TokenPat>> + Clone) {
             err: (
                 "expected {} but got {}",
                 kinds.into_iter().map(|k| k.as_ref().as_string()).collect::<BumpVec<_>>().join(" | "),

@@ -358,19 +358,111 @@ impl TyChecker<'_> {
             UnitExprAst::Int(span) => self.int(span, inference),
             UnitExprAst::Char(span) => self.char(span),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
-            UnitExprAst::Const(run) => self.const_expr(run, inference, builder),
-            UnitExprAst::StructConstructor(struct_constructor) => {
+            UnitExprAst::Const(run) => self.r#const(run, inference, builder),
+            UnitExprAst::StructCtor(struct_constructor) => {
                 self.struct_constructor(struct_constructor, inference, builder)
             }
-            UnitExprAst::DotExpr(_) => todo!(),
+            UnitExprAst::Match(match_expr) => self.r#match(match_expr, inference, builder),
+            UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
     }
 
+    fn dot_expr<'a>(
+        &mut self,
+        DotExprAst { lhs, rhs, .. }: DotExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let header = self.unit_expr(lhs, None, builder)?;
+
+        let res = self.dot_path(header.ty, rhs, builder)?;
+
+        Some(match res {
+            DotPathResult::Field(field, ty) => TirNode::new(
+                ty,
+                TirKind::Field(builder.arena.alloc(FieldTir { header, field })),
+                rhs.span(),
+            ),
+        })
+    }
+
+    fn dot_path<'a>(
+        &mut self,
+        ty: Ty,
+        PathInstanceAst { path, params }: PathInstanceAst,
+        _builder: &mut TirBuilder<'a>,
+    ) -> Option<DotPathResult> {
+        if params.is_some() {
+            todo!()
+        }
+
+        let Ty::Struct(struct_id) = ty.base(self.typec) else {
+            todo!()
+        };
+        let Struct { fields, .. } = self.typec[struct_id];
+
+        let field = self.typec[fields]
+            .iter()
+            .enumerate()
+            .find_map(|(id, field)| (field.name == path.start.ident).then_some((id, field.ty)));
+
+        let Some((field, mut field_ty)) = field else {
+            todo!()
+        };
+
+        if let Ty::Instance(instance) = ty {
+            let params = self.typec[self.typec[instance].args].to_bumpvec();
+            field_ty = self.typec.instantiate(ty, &params, self.interner);
+        }
+
+        Some(DotPathResult::Field(field as u32, field_ty))
+    }
+
+    fn r#match<'a>(
+        &mut self,
+        MatchExprAst { expr, body, .. }: MatchExprAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let value = self.expr(expr, None, builder)?;
+
+        let arms = body
+            .iter()
+            .map(|&MatchArmAst { pattern, body, .. }| {
+                let pat = self.pattern(pattern, value.ty, builder)?;
+                let body = self.expr(body, inference, builder)?;
+                Some(MatchArmTir { pat, body })
+            })
+            .collect::<Option<BumpVec<_>>>()?;
+        let arms = builder.arena.alloc_iter(arms);
+
+        let ty = arms
+            .iter()
+            .map(|arm| arm.body.ty)
+            .reduce(|a, b| match a == b {
+                true => a,
+                false => Ty::UNIT,
+            })
+            .unwrap_or(Ty::TERMINAL);
+
+        let tir = builder.arena.alloc(MatchTir { value, arms });
+        Some(TirNode::new(ty, TirKind::Match(tir), body.span()))
+    }
+
+    fn pattern<'a>(
+        &mut self,
+        pattern: PatAst,
+        ty: Ty,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<PatTir<'a>> {
+        todo!()
+    }
+
     fn struct_constructor<'a>(
         &mut self,
-        ctor @ StructConstructorAst { path, body, .. }: StructConstructorAst,
+        ctor @ StructCtorAst { path, body, .. }: StructCtorAst,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
@@ -420,7 +512,7 @@ impl TyChecker<'_> {
 
         let mut fields = bumpvec![None; body.len()];
 
-        for field_ast @ &StructConstructorFieldAst { name, expr } in body.iter() {
+        for field_ast @ &StructCtorFieldAst { name, expr } in body.iter() {
             let (index, field) = self.typec.fields[struct_meta.fields]
                 .iter()
                 .copied()
@@ -464,12 +556,12 @@ impl TyChecker<'_> {
 
         Some(TirNode::new(
             final_ty,
-            TirKind::Constructor(builder.arena.alloc_iter(fields)),
+            TirKind::Ctor(builder.arena.alloc_iter(fields)),
             ctor.span(),
         ))
     }
 
-    fn const_expr<'a>(
+    fn r#const<'a>(
         &mut self,
         run: ConstAst,
         inference: Inference,
@@ -562,8 +654,9 @@ impl TyChecker<'_> {
             | UnitExprAst::Call(..)
             | UnitExprAst::Int(..)
             | UnitExprAst::Char(..)
-            | UnitExprAst::StructConstructor(..)
-            | UnitExprAst::Const(..)) => {
+            | UnitExprAst::StructCtor(..)
+            | UnitExprAst::Const(..)
+            | UnitExprAst::Match(..)) => {
                 todo!("{kind:?}")
             }
         }
@@ -950,7 +1043,7 @@ impl TyChecker<'_> {
 
     fn args(&mut self, types: VSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
         for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
-            let var = builder.create_var(TirKind::Var(None), ty, arg.name.span);
+            let var = builder.create_var(ty, arg.name.span);
             self.scope.push(arg.name.ident, var, arg.name.span);
         }
     }
@@ -1198,6 +1291,10 @@ impl TyChecker<'_> {
 }
 
 pub type Inference = Option<Ty>;
+
+enum DotPathResult {
+    Field(u32, Ty),
+}
 
 enum FuncLookupResult<'a> {
     Func(VRef<Func>),

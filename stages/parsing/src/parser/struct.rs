@@ -72,12 +72,12 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct StructConstructorFieldAst<'a> {
+pub struct StructCtorFieldAst<'a> {
     pub name: NameAst,
     pub expr: Option<ExprAst<'a>>,
 }
 
-impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
+impl<'a> Ast<'a> for StructCtorFieldAst<'a> {
     type Args = ();
 
     const NAME: &'static str = "struct constructor field";
@@ -90,7 +90,7 @@ impl<'a> Ast<'a> for StructConstructorFieldAst<'a> {
             None
         };
 
-        Some(StructConstructorFieldAst { name, expr })
+        Some(StructCtorFieldAst { name, expr })
     }
 
     fn span(&self) -> Span {

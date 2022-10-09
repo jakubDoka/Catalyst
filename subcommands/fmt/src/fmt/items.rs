@@ -157,7 +157,7 @@ impl<'a> FmtAst for StructFieldAst<'a> {
     }
 }
 
-impl<'a> FmtAst for StructConstructorFieldAst<'a> {
+impl<'a> FmtAst for StructCtorFieldAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         self.name.display(fmt);
         if let Some(expr) = self.expr {

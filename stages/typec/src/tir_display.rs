@@ -59,7 +59,7 @@ impl TyChecker<'_> {
                     buffer.push('\n');
                 }
                 buffer.extend(iter::repeat(' ').take(indent * 4));
-                write!(buffer, "}}")?;
+                buffer.push('}');
                 *var_count = prev_var_count;
             }
             TirKind::Return(val) => {
@@ -114,7 +114,7 @@ impl TyChecker<'_> {
                 write!(buffer, "const ")?;
                 self.display_tir(*value, buffer, indent, var_count)?;
             }
-            TirKind::Constructor(fields) => {
+            TirKind::Ctor(fields) => {
                 write!(buffer, "{}\\{{", self.typec.display_ty(ty, self.interner))?;
                 if let Some((&first, others)) = fields.split_first() {
                     self.display_tir(first, buffer, indent, var_count)?;
@@ -123,7 +123,7 @@ impl TyChecker<'_> {
                         self.display_tir(val, buffer, indent, var_count)?;
                     }
                 }
-                write!(buffer, "}}")?;
+                buffer.push('}');
             }
             TirKind::Deref(expr) => {
                 write!(buffer, "*")?;
@@ -132,6 +132,24 @@ impl TyChecker<'_> {
             TirKind::Ref(expr) => {
                 write!(buffer, "^")?;
                 self.display_tir(*expr, buffer, indent, var_count)?;
+            }
+            TirKind::Match(&MatchTir { value, arms: cases }) => {
+                write!(buffer, "match ")?;
+                self.display_tir(value, buffer, indent, var_count)?;
+                buffer.push('{');
+                let inner_ident = iter::repeat(' ').take((indent + 1) * 4);
+                for MatchArmTir { pat, body } in cases {
+                    buffer.extend(inner_ident.clone());
+                    write!(buffer, "{:?} => ", pat)?;
+                    self.display_tir(*body, buffer, indent + 1, var_count)?;
+                    buffer.push('\n');
+                }
+                buffer.extend(iter::repeat(' ').take(indent * 4));
+                buffer.push('}');
+            }
+            TirKind::Field(&FieldTir { field, header }) => {
+                self.display_tir(header, buffer, indent, var_count)?;
+                write!(buffer, ".{}", field)?;
             }
         }
 

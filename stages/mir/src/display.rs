@@ -147,7 +147,7 @@ impl MirChecker<'_> {
             InstMir::Const(r#const, value) => {
                 write!(buffer, "var{} = const {}", value.index(), r#const.index())?;
             }
-            InstMir::Constructor(fields, value) => {
+            InstMir::Ctor(fields, value) => {
                 write!(buffer, "var{} = {{", value.index())?;
 
                 if let Some((first, others)) = func.value_args[fields].split_first() {
@@ -165,6 +165,15 @@ impl MirChecker<'_> {
             }
             InstMir::Ref(target, value) => {
                 write!(buffer, "var{} = &var{}", value.index(), target.index())?;
+            }
+            InstMir::Field(header, field, value) => {
+                write!(
+                    buffer,
+                    "var{} = var{}.{}",
+                    value.index(),
+                    header.index(),
+                    field,
+                )?;
             }
         }
 

@@ -121,7 +121,10 @@ mod typec;
 pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
-    tir::{CallTir, CallableTir, TirBuilder, TirFrame, TirKind, TirNode, TypecOutput, Var, VarTir},
+    tir::{
+        CallTir, CallableTir, FieldTir, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder,
+        TirFrame, TirKind, TirNode, TypecOutput, UnitKindPatTir, Var,
+    },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Field, FieldFlags, Fields, GenericTy,
         Generics, Impl, ImplKey, ImplLookup, Impls, Instance, Instances, Mutability, ParamSlices,
