@@ -1,0 +1,9 @@
+ --> match\root.ctl
+  |
+1 | 
+2 | struct B {
+3 |     a: uint
+4 |     b: uint
+5 | }
+  |
+
