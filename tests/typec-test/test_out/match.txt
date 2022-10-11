@@ -1,0 +1,10 @@
+info: tir repr of functions:
+ fn [] main() -> uint return match 0\Matched\{0, 1}{
+    \{0, 1} => 0
+    \{1, 0} => 1
+    \{var0, 0} => var0
+    \{var1, var2} => uint + uint(var1, var2)
+}
+
+
+
