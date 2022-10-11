@@ -1,0 +1,26 @@
+info: mir repr of functions:
+ fn [] sub(var0: uint, var1: uint) -> uint  {
+    block0(var2: uint, var3: uint) {
+        var4 = uint - uint(val0, val0)
+        return var4
+    }
+
+}
+
+fn [] main() -> uint  {
+    block0() {
+        var6 = const 0
+        return var2
+    }
+
+    block1() {
+        var4 = 1
+        var5 = 1
+        var3 = sub(val4, val5)
+        return var3
+    }
+
+}
+
+
+
