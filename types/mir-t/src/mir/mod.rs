@@ -71,6 +71,9 @@ impl FuncMir {
         self.insts.clear();
         self.values.truncate(ValueMir::TERMINAL.index() + 1);
         self.value_args.clear();
+        self.ty_params.clear();
+        self.dependant_types.truncate(MirTy::TERMINAL.index() + 1);
+        self.constants.clear();
     }
 
     pub fn is_referenced(&self, value: VRef<ValueMir>) -> bool {

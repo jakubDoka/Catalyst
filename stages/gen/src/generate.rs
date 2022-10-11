@@ -92,7 +92,6 @@ impl Generator<'_> {
             InstMir::Int(value, ret) => {
                 let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
                 let value = builder.ins().iconst(ty, value);
-                dbg!(builder.body.is_referenced(ret));
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Access(target, ret) => {
@@ -548,15 +547,13 @@ impl Generator<'_> {
         } else {
             match target_value {
                 ComputedValue::Value(value) => {
-                    let new_value =
-                        self.set_bit_field(layout, source, value, target_offset, builder);
+                    let new_value = self.set_bit_field(source, value, target_offset, builder);
                     self.gen_resources.values[target] = Some(ComputedValue::Value(new_value));
                 }
                 ComputedValue::StackSlot(..) => unreachable!(),
                 ComputedValue::Variable(var) => {
                     let value = builder.use_var(var);
-                    let new_value =
-                        self.set_bit_field(layout, source, value, target_offset, builder);
+                    let new_value = self.set_bit_field(source, value, target_offset, builder);
                     builder.def_var(var, new_value);
                 }
             }
@@ -565,15 +562,15 @@ impl Generator<'_> {
 
     fn set_bit_field(
         &mut self,
-        layout: Layout,
         source: ir::Value,
         target: ir::Value,
         target_offset: i32,
         builder: &mut GenBuilder,
     ) -> ir::Value {
         let source_size = builder.func.dfg.value_type(source).bytes();
-        let balanced = match layout.repr.bytes() > source_size {
-            true => builder.ins().uextend(layout.repr, source),
+        let target_repr = builder.func.dfg.value_type(target);
+        let balanced = match target_repr.bytes() > source_size {
+            true => builder.ins().uextend(target_repr, source),
             false => source,
         };
 
@@ -583,8 +580,11 @@ impl Generator<'_> {
             Ordering::Greater => builder.ins().ushr_imm(balanced, target_offset as i64 * 8),
         };
 
-        if target_offset != 0 {
-            let insert_mask = !((1 << (source_size as i64 * 8)) - 1) << (target_offset as i64 * 8);
+        if target_repr.bytes() != source_size {
+            let insert_mask = !((
+                // results into source size full of ones
+                (1 << (source_size as i64 * 8)) - 1
+            ) << (target_offset as i64 * 8));
             let target = builder.ins().band_imm(target, insert_mask);
             builder.ins().bor(target, shifted)
         } else {

@@ -111,6 +111,7 @@ impl TestState {
     }
 
     fn compile_func(&mut self, current_func: VRef<CompiledFunc>, later_init: &mut LaterInit) {
+        println!("{}", later_init.context.func.display());
         later_init
             .context
             .compile(&*later_init.object_context.isa)
@@ -639,6 +640,23 @@ fn main() {
 
             #[entry];
             fn main -> uint => Foo::{ a: 1; b: 0 }.b;
+        }
+
+        simple "register struct init and use" {
+            struct RegStruct {
+                field: uint
+            };
+
+            struct RegStruct2 {
+                field: u32;
+                field2: u32
+            };
+
+            #[entry];
+            fn main -> uint {
+                RegStruct2::{ field: 0; field2: 1 };
+                RegStruct::{ field: 0 }.field
+            }
         }
     }
 }
