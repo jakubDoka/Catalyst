@@ -9,8 +9,8 @@ info: mir repr of functions:
 
 fn [] pass(var0: uint) -> uint  {
     block0(var2: uint) {
-        access var2
-        return var2
+        var3 = access var2
+        return var3
     }
 
 }
