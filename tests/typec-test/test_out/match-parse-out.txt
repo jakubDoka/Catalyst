@@ -1,0 +1,25 @@
+error: expected '\n' | ';' but got Ident
+ --> match\root.ctl:1:27
+  |
+1 | struct Matched { a : uint b : uint } ; fn main() -> uint => match Matched \ { a : 0, b : 1 } {     \ { a : 0, b : 1 } => 0 \ { a : 1, b : 0 } => 1 \ { a, b : 0 } => a \     { a, b } => a + b } ;
+  |                           ^ token located here
+  |
+  = info: list -> item -> struct -> list
+
+error: expected '\n' | ';' but got ','
+ --> match\root.ctl:1:84
+  |
+1 | struct Matched { a : uint b : uint } ; fn main() -> uint => match Matched \ { a : 0, b : 1 } {     \ { a : 0, b : 1 } => 0 \ { a : 1, b : 0 } => 1 \ { a, b : 0 } => a \     { a, b } => a + b } ;
+  |                                                                                    ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> expr -> unit expr -> struct constructor -> list
+
+error: invalid struct constructor type
+ --> match\root.ctl:1:122
+  |
+1 | struct Matched { a : uint b : uint } ; fn main() -> uint => match Matched \ { a : 0, b : 1 } {     \ { a : 0, b : 1 } => 0 \ { a : 1, b : 0 } => 1 \ { a, b : 0 } => a \     { a, b } => a + b } ;
+  |                                                                                                                          ^ this is invalid
+  |
+  = help: this part of the constructor has same syntax as type, with a little difference which is a '\' between path and generic parameters
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> expr -> unit expr -> struct constructor
+
