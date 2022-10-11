@@ -1,0 +1,23 @@
+info: mir repr of functions:
+function u0:0() -> i64 fast {
+block0:
+    v0 = iconst.i64 0
+    v1 = iconst.i32 0
+    v2 = uextend.i64 v1  ; v1 = 0
+    v3 = band_imm v0, 0xffff_ffff_0000_0000  ; v0 = 0
+    v4 = bor v3, v2
+    v5 = iconst.i32 1
+    v6 = uextend.i64 v5  ; v5 = 1
+    v7 = ushr_imm v6, 32
+    v8 = band_imm v0, 0xffff_ffff  ; v0 = 0
+    v9 = bor v8, v7
+    v10 = iconst.i64 0
+    v11 = iconst.i64 0
+    return v10  ; v10 = 0
+}
+
+
+
+
+info: exit code: 0
+
