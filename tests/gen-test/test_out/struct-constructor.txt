@@ -1,32 +1,18 @@
 info: mir repr of functions:
 function u0:0() -> i64 fast {
-    ss0 = explicit_slot 16
-    ss1 = explicit_slot 24
+    ss0 = explicit_slot 24
 
 block0:
     v0 = iconst.i64 1
-    v1 = iconst.i64 2
     stack_store v0, ss0  ; v0 = 1
+    v1 = iconst.i64 2
     stack_store v1, ss0+8  ; v1 = 2
-    v2 = stack_addr.i64 ss0
-    v3 = iconst.i32 3
-    v4 = iconst.i32 1
-    v5 = iconst.i64 0
-    v6 = uextend.i64 v3  ; v3 = 3
-    v7 = ishl_imm v6, 0
-    v8 = bor v5, v7  ; v5 = 0
-    v9 = uextend.i64 v4  ; v4 = 1
-    v10 = ishl_imm v9, 32
-    v11 = bor v8, v10
-    v12 = stack_addr.i64 ss1
-    v13 = load.i64 aligned v2
-    v14 = load.i64 aligned v2+8
-    store aligned v13, v12
-    store aligned v14, v12+8
-    stack_store v11, ss1+16
-    v15 = stack_addr.i64 ss1
-    v16 = iconst.i64 0
-    return v16  ; v16 = 0
+    v2 = iconst.i32 3
+    stack_store v2, ss0+16  ; v2 = 3
+    v3 = iconst.i32 1
+    stack_store v3, ss0+20  ; v3 = 1
+    v4 = iconst.i64 0
+    return v4  ; v4 = 0
 }
 
 
