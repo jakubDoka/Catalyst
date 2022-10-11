@@ -34,10 +34,7 @@ impl<'a> MirBuilder<'a> {
         }
 
         let ty = self.ctx.project_ty(ty, typec);
-        self.ctx.func.values.push(ValueMir {
-            ty,
-            ..Default::default()
-        })
+        self.ctx.func.values.push(ValueMir { ty })
     }
 
     pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {
@@ -55,7 +52,7 @@ impl<'a> MirBuilder<'a> {
 
     fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
         match control_flow {
-            ControlFlowMir::Return(..) => {}
+            ControlFlowMir::Terminal | ControlFlowMir::Return(..) => {}
         }
     }
 

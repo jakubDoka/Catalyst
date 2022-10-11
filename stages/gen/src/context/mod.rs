@@ -7,11 +7,10 @@ use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
     ir::{self, types, ExternalName, Type, UserExternalName},
     isa::{self, CallConv, LookupError, TargetIsa},
-    packed_option::PackedOption,
     settings, CodegenError, Context,
 };
 
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
 use storage::*;
 use target_lexicon::Triple;
@@ -144,10 +143,10 @@ pub struct CompileRequest {
 #[derive(Default)]
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
-    pub values: ShadowMap<ValueMir, PackedOption<ir::Value>>,
+    pub values: ShadowMap<ValueMir, Option<ComputedValue>>,
     pub offsets: ShadowMap<ValueMir, i32>,
     pub must_load: ShadowMap<ValueMir, bool>,
-    pub func_imports: Map<VRef<str>, ir::FuncRef>,
+    pub func_imports: Map<VRef<str>, (ir::FuncRef, bool)>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
 }
 
@@ -160,8 +159,32 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
-        self.offsets.clear();
         // self.func_constants.clear();
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum ComputedValue {
+    Value(ir::Value),
+    StackSlot(ir::StackSlot),
+    Variable(Variable),
+}
+
+impl From<ir::Value> for ComputedValue {
+    fn from(val: ir::Value) -> Self {
+        Self::Value(val)
+    }
+}
+
+impl From<ir::StackSlot> for ComputedValue {
+    fn from(slot: ir::StackSlot) -> Self {
+        Self::StackSlot(slot)
+    }
+}
+
+impl From<Variable> for ComputedValue {
+    fn from(var: Variable) -> Self {
+        Self::Variable(var)
     }
 }
 

@@ -36,6 +36,7 @@
         "imul",
         "insts",
         "interner",
+        "ireduce",
         "ishl",
         "isub",
         "jakub",
@@ -65,6 +66,7 @@
         "udiv",
         "uextend",
         "Uninit",
+        "ushr",
         "wldap"
     ],
     "rust-analyzer.procMacro.attributes.enable": true,

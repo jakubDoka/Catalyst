@@ -6,7 +6,7 @@ const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 /// VPtrSet is storage plugin. It stores extra boolean for each [`VPtr`] with 8x efficiency
 /// compared to '[`Vec`]<[`bool`]>'. It also offers same speed (vector element is of [`usize`])
 /// as cpu would have to perform bit-shift to retrieve boolean value anyway.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct BitSet {
     data: Vec<usize>,
     len: usize,

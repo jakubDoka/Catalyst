@@ -212,5 +212,11 @@ fn main() {
 
             fn main() -> uint => uint::new() + take(0);
         }
+        simple "compile-time" {
+            fn sub(a: uint, b: uint) -> uint => a - b;
+
+            #[entry];
+            fn main -> uint => const sub(1, 1);
+        }
     }
 }

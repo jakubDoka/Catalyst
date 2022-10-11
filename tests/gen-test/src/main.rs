@@ -140,7 +140,8 @@ impl TestState {
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let func_ref = generator!(self).import_compiled_func(func, iter::empty(), &mut builder);
+            let (func_ref, _) =
+                generator!(self).import_compiled_func(func, iter::empty(), &mut builder);
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
         }

@@ -2,6 +2,7 @@
 #![feature(try_blocks)]
 #![feature(iter_intersperse)]
 #![feature(slice_group_by)]
+#![feature(if_let_guard)]
 
 mod builder;
 mod display;

@@ -77,6 +77,11 @@ impl MirChecker<'_> {
                     write!(buffer, " var{}", ret.index())?;
                 }
             }
+            ControlFlowMir::Terminal => {
+                buffer.extend(ident.clone());
+                buffer.extend(ident.clone());
+                write!(buffer, "exit")?;
+            }
         }
 
         buffer.push('\n');
@@ -91,8 +96,8 @@ impl MirChecker<'_> {
             InstMir::Int(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
             }
-            InstMir::Access(access) => {
-                write!(buffer, "access var{}", access.index())?;
+            InstMir::Access(access, ret) => {
+                write!(buffer, "var{} = access var{}", ret.index(), access.index())?;
             }
             InstMir::Call(
                 CallMir {
@@ -102,7 +107,7 @@ impl MirChecker<'_> {
                 },
                 ret,
             ) => {
-                if ret != ValueMir::UNIT {
+                if let Some(ret) = ret {
                     write!(buffer, "var{} = ", ret.index())?;
                 }
 
@@ -147,9 +152,10 @@ impl MirChecker<'_> {
             InstMir::Const(r#const, value) => {
                 write!(buffer, "var{} = const {}", value.index(), r#const.index())?;
             }
-            InstMir::Ctor(fields, value) => {
-                write!(buffer, "var{} = {{", value.index())?;
+            InstMir::Ctor(fields, value, ..) => {
+                write!(buffer, "var{} =", value.index())?;
 
+                buffer.push('{');
                 if let Some((first, others)) = func.value_args[fields].split_first() {
                     write!(buffer, "var{}", first.index())?;
 
@@ -157,7 +163,6 @@ impl MirChecker<'_> {
                         write!(buffer, ", var{}", other.index())?;
                     }
                 }
-
                 buffer.push('}');
             }
             InstMir::Deref(target, value) => {

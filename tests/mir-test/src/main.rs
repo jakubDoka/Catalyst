@@ -86,5 +86,11 @@ fn main() {
 
             fn main -> uint => 0.reference().dereference();
         }
+        simple "compile-time" {
+            fn sub(a: uint, b: uint) -> uint => a - b;
+
+            #[entry];
+            fn main -> uint => const sub(1, 1);
+        }
     }
 }

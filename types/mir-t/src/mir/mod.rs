@@ -58,6 +58,7 @@ pub struct FuncMir {
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub dependant_types: PushMap<MirTy>,
     pub constants: PushMap<FuncConstMir>,
+    pub referenced: BitSet,
 }
 
 impl FuncMir {
@@ -71,6 +72,10 @@ impl FuncMir {
         self.values.truncate(ValueMir::TERMINAL.index() + 1);
         self.value_args.clear();
     }
+
+    pub fn is_referenced(&self, value: VRef<ValueMir>) -> bool {
+        self.referenced.contains(value.index())
+    }
 }
 
 impl Default for FuncMir {
@@ -82,13 +87,9 @@ impl Default for FuncMir {
             insts: Default::default(),
             values: {
                 let mut values = PushMap::new();
-                values.push(ValueMir {
-                    ty: MirTy::UNIT,
-                    ..Default::default()
-                });
+                values.push(ValueMir { ty: MirTy::UNIT });
                 values.push(ValueMir {
                     ty: MirTy::TERMINAL,
-                    ..Default::default()
                 });
                 values
             },
@@ -101,6 +102,7 @@ impl Default for FuncMir {
                 values
             },
             constants: Default::default(),
+            referenced: Default::default(),
         }
     }
 }
@@ -134,6 +136,7 @@ pub struct BlockMir {
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
     Return(Option<VRef<ValueMir>>),
+    Terminal,
 }
 
 impl Default for ControlFlowMir {
@@ -151,10 +154,10 @@ pub struct DebugData {
 #[derive(Clone, Copy)]
 pub enum InstMir {
     Int(i64, VRef<ValueMir>),
-    Access(VRef<ValueMir>),
-    Call(CallMir, VRef<ValueMir>),
+    Access(VRef<ValueMir>, VRef<ValueMir>),
+    Call(CallMir, OptVRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
-    Ctor(VRefSlice<ValueMir>, VRef<ValueMir>),
+    Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
@@ -177,13 +180,6 @@ pub enum CallableMir {
 #[derive(Clone, Copy, Default)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
-    pub flags: ValueMirFlags,
-}
-
-bitflags! {
-    ValueMirFlags: u8 {
-        REFERENCED
-    }
 }
 
 impl ValueMir {
