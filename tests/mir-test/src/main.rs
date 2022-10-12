@@ -73,7 +73,7 @@ impl Scheduler for TestState {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "functions" {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
@@ -91,6 +91,19 @@ fn main() {
 
             #[entry];
             fn main -> uint => const sub(1, 1);
+        }
+        simple "match" {
+            struct Matched {
+                a: uint;
+                b: uint
+            };
+
+            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+                ::{ a: 0; b: 1 } => 0;
+                ::{ a: 1; b: 0 } => 1;
+                ::{ a; b: 0 } => a;
+                ::{ a; b } => a + b;
+            };
         }
     }
 }

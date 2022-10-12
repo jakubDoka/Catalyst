@@ -25,8 +25,14 @@ pub struct Context {
     package_frontier: Vec<(PathBuf, Loc)>,
     module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
     parsing_state: ParsingState,
-    ast_data: AstData,
+    ast_data: Option<AstData>,
     dep_root: PathBuf,
+}
+
+impl Context {
+    fn get_ast_data(&mut self) -> AstData {
+        self.ast_data.take().unwrap_or_default()
+    }
 }
 
 struct DummyPackage {
@@ -117,11 +123,11 @@ impl PackageLoader<'_> {
         ctx.module_frontier
             .push((root_path.clone(), root_package, source, span));
 
-        let mut ast_data = mem::take(&mut ctx.ast_data);
+        let mut ast_data = ctx.get_ast_data();
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
             self.load_module(path, package, source, span, &mut ast_data, ctx);
         }
-        ctx.ast_data = ast_data;
+        ctx.ast_data = Some(ast_data);
 
         for module in ctx.modules.values_mut() {
             let final_module = Module {
@@ -269,11 +275,11 @@ impl PackageLoader<'_> {
 
     fn load_packages(&mut self, root_path: PathBuf, ctx: &mut Context) -> Option<VRef<Package>> {
         ctx.package_frontier.push((root_path.clone(), None));
-        let mut ast_data = mem::take(&mut ctx.ast_data);
+        let mut ast_data = ctx.get_ast_data();
         while let Some((path, loc)) = ctx.package_frontier.pop() {
             self.load_package(path, loc, &mut ast_data, ctx);
         }
-        ctx.ast_data = ast_data;
+        ctx.ast_data = Some(ast_data);
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {

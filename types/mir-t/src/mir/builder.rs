@@ -53,6 +53,8 @@ impl<'a> MirBuilder<'a> {
     fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
         match control_flow {
             ControlFlowMir::Terminal | ControlFlowMir::Return(..) => {}
+            ControlFlowMir::Split(_, _, _) => todo!(),
+            ControlFlowMir::Goto(_, _) => todo!(),
         }
     }
 
@@ -71,6 +73,7 @@ pub struct MirBuilderCtx {
     pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<VRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
+    pub pattern_solver_arena: Option<Arena>,
 }
 
 impl MirBuilderCtx {
@@ -148,6 +151,9 @@ impl MirBuilderCtx {
 
     pub fn clear(&mut self) -> FuncMir {
         self.vars.clear();
+        self.dd.clear();
+        self.used_types.clear();
+
         let mut cln = self.func.clone();
         cln.generics = cln.ty_params.bump(self.generic_types.drain(..));
         self.func.clear();
@@ -163,4 +169,5 @@ impl MirBuilderCtx {
     }
 }
 
+#[must_use]
 pub struct MirFrame(usize);

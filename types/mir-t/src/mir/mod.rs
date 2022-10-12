@@ -67,6 +67,8 @@ impl FuncMir {
     }
 
     pub fn clear(&mut self) {
+        self.ret = VRef::default();
+        self.generics = VRefSlice::default();
         self.blocks.clear();
         self.insts.clear();
         self.values.truncate(ValueMir::TERMINAL.index() + 1);
@@ -74,6 +76,7 @@ impl FuncMir {
         self.ty_params.clear();
         self.dependant_types.truncate(MirTy::TERMINAL.index() + 1);
         self.constants.clear();
+        self.referenced.clear();
     }
 
     pub fn is_referenced(&self, value: VRef<ValueMir>) -> bool {
@@ -138,6 +141,8 @@ pub struct BlockMir {
 
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
+    Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
+    Goto(VRef<BlockMir>, OptVRef<ValueMir>),
     Return(Option<VRef<ValueMir>>),
     Terminal,
 }
@@ -152,6 +157,13 @@ impl Default for ControlFlowMir {
 pub struct DebugData {
     pub instr_spans: ShadowMap<InstMir, Span>,
     pub block_closers: ShadowMap<BlockMir, Span>,
+}
+
+impl DebugData {
+    pub fn clear(&mut self) {
+        self.instr_spans.clear();
+        self.block_closers.clear();
+    }
 }
 
 #[derive(Clone, Copy)]

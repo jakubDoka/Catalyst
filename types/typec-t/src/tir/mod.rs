@@ -94,6 +94,8 @@ pub struct MatchArmTir<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct PatTir<'a> {
     pub kind: PatKindTir<'a>,
+    pub has_binding: bool,
+    pub is_refutable: bool,
     pub span: Span,
     pub ty: Ty,
 }
@@ -108,7 +110,7 @@ pub enum PatKindTir<'a> {
 pub enum UnitPatKindTir<'a> {
     Struct { fields: &'a [PatTir<'a>] },
     Binding(VRef<Var>),
-    Int(Span),
+    Int(Span, VRef<Func>),
     Wildcard,
 }
 

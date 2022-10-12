@@ -5,7 +5,11 @@ use storage::*;
 pub struct PatSolver;
 
 impl PatSolver {
-    pub fn solve<'a>(arena: &'a Arena, input: &[Branch<'a>]) -> Result<PatTree<'a>, PatError> {
+    pub fn solve<'a>(
+        arena: &'a Arena,
+        input: &[Branch<'a>],
+        reachable: &mut [bool],
+    ) -> Result<PatTree<'a>, PatError> {
         let (intersected, mut sorted) = Self::intersect_branches(input.iter().copied());
         sorted.reverse();
 
@@ -20,9 +24,12 @@ impl PatSolver {
                 Ok(..) => {
                     branch_buffer.clear();
                     branch_buffer.extend(group.iter().filter_map(|(_, res)| res.ok()));
-                    Self::solve(arena, &branch_buffer).map(PatNodeChildren::More)
+                    Self::solve(arena, &branch_buffer, reachable).map(PatNodeChildren::More)
                 }
-                Err(branch) => Ok(PatNodeChildren::End(branch)),
+                Err(branch) => {
+                    reachable[branch] = true;
+                    Ok(PatNodeChildren::End(branch))
+                }
             };
 
             let current = sorted.pop();
@@ -176,6 +183,15 @@ impl Range {
     fn to_array(self) -> [UpperBound; 2] {
         [UpperBound::Inside(self.start), self.end]
     }
+
+    pub fn at(int: u128) -> Range {
+        Self {
+            start: int,
+            end: int
+                .checked_add(1)
+                .map_or(UpperBound::Outside, UpperBound::Inside),
+        }
+    }
 }
 
 impl<T: Into<UpperBound>> From<(u128, T)> for Range {
@@ -279,7 +295,7 @@ mod test {
             ],
         );
 
-        let res = PatSolver::solve(&arena, dbg!(branches));
+        let res = PatSolver::solve(&arena, dbg!(branches), &mut [false; 2]);
         println!("{:#?}", res)
     }
 }

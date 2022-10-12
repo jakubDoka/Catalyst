@@ -136,7 +136,7 @@ impl TyChecker<'_> {
             TirKind::Match(&MatchTir { value, arms: cases }) => {
                 write!(buffer, "match ")?;
                 self.display_tir(value, buffer, indent, var_count)?;
-                buffer.push_str("{\n");
+                buffer.push_str(" {\n");
                 let inner_ident = iter::repeat(' ').take((indent + 1) * 4);
                 for MatchArmTir { pat, body } in cases {
                     buffer.extend(inner_ident.clone());
@@ -204,7 +204,7 @@ impl TyChecker<'_> {
                 write!(buffer, "var{}", var.index())?;
                 *var_count = var.index() + 1;
             }
-            UnitPatKindTir::Int(span) => buffer.push_str(span_str!(self, span)),
+            UnitPatKindTir::Int(span, ..) => buffer.push_str(span_str!(self, span)),
             UnitPatKindTir::Wildcard => buffer.push('_'),
         }
         Ok(())

@@ -82,6 +82,25 @@ impl MirChecker<'_> {
                 buffer.extend(ident.clone());
                 write!(buffer, "exit")?;
             }
+            ControlFlowMir::Split(cond, then, otherwise) => {
+                buffer.extend(ident.clone());
+                buffer.extend(ident.clone());
+                write!(
+                    buffer,
+                    "split var{} block{} block{}",
+                    cond.index(),
+                    then.index(),
+                    otherwise.index()
+                )?;
+            }
+            ControlFlowMir::Goto(target, with) => {
+                buffer.extend(ident.clone());
+                buffer.extend(ident.clone());
+                write!(buffer, "goto block{}", target.index())?;
+                if let Some(with) = with {
+                    write!(buffer, " with var{}", with.index())?;
+                }
+            }
         }
 
         buffer.push('\n');

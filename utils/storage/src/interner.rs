@@ -27,6 +27,7 @@ macro_rules! gen_span_constants {
 gen_span_constants! {
     EMPTY => "",
     SELF => "Self",
+    EQUAL => "==",
 }
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),

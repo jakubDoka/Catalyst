@@ -53,7 +53,165 @@ impl MirChecker<'_> {
             TirKind::Deref(&node) => self.deref(node, span, dest_fn(), builder),
             TirKind::Ref(&node) => self.r#ref(node, span, dest_fn(), builder),
             TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
-            TirKind::Match(..) => todo!(),
+            TirKind::Match(&r#match) => self.r#match(r#match, dest_fn(), builder),
+        }
+    }
+
+    fn r#match(
+        &mut self,
+        MatchTir { value, arms }: MatchTir,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let value = self.node(value, None, builder)?;
+
+        let mut arena = builder.ctx.pattern_solver_arena.take().unwrap_or_default();
+
+        let branch_patterns = arms
+            .iter()
+            .enumerate()
+            .filter_map(|(ord, &MatchArmTir { pat, .. })| {
+                let mut branch_nodes = bumpvec![];
+                self.pattern_to_branch(pat, &mut branch_nodes, &arena, builder);
+                let (&start, rest) = branch_nodes.split_first()?;
+                Some(Branch {
+                    start,
+                    nodes: arena.alloc_slice(rest),
+                    ord,
+                })
+            })
+            .collect::<BumpVec<_>>();
+
+        let mut reachable = bumpvec![false; branch_patterns.len()];
+        PatSolver::solve(&arena, &branch_patterns, &mut reachable)
+            .map_err(|_| todo!())
+            .ok()?;
+
+        arena.clear();
+        builder.ctx.pattern_solver_arena = Some(arena);
+
+        let arms = arms
+        .iter()
+            .zip(reachable)
+            .filter_map(|(&arm, reachable)| reachable.then_some(arm))
+            .collect::<BumpVec<_>>();
+        let (&last, rest) = arms.split_last()?;
+        let mut dest_block = None;
+        for &arm in rest {
+            let cond = self.pattern_to_cond(arm.pat, value, builder).expect("only last pattern can be non refutable");
+            let block = builder.ctx.create_block();
+            let next_block = builder.ctx.create_block();
+            builder.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
+            builder.select_block(block);
+            self.match_arm(arm, &mut dest_block, value, dest, builder);
+            builder.select_block(next_block);
+        }
+        self.match_arm(last, &mut dest_block, value, dest, builder);
+
+        let dest_block = dest_block?;
+        builder.select_block(dest_block);
+        if dest != ValueMir::UNIT {
+            builder.ctx.args.push(dest);
+        }
+
+        Some(dest)
+    }
+
+    fn match_arm(
+        &mut self,
+        MatchArmTir { pat, body }: MatchArmTir,
+        dest_block: &mut OptVRef<BlockMir>,
+        value: VRef<ValueMir>,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) {
+        let frame = builder.ctx.start_frame();
+        self.bind_pattern_vars(pat, value, builder);
+        if let Some(ret) = self.node(body, Some(dest), builder) {
+            let ret = (ret != ValueMir::UNIT).then_some(ret);
+            let &mut dest_block = dest_block.get_or_insert_with(|| builder.ctx.create_block());
+            builder.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
+        }
+        builder.ctx.end_frame(frame);
+    }
+
+    fn bind_pattern_vars(
+        &mut self,
+        PatTir { kind, has_binding, .. }: PatTir,
+        value: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) {
+        if !has_binding {
+            return;
+        }
+
+        match kind {
+            PatKindTir::Unit(unit) => match unit {
+                UnitPatKindTir::Struct { fields } => {
+                    for (i, &field) in fields.iter().enumerate().filter(|(_, field)| field.has_binding) {
+                        let dest = builder.value(field.ty, self.typec);
+                        builder.inst(InstMir::Field(value, i as u32, dest), field.span);
+                        self.bind_pattern_vars(field, dest, builder);
+                    }
+                },
+                UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
+                UnitPatKindTir::Int(..)
+                | UnitPatKindTir::Wildcard => unreachable!(),
+            },
+            PatKindTir::Or(_) => todo!(),
+        }
+    }
+
+    fn pattern_to_cond(
+        &mut self,
+        PatTir { kind, ty, is_refutable, .. }: PatTir,
+        value: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) -> OptVRef<ValueMir> {
+        if !is_refutable {
+            return None;
+        }
+
+        match kind {
+            PatKindTir::Unit(unit) => match unit {
+                UnitPatKindTir::Struct { fields } => todo!(),
+                UnitPatKindTir::Int(int, cmp) => {
+                    let value = builder.value(ty, self.typec);
+                    let lit = self.int(int, value, builder);
+                    let res = 
+                },
+                UnitPatKindTir::Binding(..)
+                | UnitPatKindTir::Wildcard => unreachable!(),
+            },
+            PatKindTir::Or(..) => todo!(),
+        }
+
+        todo!()
+    }
+
+    fn pattern_to_branch<'a>(
+        &mut self,
+        PatTir { kind, .. }: PatTir,
+        nodes: &mut BumpVec<Node<'a>>,
+        _arena: &'a Arena,
+        _builder: &MirBuilder,
+    ) {
+        match kind {
+            PatKindTir::Unit(unit) => match unit {
+                UnitPatKindTir::Struct { fields } => {
+                    for &pat in fields {
+                        self.pattern_to_branch(pat, nodes, _arena, _builder);
+                    }
+                }
+                UnitPatKindTir::Int(value, ..) => {
+                    let int = span_str!(self, value).parse().unwrap();
+                    nodes.push(Node::Scalar(Range::at(int)));
+                }
+                UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => {
+                    nodes.push(Node::Scalar(Range::full()))
+                }
+            },
+            PatKindTir::Or(..) => todo!(),
         }
     }
 

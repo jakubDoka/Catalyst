@@ -116,13 +116,11 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
     }
 
     pub fn with_chunk_size(chunk_size: usize) -> Self {
-        let mut chunk = Chunk::new(chunk_size);
-        let range = chunk.range();
         Self {
-            free: Cell::new(Vec::new()),
-            chunks: Cell::new(vec![chunk]),
-            current: Cell::new(range.end as *mut _),
-            start: Cell::new(range.start as *mut _),
+            free: Cell::default(),
+            chunks: Cell::default(),
+            current: Cell::new(usize::MAX as _),
+            start: Cell::new(usize::MAX as _),
             chunk_size,
         }
     }
@@ -214,13 +212,10 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
         let mut chunks = self.chunks.take();
         let mut free = self.free.take();
 
-        free.extend(chunks.drain(1..));
+        free.append(&mut chunks);
 
-        // SAFETY: Chunks are never empty
-        let last = unsafe { chunks.last_mut().unwrap_unchecked() };
-        let range = last.range();
-        self.current.set(range.end as *mut _);
-        self.start.set(range.start as *mut _);
+        self.current.set(usize::MAX as _);
+        self.start.set(usize::MAX as _);
 
         self.chunks.set(chunks);
         self.free.set(free);

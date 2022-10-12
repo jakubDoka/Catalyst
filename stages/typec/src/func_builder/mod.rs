@@ -473,6 +473,8 @@ impl TyChecker<'_> {
                 Some(PatTir {
                     kind: PatKindTir::Unit(UnitPatKindTir::Binding(var)),
                     span: name.span,
+                    has_binding: true,
+                    is_refutable: false,
                     ty,
                 })
             }
@@ -514,6 +516,8 @@ impl TyChecker<'_> {
                             kind: PatKindTir::Unit(UnitPatKindTir::Wildcard),
                             span: double_dot,
                             ty: Ty::UNIT,
+                            has_binding: false,
+                            is_refutable: false,
                         })
                     });
                 }
@@ -523,6 +527,8 @@ impl TyChecker<'_> {
                 };
 
                 Some(PatTir {
+                    has_binding: tir_fields.iter().any(|f| f.has_binding),
+                    is_refutable: tir_fields.iter().any(|f| f.is_refutable),
                     kind: PatKindTir::Unit(UnitPatKindTir::Struct {
                         fields: builder.arena.alloc_iter(tir_fields),
                     }),
@@ -530,11 +536,24 @@ impl TyChecker<'_> {
                     ty,
                 })
             }
-            PatAst::Int(span) => Some(PatTir {
-                kind: PatKindTir::Unit(UnitPatKindTir::Int(span)),
-                span,
-                ty,
-            }),
+            PatAst::Int(span) => {
+                let start = NameAst {
+                    ident: Interner::EQUAL,
+                    span,
+                };
+                let op = PathExprAst {
+                    start,
+                    segments: &[],
+                };
+                let comparator = self.find_binary_func(op, ty, ty)?;
+                Some(PatTir {
+                    kind: PatKindTir::Unit(UnitPatKindTir::Int(span, comparator)),
+                    span,
+                    ty,
+                    has_binding: false,
+                    is_refutable: true,
+                })
+            }
         }
     }
 
@@ -1092,19 +1111,7 @@ impl TyChecker<'_> {
         let rhs = self.expr(rhs, None, builder);
         let (lhs, rhs) = (lhs?, rhs?); // recovery
 
-        let base_id = match *op.segments {
-            [] => op.start.ident,
-            [name] => {
-                let module = lookup!(Module self, name.ident, name.span);
-                self.interner.intern_scoped(module.index(), op.start.ident)
-            }
-            _ => self.invalid_op_expr_path(op.span())?,
-        };
-
-        let id = self
-            .interner
-            .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs.ty, rhs.ty, t, s));
-        let func = lookup!(Func self, id, op.span());
+        let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
 
         let ty = self.typec.funcs[func].signature.ret;
         let call = CallTir {
@@ -1117,6 +1124,22 @@ impl TyChecker<'_> {
             TirKind::Call(builder.arena.alloc(call)),
             binary_ast.span(),
         ))
+    }
+
+    fn find_binary_func(&mut self, op: PathExprAst, lhs_ty: Ty, rhs_ty: Ty) -> OptVRef<Func> {
+        let base_id = match *op.segments {
+            [] => op.start.ident,
+            [name] => {
+                let module = lookup!(Module self, name.ident, name.span);
+                self.interner.intern_scoped(module.index(), op.start.ident)
+            }
+            _ => self.invalid_op_expr_path(op.span())?,
+        };
+
+        let id = self
+            .interner
+            .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs_ty, rhs_ty, t, s));
+        Some(lookup!(Func self, id, op.span()))
     }
 
     fn args(&mut self, types: VSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
