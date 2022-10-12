@@ -5,27 +5,27 @@ info: mir repr of functions:
         var3 = 0
         var4 = 1
         var6 = var5.0
-        var7 = 0
-        var8 = uint == uint(val7, val7)
+        var7 = 1
+        var8 = uint == uint(val7, val6)
         var9 = var5.1
-        var10 = 1
-        var11 = uint == uint(val10, val10)
+        var10 = 0
+        var11 = uint == uint(val10, val9)
         var12 = bool & bool(val11, val8)
         split var12 block1 block2
     }
 
     block1() {
-        var2 = 0
+        var2 = 1
         goto block3 with var2
     }
 
     block2() {
         var13 = var5.0
-        var14 = 1
-        var15 = uint == uint(val14, val14)
+        var14 = 0
+        var15 = uint == uint(val14, val13)
         var16 = var5.1
-        var17 = 0
-        var18 = uint == uint(val17, val17)
+        var17 = 1
+        var18 = uint == uint(val17, val16)
         var19 = bool & bool(val18, val15)
         split var19 block4 block5
     }
@@ -35,14 +35,14 @@ info: mir repr of functions:
     }
 
     block4() {
-        var2 = 1
+        var2 = 0
         goto block3 with var2
     }
 
     block5() {
         var20 = var5.1
         var21 = 0
-        var22 = uint == uint(val21, val21)
+        var22 = uint == uint(val21, val20)
         split var22 block6 block7
     }
 
