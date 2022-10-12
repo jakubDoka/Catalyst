@@ -123,7 +123,7 @@ pub use {
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
         CallTir, CallableTir, FieldTir, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder,
-        TirFrame, TirKind, TirNode, TypecOutput, UnitKindPatTir, Var,
+        TirFrame, TirKind, TirNode, TypecOutput, UnitPatKindTir, Var,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Field, FieldFlags, Fields, GenericTy,

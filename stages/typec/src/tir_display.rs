@@ -136,11 +136,12 @@ impl TyChecker<'_> {
             TirKind::Match(&MatchTir { value, arms: cases }) => {
                 write!(buffer, "match ")?;
                 self.display_tir(value, buffer, indent, var_count)?;
-                buffer.push('{');
+                buffer.push_str("{\n");
                 let inner_ident = iter::repeat(' ').take((indent + 1) * 4);
                 for MatchArmTir { pat, body } in cases {
                     buffer.extend(inner_ident.clone());
-                    write!(buffer, "{:?} => ", pat)?;
+                    self.display_pat(*pat, buffer, indent + 1, var_count)?;
+                    write!(buffer, " => ")?;
                     self.display_tir(*body, buffer, indent + 1, var_count)?;
                     buffer.push('\n');
                 }
@@ -153,6 +154,59 @@ impl TyChecker<'_> {
             }
         }
 
+        Ok(())
+    }
+
+    fn display_pat(
+        &self,
+        pat: PatTir,
+        buffer: &mut String,
+        indent: usize,
+        var_count: &mut usize,
+    ) -> fmt::Result {
+        match pat.kind {
+            PatKindTir::Unit(uint) => self.display_unit_pat(uint, buffer, indent, var_count),
+            PatKindTir::Or(units) => {
+                write!(buffer, "(")?;
+                if let Some((&first, others)) = units.split_first() {
+                    self.display_unit_pat(first, buffer, indent, var_count)?;
+                    for &other in others {
+                        write!(buffer, " | ")?;
+                        self.display_unit_pat(other, buffer, indent, var_count)?;
+                    }
+                }
+                write!(buffer, ")")?;
+                Ok(())
+            }
+        }
+    }
+
+    fn display_unit_pat(
+        &self,
+        pat: UnitPatKindTir,
+        buffer: &mut String,
+        indent: usize,
+        var_count: &mut usize,
+    ) -> fmt::Result {
+        match pat {
+            UnitPatKindTir::Struct { fields } => {
+                buffer.push_str("\\{");
+                if let Some((&first, others)) = fields.split_first() {
+                    self.display_pat(first, buffer, indent, var_count)?;
+                    for &other in others {
+                        write!(buffer, ", ")?;
+                        self.display_pat(other, buffer, indent, var_count)?;
+                    }
+                }
+                buffer.push('}');
+            }
+            UnitPatKindTir::Binding(var) => {
+                write!(buffer, "var{}", var.index())?;
+                *var_count = var.index() + 1;
+            }
+            UnitPatKindTir::Int(span) => buffer.push_str(span_str!(self, span)),
+            UnitPatKindTir::Wildcard => buffer.push('_'),
+        }
         Ok(())
     }
 }

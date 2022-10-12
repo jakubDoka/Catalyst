@@ -401,14 +401,8 @@ impl TyChecker<'_> {
         let Ty::Struct(struct_id) = ty.base(self.typec) else {
             todo!()
         };
-        let Struct { fields, .. } = self.typec[struct_id];
 
-        let field = self.typec[fields]
-            .iter()
-            .enumerate()
-            .find_map(|(id, field)| (field.name == path.start.ident).then_some((id, field.ty)));
-
-        let Some((field, mut field_ty)) = field else {
+        let Some((field, .., mut field_ty)) = self.find_struct_field(struct_id, path.start.ident) else {
             todo!()
         };
 
@@ -418,6 +412,19 @@ impl TyChecker<'_> {
         }
 
         Some(DotPathResult::Field(field as u32, field_ty))
+    }
+
+    fn find_struct_field(
+        &self,
+        struct_id: VRef<Struct>,
+        field_name: VRef<str>,
+    ) -> Option<(usize, VRef<Field>, Ty)> {
+        let Struct { fields, .. } = self.typec[struct_id];
+        self.typec
+            .fields
+            .indexed(fields)
+            .enumerate()
+            .find_map(|(i, (id, field))| (field.name == field_name).then_some((i, id, field.ty)))
     }
 
     fn r#match<'a>(
@@ -431,8 +438,10 @@ impl TyChecker<'_> {
         let arms = body
             .iter()
             .map(|&MatchArmAst { pattern, body, .. }| {
+                let frame = self.scope.start_frame();
                 let pat = self.pattern(pattern, value.ty, builder)?;
                 let body = self.expr(body, inference, builder)?;
+                self.scope.end_frame(frame);
                 Some(MatchArmTir { pat, body })
             })
             .collect::<Option<BumpVec<_>>>()?;
@@ -457,7 +466,76 @@ impl TyChecker<'_> {
         ty: Ty,
         builder: &mut TirBuilder<'a>,
     ) -> Option<PatTir<'a>> {
-        todo!()
+        match pattern {
+            PatAst::Binding(name) => {
+                let var = builder.create_var(ty, name.span);
+                self.scope.push(name.ident, var, name.span);
+                Some(PatTir {
+                    kind: PatKindTir::Unit(UnitPatKindTir::Binding(var)),
+                    span: name.span,
+                    ty,
+                })
+            }
+            PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
+                let Ty::Struct(struct_ty) = ty.caller(self.typec) else {
+                    todo!()
+                };
+                let mut tir_fields = bumpvec![None; fields.len()];
+                let mut double_dot = None;
+                for &field in fields.iter() {
+                    match field {
+                        StructCtorPatFieldAst::Simple { name } => {
+                            let Some((field_id, .., field_ty)) = self.find_struct_field(struct_ty, name.ident) else {
+                                todo!()
+                            };
+
+                            let field = self.pattern(PatAst::Binding(name), field_ty, builder)?;
+                            tir_fields[field_id] = Some(field);
+                        }
+                        StructCtorPatFieldAst::Named { name, pat, .. } => {
+                            let Some((field_id, .., field_ty)) = self.find_struct_field(struct_ty, name.ident) else {
+                                todo!()
+                            };
+
+                            let field = self.pattern(pat, field_ty, builder)?;
+                            tir_fields[field_id] = Some(field);
+                        }
+                        StructCtorPatFieldAst::DoubleDot(span) => {
+                            if double_dot.replace(span).is_some() {
+                                todo!()
+                            }
+                        }
+                    }
+                }
+
+                if let Some(double_dot) = double_dot {
+                    tir_fields.iter_mut().filter(|f| f.is_none()).for_each(|f| {
+                        *f = Some(PatTir {
+                            kind: PatKindTir::Unit(UnitPatKindTir::Wildcard),
+                            span: double_dot,
+                            ty: Ty::UNIT,
+                        })
+                    });
+                }
+
+                let Some(tir_fields) = tir_fields.into_iter().collect::<Option<BumpVec<_>>>() else {
+                    todo!()
+                };
+
+                Some(PatTir {
+                    kind: PatKindTir::Unit(UnitPatKindTir::Struct {
+                        fields: builder.arena.alloc_iter(tir_fields),
+                    }),
+                    span: fields.span(),
+                    ty,
+                })
+            }
+            PatAst::Int(span) => Some(PatTir {
+                kind: PatKindTir::Unit(UnitPatKindTir::Int(span)),
+                span,
+                ty,
+            }),
+        }
     }
 
     fn struct_constructor<'a>(

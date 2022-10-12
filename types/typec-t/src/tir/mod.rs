@@ -100,15 +100,16 @@ pub struct PatTir<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum PatKindTir<'a> {
-    Unit(&'a UnitKindPatTir<'a>),
-    Or(&'a [UnitKindPatTir<'a>]),
+    Unit(UnitPatKindTir<'a>),
+    Or(&'a [UnitPatKindTir<'a>]),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum UnitKindPatTir<'a> {
+pub enum UnitPatKindTir<'a> {
     Struct { fields: &'a [PatTir<'a>] },
-    Binding,
-    Int,
+    Binding(VRef<Var>),
+    Int(Span),
+    Wildcard,
 }
 
 #[derive(Clone, Copy, Debug)]

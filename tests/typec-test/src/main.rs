@@ -212,11 +212,26 @@ fn main() {
 
             fn main() -> uint => uint::new() + take(0);
         }
+
         simple "compile-time" {
             fn sub(a: uint, b: uint) -> uint => a - b;
 
             #[entry];
             fn main -> uint => const sub(1, 1);
+        }
+
+        simple "match" {
+            struct Matched {
+                a: uint;
+                b: uint
+            };
+
+            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+                ::{ a: 0; b: 1 } => 0;
+                ::{ a: 1; b: 0 } => 1;
+                ::{ a; b: 0 } => a;
+                ::{ a; b } => a + b;
+            };
         }
     }
 }
