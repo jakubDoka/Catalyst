@@ -61,9 +61,11 @@ impl Generator<'_> {
 
         for &arg in &builder.body.value_args[args] {
             let layout = self.ty_layout(builder.body.value_ty(arg), builder.ptr_ty());
-            self.gen_resources.values[arg] =
-                ComputedValue::Value(builder.append_block_param(ir_block, layout.repr)).into();
-            self.gen_resources.must_load[arg] = layout.on_stack;
+            if self.gen_resources.values[arg].is_none() {
+                self.gen_resources.values[arg] =
+                    ComputedValue::Value(builder.append_block_param(ir_block, layout.repr)).into();
+                self.gen_resources.must_load[arg] = layout.on_stack;
+            }
         }
 
         for &inst in &builder.body.insts[insts] {
@@ -395,13 +397,14 @@ impl Generator<'_> {
             }
             ControlFlowMir::Goto(b, val) => {
                 let b = self.instantiate_block(b, builder);
-                let val = val.map(|val| {
-                    let value = self.load_value(val, builder);
-                    self.gen_resources.values[val].take();
-                    self.gen_resources.offsets[val] = 0;
-                    self.gen_resources.must_load[val] = false;
-                    value
-                });
+                let val = val
+                    .filter(|&val| !self.gen_resources.must_load[val])
+                    .map(|val| {
+                        let value = self.load_value(val, builder);
+                        self.gen_resources.values[val].take();
+                        self.gen_resources.offsets[val] = 0;
+                        value
+                    });
                 builder
                     .ins()
                     .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default());
@@ -442,7 +445,9 @@ impl Generator<'_> {
         };
 
         match must_load && !layout.on_stack {
-            true => builder.ins().load(layout.repr, MemFlags::new(), value, 0),
+            true => builder
+                .ins()
+                .load(layout.repr, MemFlags::new(), value, offset),
             false => value,
         }
     }

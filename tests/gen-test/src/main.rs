@@ -673,5 +673,18 @@ fn main() {
                 ::{ a; b } => a + b;
             };
         }
+
+        simple "match-with-struct-return" {
+            struct Returned {
+                a: uint;
+                b: uint
+            };
+
+            #[entry];
+            fn main() -> uint => match 0 {
+                0 => Returned::{ a: 0; b: 1 };
+                a => Returned::{ a: a; b: 0 };
+            }.a;
+        }
     }
 }

@@ -92,6 +92,7 @@ fn main() {
             #[entry];
             fn main -> uint => const sub(1, 1);
         }
+
         simple "match" {
             struct Matched {
                 a: uint;
@@ -104,6 +105,19 @@ fn main() {
                 ::{ a; b: 0 } => a;
                 ::{ a; b } => a + b;
             };
+        }
+
+        simple "match-with-struct-return" {
+            struct Returned {
+                a: uint;
+                b: uint
+            };
+
+            #[entry];
+            fn main() -> uint => match 0 {
+                0 => Returned::{ a: 0; b: 1 };
+                a => Returned::{ a: a; b: 0 };
+            }.a;
         }
     }
 }
