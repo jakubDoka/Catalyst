@@ -53,8 +53,13 @@ impl<'a> MirBuilder<'a> {
     fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
         match control_flow {
             ControlFlowMir::Terminal | ControlFlowMir::Return(..) => {}
-            ControlFlowMir::Split(_, _, _) => todo!(),
-            ControlFlowMir::Goto(_, _) => todo!(),
+            ControlFlowMir::Split(.., a, b) => {
+                self.ctx.func.blocks[a].ref_count += 1;
+                self.ctx.func.blocks[b].ref_count += 1;
+            }
+            ControlFlowMir::Goto(a, ..) => {
+                self.ctx.func.blocks[a].ref_count += 1;
+            }
         }
     }
 

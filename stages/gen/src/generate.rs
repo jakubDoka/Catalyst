@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -34,30 +34,29 @@ impl Generator<'_> {
             ptr_ty,
         );
 
-        self.block(root, builder);
+        self.gen_resources
+            .block_stack
+            .push((root, builder.create_block()));
+        while let Some((block, ir_block)) = self.gen_resources.block_stack.pop() {
+            self.block(block, ir_block, builder);
+        }
 
         builder.finalize();
     }
 
-    fn block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
+    fn block(
+        &mut self,
+        block: VRef<BlockMir>,
+        ir_block: ir::Block,
+        builder: &mut GenBuilder,
+    ) -> ir::Block {
         let BlockMir {
             args,
             insts,
             control_flow,
-            ref_count,
+            ..
         } = builder.body.blocks[block];
 
-        if let Some(block) = self.gen_resources.blocks[block].as_mut() {
-            block.visit_count += 1;
-
-            if block.visit_count == ref_count {
-                builder.seal_block(block.id);
-            }
-
-            return block.id;
-        }
-
-        let ir_block = builder.create_block();
         builder.switch_to_block(ir_block);
 
         for &arg in &builder.body.value_args[args] {
@@ -73,16 +72,7 @@ impl Generator<'_> {
 
         self.control_flow(control_flow, builder);
 
-        let visit_count = 0;
-        if ref_count == visit_count {
-            builder.seal_block(ir_block);
-        }
-
-        self.gen_resources.blocks[block] = GenBlock {
-            id: ir_block,
-            visit_count,
-        }
-        .into();
+        builder.seal_block(ir_block);
 
         ir_block
     }
@@ -358,6 +348,12 @@ impl Generator<'_> {
             (ints) => {
                 ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64
             };
+            (binary) => {
+                helper!(ints) | ir::types::B1
+            };
+            (scalars) => {
+                helper!(binary)
+            };
         }
 
         let value = match *args.as_slice() {
@@ -367,6 +363,8 @@ impl Generator<'_> {
                 (helper!(ints), "*") => builder.ins().imul(a, b),
                 (helper!(ints), "/") if signed => builder.ins().sdiv(a, b),
                 (helper!(ints), "/") => builder.ins().udiv(a, b),
+                (helper!(scalars), "==") => builder.ins().icmp(IntCC::Equal, a, b),
+                (helper!(binary), "&") => builder.ins().band(a, b),
                 val => unimplemented!("{:?}", val),
             },
             _ => unimplemented!(),
@@ -388,7 +386,42 @@ impl Generator<'_> {
             ControlFlowMir::Terminal => {
                 builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
             }
+            ControlFlowMir::Split(cond, a, b) => {
+                let a = self.instantiate_block(a, builder);
+                let b = self.instantiate_block(b, builder);
+                let cond = self.load_value(cond, builder);
+                builder.ins().brnz(cond, a, &[]);
+                builder.ins().jump(b, &[]);
+            }
+            ControlFlowMir::Goto(b, val) => {
+                let b = self.instantiate_block(b, builder);
+                let val = val.map(|val| {
+                    let value = self.load_value(val, builder);
+                    self.gen_resources.values[val].take();
+                    self.gen_resources.offsets[val] = 0;
+                    self.gen_resources.must_load[val] = false;
+                    value
+                });
+                builder
+                    .ins()
+                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default());
+            }
         }
+    }
+
+    fn instantiate_block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
+        let gen_block = self.gen_resources.blocks[block].get_or_insert_with(|| GenBlock {
+            id: builder.create_block(),
+            visit_count: builder.body.blocks[block].ref_count,
+        });
+
+        if gen_block.visit_count != 1 {
+            gen_block.visit_count -= 1;
+        } else {
+            self.gen_resources.block_stack.push((block, gen_block.id));
+        }
+
+        gen_block.id
     }
 
     fn load_value(&mut self, target: VRef<ValueMir>, builder: &mut GenBuilder) -> ir::Value {
@@ -400,19 +433,17 @@ impl Generator<'_> {
         {
             ComputedValue::Value(value) => value,
             ComputedValue::StackSlot(ss) => {
-                if layout.on_stack {
-                    builder.ins().stack_addr(ptr_ty, ss, offset)
-                } else {
-                    builder.ins().stack_load(layout.repr, ss, offset)
-                }
+                return match layout.on_stack {
+                    true => builder.ins().stack_addr(ptr_ty, ss, offset),
+                    false => builder.ins().stack_load(layout.repr, ss, offset),
+                };
             }
             ComputedValue::Variable(var) => builder.use_var(var),
         };
 
-        if must_load && !layout.on_stack {
-            builder.ins().load(layout.repr, MemFlags::new(), value, 0)
-        } else {
-            value
+        match must_load && !layout.on_stack {
+            true => builder.ins().load(layout.repr, MemFlags::new(), value, 0),
+            false => value,
         }
     }
 
@@ -481,21 +512,23 @@ impl Generator<'_> {
         }
 
         let source = if must_load_source {
+            let repr = match layout.repr == types::B1 {
+                true => types::I8,
+                false => layout.repr,
+            };
             match source_value {
                 ComputedValue::Value(val) => {
                     builder
                         .ins()
-                        .load(layout.repr, MemFlags::new(), val, source_offset)
+                        .load(repr, MemFlags::new(), val, source_offset)
                 }
                 ComputedValue::Variable(var) => {
                     let val = builder.use_var(var);
                     builder
                         .ins()
-                        .load(layout.repr, MemFlags::new(), val, source_offset)
+                        .load(repr, MemFlags::new(), val, source_offset)
                 }
-                ComputedValue::StackSlot(ss) => {
-                    builder.ins().stack_load(layout.repr, ss, source_offset)
-                }
+                ComputedValue::StackSlot(ss) => builder.ins().stack_load(repr, ss, source_offset),
             }
         } else {
             let value = match source_value {
@@ -517,11 +550,11 @@ impl Generator<'_> {
         };
 
         let must_load_target = match self.gen_resources.values[target].is_none() {
-            true => builder.body.is_referenced(target),
+            true => builder.body.is_referenced(target) || layout.on_stack,
             false => self.gen_resources.must_load[target],
         };
 
-        let source = match layout.repr == types::B1 && !must_load_target {
+        let source = match layout.repr == types::B1 && !must_load_target && must_load_source {
             true => builder.ins().icmp_imm(IntCC::NotEqual, source, 0),
             false => source,
         };

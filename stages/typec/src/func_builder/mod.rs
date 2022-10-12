@@ -439,9 +439,11 @@ impl TyChecker<'_> {
             .iter()
             .map(|&MatchArmAst { pattern, body, .. }| {
                 let frame = self.scope.start_frame();
+                let var_frame = builder.start_frame();
                 let pat = self.pattern(pattern, value.ty, builder)?;
                 let body = self.expr(body, inference, builder)?;
                 self.scope.end_frame(frame);
+                builder.end_frame(var_frame);
                 Some(MatchArmTir { pat, body })
             })
             .collect::<Option<BumpVec<_>>>()?;

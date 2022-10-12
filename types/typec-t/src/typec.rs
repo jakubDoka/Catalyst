@@ -31,6 +31,7 @@ pub struct Typec {
     pub spec_funcs: SpecFuncs,
     pub builtin_funcs: Vec<VRef<Func>>,
     pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
+    pub band: OptVRef<Func>,
 }
 
 macro_rules! gen_index {
@@ -97,6 +98,16 @@ gen_index! {
 }
 
 impl Typec {
+    pub fn get_band(&mut self) -> VRef<Func> {
+        *self.band.get_or_insert_with(|| {
+            let id = Interner::BAND;
+            self.funcs
+                .iter()
+                .find_map(|(k, v)| (v.name == id).then_some(k))
+                .expect("gen_band called before init")
+        })
+    }
+
     pub fn display_sig(
         &self,
         func: VRef<Func>,
@@ -273,29 +284,45 @@ impl Typec {
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
         self.funcs.push(Default::default());
 
-        let int_bin_ops = "+ - / *".split_whitespace();
+        let mut create_bin_op = |op, a, b, r| {
+            let op = interner.intern(op);
+            let id = interner.intern_with(|s, t| self.binary_op_id(op, a, b, t, s));
 
-        for op in int_bin_ops {
-            for ty in Ty::INTEGERS {
-                let op = interner.intern(op);
-                let id = interner.intern_with(|s, t| self.binary_op_id(op, ty, ty, t, s));
+            let signature = Signature {
+                cc: default(),
+                args: self.args.bump([a, b]),
+                ret: r,
+            };
 
-                let signature = Signature {
-                    cc: default(),
-                    args: self.args.bump([ty, ty]),
-                    ret: ty,
-                };
+            let func = self.funcs.push(Func {
+                signature,
+                flags: FuncFlags::BUILTIN,
+                name: id,
+                ..default()
+            });
 
-                let func = self.funcs.push(Func {
-                    signature,
-                    flags: FuncFlags::BUILTIN,
-                    name: id,
-                    ..default()
-                });
+            self.builtin_funcs.push(func);
+        };
 
-                self.builtin_funcs.push(func);
+        fn op_to_ty(
+            op: &'static str,
+            ty: impl IntoIterator<Item = Ty> + Clone,
+            mut mapper: impl FnMut(&'static str, Ty),
+        ) {
+            for op in op.split_whitespace() {
+                for ty in ty.clone() {
+                    mapper(op, ty);
+                }
             }
         }
+
+        op_to_ty("+ - / *", Ty::INTEGERS, |op, ty| {
+            create_bin_op(op, ty, ty, ty)
+        });
+        op_to_ty("== != < > <= >=", Ty::SCALARS, |op, ty| {
+            create_bin_op(op, ty, ty, Ty::BOOL)
+        });
+        op_to_ty("| & ^", Ty::BINARY, |op, ty| create_bin_op(op, ty, ty, ty));
     }
 
     pub fn pack_func_param_specs(

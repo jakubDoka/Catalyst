@@ -6,6 +6,7 @@
         "binemit",
         "bitand",
         "bitflags",
+        "brnz",
         "bruh",
         "bumpvec",
         "bytecode",

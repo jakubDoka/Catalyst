@@ -269,6 +269,8 @@ gen_builtin!(
     }
 
     groups {
+        SCALARS => [UINT U32 CHAR BOOL],
+        BINARY => [UINT U32 BOOL],
         INTEGERS => [UINT U32],
     }
 );

@@ -111,11 +111,11 @@ impl TestState {
     }
 
     fn compile_func(&mut self, current_func: VRef<CompiledFunc>, later_init: &mut LaterInit) {
-        println!("{}", later_init.context.func.display());
-        later_init
-            .context
-            .compile(&*later_init.object_context.isa)
-            .unwrap();
+        if let Err(err) = later_init.context.compile(&*later_init.object_context.isa) {
+            println!("Failed to compile: {:?}", err);
+            println!("{}", later_init.context.func.display());
+            panic!();
+        }
 
         self.gen
             .save_compiled_code(current_func, &later_init.context)
@@ -657,6 +657,21 @@ fn main() {
                 RegStruct2::{ field: 0; field2: 1 };
                 RegStruct::{ field: 0 }.field
             }
+        }
+
+        simple "match" {
+            struct Matched {
+                a: uint;
+                b: uint
+            };
+
+            #[entry];
+            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+                ::{ a: 1; b: 0 } => 1;
+                ::{ a: 0; b: 1 } => 0;
+                ::{ a; b: 0 } => a;
+                ::{ a; b } => a + b;
+            };
         }
     }
 }

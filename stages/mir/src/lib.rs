@@ -3,6 +3,7 @@
 #![feature(iter_intersperse)]
 #![feature(slice_group_by)]
 #![feature(if_let_guard)]
+#![feature(default_free_fn)]
 
 mod builder;
 mod display;

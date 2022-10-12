@@ -148,6 +148,7 @@ pub struct GenResources {
     pub must_load: ShadowMap<ValueMir, bool>,
     pub func_imports: Map<VRef<str>, (ir::FuncRef, bool)>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
+    pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
 }
 
 impl GenResources {
@@ -211,7 +212,7 @@ pub struct GenLayouts {
 
 pub type Offset = u32;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Layout {
     pub size: u32,
     pub offsets: VSlice<Offset>,

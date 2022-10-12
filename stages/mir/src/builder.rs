@@ -1,3 +1,5 @@
+use std::default::default;
+
 use lexing_t::Span;
 use mir_t::*;
 use packaging_t::span_str;
@@ -186,17 +188,53 @@ impl MirChecker<'_> {
 
         match kind {
             PatKindTir::Unit(unit) => match unit {
-                UnitPatKindTir::Struct { fields } => todo!(),
-                UnitPatKindTir::Int(int, cmp) => {
-                    let value = builder.value(ty, self.typec);
-                    let lit = self.int(int, value, builder);
+                UnitPatKindTir::Struct { fields } => {
+                    let fields = fields
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, field)| field.is_refutable);
+
+                    let mut ret_value = None;
+                    let band = self.typec.get_band();
+                    for (i, &field) in fields {
+                        let dest = builder.value(field.ty, self.typec);
+                        builder.inst(InstMir::Field(value, i as u32, dest), field.span);
+                        let Some(val) = self.pattern_to_cond(field, dest, builder) else {
+                            continue;
+                        };
+                        ret_value = match ret_value {
+                            Some(other) => {
+                                let call = CallMir {
+                                    callable: CallableMir::Func(band),
+                                    params: default(),
+                                    args: builder.ctx.func.value_args.bump([val, other]),
+                                };
+                                let ret = builder.value(Ty::BOOL, self.typec);
+                                builder.inst(InstMir::Call(call, Some(ret)), field.span);
+                                Some(ret)
+                            }
+                            None => Some(val),
+                        }
+                    }
+
+                    ret_value
                 }
-                UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => unreachable!(),
+                UnitPatKindTir::Int(int, cmp) => {
+                    let val = builder.value(ty, self.typec);
+                    let lit = self.int(int, val, builder)?;
+                    let call = CallMir {
+                        callable: CallableMir::Func(cmp),
+                        params: default(),
+                        args: builder.ctx.func.value_args.bump([lit, value]),
+                    };
+                    let cond = builder.value(Ty::BOOL, self.typec);
+                    builder.inst(InstMir::Call(call, Some(cond)), int);
+                    Some(cond)
+                }
+                UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => None,
             },
             PatKindTir::Or(..) => todo!(),
         }
-
-        todo!()
     }
 
     fn pattern_to_branch<'a>(

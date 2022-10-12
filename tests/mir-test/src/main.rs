@@ -99,8 +99,8 @@ fn main() {
             };
 
             fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 0; b: 1 } => 0;
                 ::{ a: 1; b: 0 } => 1;
+                ::{ a: 0; b: 1 } => 0;
                 ::{ a; b: 0 } => a;
                 ::{ a; b } => a + b;
             };

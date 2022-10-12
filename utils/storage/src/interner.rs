@@ -28,6 +28,7 @@ gen_span_constants! {
     EMPTY => "",
     SELF => "Self",
     EQUAL => "==",
+    BAND => "bool & bool",
 }
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),
