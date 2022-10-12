@@ -91,14 +91,16 @@ impl MirChecker<'_> {
         builder.ctx.pattern_solver_arena = Some(arena);
 
         let arms = arms
-        .iter()
+            .iter()
             .zip(reachable)
             .filter_map(|(&arm, reachable)| reachable.then_some(arm))
             .collect::<BumpVec<_>>();
         let (&last, rest) = arms.split_last()?;
         let mut dest_block = None;
         for &arm in rest {
-            let cond = self.pattern_to_cond(arm.pat, value, builder).expect("only last pattern can be non refutable");
+            let cond = self
+                .pattern_to_cond(arm.pat, value, builder)
+                .expect("only last pattern can be non refutable");
             let block = builder.ctx.create_block();
             let next_block = builder.ctx.create_block();
             builder.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
@@ -137,7 +139,9 @@ impl MirChecker<'_> {
 
     fn bind_pattern_vars(
         &mut self,
-        PatTir { kind, has_binding, .. }: PatTir,
+        PatTir {
+            kind, has_binding, ..
+        }: PatTir,
         value: VRef<ValueMir>,
         builder: &mut MirBuilder,
     ) {
@@ -148,15 +152,18 @@ impl MirChecker<'_> {
         match kind {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {
-                    for (i, &field) in fields.iter().enumerate().filter(|(_, field)| field.has_binding) {
+                    for (i, &field) in fields
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, field)| field.has_binding)
+                    {
                         let dest = builder.value(field.ty, self.typec);
                         builder.inst(InstMir::Field(value, i as u32, dest), field.span);
                         self.bind_pattern_vars(field, dest, builder);
                     }
-                },
+                }
                 UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
-                UnitPatKindTir::Int(..)
-                | UnitPatKindTir::Wildcard => unreachable!(),
+                UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
             },
             PatKindTir::Or(_) => todo!(),
         }
@@ -164,7 +171,12 @@ impl MirChecker<'_> {
 
     fn pattern_to_cond(
         &mut self,
-        PatTir { kind, ty, is_refutable, .. }: PatTir,
+        PatTir {
+            kind,
+            ty,
+            is_refutable,
+            ..
+        }: PatTir,
         value: VRef<ValueMir>,
         builder: &mut MirBuilder,
     ) -> OptVRef<ValueMir> {
@@ -178,10 +190,8 @@ impl MirChecker<'_> {
                 UnitPatKindTir::Int(int, cmp) => {
                     let value = builder.value(ty, self.typec);
                     let lit = self.int(int, value, builder);
-                    let res = 
-                },
-                UnitPatKindTir::Binding(..)
-                | UnitPatKindTir::Wildcard => unreachable!(),
+                }
+                UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => unreachable!(),
             },
             PatKindTir::Or(..) => todo!(),
         }
