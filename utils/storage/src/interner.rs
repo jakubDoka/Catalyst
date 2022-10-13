@@ -1,6 +1,6 @@
 use std::{
     fmt::{Display, Write},
-    hash::{BuildHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     ops::Index,
 };
 
@@ -231,72 +231,11 @@ impl InternerEntry {
     }
 }
 
-#[derive(Default)]
-struct InternerBuildHasher;
-
-impl BuildHasher for InternerBuildHasher {
-    type Hasher = InternerHasher;
-
-    fn build_hasher(&self) -> InternerHasher {
-        InternerHasher { value: 0 }
-    }
-}
-
-struct InternerHasher {
-    value: u64,
-}
-
-impl Hasher for InternerHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        // sdbm hash
-        self.value = bytes.iter().fold(self.value, |acc, &b| {
-            acc.wrapping_add(acc << 16)
-                .wrapping_add(acc << 8)
-                .wrapping_sub(b as u64)
-        });
-    }
-
-    fn finish(&self) -> u64 {
-        self.value
-    }
-}
-
 impl VRefDefault for str {
     fn default_state() -> VRef<Self> {
         Interner::EMPTY
     }
 }
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-// pub struct Ident(u32);
-
-// impl Ident {
-//     pub const EMPTY: Self = Self(1);
-
-//     pub unsafe fn new(index: usize) -> Self {
-//         Ident(index as u32)
-//     }
-
-//     pub const fn index(self) -> usize {
-//         self.0 as usize
-//     }
-// }
-
-// impl Default for Ident {
-//     fn default() -> Self {
-//         Self::EMPTY
-//     }
-// }
-
-// impl Invalid for Ident {
-//     unsafe fn invalid() -> Self {
-//         Self(0)
-//     }
-
-//     fn is_invalid(&self) -> bool {
-//         self.0 == 0
-//     }
-// }
 
 #[cfg(test)]
 mod test {
