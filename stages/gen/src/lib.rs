@@ -12,8 +12,8 @@ pub use {
     crate::object_context::{ObjectContext, ObjectCreationError},
     context::{
         CodeSaveError, CompileRequest, CompileRequests, CompiledFunc, Gen, GenBlock, GenBuilder,
-        GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, Isa, IsaCreationError,
-        Layout, Offset,
+        GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, GenValue, Isa,
+        IsaCreationError, Layout, Offset,
     },
     jit_context::{JitContext, JitRelocError},
     state_gen::Generator,

@@ -143,9 +143,7 @@ pub struct CompileRequest {
 #[derive(Default)]
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
-    pub values: ShadowMap<ValueMir, Option<ComputedValue>>,
-    pub offsets: ShadowMap<ValueMir, i32>,
-    pub must_load: ShadowMap<ValueMir, bool>,
+    pub values: ShadowMap<ValueMir, GenValue>,
     pub func_imports: Map<VRef<str>, (ir::FuncRef, bool)>,
     pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
     pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
@@ -164,7 +162,14 @@ impl GenResources {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct GenValue {
+    pub computed: Option<ComputedValue>,
+    pub offset: i32,
+    pub must_load: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum ComputedValue {
     Value(ir::Value),
     StackSlot(ir::StackSlot),
