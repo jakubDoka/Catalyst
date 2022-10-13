@@ -394,16 +394,16 @@ impl TyChecker<'_> {
         PathInstanceAst { path, params }: PathInstanceAst,
         _builder: &mut TirBuilder<'a>,
     ) -> Option<DotPathResult> {
-        if params.is_some() {
-            todo!()
+        if let Some((.., params)) = params {
+            self.unexpected_params(params.span())?;
         }
 
         let Ty::Struct(struct_id) = ty.base(self.typec) else {
-            todo!()
+            self.non_struct_field_access(ty, path.span())?;
         };
 
         let Some((field, .., mut field_ty)) = self.find_struct_field(struct_id, path.start.ident) else {
-            todo!()
+            self.field_not_found(struct_id, path.start)?;
         };
 
         if let Ty::Instance(instance) = ty {
@@ -482,7 +482,7 @@ impl TyChecker<'_> {
             }
             PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
                 let Ty::Struct(struct_ty) = ty.caller(self.typec) else {
-                    todo!()
+                    self.expected_struct(ty, pattern.span())?;
                 };
                 let mut tir_fields = bumpvec![None; fields.len()];
                 let mut double_dot = None;
@@ -490,7 +490,7 @@ impl TyChecker<'_> {
                     match field {
                         StructCtorPatFieldAst::Simple { name } => {
                             let Some((field_id, .., field_ty)) = self.find_struct_field(struct_ty, name.ident) else {
-                                todo!()
+                                self.field_not_found(struct_ty, name)?;
                             };
 
                             let field = self.pattern(PatAst::Binding(name), field_ty, builder)?;
@@ -498,15 +498,15 @@ impl TyChecker<'_> {
                         }
                         StructCtorPatFieldAst::Named { name, pat, .. } => {
                             let Some((field_id, .., field_ty)) = self.find_struct_field(struct_ty, name.ident) else {
-                                todo!()
+                                self.field_not_found(struct_ty, name)?;
                             };
 
                             let field = self.pattern(pat, field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
                         StructCtorPatFieldAst::DoubleDot(span) => {
-                            if double_dot.replace(span).is_some() {
-                                todo!()
+                            if let Some(prev) = double_dot.replace(span) {
+                                self.duplicate_double_dot(span, prev)?;
                             }
                         }
                     }
@@ -524,8 +524,14 @@ impl TyChecker<'_> {
                     });
                 }
 
-                let Some(tir_fields) = tir_fields.into_iter().collect::<Option<BumpVec<_>>>() else {
-                    todo!()
+                let Some(tir_fields) = tir_fields.iter().copied().collect::<Option<BumpVec<_>>>() else {
+                    let missing_fields = tir_fields
+                        .iter()
+                        .zip(&self.typec[self.typec[struct_ty].fields])
+                        .filter_map(|(opt, f)| opt.is_none().then_some(f.name))
+                        .collect::<BumpVec<_>>();
+
+                    self.missing_pat_ctor_fields(missing_fields, pattern.span())?;
                 };
 
                 Some(PatTir {
@@ -569,8 +575,8 @@ impl TyChecker<'_> {
             let ty = self.ty_path(path)?;
             (
                 match ty {
-                    TyPathResult::Ty(ty) => ty.as_generic().or_else(|| todo!())?,
-                    _ => todo!(),
+                    TyPathResult::Ty(ty) => ty.as_generic(),
+                    _ => None,
                 },
                 params.and_then(|(_, params)| {
                     params
@@ -583,16 +589,18 @@ impl TyChecker<'_> {
             let ty = inference.or_else(|| self.cannot_infer(ctor.span())?)?;
             match ty {
                 Ty::Instance(instance) => (
-                    self.typec[instance].base,
+                    Some(self.typec[instance].base),
                     Some(self.typec[self.typec[instance].args].to_bumpvec()),
                 ),
-                _ => (ty.as_generic().or_else(|| todo!())?, None),
+                _ => (ty.as_generic(), None),
             }
         };
 
-        let struct_meta = match ty {
-            GenericTy::Struct(struct_meta) => self.typec[struct_meta],
+        let struct_id = match ty {
+            Some(GenericTy::Struct(struct_meta)) => struct_meta,
+            None => self.expected_struct_path(path.map_or(ctor.span(), |p| p.span()))?,
         };
+        let struct_meta = self.typec[struct_id];
 
         let mut param_slots = bumpvec![None; self.typec[struct_meta.generics].len()];
 
@@ -617,12 +625,26 @@ impl TyChecker<'_> {
                 .copied()
                 .enumerate()
                 .find(|(.., field)| field.name == name.ident)
-                .or_else(|| self.unknown_field(ty.as_ty(), struct_meta.fields, ctor.span())?)?;
+                .or_else(|| {
+                    self.unknown_field(Ty::Struct(struct_id), struct_meta.fields, ctor.span())?
+                })?;
 
             let inference = self
                 .typec
                 .try_instantiate(field.ty, &param_slots, self.interner);
-            let Some(value) = self.expr(expr.unwrap_or_else(|| todo!()), inference, builder) else {
+            let expr = if let Some(expr) = expr {
+                self.expr(expr, inference, builder)
+            } else {
+                self.value_path(
+                    PathExprAst {
+                        start: name,
+                        segments: &[],
+                    },
+                    inference,
+                    builder,
+                )
+            };
+            let Some(value) = expr else {
                 continue;
             };
 
@@ -633,8 +655,14 @@ impl TyChecker<'_> {
             }
         }
 
-        let Some(params) = param_slots.into_iter().collect::<Option<BumpVec<_>>>() else {
-            todo!()
+        let Some(params) = param_slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
+            let missing_params = param_slots
+                .iter()
+                .copied()
+                .enumerate()
+                .filter_map(|(i, param)| param.is_none().then_some(i))
+                .collect::<BumpVec<_>>();
+            self.missing_constructor_params(ctor.span(), missing_params)?;
         };
 
         let Some(fields) = fields.iter().copied().collect::<Option<BumpVec<_>>>() else {
@@ -648,9 +676,12 @@ impl TyChecker<'_> {
         };
 
         let final_ty = if params.is_empty() {
-            ty.as_ty()
+            Ty::Struct(struct_id)
         } else {
-            Ty::Instance(self.typec.instance(ty, &params, self.interner))
+            Ty::Instance(
+                self.typec
+                    .instance(GenericTy::Struct(struct_id), &params, self.interner),
+            )
         };
 
         Some(TirNode::new(
@@ -1388,6 +1419,90 @@ impl TyChecker<'_> {
             info: "all fields must be initialized";
             (span, self.source) {
                 err[span]: "this constructor does not initialize all required fields";
+            }
+        }
+
+        push missing_constructor_params(self, span: Span, missing: BumpVec<usize>) {
+            err: "cannot infer all type parameters of constructor";
+            info: (
+                "parameters that are missing: {}",
+                missing
+                    .iter()
+                    .map(|&i| format!("parameters[{}]", i))
+                    .intersperse(", ".into())
+                    .collect::<String>(),
+            );
+            help: "syntax for specifying params: `T\\[T1, T2]\\{..}`";
+            (span, self.source) {
+                err[span]: "unable to infer all type parameters of this";
+            }
+        }
+
+        push unexpected_params(self, span: Span) {
+            err: "unexpected type parameters";
+            help: "parameters are only allowed on constructors and function calls";
+            (span, self.source) {
+                err[span]: "this is not valid";
+            }
+        }
+
+        push non_struct_field_access(self, ty: Ty, span: Span) {
+            err: "cannot access field of non-struct type";
+            info: ("found '{}'", self.typec.display_ty(ty, self.interner));
+            (span, self.source) {
+                err[span]: "when type checking this";
+            }
+        }
+
+        push field_not_found(self, ty: VRef<Struct>, name: NameAst) {
+            err: (
+                "field '{}' not found on '{}'",
+                &self.interner[name.ident],
+                self.typec.display_ty(Ty::Struct(ty), self.interner),
+            );
+            help: (
+                "available fields: {}",
+                self.typec[self.typec[ty].fields]
+                    .iter()
+                    .map(|f| &self.interner[f.name])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            (name.span, self.source) {
+                err[name.span]: "this field does not exist";
+            }
+        }
+
+        push duplicate_double_dot(self, span: Span, prev: Span) {
+            err: "duplicate '..'";
+            (span, self.source) {
+                err[span]: "this is a duplicate";
+            }
+            (prev, self.source) {
+                err[prev]: "previous '..' already here";
+            }
+        }
+
+        push missing_pat_ctor_fields(self, fields: BumpVec<VRef<str>>, span: Span) {
+            err: "missing fields in pattern";
+            help: (
+                "fields that are missing: {}",
+                fields
+                    .iter()
+                    .map(|&f| &self.interner[f])
+                    .intersperse(", ")
+                    .collect::<String>(),
+            );
+            help: "if this is intentional, use '..' to ignore the missing fields";
+            (span, self.source) {
+                err[span]: "this pattern does not include all fields";
+            }
+        }
+
+        push expected_struct_path(self, span: Span) {
+            err: "expected struct path";
+            (span, self.source) {
+                err[span]: "this path does not lead to struct definition";
             }
         }
     }

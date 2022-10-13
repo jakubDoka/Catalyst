@@ -120,6 +120,8 @@ impl TestState {
         self.gen
             .save_compiled_code(current_func, &later_init.context)
             .unwrap();
+
+        later_init.context.clear();
     }
 
     fn generate_entry_point(&mut self, later_init: &mut LaterInit) {
@@ -683,8 +685,19 @@ fn main() {
             #[entry];
             fn main() -> uint => match 0 {
                 0 => Returned::{ a: 0; b: 1 };
-                a => Returned::{ a: a; b: 0 };
+                a => Returned::{ a; b: 0 };
             }.a;
+        }
+
+        simple "recursive-fib" {
+            #[entry];
+            fn main -> uint => fib(10) - 55;
+
+            fn fib(x: uint) -> uint => match x {
+                0 => 0;
+                1 => 1;
+                a => fib(a - 1) + fib(a - 2);
+            };
         }
     }
 }
