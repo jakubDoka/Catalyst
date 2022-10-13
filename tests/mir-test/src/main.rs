@@ -107,6 +107,19 @@ fn main() {
             };
         }
 
+        simple "match-with-missing-patterns" {
+            struct Matched {
+                a: uint;
+                b: uint
+            };
+
+            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+                ::{ a: 1; b: 0 } => 1;
+                ::{ a: 0; b: 1 } => 0;
+                ::{ a; b: 0 } => a;
+            };
+        }
+
         simple "match-with-struct-return" {
             struct Returned {
                 a: uint;

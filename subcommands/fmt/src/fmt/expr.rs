@@ -77,6 +77,7 @@ impl<'a> FmtAst for MatchExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         write!(fmt, "match ");
         self.expr.display_low(false, fmt);
+        write!(fmt, " ");
         self.body.display_low(true, fmt);
     }
 }

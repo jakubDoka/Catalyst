@@ -1,5 +1,6 @@
 use std::default::default;
 
+use diags::gen_error_fns;
 use lexing_t::Span;
 use mir_t::*;
 use packaging_t::span_str;
@@ -55,13 +56,14 @@ impl MirChecker<'_> {
             TirKind::Deref(&node) => self.deref(node, span, dest_fn(), builder),
             TirKind::Ref(&node) => self.r#ref(node, span, dest_fn(), builder),
             TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
-            TirKind::Match(&r#match) => self.r#match(r#match, dest_fn(), builder),
+            TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), builder),
         }
     }
 
     fn r#match(
         &mut self,
         MatchTir { value, arms }: MatchTir,
+        span: Span,
         dest: VRef<ValueMir>,
         builder: &mut MirBuilder,
     ) -> NodeRes {
@@ -86,7 +88,7 @@ impl MirChecker<'_> {
 
         let mut reachable = bumpvec![false; branch_patterns.len()];
         PatSolver::solve(&arena, &branch_patterns, &mut reachable)
-            .map_err(|_| todo!())
+            .map_err(|err| self.non_exhaustive(err, builder.ctx.func.value_ty(value), span))
             .ok()?;
 
         arena.clear();
@@ -494,5 +496,82 @@ impl MirChecker<'_> {
             },
             c => c,
         })
+    }
+
+    fn display_pat(&self, pat: &[Range], ty: Ty) -> String {
+        let mut res = String::new();
+        let mut frontier = pat;
+        self.display_pat_low(ty, &[], &mut res, &mut frontier);
+        res
+    }
+
+    fn display_pat_low(&self, ty: Ty, params: &[Ty], res: &mut String, frontier: &mut &[Range]) {
+        use std::fmt::Write;
+        match ty {
+            Ty::Struct(s) => {
+                let Struct { fields, .. } = self.typec[s];
+                res.push_str("\\{ ");
+                if let Some((&first, rest)) = self.typec[fields].split_first() {
+                    write!(res, "{}: ", &self.interner[first.name]).unwrap();
+                    self.display_pat_low(first.ty, params, res, frontier);
+                    for &field in rest {
+                        res.push_str(", ");
+                        write!(res, "{}: ", &self.interner[field.name]).unwrap();
+                        self.display_pat_low(field.ty, params, res, frontier);
+                    }
+                }
+                res.push_str(" }");
+            }
+            Ty::Instance(inst) => {
+                let Instance { args, base } = self.typec[inst];
+                let params = &self.typec[args];
+                self.display_pat_low(base.as_ty(), params, res, frontier)
+            }
+            Ty::Pointer(ptr) => {
+                let Pointer { base, .. } = self.typec[ptr];
+                res.push('^');
+                self.display_pat_low(base, params, res, frontier)
+            }
+            Ty::Param(index) => {
+                let ty = params[index as usize];
+                self.display_pat_low(ty, params, res, frontier)
+            }
+            Ty::Builtin(b) => match b {
+                Builtin::Unit => res.push_str("()"),
+                Builtin::Terminal => res.push('!'),
+                Builtin::Uint | Builtin::U32 => {
+                    let (&first, next) = frontier.split_first().unwrap();
+                    *frontier = next;
+                    write!(res, "{}", first).unwrap();
+                }
+                Builtin::Char => todo!(),
+                Builtin::Bool => {
+                    let (&first, next) = frontier.split_first().unwrap();
+                    *frontier = next;
+                    if first == Range::full() {
+                        res.push('_');
+                    } else {
+                        write!(res, "{}", first.start == 1).unwrap();
+                    }
+                }
+            },
+        }
+    }
+
+    gen_error_fns! {
+        push non_exhaustive(self, err: PatError, ty: Ty, span: Span) {
+            err: "match is not exhaustive";
+            info: (
+                "missing patterns: {}",
+                err.missing
+                    .iter()
+                    .map(|seq| self.display_pat(seq, ty))
+                    .intersperse(", ".into())
+                    .collect::<String>()
+            );
+            (span, self.source) {
+                err[span]: "this does not cover all possible cases";
+            }
+        }
     }
 }

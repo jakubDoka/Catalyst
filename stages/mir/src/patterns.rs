@@ -1,4 +1,4 @@
-use std::{hint::unreachable_unchecked, iter};
+use std::{fmt::Display, hint::unreachable_unchecked, iter};
 
 use storage::*;
 
@@ -152,7 +152,7 @@ pub enum Node<'a> {
     Or(&'a [Range]),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Range {
     pub start: u128,
     pub end: UpperBound,
@@ -191,6 +191,12 @@ impl Range {
                 .checked_add(1)
                 .map_or(UpperBound::Outside, UpperBound::Inside),
         }
+    }
+}
+
+impl Display for Range {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
     }
 }
 
@@ -247,6 +253,15 @@ impl SortedRanges {
 pub enum UpperBound {
     Inside(u128),
     Outside,
+}
+
+impl Display for UpperBound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Inside(int) => write!(f, "{}", int),
+            Self::Outside => write!(f, "max"),
+        }
+    }
 }
 
 impl From<u128> for UpperBound {
