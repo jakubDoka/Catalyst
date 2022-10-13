@@ -1,0 +1,21 @@
+error: match is not exhaustive
+  --> match-with-missing-patterns\root.ctl:6:49
+   |
+ 6 |   fn main -> uint => match Matched\{ a: 0; b: 1 } {
+   |  _________________________________________________^
+...  |
+10 | | }
+   | |_^ this does not cover all possible cases
+   |
+   = info: missing patterns: \{ a: 0..1, b: 2..max }, \{ a: 1..2, b: 1..max }, \{ a: 2..max, b: 1..max }
+
+info: mir repr of functions:
+ fn [] main() -> uint  {
+    block0() {
+        return
+    }
+
+}
+
+
+
