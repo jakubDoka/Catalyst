@@ -104,6 +104,47 @@ impl Generator<'_> {
         };
     }
 
+    fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
+        match control_flow {
+            ControlFlowMir::Return(ret) => {
+                if let Some(ret) = ret {
+                    let ret = self.load_value(ret, builder);
+                    builder.ins().return_(&[ret]);
+                } else {
+                    builder.ins().return_(&[]);
+                }
+            }
+            ControlFlowMir::Terminal => {
+                builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
+            }
+            ControlFlowMir::Split(cond, a, b) => {
+                let a = self.instantiate_block(a, builder);
+                let b = self.instantiate_block(b, builder);
+                let cond = self.load_value(cond, builder);
+                builder.ins().brnz(cond, a, &[]);
+                builder.ins().jump(b, &[]);
+            }
+            ControlFlowMir::Goto(b, val) => {
+                let b = self.instantiate_block(b, builder);
+                let val = val
+                    .filter(|&val| {
+                        !self.gen_resources.values[val].must_load
+                            || !self
+                                .ty_layout(builder.body.value_ty(val), builder.ptr_ty())
+                                .on_stack
+                    })
+                    .map(|val| {
+                        let value = self.load_value(val, builder);
+                        self.gen_resources.values[val] = Default::default();
+                        value
+                    });
+                builder
+                    .ins()
+                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default());
+            }
+        }
+    }
+
     fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         self.assign_value(ret, target, builder);
         self.gen_resources.values[ret].must_load = true;
@@ -170,41 +211,6 @@ impl Generator<'_> {
                     ..base_value
                 };
             });
-    }
-
-    fn ensure_target(
-        &mut self,
-        target: VRef<ValueMir>,
-        source_value: Option<ir::Value>,
-        builder: &mut GenBuilder,
-    ) -> ComputedValue {
-        if let Some(value) = self.gen_resources.values[target].computed {
-            return value;
-        }
-
-        let referenced = builder.body.is_referenced(target);
-
-        let layout = self.ty_layout(builder.body.value_ty(target), builder.ptr_ty());
-        let must_load = layout.on_stack || referenced;
-        let computed = if must_load {
-            let ss = builder.create_sized_stack_slot(StackSlotData {
-                kind: StackSlotKind::ExplicitSlot,
-                size: layout.size,
-            });
-            ComputedValue::StackSlot(ss)
-        } else {
-            ComputedValue::Value(
-                source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0)),
-            )
-        };
-
-        self.gen_resources.values[target] = GenValue {
-            computed: Some(computed),
-            offset: 0,
-            must_load,
-        };
-
-        computed
     }
 
     fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
@@ -389,47 +395,6 @@ impl Generator<'_> {
         };
 
         self.save_value(target.unwrap(), value, 0, false, builder);
-    }
-
-    fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
-        match control_flow {
-            ControlFlowMir::Return(ret) => {
-                if let Some(ret) = ret {
-                    let ret = self.load_value(ret, builder);
-                    builder.ins().return_(&[ret]);
-                } else {
-                    builder.ins().return_(&[]);
-                }
-            }
-            ControlFlowMir::Terminal => {
-                builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
-            }
-            ControlFlowMir::Split(cond, a, b) => {
-                let a = self.instantiate_block(a, builder);
-                let b = self.instantiate_block(b, builder);
-                let cond = self.load_value(cond, builder);
-                builder.ins().brnz(cond, a, &[]);
-                builder.ins().jump(b, &[]);
-            }
-            ControlFlowMir::Goto(b, val) => {
-                let b = self.instantiate_block(b, builder);
-                let val = val
-                    .filter(|&val| {
-                        !self.gen_resources.values[val].must_load
-                            || !self
-                                .ty_layout(builder.body.value_ty(val), builder.ptr_ty())
-                                .on_stack
-                    })
-                    .map(|val| {
-                        let value = self.load_value(val, builder);
-                        self.gen_resources.values[val] = Default::default();
-                        value
-                    });
-                builder
-                    .ins()
-                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default());
-            }
-        }
     }
 
     fn instantiate_block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
@@ -620,6 +585,41 @@ impl Generator<'_> {
                 }
             }
         }
+    }
+
+    fn ensure_target(
+        &mut self,
+        target: VRef<ValueMir>,
+        source_value: Option<ir::Value>,
+        builder: &mut GenBuilder,
+    ) -> ComputedValue {
+        if let Some(value) = self.gen_resources.values[target].computed {
+            return value;
+        }
+
+        let referenced = builder.body.is_referenced(target);
+
+        let layout = self.ty_layout(builder.body.value_ty(target), builder.ptr_ty());
+        let must_load = layout.on_stack || referenced;
+        let computed = if must_load {
+            let ss = builder.create_sized_stack_slot(StackSlotData {
+                kind: StackSlotKind::ExplicitSlot,
+                size: layout.size,
+            });
+            ComputedValue::StackSlot(ss)
+        } else {
+            ComputedValue::Value(
+                source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0)),
+            )
+        };
+
+        self.gen_resources.values[target] = GenValue {
+            computed: Some(computed),
+            offset: 0,
+            must_load,
+        };
+
+        computed
     }
 
     fn set_bit_field(
