@@ -1,0 +1,11 @@
+error: function not found
+ --> enum\root.ctl:3:33
+  |
+3 | fn main -> uint => match Option\Some(0) {
+  |                                 ^^^^ this does not exist
+  |
+  = info: queried 'enum0\Some'
+
+info: tir repr of functions:
+ 
+

@@ -1,15 +1,7 @@
-error: expected 'struct' | 'fn' | 'spec' | 'impl' | '#' but got 'enum'
- --> enum\root.ctl:1:1
-  |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
-  | ^^^^ token located here
-  |
-  = info: list -> item
-
 error: expected ',' | '\n' | ';' but got '('
  --> enum\root.ctl:1:93
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                             ^ token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> pattern -> struct ctor pattern -> list
@@ -17,7 +9,7 @@ error: expected ',' | '\n' | ';' but got '('
 error: expected Ident | '..' but got '\'
  --> enum\root.ctl:1:104
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                                        ^ token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> pattern -> struct ctor pattern -> list -> struct ctor pattern field
@@ -25,7 +17,7 @@ error: expected Ident | '..' but got '\'
 error: expected Ident | '..' but got '\'
  --> enum\root.ctl:1:121
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                                                         ^ token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> pattern -> struct ctor pattern -> list -> struct ctor pattern field
@@ -33,7 +25,7 @@ error: expected Ident | '..' but got '\'
 error: expected Ident | '..' but got '\'
  --> enum\root.ctl:1:138
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                                                                          ^ token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> pattern -> struct ctor pattern -> list -> struct ctor pattern field
@@ -41,7 +33,7 @@ error: expected Ident | '..' but got '\'
 error: expected '=>' but got <eof>
  --> enum\root.ctl:1:153
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                                                                                          token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm
@@ -49,7 +41,7 @@ error: expected '=>' but got <eof>
 error: expected '\n' | ';' | '}' but got <eof>
  --> enum\root.ctl:1:153
   |
-1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(0) => 0 ; \ Some(1) => 1 ; \ Some(_) => 2 ; \ None => 3 ; }
+1 | enum [T] Option { Some : T ; None ; } ; fn main() -> uint => match Option \ Some(0) { \ Some(4) => 5 ; \ Some(1) => 2 ; \ Some(a) => a ; \ None => 3 ; }
   |                                                                                                                                                          token located here
   |
   = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list
