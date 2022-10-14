@@ -359,14 +359,122 @@ impl TyChecker<'_> {
             UnitExprAst::Char(span) => self.char(span),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
             UnitExprAst::Const(run) => self.r#const(run, inference, builder),
-            UnitExprAst::StructCtor(struct_constructor) => {
-                self.struct_constructor(struct_constructor, inference, builder)
-            }
+            UnitExprAst::StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
+            UnitExprAst::EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
             UnitExprAst::Match(match_expr) => self.r#match(match_expr, inference, builder),
             UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
+    }
+
+    fn enum_ctor<'a>(
+        &mut self,
+        ctor @ EnumCtorAst {
+            path: PathInstanceAst { path, params },
+            value,
+        }: EnumCtorAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let (ty, variant_name) = self.enum_path(path, inference)?;
+
+        let (variant, variant_ty) = self.typec[self.typec[ty].variants]
+            .iter()
+            .enumerate()
+            .find_map(|(i, variant)| {
+                (variant.name == variant_name.ident).then_some((i, variant.ty))
+            })
+            .or_else(|| todo!())?;
+
+        let flag_ty = self.typec.get_enum_flag_ty(ty).unwrap();
+
+        let variant_value = TirNode::new(
+            Ty::Builtin(flag_ty),
+            TirKind::Int(Some(variant as i64)),
+            variant_name.span,
+        );
+
+        let mut param_slots = bumpvec![None; self.typec[self.typec[ty].generics].len()];
+        if let Some((.., params)) = params {
+            for (slot, &param) in param_slots.iter_mut().zip(params.iter()) {
+                *slot = self.ty(param);
+            }
+        }
+
+        let value = if let Some((.., value)) = value {
+            let inference = self
+                .typec
+                .try_instantiate(variant_ty, &param_slots, self.interner);
+            let res = self.expr(value, inference, builder)?;
+            if inference.is_none() {
+                self.infer_params(&mut param_slots, res.ty, variant_ty, value.span())?;
+            }
+            Some(res)
+        } else if variant_ty != Ty::UNIT {
+            todo!();
+        } else {
+            None
+        };
+
+        let ty = if param_slots.is_empty() {
+            Ty::Enum(ty)
+        } else {
+            let Some(args) = param_slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
+                todo!();
+            };
+            Ty::Instance(
+                self.typec
+                    .instance(GenericTy::Enum(ty), &args, self.interner),
+            )
+        };
+
+        let values = iter::once(variant_value)
+            .chain(value.into_iter())
+            .collect::<BumpVec<_>>();
+        let values = builder.arena.alloc_iter(values);
+        Some(TirNode::new(ty, TirKind::Ctor(values), ctor.span()))
+    }
+
+    fn enum_path(
+        &mut self,
+        path: PathExprAst,
+        inference: Inference,
+    ) -> Option<(VRef<Enum>, NameAst)> {
+        if path.slash.is_some() {
+            let Some(expected) = inference else {
+                todo!();
+            };
+
+            let Ty::Enum(enum_ty) = expected.base(self.typec) else {
+                todo!();
+            };
+
+            return Some((enum_ty, path.start));
+        }
+
+        let module = match self.lookup(path.start.ident, path.start.span, "module or enum")? {
+            ScopeItem::Ty(Ty::Enum(enum_ty)) => {
+                let &[variant] = path.segments else {
+                    todo!();
+                };
+
+                return Some((enum_ty, variant));
+            }
+            ScopeItem::Module(module) => module,
+            _ => todo!(),
+        };
+
+        let &[r#enum, variant] = path.segments else {
+            todo!();
+        };
+
+        let id = self.interner.intern_scoped(module.index(), r#enum.ident);
+        let Ty::Enum(enum_ty) = lookup!(Ty self, id, r#enum.span) else {
+            todo!();
+        };
+
+        Some((enum_ty, variant))
     }
 
     fn dot_expr<'a>(
@@ -552,6 +660,7 @@ impl TyChecker<'_> {
                 let op = PathExprAst {
                     start,
                     segments: &[],
+                    slash: None,
                 };
                 let comparator = self.find_binary_func(op, ty, ty)?;
                 Some(PatTir {
@@ -568,16 +677,14 @@ impl TyChecker<'_> {
                 };
 
                 let Enum { variants, .. } = self.typec[enum_ty];
-                let index = self.typec[variants]
+                let (index, variant_ty) = self.typec[variants]
                     .iter()
-                    .position(|v| v.name == ctor.name.ident);
+                    .enumerate()
+                    .find_map(|(i, v)| (v.name == ctor.name.ident).then_some((i, ty)))
+                    .or_else(|| todo!())?;
 
-                let Some(index) = index else {
-                    todo!();
-                };
-
-                let value = if let Some(body) = ctor.body {
-                    Some(self.pattern(body.value, ty, builder)?)
+                let value = if let Some((.., body)) = ctor.value {
+                    Some(self.pattern(body, variant_ty, builder)?)
                 } else {
                     None
                 };
@@ -597,7 +704,7 @@ impl TyChecker<'_> {
         }
     }
 
-    fn struct_constructor<'a>(
+    fn struct_ctor<'a>(
         &mut self,
         ctor @ StructCtorAst { path, body, .. }: StructCtorAst,
         inference: Inference,
@@ -671,6 +778,7 @@ impl TyChecker<'_> {
                     PathExprAst {
                         start: name,
                         segments: &[],
+                        slash: None,
                     },
                     inference,
                     builder,
@@ -818,7 +926,8 @@ impl TyChecker<'_> {
             | UnitExprAst::Char(..)
             | UnitExprAst::StructCtor(..)
             | UnitExprAst::Const(..)
-            | UnitExprAst::Match(..)) => {
+            | UnitExprAst::Match(..)
+            | UnitExprAst::EnumCtor(..)) => {
                 todo!("{kind:?}")
             }
         }
@@ -1058,7 +1167,9 @@ impl TyChecker<'_> {
 
     fn func_path<'a>(
         &mut self,
-        path @ PathExprAst { start, segments }: PathExprAst,
+        path @ PathExprAst {
+            start, segments, ..
+        }: PathExprAst,
         builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
@@ -1068,7 +1179,15 @@ impl TyChecker<'_> {
                 let (&start, segments) = segments
                     .split_first()
                     .or_else(|| self.invalid_expr_path(path.span())?)?;
-                return self.method_path(ty, PathExprAst { start, segments }, builder);
+                return self.method_path(
+                    ty,
+                    PathExprAst {
+                        start,
+                        segments,
+                        slash: None,
+                    },
+                    builder,
+                );
             }
             item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
         };
@@ -1090,13 +1209,23 @@ impl TyChecker<'_> {
             .split_first()
             .or_else(|| self.invalid_expr_path(path.span())?)?;
 
-        self.method_path(ty, PathExprAst { start, segments }, builder)
+        self.method_path(
+            ty,
+            PathExprAst {
+                start,
+                segments,
+                slash: None,
+            },
+            builder,
+        )
     }
 
     fn method_path<'a>(
         &mut self,
         ty: Ty,
-        path @ PathExprAst { start, segments }: PathExprAst,
+        path @ PathExprAst {
+            start, segments, ..
+        }: PathExprAst,
         _builder: &mut TirBuilder<'a>,
     ) -> Option<FuncLookupResult<'a>> {
         let ty = ty.caller(self.typec);
@@ -1158,7 +1287,7 @@ impl TyChecker<'_> {
             .unwrap_or((Ty::UINT, 0));
         Some(TirNode::new(
             ty,
-            TirKind::Int,
+            TirKind::Int(None),
             span.sliced(..span_str.len() - postfix_len),
         ))
     }

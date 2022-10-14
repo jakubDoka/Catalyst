@@ -114,6 +114,7 @@ mod util {
                 .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
                 .collect_impls(items.impls, transfer.0)
                 .build(Self::build_struct, &transfer.0.structs)
+                .build(Self::build_enum, &transfer.0.enums)
                 .detect_infinite_types(ctx, transfer.0)
                 .build_funcs(
                     &ctx.tir_arena,

@@ -240,10 +240,10 @@ fn main() {
                 None;
             };
 
-            fn main() -> uint => match Option::Some(0) {
-                ::Some(4) => 5;
-                ::Some(1) => 2;
-                ::Some(a) => a;
+            fn main() -> uint => match Option::Some~0 {
+                ::Some~4 => 5;
+                ::Some~1 => 2;
+                ::Some~a => a;
                 ::None => 3;
             }
         }

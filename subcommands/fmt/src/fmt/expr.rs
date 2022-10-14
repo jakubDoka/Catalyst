@@ -54,6 +54,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::PathInstance(path) => path.display(fmt),
             UnitExprAst::TypedPath(path) => path.display(fmt),
             UnitExprAst::Match(r#match) => r#match.display(fmt),
+            UnitExprAst::EnumCtor(ctor) => ctor.display(fmt),
         }
     }
 
@@ -69,6 +70,17 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::PathInstance(path) => path.flat_len(fmt),
             UnitExprAst::TypedPath(path) => path.flat_len(fmt),
             UnitExprAst::Match(r#match) => r#match.flat_len(fmt),
+            UnitExprAst::EnumCtor(ctor) => ctor.flat_len(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for EnumCtorAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        self.path.display(fmt);
+        if let Some((tilde, value)) = self.value {
+            fmt.write_span(tilde);
+            value.display(fmt);
         }
     }
 }
@@ -107,7 +119,8 @@ impl<'a> FmtAst for EnumCtorPatAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         fmt.write_span(self.slash);
         self.name.display(fmt);
-        if let Some(ref pat) = self.body {
+        if let Some((tilde, pat)) = self.value {
+            fmt.write_span(tilde);
             pat.display(fmt);
         }
     }

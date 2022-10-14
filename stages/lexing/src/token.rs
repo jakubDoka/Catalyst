@@ -176,6 +176,7 @@ gen_kind!(
         DoubleHash = "##",
         BackSlash = "\\",
         DoubleDot = "..",
+        Tilde = "~",
     }
 
     paren_pairs {

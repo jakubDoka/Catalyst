@@ -84,6 +84,9 @@ impl<'a> FmtAst for GenericParamAst<'a> {
 
 impl<'a> FmtAst for PathExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        if let Some(slash) = self.slash {
+            fmt.write_span(slash);
+        }
         self.start.display(fmt);
         for segment in self.segments.iter() {
             write!(fmt, "\\");

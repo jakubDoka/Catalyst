@@ -143,7 +143,7 @@ impl<'a> TirNode<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum TirKind<'a> {
     Var(Option<&'a TirNode<'a>>),
-    Int,
+    Int(Option<i64>),
     Char,
     Block(&'a [TirNode<'a>]),
     Return(Option<&'a TirNode<'a>>),

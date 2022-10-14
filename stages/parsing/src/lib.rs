@@ -69,8 +69,8 @@ mod parser;
 pub use parser::{
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
-        DotExprAst, EnumCtorPatAst, ExprAst, MatchArmAst, MatchBodyAst, MatchExprAst, PatAst,
-        PathInstanceAst, ReturnExprAst, StructCtorAst, StructCtorBodyAst, StructCtorPatAst,
+        DotExprAst, EnumCtorAst, EnumCtorPatAst, ExprAst, MatchArmAst, MatchBodyAst, MatchExprAst,
+        PatAst, PathInstanceAst, ReturnExprAst, StructCtorAst, StructCtorBodyAst, StructCtorPatAst,
         StructCtorPatBodyAst, StructCtorPatBodyMeta, StructCtorPatFieldAst, TypedPathAst,
         UnitExprAst,
     },

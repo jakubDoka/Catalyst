@@ -137,7 +137,9 @@ impl TyChecker<'_> {
 
     pub fn ty_path(
         &mut self,
-        path @ PathExprAst { start, segments }: PathExprAst,
+        path @ PathExprAst {
+            start, segments, ..
+        }: PathExprAst,
     ) -> Option<TyPathResult> {
         let item = match self.lookup(start.ident, start.span, TY_OR_MOD)? {
             ScopeItem::Module(module) => {

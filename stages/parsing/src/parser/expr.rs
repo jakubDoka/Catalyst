@@ -71,6 +71,7 @@ impl<'a> BinaryExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum UnitExprAst<'a> {
     StructCtor(StructCtorAst<'a>),
+    EnumCtor(EnumCtorAst<'a>),
     DotExpr(&'a DotExprAst<'a>),
     Call(&'a CallExprAst<'a>),
     Path(PathExprAst<'a>),
@@ -92,9 +93,13 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
         let mut unit = branch!(ctx => {
             Ident => ctx.parse().map(Self::Path),
             BackSlash => {
-                let slash = ctx.advance().span;
-                ctx.parse_args((None, slash))
-                    .map(Self::StructCtor)
+                if ctx.at_next_tok(TokenKind::LeftCurly) {
+                    let slash = ctx.advance().span;
+                    ctx.parse_args((None, slash))
+                        .map(Self::StructCtor)
+                } else {
+                    ctx.parse().map(Self::Path)
+                }
             },
             Return => ctx.parse().map(Self::Return),
             Int => Some(Self::Int(ctx.advance().span)),
@@ -111,6 +116,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                 Dot => ctx.parse_args((unit?, ))
                     .map(|path| ctx.arena.alloc(path))
                     .map(Self::DotExpr),
+                Tilde => ctx.parse_args((unit?, ))
+                    .map(Self::EnumCtor),
                 BackSlash => {
                     let slash = ctx.advance().span;
                     branch!(ctx => {
@@ -140,7 +147,42 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Const(run) => run.span(),
             TypedPath(path) => path.span(),
             Match(r#match) => r#match.span(),
+            EnumCtor(ctor) => ctor.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EnumCtorAst<'a> {
+    pub path: PathInstanceAst<'a>,
+    pub value: Option<(Span, ExprAst<'a>)>,
+}
+
+impl<'a> Ast<'a> for EnumCtorAst<'a> {
+    type Args = (UnitExprAst<'a>,);
+
+    const NAME: &'static str = "enum ctor";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (path,): Self::Args) -> Option<Self> {
+        let path = match path {
+            UnitExprAst::PathInstance(path) => path,
+            UnitExprAst::Path(path) => PathInstanceAst { path, params: None },
+            _ => todo!(),
+        };
+
+        let value = if let Some(tilde) = ctx.try_advance(TokenKind::Tilde) {
+            Some((tilde.span, ctx.parse()?))
+        } else {
+            None
+        };
+
+        Some(Self { path, value })
+    }
+
+    fn span(&self) -> Span {
+        self.value.map_or(self.path.span(), |(.., value)| {
+            self.path.span().joined(value.span())
+        })
     }
 }
 
@@ -236,7 +278,7 @@ impl<'a> Ast<'a> for PatAst<'a> {
 pub struct EnumCtorPatAst<'a> {
     pub slash: Span,
     pub name: NameAst,
-    pub body: Option<WrappedAst<PatAst<'a>>>,
+    pub value: Option<(Span, PatAst<'a>)>,
 }
 
 impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
@@ -248,8 +290,9 @@ impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
         Some(Self {
             slash: ctx.advance().span,
             name: ctx.parse()?,
-            body: if ctx.at_tok(TokenKind::LeftParen) {
-                Some(ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))?)
+
+            value: if let Some(tilde) = ctx.try_advance(TokenKind::Tilde) {
+                Some((tilde.span, ctx.parse()?))
             } else {
                 None
             },
@@ -257,8 +300,10 @@ impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
     }
 
     fn span(&self) -> Span {
-        self.slash
-            .joined(self.body.map_or(self.name.span(), |body| body.span()))
+        self.slash.joined(
+            self.value
+                .map_or(self.name.span(), |(.., body)| body.span()),
+        )
     }
 }
 

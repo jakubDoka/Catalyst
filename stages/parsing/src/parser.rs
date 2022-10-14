@@ -48,6 +48,7 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct PathExprAst<'a> {
+    pub slash: Option<Span>,
     pub start: NameAst,
     pub segments: &'a [NameAst],
 }
@@ -58,6 +59,7 @@ impl<'a> Ast<'a> for PathExprAst<'a> {
     const NAME: &'static str = "ident chain";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        let slash = ctx.try_advance(TokenKind::BackSlash).map(|t| t.span);
         let start = ctx.name_unchecked();
         let mut segments = bumpvec![];
         while ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::Ident) {
@@ -65,7 +67,11 @@ impl<'a> Ast<'a> for PathExprAst<'a> {
             segments.push(ctx.name_unchecked());
         }
         let segments = ctx.arena.alloc_slice(&segments);
-        Some(Self { start, segments })
+        Some(Self {
+            slash,
+            start,
+            segments,
+        })
     }
 
     fn span(&self) -> Span {

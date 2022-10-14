@@ -43,8 +43,12 @@ impl TyChecker<'_> {
                 *var_count += 1;
                 self.display_tir(*value.unwrap(), buffer, indent, var_count)?;
             }
-            TirKind::Int => {
-                buffer.push_str(span_str!(self, span));
+            TirKind::Int(computed) => {
+                if let Some(computed) = computed {
+                    write!(buffer, "{}", computed)?;
+                } else {
+                    buffer.push_str(span_str!(self, span));
+                }
             }
             TirKind::Char => {
                 write!(buffer, "'{}'", span_str!(self, span))?;
