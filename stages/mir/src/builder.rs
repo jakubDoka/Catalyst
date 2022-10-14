@@ -46,7 +46,7 @@ impl MirChecker<'_> {
         match kind {
             TirKind::Block(stmts) => self.block(stmts, dest_fn(), builder),
             TirKind::Var(var) => self.var(var, builder),
-            TirKind::Int => self.int(span, dest_fn(), builder),
+            TirKind::Int(computed) => self.int(computed, span, dest_fn(), builder),
             TirKind::Char => self.char(span, dest_fn(), builder),
             TirKind::Access(access) => self.access(access, span, dest_fn(), builder),
             TirKind::Call(&call) => self.call(call, ty, span, dest, builder),
@@ -239,7 +239,7 @@ impl MirChecker<'_> {
                 }
                 UnitPatKindTir::Int(int, cmp) => {
                     let val = builder.value(ty, self.typec);
-                    let lit = self.int(int, val, builder)?;
+                    let lit = self.int(None, int, val, builder)?;
                     let call = CallMir {
                         callable: CallableMir::Func(cmp),
                         params: default(),
@@ -520,10 +520,18 @@ impl MirChecker<'_> {
         Some(value.unwrap_or(ValueMir::UNIT))
     }
 
-    fn int(&mut self, span: Span, dest: VRef<ValueMir>, builder: &mut MirBuilder) -> NodeRes {
-        let lit = span_str!(self, span)
-            .parse()
-            .expect("Lexer should have validated this.");
+    fn int(
+        &mut self,
+        computed: Option<i64>,
+        span: Span,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let lit = computed.unwrap_or_else(|| {
+            span_str!(self, span)
+                .parse()
+                .expect("Lexer should have validated this.")
+        });
         builder.inst(InstMir::Int(lit, dest), span);
         Some(dest)
     }

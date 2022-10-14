@@ -125,6 +125,7 @@ impl Typec {
         let ty = Ty::Builtin(self.get_enum_flag_ty(en)?);
 
         let id = interner.intern_with(|s, t| self.binary_op_id(Interner::EQUAL, ty, ty, t, s));
+        dbg!(&self.interner[id]);
         Some((*self.builtin_funcs.get(&id).unwrap(), ty))
     }
 

@@ -132,5 +132,19 @@ fn main() {
                 a => Returned::{ a: a; b: 0 };
             }.a;
         }
+
+        simple "enum" {
+            enum [T] Option {
+                Some: T;
+                None;
+            };
+
+            fn main() -> uint => match Option::Some~0 {
+                ::Some~4 => 5;
+                ::Some~1 => 2;
+                ::Some~a => a;
+                ::None => 3;
+            }
+        }
     }
 }
