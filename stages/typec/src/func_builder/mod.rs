@@ -680,7 +680,7 @@ impl TyChecker<'_> {
                 let (index, variant_ty) = self.typec[variants]
                     .iter()
                     .enumerate()
-                    .find_map(|(i, v)| (v.name == ctor.name.ident).then_some((i, ty)))
+                    .find_map(|(i, v)| (v.name == ctor.name.ident).then_some((i, v.ty)))
                     .or_else(|| todo!())?;
 
                 let value = if let Some((.., body)) = ctor.value {
