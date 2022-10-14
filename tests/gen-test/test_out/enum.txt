@@ -1,0 +1,62 @@
+info: mir repr of functions:
+function u0:0() -> i64 fast {
+    ss0 = explicit_slot 16
+
+block0:
+    v0 = iconst.i8 0
+    stack_store v0, ss0  ; v0 = 0
+    v1 = iconst.i64 0
+    stack_store v1, ss0+8  ; v1 = 0
+    v2 = iconst.i8 0
+    v3 = stack_load.i8 ss0
+    v4 = icmp eq v2, v3  ; v2 = 0
+    v5 = iconst.i64 4
+    v6 = stack_load.i64 ss0+8
+    v7 = icmp eq v5, v6  ; v5 = 4
+    v8 = band v4, v7
+    brnz v8, block1
+    jump block2
+
+block2:
+    v9 = iconst.i8 0
+    v10 = stack_load.i8 ss0
+    v11 = icmp eq v9, v10  ; v9 = 0
+    v12 = iconst.i64 1
+    v13 = stack_load.i64 ss0+8
+    v14 = icmp eq v12, v13  ; v12 = 1
+    v15 = band v11, v14
+    brnz v15, block3
+    jump block4
+
+block4:
+    v16 = iconst.i8 1
+    v17 = stack_load.i8 ss0
+    v18 = icmp eq v16, v17  ; v16 = 1
+    brnz v18, block5
+    jump block6
+
+block6:
+    v19 = stack_load.i64 ss0+8
+    jump block7(v19)
+
+block5:
+    v20 = iconst.i64 3
+    jump block7(v20)  ; v20 = 3
+
+block3:
+    v21 = iconst.i64 2
+    jump block7(v21)  ; v21 = 2
+
+block1:
+    v22 = iconst.i64 5
+    jump block7(v22)  ; v22 = 5
+
+block7(v23: i64):
+    return v23
+}
+
+
+
+
+info: exit code: 0
+
