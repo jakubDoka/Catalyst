@@ -699,5 +699,20 @@ fn main() {
                 a => fib(a - 1) + fib(a - 2);
             };
         }
+
+        simple "enum" {
+            enum [T] Option {
+                Some: T;
+                None;
+            };
+
+            #[entry];
+            fn main() -> uint => match Option::Some~0 {
+                ::Some~4 => 5;
+                ::Some~1 => 2;
+                ::None => 3;
+                ::Some~a => a;
+            }
+        }
     }
 }

@@ -32,6 +32,10 @@ impl MirTypeSwapper {
         typec: &mut Typec,
         interner: &mut Interner,
     ) {
+        if params.is_empty() {
+            return;
+        }
+
         for &mir_ty in &func.ty_params[func.generics] {
             let ty = func.dependant_types[mir_ty].ty;
             let new_ty = typec.instantiate(ty, params, interner);

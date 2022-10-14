@@ -548,11 +548,14 @@ impl TyChecker<'_> {
             .map(|&MatchArmAst { pattern, body, .. }| {
                 let frame = self.scope.start_frame();
                 let var_frame = builder.start_frame();
-                let pat = self.pattern(pattern, value.ty, builder)?;
-                let body = self.expr(body, inference, builder)?;
+                let pat = self.pattern(pattern, value.ty, builder);
+                let body = self.expr(body, inference, builder);
                 self.scope.end_frame(frame);
                 builder.end_frame(var_frame);
-                Some(MatchArmTir { pat, body })
+                Some(MatchArmTir {
+                    pat: pat?,
+                    body: body?,
+                })
             })
             .collect::<Option<BumpVec<_>>>()?;
         let arms = builder.arena.alloc_iter(arms);
@@ -703,7 +706,7 @@ impl TyChecker<'_> {
                     }),
                     span: ctor.span(),
                     ty,
-                    has_binding: false,
+                    has_binding: value.map_or(false, |val| val.has_binding),
                     is_refutable: true,
                 })
             }

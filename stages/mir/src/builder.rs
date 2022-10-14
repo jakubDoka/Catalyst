@@ -272,11 +272,11 @@ impl MirChecker<'_> {
                             cond
                         });
 
-                    let variant_ty = self.typec[self.typec[ty].variants][id].ty;
-                    let value = builder.value(variant_ty, self.typec);
-                    builder.inst(InstMir::Field(value, 1, value), span);
-                    let inner_cond = value_pat
-                        .and_then(|&value_pat| self.pattern_to_cond(value_pat, value, builder));
+                    let inner_cond = value_pat.and_then(|&value_pat| {
+                        let inner_value = builder.value(value_pat.ty, self.typec);
+                        builder.inst(InstMir::Field(value, 1, inner_value), span);
+                        self.pattern_to_cond(value_pat, inner_value, builder)
+                    });
 
                     match (cond, inner_cond) {
                         (Some(cond), Some(inner_cond)) => {

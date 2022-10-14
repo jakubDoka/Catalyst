@@ -84,7 +84,7 @@ impl TyChecker<'_> {
                             buffer,
                             "{}\\{}",
                             &self.typec.display_spec(Spec::Base(parent), self.interner),
-                            &self.interner[name]
+                            &self.interner[name],
                         )?
                     }
                     CallableTir::Pointer(val) => {
@@ -215,9 +215,8 @@ impl TyChecker<'_> {
                 let Variant { name, .. } = self.typec[variants][id];
                 write!(buffer, "\\{}", &self.interner[name])?;
                 if let Some(&value) = value {
-                    buffer.push('(');
+                    buffer.push('~');
                     self.display_pat(value, buffer, indent, var_count)?;
-                    buffer.push(')');
                 }
             }
         }
