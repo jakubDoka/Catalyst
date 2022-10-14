@@ -8,6 +8,35 @@ impl<'a> FmtAst for ItemAst<'a> {
             ItemAst::Spec(spec) => spec.display(fmt),
             ItemAst::Impl(r#impl) => r#impl.display(fmt),
             ItemAst::Attribute(attr) => attr.display(fmt),
+            ItemAst::Enum(r#enum) => r#enum.display(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for EnumAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.vis(self.vis);
+        fmt.write_span(self.r#enum);
+        write!(fmt, " ");
+        self.generics.display(fmt);
+        if !self.generics.is_empty() {
+            write!(fmt, " ");
+        }
+        self.name.display(fmt);
+        if !self.body.is_empty() {
+            write!(fmt, " ");
+            self.body.display(fmt);
+        }
+    }
+}
+
+impl<'a> FmtAst for EnumVariantAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        self.name.display(fmt);
+        if let Some((colon, ty)) = self.ty {
+            fmt.write_span(colon);
+            write!(fmt, " ");
+            ty.display(fmt);
         }
     }
 }

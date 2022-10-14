@@ -206,6 +206,16 @@ impl TyChecker<'_> {
             }
             UnitPatKindTir::Int(span, ..) => buffer.push_str(span_str!(self, span)),
             UnitPatKindTir::Wildcard => buffer.push('_'),
+            UnitPatKindTir::Enum { ty, id, value, .. } => {
+                let Enum { variants, .. } = self.typec[ty];
+                let Variant { name, .. } = self.typec[variants][id];
+                write!(buffer, "\\{}", &self.interner[name])?;
+                if let Some(&value) = value {
+                    buffer.push('(');
+                    self.display_pat(value, buffer, indent, var_count)?;
+                    buffer.push(')');
+                }
+            }
         }
         Ok(())
     }

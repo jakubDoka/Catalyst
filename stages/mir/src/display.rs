@@ -203,4 +203,75 @@ impl MirChecker<'_> {
 
         Ok(())
     }
+
+    pub fn display_pat(&self, pat: &[Range], ty: Ty) -> String {
+        let mut res = String::new();
+        let mut frontier = pat;
+        self.display_pat_low(ty, &[], &mut res, &mut frontier);
+        res
+    }
+
+    fn display_pat_low(&self, ty: Ty, params: &[Ty], res: &mut String, frontier: &mut &[Range]) {
+        let mut advance = || {
+            let (&first, others) = frontier.split_first().unwrap();
+            *frontier = others;
+            first
+        };
+        match ty {
+            Ty::Struct(s) => {
+                let Struct { fields, .. } = self.typec[s];
+                res.push_str("\\{ ");
+                if let Some((&first, rest)) = self.typec[fields].split_first() {
+                    write!(res, "{}: ", &self.interner[first.name]).unwrap();
+                    self.display_pat_low(first.ty, params, res, frontier);
+                    for &field in rest {
+                        res.push_str(", ");
+                        write!(res, "{}: ", &self.interner[field.name]).unwrap();
+                        self.display_pat_low(field.ty, params, res, frontier);
+                    }
+                }
+                res.push_str(" }");
+            }
+            Ty::Instance(inst) => {
+                let Instance { args, base } = self.typec[inst];
+                let params = &self.typec[args];
+                self.display_pat_low(base.as_ty(), params, res, frontier)
+            }
+            Ty::Pointer(ptr) => {
+                let Pointer { base, .. } = self.typec[ptr];
+                res.push('^');
+                self.display_pat_low(base, params, res, frontier)
+            }
+            Ty::Param(index) => {
+                let ty = params[index as usize];
+                self.display_pat_low(ty, params, res, frontier)
+            }
+            Ty::Builtin(b) => match b {
+                Builtin::Unit => res.push_str("()"),
+                Builtin::Terminal => res.push('!'),
+                Builtin::Uint | Builtin::U32 | Builtin::U16 | Builtin::U8 => {
+                    let first = advance();
+                    write!(res, "{}", first).unwrap();
+                }
+                Builtin::Char => todo!(),
+                Builtin::Bool => {
+                    let first = advance();
+                    if first == Range::full() {
+                        res.push('_');
+                    } else {
+                        write!(res, "{}", first.start == 1).unwrap();
+                    }
+                }
+            },
+            Ty::Enum(r#enum) => {
+                let flag = advance();
+                let index = flag.start as usize;
+                let Enum { variants, .. } = self.typec[r#enum];
+                let variant = self.typec[variants][index];
+                write!(res, "\\{}(", &self.interner[variant.name]).unwrap();
+                self.display_pat_low(variant.ty, params, res, frontier);
+                res.push(')');
+            }
+        }
+    }
 }

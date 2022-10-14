@@ -144,7 +144,10 @@ impl MirChecker<'_> {
     fn bind_pattern_vars(
         &mut self,
         PatTir {
-            kind, has_binding, ..
+            kind,
+            has_binding,
+            span,
+            ..
         }: PatTir,
         value: VRef<ValueMir>,
         builder: &mut MirBuilder,
@@ -168,6 +171,18 @@ impl MirChecker<'_> {
                 }
                 UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
+                UnitPatKindTir::Enum {
+                    ty,
+                    id,
+                    value: value_pat,
+                } => {
+                    let variant_ty = self.typec[self.typec[ty].variants][id].ty;
+                    let dest = builder.value(variant_ty, self.typec);
+                    builder.inst(InstMir::Field(value, 1, dest), span);
+                    if let Some(&value) = value_pat {
+                        self.bind_pattern_vars(value, dest, builder);
+                    }
+                }
             },
             PatKindTir::Or(_) => todo!(),
         }
@@ -179,6 +194,7 @@ impl MirChecker<'_> {
             kind,
             ty,
             is_refutable,
+            span,
             ..
         }: PatTir,
         value: VRef<ValueMir>,
@@ -233,6 +249,51 @@ impl MirChecker<'_> {
                     builder.inst(InstMir::Call(call, Some(cond)), int);
                     Some(cond)
                 }
+                UnitPatKindTir::Enum {
+                    ty,
+                    id,
+                    value: value_pat,
+                } => {
+                    let cond = self
+                        .typec
+                        .get_enum_cmp(ty, self.interner)
+                        .map(|(enum_cmp, ty)| {
+                            let flag = builder.value(ty, self.typec);
+                            builder.inst(InstMir::Field(value, 0, flag), span);
+                            let lit = builder.value(ty, self.typec);
+                            builder.inst(InstMir::Int(id as i64, lit), span);
+                            let call = CallMir {
+                                callable: CallableMir::Func(enum_cmp),
+                                params: default(),
+                                args: builder.ctx.func.value_args.bump([lit, flag]),
+                            };
+                            let cond = builder.value(Ty::BOOL, self.typec);
+                            builder.inst(InstMir::Call(call, Some(cond)), span);
+                            cond
+                        });
+
+                    let variant_ty = self.typec[self.typec[ty].variants][id].ty;
+                    let value = builder.value(variant_ty, self.typec);
+                    builder.inst(InstMir::Field(value, 1, value), span);
+                    let inner_cond = value_pat
+                        .and_then(|&value_pat| self.pattern_to_cond(value_pat, value, builder));
+
+                    match (cond, inner_cond) {
+                        (Some(cond), Some(inner_cond)) => {
+                            let band = self.typec.get_band();
+                            let call = CallMir {
+                                callable: CallableMir::Func(band),
+                                params: default(),
+                                args: builder.ctx.func.value_args.bump([cond, inner_cond]),
+                            };
+                            let cond = builder.value(Ty::BOOL, self.typec);
+                            builder.inst(InstMir::Call(call, Some(cond)), span);
+                            Some(cond)
+                        }
+                        (Some(cond), None) | (None, Some(cond)) => Some(cond),
+                        (None, None) => None,
+                    }
+                }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => None,
             },
             PatKindTir::Or(..) => todo!(),
@@ -259,6 +320,20 @@ impl MirChecker<'_> {
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => {
                     nodes.push(Node::Scalar(Range::full()))
+                }
+                UnitPatKindTir::Enum { ty, id, value } => {
+                    let Enum { variants, .. } = self.typec[ty];
+                    let len = self.typec[variants].len();
+                    nodes.push(Node::Scalar(match id == len - 1 {
+                        true => Range {
+                            start: id as u128,
+                            end: UpperBound::Outside,
+                        },
+                        false => Range::at(id as u128),
+                    }));
+                    if let Some(&value) = value {
+                        self.pattern_to_branch(value, nodes, _arena, _builder);
+                    }
                 }
             },
             PatKindTir::Or(..) => todo!(),
@@ -496,66 +571,6 @@ impl MirChecker<'_> {
             },
             c => c,
         })
-    }
-
-    fn display_pat(&self, pat: &[Range], ty: Ty) -> String {
-        let mut res = String::new();
-        let mut frontier = pat;
-        self.display_pat_low(ty, &[], &mut res, &mut frontier);
-        res
-    }
-
-    fn display_pat_low(&self, ty: Ty, params: &[Ty], res: &mut String, frontier: &mut &[Range]) {
-        use std::fmt::Write;
-        match ty {
-            Ty::Struct(s) => {
-                let Struct { fields, .. } = self.typec[s];
-                res.push_str("\\{ ");
-                if let Some((&first, rest)) = self.typec[fields].split_first() {
-                    write!(res, "{}: ", &self.interner[first.name]).unwrap();
-                    self.display_pat_low(first.ty, params, res, frontier);
-                    for &field in rest {
-                        res.push_str(", ");
-                        write!(res, "{}: ", &self.interner[field.name]).unwrap();
-                        self.display_pat_low(field.ty, params, res, frontier);
-                    }
-                }
-                res.push_str(" }");
-            }
-            Ty::Instance(inst) => {
-                let Instance { args, base } = self.typec[inst];
-                let params = &self.typec[args];
-                self.display_pat_low(base.as_ty(), params, res, frontier)
-            }
-            Ty::Pointer(ptr) => {
-                let Pointer { base, .. } = self.typec[ptr];
-                res.push('^');
-                self.display_pat_low(base, params, res, frontier)
-            }
-            Ty::Param(index) => {
-                let ty = params[index as usize];
-                self.display_pat_low(ty, params, res, frontier)
-            }
-            Ty::Builtin(b) => match b {
-                Builtin::Unit => res.push_str("()"),
-                Builtin::Terminal => res.push('!'),
-                Builtin::Uint | Builtin::U32 => {
-                    let (&first, next) = frontier.split_first().unwrap();
-                    *frontier = next;
-                    write!(res, "{}", first).unwrap();
-                }
-                Builtin::Char => todo!(),
-                Builtin::Bool => {
-                    let (&first, next) = frontier.split_first().unwrap();
-                    *frontier = next;
-                    if first == Range::full() {
-                        res.push('_');
-                    } else {
-                        write!(res, "{}", first.start == 1).unwrap();
-                    }
-                }
-            },
-        }
     }
 
     gen_error_fns! {

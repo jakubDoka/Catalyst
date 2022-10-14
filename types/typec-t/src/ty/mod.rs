@@ -13,10 +13,12 @@ pub type SpecSums = BumpMap<Spec>;
 pub type ArgSlices = BumpMap<Ty>;
 pub type Fields = BumpMap<Field>;
 pub type SpecFuncs = BumpMap<SpecFunc>;
+pub type Variants = BumpMap<Variant>;
 
 pub type Impls = PushMap<Impl>;
 pub type Instances = PushMap<Instance>;
 pub type Structs = PushMap<Struct>;
+pub type Enums = PushMap<Enum>;
 pub type Pointers = PushMap<Pointer>;
 pub type BaseSpecs = PushMap<SpecBase>;
 pub type SpecInstances = PushMap<SpecInstance>;
@@ -54,6 +56,21 @@ pub struct Struct {
     pub generics: Generics,
     pub fields: VSlice<Field>,
     pub loc: Loc,
+}
+
+#[derive(Clone, Copy)]
+pub struct Enum {
+    pub name: VRef<str>,
+    pub generics: Generics,
+    pub variants: VSlice<Variant>,
+    pub loc: Loc,
+}
+
+#[derive(Clone, Copy)]
+pub struct Variant {
+    pub name: VRef<str>,
+    pub ty: Ty,
+    pub span: Option<Span>,
 }
 
 #[derive(Clone, Copy)]
@@ -112,12 +129,14 @@ impl Spec {
 #[derive(Clone, Copy)]
 pub enum GenericTy {
     Struct(VRef<Struct>),
+    Enum(VRef<Enum>),
 }
 
 impl GenericTy {
     pub fn as_ty(self) -> Ty {
         match self {
             GenericTy::Struct(s) => Ty::Struct(s),
+            GenericTy::Enum(e) => Ty::Enum(e),
         }
     }
 }
@@ -132,6 +151,7 @@ pub enum ComputedTypecItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ty {
     Struct(VRef<Struct>),
+    Enum(VRef<Enum>),
     Instance(VRef<Instance>),
     Pointer(VRef<Pointer>),
     Param(u16),
@@ -142,6 +162,7 @@ impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Ty::Struct(s) => write!(f, "struct{}", s.index()),
+            Ty::Enum(e) => write!(f, "enum{}", e.index()),
             Ty::Instance(i) => write!(f, "inst{}", i.index()),
             Ty::Pointer(p) => write!(f, "ptr{}", p.index()),
             Ty::Param(i) => write!(f, "param{}", i),
@@ -199,6 +220,7 @@ impl Ty {
             Self::Struct(s) => {
                 Some(typec.module_items[typec[s].loc.module][typec[s].loc.item].span)
             }
+            Self::Enum(e) => Some(typec.module_items[typec[e].loc.module][typec[e].loc.item].span),
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
         }
     }
@@ -264,6 +286,8 @@ gen_builtin!(
         TERMINAL => Terminal => "!",
         UINT => Uint => "uint",
         U32 => U32 => "u32",
+        U16 => U16 => "u16",
+        U8 => U8 => "u8",
         CHAR => Char => "char",
         BOOL => Bool => "bool",
     }
@@ -277,14 +301,7 @@ gen_builtin!(
 
 impl Builtin {
     pub fn is_signed(self) -> bool {
-        match self {
-            Builtin::Unit
-            | Builtin::Terminal
-            | Builtin::Uint
-            | Builtin::U32
-            | Builtin::Char
-            | Builtin::Bool => false,
-        }
+        false
     }
 
     pub fn size(self) -> u32 {
@@ -293,6 +310,8 @@ impl Builtin {
             Builtin::Terminal => 0,
             Builtin::Uint => 8,
             Builtin::U32 => 4,
+            Builtin::U16 => 2,
+            Builtin::U8 => 1,
             Builtin::Char => 4,
             Builtin::Bool => 1,
         }

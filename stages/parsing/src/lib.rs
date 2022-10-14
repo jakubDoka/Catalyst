@@ -69,16 +69,17 @@ mod parser;
 pub use parser::{
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
-        DotExprAst, ExprAst, MatchArmAst, MatchBodyAst, MatchExprAst, PatAst, PathInstanceAst,
-        ReturnExprAst, StructCtorAst, StructCtorBodyAst, StructCtorPatAst, StructCtorPatBodyAst,
-        StructCtorPatFieldAst, TypedPathAst, UnitExprAst,
+        DotExprAst, EnumCtorPatAst, ExprAst, MatchArmAst, MatchBodyAst, MatchExprAst, PatAst,
+        PathInstanceAst, ReturnExprAst, StructCtorAst, StructCtorBodyAst, StructCtorPatAst,
+        StructCtorPatBodyAst, StructCtorPatBodyMeta, StructCtorPatFieldAst, TypedPathAst,
+        UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},
     items::{
-        GroupedItemSlice, GroupedItemsAst, ImplAst, ImplBodyAst, ImplBodyMeta, ImplItemAst,
-        ImplTarget, InlineModeAst, ItemAst, ItemsAst, ItemsMeta, SpecAst, SpecBodyAst,
-        SpecBodyMeta, TopLevelAttributeAst, TopLevelAttributeKindAst,
+        EnumAst, EnumBodyAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst,
+        ImplBodyAst, ImplItemAst, ImplTarget, InlineModeAst, ItemAst, ItemBodyMeta, ItemsAst,
+        ItemsMeta, SpecAst, SpecBodyAst, TopLevelAttributeAst, TopLevelAttributeKindAst,
     },
     manifest::{
         DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,

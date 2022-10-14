@@ -126,10 +126,10 @@ pub use {
         TirFrame, TirKind, TirNode, TypecOutput, UnitPatKindTir, Var,
     },
     ty::{
-        ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Field, FieldFlags, Fields, GenericTy,
-        Generics, Impl, ImplKey, ImplLookup, Impls, Instance, Instances, Mutability, ParamSlices,
-        Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance, SpecInstances,
-        SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup,
+        ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
+        GenericTy, Generics, Impl, ImplKey, ImplLookup, Impls, Instance, Instances, Mutability,
+        ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance,
+        SpecInstances, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup, Variant, Variants,
     },
     typec::{Loc, Typec},
 };

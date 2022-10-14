@@ -98,6 +98,17 @@ impl<'a> FmtAst for PatAst<'a> {
             PatAst::Binding(name) => name.display(fmt),
             PatAst::StructCtor(ctor) => ctor.display(fmt),
             PatAst::Int(span) => fmt.write_span(span),
+            PatAst::EnumCtor(ctor) => ctor.display(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for EnumCtorPatAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.slash);
+        self.name.display(fmt);
+        if let Some(ref pat) = self.body {
+            pat.display(fmt);
         }
     }
 }

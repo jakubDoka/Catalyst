@@ -63,6 +63,32 @@ impl TyChecker<'_> {
         self.typec.spec_funcs.bump(methods)
     }
 
+    pub fn build_enum(&mut self, ty: VRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
+        let frame = self.scope.start_frame();
+
+        self.insert_generics(generics, 0);
+        self.typec[ty].variants = self.enum_variants(body);
+        self.typec[ty].generics = self.generics(generics);
+
+        self.scope.end_frame(frame);
+    }
+
+    pub fn enum_variants(&mut self, body: EnumBodyAst) -> VSlice<Variant> {
+        let variants = body
+            .iter()
+            .filter_map(|EnumVariantAst { name, ty }| {
+                let ty = ty.map_or(Some(Ty::UNIT), |(.., ty)| self.ty(ty))?;
+
+                Some(Variant {
+                    name: name.ident,
+                    ty,
+                    span: Some(name.span),
+                })
+            })
+            .collect::<BumpVec<_>>();
+        self.typec.variants.bump(variants)
+    }
+
     pub fn build_struct(&mut self, ty: VRef<Struct>, StructAst { generics, body, .. }: StructAst) {
         let frame = self.scope.start_frame();
 

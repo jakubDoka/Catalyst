@@ -198,6 +198,7 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
 pub enum PatAst<'a> {
     Binding(NameAst),
     StructCtor(StructCtorPatAst<'a>),
+    EnumCtor(&'a EnumCtorPatAst<'a>),
     Int(Span),
 }
 
@@ -209,7 +210,13 @@ impl<'a> Ast<'a> for PatAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch!(ctx => {
             Ident => ctx.parse().map(Self::Binding),
-            BackSlash => ctx.parse().map(Self::StructCtor),
+            BackSlash => {
+                if ctx.at_next_tok(TokenKind::Ident) {
+                    ctx.parse_alloc().map(Self::EnumCtor)
+                } else {
+                    ctx.parse().map(Self::StructCtor)
+                }
+            },
             Int => Some(Self::Int(ctx.advance().span)),
         })
     }
@@ -220,7 +227,38 @@ impl<'a> Ast<'a> for PatAst<'a> {
             Binding(name) => name.span(),
             StructCtor(ctor) => ctor.span(),
             Int(span) => span,
+            EnumCtor(ctor) => ctor.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EnumCtorPatAst<'a> {
+    pub slash: Span,
+    pub name: NameAst,
+    pub body: Option<WrappedAst<PatAst<'a>>>,
+}
+
+impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "enum pattern";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            slash: ctx.advance().span,
+            name: ctx.parse()?,
+            body: if ctx.at_tok(TokenKind::LeftParen) {
+                Some(ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))?)
+            } else {
+                None
+            },
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.slash
+            .joined(self.body.map_or(self.name.span(), |body| body.span()))
     }
 }
 

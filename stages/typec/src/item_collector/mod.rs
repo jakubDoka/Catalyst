@@ -282,6 +282,26 @@ impl TyChecker<'_> {
         Some(self.typec.structs.push(s))
     }
 
+    pub fn collect_enum(
+        &mut self,
+        EnumAst { vis, name, .. }: EnumAst,
+        _: &[TopLevelAttributeAst],
+    ) -> Option<VRef<Enum>> {
+        let loc = {
+            // SAFETY: We push right after this, if item inset fails, id is forgotten.
+            let id = unsafe { self.typec.enums.next() };
+            let item = ModuleItem::new(name.ident, Ty::Enum(id), name.span, vis);
+            self.insert_scope_item(item)?
+        };
+        let e = Enum {
+            generics: default(),
+            variants: default(),
+            name: name.ident,
+            loc,
+        };
+        Some(self.typec.enums.push(e))
+    }
+
     gen_error_fns! {
         push generic_extern(self, generics: Span, body: Span, func: Span) {
             err: "function with extern body cannot be generic";
@@ -337,4 +357,8 @@ impl CollectGroup for StructAst<'_> {
 
 impl CollectGroup for SpecAst<'_> {
     type Output = SpecBase;
+}
+
+impl CollectGroup for EnumAst<'_> {
+    type Output = Enum;
 }

@@ -562,6 +562,38 @@ impl TyChecker<'_> {
                     is_refutable: true,
                 })
             }
+            PatAst::EnumCtor(ctor) => {
+                let Ty::Enum(enum_ty) = ty.caller(self.typec) else {
+                    todo!();
+                };
+
+                let Enum { variants, .. } = self.typec[enum_ty];
+                let index = self.typec[variants]
+                    .iter()
+                    .position(|v| v.name == ctor.name.ident);
+
+                let Some(index) = index else {
+                    todo!();
+                };
+
+                let value = if let Some(body) = ctor.body {
+                    Some(self.pattern(body.value, ty, builder)?)
+                } else {
+                    None
+                };
+
+                Some(PatTir {
+                    kind: PatKindTir::Unit(UnitPatKindTir::Enum {
+                        ty: enum_ty,
+                        id: index,
+                        value: value.map(|val| builder.arena.alloc(val)),
+                    }),
+                    span: ctor.span(),
+                    ty,
+                    has_binding: false,
+                    is_refutable: true,
+                })
+            }
         }
     }
 
@@ -596,10 +628,10 @@ impl TyChecker<'_> {
             }
         };
 
-        let struct_id = match ty {
-            Some(GenericTy::Struct(struct_meta)) => struct_meta,
-            None => self.expected_struct_path(path.map_or(ctor.span(), |p| p.span()))?,
+        let Some(GenericTy::Struct(struct_id)) = ty else {
+            self.expected_struct_path(path.map_or(ctor.span(), |p| p.span()))?;
         };
+
         let struct_meta = self.typec[struct_id];
 
         let mut param_slots = bumpvec![None; self.typec[struct_meta.generics].len()];

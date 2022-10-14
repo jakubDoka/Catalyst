@@ -1,10 +1,10 @@
-error: function not found
- --> enum\root.ctl:3:33
+error: Func not found
+ --> enum\root.ctl:4:11
   |
-3 | fn main -> uint => match Option\Some(0) {
-  |                                 ^^^^ this does not exist
+4 |     \Some~4 => 5
+  |           ^ this does not exist
   |
-  = info: queried 'enum0\Some'
+  = info: queried '0\Option[uint] == 0\Option[uint]'
 
 info: tir repr of functions:
  

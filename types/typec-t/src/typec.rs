@@ -29,9 +29,10 @@ pub struct Typec {
     pub impl_lookup: ImplLookup,
     pub func_slices: FuncSlices,
     pub spec_funcs: SpecFuncs,
-    pub builtin_funcs: Vec<VRef<Func>>,
+    pub builtin_funcs: Map<VRef<str>, VRef<Func>>,
     pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
-    pub band: OptVRef<Func>,
+    pub variants: Variants,
+    pub enums: Enums,
 }
 
 macro_rules! gen_index {
@@ -86,6 +87,8 @@ gen_index! {
         Func => funcs
         Field => fields
         Instance => instances
+        Enum => enums
+        Variant => variants
     }
     slices {
         Field => fields
@@ -94,18 +97,35 @@ gen_index! {
         Ty => args
         VRef<Func> => func_slices
         SpecFunc => spec_funcs
+        Variant => variants
     }
 }
 
 impl Typec {
     pub fn get_band(&mut self) -> VRef<Func> {
-        *self.band.get_or_insert_with(|| {
-            let id = Interner::BAND;
-            self.funcs
-                .iter()
-                .find_map(|(k, v)| (v.name == id).then_some(k))
-                .expect("gen_band called before init")
+        *self
+            .builtin_funcs
+            .get(&Interner::BAND)
+            .expect("gen_band called before init")
+    }
+
+    pub fn get_enum_flag_ty(&self, en: VRef<Enum>) -> Option<Builtin> {
+        Some(match self[self[en].variants].len() {
+            256.. => Builtin::U16,
+            2.. => Builtin::U8,
+            _ => return None,
         })
+    }
+
+    pub fn get_enum_cmp(
+        &mut self,
+        en: VRef<Enum>,
+        interner: &mut Interner,
+    ) -> Option<(VRef<Func>, Ty)> {
+        let ty = Ty::Builtin(self.get_enum_flag_ty(en)?);
+
+        let id = interner.intern_with(|s, t| self.binary_op_id(Interner::EQUAL, ty, ty, t, s));
+        Some((*self.builtin_funcs.get(&id).unwrap(), ty))
     }
 
     pub fn display_sig(
@@ -169,6 +189,10 @@ impl Typec {
             Ty::Struct(r#struct) => {
                 write!(to, "{}\\", self[r#struct].loc.module.index()).unwrap();
                 to.push_str(&interner[self[r#struct].name])
+            }
+            Ty::Enum(r#enum) => {
+                write!(to, "{}\\", self[r#enum].loc.module.index()).unwrap();
+                to.push_str(&interner[self[r#enum].name])
             }
             Ty::Instance(instance) => {
                 let Instance { base, args } = self[instance];
@@ -273,7 +297,7 @@ impl Typec {
                     || matches!(self[pointer].mutability, Mutability::Param(..))
             }
             Ty::Param(..) => true,
-            Ty::Struct(..) | Ty::Builtin(..) => false,
+            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => false,
         }
     }
 
@@ -301,7 +325,7 @@ impl Typec {
                 ..default()
             });
 
-            self.builtin_funcs.push(func);
+            self.builtin_funcs.insert(id, func);
         };
 
         fn op_to_ty(
@@ -704,7 +728,7 @@ impl Typec {
                 Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
             Ty::Param(index) => return params[index as usize],
-            Ty::Struct(..) | Ty::Builtin(_) => ty,
+            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
         })
     }
 

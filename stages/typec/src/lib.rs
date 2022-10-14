@@ -66,6 +66,7 @@ mod util {
         pub structs: TypecOutput<StructAst<'a>, Struct>,
         pub funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub specs: TypecOutput<SpecAst<'a>, SpecBase>,
+        pub enums: TypecOutput<EnumAst<'a>, Enum>,
         pub impl_funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub impl_frames: ImplFrames<'a>,
     }
@@ -108,6 +109,7 @@ mod util {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)
                 .collect(items.structs, Self::collect_struct, &mut transfer.0.structs)
+                .collect(items.enums, Self::collect_enum, &mut transfer.0.enums)
                 .build(Self::build_spec, &transfer.0.specs)
                 .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
                 .collect_impls(items.impls, transfer.0)
@@ -202,7 +204,7 @@ mod util {
             scope.insert_builtin(interner.intern(ty.name()), Ty::Builtin(ty));
         }
 
-        for &func in &typec.builtin_funcs {
+        for &func in typec.builtin_funcs.values() {
             let id = typec[func].name;
             scope.insert_builtin(id, func);
         }

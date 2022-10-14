@@ -3,10 +3,10 @@ use super::*;
 list_meta!(ItemsMeta none NewLine [Break Eof]);
 pub type ItemsAst<'a> = ListAst<'a, ItemAst<'a>, ItemsMeta>;
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
-list_meta!(SpecBodyMeta ?LeftCurly NewLine RightCurly);
-pub type SpecBodyAst<'a> = ListAst<'a, FuncSigAst<'a>, SpecBodyMeta>;
-list_meta!(ImplBodyMeta ?LeftCurly NewLine RightCurly);
-pub type ImplBodyAst<'a> = ListAst<'a, ImplItemAst<'a>, SpecBodyMeta>;
+list_meta!(ItemBodyMeta ?LeftCurly NewLine RightCurly);
+pub type SpecBodyAst<'a> = ListAst<'a, FuncSigAst<'a>, ItemBodyMeta>;
+pub type ImplBodyAst<'a> = ListAst<'a, ImplItemAst<'a>, ItemBodyMeta>;
+pub type EnumBodyAst<'a> = ListAst<'a, EnumVariantAst<'a>, ItemBodyMeta>;
 
 #[derive(Clone, Copy)]
 pub struct GroupedItemsAst<'a> {
@@ -14,6 +14,7 @@ pub struct GroupedItemsAst<'a> {
     pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,
     pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
     pub impls: GroupedItemSlice<'a, ImplAst<'a>>,
+    pub enums: GroupedItemSlice<'a, EnumAst<'a>>,
     pub last: bool,
     pub span: Span,
 }
@@ -68,6 +69,7 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
             funcs: Func,
             specs: Spec,
             impls: Impl,
+            enums: Enum,
         }
     }
 
@@ -82,6 +84,7 @@ pub enum ItemAst<'a> {
     Func(&'a FuncDefAst<'a>),
     Spec(&'a SpecAst<'a>),
     Impl(&'a ImplAst<'a>),
+    Enum(&'a EnumAst<'a>),
     Attribute(&'a TopLevelAttributeAst),
 }
 
@@ -94,21 +97,24 @@ impl<'a> Ast<'a> for ItemAst<'a> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
-            Struct => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Struct),
-            Func => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Func),
-            Spec => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Spec),
-            Impl => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Impl),
-            Hash => ctx.parse()
-                .map(|s| ctx.arena.alloc(s))
-                .map(ItemAst::Attribute),
+        Struct => ctx.parse_args((vis, start))
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Struct),
+        Func => ctx.parse_args((vis, start))
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Func),
+        Spec => ctx.parse_args((vis, start))
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Spec),
+        Enum => ctx.parse_args((vis, start))
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Enum),
+        Impl => ctx.parse_args((vis, start))
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Impl),
+        Hash => ctx.parse()
+            .map(|s| ctx.arena.alloc(s))
+            .map(ItemAst::Attribute),
         }}
     }
 
@@ -119,7 +125,68 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             ItemAst::Spec(s) => s.span(),
             ItemAst::Impl(i) => i.span(),
             ItemAst::Attribute(a) => a.span(),
+            ItemAst::Enum(e) => e.span(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EnumAst<'a> {
+    pub start: Span,
+    pub vis: Vis,
+    pub r#enum: Span,
+    pub generics: GenericsAst<'a>,
+    pub name: NameAst,
+    pub body: EnumBodyAst<'a>,
+}
+
+impl<'a> Ast<'a> for EnumAst<'a> {
+    type Args = (Vis, Span);
+
+    const NAME: &'static str = "enum";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+        Some(Self {
+            start,
+            vis,
+            r#enum: ctx.advance().span,
+            generics: ctx.parse()?,
+            name: ctx.parse()?,
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.start.joined(self.body.span())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EnumVariantAst<'a> {
+    pub name: NameAst,
+    pub ty: Option<(Span, TyAst<'a>)>,
+}
+
+impl<'a> Ast<'a> for EnumVariantAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "enum variant";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            name: ctx.parse()?,
+            ty: if let Some(colon) = ctx.try_advance(TokenKind::Colon) {
+                let ty = ctx.parse()?;
+                Some((colon.span, ty))
+            } else {
+                None
+            },
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.ty
+            .map_or(self.name.span, |(_, ty)| self.name.span.joined(ty.span()))
     }
 }
 

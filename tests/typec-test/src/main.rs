@@ -233,5 +233,19 @@ fn main() {
                 ::{ a; b } => a + b;
             };
         }
+
+        simple "enum" {
+            enum [T] Option {
+                Some: T;
+                None;
+            };
+
+            fn main() -> uint => match Option::Some(0) {
+                ::Some(4) => 5;
+                ::Some(1) => 2;
+                ::Some(a) => a;
+                ::None => 3;
+            }
+        }
     }
 }
