@@ -684,6 +684,12 @@ impl TyChecker<'_> {
                     .or_else(|| todo!())?;
 
                 let value = if let Some((.., body)) = ctor.value {
+                    let variant_ty = if let Ty::Instance(inst) = ty.ptr_base(self.typec) {
+                        let params = self.typec[self.typec[inst].args].to_bumpvec();
+                        self.typec.instantiate(variant_ty, &params, self.interner)
+                    } else {
+                        variant_ty
+                    };
                     Some(self.pattern(body, variant_ty, builder)?)
                 } else {
                     None
