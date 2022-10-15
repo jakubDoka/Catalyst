@@ -147,7 +147,7 @@ pub struct BlockMir {
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
     Goto(VRef<BlockMir>, OptVRef<ValueMir>),
-    Return(Option<VRef<ValueMir>>),
+    Return(OptVRef<ValueMir>),
     Terminal,
 }
 

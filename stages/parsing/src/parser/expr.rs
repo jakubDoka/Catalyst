@@ -83,6 +83,7 @@ pub enum UnitExprAst<'a> {
     Const(ConstAst<'a>),
     Match(MatchExprAst<'a>),
     If(IfAst<'a>),
+    Let(LetAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -108,6 +109,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Const => ctx.parse().map(Self::Const),
             Match => ctx.parse().map(Self::Match),
             If => ctx.parse().map(Self::If),
+            Let => ctx.parse().map(Self::Let),
         });
 
         loop {
@@ -154,7 +156,40 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Match(r#match) => r#match.span(),
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
+            Let(r#let) => r#let.span(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LetAst<'a> {
+    pub r#let: Span,
+    pub pat: PatAst<'a>,
+    pub ty: Option<(Span, TyAst<'a>)>,
+    pub equal: Span,
+    pub value: ExprAst<'a>,
+}
+
+impl<'a> Ast<'a> for LetAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "let";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#let: ctx.advance().span,
+            pat: ctx.parse()?,
+            ty: ctx
+                .try_advance(TokenKind::Colon)
+                .map(|colon| ctx.parse().map(|ty| (colon.span, ty)))
+                .transpose()?,
+            equal: ctx.expect_advance("=")?.span,
+            value: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.r#let.joined(self.value.span())
     }
 }
 
@@ -184,11 +219,10 @@ impl<'a> Ast<'a> for IfAst<'a> {
                 }
                 ctx.arena.alloc_iter(else_ifs)
             },
-            r#else: if let Some(r#else) = ctx.try_advance_ignore_lines(TokenKind::Else) {
-                Some((r#else.span, ctx.parse()?))
-            } else {
-                None
-            },
+            r#else: ctx
+                .try_advance_ignore_lines(TokenKind::Else)
+                .map(|r#else| ctx.parse().map(|body| (r#else.span, body)))
+                .transpose()?,
         })
     }
 
@@ -268,19 +302,17 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
     const NAME: &'static str = "enum ctor";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (path,): Self::Args) -> Option<Self> {
-        let path = match path {
-            UnitExprAst::PathInstance(path) => path,
-            UnitExprAst::Path(path) => PathInstanceAst { path, params: None },
-            _ => todo!(),
-        };
-
-        let value = if let Some(tilde) = ctx.try_advance(TokenKind::Tilde) {
-            Some((tilde.span, ctx.parse()?))
-        } else {
-            None
-        };
-
-        Some(Self { path, value })
+        Some(Self {
+            path: match path {
+                UnitExprAst::PathInstance(path) => path,
+                UnitExprAst::Path(path) => PathInstanceAst { path, params: None },
+                _ => todo!(),
+            },
+            value: ctx
+                .try_advance(TokenKind::Tilde)
+                .map(|tilde| ctx.parse().map(|value| (tilde.span, value)))
+                .transpose()?,
+        })
     }
 
     fn span(&self) -> Span {
@@ -342,25 +374,33 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum PatAst<'a> {
-    Binding(NameAst),
+    Binding(Option<Span>, NameAst),
     StructCtor(StructCtorPatAst<'a>),
     EnumCtor(&'a EnumCtorPatAst<'a>),
     Int(Span),
 }
 
 impl<'a> Ast<'a> for PatAst<'a> {
-    type Args = ();
+    type Args = Option<Span>;
 
     const NAME: &'static str = "pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
         branch!(ctx => {
-            Ident => ctx.parse().map(Self::Binding),
+            Mut => {
+                if let Some(_mutable) = mutable {
+                    todo!();
+                }
+
+                let mutable = ctx.advance().span;
+                ctx.parse_args(Some(mutable))
+            },
+            Ident => ctx.parse().map(|b| Self::Binding(mutable, b)),
             BackSlash => {
                 if ctx.at_next_tok(TokenKind::Ident) {
-                    ctx.parse_alloc().map(Self::EnumCtor)
+                    ctx.parse_args_alloc(mutable).map(Self::EnumCtor)
                 } else {
-                    ctx.parse().map(Self::StructCtor)
+                    ctx.parse_args(mutable).map(Self::StructCtor)
                 }
             },
             Int => Some(Self::Int(ctx.advance().span)),
@@ -370,7 +410,9 @@ impl<'a> Ast<'a> for PatAst<'a> {
     fn span(&self) -> Span {
         use PatAst::*;
         match *self {
-            Binding(name) => name.span(),
+            Binding(mutable, name) => {
+                mutable.map_or(name.span(), |mutable| mutable.joined(name.span()))
+            }
             StructCtor(ctor) => ctor.span(),
             Int(span) => span,
             EnumCtor(ctor) => ctor.span(),
@@ -386,20 +428,19 @@ pub struct EnumCtorPatAst<'a> {
 }
 
 impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
-    type Args = ();
+    type Args = Option<Span>;
 
     const NAME: &'static str = "enum pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
             name: ctx.parse()?,
 
-            value: if let Some(tilde) = ctx.try_advance(TokenKind::Tilde) {
-                Some((tilde.span, ctx.parse()?))
-            } else {
-                None
-            },
+            value: ctx
+                .try_advance(TokenKind::Tilde)
+                .map(|tilde| ctx.parse_args(mutable).map(|value| (tilde.span, value)))
+                .transpose()?,
         })
     }
 
@@ -418,14 +459,14 @@ pub struct StructCtorPatAst<'a> {
 }
 
 impl<'a> Ast<'a> for StructCtorPatAst<'a> {
-    type Args = ();
+    type Args = Option<Span>;
 
     const NAME: &'static str = "struct ctor pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
-            fields: ctx.parse()?,
+            fields: ctx.parse_args(mutable)?,
         })
     }
 
@@ -437,6 +478,7 @@ impl<'a> Ast<'a> for StructCtorPatAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum StructCtorPatFieldAst<'a> {
     Simple {
+        mutable: Option<Span>,
         name: NameAst,
     },
     Named {
@@ -448,17 +490,17 @@ pub enum StructCtorPatFieldAst<'a> {
 }
 
 impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
-    type Args = ();
+    type Args = Option<Span>;
 
     const NAME: &'static str = "struct ctor pattern field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Ident => {
                 let name = ctx.parse()?;
                 branch! {ctx => {
-                    Colon => Self::Named { name, colon: ctx.advance().span, pat: ctx.parse()? },
-                    _ => Self::Simple { name },
+                    Colon => Self::Named { name, colon: ctx.advance().span, pat: ctx.parse_args(mutable)? },
+                    _ => Self::Simple { name, mutable },
                 }}
             },
             DoubleDot => Self::DoubleDot(ctx.advance().span),
@@ -468,7 +510,9 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
     fn span(&self) -> Span {
         use StructCtorPatFieldAst::*;
         match *self {
-            Simple { name } => name.span(),
+            Simple { name, mutable } => {
+                mutable.map_or(name.span(), |mutable| mutable.joined(name.span()))
+            }
             Named { name, pat, .. } => name.span().joined(pat.span()),
             DoubleDot(span) => span,
         }

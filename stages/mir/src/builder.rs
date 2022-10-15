@@ -529,13 +529,12 @@ impl MirChecker<'_> {
     }
 
     fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
-        let ret_val = if let Some(&val) = val {
-            let ret_dest = builder.value(val.ty, self.typec);
-            self.node(val, Some(ret_dest), builder)?;
-            Some(ret_dest)
-        } else {
-            None
-        };
+        let ret_val = val
+            .map(|&val| {
+                let dest = Some(builder.value(val.ty, self.typec));
+                self.node(val, dest, builder)
+            })
+            .transpose()?;
 
         builder.close_block(span, ControlFlowMir::Return(ret_val));
         None

@@ -31,4 +31,4 @@ Is not recommended, code is not documented and changes quickly. I want to improv
 
 ### How to run Tests
 
-My development environment is `Windows 10` (sorry) and only dependant part of project are `.bat` files though i kept them simple and rewriting them to bash should be easy (contribution opportunity). 
+My development environment is `Windows 10` (sorry) and only dependant part of project are `.bat` files though i kept them simple and rewriting them to bash should be easy (contribution opportunity).

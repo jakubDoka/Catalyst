@@ -43,37 +43,53 @@ impl<'a> FmtAst for BinaryExprAst<'a> {
 
 impl<'a> FmtAst for UnitExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        use UnitExprAst::*;
         match *self {
-            UnitExprAst::StructCtor(ctor) => ctor.display(fmt),
-            UnitExprAst::DotExpr(dot) => dot.display(fmt),
-            UnitExprAst::Call(call) => call.display(fmt),
-            UnitExprAst::Path(path) => path.display(fmt),
-            UnitExprAst::Return(ret) => ret.display(fmt),
-            UnitExprAst::Int(span) | UnitExprAst::Char(span) => fmt.write_span(span),
-            UnitExprAst::Const(run) => run.display(fmt),
-            UnitExprAst::PathInstance(path) => path.display(fmt),
-            UnitExprAst::TypedPath(path) => path.display(fmt),
-            UnitExprAst::Match(r#match) => r#match.display(fmt),
-            UnitExprAst::EnumCtor(ctor) => ctor.display(fmt),
-            UnitExprAst::If(r#if) => r#if.display(fmt),
+            StructCtor(ctor) => ctor.display(fmt),
+            DotExpr(dot) => dot.display(fmt),
+            Call(call) => call.display(fmt),
+            Path(path) => path.display(fmt),
+            Return(ret) => ret.display(fmt),
+            Int(span) | Char(span) => fmt.write_span(span),
+            Const(run) => run.display(fmt),
+            PathInstance(path) => path.display(fmt),
+            TypedPath(path) => path.display(fmt),
+            Match(r#match) => r#match.display(fmt),
+            EnumCtor(ctor) => ctor.display(fmt),
+            If(r#if) => r#if.display(fmt),
+            Let(r#let) => r#let.display(fmt),
         }
     }
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
+        use UnitExprAst::*;
         match *self {
-            UnitExprAst::StructCtor(ctor) => ctor.flat_len(fmt),
-            UnitExprAst::DotExpr(dot) => dot.flat_len(fmt),
-            UnitExprAst::Call(call) => call.flat_len(fmt),
-            UnitExprAst::Path(path) => path.flat_len(fmt),
-            UnitExprAst::Return(ret) => ret.flat_len(fmt),
-            UnitExprAst::Int(int) | UnitExprAst::Char(int) => int.len(),
-            UnitExprAst::Const(run) => run.flat_len(fmt),
-            UnitExprAst::PathInstance(path) => path.flat_len(fmt),
-            UnitExprAst::TypedPath(path) => path.flat_len(fmt),
-            UnitExprAst::Match(r#match) => r#match.flat_len(fmt),
-            UnitExprAst::EnumCtor(ctor) => ctor.flat_len(fmt),
-            UnitExprAst::If(r#if) => r#if.flat_len(fmt),
+            StructCtor(ctor) => ctor.flat_len(fmt),
+            DotExpr(dot) => dot.flat_len(fmt),
+            Call(call) => call.flat_len(fmt),
+            Path(path) => path.flat_len(fmt),
+            Return(ret) => ret.flat_len(fmt),
+            Int(int) | Char(int) => int.len(),
+            Const(run) => run.flat_len(fmt),
+            PathInstance(path) => path.flat_len(fmt),
+            TypedPath(path) => path.flat_len(fmt),
+            Match(r#match) => r#match.flat_len(fmt),
+            EnumCtor(ctor) => ctor.flat_len(fmt),
+            If(r#if) => r#if.flat_len(fmt),
+            Let(r#let) => r#let.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for LetAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#let);
+        write!(fmt, " ");
+        self.pat.display(fmt);
+        write!(fmt, " ");
+        fmt.write_span(self.equal);
+        write!(fmt, " ");
+        self.value.display(fmt);
     }
 }
 
@@ -207,7 +223,13 @@ impl<'a> FmtAst for MatchArmAst<'a> {
 impl<'a> FmtAst for PatAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
-            PatAst::Binding(name) => name.display(fmt),
+            PatAst::Binding(mutable, name) => {
+                if let Some(mutable) = mutable {
+                    fmt.write_span(mutable);
+                    write!(fmt, " ");
+                }
+                name.display(fmt)
+            }
             PatAst::StructCtor(ctor) => ctor.display(fmt),
             PatAst::Int(span) => fmt.write_span(span),
             PatAst::EnumCtor(ctor) => ctor.display(fmt),
@@ -237,7 +259,13 @@ impl<'a> FmtAst for StructCtorPatFieldAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         use StructCtorPatFieldAst::*;
         match *self {
-            Simple { name } => name.display(fmt),
+            Simple { mutable, name } => {
+                if let Some(mutable) = mutable {
+                    fmt.write_span(mutable);
+                    write!(fmt, " ");
+                }
+                name.display(fmt);
+            }
             Named { name, colon, pat } => {
                 name.display(fmt);
                 fmt.write_span(colon);

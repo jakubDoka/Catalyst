@@ -1,5 +1,19 @@
 use std::{fmt::Debug, marker::PhantomData};
 
+pub trait TransposeOption: Sized {
+    fn transpose(self) -> Self;
+}
+
+impl<T> TransposeOption for Option<Option<T>> {
+    fn transpose(self) -> Self {
+        match self {
+            Some(Some(x)) => Some(Some(x)),
+            Some(None) => None,
+            None => Some(None),
+        }
+    }
+}
+
 pub trait NoShortCircuitCollect {
     type Item;
     fn nsc_collect<T: FromIterator<Self::Item>>(self) -> T;

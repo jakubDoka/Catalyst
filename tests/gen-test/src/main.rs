@@ -717,8 +717,8 @@ fn main() {
 
         simple "enum-stress" {
             enum [T] Option {
-                Some: T;
                 None;
+                Some: T;
             };
 
             #[entry];

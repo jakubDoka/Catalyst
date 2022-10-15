@@ -172,7 +172,9 @@ pub use {
     partial_ordered_map::PartialOrderedMap,
     pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
     pool_map::PoolMap,
-    primitives::{NoShortCircuitCollect, OptVRef, VRef, VRefDefault, VRefSlice, VSlice},
+    primitives::{
+        NoShortCircuitCollect, OptVRef, TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
+    },
     push_map::PushMap,
     shadow_map::ShadowMap,
     sparse_map::SparseMap,

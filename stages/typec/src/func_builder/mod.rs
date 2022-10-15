@@ -364,9 +364,22 @@ impl TyChecker<'_> {
             UnitExprAst::Match(match_expr) => self.r#match(match_expr, inference, builder),
             UnitExprAst::If(r#if) => self.r#if(r#if, inference, builder),
             UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
+            UnitExprAst::Let(r#let) => self.r#let(r#let, inference, builder),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
+    }
+
+    fn r#let<'a>(
+        &mut self,
+        LetAst { pat, value, .. }: LetAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let value = self.expr(value, None, builder)?;
+        let pat = self.pattern(pat, ty, builder)
+
+        todo!()
     }
 
     fn r#if<'a>(
@@ -661,8 +674,8 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> Option<PatTir<'a>> {
         match pattern {
-            PatAst::Binding(name) => {
-                let var = builder.create_var(ty, name.span);
+            PatAst::Binding(mutable, name) => {
+                let var = builder.create_var(mutable.is_some(), ty, name.span);
                 self.scope.push(name.ident, var, name.span);
                 Some(PatTir {
                     kind: PatKindTir::Unit(UnitPatKindTir::Binding(var)),
@@ -680,12 +693,12 @@ impl TyChecker<'_> {
                 let mut double_dot = None;
                 for &field in fields.iter() {
                     match field {
-                        StructCtorPatFieldAst::Simple { name } => {
+                        StructCtorPatFieldAst::Simple { name, mutable } => {
                             let Some((field_id, .., field_ty)) = self.find_struct_field(struct_ty, name.ident) else {
                                 self.field_not_found(struct_ty, name)?;
                             };
 
-                            let field = self.pattern(PatAst::Binding(name), field_ty, builder)?;
+                            let field = self.pattern(PatAst::Binding(mutable, name), field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
                         StructCtorPatFieldAst::Named { name, pat, .. } => {
@@ -1431,7 +1444,7 @@ impl TyChecker<'_> {
 
     fn args(&mut self, types: VSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
         for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
-            let var = builder.create_var(ty, arg.name.span);
+            let var = builder.create_var(false, ty, arg.name.span);
             self.scope.push(arg.name.ident, var, arg.name.span);
         }
     }

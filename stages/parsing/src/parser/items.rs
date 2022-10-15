@@ -175,12 +175,10 @@ impl<'a> Ast<'a> for EnumVariantAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
-            ty: if let Some(colon) = ctx.try_advance(TokenKind::Colon) {
-                let ty = ctx.parse()?;
-                Some((colon.span, ty))
-            } else {
-                None
-            },
+            ty: ctx
+                .try_advance(TokenKind::Colon)
+                .map(|colon| ctx.parse().map(|ty| (colon.span, ty)))
+                .transpose()?,
         })
     }
 

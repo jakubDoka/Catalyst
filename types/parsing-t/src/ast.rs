@@ -160,11 +160,13 @@ impl<'a, T, META: ListAstMeta> Default for ListAst<'a, T, META> {
 
 impl<'a, T: Ast<'a>, META: ListAstMeta> Ast<'a> for ListAst<'a, T, META>
 where
-    T::Args: Default,
+    T::Args: Default + Clone,
 {
     const NAME: &'static str = "list";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    type Args = T::Args;
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, args: T::Args) -> Option<Self> {
         let on_delim = ctx.at(META::START);
         let pos = ctx.state.current.span.sliced(..0);
         if META::OPTIONAL && !on_delim && !META::START.is_empty() {
@@ -193,7 +195,7 @@ where
                 break ctx.advance().span;
             }
 
-            let Some(element) = T::parse(ctx) else {
+            let Some(element) = T::parse_args(ctx, args.clone()) else {
                 if let Some(span) = META::recover(ctx)? {
                     break span;
                 } else {

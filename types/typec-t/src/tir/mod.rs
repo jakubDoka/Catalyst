@@ -39,9 +39,9 @@ impl<'a> TirBuilder<'a> {
         self.vars.truncate(frame.0);
     }
 
-    pub fn create_var(&mut self, ty: Ty, span: Span) -> VRef<Var> {
+    pub fn create_var(&mut self, mutable: bool, ty: Ty, span: Span) -> VRef<Var> {
         let index = self.vars.len();
-        self.vars.push(Var { ty, span });
+        self.vars.push(Var { ty, span, mutable });
         unsafe { VRef::new(index) }
     }
 
@@ -54,6 +54,7 @@ impl<'a> TirBuilder<'a> {
 pub struct Var {
     pub ty: Ty,
     pub span: Span,
+    pub mutable: bool,
 }
 
 #[must_use]
