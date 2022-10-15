@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, iter};
 
 use diags::gen_error_fns;
 use lexing_t::Span;
@@ -57,7 +57,39 @@ impl MirChecker<'_> {
             TirKind::Ref(&node) => self.r#ref(node, span, dest_fn(), builder),
             TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
             TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), builder),
+            TirKind::If(&r#if) => self.r#if(r#if, dest_fn(), builder),
         }
+    }
+
+    fn r#if(
+        &mut self,
+        IfTir { top, elifs, r#else }: IfTir,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
+        let mut dest_block = None;
+        for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
+            let cond_val = self.node(cond, None, builder)?;
+            let then = builder.ctx.create_block();
+            let next = builder.ctx.create_block();
+            builder.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
+            builder.select_block(then);
+            self.branch(body, &mut dest_block, dest, builder);
+            builder.select_block(next);
+        }
+
+        if let Some(r#else) = r#else {
+            self.branch(r#else, &mut dest_block, dest, builder);
+        }
+
+        if let Some(dest_block) = dest_block {
+            builder.select_block(dest_block);
+            if dest != ValueMir::UNIT {
+                builder.ctx.args.push(dest);
+            }
+        }
+
+        Some(dest)
     }
 
     fn r#match(
@@ -135,12 +167,22 @@ impl MirChecker<'_> {
     ) {
         let frame = builder.ctx.start_frame();
         self.bind_pattern_vars(pat, value, builder);
+        self.branch(body, dest_block, dest, builder);
+        builder.ctx.end_frame(frame);
+    }
+
+    fn branch(
+        &mut self,
+        body: TirNode,
+        dest_block: &mut OptVRef<BlockMir>,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) {
         if let Some(ret) = self.node(body, Some(dest), builder) {
             let ret = (ret != ValueMir::UNIT).then_some(ret);
             let &mut dest_block = dest_block.get_or_insert_with(|| builder.ctx.create_block());
             builder.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
         }
-        builder.ctx.end_frame(frame);
     }
 
     fn bind_pattern_vars(

@@ -93,7 +93,7 @@ impl<'a> FmtAst for IfAst<'a> {
             }
             return;
         }
-        if let IfBlock::Arrow(..) = self.body && (!self.elifs.is_empty() || self.r#else.is_some()) {
+        if let IfBlockAst::Arrow(..) = self.body && (!self.elifs.is_empty() || self.r#else.is_some()) {
             fmt.newline();
             fmt.write_indent();
         } else {
@@ -106,7 +106,7 @@ impl<'a> FmtAst for IfAst<'a> {
                 cond.display(fmt);
                 write!(fmt, " ");
                 body.display(fmt);
-                if let IfBlock::Arrow(..) = body {
+                if let IfBlockAst::Arrow(..) = body {
                     fmt.newline();
                     fmt.write_indent();
                 } else {
@@ -118,7 +118,7 @@ impl<'a> FmtAst for IfAst<'a> {
             last.cond.display(fmt);
             write!(fmt, " ");
             last.body.display(fmt);
-            if let IfBlock::Arrow(..) = last.body && self.r#else.is_some() {
+            if let IfBlockAst::Arrow(..) = last.body && self.r#else.is_some() {
                 fmt.newline();
                 fmt.write_indent();
             } else {
@@ -146,11 +146,11 @@ impl<'a> FmtAst for IfAst<'a> {
     }
 }
 
-impl<'a> FmtAst for IfBlock<'a> {
+impl<'a> FmtAst for IfBlockAst<'a> {
     fn display_low(&self, fold: bool, fmt: &mut Fmt) {
         match *self {
-            IfBlock::Block(block) => block.display_low(true, fmt),
-            IfBlock::Arrow(arrow, expr) => {
+            IfBlockAst::Block(block) => block.display_low(true, fmt),
+            IfBlockAst::Arrow(arrow, expr) => {
                 fmt.write_span(arrow);
                 if fold {
                     fmt.indent();
@@ -169,8 +169,8 @@ impl<'a> FmtAst for IfBlock<'a> {
 
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
-            IfBlock::Block(..) => fmt.line_length,
-            IfBlock::Arrow(arrow, expr) => arrow.len() + " ".len() + expr.flat_len(fmt),
+            IfBlockAst::Block(..) => fmt.line_length,
+            IfBlockAst::Arrow(arrow, expr) => arrow.len() + " ".len() + expr.flat_len(fmt),
         }
     }
 }

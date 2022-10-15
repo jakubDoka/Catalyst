@@ -127,6 +127,19 @@ pub struct TirNode<'a> {
     pub span: Span,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct IfBranchTir<'a> {
+    pub cond: TirNode<'a>,
+    pub body: TirNode<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IfTir<'a> {
+    pub top: IfBranchTir<'a>,
+    pub elifs: &'a [IfBranchTir<'a>],
+    pub r#else: Option<TirNode<'a>>,
+}
+
 impl<'a> TirNode<'a> {
     pub fn new(ty: Ty, kind: TirKind<'a>, span: Span) -> Self {
         Self { kind, ty, span }
@@ -147,5 +160,6 @@ pub enum TirKind<'a> {
     Deref(&'a TirNode<'a>),
     Ref(&'a TirNode<'a>),
     Match(&'a MatchTir<'a>),
+    If(&'a IfTir<'a>),
     Field(&'a FieldTir<'a>),
 }

@@ -247,5 +247,13 @@ fn main() {
                 ::None => 3;
             }
         }
+
+        simple "if-statement" {
+            #[entry];
+            fn main() -> uint =>
+                if 0 == 0 => 0;
+                elif 0 == 69 => 89;
+                else => 1;
+        }
     }
 }

@@ -371,17 +371,79 @@ impl TyChecker<'_> {
 
     fn r#if<'a>(
         &mut self,
-        IfAst {
-            r#if,
+        r#if @ IfAst {
             cond,
             body,
             elifs,
             r#else,
+            ..
         }: IfAst,
         inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        todo!()
+        let top = self.if_branch(cond, body, inference, builder)?;
+
+        let elifs = elifs
+            .iter()
+            .filter_map(|&ElifAst { cond, body, .. }| {
+                self.if_branch(cond, body, inference, builder)
+            })
+            .collect::<BumpVec<_>>();
+        let elifs = builder.arena.alloc_iter(elifs);
+
+        let r#else = if let Some((.., r#else)) = r#else {
+            Some(self.if_block(r#else, inference, builder)?)
+        } else {
+            None
+        };
+
+        let ty = Self::combine_branch_types(
+            elifs
+                .iter()
+                .copied()
+                .map(|branch| branch.body.ty)
+                .chain(r#else.map(|r#else| r#else.ty)),
+        );
+
+        Some(TirNode::new(
+            ty,
+            TirKind::If(builder.arena.alloc(IfTir { top, elifs, r#else })),
+            r#if.span(),
+        ))
+    }
+
+    fn if_branch<'a>(
+        &mut self,
+        cond: ExprAst,
+        body: IfBlockAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> Option<IfBranchTir<'a>> {
+        let cond = self.expr(cond, Some(Ty::BOOL), builder)?;
+        let body = self.if_block(body, inference, builder)?;
+        Some(IfBranchTir { cond, body })
+    }
+
+    fn if_block<'a>(
+        &mut self,
+        body: IfBlockAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        match body {
+            IfBlockAst::Block(body) => self.block(body, inference, builder),
+            IfBlockAst::Arrow(.., body) => {
+                let frame = self.scope.start_frame();
+                let expr = self.expr(body, inference, builder);
+                self.scope.end_frame(frame);
+                let expr = expr?;
+                Some(TirNode::new(
+                    expr.ty,
+                    TirKind::Block(builder.arena.alloc_iter([expr])),
+                    expr.span,
+                ))
+            }
+        }
     }
 
     fn enum_ctor<'a>(

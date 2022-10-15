@@ -513,7 +513,7 @@ impl Scheduler for TestState {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "functions" {
             #[entry];
             fn main -> uint => pass(0);
@@ -546,7 +546,7 @@ fn main() {
             #[entry];
             fn main -> uint {
                 const putchar('a'); // compile time print
-                const putchar('\n');
+                putchar('\n');
                 0
             };
         }
@@ -732,6 +732,14 @@ fn main() {
                     ::None => 1;
                 };
             }
+        }
+
+        simple "if-statement" {
+            #[entry];
+            fn main() -> uint =>
+                if 0 == 0 => 0;
+                elif 0 == 69 => 89;
+                else => 1;
         }
     }
 }

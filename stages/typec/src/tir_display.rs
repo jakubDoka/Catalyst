@@ -156,6 +156,22 @@ impl TyChecker<'_> {
                 self.display_tir(header, buffer, indent, var_count)?;
                 write!(buffer, ".{}", field)?;
             }
+            TirKind::If(&IfTir { top, elifs, r#else }) => {
+                write!(buffer, "if ")?;
+                self.display_tir(top.cond, buffer, indent, var_count)?;
+                write!(buffer, " ")?;
+                self.display_tir(top.body, buffer, indent, var_count)?;
+                for &IfBranchTir { cond, body } in elifs {
+                    write!(buffer, " elif ")?;
+                    self.display_tir(cond, buffer, indent, var_count)?;
+                    write!(buffer, " ")?;
+                    self.display_tir(body, buffer, indent, var_count)?;
+                }
+                if let Some(body) = r#else {
+                    write!(buffer, " else ")?;
+                    self.display_tir(body, buffer, indent, var_count)?;
+                }
+            }
         }
 
         Ok(())

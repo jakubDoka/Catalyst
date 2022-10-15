@@ -162,9 +162,9 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
 pub struct IfAst<'a> {
     pub r#if: Span,
     pub cond: ExprAst<'a>,
-    pub body: IfBlock<'a>,
+    pub body: IfBlockAst<'a>,
     pub elifs: &'a [ElifAst<'a>],
-    pub r#else: Option<(Span, IfBlock<'a>)>,
+    pub r#else: Option<(Span, IfBlockAst<'a>)>,
 }
 
 impl<'a> Ast<'a> for IfAst<'a> {
@@ -205,7 +205,7 @@ impl<'a> Ast<'a> for IfAst<'a> {
 pub struct ElifAst<'a> {
     pub elif: Span,
     pub cond: ExprAst<'a>,
-    pub body: IfBlock<'a>,
+    pub body: IfBlockAst<'a>,
 }
 
 impl<'a> Ast<'a> for ElifAst<'a> {
@@ -227,12 +227,12 @@ impl<'a> Ast<'a> for ElifAst<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum IfBlock<'a> {
+pub enum IfBlockAst<'a> {
     Block(BlockAst<'a>),
     Arrow(Span, ExprAst<'a>),
 }
 
-impl<'a> Ast<'a> for IfBlock<'a> {
+impl<'a> Ast<'a> for IfBlockAst<'a> {
     type Args = ();
 
     const NAME: &'static str = "if block";
@@ -248,7 +248,7 @@ impl<'a> Ast<'a> for IfBlock<'a> {
     }
 
     fn span(&self) -> Span {
-        use IfBlock::*;
+        use IfBlockAst::*;
         match *self {
             Block(block) => block.span(),
             Arrow(.., expr) => expr.span(),
