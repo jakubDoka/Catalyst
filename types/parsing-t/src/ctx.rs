@@ -81,6 +81,30 @@ impl<'a> ParsingCtx<'_, 'a> {
         self.parse_args(args).map(|t| self.arena.alloc(t))
     }
 
+    pub fn reduce_repetition(&mut self, pat: TokenKind) -> bool {
+        if self.at_tok(pat) {
+            while self.at_next_tok(pat) {
+                self.advance();
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn try_advance_ignore_lines(&mut self, pat: TokenKind) -> Option<Token> {
+        if self.at_tok(pat) {
+            return Some(self.advance());
+        }
+        self.reduce_repetition(TokenKind::NewLine);
+        if self.at_next_tok(pat) {
+            self.advance();
+            Some(self.advance())
+        } else {
+            None
+        }
+    }
+
     pub fn advance(&mut self) -> Token {
         let current = self.state.current;
         self.state.current = self.state.next;

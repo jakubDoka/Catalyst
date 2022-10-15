@@ -55,6 +55,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::TypedPath(path) => path.display(fmt),
             UnitExprAst::Match(r#match) => r#match.display(fmt),
             UnitExprAst::EnumCtor(ctor) => ctor.display(fmt),
+            UnitExprAst::If(r#if) => r#if.display(fmt),
         }
     }
 
@@ -71,6 +72,105 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             UnitExprAst::TypedPath(path) => path.flat_len(fmt),
             UnitExprAst::Match(r#match) => r#match.flat_len(fmt),
             UnitExprAst::EnumCtor(ctor) => ctor.flat_len(fmt),
+            UnitExprAst::If(r#if) => r#if.flat_len(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for IfAst<'a> {
+    fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#if);
+        write!(fmt, " ");
+        self.cond.display(fmt);
+        write!(fmt, " ");
+        self.body.display(fmt);
+        if !fold {
+            if let Some((r#else, else_body)) = self.r#else {
+                write!(fmt, " ");
+                fmt.write_span(r#else);
+                write!(fmt, " ");
+                else_body.display(fmt);
+            }
+            return;
+        }
+        if let IfBlock::Arrow(..) = self.body && (!self.elifs.is_empty() || self.r#else.is_some()) {
+            fmt.newline();
+            fmt.write_indent();
+        } else {
+            write!(fmt, " ");
+        }
+        if let Some((&last, others)) = self.elifs.split_last() {
+            for &ElifAst { elif, cond, body } in others {
+                fmt.write_span(elif);
+                write!(fmt, " ");
+                cond.display(fmt);
+                write!(fmt, " ");
+                body.display(fmt);
+                if let IfBlock::Arrow(..) = body {
+                    fmt.newline();
+                    fmt.write_indent();
+                } else {
+                    write!(fmt, " ");
+                }
+            }
+            fmt.write_span(last.elif);
+            write!(fmt, " ");
+            last.cond.display(fmt);
+            write!(fmt, " ");
+            last.body.display(fmt);
+            if let IfBlock::Arrow(..) = last.body && self.r#else.is_some() {
+                fmt.newline();
+                fmt.write_indent();
+            } else {
+                write!(fmt, " ");
+            }
+        }
+        if let Some((r#else, body)) = self.r#else {
+            fmt.write_span(r#else);
+            write!(fmt, " ");
+            body.display(fmt);
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        self.r#if.len()
+            + " ".len()
+            + self.cond.flat_len(fmt)
+            + " ".len()
+            + self.body.flat_len(fmt)
+            + !self.elifs.is_empty() as usize * fmt.line_length
+            + self
+                .r#else
+                .map(|(r#else, body)| " ".len() + r#else.len() + body.flat_len(fmt))
+                .unwrap_or(0)
+    }
+}
+
+impl<'a> FmtAst for IfBlock<'a> {
+    fn display_low(&self, fold: bool, fmt: &mut Fmt) {
+        match *self {
+            IfBlock::Block(block) => block.display_low(true, fmt),
+            IfBlock::Arrow(arrow, expr) => {
+                fmt.write_span(arrow);
+                if fold {
+                    fmt.indent();
+                    fmt.newline();
+                    fmt.write_indent();
+                } else {
+                    write!(fmt, " ");
+                }
+                expr.display(fmt);
+                if fold {
+                    fmt.unindent();
+                }
+            }
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        match *self {
+            IfBlock::Block(..) => fmt.line_length,
+            IfBlock::Arrow(arrow, expr) => arrow.len() + " ".len() + expr.flat_len(fmt),
         }
     }
 }

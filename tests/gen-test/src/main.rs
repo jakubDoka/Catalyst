@@ -725,7 +725,7 @@ fn main() {
             fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
                 ::Some~::None => 5;
                 ::Some~::Some~::None => 2;
-                ::None => 3;
+                ::None => return 3;
                 ::Some~a => match a {
                     ::Some~::Some~a => a;
                     ::Some~::None => 6;

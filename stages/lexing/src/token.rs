@@ -148,6 +148,7 @@ gen_kind!(
         Use = "use",
         Extern = "extern",
         If = "if",
+        Elif = "elif",
         Else = "else",
         For = "for",
         Break = "break",

@@ -23,6 +23,7 @@
         "deps",
         "dlsym",
         "Doka",
+        "elifs",
         "Endianness",
         "ents",
         "fastcall",

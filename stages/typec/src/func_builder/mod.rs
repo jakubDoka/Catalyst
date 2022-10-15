@@ -362,10 +362,26 @@ impl TyChecker<'_> {
             UnitExprAst::StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
             UnitExprAst::EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
             UnitExprAst::Match(match_expr) => self.r#match(match_expr, inference, builder),
+            UnitExprAst::If(r#if) => self.r#if(r#if, inference, builder),
             UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
+    }
+
+    fn r#if<'a>(
+        &mut self,
+        IfAst {
+            r#if,
+            cond,
+            body,
+            elifs,
+            r#else,
+        }: IfAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        todo!()
     }
 
     fn enum_ctor<'a>(
@@ -560,17 +576,20 @@ impl TyChecker<'_> {
             .collect::<Option<BumpVec<_>>>()?;
         let arms = builder.arena.alloc_iter(arms);
 
-        let ty = arms
-            .iter()
-            .map(|arm| arm.body.ty)
-            .reduce(|a, b| match a == b {
-                true => a,
-                false => Ty::UNIT,
-            })
-            .unwrap_or(Ty::TERMINAL);
+        let ty = Self::combine_branch_types(arms.iter().map(|arm| arm.body.ty));
 
         let tir = builder.arena.alloc(MatchTir { value, arms });
         Some(TirNode::new(ty, TirKind::Match(tir), body.span()))
+    }
+
+    fn combine_branch_types(tys: impl IntoIterator<Item = Ty>) -> Ty {
+        tys.into_iter()
+            .reduce(|a, b| match Ty::compatible(a, b) {
+                true if a != Ty::TERMINAL => a,
+                true => b,
+                false => Ty::UNIT,
+            })
+            .unwrap_or(Ty::TERMINAL)
     }
 
     fn pattern<'a>(
@@ -939,14 +958,7 @@ impl TyChecker<'_> {
                     FuncLookupResult::Var(..) => todo!(),
                 }
             }
-            kind @ (UnitExprAst::Return(..)
-            | UnitExprAst::Call(..)
-            | UnitExprAst::Int(..)
-            | UnitExprAst::Char(..)
-            | UnitExprAst::StructCtor(..)
-            | UnitExprAst::Const(..)
-            | UnitExprAst::Match(..)
-            | UnitExprAst::EnumCtor(..)) => {
+            kind => {
                 todo!("{kind:?}")
             }
         }

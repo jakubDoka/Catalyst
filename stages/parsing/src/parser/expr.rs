@@ -82,6 +82,7 @@ pub enum UnitExprAst<'a> {
     Char(Span),
     Const(ConstAst<'a>),
     Match(MatchExprAst<'a>),
+    If(IfAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -106,9 +107,13 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Char => Some(Self::Char(ctx.advance().span)),
             Const => ctx.parse().map(Self::Const),
             Match => ctx.parse().map(Self::Match),
+            If => ctx.parse().map(Self::If),
         });
 
         loop {
+            if ctx.reduce_repetition(TokenKind::NewLine) && ctx.at_next_tok(TokenKind::Dot) {
+                ctx.advance();
+            }
             unit = branch!(ctx => {
                 LeftParen => ctx.parse_args((unit?, ))
                     .map(|call| ctx.arena.alloc(call))
@@ -148,6 +153,105 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             TypedPath(path) => path.span(),
             Match(r#match) => r#match.span(),
             EnumCtor(ctor) => ctor.span(),
+            If(r#if) => r#if.span(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IfAst<'a> {
+    pub r#if: Span,
+    pub cond: ExprAst<'a>,
+    pub body: IfBlock<'a>,
+    pub elifs: &'a [ElifAst<'a>],
+    pub r#else: Option<(Span, IfBlock<'a>)>,
+}
+
+impl<'a> Ast<'a> for IfAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "if";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#if: ctx.advance().span,
+            cond: ctx.parse()?,
+            body: ctx.parse()?,
+            elifs: {
+                let mut else_ifs = bumpvec![];
+                while let Some(elif) = ctx.try_advance_ignore_lines(TokenKind::Elif) {
+                    else_ifs.push(ctx.parse_args((elif.span,))?);
+                }
+                ctx.arena.alloc_iter(else_ifs)
+            },
+            r#else: if let Some(r#else) = ctx.try_advance_ignore_lines(TokenKind::Else) {
+                Some((r#else.span, ctx.parse()?))
+            } else {
+                None
+            },
+        })
+    }
+
+    fn span(&self) -> Span {
+        let mut span = self.cond.span().joined(self.body.span());
+        if let Some((_, body)) = self.r#else {
+            span = span.joined(body.span());
+        }
+        span
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ElifAst<'a> {
+    pub elif: Span,
+    pub cond: ExprAst<'a>,
+    pub body: IfBlock<'a>,
+}
+
+impl<'a> Ast<'a> for ElifAst<'a> {
+    type Args = (Span,);
+
+    const NAME: &'static str = "else if";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (elif,): Self::Args) -> Option<Self> {
+        Some(Self {
+            elif,
+            cond: ctx.parse()?,
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.elif.joined(self.body.span())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IfBlock<'a> {
+    Block(BlockAst<'a>),
+    Arrow(Span, ExprAst<'a>),
+}
+
+impl<'a> Ast<'a> for IfBlock<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "if block";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+        branch!(ctx => {
+            LeftCurly => ctx.parse().map(Self::Block),
+            ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
+                ctx.skip(TokenKind::NewLine);
+                ctx.parse()?
+            })),
+        })
+    }
+
+    fn span(&self) -> Span {
+        use IfBlock::*;
+        match *self {
+            Block(block) => block.span(),
+            Arrow(.., expr) => expr.span(),
         }
     }
 }

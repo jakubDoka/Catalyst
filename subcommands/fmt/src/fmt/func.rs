@@ -43,8 +43,17 @@ impl<'a> FmtAst for FuncBodyAst<'a> {
         match self {
             FuncBodyAst::Arrow(.., expr) => {
                 write!(fmt, " =>");
-                fmt.buffer.push([' ', '\n'][fold as usize]);
+                if fold {
+                    fmt.indent();
+                    fmt.newline();
+                    fmt.write_indent();
+                } else {
+                    write!(fmt, " ");
+                }
                 expr.display(fmt);
+                if fold {
+                    fmt.unindent();
+                }
             }
             FuncBodyAst::Block(block) => {
                 write!(fmt, " ");

@@ -39,9 +39,14 @@ pub trait FmtAst {
     }
     fn display_low(&self, _: bool, fmt: &mut Fmt);
 
-    fn display(&self, fmt: &mut Fmt) {
+    fn display_report(&self, fmt: &mut Fmt) -> bool {
         let fold = self.flat_len(fmt) + fmt.line_progress() > fmt.line_length;
         self.display_low(fold, fmt);
+        fold
+    }
+
+    fn display(&self, fmt: &mut Fmt) {
+        self.display_report(fmt);
     }
 }
 
