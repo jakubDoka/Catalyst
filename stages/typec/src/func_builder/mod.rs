@@ -372,12 +372,13 @@ impl TyChecker<'_> {
 
     fn r#let<'a>(
         &mut self,
-        LetAst { pat, value, .. }: LetAst,
-        inference: Inference,
+        LetAst { pat, ty, value, .. }: LetAst,
+        _inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
+        let ty = ty.map(|ty| self.typec.type_from_ast(ty));
         let value = self.expr(value, None, builder)?;
-        let pat = self.pattern(pat, ty, builder)
+        let pat = self.pattern(pat, ty, builder);
 
         todo!()
     }
@@ -698,7 +699,8 @@ impl TyChecker<'_> {
                                 self.field_not_found(struct_ty, name)?;
                             };
 
-                            let field = self.pattern(PatAst::Binding(mutable, name), field_ty, builder)?;
+                            let field =
+                                self.pattern(PatAst::Binding(mutable, name), field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
                         StructCtorPatFieldAst::Named { name, pat, .. } => {
