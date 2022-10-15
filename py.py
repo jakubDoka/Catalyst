@@ -13,7 +13,8 @@ assert partition_ranges(
 ) == [1, 2, 4, 5, 10, 14]
 
 def partition_pattern(pattern):
-    if len(pattern) == 0 or len(pattern[0]) == 0: return []
+    pattern = list(filter(lambda x: len(x) > 0, pattern))
+    if len(pattern) == 0: return []
     partition = partition_ranges(map(lambda x: x[0], pattern))
     result = []
     for ((s_start, r_end), *others) in pattern:
@@ -39,7 +40,7 @@ assert partition_pattern(
 ]
 
 def build_pattern_tree(pattern):
-    part_pattern = partition_pattern(pattern)
+    part_pattern = dbg(partition_pattern(pattern))
     branches = {}
     for (span, others) in part_pattern:
         if span not in branches:
@@ -49,18 +50,18 @@ def build_pattern_tree(pattern):
         branches[span] = build_pattern_tree(others)
     return sorted(((k, v) for k, v in branches.items()))
 
-assert build_pattern_tree(
-    [
-        ((0, 6), (0, 30)),
-        ((2, 50), (0, 64)),
-        ((50, 255), (0, 255)),
-    ],
-) == [
-    ((0, 2), [((0, 30), [])]),
-    ((2, 6), [((0, 30), []), ((30, 64), [])]),
-    ((6, 50), [((0, 64), [])]),
-    ((50, 255), [((0, 255), [])]),
-]
+# assert build_pattern_tree(
+#     [
+#         ((0, 6), (0, 30)),
+#         ((2, 50), (0, 64)),
+#         ((50, 255), (0, 255)),
+#     ],
+# ) == [
+#     ((0, 2), [((0, 30), [])]),
+#     ((2, 6), [((0, 30), []), ((30, 64), [])]),
+#     ((6, 50), [((0, 64), [])]),
+#     ((50, 255), [((0, 255), [])]),
+# ]
 
 
 def is_exhaustive_tree(type, pattern_tree):
@@ -80,19 +81,36 @@ def is_exhaustive_tree(type, pattern_tree):
     return arr
 
 def is_exhaustive(type, pattern):
-    pattern_tree = build_pattern_tree(pattern)
+    pattern_tree = dbg(build_pattern_tree(pattern))
     return is_exhaustive_tree(type, pattern_tree)
 
 
-assert is_exhaustive(
-    ((0, 255), (0, 255)),
+# assert is_exhaustive(
+#     ((0, 255), (0, 255)),
+#     [
+#         ((0, 2), (0, 30)),
+#         ((2, 50), (0, 64)),
+#         ((0, 50), (30, 255)),
+#         ((50, 255), (0, 255)),
+#     ],
+# ) == []
+# ::Some~::None => 5;
+#                 ::Some~::Some~::None => 2;
+#                 ::None => 3;
+#                 ::Some~a => match a {
+#                     ::Some~::Some~a => a;
+#                     ::Some~::None => 0;
+#                     ::None => 1;
+#                 };
+assert dbg(is_exhaustive(
+    ((0, 2), (0, 2), (0, 2), (0, 255)),
     [
-        ((0, 2), (0, 30)),
-        ((2, 50), (0, 64)),
-        ((0, 50), (30, 255)),
-        ((50, 255), (0, 255)),
+        ((0, 1), (1, 2)),
+        ((0, 1), (0, 1), (1, 2)),
+        ((1, 2),),
+        ((0, 1), (0, 2)),
     ],
-) == []
+)) == []
 assert is_exhaustive(
     ((0, 255), (0, 255)),
     [

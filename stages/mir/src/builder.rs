@@ -87,9 +87,11 @@ impl MirChecker<'_> {
             .collect::<BumpVec<_>>();
 
         let mut reachable = bumpvec![false; branch_patterns.len()];
-        PatSolver::solve(&arena, &branch_patterns, &mut reachable)
-            .map_err(|err| self.non_exhaustive(err, builder.ctx.func.value_ty(value), span))
-            .ok()?;
+        let tree = patterns::as_tree(&arena, &branch_patterns, &mut reachable);
+        if tree.has_missing {
+            let gaps = patterns::find_gaps(tree);
+            self.non_exhaustive(gaps, builder.ctx.func.value_ty(value), span)?
+        }
 
         arena.clear();
         builder.ctx.pattern_solver_arena = Some(arena);
@@ -146,6 +148,7 @@ impl MirChecker<'_> {
         PatTir {
             kind,
             has_binding,
+            ty,
             span,
             ..
         }: PatTir,
@@ -172,11 +175,15 @@ impl MirChecker<'_> {
                 UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
                 UnitPatKindTir::Enum {
-                    ty,
+                    ty: enum_ty,
                     id,
                     value: value_pat,
                 } => {
-                    let variant_ty = self.typec[self.typec[ty].variants][id].ty;
+                    let mut variant_ty = self.typec[self.typec[enum_ty].variants][id].ty;
+                    if let Ty::Instance(ty) = ty {
+                        let params = self.typec[self.typec[ty].args].to_bumpvec();
+                        variant_ty = self.typec.instantiate(variant_ty, &params, self.interner);
+                    }
                     let dest = builder.value(variant_ty, self.typec);
                     builder.inst(InstMir::Field(value, 1, dest), span);
                     if let Some(&value) = value_pat {
@@ -582,11 +589,11 @@ impl MirChecker<'_> {
     }
 
     gen_error_fns! {
-        push non_exhaustive(self, err: PatError, ty: Ty, span: Span) {
+        push non_exhaustive(self, err: Vec<Vec<Range>>, ty: Ty, span: Span) {
             err: "match is not exhaustive";
             info: (
                 "missing patterns: {}",
-                err.missing
+                err
                     .iter()
                     .map(|seq| self.display_pat(seq, ty))
                     .intersperse(", ".into())

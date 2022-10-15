@@ -714,5 +714,24 @@ fn main() {
                 ::Some~a => a;
             }
         }
+
+        simple "enum-stress" {
+            enum [T] Option {
+                Some: T;
+                None;
+            };
+
+            #[entry];
+            fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
+                ::Some~::None => 5;
+                ::Some~::Some~::None => 2;
+                ::None => 3;
+                ::Some~a => match a {
+                    ::Some~::Some~a => a;
+                    ::Some~::None => 6;
+                    ::None => 1;
+                };
+            }
+        }
     }
 }

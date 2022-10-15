@@ -12,8 +12,6 @@ mod patterns;
 mod state_gen;
 
 pub use {
-    patterns::{
-        Branch, Node, PatError, PatNode, PatNodeChildren, PatSolver, PatTree, Range, UpperBound,
-    },
+    patterns::{Branch, Node, PatNode, PatNodeChildren, PatTree, Range, UpperBound},
     state_gen::MirChecker,
 };

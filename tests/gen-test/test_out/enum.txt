@@ -13,7 +13,7 @@ block0:
     v5 = iconst.i64 4
     v6 = stack_load.i64 ss0+8
     v7 = icmp eq v5, v6  ; v5 = 4
-    v8 = band v4, v7
+    v8 = band v7, v4
     brnz v8, block1
     jump block2
 
@@ -24,7 +24,7 @@ block2:
     v12 = iconst.i64 1
     v13 = stack_load.i64 ss0+8
     v14 = icmp eq v12, v13  ; v12 = 1
-    v15 = band v11, v14
+    v15 = band v14, v11
     brnz v15, block3
     jump block4
 

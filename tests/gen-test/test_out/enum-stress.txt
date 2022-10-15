@@ -17,7 +17,7 @@ block0:
     v7 = iconst.i8 1
     v8 = stack_load.i8 ss0+8
     v9 = icmp eq v7, v8  ; v7 = 1
-    v10 = band v6, v9
+    v10 = band v9, v6
     brnz v10, block1
     jump block2
 
@@ -31,8 +31,8 @@ block2:
     v17 = iconst.i8 1
     v18 = stack_load.i8 ss0+16
     v19 = icmp eq v17, v18  ; v17 = 1
-    v20 = band v16, v19
-    v21 = band v13, v20
+    v20 = band v19, v16
+    v21 = band v20, v13
     brnz v21, block3
     jump block4
 
@@ -50,7 +50,7 @@ block6:
     v28 = iconst.i8 0
     v29 = stack_load.i8 ss0+16
     v30 = icmp eq v28, v29  ; v28 = 0
-    v31 = band v27, v30
+    v31 = band v30, v27
     brnz v31, block7
     jump block8
 
@@ -61,7 +61,7 @@ block8:
     v35 = iconst.i8 1
     v36 = stack_load.i8 ss0+16
     v37 = icmp eq v35, v36  ; v35 = 1
-    v38 = band v34, v37
+    v38 = band v37, v34
     brnz v38, block9
     jump block10
 

@@ -1,124 +1,108 @@
-use std::{fmt::Display, hint::unreachable_unchecked, iter};
+use std::{fmt::Display, hint::unreachable_unchecked};
 
 use storage::*;
 
-pub struct PatSolver;
+pub fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
+    dbg!(tree);
+    vec![]
+}
 
-impl PatSolver {
-    pub fn solve<'a>(
-        arena: &'a Arena,
-        input: &[Branch<'a>],
-        reachable: &mut [bool],
-    ) -> Result<PatTree<'a>, PatError> {
-        let (intersected, mut sorted) = Self::intersect_branches(input.iter().copied());
-        sorted.reverse();
+pub fn as_tree<'a>(arena: &'a Arena, input: &[Branch<'a>], reachable: &mut [bool]) -> PatTree<'a> {
+    let intersected = intersect_branches(input.iter().copied());
 
-        let grouped = || intersected.group_by(|a, b| a.0.start == b.0.start);
-        let mut missing = vec![];
-        let mut branches = bumpvec![cap grouped().count()];
-        let mut branch_buffer = bumpvec![];
-        for group in grouped() {
-            // SAFETY: group has at least one element, otherwise group by would not supply it
-            let &[(range, res), ..] = group else { unsafe { unreachable_unchecked() } };
-            let children_res = match res {
+    let grouped = || intersected.group_by(|a, b| a.0.start == b.0.start);
+    let mut branches = bumpvec![cap grouped().count()];
+    let mut branch_buffer = bumpvec![];
+    let mut final_missing = false;
+    let mut current = UpperBound::Inside(0);
+    for group in grouped() {
+        // SAFETY: group has at least one element, otherwise group by would not supply it
+        let &[(range, ..), ..] = group else { unsafe { unreachable_unchecked() } };
+        let mut group_iter = group.iter().copied();
+        let missing = loop {
+            let Some((.., res)) = group_iter.next() else {
+                break true;
+            };
+
+            let (children, missing) = match res {
                 Ok(..) => {
                     branch_buffer.clear();
                     branch_buffer.extend(group.iter().filter_map(|(_, res)| res.ok()));
-                    Self::solve(arena, &branch_buffer, reachable).map(PatNodeChildren::More)
+                    let sub_tree = as_tree(arena, &branch_buffer, reachable);
+                    (PatNodeChildren::More(sub_tree), sub_tree.has_missing)
                 }
                 Err(branch) => {
                     reachable[branch] = true;
-                    Ok(PatNodeChildren::End(branch))
+                    (PatNodeChildren::End(branch), false)
                 }
             };
-
-            let current = sorted.pop();
-            if current != Some(UpperBound::Inside(range.start)) {
-                missing.push(vec![range]);
-                assert!(sorted.pop() == current);
-                continue;
-            }
-
-            let children = match children_res {
-                Ok(children) => children,
-                Err(PatError { missing: others }) => {
-                    missing.extend(
-                        others
-                            .into_iter()
-                            .map(|missing| iter::once(range).chain(missing).collect()),
-                    );
-                    continue;
-                }
-            };
-
             branches.push(PatNode { range, children });
-        }
-
-        if let (Some(UpperBound::Inside(start)), Some(end)) = (sorted.pop(), sorted.pop()) {
-            missing.push(vec![Range { start, end }]);
-        }
-
-        if missing.is_empty() {
-            Ok(PatTree {
-                nodes: arena.alloc_iter(branches),
-            })
-        } else {
-            Err(PatError { missing })
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn intersect_branches<'a>(
-        input: impl Iterator<Item = Branch<'a>> + Clone,
-    ) -> (
-        BumpVec<(Range, Result<Branch<'a>, usize>)>,
-        BumpVec<UpperBound>,
-    ) {
-        let sorted = Self::sorted_ranges(input.clone());
-
-        let mut intersected = bumpvec![];
-        for Branch { start, nodes, ord } in input {
-            let mut holder = [Range::empty()];
-            let ranges = match start {
-                Node::Scalar(range) => {
-                    holder[0] = range;
-                    &holder[..]
-                }
-                Node::Or(options) => options,
-            };
-
-            for overlap in ranges.iter().flat_map(|r| sorted.overlaps(r)) {
-                let branch = match *nodes {
-                    [first, ref rest @ ..] => Ok(Branch {
-                        start: first,
-                        nodes: rest,
-                        ord,
-                    }),
-                    [] => Err(ord),
-                };
-                intersected.push((overlap, branch));
+            if !missing {
+                break false;
             }
-        }
-        intersected.sort_by_key(|(r, b)| (r.start, b.map_or_else(|o| o, |b| b.ord)));
-        (intersected, sorted.ranges)
+        };
+
+        final_missing |= (UpperBound::Inside(range.start) != current) | missing;
+        current = range.end;
     }
 
-    fn sorted_ranges<'a>(input: impl Iterator<Item = Branch<'a>>) -> SortedRanges {
-        let mut ranges = bumpvec![UpperBound::Inside(0), UpperBound::Outside];
-        input
-            .map(|branch| branch.start)
-            .for_each(|node| match node {
-                Node::Or(options) => {
-                    ranges.extend(options.iter().flat_map(|&option| option.to_array()))
-                }
-                Node::Scalar(option) => ranges.extend(option.to_array()),
-            });
-        SortedRanges::new(ranges)
+    final_missing |= current != UpperBound::Outside;
+
+    PatTree {
+        has_missing: final_missing,
+        nodes: arena.alloc_iter(branches),
     }
 }
 
-#[derive(Debug)]
+#[allow(clippy::type_complexity)]
+fn intersect_branches<'a>(
+    input: impl Iterator<Item = Branch<'a>> + Clone,
+) -> BumpVec<(Range, Result<Branch<'a>, usize>)> {
+    let sorted = sorted_ranges(input.clone());
+
+    let mut intersected = bumpvec![];
+    for Branch { start, nodes, ord } in input {
+        let mut holder = [Range::empty()];
+        let ranges = match start {
+            Node::Scalar(range) => {
+                holder[0] = range;
+                &holder[..]
+            }
+            Node::Or(options) => options,
+        };
+
+        for overlap in ranges.iter().flat_map(|r| sorted.overlaps(r)) {
+            let branch = match *nodes {
+                [first, ref rest @ ..] => Ok(Branch {
+                    start: first,
+                    nodes: rest,
+                    ord,
+                }),
+                [] => Err(ord),
+            };
+            intersected.push((overlap, branch));
+        }
+    }
+    intersected.sort_unstable_by_key(|(r, b)| (r.start, b.map_or_else(|o| o, |b| b.ord)));
+    intersected
+}
+
+fn sorted_ranges<'a>(input: impl Iterator<Item = Branch<'a>>) -> SortedRanges {
+    let mut ranges = bumpvec![UpperBound::Inside(0), UpperBound::Outside];
+    input
+        .map(|branch| branch.start)
+        .for_each(|node| match node {
+            Node::Or(options) => {
+                ranges.extend(options.iter().flat_map(|&option| option.to_array()))
+            }
+            Node::Scalar(option) => ranges.extend(option.to_array()),
+        });
+    SortedRanges::new(ranges)
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct PatTree<'a> {
+    pub has_missing: bool,
     pub nodes: &'a [PatNode<'a>],
 }
 
@@ -132,11 +116,6 @@ pub struct PatNode<'a> {
 pub enum PatNodeChildren<'a> {
     End(usize),
     More(PatTree<'a>),
-}
-
-#[derive(Debug)]
-pub struct PatError {
-    pub missing: Vec<Vec<Range>>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -310,7 +289,7 @@ mod test {
             ],
         );
 
-        let res = PatSolver::solve(&arena, dbg!(branches), &mut [false; 2]);
+        let res = as_tree(&arena, dbg!(branches), &mut [false; 2]);
         println!("{:#?}", res)
     }
 }
