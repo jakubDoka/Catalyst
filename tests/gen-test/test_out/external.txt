@@ -10,24 +10,16 @@ block0:
 }
 
 
-const function u0:0() -> i32 windows_fastcall {
-    sig0 = (i32) -> i32 windows_fastcall
-    fn0 = u0:2 sig0
-
-block0:
-    v0 = iconst.i32 97
-    v1 = call fn0(v0)  ; v0 = 97
-    v2 = iconst.i32 10
-    v3 = call fn0(v2)  ; v2 = 10
-    return v3
-}
-
-
 function u0:0() -> i64 fast {
+    sig0 = (i32) -> i32 windows_fastcall
+    fn0 = u0:3 sig0
+
 block0:
     v0 = iconst.i32 97
-    v1 = iconst.i64 0
-    return v1  ; v1 = 0
+    v1 = iconst.i32 10
+    v2 = call fn0(v1)  ; v1 = 10
+    v3 = iconst.i64 0
+    return v3  ; v3 = 0
 }
 
 
