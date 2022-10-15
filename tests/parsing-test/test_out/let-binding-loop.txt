@@ -1,0 +1,14 @@
+  --> let-binding-loop\root.ctl
+   |
+ 1 | 
+ 2 | struct A {
+ 3 |     a: uint
+ 4 |     b: uint
+ 5 | }
+ 6 | #[entry]
+ 7 | fn main -> uint {
+ 8 |     a = a + b
+ 9 |     a - 3
+10 | }
+   |
+
