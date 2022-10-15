@@ -213,7 +213,7 @@ impl MirChecker<'_> {
 
     fn display_pat_low(&self, ty: Ty, params: &[Ty], res: &mut String, frontier: &mut &[Range]) {
         let mut advance = || {
-            let (&first, others) = frontier.split_first().unwrap();
+            let (&first, others) = frontier.split_first().unwrap_or((&Range::full(), &[]));
             *frontier = others;
             first
         };
@@ -264,13 +264,19 @@ impl MirChecker<'_> {
                 }
             },
             Ty::Enum(r#enum) => {
-                let flag = advance();
-                let index = flag.start as usize;
                 let Enum { variants, .. } = self.typec[r#enum];
-                let variant = self.typec[variants][index];
-                write!(res, "\\{}(", &self.interner[variant.name]).unwrap();
-                self.display_pat_low(variant.ty, params, res, frontier);
-                res.push(')');
+                let variant = if self.typec.get_enum_flag_ty(r#enum).is_some() {
+                    let flag = advance();
+                    let index = flag.start as usize;
+                    self.typec[variants][index]
+                } else {
+                    self.typec[variants][0]
+                };
+                write!(res, "\\{}", &self.interner[variant.name]).unwrap();
+                if variant.ty != Ty::UNIT {
+                    res.push('~');
+                    self.display_pat_low(variant.ty, params, res, frontier);
+                }
             }
         }
     }

@@ -1,10 +1,38 @@
-use std::{fmt::Display, hint::unreachable_unchecked};
+use std::{fmt::Display, hint::unreachable_unchecked, iter};
 
 use storage::*;
 
 pub fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
-    dbg!(tree);
-    vec![]
+    let mut missing = vec![];
+    let mut current = UpperBound::Inside(0);
+    for group in tree.nodes.group_by(|a, b| a.range.start == b.range.start) {
+        let &[PatNode { range, .. }, ..] = group else { unsafe { unreachable_unchecked() } };
+        for &PatNode { children, .. } in group {
+            if let PatNodeChildren::More(sub_tree) = children {
+                if sub_tree.has_missing {
+                    for sub in find_gaps(sub_tree) {
+                        missing.push(iter::once(range).chain(sub).collect());
+                    }
+                }
+            }
+        }
+        if current != UpperBound::Inside(range.start) && let UpperBound::Inside(start) = current {
+            missing.push(vec![Range { start, end: range.start.into() }]);
+        }
+        current = range.end;
+    }
+
+    if let UpperBound::Inside(current) = current {
+        missing.push(vec![Range {
+            start: current,
+            end: UpperBound::Outside,
+        }]);
+    }
+
+    missing.sort_unstable();
+    missing.dedup();
+
+    missing
 }
 
 pub fn as_tree<'a>(arena: &'a Arena, input: &[Branch<'a>], reachable: &mut [bool]) -> PatTree<'a> {
@@ -106,13 +134,13 @@ pub struct PatTree<'a> {
     pub nodes: &'a [PatNode<'a>],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PatNode<'a> {
     pub range: Range,
     pub children: PatNodeChildren<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PatNodeChildren<'a> {
     End(usize),
     More(PatTree<'a>),
@@ -131,7 +159,7 @@ pub enum Node<'a> {
     Or(&'a [Range]),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Range {
     pub start: u128,
     pub end: UpperBound,

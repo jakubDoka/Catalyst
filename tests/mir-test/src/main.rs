@@ -139,11 +139,9 @@ fn main() {
                 None;
             };
 
-            fn main() -> uint => match Option::Some~0 {
-                ::Some~4 => 5;
-                ::Some~1 => 2;
-                ::None => 3;
-                ::Some~a => a;
+            fn main() -> uint => match Option::Some~Option::Some~0 {
+                ::Some~::None => 5;
+                ::Some~::Some~1 => 2;
             }
         }
     }

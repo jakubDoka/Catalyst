@@ -253,8 +253,9 @@ impl MirChecker<'_> {
         match kind {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {
+                    let mut ty = Some(ty);
                     for &pat in fields {
-                        self.pattern_to_branch(pat, nodes, Some(ty), _arena, _builder);
+                        self.pattern_to_branch(pat, nodes, ty.take(), _arena, _builder);
                     }
                 }
                 UnitPatKindTir::Int(value, ..) => {

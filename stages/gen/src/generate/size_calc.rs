@@ -96,8 +96,9 @@ impl Generator<'_> {
                     .unwrap_or((0, 1));
 
                 let align = base_align.max(size.unwrap_or(0) as u8);
+                let size = size.map(|size| size.max(align as u32));
                 let offsets = iter::once(0).chain(size).collect::<BumpVec<_>>();
-                let size = base_size + size.unwrap_or(0).max(align as u32);
+                let size = base_size + size.unwrap_or(align as u32);
 
                 let (repr, on_stack) = Self::repr_for_size(size, ptr_ty);
                 Layout {
