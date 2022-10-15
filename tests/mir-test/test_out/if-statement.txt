@@ -1,0 +1,39 @@
+info: mir repr of functions:
+ fn [] main() -> uint  {
+    block0() {
+        var3 = 0
+        var4 = 0
+        var5 = uint == uint(val3, val4)
+        split var5 block1 block2
+    }
+
+    block1() {
+        var2 = 0
+        goto block3 with var2
+    }
+
+    block2() {
+        var6 = 0
+        var7 = 69
+        var8 = uint == uint(val6, val7)
+        split var8 block4 block5
+    }
+
+    block3(var2: uint) {
+        return var2
+    }
+
+    block4() {
+        var2 = 89
+        goto block3 with var2
+    }
+
+    block5() {
+        var2 = 1
+        goto block3 with var2
+    }
+
+}
+
+
+

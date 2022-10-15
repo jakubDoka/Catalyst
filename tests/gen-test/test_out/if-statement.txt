@@ -1,6 +1,37 @@
 info: mir repr of functions:
+function u0:0() -> i64 fast {
+block0:
+    v0 = iconst.i64 0
+    v1 = iconst.i64 0
+    v2 = icmp eq v0, v1  ; v0 = 0, v1 = 0
+    brnz v2, block1
+    jump block2
+
+block2:
+    v3 = iconst.i64 0
+    v4 = iconst.i64 69
+    v5 = icmp eq v3, v4  ; v3 = 0, v4 = 69
+    brnz v5, block3
+    jump block4
+
+block4:
+    v6 = iconst.i64 1
+    jump block5(v6)  ; v6 = 1
+
+block3:
+    v7 = iconst.i64 89
+    jump block5(v7)  ; v7 = 89
+
+block1:
+    v8 = iconst.i64 0
+    jump block5(v8)  ; v8 = 0
+
+block5(v9: i64):
+    return v9
+}
 
 
-error: no entry points found
- = help: add '#[entry]' to a function that should take this role
+
+
+info: exit code: 0
 
