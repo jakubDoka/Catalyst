@@ -1,3 +1,5 @@
+use std::iter;
+
 use super::*;
 
 impl Generator<'_> {
@@ -84,7 +86,7 @@ impl Generator<'_> {
                 return self.ty_layout_low(base.as_ty(), &params, ptr_ty);
             }
             Ty::Enum(ty) => {
-                let size = self.typec.get_enum_flag_ty(ty).map_or(0, |ty| ty.size());
+                let size = self.typec.get_enum_flag_ty(ty).map(|ty| ty.size());
                 let (base_size, base_align) = self.typec[self.typec[ty].variants]
                     .to_bumpvec()
                     .into_iter()
@@ -93,9 +95,9 @@ impl Generator<'_> {
                     .max()
                     .unwrap_or((0, 1));
 
-                let align = base_align.max(size as u8);
-                let size = base_size + size.max(align as u32);
-                let offsets = [0, (size != 0) as u32 * align as u32];
+                let align = base_align.max(size.unwrap_or(0) as u8);
+                let offsets = iter::once(0).chain(size).collect::<BumpVec<_>>();
+                let size = base_size + size.unwrap_or(0).max(align as u32);
 
                 let (repr, on_stack) = Self::repr_for_size(size, ptr_ty);
                 Layout {

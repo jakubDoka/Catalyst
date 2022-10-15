@@ -1,9 +1,9 @@
 info: tir repr of functions:
  fn [] main() -> uint return match 0\Option[uint]\{0, 0} {
-    \Some(4) => 5
-    \Some(1) => 2
-    \Some(var0) => var0
-    \None => 3
+    \{0, 4} => 5
+    \{0, 1} => 2
+    \{0, var0} => var0
+    \{1} => 3
 }
 
 
