@@ -108,16 +108,9 @@ pub enum PatKindTir<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum UnitPatKindTir<'a> {
-    Enum {
-        ty: VRef<Enum>,
-        id: usize,
-        value: Option<&'a PatTir<'a>>,
-    },
-    Struct {
-        fields: &'a [PatTir<'a>],
-    },
+    Struct { fields: &'a [PatTir<'a>] },
     Binding(VRef<Var>),
-    Int(Span, VRef<Func>),
+    Int(Result<Span, i64>, VRef<Func>),
     Wildcard,
 }
 

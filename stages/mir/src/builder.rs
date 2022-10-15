@@ -76,7 +76,7 @@ impl MirChecker<'_> {
             .enumerate()
             .filter_map(|(ord, &MatchArmTir { pat, .. })| {
                 let mut branch_nodes = bumpvec![];
-                self.pattern_to_branch(pat, &mut branch_nodes, &arena, builder);
+                self.pattern_to_branch(pat, &mut branch_nodes, None, &arena, builder);
                 let (&start, rest) = branch_nodes.split_first()?;
                 Some(Branch {
                     start,
@@ -146,11 +146,7 @@ impl MirChecker<'_> {
     fn bind_pattern_vars(
         &mut self,
         PatTir {
-            kind,
-            has_binding,
-            ty,
-            span,
-            ..
+            kind, has_binding, ..
         }: PatTir,
         value: VRef<ValueMir>,
         builder: &mut MirBuilder,
@@ -174,22 +170,6 @@ impl MirChecker<'_> {
                 }
                 UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
-                UnitPatKindTir::Enum {
-                    ty: enum_ty,
-                    id,
-                    value: value_pat,
-                } => {
-                    let mut variant_ty = self.typec[self.typec[enum_ty].variants][id].ty;
-                    if let Ty::Instance(ty) = ty {
-                        let params = self.typec[self.typec[ty].args].to_bumpvec();
-                        variant_ty = self.typec.instantiate(variant_ty, &params, self.interner);
-                    }
-                    let dest = builder.value(variant_ty, self.typec);
-                    builder.inst(InstMir::Field(value, 1, dest), span);
-                    if let Some(&value) = value_pat {
-                        self.bind_pattern_vars(value, dest, builder);
-                    }
-                }
             },
             PatKindTir::Or(_) => todo!(),
         }
@@ -246,60 +226,15 @@ impl MirChecker<'_> {
                 }
                 UnitPatKindTir::Int(int, cmp) => {
                     let val = builder.value(ty, self.typec);
-                    let lit = self.int(None, int, val, builder)?;
+                    let lit = self.int(int.err(), int.unwrap_or(span), val, builder)?;
                     let call = CallMir {
                         callable: CallableMir::Func(cmp),
                         params: default(),
                         args: builder.ctx.func.value_args.bump([lit, value]),
                     };
                     let cond = builder.value(Ty::BOOL, self.typec);
-                    builder.inst(InstMir::Call(call, Some(cond)), int);
+                    builder.inst(InstMir::Call(call, Some(cond)), int.unwrap_or(span));
                     Some(cond)
-                }
-                UnitPatKindTir::Enum {
-                    ty,
-                    id,
-                    value: value_pat,
-                } => {
-                    let cond = self
-                        .typec
-                        .get_enum_cmp(ty, self.interner)
-                        .map(|(enum_cmp, ty)| {
-                            let flag = builder.value(ty, self.typec);
-                            builder.inst(InstMir::Field(value, 0, flag), span);
-                            let lit = builder.value(ty, self.typec);
-                            builder.inst(InstMir::Int(id as i64, lit), span);
-                            let call = CallMir {
-                                callable: CallableMir::Func(enum_cmp),
-                                params: default(),
-                                args: builder.ctx.func.value_args.bump([lit, flag]),
-                            };
-                            let cond = builder.value(Ty::BOOL, self.typec);
-                            builder.inst(InstMir::Call(call, Some(cond)), span);
-                            cond
-                        });
-
-                    let inner_cond = value_pat.and_then(|&value_pat| {
-                        let inner_value = builder.value(value_pat.ty, self.typec);
-                        builder.inst(InstMir::Field(value, 1, inner_value), span);
-                        self.pattern_to_cond(value_pat, inner_value, builder)
-                    });
-
-                    match (cond, inner_cond) {
-                        (Some(cond), Some(inner_cond)) => {
-                            let band = self.typec.get_band();
-                            let call = CallMir {
-                                callable: CallableMir::Func(band),
-                                params: default(),
-                                args: builder.ctx.func.value_args.bump([cond, inner_cond]),
-                            };
-                            let cond = builder.value(Ty::BOOL, self.typec);
-                            builder.inst(InstMir::Call(call, Some(cond)), span);
-                            Some(cond)
-                        }
-                        (Some(cond), None) | (None, Some(cond)) => Some(cond),
-                        (None, None) => None,
-                    }
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => None,
             },
@@ -309,8 +244,9 @@ impl MirChecker<'_> {
 
     fn pattern_to_branch<'a>(
         &mut self,
-        PatTir { kind, .. }: PatTir,
+        PatTir { kind, ty, .. }: PatTir,
         nodes: &mut BumpVec<Node<'a>>,
+        parent: Option<Ty>,
         _arena: &'a Arena,
         _builder: &MirBuilder,
     ) {
@@ -318,29 +254,28 @@ impl MirChecker<'_> {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {
                     for &pat in fields {
-                        self.pattern_to_branch(pat, nodes, _arena, _builder);
+                        self.pattern_to_branch(pat, nodes, Some(ty), _arena, _builder);
                     }
                 }
                 UnitPatKindTir::Int(value, ..) => {
-                    let int = span_str!(self, value).parse().unwrap();
-                    nodes.push(Node::Scalar(Range::at(int)));
+                    let int = match value {
+                        Ok(span) => span_str!(self, span).parse().unwrap(),
+                        Err(lit) => lit as u128,
+                    };
+                    if let Some(parent) = parent
+                        && let Ty::Enum(enum_ty) = parent.caller(self.typec)
+                        && int as usize == self.typec[self.typec[enum_ty].variants].len() - 1
+                    {
+                        nodes.push(Node::Scalar(Range {
+                            start: int,
+                            end: UpperBound::Outside,
+                        }));
+                    } else {
+                        nodes.push(Node::Scalar(Range::at(int)));
+                    }
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => {
                     nodes.push(Node::Scalar(Range::full()))
-                }
-                UnitPatKindTir::Enum { ty, id, value } => {
-                    let Enum { variants, .. } = self.typec[ty];
-                    let len = self.typec[variants].len();
-                    nodes.push(Node::Scalar(match id == len - 1 {
-                        true => Range {
-                            start: id as u128,
-                            end: UpperBound::Outside,
-                        },
-                        false => Range::at(id as u128),
-                    }));
-                    if let Some(&value) = value {
-                        self.pattern_to_branch(value, nodes, _arena, _builder);
-                    }
                 }
             },
             PatKindTir::Or(..) => todo!(),

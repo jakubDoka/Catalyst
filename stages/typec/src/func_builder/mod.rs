@@ -667,7 +667,7 @@ impl TyChecker<'_> {
                 };
                 let comparator = self.find_binary_func(op, ty, ty)?;
                 Some(PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Int(span, comparator)),
+                    kind: PatKindTir::Unit(UnitPatKindTir::Int(Ok(span), comparator)),
                     span,
                     ty,
                     has_binding: false,
@@ -698,15 +698,25 @@ impl TyChecker<'_> {
                     None
                 };
 
+                let flag_meta = self.typec.get_enum_cmp(enum_ty, self.interner);
+
+                let flag = flag_meta.map(|(cmp, flag_ty)| PatTir {
+                    kind: PatKindTir::Unit(UnitPatKindTir::Int(Err(index as i64), cmp)),
+                    has_binding: false,
+                    is_refutable: true,
+                    span: ctor.name.span,
+                    ty: flag_ty,
+                });
+
+                let fields = flag.into_iter().chain(value).collect::<BumpVec<_>>();
+
                 Some(PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Enum {
-                        ty: enum_ty,
-                        id: index,
-                        value: value.map(|val| builder.arena.alloc(val)),
+                    kind: PatKindTir::Unit(UnitPatKindTir::Struct {
+                        fields: builder.arena.alloc_iter(fields),
                     }),
                     span: ctor.span(),
                     ty,
-                    has_binding: value.map_or(false, |val| val.has_binding),
+                    has_binding: value.map_or(false, |v| v.has_binding),
                     is_refutable: true,
                 })
             }

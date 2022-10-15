@@ -5,6 +5,7 @@
 #![feature(if_let_guard)]
 #![feature(default_free_fn)]
 #![feature(never_type)]
+#![feature(let_chains)]
 
 mod builder;
 mod display;
