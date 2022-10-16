@@ -1,10 +1,12 @@
-use std::{cmp::Ordering, default::default, slice};
+use std::{cmp::Ordering, default::default, mem, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
 };
 use cranelift_frontend::Variable;
+use diags::{snippet, Workspace};
 use mir_t::*;
+use packaging_t::Source;
 use storage::*;
 
 use typec_t::*;
@@ -15,6 +17,45 @@ mod function_loading;
 mod size_calc;
 
 impl Generator<'_> {
+    pub fn check_casts(&mut self, source: VRef<Source>, workspace: &mut Workspace, ptr_ty: Type) {
+        let mut checks = mem::take(&mut self.typec.cast_checks);
+        for (span, from, to) in checks.drain(..) {
+            if self.typec.contains_params(from) || self.typec.contains_params(to) {
+                workspace.push(snippet! {
+                    err: "cast between generic types is not allowed";
+                    info: (
+                        "cast from {} to {}, which contain generic parameters that depend on function instance",
+                        self.typec.display_ty(from, self.interner),
+                        self.typec.display_ty(to, self.interner),
+                    );
+                    (span, source) {
+                        err[span]: "happened here";
+                    }
+                });
+                continue;
+            }
+
+            let from_layout = self.ty_layout(from, ptr_ty);
+            let to_layout = self.ty_layout(to, ptr_ty);
+            if from_layout.size != to_layout.size {
+                workspace.push(snippet! {
+                    err: "cast size mismatch";
+                    info: (
+                        "cast from {}({}) to {}({}), size does not match",
+                        self.typec.display_ty(from, self.interner),
+                        from_layout.size,
+                        self.typec.display_ty(to, self.interner),
+                        to_layout.size,
+                    );
+                    (span, source) {
+                        err[span]: "happened here";
+                    }
+                });
+            }
+        }
+        self.typec.cast_checks = checks;
+    }
+
     pub fn generate(
         &mut self,
         signature: Signature,
@@ -268,6 +309,11 @@ impl Generator<'_> {
 
         let (func_ref, struct_ret) = match callable {
             CallableMir::Func(func_id) => {
+                if func_id == Func::CAST {
+                    self.cast(args, ret, builder);
+                    return;
+                }
+
                 if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
                     let args = builder.body.value_args[args]
                         .iter()
@@ -353,6 +399,18 @@ impl Generator<'_> {
         }
     }
 
+    fn cast(
+        &mut self,
+        args: VRefSlice<ValueMir>,
+        ret: OptVRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) {
+        let [value] = builder.body.value_args[args] else {
+            unreachable!()
+        };
+        self.assign_value(ret.unwrap(), value, builder)
+    }
+
     fn builtin_call(
         &mut self,
         func_id: VRef<Func>,
@@ -392,7 +450,7 @@ impl Generator<'_> {
                 (helper!(binary), "&") => builder.ins().band(a, b),
                 val => unimplemented!("{:?}", val),
             },
-            _ => unimplemented!(),
+            ref slice => unimplemented!("{slice:?}"),
         };
 
         self.save_value(target.unwrap(), value, 0, false, builder);
@@ -480,7 +538,7 @@ impl Generator<'_> {
         } = self.gen_resources.values[target];
 
         if must_load_source && must_load {
-            let target_value = self.ensure_target(target, None, builder);
+            let (target_value, ..) = self.ensure_target(target, None, builder);
             let mut get_addr = |value| match value {
                 ComputedValue::StackSlot(slot) => builder.ins().stack_addr(ptr_ty, slot, 0),
                 ComputedValue::Value(value) => value,
@@ -557,7 +615,7 @@ impl Generator<'_> {
             false => source,
         };
 
-        let target_value = self.ensure_target(target, Some(source), builder);
+        let (target_value, used) = self.ensure_target(target, Some(source), builder);
         if must_load_target {
             match target_value {
                 ComputedValue::Value(val) => {
@@ -571,7 +629,7 @@ impl Generator<'_> {
                     builder.ins().stack_store(source, ss, offset);
                 }
             }
-        } else {
+        } else if !used {
             match target_value {
                 ComputedValue::Value(value) => {
                     let new_value = self.set_bit_field(source, value, offset, builder);
@@ -593,31 +651,34 @@ impl Generator<'_> {
         target: VRef<ValueMir>,
         source_value: Option<ir::Value>,
         builder: &mut GenBuilder,
-    ) -> ComputedValue {
+    ) -> (ComputedValue, bool) {
         if let Some(value) = self.gen_resources.values[target].computed {
-            return value;
+            return (value, false);
         }
 
         let referenced = builder.body.is_referenced(target);
 
         let layout = self.ty_layout(builder.body.value_ty(target), builder.ptr_ty());
         let must_load = layout.on_stack || referenced;
-        let computed = if must_load {
+        let (computed, used) = if must_load {
             let ss = builder.create_sized_stack_slot(StackSlotData {
                 kind: StackSlotKind::ExplicitSlot,
                 size: layout.size,
             });
-            ComputedValue::StackSlot(ss)
+            (ComputedValue::StackSlot(ss), false)
         } else {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
-            if builder.body.is_mutable(target) {
-                let var = Variable::with_u32(target.as_u32());
-                builder.declare_var(var, layout.repr);
-                builder.def_var(var, init);
-                ComputedValue::Variable(var)
-            } else {
-                ComputedValue::Value(init)
-            }
+            (
+                if builder.body.is_mutable(target) {
+                    let var = Variable::with_u32(target.as_u32());
+                    builder.declare_var(var, layout.repr);
+                    builder.def_var(var, init);
+                    ComputedValue::Variable(var)
+                } else {
+                    ComputedValue::Value(init)
+                },
+                source_value.is_some(),
+            )
         };
 
         self.gen_resources.values[target] = GenValue {
@@ -626,7 +687,7 @@ impl Generator<'_> {
             must_load,
         };
 
-        computed
+        (computed, used)
     }
 
     fn set_bit_field(

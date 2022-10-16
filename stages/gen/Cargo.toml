@@ -12,6 +12,7 @@ lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
 mir-t = { version = "0.1.0", path = "../../types/mir-t" }
 packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
+diags = { version = "0.1.0", path = "../../types/diags" }
 target-lexicon = "0.12.4"
 typec-t = { version = "0.1.0", path = "../../types/typec-t" }
 region = "3.0.0"

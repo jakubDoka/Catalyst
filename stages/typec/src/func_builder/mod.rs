@@ -1083,6 +1083,10 @@ impl TyChecker<'_> {
             builder,
         )?;
 
+        if func == Func::CAST && let &[from, to] = params {
+            self.typec.cast_checks.push((call.span(), from, to));
+        }
+
         let call_tir = CallTir {
             func: CallableTir::Func(func),
             args,

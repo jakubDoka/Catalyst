@@ -5,6 +5,7 @@
         "allocs",
         "binemit",
         "bitand",
+        "bitcast",
         "bitflags",
         "brnz",
         "bruh",

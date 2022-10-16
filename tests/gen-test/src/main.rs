@@ -42,7 +42,8 @@ struct TestState {
     ast_transfer: AstTransfer<'static>,
     mir_ctx: MirBuilderCtx,
     gen: Gen,
-    gen_resources: GenResources,
+    object_resources: GenResources,
+    jit_resources: GenResources,
     gen_layouts: GenLayouts,
     compile_requests: CompileRequests,
     functions: String,
@@ -144,8 +145,11 @@ impl TestState {
         builder.switch_to_block(entry_point);
 
         for func in self.entry_points.drain(..) {
-            let (func_ref, _) =
-                generator!(self).import_compiled_func(func, iter::empty(), &mut builder);
+            let (func_ref, _) = generator!(self, self.jit_resources).import_compiled_func(
+                func,
+                iter::empty(),
+                &mut builder,
+            );
             builder.ins().call(func_ref, &[]);
             builder.ins().return_(&[]);
         }
@@ -216,7 +220,7 @@ impl TestState {
                 &mut later_init.func_ctx,
             );
 
-            generator!(self).generate(signature, &[], root_block, &mut builder);
+            generator!(self, self.jit_resources).generate(signature, &[], root_block, &mut builder);
 
             write!(
                 self.functions,
@@ -270,7 +274,12 @@ impl TestState {
                     &mut later_init.func_ctx,
                 );
 
-                generator!(self).generate(signature, &[], root_block, &mut builder);
+                generator!(self, self.jit_resources).generate(
+                    signature,
+                    &[],
+                    root_block,
+                    &mut builder,
+                );
 
                 write!(self.functions, "{}\n\n", later_init.context.func.display()).unwrap();
 
@@ -319,7 +328,7 @@ impl TestState {
                 todo!()
             };
 
-            self.gen_resources.func_constants[key] = constant.into();
+            self.object_resources.func_constants[key] = constant.into();
         }
 
         self.mir.bodies[target_func] = Some(body);
@@ -360,6 +369,12 @@ impl Scheduler for TestState {
                 &mut type_checked_funcs,
             );
             mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
+            let source = self.resources.modules[module].source;
+            generator!(self, self.object_resources).check_casts(
+                source,
+                &mut self.workspace,
+                later_init.object_context.isa.pointer_ty,
+            )
         }
 
         if self.workspace.has_errors() {
@@ -410,7 +425,12 @@ impl Scheduler for TestState {
                 &mut later_init.func_ctx,
             );
 
-            generator!(self).generate(signature, &params, root_block, &mut builder);
+            generator!(self, self.object_resources).generate(
+                signature,
+                &params,
+                root_block,
+                &mut builder,
+            );
 
             self.mir_type_swapper.swap_back(body);
 
@@ -755,6 +775,18 @@ fn main() {
                 a = a + b;
                 a - 3
             };
+        }
+
+        simple "cast" {
+            #[entry];
+            fn main() -> uint => cast(0);
+        }
+
+        simple "cast-mismatch" {
+            #[entry];
+            fn main() -> u32 => cast(0);
+
+            fn [F, T] my_cast(value: F) -> T => cast(value);
         }
     }
 }

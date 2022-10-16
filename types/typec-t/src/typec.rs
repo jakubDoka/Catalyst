@@ -9,6 +9,7 @@ use std::{
 };
 
 use crate::*;
+use lexing_t::Span;
 use packaging_t::Module;
 use storage::*;
 
@@ -33,6 +34,7 @@ pub struct Typec {
     pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
     pub variants: Variants,
     pub enums: Enums,
+    pub cast_checks: Vec<(Span, Ty, Ty)>,
 }
 
 macro_rules! gen_index {
@@ -317,9 +319,11 @@ impl Typec {
                     ret: Ty::Param(1),
                 },
                 name: Interner::CAST,
+                flags: FuncFlags::BUILTIN,
                 ..default()
             })
         );
+        self.builtin_funcs.insert(Interner::CAST, Func::CAST);
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);

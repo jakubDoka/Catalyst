@@ -53,5 +53,7 @@ block5(v14: i64):
 
 
 
-info: exit code: 0
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 

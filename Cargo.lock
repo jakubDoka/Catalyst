@@ -223,6 +223,7 @@ dependencies = [
  "cc",
  "cranelift-codegen",
  "cranelift-frontend",
+ "diags",
  "lexing-t",
  "mir-t",
  "object",
