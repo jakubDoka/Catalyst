@@ -1,11 +1,11 @@
-error: type mismatch
- --> if-statement\root.ctl:4:8
-  |
-4 |     if 0 == 0 => 0
-  |        ^^^^^^ mismatch occurred here
-  |
-  = info: expected 'bool' but got '()'
-
 info: tir repr of functions:
- 
+ fn [] main() -> uint return if uint == uint(0, 0) {
+    0
+} elif uint == uint(0, 69) {
+    89
+} else {
+    1
+}
+
+
 

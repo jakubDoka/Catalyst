@@ -1,0 +1,9 @@
+info: tir repr of functions:
+ fn [] main() -> uint return {
+    let \{mut var0, var1} = 0\A\{0, 3}
+    var0 = uint + uint(var0, var1)
+    uint - uint(var0, 3)
+}
+
+
+
