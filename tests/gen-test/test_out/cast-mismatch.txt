@@ -1,0 +1,14 @@
+error: cast size mismatch
+ --> cast-mismatch\root.ctl:3:19
+  |
+3 | fn main -> u32 => cast(0)
+  |                   ^^^^^^^ happened here
+  |
+  = info: cast from uint(8) to u32(4), size does not match
+
+info: mir repr of functions:
+
+
+error: no entry points found
+ = help: add '#[entry]' to a function that should take this role
+
