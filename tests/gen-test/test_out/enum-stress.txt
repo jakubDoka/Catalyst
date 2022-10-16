@@ -3,64 +3,64 @@ function u0:0() -> i64 fast {
     ss0 = explicit_slot 32
 
 block0:
-    v0 = iconst.i8 0
-    stack_store v0, ss0  ; v0 = 0
-    v1 = iconst.i8 0
-    stack_store v1, ss0+8  ; v1 = 0
-    v2 = iconst.i8 0
-    stack_store v2, ss0+16  ; v2 = 0
+    v0 = iconst.i8 1
+    stack_store v0, ss0  ; v0 = 1
+    v1 = iconst.i8 1
+    stack_store v1, ss0+8  ; v1 = 1
+    v2 = iconst.i8 1
+    stack_store v2, ss0+16  ; v2 = 1
     v3 = iconst.i64 0
     stack_store v3, ss0+24  ; v3 = 0
-    v4 = iconst.i8 0
+    v4 = iconst.i8 1
     v5 = stack_load.i8 ss0
-    v6 = icmp eq v4, v5  ; v4 = 0
-    v7 = iconst.i8 1
+    v6 = icmp eq v4, v5  ; v4 = 1
+    v7 = iconst.i8 0
     v8 = stack_load.i8 ss0+8
-    v9 = icmp eq v7, v8  ; v7 = 1
+    v9 = icmp eq v7, v8  ; v7 = 0
     v10 = band v9, v6
     brnz v10, block1
     jump block2
 
 block2:
-    v11 = iconst.i8 0
+    v11 = iconst.i8 1
     v12 = stack_load.i8 ss0
-    v13 = icmp eq v11, v12  ; v11 = 0
-    v14 = iconst.i8 0
+    v13 = icmp eq v11, v12  ; v11 = 1
+    v14 = iconst.i8 1
     v15 = stack_load.i8 ss0+8
-    v16 = icmp eq v14, v15  ; v14 = 0
-    v17 = iconst.i8 1
+    v16 = icmp eq v14, v15  ; v14 = 1
+    v17 = iconst.i8 0
     v18 = stack_load.i8 ss0+16
-    v19 = icmp eq v17, v18  ; v17 = 1
+    v19 = icmp eq v17, v18  ; v17 = 0
     v20 = band v19, v16
     v21 = band v20, v13
     brnz v21, block3
     jump block4
 
 block4:
-    v22 = iconst.i8 1
+    v22 = iconst.i8 0
     v23 = stack_load.i8 ss0
-    v24 = icmp eq v22, v23  ; v22 = 1
+    v24 = icmp eq v22, v23  ; v22 = 0
     brnz v24, block5
     jump block6
 
 block6:
-    v25 = iconst.i8 0
+    v25 = iconst.i8 1
     v26 = stack_load.i8 ss0+8
-    v27 = icmp eq v25, v26  ; v25 = 0
-    v28 = iconst.i8 0
+    v27 = icmp eq v25, v26  ; v25 = 1
+    v28 = iconst.i8 1
     v29 = stack_load.i8 ss0+16
-    v30 = icmp eq v28, v29  ; v28 = 0
+    v30 = icmp eq v28, v29  ; v28 = 1
     v31 = band v30, v27
     brnz v31, block7
     jump block8
 
 block8:
-    v32 = iconst.i8 0
+    v32 = iconst.i8 1
     v33 = stack_load.i8 ss0+8
-    v34 = icmp eq v32, v33  ; v32 = 0
-    v35 = iconst.i8 1
+    v34 = icmp eq v32, v33  ; v32 = 1
+    v35 = iconst.i8 0
     v36 = stack_load.i8 ss0+16
-    v37 = icmp eq v35, v36  ; v35 = 1
+    v37 = icmp eq v35, v36  ; v35 = 0
     v38 = band v37, v34
     brnz v38, block9
     jump block10

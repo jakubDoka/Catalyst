@@ -1,0 +1,24 @@
+info: mir repr of functions:
+function u0:0() -> i64 fast {
+    ss0 = explicit_slot 16
+
+block0:
+    v0 = iconst.i64 0
+    stack_store v0, ss0  ; v0 = 0
+    v1 = iconst.i64 3
+    stack_store v1, ss0+8  ; v1 = 3
+    v2 = stack_load.i64 ss0
+    v3 = stack_load.i64 ss0+8
+    v4 = iadd v2, v3
+    stack_store v4, ss0
+    v5 = iconst.i64 3
+    v6 = stack_load.i64 ss0
+    v7 = isub v6, v5  ; v5 = 3
+    return v7
+}
+
+
+
+
+info: exit code: 0
+
