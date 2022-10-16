@@ -95,7 +95,7 @@ macro_rules! gen_kind {
         }
 
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
-        #[repr(C)]
+        #[repr(C, u8)]
         pub enum TokenKind {
             $(
                 #[token($keyword_repr)]
@@ -140,11 +140,6 @@ macro_rules! gen_kind {
             None,
         }
     };
-}
-
-#[test]
-fn test() {
-    panic!("{}", std::mem::size_of::<TokenKind>());
 }
 
 gen_kind!(

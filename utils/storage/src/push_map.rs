@@ -1,4 +1,5 @@
 use std::{
+    default::default,
     fmt::Debug,
     ops::{Index, IndexMut},
 };
@@ -87,8 +88,6 @@ impl<T: Debug> Debug for PushMap<T> {
 
 impl<T> Default for PushMap<T> {
     fn default() -> Self {
-        Self {
-            data: Default::default(),
-        }
+        Self { data: default() }
     }
 }

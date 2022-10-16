@@ -306,7 +306,20 @@ impl Typec {
     }
 
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
-        self.funcs.push(Default::default());
+        assert_eq!(Func::ANON_TEMP, self.funcs.push(default()));
+        assert_eq!(
+            Func::CAST,
+            self.funcs.push(Func {
+                generics: self.params.bump([default(), default()]), // F, T
+                signature: Signature {
+                    cc: default(),
+                    args: self.args.bump([Ty::Param(0)]),
+                    ret: Ty::Param(1),
+                },
+                name: Interner::CAST,
+                ..default()
+            })
+        );
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);

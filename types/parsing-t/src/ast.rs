@@ -1,4 +1,5 @@
 use std::{
+    default::default,
     fmt::Debug,
     ops::{Deref, Range},
 };
@@ -93,7 +94,7 @@ pub trait Ast<'a>: Copy {
     where
         Self::Args: Default,
     {
-        Self::parse_args(ctx, Default::default())
+        Self::parse_args(ctx, default())
     }
 
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Option<Self> {
@@ -150,10 +151,10 @@ impl<'a, T, META: ListAstMeta> Copy for ListAst<'a, T, META> {}
 impl<'a, T, META: ListAstMeta> Default for ListAst<'a, T, META> {
     fn default() -> Self {
         Self {
-            start: Default::default(),
-            elements: Default::default(),
-            end: Default::default(),
-            _ph: Default::default(),
+            start: default(),
+            elements: default(),
+            end: default(),
+            _ph: default(),
         }
     }
 }

@@ -1,5 +1,7 @@
 #![feature(default_free_fn)]
 
+use std::default::default;
+
 use diags::*;
 use lexing_t::*;
 use packaging::*;
@@ -28,13 +30,13 @@ impl Scheduler for TestState {
             slices: vec![Slice {
                 span: Span::new(0..content.len()),
                 origin: module_ent.source,
-                annotations: Default::default(),
+                annotations: default(),
                 fold: false,
             }
             .into()],
-            title: Default::default(),
-            footer: Default::default(),
-            origin: Default::default(),
+            title: default(),
+            footer: default(),
+            origin: default(),
         });
     }
 }

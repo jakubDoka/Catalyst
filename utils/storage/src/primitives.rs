@@ -1,6 +1,6 @@
 use std::{fmt::Debug, marker::PhantomData};
 
-#[repr(C)]
+#[repr(C, u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CtlOption<T> {
     None,

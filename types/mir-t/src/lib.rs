@@ -1,4 +1,5 @@
 #![feature(let_else)]
+#![feature(default_free_fn)]
 
 mod mir;
 

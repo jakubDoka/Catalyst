@@ -1,8 +1,9 @@
 #![feature(let_else)]
 #![feature(fs_try_exists)]
 #![feature(thread_id_value)]
+#![feature(default_free_fn)]
 
-use std::{fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
+use std::{default::default, fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
 use cranelift_codegen::{ir::InstBuilder, settings, Context};
 use cranelift_frontend::FunctionBuilderContext;
@@ -99,7 +100,7 @@ impl TestState {
                 CompileRequest {
                     id,
                     func,
-                    params: Default::default(),
+                    params: default(),
                 }
             })
             .collect::<Vec<_>>();
@@ -152,7 +153,7 @@ impl TestState {
         let func_id = self.typec.funcs.push(Func {
             visibility: FuncVisibility::Exported,
             name: self.interner.intern(gen::ENTRY_POINT_NAME),
-            ..Default::default()
+            ..default()
         });
         let entry_point = self.gen.compiled_funcs.insert_unique(
             self.interner.intern(gen::ENTRY_POINT_NAME),
@@ -201,7 +202,7 @@ impl TestState {
 
         let mut signature = Signature {
             cc: self.interner.intern("windows_fastcall").into(),
-            ..Default::default()
+            ..default()
         };
 
         for (key, const_mir) in body.constants.iter() {

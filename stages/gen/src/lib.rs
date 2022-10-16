@@ -1,5 +1,6 @@
 #![feature(let_else)]
 #![feature(drain_filter)]
+#![feature(default_free_fn)]
 
 mod context;
 mod generate;

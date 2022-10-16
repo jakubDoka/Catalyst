@@ -1,5 +1,6 @@
 #![feature(let_else)]
 #![feature(iter_intersperse)]
+#![feature(default_free_fn)]
 
 #[macro_export]
 macro_rules! span_str {

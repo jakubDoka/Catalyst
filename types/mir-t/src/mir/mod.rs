@@ -1,3 +1,5 @@
+use std::default::default;
+
 use lexing_t::*;
 use storage::*;
 use typec_t::*;
@@ -112,9 +114,9 @@ impl Default for FuncMir {
     fn default() -> Self {
         Self {
             ret: MirTy::UNIT,
-            generics: Default::default(),
-            blocks: Default::default(),
-            insts: Default::default(),
+            generics: default(),
+            blocks: default(),
+            insts: default(),
             values: {
                 let mut values = PushMap::new();
                 values.push(ValueMir { ty: MirTy::UNIT });
@@ -123,16 +125,16 @@ impl Default for FuncMir {
                 });
                 values
             },
-            value_args: Default::default(),
-            ty_params: Default::default(),
+            value_args: default(),
+            ty_params: default(),
             dependant_types: {
                 let mut values = PushMap::new();
                 values.push(MirTy { ty: Ty::UNIT });
                 values.push(MirTy { ty: Ty::TERMINAL });
                 values
             },
-            constants: Default::default(),
-            value_flags: Default::default(),
+            constants: default(),
+            value_flags: default(),
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, slice};
+use std::{cmp::Ordering, default::default, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -136,7 +136,7 @@ impl Generator<'_> {
                     })
                     .map(|val| {
                         let value = self.load_value(val, builder);
-                        self.gen_resources.values[val] = Default::default();
+                        self.gen_resources.values[val] = default();
                         value
                     });
                 builder

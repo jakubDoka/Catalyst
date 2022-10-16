@@ -17,7 +17,9 @@ pub struct Func {
 }
 
 impl Func {
-    gen_increasing_constants!(ANON_TEMP);
+    gen_increasing_constants!(
+        ANON_TEMP CAST
+    );
 
     pub fn is_generic(&self) -> bool {
         !self.generics.is_empty() || !self.upper_generics.is_empty()

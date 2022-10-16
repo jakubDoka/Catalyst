@@ -6,6 +6,7 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
 #![feature(never_type)]
+#![feature(default_free_fn)]
 
 mod ast;
 mod ctx;

@@ -1,5 +1,5 @@
 use lexing_t::*;
-use std::path::*;
+use std::{default::default, path::*};
 use storage::*;
 
 use crate::*;
@@ -25,7 +25,7 @@ impl Resources {
     pub fn with_resources(resources: impl ResourceDb + 'static) -> Self {
         Self {
             db: Box::new(resources),
-            ..Default::default()
+            ..default()
         }
     }
 }

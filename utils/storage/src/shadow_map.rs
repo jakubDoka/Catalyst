@@ -1,4 +1,5 @@
 use std::{
+    default::default,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
@@ -35,8 +36,7 @@ impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
 impl<T, V: Default + Clone> IndexMut<VRef<T>> for ShadowMap<T, V> {
     fn index_mut(&mut self, key: VRef<T>) -> &mut V {
         let index = key.index();
-        self.data
-            .resize(self.data.len().max(index + 1), Default::default());
+        self.data.resize(self.data.len().max(index + 1), default());
         &mut self.data[index]
     }
 }

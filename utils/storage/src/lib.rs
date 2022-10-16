@@ -173,7 +173,8 @@ pub use {
     pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
     pool_map::PoolMap,
     primitives::{
-        NoShortCircuitCollect, OptVRef, TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
+        CtlOption, NoShortCircuitCollect, OptVRef, TransposeOption, VRef, VRefDefault, VRefSlice,
+        VSlice,
     },
     push_map::PushMap,
     shadow_map::ShadowMap,
