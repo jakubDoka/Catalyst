@@ -519,14 +519,16 @@ impl Scheduler for TestState {
 
         let output = Command::new(path)
             .current_dir(std::env::current_dir().unwrap())
-            .status()
+            .output()
             .unwrap();
 
         fs::remove_file(obj_path).unwrap();
         fs::remove_file(exe_path).unwrap();
 
         self.workspace.push(snippet! {
-            info: ("exit code: {:x?}", output.code().unwrap());
+            info: ("status: {:x?}", output.status.code().unwrap());
+            info: ("stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+            info: ("stderr:\n{}", String::from_utf8_lossy(&output.stderr));
         });
     }
 }
