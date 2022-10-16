@@ -4,6 +4,7 @@ use logos::Logos;
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct Token {
     pub kind: TokenKind,
     /// Span points to &str inside source file. Origin of span is
@@ -94,6 +95,7 @@ macro_rules! gen_kind {
         }
 
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
+        #[repr(C)]
         pub enum TokenKind {
             $(
                 #[token($keyword_repr)]
@@ -138,6 +140,11 @@ macro_rules! gen_kind {
             None,
         }
     };
+}
+
+#[test]
+fn test() {
+    panic!("{}", std::mem::size_of::<TokenKind>());
 }
 
 gen_kind!(

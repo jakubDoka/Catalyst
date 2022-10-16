@@ -1,5 +1,30 @@
 use std::{fmt::Debug, marker::PhantomData};
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CtlOption<T> {
+    None,
+    Some(T),
+}
+
+impl<T> From<Option<T>> for CtlOption<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            None => CtlOption::None,
+            Some(value) => CtlOption::Some(value),
+        }
+    }
+}
+
+impl<T> From<CtlOption<T>> for Option<T> {
+    fn from(value: CtlOption<T>) -> Self {
+        match value {
+            CtlOption::None => None,
+            CtlOption::Some(value) => Some(value),
+        }
+    }
+}
+
 pub trait TransposeOption: Sized {
     fn transpose(self) -> Self;
 }
