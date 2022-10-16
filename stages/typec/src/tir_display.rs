@@ -38,11 +38,6 @@ impl TyChecker<'_> {
         var_count: &mut usize,
     ) -> fmt::Result {
         match kind {
-            TirKind::Var(value) => {
-                write!(buffer, "let var{} = ", *var_count)?;
-                *var_count += 1;
-                self.display_tir(*value.unwrap(), buffer, indent, var_count)?;
-            }
             TirKind::Int(computed) => {
                 if let Some(computed) = computed {
                     write!(buffer, "{}", computed)?;
@@ -172,6 +167,17 @@ impl TyChecker<'_> {
                     self.display_tir(body, buffer, indent, var_count)?;
                 }
             }
+            TirKind::Let(&LetTir { pat, value }) => {
+                write!(buffer, "let ")?;
+                self.display_pat(pat, buffer, indent, var_count)?;
+                write!(buffer, " = ")?;
+                self.display_tir(value, buffer, indent, var_count)?;
+            }
+            TirKind::Assign(&AssignTir { lhs, rhs }) => {
+                self.display_tir(lhs, buffer, indent, var_count)?;
+                write!(buffer, " = ")?;
+                self.display_tir(rhs, buffer, indent, var_count)?;
+            }
         }
 
         Ok(())
@@ -220,7 +226,10 @@ impl TyChecker<'_> {
                 }
                 buffer.push('}');
             }
-            UnitPatKindTir::Binding(var) => {
+            UnitPatKindTir::Binding(mutable, var) => {
+                if mutable {
+                    buffer.push_str("mut ");
+                }
                 write!(buffer, "var{}", var.index())?;
                 *var_count = var.index() + 1;
             }

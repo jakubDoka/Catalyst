@@ -45,7 +45,6 @@ impl MirChecker<'_> {
         let mut dest_fn = || dest.unwrap_or_else(|| builder.value(ty, self.typec));
         match kind {
             TirKind::Block(stmts) => self.block(stmts, dest_fn(), builder),
-            TirKind::Var(var) => self.var(var, builder),
             TirKind::Int(computed) => self.int(computed, span, dest_fn(), builder),
             TirKind::Char => self.char(span, dest_fn(), builder),
             TirKind::Access(access) => self.access(access, span, dest_fn(), builder),
@@ -58,7 +57,21 @@ impl MirChecker<'_> {
             TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
             TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), builder),
             TirKind::If(&r#if) => self.r#if(r#if, dest_fn(), builder),
+            TirKind::Let(&r#let) => self.r#let(r#let, builder),
+            TirKind::Assign(&assign) => self.assign(assign, builder),
         }
+    }
+
+    fn assign(&mut self, AssignTir { lhs, rhs }: AssignTir, builder: &mut MirBuilder) -> NodeRes {
+        let dest = self.node(lhs, None, builder)?;
+        self.node(rhs, Some(dest), builder)?;
+        Some(dest)
+    }
+
+    fn r#let(&mut self, LetTir { pat, value }: LetTir, builder: &mut MirBuilder) -> NodeRes {
+        let value = self.node(value, None, builder)?;
+        self.bind_pattern_vars(pat, value, builder);
+        Some(ValueMir::UNIT)
     }
 
     fn r#if(
@@ -210,7 +223,12 @@ impl MirChecker<'_> {
                         self.bind_pattern_vars(field, dest, builder);
                     }
                 }
-                UnitPatKindTir::Binding(..) => builder.ctx.vars.push(value),
+                UnitPatKindTir::Binding(mutable, ..) => {
+                    if mutable {
+                        builder.ctx.func.set_mutable(value);
+                    }
+                    builder.ctx.vars.push(VarMir { value });
+                }
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
             },
             PatKindTir::Or(_) => todo!(),
@@ -357,7 +375,7 @@ impl MirChecker<'_> {
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let node = self.node(node, None, builder)?;
-        builder.ctx.func.referenced.insert(node.index());
+        builder.ctx.func.set_referenced(node);
         builder.inst(InstMir::Ref(node, dest), span);
         Some(dest)
     }
@@ -440,23 +458,15 @@ impl MirChecker<'_> {
         res
     }
 
-    fn var(&mut self, value: Option<&TirNode>, builder: &mut MirBuilder) -> NodeRes {
-        let &value = value.expect("Only func params have no value.");
-        let dest = builder.value(value.ty, self.typec);
-        self.node(value, Some(dest), builder)?;
-        builder.ctx.vars.push(dest);
-        Some(dest)
-    }
-
     fn access(
         &mut self,
-        var: VRef<Var>,
+        var: VRef<VarHeaderTir>,
         span: Span,
         dest: VRef<ValueMir>,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let var = builder.ctx.get_var(var);
-        builder.inst(InstMir::Access(var, dest), span);
+        builder.inst(InstMir::Access(var.value, dest), span);
         Some(dest)
     }
 
@@ -545,9 +555,9 @@ impl MirChecker<'_> {
         let mut builder = MirBuilder::new(block, ctx);
 
         for &ty in &self.typec[args] {
-            let val = builder.value(ty, self.typec);
-            builder.ctx.vars.push(val);
-            builder.ctx.args.push(val);
+            let value = builder.value(ty, self.typec);
+            builder.ctx.vars.push(VarMir { value });
+            builder.ctx.args.push(value);
         }
 
         builder

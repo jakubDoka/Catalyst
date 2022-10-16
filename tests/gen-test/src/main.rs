@@ -741,5 +741,19 @@ fn main() {
                 elif 0 == 69 => 89;
                 else => 1;
         }
+
+        simple "let-binding" {
+            struct A {
+                a: uint;
+                b: uint;
+            };
+
+            #[entry];
+            fn main() -> uint {
+                let ::{ mut a, b } = A::{ a: 0; b: 3 };
+                a = a + b;
+                a - 3
+            };
+        }
     }
 }

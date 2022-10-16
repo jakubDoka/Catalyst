@@ -125,7 +125,7 @@ fn main() {
                 else => 1;
         }
 
-        simple "let-binding-loop" {
+        simple "let-binding" {
             struct A {
                 a: uint;
                 b: uint;

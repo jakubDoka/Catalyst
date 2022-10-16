@@ -372,15 +372,19 @@ impl TyChecker<'_> {
 
     fn r#let<'a>(
         &mut self,
-        LetAst { pat, ty, value, .. }: LetAst,
+        r#let @ LetAst { pat, ty, value, .. }: LetAst,
         _inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        let ty = ty.map(|ty| self.typec.type_from_ast(ty));
-        let value = self.expr(value, None, builder)?;
-        let pat = self.pattern(pat, ty, builder);
+        let ty = ty.map(|(.., ty)| self.ty(ty)).transpose()?;
+        let value = self.expr(value, ty, builder)?;
+        let pat = self.pattern(pat, value.ty, builder)?;
 
-        todo!()
+        Some(TirNode::new(
+            Ty::UNIT,
+            TirKind::Let(builder.arena.alloc(LetTir { pat, value })),
+            r#let.span(),
+        ))
     }
 
     fn r#if<'a>(
@@ -679,7 +683,7 @@ impl TyChecker<'_> {
                 let var = builder.create_var(mutable.is_some(), ty, name.span);
                 self.scope.push(name.ident, var, name.span);
                 Some(PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Binding(var)),
+                    kind: PatKindTir::Unit(UnitPatKindTir::Binding(mutable.is_some(), var)),
                     span: name.span,
                     has_binding: true,
                     is_refutable: false,
@@ -1365,7 +1369,7 @@ impl TyChecker<'_> {
         _inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        let var = lookup!(Var self, start.ident, start.span);
+        let var = lookup!(VarHeaderTir self, start.ident, start.span);
         Some(TirNode::new(
             builder.get_var(var).ty,
             TirKind::Access(var),
@@ -1412,6 +1416,14 @@ impl TyChecker<'_> {
         let lhs = self.expr(lhs, None, builder);
         let rhs = self.expr(rhs, None, builder);
         let (lhs, rhs) = (lhs?, rhs?); // recovery
+
+        if op.start.ident == Interner::ASSIGN {
+            return Some(TirNode::new(
+                Ty::UNIT,
+                TirKind::Assign(builder.arena.alloc(AssignTir { lhs, rhs })),
+                binary_ast.span(),
+            ));
+        }
 
         let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
 

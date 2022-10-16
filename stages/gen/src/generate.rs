@@ -3,6 +3,7 @@ use std::{cmp::Ordering, slice};
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
 };
+use cranelift_frontend::Variable;
 use mir_t::*;
 use storage::*;
 
@@ -608,9 +609,15 @@ impl Generator<'_> {
             });
             ComputedValue::StackSlot(ss)
         } else {
-            ComputedValue::Value(
-                source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0)),
-            )
+            let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
+            if builder.body.is_mutable(target) {
+                let var = Variable::with_u32(target.as_u32());
+                builder.declare_var(var, layout.repr);
+                builder.def_var(var, init);
+                ComputedValue::Variable(var)
+            } else {
+                ComputedValue::Value(init)
+            }
         };
 
         self.gen_resources.values[target] = GenValue {

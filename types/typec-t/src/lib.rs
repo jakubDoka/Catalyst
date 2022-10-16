@@ -122,8 +122,9 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
-        CallTir, CallableTir, FieldTir, IfBranchTir, IfTir, MatchArmTir, MatchTir, PatKindTir,
-        PatTir, TirBuilder, TirFrame, TirKind, TirNode, TypecOutput, UnitPatKindTir, Var,
+        AssignTir, CallTir, CallableTir, FieldTir, IfBranchTir, IfTir, LetTir, MatchArmTir,
+        MatchTir, PatKindTir, PatTir, TirBuilder, TirFrame, TirKind, TirNode, TypecOutput,
+        UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,

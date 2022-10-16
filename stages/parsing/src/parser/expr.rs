@@ -496,6 +496,14 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
+            Mut => {
+                if let Some(_mutable) = mutable {
+                    todo!();
+                }
+
+                let mutable = ctx.advance().span;
+                ctx.parse_args(Some(mutable))?
+            },
             Ident => {
                 let name = ctx.parse()?;
                 branch! {ctx => {

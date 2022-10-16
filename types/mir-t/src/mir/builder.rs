@@ -68,11 +68,16 @@ impl<'a> MirBuilder<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct VarMir {
+    pub value: VRef<ValueMir>,
+}
+
 #[derive(Default)]
 pub struct MirBuilderCtx {
     pub func: FuncMir,
     pub dd: DebugData,
-    pub vars: Vec<VRef<ValueMir>>,
+    pub vars: Vec<VarMir>,
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
     pub used_types: Map<Ty, VRef<MirTy>>,
@@ -86,7 +91,7 @@ impl MirBuilderCtx {
         self.func.blocks.push(BlockMir::default())
     }
 
-    pub fn get_var(&self, var: VRef<Var>) -> VRef<ValueMir> {
+    pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarMir {
         self.vars[var.index()]
     }
 

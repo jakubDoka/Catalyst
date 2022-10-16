@@ -62,10 +62,14 @@ pub struct FuncMir {
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub dependant_types: PushMap<MirTy>,
     pub constants: PushMap<FuncConstMir>,
-    pub referenced: BitSet,
+    value_flags: BitSet,
 }
 
 impl FuncMir {
+    const FLAG_WIDTH: usize = 2;
+    const IS_REFERENCED: usize = 0;
+    const IS_MUTABLE: usize = 1;
+
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.dependant_types[self.values[value].ty].ty
     }
@@ -80,11 +84,27 @@ impl FuncMir {
         self.ty_params.clear();
         self.dependant_types.truncate(MirTy::TERMINAL.index() + 1);
         self.constants.clear();
-        self.referenced.clear();
+        self.value_flags.clear();
     }
 
     pub fn is_referenced(&self, value: VRef<ValueMir>) -> bool {
-        self.referenced.contains(value.index())
+        self.value_flags
+            .contains(value.index() * Self::FLAG_WIDTH + Self::IS_REFERENCED)
+    }
+
+    pub fn set_referenced(&mut self, value: VRef<ValueMir>) {
+        self.value_flags
+            .insert(value.index() * Self::FLAG_WIDTH + Self::IS_REFERENCED);
+    }
+
+    pub fn is_mutable(&self, value: VRef<ValueMir>) -> bool {
+        self.value_flags
+            .contains(value.index() * Self::FLAG_WIDTH + Self::IS_MUTABLE)
+    }
+
+    pub fn set_mutable(&mut self, value: VRef<ValueMir>) {
+        self.value_flags
+            .insert(value.index() * Self::FLAG_WIDTH + Self::IS_MUTABLE);
     }
 }
 
@@ -112,7 +132,7 @@ impl Default for FuncMir {
                 values
             },
             constants: Default::default(),
-            referenced: Default::default(),
+            value_flags: Default::default(),
         }
     }
 }

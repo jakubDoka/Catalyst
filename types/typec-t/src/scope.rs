@@ -183,7 +183,7 @@ pub enum ScopeItem {
     SpecFunc(VRef<SpecFunc>),
     Ty(Ty),
     SpecBase(VRef<SpecBase>),
-    Var(VRef<Var>),
+    VarHeaderTir(VRef<VarHeaderTir>),
     Module(VRef<Module>),
 }
 
@@ -208,7 +208,7 @@ macro_rules! gen_scope_item {
     }
 }
 
-gen_scope_item!(SpecFunc, Func, Var, Module, SpecBase);
+gen_scope_item!(SpecFunc, Func, VarHeaderTir, Module, SpecBase);
 
 impl From<Ty> for ScopeItem {
     fn from(item: Ty) -> Self {
