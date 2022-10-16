@@ -1,0 +1,22 @@
+info: mir repr of functions:
+ fn [] main() -> uint  {
+    block0() {
+        var5 ={var3, var4}
+        var3 = 0
+        var4 = 3
+        var6 = var5.0
+        var7 = var5.1
+        var8 = access var6
+        var9 = access var6
+        var10 = access var7
+        var8 = uint + uint(val9, val10)
+        var11 = access var6
+        var12 = 3
+        var2 = uint - uint(val11, val12)
+        return var2
+    }
+
+}
+
+
+
