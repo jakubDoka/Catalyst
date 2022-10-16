@@ -1,0 +1,16 @@
+error: Func not found
+ --> let-binding-\root.ctl:9:7
+  |
+9 |     a = a + b
+  |       ^ this does not exist
+  |
+  = info: queried 'uint = uint'
+
+info: tir repr of functions:
+ fn [] main() -> uint return {
+    let \{mut var0, var1} = 0\A\{0, 3}
+    uint - uint(var0, 3)
+}
+
+
+

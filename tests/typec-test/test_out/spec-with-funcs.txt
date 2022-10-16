@@ -21,7 +21,7 @@ error: spec function return type mismatch
    |
    = info: expected '0\A' but found 'uint'
 
-error: Var not found
+error: VarHeaderTir not found
   --> spec-with-funcs\root.ctl:18:54
    |
 18 |     fn [T] use_on(s: ^uint) -> Glued[T] => \{ inner: value }
