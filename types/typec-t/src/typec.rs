@@ -788,3 +788,53 @@ pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
 }
+
+pub const fn sorted_water_drops<T, const LEN: usize>(
+    mut drops: [(&'static str, VRef<T>); LEN],
+) -> [(&'static str, VRef<T>); LEN] {
+    let mut i = 0;
+    while i < LEN {
+        let mut j = i;
+        while j < LEN - 1 {
+            if let std::cmp::Ordering::Greater =
+                compare_strings(drops[j].0.as_bytes(), drops[j + 1].0.as_bytes())
+            {
+                drops.swap(j, j + 1);
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+
+    // check correctness
+    i = 0;
+    while i < LEN - 1 {
+        assert!(matches!(
+            compare_strings(drops[i].0.as_bytes(), drops[i + 1].0.as_bytes()),
+            std::cmp::Ordering::Less
+        ));
+        i += 1;
+    }
+
+    drops
+}
+
+const fn compare_strings(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+    match (a, b) {
+        (&[a, ref a_else @ ..], &[b, ref b_else @ ..]) if a == b => compare_strings(a_else, b_else),
+        (&[a, ..], &[b, ..]) => match a < b {
+            true => std::cmp::Ordering::Less,
+            false => std::cmp::Ordering::Greater,
+        },
+        (&[], &[]) => std::cmp::Ordering::Equal,
+        (&[], _) => std::cmp::Ordering::Less,
+        _ => std::cmp::Ordering::Greater,
+    }
+}
+
+pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRef<T>> {
+    drops
+        .binary_search_by_key(&name, |(str, _)| str)
+        .map(|i| drops[i].1)
+        .ok()
+}

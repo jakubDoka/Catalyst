@@ -136,7 +136,9 @@ impl FmtAst for TopLevelAttributeAst {
 impl FmtAst for TopLevelAttributeKindAst {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
-            TopLevelAttributeKindAst::Entry(span) => fmt.write_span(span),
+            TopLevelAttributeKindAst::Entry(span) | TopLevelAttributeKindAst::WaterDrop(span) => {
+                fmt.write_span(span)
+            }
             TopLevelAttributeKindAst::Inline(mode) => {
                 write!(fmt, "inline");
                 if let Some(mode) = mode {

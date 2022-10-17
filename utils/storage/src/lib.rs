@@ -52,7 +52,7 @@ macro_rules! gen_constant_groups {
 
 #[macro_export]
 macro_rules! gen_increasing_constants {
-    ($($ident:ident)*) => {
+    ($($ident:ident)+) => {
         $crate::gen_increasing_constants!(exp Self => $($ident)*);
     };
 

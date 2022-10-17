@@ -97,7 +97,7 @@ impl fmt::Display for Mutability {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct SpecBase {
     pub name: VRef<str>,
     pub generics: Generics,
@@ -106,8 +106,9 @@ pub struct SpecBase {
 }
 
 impl SpecBase {
-    gen_increasing_constants! {
-        TOKEN_MACRO
+    gen_water_drops! {
+        base_specs
+        TOKEN_MACRO => "TokenMacro",
     }
 }
 
@@ -132,6 +133,18 @@ impl Spec {
     }
 }
 
+impl From<VRef<SpecBase>> for Spec {
+    fn from(base: VRef<SpecBase>) -> Self {
+        Spec::Base(base)
+    }
+}
+
+impl From<VRef<SpecInstance>> for Spec {
+    fn from(instance: VRef<SpecInstance>) -> Self {
+        Spec::Instance(instance)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum GenericTy {
     Struct(VRef<Struct>),
@@ -144,6 +157,18 @@ impl GenericTy {
             GenericTy::Struct(s) => Ty::Struct(s),
             GenericTy::Enum(e) => Ty::Enum(e),
         }
+    }
+}
+
+impl From<VRef<Struct>> for GenericTy {
+    fn from(s: VRef<Struct>) -> Self {
+        GenericTy::Struct(s)
+    }
+}
+
+impl From<VRef<Enum>> for GenericTy {
+    fn from(e: VRef<Enum>) -> Self {
+        GenericTy::Enum(e)
     }
 }
 
@@ -229,6 +254,36 @@ impl Ty {
             Self::Enum(e) => Some(typec.module_items[typec[e].loc.module][typec[e].loc.item].span),
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
         }
+    }
+}
+
+impl From<VRef<Struct>> for Ty {
+    fn from(s: VRef<Struct>) -> Self {
+        Ty::Struct(s)
+    }
+}
+
+impl From<VRef<Enum>> for Ty {
+    fn from(e: VRef<Enum>) -> Self {
+        Ty::Enum(e)
+    }
+}
+
+impl From<VRef<Instance>> for Ty {
+    fn from(i: VRef<Instance>) -> Self {
+        Ty::Instance(i)
+    }
+}
+
+impl From<VRef<Pointer>> for Ty {
+    fn from(p: VRef<Pointer>) -> Self {
+        Ty::Pointer(p)
+    }
+}
+
+impl From<Builtin> for Ty {
+    fn from(b: Builtin) -> Self {
+        Ty::Builtin(b)
     }
 }
 
@@ -329,39 +384,6 @@ impl Default for Ty {
         Ty::UNIT
     }
 }
-
-// gen_kind!(TyKind
-//     Instance = TyInstance {
-//         base: Ty,
-//         args: VRefSlice<Ty>,
-//     },
-//     Struct = TyStruct {
-//         generics: VRefSlice<Ty>,
-//         fields: VSlice<Field>,
-//     },
-//     Pointer = TyPointer {
-//         base: Ty,
-//         mutability: Ty,
-//         depth: u32,
-//     },
-//     Integer = TyInteger {
-//         size: u8,
-//         signed: bool,
-//     },
-//     Spec = TySpec {
-//         inherits: VRefSlice<Ty>,
-//         generics: VRefSlice<Ty>,
-//         methods: VSlice<SpecFunc>,
-//     },
-//     Param = u32,
-//     Bool,
-// );
-
-// impl Default for TyKind {
-//     fn default() -> Self {
-//         Self::Struct(default())
-//     }
-// }
 
 #[derive(Clone, Copy)]
 pub struct SpecFunc {

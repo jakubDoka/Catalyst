@@ -343,6 +343,7 @@ impl<'a> Ast<'a> for TopLevelAttributeAst {
 #[derive(Clone, Copy, Debug)]
 pub enum TopLevelAttributeKindAst {
     Entry(Span),
+    WaterDrop(Span),
     Inline(Option<WrappedAst<InlineModeAst>>),
 }
 
@@ -354,8 +355,11 @@ impl<'a> Ast<'a> for TopLevelAttributeKindAst {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {str ctx => {
             "entry" => Some(TopLevelAttributeKindAst::Entry(ctx.advance().span)),
+            "water_drop" => Some(TopLevelAttributeKindAst::WaterDrop(
+                ctx.advance().span,
+            )),
             "inline" => {
-                if ctx.at_tok(TokenKind::LeftParen) {
+                if !ctx.at_tok(TokenKind::LeftParen) {
                     Some(TopLevelAttributeKindAst::Inline(None))
                 } else {
                     ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))
@@ -368,6 +372,7 @@ impl<'a> Ast<'a> for TopLevelAttributeKindAst {
 
     fn span(&self) -> Span {
         match *self {
+            TopLevelAttributeKindAst::WaterDrop(span) => span,
             TopLevelAttributeKindAst::Entry(span) => span,
             TopLevelAttributeKindAst::Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
         }
