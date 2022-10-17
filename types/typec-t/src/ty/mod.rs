@@ -102,7 +102,13 @@ pub struct SpecBase {
     pub name: VRef<str>,
     pub generics: Generics,
     pub methods: VSlice<SpecFunc>,
-    pub loc: Loc,
+    pub loc: Option<Loc>,
+}
+
+impl SpecBase {
+    gen_increasing_constants! {
+        TOKEN_MACRO
+    }
 }
 
 #[derive(Clone, Copy)]

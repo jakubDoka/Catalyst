@@ -247,9 +247,12 @@ impl MirChecker<'_> {
                 self.display_pat_low(ty, params, res, frontier)
             }
             Ty::Builtin(b) => match b {
-                Builtin::Unit => res.push_str("()"),
-                Builtin::Terminal => res.push('!'),
-                Builtin::Uint | Builtin::U32 | Builtin::U16 | Builtin::U8 => {
+                Builtin::Unit
+                | Builtin::Terminal
+                | Builtin::Uint
+                | Builtin::U32
+                | Builtin::U16
+                | Builtin::U8 => {
                     let first = advance();
                     write!(res, "{}", first).unwrap();
                 }

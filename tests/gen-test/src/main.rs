@@ -790,5 +790,83 @@ fn main() {
 
             fn [F, T] my_cast(value: F) -> T => cast(value);
         }
+
+        // simple "swap-macro" {
+        //     enum [T] Option {
+        //         Some: T;
+        //         None;
+        //     };
+
+        //     struct LastToken {
+        //         last: MacroToken;
+        //     };
+
+        //     struct TwoTokens {
+        //         first: MacroToken;
+        //         second: MacroToken;
+        //     };
+
+        //     enum Swap {
+        //         Two: TwoTokens;
+        //         Last: LastToken;
+        //         Empty;
+        //     };
+
+        //     struct MacroLexer;
+
+        //     impl MacroLexer {
+        //         fn next(ml: ^MacroLexer) -> MacroToken => ctl_next_token(ml);
+        //     };
+
+        //     struct Span {
+        //         start: u32;
+        //         end: u32;
+        //     };
+
+        //     struct MacroToken {
+        //         kind: MacroTokenKind;
+        //         span: Span;
+        //     };
+
+        //     fn "default" malloc(size: uint) -> ^unit;
+        //     fn "default" free(ptr: ^unit);
+        //     #[ct_only];
+        //     fn "default" ctl_next_token(lexer: ^MacroLexer) -> MacroToken;
+
+        //     impl TokenMacro for Swap {
+        //         fn new() -> ^Self => cast(malloc(sizeof(Self)));
+
+        //         fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self] {
+        //             *s = ::Two~::{
+        //                 first: lexer.next()?;
+        //                 second: lexer.next()?;
+        //             };
+        //             ::Some~s
+        //         };
+
+        //         fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => ::Some~match *s {
+        //             ::Two~::{ first, second } => {
+        //                 *s = ::Last~::{ last: first };
+        //                 second
+        //             };
+        //             ::Last~::{ last } => {
+        //                 *s = ::Empty;
+        //                 last
+        //             };
+        //             ::Empty => return ::None;
+        //         }
+
+        //         fn clear(s: ^Self) {};
+
+        //         fn drop(s: ^Self) => free(cast(s));
+        //     };
+
+        //     break;
+
+        //     #[entry];
+        //     swap! swap! fn -> main uint => 0;
+        //     //fn swap! -> main uint => 0;
+        //     //fn main -> uint => 0;
+        // }
     }
 }

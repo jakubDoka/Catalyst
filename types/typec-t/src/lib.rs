@@ -6,6 +6,7 @@
 #![feature(result_flattening)]
 #![feature(let_else)]
 #![feature(if_let_guard)]
+#![feature(decl_macro)]
 
 #[macro_export]
 macro_rules! gen_kind {

@@ -31,6 +31,9 @@ gen_span_constants! {
     BAND => "bool & bool",
     ASSIGN => "=",
     CAST => "cast",
+    TOKEN_MACRO => "token_macro",
+    NEW => "new",
+    CLEAR => "clear",
 }
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),

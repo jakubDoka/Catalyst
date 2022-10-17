@@ -148,7 +148,7 @@ impl TyChecker<'_> {
             name: name.ident,
             generics: default(),
             methods: default(),
-            loc,
+            loc: Some(loc),
         };
         let id = self.typec.base_specs.push(spec);
 

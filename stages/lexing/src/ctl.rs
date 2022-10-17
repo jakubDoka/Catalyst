@@ -2,42 +2,114 @@ use storage::*;
 
 use crate::*;
 
-pub type NextFn = unsafe extern "C" fn(*mut (), *mut CtlLexer) -> CtlOption<Token>;
-pub type DropFn = unsafe extern "C" fn(*mut ());
-pub type ClearFn = unsafe extern "C" fn(*mut ());
+pub struct TokenMacroData;
 
-pub struct TokenMacro {
-    data: *mut (),
-    next: NextFn,
-    clear: ClearFn,
-    drop: DropFn,
+#[derive(Default)]
+pub struct TokenMacroCtx {
+    specs: Map<VRef<str>, TokenMacroPool>,
 }
 
-impl TokenMacro {
-    /// # Safety
-    /// data must be a valid pointer to a state which can be passed to
-    /// next, drop and clear.
-    pub unsafe fn new(data: *mut (), next: NextFn, clear: ClearFn, drop: DropFn) -> Self {
+impl TokenMacroCtx {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn declare_macro(&mut self, name: VRef<str>, spec: TokenMacroSpec) -> bool {
+        self.specs.insert(name, TokenMacroPool::new(spec)).is_some()
+    }
+
+    pub fn alloc(&mut self, name: VRef<str>) -> Option<TokenMacro> {
+        self.specs.get_mut(&name).map(|p| p.alloc(name))
+    }
+
+    pub fn free(&mut self, mut token_macro: TokenMacro) {
+        token_macro.clear();
+        if let Some(pool) = self.specs.get_mut(&token_macro.name) {
+            pool.free(token_macro);
+        }
+    }
+}
+
+struct TokenMacroPool {
+    pub free: Vec<*mut TokenMacroData>,
+    pub spec: TokenMacroSpec,
+}
+
+impl TokenMacroPool {
+    fn new(spec: TokenMacroSpec) -> Self {
         Self {
-            data,
-            next,
-            clear,
-            drop,
+            free: Vec::new(),
+            spec,
         }
     }
 
-    pub fn next(&mut self, lexer: &mut CtlLexer) -> Option<Token> {
-        unsafe { (self.next)(self.data, lexer).into() }
+    fn alloc(&mut self, name: VRef<str>) -> TokenMacro {
+        let data = if let Some(ptr) = self.free.pop() {
+            ptr
+        } else {
+            unsafe { (self.spec.new)() }
+        };
+
+        TokenMacro {
+            name,
+            data,
+            spec: self.spec,
+        }
     }
 
-    pub fn clear(&mut self) {
-        unsafe { (self.clear)(self.data) }
+    fn free(&mut self, r#macro: TokenMacro) {
+        self.free.push(r#macro.into_data());
+    }
+}
+
+impl Drop for TokenMacroPool {
+    fn drop(&mut self) {
+        for ptr in self.free.drain(..) {
+            unsafe {
+                (self.spec.drop)(ptr);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TokenMacroSpec {
+    pub new: unsafe extern "C" fn() -> *mut TokenMacroData,
+    pub start: unsafe extern "C" fn(*mut TokenMacroData, *mut CtlLexer),
+    pub next: unsafe extern "C" fn(*mut TokenMacroData, *mut CtlLexer) -> CtlOption<Token>,
+    pub clear: unsafe extern "C" fn(*mut TokenMacroData),
+    pub drop: unsafe extern "C" fn(*mut TokenMacroData),
+}
+
+pub struct TokenMacro {
+    name: VRef<str>,
+    data: *mut TokenMacroData,
+    spec: TokenMacroSpec,
+}
+
+impl TokenMacro {
+    pub fn next(&mut self, lexer: &mut CtlLexer) -> Option<Token> {
+        unsafe { (self.spec.next)(self.data, lexer).into() }
+    }
+
+    fn clear(&mut self) {
+        unsafe { (self.spec.clear)(self.data) }
+    }
+
+    pub fn start(&mut self, lexer: &mut CtlLexer) {
+        unsafe { (self.spec.start)(self.data, lexer) }
+    }
+
+    fn into_data(self) -> *mut TokenMacroData {
+        let data = self.data;
+        std::mem::forget(self);
+        data
     }
 }
 
 impl Drop for TokenMacro {
     fn drop(&mut self) {
-        unsafe { (self.drop)(self.data) }
+        unsafe { (self.spec.drop)(self.data) }
     }
 }
 
