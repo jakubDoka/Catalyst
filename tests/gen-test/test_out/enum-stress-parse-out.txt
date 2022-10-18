@@ -1,0 +1,32 @@
+error: expected '{' | '=>' but got Int
+ --> enum-stress\root.ctl:1:154
+  |
+1 | enum [T] Option { None ; Some : T ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ Option \ Some ~ Option \ Some ~ 0 {     \ Some ~ \ None => 5 ; \ Some ~ \ Some ~ \ None => 2 ; \ None =>     return 3 ; \ Some ~ a => match a     { \ Some ~ \ Some ~ a => a ; \ Some ~ \ None => 6 ; \ None => 1 ; } ; }
+  |                                                                                                                                                          ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got Int
+ --> enum-stress\root.ctl:1:186
+  |
+1 | enum [T] Option { None ; Some : T ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ Option \ Some ~ Option \ Some ~ 0 {     \ Some ~ \ None => 5 ; \ Some ~ \ Some ~ \ None => 2 ; \ None =>     return 3 ; \ Some ~ a => match a     { \ Some ~ \ Some ~ a => a ; \ Some ~ \ None => 6 ; \ None => 1 ; } ; }
+  |                                                                                                                                                                                          ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got 'return'
+ --> enum-stress\root.ctl:1:204
+  |
+1 | enum [T] Option { None ; Some : T ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ Option \ Some ~ Option \ Some ~ 0 {     \ Some ~ \ None => 5 ; \ Some ~ \ Some ~ \ None => 2 ; \ None =>     return 3 ; \ Some ~ a => match a     { \ Some ~ \ Some ~ a => a ; \ Some ~ \ None => 6 ; \ None => 1 ; } ; }
+  |                                                                                                                                                                                                            ^^^^^^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got 'match'
+ --> enum-stress\root.ctl:1:229
+  |
+1 | enum [T] Option { None ; Some : T ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ Option \ Some ~ Option \ Some ~ 0 {     \ Some ~ \ None => 5 ; \ Some ~ \ Some ~ \ None => 2 ; \ None =>     return 3 ; \ Some ~ a => match a     { \ Some ~ \ Some ~ a => a ; \ Some ~ \ None => 6 ; \ None => 1 ; } ; }
+  |                                                                                                                                                                                                                                     ^^^^^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
