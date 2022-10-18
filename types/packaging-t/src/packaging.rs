@@ -43,6 +43,7 @@ impl Source {
     }
 
     pub fn reveal_span_lines(&self, span: Span) -> Span {
+        dbg!(&self.path);
         span.reveal_lines(&self.content)
     }
 }

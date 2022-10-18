@@ -17,13 +17,17 @@ pub struct Func {
 }
 
 impl Func {
-    gen_increasing_constants!(
-        ANON_TEMP CAST
-    );
-
     pub fn is_generic(&self) -> bool {
         !self.generics.is_empty() || !self.upper_generics.is_empty()
     }
+}
+
+gen_water_drops! {
+    Func
+    funcs
+    ANON_TEMP => "anon_temp",
+    CAST => "cast",
+    SIZEOF => "sizeof",
 }
 
 bitflags! {

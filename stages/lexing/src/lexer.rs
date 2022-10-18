@@ -35,7 +35,6 @@ impl<'a> Lexer<'a> {
     pub fn next_tok(&mut self) -> Token {
         let kind = self.inner.next().unwrap_or(TokenKind::Eof);
         let span = Span::new(self.inner.span());
-
         Token { kind, span }
     }
 }

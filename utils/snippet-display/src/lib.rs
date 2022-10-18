@@ -33,7 +33,7 @@ impl SnippetDisplay {
         packages: &'a Resources,
         snippet: &'a diags::Snippet,
     ) -> Snippet<'a> {
-        let slices = snippet
+        let slices = dbg!(snippet)
             .slices
             .iter()
             .filter_map(|s| s.as_ref())

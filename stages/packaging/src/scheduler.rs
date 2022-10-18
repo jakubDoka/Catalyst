@@ -9,6 +9,7 @@ use crate::{packages::Context, *};
 
 pub trait Scheduler {
     fn resources(&mut self) -> PackageLoader;
+
     fn init(&mut self, _: &Path) {}
     fn before_parsing(&mut self, _module: VRef<Module>) {}
     fn parse_segment(&mut self, _module: VRef<Module>, _items: GroupedItemsAst) {}
@@ -45,12 +46,13 @@ pub trait Scheduler {
                 ast_data.clear();
                 let source = res.resources.modules[module].source;
                 let content = &res.resources.sources[source].content;
-                let items = ParsingCtx::new(
+                let items = ParsingCtx::new_with_macros(
                     content,
                     &mut parse_state,
                     &ast_data,
                     res.workspace,
                     res.interner,
+                    res.token_macro_ctx,
                     source,
                 )
                 .parse::<GroupedItemsAst>();

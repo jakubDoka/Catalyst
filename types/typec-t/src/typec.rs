@@ -333,6 +333,21 @@ impl Typec {
             })
         );
         self.builtin_funcs.insert(Interner::CAST, Func::CAST);
+        assert_eq!(
+            Func::SIZEOF,
+            self.funcs.push(Func {
+                generics: self.params.bump([default()]), // T
+                signature: Signature {
+                    cc: default(),
+                    args: default(),
+                    ret: Ty::UINT,
+                },
+                name: Interner::SIZEOF,
+                flags: FuncFlags::BUILTIN,
+                ..default()
+            })
+        );
+        self.builtin_funcs.insert(Interner::SIZEOF, Func::SIZEOF);
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);

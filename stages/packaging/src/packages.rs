@@ -222,7 +222,7 @@ impl PackageLoader<'_> {
                 .or_else(|| (package == ".").then_some(package_id));
 
             let Some(import_package) = import_package else {
-                self.unknown_package(path.sliced(..package.len()), package_id);
+                self.unknown_package(path.sliced(..package.len()), package_id, source);
                 continue;
             };
 
@@ -677,7 +677,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        push unknown_package(self, span: Span, package: VRef<Package>) {
+        push unknown_package(self, span: Span, package: VRef<Package>, source: VRef<Source>) {
             err: "unknown package";
             help: "to refer to current package use '.'";
             help: (
@@ -688,7 +688,7 @@ impl PackageLoader<'_> {
                     .intersperse(", ")
                     .collect::<String>()
             );
-            (span, self.resources.packages[package].source) {
+            (span, source) {
                 info[span]: "declared here";
             }
         }

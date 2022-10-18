@@ -160,8 +160,8 @@ mod util {
                     .intersperse(" -> ".into())
                     .collect::<String>();
 
-                let slice = try {
-                    diags::Slice {
+                let slice = (|| {
+                    Some(diags::Slice {
                         span: cycle
                             .iter()
                             .filter_map(|&ty| ty.span(self.typec))
@@ -176,8 +176,8 @@ mod util {
                             )
                             .collect(),
                         fold: true,
-                    }
-                };
+                    })
+                })();
 
                 let snippet = Snippet {
                     title: annotation!(err: "infinitely sized type detected between defined types"),

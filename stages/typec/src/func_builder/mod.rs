@@ -62,12 +62,16 @@ impl TyChecker<'_> {
     ) {
         let Impl {
             key: ImplKey { ty, spec },
-            span,
+            span: Some(span),
             ..
-        } = self.typec.impls[impl_ref];
+        } = self.typec.impls[impl_ref] else {
+            todo!();
+        };
         let spec_base = spec.base(self.typec);
         let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
+
+        self.scope.push(Interner::SELF, ty, span);
 
         let mut methods = bumpvec![None; spec_methods.len()];
         for &(ast, func) in input {
@@ -301,7 +305,7 @@ impl TyChecker<'_> {
         }
 
         let value = if let Some(expr) = expr {
-            Some(self.expr(expr, Some(builder.ret), builder).unwrap())
+            Some(self.expr(expr, Some(builder.ret), builder)?)
         } else {
             None
         };
@@ -365,9 +369,30 @@ impl TyChecker<'_> {
             UnitExprAst::If(r#if) => self.r#if(r#if, inference, builder),
             UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             UnitExprAst::Let(r#let) => self.r#let(r#let, inference, builder),
+            UnitExprAst::Deref(.., &expr) => self.deref(expr, inference, builder),
             UnitExprAst::PathInstance(_) => todo!(),
             UnitExprAst::TypedPath(_) => todo!(),
         }
+    }
+
+    fn deref<'a>(
+        &mut self,
+        expr: UnitExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a>,
+    ) -> ExprRes<'a> {
+        let expr = self.unit_expr(expr, None, builder)?;
+        let Ty::Pointer(ptr) = expr.ty else {
+            todo!();
+        };
+
+        let base = self.typec[ptr].base;
+
+        Some(TirNode::new(
+            base,
+            TirKind::Deref(builder.arena.alloc(expr)),
+            expr.span,
+        ))
     }
 
     fn r#let<'a>(
@@ -492,6 +517,10 @@ impl TyChecker<'_> {
         );
 
         let mut param_slots = bumpvec![None; self.typec[self.typec[ty].generics].len()];
+        if let Some(inference) = inference && let Ty::Instance(inst) = inference {
+            param_slots.iter_mut().zip(&self.typec[self.typec[inst].args])
+                .for_each(|(slot, &arg)| *slot = Some(arg))
+        }
         if let Some((.., params)) = params {
             for (slot, &param) in param_slots.iter_mut().zip(params.iter()) {
                 *slot = self.ty(param);
@@ -645,7 +674,7 @@ impl TyChecker<'_> {
                 let frame = self.scope.start_frame();
                 let var_frame = builder.start_frame();
                 let pat = self.pattern(pattern, value.ty, builder);
-                let body = self.expr(body, inference, builder);
+                let body = self.if_block(body, inference, builder);
                 self.scope.end_frame(frame);
                 builder.end_frame(var_frame);
                 Some(MatchArmTir {
@@ -756,14 +785,9 @@ impl TyChecker<'_> {
                 })
             }
             PatAst::Int(span) => {
-                let start = NameAst {
+                let op = NameAst {
                     ident: Interner::EQUAL,
                     span,
-                };
-                let op = PathExprAst {
-                    start,
-                    segments: &[],
-                    slash: None,
                 };
                 let comparator = self.find_binary_func(op, ty, ty)?;
                 Some(PatTir {
@@ -1369,16 +1393,62 @@ impl TyChecker<'_> {
 
     fn value_path<'a>(
         &mut self,
-        path @ PathExprAst { start, .. }: PathExprAst,
-        _inference: Inference,
+        path @ PathExprAst { slash, start, .. }: PathExprAst,
+        inference: Inference,
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
-        let var = lookup!(VarHeaderTir self, start.ident, start.span);
-        Some(TirNode::new(
-            builder.get_var(var).ty,
-            TirKind::Access(var),
-            path.span(),
-        ))
+        if slash.is_some() {
+            let Some(inference) = inference else {
+                todo!();
+            };
+
+            match inference.base(self.typec) {
+                Ty::Enum(..) => {
+                    return self.enum_ctor(
+                        EnumCtorAst {
+                            path: PathInstanceAst { path, params: None },
+                            value: None,
+                        },
+                        Some(inference),
+                        builder,
+                    )
+                }
+                Ty::Struct(_) => todo!(),
+                Ty::Instance(_) => todo!(),
+                Ty::Pointer(_) => todo!(),
+                Ty::Param(_) => todo!(),
+                Ty::Builtin(_) => todo!(),
+            }
+        }
+
+        Some(
+            match self.lookup(start.ident, start.span, "variable or enum")? {
+                ScopeItem::Func(_) => todo!(),
+                ScopeItem::SpecFunc(_) => todo!(),
+                ScopeItem::Ty(ty) => match ty {
+                    Ty::Struct(_) => todo!(),
+                    Ty::Enum(..) => {
+                        return self.enum_ctor(
+                            EnumCtorAst {
+                                path: PathInstanceAst { path, params: None },
+                                value: None,
+                            },
+                            inference,
+                            builder,
+                        )
+                    }
+                    Ty::Instance(_) => todo!(),
+                    Ty::Pointer(_) => todo!(),
+                    Ty::Param(_) => todo!(),
+                    Ty::Builtin(_) => todo!(),
+                },
+                ScopeItem::SpecBase(_) => todo!(),
+                ScopeItem::Module(_) => todo!(),
+                ScopeItem::VarHeaderTir(var) => {
+                    TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
+                }
+            },
+        )
     }
 
     fn int<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
@@ -1418,16 +1488,18 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a>,
     ) -> ExprRes<'a> {
         let lhs = self.expr(lhs, None, builder);
-        let rhs = self.expr(rhs, None, builder);
-        let (lhs, rhs) = (lhs?, rhs?); // recovery
 
-        if op.start.ident == Interner::ASSIGN {
+        if op.ident == Interner::ASSIGN {
+            let rhs = self.expr(rhs, lhs.map(|lhs| lhs.ty), builder)?;
             return Some(TirNode::new(
                 Ty::UNIT,
-                TirKind::Assign(builder.arena.alloc(AssignTir { lhs, rhs })),
+                TirKind::Assign(builder.arena.alloc(AssignTir { lhs: lhs?, rhs })),
                 binary_ast.span(),
             ));
         }
+
+        let rhs = self.expr(rhs, None, builder);
+        let (lhs, rhs) = (lhs?, rhs?); // recovery
 
         let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
 
@@ -1444,16 +1516,8 @@ impl TyChecker<'_> {
         ))
     }
 
-    fn find_binary_func(&mut self, op: PathExprAst, lhs_ty: Ty, rhs_ty: Ty) -> OptVRef<Func> {
-        let base_id = match *op.segments {
-            [] => op.start.ident,
-            [name] => {
-                let module = lookup!(Module self, name.ident, name.span);
-                self.interner.intern_scoped(module.index(), op.start.ident)
-            }
-            _ => self.invalid_op_expr_path(op.span())?,
-        };
-
+    fn find_binary_func(&mut self, op: NameAst, lhs_ty: Ty, rhs_ty: Ty) -> OptVRef<Func> {
+        let base_id = op.ident;
         let id = self
             .interner
             .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs_ty, rhs_ty, t, s));
@@ -1639,7 +1703,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_spec_impl_funcs(self, span: Option<Span>, missing: &[VRef<str>]) {
+        push missing_spec_impl_funcs(self, span: Span, missing: &[VRef<str>]) {
             err: "missing spec functions";
             help: (
                 "functions that are missing: {}",
@@ -1648,8 +1712,8 @@ impl TyChecker<'_> {
                     .intersperse(", ")
                     .collect::<String>(),
             );
-            (span?, self.source) {
-                err[span?]: "this impl block does not implement all required functions";
+            (span, self.source) {
+                err[span]: "this impl block does not implement all required functions";
             }
         }
 

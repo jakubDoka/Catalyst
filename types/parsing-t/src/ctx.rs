@@ -15,6 +15,7 @@ pub struct ParsingCtx<'a, 'b> {
     pub arena: &'b AstData,
     pub workspace: &'a mut Workspace,
     pub interner: &'a mut Interner,
+    pub token_macro_ctx: Option<&'a mut TokenMacroCtx>,
     pub source: VRef<Source>,
 }
 
@@ -33,6 +34,27 @@ impl<'a, 'b> ParsingCtx<'a, 'b> {
             arena: ast_data,
             workspace,
             interner,
+            token_macro_ctx: None,
+            source,
+        }
+    }
+
+    pub fn new_with_macros(
+        source_code: &'a str,
+        state: &'a mut ParsingState,
+        ast_data: &'b AstData,
+        workspace: &'a mut Workspace,
+        interner: &'a mut Interner,
+        token_macro_ctx: Option<&'a mut TokenMacroCtx>,
+        source: VRef<Source>,
+    ) -> Self {
+        Self {
+            lexer: Lexer::new(source_code, state.progress),
+            state,
+            arena: ast_data,
+            workspace,
+            interner,
+            token_macro_ctx,
             source,
         }
     }
@@ -108,8 +130,52 @@ impl<'a> ParsingCtx<'_, 'a> {
     pub fn advance(&mut self) -> Token {
         let current = self.state.current;
         self.state.current = self.state.next;
-        self.state.next = self.lexer.next_tok();
+        self.state.next = self.next_token();
+        self.check_for_macro();
         current
+    }
+
+    fn check_for_macro(&mut self) {
+        if self.state.next.kind != TokenKind::Macro {
+            return;
+        }
+
+        let Some(token_macro_ctx) = &mut self.token_macro_ctx else {
+            //todo!()
+            return;
+        };
+
+        let macro_name =
+            &self.lexer.inner_span_str(self.state.next.span)[..self.state.next.span.len() - 1];
+        let macro_name_ident = self.interner.intern(macro_name);
+
+        let Some(mut token_macro) = token_macro_ctx.alloc(macro_name_ident) else {
+            return;
+        };
+
+        if !token_macro.start(&mut self.lexer) {
+            token_macro_ctx.free(token_macro);
+            return;
+        }
+
+        self.state.token_macro_stack.push(token_macro);
+
+        self.state.next = self.next_token();
+    }
+
+    fn next_token(&mut self) -> Token {
+        let Some(mut token_macro) = self.state.token_macro_stack.pop() else {
+            return self.lexer.next_tok();
+        };
+
+        let Some(token) = token_macro.next(&mut self.lexer) else {
+            self.token_macro_ctx.as_mut().unwrap().free(token_macro);
+            return self.lexer.next_tok();
+        };
+
+        self.state.token_macro_stack.push(token_macro);
+
+        token
     }
 
     pub fn expect_advance(&mut self, expected: impl Into<TokenPat> + Clone) -> Option<Token> {
@@ -298,6 +364,7 @@ pub struct ParsingState {
     pub next: Token,
     pub progress: usize,
     pub parse_stack: Vec<&'static str>,
+    pub token_macro_stack: Vec<TokenMacro>,
 }
 
 impl ParsingState {

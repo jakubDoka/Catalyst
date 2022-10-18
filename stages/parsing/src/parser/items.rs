@@ -317,7 +317,7 @@ impl<'a> Ast<'a> for SpecAst<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct TopLevelAttributeAst {
     pub hash: Span,
-    pub value: WrappedAst<TopLevelAttributeKindAst>,
+    pub value: WrappedAst<TopLevelAttrKindAst>,
 }
 
 impl<'a> Ast<'a> for TopLevelAttributeAst {
@@ -341,30 +341,34 @@ impl<'a> Ast<'a> for TopLevelAttributeAst {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum TopLevelAttributeKindAst {
+pub enum TopLevelAttrKindAst {
     Entry(Span),
     WaterDrop(Span),
+    CompileTime(Span),
     Inline(Option<WrappedAst<InlineModeAst>>),
 }
 
-impl<'a> Ast<'a> for TopLevelAttributeKindAst {
+impl<'a> Ast<'a> for TopLevelAttrKindAst {
     type Args = ();
 
     const NAME: &'static str = "top level attribute";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         branch! {str ctx => {
-            "entry" => Some(TopLevelAttributeKindAst::Entry(ctx.advance().span)),
-            "water_drop" => Some(TopLevelAttributeKindAst::WaterDrop(
+            "entry" => Some(TopLevelAttrKindAst::Entry(ctx.advance().span)),
+            "water_drop" => Some(TopLevelAttrKindAst::WaterDrop(
+                ctx.advance().span,
+            )),
+            "compile_time" => Some(TopLevelAttrKindAst::CompileTime(
                 ctx.advance().span,
             )),
             "inline" => {
                 if !ctx.at_tok(TokenKind::LeftParen) {
-                    Some(TopLevelAttributeKindAst::Inline(None))
+                    Some(TopLevelAttrKindAst::Inline(None))
                 } else {
                     ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))
                         .map(Some)
-                        .map(TopLevelAttributeKindAst::Inline)
+                        .map(TopLevelAttrKindAst::Inline)
                 }
             },
         }}
@@ -372,9 +376,10 @@ impl<'a> Ast<'a> for TopLevelAttributeKindAst {
 
     fn span(&self) -> Span {
         match *self {
-            TopLevelAttributeKindAst::WaterDrop(span) => span,
-            TopLevelAttributeKindAst::Entry(span) => span,
-            TopLevelAttributeKindAst::Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
+            TopLevelAttrKindAst::WaterDrop(span)
+            | TopLevelAttrKindAst::CompileTime(span)
+            | TopLevelAttrKindAst::Entry(span) => span,
+            TopLevelAttrKindAst::Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
         }
     }
 }

@@ -36,7 +36,7 @@ impl<'a> Ast<'a> for ExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct BinaryExprAst<'a> {
     pub lhs: ExprAst<'a>,
-    pub op: PathExprAst<'a>,
+    pub op: NameAst,
     pub rhs: ExprAst<'a>,
 }
 
@@ -52,7 +52,7 @@ impl<'a> BinaryExprAst<'a> {
             };
 
             if prev_precedence > precedence {
-                let op = ctx.parse::<PathExprAst>()?;
+                let op = ctx.name_unchecked();
                 ctx.skip(TokenKind::NewLine);
                 let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
                 let rhs = Self::try_parse_binary(ctx, rhs, precedence)?;
@@ -84,6 +84,7 @@ pub enum UnitExprAst<'a> {
     Match(MatchExprAst<'a>),
     If(IfAst<'a>),
     Let(LetAst<'a>),
+    Deref(Span, &'a UnitExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -110,6 +111,9 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Match => ctx.parse().map(Self::Match),
             If => ctx.parse().map(Self::If),
             Let => ctx.parse().map(Self::Let),
+            Operator(_ = 0) => branch! {str ctx => {
+                "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
+            }},
         });
 
         loop {
@@ -123,8 +127,10 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                 Dot => ctx.parse_args((unit?, ))
                     .map(|path| ctx.arena.alloc(path))
                     .map(Self::DotExpr),
-                Tilde => ctx.parse_args((unit?, ))
-                    .map(Self::EnumCtor),
+                Tilde => {
+                    dbg!();
+                    ctx.parse_args((unit?, ))
+                    .map(Self::EnumCtor)},
                 BackSlash => {
                     let slash = ctx.advance().span;
                     branch!(ctx => {
@@ -157,6 +163,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
             Let(r#let) => r#let.span(),
+            Deref(span, expr) => span.joined(expr.span()),
         }
     }
 }
@@ -350,8 +357,7 @@ impl<'a> Ast<'a> for MatchExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct MatchArmAst<'a> {
     pub pattern: PatAst<'a>,
-    pub arrow: Span,
-    pub body: ExprAst<'a>,
+    pub body: IfBlockAst<'a>,
 }
 
 impl<'a> Ast<'a> for MatchArmAst<'a> {
@@ -362,7 +368,6 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
         Some(Self {
             pattern: ctx.parse()?,
-            arrow: ctx.expect_advance(TokenKind::ThickRightArrow)?.span,
             body: ctx.parse()?,
         })
     }

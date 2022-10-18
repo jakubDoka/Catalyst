@@ -314,6 +314,11 @@ impl Generator<'_> {
                     return;
                 }
 
+                if func_id == Func::SIZEOF {
+                    self.sizeof(params[0], ret, builder);
+                    return;
+                }
+
                 if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
                     let args = builder.body.value_args[args]
                         .iter()
@@ -409,6 +414,13 @@ impl Generator<'_> {
             unreachable!()
         };
         self.assign_value(ret.unwrap(), value, builder)
+    }
+
+    fn sizeof(&mut self, ty: Ty, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
+        let ptr_ty = builder.ptr_ty();
+        let ty = self.ty_layout(ty, ptr_ty);
+        let value = builder.ins().iconst(ptr_ty, ty.size as i64);
+        self.save_value(ret.unwrap(), value, 0, false, builder);
     }
 
     fn builtin_call(

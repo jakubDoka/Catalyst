@@ -239,7 +239,7 @@ pub mod items {
                 let c = if replace {
                     content
                         .replace('\n', " ")
-                        .replace("::", "\\")
+                        .replace(" :: ", "\\")
                         .replace("[qm]", "'")
                 } else {
                     content

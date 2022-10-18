@@ -194,6 +194,7 @@ gen_kind!(
     literal {
         Label = "'[a-zA-Z0-9_]+",
         Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
+        Macro = r"[a-zA-Z_][a-zA-Z0-9_]*!",
         Int = "[0-9]+((u)(32)|uint)?",
         String = r#""(\\"|[^"])*""#,
         Bool = "(true|false)",
@@ -226,6 +227,11 @@ gen_kind!(
         ) = EQUAL_SIGN_PRECEDENCE,
     }
 );
+
+// #[test]
+// fn test() {
+//     panic!("{:?}", TokenKind::lexer("Option\\None").into_iter().collect::<Vec<_>>());
+// }
 
 impl IntoIterator for TokenKind {
     type Item = TokenKind;

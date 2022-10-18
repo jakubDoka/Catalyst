@@ -245,6 +245,7 @@ dependencies = [
  "cranelift-module",
  "diags",
  "gen",
+ "lexing",
  "mir",
  "mir-t",
  "packaging",
@@ -443,6 +444,7 @@ name = "packaging"
 version = "0.1.0"
 dependencies = [
  "diags",
+ "lexing",
  "lexing-t",
  "packaging-t",
  "parsing",

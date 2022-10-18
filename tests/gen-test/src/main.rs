@@ -11,6 +11,7 @@ use target_lexicon::Triple;
 
 use diags::*;
 use gen::*;
+use lexing::*;
 use mir::*;
 use mir_t::*;
 use packaging::*;
@@ -51,6 +52,7 @@ struct TestState {
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
     mir_type_swapper: MirTypeSwapper,
+    token_macro_ctx: TokenMacroCtx,
 }
 
 impl TestState {
@@ -337,7 +339,9 @@ impl TestState {
 
 impl Scheduler for TestState {
     fn resources(&mut self) -> packaging::PackageLoader {
-        package_loader!(self)
+        let mut packs = package_loader!(self);
+        packs.token_macro_ctx = Some(&mut self.token_macro_ctx);
+        packs
     }
 
     fn init(&mut self, _: &Path) {
@@ -537,261 +541,269 @@ fn main() {
     gen_test! {
         TestState,
         false,
-        simple "functions" {
-            #[entry];
-            fn main -> uint => pass(0);
-            fn pass(a: uint) -> uint { return a };
-            fn pass_with_implicit_return(a: uint) -> uint { a };
-        }
+        // simple "functions" {
+        //     #[entry];
+        //     fn main -> uint => pass(0);
+        //     fn pass(a: uint) -> uint { return a };
+        //     fn pass_with_implicit_return(a: uint) -> uint { a };
+        // }
 
-        simple "recursion" {
-            #[entry];
-            fn main -> uint => 0;
+        // simple "recursion" {
+        //     #[entry];
+        //     fn main -> uint => 0;
 
-            fn infinity(a: uint) => infinity(a);
-        }
+        //     fn infinity(a: uint) => infinity(a);
+        // }
 
-        simple "operators" {
-            #[entry];
-            fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
-        }
+        // simple "operators" {
+        //     #[entry];
+        //     fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
+        // }
 
-        simple "compile-time" {
-            fn sub(a: uint, b: uint) -> uint => a - b;
+        // simple "compile-time" {
+        //     fn sub(a: uint, b: uint) -> uint => a - b;
 
-            #[entry];
-            fn main -> uint => const sub(1, 1);
-        }
+        //     #[entry];
+        //     fn main -> uint => const sub(1, 1);
+        // }
 
-        simple "external" {
-            fn "default" putchar(c: char) -> u32 extern;
+        // // simple "external" {
+        // //     fn "default" putchar(c: char) -> u32 extern;
 
-            #[entry];
-            fn main -> uint {
-                const putchar('a'); // compile time print
-                putchar('\n');
-                0
-            };
-        }
+        // //     #[entry];
+        // //     fn main -> uint {
+        // //         const putchar('a'); // compile time print
+        // //         putchar('\n');
+        // //         0
+        // //     };
+        // // }
 
-        simple "generic" {
-            fn [T] pass(value: T) -> T => value;
+        // simple "generic" {
+        //     fn [T] pass(value: T) -> T => value;
 
-            #[entry];
-            fn main -> u32 => pass(0uint);
-        }
+        //     #[entry];
+        //     fn main -> u32 => pass(0uint);
+        // }
 
-        simple "struct-constructor" {
-            struct OnStack {
-                a: uint;
-                b: uint
-            };
+        // simple "struct-constructor" {
+        //     struct OnStack {
+        //         a: uint;
+        //         b: uint
+        //     };
 
-            struct InRegister {
-                a: u32;
-                b: u32
-            };
+        //     struct InRegister {
+        //         a: u32;
+        //         b: u32
+        //     };
 
-            struct [T, E] Generic {
-                a: T;
-                b: E
-            };
+        //     struct [T, E] Generic {
+        //         a: T;
+        //         b: E
+        //     };
 
-            #[entry];
-            fn main -> uint {
-                Generic::{
-                    a: OnStack::{ a: 1; b: 2 };
-                    b: InRegister::{ a: 3; b: 1 }
-                };
-                0
-            };
-        }
-        simple "auto-ref-deref" {
-            impl uint {
-                fn reference(s: ^^^^^^^^^^^^Self) -> ^^^^^^^^^^^^Self => s;
-                fn dereference(s: Self) -> Self => s;
-            };
+        //     #[entry];
+        //     fn main -> uint {
+        //         Generic::{
+        //             a: OnStack::{ a: 1; b: 2 };
+        //             b: InRegister::{ a: 3; b: 1 }
+        //         };
+        //         0
+        //     };
+        // }
+        // simple "auto-ref-deref" {
+        //     impl uint {
+        //         fn reference(s: ^^^^^^^^^^^^Self) -> ^^^^^^^^^^^^Self => s;
+        //         fn dereference(s: Self) -> Self => s;
+        //     };
 
-            #[entry];
-            fn main -> uint => 0.reference().dereference();
-        }
+        //     #[entry];
+        //     fn main -> uint => 0.reference().dereference();
+        // }
 
-        simple "additional-param-garbage" {
-            fn [T] pass(value: T) -> T => value;
+        // simple "additional-param-garbage" {
+        //     fn [T] pass(value: T) -> T => value;
 
-            struct B;
+        //     struct B;
 
-            #[entry];
-            fn main -> uint => pass::[uint, B](0uint, 'h');
-        }
+        //     #[entry];
+        //     fn main -> uint => pass::[uint, B](0uint, 'h');
+        // }
 
-        simple "spec-test" {
-            spec Flood {
-                fn new -> uint;
-            };
+        // simple "spec-test" {
+        //     spec Flood {
+        //         fn new -> uint;
+        //     };
 
-            struct Fool;
+        //     struct Fool;
 
-            impl Flood for Fool {
-                fn new -> uint => 0;
-            };
+        //     impl Flood for Fool {
+        //         fn new -> uint => 0;
+        //     };
 
-            fn [T: Flood] make_flood() -> uint => T::new();
+        //     fn [T: Flood] make_flood() -> uint => T::new();
 
-            #[entry];
-            fn main -> uint => make_flood::[Fool]();
-        }
+        //     #[entry];
+        //     fn main -> uint => make_flood::[Fool]();
+        // }
 
-        simple "generic-spec" {
-            spec [T] GenericSpec {
-                fn take(t: T) -> Self;
-            };
+        // simple "generic-spec" {
+        //     spec [T] GenericSpec {
+        //         fn take(t: T) -> Self;
+        //     };
 
-            impl GenericSpec[uint] for uint {
-                fn take(t: uint) -> Self => t;
-            };
+        //     impl GenericSpec[uint] for uint {
+        //         fn take(t: uint) -> Self => t;
+        //     };
 
-            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+        //     fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
 
-            #[entry];
-            fn main() -> uint => take(0);
-        }
+        //     #[entry];
+        //     fn main() -> uint => take(0);
+        // }
 
-        simple "struct access" {
-            struct Foo {
-                a: uint;
-                b: uint;
-            };
+        // simple "struct access" {
+        //     struct Foo {
+        //         a: uint;
+        //         b: uint;
+        //     };
 
-            #[entry];
-            fn main -> uint => Foo::{ a: 1; b: 0 }.b;
-        }
+        //     #[entry];
+        //     fn main -> uint => Foo::{ a: 1; b: 0 }.b;
+        // }
 
-        simple "register struct init and use" {
-            struct RegStruct {
-                field: uint
-            };
+        // simple "register struct init and use" {
+        //     struct RegStruct {
+        //         field: uint
+        //     };
 
-            struct RegStruct2 {
-                field: u32;
-                field2: u32
-            };
+        //     struct RegStruct2 {
+        //         field: u32;
+        //         field2: u32
+        //     };
 
-            #[entry];
-            fn main -> uint {
-                RegStruct2::{ field: 0; field2: 1 };
-                RegStruct::{ field: 0 }.field
-            }
-        }
+        //     #[entry];
+        //     fn main -> uint {
+        //         RegStruct2::{ field: 0; field2: 1 };
+        //         RegStruct::{ field: 0 }.field
+        //     }
+        // }
 
-        simple "match" {
-            struct Matched {
-                a: uint;
-                b: uint
-            };
+        // simple "match" {
+        //     struct Matched {
+        //         a: uint;
+        //         b: uint
+        //     };
 
-            #[entry];
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a; b: 0 } => a;
-                ::{ a; b } => a + b;
-            };
-        }
+        //     #[entry];
+        //     fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+        //         ::{ a: 1; b: 0 } => 1;
+        //         ::{ a: 0; b: 1 } => 0;
+        //         ::{ a; b: 0 } => a;
+        //         ::{ a; b } => a + b;
+        //     };
+        // }
 
-        simple "match-with-struct-return" {
-            struct Returned {
-                a: uint;
-                b: uint
-            };
+        // simple "match-with-struct-return" {
+        //     struct Returned {
+        //         a: uint;
+        //         b: uint
+        //     };
 
-            #[entry];
-            fn main() -> uint => match 0 {
-                0 => Returned::{ a: 0; b: 1 };
-                a => Returned::{ a; b: 0 };
-            }.a;
-        }
+        //     #[entry];
+        //     fn main() -> uint => match 0 {
+        //         0 => Returned::{ a: 0; b: 1 };
+        //         a => Returned::{ a; b: 0 };
+        //     }.a;
+        // }
 
-        simple "recursive-fib" {
-            #[entry];
-            fn main -> uint => fib(10) - 55;
+        // simple "recursive-fib" {
+        //     #[entry];
+        //     fn main -> uint => fib(10) - 55;
 
-            fn fib(x: uint) -> uint => match x {
-                0 => 0;
-                1 => 1;
-                a => fib(a - 1) + fib(a - 2);
-            };
-        }
+        //     fn fib(x: uint) -> uint => match x {
+        //         0 => 0;
+        //         1 => 1;
+        //         a => fib(a - 1) + fib(a - 2);
+        //     };
+        // }
 
-        simple "enum" {
-            enum [T] Option {
-                Some: T;
-                None;
-            };
+        // simple "enum" {
+        //     enum [T] Option {
+        //         Some: T;
+        //         None;
+        //     };
 
-            #[entry];
-            fn main() -> uint => match Option::Some~0 {
-                ::Some~4 => 5;
-                ::Some~1 => 2;
-                ::None => 3;
-                ::Some~a => a;
-            }
-        }
+        //     #[entry];
+        //     fn main() -> uint => match Option::Some~0 {
+        //         ::Some~4 => 5;
+        //         ::Some~1 => 2;
+        //         ::None => 3;
+        //         ::Some~a => a;
+        //     }
+        // }
 
-        simple "enum-stress" {
-            enum [T] Option {
-                None;
-                Some: T;
-            };
+        // simple "enum-stress" {
+        //     enum [T] Option {
+        //         None;
+        //         Some: T;
+        //     };
 
-            #[entry];
-            fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
-                ::Some~::None => 5;
-                ::Some~::Some~::None => 2;
-                ::None => return 3;
-                ::Some~a => match a {
-                    ::Some~::Some~a => a;
-                    ::Some~::None => 6;
-                    ::None => 1;
-                };
-            }
-        }
+        //     #[entry];
+        //     fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
+        //         ::Some~::None => 5;
+        //         ::Some~::Some~::None => 2;
+        //         ::None => return 3;
+        //         ::Some~a => match a {
+        //             ::Some~::Some~a => a;
+        //             ::Some~::None => 6;
+        //             ::None => 1;
+        //         };
+        //     }
+        // }
 
-        simple "if-statement" {
-            #[entry];
-            fn main() -> uint =>
-                if 0 == 0 => 0;
-                elif 0 == 69 => 89;
-                else => 1;
-        }
+        // simple "if-statement" {
+        //     #[entry];
+        //     fn main() -> uint =>
+        //         if 0 == 0 => 0;
+        //         elif 0 == 69 => 89;
+        //         else => 1;
+        // }
 
-        simple "let-binding" {
-            struct A {
-                a: uint;
-                b: uint;
-            };
+        // simple "let-binding" {
+        //     struct A {
+        //         a: uint;
+        //         b: uint;
+        //     };
 
-            #[entry];
-            fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
-                a = a + b;
-                a - 3
-            };
-        }
+        //     #[entry];
+        //     fn main() -> uint {
+        //         let ::{ mut a, b } = A::{ a: 0; b: 3 };
+        //         a = a + b;
+        //         a - 3
+        //     };
+        // }
 
-        simple "cast" {
-            #[entry];
-            fn main() -> uint => cast(0);
-        }
+        // simple "cast" {
+        //     #[entry];
+        //     fn main() -> uint => cast(0);
+        // }
 
-        simple "cast-mismatch" {
-            #[entry];
-            fn main() -> u32 => cast(0);
+        // simple "cast-mismatch" {
+        //     #[entry];
+        //     fn main() -> u32 => cast(0);
 
-            fn [F, T] my_cast(value: F) -> T => cast(value);
-        }
+        //     fn [F, T] my_cast(value: F) -> T => cast(value);
+        // }
 
         simple "swap-macro" {
+            use {
+                w "water"
+            };
+
+            // TODO: Solution for macro name collisions
+            // type WSwap = w::Swap[uint];
+            // break;
+
             #[water_drop];
             enum [T] Option {
                 Some: T;
@@ -813,7 +825,7 @@ fn main() {
                 Empty;
             };
 
-            #[water_drop]
+            #[water_drop];
             struct MacroLexer;
 
             impl MacroLexer {
@@ -901,7 +913,7 @@ fn main() {
             };
 
             impl TokenMacro for Swap {
-                fn new() -> ^Self => cast(malloc(sizeof(Self)));
+                fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
 
                 fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self] {
                     *s = ::Two~::{
@@ -911,17 +923,17 @@ fn main() {
                     ::Some~s
                 };
 
-                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => ::Some~match *s {
-                    ::Two~::{ first, second } => {
+                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => Option::Some~match *s {
+                    ::Two~::{ first, second } {
                         *s = ::Last~::{ last: first };
                         second
                     };
-                    ::Last~::{ last } => {
+                    ::Last~::{ last } {
                         *s = ::Empty;
                         last
                     };
                     ::Empty => return ::None;
-                }
+                };
 
                 fn clear(s: ^Self) {};
 
@@ -930,8 +942,8 @@ fn main() {
 
             break;
 
-            //#[entry];
-            //swap! swap! fn -> main uint => 0;
+            #[entry];
+            swap! swap! fn -> main uint => 0;
             //fn swap! -> main uint => 0;
             //fn main -> uint => 0;
         }

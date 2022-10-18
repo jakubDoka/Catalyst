@@ -75,8 +75,8 @@ impl Drop for TokenMacroPool {
 #[derive(Clone, Copy)]
 pub struct TokenMacroSpec {
     pub new: unsafe extern "C" fn() -> *mut TokenMacroData,
-    pub start: unsafe extern "C" fn(*mut TokenMacroData, *mut CtlLexer),
-    pub next: unsafe extern "C" fn(*mut TokenMacroData, *mut CtlLexer) -> CtlOption<Token>,
+    pub start: unsafe extern "C" fn(*mut TokenMacroData, CtlLexer) -> bool,
+    pub next: unsafe extern "C" fn(*mut TokenMacroData, CtlLexer) -> CtlOption<Token>,
     pub clear: unsafe extern "C" fn(*mut TokenMacroData),
     pub drop: unsafe extern "C" fn(*mut TokenMacroData),
 }
@@ -88,16 +88,16 @@ pub struct TokenMacro {
 }
 
 impl TokenMacro {
-    pub fn next(&mut self, lexer: &mut CtlLexer) -> Option<Token> {
-        unsafe { (self.spec.next)(self.data, lexer).into() }
+    pub fn next(&mut self, lexer: &mut Lexer) -> Option<Token> {
+        unsafe { (self.spec.next)(self.data, CtlLexer { inner: lexer }).into() }
     }
 
     fn clear(&mut self) {
         unsafe { (self.spec.clear)(self.data) }
     }
 
-    pub fn start(&mut self, lexer: &mut CtlLexer) {
-        unsafe { (self.spec.start)(self.data, lexer) }
+    pub fn start(&mut self, lexer: &mut Lexer) -> bool {
+        unsafe { (self.spec.start)(self.data, CtlLexer { inner: lexer }) }
     }
 
     fn into_data(self) -> *mut TokenMacroData {
@@ -121,6 +121,6 @@ pub struct CtlLexer<'a, 'b> {
 /// Returns next token from the lexer. Used for Catalyst ffi.
 /// # Safety
 /// The pointer must be valid.
-pub unsafe extern "C" fn ctl_lexer_next(lexer: *mut CtlLexer) -> Token {
-    (*lexer).inner.next_tok()
+pub unsafe extern "C" fn ctl_lexer_next(lexer: CtlLexer) -> Token {
+    lexer.inner.next_tok()
 }

@@ -79,6 +79,7 @@ impl ErrorCount {
 
 pub type Str = Cow<'static, str>;
 
+#[derive(Debug)]
 pub struct Snippet {
     pub title: Option<Annotation>,
     pub footer: Vec<Option<Annotation>>,
@@ -86,12 +87,14 @@ pub struct Snippet {
     pub origin: String,
 }
 
+#[derive(Debug)]
 pub struct Annotation {
     pub id: Option<Str>,
     pub label: Option<Str>,
     pub annotation_type: AnnotationType,
 }
 
+#[derive(Debug)]
 pub struct Slice {
     pub span: Span,
     pub origin: VRef<Source>,
@@ -99,6 +102,7 @@ pub struct Slice {
     pub fold: bool,
 }
 
+#[derive(Debug)]
 pub struct SourceAnnotation {
     pub range: Span,
     pub label: Str,

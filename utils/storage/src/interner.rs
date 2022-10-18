@@ -34,6 +34,7 @@ gen_span_constants! {
     TOKEN_MACRO => "token_macro",
     NEW => "new",
     CLEAR => "clear",
+    SIZEOF => "sizeof",
 }
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),

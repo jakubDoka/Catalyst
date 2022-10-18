@@ -58,6 +58,10 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.display(fmt),
             If(r#if) => r#if.display(fmt),
             Let(r#let) => r#let.display(fmt),
+            Deref(star, target) => {
+                fmt.write_span(star);
+                target.display(fmt);
+            }
         }
     }
 
@@ -77,6 +81,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.flat_len(fmt),
             If(r#if) => r#if.flat_len(fmt),
             Let(r#let) => r#let.flat_len(fmt),
+            Deref(span, target) => span.len() + target.flat_len(fmt),
         }
     }
 }
@@ -214,9 +219,7 @@ impl<'a> FmtAst for MatchArmAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         self.pattern.display(fmt);
         write!(fmt, " ");
-        fmt.write_span(self.arrow);
-        write!(fmt, " ");
-        self.body.display_low(false, fmt);
+        self.body.display(fmt);
     }
 }
 

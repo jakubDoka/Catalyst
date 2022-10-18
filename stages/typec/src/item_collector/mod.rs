@@ -184,7 +184,7 @@ impl TyChecker<'_> {
 
         let entry = attributes
             .iter()
-            .find(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::Entry(..)));
+            .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::Entry(..)));
 
         if let Some(entry) = entry && !parsed_generics.is_empty() {
             self.generic_entry(generics.span(), entry.span(), func.span())?;
@@ -307,7 +307,7 @@ impl TyChecker<'_> {
     ) -> VRef<I> {
         if attributes
             .iter()
-            .any(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::WaterDrop(..)))
+            .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
         {
             let name = &self.interner[name];
             let Some(id) = I::lookup_water_drop(name) else {
@@ -325,7 +325,7 @@ impl TyChecker<'_> {
         attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<I>> {
         for attr in attributes {
-            if let TopLevelAttributeKindAst::WaterDrop(_) = attr.value.value {
+            if let TopLevelAttrKindAst::WaterDrop(_) = attr.value.value {
                 let name = &self.interner[item.name()];
                 let Some(id) = I::lookup_water_drop(name) else {
                     todo!()

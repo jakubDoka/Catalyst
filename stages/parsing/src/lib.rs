@@ -79,7 +79,7 @@ pub use parser::{
     items::{
         EnumAst, EnumBodyAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst,
         ImplBodyAst, ImplItemAst, ImplTarget, InlineModeAst, ItemAst, ItemBodyMeta, ItemsAst,
-        ItemsMeta, SpecAst, SpecBodyAst, TopLevelAttributeAst, TopLevelAttributeKindAst,
+        ItemsMeta, SpecAst, SpecBodyAst, TopLevelAttrKindAst, TopLevelAttributeAst,
     },
     manifest::{
         DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,
