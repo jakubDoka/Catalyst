@@ -1,0 +1,16 @@
+error: expected '{' | '=>' but got Ident
+ --> match-with-struct-return\root.ctl:1:90
+  |
+1 | struct Returned { a : uint ; b : uint } ; #[entry] ; fn main() -> uint => match 0 { 0 => Returned \ { a : 0 ; b : 1 } ; a => Returned \ { a ; b : 0 } ; }.a ;
+  |                                                                                          ^^^^^^^^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got Ident
+ --> match-with-struct-return\root.ctl:1:126
+  |
+1 | struct Returned { a : uint ; b : uint } ; #[entry] ; fn main() -> uint => match 0 { 0 => Returned \ { a : 0 ; b : 1 } ; a => Returned \ { a ; b : 0 } ; }.a ;
+  |                                                                                                                              ^^^^^^^^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
