@@ -136,11 +136,10 @@ impl TyChecker<'_> {
     pub fn collect_spec(
         &mut self,
         SpecAst { vis, name, .. }: SpecAst,
-        _: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<SpecBase>> {
         let loc = {
-            // SAFETY: We push right after this, if item inset fails, id is forgotten.
-            let id = unsafe { self.typec.base_specs.next() };
+            let id = self.next_humid_item_id::<SpecBase>(name.ident, attributes);
             let item = ModuleItem::new(name.ident, id, name.span, vis);
             self.insert_scope_item(item)?
         };
@@ -150,9 +149,8 @@ impl TyChecker<'_> {
             methods: default(),
             loc: Some(loc),
         };
-        let id = self.typec.base_specs.push(spec);
 
-        Some(id)
+        self.insert_humid_item(spec, attributes)
     }
 
     pub fn collect_func(
@@ -285,11 +283,11 @@ impl TyChecker<'_> {
     pub fn collect_enum(
         &mut self,
         EnumAst { vis, name, .. }: EnumAst,
-        _: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<Enum>> {
         let loc = {
             // SAFETY: We push right after this, if item inset fails, id is forgotten.
-            let id = unsafe { self.typec.enums.next() };
+            let id = self.next_humid_item_id(name.ident, attributes);
             let item = ModuleItem::new(name.ident, Ty::Enum(id), name.span, vis);
             self.insert_scope_item(item)?
         };
@@ -297,9 +295,47 @@ impl TyChecker<'_> {
             generics: default(),
             variants: default(),
             name: name.ident,
-            loc,
+            loc: Some(loc),
         };
-        Some(self.typec.enums.push(e))
+        self.insert_humid_item(e, attributes)
+    }
+
+    fn next_humid_item_id<I: Humid>(
+        &mut self,
+        name: VRef<str>,
+        attributes: &[TopLevelAttributeAst],
+    ) -> VRef<I> {
+        if attributes
+            .iter()
+            .any(|attr| matches!(attr.value.value, TopLevelAttributeKindAst::WaterDrop(..)))
+        {
+            let name = &self.interner[name];
+            let Some(id) = I::lookup_water_drop(name) else {
+                todo!()
+            };
+            id
+        } else {
+            unsafe { I::storage(self.typec).next() }
+        }
+    }
+
+    fn insert_humid_item<I: Humid>(
+        &mut self,
+        item: I,
+        attributes: &[TopLevelAttributeAst],
+    ) -> Option<VRef<I>> {
+        for attr in attributes {
+            if let TopLevelAttributeKindAst::WaterDrop(_) = attr.value.value {
+                let name = &self.interner[item.name()];
+                let Some(id) = I::lookup_water_drop(name) else {
+                    todo!()
+                };
+                I::storage(self.typec)[id] = item;
+                return Some(dbg!(id));
+            }
+        }
+
+        Some(dbg!(I::storage(self.typec).push(item)))
     }
 
     gen_error_fns! {

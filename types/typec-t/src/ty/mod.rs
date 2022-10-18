@@ -58,12 +58,19 @@ pub struct Struct {
     pub loc: Loc,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Enum {
     pub name: VRef<str>,
     pub generics: Generics,
     pub variants: VSlice<Variant>,
-    pub loc: Loc,
+    pub loc: Option<Loc>,
+}
+
+gen_water_drops! {
+    Enum
+    enums
+    OPTION => "Option",
+    MACRO_TOKEN_KIND => "MacroTokenKind",
 }
 
 #[derive(Clone, Copy)]
@@ -105,11 +112,10 @@ pub struct SpecBase {
     pub loc: Option<Loc>,
 }
 
-impl SpecBase {
-    gen_water_drops! {
-        base_specs
-        TOKEN_MACRO => "TokenMacro",
-    }
+gen_water_drops! {
+    SpecBase
+    base_specs
+    TOKEN_MACRO => "TokenMacro",
 }
 
 #[derive(Clone, Copy)]
@@ -210,6 +216,7 @@ impl Ty {
     pub fn as_generic(self) -> Option<GenericTy> {
         Some(match self {
             Self::Struct(s) => GenericTy::Struct(s),
+            Self::Enum(e) => GenericTy::Enum(e),
             _ => return None,
         })
     }
@@ -251,7 +258,9 @@ impl Ty {
             Self::Struct(s) => {
                 Some(typec.module_items[typec[s].loc.module][typec[s].loc.item].span)
             }
-            Self::Enum(e) => Some(typec.module_items[typec[e].loc.module][typec[e].loc.item].span),
+            Self::Enum(e) => {
+                Some(typec.module_items[typec[e].loc?.module][typec[e].loc?.item].span)
+            }
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
         }
     }
@@ -420,4 +429,10 @@ bitflags! {
     TyFlags: u8 {
         GENERIC
     }
+}
+
+pub trait Humid: Sized {
+    fn lookup_water_drop(key: &str) -> Option<VRef<Self>>;
+    fn name(&self) -> VRef<str>;
+    fn storage(typec: &mut Typec) -> &mut PushMap<Self>;
 }

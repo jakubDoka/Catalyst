@@ -536,7 +536,7 @@ impl Scheduler for TestState {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "functions" {
             #[entry];
             fn main -> uint => pass(0);
@@ -791,82 +791,149 @@ fn main() {
             fn [F, T] my_cast(value: F) -> T => cast(value);
         }
 
-        // simple "swap-macro" {
-        //     enum [T] Option {
-        //         Some: T;
-        //         None;
-        //     };
+        simple "swap-macro" {
+            #[water_drop];
+            enum [T] Option {
+                Some: T;
+                None;
+            };
 
-        //     struct LastToken {
-        //         last: MacroToken;
-        //     };
+            struct LastToken {
+                last: MacroToken;
+            };
 
-        //     struct TwoTokens {
-        //         first: MacroToken;
-        //         second: MacroToken;
-        //     };
+            struct TwoTokens {
+                first: MacroToken;
+                second: MacroToken;
+            };
 
-        //     enum Swap {
-        //         Two: TwoTokens;
-        //         Last: LastToken;
-        //         Empty;
-        //     };
+            enum Swap {
+                Two: TwoTokens;
+                Last: LastToken;
+                Empty;
+            };
 
-        //     struct MacroLexer;
+            #[water_drop]
+            struct MacroLexer;
 
-        //     impl MacroLexer {
-        //         fn next(ml: ^MacroLexer) -> MacroToken => ctl_next_token(ml);
-        //     };
+            impl MacroLexer {
+                fn next(ml: ^MacroLexer) -> MacroToken => ctl_next_token(ml);
+            };
 
-        //     struct Span {
-        //         start: u32;
-        //         end: u32;
-        //     };
+            struct Span {
+                start: u32;
+                end: u32;
+            };
 
-        //     struct MacroToken {
-        //         kind: MacroTokenKind;
-        //         span: Span;
-        //     };
+            #[water_drop];
+            enum MacroTokenKind {
+                Func;
+                Type;
+                Return;
+                Use;
+                Extern;
+                If;
+                Elif;
+                Else;
+                For;
+                Break;
+                Continue;
+                Let;
+                Struct;
+                Spec;
+                Enum;
+                Mut;
+                Impl;
+                As;
+                Match;
+                Pub;
+                Priv;
+                Const;
+                Comma;
+                Colon;
+                Dot;
+                RightArrow;
+                ThickRightArrow;
+                DoubleColon;
+                Hash;
+                DoubleHash;
+                BackSlash;
+                DoubleDot;
+                Tilde;
+                LeftCurly;
+                RightCurly;
+                LeftParen;
+                RightParen;
+                LeftBracket;
+                RightBracket;
+                Label;
+                Ident;
+                Int;
+                String;
+                Bool;
+                Char;
+                Comment;
+                Space;
+                Operator: u8;
+                NewLine;
+                Error;
+                Eof;
+                None;
+            };
 
-        //     fn "default" malloc(size: uint) -> ^unit;
-        //     fn "default" free(ptr: ^unit);
-        //     #[ct_only];
-        //     fn "default" ctl_next_token(lexer: ^MacroLexer) -> MacroToken;
+            struct MacroToken {
+                kind: MacroTokenKind;
+                span: Span;
+            };
 
-        //     impl TokenMacro for Swap {
-        //         fn new() -> ^Self => cast(malloc(sizeof(Self)));
+            fn "default" malloc(size: uint) -> ^() extern;
+            fn "default" free(ptr: ^()) extern;
+            #[compile_time];
+            fn "default" ctl_next_token(lexer: ^MacroLexer) -> MacroToken extern;
 
-        //         fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self] {
-        //             *s = ::Two~::{
-        //                 first: lexer.next()?;
-        //                 second: lexer.next()?;
-        //             };
-        //             ::Some~s
-        //         };
+            #[water_drop];
+            spec TokenMacro {
+                fn new() -> ^Self;
+                fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self];
+                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken];
+                fn clear(s: ^Self);
+                fn drop(s: ^Self);
+            };
 
-        //         fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => ::Some~match *s {
-        //             ::Two~::{ first, second } => {
-        //                 *s = ::Last~::{ last: first };
-        //                 second
-        //             };
-        //             ::Last~::{ last } => {
-        //                 *s = ::Empty;
-        //                 last
-        //             };
-        //             ::Empty => return ::None;
-        //         }
+            impl TokenMacro for Swap {
+                fn new() -> ^Self => cast(malloc(sizeof(Self)));
 
-        //         fn clear(s: ^Self) {};
+                fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self] {
+                    *s = ::Two~::{
+                        first: lexer.next();
+                        second: lexer.next();
+                    };
+                    ::Some~s
+                };
 
-        //         fn drop(s: ^Self) => free(cast(s));
-        //     };
+                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => ::Some~match *s {
+                    ::Two~::{ first, second } => {
+                        *s = ::Last~::{ last: first };
+                        second
+                    };
+                    ::Last~::{ last } => {
+                        *s = ::Empty;
+                        last
+                    };
+                    ::Empty => return ::None;
+                }
 
-        //     break;
+                fn clear(s: ^Self) {};
 
-        //     #[entry];
-        //     swap! swap! fn -> main uint => 0;
-        //     //fn swap! -> main uint => 0;
-        //     //fn main -> uint => 0;
-        // }
+                fn drop(s: ^Self) => free(cast(s));
+            };
+
+            break;
+
+            //#[entry];
+            //swap! swap! fn -> main uint => 0;
+            //fn swap! -> main uint => 0;
+            //fn main -> uint => 0;
+        }
     }
 }

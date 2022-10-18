@@ -193,7 +193,14 @@ impl Typec {
                 to.push_str(&interner[self[r#struct].name])
             }
             Ty::Enum(r#enum) => {
-                write!(to, "{}\\", self[r#enum].loc.module.index()).unwrap();
+                write!(
+                    to,
+                    "{}\\",
+                    self[r#enum]
+                        .loc
+                        .map_or(usize::MAX, |loc| loc.module.index())
+                )
+                .unwrap();
                 to.push_str(&interner[self[r#enum].name])
             }
             Ty::Instance(instance) => {
@@ -305,6 +312,8 @@ impl Typec {
 
     pub fn init(&mut self, interner: &mut Interner) {
         self.init_builtin_funcs(interner);
+        SpecBase::init_water_drops(self);
+        Enum::init_water_drops(self);
     }
 
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {

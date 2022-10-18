@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use diags::*;
 use lexing_t::Span;
+use packaging_t::span_str;
 use parsing::*;
 use parsing_t::*;
 
@@ -123,7 +124,9 @@ impl TyChecker<'_> {
         }: TyInstanceAst,
     ) -> Option<VRef<Instance>> {
         let base = match self.ty_path(ident)? {
-            TyPathResult::Ty(base) => base.as_generic().or_else(|| todo!())?,
+            TyPathResult::Ty(base) => base
+                .as_generic()
+                .or_else(|| todo!("{} {base:?}", span_str!(self, ident.span())))?,
             TyPathResult::Spec(..) => todo!(),
         };
 

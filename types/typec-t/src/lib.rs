@@ -10,29 +10,42 @@
 #![feature(const_swap)]
 #![feature(const_mut_refs)]
 
+use storage::gen_increasing_constants;
+
 macro_rules! gen_water_drops {
     (
+        $target:ident
         $field:ident
         $(
             $name:ident => $repr:literal,
         )+
     ) => {
-        gen_increasing_constants!($($name)+);
+        impl $target {
+            gen_increasing_constants!($($name)+);
 
-        pub const WATER_DROPS: [(&str, VRef<Self>); [$(Self::$name),*].len()] = sorted_water_drops([
-            $(
-                ($repr, Self::$name),
-            )*
-        ]);
+            pub const WATER_DROPS: [(&str, VRef<Self>); [$(Self::$name),*].len()] = sorted_water_drops([
+                $(
+                    ($repr, Self::$name),
+                )*
+            ]);
 
-        pub fn init_water_drops(typec: &mut Typec) {
-            $(
-                assert_eq!(Self::$name, typec.$field.push(Default::default()));
-            )*
+            pub fn init_water_drops(typec: &mut Typec) {
+                $(
+                    assert_eq!(Self::$name, typec.$field.push(Default::default()));
+                )*
+            }
         }
 
-        pub fn lookup_water_drop(name: &str) -> Option<VRef<Self>> {
-            lookup_water_drop(&Self::WATER_DROPS, name)
+        impl Humid for $target {
+            fn lookup_water_drop(name: &str) -> Option<VRef<Self>> {
+                lookup_water_drop(&Self::WATER_DROPS, name)
+            }
+            fn name(&self) -> VRef<str> {
+                self.name
+            }
+            fn storage(typec: &mut Typec) -> &mut PushMap<Self> {
+                &mut typec.$field
+            }
         }
     };
 }
@@ -53,9 +66,10 @@ pub use {
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
-        GenericTy, Generics, Impl, ImplKey, ImplLookup, Impls, Instance, Instances, Mutability,
-        ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs, SpecInstance,
-        SpecInstances, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup, Variant, Variants,
+        GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Impls, Instance, Instances,
+        Mutability, ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs,
+        SpecInstance, SpecInstances, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup, Variant,
+        Variants,
     },
     typec::{lookup_water_drop, sorted_water_drops, Loc, Typec},
 };
