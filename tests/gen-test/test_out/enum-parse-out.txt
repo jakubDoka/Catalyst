@@ -1,0 +1,32 @@
+error: expected '{' | '=>' but got Int
+ --> enum\root.ctl:1:113
+  |
+1 | enum [T] Option { Some : T ; None ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ 0 { \ Some ~ 4 => 5 ; \ Some ~ 1 => 2 ; \ None => 3 ; \ Some ~ a => a ; }
+  |                                                                                                                 ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got Int
+ --> enum\root.ctl:1:131
+  |
+1 | enum [T] Option { Some : T ; None ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ 0 { \ Some ~ 4 => 5 ; \ Some ~ 1 => 2 ; \ None => 3 ; \ Some ~ a => a ; }
+  |                                                                                                                                   ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got Int
+ --> enum\root.ctl:1:145
+  |
+1 | enum [T] Option { Some : T ; None ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ 0 { \ Some ~ 4 => 5 ; \ Some ~ 1 => 2 ; \ None => 3 ; \ Some ~ a => a ; }
+  |                                                                                                                                                 ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
+error: expected '{' | '=>' but got Ident
+ --> enum\root.ctl:1:163
+  |
+1 | enum [T] Option { Some : T ; None ; } ; #[entry] ; fn main() -> uint => match Option \ Some ~ 0 { \ Some ~ 4 => 5 ; \ Some ~ 1 => 2 ; \ None => 3 ; \ Some ~ a => a ; }
+  |                                                                                                                                                                   ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr -> match expr -> list -> match arm -> if block
+
