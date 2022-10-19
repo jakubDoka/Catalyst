@@ -127,10 +127,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                 Dot => ctx.parse_args((unit?, ))
                     .map(|path| ctx.arena.alloc(path))
                     .map(Self::DotExpr),
-                Tilde => {
-                    dbg!();
-                    ctx.parse_args((unit?, ))
-                    .map(Self::EnumCtor)},
+                Tilde => ctx.parse_args((unit?, ))
+                    .map(Self::EnumCtor),
                 BackSlash => {
                     let slash = ctx.advance().span;
                     branch!(ctx => {

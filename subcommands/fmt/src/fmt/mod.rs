@@ -119,6 +119,9 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         }
 
         fmt.write_span(self.start);
+        if let Some(error) = self.error {
+            fmt.write_span(error);
+        }
         if fold && !is_top_list {
             fmt.indent();
         } else if !fold && delimiter_spacing {
@@ -156,6 +159,15 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
                     }
                 }
                 fmt.write_between(fold, after.range());
+            }
+
+            if let Some(error) = elem.error {
+                if fold {
+                    fmt.optional_newline();
+                } else if is_last && let Some(after) = elem.after_delim {
+                    fmt.write_span(Span::new(elem.after_value.end()..after.start()));
+                }
+                fmt.write_span(error);
             }
 
             if fold && !is_last {

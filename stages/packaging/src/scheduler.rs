@@ -8,7 +8,7 @@ use storage::*;
 use crate::{packages::Context, *};
 
 pub trait Scheduler {
-    fn resources(&mut self) -> PackageLoader;
+    fn loader(&mut self) -> PackageLoader;
 
     fn init(&mut self, _: &Path) {}
     fn before_parsing(&mut self, _module: VRef<Module>) {}
@@ -17,7 +17,7 @@ pub trait Scheduler {
 
     fn execute(&mut self, path: &Path) {
         let mut ctx = Context::default();
-        let mut res = self.resources();
+        let mut res = self.loader();
         res.load(path, &mut ctx);
         let order = mem::take(&mut res.resources.module_order);
         self.init(path);
@@ -27,7 +27,7 @@ pub trait Scheduler {
         for module in order {
             self.before_parsing(module);
 
-            let res = self.resources();
+            let res = self.loader();
             let source = res.resources.modules[module].source;
             let content = &res.resources.sources[source].content;
             parse_state.start(content);
@@ -42,7 +42,7 @@ pub trait Scheduler {
             .parse::<UseAstSkip>();
 
             loop {
-                let res = self.resources();
+                let res = self.loader();
                 ast_data.clear();
                 let source = res.resources.modules[module].source;
                 let content = &res.resources.sources[source].content;

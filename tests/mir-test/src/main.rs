@@ -28,7 +28,7 @@ struct TestState {
 }
 
 impl Scheduler for TestState {
-    fn resources(&mut self) -> packaging::PackageLoader {
+    fn loader(&mut self) -> packaging::PackageLoader {
         package_loader!(self)
     }
 

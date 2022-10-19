@@ -126,13 +126,13 @@ pub mod items {
             self.execute(Path::new(name));
 
             (
-                mem::take(self.resources().workspace),
-                mem::take(self.resources().resources),
+                mem::take(self.loader().workspace),
+                mem::take(self.loader().resources),
             )
         }
 
         fn set_packages(&mut self, packages: Resources) {
-            *self.resources().resources = packages;
+            *self.loader().resources = packages;
         }
     }
 
@@ -237,10 +237,7 @@ pub mod items {
                 let path = self_path.join(name);
 
                 let c = if replace {
-                    content
-                        .replace('\n', " ")
-                        .replace(" :: ", "\\")
-                        .replace("[qm]", "'")
+                    content.replace('\n', " ").replace(" :: ", "\\")
                 } else {
                     content
                 };

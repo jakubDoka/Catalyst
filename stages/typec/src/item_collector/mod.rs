@@ -331,11 +331,11 @@ impl TyChecker<'_> {
                     todo!()
                 };
                 I::storage(self.typec)[id] = item;
-                return Some(dbg!(id));
+                return Some(id);
             }
         }
 
-        Some(dbg!(I::storage(self.typec).push(item)))
+        Some(I::storage(self.typec).push(item))
     }
 
     gen_error_fns! {

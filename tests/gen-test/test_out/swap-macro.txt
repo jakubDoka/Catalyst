@@ -1,8 +1,8 @@
 error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
-   --> swap-macro\root.ctl:117:2
+   --> swap-macro\root.ctl:117:1
     |
-117 |  swap! swap! fn -> main uint => 0 ;
-    |  ^^^^^ token located here
+117 | swap! swap! fn -> main uint => 0 
+    | ^^^^^ token located here
     |
     = info: grouped items -> list -> item
 

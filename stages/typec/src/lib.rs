@@ -80,6 +80,7 @@ mod util {
             self.structs.clear();
             self.funcs.clear();
             self.specs.clear();
+            self.enums.clear();
             self.impl_funcs.clear();
             self.impl_frames.clear();
         }

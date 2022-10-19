@@ -107,6 +107,7 @@ pub trait Ast<'a>: Copy {
 
 pub struct ListAst<'a, T, META> {
     pub start: Span,
+    pub error: Option<Span>,
     pub elements: &'a [ListElement<T>],
     pub end: Span,
     _ph: std::marker::PhantomData<META>,
@@ -153,6 +154,7 @@ impl<'a, T, META: ListAstMeta> Default for ListAst<'a, T, META> {
         Self {
             start: default(),
             elements: default(),
+            error: default(),
             end: default(),
             _ph: default(),
         }
@@ -174,6 +176,7 @@ where
             return Some(Self {
                 start: pos,
                 elements: &[],
+                error: None,
                 end: pos,
                 _ph: std::marker::PhantomData,
             });
@@ -184,6 +187,8 @@ where
         } else {
             ctx.state.current.span
         };
+
+        let mut error = None;
 
         if on_delim {
             ctx.advance();
@@ -197,7 +202,13 @@ where
             }
 
             let Some(element) = T::parse_args(ctx, args.clone()) else {
-                if let Some(span) = META::recover(ctx)? {
+                let recover_res = META::recover(ctx)?;
+                if let Some(last) = elements.last_mut() {
+                    last.error = Some(Span::new(last.after_delim.unwrap_or(last.after_value).end()..ctx.state.current.span.end()));
+                } else {
+                    error = Some(Span::new(start.end()..ctx.state.current.span.end()));
+                }
+                if let Some(span) = recover_res {
                     break span;
                 } else {
                     continue;
@@ -226,6 +237,7 @@ where
 
             elements.push(ListElement {
                 value: element,
+                error: None,
                 after_value,
                 after_delim,
             });
@@ -236,7 +248,16 @@ where
                 }
 
                 ctx.expect_error(META::SEP);
-                if let Some(span) = META::recover(ctx)? {
+                let recover_res = META::recover(ctx)?;
+                if let Some(last) = elements.last_mut() {
+                    last.error = Some(Span::new(
+                        last.after_delim.unwrap_or(last.after_value).end()
+                            ..ctx.state.current.span.end(),
+                    ));
+                } else {
+                    error = Some(Span::new(start.end()..ctx.state.current.span.end()));
+                }
+                if let Some(span) = recover_res {
                     break span;
                 } else {
                     continue;
@@ -256,6 +277,7 @@ where
 
         Some(Self {
             start,
+            error,
             elements,
             end,
             _ph: std::marker::PhantomData,
@@ -280,6 +302,7 @@ pub struct ListElement<T> {
     pub value: T,
     pub after_value: Span,
     pub after_delim: Option<Span>,
+    pub error: Option<Span>,
 }
 
 pub trait ListAstMeta {
