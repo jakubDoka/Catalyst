@@ -201,11 +201,12 @@ impl ObjectContext {
         };
 
         let symbol = match record.name {
-            crate::GenItemName::Func(func) => {
+            GenItemName::Func(func) => {
                 self.functions[func]
                     .ok_or(ObjectRelocationError::MissingSymbol(func))?
                     .symbol
             }
+            GenItemName::LibCall(_) => todo!(),
         };
 
         Ok(Relocation {

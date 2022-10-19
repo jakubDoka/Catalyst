@@ -47,7 +47,8 @@ impl TokenMacroPool {
         let data = if let Some(ptr) = self.free.pop() {
             ptr
         } else {
-            unsafe { (self.spec.new)() }
+            dbg!();
+            unsafe { dbg!((self.spec.new)()) }
         };
 
         TokenMacro {

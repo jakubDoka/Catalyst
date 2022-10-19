@@ -87,7 +87,11 @@ impl TyChecker<'_> {
             };
             compiled_funcs.push((func, body));
 
-            let Func { name, .. } = self.typec.funcs[func];
+            let Func {
+                name,
+                signature: Signature { ref mut cc, .. },
+                ..
+            } = self.typec.funcs[func];
             let Some((i, spec_func)) = spec_methods
                 .iter()
                 .copied()
@@ -102,6 +106,8 @@ impl TyChecker<'_> {
                 self.unknown_spec_impl_func(ast.signature.name.span, left_to_implement.as_slice());
                 continue;
             };
+
+            *cc = spec_func.signature.cc;
 
             self.check_impl_signature(ty, spec_func, func, ast.signature.span());
 
@@ -1489,7 +1495,11 @@ impl TyChecker<'_> {
     }
 
     fn bool(&mut self, span: Span) -> ExprRes<'static> {
-        Some(TirNode::new(Ty::BOOL, TirKind::Bool(span_str!(self, span).starts_with('t')), span))
+        Some(TirNode::new(
+            Ty::BOOL,
+            TirKind::Bool(span_str!(self, span).starts_with('t')),
+            span,
+        ))
     }
 
     fn binary_expr<'a>(

@@ -539,7 +539,13 @@ impl MirChecker<'_> {
         Some(dest)
     }
 
-    fn bool(&mut self, value: bool, span: Span, dest: VRef<ValueMir>, builder: &mut MirBuilder) -> NodeRes {
+    fn bool(
+        &mut self,
+        value: bool,
+        span: Span,
+        dest: VRef<ValueMir>,
+        builder: &mut MirBuilder,
+    ) -> NodeRes {
         builder.inst(InstMir::Bool(value, dest), span);
         Some(dest)
     }

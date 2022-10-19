@@ -47,6 +47,7 @@
         "jakub",
         "lalrpop",
         "libc",
+        "libcall",
         "libcurl",
         "libucrt",
         "msvc",

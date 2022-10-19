@@ -386,6 +386,7 @@ impl TestState {
                 later_init.context.func.display()
             )
             .unwrap();
+            println!("{}", later_init.context.func.display());
 
             self.compile_func(current.id, later_init);
 
@@ -402,6 +403,8 @@ impl TestState {
                 false,
             )
             .unwrap();
+
+        later_init.jit_context.prepare_for_execution();
     }
 
     fn jit_compile_macros(&mut self, later_init: &mut LaterInit) {
@@ -519,7 +522,13 @@ impl Scheduler for TestState {
                 self.ast_transfer.activate(),
                 &mut type_checked_funcs,
             );
-            mir_checker!(self, module).funcs(&mut self.mir_ctx, &mut type_checked_funcs);
+            // let mut buff = String::new();
+            // let funcs = type_checked_funcs.iter().map(|&(f, _)| f).collect::<Vec<_>>();
+            mir_checker!(self, module)
+                .funcs(&mut self.mir_ctx, &mut type_checked_funcs)
+                // .display_funcs(&funcs, &mut buff)
+                ;
+            // println!("{}", buff);
             let source = self.resources.modules[module].source;
             generator!(self, self.object_resources).check_casts(
                 source,
@@ -1053,6 +1062,7 @@ fn main() {
             fn "default" free(ptr: ^()) extern;
             #[compile_time];
             fn "default" ctl_lexer_next(lexer: MacroLexer) -> MacroToken extern;
+            fn "default" putchar(c: char) -> u32 extern;
 
             #[water_drop];
             spec TokenMacro {
@@ -1064,7 +1074,12 @@ fn main() {
             };
 
             impl TokenMacro for Swap {
-                fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
+                fn new() -> ^Self {
+                    putchar('n');
+                    let val = malloc(sizeof::[Self]());
+                    putchar('a');
+                    cast(val)
+                };
 
                 fn start(s: ^Self, lexer: MacroLexer) -> bool {
                     *s = ::Two~::{
@@ -1074,16 +1089,20 @@ fn main() {
                     true
                 };
 
-                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] => Option::Some~match *s {
-                    ::Two~::{ first, second } {
-                        *s = ::Last~::{ last: first };
-                        second
-                    };
-                    ::Last~::{ last } {
-                        *s = ::Empty;
-                        last
-                    };
-                    ::Empty => return ::None;
+                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] {
+                    putchar('f');
+                    Option::Some~match *s {
+                        ::Two~::{ first, second } {
+                            putchar('t');
+                            *s = ::Last~::{ last: first };
+                            second
+                        };
+                        ::Last~::{ last } {
+                            *s = ::Empty;
+                            last
+                        };
+                        ::Empty => return ::None;
+                    }
                 };
 
                 fn clear(s: ^Self) {};

@@ -36,11 +36,12 @@ impl ProtectedAllocator {
     }
 
     pub fn seal(&mut self) {
-        for chunk in self.inner.chunks.get_mut().iter_mut().skip(self.protected) {
-            chunk.set_memory_protection(self.protection);
+        if !self.is_current_protected {
+            for chunk in self.inner.chunks.get_mut().iter_mut().skip(self.protected) {
+                chunk.set_memory_protection(self.protection);
+            }
+            self.is_current_protected = true;
         }
-
-        self.is_current_protected = true;
     }
 
     pub fn alloc(&mut self, layout: Layout) -> NonNull<[u8]> {
@@ -53,17 +54,10 @@ impl ProtectedAllocator {
     #[cold]
     #[inline(never)]
     pub fn reset_current(&mut self) {
-        // SAFETY: There is always at least one chunk.
-        unsafe {
-            self.inner
-                .chunks
-                .get_mut()
-                .last_mut()
-                .unwrap_unchecked()
-                .set_memory_protection(region::Protection::READ_WRITE)
-        };
-
-        self.protected -= 1;
+        if let Some(chunk) = self.inner.chunks.get_mut().last_mut() {
+            chunk.set_memory_protection(region::Protection::READ_WRITE);
+            self.protected -= 1;
+        }
     }
 
     /// Frees all allocations. Protection is also released.

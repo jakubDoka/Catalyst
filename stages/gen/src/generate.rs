@@ -78,7 +78,7 @@ impl Generator<'_> {
 
         let entry_block = builder.create_block();
         if has_s_ret {
-            builder.append_block_param(entry_block, ptr_ty);
+            builder.struct_ret = Some(builder.append_block_param(entry_block, ptr_ty));
         }
         self.gen_resources.block_stack.push((root, entry_block));
         while let Some((block, ir_block)) = self.gen_resources.block_stack.pop() {
@@ -138,7 +138,7 @@ impl Generator<'_> {
                 let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
                 let value = builder.ins().bconst(ty, value);
                 self.save_value(ret, value, 0, false, builder);
-            },
+            }
             InstMir::Access(target, ret) => {
                 self.gen_resources.values[ret] = self.gen_resources.values[target];
             }
@@ -195,8 +195,9 @@ impl Generator<'_> {
     }
 
     fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
+        self.gen_resources.values[target].must_load = true;
         self.assign_value(ret, target, builder);
-        self.gen_resources.values[ret].must_load = true;
+        self.gen_resources.values[target].must_load = false;
     }
 
     fn r#ref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
@@ -556,7 +557,12 @@ impl Generator<'_> {
             must_load,
         } = self.gen_resources.values[target];
 
-        if must_load_source && must_load {
+        let must_load_target = match computed.is_none() {
+            true => builder.body.is_referenced(target) || layout.on_stack,
+            false => must_load,
+        };
+
+        if must_load_source && must_load_target {
             let (target_value, ..) = self.ensure_target(target, None, builder);
             let mut get_addr = |value| match value {
                 ComputedValue::StackSlot(slot) => builder.ins().stack_addr(ptr_ty, slot, 0),
@@ -572,6 +578,7 @@ impl Generator<'_> {
             ) if a != b);
 
             let config = builder.isa.frontend_config();
+            println!("{:?}", layout.size);
             builder.emit_small_memory_copy(
                 config,
                 target_addr,
@@ -622,11 +629,6 @@ impl Generator<'_> {
                 true => builder.ins().ireduce(layout.repr, shifted),
                 false => shifted,
             }
-        };
-
-        let must_load_target = match computed.is_none() {
-            true => builder.body.is_referenced(target) || layout.on_stack,
-            false => must_load,
         };
 
         let source = match layout.repr == types::B1 && !must_load_target && must_load_source {

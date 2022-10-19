@@ -4,7 +4,7 @@ use std::{
     ptr::{slice_from_raw_parts_mut, NonNull},
 };
 
-use cranelift_codegen::binemit::Reloc;
+use cranelift_codegen::{binemit::Reloc, ir::LibCall};
 use storage::*;
 use typec_t::{Func, FuncVisibility, Typec};
 
@@ -121,6 +121,27 @@ impl JitContext {
                 &func_ent.relocs,
                 |name| match name {
                     GenItemName::Func(func) => self.get_function(func).map(|code| code.as_ptr()),
+                    GenItemName::LibCall(libcall) => {
+                        RuntimeFunctionLookup::new().lookup(match libcall {
+                            LibCall::Probestack => todo!(),
+                            LibCall::CeilF32 => todo!(),
+                            LibCall::CeilF64 => todo!(),
+                            LibCall::FloorF32 => todo!(),
+                            LibCall::FloorF64 => todo!(),
+                            LibCall::TruncF32 => todo!(),
+                            LibCall::TruncF64 => todo!(),
+                            LibCall::NearestF32 => todo!(),
+                            LibCall::NearestF64 => todo!(),
+                            LibCall::FmaF32 => todo!(),
+                            LibCall::FmaF64 => todo!(),
+                            LibCall::Memcpy => "memcpy",
+                            LibCall::Memset => todo!(),
+                            LibCall::Memmove => "memmove",
+                            LibCall::Memcmp => todo!(),
+                            LibCall::ElfTlsGetAddr => todo!(),
+                            LibCall::ElfTlsGetOffset => todo!(),
+                        })
+                    }
                 },
                 |_| todo!("get got entry"),
                 |_| todo!("get plt entry"),

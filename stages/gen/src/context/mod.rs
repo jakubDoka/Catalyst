@@ -48,9 +48,8 @@ impl Gen {
                             } => GenItemName::Func(unsafe { VRef::new(index as usize) }),
                             name => unreachable!("Unexpected name: {:?}", name),
                         },
-                        ExternalName::TestCase(_)
-                        | ExternalName::LibCall(_)
-                        | ExternalName::KnownSymbol(_) => todo!(),
+                        ExternalName::LibCall(lc) => GenItemName::LibCall(lc),
+                        ExternalName::TestCase(_) | ExternalName::KnownSymbol(_) => todo!(),
                     },
                     addend: rel
                         .addend
@@ -83,6 +82,12 @@ pub struct CompiledFunc {
 }
 
 impl CompiledFunc {
+    gen_increasing_constants! {
+        MEMMOVE
+        MEMSET
+        MEMCPY
+    }
+
     pub fn new(func: VRef<Func>) -> Self {
         Self {
             func,
@@ -92,6 +97,28 @@ impl CompiledFunc {
             relocs: Vec::new(),
         }
     }
+
+    // pub fn lib_call_to_func(lib_call: ir::LibCall) -> VRef<Self> {
+    //     match lib_call {
+    //         ir::LibCall::Probestack => todo!(),
+    //         ir::LibCall::CeilF32 => todo!(),
+    //         ir::LibCall::CeilF64 => todo!(),
+    //         ir::LibCall::FloorF32 => todo!(),
+    //         ir::LibCall::FloorF64 => todo!(),
+    //         ir::LibCall::TruncF32 => todo!(),
+    //         ir::LibCall::TruncF64 => todo!(),
+    //         ir::LibCall::NearestF32 => todo!(),
+    //         ir::LibCall::NearestF64 => todo!(),
+    //         ir::LibCall::FmaF32 => todo!(),
+    //         ir::LibCall::FmaF64 => todo!(),
+    //         ir::LibCall::Memcpy => CompiledFunc::MEMCPY,
+    //         ir::LibCall::Memset => CompiledFunc::MEMSET,
+    //         ir::LibCall::Memmove => CompiledFunc::MEMMOVE,
+    //         ir::LibCall::Memcmp => todo!(),
+    //         ir::LibCall::ElfTlsGetAddr => todo!(),
+    //         ir::LibCall::ElfTlsGetOffset => todo!(),
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -256,6 +283,7 @@ pub struct GenReloc {
 #[derive(Clone, Copy, Debug)]
 pub enum GenItemName {
     Func(VRef<CompiledFunc>),
+    LibCall(ir::LibCall),
 }
 
 //////////////////////////////////
@@ -328,6 +356,7 @@ impl std::fmt::Display for IsaCreationError {
 pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
     pub body: &'a FuncMir,
+    pub struct_ret: Option<ir::Value>,
     inner: FunctionBuilder<'b>,
 }
 
@@ -341,6 +370,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
         Self {
             isa,
             body,
+            struct_ret: None,
             inner: FunctionBuilder::new(func, ctx),
         }
     }
