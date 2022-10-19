@@ -50,6 +50,7 @@ mod util {
     pub struct TyCheckerCtx {
         pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
+        pub token_macros: Vec<VRef<Impl>>,
         pub ty_graph: TyGraph,
     }
 
@@ -57,6 +58,7 @@ mod util {
         pub fn clear(&mut self) {
             self.tir_arena.clear();
             self.extern_funcs.clear();
+            self.token_macros.clear();
             self.ty_graph.clear();
         }
     }
@@ -128,6 +130,7 @@ mod util {
                     &ctx.tir_arena,
                     transfer.0,
                     type_checked_funcs,
+                    &mut ctx.token_macros,
                     &mut ctx.extern_funcs,
                 )
         }

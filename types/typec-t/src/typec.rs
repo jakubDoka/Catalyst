@@ -91,6 +91,7 @@ gen_index! {
         Instance => instances
         Enum => enums
         Variant => variants
+        Impl => impls
     }
     slices {
         Field => fields

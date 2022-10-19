@@ -11,6 +11,7 @@ use typec_t::{Func, FuncVisibility, Typec};
 use crate::{context::Isa, CompiledFunc, Gen, GenItemName, GenReloc};
 
 pub struct JitContext {
+    exposed_funcs: Map<&'static str, *const u8>,
     functions: ShadowMap<CompiledFunc, Option<JitFunction>>,
     resources: JitResources,
     runtime_lookup: RuntimeFunctionLookup,
@@ -18,8 +19,12 @@ pub struct JitContext {
 }
 
 impl JitContext {
-    pub fn new(isa: Isa) -> Self {
+    pub fn new(
+        isa: Isa,
+        exposed_funcs: impl IntoIterator<Item = (&'static str, *const u8)>,
+    ) -> Self {
         Self {
+            exposed_funcs: exposed_funcs.into_iter().collect(),
             functions: ShadowMap::new(),
             resources: JitResources::new(),
             runtime_lookup: RuntimeFunctionLookup::new(),
@@ -74,9 +79,11 @@ impl JitContext {
                 } = typec.funcs[parent_func];
 
                 if visibility == FuncVisibility::Imported {
+                    dbg!(&interner[name]);
                     let code = self
                         .runtime_lookup
                         .lookup(&interner[name])
+                        .or_else(|| self.exposed_funcs.get(&interner[name]).cloned())
                         .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?;
                     let slice = slice_from_raw_parts_mut(code as *mut _, 0);
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));

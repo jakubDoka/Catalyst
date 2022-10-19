@@ -33,7 +33,10 @@ gen_span_constants! {
     CAST => "cast",
     TOKEN_MACRO => "token_macro",
     NEW => "new",
+    START => "start",
+    NEXT => "next",
     CLEAR => "clear",
+    DROP => "drop",
     SIZEOF => "sizeof",
 }
 

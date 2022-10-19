@@ -237,7 +237,10 @@ pub mod items {
                 let path = self_path.join(name);
 
                 let c = if replace {
-                    content.replace('\n', " ").replace(" :: ", "\\")
+                    content
+                        .replace('\n', " ")
+                        .replace(" :: ", "\\")
+                        .replace(":: ", "\\")
                 } else {
                     content
                 };

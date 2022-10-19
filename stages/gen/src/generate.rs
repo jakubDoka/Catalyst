@@ -68,7 +68,7 @@ impl Generator<'_> {
 
         let system_cc = builder.isa.default_call_conv();
         let ptr_ty = builder.isa.pointer_ty;
-        self.populate_signature(
+        let has_s_ret = self.populate_signature(
             signature,
             params,
             &mut builder.func.signature,
@@ -76,9 +76,11 @@ impl Generator<'_> {
             ptr_ty,
         );
 
-        self.gen_resources
-            .block_stack
-            .push((root, builder.create_block()));
+        let entry_block = builder.create_block();
+        if has_s_ret {
+            builder.append_block_param(entry_block, ptr_ty);
+        }
+        self.gen_resources.block_stack.push((root, entry_block));
         while let Some((block, ir_block)) = self.gen_resources.block_stack.pop() {
             self.block(block, ir_block, builder);
         }

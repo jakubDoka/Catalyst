@@ -2,6 +2,7 @@
 #![feature(fs_try_exists)]
 #![feature(thread_id_value)]
 #![feature(default_free_fn)]
+#![feature(array_zip)]
 
 use std::{default::default, fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
@@ -76,7 +77,7 @@ impl TestState {
                 object_context: ObjectContext::new(object_isa).unwrap(),
                 context: Context::new(),
                 func_ctx: FunctionBuilderContext::new(),
-                jit_context: JitContext::new(jit_isa),
+                jit_context: JitContext::new(jit_isa, [("ctl_lexer_next", ctl_lexer_next as _)]),
             }
         })
     }
@@ -335,6 +336,152 @@ impl TestState {
 
         self.mir.bodies[target_func] = Some(body);
     }
+
+    fn jit_compile(&mut self, compile_queue: &mut Vec<CompileRequest>, later_init: &mut LaterInit) {
+        let mut compiled_funcs = vec![];
+
+        while let Some(current) = compile_queue.pop() {
+            compiled_funcs.push(current.id);
+
+            let CompiledFunc { func, .. } = self.gen.compiled_funcs[current.id];
+            let Func {
+                signature,
+                visibility,
+                ..
+            } = self.typec.funcs[func];
+
+            if visibility == FuncVisibility::Imported {
+                continue;
+            }
+
+            let body = self.mir.bodies[func].as_mut().expect("should be generated");
+
+            self.mir_type_swapper.swap(
+                body,
+                &self.compile_requests.ty_slices[current.params],
+                &mut self.typec,
+                &mut self.interner,
+            );
+
+            let root_block = body
+                .blocks
+                .keys()
+                .next()
+                .expect("function without blocks is invalid");
+
+            let mut builder = GenBuilder::new(
+                &later_init.jit_context.isa,
+                body,
+                &mut later_init.context.func,
+                &mut later_init.func_ctx,
+            );
+
+            generator!(self, self.jit_resources).generate(signature, &[], root_block, &mut builder);
+
+            self.mir_type_swapper.swap_back(body);
+
+            write!(
+                self.functions,
+                "jit {}\n\n",
+                later_init.context.func.display()
+            )
+            .unwrap();
+
+            self.compile_func(current.id, later_init);
+
+            compile_queue.append(&mut self.compile_requests.queue);
+        }
+
+        later_init
+            .jit_context
+            .load_functions(
+                compiled_funcs,
+                &self.gen,
+                &self.typec,
+                &self.interner,
+                false,
+            )
+            .unwrap();
+    }
+
+    fn jit_compile_macros(&mut self, later_init: &mut LaterInit) {
+        let mut compile_queue = vec![];
+        let mut token_macros = vec![];
+        for token_macro in self.typec_ctx.token_macros.drain(..) {
+            let Impl {
+                methods,
+                key: ImplKey { ty, .. },
+                ..
+            } = self.typec[token_macro];
+            let method_order = [
+                Interner::NEW,
+                Interner::START,
+                Interner::NEXT,
+                Interner::CLEAR,
+                Interner::DROP,
+            ];
+            let funcs = method_order
+                .zip(self.typec[methods].try_into().unwrap())
+                .map(|(name, method)| {
+                    assert!(self.typec[method].name == name);
+                    let id = Generator::func_instance_name(
+                        true,
+                        later_init.jit_context.isa.triple,
+                        method,
+                        iter::empty(),
+                        &self.typec,
+                        &mut self.interner,
+                    );
+                    let id = self
+                        .gen
+                        .compiled_funcs
+                        .insert_unique(id, CompiledFunc::new(method));
+                    compile_queue.push(CompileRequest {
+                        id,
+                        func: method,
+                        params: default(),
+                    });
+                    id
+                });
+            token_macros.push((ty, funcs));
+        }
+
+        self.jit_compile(&mut compile_queue, later_init);
+
+        for (ty, funcs) in token_macros {
+            let name = self.token_macro_name(ty);
+            let funcs =
+                funcs.map(|func| later_init.jit_context.get_function(func).unwrap().as_ptr());
+            let spec = unsafe { mem::transmute::<_, TokenMacroSpec>(funcs) };
+            self.token_macro_ctx.declare_macro(name, spec);
+        }
+    }
+
+    fn token_macro_name(&mut self, ty: Ty) -> VRef<str> {
+        let name = match ty {
+            Ty::Struct(s) => self.typec[s].name,
+            Ty::Enum(e) => self.typec[e].name,
+            Ty::Instance(_) => todo!(),
+            Ty::Pointer(_) => todo!(),
+            Ty::Param(_) => todo!(),
+            Ty::Builtin(_) => todo!(),
+        };
+
+        self.interner
+            .intern_with(|s, t| Self::to_snake_case(&s[name], t))
+    }
+
+    fn to_snake_case(str: &str, buf: &mut String) -> Option<()> {
+        let mut chars = str.chars();
+        buf.push(chars.next()?.to_ascii_lowercase());
+        for c in chars {
+            if c.is_uppercase() {
+                buf.push('_');
+            }
+            buf.push(c.to_ascii_lowercase());
+        }
+        Some(())
+    }
 }
 
 impl Scheduler for TestState {
@@ -384,6 +531,8 @@ impl Scheduler for TestState {
         if self.workspace.has_errors() {
             return;
         }
+
+        self.jit_compile_macros(&mut later_init);
 
         let mut compiled_funcs = vec![];
         let mut compile_queue = self.collect_entry_points(later_init.object_context.isa.triple);
@@ -826,10 +975,12 @@ fn main() {
             };
 
             #[water_drop];
-            struct MacroLexer;
+            struct MacroLexer {
+                _addr: ^();
+            };
 
             impl MacroLexer {
-                fn next(ml: ^MacroLexer) -> MacroToken => ctl_next_token(ml);
+                fn next(ml: MacroLexer) -> MacroToken => ctl_lexer_next(ml);
             };
 
             struct Span {
@@ -901,29 +1052,29 @@ fn main() {
             fn "default" malloc(size: uint) -> ^() extern;
             fn "default" free(ptr: ^()) extern;
             #[compile_time];
-            fn "default" ctl_next_token(lexer: ^MacroLexer) -> MacroToken extern;
+            fn "default" ctl_lexer_next(lexer: MacroLexer) -> MacroToken extern;
 
             #[water_drop];
             spec TokenMacro {
-                fn new() -> ^Self;
-                fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self];
-                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken];
-                fn clear(s: ^Self);
-                fn drop(s: ^Self);
+                fn "default" new() -> ^Self;
+                fn "default" start(s: ^Self, lexer: MacroLexer) -> bool;
+                fn "default" next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken];
+                fn "default" clear(s: ^Self);
+                fn "default" drop(s: ^Self);
             };
 
             impl TokenMacro for Swap {
                 fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
 
-                fn start(s: ^Self, lexer: ^MacroLexer) -> Option[^Self] {
+                fn start(s: ^Self, lexer: MacroLexer) -> bool {
                     *s = ::Two~::{
                         first: lexer.next();
                         second: lexer.next();
                     };
-                    ::Some~s
+                    true
                 };
 
-                fn next(s: ^Self, lexer: ^MacroLexer) -> Option[MacroToken] => Option::Some~match *s {
+                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] => Option::Some~match *s {
                     ::Two~::{ first, second } {
                         *s = ::Last~::{ last: first };
                         second

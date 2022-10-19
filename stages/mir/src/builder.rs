@@ -540,6 +540,7 @@ impl MirChecker<'_> {
 
     fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let ret_val = val
+            .filter(|val| val.ty != Ty::UNIT)
             .map(|&val| {
                 let dest = Some(builder.value(val.ty, self.typec));
                 self.node(val, dest, builder)

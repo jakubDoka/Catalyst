@@ -141,7 +141,6 @@ impl<'a> ParsingCtx<'_, 'a> {
         }
 
         let Some(token_macro_ctx) = &mut self.token_macro_ctx else {
-            //todo!()
             return;
         };
 
@@ -150,6 +149,7 @@ impl<'a> ParsingCtx<'_, 'a> {
         let macro_name_ident = self.interner.intern(macro_name);
 
         let Some(mut token_macro) = token_macro_ctx.alloc(macro_name_ident) else {
+            dbg!(macro_name);
             return;
         };
 

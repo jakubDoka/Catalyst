@@ -201,14 +201,9 @@ where
                 break ctx.advance().span;
             }
 
+            let start = ctx.state.current.span.start();
             let Some(element) = T::parse_args(ctx, args.clone()) else {
-                let recover_res = META::recover(ctx)?;
-                if let Some(last) = elements.last_mut() {
-                    last.error = Some(Span::new(last.after_delim.unwrap_or(last.after_value).end()..ctx.state.current.span.end()));
-                } else {
-                    error = Some(Span::new(start.end()..ctx.state.current.span.end()));
-                }
-                if let Some(span) = recover_res {
+                if let Some(span) = META::recover(ctx, start, elements.last_mut().map_or(&mut error, |e| &mut e.error))? {
                     break span;
                 } else {
                     continue;
@@ -248,16 +243,11 @@ where
                 }
 
                 ctx.expect_error(META::SEP);
-                let recover_res = META::recover(ctx)?;
-                if let Some(last) = elements.last_mut() {
-                    last.error = Some(Span::new(
-                        last.after_delim.unwrap_or(last.after_value).end()
-                            ..ctx.state.current.span.end(),
-                    ));
-                } else {
-                    error = Some(Span::new(start.end()..ctx.state.current.span.end()));
-                }
-                if let Some(span) = recover_res {
+                if let Some(span) = META::recover(
+                    ctx,
+                    start,
+                    elements.last_mut().map_or(&mut error, |e| &mut e.error),
+                )? {
                     break span;
                 } else {
                     continue;
@@ -311,8 +301,13 @@ pub trait ListAstMeta {
     const END: &'static [TokenPat<'static>];
     const OPTIONAL: bool;
 
-    fn recover(ctx: &mut ParsingCtx) -> Option<Option<Span>> {
+    fn recover(
+        ctx: &mut ParsingCtx,
+        start: usize,
+        error: &mut Option<Span>,
+    ) -> Option<Option<Span>> {
         let ending = ctx.recover(Self::SEP.iter().chain(Self::END))?;
+        *error = Some(Span::new(start..ending.span.start()));
         Some(ctx.matches(Self::END, ending).then_some(ending.span))
     }
 }
