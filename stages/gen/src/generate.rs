@@ -134,6 +134,11 @@ impl Generator<'_> {
                 let value = builder.ins().iconst(ty, value);
                 self.save_value(ret, value, 0, false, builder);
             }
+            InstMir::Bool(value, ret) => {
+                let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
+                let value = builder.ins().bconst(ty, value);
+                self.save_value(ret, value, 0, false, builder);
+            },
             InstMir::Access(target, ret) => {
                 self.gen_resources.values[ret] = self.gen_resources.values[target];
             }

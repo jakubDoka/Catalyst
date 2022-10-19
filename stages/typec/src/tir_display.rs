@@ -45,7 +45,7 @@ impl TyChecker<'_> {
                     buffer.push_str(span_str!(self, span));
                 }
             }
-            TirKind::Char => {
+            TirKind::Char | TirKind::Bool(..) => {
                 write!(buffer, "'{}'", span_str!(self, span))?;
             }
             TirKind::Block(nodes) => {

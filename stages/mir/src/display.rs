@@ -199,6 +199,9 @@ impl MirChecker<'_> {
                     field,
                 )?;
             }
+            InstMir::Bool(value, ret) => {
+                write!(buffer, "var{} = {}", ret.index(), value)?;
+            },
         }
 
         Ok(())

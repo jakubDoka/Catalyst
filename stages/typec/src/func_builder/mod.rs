@@ -366,6 +366,7 @@ impl TyChecker<'_> {
             }
             UnitExprAst::Int(span) => self.int(span, inference),
             UnitExprAst::Char(span) => self.char(span),
+            UnitExprAst::Bool(span) => self.bool(span),
             UnitExprAst::Call(&call) => self.call(call, inference, builder),
             UnitExprAst::Const(run) => self.r#const(run, inference, builder),
             UnitExprAst::StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
@@ -1485,6 +1486,10 @@ impl TyChecker<'_> {
 
     fn char<'a>(&mut self, span: Span) -> ExprRes<'a> {
         Some(TirNode::new(Ty::CHAR, TirKind::Char, span))
+    }
+
+    fn bool(&mut self, span: Span) -> ExprRes<'static> {
+        Some(TirNode::new(Ty::BOOL, TirKind::Bool(span_str!(self, span).starts_with('t')), span))
     }
 
     fn binary_expr<'a>(

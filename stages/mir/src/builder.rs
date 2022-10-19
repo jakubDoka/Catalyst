@@ -47,6 +47,7 @@ impl MirChecker<'_> {
             TirKind::Block(stmts) => self.block(stmts, dest_fn(), builder),
             TirKind::Int(computed) => self.int(computed, span, dest_fn(), builder),
             TirKind::Char => self.char(span, dest_fn(), builder),
+            TirKind::Bool(value) => self.bool(value, span, dest_fn(), builder),
             TirKind::Access(access) => self.access(access, span, dest_fn(), builder),
             TirKind::Call(&call) => self.call(call, ty, span, dest, builder),
             TirKind::Return(ret) => self.r#return(ret, span, builder),
@@ -535,6 +536,11 @@ impl MirChecker<'_> {
         let lit = Self::parse_char(span_str!(self, span.shrink(1)).chars().by_ref())
             .expect("Lexer should have validated this.");
         builder.inst(InstMir::Int(lit as i64, dest), span);
+        Some(dest)
+    }
+
+    fn bool(&mut self, value: bool, span: Span, dest: VRef<ValueMir>, builder: &mut MirBuilder) -> NodeRes {
+        builder.inst(InstMir::Bool(value, dest), span);
         Some(dest)
     }
 

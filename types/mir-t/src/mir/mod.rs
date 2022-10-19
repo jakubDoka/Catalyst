@@ -202,6 +202,7 @@ pub enum InstMir {
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
+    Bool(bool, VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

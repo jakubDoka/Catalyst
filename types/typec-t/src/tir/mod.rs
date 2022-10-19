@@ -163,6 +163,7 @@ impl<'a> TirNode<'a> {
 pub enum TirKind<'a> {
     Int(Option<i64>),
     Char,
+    Bool(bool),
     Block(&'a [TirNode<'a>]),
     Return(Option<&'a TirNode<'a>>),
     Call(&'a CallTir<'a>),
