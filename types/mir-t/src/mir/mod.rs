@@ -55,7 +55,7 @@ impl MirTypeSwapper {
 
 #[derive(Clone)]
 pub struct FuncMir {
-    pub ret: VRef<MirTy>,
+    pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
     pub blocks: PushMap<BlockMir>,
     pub insts: BumpMap<InstMir>,
@@ -113,7 +113,7 @@ impl FuncMir {
 impl Default for FuncMir {
     fn default() -> Self {
         Self {
-            ret: MirTy::UNIT,
+            ret: default(),
             generics: default(),
             blocks: default(),
             insts: default(),
@@ -229,4 +229,10 @@ impl ValueMir {
         UNIT
         TERMINAL
     );
+}
+
+impl VRefDefault for ValueMir {
+    fn default_state() -> VRef<Self> {
+        Self::UNIT
+    }
 }

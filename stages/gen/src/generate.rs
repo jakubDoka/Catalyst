@@ -78,7 +78,13 @@ impl Generator<'_> {
 
         let entry_block = builder.create_block();
         if has_s_ret {
-            builder.struct_ret = Some(builder.append_block_param(entry_block, ptr_ty));
+            let ret = builder.body.ret;
+            let addr = builder.append_block_param(entry_block, ptr_ty);
+            self.gen_resources.values[ret] = GenValue {
+                computed: Some(ComputedValue::Value(addr)),
+                offset: 0,
+                must_load: true,
+            };
         }
         self.gen_resources.block_stack.push((root, entry_block));
         while let Some((block, ir_block)) = self.gen_resources.block_stack.pop() {
@@ -140,7 +146,7 @@ impl Generator<'_> {
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Access(target, ret) => {
-                self.gen_resources.values[ret] = self.gen_resources.values[target];
+                self.assign_value(ret, target, builder);
             }
             InstMir::Call(call, ret) => self.call(call, ret, builder),
             InstMir::Const(id, ret) => self.r#const(id, ret, builder),
@@ -194,10 +200,11 @@ impl Generator<'_> {
         }
     }
 
-    fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        self.gen_resources.values[target].must_load = true;
-        self.assign_value(ret, target, builder);
-        self.gen_resources.values[target].must_load = false;
+    fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, _builder: &mut GenBuilder) {
+        self.gen_resources.values[ret] = GenValue {
+            must_load: true,
+            ..self.gen_resources.values[target]
+        };
     }
 
     fn r#ref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
@@ -406,7 +413,7 @@ impl Generator<'_> {
             .collect::<BumpVec<_>>();
 
         let inst = builder.ins().call(func_ref, &args);
-        if let Some(&first) = builder.inst_results(inst).first() {
+        if let Some(&first) = builder.inst_results(inst).first() && !struct_ret {
             let ret = ret.unwrap();
             self.save_value(ret, first, 0, false, builder)
         }
@@ -510,11 +517,12 @@ impl Generator<'_> {
             ComputedValue::Variable(var) => builder.use_var(var),
         };
 
-        match must_load && !layout.on_stack {
-            true => builder
+        match (must_load, layout.on_stack) {
+            (true, false) => builder
                 .ins()
                 .load(layout.repr, MemFlags::new(), value, offset),
-            false => value,
+            (true, true) if offset != 0 => builder.ins().iadd_imm(value, offset as i64),
+            _ => value,
         }
     }
 
@@ -564,13 +572,17 @@ impl Generator<'_> {
 
         if must_load_source && must_load_target {
             let (target_value, ..) = self.ensure_target(target, None, builder);
-            let mut get_addr = |value| match value {
-                ComputedValue::StackSlot(slot) => builder.ins().stack_addr(ptr_ty, slot, 0),
-                ComputedValue::Value(value) => value,
+
+            let mut get_addr = |value, offset: i32| match value {
+                ComputedValue::StackSlot(slot) => builder.ins().stack_addr(ptr_ty, slot, offset),
+                ComputedValue::Value(val) => match offset != 0 {
+                    true => builder.ins().iadd_imm(val, offset as i64),
+                    false => val,
+                },
                 ComputedValue::Variable(var) => builder.use_var(var),
             };
-            let target_addr = get_addr(target_value);
-            let source_addr = get_addr(source_value);
+            let target_addr = get_addr(target_value, offset);
+            let source_addr = get_addr(source_value, source_offset);
 
             let non_overlapping = matches!((target_value, source_value), (
                 ComputedValue::StackSlot(a),
@@ -578,7 +590,6 @@ impl Generator<'_> {
             ) if a != b);
 
             let config = builder.isa.frontend_config();
-            println!("{:?}", layout.size);
             builder.emit_small_memory_copy(
                 config,
                 target_addr,

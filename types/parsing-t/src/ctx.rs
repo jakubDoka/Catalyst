@@ -174,7 +174,7 @@ impl<'a> ParsingCtx<'_, 'a> {
             self.token_macro_ctx.as_mut().unwrap().free(token_macro);
             return self.lexer.next_tok();
         };
-        dbg!();
+        unsafe { dbg!(std::mem::transmute::<_, [u32; 3]>(token), token.span) };
 
         self.state.token_macro_stack.push(token_macro);
 

@@ -120,8 +120,8 @@ pub struct CtlLexer<'a, 'b> {
 }
 
 /// Returns next token from the lexer. Used for Catalyst ffi.
-/// # Safety
-/// The pointer must be valid.
-pub unsafe extern "C" fn ctl_lexer_next(lexer: CtlLexer) -> Token {
-    lexer.inner.next_tok()
+pub extern "C" fn ctl_lexer_next(lexer: CtlLexer) -> Token {
+    let tok = lexer.inner.next_tok();
+    dbg!(tok, unsafe { std::mem::transmute::<_, [u32; 3]>(tok) });
+    tok
 }

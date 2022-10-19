@@ -3,7 +3,7 @@ use logos::Logos;
 
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
 pub struct Token {
     pub kind: TokenKind,

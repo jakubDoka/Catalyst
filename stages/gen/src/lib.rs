@@ -1,6 +1,7 @@
 #![feature(let_else)]
 #![feature(drain_filter)]
 #![feature(default_free_fn)]
+#![feature(let_chains)]
 
 mod context;
 mod generate;

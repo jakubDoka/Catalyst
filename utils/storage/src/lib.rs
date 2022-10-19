@@ -6,6 +6,7 @@
 #![feature(const_trait_impl)]
 #![feature(rustc_attrs)]
 #![feature(new_uninit)]
+#![feature(const_discriminant)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten

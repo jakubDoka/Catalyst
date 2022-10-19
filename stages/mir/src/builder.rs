@@ -30,6 +30,8 @@ impl MirChecker<'_> {
         let Func { signature, .. } = self.typec.funcs[func];
 
         let mut builder = self.push_args(signature.args, ctx);
+        let ret = builder.value(signature.ret, self.typec);
+        builder.ctx.func.ret = ret;
 
         self.node(body, None, &mut builder);
 
@@ -53,7 +55,7 @@ impl MirChecker<'_> {
             TirKind::Return(ret) => self.r#return(ret, span, builder),
             TirKind::Const(&r#const) => self.r#const(r#const, ty, span, dest_fn(), builder),
             TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, builder),
-            TirKind::Deref(&node) => self.deref(node, span, dest_fn(), builder),
+            TirKind::Deref(&node) => self.deref(node, ty, span, builder),
             TirKind::Ref(&node) => self.r#ref(node, span, dest_fn(), builder),
             TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
             TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), builder),
@@ -356,14 +358,9 @@ impl MirChecker<'_> {
         Some(dest)
     }
 
-    fn deref(
-        &mut self,
-        node: TirNode,
-        span: Span,
-        dest: VRef<ValueMir>,
-        builder: &mut MirBuilder,
-    ) -> NodeRes {
+    fn deref(&mut self, node: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let node = self.node(node, None, builder)?;
+        let dest = builder.value(ty, self.typec);
         builder.inst(InstMir::Deref(node, dest), span);
         Some(dest)
     }
@@ -553,10 +550,7 @@ impl MirChecker<'_> {
     fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let ret_val = val
             .filter(|val| val.ty != Ty::UNIT)
-            .map(|&val| {
-                let dest = Some(builder.value(val.ty, self.typec));
-                self.node(val, dest, builder)
-            })
+            .map(|&val| self.node(val, Some(builder.ctx.func.ret), builder))
             .transpose()?;
 
         builder.close_block(span, ControlFlowMir::Return(ret_val));

@@ -1,4 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    mem::{discriminant, transmute},
+};
 
 #[repr(C, u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +19,11 @@ impl<T> From<Option<T>> for CtlOption<T> {
         }
     }
 }
+
+const _: () = {
+    assert!(unsafe { transmute::<_, u8>(discriminant(&CtlOption::<()>::None)) } == 0);
+    assert!(unsafe { transmute::<_, u8>(discriminant(&CtlOption::<()>::Some(()))) } == 1);
+};
 
 impl<T> From<CtlOption<T>> for Option<T> {
     fn from(value: CtlOption<T>) -> Self {
