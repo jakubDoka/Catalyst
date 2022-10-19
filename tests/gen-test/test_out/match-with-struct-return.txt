@@ -10,6 +10,7 @@ block0:
     jump block2
 
 block2:
+    stack_store.i64 v0, ss0  ; v0 = 0
     v3 = iconst.i64 0
     stack_store v3, ss0+8  ; v3 = 0
     jump block3
