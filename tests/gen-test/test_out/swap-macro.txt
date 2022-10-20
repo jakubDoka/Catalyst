@@ -127,19 +127,13 @@ block0(v0: i64, v1: i64):
 
 
 jit function u0:0() -> i64 windows_fastcall {
-    sig0 = (i32) -> i32 windows_fastcall
-    sig1 = (i64) -> i64 windows_fastcall
+    sig0 = (i64) -> i64 windows_fastcall
     fn0 = u0:7 sig0
-    fn1 = u0:8 sig1
 
 block0:
-    v0 = iconst.i32 110
-    v1 = call fn0(v0)  ; v0 = 110
-    v2 = iconst.i64 28
-    v3 = call fn1(v2)  ; v2 = 28
-    v4 = iconst.i32 97
-    v5 = call fn0(v4)  ; v4 = 97
-    return v3
+    v0 = iconst.i64 28
+    v1 = call fn0(v0)  ; v0 = 28
+    return v1
 }
 
 

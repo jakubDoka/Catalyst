@@ -5,10 +5,3 @@ warning: invalid version
   |                                       -------------------- info: declared here
   |
 
-info: executing git: clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water invalid-version\deps\github.com/jakubDoka/water\main
- --> invalid-version\package.ctlm:3:5
-  |
-3 |     git "github.com/jakubDoka/water" "non existent version"
-  |     ------------------------------------------------------- info: invocation declared here
-  |
-

@@ -1,10 +1,3 @@
-info: executing git: clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link\deps\github.com/jakubDoka/water-kun\main
- --> invalid-link\package.ctlm:3:5
-  |
-3 |     git "github.com/jakubDoka/water-kun"
-  |     ------------------------------------ info: invocation declared here
-  |
-
 error: git execution failed
  --> invalid-link\package.ctlm:3:5
   |
