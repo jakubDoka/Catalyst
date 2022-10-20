@@ -386,7 +386,6 @@ impl TestState {
                 later_init.context.func.display()
             )
             .unwrap();
-            println!("{}", later_init.context.func.display());
 
             self.compile_func(current.id, later_init);
 
@@ -535,7 +534,7 @@ impl Scheduler for TestState {
                 .funcs(&mut self.mir_ctx, &mut type_checked_funcs)
                 .display_funcs(&funcs, &mut buff)
                 .unwrap();
-            println!("{}", buff);
+            // println!("{}", buff);
             let source = self.resources.modules[module].source;
             generator!(self, self.object_resources).check_casts(
                 source,

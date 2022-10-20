@@ -48,16 +48,19 @@ info: mir repr of functions:
 
     block6() {
         var23 = var5.0
-        var2 = access var23
+        var24 = var23
+        var2 = access var24
         goto block3 with var2
     }
 
     block7() {
-        var24 = var5.0
-        var25 = var5.1
-        var26 = access var24
-        var27 = access var25
-        var2 = uint + uint(val26, val27)
+        var25 = var5.0
+        var26 = var25
+        var27 = var5.1
+        var28 = var27
+        access var26
+        access var28
+        var2 = uint + uint(val26, val28)
         goto block3 with var2
     }
 

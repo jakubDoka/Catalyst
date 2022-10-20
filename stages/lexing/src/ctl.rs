@@ -47,8 +47,7 @@ impl TokenMacroPool {
         let data = if let Some(ptr) = self.free.pop() {
             ptr
         } else {
-            dbg!();
-            unsafe { dbg!((self.spec.new)()) }
+            unsafe { (self.spec.new)() }
         };
 
         TokenMacro {
@@ -121,7 +120,5 @@ pub struct CtlLexer<'a, 'b> {
 
 /// Returns next token from the lexer. Used for Catalyst ffi.
 pub extern "C" fn ctl_lexer_next(lexer: CtlLexer) -> Token {
-    let tok = lexer.inner.next_tok();
-    dbg!(tok, unsafe { std::mem::transmute::<_, [u32; 3]>(tok) });
-    tok
+    lexer.inner.next_tok()
 }

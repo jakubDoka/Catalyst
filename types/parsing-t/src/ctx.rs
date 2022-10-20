@@ -152,12 +152,10 @@ impl<'a> ParsingCtx<'_, 'a> {
             return;
         };
 
-        dbg!();
         if !token_macro.start(&mut self.lexer) {
             token_macro_ctx.free(token_macro);
             return;
         }
-        dbg!();
 
         self.state.token_macro_stack.push(token_macro);
 
@@ -169,12 +167,10 @@ impl<'a> ParsingCtx<'_, 'a> {
             return self.lexer.next_tok();
         };
 
-        dbg!();
         let Some(token) = token_macro.next(&mut self.lexer) else {
             self.token_macro_ctx.as_mut().unwrap().free(token_macro);
             return self.lexer.next_tok();
         };
-        unsafe { dbg!(std::mem::transmute::<_, [u32; 3]>(token), token.span) };
 
         self.state.token_macro_stack.push(token_macro);
 

@@ -146,7 +146,9 @@ impl Generator<'_> {
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Access(target, ret) => {
-                self.assign_value(ret, target, builder);
+                if let Some(ret) = ret {
+                    self.assign_value(ret, target, builder);
+                }
             }
             InstMir::Call(call, ret) => self.call(call, ret, builder),
             InstMir::Const(id, ret) => self.r#const(id, ret, builder),
@@ -156,6 +158,9 @@ impl Generator<'_> {
             InstMir::Deref(target, ret) => self.deref(target, ret, builder),
             InstMir::Ref(target, ret) => self.r#ref(target, ret, builder),
             InstMir::Field(header, field, ret) => self.field(header, field, ret, builder),
+            InstMir::Var(value, ret) => {
+                self.assign_value(ret, value, builder);
+            }
         };
     }
 
@@ -200,9 +205,11 @@ impl Generator<'_> {
         }
     }
 
-    fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, _builder: &mut GenBuilder) {
+    fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
+        let value = self.load_value(target, builder);
         self.gen_resources.values[ret] = GenValue {
             must_load: true,
+            computed: Some(ComputedValue::Value(value)),
             ..self.gen_resources.values[target]
         };
     }

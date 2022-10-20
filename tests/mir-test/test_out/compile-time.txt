@@ -1,9 +1,9 @@
 info: mir repr of functions:
  fn [] sub(var0: uint, var1: uint) -> uint  {
     block0(var2: uint, var3: uint) {
-        var5 = access var2
-        var6 = access var3
-        var4 = uint - uint(val5, val6)
+        access var2
+        access var3
+        var4 = uint - uint(val2, val3)
         return var4
     }
 

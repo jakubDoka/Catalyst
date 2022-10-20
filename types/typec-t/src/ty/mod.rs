@@ -164,6 +164,13 @@ impl GenericTy {
             GenericTy::Enum(e) => Ty::Enum(e),
         }
     }
+
+    pub fn is_generic(self, typec: &Typec) -> bool {
+        !match self {
+            GenericTy::Struct(s) => typec.structs[s].generics.is_empty(),
+            GenericTy::Enum(e) => typec.enums[e].generics.is_empty(),
+        }
+    }
 }
 
 impl From<VRef<Struct>> for GenericTy {

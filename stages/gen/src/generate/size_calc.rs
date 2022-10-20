@@ -83,7 +83,7 @@ impl Generator<'_> {
                     .into_iter()
                     .map(|ty| self.typec.instantiate(ty, params, self.interner))
                     .collect::<BumpVec<_>>();
-                return self.ty_layout_low(base.as_ty(), &params, ptr_ty);
+                self.ty_layout_low(base.as_ty(), &params, ptr_ty)
             }
             Ty::Enum(ty) => {
                 let size = self.typec.get_enum_flag_ty(ty).map(|ty| ty.size());
@@ -111,7 +111,9 @@ impl Generator<'_> {
             }
         };
 
-        self.gen_layouts.mapping.insert(ty, res);
+        if ty.as_generic().map_or(true, |g| !g.is_generic(self.typec)) {
+            self.gen_layouts.mapping.insert(ty, res);
+        }
 
         res
     }

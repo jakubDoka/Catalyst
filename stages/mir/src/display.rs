@@ -116,7 +116,10 @@ impl MirChecker<'_> {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
             }
             InstMir::Access(access, ret) => {
-                write!(buffer, "var{} = access var{}", ret.index(), access.index())?;
+                if let Some(ret) = ret {
+                    write!(buffer, "var{} = ", ret.index())?;
+                }
+                write!(buffer, "access {}", access.index())?;
             }
             InstMir::Call(
                 CallMir {
@@ -201,6 +204,9 @@ impl MirChecker<'_> {
             }
             InstMir::Bool(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
+            }
+            InstMir::Var(value, ret) => {
+                write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
         }
 

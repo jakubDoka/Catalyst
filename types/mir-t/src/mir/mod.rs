@@ -194,8 +194,9 @@ impl DebugData {
 
 #[derive(Clone, Copy)]
 pub enum InstMir {
+    Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
-    Access(VRef<ValueMir>, VRef<ValueMir>),
+    Access(VRef<ValueMir>, OptVRef<ValueMir>),
     Call(CallMir, OptVRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),

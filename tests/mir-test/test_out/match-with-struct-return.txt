@@ -15,9 +15,10 @@ info: mir repr of functions:
     }
 
     block2() {
-        var3 ={var9, var10}
-        var9 = access var4
-        var10 = 0
+        var9 = var4
+        var3 ={var10, var11}
+        var10 = access var9
+        var11 = 0
         goto block3 with var3
     }
 

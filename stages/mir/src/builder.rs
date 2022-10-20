@@ -50,7 +50,7 @@ impl MirChecker<'_> {
             TirKind::Int(computed) => self.int(computed, span, dest_fn(), builder),
             TirKind::Char => self.char(span, dest_fn(), builder),
             TirKind::Bool(value) => self.bool(value, span, dest_fn(), builder),
-            TirKind::Access(access) => self.access(access, span, dest_fn(), builder),
+            TirKind::Access(access) => self.access(access, span, dest, builder),
             TirKind::Call(&call) => self.call(call, ty, span, dest, builder),
             TirKind::Return(ret) => self.r#return(ret, span, builder),
             TirKind::Const(&r#const) => self.r#const(r#const, ty, span, dest_fn(), builder),
@@ -204,7 +204,11 @@ impl MirChecker<'_> {
     fn bind_pattern_vars(
         &mut self,
         PatTir {
-            kind, has_binding, ..
+            kind,
+            has_binding,
+            ty,
+            span,
+            ..
         }: PatTir,
         value: VRef<ValueMir>,
         builder: &mut MirBuilder,
@@ -227,10 +231,12 @@ impl MirChecker<'_> {
                     }
                 }
                 UnitPatKindTir::Binding(mutable, ..) => {
+                    let dest = builder.value(ty, self.typec);
                     if mutable {
-                        builder.ctx.func.set_mutable(value);
+                        builder.ctx.func.set_mutable(dest);
                     }
-                    builder.ctx.vars.push(VarMir { value });
+                    builder.inst(InstMir::Var(value, dest), span);
+                    builder.ctx.vars.push(VarMir { value: dest });
                 }
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
             },
@@ -460,12 +466,12 @@ impl MirChecker<'_> {
         &mut self,
         var: VRef<VarHeaderTir>,
         span: Span,
-        dest: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let var = builder.ctx.get_var(var);
         builder.inst(InstMir::Access(var.value, dest), span);
-        Some(dest)
+        Some(dest.unwrap_or(var.value))
     }
 
     fn call(
