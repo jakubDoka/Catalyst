@@ -1,0 +1,25 @@
+{
+  "name": "catalyst-lsp",
+  "displayName": "Catalyst Lsp",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.72.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "catalyst",
+      "aliases": ["Catalyst", "catalyst"],
+      "extensions": ["ctl"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "catalyst",
+      "scopeName": "source.catalyst",
+      "path": "./syntaxes/catalyst.tmLanguage.json"
+    }]
+  }
+}
