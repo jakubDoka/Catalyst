@@ -1082,12 +1082,7 @@ fn main() {
             };
 
             impl TokenMacro for Swap {
-                fn new() -> ^Self {
-                    putchar('n');
-                    let val = malloc(sizeof::[Self]());
-                    putchar('a');
-                    cast(val)
-                };
+                fn new() -> ^Self => malloc(sizeof::[Self]());
 
                 fn start(s: ^Self, lexer: MacroLexer) -> bool {
                     *s = ::Two~::{
