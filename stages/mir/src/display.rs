@@ -119,7 +119,7 @@ impl MirChecker<'_> {
                 if let Some(ret) = ret {
                     write!(buffer, "var{} = ", ret.index())?;
                 }
-                write!(buffer, "access {}", access.index())?;
+                write!(buffer, "access var{}", access.index())?;
             }
             InstMir::Call(
                 CallMir {
