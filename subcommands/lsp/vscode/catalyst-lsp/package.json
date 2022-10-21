@@ -1,6 +1,8 @@
 {
   "name": "catalyst-lsp",
   "displayName": "Catalyst Lsp",
+  "publisher": "JakubDka",
+  "repository": { "type": "git", "url": "github.com/jakubDoka/Catalyst" },
   "description": "",
   "version": "0.0.1",
   "engines": {
