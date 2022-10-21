@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": ".\\yaml-to-json.exe",
+            "args": [
+                "syntaxes/catalyst.tmLanguage.yaml",
+                "syntaxes/catalyst.tmLanguage.json"
+            ]
+        }
+    ]
+}
