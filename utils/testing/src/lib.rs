@@ -15,7 +15,8 @@ macro_rules! gen_test {
             $(
                 let value = $parallel.then_some(h);
                 $crate::items::test_case($name, value, |name| {
-                    let resources = gen_test!(__inner__ name $($type)? $structure);
+                    let mut resources = gen_test!(__inner__ name $($type)? $structure);
+                    resources.add_water();
                     <$test_struct>::new(resources).exec($name)
                 });
             )*
@@ -26,7 +27,9 @@ macro_rules! gen_test {
         $crate::quick_file_system!(
             ($name)
             file "root.ctl" $structure
-            file "package.ctlm" {}
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
         )
     };
 
@@ -288,6 +291,33 @@ pub mod items {
     }
 
     impl TestResources {
+        pub fn add_water(&mut self) {
+            self.repositories.insert(
+                "github.com/jakubDoka/water#main".to_string(),
+                Self::water_repo(),
+            );
+        }
+
+        pub fn water_repo() -> Self {
+            Self {
+                files: [
+                    ("root.ctt", include_str!("../../../water/root.ctl")),
+                    ("package.ctlm", include_str!("../../../water/package.ctlm")),
+                    (
+                        "root/option.ctl",
+                        include_str!("../../../water/root/option.ctl"),
+                    ),
+                    (
+                        "root/macros/tokens.ctl",
+                        include_str!("../../../water/root/macros/tokens.ctl"),
+                    ),
+                ]
+                .map(|(path, content)| (PathBuf::from(path), content.to_string()))
+                .into(),
+                ..Default::default()
+            }
+        }
+
         pub fn add_file(&mut self, path: &Path, content: String) {
             self.files.insert(self.canonicalize(path).unwrap(), content);
         }

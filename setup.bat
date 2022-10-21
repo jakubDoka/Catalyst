@@ -17,5 +17,13 @@ cd scripts/tester
 cargo build --release
 cd ../..
 
+set CONVERTER="target\release\yaml-to-json.exe"
+
+cd scripts/yaml-to-json
+cargo build --release
+cd ../..
+
+move %CONVERTER% subcommands\lsp\vscode\catalyst-lsp
+
 %STATE_GEN% state_gen.rbg
 %TESTER% %1

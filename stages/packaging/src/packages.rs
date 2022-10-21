@@ -507,7 +507,7 @@ impl PackageLoader<'_> {
             .map(|s| s.as_ref())
             .chain(iter::once(download_root.as_ref()));
 
-        self.execute_git(args, source, span, false)?;
+        self.execute_git(args, source, span, true)?;
 
         Some(install_path)
     }

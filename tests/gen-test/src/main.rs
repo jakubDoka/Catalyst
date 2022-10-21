@@ -962,6 +962,10 @@ fn main() {
         }
 
         simple "swap-macro" {
+            use {
+                "water/option";
+                "water/macros/tokens";
+            };
             // use {
             //     w "water"
             // };
@@ -969,12 +973,6 @@ fn main() {
             // TODO: Solution for macro name collisions
             // type WSwap = w::Swap[uint];
             // break;
-
-            #[water_drop];
-            enum [T] Option {
-                None;
-                Some: T;
-            };
 
             struct LastToken {
                 last: MacroToken;
@@ -991,98 +989,11 @@ fn main() {
                 Empty;
             };
 
-            #[water_drop];
-            struct MacroLexer {
-                _addr: ^();
-            };
-
-            impl MacroLexer {
-                fn next(ml: MacroLexer) -> MacroToken => ctl_lexer_next(ml);
-            };
-
-            struct Span {
-                start: u32;
-                end: u32;
-            };
-
-            #[water_drop];
-            enum MacroTokenKind {
-                Func;
-                Type;
-                Return;
-                Use;
-                Extern;
-                If;
-                Elif;
-                Else;
-                For;
-                Break;
-                Continue;
-                Let;
-                Struct;
-                Spec;
-                Enum;
-                Mut;
-                Impl;
-                As;
-                Match;
-                Pub;
-                Priv;
-                Const;
-                Comma;
-                Colon;
-                Dot;
-                RightArrow;
-                ThickRightArrow;
-                DoubleColon;
-                Hash;
-                DoubleHash;
-                BackSlash;
-                DoubleDot;
-                Tilde;
-                LeftCurly;
-                RightCurly;
-                LeftParen;
-                RightParen;
-                LeftBracket;
-                RightBracket;
-                Label;
-                Ident;
-                Int;
-                String;
-                Bool;
-                Char;
-                Comment;
-                Space;
-                Operator: u8;
-                NewLine;
-                Error;
-                Eof;
-                None;
-            };
-
-            struct MacroToken {
-                kind: MacroTokenKind;
-                span: Span;
-            };
-
             fn "default" malloc(size: uint) -> ^() extern;
             fn "default" free(ptr: ^()) extern;
-            #[compile_time];
-            fn "default" ctl_lexer_next(lexer: MacroLexer) -> MacroToken extern;
-            fn "default" putchar(c: char) -> u32 extern;
-
-            #[water_drop];
-            spec TokenMacro {
-                fn "default" new() -> ^Self;
-                fn "default" start(s: ^Self, lexer: MacroLexer) -> bool;
-                fn "default" next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken];
-                fn "default" clear(s: ^Self);
-                fn "default" drop(s: ^Self);
-            };
 
             impl TokenMacro for Swap {
-                fn new() -> ^Self => malloc(sizeof::[Self]());
+                fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
 
                 fn start(s: ^Self, lexer: MacroLexer) -> bool {
                     *s = ::Two~::{
@@ -1092,8 +1003,8 @@ fn main() {
                     true
                 };
 
-                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] {
-                    Option::Some~match *s {
+                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
+                    ::Some~match *s {
                         ::Two~::{ first, second } {
                             *s = ::Last~::{ last: first };
                             second
@@ -1103,8 +1014,7 @@ fn main() {
                             last
                         };
                         ::Empty => return ::None;
-                    }
-                };
+                    };
 
                 fn clear(s: ^Self) {};
 
