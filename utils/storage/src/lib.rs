@@ -7,6 +7,7 @@
 #![feature(rustc_attrs)]
 #![feature(new_uninit)]
 #![feature(const_discriminant)]
+#![feature(atomic_bool_fetch_not)]
 
 //! Crate contains all primitives for storing data in most efficient way, used by compiler.
 //! Some concepts are identical to cranelifts way of handling things but they are rewritten
@@ -155,6 +156,7 @@ mod pool_map;
 /// Trait representing virtual pointer.
 mod primitives;
 mod push_map;
+mod rw_swap;
 /// Storage that can map additional info for existing map.
 mod shadow_map;
 /// Similar to shadow map, but lot more memory efficient when storing big structures
@@ -178,6 +180,7 @@ pub use {
         VSlice,
     },
     push_map::PushMap,
+    rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,
     sparse_map::SparseMap,
 };

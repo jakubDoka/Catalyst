@@ -1,4 +1,5 @@
 #![feature(let_else)]
+#![feature(iter_intersperse)]
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();

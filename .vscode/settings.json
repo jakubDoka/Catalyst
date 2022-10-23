@@ -22,6 +22,7 @@
         "ctlm",
         "DCURL",
         "deps",
+        "Deque",
         "dlsym",
         "Doka",
         "elifs",
@@ -73,6 +74,7 @@
         "udiv",
         "uextend",
         "Uninit",
+        "unproject",
         "ushr",
         "wldap"
     ],
