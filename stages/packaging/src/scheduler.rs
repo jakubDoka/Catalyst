@@ -5,7 +5,7 @@ use parsing::*;
 use parsing_t::*;
 use storage::*;
 
-use crate::{packages::Context, *};
+use crate::{packages::PackageLoaderCtx, *};
 
 pub trait Scheduler {
     fn loader(&mut self) -> PackageLoader;
@@ -16,9 +16,9 @@ pub trait Scheduler {
     fn finally(&mut self) {}
 
     fn execute(&mut self, path: &Path) {
-        let mut ctx = Context::default();
+        let mut ctx = PackageLoaderCtx::default();
         let mut res = self.loader();
-        res.load(path, &mut ctx);
+        res.reload(path, &mut ctx);
         let order = mem::take(&mut res.resources.module_order);
         self.init(path);
 

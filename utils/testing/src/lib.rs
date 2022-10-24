@@ -113,7 +113,7 @@ pub mod items {
     use packaging::Scheduler;
     use packaging_t::*;
     use snippet_display::SnippetDisplay;
-    use std::{mem, thread::Scope};
+    use std::{mem, thread::Scope, time::SystemTime};
     use storage::*;
 
     use std::{
@@ -250,6 +250,7 @@ pub mod items {
 
                 let source = packages.sources.push(Source {
                     path: path.clone(),
+                    last_modified: SystemTime::UNIX_EPOCH,
                     line_mapping: LineMapping::new(&c),
                     content: c.to_string(),
                 });
@@ -473,6 +474,10 @@ pub mod items {
 
         fn create_dir_all(&self, _: &Path) -> io::Result<()> {
             Ok(()) // nothing
+        }
+
+        fn get_modification_time(&self, path: &Path) -> io::Result<std::time::SystemTime> {
+            Ok(SystemTime::UNIX_EPOCH)
         }
     }
 }

@@ -1,5 +1,5 @@
 use lexing_t::*;
-use std::{default::default, path::*};
+use std::{default::default, path::*, time::SystemTime};
 use storage::*;
 
 use crate::*;
@@ -28,11 +28,21 @@ impl Resources {
             ..default()
         }
     }
+
+    pub fn clear(&mut self) {
+        // self.sources.clear(); // to avoid io
+        self.packages.clear();
+        self.modules.clear();
+        self.package_deps.clear();
+        self.module_deps.clear();
+        self.module_order.clear();
+    }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Source {
     pub path: PathBuf,
+    pub last_modified: SystemTime,
     pub content: String,
     pub line_mapping: LineMapping,
 }

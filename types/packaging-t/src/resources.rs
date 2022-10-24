@@ -3,6 +3,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::{Command, Output},
+    time::SystemTime,
 };
 
 pub trait ResourceDb {
@@ -10,6 +11,7 @@ pub trait ResourceDb {
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn command(&mut self, command: &mut Command) -> io::Result<Output>;
+    fn get_modification_time(&self, path: &Path) -> io::Result<SystemTime>;
     fn read_to_string(&self, path: &Path) -> io::Result<String>;
     fn var(&self, key: &str) -> Result<String, VarError>;
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
@@ -44,6 +46,10 @@ impl ResourceDb for OsResources {
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         fs::create_dir_all(path)
+    }
+
+    fn get_modification_time(&self, path: &Path) -> io::Result<SystemTime> {
+        fs::metadata(path).and_then(|metadata| metadata.modified())
     }
 }
 
