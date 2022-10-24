@@ -709,7 +709,7 @@ impl Generator<'_> {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
             (
                 if builder.body.is_mutable(target) {
-                    let var = Variable::with_u32(target.as_u32());
+                    let var = Variable::from_u32(target.as_u32());
                     builder.declare_var(var, layout.repr);
                     builder.def_var(var, init);
                     ComputedValue::Variable(var)

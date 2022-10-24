@@ -476,7 +476,7 @@ pub mod items {
             Ok(()) // nothing
         }
 
-        fn get_modification_time(&self, path: &Path) -> io::Result<std::time::SystemTime> {
+        fn get_modification_time(&self, _path: &Path) -> io::Result<std::time::SystemTime> {
             Ok(SystemTime::UNIX_EPOCH)
         }
     }
