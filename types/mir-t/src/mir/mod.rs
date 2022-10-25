@@ -1,14 +1,36 @@
-use std::default::default;
+use std::{default::default, ops::Deref, sync::Arc};
 
 use lexing_t::*;
 use storage::*;
 use typec_t::*;
 
+use crate::*;
+
 pub mod builder;
 
 #[derive(Default)]
 pub struct Mir {
-    pub bodies: ShadowMap<Func, Option<FuncMir>>,
+    pub bodies: SparseMap<Func, FuncMir>,
+}
+
+#[derive(Clone, Default)]
+pub struct FuncMir {
+    pub inner: Arc<FuncMirInner>,
+    pub dependant_types: DependantTypes,
+}
+
+impl FuncMir {
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
+        self.dependant_types[self.values[value].ty].ty
+    }
+}
+
+impl Deref for FuncMir {
+    type Target = FuncMirInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -38,7 +60,7 @@ impl MirTypeSwapper {
             return;
         }
 
-        for &mir_ty in &func.ty_params[func.generics] {
+        for &mir_ty in &func.inner.ty_params[func.generics] {
             let ty = func.dependant_types[mir_ty].ty;
             let new_ty = typec.instantiate(ty, params, interner);
             func.dependant_types[mir_ty].ty = new_ty;
@@ -47,14 +69,18 @@ impl MirTypeSwapper {
     }
 
     pub fn swap_back(&mut self, func: &mut FuncMir) {
-        for (ty, &mir_ty) in self.swapped.drain(..).zip(&func.ty_params[func.generics]) {
+        for (ty, &mir_ty) in self
+            .swapped
+            .drain(..)
+            .zip(&func.inner.ty_params[func.generics])
+        {
             func.dependant_types[mir_ty].ty = ty;
         }
     }
 }
 
 #[derive(Clone)]
-pub struct FuncMir {
+pub struct FuncMirInner {
     pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
     pub blocks: PushMap<BlockMir>,
@@ -62,19 +88,14 @@ pub struct FuncMir {
     pub values: PushMap<ValueMir>,
     pub value_args: BumpMap<VRef<ValueMir>>,
     pub ty_params: BumpMap<VRef<MirTy>>,
-    pub dependant_types: PushMap<MirTy>,
     pub constants: PushMap<FuncConstMir>,
     value_flags: BitSet,
 }
 
-impl FuncMir {
+impl FuncMirInner {
     const FLAG_WIDTH: usize = 2;
     const IS_REFERENCED: usize = 0;
     const IS_MUTABLE: usize = 1;
-
-    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.dependant_types[self.values[value].ty].ty
-    }
 
     pub fn clear(&mut self) {
         self.ret = VRef::default();
@@ -84,7 +105,6 @@ impl FuncMir {
         self.values.truncate(ValueMir::TERMINAL.index() + 1);
         self.value_args.clear();
         self.ty_params.clear();
-        self.dependant_types.truncate(MirTy::TERMINAL.index() + 1);
         self.constants.clear();
         self.value_flags.clear();
     }
@@ -110,7 +130,7 @@ impl FuncMir {
     }
 }
 
-impl Default for FuncMir {
+impl Default for FuncMirInner {
     fn default() -> Self {
         Self {
             ret: default(),
@@ -127,12 +147,6 @@ impl Default for FuncMir {
             },
             value_args: default(),
             ty_params: default(),
-            dependant_types: {
-                let mut values = PushMap::new();
-                values.push(MirTy { ty: Ty::UNIT });
-                values.push(MirTy { ty: Ty::TERMINAL });
-                values
-            },
             constants: default(),
             value_flags: default(),
         }

@@ -22,7 +22,7 @@ impl Resources {
         Self::default()
     }
 
-    pub fn with_resources(resources: impl ResourceDb + 'static) -> Self {
+    pub fn with_resources(resources: impl ResourceDb) -> Self {
         Self {
             db: Box::new(resources),
             ..default()

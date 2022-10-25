@@ -17,7 +17,10 @@ impl<'a> Ast<'a> for StructAst<'a> {
 
     const NAME: &'static str = "struct";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (vis, start): Self::Args,
+    ) -> Option<Self> {
         ctx.advance();
         let generics = GenericsAst::parse(ctx)?;
         let name = NameAst::parse(ctx)?;
@@ -52,7 +55,7 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
 
     const NAME: &'static str = "struct field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(StructFieldAst {
             start: ctx.state.current.span,
             vis: ctx.visibility(),
@@ -82,7 +85,7 @@ impl<'a> Ast<'a> for StructCtorFieldAst<'a> {
 
     const NAME: &'static str = "struct constructor field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let name = ctx.parse()?;
         let expr = if ctx.try_advance(TokenKind::Colon).is_some() {
             Some(ctx.parse()?)

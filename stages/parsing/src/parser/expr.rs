@@ -20,7 +20,7 @@ impl<'a> Ast<'a> for ExprAst<'a> {
 
     const NAME: &'static str = "expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let unit = ctx.parse_alloc().map(ExprAst::Unit)?;
         BinaryExprAst::try_parse_binary(ctx, unit, u8::MAX)
     }
@@ -42,7 +42,7 @@ pub struct BinaryExprAst<'a> {
 
 impl<'a> BinaryExprAst<'a> {
     fn try_parse_binary(
-        ctx: &mut ParsingCtx<'_, 'a>,
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
         mut lhs: ExprAst<'a>,
         prev_precedence: u8,
     ) -> Option<ExprAst<'a>> {
@@ -93,7 +93,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
 
     const NAME: &'static str = "unit expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let mut unit = branch!(ctx => {
             Ident => ctx.parse().map(Self::Path),
             BackSlash => {
@@ -182,7 +182,7 @@ impl<'a> Ast<'a> for LetAst<'a> {
 
     const NAME: &'static str = "let";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#let: ctx.advance().span,
             pat: ctx.parse()?,
@@ -214,7 +214,7 @@ impl<'a> Ast<'a> for IfAst<'a> {
 
     const NAME: &'static str = "if";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#if: ctx.advance().span,
             cond: ctx.parse()?,
@@ -254,7 +254,7 @@ impl<'a> Ast<'a> for ElifAst<'a> {
 
     const NAME: &'static str = "else if";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (elif,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (elif,): Self::Args) -> Option<Self> {
         Some(Self {
             elif,
             cond: ctx.parse()?,
@@ -278,7 +278,7 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
 
     const NAME: &'static str = "if block";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch!(ctx => {
             LeftCurly => ctx.parse().map(Self::Block),
             ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
@@ -308,7 +308,7 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
 
     const NAME: &'static str = "enum ctor";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (path,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (path,): Self::Args) -> Option<Self> {
         Some(Self {
             path: match path {
                 UnitExprAst::PathInstance(path) => path,
@@ -341,7 +341,7 @@ impl<'a> Ast<'a> for MatchExprAst<'a> {
 
     const NAME: &'static str = "match expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#match: ctx.advance().span,
             expr: ctx.parse()?,
@@ -365,7 +365,7 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
 
     const NAME: &'static str = "match arm";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             pattern: ctx.parse()?,
             body: ctx.parse()?,
@@ -390,7 +390,7 @@ impl<'a> Ast<'a> for PatAst<'a> {
 
     const NAME: &'static str = "pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         branch!(ctx => {
             Mut => {
                 if let Some(_mutable) = mutable {
@@ -437,7 +437,7 @@ impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
 
     const NAME: &'static str = "enum pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
             name: ctx.parse()?,
@@ -468,7 +468,7 @@ impl<'a> Ast<'a> for StructCtorPatAst<'a> {
 
     const NAME: &'static str = "struct ctor pattern";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
             fields: ctx.parse_args(mutable)?,
@@ -499,7 +499,7 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
 
     const NAME: &'static str = "struct ctor pattern field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Mut => {
                 if let Some(_mutable) = mutable {
@@ -545,7 +545,7 @@ impl<'a> Ast<'a> for TypedPathAst<'a> {
     const NAME: &'static str = "typed path";
 
     fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a>,
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
         (unit, slash): Self::Args,
     ) -> Option<Self> {
         let ty = match unit {
@@ -597,7 +597,7 @@ impl<'a> Ast<'a> for PathInstanceAst<'a> {
     const NAME: &'static str = "path instance";
 
     fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a>,
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
         (path, slash): Self::Args,
     ) -> Option<Self> {
         let UnitExprAst::Path(path) = path else {
@@ -636,7 +636,10 @@ impl<'a> Ast<'a> for StructCtorAst<'a> {
 
     const NAME: &'static str = "struct constructor";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ty, slash): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (ty, slash): Self::Args,
+    ) -> Option<Self> {
         let path = match ty {
             Some(UnitExprAst::PathInstance(path)) => Some(path),
             Some(UnitExprAst::Path(path)) => Some(PathInstanceAst { path, params: None }),
@@ -671,7 +674,7 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
 
     const NAME: &'static str = "dot expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (lhs,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (lhs,): Self::Args) -> Option<Self> {
         Some(Self {
             lhs,
             dot: ctx.advance().span,
@@ -698,7 +701,7 @@ impl<'a> Ast<'a> for ConstAst<'a> {
 
     const NAME: &'static str = "comp time run";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#const: ctx.advance().span,
             value: ctx.parse()?,
@@ -721,7 +724,10 @@ impl<'a> Ast<'a> for CallExprAst<'a> {
 
     const NAME: &'static str = "call";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (callable,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (callable,): Self::Args,
+    ) -> Option<Self> {
         Some(Self {
             callable,
             args: ctx.parse_args(())?,
@@ -744,7 +750,7 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
 
     const NAME: &'static str = "return";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             return_span: ctx.advance().span,
             expr: if ctx.at_tok(TokenKind::NewLine) {

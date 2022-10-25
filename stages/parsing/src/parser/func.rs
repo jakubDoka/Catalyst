@@ -16,7 +16,10 @@ impl<'a> Ast<'a> for FuncDefAst<'a> {
 
     const NAME: &'static str = "function definition";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (vis, start): Self::Args,
+    ) -> Option<Self> {
         let signature = ctx.parse()?;
         let body = ctx.parse::<FuncBodyAst>()?;
         let span = start.joined(body.span());
@@ -49,7 +52,7 @@ impl<'a> Ast<'a> for FuncSigAst<'a> {
 
     const NAME: &'static str = "function signature";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             fn_span: ctx.advance().span,
             cc: ctx
@@ -82,7 +85,7 @@ impl<'a> Ast<'a> for FuncArgAst<'a> {
 
     const NAME: &'static str = "function argument";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             ty: {
@@ -109,7 +112,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
 
     const NAME: &'static str = "function body";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             ThickRightArrow => {
                 let arrow = ctx.advance().span;

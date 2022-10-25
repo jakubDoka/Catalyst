@@ -117,6 +117,9 @@ pub trait VRefDefault {
 #[repr(transparent)]
 pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
 
+unsafe impl<T: ?Sized> Send for VRef<T> {}
+unsafe impl<T: ?Sized> Sync for VRef<T> {}
+
 pub type OptVRef<T> = Option<VRef<T>>;
 
 gen_derives!(VRef);
@@ -182,6 +185,9 @@ impl<'de, T: ?Sized> Deserialize<'de> for VRef<T> {
 }
 
 pub struct VSlice<T: ?Sized>(u32, PhantomData<*const T>);
+
+unsafe impl<T: ?Sized> Send for VSlice<T> {}
+unsafe impl<T: ?Sized> Sync for VSlice<T> {}
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.

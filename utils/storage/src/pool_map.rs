@@ -18,7 +18,7 @@ pub struct PoolMap<K, T = K> {
     free: Vec<VRef<K>>,
     free_lookup: BitSet,
     data: Vec<MaybeUninit<T>>,
-    phantom: PhantomData<*const K>,
+    phantom: PhantomData<fn(K) -> K>,
 }
 
 impl<K, V> PoolMap<K, V> {

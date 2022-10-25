@@ -12,7 +12,7 @@ pub trait SnippetDisplay {
 pub struct Workspace {
     sippets: Vec<Snippet>,
     error_count: usize,
-    display: Option<Box<dyn SnippetDisplay>>,
+    display: Option<Box<dyn SnippetDisplay + Send>>,
 }
 
 impl Workspace {
@@ -23,7 +23,7 @@ impl Workspace {
     pub fn display<'a>(
         &'a mut self,
         packages: &Resources,
-        display: &'a mut dyn SnippetDisplay,
+        display: &'a mut (dyn SnippetDisplay + Send),
     ) -> String {
         let display: &'a mut _ = if let Some(ref mut display) = self.display {
             &mut **display

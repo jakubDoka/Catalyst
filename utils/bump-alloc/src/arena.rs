@@ -11,6 +11,8 @@ pub struct Arena {
     allocator: Allocator,
 }
 
+unsafe impl Send for Arena {}
+
 impl Arena {
     pub fn new() -> Self {
         Self::from_allocator(Allocator::new())

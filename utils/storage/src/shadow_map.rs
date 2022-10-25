@@ -9,7 +9,7 @@ use crate::VRef;
 pub struct ShadowMap<T, V> {
     data: Vec<V>,
     default: V,
-    phantom: PhantomData<*const T>,
+    phantom: PhantomData<fn(T) -> T>,
 }
 
 impl<T, V: Default> ShadowMap<T, V> {

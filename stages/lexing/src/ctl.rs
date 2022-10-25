@@ -5,24 +5,24 @@ use crate::*;
 pub struct TokenMacroData;
 
 #[derive(Default)]
-pub struct TokenMacroCtx {
-    specs: Map<VRef<str>, TokenMacroPool>,
+pub struct TokenMacroCtx<'a> {
+    specs: Map<VRef<str>, TokenMacroPool<'a>>,
 }
 
-impl TokenMacroCtx {
+impl<'a> TokenMacroCtx<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn declare_macro(&mut self, name: VRef<str>, spec: TokenMacroSpec) -> bool {
+    pub fn declare_macro(&mut self, name: VRef<str>, spec: TokenMacroSpec<'a>) -> bool {
         self.specs.insert(name, TokenMacroPool::new(spec)).is_some()
     }
 
-    pub fn alloc(&mut self, name: VRef<str>) -> Option<TokenMacro> {
+    pub fn alloc(&mut self, name: VRef<str>) -> Option<TokenMacro<'a>> {
         self.specs.get_mut(&name).map(|p| p.alloc(name))
     }
 
-    pub fn free(&mut self, mut token_macro: TokenMacro) {
+    pub fn free(&mut self, mut token_macro: TokenMacro<'a>) {
         token_macro.clear();
         if let Some(pool) = self.specs.get_mut(&token_macro.name) {
             pool.free(token_macro);
@@ -30,24 +30,24 @@ impl TokenMacroCtx {
     }
 }
 
-struct TokenMacroPool {
+struct TokenMacroPool<'a> {
     pub free: Vec<*mut TokenMacroData>,
-    pub spec: TokenMacroSpec,
+    pub spec: TokenMacroSpec<'a>,
 }
 
-impl TokenMacroPool {
-    fn new(spec: TokenMacroSpec) -> Self {
+impl<'a> TokenMacroPool<'a> {
+    fn new(spec: TokenMacroSpec<'a>) -> Self {
         Self {
             free: Vec::new(),
             spec,
         }
     }
 
-    fn alloc(&mut self, name: VRef<str>) -> TokenMacro {
+    fn alloc(&mut self, name: VRef<str>) -> TokenMacro<'a> {
         let data = if let Some(ptr) = self.free.pop() {
             ptr
         } else {
-            unsafe { (self.spec.new)() }
+            (self.spec.new)()
         };
 
         TokenMacro {
@@ -57,47 +57,55 @@ impl TokenMacroPool {
         }
     }
 
-    fn free(&mut self, r#macro: TokenMacro) {
+    fn free(&mut self, r#macro: TokenMacro<'a>) {
         self.free.push(r#macro.into_data());
     }
 }
 
-impl Drop for TokenMacroPool {
+impl Drop for TokenMacroPool<'_> {
     fn drop(&mut self) {
         for ptr in self.free.drain(..) {
-            unsafe {
-                (self.spec.drop)(ptr);
-            }
+            (self.spec.drop)(ptr);
         }
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct TokenMacroSpec {
-    pub new: unsafe extern "C" fn() -> *mut TokenMacroData,
-    pub start: unsafe extern "C" fn(*mut TokenMacroData, CtlLexer) -> bool,
-    pub next: unsafe extern "C" fn(*mut TokenMacroData, CtlLexer) -> CtlOption<Token>,
-    pub clear: unsafe extern "C" fn(*mut TokenMacroData),
-    pub drop: unsafe extern "C" fn(*mut TokenMacroData),
+function_pointer! {
+    TokenMacroNew -> *mut TokenMacroData,
+    TokenMacroStart(s: *mut TokenMacroData, l: CtlLexer<'_, '_>) -> bool,
+    TokenMacroNext(s: *mut TokenMacroData, l: CtlLexer<'_, '_>) -> CtlOption<Token>,
+    TokenMacroClear(s: *mut TokenMacroData),
+    TokenMacroDrop(s: *mut TokenMacroData),
 }
 
-pub struct TokenMacro {
+#[derive(Clone, Copy)]
+pub struct TokenMacroSpec<'a> {
+    pub new: TokenMacroNew<'a>,
+    pub start: TokenMacroStart<'a>,
+    pub next: TokenMacroNext<'a>,
+    pub clear: TokenMacroClear<'a>,
+    pub drop: TokenMacroDrop<'a>,
+}
+
+pub struct TokenMacro<'a> {
     name: VRef<str>,
     data: *mut TokenMacroData,
-    spec: TokenMacroSpec,
+    spec: TokenMacroSpec<'a>,
 }
 
-impl TokenMacro {
+unsafe impl Send for TokenMacro<'_> {}
+
+impl TokenMacro<'_> {
     pub fn next(&mut self, lexer: &mut Lexer) -> Option<Token> {
-        unsafe { (self.spec.next)(self.data, CtlLexer { inner: lexer }).into() }
+        (self.spec.next)(self.data, CtlLexer { inner: lexer }).into()
     }
 
     fn clear(&mut self) {
-        unsafe { (self.spec.clear)(self.data) }
+        (self.spec.clear)(self.data)
     }
 
     pub fn start(&mut self, lexer: &mut Lexer) -> bool {
-        unsafe { (self.spec.start)(self.data, CtlLexer { inner: lexer }) }
+        (self.spec.start)(self.data, CtlLexer { inner: lexer })
     }
 
     fn into_data(self) -> *mut TokenMacroData {
@@ -107,9 +115,9 @@ impl TokenMacro {
     }
 }
 
-impl Drop for TokenMacro {
+impl Drop for TokenMacro<'_> {
     fn drop(&mut self) {
-        unsafe { (self.spec.drop)(self.data) }
+        (self.spec.drop)(self.data)
     }
 }
 

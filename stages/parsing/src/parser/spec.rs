@@ -11,7 +11,7 @@ impl<'a> Ast<'a> for SpecExprAst<'a> {
 
     const NAME: &'static str = "bound expr";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             Ident => {
                 let ident = ctx.parse();

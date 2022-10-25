@@ -48,7 +48,6 @@ mod util {
 
     #[derive(Default)]
     pub struct TyCheckerCtx {
-        pub tir_arena: Arena,
         pub extern_funcs: Vec<VRef<Func>>,
         pub token_macros: Vec<VRef<Impl>>,
         pub ty_graph: TyGraph,
@@ -56,7 +55,6 @@ mod util {
 
     impl TyCheckerCtx {
         pub fn clear(&mut self) {
-            self.tir_arena.clear();
             self.extern_funcs.clear();
             self.token_macros.clear();
             self.ty_graph.clear();
@@ -102,12 +100,13 @@ mod util {
     }
 
     impl TyChecker<'_> {
-        pub fn execute<'a, 'b>(
+        pub fn execute<'a>(
             &mut self,
-            items: GroupedItemsAst<'b>,
-            ctx: &'a mut TyCheckerCtx,
-            transfer: ActiveAstTransfer<'b, '_>,
-            type_checked_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+            arena: &'a Arena,
+            items: GroupedItemsAst<'a>,
+            ctx: &mut TyCheckerCtx,
+            transfer: ActiveAstTransfer<'a, '_>,
+            type_checked_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)
@@ -120,14 +119,14 @@ mod util {
                 .build(Self::build_enum, &transfer.0.enums)
                 .detect_infinite_types(ctx, transfer.0)
                 .build_funcs(
-                    &ctx.tir_arena,
+                    arena,
                     &transfer.0.funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
                     0,
                 )
                 .build_impl_funcs(
-                    &ctx.tir_arena,
+                    arena,
                     transfer.0,
                     type_checked_funcs,
                     &mut ctx.token_macros,

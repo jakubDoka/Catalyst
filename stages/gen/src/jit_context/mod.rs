@@ -32,10 +32,15 @@ impl JitContext {
         }
     }
 
-    pub fn get_function(&self, func: VRef<CompiledFunc>) -> Option<&[u8]> {
+    /// # Safety
+    /// Caller has to guarantee that the function pointer has correct signature.
+    pub unsafe fn get_function<'a, T: FunctionPointer<'a>>(
+        &'a self,
+        func: VRef<CompiledFunc>,
+    ) -> Option<T> {
         self.functions[func]
             // SAFETY: Lifetime of the returned slice is limited by the lifetime of the JitContext
-            .map(|f| unsafe { f.code.as_ref() })
+            .map(|f| T::new(&*f.code.as_ref().as_ptr()))
     }
 
     /// If function is already loaded this call does nothing.
@@ -119,7 +124,9 @@ impl JitContext {
                 unsafe { code.as_ref() },
                 &func_ent.relocs,
                 |name| match name {
-                    GenItemName::Func(func) => self.get_function(func).map(|code| code.as_ptr()),
+                    GenItemName::Func(func) => {
+                        self.functions[func].map(|code| unsafe { code.code.as_ref().as_ptr() })
+                    }
                     GenItemName::LibCall(libcall) => {
                         RuntimeFunctionLookup::new().lookup(match libcall {
                             LibCall::Probestack => todo!(),

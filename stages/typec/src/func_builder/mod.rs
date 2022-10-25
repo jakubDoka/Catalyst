@@ -19,7 +19,7 @@ impl TyChecker<'_> {
         &mut self,
         arena: &'a Arena,
         transfer: &AstTransfer,
-        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         token_macros: &mut Vec<VRef<Impl>>,
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
@@ -58,7 +58,7 @@ impl TyChecker<'_> {
         arena: &'a Arena,
         impl_ref: VRef<Impl>,
         input: &[(FuncDefAst, VRef<Func>)],
-        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         token_macros: &mut Vec<VRef<Impl>>,
         offset: usize,
     ) {
@@ -205,7 +205,7 @@ impl TyChecker<'_> {
         &mut self,
         arena: &'a Arena,
         input: &[(FuncDefAst, VRef<Func>)],
-        compiled_funcs: &mut Vec<(VRef<Func>, TirNode<'a>)>,
+        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
         offset: usize,
     ) -> &mut Self {

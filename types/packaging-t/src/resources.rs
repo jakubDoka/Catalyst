@@ -6,7 +6,7 @@ use std::{
     time::SystemTime,
 };
 
-pub trait ResourceDb {
+pub trait ResourceDb: Send + Sync + 'static {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;

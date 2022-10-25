@@ -8,19 +8,61 @@
 #![feature(new_uninit)]
 #![feature(const_discriminant)]
 #![feature(atomic_bool_fetch_not)]
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
 
-//! Crate contains all primitives for storing data in most efficient way, used by compiler.
-//! Some concepts are identical to cranelifts way of handling things but they are rewritten
-//! here for more convenience.
-//!
-//! Core component of storage system is [`VPtr`] which is a trait that defines typed virtual
-//! pointer, usually pointing to item inside the vector. All storages use this as an access
-//! point and store it in its own structures. Advantage over just usize is the size and type
-//! safety. Each container should have distinct [`VPtr`] unless it is a storage plugin.
-//!
-//! Another important part of API is [`Maybe`]. This value wrapper can optionally store a
-//! value without any extra memory for flags. Its based of [`Invalid`] trait which determines
-//! whether value is invalid thus the [`Maybe`] holds nothing.
+#[macro_export]
+macro_rules! function_pointer {
+    ($($name:ident$(($($arg_name:ident: $arg:ty),*))? $(-> $ret:ty)?,)+) => {
+        $(
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            pub struct $name<'a>(&'a u8);
+
+            impl FnOnce<($($($arg,)*)?)> for $name<'_> {
+                type Output = function_pointer!(@ret $($ret)?);
+                extern "rust-call" fn call_once(self, ($($($arg_name,)*)?): ($($($arg,)*)?)) $(-> $ret)? {
+                    unsafe {
+                        let ptr = std::mem::transmute::<_, extern "C" fn($($($arg),*)?) $(-> $ret)?>(self.0);
+                        ptr($($($arg_name),*)?)
+                    }
+                }
+            }
+
+            impl FnMut<($($($arg,)*)?)> for $name<'_> {
+                extern "rust-call" fn call_mut(&mut self, args: ($($($arg,)*)?)) $(-> $ret)? {
+                    (*self).call_once(args)
+                }
+            }
+
+            impl Fn<($($($arg,)*)?)> for $name<'_> {
+                extern "rust-call" fn call(&self, args: ($($($arg,)*)?)) $(-> $ret)? {
+                    (*self).call_once(args)
+                }
+            }
+
+            impl<'a> FunctionPointer<'a> for $name<'a> {
+                fn new(ptr: &'a u8) -> Self {
+                    Self(ptr)
+                }
+            }
+        )+
+    };
+
+    (@ret) => {
+        ()
+    };
+
+    (@ret $ret:ty) => {
+        $ret
+    };
+}
+
+pub trait FunctionPointer<'a> {
+    fn new(ptr: &'a u8) -> Self;
+}
+
+function_pointer!(____(a: i8, b: i8) -> i8,);
 
 #[macro_export]
 macro_rules! impl_flag_and_bool {

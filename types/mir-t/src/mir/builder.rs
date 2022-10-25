@@ -1,4 +1,7 @@
-use std::mem;
+use std::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 
 use lexing_t::Span;
 use storage::*;
@@ -75,7 +78,7 @@ pub struct VarMir {
 
 #[derive(Default)]
 pub struct MirBuilderCtx {
-    pub func: FuncMir,
+    pub func: FuncMirInner,
     pub dd: DebugData,
     pub vars: Vec<VarMir>,
     pub args: Vec<VRef<ValueMir>>,
@@ -84,6 +87,7 @@ pub struct MirBuilderCtx {
     pub just_compiled: Vec<VRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
     pub pattern_solver_arena: Option<Arena>,
+    pub dependant_types: DependantTypes,
 }
 
 impl MirBuilderCtx {
@@ -100,7 +104,7 @@ impl MirBuilderCtx {
             Self::project_ty_low(
                 ty,
                 &mut self.used_types,
-                &mut self.func.dependant_types,
+                &mut self.dependant_types,
                 &mut self.generic_types,
                 typec,
             )
@@ -111,7 +115,7 @@ impl MirBuilderCtx {
         Self::project_ty_low(
             ty,
             &mut self.used_types,
-            &mut self.func.dependant_types,
+            &mut self.dependant_types,
             &mut self.generic_types,
             typec,
         )
@@ -159,7 +163,7 @@ impl MirBuilderCtx {
         self.func.blocks[id] = block;
     }
 
-    pub fn clear(&mut self) -> FuncMir {
+    pub fn clear(&mut self) -> FuncMirInner {
         self.vars.clear();
         self.dd.clear();
         self.used_types.clear();
@@ -176,6 +180,34 @@ impl MirBuilderCtx {
 
     pub fn end_frame(&mut self, frame: MirFrame) {
         self.vars.truncate(frame.0);
+    }
+}
+
+#[derive(Clone)]
+pub struct DependantTypes(PushMap<MirTy>);
+
+impl Default for DependantTypes {
+    fn default() -> Self {
+        Self({
+            let mut values = PushMap::new();
+            values.push(MirTy { ty: Ty::UNIT });
+            values.push(MirTy { ty: Ty::TERMINAL });
+            values
+        })
+    }
+}
+
+impl Deref for DependantTypes {
+    type Target = PushMap<MirTy>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for DependantTypes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

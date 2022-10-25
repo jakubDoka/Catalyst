@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{default::default, fmt};
 
 use diags::*;
 use lexing::*;
@@ -9,23 +9,24 @@ use storage::*;
 
 use crate::*;
 
-pub struct ParsingCtx<'a, 'b> {
-    pub lexer: Lexer<'a>,
-    pub state: &'a mut ParsingState,
-    pub arena: &'b AstData,
-    pub workspace: &'a mut Workspace,
-    pub interner: &'a mut Interner,
-    pub token_macro_ctx: Option<&'a mut TokenMacroCtx>,
+pub struct ParsingCtx<'ctx, 'ast: 'ctx, 'macros: 'ctx> {
+    pub lexer: Lexer<'ctx>,
+    pub state: &'ctx mut ParsingState,
+    pub arena: &'ast AstData,
+    pub workspace: &'ctx mut Workspace,
+    pub interner: &'ctx mut Interner,
+    pub token_macro_ctx: Option<&'ctx mut TokenMacroCtx<'macros>>,
+    pub token_macro_stack: BumpVec<TokenMacro<'macros>>,
     pub source: VRef<Source>,
 }
 
-impl<'a, 'b> ParsingCtx<'a, 'b> {
+impl<'ctx, 'ast, 'macros> ParsingCtx<'ctx, 'ast, 'macros> {
     pub fn new(
-        source_code: &'a str,
-        state: &'a mut ParsingState,
-        ast_data: &'b AstData,
-        workspace: &'a mut Workspace,
-        interner: &'a mut Interner,
+        source_code: &'ctx str,
+        state: &'ctx mut ParsingState,
+        ast_data: &'ast AstData,
+        workspace: &'ctx mut Workspace,
+        interner: &'ctx mut Interner,
         source: VRef<Source>,
     ) -> Self {
         Self {
@@ -35,17 +36,18 @@ impl<'a, 'b> ParsingCtx<'a, 'b> {
             workspace,
             interner,
             token_macro_ctx: None,
+            token_macro_stack: default(),
             source,
         }
     }
 
     pub fn new_with_macros(
-        source_code: &'a str,
-        state: &'a mut ParsingState,
-        ast_data: &'b AstData,
-        workspace: &'a mut Workspace,
-        interner: &'a mut Interner,
-        token_macro_ctx: Option<&'a mut TokenMacroCtx>,
+        source_code: &'ctx str,
+        state: &'ctx mut ParsingState,
+        ast_data: &'ast AstData,
+        workspace: &'ctx mut Workspace,
+        interner: &'ctx mut Interner,
+        token_macro_ctx: Option<&'ctx mut TokenMacroCtx<'macros>>,
         source: VRef<Source>,
     ) -> Self {
         Self {
@@ -55,18 +57,19 @@ impl<'a, 'b> ParsingCtx<'a, 'b> {
             workspace,
             interner,
             token_macro_ctx,
+            token_macro_stack: default(),
             source,
         }
     }
 }
 
-impl Drop for ParsingCtx<'_, '_> {
+impl Drop for ParsingCtx<'_, '_, '_> {
     fn drop(&mut self) {
         self.state.progress = self.lexer.progress();
     }
 }
 
-impl<'a> ParsingCtx<'_, 'a> {
+impl<'ast> ParsingCtx<'_, 'ast, '_> {
     pub fn visibility(&mut self) -> Vis {
         let res = match self.state.current.kind {
             TokenKind::Pub => Vis::Pub,
@@ -81,25 +84,25 @@ impl<'a> ParsingCtx<'_, 'a> {
         res
     }
 
-    pub fn parse<T: Ast<'a>>(&mut self) -> Option<T>
+    pub fn parse<T: Ast<'ast>>(&mut self) -> Option<T>
     where
         T::Args: Default,
     {
         T::parse(self)
     }
 
-    pub fn parse_alloc<T: Ast<'a>>(&mut self) -> Option<&'a T>
+    pub fn parse_alloc<T: Ast<'ast>>(&mut self) -> Option<&'ast T>
     where
         T::Args: Default,
     {
         self.parse().map(|t| self.arena.alloc(t))
     }
 
-    pub fn parse_args<T: Ast<'a>>(&mut self, args: T::Args) -> Option<T> {
+    pub fn parse_args<T: Ast<'ast>>(&mut self, args: T::Args) -> Option<T> {
         T::parse_args(self, args)
     }
 
-    pub fn parse_args_alloc<T: Ast<'a>>(&mut self, args: T::Args) -> Option<&'a T> {
+    pub fn parse_args_alloc<T: Ast<'ast>>(&mut self, args: T::Args) -> Option<&'ast T> {
         self.parse_args(args).map(|t| self.arena.alloc(t))
     }
 
@@ -140,7 +143,7 @@ impl<'a> ParsingCtx<'_, 'a> {
             return;
         }
 
-        let Some(token_macro_ctx) = &mut self.token_macro_ctx else {
+        let Some(ref mut token_macro_ctx) = self.token_macro_ctx else {
             return;
         };
 
@@ -157,13 +160,13 @@ impl<'a> ParsingCtx<'_, 'a> {
             return;
         }
 
-        self.state.token_macro_stack.push(token_macro);
+        self.token_macro_stack.push(token_macro);
 
         self.state.next = self.next_token();
     }
 
     fn next_token(&mut self) -> Token {
-        let Some(mut token_macro) = self.state.token_macro_stack.pop() else {
+        let Some(mut token_macro) = self.token_macro_stack.pop() else {
             return self.lexer.next_tok();
         };
 
@@ -172,7 +175,7 @@ impl<'a> ParsingCtx<'_, 'a> {
             return self.lexer.next_tok();
         };
 
-        self.state.token_macro_stack.push(token_macro);
+        self.token_macro_stack.push(token_macro);
 
         token
     }
@@ -363,7 +366,6 @@ pub struct ParsingState {
     pub next: Token,
     pub progress: usize,
     pub parse_stack: Vec<&'static str>,
-    pub token_macro_stack: Vec<TokenMacro>,
 }
 
 impl ParsingState {

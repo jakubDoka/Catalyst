@@ -24,7 +24,7 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
 
     const NAME: &'static str = "grouped items";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let items = ctx.parse::<ItemsAst>()?;
 
         let last = items.end.is_empty();
@@ -93,7 +93,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
 
     const NAME: &'static str = "item";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
@@ -145,7 +145,10 @@ impl<'a> Ast<'a> for EnumAst<'a> {
 
     const NAME: &'static str = "enum";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (vis, start): Self::Args,
+    ) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -172,7 +175,7 @@ impl<'a> Ast<'a> for EnumVariantAst<'a> {
 
     const NAME: &'static str = "enum variant";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             ty: ctx
@@ -203,7 +206,10 @@ impl<'a> Ast<'a> for ImplAst<'a> {
 
     const NAME: &'static str = "impl";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (vis, start): Self::Args,
+    ) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -230,7 +236,7 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
 
     const NAME: &'static str = "impl target";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
         let ty = ctx.parse()?;
         if let Some(tok) = ctx.try_advance(TokenKind::For) {
@@ -266,7 +272,7 @@ impl<'a> Ast<'a> for ImplItemAst<'a> {
 
     const NAME: &'static str = "impl item";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
@@ -298,7 +304,10 @@ impl<'a> Ast<'a> for SpecAst<'a> {
 
     const NAME: &'static str = "spec";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (vis, start): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (vis, start): Self::Args,
+    ) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -325,7 +334,7 @@ impl<'a> Ast<'a> for TopLevelAttributeAst {
 
     const NAME: &'static str = "top level attribute";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             hash: ctx.advance().span,
             value: ctx.parse_args((
@@ -353,7 +362,7 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
 
     const NAME: &'static str = "top level attribute";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {str ctx => {
             "entry" => Some(TopLevelAttrKindAst::Entry(ctx.advance().span)),
             "water_drop" => Some(TopLevelAttrKindAst::WaterDrop(
@@ -395,7 +404,7 @@ impl<'a> Ast<'a> for InlineModeAst {
 
     const NAME: &'static str = "inline mode";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {str ctx => {
             "always" => Some(InlineModeAst::Always(ctx.advance().span)),
             "never" => Some(InlineModeAst::Never(ctx.advance().span)),

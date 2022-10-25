@@ -30,7 +30,7 @@ impl<'a> Ast<'a> for ManifestAst<'a> {
 
     const NAME: &'static str = "manifest";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let mut fields = bumpvec![];
         let mut deps = None;
         let mut deps_span = None;
@@ -73,7 +73,7 @@ impl<'a> Ast<'a> for ManifestFieldAst<'a> {
 
     const NAME: &'static str = "manifest field";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(ManifestFieldAst {
             name: ctx.parse()?,
             value: {
@@ -100,7 +100,7 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
 
     const NAME: &'static str = "manifest value";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             String => Some(ManifestValueAst::String(ctx.advance().span)),
             LeftBracket => ctx.parse().map(ManifestValueAst::Array),
@@ -131,7 +131,7 @@ impl<'a> Ast<'a> for ManifestDepAst {
 
     const NAME: &'static str = "manifest dependency";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let git = ctx.optional_advance("git").is_some();
         let name = ctx.parse_args((true,));

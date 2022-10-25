@@ -11,7 +11,7 @@ impl<'a> Ast<'a> for UseAstSkip {
 
     const NAME: &'static str = "use skip";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
         if !ctx.at_tok(TokenKind::Use) {
             return Some(UseAstSkip);
@@ -38,7 +38,7 @@ impl<'a> Ast<'a> for UseAst<'a> {
 
     const NAME: &'static str = "use";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
 
         if !ctx.at_tok(TokenKind::Use) {
@@ -72,7 +72,7 @@ impl<'a> Ast<'a> for ImportAst {
 
     const NAME: &'static str = "import";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         let name = ctx.parse_args((true,));

@@ -47,8 +47,10 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
-        let mut type_checked_funcs = vec![];
+        let mut type_checked_funcs = bumpvec![];
+        let arena = Arena::new();
         ty_checker!(self, module).execute(
+            &arena,
             items,
             &mut self.typec_ctx,
             self.ast_transfer.activate(),

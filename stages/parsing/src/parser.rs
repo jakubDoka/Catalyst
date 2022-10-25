@@ -34,7 +34,7 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
 
     const NAME: &'static str = "generic param";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             bounds: ctx.parse()?,
@@ -58,7 +58,7 @@ impl<'a> Ast<'a> for PathExprAst<'a> {
 
     const NAME: &'static str = "ident chain";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let slash = ctx.try_advance(TokenKind::BackSlash).map(|t| t.span);
         let start = ctx.name_unchecked();
         let mut segments = bumpvec![];

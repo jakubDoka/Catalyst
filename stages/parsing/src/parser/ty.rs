@@ -20,7 +20,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
     const NAME: &'static str = "type";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             Ident => {
                 if ctx.current_token_str() == "_" {
@@ -66,7 +66,7 @@ impl<'a> Ast<'a> for TyInstanceAst<'a> {
 
     const NAME: &'static str = "type instance";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (ident,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (ident,): Self::Args) -> Option<Self> {
         Some(TyInstanceAst {
             path: ident,
             params: ctx.parse()?,
@@ -90,7 +90,7 @@ impl<'a> Ast<'a> for TyPointerAst<'a> {
 
     const NAME: &'static str = "pointer type";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(TyPointerAst {
             carrot: ctx.advance().span,
             mutability: ctx.parse()?,
@@ -115,7 +115,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
 
     const NAME: &'static str = "mutability";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (): Self::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Mut => Self::Mut(ctx.advance().span),
             Use => Self::Generic(ctx.advance().span, ctx.parse()?),

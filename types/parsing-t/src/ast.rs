@@ -28,7 +28,10 @@ where
 
     const NAME: &'static str = "wrapped";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (start, end): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (start, end): Self::Args,
+    ) -> Option<Self> {
         Some(Self {
             start: ctx.expect_advance(start)?.span,
             value: ctx.parse()?,
@@ -48,14 +51,14 @@ pub struct NameAst {
 }
 
 impl NameAst {
-    pub fn from_path(ctx: &mut ParsingCtx<'_, '_>, path: Span) -> Self {
+    pub fn from_path(ctx: &mut ParsingCtx<'_, '_, '_>, path: Span) -> Self {
         let path_str = ctx.lexer.inner_span_str(path);
         let last_slash = path_str.rfind('/').map_or(0, |i| i + 1);
         let span = path.sliced(last_slash..);
         Self::new(ctx, span)
     }
 
-    pub fn new(ctx: &mut ParsingCtx<'_, '_>, span: Span) -> Self {
+    pub fn new(ctx: &mut ParsingCtx<'_, '_, '_>, span: Span) -> Self {
         Self {
             ident: ctx.interner.intern(ctx.lexer.inner_span_str(span)),
             span,
@@ -68,7 +71,10 @@ impl<'a> Ast<'a> for NameAst {
 
     const NAME: &'static str = "name";
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, (just_try,): Self::Args) -> Option<Self> {
+    fn parse_args_internal(
+        ctx: &mut ParsingCtx<'_, 'a, '_>,
+        (just_try,): Self::Args,
+    ) -> Option<Self> {
         let span = if just_try {
             ctx.try_advance(TokenKind::Ident)?.span
         } else {
@@ -87,17 +93,17 @@ pub trait Ast<'a>: Copy {
 
     const NAME: &'static str;
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Option<Self>;
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, args: Self::Args) -> Option<Self>;
     fn span(&self) -> Span;
 
-    fn parse(ctx: &mut ParsingCtx<'_, 'a>) -> Option<Self>
+    fn parse(ctx: &mut ParsingCtx<'_, 'a, '_>) -> Option<Self>
     where
         Self::Args: Default,
     {
         Self::parse_args(ctx, default())
     }
 
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a>, args: Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, args: Self::Args) -> Option<Self> {
         ctx.state.parse_stack.push(Self::NAME);
         let res = Self::parse_args_internal(ctx, args);
         ctx.state.parse_stack.pop().unwrap();
@@ -169,7 +175,7 @@ where
 
     type Args = T::Args;
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a>, args: T::Args) -> Option<Self> {
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, args: T::Args) -> Option<Self> {
         let on_delim = ctx.at(META::START);
         let pos = ctx.state.current.span.sliced(..0);
         if META::OPTIONAL && !on_delim && !META::START.is_empty() {

@@ -1,4 +1,4 @@
-use std::{default::default, iter};
+use std::{default::default, iter, sync::Arc};
 
 use diags::gen_error_fns;
 use lexing_t::Span;
@@ -15,18 +15,25 @@ impl MirChecker<'_> {
     pub fn funcs(
         &mut self,
         ctx: &mut MirBuilderCtx,
-        input: &mut Vec<(VRef<Func>, TirNode)>,
+        input: &mut BumpVec<(VRef<Func>, TirNode)>,
     ) -> &mut Self {
         for (func, body) in input.drain(..) {
             let body = self.func(func, body, ctx);
-            self.mir.bodies[func] = Some(body);
+            self.mir.bodies.insert(
+                func,
+                FuncMir {
+                    inner: Arc::new(body),
+                    dependant_types: ctx.dependant_types.clone(),
+                },
+            );
+            ctx.dependant_types.clear();
             ctx.just_compiled.push(func);
         }
 
         self
     }
 
-    fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMir {
+    fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMirInner {
         let Func { signature, .. } = self.typec.funcs[func];
 
         let mut builder = self.push_args(signature.args, ctx);
@@ -138,7 +145,11 @@ impl MirChecker<'_> {
         let tree = patterns::as_tree(&arena, &branch_patterns, &mut reachable);
         if tree.has_missing {
             let gaps = patterns::find_gaps(tree);
-            self.non_exhaustive(gaps, builder.ctx.func.value_ty(value), span)?
+            self.non_exhaustive(
+                gaps,
+                builder.ctx.dependant_types[builder.ctx.func.values[value].ty].ty,
+                span,
+            )?
         }
 
         arena.clear();

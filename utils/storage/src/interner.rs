@@ -51,6 +51,9 @@ pub struct Interner {
     temp: String,
 }
 
+unsafe impl Sync for Interner {}
+unsafe impl Send for Interner {}
+
 impl Interner {
     pub const CHUNK_SIZE: usize = 1024 * 1024;
 

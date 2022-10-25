@@ -3,6 +3,8 @@
 #![feature(thread_id_value)]
 #![feature(default_free_fn)]
 #![feature(array_zip)]
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
 
 use std::{default::default, fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
 
@@ -24,6 +26,11 @@ use testing::*;
 use typec::*;
 
 use typec_t::*;
+
+function_pointer! {
+    ConstUsize -> usize
+    ConstU32 -> u32
+}
 
 struct LaterInit {
     object_context: ObjectContext,
@@ -187,15 +194,19 @@ impl TestState {
     ) {
         let target_func = self.gen.compiled_funcs[target_func].func;
 
-        if self.mir.bodies[target_func]
-            .as_ref()
+        if self
+            .mir
+            .bodies
+            .get(target_func)
             .map_or(false, |body| body.constants.is_empty())
         {
             return;
         }
 
-        let body = self.mir.bodies[target_func]
-            .take()
+        let body = self
+            .mir
+            .bodies
+            .remove(target_func)
             .expect("Should be generated.");
 
         let mut compile_queue = vec![];
@@ -259,8 +270,10 @@ impl TestState {
                 }
 
                 let fall_back = (func == target_func).then_some(&body);
-                let body = self.mir.bodies[func]
-                    .as_ref()
+                let body = self
+                    .mir
+                    .bodies
+                    .get(func)
                     .or(fall_back)
                     .expect("should be generated");
 
@@ -320,12 +333,13 @@ impl TestState {
 
             later_init.jit_context.prepare_for_execution();
 
-            let fn_ptr = later_init.jit_context.get_function(root_func).unwrap();
             let constant = if body.dependant_types[const_mir.ty].ty == Ty::UINT {
-                let func: extern "C" fn() -> usize = unsafe { mem::transmute(fn_ptr.as_ptr()) };
+                let func = unsafe { later_init.jit_context.get_function::<ConstUsize>(root_func) }
+                    .unwrap();
                 GenFuncConstant::Int(func() as u64)
             } else if body.dependant_types[const_mir.ty].ty == Ty::U32 {
-                let func: extern "C" fn() -> u32 = unsafe { mem::transmute(fn_ptr.as_ptr()) };
+                let func =
+                    unsafe { later_init.jit_context.get_function::<ConstU32>(root_func) }.unwrap();
                 GenFuncConstant::Int(func() as u64)
             } else {
                 todo!()
@@ -334,7 +348,7 @@ impl TestState {
             self.object_resources.func_constants[key] = constant.into();
         }
 
-        self.mir.bodies[target_func] = Some(body);
+        self.mir.bodies.insert(target_func, body);
     }
 
     fn jit_compile(&mut self, compile_queue: &mut Vec<CompileRequest>, later_init: &mut LaterInit) {
@@ -354,7 +368,7 @@ impl TestState {
                 continue;
             }
 
-            let body = self.mir.bodies[func].as_mut().expect("should be generated");
+            let body = self.mir.bodies.get_mut(func).expect("should be generated");
 
             self.mir_type_swapper.swap(
                 body,
@@ -452,9 +466,16 @@ impl TestState {
 
         for (ty, funcs) in token_macros {
             let name = self.token_macro_name(ty);
-            let funcs =
-                funcs.map(|func| later_init.jit_context.get_function(func).unwrap().as_ptr());
-            let spec = unsafe { mem::transmute::<_, TokenMacroSpec>(funcs) };
+            let [new, start, next, end, drop] = funcs;
+            let spec = unsafe {
+                TokenMacroSpec {
+                    new: todo!(),
+                    start: todo!(),
+                    next: todo!(),
+                    clear: todo!(),
+                    drop: todo!(),
+                }
+            };
             self.token_macro_ctx.declare_macro(name, spec);
         }
     }
@@ -509,16 +530,18 @@ impl Scheduler for TestState {
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
         let mut later_init = self.get_init_later();
+        let arena = Arena::new();
         unsafe {
             later_init.jit_context.clear_temp();
         }
 
         {
-            let mut type_checked_funcs = vec![];
+            let mut type_checked_funcs = bumpvec![];
 
             let mut buff = String::new();
             ty_checker!(self, module)
                 .execute(
+                    &arena,
                     items,
                     &mut self.typec_ctx,
                     self.ast_transfer.activate(),
@@ -567,8 +590,10 @@ impl Scheduler for TestState {
 
             self.compute_func_constants(request.id, &mut later_init);
 
-            let body = self.mir.bodies[request.func]
-                .as_mut()
+            let body = self
+                .mir
+                .bodies
+                .get_mut(request.func)
                 .expect("should be generated");
 
             self.mir_type_swapper.swap(
