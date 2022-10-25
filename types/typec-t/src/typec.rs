@@ -31,7 +31,7 @@ pub struct Typec {
     pub func_slices: FuncSlices,
     pub spec_funcs: SpecFuncs,
     pub builtin_funcs: Map<VRef<str>, VRef<Func>>,
-    pub module_items: ShadowMap<Module, PushMap<ModuleItem>>,
+    pub module_items: ShadowMap<Module, ModuleItems>,
     pub variants: Variants,
     pub enums: Enums,
     pub cast_checks: Vec<(Span, Ty, Ty)>,
@@ -862,4 +862,10 @@ pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRe
         .binary_search_by_key(&name, |(str, _)| str)
         .map(|i| drops[i].1)
         .ok()
+}
+
+#[derive(Default, Clone)]
+pub struct ModuleItems {
+    pub items: PushMap<ModuleItem>,
+    pub token_macros: Vec<VRef<Impl>>,
 }

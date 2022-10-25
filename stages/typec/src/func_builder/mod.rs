@@ -20,7 +20,6 @@ impl TyChecker<'_> {
         arena: &'a Arena,
         transfer: &AstTransfer,
         compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
-        token_macros: &mut Vec<VRef<Impl>>,
         extern_funcs: &mut Vec<VRef<Func>>,
     ) -> &mut Self {
         let iter = iter::once(0)
@@ -42,7 +41,7 @@ impl TyChecker<'_> {
             self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {
-                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, token_macros, offset);
+                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, offset);
             } else {
                 self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, offset);
             }
@@ -59,7 +58,6 @@ impl TyChecker<'_> {
         impl_ref: VRef<Impl>,
         input: &[(FuncDefAst, VRef<Func>)],
         compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
-        token_macros: &mut Vec<VRef<Impl>>,
         offset: usize,
     ) {
         let Impl {
@@ -71,7 +69,9 @@ impl TyChecker<'_> {
         };
         let spec_base = spec.base(self.typec);
         if spec_base == SpecBase::TOKEN_MACRO {
-            token_macros.push(impl_ref);
+            self.typec.module_items[self.module]
+                .token_macros
+                .push(impl_ref);
         }
         let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
@@ -1876,6 +1876,20 @@ impl TyChecker<'_> {
         }
     }
 }
+
+// fn snake_case(input: &str, output: &mut String) -> Option<()> {
+//     let mut chars = input.chars();
+//     output.push(chars.next()?.to_ascii_lowercase());
+
+//     for c in chars {
+//         if c.is_uppercase() {
+//             output.push('_');
+//         }
+//         output.push(c.to_ascii_lowercase());
+//     }
+
+//     Some(())
+// }
 
 pub type Inference = Option<Ty>;
 

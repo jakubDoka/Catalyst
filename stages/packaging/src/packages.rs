@@ -65,7 +65,7 @@ struct DummyModule {
     ordering: usize,
 }
 
-impl PackageLoader<'_> {
+impl PackageLoader<'_, '_> {
     /// Loads the project into graph of manifests and source files.
     pub fn reload(&mut self, root_path: &Path, ctx: &mut PackageLoaderCtx) -> Option<()> {
         ctx.clear();

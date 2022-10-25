@@ -263,10 +263,10 @@ impl Ty {
     pub fn span(self, typec: &Typec) -> Option<Span> {
         match self {
             Self::Struct(s) => {
-                Some(typec.module_items[typec[s].loc.module][typec[s].loc.item].span)
+                Some(typec.module_items[typec[s].loc.module].items[typec[s].loc.item].span)
             }
             Self::Enum(e) => {
-                Some(typec.module_items[typec[e].loc?.module][typec[e].loc?.item].span)
+                Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)
             }
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
         }

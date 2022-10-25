@@ -232,6 +232,7 @@ impl TyChecker<'_> {
                     .iter()
                     .filter(|dep| {
                         self.typec.module_items[dep.ptr]
+                            .items
                             .values()
                             .any(|i| i.id == sym)
                     })

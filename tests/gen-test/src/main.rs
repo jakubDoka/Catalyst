@@ -6,7 +6,7 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 
-use std::{default::default, fmt::Write, fs, iter, mem, path::Path, process::Command, vec};
+use std::{default::default, fmt::Write, fs, iter, path::Path, process::Command, vec};
 
 use cranelift_codegen::{ir::InstBuilder, settings, Context};
 use cranelift_frontend::FunctionBuilderContext;
@@ -28,8 +28,8 @@ use typec::*;
 use typec_t::*;
 
 function_pointer! {
-    ConstUsize -> usize
-    ConstU32 -> u32
+    ConstUsize -> usize,
+    ConstU32 -> u32,
 }
 
 struct LaterInit {
@@ -60,7 +60,6 @@ struct TestState {
     mir: Mir,
     entry_points: Vec<VRef<CompiledFunc>>,
     mir_type_swapper: MirTypeSwapper,
-    token_macro_ctx: TokenMacroCtx,
 }
 
 impl TestState {
@@ -336,11 +335,11 @@ impl TestState {
             let constant = if body.dependant_types[const_mir.ty].ty == Ty::UINT {
                 let func = unsafe { later_init.jit_context.get_function::<ConstUsize>(root_func) }
                     .unwrap();
-                GenFuncConstant::Int(func() as u64)
+                GenFuncConstant::Int(func.call() as u64)
             } else if body.dependant_types[const_mir.ty].ty == Ty::U32 {
                 let func =
                     unsafe { later_init.jit_context.get_function::<ConstU32>(root_func) }.unwrap();
-                GenFuncConstant::Int(func() as u64)
+                GenFuncConstant::Int(func.call() as u64)
             } else {
                 todo!()
             };
@@ -420,10 +419,10 @@ impl TestState {
         later_init.jit_context.prepare_for_execution();
     }
 
-    fn jit_compile_macros(&mut self, later_init: &mut LaterInit) {
+    fn jit_compile_macros(&mut self, module: VRef<Module>, later_init: &mut LaterInit) {
         let mut compile_queue = vec![];
         let mut token_macros = vec![];
-        for token_macro in self.typec_ctx.token_macros.drain(..) {
+        for &token_macro in &self.typec.module_items[module].token_macros {
             let Impl {
                 methods,
                 key: ImplKey { ty, .. },
@@ -463,54 +462,13 @@ impl TestState {
         }
 
         self.jit_compile(&mut compile_queue, later_init);
-
-        for (ty, funcs) in token_macros {
-            let name = self.token_macro_name(ty);
-            let [new, start, next, end, drop] = funcs;
-            let spec = unsafe {
-                TokenMacroSpec {
-                    new: todo!(),
-                    start: todo!(),
-                    next: todo!(),
-                    clear: todo!(),
-                    drop: todo!(),
-                }
-            };
-            self.token_macro_ctx.declare_macro(name, spec);
-        }
-    }
-
-    fn token_macro_name(&mut self, ty: Ty) -> VRef<str> {
-        let name = match ty {
-            Ty::Struct(s) => self.typec[s].name,
-            Ty::Enum(e) => self.typec[e].name,
-            Ty::Instance(_) => todo!(),
-            Ty::Pointer(_) => todo!(),
-            Ty::Param(_) => todo!(),
-            Ty::Builtin(_) => todo!(),
-        };
-
-        self.interner
-            .intern_with(|s, t| Self::to_snake_case(&s[name], t))
-    }
-
-    fn to_snake_case(str: &str, buf: &mut String) -> Option<()> {
-        let mut chars = str.chars();
-        buf.push(chars.next()?.to_ascii_lowercase());
-        for c in chars {
-            if c.is_uppercase() {
-                buf.push('_');
-            }
-            buf.push(c.to_ascii_lowercase());
-        }
-        Some(())
     }
 }
 
 impl Scheduler for TestState {
     fn loader(&mut self) -> packaging::PackageLoader {
-        let mut packs = package_loader!(self);
-        packs.token_macro_ctx = Some(&mut self.token_macro_ctx);
+        let packs = package_loader!(self);
+        // packs.token_macro_ctx = Some(&mut self.token_macro_ctx);
         packs
     }
 
@@ -570,7 +528,7 @@ impl Scheduler for TestState {
             return;
         }
 
-        self.jit_compile_macros(&mut later_init);
+        self.jit_compile_macros(module, &mut later_init);
 
         let mut compiled_funcs = vec![];
         let mut compile_queue = self.collect_entry_points(later_init.object_context.isa.triple);
@@ -650,7 +608,7 @@ impl Scheduler for TestState {
     }
 
     fn finally(&mut self) {
-        drop(mem::take(&mut self.token_macro_ctx));
+        // drop(mem::take(&mut self.token_macro_ctx));
 
         self.workspace.push(snippet! {
             info: ("mir repr of functions:\n{}", self.functions);
@@ -986,72 +944,72 @@ fn main() {
             fn [F, T] my_cast(value: F) -> T => cast(value);
         }
 
-        simple "swap-macro" {
-            use {
-                "water/option";
-                "water/macros/tokens";
-            };
-            // use {
-            //     w "water"
-            // };
+        // simple "swap-macro" {
+        //     use {
+        //         "water/option";
+        //         "water/macros/tokens";
+        //     };
+        //     // use {
+        //     //     w "water"
+        //     // };
 
-            // TODO: Solution for macro name collisions
-            // type WSwap = w::Swap[uint];
-            // break;
+        //     // TODO: Solution for macro name collisions
+        //     // type WSwap = w::Swap[uint];
+        //     // break;
 
-            struct LastToken {
-                last: MacroToken;
-            };
+        //     struct LastToken {
+        //         last: MacroToken;
+        //     };
 
-            struct TwoTokens {
-                second: MacroToken;
-                first: MacroToken;
-            };
+        //     struct TwoTokens {
+        //         second: MacroToken;
+        //         first: MacroToken;
+        //     };
 
-            enum Swap {
-                Two: TwoTokens;
-                Last: LastToken;
-                Empty;
-            };
+        //     enum Swap {
+        //         Two: TwoTokens;
+        //         Last: LastToken;
+        //         Empty;
+        //     };
 
-            fn "default" malloc(size: uint) -> ^() extern;
-            fn "default" free(ptr: ^()) extern;
+        //     fn "default" malloc(size: uint) -> ^() extern;
+        //     fn "default" free(ptr: ^()) extern;
 
-            impl TokenMacro for Swap {
-                fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
+        //     impl TokenMacro for Swap {
+        //         fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
 
-                fn start(s: ^Self, lexer: MacroLexer) -> bool {
-                    *s = ::Two~::{
-                        first: lexer.next();
-                        second: lexer.next();
-                    };
-                    true
-                };
+        //         fn start(s: ^Self, lexer: MacroLexer) -> bool {
+        //             *s = ::Two~::{
+        //                 first: lexer.next();
+        //                 second: lexer.next();
+        //             };
+        //             true
+        //         };
 
-                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
-                    ::Some~match *s {
-                        ::Two~::{ first, second } {
-                            *s = ::Last~::{ last: first };
-                            second
-                        };
-                        ::Last~::{ last } {
-                            *s = ::Empty;
-                            last
-                        };
-                        ::Empty => return ::None;
-                    };
+        //         fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
+        //             ::Some~match *s {
+        //                 ::Two~::{ first, second } {
+        //                     *s = ::Last~::{ last: first };
+        //                     second
+        //                 };
+        //                 ::Last~::{ last } {
+        //                     *s = ::Empty;
+        //                     last
+        //                 };
+        //                 ::Empty => return ::None;
+        //             };
 
-                fn clear(s: ^Self) {};
+        //         fn clear(s: ^Self) {};
 
-                fn drop(s: ^Self) => free(cast(s));
-            };
+        //         fn drop(s: ^Self) => free(cast(s));
+        //     };
 
-            break;
+        //     break;
 
-            #[entry];
-            swap! swap! fn -> main uint => 0;
-            //fn swap! -> main uint => 0;
-            //fn main -> uint => 0;
-        }
+        //     #[entry];
+        //     swap! swap! fn -> main uint => 0;
+        //     //fn swap! -> main uint => 0;
+        //     //fn main -> uint => 0;
+        // }
     }
 }

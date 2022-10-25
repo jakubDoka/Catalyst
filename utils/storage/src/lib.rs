@@ -19,25 +19,12 @@ macro_rules! function_pointer {
             #[derive(Copy, Clone)]
             pub struct $name<'a>(&'a u8);
 
-            impl FnOnce<($($($arg,)*)?)> for $name<'_> {
-                type Output = function_pointer!(@ret $($ret)?);
-                extern "rust-call" fn call_once(self, ($($($arg_name,)*)?): ($($($arg,)*)?)) $(-> $ret)? {
+            impl $name<'_> {
+                pub fn call(self, $($($arg_name: $arg,)*)?) $(-> $ret)? {
                     unsafe {
                         let ptr = std::mem::transmute::<_, extern "C" fn($($($arg),*)?) $(-> $ret)?>(self.0);
                         ptr($($($arg_name),*)?)
                     }
-                }
-            }
-
-            impl FnMut<($($($arg,)*)?)> for $name<'_> {
-                extern "rust-call" fn call_mut(&mut self, args: ($($($arg,)*)?)) $(-> $ret)? {
-                    (*self).call_once(args)
-                }
-            }
-
-            impl Fn<($($($arg,)*)?)> for $name<'_> {
-                extern "rust-call" fn call(&self, args: ($($($arg,)*)?)) $(-> $ret)? {
-                    (*self).call_once(args)
                 }
             }
 
@@ -61,8 +48,6 @@ macro_rules! function_pointer {
 pub trait FunctionPointer<'a> {
     fn new(ptr: &'a u8) -> Self;
 }
-
-function_pointer!(____(a: i8, b: i8) -> i8,);
 
 #[macro_export]
 macro_rules! impl_flag_and_bool {

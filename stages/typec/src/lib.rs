@@ -49,14 +49,12 @@ mod util {
     #[derive(Default)]
     pub struct TyCheckerCtx {
         pub extern_funcs: Vec<VRef<Func>>,
-        pub token_macros: Vec<VRef<Impl>>,
         pub ty_graph: TyGraph,
     }
 
     impl TyCheckerCtx {
         pub fn clear(&mut self) {
             self.extern_funcs.clear();
-            self.token_macros.clear();
             self.ty_graph.clear();
         }
     }
@@ -125,13 +123,7 @@ mod util {
                     &mut ctx.extern_funcs,
                     0,
                 )
-                .build_impl_funcs(
-                    arena,
-                    transfer.0,
-                    type_checked_funcs,
-                    &mut ctx.token_macros,
-                    &mut ctx.extern_funcs,
-                )
+                .build_impl_funcs(arena, transfer.0, type_checked_funcs, &mut ctx.extern_funcs)
         }
 
         pub fn detect_infinite_types(
@@ -217,7 +209,7 @@ mod util {
         for dep in &packages.module_deps[mod_ent.deps] {
             let items = &typec.module_items[dep.ptr];
             scope.push(dep.name, dep.ptr, dep.name_span);
-            for &item in items.values() {
+            for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
             }
         }
@@ -232,7 +224,7 @@ mod util {
                 return None;
             }
 
-            let item = self.typec.module_items[self.module].push(item);
+            let item = self.typec.module_items[self.module].items.push(item);
             Some(Loc {
                 module: self.module,
                 item,

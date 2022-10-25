@@ -47,7 +47,7 @@ impl<'a> TokenMacroPool<'a> {
         let data = if let Some(ptr) = self.free.pop() {
             ptr
         } else {
-            (self.spec.new)()
+            self.spec.new.call()
         };
 
         TokenMacro {
@@ -65,7 +65,7 @@ impl<'a> TokenMacroPool<'a> {
 impl Drop for TokenMacroPool<'_> {
     fn drop(&mut self) {
         for ptr in self.free.drain(..) {
-            (self.spec.drop)(ptr);
+            self.spec.drop.call(ptr);
         }
     }
 }
@@ -97,15 +97,18 @@ unsafe impl Send for TokenMacro<'_> {}
 
 impl TokenMacro<'_> {
     pub fn next(&mut self, lexer: &mut Lexer) -> Option<Token> {
-        (self.spec.next)(self.data, CtlLexer { inner: lexer }).into()
+        self.spec
+            .next
+            .call(self.data, CtlLexer { inner: lexer })
+            .into()
     }
 
     fn clear(&mut self) {
-        (self.spec.clear)(self.data)
+        self.spec.clear.call(self.data)
     }
 
     pub fn start(&mut self, lexer: &mut Lexer) -> bool {
-        (self.spec.start)(self.data, CtlLexer { inner: lexer })
+        self.spec.start.call(self.data, CtlLexer { inner: lexer })
     }
 
     fn into_data(self) -> *mut TokenMacroData {
@@ -117,7 +120,7 @@ impl TokenMacro<'_> {
 
 impl Drop for TokenMacro<'_> {
     fn drop(&mut self) {
-        (self.spec.drop)(self.data)
+        self.spec.drop.call(self.data)
     }
 }
 
