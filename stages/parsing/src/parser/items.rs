@@ -354,6 +354,7 @@ pub enum TopLevelAttrKindAst {
     Entry(Span),
     WaterDrop(Span),
     CompileTime(Span),
+    Macro(Span, NameAst),
     Inline(Option<WrappedAst<InlineModeAst>>),
 }
 
@@ -371,6 +372,7 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
             "compile_time" => Some(TopLevelAttrKindAst::CompileTime(
                 ctx.advance().span,
             )),
+            "macro" => Some(TopLevelAttrKindAst::Macro(ctx.advance().span, ctx.parse()?)),
             "inline" => {
                 if !ctx.at_tok(TokenKind::LeftParen) {
                     Some(TopLevelAttrKindAst::Inline(None))
@@ -388,6 +390,7 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
             TopLevelAttrKindAst::WaterDrop(span)
             | TopLevelAttrKindAst::CompileTime(span)
             | TopLevelAttrKindAst::Entry(span) => span,
+            TopLevelAttrKindAst::Macro(span, name) => span.joined(name.span()),
             TopLevelAttrKindAst::Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
         }
     }

@@ -139,6 +139,11 @@ impl FmtAst for TopLevelAttrKindAst {
             TopLevelAttrKindAst::Entry(span)
             | TopLevelAttrKindAst::WaterDrop(span)
             | TopLevelAttrKindAst::CompileTime(span) => fmt.write_span(span),
+            TopLevelAttrKindAst::Macro(span, name) => {
+                fmt.write_span(span);
+                fmt.buffer.push(' ');
+                name.display(fmt);
+            }
             TopLevelAttrKindAst::Inline(mode) => {
                 write!(fmt, "inline");
                 if let Some(mode) = mode {
