@@ -103,6 +103,7 @@ mod util {
             arena: &'a Arena,
             items: GroupedItemsAst<'a>,
             ctx: &mut TyCheckerCtx,
+            tir_builder_ctx: &mut TirBuilderCtx,
             transfer: ActiveAstTransfer<'a, '_>,
             type_checked_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
@@ -121,9 +122,16 @@ mod util {
                     &transfer.0.funcs,
                     type_checked_funcs,
                     &mut ctx.extern_funcs,
+                    tir_builder_ctx,
                     0,
                 )
-                .build_impl_funcs(arena, transfer.0, type_checked_funcs, &mut ctx.extern_funcs)
+                .build_impl_funcs(
+                    arena,
+                    transfer.0,
+                    type_checked_funcs,
+                    &mut ctx.extern_funcs,
+                    tir_builder_ctx,
+                )
         }
 
         pub fn detect_infinite_types(

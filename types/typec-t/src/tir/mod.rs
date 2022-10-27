@@ -5,48 +5,59 @@ use crate::*;
 
 pub type TypecOutput<A, T> = Vec<(A, VRef<T>)>;
 
-pub struct TirBuilder<'a> {
-    pub arena: &'a Arena,
-    pub ret: Ty,
-    pub ret_span: Option<Span>,
+#[derive(Default)]
+pub struct TirBuilderCtx {
     pub vars: Vec<VarHeaderTir>,
     pub generics: Vec<VSlice<Spec>>,
-    pub runner: Option<(Span, TirFrame)>,
+    pub cast_checks: Vec<CastCheck>,
 }
 
-impl<'a> TirBuilder<'a> {
+pub struct CastCheck {
+    pub loc: Span,
+    pub from: Ty,
+    pub to: Ty,
+}
+
+pub struct TirBuilder<'arena, 'ctx> {
+    pub arena: &'arena Arena,
+    pub ret: Ty,
+    pub ret_span: Option<Span>,
+    pub runner: Option<(Span, TirFrame)>,
+    pub ctx: &'ctx mut TirBuilderCtx,
+}
+
+impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn new(
-        arena: &'a Arena,
+        arena: &'arena Arena,
         ret: Ty,
         ret_span: Option<Span>,
-        generics: Vec<VSlice<Spec>>,
+        ctx: &'ctx mut TirBuilderCtx,
     ) -> Self {
         Self {
             arena,
             ret,
             ret_span,
-            vars: Vec::new(),
-            generics,
             runner: None,
+            ctx,
         }
     }
 
     pub fn start_frame(&mut self) -> TirFrame {
-        TirFrame(self.vars.len())
+        TirFrame(self.ctx.vars.len())
     }
 
     pub fn end_frame(&mut self, frame: TirFrame) {
-        self.vars.truncate(frame.0);
+        self.ctx.vars.truncate(frame.0);
     }
 
     pub fn create_var(&mut self, mutable: bool, ty: Ty, span: Span) -> VRef<VarHeaderTir> {
-        let index = self.vars.len();
-        self.vars.push(VarHeaderTir { ty, span, mutable });
+        let index = self.ctx.vars.len();
+        self.ctx.vars.push(VarHeaderTir { ty, span, mutable });
         unsafe { VRef::new(index) }
     }
 
     pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarHeaderTir {
-        self.vars[var.index()]
+        self.ctx.vars[var.index()]
     }
 }
 

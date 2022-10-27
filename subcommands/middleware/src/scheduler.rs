@@ -127,13 +127,13 @@ impl Worker {
                 continue;
             };
 
-            let token_macro_checkpoint = task.typec.module_items[module].macros.len();
+            let macro_checkpoint = task.typec.module_items[module].macros.len();
             self.type_check_batch(module, grouped_items, arena, task, shared);
             let last = grouped_items.last;
             arena.clear();
 
             let new_macros =
-                task.typec.module_items[module].macros[token_macro_checkpoint..].to_bumpvec();
+                task.typec.module_items[module].macros[macro_checkpoint..].to_bumpvec();
             if !new_macros.is_empty() {}
 
             if last {
@@ -221,6 +221,7 @@ impl Worker {
             arena,
             grouped_items,
             &mut self.state.ty_checker_ctx,
+            &mut self.state.tir_builder_ctx,
             self.state.ast_transfer.activate(),
             &mut type_checked_funcs,
         );
@@ -279,6 +280,7 @@ pub struct WorkerState {
     pub mir_builder_ctx: MirBuilderCtx,
     pub token_macros: SparseMap<Impl, TokenMacroOwnedSpec>,
     pub macro_ctx: MacroCtx<'static>,
+    pub tir_builder_ctx: TirBuilderCtx,
 }
 
 #[derive(Default)]

@@ -50,12 +50,18 @@ pub struct Instance {
     pub args: VSlice<Ty>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Struct {
     pub name: VRef<str>,
     pub generics: Generics,
     pub fields: VSlice<Field>,
-    pub loc: Loc,
+    pub loc: Option<Loc>,
+}
+
+gen_water_drops! {
+    Struct
+    structs
+    EH => "|||",
 }
 
 #[derive(Clone, Copy, Default)]
@@ -269,7 +275,7 @@ impl Ty {
     pub fn span(self, typec: &Typec) -> Option<Span> {
         match self {
             Self::Struct(s) => {
-                Some(typec.module_items[typec[s].loc.module].items[typec[s].loc.item].span)
+                Some(typec.module_items[typec[s].loc?.module].items[typec[s].loc?.item].span)
             }
             Self::Enum(e) => {
                 Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)

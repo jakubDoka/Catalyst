@@ -9,13 +9,12 @@ use std::{
 };
 
 use crate::*;
-use lexing_t::Span;
 use packaging_t::Module;
 use storage::*;
 
 #[derive(Default)]
 pub struct Typec {
-    lookup: TypecLookup,
+    pub lookup: TypecLookup,
     pub structs: Structs,
     pub pointers: Pointers,
     pub instances: Instances,
@@ -33,8 +32,8 @@ pub struct Typec {
     pub builtin_funcs: Map<VRef<str>, VRef<Func>>,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub variants: Variants,
+    pub macros: Map<Ty, MacroImpl>,
     pub enums: Enums,
-    pub cast_checks: Vec<(Span, Ty, Ty)>,
 }
 
 macro_rules! gen_index {
@@ -190,7 +189,14 @@ impl Typec {
     pub fn display_ty_to(&self, ty: Ty, to: &mut String, interner: &Interner) {
         match ty {
             Ty::Struct(r#struct) => {
-                write!(to, "{}\\", self[r#struct].loc.module.index()).unwrap();
+                write!(
+                    to,
+                    "{}\\",
+                    self[r#struct]
+                        .loc
+                        .map_or(usize::MAX, |loc| loc.module.index())
+                )
+                .unwrap();
                 to.push_str(&interner[self[r#struct].name])
             }
             Ty::Enum(r#enum) => {
@@ -862,6 +868,12 @@ pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRe
         .binary_search_by_key(&name, |(str, _)| str)
         .map(|i| drops[i].1)
         .ok()
+}
+
+#[derive(Clone, Copy)]
+pub struct MacroImpl {
+    pub name: VRef<str>,
+    pub r#impl: OptVRef<Impl>,
 }
 
 #[derive(Default, Clone)]

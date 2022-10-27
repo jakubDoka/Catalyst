@@ -21,6 +21,7 @@ impl TyChecker<'_> {
         transfer: &AstTransfer,
         compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
+        ctx: &mut TirBuilderCtx,
     ) -> &mut Self {
         let iter = iter::once(0)
             .chain(transfer.impl_frames.iter().map(|&(.., i)| i))
@@ -41,9 +42,9 @@ impl TyChecker<'_> {
             self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {
-                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, offset);
+                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, ctx, offset);
             } else {
-                self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, offset);
+                self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, ctx, offset);
             }
 
             self.scope.end_frame(frame);
@@ -58,6 +59,7 @@ impl TyChecker<'_> {
         impl_ref: VRef<Impl>,
         input: &[(FuncDefAst, VRef<Func>)],
         compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
+        ctx: &mut TirBuilderCtx,
         offset: usize,
     ) {
         let Impl {
@@ -84,7 +86,7 @@ impl TyChecker<'_> {
 
         let mut methods = bumpvec![None; spec_methods.len()];
         for &(ast, func) in input {
-            let Some(func_res) = self.build_func(ast, func, arena, offset) else { continue; };
+            let Some(func_res) = self.build_func(ast, func, arena, ctx, offset) else { continue; };
             let Some(body) = func_res else {
                 self.extern_in_impl(ast.span);
                 continue;
@@ -211,10 +213,11 @@ impl TyChecker<'_> {
         input: &[(FuncDefAst, VRef<Func>)],
         compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
         extern_funcs: &mut Vec<VRef<Func>>,
+        ctx: &mut TirBuilderCtx,
         offset: usize,
     ) -> &mut Self {
         let iter = input.iter().filter_map(|&(ast, func)| {
-            let res = self.build_func(ast, func, arena, offset)?;
+            let res = self.build_func(ast, func, arena, ctx, offset)?;
 
             let Some(body) = res else {
                 extern_funcs.push(func);
@@ -244,6 +247,7 @@ impl TyChecker<'_> {
         }: FuncDefAst,
         func: VRef<Func>,
         arena: &'a Arena,
+        ctx: &mut TirBuilderCtx,
         offset: usize,
     ) -> Option<Option<TirNode<'a>>> {
         let frame = self.scope.start_frame();
@@ -253,12 +257,10 @@ impl TyChecker<'_> {
             ..
         } = self.typec.funcs[func];
 
-        let mut builder = TirBuilder::new(
-            arena,
-            signature.ret,
-            ret.map(|ret| ret.span()),
-            self.typec.pack_func_param_specs(func).collect::<Vec<_>>(),
-        );
+        ctx.vars.clear();
+        ctx.generics.clear();
+        ctx.generics.extend(self.typec.pack_func_param_specs(func));
+        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()), ctx);
 
         self.insert_generics(generics, offset);
         self.insert_spec_functions(self_generics, offset);
@@ -283,7 +285,7 @@ impl TyChecker<'_> {
         &mut self,
         block: BlockAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let frame = builder.start_frame();
         let scope_frame = self.scope.start_frame();
@@ -313,7 +315,7 @@ impl TyChecker<'_> {
         &mut self,
         expr: Option<ExprAst>,
         span: Span,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         if let Some((span, ..)) = builder.runner {
             self.control_flow_in_const(span, span);
@@ -334,7 +336,7 @@ impl TyChecker<'_> {
         &mut self,
         value: ExprRes<'a>,
         span: Span,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         self.type_check(builder.ret, value.map_or(Ty::UNIT, |value| value.ty), span)?;
 
@@ -349,7 +351,7 @@ impl TyChecker<'_> {
         &mut self,
         expr: ExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let value = match expr {
             ExprAst::Unit(&unit) => self.unit_expr(unit, inference, builder),
@@ -367,7 +369,7 @@ impl TyChecker<'_> {
         &mut self,
         unit_ast: UnitExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         match unit_ast {
             UnitExprAst::Path(path) => self.value_path(path, inference, builder),
@@ -395,7 +397,7 @@ impl TyChecker<'_> {
         &mut self,
         expr: UnitExprAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let expr = self.unit_expr(expr, None, builder)?;
         let Ty::Pointer(ptr) = expr.ty else {
@@ -415,7 +417,7 @@ impl TyChecker<'_> {
         &mut self,
         r#let @ LetAst { pat, ty, value, .. }: LetAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let ty = ty.map(|(.., ty)| self.ty(ty)).transpose()?;
         let value = self.expr(value, ty, builder)?;
@@ -438,7 +440,7 @@ impl TyChecker<'_> {
             ..
         }: IfAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let top = self.if_branch(cond, body, inference, builder)?;
 
@@ -476,7 +478,7 @@ impl TyChecker<'_> {
         cond: ExprAst,
         body: IfBlockAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<IfBranchTir<'a>> {
         let cond = self.expr(cond, Some(Ty::BOOL), builder)?;
         let body = self.if_block(body, inference, builder)?;
@@ -487,7 +489,7 @@ impl TyChecker<'_> {
         &mut self,
         body: IfBlockAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         match body {
             IfBlockAst::Block(body) => self.block(body, inference, builder),
@@ -512,7 +514,7 @@ impl TyChecker<'_> {
             value,
         }: EnumCtorAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let (ty, variant_name) = self.enum_path(path, inference)?;
 
@@ -622,7 +624,7 @@ impl TyChecker<'_> {
         &mut self,
         DotExprAst { lhs, rhs, .. }: DotExprAst,
         _inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let header = self.unit_expr(lhs, None, builder)?;
 
@@ -641,7 +643,7 @@ impl TyChecker<'_> {
         &mut self,
         ty: Ty,
         PathInstanceAst { path, params }: PathInstanceAst,
-        _builder: &mut TirBuilder<'a>,
+        _builder: &mut TirBuilder<'a, '_>,
     ) -> Option<DotPathResult> {
         if let Some((.., params)) = params {
             self.unexpected_params(params.span())?;
@@ -680,7 +682,7 @@ impl TyChecker<'_> {
         &mut self,
         MatchExprAst { expr, body, .. }: MatchExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let value = self.expr(expr, None, builder)?;
 
@@ -721,7 +723,7 @@ impl TyChecker<'_> {
         &mut self,
         pattern: PatAst,
         ty: Ty,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<PatTir<'a>> {
         match pattern {
             PatAst::Binding(mutable, name) => {
@@ -867,7 +869,7 @@ impl TyChecker<'_> {
         &mut self,
         ctor @ StructCtorAst { path, body, .. }: StructCtorAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let (ty, params) = if let Some(PathInstanceAst { path, params }) = path {
             let ty = self.ty_path(path)?;
@@ -994,7 +996,7 @@ impl TyChecker<'_> {
         &mut self,
         run: ConstAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         if let Some((runner, ..)) = builder.runner {
             self.nested_runner(runner, run.span())?
@@ -1018,7 +1020,7 @@ impl TyChecker<'_> {
         &mut self,
         call @ CallExprAst { callable, .. }: CallExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         match callable {
             UnitExprAst::Path(path) => {
@@ -1092,7 +1094,7 @@ impl TyChecker<'_> {
         caller: Option<TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let Func {
             signature,
@@ -1124,7 +1126,7 @@ impl TyChecker<'_> {
         )?;
 
         if func == Func::CAST && let &[from, to] = params {
-            self.typec.cast_checks.push((call.span(), from, to));
+            builder.ctx.cast_checks.push(CastCheck { loc: call.span(), from, to });
         }
 
         let call_tir = CallTir {
@@ -1147,7 +1149,7 @@ impl TyChecker<'_> {
         caller: Result<Ty, TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let func_ent @ SpecFunc {
             generics,
@@ -1195,7 +1197,7 @@ impl TyChecker<'_> {
         &mut self,
         params: impl Iterator<Item = Option<Ty>> + Clone,
         span: Span,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<&'a [Ty]> {
         let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() else {
             let missing = params
@@ -1222,7 +1224,7 @@ impl TyChecker<'_> {
         args: CallArgsAst,
         signature: Signature,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
         let arg_types = self.typec.args[signature.args].to_bumpvec();
 
@@ -1280,7 +1282,7 @@ impl TyChecker<'_> {
         &mut self,
         node: &mut TirNode<'a>,
         ty: Ty,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<()> {
         let (desired_pointer_depth, mutability) = match ty {
             Ty::Pointer(ptr) => (self.typec[ptr].depth, self.typec[ptr].mutability),
@@ -1326,7 +1328,7 @@ impl TyChecker<'_> {
         path @ PathExprAst {
             start, segments, ..
         }: PathExprAst,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<FuncLookupResult<'a>> {
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
             ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
@@ -1382,7 +1384,7 @@ impl TyChecker<'_> {
         path @ PathExprAst {
             start, segments, ..
         }: PathExprAst,
-        _builder: &mut TirBuilder<'a>,
+        _builder: &mut TirBuilder<'a, '_>,
     ) -> Option<FuncLookupResult<'a>> {
         let ty = ty.caller(self.typec);
         match *segments {
@@ -1411,7 +1413,7 @@ impl TyChecker<'_> {
         &mut self,
         path @ PathExprAst { slash, start, .. }: PathExprAst,
         inference: Inference,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         if slash.is_some() {
             let Some(inference) = inference else {
@@ -1509,7 +1511,7 @@ impl TyChecker<'_> {
     fn binary_expr<'a>(
         &mut self,
         binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
-        builder: &mut TirBuilder<'a>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let lhs = self.expr(lhs, None, builder);
 

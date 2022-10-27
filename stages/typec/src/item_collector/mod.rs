@@ -3,7 +3,7 @@ use std::default::default;
 use diags::gen_error_fns;
 use lexing_t::*;
 use parsing::*;
-use parsing_t::{Ast, Vis};
+use parsing_t::{Ast, NameAst, Vis};
 
 use storage::*;
 use typec_t::*;
@@ -263,21 +263,15 @@ impl TyChecker<'_> {
     pub fn collect_struct(
         &mut self,
         StructAst { vis, name, .. }: StructAst,
-        _: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<Struct>> {
-        let loc = {
-            // SAFETY: We push right after this, if item inset fails, id is forgotten.
-            let id = unsafe { self.typec.structs.next() };
-            let item = ModuleItem::new(name.ident, Ty::Struct(id), name.span, vis);
-            self.insert_scope_item(item)?
-        };
+        let loc = self.humid_item_loc(name, Ty::Struct, attributes, vis)?;
         let s = Struct {
-            generics: default(),
-            fields: default(),
             name: name.ident,
-            loc,
+            loc: Some(loc),
+            ..default()
         };
-        Some(self.typec.structs.push(s))
+        self.insert_humid_item(s, attributes)
     }
 
     pub fn collect_enum(
@@ -285,19 +279,25 @@ impl TyChecker<'_> {
         EnumAst { vis, name, .. }: EnumAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<Enum>> {
-        let loc = {
-            // SAFETY: We push right after this, if item inset fails, id is forgotten.
-            let id = self.next_humid_item_id(name.ident, attributes);
-            let item = ModuleItem::new(name.ident, Ty::Enum(id), name.span, vis);
-            self.insert_scope_item(item)?
-        };
+        let loc = self.humid_item_loc(name, Ty::Enum, attributes, vis)?;
         let e = Enum {
-            generics: default(),
-            variants: default(),
             name: name.ident,
             loc: Some(loc),
+            ..default()
         };
         self.insert_humid_item(e, attributes)
+    }
+
+    pub fn humid_item_loc<T: Humid>(
+        &mut self,
+        name: NameAst,
+        map: impl Fn(VRef<T>) -> Ty,
+        attributes: &[TopLevelAttributeAst],
+        vis: Vis,
+    ) -> Option<Loc> {
+        let id = self.next_humid_item_id(name.ident, attributes);
+        let item = ModuleItem::new(name.ident, map(id), name.span, vis);
+        self.insert_scope_item(item)
     }
 
     fn next_humid_item_id<I: Humid>(

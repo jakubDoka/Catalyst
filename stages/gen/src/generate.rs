@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, default::default, mem, slice};
+use std::{cmp::Ordering, default::default, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -17,9 +17,13 @@ mod function_loading;
 mod size_calc;
 
 impl Generator<'_> {
-    pub fn check_casts(&mut self, source: VRef<Source>, workspace: &mut Workspace) {
-        let mut checks = mem::take(&mut self.typec.cast_checks);
-        for (span, from, to) in checks.drain(..) {
+    pub fn check_casts(
+        &mut self,
+        source: VRef<Source>,
+        workspace: &mut Workspace,
+        checks: &mut Vec<CastCheck>,
+    ) {
+        for CastCheck { loc, from, to } in checks.drain(..) {
             if self.typec.contains_params(from) || self.typec.contains_params(to) {
                 workspace.push(snippet! {
                     err: "cast between generic types is not allowed";
@@ -28,8 +32,8 @@ impl Generator<'_> {
                         self.typec.display_ty(from, self.interner),
                         self.typec.display_ty(to, self.interner),
                     );
-                    (span, source) {
-                        err[span]: "happened here";
+                    (loc, source) {
+                        err[loc]: "happened here";
                     }
                 });
                 continue;
@@ -47,13 +51,12 @@ impl Generator<'_> {
                         self.typec.display_ty(to, self.interner),
                         to_layout.size,
                     );
-                    (span, source) {
-                        err[span]: "happened here";
+                    (loc, source) {
+                        err[loc]: "happened here";
                     }
                 });
             }
         }
-        self.typec.cast_checks = checks;
     }
 
     pub fn generate(
