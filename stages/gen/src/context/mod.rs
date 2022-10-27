@@ -1,4 +1,5 @@
 use std::{
+    alloc, iter,
     num::NonZeroU8,
     ops::{Deref, DerefMut},
 };
@@ -240,6 +241,140 @@ pub struct GenBlock {
 pub struct GenLayouts {
     pub mapping: Map<Ty, Layout>,
     pub offsets: BumpMap<Offset>,
+    pub ptr_ty: Type,
+}
+
+impl GenLayouts {
+    pub fn ty_layout(
+        &mut self,
+        ty: Ty,
+        params: &[Ty],
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Layout {
+        if let Some(&layout) = self.mapping.get(&ty) {
+            return layout;
+        }
+
+        let res = match ty {
+            Ty::Struct(s) => {
+                let Struct { fields, .. } = typec.structs[s];
+                let mut offsets = bumpvec![cap typec.fields[fields].len()];
+
+                let layouts = typec.fields[fields]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|field| self.ty_layout(field.ty, params, typec, interner));
+
+                let mut align = 1;
+                let mut size = 0;
+                for layout in layouts {
+                    align = align.max(layout.align.get());
+
+                    offsets.push(size);
+
+                    let padding = (layout.align.get() - (size as u8 & (layout.align.get() - 1)))
+                        & (layout.align.get() - 1);
+                    size += padding as u32;
+                    size += layout.size;
+                }
+
+                let (repr, on_stack) = self.repr_for_size(size);
+
+                Layout {
+                    repr,
+                    offsets: self.offsets.bump(offsets),
+                    align: align.try_into().unwrap(),
+                    size,
+                    on_stack,
+                }
+            }
+            Ty::Pointer(..) | Ty::Builtin(Builtin::Uint) => Layout {
+                repr: self.ptr_ty,
+                offsets: VSlice::empty(),
+                align: (self.ptr_ty.bytes() as u8).try_into().unwrap(),
+                size: self.ptr_ty.bytes() as u32,
+                on_stack: false,
+            },
+            Ty::Builtin(Builtin::Bool) => Layout {
+                repr: types::B1,
+                offsets: VSlice::empty(),
+                align: 1.try_into().unwrap(),
+                size: 1,
+                on_stack: false,
+            },
+            Ty::Builtin(b) => {
+                let size = b.size();
+                let (repr, on_stack) = self.repr_for_size(size);
+                Layout {
+                    size,
+                    offsets: VSlice::empty(),
+                    align: (size.max(1) as u8).try_into().unwrap(),
+                    repr,
+                    on_stack,
+                }
+            }
+            Ty::Param(index) => {
+                return self.ty_layout(params[index as usize], &[], typec, interner)
+            }
+            Ty::Instance(inst) => {
+                let Instance { base, args } = typec[inst];
+                // remap the instance parameters so we can compute the layout correctly
+                let params = typec.args[args]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|ty| typec.instantiate(ty, params, interner))
+                    .collect::<BumpVec<_>>();
+                self.ty_layout(base.as_ty(), &params, typec, interner)
+            }
+            Ty::Enum(ty) => {
+                let size = typec.get_enum_flag_ty(ty).map(|ty| ty.size());
+                let (base_size, base_align) = typec[typec[ty].variants]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|variant| self.ty_layout(variant.ty, params, typec, interner))
+                    .map(|layout| (layout.size, layout.align.get()))
+                    .max()
+                    .unwrap_or((0, 1));
+
+                let align = base_align.max(size.unwrap_or(0) as u8);
+                let size = size.map(|size| size.max(align as u32));
+                let offsets = iter::once(0).chain(size).collect::<BumpVec<_>>();
+                let size = base_size + size.unwrap_or(align as u32);
+
+                let (repr, on_stack) = self.repr_for_size(size);
+                Layout {
+                    size,
+                    offsets: self.offsets.bump(offsets),
+                    align: align.try_into().unwrap(),
+                    repr,
+                    on_stack,
+                }
+            }
+        };
+
+        if ty.as_generic().map_or(true, |g| !g.is_generic(typec)) {
+            self.mapping.insert(ty, res);
+        }
+
+        res
+    }
+
+    fn repr_for_size(&self, size: u32) -> (Type, bool) {
+        if size > self.ptr_ty.bytes() as u32 {
+            return (self.ptr_ty, true);
+        }
+
+        (
+            match size {
+                8.. => types::I64,
+                4.. => types::I32,
+                2.. => types::I16,
+                0.. => types::I8,
+            },
+            false,
+        )
+    }
 }
 
 pub type Offset = u32;
@@ -261,6 +396,10 @@ impl Layout {
         repr: types::INVALID,
         on_stack: false,
     };
+
+    pub fn rust_layout(&self) -> alloc::Layout {
+        alloc::Layout::from_size_align(self.size as usize, self.align.get() as usize).unwrap()
+    }
 }
 
 //////////////////////////////////
@@ -323,12 +462,6 @@ impl Deref for Isa {
 
     fn deref(&self) -> &Self::Target {
         &*self.inner
-    }
-}
-
-impl DerefMut for Isa {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.inner
     }
 }
 

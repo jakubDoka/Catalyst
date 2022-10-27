@@ -17,9 +17,11 @@ pub trait Scheduler {
 
     fn execute(&mut self, path: &Path) {
         let mut ctx = PackageLoaderCtx::default();
-        let mut res = self.loader();
-        res.reload(path, &mut ctx);
-        let order = mem::take(&mut res.resources.module_order);
+        let order = {
+            let mut res = self.loader();
+            res.reload(path, &mut ctx);
+            mem::take(&mut res.resources.module_order)
+        };
         self.init(path);
 
         let mut parse_state = ParsingState::new();
@@ -27,35 +29,42 @@ pub trait Scheduler {
         for module in order {
             self.before_parsing(module);
 
-            let res = self.loader();
-            let source = res.resources.modules[module].source;
-            let content = &res.resources.sources[source].content;
-            parse_state.start(content);
-            ParsingCtx::new(
-                content,
-                &mut parse_state,
-                &ast_data,
-                res.workspace,
-                res.interner,
-                source,
-            )
-            .parse::<UseAstSkip>();
-
-            loop {
+            {
                 let res = self.loader();
-                ast_data.clear();
                 let source = res.resources.modules[module].source;
                 let content = &res.resources.sources[source].content;
-                let items = ParsingCtx::new_with_macros(
+                parse_state.start(content);
+                ParsingCtx::new(
                     content,
                     &mut parse_state,
                     &ast_data,
                     res.workspace,
                     res.interner,
-                    res.token_macro_ctx,
                     source,
                 )
-                .parse::<GroupedItemsAst>();
+                .parse::<UseAstSkip>();
+            }
+
+            loop {
+                let items = {
+                    let res = self.loader();
+                    ast_data.clear();
+                    let source = res.resources.modules[module].source;
+                    let content = &res.resources.sources[source].content;
+                    // hu boy
+                    let mut p = ParsingCtx::new_with_macros(
+                        content,
+                        &mut parse_state,
+                        &ast_data,
+                        res.workspace,
+                        res.interner,
+                        res.token_macro_ctx.as_ref(),
+                        source,
+                    );
+                    let r = p.parse::<GroupedItemsAst>();
+                    drop(p);
+                    r
+                };
 
                 let Some(items) = items else {
                     break;

@@ -34,6 +34,10 @@ macro_rules! gen_water_drops {
                     assert_eq!(Self::$name, typec.$field.push(Default::default()));
                 )*
             }
+
+            pub fn is_water_drop(s: VRef<Self>) -> bool {
+                s.index() < Self::WATER_DROPS.len()
+            }
         }
 
         impl Humid for $target {

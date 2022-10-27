@@ -61,17 +61,21 @@ impl TyChecker<'_> {
         offset: usize,
     ) {
         let Impl {
+            generics,
             key: ImplKey { ty, spec },
             span: Some(span),
             ..
         } = self.typec.impls[impl_ref] else {
             todo!();
         };
+
         let spec_base = spec.base(self.typec);
-        if spec_base == SpecBase::TOKEN_MACRO {
-            self.typec.module_items[self.module]
-                .token_macros
-                .push(impl_ref);
+        if SpecBase::is_macro(spec_base) {
+            if !generics.is_empty() {
+                todo!()
+            }
+
+            self.typec.module_items[self.module].macros.push(impl_ref);
         }
         let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
@@ -1876,20 +1880,6 @@ impl TyChecker<'_> {
         }
     }
 }
-
-// fn snake_case(input: &str, output: &mut String) -> Option<()> {
-//     let mut chars = input.chars();
-//     output.push(chars.next()?.to_ascii_lowercase());
-
-//     for c in chars {
-//         if c.is_uppercase() {
-//             output.push('_');
-//         }
-//         output.push(c.to_ascii_lowercase());
-//     }
-
-//     Some(())
-// }
 
 pub type Inference = Option<Ty>;
 

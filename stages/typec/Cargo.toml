@@ -16,3 +16,4 @@ typec-t = { path = "../../types/typec-t" }
 parsing-t = { path = "../../types/parsing-t" }
 packaging-t = { path = "../../types/packaging-t" }
 lexing-t = { path = "../../types/lexing-t" }
+lexing = { path = "../../stages/lexing" }

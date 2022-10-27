@@ -16,7 +16,7 @@ pub use {
         GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, GenValue, Isa,
         IsaCreationError, Layout, Offset,
     },
-    jit_context::{JitContext, JitRelocError},
+    jit_context::{JitContext, JitRelocError, TokenMacroOwnedSpec},
     state_gen::Generator,
 };
 

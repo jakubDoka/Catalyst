@@ -9,7 +9,8 @@ file "stages/packaging/src/state_gen.rs" {
         mut Workspace
         mut Interner
         mut PackageGraph
-        owned token_macro_ctx: `Option<TokenMacroCtx<'a0>>` = "None"
+        unique lt: `()` = "&()"
+        owned token_macro_ctx: `Option<TokenMacroCtx<'a1>>` = "None"
     }
 }
 

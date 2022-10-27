@@ -1,34 +1,36 @@
 use std::alloc;
 use std::{
+    alloc::Layout,
     ffi::CStr,
     ptr::{slice_from_raw_parts_mut, NonNull},
 };
 
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
+use lexing::{ctl_lexer_next, TokenMacroSpec};
 use storage::*;
 use typec_t::{Func, FuncVisibility, Typec};
 
-use crate::{context::Isa, CompiledFunc, Gen, GenItemName, GenReloc};
+use crate::{CompiledFunc, Gen, GenItemName, GenReloc};
+
+pub const EXPOSED_FUNCS: &[(&str, *const u8)] = &[("ctl_lexer_next", ctl_lexer_next as _)];
 
 pub struct JitContext {
     exposed_funcs: Map<&'static str, *const u8>,
     functions: ShadowMap<CompiledFunc, Option<JitFunction>>,
     resources: JitResources,
     runtime_lookup: RuntimeFunctionLookup,
-    pub isa: Isa,
 }
 
 impl JitContext {
-    pub fn new(
-        isa: Isa,
-        exposed_funcs: impl IntoIterator<Item = (&'static str, *const u8)>,
-    ) -> Self {
+    pub fn new(exposed_funcs: impl IntoIterator<Item = (&'static str, *const u8)>) -> Self {
         Self {
-            exposed_funcs: exposed_funcs.into_iter().collect(),
+            exposed_funcs: exposed_funcs
+                .into_iter()
+                .chain(EXPOSED_FUNCS.iter().copied())
+                .collect(),
             functions: ShadowMap::new(),
             resources: JitResources::new(),
             runtime_lookup: RuntimeFunctionLookup::new(),
-            isa,
         }
     }
 
@@ -349,6 +351,54 @@ impl JitResources {
 impl Default for JitResources {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+macro_rules! gen_macro_structs {
+    (
+        $(
+            $backing:ident $name:ident $func:ident {
+                $($fn_name:ident)+
+            }
+        )*
+    ) => {
+        $(
+            #[derive(Clone, Copy)]
+            pub struct $name {
+                pub layout: Layout,
+                pub name: VRef<str>,
+                $(pub $fn_name: VRef<CompiledFunc>),+
+            }
+
+            impl $name {
+                pub fn new(layout: Layout, name: VRef<str>, mut fns: impl Iterator<Item = VRef<CompiledFunc>>) -> Option<Self> {
+                    Some(Self {
+                        layout,
+                        name,
+                        $($fn_name: fns.next()?),+
+                    })
+                }
+            }
+        )*
+
+        impl JitContext {
+            $(
+                pub fn $func(&self, spec: &$name) -> Option<$backing> {
+                    unsafe {
+                        Some($backing {
+                            layout: spec.layout,
+                            $($fn_name: self.get_function(spec.$fn_name)?),+
+                        })
+                    }
+                }
+            )+
+        }
+    };
+}
+
+gen_macro_structs! {
+    TokenMacroSpec TokenMacroOwnedSpec token_macro {
+        new next drop
     }
 }
 

@@ -78,6 +78,12 @@ impl Arena {
         unsafe { mem::transmute(slice) }
     }
 
+    #[allow(clippy::mut_from_ref)]
+    pub fn alloc_byte_layout(&self, layout: Layout) -> &mut [u8] {
+        let mut ptr = self.allocator.alloc(layout);
+        unsafe { ptr.as_mut() }
+    }
+
     pub fn clear(&mut self) {
         // unique access means there is no valid reference eto this
         unsafe { self.allocator.clear() };

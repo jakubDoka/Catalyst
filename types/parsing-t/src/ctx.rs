@@ -15,8 +15,8 @@ pub struct ParsingCtx<'ctx, 'ast: 'ctx, 'macros: 'ctx> {
     pub arena: &'ast AstData,
     pub workspace: &'ctx mut Workspace,
     pub interner: &'ctx mut Interner,
-    pub token_macro_ctx: Option<&'ctx mut TokenMacroCtx<'macros>>,
-    pub token_macro_stack: BumpVec<TokenMacro<'macros>>,
+    pub token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
+    pub token_macro_stack: BumpVec<TokenMacro<'macros, 'ast>>,
     pub source: VRef<Source>,
 }
 
@@ -47,7 +47,7 @@ impl<'ctx, 'ast, 'macros> ParsingCtx<'ctx, 'ast, 'macros> {
         ast_data: &'ast AstData,
         workspace: &'ctx mut Workspace,
         interner: &'ctx mut Interner,
-        token_macro_ctx: Option<&'ctx mut TokenMacroCtx<'macros>>,
+        token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
         source: VRef<Source>,
     ) -> Self {
         Self {
@@ -151,14 +151,12 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
             &self.lexer.inner_span_str(self.state.next.span)[..self.state.next.span.len() - 1];
         let macro_name_ident = self.interner.intern(macro_name);
 
-        let Some(mut token_macro) = token_macro_ctx.alloc(macro_name_ident) else {
+        let Some(spec) = token_macro_ctx.get_macro(macro_name_ident) else {
             return;
         };
 
-        if !token_macro.start(&mut self.lexer) {
-            token_macro_ctx.free(token_macro);
-            return;
-        }
+        let data = self.arena.alloc_byte_layout(spec.layout);
+        let token_macro = TokenMacro::new(data, spec, &mut self.lexer);
 
         self.token_macro_stack.push(token_macro);
 
@@ -171,7 +169,6 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         };
 
         let Some(token) = token_macro.next(&mut self.lexer) else {
-            self.token_macro_ctx.as_mut().unwrap().free(token_macro);
             return self.lexer.next_tok();
         };
 

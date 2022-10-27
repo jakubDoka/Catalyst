@@ -86,8 +86,7 @@ impl Generator<'_> {
 
         let params = params.collect::<BumpVec<_>>();
 
-        let (signature, struct_ret) =
-            self.load_signature(signature, &params, builder.system_cc(), builder.ptr_ty());
+        let (signature, struct_ret) = self.load_signature(signature, &params, builder.system_cc());
         let signature = builder.import_signature(signature);
 
         (
@@ -105,10 +104,9 @@ impl Generator<'_> {
         signature: Signature,
         params: &[Ty],
         system_cc: CallConv,
-        ptr_ty: Type,
     ) -> (ir::Signature, bool) {
         let mut sig = ir::Signature::new(CallConv::Fast);
-        let struct_ret = self.populate_signature(signature, params, &mut sig, system_cc, ptr_ty);
+        let struct_ret = self.populate_signature(signature, params, &mut sig, system_cc);
         (sig, struct_ret)
     }
 
@@ -118,17 +116,17 @@ impl Generator<'_> {
         params: &[Ty],
         target: &mut ir::Signature,
         system_cc: CallConv,
-        ptr_ty: Type,
     ) -> bool {
         let cc = self.cc(signature.cc, system_cc);
         target.clear(cc);
 
         let instance = self.typec.instantiate(signature.ret, params, self.interner);
-        let on_stack = self.ty_layout(instance, ptr_ty).on_stack;
+        let on_stack = self.ty_layout(instance).on_stack;
         if on_stack {
-            target
-                .params
-                .push(AbiParam::special(ptr_ty, ArgumentPurpose::StructReturn));
+            target.params.push(AbiParam::special(
+                self.gen_layouts.ptr_ty,
+                ArgumentPurpose::StructReturn,
+            ));
         }
 
         let args = self.typec.args[signature.args]
@@ -136,13 +134,13 @@ impl Generator<'_> {
             .into_iter()
             .map(|ty| {
                 let instance = self.typec.instantiate(ty, params, self.interner);
-                self.ty_repr(instance, ptr_ty)
+                self.ty_repr(instance)
             })
             .map(AbiParam::new);
         target.params.extend(args);
 
         if instance != Ty::UNIT {
-            let ret = self.ty_repr(instance, ptr_ty);
+            let ret = self.ty_repr(instance);
             let ret = if on_stack {
                 AbiParam::special(ret, ArgumentPurpose::StructReturn)
             } else {

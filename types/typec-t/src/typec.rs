@@ -867,5 +867,5 @@ pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRe
 #[derive(Default, Clone)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
-    pub token_macros: Vec<VRef<Impl>>,
+    pub macros: Vec<VRef<Impl>>,
 }

@@ -112,6 +112,12 @@ pub struct SpecBase {
     pub loc: Option<Loc>,
 }
 
+impl SpecBase {
+    pub fn is_macro(s: VRef<Self>) -> bool {
+        s.index() <= Self::TOKEN_MACRO.index()
+    }
+}
+
 gen_water_drops! {
     SpecBase
     base_specs

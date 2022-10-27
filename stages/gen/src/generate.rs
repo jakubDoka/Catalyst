@@ -17,7 +17,7 @@ mod function_loading;
 mod size_calc;
 
 impl Generator<'_> {
-    pub fn check_casts(&mut self, source: VRef<Source>, workspace: &mut Workspace, ptr_ty: Type) {
+    pub fn check_casts(&mut self, source: VRef<Source>, workspace: &mut Workspace) {
         let mut checks = mem::take(&mut self.typec.cast_checks);
         for (span, from, to) in checks.drain(..) {
             if self.typec.contains_params(from) || self.typec.contains_params(to) {
@@ -35,8 +35,8 @@ impl Generator<'_> {
                 continue;
             }
 
-            let from_layout = self.ty_layout(from, ptr_ty);
-            let to_layout = self.ty_layout(to, ptr_ty);
+            let from_layout = self.ty_layout(from);
+            let to_layout = self.ty_layout(to);
             if from_layout.size != to_layout.size {
                 workspace.push(snippet! {
                     err: "cast size mismatch";
@@ -68,13 +68,8 @@ impl Generator<'_> {
 
         let system_cc = builder.isa.default_call_conv();
         let ptr_ty = builder.isa.pointer_ty;
-        let has_s_ret = self.populate_signature(
-            signature,
-            params,
-            &mut builder.func.signature,
-            system_cc,
-            ptr_ty,
-        );
+        let has_s_ret =
+            self.populate_signature(signature, params, &mut builder.func.signature, system_cc);
 
         let entry_block = builder.create_block();
         if has_s_ret {
@@ -110,7 +105,7 @@ impl Generator<'_> {
         builder.switch_to_block(ir_block);
 
         for &arg in &builder.body.value_args[args] {
-            let layout = self.ty_layout(builder.body.value_ty(arg), builder.ptr_ty());
+            let layout = self.ty_layout(builder.body.value_ty(arg));
             if let val @ GenValue { computed: None, .. } = &mut self.gen_resources.values[arg] {
                 *val = GenValue {
                     computed: Some(ComputedValue::Value(
@@ -136,12 +131,12 @@ impl Generator<'_> {
     fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder) {
         match inst {
             InstMir::Int(value, ret) => {
-                let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
+                let ty = self.ty_repr(builder.body.value_ty(ret));
                 let value = builder.ins().iconst(ty, value);
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Bool(value, ret) => {
-                let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
+                let ty = self.ty_repr(builder.body.value_ty(ret));
                 let value = builder.ins().bconst(ty, value);
                 self.save_value(ret, value, 0, false, builder);
             }
@@ -189,9 +184,7 @@ impl Generator<'_> {
                 let val = val
                     .filter(|&val| {
                         !self.gen_resources.values[val].must_load
-                            || !self
-                                .ty_layout(builder.body.value_ty(val), builder.ptr_ty())
-                                .on_stack
+                            || !self.ty_layout(builder.body.value_ty(val)).on_stack
                     })
                     .map(|val| {
                         let value = self.load_value(val, builder);
@@ -244,7 +237,7 @@ impl Generator<'_> {
             must_load,
         } = self.gen_resources.values[header];
         let header_ty = builder.body.value_ty(header);
-        let offsets = self.ty_layout(header_ty, builder.ptr_ty()).offsets;
+        let offsets = self.ty_layout(header_ty).offsets;
         let field_offset = self.gen_layouts.offsets[offsets][field as usize];
         self.gen_resources.values[ret] = GenValue {
             computed,
@@ -260,7 +253,7 @@ impl Generator<'_> {
         _needs_instance: bool,
         builder: &mut GenBuilder,
     ) {
-        let layout = self.ty_layout(builder.body.value_ty(ret), builder.ptr_ty());
+        let layout = self.ty_layout(builder.body.value_ty(ret));
 
         self.ensure_target(ret, None, builder);
 
@@ -304,7 +297,7 @@ impl Generator<'_> {
         } else {
             let value = self.gen_resources.func_constants[id]
                 .expect("Constant should be computed before function compilation.");
-            let ty = self.ty_repr(builder.body.value_ty(ret), builder.ptr_ty());
+            let ty = self.ty_repr(builder.body.value_ty(ret));
 
             let value = match value {
                 GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
@@ -401,7 +394,7 @@ impl Generator<'_> {
                 self.load_value(ret, builder)
             } else {
                 let ptr_ty = builder.ptr_ty();
-                let layout = self.ty_layout(builder.body.value_ty(ret), ptr_ty);
+                let layout = self.ty_layout(builder.body.value_ty(ret));
                 let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                     kind: StackSlotKind::ExplicitSlot,
                     size: layout.size as u32,
@@ -440,7 +433,7 @@ impl Generator<'_> {
 
     fn sizeof(&mut self, ty: Ty, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
         let ptr_ty = builder.ptr_ty();
-        let ty = self.ty_layout(ty, ptr_ty);
+        let ty = self.ty_layout(ty);
         let value = builder.ins().iconst(ptr_ty, ty.size as i64);
         self.save_value(ret.unwrap(), value, 0, false, builder);
     }
@@ -512,7 +505,7 @@ impl Generator<'_> {
             must_load,
         } = self.gen_resources.values[target];
         let ptr_ty = builder.ptr_ty();
-        let layout = self.ty_layout(builder.body.value_ty(target), ptr_ty);
+        let layout = self.ty_layout(builder.body.value_ty(target));
         let value = match computed.expect("value must be computed by now") {
             ComputedValue::Value(value) => value,
             ComputedValue::StackSlot(ss) => {
@@ -564,7 +557,7 @@ impl Generator<'_> {
         let source_value = source_value.into();
 
         let ptr_ty = builder.ptr_ty();
-        let layout = self.ty_layout(builder.body.value_ty(target), builder.ptr_ty());
+        let layout = self.ty_layout(builder.body.value_ty(target));
 
         let GenValue {
             computed,
@@ -697,7 +690,7 @@ impl Generator<'_> {
 
         let referenced = builder.body.is_referenced(target);
 
-        let layout = self.ty_layout(builder.body.value_ty(target), builder.ptr_ty());
+        let layout = self.ty_layout(builder.body.value_ty(target));
         let must_load = layout.on_stack || referenced;
         let (computed, used) = if must_load {
             let ss = builder.create_sized_stack_slot(StackSlotData {

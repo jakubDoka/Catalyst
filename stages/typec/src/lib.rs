@@ -193,7 +193,7 @@ mod util {
         packages: &Resources,
         typec: &Typec,
         interner: &mut Interner,
-    ) {
+    ) -> BumpVec<VRef<Impl>> {
         scope.clear();
 
         for ty in Builtin::ALL {
@@ -205,6 +205,7 @@ mod util {
             scope.insert_builtin(id, func);
         }
 
+        let mut token_macros = bumpvec![];
         let mod_ent = &packages.modules[module];
         for dep in &packages.module_deps[mod_ent.deps] {
             let items = &typec.module_items[dep.ptr];
@@ -212,7 +213,9 @@ mod util {
             for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
             }
+            token_macros.extend(items.macros.iter().copied());
         }
+        token_macros
     }
 
     use crate::TyChecker;

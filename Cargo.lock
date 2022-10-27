@@ -266,6 +266,7 @@ dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
  "diags",
+ "lexing",
  "lexing-t",
  "mir-t",
  "object",
@@ -863,6 +864,7 @@ name = "typec"
 version = "0.1.0"
 dependencies = [
  "diags",
+ "lexing",
  "lexing-t",
  "packaging-t",
  "parsing",
