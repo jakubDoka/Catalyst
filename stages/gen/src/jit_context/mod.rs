@@ -6,11 +6,11 @@ use std::{
 };
 
 use cranelift_codegen::{binemit::Reloc, ir::LibCall};
-use lexing::{ctl_lexer_next, TokenMacroSpec};
+use lexing::*;
 use storage::*;
-use typec_t::{Func, FuncVisibility, Typec};
+use typec_t::*;
 
-use crate::{CompiledFunc, Gen, GenItemName, GenReloc};
+use crate::*;
 
 pub const EXPOSED_FUNCS: &[(&str, *const u8)] = &[("ctl_lexer_next", ctl_lexer_next as _)];
 
@@ -77,10 +77,11 @@ impl JitContext {
             .map(|func| {
                 let &CompiledFunc {
                     func: parent_func,
-                    bytecode: ref body,
-                    alignment,
+                    inner: Some(ref inner),
                     ..
-                } = &gen.compiled_funcs[func];
+                } = &gen.compiled_funcs[func] else {
+                    return Err(JitRelocError::MissingBytecode(func));
+                };
                 let Func {
                     visibility, name, ..
                 } = typec.funcs[parent_func];
@@ -95,8 +96,8 @@ impl JitContext {
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
                 }
 
-                let layout = alloc::Layout::for_value(body.as_slice())
-                    .align_to(alignment as usize)
+                let layout = alloc::Layout::for_value(inner.bytecode.as_slice())
+                    .align_to(inner.alignment as usize)
                     .unwrap();
                 let mut code = if temp {
                     self.resources.temp_executable.alloc(layout)
@@ -106,9 +107,7 @@ impl JitContext {
 
                 // SAFETY: `code` has the same layout and only we own it.
                 unsafe {
-                    code.as_mut()
-                        .as_mut_ptr()
-                        .copy_from_nonoverlapping(body.as_ptr(), body.len());
+                    code.as_mut().copy_from_slice(inner.bytecode.as_slice());
                 }
 
                 Ok((func, code))
@@ -124,7 +123,7 @@ impl JitContext {
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },
-                &func_ent.relocs,
+                func_ent.inner.as_ref().map_or(&[], |i| &i.relocs),
                 |name| match name {
                     GenItemName::Func(func) => {
                         self.functions[func].map(|code| unsafe { code.code.as_ref().as_ptr() })
@@ -408,6 +407,7 @@ pub enum JitRelocError {
     OffsetOverflow,
     OffsetOutOfBounds,
     UnsupportedReloc(Reloc),
+    MissingBytecode(VRef<CompiledFunc>),
 }
 
 pub struct RuntimeFunctionLookup {

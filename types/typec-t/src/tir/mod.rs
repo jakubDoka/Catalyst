@@ -10,6 +10,14 @@ pub struct TirBuilderCtx {
     pub vars: Vec<VarHeaderTir>,
     pub generics: Vec<VSlice<Spec>>,
     pub cast_checks: Vec<CastCheck>,
+    pub macros: Vec<MacroCompileRequest>,
+}
+
+#[derive(Clone, Copy)]
+pub struct MacroCompileRequest {
+    pub name: VRef<str>,
+    pub ty: Ty,
+    pub r#impl: VRef<Impl>,
 }
 
 pub struct CastCheck {

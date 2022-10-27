@@ -108,7 +108,9 @@ impl ObjectContext {
 
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
-            let ent = &gen.compiled_funcs[func];
+            let Some(ent) = &gen.compiled_funcs[func].inner else {
+                return Err(ObjectRelocationError::MissingFunctionBody(func));
+            };
 
             *offset = self.object.add_symbol_data(
                 symbol,
@@ -120,7 +122,9 @@ impl ObjectContext {
 
         // add relocations
         for (func, _, offset, ..) in funcs {
-            let ent = &gen.compiled_funcs[func];
+            let Some(ent) = &gen.compiled_funcs[func].inner else {
+                unreachable!();
+            };
             for &record in &ent.relocs {
                 let reloc = self.process_reloc(record, offset)?;
                 self.object
@@ -239,6 +243,7 @@ pub enum ObjectRelocationError {
     Unsupported(Reloc, BinaryFormat, BinaryFormat),
     MissingSymbol(VRef<CompiledFunc>),
     AddRelocation(object::write::Error),
+    MissingFunctionBody(VRef<CompiledFunc>),
 }
 
 impl Display for ObjectRelocationError {
@@ -254,6 +259,9 @@ impl Display for ObjectRelocationError {
             }
             ObjectRelocationError::AddRelocation(err) => {
                 write!(f, "failed to add relocation: {}", err)
+            }
+            ObjectRelocationError::MissingFunctionBody(func) => {
+                write!(f, "missing function body for function {:?}", func)
             }
         }
     }

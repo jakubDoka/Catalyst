@@ -39,46 +39,6 @@ pub struct FuncConstMir {
     pub block: VRef<BlockMir>,
 }
 
-#[derive(Default)]
-pub struct MirTypeSwapper {
-    swapped: Vec<Ty>,
-}
-
-impl MirTypeSwapper {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn swap(
-        &mut self,
-        func: &mut FuncMir,
-        params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) {
-        if params.is_empty() {
-            return;
-        }
-
-        for &mir_ty in &func.inner.ty_params[func.generics] {
-            let ty = func.dependant_types[mir_ty].ty;
-            let new_ty = typec.instantiate(ty, params, interner);
-            func.dependant_types[mir_ty].ty = new_ty;
-            self.swapped.push(ty);
-        }
-    }
-
-    pub fn swap_back(&mut self, func: &mut FuncMir) {
-        for (ty, &mir_ty) in self
-            .swapped
-            .drain(..)
-            .zip(&func.inner.ty_params[func.generics])
-        {
-            func.dependant_types[mir_ty].ty = ty;
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct FuncMirInner {
     pub ret: VRef<ValueMir>,

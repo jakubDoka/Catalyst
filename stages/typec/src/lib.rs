@@ -7,6 +7,7 @@
 #![feature(never_type)]
 #![feature(iter_intersperse)]
 #![feature(try_blocks)]
+#![feature(result_option_inspect)]
 #![feature(if_let_guard)]
 
 const FUNC: &str = "function";
@@ -201,7 +202,7 @@ mod util {
         packages: &Resources,
         typec: &Typec,
         interner: &mut Interner,
-    ) -> BumpVec<VRef<Impl>> {
+    ) -> BumpVec<MacroCompileRequest> {
         scope.clear();
 
         for ty in Builtin::ALL {
@@ -220,8 +221,13 @@ mod util {
             scope.push(dep.name, dep.ptr, dep.name_span);
             for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
+                if let ScopeItem::Ty(ty) = item.item
+                    && let Some(&r#impl) = typec.macros.get(&ty)
+                    && let MacroImpl { name, r#impl: Some(r#impl) } = r#impl
+                {
+                    token_macros.push(MacroCompileRequest { name, ty, r#impl });
+                }
             }
-            token_macros.extend(items.macros.iter().copied());
         }
         token_macros
     }

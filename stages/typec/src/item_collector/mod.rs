@@ -262,7 +262,12 @@ impl TyChecker<'_> {
 
     pub fn collect_struct(
         &mut self,
-        StructAst { vis, name, .. }: StructAst,
+        StructAst {
+            vis,
+            name,
+            generics,
+            ..
+        }: StructAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<Struct>> {
         let loc = self.humid_item_loc(name, Ty::Struct, attributes, vis)?;
@@ -272,11 +277,17 @@ impl TyChecker<'_> {
             ..default()
         };
         self.insert_humid_item(s, attributes)
+            .inspect(|&ty| self.handle_macro_attr(attributes, Ty::Struct(ty), !generics.is_empty()))
     }
 
     pub fn collect_enum(
         &mut self,
-        EnumAst { vis, name, .. }: EnumAst,
+        EnumAst {
+            vis,
+            name,
+            generics,
+            ..
+        }: EnumAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<Enum>> {
         let loc = self.humid_item_loc(name, Ty::Enum, attributes, vis)?;
@@ -286,6 +297,7 @@ impl TyChecker<'_> {
             ..default()
         };
         self.insert_humid_item(e, attributes)
+            .inspect(|&ty| self.handle_macro_attr(attributes, Ty::Enum(ty), !generics.is_empty()))
     }
 
     pub fn humid_item_loc<T: Humid>(
@@ -324,18 +336,37 @@ impl TyChecker<'_> {
         item: I,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<VRef<I>> {
+        let is_drop = attributes
+            .iter()
+            .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)));
+        Some(if is_drop {
+            let name = &self.interner[item.name()];
+            let Some(id) = I::lookup_water_drop(name) else {
+                todo!()
+            };
+            I::storage(self.typec)[id] = item;
+            id
+        } else {
+            I::storage(self.typec).push(item)
+        })
+    }
+
+    fn handle_macro_attr(&mut self, attributes: &[TopLevelAttributeAst], ty: Ty, is_generic: bool) {
         for attr in attributes {
-            if let TopLevelAttrKindAst::WaterDrop(_) = attr.value.value {
-                let name = &self.interner[item.name()];
-                let Some(id) = I::lookup_water_drop(name) else {
+            if let TopLevelAttrKindAst::Macro(.., name) = attr.value.value {
+                if is_generic {
                     todo!()
-                };
-                I::storage(self.typec)[id] = item;
-                return Some(id);
+                }
+                self.typec.macros.insert(
+                    ty,
+                    MacroImpl {
+                        name: name.ident,
+                        r#impl: None,
+                    },
+                );
+                break;
             }
         }
-
-        Some(I::storage(self.typec).push(item))
     }
 
     gen_error_fns! {

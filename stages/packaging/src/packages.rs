@@ -120,6 +120,8 @@ impl PackageLoader<'_, '_> {
         self.resources
             .module_order
             .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i as usize) }));
+        self.resources.mark_changed();
+
         self.resources
             .module_order
             .iter()
@@ -447,6 +449,7 @@ impl PackageLoader<'_, '_> {
             && let Ok(last_modified) = last_modified
             && self.resources.sources[source].last_modified == last_modified
         {
+            self.resources.sources[source].changed = false;
             return Some(source);
         }
 
@@ -463,6 +466,7 @@ impl PackageLoader<'_, '_> {
             last_modified,
             line_mapping: LineMapping::new(&content),
             content,
+            changed: true,
         };
 
         Some(match ctx.sources.entry(path) {

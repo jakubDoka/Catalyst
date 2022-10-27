@@ -2,6 +2,7 @@ use std::{
     alloc, iter,
     num::NonZeroU8,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 use cranelift_codegen::{
@@ -61,10 +62,12 @@ impl Gen {
             .collect::<Result<Vec<_>, _>>()?;
 
         let func = CompiledFunc {
-            signature: ctx.func.signature.clone(),
-            bytecode: cc.buffer.data().to_vec(),
-            alignment: cc.alignment as u64,
-            relocs,
+            inner: Some(Arc::new(CompiledFuncInner {
+                signature: ctx.func.signature.clone(),
+                bytecode: cc.buffer.data().to_vec(),
+                alignment: cc.alignment as u64,
+                relocs,
+            })),
             ..self.compiled_funcs[id]
         };
 
@@ -76,6 +79,10 @@ impl Gen {
 
 pub struct CompiledFunc {
     pub func: VRef<Func>,
+    pub inner: Option<Arc<CompiledFuncInner>>,
+}
+
+pub struct CompiledFuncInner {
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
     pub alignment: u64,
@@ -83,43 +90,9 @@ pub struct CompiledFunc {
 }
 
 impl CompiledFunc {
-    gen_increasing_constants! {
-        MEMMOVE
-        MEMSET
-        MEMCPY
-    }
-
     pub fn new(func: VRef<Func>) -> Self {
-        Self {
-            func,
-            signature: ir::Signature::new(CallConv::Fast),
-            bytecode: Vec::new(),
-            alignment: 0,
-            relocs: Vec::new(),
-        }
+        Self { func, inner: None }
     }
-
-    // pub fn lib_call_to_func(lib_call: ir::LibCall) -> VRef<Self> {
-    //     match lib_call {
-    //         ir::LibCall::Probestack => todo!(),
-    //         ir::LibCall::CeilF32 => todo!(),
-    //         ir::LibCall::CeilF64 => todo!(),
-    //         ir::LibCall::FloorF32 => todo!(),
-    //         ir::LibCall::FloorF64 => todo!(),
-    //         ir::LibCall::TruncF32 => todo!(),
-    //         ir::LibCall::TruncF64 => todo!(),
-    //         ir::LibCall::NearestF32 => todo!(),
-    //         ir::LibCall::NearestF64 => todo!(),
-    //         ir::LibCall::FmaF32 => todo!(),
-    //         ir::LibCall::FmaF64 => todo!(),
-    //         ir::LibCall::Memcpy => CompiledFunc::MEMCPY,
-    //         ir::LibCall::Memset => CompiledFunc::MEMSET,
-    //         ir::LibCall::Memmove => CompiledFunc::MEMMOVE,
-    //         ir::LibCall::Memcmp => todo!(),
-    //         ir::LibCall::ElfTlsGetAddr => todo!(),
-    //         ir::LibCall::ElfTlsGetOffset => todo!(),
-    //     }
-    // }
 }
 
 #[derive(Debug)]
@@ -488,24 +461,31 @@ impl std::fmt::Display for IsaCreationError {
 
 pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
-    pub body: &'a FuncMir,
+    pub body: &'a FuncMirInner,
     pub struct_ret: Option<ir::Value>,
+    pub dependant_types: &'a Vec<MirTy>,
     inner: FunctionBuilder<'b>,
 }
 
 impl<'a, 'b> GenBuilder<'a, 'b> {
     pub fn new(
         isa: &'a Isa,
-        body: &'a FuncMir,
+        body: &'a FuncMirInner,
         func: &'b mut ir::Function,
+        dependant_types: &'a Vec<MirTy>,
         ctx: &'b mut FunctionBuilderContext,
     ) -> Self {
         Self {
             isa,
             body,
             struct_ret: None,
+            dependant_types,
             inner: FunctionBuilder::new(func, ctx),
         }
+    }
+
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
+        self.dependant_types[self.body.values[value].ty.index()].ty
     }
 
     pub fn ptr_ty(&self) -> Type {

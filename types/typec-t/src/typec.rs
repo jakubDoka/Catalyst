@@ -879,5 +879,4 @@ pub struct MacroImpl {
 #[derive(Default, Clone)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
-    pub macros: Vec<VRef<Impl>>,
 }

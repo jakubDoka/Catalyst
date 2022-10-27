@@ -253,6 +253,7 @@ pub mod items {
                     last_modified: SystemTime::UNIX_EPOCH,
                     line_mapping: LineMapping::new(&c),
                     content: c.to_string(),
+                    changed: true,
                 });
 
                 let (res, c) = formatter(fmt, c, source);

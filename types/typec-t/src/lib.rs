@@ -65,8 +65,8 @@ pub use {
     scope::{ModuleItem, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
         AssignTir, CallTir, CallableTir, CastCheck, FieldTir, IfBranchTir, IfTir, LetTir,
-        MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirFrame, TirKind,
-        TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
+        MacroCompileRequest, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx,
+        TirFrame, TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
@@ -75,7 +75,9 @@ pub use {
         SpecInstance, SpecInstances, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup, Variant,
         Variants,
     },
-    typec::{lookup_water_drop, sorted_water_drops, Loc, Typec},
+    typec::{
+        lookup_water_drop, sorted_water_drops, Loc, MacroImpl, ModuleItems, SpecCmpError, Typec,
+    },
 };
 
 pub type TyGraph = graphs::ProjectedCycleDetector<Ty>;

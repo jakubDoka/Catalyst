@@ -63,7 +63,6 @@ impl TyChecker<'_> {
         offset: usize,
     ) {
         let Impl {
-            generics,
             key: ImplKey { ty, spec },
             span: Some(span),
             ..
@@ -72,12 +71,13 @@ impl TyChecker<'_> {
         };
 
         let spec_base = spec.base(self.typec);
-        if SpecBase::is_macro(spec_base) {
-            if !generics.is_empty() {
-                todo!()
-            }
-
-            self.typec.module_items[self.module].macros.push(impl_ref);
+        if SpecBase::is_macro(spec_base) && let Some(macro_impl) = self.typec.macros.get_mut(&ty) {
+            macro_impl.r#impl = Some(impl_ref);
+            ctx.macros.push(MacroCompileRequest {
+                name: macro_impl.name,
+                ty,
+                r#impl: impl_ref,
+            });
         }
         let spec_ent = self.typec[spec_base];
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();

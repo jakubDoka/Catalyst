@@ -37,6 +37,16 @@ impl Resources {
         self.module_deps.clear();
         self.module_order.clear();
     }
+
+    pub fn mark_changed(&mut self) {
+        for &elem in &self.module_order {
+            let Module { deps, source, .. } = self.modules[elem];
+            self.sources[source].changed = self.sources[source].changed
+                || self.module_deps[deps]
+                    .iter()
+                    .any(|&dep| self.sources[self.modules[dep.ptr].source].changed);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -45,6 +55,7 @@ pub struct Source {
     pub last_modified: SystemTime,
     pub content: String,
     pub line_mapping: LineMapping,
+    pub changed: bool,
 }
 
 impl Source {
