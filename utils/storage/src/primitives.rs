@@ -221,3 +221,15 @@ impl<T> Default for VSlice<T> {
 }
 
 gen_derives!(VSlice);
+
+impl<T> Serialize for VSlice<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for VSlice<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u32::deserialize(deserializer).map(|x| unsafe { Self::new(x as usize) })
+    }
+}

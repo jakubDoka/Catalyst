@@ -48,7 +48,7 @@ impl Scheduler {
             .take(num_workers)
             .collect::<Vec<_>>();
 
-        thread::scope(|s| {})
+        thread::scope(|s| {});
     }
 }
 

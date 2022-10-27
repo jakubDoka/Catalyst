@@ -1,10 +1,11 @@
 use crate::*;
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 pub type Funcs = PushMap<Func>;
 pub type FuncSlices = BumpMap<VRef<Func>>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Func {
     pub generics: Generics,
     pub owner: Option<Ty>,
@@ -31,13 +32,14 @@ gen_water_drops! {
 }
 
 bitflags! {
+    #[Deserialize, Serialize]
     FuncFlags: u8 {
         ENTRY
         BUILTIN
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum FuncVisibility {
     #[default]
     Local,
@@ -45,7 +47,7 @@ pub enum FuncVisibility {
     Imported,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Signature {
     pub cc: Option<VRef<str>>,
     pub args: VSlice<Ty>,

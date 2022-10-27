@@ -5,6 +5,7 @@ use lexing::*;
 use lexing_t::*;
 use packaging_t::Source;
 
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 use crate::*;
@@ -378,7 +379,7 @@ impl ParsingState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Vis {
     Pub,
     None,

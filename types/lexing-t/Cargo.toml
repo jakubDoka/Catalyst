@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 
 storage = { path = "../../utils/storage" }
-
+serde = { version = "1.0.138", features = ["derive"] }

@@ -1,8 +1,10 @@
 use std::ops::{Bound, Range, RangeBounds};
 
+use serde::{Deserialize, Serialize};
+
 /// Identical to [`std::ops::Range`]<[`u32`]> but a lot more ergonomic
 /// since it is defined here.
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Span {
     pub start: u32,

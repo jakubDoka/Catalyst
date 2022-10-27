@@ -3,6 +3,7 @@ use std::fmt::{self, Display};
 use crate::*;
 use lexing_t::Span;
 use parsing_t::Vis;
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 pub type TypecLookup = Map<VRef<str>, ComputedTypecItem>;
@@ -23,7 +24,7 @@ pub type Pointers = PushMap<Pointer>;
 pub type BaseSpecs = PushMap<SpecBase>;
 pub type SpecInstances = PushMap<SpecInstance>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
@@ -38,19 +39,19 @@ impl Impl {
 
 pub type Generics = VSlice<VSlice<Spec>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Instance {
     pub base: GenericTy,
     pub args: VSlice<Ty>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Struct {
     pub name: VRef<str>,
     pub generics: Generics,
@@ -64,7 +65,7 @@ gen_water_drops! {
     EH => "|||",
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Enum {
     pub name: VRef<str>,
     pub generics: Generics,
@@ -79,21 +80,21 @@ gen_water_drops! {
     MACRO_TOKEN_KIND => "MacroTokenKind",
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Variant {
     pub name: VRef<str>,
     pub ty: Ty,
     pub span: Option<Span>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Pointer {
     pub base: Ty,
     pub mutability: Mutability,
     pub depth: u16,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Mutability {
     Mutable,
     Immutable,
@@ -110,7 +111,7 @@ impl fmt::Display for Mutability {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct SpecBase {
     pub name: VRef<str>,
     pub generics: Generics,
@@ -130,13 +131,13 @@ gen_water_drops! {
     TOKEN_MACRO => "TokenMacro",
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct SpecInstance {
     pub base: VRef<SpecBase>,
     pub args: VSlice<Ty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
 pub enum Spec {
     Base(VRef<SpecBase>),
     Instance(VRef<SpecInstance>),
@@ -163,7 +164,7 @@ impl From<VRef<SpecInstance>> for Spec {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum GenericTy {
     Struct(VRef<Struct>),
     Enum(VRef<Enum>),
@@ -197,14 +198,14 @@ impl From<VRef<Enum>> for GenericTy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum ComputedTypecItem {
     Pointer(VRef<Pointer>),
     Instance(VRef<Instance>),
     SpecInstance(VRef<SpecInstance>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum Ty {
     Struct(VRef<Struct>),
     Enum(VRef<Enum>),
@@ -348,7 +349,7 @@ macro_rules! gen_builtin {
             )*
         }
 
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
         pub enum Builtin {
             $($builtin),*
         }
@@ -413,7 +414,7 @@ impl Default for Ty {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
@@ -428,7 +429,7 @@ impl SpecFunc {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Field {
     pub vis: Vis,
     pub ty: Ty,
@@ -438,6 +439,7 @@ pub struct Field {
 }
 
 bitflags! {
+    #[Serialize, Deserialize]
     FieldFlags: u8 {
         MUTABLE
         USED
@@ -445,6 +447,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[Serialize, Deserialize]
     TyFlags: u8 {
         GENERIC
     }

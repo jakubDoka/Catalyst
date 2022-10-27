@@ -128,6 +128,7 @@ macro_rules! gen_v_ref_constants {
 macro_rules! bitflags {
     (
         $(
+            $(#[$($attr:ident),*])?
             $name:ident: $repr:ty {
                 $($first:ident $($item:ident)*)?
             }
@@ -135,7 +136,7 @@ macro_rules! bitflags {
     ) => {
         $(
             $crate::bitflags::bitflags! {
-                #[derive(Default)]
+                #[derive(Default, $($($attr),*)?)]
                 pub struct $name: $repr {
 
                 }
@@ -158,7 +159,6 @@ macro_rules! bitflags {
 }
 
 pub extern crate bitflags;
-pub extern crate serde;
 
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod bit_set;

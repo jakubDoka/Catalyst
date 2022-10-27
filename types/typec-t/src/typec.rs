@@ -10,6 +10,7 @@ use std::{
 
 use crate::*;
 use packaging_t::Module;
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 #[derive(Default)]
@@ -814,7 +815,7 @@ pub enum SpecCmpError {
     Args(Ty, Ty),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
