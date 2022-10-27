@@ -1,6 +1,7 @@
 use lexing_t::*;
 use packaging_t::Module;
 use parsing_t::*;
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 use crate::*;
@@ -158,7 +159,7 @@ impl ScopeRecord {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleItem {
     pub id: VRef<str>,
     pub item: ScopeItem,
@@ -177,7 +178,7 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ScopeItem {
     Func(VRef<Func>),
     SpecFunc(VRef<SpecFunc>),

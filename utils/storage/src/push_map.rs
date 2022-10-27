@@ -4,9 +4,11 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::VRef;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PushMap<T> {
     data: Vec<T>,
 }

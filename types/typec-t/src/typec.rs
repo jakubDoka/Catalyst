@@ -13,7 +13,7 @@ use packaging_t::Module;
 use serde::{Deserialize, Serialize};
 use storage::*;
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Typec {
     pub lookup: TypecLookup,
     pub structs: Structs,
@@ -871,13 +871,13 @@ pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRe
         .ok()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct MacroImpl {
     pub name: VRef<str>,
     pub r#impl: OptVRef<Impl>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }
