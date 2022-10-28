@@ -122,6 +122,8 @@ impl<'ctx> IncrementalBorrow<'ctx> {
     fn compiled_funcs(&mut self, ctx: &mut SweepCtx, interner: &mut InternerTransfer) {
         let mut compiled_funcs = mem::take(&mut self.gen.compiled_funcs);
         for (&key, func) in compiled_funcs.iter() {
+            // TODO: This may cause some compiled functions to be
+            // ignored and recompiled multiple times
             let Some(proj) = ctx.projections.funcs[func.func] else {
                 continue;
             };
