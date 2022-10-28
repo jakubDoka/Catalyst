@@ -11,6 +11,7 @@ use crate::Task;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Incremental {
+    pub interner: Interner,
     pub typec: Typec,
     pub mir: Mir,
     pub gen: Gen,
@@ -540,24 +541,20 @@ impl<'ctx> IncrementalBorrow<'ctx> {
 
 pub struct InternerTransfer<'i> {
     from: &'i mut Interner,
-    to: Option<&'i mut Interner>,
+    to: &'i mut Interner,
 }
 
 impl<'i> InternerTransfer<'i> {
-    pub fn new(from: &'i mut Interner, to: Option<&'i mut Interner>) -> Self {
+    pub fn new(from: &'i mut Interner, to: &'i mut Interner) -> Self {
         Self { from, to }
     }
 
     pub fn transfer(&mut self, ident: VRef<str>) -> VRef<str> {
-        if let Some(ref mut to) = self.to {
-            to.intern(&self.from[ident])
-        } else {
-            ident
-        }
+        self.to.intern(&self.from[ident])
     }
 
     pub fn dest(&mut self) -> &mut Interner {
-        self.to.as_mut().unwrap_or(&mut self.from)
+        self.to
     }
 }
 

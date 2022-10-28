@@ -18,6 +18,20 @@ pub struct SparseMap<T, V = T> {
     data: Vec<(VRef<T>, V)>,
 }
 
+impl<T, V: Clone> Clone for SparseMap<T, V> {
+    fn clone(&self) -> Self {
+        SparseMap {
+            mapping: self.mapping.clone(),
+            data: self.data.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.mapping.clone_from(&source.mapping);
+        self.data.clone_from(&source.data);
+    }
+}
+
 impl<T, V> SparseMap<T, V> {
     pub fn new() -> Self {
         SparseMap {

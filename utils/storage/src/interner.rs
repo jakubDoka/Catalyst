@@ -1,7 +1,8 @@
 use std::{
+    default::default,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
-    ops::Index,
+    ops::{Index, Range},
 };
 
 use serde::{Deserialize, Serialize};
@@ -45,9 +46,8 @@ gen_span_constants! {
 pub struct Interner {
     map: Map<InternerEntry, VRef<str>>,
     entries: PushMap<InternerEntry>,
-    data: Vec<Box<[u8]>>,
-    garbage: Vec<Box<[u8]>>,
-    cursor: *mut u8,
+    data: Vec<Vec<u8>>,
+    garbage: Vec<Vec<u8>>,
     temp: String,
 }
 
@@ -59,14 +59,11 @@ impl Interner {
 
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
-        let mut slice = Box::new_uninit_slice(Self::CHUNK_SIZE);
-        let cursor = slice.as_mut_ptr_range().end;
         let mut s = Interner {
             map: Map::default(),
             entries: PushMap::default(),
-            data: vec![unsafe { slice.assume_init() }],
+            data: default(),
             garbage: Vec::new(),
-            cursor: cursor as *mut u8,
             temp: String::new(),
         };
         s.init();
@@ -75,8 +72,7 @@ impl Interner {
 
     pub fn clear(&mut self) {
         self.map.clear();
-        self.garbage.extend(self.data.drain(1..));
-        self.cursor = unsafe { self.data.get_unchecked_mut(0).as_mut_ptr_range().end };
+        self.garbage.append(&mut self.data);
         self.entries.clear();
         self.init();
     }
@@ -103,23 +99,23 @@ impl Interner {
         match self.map.get(&key) {
             Some(&str) => str,
             None => {
-                if self.cursor as usize + s.len() > Self::CHUNK_SIZE {
-                    self.grow();
+                if self
+                    .data
+                    .last()
+                    .map_or(true, |l| l.len() + s.len() > l.capacity())
+                {
+                    self.grow(s.len());
                 }
+                let last = self.data.last_mut().unwrap();
 
-                let new = unsafe { self.cursor.sub(s.len()) };
-                unsafe { new.copy_from_nonoverlapping(s.as_ptr(), s.len()) };
+                let start = last.len();
+                last.extend_from_slice(s.as_bytes());
 
-                self.cursor = new;
+                let entry = unsafe { std::str::from_utf8_unchecked(&last[start..]) };
+                let entry = InternerEntry::new(entry);
 
-                let slice = unsafe { std::slice::from_raw_parts(new, s.len()) };
-                let str = unsafe { std::str::from_utf8_unchecked(slice) };
-
-                let key = InternerEntry::new(str);
-
-                let v_ref = unsafe { self.entries.push(key).cast() };
-                self.map.insert(key, v_ref);
-
+                let v_ref = unsafe { self.entries.push(entry).cast() };
+                self.map.insert(entry, v_ref);
                 v_ref
             }
         }
@@ -127,14 +123,47 @@ impl Interner {
 
     #[cold]
     #[inline(never)]
-    fn grow(&mut self) {
-        let mut slice = self
+    fn grow(&mut self, size: usize) {
+        let slice = self
             .garbage
             .pop()
-            .unwrap_or_else(|| unsafe { Box::new_uninit_slice(Self::CHUNK_SIZE).assume_init() });
-        let end = slice.as_mut_ptr_range().end;
+            .unwrap_or_else(|| Vec::with_capacity(Self::CHUNK_SIZE.max(size)));
         self.data.push(slice);
-        self.cursor = end;
+    }
+
+    fn to_raw(&self) -> RawInterner {
+        let capacity = self.data.iter().map(|s| s.len()).sum::<usize>();
+        let mut data = Vec::with_capacity(capacity);
+        let mut slices = Vec::with_capacity(self.entries.len());
+        let mut entries = self.entries.values().peekable();
+        for slice in &self.data {
+            while let Some(entry) = entries.peek() {
+                let Range { start, end } = unsafe { (*(entry.str as *const [u8])).as_ptr_range() };
+
+                let Range {
+                    start: data_start,
+                    end: data_end,
+                } = slice.as_ptr_range();
+
+                if start >= data_end || end < data_start {
+                    break;
+                }
+
+                let start = start as usize - data_start as usize + data.len();
+                let end = end as usize - data_start as usize + data.len();
+                slices.push(Range { start, end });
+                entries.next();
+            }
+            data.extend_from_slice(slice);
+        }
+
+        RawInterner { data, slices }
+    }
+}
+
+impl Clone for Interner {
+    fn clone(&self) -> Self {
+        self.to_raw().into_interner()
     }
 }
 
@@ -152,68 +181,51 @@ impl Index<VRef<str>> for Interner {
     }
 }
 
-// impl Serialize for Interner {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: serde::Serializer,
-//     {
-//         let map = self
-//             .map
-//             .iter()
-//             .map(|(&k, &v)| (k.start, k.end, v))
-//             .collect::<Vec<_>>();
-//         let raw = unsafe {
-//             RawInterner {
-//                 map,
-//                 indices: std::ptr::read(&self.indices),
-//                 data: std::ptr::read(&self.data),
-//             }
-//         };
+impl Serialize for Interner {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_raw().serialize(serializer)
+    }
+}
 
-//         let res = raw.serialize(serializer);
-
-//         std::mem::forget(raw.indices);
-//         std::mem::forget(raw.data);
-
-//         res
-//     }
-// }
-
-// impl<'a> Deserialize<'a> for Interner {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: serde::Deserializer<'a>,
-//     {
-//         let raw = RawInterner::deserialize(deserializer)?;
-//         let map = raw
-//             .map
-//             .into_iter()
-//             .map(|(start, end, ident)| {
-//                 (
-//                     InternerEntry {
-//                         str: &*raw.data as *const *const str,
-//                         start,
-//                         end,
-//                     },
-//                     ident,
-//                 )
-//             })
-//             .collect::<HashMap<_, _, InternerBuildHasher>>();
-
-//         Ok(Interner {
-//             map,
-//             indices: raw.indices,
-//             data: raw.data,
-//         })
-//     }
-// }
+impl<'a> Deserialize<'a> for Interner {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        RawInterner::deserialize(deserializer).map(RawInterner::into_interner)
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 struct RawInterner {
-    map: Vec<(u32, u32, VRef<str>)>,
-    indices: Vec<usize>,
-    #[allow(clippy::box_collection)]
-    data: Box<String>,
+    slices: Vec<Range<usize>>,
+    data: Vec<u8>,
+}
+
+impl RawInterner {
+    fn into_interner(self) -> Interner {
+        let RawInterner { data, slices } = self;
+
+        let mut map = Map::with_capacity_and_hasher(slices.len(), map::FvnBuildHasher);
+        let mut entries = PushMap::with_capacity(slices.len());
+
+        for range in slices {
+            let entry = InternerEntry::new(unsafe { std::str::from_utf8_unchecked(&data[range]) });
+            let v_ref = unsafe { entries.push(entry).cast() };
+            map.insert(entry, v_ref);
+        }
+
+        Interner {
+            map,
+            entries,
+            data: vec![data],
+            garbage: Vec::new(),
+            temp: String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -268,24 +280,24 @@ mod test {
         assert_eq!(&interner[cb], "cb");
     }
 
-    // #[test]
-    // fn test_interner_serde() {
-    //     let mut interner = Interner::new();
-    //     let a = interner.intern("a");
-    //     let b = interner.intern("b");
-    //     let c = interner.intern("c");
+    #[test]
+    fn test_interner_serde() {
+        let mut interner = Interner::new();
+        let a = interner.intern("a");
+        let b = interner.intern("b");
+        let c = interner.intern("c");
 
-    //     let mut buf = Vec::new();
-    //     interner
-    //         .serialize(&mut rmp_serde::encode::Serializer::new(&mut buf))
-    //         .unwrap();
+        let mut buf = Vec::new();
+        interner
+            .serialize(&mut rmp_serde::encode::Serializer::new(&mut buf))
+            .unwrap();
 
-    //     let interner2 =
-    //         Interner::deserialize(&mut rmp_serde::decode::Deserializer::new(buf.as_slice()))
-    //             .unwrap();
+        let interner2 =
+            Interner::deserialize(&mut rmp_serde::decode::Deserializer::new(buf.as_slice()))
+                .unwrap();
 
-    //     assert_eq!(&interner2[a], "a");
-    //     assert_eq!(&interner2[b], "b");
-    //     assert_eq!(&interner2[c], "c");
-    // }
+        assert_eq!(&interner2[a], "a");
+        assert_eq!(&interner2[b], "b");
+        assert_eq!(&interner2[c], "c");
+    }
 }

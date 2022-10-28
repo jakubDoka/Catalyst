@@ -21,6 +21,43 @@ pub struct PoolMap<K, T = K> {
     phantom: PhantomData<fn(K) -> K>,
 }
 
+impl<K, V: Clone> Clone for PoolMap<K, V> {
+    fn clone(&self) -> Self {
+        PoolMap {
+            free: self.free.clone(),
+            free_lookup: self.free_lookup.clone(),
+            data: self
+                .data
+                .iter()
+                .enumerate()
+                .map(|(i, value)| {
+                    if self.free_lookup.contains(i) {
+                        MaybeUninit::uninit()
+                    } else {
+                        MaybeUninit::new(unsafe { &*value.as_ptr() }.clone())
+                    }
+                })
+                .collect(),
+            phantom: PhantomData,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.free.clone_from(&source.free);
+        self.free_lookup.clone_from(&source.free_lookup);
+        self.data.clear();
+        self.data
+            .extend(source.data.iter().enumerate().map(|(i, value)| {
+                if source.free_lookup.contains(i) {
+                    MaybeUninit::uninit()
+                } else {
+                    MaybeUninit::new(unsafe { &*value.as_ptr() }.clone())
+                }
+            }));
+        self.phantom = PhantomData;
+    }
+}
+
 impl<K, V> PoolMap<K, V> {
     /// Does not allocate.
     pub fn new() -> Self {

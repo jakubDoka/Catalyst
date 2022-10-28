@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::VRef;
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct PushMap<T> {
     data: Vec<T>,
 }
@@ -16,6 +16,12 @@ pub struct PushMap<T> {
 impl<T> PushMap<T> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+        }
     }
 
     /// # Safety
@@ -65,6 +71,18 @@ impl<T> PushMap<T> {
 
     pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> {
         self.keys().zip(self.values())
+    }
+}
+
+impl<T: Clone> Clone for PushMap<T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.data.clone_from(&source.data);
     }
 }
 

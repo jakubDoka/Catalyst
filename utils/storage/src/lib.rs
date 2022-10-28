@@ -176,8 +176,6 @@ mod map;
 mod ordered_map;
 /// Similar to ordered map but some indexes may not have mapping.
 mod partial_ordered_map;
-/// Bump map with ability to reallocate slices.
-mod pool_bump_map;
 /// Vector abstraction that allows reusing allocations while preserving other values.
 mod pool_map;
 /// Trait representing virtual pointer.
@@ -200,7 +198,6 @@ pub use {
     map::Map,
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
-    pool_bump_map::{CachedPoolBumpMap, PoolBumpMap},
     pool_map::PoolMap,
     primitives::{
         CtlOption, NoShortCircuitCollect, OptVRef, TransposeOption, VRef, VRefDefault, VRefSlice,

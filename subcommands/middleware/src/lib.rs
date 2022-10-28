@@ -11,5 +11,5 @@ mod state_gen;
 
 pub use {
     incremental::{Incremental, IncrementalBorrow, InternerTransfer, SweepCtx},
-    scheduler::{Scheduler, Task, Worker},
+    scheduler::{Middleware, Task, Worker},
 };

@@ -3,7 +3,7 @@ use std::{
     default::default,
     iter, mem,
     path::*,
-    sync::mpsc::{self, Receiver, SendError, Sender, SyncSender},
+    sync::mpsc::{self, Receiver, Sender, SyncSender},
     thread,
 };
 
@@ -24,9 +24,30 @@ use typec_t::*;
 
 use crate::{incremental::SweepProjections, *};
 
+macro_rules! sweep {
+    ($self:expr, $source:expr => $target:expr) => {
+        IncrementalBorrow {
+            typec: &mut $source.typec,
+            mir: &mut $source.mir,
+            gen: &mut $source.gen,
+        }
+        .sweep(
+            &$self.sweep_bitset,
+            &mut SweepCtx {
+                temp: IncrementalBorrow {
+                    typec: &mut $target.typec,
+                    mir: &mut $target.mir,
+                    gen: &mut $target.gen,
+                },
+                projections: &mut $self.sweep_ctx,
+            },
+            &mut InternerTransfer::new(&mut $source.interner, &mut $target.interner),
+        );
+    };
+}
+
 #[derive(Default)]
-pub struct Scheduler {
-    pub interner: Interner,
+pub struct Middleware {
     pub workspace: Workspace,
     pub resources: Resources,
     pub package_graph: PackageGraph,
@@ -36,15 +57,22 @@ pub struct Scheduler {
     pub sweep_ctx: SweepProjections,
     pub sweep_bitset: BitSet,
     pub task_graph: TaskGraph,
+    pub entry_points: Vec<VRef<Func>>,
 }
 
-impl Scheduler {
+impl Middleware {
     pub fn new() -> Self {
         Self::default()
     }
 
     fn reload_resources(&mut self, path: &Path) {
-        package_loader!(self).reload(path, &mut self.resource_loading_ctx);
+        PackageLoader::new(
+            &mut self.resources,
+            &mut self.workspace,
+            &mut self.incremental.interner,
+            &mut self.package_graph,
+        )
+        .reload(path, &mut self.resource_loading_ctx);
     }
 
     pub fn update(&mut self, args: &SchedulerArgs) {
@@ -57,6 +85,7 @@ impl Scheduler {
         }
 
         let (sender, receiver) = mpsc::channel();
+        let (gen_sender, _gen_receiver) = mpsc::channel();
         let num_workers = thread::available_parallelism()
             .map_or(1, |n| n.get())
             .min(args.max_cores.unwrap_or(usize::MAX));
@@ -65,93 +94,85 @@ impl Scheduler {
             todo!();
         }
 
-        let workers = iter::repeat_with(|| Worker::new(sender.clone()))
-            .take(num_workers)
-            .collect::<Vec<_>>();
+        let (workers, _gen_receivers): (Vec<_>, Vec<_>) =
+            iter::repeat_with(|| Worker::new(sender.clone(), gen_sender.clone()))
+                .take(num_workers)
+                .unzip();
 
         self.build_task_graph();
 
-        let shared = Shared {
-            resources: &self.resources,
-            jit_isa: &args.jit_isa,
-        };
+        let resources = mem::take(&mut self.resources);
 
         thread::scope(|s| {
-            let mut senders = workers
+            let senders = workers
                 .into_iter()
                 .map(|(worker, sender)| {
+                    let shared = Shared {
+                        resources: &resources,
+                        jit_isa: &args.jit_isa,
+                    };
                     worker.run(s, shared);
                     (sender, Some(Task::default()))
                 })
                 .collect::<Vec<_>>();
 
-            while self.task_graph.has_tasks() {
-                for (sender, task) in senders.iter_mut() {
-                    if let Some(mut task) = task.take() {
-                        let Some(package) = self.task_graph.next() else {
-                            break;
-                        };
-
-                        task.clear();
-                        task.modules_to_compile.extend(
-                            self.resources.module_order.iter().filter(|&&module| {
-                                self.resources.modules[module].package == package
-                            }),
-                        );
-
-                        self.sweep_bitset.clear();
-                        self.resources
-                            .mark_subgraph(&task.modules_to_compile, &mut self.sweep_bitset);
-
-                        IncrementalBorrow::from_incremental(&mut self.incremental).sweep(
-                            &self.sweep_bitset,
-                            &mut SweepCtx {
-                                temp: IncrementalBorrow {
-                                    typec: &mut task.typec,
-                                    mir: &mut task.mir,
-                                    gen: &mut task.gen,
-                                },
-                                projections: &mut self.sweep_ctx,
-                            },
-                            &mut InternerTransfer::new(
-                                &mut self.interner,
-                                Some(&mut task.interner),
-                            ),
-                        );
-
-                        sender.send(task).expect("whoops");
-                    }
-                }
-
-                let mut task = receiver.recv().expect("very bad");
-                self.sweep_bitset.clear();
-                for &module in &task.modules_to_compile {
-                    self.sweep_bitset.insert(module.index());
-                }
-                IncrementalBorrow {
-                    typec: &mut task.typec,
-                    mir: &mut task.mir,
-                    gen: &mut task.gen,
-                }
-                .sweep(
-                    &self.sweep_bitset,
-                    &mut SweepCtx {
-                        temp: IncrementalBorrow::from_incremental(&mut self.incremental),
-                        projections: &mut self.sweep_ctx,
-                    },
-                    &mut InternerTransfer::new(&mut task.interner, Some(&mut self.interner)),
-                );
-            }
-
-            for (sender, task) in senders {
-                if let Some(mut task) = task {
-                    task.clear();
-                    sender.send(task).expect("failed successfully");
-                }
-            }
-
-            drop(receiver);
+            let tasks = self.expand(receiver, senders, &resources);
         });
+
+        self.resources = resources;
+    }
+
+    pub fn expand(
+        &mut self,
+        receiver: Receiver<Task>,
+        mut senders: Vec<(SyncSender<Task>, Option<Task>)>,
+        resources: &Resources,
+    ) -> Vec<Task> {
+        while self.task_graph.has_tasks() {
+            for (sender, task) in senders.iter_mut() {
+                if let Some(mut task) = task.take() {
+                    let Some(package) = self.task_graph.next() else {
+                        break;
+                    };
+
+                    task.clear();
+                    task.modules_to_compile.extend(
+                        resources
+                            .module_order
+                            .iter()
+                            .filter(|&&module| resources.modules[module].package == package),
+                    );
+
+                    self.sweep_bitset.clear();
+                    resources.mark_subgraph(&task.modules_to_compile, &mut self.sweep_bitset);
+
+                    sweep!(self, self.incremental => task);
+                    sender.send(task).expect("whoops");
+                }
+            }
+
+            let mut task = receiver.recv().expect("very bad");
+            self.entry_points.append(&mut task.entry_points);
+            self.sweep_bitset.clear();
+            for &module in &task.modules_to_compile {
+                self.sweep_bitset.insert(module.index());
+            }
+            sweep!(self, task => self.incremental);
+        }
+
+        senders
+            .into_iter()
+            .map(|(_sender, task)| task.unwrap_or_else(|| receiver.recv().expect("we are doomed")))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn transfer_all(task: &mut Task, incremental: &Incremental) {
+        task.typec.transfer(&incremental.typec);
+        task.interner.clone_from(&incremental.interner);
+        task.mir.bodies.clone_from(&incremental.mir.bodies);
+        task.gen
+            .compiled_funcs
+            .clone_from(&incremental.gen.compiled_funcs);
     }
 
     pub fn prepare_incremental(&mut self, path: &Path, resource_path: &Path) {
@@ -173,14 +194,7 @@ impl Scheduler {
             }
         }
 
-        IncrementalBorrow::from_incremental(&mut self.incremental).sweep(
-            &self.sweep_bitset,
-            &mut SweepCtx {
-                temp: IncrementalBorrow::from_incremental(&mut self.temp_incremental),
-                projections: &mut self.sweep_ctx,
-            },
-            &mut InternerTransfer::new(&mut self.interner, None),
-        );
+        sweep!(self, self.incremental => self.temp_incremental);
         mem::swap(&mut self.incremental, &mut self.temp_incremental);
         self.temp_incremental.clear();
         self.incremental.loaded = true;
@@ -202,6 +216,7 @@ impl Scheduler {
     pub fn save(&mut self, path: &Path) -> std::io::Result<()> {
         let file = std::fs::File::create(path)?;
         let mut buffered = std::io::BufWriter::new(file);
+        self.incremental.sources = mem::take(&mut self.resources.sources);
         rmp_serde::encode::write(&mut buffered, &self.incremental)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
 
@@ -297,23 +312,34 @@ pub struct SchedulerArgs {
 pub struct Worker {
     pub tasks: Receiver<Task>,
     pub products: Sender<Task>,
+    pub gen_tasks: Receiver<GenTask>,
+    pub gen_products: Sender<GenTask>,
     pub state: WorkerState,
     pub context: Context,
     pub function_builder_ctx: FunctionBuilderContext,
 }
 
 impl Worker {
-    pub fn new(products: Sender<Task>) -> (Self, SyncSender<Task>) {
+    pub fn new(
+        products: Sender<Task>,
+        gen_products: Sender<GenTask>,
+    ) -> ((Self, SyncSender<Task>), Sender<GenTask>) {
         let (tx, rx) = mpsc::sync_channel(0);
+        let (gen_tx, gen_rx) = mpsc::channel();
         (
-            Self {
-                tasks: rx,
-                products,
-                state: WorkerState::default(),
-                context: Context::new(),
-                function_builder_ctx: FunctionBuilderContext::new(),
-            },
-            tx,
+            (
+                Self {
+                    tasks: rx,
+                    gen_tasks: gen_rx,
+                    products,
+                    gen_products,
+                    state: WorkerState::default(),
+                    context: Context::new(),
+                    function_builder_ctx: FunctionBuilderContext::new(),
+                },
+                tx,
+            ),
+            gen_tx,
         )
     }
 
@@ -577,6 +603,13 @@ impl Worker {
             shared.resources,
         )
         .funcs(&mut self.state.mir_builder_ctx, &mut type_checked_funcs);
+        task.entry_points.extend(
+            self.state
+                .mir_builder_ctx
+                .just_compiled
+                .drain(..)
+                .filter(|&func| task.typec.funcs[func].flags.contains(FuncFlags::ENTRY)),
+        );
     }
 
     fn parse<'a, T: Ast<'a>>(
@@ -622,8 +655,12 @@ impl Worker {
 }
 
 #[derive(Default)]
+pub struct GenTask {}
+
+#[derive(Default)]
 pub struct Task {
     pub modules_to_compile: Vec<VRef<Module>>,
+    pub entry_points: Vec<VRef<Func>>,
     pub interner: Interner,
     pub workspace: Workspace,
     pub typec: Typec,

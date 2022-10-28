@@ -17,6 +17,20 @@ pub struct OrderedMap<K: Eq + Hash, V> {
     data: PoolMap<V, (K, V)>,
 }
 
+impl<K: Eq + Hash + Clone, V: Clone> Clone for OrderedMap<K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            index: self.index.clone(),
+            data: self.data.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.index.clone_from(&source.index);
+        self.data.clone_from(&source.data);
+    }
+}
+
 impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
     /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.
     pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {

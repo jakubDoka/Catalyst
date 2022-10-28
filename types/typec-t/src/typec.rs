@@ -128,6 +128,28 @@ impl Typec {
         self.enums.clear();
     }
 
+    pub fn transfer(&mut self, other: &Self) {
+        self.lookup.clone_from(&other.lookup);
+        self.structs.clone_from(&other.structs);
+        self.pointers.clone_from(&other.pointers);
+        self.instances.clone_from(&other.instances);
+        self.base_specs.clone_from(&other.base_specs);
+        self.spec_instances.clone_from(&other.spec_instances);
+        self.funcs.clone_from(&other.funcs);
+        self.fields.clone_from(&other.fields);
+        self.impls.clone_from(&other.impls);
+        self.params.clone_from(&other.params);
+        self.spec_sums.clone_from(&other.spec_sums);
+        self.args.clone_from(&other.args);
+        self.impl_lookup.clone_from(&other.impl_lookup);
+        self.func_slices.clone_from(&other.func_slices);
+        self.spec_funcs.clone_from(&other.spec_funcs);
+        self.builtin_funcs.clone_from(&other.builtin_funcs);
+        self.variants.clone_from(&other.variants);
+        self.macros.clone_from(&other.macros);
+        self.enums.clone_from(&other.enums);
+    }
+
     pub fn get_band(&mut self) -> VRef<Func> {
         *self
             .builtin_funcs
