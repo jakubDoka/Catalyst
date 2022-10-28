@@ -136,7 +136,7 @@ pub enum ScopeRecord {
 impl ScopeRecord {
     pub fn scope_item(&self) -> Option<ScopeItem> {
         match *self {
-            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.item),
+            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.ptr.into()),
             Self::Builtin { kind } | Self::Pushed { kind, .. } => Some(kind),
             Self::Collision => None,
         }
@@ -162,19 +162,44 @@ impl ScopeRecord {
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleItem {
     pub id: VRef<str>,
-    pub item: ScopeItem,
+    pub ptr: ModuleItemPtr,
     pub span: Span,
     pub vis: Vis,
 }
 
 impl ModuleItem {
-    pub fn new(id: VRef<str>, ptr: impl Into<ScopeItem>, span: Span, vis: Vis) -> Self {
+    pub fn new(id: VRef<str>, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
         Self {
             id,
-            item: ptr.into(),
+            ptr: ptr.into(),
             span,
             vis,
         }
+    }
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ModuleItemPtr {
+    Func(VRef<Func>),
+    Ty(Ty),
+    SpecBase(VRef<SpecBase>),
+}
+
+impl From<VRef<Func>> for ModuleItemPtr {
+    fn from(func: VRef<Func>) -> Self {
+        Self::Func(func)
+    }
+}
+
+impl From<Ty> for ModuleItemPtr {
+    fn from(ty: Ty) -> Self {
+        Self::Ty(ty)
+    }
+}
+
+impl From<VRef<SpecBase>> for ModuleItemPtr {
+    fn from(base: VRef<SpecBase>) -> Self {
+        Self::SpecBase(base)
     }
 }
 
@@ -214,5 +239,15 @@ gen_scope_item!(SpecFunc, Func, VarHeaderTir, Module, SpecBase);
 impl From<Ty> for ScopeItem {
     fn from(item: Ty) -> Self {
         Self::Ty(item)
+    }
+}
+
+impl From<ModuleItemPtr> for ScopeItem {
+    fn from(item: ModuleItemPtr) -> Self {
+        match item {
+            ModuleItemPtr::Func(func) => func.into(),
+            ModuleItemPtr::Ty(ty) => ty.into(),
+            ModuleItemPtr::SpecBase(base) => base.into(),
+        }
     }
 }

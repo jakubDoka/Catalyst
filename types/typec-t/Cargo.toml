@@ -12,5 +12,5 @@ lexing-t = { path = "../lexing-t" }
 parsing-t = { path = "../parsing-t" }
 packaging-t = { path = "../packaging-t" }
 diags = { version = "0.1.0", path = "../diags" }
-serde = { version = "1.0.138", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 

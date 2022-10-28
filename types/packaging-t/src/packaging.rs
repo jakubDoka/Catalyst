@@ -1,4 +1,5 @@
 use lexing_t::*;
+use serde::{Deserialize, Serialize};
 use std::{default::default, path::*, time::SystemTime};
 use storage::*;
 
@@ -49,7 +50,7 @@ impl Resources {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Source {
     pub path: PathBuf,
     pub last_modified: SystemTime,

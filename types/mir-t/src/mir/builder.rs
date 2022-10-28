@@ -4,6 +4,7 @@ use std::{
 };
 
 use lexing_t::Span;
+use serde::{Deserialize, Serialize};
 use storage::*;
 use typec_t::*;
 
@@ -183,7 +184,7 @@ impl MirBuilderCtx {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DependantTypes(PushMap<MirTy>);
 
 impl Default for DependantTypes {

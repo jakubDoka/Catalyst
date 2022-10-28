@@ -1,6 +1,7 @@
 use std::{default::default, ops::Deref, sync::Arc};
 
 use lexing_t::*;
+use serde::{Deserialize, Serialize};
 use storage::*;
 use typec_t::*;
 
@@ -8,12 +9,24 @@ use crate::*;
 
 pub mod builder;
 
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct Mir {
     pub bodies: SparseMap<Func, FuncMir>,
 }
 
-#[derive(Clone, Default)]
+impl Mir {
+    pub fn clear(&mut self) {
+        self.bodies.clear();
+    }
+}
+
+impl Clear for Mir {
+    fn clear(&mut self) {
+        self.bodies.clear();
+    }
+}
+
+#[derive(Clone, Default, Deserialize, Serialize)]
 pub struct FuncMir {
     pub inner: Arc<FuncMirInner>,
     pub dependant_types: DependantTypes,
@@ -33,13 +46,13 @@ impl Deref for FuncMir {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct FuncConstMir {
     pub ty: VRef<MirTy>,
     pub block: VRef<BlockMir>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct FuncMirInner {
     pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
@@ -113,7 +126,7 @@ impl Default for FuncMirInner {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct MirTy {
     pub ty: Ty,
 }
@@ -131,7 +144,7 @@ impl VRefDefault for MirTy {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct BlockMir {
     pub args: VRefSlice<ValueMir>,
     pub insts: VSlice<InstMir>,
@@ -139,7 +152,7 @@ pub struct BlockMir {
     pub ref_count: u32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
     Goto(VRef<BlockMir>, OptVRef<ValueMir>),
@@ -166,7 +179,7 @@ impl DebugData {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
@@ -180,21 +193,21 @@ pub enum InstMir {
     Bool(bool, VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct CallMir {
     pub callable: CallableMir,
     pub params: VRefSlice<MirTy>,
     pub args: VRefSlice<ValueMir>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum CallableMir {
     Func(VRef<Func>),
     SpecFunc(VRef<SpecFunc>),
     Pointer(VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
 }

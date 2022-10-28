@@ -164,7 +164,7 @@ impl From<VRef<SpecInstance>> for Spec {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum GenericTy {
     Struct(VRef<Struct>),
     Enum(VRef<Enum>),

@@ -130,6 +130,11 @@ impl<T, V> SparseMap<T, V> {
         self.data.iter().map(|(key, value)| (*key, value))
     }
 
+    pub fn drain(&mut self) -> impl Iterator<Item = (VRef<T>, V)> + '_ {
+        self.mapping.clear();
+        self.data.drain(..)
+    }
+
     pub fn clear(&mut self) {
         self.mapping.clear();
         self.data.clear();

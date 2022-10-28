@@ -20,6 +20,8 @@ use storage::*;
 use typec::*;
 use typec_t::*;
 
+use crate::*;
+
 #[derive(Default)]
 pub struct Scheduler {
     pub interner: Interner,
@@ -27,6 +29,9 @@ pub struct Scheduler {
     pub resources: Resources,
     pub package_graph: PackageGraph,
     pub resource_loading_ctx: PackageLoaderCtx,
+    pub incremental: Incremental,
+    pub sweep_ctx: SweepCtx,
+    pub task_pool: Vec<Task>,
 }
 
 impl Scheduler {
@@ -39,7 +44,23 @@ impl Scheduler {
     }
 
     pub fn update(&mut self, args: SchedulerArgs) {
+        if let Some(path) = args.incremental_path
+            && let Err(err) = self.load_incremental(path)
+        {
+            self.workspace.push(snippet! {
+                warn: ("Failed to load incremental data: {}", err);
+                info: "Rebuilding from scratch";
+                info: ("queried path: {}", path.display());
+            })
+        };
+
+        self.resources.sources = mem::take(&mut self.incremental.sources);
+
         self.reload_resources(args.path);
+
+        self.incremental
+            .sweep(&self.resources, &mut self.sweep_ctx, &mut self.interner);
+        self.incremental.loaded = true;
 
         let (sender, receiver) = mpsc::channel();
         // num cores form std
@@ -48,10 +69,46 @@ impl Scheduler {
             .take(num_workers)
             .collect::<Vec<_>>();
 
-        thread::scope(|s| {});
+        let shared = Shared {
+            resources: &self.resources,
+            jit_isa: args.jit_isa,
+        };
+
+        thread::scope(|s| {
+            let mut senders = workers
+                .into_iter()
+                .map(|(worker, sender)| {
+                    worker.run(s, shared);
+                    sender
+                })
+                .collect::<Vec<_>>();
+        });
+    }
+
+    fn load_incremental(&mut self, path: &Path) -> std::io::Result<()> {
+        if self.incremental.loaded || !path.exists() {
+            return Ok(());
+        }
+
+        let file = std::fs::File::open(path)?;
+        let mut buffered = std::io::BufReader::new(file);
+        self.incremental = rmp_serde::from_read(&mut buffered)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+
+        Ok(())
+    }
+
+    pub fn save(&mut self, path: &Path) -> std::io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        let mut buffered = std::io::BufWriter::new(file);
+        rmp_serde::encode::write(&mut buffered, &self.incremental)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+
+        Ok(())
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Shared<'a> {
     resources: &'a Resources,
     jit_isa: &'a Isa,
@@ -59,7 +116,8 @@ pub struct Shared<'a> {
 
 pub struct SchedulerArgs<'a> {
     pub path: &'a Path,
-    pub isa: &'a Isa,
+    pub jit_isa: &'a Isa,
+    pub incremental_path: Option<&'a Path>,
 }
 
 pub struct Worker {

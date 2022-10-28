@@ -10,3 +10,4 @@ storage = { path = "../../utils/storage" }
 graphs = { path = "../../utils/graphs" }
 
 lexing-t = { path = "../lexing-t" }
+serde = { version = "1", features = ["derive"] }

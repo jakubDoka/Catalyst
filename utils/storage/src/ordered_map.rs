@@ -5,11 +5,14 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::*;
 
 /// Has access complexity of an ordinary map, but it allows addressing
 /// values by [`VPtr`]
-pub struct OrderedMap<K, V> {
+#[derive(Serialize, Deserialize)]
+pub struct OrderedMap<K: Eq + Hash, V> {
     index: Map<K, VRef<V>>,
     data: PoolMap<V, (K, V)>,
 }
@@ -91,6 +94,10 @@ impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
 
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.data.values().map(|(_, value)| value)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.data.values().map(|(key, value)| (key, value))
     }
 
     pub fn clear(&mut self) {

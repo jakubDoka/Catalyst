@@ -14,17 +14,22 @@ use cranelift_codegen::{
 
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
+use serde::{Deserialize, Serialize};
 use storage::*;
 use target_lexicon::Triple;
 use typec_t::*;
 
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct Gen {
     pub compiled_funcs: OrderedMap<VRef<str>, CompiledFunc>,
 }
 
 impl Gen {
     pub const FUNC_NAMESPACE: u32 = 0;
+
+    pub fn clear(&mut self) {
+        self.compiled_funcs.clear();
+    }
 
     pub fn save_compiled_code(
         &mut self,
@@ -77,11 +82,13 @@ impl Gen {
     }
 }
 
+#[derive(Clone, Deserialize, Serialize)]
 pub struct CompiledFunc {
     pub func: VRef<Func>,
     pub inner: Option<Arc<CompiledFuncInner>>,
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct CompiledFuncInner {
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
@@ -379,7 +386,7 @@ impl Layout {
 // relocs
 //////////////////////////////////
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct GenReloc {
     /// The offset at which the relocation applies, *relative to the
     /// containing section*.
@@ -392,7 +399,7 @@ pub struct GenReloc {
     pub addend: isize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum GenItemName {
     Func(VRef<CompiledFunc>),
     LibCall(ir::LibCall),

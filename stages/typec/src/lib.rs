@@ -221,7 +221,7 @@ mod util {
             scope.push(dep.name, dep.ptr, dep.name_span);
             for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
-                if let ScopeItem::Ty(ty) = item.item
+                if let ModuleItemPtr::Ty(ty) = item.ptr
                     && let Some(&r#impl) = typec.macros.get(&ty)
                     && let MacroImpl { name, r#impl: Some(r#impl) } = r#impl
                 {

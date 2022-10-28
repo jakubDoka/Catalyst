@@ -110,6 +110,7 @@ dependencies = [
  "gimli",
  "log",
  "regalloc2",
+ "serde",
  "smallvec",
  "target-lexicon",
 ]
@@ -134,6 +135,9 @@ name = "cranelift-entity"
 version = "0.89.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddae4fec5d6859233ffa175b61d269443c473b3971a2c3e69008c8d3e83d5825"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "cranelift-frontend"
@@ -272,6 +276,7 @@ dependencies = [
  "object",
  "packaging-t",
  "region",
+ "serde",
  "storage",
  "target-lexicon",
  "typec-t",
@@ -462,6 +467,8 @@ dependencies = [
  "packaging-t",
  "parsing",
  "parsing-t",
+ "rmp-serde",
+ "serde",
  "storage",
  "target-lexicon",
  "testing",
@@ -486,6 +493,7 @@ name = "mir-t"
 version = "0.1.0"
 dependencies = [
  "lexing-t",
+ "serde",
  "storage",
  "typec-t",
 ]
@@ -563,6 +571,7 @@ version = "0.1.0"
 dependencies = [
  "graphs",
  "lexing-t",
+ "serde",
  "storage",
 ]
 
@@ -673,6 +682,7 @@ checksum = "69025b4a161879ba90719837c06621c3d73cffa147a000aeacf458f6a9572485"
 dependencies = [
  "fxhash",
  "log",
+ "serde",
  "slice-group-by",
  "smallvec",
 ]
@@ -792,6 +802,9 @@ name = "smallvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "snippet-display"

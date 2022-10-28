@@ -25,6 +25,28 @@ impl<T, V: Default> ShadowMap<T, V> {
     {
         self.data.fill(self.default.clone());
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &V)> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (VRef<T>, &mut V)> {
+        self.data
+            .iter_mut()
+            .enumerate()
+            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.data.iter()
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.data.iter_mut()
+    }
 }
 
 impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
@@ -107,8 +129,9 @@ where
     where
         S: serde::Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(self.data.len()))?;
-        for (i, v) in self.data.iter().rev().enumerate() {
+        let mut seq = serializer.serialize_seq(None)?;
+        // we do this in reverse to guarantee that deserialization will allocate just once
+        for (i, v) in self.data.iter().enumerate().rev() {
             if *v != self.default {
                 seq.serialize_element(&(unsafe { VRef::<K>::new(i) }, v))?;
             }

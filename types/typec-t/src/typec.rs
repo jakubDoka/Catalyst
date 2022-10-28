@@ -105,6 +105,29 @@ gen_index! {
 }
 
 impl Typec {
+    pub fn clear(&mut self) {
+        self.lookup.clear();
+        self.structs.clear();
+        self.pointers.clear();
+        self.instances.clear();
+        self.base_specs.clear();
+        self.spec_instances.clear();
+        self.funcs.clear();
+        self.fields.clear();
+        self.impls.clear();
+        self.params.clear();
+        self.spec_sums.clear();
+        self.args.clear();
+        self.impl_lookup.clear();
+        self.func_slices.clear();
+        self.spec_funcs.clear();
+        self.builtin_funcs.clear();
+        self.module_items.clear();
+        self.variants.clear();
+        self.macros.clear();
+        self.enums.clear();
+    }
+
     pub fn get_band(&mut self) -> VRef<Func> {
         *self
             .builtin_funcs
@@ -880,4 +903,10 @@ pub struct MacroImpl {
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
+}
+
+impl ModuleItems {
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
 }
