@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, mem};
 
 use lexing_t::*;
 use packaging_t::{Resources, Source};
@@ -18,6 +18,11 @@ pub struct Workspace {
 impl Workspace {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn transfer(&mut self, other: &mut Self) {
+        self.sippets.append(&mut other.sippets);
+        self.error_count += mem::take(&mut other.error_count);
     }
 
     pub fn display<'a>(

@@ -75,6 +75,7 @@ impl PackageLoader<'_, '_> {
         let root_path = self.resolve_package_path(root_path, None)?;
         let root_package = self.load_packages(root_path, ctx)?;
 
+        let mut sweep_set = bumpvec![false; self.resources.sources.size_hint()];
         let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
         for package in self.resources.packages.values() {
@@ -87,7 +88,7 @@ impl PackageLoader<'_, '_> {
             .ordering(iter::once(root_package.index()), &mut buffer)
             .map_err(|cycle| self.package_cycle(cycle))
             .ok();
-        buffer.clear();
+        buffer.drain(..).for_each(|i| sweep_set[i] = true);
 
         let &Package {
             ref root_module,
@@ -119,7 +120,10 @@ impl PackageLoader<'_, '_> {
 
         self.resources
             .module_order
-            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i as usize) }));
+            .extend(buffer.drain(..).map(|i| {
+                sweep_set[i] = true;
+                unsafe { VRef::new(i as usize) }
+            }));
         self.resources.mark_changed();
 
         self.resources
@@ -127,6 +131,14 @@ impl PackageLoader<'_, '_> {
             .iter()
             .enumerate()
             .for_each(|(i, &id)| self.resources.modules[id].ordering = i);
+
+        for i in sweep_set
+            .drain(..)
+            .enumerate()
+            .filter_map(|(i, b)| b.then_some(i))
+        {
+            self.resources.sources.remove(unsafe { VRef::new(i) });
+        }
 
         Some(())
     }

@@ -9,7 +9,7 @@ pub type PackageGraph = graphs::CycleDetector;
 
 #[derive(Default)]
 pub struct Resources {
-    pub sources: PushMap<Source>,
+    pub sources: PoolMap<Source>,
     pub packages: PushMap<Package>,
     pub modules: PushMap<Module>,
     pub package_deps: BumpMap<Dep<Package>>,
@@ -46,6 +46,16 @@ impl Resources {
                 || self.module_deps[deps]
                     .iter()
                     .any(|&dep| self.sources[self.modules[dep.ptr].source].changed);
+        }
+    }
+
+    pub fn mark_subgraph(&self, roots: &[VRef<Module>], mark: &mut BitSet) {
+        let mut stack = roots.to_bumpvec();
+        while let Some(elem) = stack.pop() {
+            if mark.insert(elem.index()) {
+                let Module { deps, .. } = self.modules[elem];
+                stack.extend(self.module_deps[deps].iter().map(|&dep| dep.ptr));
+            }
         }
     }
 }

@@ -460,6 +460,7 @@ dependencies = [
  "cranelift-frontend",
  "diags",
  "gen",
+ "graphs",
  "lexing",
  "mir",
  "mir-t",
