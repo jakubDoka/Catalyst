@@ -5,6 +5,7 @@ use std::{
     env::{self, VarError},
     ffi::OsStr,
     io, iter, mem,
+    ops::Not,
     path::*,
     process::Command,
     time::SystemTime,
@@ -105,6 +106,7 @@ impl PackageLoader<'_, '_> {
             root_module_span,
             ctx,
         )?;
+        sweep_set.resize(self.resources.sources.size_hint(), false);
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -120,10 +122,11 @@ impl PackageLoader<'_, '_> {
 
         self.resources
             .module_order
-            .extend(buffer.drain(..).map(|i| {
-                sweep_set[i] = true;
-                unsafe { VRef::new(i as usize) }
-            }));
+            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i as usize) }));
+        for &module in &self.resources.module_order {
+            let Module { source, .. } = self.resources.modules[module];
+            sweep_set[source.index()] = true;
+        }
         self.resources.mark_changed();
 
         self.resources
@@ -132,10 +135,12 @@ impl PackageLoader<'_, '_> {
             .enumerate()
             .for_each(|(i, &id)| self.resources.modules[id].ordering = i);
 
+        dbg!(&sweep_set);
+
         for i in sweep_set
             .drain(..)
             .enumerate()
-            .filter_map(|(i, b)| b.then_some(i))
+            .filter_map(|(i, b)| b.not().then_some(i))
         {
             self.resources.sources.remove(unsafe { VRef::new(i) });
         }

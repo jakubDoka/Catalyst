@@ -202,7 +202,7 @@ pub struct CallMir {
     pub args: VRefSlice<ValueMir>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize, Debug)]
 pub enum CallableMir {
     Func(VRef<Func>),
     SpecFunc(VRef<SpecFunc>),

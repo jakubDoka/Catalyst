@@ -293,6 +293,7 @@ dependencies = [
  "diags",
  "gen",
  "lexing",
+ "middleware",
  "mir",
  "mir-t",
  "packaging",

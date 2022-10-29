@@ -114,6 +114,10 @@ impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
         self.data.values().map(|(key, value)| (key, value))
     }
 
+    pub fn indexed_values(&self) -> impl Iterator<Item = (VRef<V>, &V)> {
+        self.data.iter().map(|(key, (.., value))| (key, value))
+    }
+
     pub fn clear(&mut self) {
         self.index.clear();
         self.data.clear();

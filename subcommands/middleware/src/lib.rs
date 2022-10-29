@@ -6,9 +6,11 @@
 
 mod cmd_args;
 mod incremental;
-mod scheduler;
+mod logic;
 
 pub use {
     incremental::{Incremental, IncrementalBorrow, InternerTransfer, SweepCtx},
-    scheduler::{Middleware, Task, Worker},
+    logic::{
+        GenTask, MacroCtx, Middleware, MiddlewareArgs, Shared, Task, TaskGraph, Worker, WorkerState,
+    },
 };

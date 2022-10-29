@@ -8,7 +8,11 @@ use std::{
     thread,
 };
 
-use cranelift_codegen::Context;
+use cranelift_codegen::{
+    ir::{self, InstBuilder},
+    isa::CallConv,
+    Context,
+};
 use cranelift_frontend::FunctionBuilderContext;
 use diags::*;
 use gen::*;
@@ -79,6 +83,8 @@ impl Middleware {
     pub fn update(&mut self, args: &MiddlewareArgs) -> Option<Vec<u8>> {
         if let Some(ref path) = args.incremental_path {
             self.prepare_incremental(path, &args.path);
+        } else {
+            self.reload_resources(&args.path);
         }
 
         if self.workspace.has_errors() {
@@ -125,12 +131,13 @@ impl Middleware {
 
             let mut tasks = self.expand(&mut receiver, &mut senders, &resources);
             self.distribute_compile_requests(&mut tasks, &args.isa);
-            for (task, (recv, ..)) in tasks.into_iter().zip(senders) {
+            for (task, (recv, ..)) in tasks.into_iter().zip(senders.iter_mut()) {
                 recv.send(task).expect("Bruh...");
             }
 
             let to_link = (0..num_workers)
                 .flat_map(|_| {
+                    dbg!();
                     let mut task = receiver.recv().expect("Eh...");
                     task.compile_requests.queue.into_iter().map(move |req| {
                         let (key, value) = task.gen.compiled_funcs.remove_index(req.id);
@@ -145,10 +152,13 @@ impl Middleware {
                     id
                 })
                 .collect::<BumpVec<_>>();
+
+            let entry_point = self.generate_entry_point(&args.isa);
+
             let mut object = ObjectContext::new(&args.isa).expect("This really sucks...");
             object
                 .load_functions(
-                    to_link,
+                    to_link.into_iter().chain(iter::once(entry_point)),
                     &self.incremental.gen,
                     &self.incremental.typec,
                     &self.incremental.interner,
@@ -162,14 +172,65 @@ impl Middleware {
         Some(binary)
     }
 
+    fn generate_entry_point(&mut self, isa: &Isa) -> VRef<CompiledFunc> {
+        let mut context = Context::new();
+        let mut func_ctx = FunctionBuilderContext::new();
+
+        let (body, dependant) = (default(), default());
+        let mut builder = GenBuilder::new(isa, &body, &mut context.func, &dependant, &mut func_ctx);
+
+        let entry_point = builder.create_block();
+        builder.append_block_params_for_function_params(entry_point);
+        builder.switch_to_block(entry_point);
+
+        for (index, func) in self.incremental.gen.compiled_funcs.indexed_values() {
+            if !self.incremental.typec.funcs[func.func]
+                .flags
+                .contains(FuncFlags::ENTRY)
+            {
+                continue;
+            }
+
+            let signature = ir::Signature::new(CallConv::Fast);
+            let sig_ref = builder.import_signature(signature);
+            let external_name = ir::UserExternalName::new(0, index.as_u32());
+            let name = builder.func.declare_imported_user_function(external_name);
+            let func_ref = builder.import_function(ir::ExtFuncData {
+                name: ir::ExternalName::user(name),
+                signature: sig_ref,
+                colocated: true,
+            });
+            builder.ins().call(func_ref, &[]);
+        }
+        builder.ins().return_(&[]);
+
+        let func_id = self.incremental.typec.funcs.push(Func {
+            visibility: FuncVisibility::Exported,
+            name: self.incremental.interner.intern(gen::ENTRY_POINT_NAME),
+            ..default()
+        });
+        let entry_point = self.incremental.gen.compiled_funcs.insert_unique(
+            self.incremental.interner.intern(gen::ENTRY_POINT_NAME),
+            CompiledFunc::new(func_id),
+        );
+
+        context.compile(&*isa.inner).expect("Real nice...");
+        self.incremental
+            .gen
+            .save_compiled_code(entry_point, &context)
+            .expect("Not again...");
+
+        entry_point
+    }
+
     pub fn distribute_compile_requests(&mut self, tasks: &mut [Task], isa: &Isa) {
         let frontier = self
             .entry_points
-            .drain(..)
-            .map(|func| {
+            .iter()
+            .map(|&func| {
                 let key = Generator::func_instance_name(
                     false,
-                    isa.triple,
+                    &isa.triple,
                     func,
                     iter::empty(),
                     &self.incremental.typec,
@@ -206,10 +267,12 @@ impl Middleware {
                     continue;
                 };
 
-                let Some(package) = self.task_graph.next() else {
+                let Some(package) = self.task_graph.next_task() else {
                     *maybe_task = Some(task);
                     break;
                 };
+
+                dbg!(package);
 
                 task.clear();
                 task.modules_to_compile.extend(
@@ -228,15 +291,20 @@ impl Middleware {
 
             let mut task = receiver.recv().expect("Very bad...");
             loop {
-                self.entry_points.append(&mut task.entry_points);
+                self.entry_points.append(dbg!(&mut task.entry_points));
                 self.sweep_bitset.clear();
                 for &module in &task.modules_to_compile {
                     self.sweep_bitset.insert(module.index());
                 }
                 sweep!(self, task => self.incremental);
+                let id = task.id;
+                senders[id].1 = Some(task);
                 if let Ok(next_task) = receiver.try_recv() {
-                    senders[next_task.id].1 = Some(task);
                     task = next_task;
+                } else if !self.task_graph.has_tasks()
+                    && senders.iter().any(|(_, task)| task.is_none())
+                {
+                    task = receiver.recv().expect("Interesting...");
                 } else {
                     break;
                 }
@@ -317,6 +385,7 @@ impl Middleware {
             .packages
             .keys()
             .flat_map(|key| {
+                dbg!(&self.resources.sources[self.resources.packages[key].source].path);
                 self.resources.package_deps[self.resources.packages[key].deps]
                     .iter()
                     .map(move |dep| (dep.ptr, key))
@@ -324,21 +393,24 @@ impl Middleware {
             .collect::<BumpVec<_>>();
         edges.sort_unstable();
 
+        dbg!(&edges);
+
+        self.task_graph.meta.extend(
+            self.resources
+                .packages
+                .values()
+                .map(|package| self.resources.package_deps[package.deps].len())
+                .map(|count| (count, default())),
+        );
+
         for package_deps in edges.group_by(|(a, _), (b, _)| *a == *b) {
             let package = package_deps[0].0;
 
-            while package.index() >= self.task_graph.meta.len() {
-                self.task_graph.meta.push(default());
-            }
-
-            let count = self.resources.package_deps[self.resources.packages[package].deps].len();
-            let children = self
+            let (count, ref mut children) = self.task_graph.meta[package.index()];
+            *children = self
                 .task_graph
                 .inverse_graph
                 .bump(package_deps.iter().map(|&(_, dep)| dep));
-
-            self.task_graph.meta.push((count, children));
-
             if count == 0 {
                 self.task_graph.frontier.push_back(package);
             }
@@ -354,13 +426,13 @@ pub struct TaskGraph {
 }
 
 impl TaskGraph {
-    pub fn next(&mut self) -> Option<VRef<Package>> {
+    pub fn next_task(&mut self) -> Option<VRef<Package>> {
         let current = self.frontier.pop_front();
 
         if let Some(current) = current {
             let (.., deps) = self.meta[current.index()];
             for &dep in &self.inverse_graph[deps] {
-                let index = self.meta[dep.index()].0;
+                let index = dep.index();
                 self.meta[index].0 -= 1;
                 if self.meta[index].0 == 0 {
                     self.frontier.push_back(dep);
@@ -427,7 +499,8 @@ impl Worker {
             self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
             let mut compile_task = loop {
                 let mut task = self.tasks.recv().expect("This is f...");
-                if !task.for_generation {
+                dbg!(task.for_generation);
+                if task.for_generation {
                     break task;
                 }
 
@@ -437,6 +510,7 @@ impl Worker {
                 }
                 task.modules_to_compile = modules;
                 self.products.send(task).expect("As I was saying...");
+                dbg!("Sent task");
             };
 
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
@@ -598,7 +672,7 @@ impl Worker {
                 .map(|&func| {
                     let key = Generator::func_instance_name(
                         true,
-                        shared.jit_isa.triple,
+                        &shared.jit_isa.triple,
                         func,
                         params.iter().cloned(),
                         &task.typec,
@@ -684,7 +758,7 @@ impl Worker {
 
                 let key = Generator::func_instance_name(
                     false,
-                    isa.triple,
+                    &isa.triple,
                     func_id,
                     params.iter().cloned(),
                     &task.typec,

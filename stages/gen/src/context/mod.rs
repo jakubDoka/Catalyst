@@ -120,23 +120,9 @@ pub struct CompileRequests {
 }
 
 impl CompileRequests {
-    pub fn add_request(
-        &mut self,
-        id: VRef<CompiledFunc>,
-        func: VRef<Func>,
-        params: impl IntoIterator<Item = Ty>,
-        children: impl IntoIterator<Item = CompileRequestChild>,
-    ) {
-        self.queue.push(CompileRequest {
-            id,
-            func,
-            params: self.ty_slices.bump(params),
-            children: self.children.bump(children),
-        })
-    }
-
     pub fn clear(&mut self) {
         self.ty_slices.clear();
+        self.children.clear();
     }
 }
 
@@ -421,7 +407,7 @@ pub enum GenItemName {
 //////////////////////////////////
 
 pub struct Isa {
-    pub triple: VRef<str>,
+    pub triple: String,
     pub pointer_ty: Type,
     pub inner: Box<dyn TargetIsa>,
     pub jit: bool,
@@ -432,9 +418,8 @@ impl Isa {
         triple: Triple,
         flags: settings::Flags,
         jit: bool,
-        interner: &mut Interner,
     ) -> Result<Self, IsaCreationError> {
-        let triple_str = interner.intern(&triple.to_string());
+        let triple_str = triple.to_string();
         isa::lookup(triple)
             .map_err(IsaCreationError::Lookup)?
             .finish(flags)
@@ -445,6 +430,13 @@ impl Isa {
                 inner: isa,
                 jit,
             })
+    }
+
+    pub fn host(jit: bool) -> Result<Self, IsaCreationError> {
+        let triple = Triple::host();
+        let flags_builder = settings::builder();
+        let flags = settings::Flags::new(flags_builder);
+        Self::new(triple, flags, jit)
     }
 }
 
