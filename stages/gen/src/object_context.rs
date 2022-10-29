@@ -20,11 +20,10 @@ pub struct ObjectContext {
     functions: ShadowMap<CompiledFunc, Option<ObjectFunction>>,
     text_section: SectionId,
     object: Object<'static>,
-    pub isa: Isa,
 }
 
 impl ObjectContext {
-    pub fn new(isa: Isa) -> Result<Self, ObjectCreationError> {
+    pub fn new(isa: &Isa) -> Result<Self, ObjectCreationError> {
         let triple = isa.triple();
         let binary_format = match triple.binary_format {
             target_lexicon::BinaryFormat::Elf => BinaryFormat::Elf,
@@ -56,7 +55,6 @@ impl ObjectContext {
             functions: ShadowMap::new(),
             text_section: object.section_id(StandardSection::Text),
             object,
-            isa,
         })
     }
 

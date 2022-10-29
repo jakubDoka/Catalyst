@@ -274,122 +274,49 @@ impl Generator<'_> {
     }
 
     fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        if builder.isa.jit {
-            // since this si already compile time, we inline the constant
-            // expression
+        let block_id = builder.body.constants[id].block;
+        let BlockMir {
+            insts,
+            control_flow,
+            ..
+        } = builder.body.blocks[block_id];
 
-            let block_id = builder.body.constants[id].block;
-            let BlockMir {
-                insts,
-                control_flow,
-                ..
-            } = builder.body.blocks[block_id];
+        for &inst in &builder.body.insts[insts] {
+            self.inst(inst, builder);
+        }
 
-            for &inst in &builder.body.insts[insts] {
-                self.inst(inst, builder);
-            }
+        #[allow(irrefutable_let_patterns)]
+        let ControlFlowMir::Return(final_value) = control_flow else {
+            unreachable!()
+        };
 
-            #[allow(irrefutable_let_patterns)]
-            let ControlFlowMir::Return(final_value) = control_flow else {
-                unreachable!()
-            };
-
-            if let Some(final_value) = final_value {
-                self.assign_value(ret, final_value, builder)
-            }
-        } else {
-            let value = self.gen_resources.func_constants[id]
-                .expect("Constant should be computed before function compilation.");
-            let ty = self.ty_repr(builder.value_ty(ret));
-
-            let value = match value {
-                GenFuncConstant::Int(val) => builder.ins().iconst(ty, val as i64),
-            };
-
-            self.save_value(ret, value, 0, false, builder);
+        if let Some(final_value) = final_value {
+            self.assign_value(ret, final_value, builder)
         }
     }
 
-    fn call(
-        &mut self,
-        CallMir {
-            callable,
-            params,
-            args,
-        }: CallMir,
-        ret: OptVRef<ValueMir>,
-        builder: &mut GenBuilder,
-    ) {
-        let params = builder.body.ty_params[params]
-            .iter()
-            .map(|&param| builder.dependant_types[param.index()].ty)
-            .collect::<BumpVec<_>>();
+    fn call(&mut self, call: VRef<CallMir>, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
+        let CallMir { args, .. } = builder.body.calls[call];
+        let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
-        let (func_ref, struct_ret) = match callable {
-            CallableMir::Func(func_id) => {
-                if func_id == Func::CAST {
-                    self.cast(args, ret, builder);
-                    return;
-                }
-
-                if func_id == Func::SIZEOF {
-                    self.sizeof(params[0], ret, builder);
-                    return;
-                }
-
-                if self.typec.funcs[func_id].flags.contains(FuncFlags::BUILTIN) {
-                    let args = builder.body.value_args[args]
-                        .iter()
-                        .map(|&arg| self.load_value(arg, builder))
-                        .collect::<BumpVec<_>>();
-                    self.builtin_call(func_id, args, ret, builder);
-                    return;
-                }
-                self.instantiate(func_id, params.iter().copied(), builder)
-            }
-            CallableMir::SpecFunc(func) => {
-                // TODO: I dislike how much can panic here, maybe improve this in the future
-                let SpecFunc {
-                    parent, generics, ..
-                } = self.typec.spec_funcs[func];
-                let SpecBase { methods, .. } = self.typec[parent];
-                let index = self.typec.spec_funcs.local_index(methods, func);
-                let generic_count = params.len() - self.typec[generics].len();
-                let (upper, caller, lower) = (
-                    &params[..generic_count - 1],
-                    params[generic_count - 1],
-                    &params[generic_count..],
-                );
-                let used_spec = if upper.is_empty() {
-                    Spec::Base(parent)
-                } else {
-                    Spec::Instance(self.typec.spec_instance(parent, upper, self.interner))
-                };
-                let r#impl = self
-                    .typec
-                    .find_implementation(caller, used_spec, &[], &mut None, self.interner)
-                    .unwrap()
-                    .unwrap();
-                let Impl {
-                    generics,
-                    methods,
-                    key: ImplKey { ty, spec },
-                    ..
-                } = self.typec.impls[r#impl];
-                let func_id = self.typec.func_slices[methods][index];
-                let mut infer_slots = bumpvec![None; self.typec[generics].len()];
-                let _ = self.typec.compatible(&mut infer_slots, caller, ty);
-                let _ = self
-                    .typec
-                    .compatible_spec(&mut infer_slots, used_spec, spec);
-                let params = infer_slots
+        if self.typec.funcs[func].flags.contains(FuncFlags::BUILTIN) {
+            if func == Func::CAST {
+                self.cast(args, ret, builder)
+            } else if func == Func::SIZEOF {
+                self.sizeof(self.compile_requests.ty_slices[params][0], ret, builder)
+            } else {
+                let args = builder.body.value_args[args]
                     .iter()
-                    .map(|&slot| slot.unwrap())
-                    .chain(lower.iter().copied());
-                self.instantiate(func_id, params, builder)
+                    .map(|&arg| self.load_value(arg, builder))
+                    .collect::<BumpVec<_>>();
+                self.builtin_call(func, args, ret, builder);
             }
-            CallableMir::Pointer(_) => todo!(),
-        };
+
+            return;
+        }
+
+        let params = self.compile_requests.ty_slices[params].iter().copied();
+        let (func, struct_ret) = self.import_compiled_func(id, params, builder);
 
         let struct_ptr = struct_ret.then(|| {
             let ret = ret.unwrap();
@@ -415,7 +342,7 @@ impl Generator<'_> {
             )
             .collect::<BumpVec<_>>();
 
-        let inst = builder.ins().call(func_ref, &args);
+        let inst = builder.ins().call(func, &args);
         if let Some(&first) = builder.inst_results(inst).first() && !struct_ret {
             let ret = ret.unwrap();
             self.save_value(ret, first, 0, false, builder)

@@ -116,6 +116,7 @@ pub enum CodeSaveError {
 pub struct CompileRequests {
     pub queue: Vec<CompileRequest>,
     pub ty_slices: BumpMap<Ty>,
+    pub children: BumpMap<CompileRequestChild>,
 }
 
 impl CompileRequests {
@@ -124,11 +125,13 @@ impl CompileRequests {
         id: VRef<CompiledFunc>,
         func: VRef<Func>,
         params: impl IntoIterator<Item = Ty>,
+        children: impl IntoIterator<Item = CompileRequestChild>,
     ) {
         self.queue.push(CompileRequest {
             id,
             func,
             params: self.ty_slices.bump(params),
+            children: self.children.bump(children),
         })
     }
 
@@ -139,6 +142,14 @@ impl CompileRequests {
 
 #[derive(Clone, Copy)]
 pub struct CompileRequest {
+    pub id: VRef<CompiledFunc>,
+    pub func: VRef<Func>,
+    pub params: VSlice<Ty>,
+    pub children: VSlice<CompileRequestChild>,
+}
+
+#[derive(Clone, Copy)]
+pub struct CompileRequestChild {
     pub id: VRef<CompiledFunc>,
     pub func: VRef<Func>,
     pub params: VSlice<Ty>,
@@ -153,8 +164,8 @@ pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
     pub func_imports: Map<VRef<str>, (ir::FuncRef, bool)>,
-    pub func_constants: ShadowMap<FuncConstMir, Option<GenFuncConstant>>,
     pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
+    pub calls: Vec<CompileRequestChild>,
 }
 
 impl GenResources {

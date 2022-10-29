@@ -123,17 +123,16 @@ impl MirChecker<'_> {
                 }
                 write!(buffer, "access var{}", access.index())?;
             }
-            InstMir::Call(
-                CallMir {
-                    callable,
-                    params,
-                    args,
-                },
-                ret,
-            ) => {
+            InstMir::Call(call, ret) => {
                 if let Some(ret) = ret {
                     write!(buffer, "var{} = ", ret.index())?;
                 }
+
+                let CallMir {
+                    callable,
+                    params,
+                    args,
+                } = func.calls[call];
 
                 match callable {
                     CallableMir::Func(func) => {

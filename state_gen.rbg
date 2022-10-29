@@ -59,21 +59,13 @@ file "stages/gen/src/state_gen.rs" {
     use "packaging_t"
 
     struct Generator {
-        mut CompileRequests
         mut GenLayouts
         mut Gen
         passed mut GenResources
         mut Interner
         mut Typec
 
-        Resources
-    }
-}
-
-file "subcommands/middleware/src/state_gen.rs" {
-    use "packaging_t"
-
-    struct Shared {
+        CompileRequests
         Resources
     }
 }

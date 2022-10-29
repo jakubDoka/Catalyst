@@ -6,38 +6,6 @@ use cranelift_codegen::{
 use super::*;
 
 impl Generator<'_> {
-    pub fn instantiate(
-        &mut self,
-        func_id: VRef<Func>,
-        params: impl Iterator<Item = Ty> + Clone,
-        builder: &mut GenBuilder,
-    ) -> (ir::FuncRef, bool) {
-        let name = Self::func_instance_name(
-            builder.isa.jit,
-            builder.isa.triple,
-            func_id,
-            params.clone(),
-            self.typec,
-            self.interner,
-        );
-
-        if let Some(&imported) = self.gen_resources.func_imports.get(&name) {
-            return imported;
-        }
-
-        let func = self.gen.compiled_funcs.get_or_insert(name, |s| {
-            self.compile_requests
-                .add_request(s.next(), func_id, params.clone());
-            CompiledFunc::new(func_id)
-        });
-
-        let func_ref = self.import_compiled_func(func, params, builder);
-
-        self.gen_resources.func_imports.insert(name, func_ref);
-
-        func_ref
-    }
-
     pub fn func_instance_name(
         jit: bool,
         triple: VRef<str>,

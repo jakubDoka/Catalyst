@@ -7,7 +7,6 @@
 mod cmd_args;
 mod incremental;
 mod scheduler;
-mod state_gen;
 
 pub use {
     incremental::{Incremental, IncrementalBorrow, InternerTransfer, SweepCtx},

@@ -289,11 +289,11 @@ impl MirChecker<'_> {
                         };
                         ret_value = match ret_value {
                             Some(other) => {
-                                let call = CallMir {
+                                let call = builder.ctx.func.calls.push(CallMir {
                                     callable: CallableMir::Func(band),
                                     params: default(),
                                     args: builder.ctx.func.value_args.bump([val, other]),
-                                };
+                                });
                                 let ret = builder.value(Ty::BOOL, self.typec);
                                 builder.inst(InstMir::Call(call, Some(ret)), field.span);
                                 Some(ret)
@@ -307,11 +307,11 @@ impl MirChecker<'_> {
                 UnitPatKindTir::Int(int, cmp) => {
                     let val = builder.value(ty, self.typec);
                     let lit = self.int(int.err(), int.unwrap_or(span), val, builder)?;
-                    let call = CallMir {
+                    let call = builder.ctx.func.calls.push(CallMir {
                         callable: CallableMir::Func(cmp),
                         params: default(),
                         args: builder.ctx.func.value_args.bump([lit, value]),
-                    };
+                    });
                     let cond = builder.value(Ty::BOOL, self.typec);
                     builder.inst(InstMir::Call(call, Some(cond)), int.unwrap_or(span));
                     Some(cond)
@@ -512,14 +512,12 @@ impl MirChecker<'_> {
         let value = dest.or_else(|| {
             (ty != Ty::UNIT && ty != Ty::TERMINAL).then(|| builder.value(ty, self.typec))
         });
-        let call = InstMir::Call(
-            CallMir {
-                callable,
-                params,
-                args,
-            },
-            value,
-        );
+        let callable = builder.ctx.func.calls.push(CallMir {
+            callable,
+            params,
+            args,
+        });
+        let call = InstMir::Call(callable, value);
         builder.inst(call, span);
 
         if ty == Ty::TERMINAL {

@@ -62,6 +62,7 @@ pub struct FuncMirInner {
     pub value_args: BumpMap<VRef<ValueMir>>,
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub constants: PushMap<FuncConstMir>,
+    pub calls: PushMap<CallMir>,
     value_flags: BitSet,
 }
 
@@ -121,6 +122,7 @@ impl Default for FuncMirInner {
             value_args: default(),
             ty_params: default(),
             constants: default(),
+            calls: default(),
             value_flags: default(),
         }
     }
@@ -184,7 +186,7 @@ pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>, OptVRef<ValueMir>),
-    Call(CallMir, OptVRef<ValueMir>),
+    Call(VRef<CallMir>, OptVRef<ValueMir>),
     Const(VRef<FuncConstMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
