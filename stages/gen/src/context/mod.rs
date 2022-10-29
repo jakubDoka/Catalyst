@@ -121,6 +121,7 @@ pub struct CompileRequests {
 
 impl CompileRequests {
     pub fn clear(&mut self) {
+        self.queue.clear();
         self.ty_slices.clear();
         self.children.clear();
     }

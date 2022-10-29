@@ -1,9 +1,9 @@
 use std::{
     collections::VecDeque,
     default::default,
+    fmt::Write,
     iter, mem,
     path::*,
-    slice,
     sync::mpsc::{self, Receiver, Sender, SyncSender},
     thread,
 };
@@ -80,7 +80,9 @@ impl Middleware {
         .reload(path, &mut self.resource_loading_ctx);
     }
 
-    pub fn update(&mut self, args: &MiddlewareArgs) -> Option<Vec<u8>> {
+    pub fn update(&mut self, args: &MiddlewareArgs) -> Option<MiddlewareOutput> {
+        let mut ir = args.dump_ir.then(String::new);
+
         if let Some(ref path) = args.incremental_path {
             self.prepare_incremental(path, &args.path);
         } else {
@@ -123,6 +125,7 @@ impl Middleware {
                         sender,
                         Some(Task {
                             id,
+                            ir_dump: ir.clone(),
                             ..Task::default()
                         }),
                     )
@@ -137,18 +140,19 @@ impl Middleware {
 
             let to_link = (0..num_workers)
                 .flat_map(|_| {
-                    dbg!();
                     let mut task = receiver.recv().expect("Eh...");
+                    if let (Some(ir), Some(dump)) = (&mut ir, task.ir_dump) {
+                        ir.push_str(&dump);
+                        ir.push('\n');
+                    }
+                    task.workspace.transfer(&mut self.workspace);
                     task.compile_requests.queue.into_iter().map(move |req| {
                         let (key, value) = task.gen.compiled_funcs.remove_index(req.id);
                         (req.id, key, value)
                     })
                 })
                 .map(|(id, key, value)| {
-                    self.incremental
-                        .gen
-                        .compiled_funcs
-                        .insert_unique(key, value);
+                    self.incremental.gen.compiled_funcs.insert(key, value);
                     id
                 })
                 .collect::<BumpVec<_>>();
@@ -169,7 +173,7 @@ impl Middleware {
 
         self.resources = resources;
 
-        Some(binary)
+        Some(MiddlewareOutput { binary, ir })
     }
 
     fn generate_entry_point(&mut self, isa: &Isa) -> VRef<CompiledFunc> {
@@ -241,6 +245,8 @@ impl Middleware {
                     .gen
                     .compiled_funcs
                     .insert_unique(key, CompiledFunc::new(func));
+                let _ = self.incremental.gen.compiled_funcs[id].clone();
+
                 CompileRequestChild {
                     id,
                     func,
@@ -248,10 +254,40 @@ impl Middleware {
                 }
             })
             .collect();
-        Worker::traverse_compile_requests(frontier, tasks, isa);
-        for task in tasks {
+
+        let mut compile_requests = CompileRequests::default();
+        Worker::traverse_compile_requests(
+            frontier,
+            &self.incremental.mir,
+            &mut self.incremental.gen,
+            &mut self.incremental.typec,
+            &mut self.incremental.interner,
+            &mut compile_requests,
+            isa,
+        );
+
+        for task in tasks.iter_mut() {
             task.for_generation = true;
             Self::transfer_all(task, &self.incremental);
+        }
+
+        let chunk_size =
+            ((compile_requests.queue.len() & !(tasks.len() - 1)) + tasks.len()) / tasks.len();
+        let chunks = compile_requests.queue.chunks(chunk_size);
+
+        for (task, chunk) in tasks.iter_mut().zip(chunks) {
+            for req in chunk {
+                let key = self.incremental.gen.compiled_funcs.id(req.id);
+                let value = self.incremental.gen.compiled_funcs[req.id].clone();
+                task.gen.compiled_funcs.insert(key, value);
+            }
+            task.compile_requests.queue.extend(chunk);
+            task.compile_requests
+                .ty_slices
+                .clone_from(&compile_requests.ty_slices);
+            task.compile_requests
+                .children
+                .clone_from(&compile_requests.children);
         }
     }
 
@@ -296,7 +332,9 @@ impl Middleware {
                 for &module in &task.modules_to_compile {
                     self.sweep_bitset.insert(module.index());
                 }
+                dbg!("start");
                 sweep!(self, task => self.incremental);
+                dbg!("end");
                 let id = task.id;
                 senders[id].1 = Some(task);
                 if let Ok(next_task) = receiver.try_recv() {
@@ -310,6 +348,7 @@ impl Middleware {
                 }
             }
         }
+        dbg!("done");
 
         senders
             .iter_mut()
@@ -467,6 +506,12 @@ pub struct MiddlewareArgs {
     pub isa: Isa,
     pub incremental_path: Option<PathBuf>,
     pub max_cores: Option<usize>,
+    pub dump_ir: bool,
+}
+
+pub struct MiddlewareOutput {
+    pub binary: Vec<u8>,
+    pub ir: Option<String>,
 }
 
 pub struct Worker {
@@ -497,6 +542,7 @@ impl Worker {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
             self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
+            self.state.gen_layouts.ptr_ty = shared.isa.pointer_ty;
             let mut compile_task = loop {
                 let mut task = self.tasks.recv().expect("This is f...");
                 dbg!(task.for_generation);
@@ -633,6 +679,10 @@ impl Worker {
                 shared.resources,
             )
             .generate(signature, &params, root, &mut builder);
+            if let Some(ref mut dump) = task.ir_dump {
+                write!(dump, "{}", self.context.func.display()).unwrap();
+            }
+            self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
                 .save_compiled_code(id, &self.context)
                 .expect("Superb error occurred!");
@@ -690,21 +740,41 @@ impl Worker {
                 })
                 .collect::<BumpVec<_>>();
 
-            Self::traverse_compile_requests(frontier, slice::from_mut(task), shared.jit_isa);
+            Self::traverse_compile_requests(
+                frontier,
+                &task.mir,
+                &mut task.gen,
+                &mut task.typec,
+                &mut task.interner,
+                &mut task.compile_requests,
+                shared.jit_isa,
+            );
         }
     }
 
     fn traverse_compile_requests(
         mut frontier: BumpVec<CompileRequestChild>,
-        tasks: &mut [Task],
+        mir: &Mir,
+        gen: &mut Gen,
+        typec: &mut Typec,
+        interner: &mut Interner,
+        compile_requests: &mut CompileRequests,
         isa: &Isa,
     ) {
-        let mut task_cycle = (0..tasks.len()).cycle();
-        while let Some(CompileRequestChild { id, func, params }) = frontier.pop() && let Some(current) = task_cycle.next() {
-            let task = &mut tasks[current];
-            let body = &task.mir.bodies[func];
+        while let Some(CompileRequestChild { id, func, params }) = frontier.pop() {
+            let body = &mir.bodies[func];
+            let mut types = body
+                .dependant_types
+                .values()
+                .copied()
+                .collect::<BumpVec<_>>();
+            let bumped_params = compile_requests.ty_slices[params].to_bumpvec();
+            Worker::swap_mir_types(&body.inner, &mut types, &bumped_params, typec, interner);
             let prev = frontier.len();
-            for &CallMir { callable, params, .. } in body.calls.values() {
+            for &CallMir {
+                callable, params, ..
+            } in body.calls.values()
+            {
                 let params = body.ty_params[params]
                     .iter()
                     .map(|&ty| body.dependant_types[ty].ty)
@@ -715,10 +785,10 @@ impl Worker {
                         // TODO: I dislike how much can panic here, maybe improve this in the future
                         let SpecFunc {
                             parent, generics, ..
-                        } = task.typec.spec_funcs[func];
-                        let SpecBase { methods, .. } = task.typec[parent];
-                        let index = task.typec.spec_funcs.local_index(methods, func);
-                        let generic_count = params.len() - task.typec[generics].len();
+                        } = typec.spec_funcs[func];
+                        let SpecBase { methods, .. } = typec[parent];
+                        let index = typec.spec_funcs.local_index(methods, func);
+                        let generic_count = params.len() - typec[generics].len();
                         let (upper, caller, lower) = (
                             &params[..generic_count - 1],
                             params[generic_count - 1],
@@ -727,11 +797,10 @@ impl Worker {
                         let used_spec = if upper.is_empty() {
                             Spec::Base(parent)
                         } else {
-                            Spec::Instance(task.typec.spec_instance(parent, upper, &mut task.interner))
+                            Spec::Instance(typec.spec_instance(parent, upper, interner))
                         };
-                        let r#impl = task
-                            .typec
-                            .find_implementation(caller, used_spec, &[], &mut None, &mut task.interner)
+                        let r#impl = typec
+                            .find_implementation(caller, used_spec, &[], &mut None, interner)
                             .unwrap()
                             .unwrap();
                         let Impl {
@@ -739,13 +808,11 @@ impl Worker {
                             methods,
                             key: ImplKey { ty, spec },
                             ..
-                        } = task.typec.impls[r#impl];
-                        let func_id = task.typec.func_slices[methods][index];
-                        let mut infer_slots = bumpvec![None; task.typec[generics].len()];
-                        let _ = task.typec.compatible(&mut infer_slots, caller, ty);
-                        let _ = task
-                            .typec
-                            .compatible_spec(&mut infer_slots, used_spec, spec);
+                        } = typec.impls[r#impl];
+                        let func_id = typec.func_slices[methods][index];
+                        let mut infer_slots = bumpvec![None; typec[generics].len()];
+                        let _ = typec.compatible(&mut infer_slots, caller, ty);
+                        let _ = typec.compatible_spec(&mut infer_slots, used_spec, spec);
                         let params = infer_slots
                             .iter()
                             .map(|&slot| slot.unwrap())
@@ -761,21 +828,23 @@ impl Worker {
                     &isa.triple,
                     func_id,
                     params.iter().cloned(),
-                    &task.typec,
-                    &mut task.interner,
+                    typec,
+                    interner,
                 );
-                let id = task
-                    .gen
-                    .compiled_funcs
-                    .insert_unique(key, CompiledFunc::new(func_id));
+                let (id, dup) = gen.compiled_funcs.insert(key, CompiledFunc::new(func_id));
+                if dup.is_some() {
+                    continue;
+                }
+                let _ = gen.compiled_funcs[dbg!(id)].clone();
                 frontier.push(CompileRequestChild {
                     func: func_id,
                     id,
-                    params: task.compile_requests.ty_slices.bump_slice(&params),
+                    params: compile_requests.ty_slices.bump_slice(&params),
                 });
             }
-            let children = task.compile_requests.children.bump_slice(&frontier[prev..]);
-            task.compile_requests.queue.push(CompileRequest {
+            let children = compile_requests.children.bump_slice(&frontier[prev..]);
+            let _ = gen.compiled_funcs[dbg!(id)].clone();
+            compile_requests.queue.push(CompileRequest {
                 func,
                 id,
                 params,
@@ -931,6 +1000,7 @@ pub struct Task {
     pub gen: Gen,
     pub compile_requests: CompileRequests,
     pub for_generation: bool,
+    pub ir_dump: Option<String>,
 }
 
 impl Task {

@@ -11,6 +11,7 @@ mod logic;
 pub use {
     incremental::{Incremental, IncrementalBorrow, InternerTransfer, SweepCtx},
     logic::{
-        GenTask, MacroCtx, Middleware, MiddlewareArgs, Shared, Task, TaskGraph, Worker, WorkerState,
+        GenTask, MacroCtx, Middleware, MiddlewareArgs, MiddlewareOutput, Shared, Task, TaskGraph,
+        Worker, WorkerState,
     },
 };

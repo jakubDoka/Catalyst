@@ -30,6 +30,7 @@ impl Clear for Mir {
 pub struct FuncMir {
     pub inner: Arc<FuncMirInner>,
     pub dependant_types: DependantTypes,
+    pub dependant_funcs: PushMap<CallMir>,
 }
 
 impl FuncMir {
@@ -62,7 +63,6 @@ pub struct FuncMirInner {
     pub value_args: BumpMap<VRef<ValueMir>>,
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub constants: PushMap<FuncConstMir>,
-    pub calls: PushMap<CallMir>,
     value_flags: BitSet,
 }
 
@@ -122,7 +122,6 @@ impl Default for FuncMirInner {
             value_args: default(),
             ty_params: default(),
             constants: default(),
-            calls: default(),
             value_flags: default(),
         }
     }

@@ -2,6 +2,7 @@ use std::{
     collections::hash_map::Entry,
     default::default,
     hash::Hash,
+    mem,
     ops::{Index, IndexMut},
 };
 
@@ -34,9 +35,17 @@ impl<K: Eq + Hash + Clone, V: Clone> Clone for OrderedMap<K, V> {
 impl<K: Hash + Eq + Clone, V> OrderedMap<K, V> {
     /// Inserts a new value into the map returning its possible shadow and [`VPtr`] to it.
     pub fn insert(&mut self, key: K, value: V) -> (VRef<V>, Option<V>) {
-        let index = self.data.push((key.clone(), value));
-        let shadow = self.index.insert(key, index);
-        (index, shadow.map(|shadow| self.data.remove(shadow).1))
+        match self.index.entry(key.clone()) {
+            Entry::Occupied(entry) => (
+                *entry.get(),
+                Some(mem::replace(&mut self.data[*entry.get()].1, value)),
+            ),
+            Entry::Vacant(vacant) => {
+                let index = self.data.push((key, value));
+                vacant.insert(index);
+                (index, None)
+            }
+        }
     }
 
     pub fn next(&self) -> VRef<V> {

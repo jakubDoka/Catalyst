@@ -1,0 +1,24 @@
+info: generated ir:
+
+
+function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    return v0
+}
+
+function u0:0() -> i64 fast {
+    sig0 = (i64) -> i64 fast
+    fn0 = colocated u0:1 sig0
+
+block0:
+    v0 = iconst.i64 0
+    v1 = call fn0(v0)  ; v0 = 0
+    return v1
+}
+
+
+
+info: status: 0
+ = info: stdout:
+ = info: stderr:
+

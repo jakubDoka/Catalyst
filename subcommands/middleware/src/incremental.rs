@@ -1,4 +1,4 @@
-use std::mem;
+use std::{default::default, mem};
 
 use gen::*;
 use mir_t::*;
@@ -265,6 +265,8 @@ impl<'ctx> IncrementalBorrow<'ctx> {
             methods,
         } = self.typec.base_specs[spec_base];
 
+        let s = ctx.temp.typec.base_specs.push(default());
+        ctx.projections.base_specs[spec_base] = Some(s);
         let spec_base_ent = SpecBase {
             name: interner.transfer(name),
             generics: self.generics(generics, ctx, interner),
@@ -272,8 +274,7 @@ impl<'ctx> IncrementalBorrow<'ctx> {
             loc,
         };
 
-        let s = ctx.temp.typec.base_specs.push(spec_base_ent);
-        ctx.projections.base_specs[spec_base] = Some(s);
+        ctx.temp.typec.base_specs[s] = spec_base_ent;
         s
     }
 
@@ -376,6 +377,7 @@ impl<'ctx> IncrementalBorrow<'ctx> {
     }
 
     fn ty(&self, ty: Ty, ctx: &mut SweepCtx, interner: &mut InternerTransfer) -> Ty {
+        dbg!(ty);
         match ty {
             Ty::Struct(s) => Ty::Struct(self.r#struct(s, ctx, interner)),
             Ty::Enum(e) => Ty::Enum(self.r#enum(e, ctx, interner)),
