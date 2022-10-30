@@ -1,8 +1,6 @@
 use std::{iter::once, ops::Range};
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct LineMapping {
     indices: Vec<usize>,
 }

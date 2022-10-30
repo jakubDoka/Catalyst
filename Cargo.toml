@@ -10,6 +10,8 @@ members = [
     "stages/*",
     "tests/*",
     "types/*",
+    # "utils/bump-alloc",
+    # "utils/storage",
     "utils/*",
     "subcommands/*",
     "scripts/*",

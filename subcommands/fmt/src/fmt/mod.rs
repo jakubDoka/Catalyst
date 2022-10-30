@@ -224,7 +224,6 @@ impl Fmt {
         self.last_newline = 0;
         self.indent = 0;
         self.line_length = 80;
-        self.interner.clear();
         self.parse_state.start(source);
         self.line_mapping = LineMapping::new(source);
     }

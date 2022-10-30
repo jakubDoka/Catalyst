@@ -296,7 +296,7 @@ impl Generator<'_> {
     }
 
     fn call(&mut self, call: VRef<CallMir>, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
-        let CallMir { args, .. } = builder.body.dependant_calls[call];
+        let CallMir { args, .. } = builder.body.calls[call];
         let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
         if self.typec.funcs[func].flags.contains(FuncFlags::BUILTIN) {
@@ -370,7 +370,7 @@ impl Generator<'_> {
 
     fn builtin_call(
         &mut self,
-        func_id: VRef<Func>,
+        func_id: FragRef<Func>,
         args: BumpVec<ir::Value>,
         target: OptVRef<ValueMir>,
         builder: &mut GenBuilder,

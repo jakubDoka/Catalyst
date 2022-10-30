@@ -10,12 +10,12 @@ use typec_t::*;
 use crate::*;
 
 impl MirChecker<'_> {
-    pub fn display_funcs(&self, funcs: &[VRef<Func>], buffer: &mut String) -> fmt::Result {
+    pub fn display_funcs(&self, funcs: &[FragRef<Func>], buffer: &mut String) -> fmt::Result {
         for &func in funcs {
             let mir = self
                 .mir
                 .bodies
-                .get(func)
+                .get(&func)
                 .expect("Expected body to be present");
             self.display_func(func, mir, buffer)?;
             buffer.push_str("\n\n");
@@ -24,7 +24,7 @@ impl MirChecker<'_> {
         Ok(())
     }
 
-    fn display_func(&self, func: VRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
+    fn display_func(&self, func: FragRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
         buffer.push_str(" {\n");
 
@@ -57,7 +57,8 @@ impl MirChecker<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    self.typec.display_ty(func.value_ty(arg), self.interner)
+                    self.typec
+                        .display_ty(func.types[func.values[arg].ty].ty, self.interner)
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -151,7 +152,7 @@ impl MirChecker<'_> {
 
                     let iter = func.ty_params[params]
                         .iter()
-                        .map(|&ty| func.dependant_types[ty].ty)
+                        .map(|&ty| func.types[ty].ty)
                         .map(|ty| self.typec.display_ty(ty, self.interner))
                         .intersperse(", ".into())
                         .collect::<String>();

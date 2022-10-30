@@ -7,7 +7,7 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn build<T: CollectGroup>(
         &mut self,
-        builder: fn(&mut Self, VRef<T::Output>, T),
+        builder: fn(&mut Self, FragRef<T::Output>, T),
         types: &TypecOutput<T, T::Output>,
     ) -> &mut Self {
         for &(ast, ty) in types {
@@ -19,7 +19,7 @@ impl TyChecker<'_> {
 
     pub fn build_spec(
         &mut self,
-        spec: VRef<SpecBase>,
+        spec: FragRef<SpecBase>,
         SpecAst {
             generics,
             body,
@@ -40,10 +40,10 @@ impl TyChecker<'_> {
 
     fn build_spec_methods(
         &mut self,
-        parent: VRef<SpecBase>,
+        parent: FragRef<SpecBase>,
         body: SpecBodyAst,
         offset: usize,
-    ) -> VSlice<SpecFunc> {
+    ) -> FragSlice<SpecFunc> {
         let mut methods = bumpvec![cap body.len()];
         for &func in body.iter() {
             let Some((signature, generics)) = self.collect_signature(func, offset) else {
@@ -60,10 +60,10 @@ impl TyChecker<'_> {
 
             methods.push(func);
         }
-        self.typec.spec_funcs.bump(methods)
+        self.typec.spec_funcs.extend(methods)
     }
 
-    pub fn build_enum(&mut self, ty: VRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
+    pub fn build_enum(&mut self, ty: FragRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
@@ -73,7 +73,7 @@ impl TyChecker<'_> {
         self.scope.end_frame(frame);
     }
 
-    pub fn enum_variants(&mut self, body: EnumBodyAst) -> VSlice<Variant> {
+    pub fn enum_variants(&mut self, body: EnumBodyAst) -> FragSlice<Variant> {
         let variants = body
             .iter()
             .filter_map(|EnumVariantAst { name, ty }| {
@@ -86,10 +86,14 @@ impl TyChecker<'_> {
                 })
             })
             .collect::<BumpVec<_>>();
-        self.typec.variants.bump(variants)
+        self.typec.variants.extend(variants)
     }
 
-    pub fn build_struct(&mut self, ty: VRef<Struct>, StructAst { generics, body, .. }: StructAst) {
+    pub fn build_struct(
+        &mut self,
+        ty: FragRef<Struct>,
+        StructAst { generics, body, .. }: StructAst,
+    ) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
@@ -99,7 +103,7 @@ impl TyChecker<'_> {
         self.scope.end_frame(frame);
     }
 
-    fn struct_fields(&mut self, body: StructBodyAst) -> VSlice<Field> {
+    fn struct_fields(&mut self, body: StructBodyAst) -> FragSlice<Field> {
         let fields = body
             .iter()
             .map(
@@ -122,6 +126,6 @@ impl TyChecker<'_> {
             )
             .nsc_collect::<Option<BumpVec<_>>>()
             .unwrap_or_default();
-        self.typec.fields.bump(fields)
+        self.typec.fields.extend(fields)
     }
 }

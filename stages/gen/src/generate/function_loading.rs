@@ -9,11 +9,11 @@ impl Generator<'_> {
     pub fn func_instance_name(
         jit: bool,
         triple: &str,
-        func_id: VRef<Func>,
+        func_id: FragRef<Func>,
         mut params: impl Iterator<Item = Ty>,
         typec: &Typec,
         interner: &mut Interner,
-    ) -> VRef<str> {
+    ) -> FragSlice<u8> {
         use std::fmt::Write;
         let prefix = if jit { "jit-" } else { "native-" };
         interner.intern_with(|s, t| {
@@ -34,7 +34,7 @@ impl Generator<'_> {
 
     pub fn import_compiled_func(
         &mut self,
-        func: VRef<CompiledFunc>,
+        func: FragRef<CompiledFunc>,
         params: impl Iterator<Item = Ty>,
         builder: &mut GenBuilder,
     ) -> (ir::FuncRef, bool) {
@@ -42,10 +42,10 @@ impl Generator<'_> {
             .func
             .declare_imported_user_function(UserExternalName::new(
                 Gen::FUNC_NAMESPACE,
-                func.as_u32(),
+                func.to_u32(),
             ));
 
-        let func_id = self.gen.compiled_funcs[func].func;
+        let func_id = self.gen.funcs[func].func;
         let Func {
             signature,
             visibility,
@@ -119,7 +119,7 @@ impl Generator<'_> {
         on_stack
     }
 
-    fn cc(&self, cc: Option<VRef<str>>, system_cc: CallConv) -> CallConv {
+    fn cc(&self, cc: Option<FragSlice<u8>>, system_cc: CallConv) -> CallConv {
         let Some(cc) = cc else {
             return CallConv::Fast;
         };

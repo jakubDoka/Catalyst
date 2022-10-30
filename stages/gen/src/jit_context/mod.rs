@@ -1,4 +1,4 @@
-use std::alloc;
+use std::{alloc, ops::Not};
 use std::{
     alloc::Layout,
     ffi::CStr,
@@ -16,7 +16,7 @@ pub const EXPOSED_FUNCS: &[(&str, *const u8)] = &[("ctl_lexer_next", ctl_lexer_n
 
 pub struct JitContext {
     exposed_funcs: Map<&'static str, *const u8>,
-    functions: ShadowMap<CompiledFunc, Option<JitFunction>>,
+    functions: Map<FragRef<CompiledFunc>, JitFunction>,
     resources: JitResources,
     runtime_lookup: RuntimeFunctionLookup,
 }
@@ -28,7 +28,7 @@ impl JitContext {
                 .into_iter()
                 .chain(EXPOSED_FUNCS.iter().copied())
                 .collect(),
-            functions: ShadowMap::new(),
+            functions: Map::default(),
             resources: JitResources::new(),
             runtime_lookup: RuntimeFunctionLookup::new(),
         }
@@ -38,9 +38,10 @@ impl JitContext {
     /// Caller has to guarantee that the function pointer has correct signature.
     pub unsafe fn get_function<'a, T: FunctionPointer<'a>>(
         &'a self,
-        func: VRef<CompiledFunc>,
+        func: FragRef<CompiledFunc>,
     ) -> Option<T> {
-        self.functions[func]
+        self.functions
+            .get(&func)
             // SAFETY: Lifetime of the returned slice is limited by the lifetime of the JitContext
             .map(|f| T::new(&*f.code.as_ref().as_ptr()))
     }
@@ -50,14 +51,17 @@ impl JitContext {
     /// The caller must ensure signature of `func` matches the function pointer
     /// signature passed as `ptr`, `func` also has to have default call convention
     /// `ptr` should be `export "C"`.
-    pub unsafe fn load_runtime_function(&mut self, func: VRef<CompiledFunc>, ptr: *const u8) {
-        if self.functions[func].is_some() {
+    pub unsafe fn load_runtime_function(&mut self, func: FragRef<CompiledFunc>, ptr: *const u8) {
+        if self.functions.get(&func).is_some() {
             return;
         }
 
-        self.functions[func] = Some(JitFunction {
-            code: NonNull::new_unchecked(slice_from_raw_parts_mut(ptr as *mut _, 0)),
-        });
+        self.functions.insert(
+            func,
+            JitFunction {
+                code: NonNull::new_unchecked(slice_from_raw_parts_mut(ptr as *mut _, 0)),
+            },
+        );
     }
 
     /// Used for loading batch of functions that are currently needed to execute.
@@ -65,7 +69,7 @@ impl JitContext {
     /// it is ignored.
     pub fn load_functions(
         &mut self,
-        funcs: impl IntoIterator<Item = VRef<CompiledFunc>>,
+        funcs: impl IntoIterator<Item = FragRef<CompiledFunc>>,
         gen: &Gen,
         typec: &Typec,
         interner: &Interner,
@@ -73,13 +77,13 @@ impl JitContext {
     ) -> Result<(), JitRelocError> {
         let filtered_funcs = funcs
             .into_iter()
-            .filter_map(|func| self.functions[func].is_none().then_some(func))
+            .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
                 let &CompiledFunc {
                     func: parent_func,
                     inner: Some(ref inner),
                     ..
-                } = &gen.compiled_funcs[func] else {
+                } = &gen.funcs[func] else {
                     return Err(JitRelocError::MissingBytecode(func));
                 };
                 let Func {
@@ -115,19 +119,20 @@ impl JitContext {
             .collect::<Result<BumpVec<_>, _>>()?;
 
         for &(func, code) in filtered_funcs.iter() {
-            self.functions[func] = Some(JitFunction { code });
+            self.functions.insert(func, JitFunction { code });
         }
 
         for (func, code) in filtered_funcs {
-            let func_ent = &gen.compiled_funcs[func];
+            let func_ent = &gen.funcs[func];
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },
                 func_ent.inner.as_ref().map_or(&[], |i| &i.relocs),
                 |name| match name {
-                    GenItemName::Func(func) => {
-                        self.functions[func].map(|code| unsafe { code.code.as_ref().as_ptr() })
-                    }
+                    GenItemName::Func(func) => self
+                        .functions
+                        .get(&func)
+                        .map(|code| unsafe { code.code.as_ref().as_ptr() }),
                     GenItemName::LibCall(libcall) => {
                         RuntimeFunctionLookup::new().lookup(match libcall {
                             LibCall::Probestack => todo!(),
@@ -365,12 +370,12 @@ macro_rules! gen_macro_structs {
             #[derive(Clone, Copy)]
             pub struct $name {
                 pub layout: Layout,
-                pub name: VRef<str>,
-                $(pub $fn_name: VRef<CompiledFunc>),+
+                pub name: FragSlice<u8>,
+                $(pub $fn_name: FragRef<CompiledFunc>),+
             }
 
             impl $name {
-                pub fn new(layout: Layout, name: VRef<str>, mut fns: impl Iterator<Item = VRef<CompiledFunc>>) -> Option<Self> {
+                pub fn new(layout: Layout, name: FragSlice<u8>, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
                     Some(Self {
                         layout,
                         name,
@@ -407,7 +412,7 @@ pub enum JitRelocError {
     OffsetOverflow,
     OffsetOutOfBounds,
     UnsupportedReloc(Reloc),
-    MissingBytecode(VRef<CompiledFunc>),
+    MissingBytecode(FragRef<CompiledFunc>),
 }
 
 pub struct RuntimeFunctionLookup {

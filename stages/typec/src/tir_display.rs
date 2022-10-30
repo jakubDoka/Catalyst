@@ -12,7 +12,7 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn display_funcs(
         &self,
-        funcs: &[(VRef<Func>, TirNode)],
+        funcs: &[(FragRef<Func>, TirNode)],
         buffer: &mut String,
     ) -> fmt::Result {
         for &(func, tir) in funcs.iter() {
@@ -23,11 +23,11 @@ impl TyChecker<'_> {
         Ok(())
     }
 
-    fn display_func(&self, func: VRef<Func>, tir: TirNode, buffer: &mut String) -> fmt::Result {
+    fn display_func(&self, func: FragRef<Func>, tir: TirNode, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
 
         let Func { signature, .. } = self.typec.funcs[func];
-        self.display_tir(tir, buffer, 0, &mut self.typec.args[signature.args].len())
+        self.display_tir(tir, buffer, 0, &mut signature.args.len())
     }
 
     pub fn display_tir(

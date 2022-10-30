@@ -4,6 +4,113 @@ use std::{
     mem::{discriminant, transmute},
 };
 
+use serde::{Deserialize, Serialize};
+
+macro_rules! gen_derives {
+    ($ident:ident) => {
+        impl<T: ?Sized> Clone for $ident<T> {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+
+        impl<T: ?Sized> Copy for $ident<T> {}
+
+        impl<T: ?Sized> Debug for $ident<T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "{}<{}>({:?})",
+                    stringify!($ident),
+                    std::any::type_name::<T>(),
+                    self.0
+                )
+            }
+        }
+
+        impl<T: ?Sized> const PartialEq for $ident<T> {
+            fn eq(&self, other: &Self) -> bool {
+                self.0 == other.0
+            }
+        }
+
+        impl<T: ?Sized> const Eq for $ident<T> {}
+
+        impl<T: ?Sized> std::hash::Hash for $ident<T> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.0.hash(state);
+            }
+        }
+
+        impl<T: ?Sized> PartialOrd for $ident<T> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                self.0.partial_cmp(&other.0)
+            }
+        }
+
+        impl<T: ?Sized> Ord for $ident<T> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.0.cmp(&other.0)
+            }
+        }
+
+        unsafe impl<T: ?Sized> Send for $ident<T> {}
+        unsafe impl<T: ?Sized> Sync for $ident<T> {}
+    };
+}
+
+pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
+gen_derives!(FragRef);
+
+impl<T: ?Sized> FragRef<T> {
+    /// # Safety
+    /// See [`FragSliceAddr::new`].
+    pub const unsafe fn new(addr: FragAddr) -> Self {
+        Self(addr, PhantomData)
+    }
+
+    pub const fn to_u32(self) -> u32 {
+        self.0.to_u32()
+    }
+}
+
+pub type OptFragRef<T> = Option<FragRef<T>>;
+
+pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
+gen_derives!(FragSlice);
+
+pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
+
+impl<T: ?Sized> FragSlice<T> {
+    /// # Safety
+    /// See [`FragSliceAddr::new`].
+    pub const unsafe fn new(addr: FragSliceAddr) -> Self {
+        Self(addr, PhantomData)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = FragRef<T>> {
+        self.0.keys().map(|addr| FragRef(addr, PhantomData))
+    }
+
+    pub fn empty() -> Self {
+        Self(FragSliceAddr::default(), PhantomData)
+    }
+}
+
+impl<T: ?Sized> Default for FragSlice<T> {
+    fn default() -> Self {
+        Self(FragSliceAddr::default(), PhantomData)
+    }
+}
+
 #[repr(C, u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CtlOption<T> {
@@ -67,45 +174,7 @@ where
     }
 }
 
-macro_rules! gen_derives {
-    ($ident:ident) => {
-        impl<T: ?Sized> Clone for $ident<T> {
-            fn clone(&self) -> Self {
-                *self
-            }
-        }
-
-        impl<T: ?Sized> Copy for $ident<T> {}
-
-        impl<T: ?Sized> Debug for $ident<T> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "{}<{}>({})",
-                    stringify!($ident),
-                    std::any::type_name::<T>(),
-                    self.0
-                )
-            }
-        }
-
-        impl<T: ?Sized> const PartialEq for $ident<T> {
-            fn eq(&self, other: &Self) -> bool {
-                self.0 == other.0
-            }
-        }
-
-        impl<T: ?Sized> const Eq for $ident<T> {}
-
-        impl<T: ?Sized> std::hash::Hash for $ident<T> {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                self.0.hash(state);
-            }
-        }
-    };
-}
-
-use serde::{Deserialize, Serialize};
+use crate::{FragAddr, FragSliceAddr};
 
 pub type VRefSlice<T> = VSlice<VRef<T>>;
 
@@ -116,9 +185,6 @@ pub trait VRefDefault {
 #[rustc_layout_scalar_valid_range_end(4294967294)]
 #[repr(transparent)]
 pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
-
-unsafe impl<T: ?Sized> Send for VRef<T> {}
-unsafe impl<T: ?Sized> Sync for VRef<T> {}
 
 pub type OptVRef<T> = Option<VRef<T>>;
 
@@ -153,18 +219,6 @@ impl<T: ?Sized> VRef<T> {
     }
 }
 
-impl<T: ?Sized> Ord for VRef<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<T: ?Sized> PartialOrd for VRef<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl<T: VRefDefault + ?Sized> Default for VRef<T> {
     #[inline(always)]
     fn default() -> Self {
@@ -185,9 +239,6 @@ impl<'de, T: ?Sized> Deserialize<'de> for VRef<T> {
 }
 
 pub struct VSlice<T: ?Sized>(u32, PhantomData<*const T>);
-
-unsafe impl<T: ?Sized> Send for VSlice<T> {}
-unsafe impl<T: ?Sized> Sync for VSlice<T> {}
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.

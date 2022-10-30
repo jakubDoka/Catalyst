@@ -10,10 +10,10 @@ use std::{
 
 use crate::*;
 use packaging_t::Module;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Typec {
     pub lookup: TypecLookup,
     pub structs: Structs,
@@ -30,7 +30,7 @@ pub struct Typec {
     pub impl_lookup: ImplLookup,
     pub func_slices: FuncSlices,
     pub spec_funcs: SpecFuncs,
-    pub builtin_funcs: Map<VRef<str>, VRef<Func>>,
+    pub builtin_funcs: Map<FragSlice<u8>, FragRef<Func>>,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub variants: Variants,
     pub macros: Map<Ty, MacroImpl>,
@@ -47,32 +47,32 @@ macro_rules! gen_index {
         }
     ) => {
         $(
-            impl Index<VRef<$ty>> for Typec {
+            impl Index<FragRef<$ty>> for Typec {
                 type Output = $ty;
 
-                fn index(&self, index: VRef<$ty>) -> &Self::Output {
+                fn index(&self, index: FragRef<$ty>) -> &Self::Output {
                     &self.$storage[index]
                 }
             }
 
-            impl IndexMut<VRef<$ty>> for Typec {
-                fn index_mut(&mut self, index: VRef<$ty>) -> &mut Self::Output {
+            impl IndexMut<FragRef<$ty>> for Typec {
+                fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
                     &mut self.$storage[index]
                 }
             }
         )*
 
         $(
-            impl Index<VSlice<$slice_ty>> for Typec {
+            impl Index<FragSlice<$slice_ty>> for Typec {
                 type Output = [$slice_ty];
 
-                fn index(&self, index: VSlice<$slice_ty>) -> &Self::Output {
+                fn index(&self, index: FragSlice<$slice_ty>) -> &Self::Output {
                     &self.$slice_storage[index]
                 }
             }
 
-            impl IndexMut<VSlice<$slice_ty>> for Typec {
-                fn index_mut(&mut self, index: VSlice<$slice_ty>) -> &mut Self::Output {
+            impl IndexMut<FragSlice<$slice_ty>> for Typec {
+                fn index_mut(&mut self, index: FragSlice<$slice_ty>) -> &mut Self::Output {
                     &mut self.$slice_storage[index]
                 }
             }
@@ -95,69 +95,24 @@ gen_index! {
     }
     slices {
         Field => fields
-        VSlice<Spec> => params
+        FragSlice<Spec> => params
         Spec => spec_sums
         Ty => args
-        VRef<Func> => func_slices
+        FragRef<Func> => func_slices
         SpecFunc => spec_funcs
         Variant => variants
     }
 }
 
 impl Typec {
-    pub fn clear(&mut self) {
-        self.lookup.clear();
-        self.structs.clear();
-        self.pointers.clear();
-        self.instances.clear();
-        self.base_specs.clear();
-        self.spec_instances.clear();
-        self.funcs.clear();
-        self.fields.clear();
-        self.impls.clear();
-        self.params.clear();
-        self.spec_sums.clear();
-        self.args.clear();
-        self.impl_lookup.clear();
-        self.func_slices.clear();
-        self.spec_funcs.clear();
-        self.builtin_funcs.clear();
-        self.module_items.clear();
-        self.variants.clear();
-        self.macros.clear();
-        self.enums.clear();
-    }
-
-    pub fn transfer(&mut self, other: &Self) {
-        self.lookup.clone_from(&other.lookup);
-        self.structs.clone_from(&other.structs);
-        self.pointers.clone_from(&other.pointers);
-        self.instances.clone_from(&other.instances);
-        self.base_specs.clone_from(&other.base_specs);
-        self.spec_instances.clone_from(&other.spec_instances);
-        self.funcs.clone_from(&other.funcs);
-        self.fields.clone_from(&other.fields);
-        self.impls.clone_from(&other.impls);
-        self.params.clone_from(&other.params);
-        self.spec_sums.clone_from(&other.spec_sums);
-        self.args.clone_from(&other.args);
-        self.impl_lookup.clone_from(&other.impl_lookup);
-        self.func_slices.clone_from(&other.func_slices);
-        self.spec_funcs.clone_from(&other.spec_funcs);
-        self.builtin_funcs.clone_from(&other.builtin_funcs);
-        self.variants.clone_from(&other.variants);
-        self.macros.clone_from(&other.macros);
-        self.enums.clone_from(&other.enums);
-    }
-
-    pub fn get_band(&mut self) -> VRef<Func> {
+    pub fn get_band(&mut self) -> FragRef<Func> {
         *self
             .builtin_funcs
             .get(&Interner::BAND)
             .expect("gen_band called before init")
     }
 
-    pub fn get_enum_flag_ty(&self, en: VRef<Enum>) -> Option<Builtin> {
+    pub fn get_enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
         Some(match self[self[en].variants].len() {
             256.. => Builtin::U16,
             2.. => Builtin::U8,
@@ -167,9 +122,9 @@ impl Typec {
 
     pub fn get_enum_cmp(
         &mut self,
-        en: VRef<Enum>,
+        en: FragRef<Enum>,
         interner: &mut Interner,
-    ) -> Option<(VRef<Func>, Ty)> {
+    ) -> Option<(FragRef<Func>, Ty)> {
         let ty = Ty::Builtin(self.get_enum_flag_ty(en)?);
 
         let id = interner.intern_with(|s, t| self.binary_op_id(Interner::EQUAL, ty, ty, t, s));
@@ -178,7 +133,7 @@ impl Typec {
 
     pub fn display_sig(
         &self,
-        func: VRef<Func>,
+        func: FragRef<Func>,
         interner: &Interner,
         buffer: &mut String,
     ) -> fmt::Result {
@@ -213,7 +168,7 @@ impl Typec {
         )
     }
 
-    pub fn func_name(&self, func: VRef<Func>, to: &mut String, interner: &Interner) {
+    pub fn func_name(&self, func: FragRef<Func>, to: &mut String, interner: &Interner) {
         let Func {
             name, loc, owner, ..
         } = self.funcs[func];
@@ -287,13 +242,13 @@ impl Typec {
         }
     }
 
-    pub fn display_spec_sum(&self, spec: VSlice<Spec>, interner: &Interner) -> String {
+    pub fn display_spec_sum(&self, spec: FragSlice<Spec>, interner: &Interner) -> String {
         let mut str = String::new();
         self.display_spec_sum_to(spec, &mut str, interner);
         str
     }
 
-    pub fn display_spec_sum_to(&self, spec: VSlice<Spec>, to: &mut String, interner: &Interner) {
+    pub fn display_spec_sum_to(&self, spec: FragSlice<Spec>, to: &mut String, interner: &Interner) {
         if let Some((&last, spec)) = self[spec].split_last() {
             for &spec in spec {
                 self.display_spec_to(spec, to, interner);
@@ -374,10 +329,10 @@ impl Typec {
         assert_eq!(
             Func::CAST,
             self.funcs.push(Func {
-                generics: self.params.bump([default(), default()]), // F, T
+                generics: self.params.extend([default(), default()]), // F, T
                 signature: Signature {
                     cc: default(),
-                    args: self.args.bump([Ty::Param(0)]),
+                    args: self.args.extend([Ty::Param(0)]),
                     ret: Ty::Param(1),
                 },
                 name: Interner::CAST,
@@ -389,7 +344,7 @@ impl Typec {
         assert_eq!(
             Func::SIZEOF,
             self.funcs.push(Func {
-                generics: self.params.bump([default()]), // T
+                generics: self.params.extend([default()]), // T
                 signature: Signature {
                     cc: default(),
                     args: default(),
@@ -408,7 +363,7 @@ impl Typec {
 
             let signature = Signature {
                 cc: default(),
-                args: self.args.bump([a, b]),
+                args: self.args.extend([a, b]),
                 ret: r,
             };
 
@@ -445,8 +400,8 @@ impl Typec {
 
     pub fn pack_func_param_specs(
         &self,
-        func: VRef<Func>,
-    ) -> impl Iterator<Item = VSlice<Spec>> + '_ {
+        func: FragRef<Func>,
+    ) -> impl Iterator<Item = FragSlice<Spec>> + '_ {
         let Func {
             generics,
             upper_generics,
@@ -461,7 +416,7 @@ impl Typec {
     pub fn pack_spec_func_param_specs(
         &self,
         func: SpecFunc,
-    ) -> impl Iterator<Item = VSlice<Spec>> + '_ {
+    ) -> impl Iterator<Item = FragSlice<Spec>> + '_ {
         let SpecFunc {
             generics, parent, ..
         } = func;
@@ -471,13 +426,13 @@ impl Typec {
         } = self[parent];
         iter::empty()
             .chain(self[upper_generics].iter().copied())
-            .chain(iter::once(VSlice::empty()))
+            .chain(iter::once(FragSlice::empty()))
             .chain(self[generics].iter().copied())
     }
 
     pub fn binary_op_id(
         &self,
-        op: VRef<str>,
+        op: FragSlice<u8>,
         lhs: Ty,
         rhs: Ty,
         to: &mut String,
@@ -495,7 +450,7 @@ impl Typec {
         mutability: Mutability,
         base: Ty,
         interner: &mut Interner,
-    ) -> VRef<Pointer> {
+    ) -> FragRef<Pointer> {
         let id = interner.intern_with(|s, t| self.pointer_id(mutability, base, t, s));
         let depth = base.ptr_depth(self) + 1;
 
@@ -553,7 +508,7 @@ impl Typec {
         base: GenericTy,
         args: &[Ty],
         interner: &mut Interner,
-    ) -> VRef<Instance> {
+    ) -> FragRef<Instance> {
         let id = interner.intern_with(|s, t| self.instance_id(base, args, t, s));
         match self.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
@@ -563,7 +518,7 @@ impl Typec {
             Entry::Vacant(entry) => {
                 let instance = Instance {
                     base,
-                    args: self.args.bump_slice(args),
+                    args: self.args.extend(args.iter().cloned()),
                 };
                 let instance = self.instances.push(instance);
                 entry.insert(ComputedTypecItem::Instance(instance));
@@ -574,10 +529,10 @@ impl Typec {
 
     pub fn spec_instance(
         &mut self,
-        base: VRef<SpecBase>,
+        base: FragRef<SpecBase>,
         args: &[Ty],
         interner: &mut Interner,
-    ) -> VRef<SpecInstance> {
+    ) -> FragRef<SpecInstance> {
         let id = interner.intern_with(|s, t| self.spec_instance_id(base, args, t, s));
         match self.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
@@ -587,7 +542,7 @@ impl Typec {
             Entry::Vacant(entry) => {
                 let instance = SpecInstance {
                     base,
-                    args: self.args.bump_slice(args),
+                    args: self.args.extend(args.iter().cloned()),
                 };
                 let instance = self.spec_instances.push(instance);
                 entry.insert(ComputedTypecItem::SpecInstance(instance));
@@ -598,7 +553,7 @@ impl Typec {
 
     pub fn spec_instance_id(
         &self,
-        base: VRef<SpecBase>,
+        base: FragRef<SpecBase>,
         args: &[Ty],
         to: &mut String,
         interner: &Interner,
@@ -630,8 +585,8 @@ impl Typec {
     pub fn implements_sum(
         &mut self,
         ty: Ty,
-        sum: VSlice<Spec>,
-        params: &[VSlice<Spec>],
+        sum: FragSlice<Spec>,
+        params: &[FragSlice<Spec>],
         inferred: &[Ty],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
         interner: &mut Interner,
@@ -654,10 +609,10 @@ impl Typec {
         &mut self,
         ty: Ty,
         spec: Spec,
-        params: &[VSlice<Spec>],
+        params: &[FragSlice<Spec>],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
         interner: &mut Interner,
-    ) -> Option<Option<VRef<Impl>>> {
+    ) -> Option<Option<FragRef<Impl>>> {
         if let Ty::Param(index) = ty {
             let specs = params[index as usize];
             return self[specs].contains(&spec).then_some(None);
@@ -860,15 +815,15 @@ pub enum SpecCmpError {
     Args(Ty, Ty),
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
 }
 
 pub const fn sorted_water_drops<T, const LEN: usize>(
-    mut drops: [(&'static str, VRef<T>); LEN],
-) -> [(&'static str, VRef<T>); LEN] {
+    mut drops: [(&'static str, FragRef<T>); LEN],
+) -> [(&'static str, FragRef<T>); LEN] {
     let mut i = 0;
     while i < LEN {
         let mut j = i;
@@ -909,20 +864,20 @@ const fn compare_strings(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
     }
 }
 
-pub fn lookup_water_drop<T>(drops: &[(&str, VRef<T>)], name: &str) -> Option<VRef<T>> {
+pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<FragRef<T>> {
     drops
         .binary_search_by_key(&name, |(str, _)| str)
         .map(|i| drops[i].1)
         .ok()
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy)]
 pub struct MacroImpl {
-    pub name: VRef<str>,
-    pub r#impl: OptVRef<Impl>,
+    pub name: FragSlice<u8>,
+    pub r#impl: OptFragRef<Impl>,
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }

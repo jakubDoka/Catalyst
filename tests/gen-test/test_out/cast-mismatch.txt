@@ -14,9 +14,16 @@ error: cast between generic types is not allowed
   |
   = info: cast from param0 to param1, which contain generic parameters that depend on function instance
 
-info: mir repr of functions:
+info: generated ir:
+function u0:0() -> i32 fast {
+block0:
+    v0 = iconst.i64 0
+    v1 = ireduce.i32 v0  ; v0 = 0
+    return v1
+}
 
 
-error: no entry points found
- = help: add '#[entry]' to a function that should take this role
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 

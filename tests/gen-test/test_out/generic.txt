@@ -6,9 +6,10 @@ error: type mismatch
   |
   = info: expected 'u32' but got 'uint'
 
-info: mir repr of functions:
+info: generated ir:
 
 
-error: no entry points found
- = help: add '#[entry]' to a function that should take this role
+info: status: 63b11000
+ = info: stdout:
+ = info: stderr:
 

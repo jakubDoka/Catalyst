@@ -1,7 +1,7 @@
 use std::{default::default, ops::Deref, sync::Arc};
 
 use lexing_t::*;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 use typec_t::*;
 
@@ -9,9 +9,9 @@ use crate::*;
 
 pub mod builder;
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Clone)]
 pub struct Mir {
-    pub bodies: SparseMap<Func, FuncMir>,
+    pub bodies: Map<FragRef<Func>, FuncMir>,
 }
 
 impl Mir {
@@ -26,17 +26,9 @@ impl Clear for Mir {
     }
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Default)]
 pub struct FuncMir {
     pub inner: Arc<FuncMirInner>,
-    pub dependant_types: DependantTypes,
-    pub dependant_funcs: PushMap<CallMir>,
-}
-
-impl FuncMir {
-    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.dependant_types[self.values[value].ty].ty
-    }
 }
 
 impl Deref for FuncMir {
@@ -47,13 +39,13 @@ impl Deref for FuncMir {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct FuncConstMir {
     pub ty: VRef<MirTy>,
     pub block: VRef<BlockMir>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone)]
 pub struct FuncMirInner {
     pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
@@ -63,6 +55,8 @@ pub struct FuncMirInner {
     pub value_args: BumpMap<VRef<ValueMir>>,
     pub ty_params: BumpMap<VRef<MirTy>>,
     pub constants: PushMap<FuncConstMir>,
+    pub calls: PushMap<CallMir>,
+    pub types: DependantTypes,
     value_flags: BitSet,
 }
 
@@ -123,17 +117,19 @@ impl Default for FuncMirInner {
             ty_params: default(),
             constants: default(),
             value_flags: default(),
+            calls: default(),
+            types: default(),
         }
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct MirTy {
     pub ty: Ty,
 }
 
 impl MirTy {
-    gen_increasing_constants! {
+    gen_v_ref_constants! {
         UNIT
         TERMINAL
     }
@@ -145,7 +141,7 @@ impl VRefDefault for MirTy {
     }
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct BlockMir {
     pub args: VRefSlice<ValueMir>,
     pub insts: VSlice<InstMir>,
@@ -153,7 +149,7 @@ pub struct BlockMir {
     pub ref_count: u32,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
     Goto(VRef<BlockMir>, OptVRef<ValueMir>),
@@ -180,7 +176,7 @@ impl DebugData {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
@@ -194,27 +190,27 @@ pub enum InstMir {
     Bool(bool, VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct CallMir {
     pub callable: CallableMir,
     pub params: VRefSlice<MirTy>,
     pub args: VRefSlice<ValueMir>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum CallableMir {
-    Func(VRef<Func>),
-    SpecFunc(VRef<SpecFunc>),
+    Func(FragRef<Func>),
+    SpecFunc(FragRef<SpecFunc>),
     Pointer(VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
 }
 
 impl ValueMir {
-    gen_increasing_constants!(
+    gen_v_ref_constants!(
         UNIT
         TERMINAL
     );

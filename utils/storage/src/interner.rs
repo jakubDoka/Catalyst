@@ -1,5 +1,4 @@
 use std::{
-    default::default,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
     ops::{Index, Range},
@@ -14,7 +13,7 @@ macro_rules! gen_span_constants {
         $($name:ident => $repr:literal,)*
     ) => {
         impl Interner {
-            gen_increasing_constants!(exp str => $($name)*);
+            gen_span_constants!(@recur (0) $($name => $repr,)*);
 
             fn init(&mut self) {
                 $(
@@ -23,6 +22,13 @@ macro_rules! gen_span_constants {
             }
         }
     };
+
+    (@recur ($acc:expr) $name:ident => $repr:literal, $($rest:tt)*) => {
+        pub const $name: FragSlice<u8> = unsafe { FragSlice::new(FragSliceAddr::new(0, $acc as u16, $repr.len() as u16)) };
+        gen_span_constants!(@recur ($acc + $repr.len()) $($rest)*);
+    };
+
+    (@recur ($acc:expr)) => {};
 }
 
 gen_span_constants! {
@@ -44,10 +50,8 @@ gen_span_constants! {
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
-    map: Map<InternerEntry, VRef<str>>,
-    entries: PushMap<InternerEntry>,
-    data: Vec<Vec<u8>>,
-    garbage: Vec<Vec<u8>>,
+    map: Map<InternerEntry, FragSlice<u8>>,
+    frag_map: FragMap<u8, MAX_FRAGMENT_SIZE>,
     temp: String,
 }
 
@@ -55,36 +59,25 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    pub const CHUNK_SIZE: usize = 1024 * 1024;
-
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
         let mut s = Interner {
             map: Map::default(),
-            entries: PushMap::default(),
-            data: default(),
-            garbage: Vec::new(),
+            frag_map: FragMap::default(),
             temp: String::new(),
         };
         s.init();
         s
     }
 
-    pub fn clear(&mut self) {
-        self.map.clear();
-        self.garbage.append(&mut self.data);
-        self.entries.clear();
-        self.init();
-    }
-
-    pub fn intern_scoped(&mut self, scope: impl Display, name: VRef<str>) -> VRef<str> {
+    pub fn intern_scoped(&mut self, scope: impl Display, name: FragSlice<u8>) -> FragSlice<u8> {
         self.intern_with(|s, t| write!(t, "{}\\{}", scope, &s[name]))
     }
 
     pub fn intern_with<T>(
         &mut self,
         mut builder: impl FnMut(&Self, &mut String) -> T,
-    ) -> VRef<str> {
+    ) -> FragSlice<u8> {
         let mut temp = std::mem::take(&mut self.temp);
         builder(self, &mut temp);
         let res = self.intern(&temp);
@@ -93,71 +86,20 @@ impl Interner {
         res
     }
 
-    /// Interns a string
-    pub fn intern(&mut self, s: &str) -> VRef<str> {
-        let key = InternerEntry::new(s);
-        match self.map.get(&key) {
-            Some(&str) => str,
+    pub fn intern(&mut self, s: &str) -> FragSlice<u8> {
+        match self.map.get(&InternerEntry::new(s)) {
+            Some(&v) => v,
             None => {
-                if self
-                    .data
-                    .last()
-                    .map_or(true, |l| l.len() + s.len() > l.capacity())
-                {
-                    self.grow(s.len());
-                }
-                let last = self.data.last_mut().unwrap();
-
-                let start = last.len();
-                last.extend_from_slice(s.as_bytes());
-
-                let entry = unsafe { std::str::from_utf8_unchecked(&last[start..]) };
-                let entry = InternerEntry::new(entry);
-
-                let v_ref = unsafe { self.entries.push(entry).cast() };
-                self.map.insert(entry, v_ref);
-                v_ref
+                let v = self.frag_map.extend(s.as_bytes().iter().copied());
+                let key = InternerEntry::new(&self[v]);
+                self.map.insert(key, v);
+                v
             }
         }
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn grow(&mut self, size: usize) {
-        let slice = self
-            .garbage
-            .pop()
-            .unwrap_or_else(|| Vec::with_capacity(Self::CHUNK_SIZE.max(size)));
-        self.data.push(slice);
     }
 
     fn to_raw(&self) -> RawInterner {
-        let capacity = self.data.iter().map(|s| s.len()).sum::<usize>();
-        let mut data = Vec::with_capacity(capacity);
-        let mut slices = Vec::with_capacity(self.entries.len());
-        let mut entries = self.entries.values().peekable();
-        for slice in &self.data {
-            while let Some(entry) = entries.peek() {
-                let Range { start, end } = unsafe { (*(entry.str as *const [u8])).as_ptr_range() };
-
-                let Range {
-                    start: data_start,
-                    end: data_end,
-                } = slice.as_ptr_range();
-
-                if start >= data_end || end < data_start {
-                    break;
-                }
-
-                let start = start as usize - data_start as usize + data.len();
-                let end = end as usize - data_start as usize + data.len();
-                slices.push(Range { start, end });
-                entries.next();
-            }
-            data.extend_from_slice(slice);
-        }
-
-        RawInterner { data, slices }
+        todo!()
     }
 }
 
@@ -173,11 +115,11 @@ impl Default for Interner {
     }
 }
 
-impl Index<VRef<str>> for Interner {
+impl Index<FragSlice<u8>> for Interner {
     type Output = str;
 
-    fn index(&self, ident: VRef<str>) -> &str {
-        unsafe { &*self.entries[ident.cast()].str }
+    fn index(&self, ident: FragSlice<u8>) -> &str {
+        unsafe { std::str::from_utf8_unchecked(&self.frag_map[ident]) }
     }
 }
 
@@ -207,24 +149,7 @@ struct RawInterner {
 
 impl RawInterner {
     fn into_interner(self) -> Interner {
-        let RawInterner { data, slices } = self;
-
-        let mut map = Map::with_capacity_and_hasher(slices.len(), map::FvnBuildHasher);
-        let mut entries = PushMap::with_capacity(slices.len());
-
-        for range in slices {
-            let entry = InternerEntry::new(unsafe { std::str::from_utf8_unchecked(&data[range]) });
-            let v_ref = unsafe { entries.push(entry).cast() };
-            map.insert(entry, v_ref);
-        }
-
-        Interner {
-            map,
-            entries,
-            data: vec![data],
-            garbage: Vec::new(),
-            temp: String::new(),
-        }
+        todo!()
     }
 }
 
@@ -252,12 +177,6 @@ impl Eq for InternerEntry {}
 impl InternerEntry {
     pub fn new(str: &str) -> InternerEntry {
         InternerEntry { str }
-    }
-}
-
-impl VRefDefault for str {
-    fn default_state() -> VRef<Self> {
-        Interner::EMPTY
     }
 }
 

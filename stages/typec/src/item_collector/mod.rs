@@ -15,7 +15,7 @@ impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
         items: GroupedItemSlice<T>,
-        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<VRef<T::Output>>,
+        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<FragRef<T::Output>>,
         out: &mut TypecOutput<T, T::Output>,
     ) -> &mut Self {
         for &(item_ast, attributes) in items.iter() {
@@ -137,7 +137,7 @@ impl TyChecker<'_> {
         &mut self,
         SpecAst { vis, name, .. }: SpecAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<VRef<SpecBase>> {
+    ) -> Option<FragRef<SpecBase>> {
         let loc = {
             let id = self.next_humid_item_id::<SpecBase>(name.ident, attributes);
             let item = ModuleItem::new(name.ident, id, name.span, vis);
@@ -157,7 +157,7 @@ impl TyChecker<'_> {
         &mut self,
         func: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<VRef<Func>> {
+    ) -> Option<FragRef<Func>> {
         self.collect_func_low(func, attributes, default())
     }
 
@@ -179,7 +179,7 @@ impl TyChecker<'_> {
             owner,
             upper_vis,
         }: ScopeData,
-    ) -> Option<VRef<Func>> {
+    ) -> Option<FragRef<Func>> {
         let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
 
         let entry = attributes
@@ -250,7 +250,7 @@ impl TyChecker<'_> {
 
         let signature = Signature {
             cc: cc.map(|cc| cc.ident),
-            args: self.typec.args.bump(args),
+            args: self.typec.args.extend(args),
             ret,
         };
         let parsed_generics = self.generics(generics);
@@ -269,7 +269,7 @@ impl TyChecker<'_> {
             ..
         }: StructAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<VRef<Struct>> {
+    ) -> Option<FragRef<Struct>> {
         let loc = self.humid_item_loc(name, Ty::Struct, attributes, vis)?;
         let s = Struct {
             name: name.ident,
@@ -289,7 +289,7 @@ impl TyChecker<'_> {
             ..
         }: EnumAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<VRef<Enum>> {
+    ) -> Option<FragRef<Enum>> {
         let loc = self.humid_item_loc(name, Ty::Enum, attributes, vis)?;
         let e = Enum {
             name: name.ident,
@@ -303,7 +303,7 @@ impl TyChecker<'_> {
     pub fn humid_item_loc<T: Humid>(
         &mut self,
         name: NameAst,
-        map: impl Fn(VRef<T>) -> Ty,
+        map: impl Fn(FragRef<T>) -> Ty,
         attributes: &[TopLevelAttributeAst],
         vis: Vis,
     ) -> Option<Loc> {
@@ -314,9 +314,9 @@ impl TyChecker<'_> {
 
     fn next_humid_item_id<I: Humid>(
         &mut self,
-        name: VRef<str>,
+        name: FragSlice<u8>,
         attributes: &[TopLevelAttributeAst],
-    ) -> VRef<I> {
+    ) -> FragRef<I> {
         if attributes
             .iter()
             .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
@@ -335,7 +335,7 @@ impl TyChecker<'_> {
         &mut self,
         item: I,
         attributes: &[TopLevelAttributeAst],
-    ) -> Option<VRef<I>> {
+    ) -> Option<FragRef<I>> {
         let is_drop = attributes
             .iter()
             .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)));

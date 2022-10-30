@@ -10,7 +10,7 @@
 #![feature(const_swap)]
 #![feature(const_mut_refs)]
 
-use storage::gen_increasing_constants;
+use storage::gen_v_ref_constants;
 
 macro_rules! gen_water_drops {
     (
@@ -21,9 +21,9 @@ macro_rules! gen_water_drops {
         )+
     ) => {
         impl $target {
-            gen_increasing_constants!($($name)+);
+            gen_frag_ref_constants!($($name)+);
 
-            pub const WATER_DROPS: [(&str, VRef<Self>); [$(Self::$name),*].len()] = sorted_water_drops([
+            pub const WATER_DROPS: [(&str, FragRef<Self>); [$(Self::$name),*].len()] = sorted_water_drops([
                 $(
                     ($repr, Self::$name),
                 )*
@@ -35,19 +35,19 @@ macro_rules! gen_water_drops {
                 )*
             }
 
-            pub fn is_water_drop(s: VRef<Self>) -> bool {
-                s.index() < Self::WATER_DROPS.len()
+            pub fn is_water_drop(s: FragRef<Self>) -> bool {
+                s <= Self::WATER_DROPS.last().unwrap().1
             }
         }
 
         impl Humid for $target {
-            fn lookup_water_drop(name: &str) -> Option<VRef<Self>> {
+            fn lookup_water_drop(name: &str) -> Option<FragRef<Self>> {
                 lookup_water_drop(&Self::WATER_DROPS, name)
             }
-            fn name(&self) -> VRef<str> {
+            fn name(&self) -> FragSlice<u8> {
                 self.name
             }
-            fn storage(typec: &mut Typec) -> &mut PushMap<Self> {
+            fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE> {
                 &mut typec.$field
             }
         }

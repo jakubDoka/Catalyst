@@ -3,13 +3,6 @@ function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }
-
-
-function u0:0(i64) -> i64 fast {
-block0(v0: i64):
-    return v0
-}
-
 function u0:0() -> i64 fast {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
@@ -26,7 +19,7 @@ function u0:0() -> i64 fast {
     sig0 = (i64) -> i64 fast
     sig1 = (i64) -> i64 fast
     fn0 = colocated u0:1 sig0
-    fn1 = colocated u0:2 sig1
+    fn1 = colocated u0:196608 sig1
 
 block0:
     v0 = iconst.i64 0
@@ -70,7 +63,10 @@ block0:
     v26 = call fn1(v25)
     return v26
 }
-
+function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    return v0
+}
 
 
 info: status: 0

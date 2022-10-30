@@ -19,7 +19,7 @@ impl TyChecker<'_> {
             let bound = self.spec_sum(bounds.iter()).unwrap_or_default();
             generics.push(bound);
         }
-        self.typec.params.bump(generics)
+        self.typec.params.extend(generics)
     }
 
     pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
@@ -62,11 +62,11 @@ impl TyChecker<'_> {
     pub fn spec_sum<'a>(
         &mut self,
         specs: impl Iterator<Item = &'a SpecExprAst<'a>>,
-    ) -> Option<VSlice<Spec>> {
+    ) -> Option<FragSlice<Spec>> {
         let specs = specs
             .map(|&ast| self.spec(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
-        Some(self.typec.spec_sums.bump(specs))
+        Some(self.typec.spec_sums.extend(specs))
     }
 
     pub fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {
@@ -82,7 +82,7 @@ impl TyChecker<'_> {
     fn spec_instance(
         &mut self,
         TyInstanceAst { path, params }: TyInstanceAst,
-    ) -> Option<VRef<SpecInstance>> {
+    ) -> Option<FragRef<SpecInstance>> {
         let base = match self.ty_path(path)? {
             TyPathResult::Ty(..) => todo!(),
             TyPathResult::Spec(base) => base,
@@ -102,7 +102,7 @@ impl TyChecker<'_> {
     fn pointer(
         &mut self,
         TyPointerAst { mutability, ty, .. }: TyPointerAst,
-    ) -> Option<VRef<Pointer>> {
+    ) -> Option<FragRef<Pointer>> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
         Some(self.typec.pointer_to(mutability, base, self.interner))
@@ -122,7 +122,7 @@ impl TyChecker<'_> {
             path: ident,
             params,
         }: TyInstanceAst,
-    ) -> Option<VRef<Instance>> {
+    ) -> Option<FragRef<Instance>> {
         let base = match self.ty_path(ident)? {
             TyPathResult::Ty(base) => base
                 .as_generic()
@@ -163,7 +163,7 @@ impl TyChecker<'_> {
         })
     }
 
-    pub fn lookup(&mut self, sym: VRef<str>, span: Span, what: &str) -> Option<ScopeItem> {
+    pub fn lookup(&mut self, sym: FragSlice<u8>, span: Span, what: &str) -> Option<ScopeItem> {
         self.scope
             .get(sym)
             .map_err(|err| self.scope_error(err, sym, span, what))
@@ -185,7 +185,7 @@ impl TyChecker<'_> {
         let spec_base = generic.base(self.typec);
         let functions = self.typec[spec_base].methods;
 
-        for (key, &func) in self.typec.spec_funcs.indexed(functions) {
+        for (key, &func) in functions.keys().zip(&self.typec.spec_funcs[functions]) {
             let id = self
                 .interner
                 .intern_scoped(Ty::Param(index as u16), func.name);
@@ -214,7 +214,7 @@ impl TyChecker<'_> {
     pub fn scope_error(
         &mut self,
         err: ScopeError,
-        sym: VRef<str>,
+        sym: FragSlice<u8>,
         span: Span,
         what: &str,
     ) -> Option<!> {
@@ -259,5 +259,5 @@ impl TyChecker<'_> {
 
 pub enum TyPathResult {
     Ty(Ty),
-    Spec(VRef<SpecBase>),
+    Spec(FragRef<SpecBase>),
 }

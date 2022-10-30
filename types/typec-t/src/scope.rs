@@ -1,15 +1,15 @@
 use lexing_t::*;
 use packaging_t::Module;
 use parsing_t::*;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 
 use crate::*;
 
 #[derive(Default)]
 pub struct Scope {
-    data: Map<VRef<str>, ScopeRecord>,
-    pushed: Vec<(VRef<str>, Option<ScopeRecord>)>,
+    data: Map<FragSlice<u8>, ScopeRecord>,
+    pushed: Vec<(FragSlice<u8>, Option<ScopeRecord>)>,
 }
 
 impl Scope {
@@ -17,7 +17,7 @@ impl Scope {
         Self::default()
     }
 
-    pub fn get(&self, ident: VRef<str>) -> Result<ScopeItem, ScopeError> {
+    pub fn get(&self, ident: FragSlice<u8>) -> Result<ScopeItem, ScopeError> {
         self.data
             .get(&ident)
             .map(|option| option.scope_item().ok_or(ScopeError::Collision))
@@ -25,7 +25,7 @@ impl Scope {
             .flatten()
     }
 
-    pub fn push(&mut self, id: VRef<str>, item: impl Into<ScopeItem>, span: Span) {
+    pub fn push(&mut self, id: FragSlice<u8>, item: impl Into<ScopeItem>, span: Span) {
         let record = ScopeRecord::Pushed {
             kind: item.into(),
             span,
@@ -47,7 +47,7 @@ impl Scope {
         }
     }
 
-    pub fn insert_builtin(&mut self, id: VRef<str>, item: impl Into<ScopeItem>) {
+    pub fn insert_builtin(&mut self, id: FragSlice<u8>, item: impl Into<ScopeItem>) {
         self.data
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
@@ -159,16 +159,16 @@ impl ScopeRecord {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ModuleItem {
-    pub id: VRef<str>,
+    pub id: FragSlice<u8>,
     pub ptr: ModuleItemPtr,
     pub span: Span,
     pub vis: Vis,
 }
 
 impl ModuleItem {
-    pub fn new(id: VRef<str>, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
+    pub fn new(id: FragSlice<u8>, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ptr.into(),
@@ -178,15 +178,15 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ModuleItemPtr {
-    Func(VRef<Func>),
+    Func(FragRef<Func>),
     Ty(Ty),
-    SpecBase(VRef<SpecBase>),
+    SpecBase(FragRef<SpecBase>),
 }
 
-impl From<VRef<Func>> for ModuleItemPtr {
-    fn from(func: VRef<Func>) -> Self {
+impl From<FragRef<Func>> for ModuleItemPtr {
+    fn from(func: FragRef<Func>) -> Self {
         Self::Func(func)
     }
 }
@@ -197,27 +197,27 @@ impl From<Ty> for ModuleItemPtr {
     }
 }
 
-impl From<VRef<SpecBase>> for ModuleItemPtr {
-    fn from(base: VRef<SpecBase>) -> Self {
+impl From<FragRef<SpecBase>> for ModuleItemPtr {
+    fn from(base: FragRef<SpecBase>) -> Self {
         Self::SpecBase(base)
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ScopeItem {
-    Func(VRef<Func>),
-    SpecFunc(VRef<SpecFunc>),
+    Func(FragRef<Func>),
+    SpecFunc(FragRef<SpecFunc>),
     Ty(Ty),
-    SpecBase(VRef<SpecBase>),
+    SpecBase(FragRef<SpecBase>),
     VarHeaderTir(VRef<VarHeaderTir>),
     Module(VRef<Module>),
 }
 
 macro_rules! gen_scope_item {
-    ($($name:ident),*) => {
+    ($($ref:ident $name:ident),*) => {
         $(
-            impl From<VRef<$name>> for ScopeItem {
-                fn from(item: VRef<$name>) -> Self {
+            impl From<$ref<$name>> for ScopeItem {
+                fn from(item: $ref<$name>) -> Self {
                     Self::$name(item)
                 }
             }
@@ -234,7 +234,7 @@ macro_rules! gen_scope_item {
     }
 }
 
-gen_scope_item!(SpecFunc, Func, VarHeaderTir, Module, SpecBase);
+gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase);
 
 impl From<Ty> for ScopeItem {
     fn from(item: Ty) -> Self {

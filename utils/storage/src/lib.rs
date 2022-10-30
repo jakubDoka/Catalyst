@@ -10,6 +10,7 @@
 #![feature(atomic_bool_fetch_not)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
+#![feature(macro_metavar_expr)]
 
 #[macro_export]
 macro_rules! function_pointer {
@@ -80,46 +81,38 @@ macro_rules! gen_constant_groups {
 }
 
 #[macro_export]
-macro_rules! gen_increasing_constants {
+macro_rules! gen_v_ref_constants {
     ($($ident:ident)+) => {
-        $crate::gen_increasing_constants!(exp Self => $($ident)*);
+        $crate::gen_v_ref_constants!(exp Self => $($ident)*);
     };
 
     (exp $ty:ty => $($ident:ident)*) => {
-        $crate::gen_increasing_constants!($ty => (0) $($ident)*);
+        $crate::gen_v_ref_constants!($ty => (0) $($ident)*);
         $crate::gen_constant_groups!(exp $ty => ALL = [$($ident)*];);
     };
 
     ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
         pub const $current: VRef<$ty> = unsafe { VRef::new($prev) };
         $(
-            $crate::gen_increasing_constants!($ty => (Self::$current.index() + 1) $next $($others)*);
+            $crate::gen_v_ref_constants!($ty => (Self::$current.index() + 1) $next $($others)*);
         )?
     };
 }
 
 #[macro_export]
-macro_rules! gen_v_ref_const_group {
-    ($($name:ident = [$($elem:ident)*];)*) => {
-        $(
-            pub const $name: &'static [VRef<Self>] = &[$(Self::$elem),*];
-        )*
-    };
-}
-
-#[macro_export]
-macro_rules! gen_v_ref_constants {
-    ($($name:ident)*) => {
-        gen_v_ref_constants!(__low__ (0) $($name)*);
-        gen_v_ref_const_group!(ALL = [$($name)*];);
+macro_rules! gen_frag_ref_constants {
+    ($($ident:ident)+) => {
+        $crate::gen_frag_ref_constants!(exp Self => $($ident)*);
     };
 
-    (__low__
-        ($prev:expr) $current:ident $($next:ident $($others:ident)*)?
-    ) => {
-        pub const $current: VRef<Self> = unsafe { VRef::new($prev) };
+    (exp $ty:ty => $($ident:ident)*) => {
+        $crate::gen_frag_ref_constants!($ty => (0) $($ident)*);
+    };
+
+    ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
+        pub const $current: FragRef<$ty> = unsafe { FragRef::new(FragAddr::new(0, $prev as u16)) };
         $(
-            gen_v_ref_constants!(__low__ (Self::$current.index() + 1) $next $($others)*);
+            $crate::gen_frag_ref_constants!($ty => ($prev + 1) $next $($others)*);
         )?
     };
 }
@@ -178,8 +171,6 @@ mod ordered_map;
 mod partial_ordered_map;
 /// Vector abstraction that allows reusing allocations while preserving other values.
 mod pool_map;
-/// Trait representing virtual pointer.
-mod primitives;
 mod push_map;
 mod rw_swap;
 /// Storage that can map additional info for existing map.
@@ -199,10 +190,6 @@ pub use {
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,
-    primitives::{
-        CtlOption, NoShortCircuitCollect, OptVRef, TransposeOption, VRef, VRefDefault, VRefSlice,
-        VSlice,
-    },
     push_map::PushMap,
     rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,

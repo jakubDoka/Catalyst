@@ -136,7 +136,7 @@ impl Testable for TestState {
 //         })
 //     }
 
-//     fn collect_entry_points(&mut self, triple: VRef<str>) -> Vec<CompileRequest> {
+//     fn collect_entry_points(&mut self, triple: FragSlice<u8>) -> Vec<CompileRequest> {
 //         let entry_points = self
 //             .mir_ctx
 //             .just_compiled
@@ -169,7 +169,7 @@ impl Testable for TestState {
 //         entry_points
 //     }
 
-//     fn compile_func(&mut self, current_func: VRef<str>, later_init: &mut LaterInit) {
+//     fn compile_func(&mut self, current_func: FragSlice<u8>, later_init: &mut LaterInit) {
 //         if let Err(err) = later_init.context.compile(&*later_init.object_context.isa) {
 //             println!("Failed to compile: {:?}", err);
 //             println!("{}", later_init.context.func.display());
@@ -236,7 +236,7 @@ impl Testable for TestState {
 
 //     fn compute_func_constants(
 //         &mut self,
-//         target_func: VRef<str>,
+//         target_func: FragSlice<u8>,
 //         later_init: &mut LaterInit,
 //     ) {
 //         let target_func = self.gen.compiled_funcs[target_func].func;

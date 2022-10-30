@@ -27,29 +27,29 @@ use storage::*;
 use typec::*;
 use typec_t::*;
 
-use crate::{incremental::SweepProjections, *};
+// use crate::{incremental::SweepProjections, *};
 
-macro_rules! sweep {
-    ($self:expr, $source:expr => $target:expr) => {
-        IncrementalBorrow {
-            typec: &mut $source.typec,
-            mir: &mut $source.mir,
-            gen: &mut $source.gen,
-        }
-        .sweep(
-            &$self.sweep_bitset,
-            &mut SweepCtx {
-                temp: IncrementalBorrow {
-                    typec: &mut $target.typec,
-                    mir: &mut $target.mir,
-                    gen: &mut $target.gen,
-                },
-                projections: &mut $self.sweep_ctx,
-            },
-            &mut InternerTransfer::new(&mut $source.interner, &mut $target.interner),
-        );
-    };
-}
+// macro_rules! sweep {
+//     ($self:expr, $source:expr => $target:expr) => {
+//         IncrementalBorrow {
+//             typec: &mut $source.typec,
+//             mir: &mut $source.mir,
+//             gen: &mut $source.gen,
+//         }
+//         .sweep(
+//             &$self.sweep_bitset,
+//             &mut SweepCtx {
+//                 temp: IncrementalBorrow {
+//                     typec: &mut $target.typec,
+//                     mir: &mut $target.mir,
+//                     gen: &mut $target.gen,
+//                 },
+//                 projections: &mut $self.sweep_ctx,
+//             },
+//             &mut InternerTransfer::new(&mut $source.interner, &mut $target.interner),
+//         );
+//     };
+// }
 
 #[derive(Default)]
 pub struct Middleware {
@@ -57,12 +57,12 @@ pub struct Middleware {
     pub resources: Resources,
     pub package_graph: PackageGraph,
     pub resource_loading_ctx: PackageLoaderCtx,
-    pub incremental: Incremental,
-    pub temp_incremental: Incremental,
-    pub sweep_ctx: SweepProjections,
+    pub main_task: Task,
+    // pub temp_incremental: Incremental,
+    // pub sweep_ctx: SweepProjections,
     pub sweep_bitset: BitSet,
     pub task_graph: TaskGraph,
-    pub entry_points: Vec<VRef<Func>>,
+    pub entry_points: Vec<FragRef<Func>>,
 }
 
 impl Middleware {
@@ -74,7 +74,7 @@ impl Middleware {
         PackageLoader::new(
             &mut self.resources,
             &mut self.workspace,
-            &mut self.incremental.interner,
+            &mut self.main_task.interner,
             &mut self.package_graph,
         )
         .reload(path, &mut self.resource_loading_ctx);
@@ -83,11 +83,11 @@ impl Middleware {
     pub fn update(&mut self, args: &MiddlewareArgs) -> Option<MiddlewareOutput> {
         let mut ir = args.dump_ir.then(String::new);
 
-        if let Some(ref path) = args.incremental_path {
-            self.prepare_incremental(path, &args.path);
-        } else {
-            self.reload_resources(&args.path);
-        }
+        // if let Some(ref path) = args.incremental_path {
+        //     self.prepare_incremental(path, &args.path);
+        // } else {
+        self.reload_resources(&args.path);
+        // }
 
         if self.workspace.has_errors() {
             return None;
@@ -147,12 +147,12 @@ impl Middleware {
                     }
                     task.workspace.transfer(&mut self.workspace);
                     task.compile_requests.queue.into_iter().map(move |req| {
-                        let (key, value) = task.gen.compiled_funcs.remove_index(req.id);
+                        let (key, value) = task.gen.funcs.remove_index(req.id);
                         (req.id, key, value)
                     })
                 })
                 .map(|(id, key, value)| {
-                    self.incremental.gen.compiled_funcs.insert(key, value);
+                    self.main_task.gen.funcs.insert(key, value);
                     id
                 })
                 .collect::<BumpVec<_>>();
@@ -163,9 +163,9 @@ impl Middleware {
             object
                 .load_functions(
                     to_link.into_iter().chain(iter::once(entry_point)),
-                    &self.incremental.gen,
-                    &self.incremental.typec,
-                    &self.incremental.interner,
+                    &self.main_task.gen,
+                    &self.main_task.typec,
+                    &self.main_task.interner,
                 )
                 .expect("So close...");
             object.emit().expect("This is so sad...")
@@ -176,7 +176,7 @@ impl Middleware {
         Some(MiddlewareOutput { binary, ir })
     }
 
-    fn generate_entry_point(&mut self, isa: &Isa) -> VRef<CompiledFunc> {
+    fn generate_entry_point(&mut self, isa: &Isa) -> FragRef<CompiledFunc> {
         let mut context = Context::new();
         let mut func_ctx = FunctionBuilderContext::new();
 
@@ -187,8 +187,8 @@ impl Middleware {
         builder.append_block_params_for_function_params(entry_point);
         builder.switch_to_block(entry_point);
 
-        for (index, func) in self.incremental.gen.compiled_funcs.indexed_values() {
-            if !self.incremental.typec.funcs[func.func]
+        for (index, func) in self.main_task.gen.funcs.indexed_values() {
+            if !self.main_task.typec.funcs[func.func]
                 .flags
                 .contains(FuncFlags::ENTRY)
             {
@@ -208,18 +208,18 @@ impl Middleware {
         }
         builder.ins().return_(&[]);
 
-        let func_id = self.incremental.typec.funcs.push(Func {
+        let func_id = self.main_task.typec.funcs.push(Func {
             visibility: FuncVisibility::Exported,
-            name: self.incremental.interner.intern(gen::ENTRY_POINT_NAME),
+            name: self.main_task.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
         });
-        let entry_point = self.incremental.gen.compiled_funcs.insert_unique(
-            self.incremental.interner.intern(gen::ENTRY_POINT_NAME),
+        let entry_point = self.main_task.gen.funcs.insert_unique(
+            self.main_task.interner.intern(gen::ENTRY_POINT_NAME),
             CompiledFunc::new(func_id),
         );
 
         context.compile(&*isa.inner).expect("Real nice...");
-        self.incremental
+        self.main_task
             .gen
             .save_compiled_code(entry_point, &context)
             .expect("Not again...");
@@ -237,15 +237,15 @@ impl Middleware {
                     &isa.triple,
                     func,
                     iter::empty(),
-                    &self.incremental.typec,
-                    &mut self.incremental.interner,
+                    &self.main_task.typec,
+                    &mut self.main_task.interner,
                 );
                 let id = self
-                    .incremental
+                    .main_task
                     .gen
-                    .compiled_funcs
+                    .funcs
                     .insert_unique(key, CompiledFunc::new(func));
-                let _ = self.incremental.gen.compiled_funcs[id].clone();
+                let _ = self.main_task.gen.funcs[id].clone();
 
                 CompileRequestChild {
                     id,
@@ -258,17 +258,17 @@ impl Middleware {
         let mut compile_requests = CompileRequests::default();
         Worker::traverse_compile_requests(
             frontier,
-            &self.incremental.mir,
-            &mut self.incremental.gen,
-            &mut self.incremental.typec,
-            &mut self.incremental.interner,
+            &self.main_task.mir,
+            &mut self.main_task.gen,
+            &mut self.main_task.typec,
+            &mut self.main_task.interner,
             &mut compile_requests,
             isa,
         );
 
         for task in tasks.iter_mut() {
             task.for_generation = true;
-            Self::transfer_all(task, &self.incremental);
+            Self::transfer_all(task, &self.main_task);
         }
 
         let chunk_size =
@@ -277,9 +277,9 @@ impl Middleware {
 
         for (task, chunk) in tasks.iter_mut().zip(chunks) {
             for req in chunk {
-                let key = self.incremental.gen.compiled_funcs.id(req.id);
-                let value = self.incremental.gen.compiled_funcs[req.id].clone();
-                task.gen.compiled_funcs.insert(key, value);
+                let key = self.main_task.gen.funcs.id(req.id);
+                let value = self.main_task.gen.funcs[req.id].clone();
+                task.gen.funcs.insert(key, value);
             }
             task.compile_requests.queue.extend(chunk);
             task.compile_requests
@@ -359,62 +359,60 @@ impl Middleware {
             .collect::<Vec<_>>()
     }
 
-    pub fn transfer_all(task: &mut Task, incremental: &Incremental) {
+    pub fn transfer_all(task: &mut Task, incremental: &Task) {
         task.typec.transfer(&incremental.typec);
         task.interner.clone_from(&incremental.interner);
         task.mir.bodies.clone_from(&incremental.mir.bodies);
-        task.gen
-            .compiled_funcs
-            .clone_from(&incremental.gen.compiled_funcs);
+        task.gen.funcs.clone_from(&incremental.gen.funcs);
     }
 
-    pub fn prepare_incremental(&mut self, path: &Path, resource_path: &Path) {
-        if let Err(err) = self.load_incremental(path) {
-            self.workspace.push(snippet! {
-                warn: ("Failed to load incremental data: {}", err);
-                info: "Rebuilding from scratch";
-                info: ("queried path: {}", path.display());
-            })
-        };
+    // pub fn prepare_incremental(&mut self, path: &Path, resource_path: &Path) {
+    //     if let Err(err) = self.load_incremental(path) {
+    //         self.workspace.push(snippet! {
+    //             warn: ("Failed to load incremental data: {}", err);
+    //             info: "Rebuilding from scratch";
+    //             info: ("queried path: {}", path.display());
+    //         })
+    //     };
 
-        self.resources.sources = mem::take(&mut self.incremental.sources);
+    //     self.resources.sources = mem::take(&mut self.incremental.sources);
 
-        self.reload_resources(resource_path);
-        self.sweep_bitset.clear();
-        for (key, module) in self.resources.modules.iter() {
-            if !self.resources.sources[module.source].changed {
-                self.sweep_bitset.insert(key.index());
-            }
-        }
+    //     self.reload_resources(resource_path);
+    //     self.sweep_bitset.clear();
+    //     for (key, module) in self.resources.modules.iter() {
+    //         if !self.resources.sources[module.source].changed {
+    //             self.sweep_bitset.insert(key.index());
+    //         }
+    //     }
 
-        sweep!(self, self.incremental => self.temp_incremental);
-        mem::swap(&mut self.incremental, &mut self.temp_incremental);
-        self.temp_incremental.clear();
-        self.incremental.loaded = true;
-    }
+    //     sweep!(self, self.incremental => self.temp_incremental);
+    //     mem::swap(&mut self.incremental, &mut self.temp_incremental);
+    //     self.temp_incremental.clear();
+    //     self.incremental.loaded = true;
+    // }
 
-    fn load_incremental(&mut self, path: &Path) -> std::io::Result<()> {
-        if self.incremental.loaded || !path.exists() {
-            return Ok(());
-        }
+    // fn load_incremental(&mut self, path: &Path) -> std::io::Result<()> {
+    //     if self.incremental.loaded || !path.exists() {
+    //         return Ok(());
+    //     }
 
-        let file = std::fs::File::open(path)?;
-        let mut buffered = std::io::BufReader::new(file);
-        self.incremental = rmp_serde::from_read(&mut buffered)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+    //     let file = std::fs::File::open(path)?;
+    //     let mut buffered = std::io::BufReader::new(file);
+    //     self.incremental = rmp_serde::from_read(&mut buffered)
+    //         .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    pub fn save(&mut self, path: &Path) -> std::io::Result<()> {
-        let file = std::fs::File::create(path)?;
-        let mut buffered = std::io::BufWriter::new(file);
-        self.incremental.sources = mem::take(&mut self.resources.sources);
-        rmp_serde::encode::write(&mut buffered, &self.incremental)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+    // pub fn save(&mut self, path: &Path) -> std::io::Result<()> {
+    //     let file = std::fs::File::create(path)?;
+    //     let mut buffered = std::io::BufWriter::new(file);
+    //     self.incremental.sources = mem::take(&mut self.resources.sources);
+    //     rmp_serde::encode::write(&mut buffered, &self.incremental)
+    //         .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub fn build_task_graph(&mut self) {
         self.task_graph.clear();
@@ -633,7 +631,7 @@ impl Worker {
         shared: &Shared,
         isa: &Isa,
         gen_layouts: &mut GenLayouts,
-    ) -> BumpVec<VRef<CompiledFunc>> {
+    ) -> BumpVec<FragRef<CompiledFunc>> {
         let mut compiled = bumpvec![];
         for &CompileRequest {
             func,
@@ -708,7 +706,7 @@ impl Worker {
                 ..
             } = task.typec.impls[r#impl];
 
-            let mut params = bumpvec![None; task.typec.params[generics].len()];
+            let mut params = bumpvec![None; generics.len()];
             task.typec
                 .compatible(&mut params, ty, template)
                 .expect("Heh...");
@@ -728,10 +726,7 @@ impl Worker {
                         &task.typec,
                         &mut task.interner,
                     );
-                    let id = task
-                        .gen
-                        .compiled_funcs
-                        .insert_unique(key, CompiledFunc::new(func));
+                    let id = task.gen.funcs.insert_unique(key, CompiledFunc::new(func));
                     CompileRequestChild {
                         func,
                         id,
@@ -810,7 +805,7 @@ impl Worker {
                             ..
                         } = typec.impls[r#impl];
                         let func_id = typec.func_slices[methods][index];
-                        let mut infer_slots = bumpvec![None; typec[generics].len()];
+                        let mut infer_slots = bumpvec![None; generics.len()];
                         let _ = typec.compatible(&mut infer_slots, caller, ty);
                         let _ = typec.compatible_spec(&mut infer_slots, used_spec, spec);
                         let params = infer_slots
@@ -831,11 +826,11 @@ impl Worker {
                     typec,
                     interner,
                 );
-                let (id, dup) = gen.compiled_funcs.insert(key, CompiledFunc::new(func_id));
+                let (id, dup) = gen.funcs.insert(key, CompiledFunc::new(func_id));
                 if dup.is_some() {
                     continue;
                 }
-                let _ = gen.compiled_funcs[dbg!(id)].clone();
+                let _ = gen.funcs[dbg!(id)].clone();
                 frontier.push(CompileRequestChild {
                     func: func_id,
                     id,
@@ -843,7 +838,7 @@ impl Worker {
                 });
             }
             let children = compile_requests.children.bump_slice(&frontier[prev..]);
-            let _ = gen.compiled_funcs[dbg!(id)].clone();
+            let _ = gen.funcs[dbg!(id)].clone();
             compile_requests.queue.push(CompileRequest {
                 func,
                 id,
@@ -884,7 +879,7 @@ impl Worker {
             let funcs = task.typec.func_slices[impl_ent.methods]
                 .iter()
                 .map(|&func| task.typec.funcs[func].name)
-                .filter_map(|name| task.gen.compiled_funcs.index(name));
+                .filter_map(|name| task.gen.funcs.index(name));
 
             match spec {
                 s if s == SpecBase::TOKEN_MACRO => {
@@ -990,26 +985,40 @@ pub struct GenTask {}
 
 #[derive(Default)]
 pub struct Task {
+    // config
     pub id: usize,
+    pub for_generation: bool,
+    pub ir_dump: Option<String>,
+
+    // temp
+    pub compile_requests: CompileRequests,
     pub modules_to_compile: Vec<VRef<Module>>,
-    pub entry_points: Vec<VRef<Func>>,
-    pub interner: Interner,
+    pub entry_points: Vec<FragRef<Func>>,
     pub workspace: Workspace,
+
+    // state
+    pub interner: Interner,
     pub typec: Typec,
     pub mir: Mir,
     pub gen: Gen,
-    pub compile_requests: CompileRequests,
-    pub for_generation: bool,
-    pub ir_dump: Option<String>,
 }
 
 impl Task {
-    fn clear(&mut self) {
-        self.modules_to_compile.clear();
-        self.interner.clear();
-        self.typec.clear();
-        self.mir.clear();
-        self.gen.clear();
+    fn split(&self) -> Self {
+        Self {
+            interner: self.interner.clone(),
+            typec: self.typec.clone(),
+            mir: self.mir.clone(),
+            gen: self.gen.clone(),
+
+            ..default()
+        }
+    }
+
+    fn sync_with(&mut self, other: &Self) {
+        for (&key, value) in other.gen.funcs.iter() {
+            self.gen.funcs.insert(key, value.clone());
+        }
     }
 }
 

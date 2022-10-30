@@ -1,11 +1,11 @@
 use crate::*;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 
-pub type Funcs = PushMap<Func>;
-pub type FuncSlices = BumpMap<VRef<Func>>;
+pub type Funcs = FragMap<Func, MAX_FRAGMENT_SIZE>;
+pub type FuncSlices = FragMap<FragRef<Func>, MAX_FRAGMENT_SIZE>;
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct Func {
     pub generics: Generics,
     pub owner: Option<Ty>,
@@ -13,7 +13,7 @@ pub struct Func {
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub loc: Option<Loc>,
 }
 
@@ -32,14 +32,13 @@ gen_water_drops! {
 }
 
 bitflags! {
-    #[Deserialize, Serialize]
     FuncFlags: u8 {
         ENTRY
         BUILTIN
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum FuncVisibility {
     #[default]
     Local,
@@ -47,9 +46,9 @@ pub enum FuncVisibility {
     Imported,
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct Signature {
-    pub cc: Option<VRef<str>>,
-    pub args: VSlice<Ty>,
+    pub cc: Option<FragSlice<u8>>,
+    pub args: FragSlice<Ty>,
     pub ret: Ty,
 }

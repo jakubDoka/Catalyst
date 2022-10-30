@@ -75,6 +75,16 @@ impl<T, V: Default> Default for ShadowMap<T, V> {
     }
 }
 
+impl<T, V: Clone> Clone for ShadowMap<T, V> {
+    fn clone(&self) -> Self {
+        ShadowMap {
+            data: self.data.clone(),
+            default: self.default.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
 struct ShadowMapVisitor<K, V> {
     marker: PhantomData<fn() -> ShadowMap<K, V>>,
 }

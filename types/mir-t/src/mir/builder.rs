@@ -4,7 +4,7 @@ use std::{
 };
 
 use lexing_t::Span;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 use typec_t::*;
 
@@ -85,7 +85,7 @@ pub struct MirBuilderCtx {
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
     pub used_types: Map<Ty, VRef<MirTy>>,
-    pub just_compiled: Vec<VRef<Func>>,
+    pub just_compiled: Vec<FragRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
     pub pattern_solver_arena: Option<Arena>,
     pub dependant_types: DependantTypes,
@@ -184,7 +184,7 @@ impl MirBuilderCtx {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone)]
 pub struct DependantTypes(PushMap<MirTy>);
 
 impl Default for DependantTypes {

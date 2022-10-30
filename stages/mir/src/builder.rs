@@ -15,7 +15,7 @@ impl MirChecker<'_> {
     pub fn funcs(
         &mut self,
         ctx: &mut MirBuilderCtx,
-        input: &mut BumpVec<(VRef<Func>, TirNode)>,
+        input: &mut BumpVec<(FragRef<Func>, TirNode)>,
     ) -> &mut Self {
         for (func, body) in input.drain(..) {
             let body = self.func(func, body, ctx);
@@ -23,7 +23,6 @@ impl MirChecker<'_> {
                 func,
                 FuncMir {
                     inner: Arc::new(body),
-                    dependant_types: ctx.dependant_types.clone(),
                 },
             );
             ctx.dependant_types.clear();
@@ -33,7 +32,12 @@ impl MirChecker<'_> {
         self
     }
 
-    fn func(&mut self, func: VRef<Func>, body: TirNode, ctx: &mut MirBuilderCtx) -> FuncMirInner {
+    fn func(
+        &mut self,
+        func: FragRef<Func>,
+        body: TirNode,
+        ctx: &mut MirBuilderCtx,
+    ) -> FuncMirInner {
         let Func { signature, .. } = self.typec.funcs[func];
 
         let mut builder = self.push_args(signature.args, ctx);
@@ -345,7 +349,7 @@ impl MirChecker<'_> {
                     };
                     if let Some(parent) = parent
                         && let Ty::Enum(enum_ty) = parent.caller(self.typec)
-                        && int as usize == self.typec[self.typec[enum_ty].variants].len() - 1
+                        && int as usize == self.typec[enum_ty].variants.len() - 1
                     {
                         nodes.push(Node::Scalar(Range {
                             start: int,
@@ -572,7 +576,7 @@ impl MirChecker<'_> {
         None
     }
 
-    fn push_args<'a>(&mut self, args: VSlice<Ty>, ctx: &'a mut MirBuilderCtx) -> MirBuilder<'a> {
+    fn push_args<'a>(&mut self, args: FragSlice<Ty>, ctx: &'a mut MirBuilderCtx) -> MirBuilder<'a> {
         let block = ctx.create_block();
         let mut builder = MirBuilder::new(block, ctx);
 

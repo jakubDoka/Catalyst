@@ -14,26 +14,23 @@ use cranelift_codegen::{
 
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 use target_lexicon::Triple;
 use typec_t::*;
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Clone)]
 pub struct Gen {
-    pub compiled_funcs: OrderedMap<VRef<str>, CompiledFunc>,
+    pub lookup: Map<FragSlice<u8>, FragRef<CompiledFunc>>,
+    pub funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
 }
 
 impl Gen {
     pub const FUNC_NAMESPACE: u32 = 0;
 
-    pub fn clear(&mut self) {
-        self.compiled_funcs.clear();
-    }
-
     pub fn save_compiled_code(
         &mut self,
-        id: VRef<CompiledFunc>,
+        id: FragRef<CompiledFunc>,
         ctx: &Context,
     ) -> Result<(), CodeSaveError> {
         let cc = ctx.compiled_code().ok_or(CodeSaveError::MissingCode)?;
@@ -52,7 +49,9 @@ impl Gen {
                             &UserExternalName {
                                 namespace: Self::FUNC_NAMESPACE,
                                 index,
-                            } => GenItemName::Func(unsafe { VRef::new(index as usize) }),
+                            } => GenItemName::Func(unsafe {
+                                FragRef::new(FragAddr::from_u32(index))
+                            }),
                             name => unreachable!("Unexpected name: {:?}", name),
                         },
                         ExternalName::LibCall(lc) => GenItemName::LibCall(lc),
@@ -73,22 +72,22 @@ impl Gen {
                 alignment: cc.alignment as u64,
                 relocs,
             })),
-            ..self.compiled_funcs[id]
+            ..self.funcs[id]
         };
 
-        self.compiled_funcs[id] = func;
+        self.funcs[id] = func;
 
         Ok(())
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone)]
 pub struct CompiledFunc {
-    pub func: VRef<Func>,
+    pub func: FragRef<Func>,
+    pub name: FragSlice<u8>,
     pub inner: Option<Arc<CompiledFuncInner>>,
 }
 
-#[derive(Deserialize, Serialize)]
 pub struct CompiledFuncInner {
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
@@ -97,8 +96,12 @@ pub struct CompiledFuncInner {
 }
 
 impl CompiledFunc {
-    pub fn new(func: VRef<Func>) -> Self {
-        Self { func, inner: None }
+    pub fn new(func: FragRef<Func>, name: FragSlice<u8>) -> Self {
+        Self {
+            func,
+            name,
+            inner: None,
+        }
     }
 }
 
@@ -129,16 +132,16 @@ impl CompileRequests {
 
 #[derive(Clone, Copy)]
 pub struct CompileRequest {
-    pub id: VRef<CompiledFunc>,
-    pub func: VRef<Func>,
+    pub id: FragRef<CompiledFunc>,
+    pub func: FragRef<Func>,
     pub params: VSlice<Ty>,
     pub children: VSlice<CompileRequestChild>,
 }
 
 #[derive(Clone, Copy)]
 pub struct CompileRequestChild {
-    pub id: VRef<CompiledFunc>,
-    pub func: VRef<Func>,
+    pub id: FragRef<CompiledFunc>,
+    pub func: FragRef<Func>,
     pub params: VSlice<Ty>,
 }
 
@@ -150,7 +153,7 @@ pub struct CompileRequestChild {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
-    pub func_imports: Map<VRef<str>, (ir::FuncRef, bool)>,
+    pub func_imports: Map<FragSlice<u8>, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
 }
@@ -237,7 +240,7 @@ impl GenLayouts {
         let res = match ty {
             Ty::Struct(s) => {
                 let Struct { fields, .. } = typec.structs[s];
-                let mut offsets = bumpvec![cap typec.fields[fields].len()];
+                let mut offsets = bumpvec![cap fields.len()];
 
                 let layouts = typec.fields[fields]
                     .to_bumpvec()
@@ -384,7 +387,7 @@ impl Layout {
 // relocs
 //////////////////////////////////
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy)]
 pub struct GenReloc {
     /// The offset at which the relocation applies, *relative to the
     /// containing section*.
@@ -397,9 +400,9 @@ pub struct GenReloc {
     pub addend: isize,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
 pub enum GenItemName {
-    Func(VRef<CompiledFunc>),
+    Func(FragRef<CompiledFunc>),
     LibCall(ir::LibCall),
 }
 

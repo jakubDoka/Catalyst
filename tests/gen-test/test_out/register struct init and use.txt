@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: generated ir:
 function u0:0() -> i64 fast {
 block0:
     v0 = iconst.i64 0
@@ -15,8 +15,6 @@ block0:
     v11 = iconst.i64 0
     return v10  ; v10 = 0
 }
-
-
 
 
 info: status: 0

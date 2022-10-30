@@ -3,21 +3,21 @@ use storage::*;
 
 use crate::*;
 
-pub type TypecOutput<A, T> = Vec<(A, VRef<T>)>;
+pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
 
 #[derive(Default)]
 pub struct TirBuilderCtx {
     pub vars: Vec<VarHeaderTir>,
-    pub generics: Vec<VSlice<Spec>>,
+    pub generics: Vec<FragSlice<Spec>>,
     pub cast_checks: Vec<CastCheck>,
     pub macros: Vec<MacroCompileRequest>,
 }
 
 #[derive(Clone, Copy)]
 pub struct MacroCompileRequest {
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub ty: Ty,
-    pub r#impl: VRef<Impl>,
+    pub r#impl: FragRef<Impl>,
 }
 
 pub struct CastCheck {
@@ -94,8 +94,8 @@ pub struct CallTir<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum CallableTir<'a> {
-    Func(VRef<Func>),
-    SpecFunc(VRef<SpecFunc>),
+    Func(FragRef<Func>),
+    SpecFunc(FragRef<SpecFunc>),
     Pointer(TirNode<'a>),
 }
 
@@ -130,7 +130,7 @@ pub enum PatKindTir<'a> {
 pub enum UnitPatKindTir<'a> {
     Struct { fields: &'a [PatTir<'a>] },
     Binding(bool, VRef<VarHeaderTir>),
-    Int(Result<Span, i64>, VRef<Func>),
+    Int(Result<Span, i64>, FragRef<Func>),
     Wildcard,
 }
 

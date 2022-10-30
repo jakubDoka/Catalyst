@@ -8,10 +8,7 @@ mod cmd_args;
 mod incremental;
 mod logic;
 
-pub use {
-    incremental::{Incremental, IncrementalBorrow, InternerTransfer, SweepCtx},
-    logic::{
-        GenTask, MacroCtx, Middleware, MiddlewareArgs, MiddlewareOutput, Shared, Task, TaskGraph,
-        Worker, WorkerState,
-    },
+pub use logic::{
+    GenTask, MacroCtx, Middleware, MiddlewareArgs, MiddlewareOutput, Shared, Task, TaskGraph,
+    Worker, WorkerState,
 };

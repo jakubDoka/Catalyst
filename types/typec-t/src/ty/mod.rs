@@ -3,59 +3,59 @@ use std::fmt::{self, Display};
 use crate::*;
 use lexing_t::Span;
 use parsing_t::Vis;
-use serde::{Deserialize, Serialize};
+
 use storage::*;
 
-pub type TypecLookup = Map<VRef<str>, ComputedTypecItem>;
-pub type ImplLookup = Map<ImplKey, VRef<Impl>>;
+pub type TypecLookup = Map<FragSlice<u8>, ComputedTypecItem>;
+pub type ImplLookup = Map<ImplKey, FragRef<Impl>>;
 
-pub type ParamSlices = BumpMap<VSlice<Spec>>;
-pub type SpecSums = BumpMap<Spec>;
-pub type ArgSlices = BumpMap<Ty>;
-pub type Fields = BumpMap<Field>;
-pub type SpecFuncs = BumpMap<SpecFunc>;
-pub type Variants = BumpMap<Variant>;
+pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
+pub type SpecSums = FragMap<Spec, MAX_FRAGMENT_SIZE>;
+pub type ArgSlices = FragMap<Ty, MAX_FRAGMENT_SIZE>;
+pub type Fields = FragMap<Field, MAX_FRAGMENT_SIZE>;
+pub type SpecFuncs = FragMap<SpecFunc, MAX_FRAGMENT_SIZE>;
+pub type Variants = FragMap<Variant, MAX_FRAGMENT_SIZE>;
 
-pub type Impls = PushMap<Impl>;
-pub type Instances = PushMap<Instance>;
-pub type Structs = PushMap<Struct>;
-pub type Enums = PushMap<Enum>;
-pub type Pointers = PushMap<Pointer>;
-pub type BaseSpecs = PushMap<SpecBase>;
-pub type SpecInstances = PushMap<SpecInstance>;
+pub type Impls = FragMap<Impl, MAX_FRAGMENT_SIZE>;
+pub type Instances = FragMap<Instance, MAX_FRAGMENT_SIZE>;
+pub type Structs = FragMap<Struct, MAX_FRAGMENT_SIZE>;
+pub type Enums = FragMap<Enum, MAX_FRAGMENT_SIZE>;
+pub type Pointers = FragMap<Pointer, MAX_FRAGMENT_SIZE>;
+pub type BaseSpecs = FragMap<SpecBase, MAX_FRAGMENT_SIZE>;
+pub type SpecInstances = FragMap<SpecInstance, MAX_FRAGMENT_SIZE>;
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
-    pub methods: VRefSlice<Func>,
-    pub next: Option<VRef<Impl>>,
+    pub methods: FragRefSlice<Func>,
+    pub next: Option<FragRef<Impl>>,
     pub span: Option<Span>,
 }
 
 impl Impl {
-    gen_increasing_constants!(ANY);
+    gen_v_ref_constants!(ANY);
 }
 
-pub type Generics = VSlice<VSlice<Spec>>;
+pub type Generics = FragSlice<FragSlice<Spec>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Instance {
     pub base: GenericTy,
-    pub args: VSlice<Ty>,
+    pub args: FragSlice<Ty>,
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct Struct {
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub generics: Generics,
-    pub fields: VSlice<Field>,
+    pub fields: FragSlice<Field>,
     pub loc: Option<Loc>,
 }
 
@@ -65,11 +65,11 @@ gen_water_drops! {
     EH => "|||",
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct Enum {
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub generics: Generics,
-    pub variants: VSlice<Variant>,
+    pub variants: FragSlice<Variant>,
     pub loc: Option<Loc>,
 }
 
@@ -80,21 +80,21 @@ gen_water_drops! {
     MACRO_TOKEN_KIND => "MacroTokenKind",
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Variant {
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub ty: Ty,
     pub span: Option<Span>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Pointer {
     pub base: Ty,
     pub mutability: Mutability,
     pub depth: u16,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mutability {
     Mutable,
     Immutable,
@@ -111,17 +111,17 @@ impl fmt::Display for Mutability {
     }
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default)]
 pub struct SpecBase {
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub generics: Generics,
-    pub methods: VSlice<SpecFunc>,
+    pub methods: FragSlice<SpecFunc>,
     pub loc: Option<Loc>,
 }
 
 impl SpecBase {
-    pub fn is_macro(s: VRef<Self>) -> bool {
-        s.index() <= Self::TOKEN_MACRO.index()
+    pub fn is_macro(s: FragRef<Self>) -> bool {
+        s <= Self::TOKEN_MACRO
     }
 }
 
@@ -131,20 +131,20 @@ gen_water_drops! {
     TOKEN_MACRO => "TokenMacro",
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct SpecInstance {
-    pub base: VRef<SpecBase>,
-    pub args: VSlice<Ty>,
+    pub base: FragRef<SpecBase>,
+    pub args: FragSlice<Ty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Spec {
-    Base(VRef<SpecBase>),
-    Instance(VRef<SpecInstance>),
+    Base(FragRef<SpecBase>),
+    Instance(FragRef<SpecInstance>),
 }
 
 impl Spec {
-    pub fn base(self, typec: &Typec) -> VRef<SpecBase> {
+    pub fn base(self, typec: &Typec) -> FragRef<SpecBase> {
         match self {
             Spec::Base(base) => base,
             Spec::Instance(instance) => typec.spec_instances[instance].base,
@@ -152,22 +152,22 @@ impl Spec {
     }
 }
 
-impl From<VRef<SpecBase>> for Spec {
-    fn from(base: VRef<SpecBase>) -> Self {
+impl From<FragRef<SpecBase>> for Spec {
+    fn from(base: FragRef<SpecBase>) -> Self {
         Spec::Base(base)
     }
 }
 
-impl From<VRef<SpecInstance>> for Spec {
-    fn from(instance: VRef<SpecInstance>) -> Self {
+impl From<FragRef<SpecInstance>> for Spec {
+    fn from(instance: FragRef<SpecInstance>) -> Self {
         Spec::Instance(instance)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GenericTy {
-    Struct(VRef<Struct>),
-    Enum(VRef<Enum>),
+    Struct(FragRef<Struct>),
+    Enum(FragRef<Enum>),
 }
 
 impl GenericTy {
@@ -186,31 +186,31 @@ impl GenericTy {
     }
 }
 
-impl From<VRef<Struct>> for GenericTy {
-    fn from(s: VRef<Struct>) -> Self {
+impl From<FragRef<Struct>> for GenericTy {
+    fn from(s: FragRef<Struct>) -> Self {
         GenericTy::Struct(s)
     }
 }
 
-impl From<VRef<Enum>> for GenericTy {
-    fn from(e: VRef<Enum>) -> Self {
+impl From<FragRef<Enum>> for GenericTy {
+    fn from(e: FragRef<Enum>) -> Self {
         GenericTy::Enum(e)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComputedTypecItem {
-    Pointer(VRef<Pointer>),
-    Instance(VRef<Instance>),
-    SpecInstance(VRef<SpecInstance>),
+    Pointer(FragRef<Pointer>),
+    Instance(FragRef<Instance>),
+    SpecInstance(FragRef<SpecInstance>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ty {
-    Struct(VRef<Struct>),
-    Enum(VRef<Enum>),
-    Instance(VRef<Instance>),
-    Pointer(VRef<Pointer>),
+    Struct(FragRef<Struct>),
+    Enum(FragRef<Enum>),
+    Instance(FragRef<Instance>),
+    Pointer(FragRef<Pointer>),
     Param(u16),
     Builtin(Builtin),
 }
@@ -218,10 +218,10 @@ pub enum Ty {
 impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Struct(s) => write!(f, "struct{}", s.index()),
-            Ty::Enum(e) => write!(f, "enum{}", e.index()),
-            Ty::Instance(i) => write!(f, "inst{}", i.index()),
-            Ty::Pointer(p) => write!(f, "ptr{}", p.index()),
+            Ty::Struct(s) => write!(f, "struct{:?}", s),
+            Ty::Enum(e) => write!(f, "enum{:?}", e),
+            Ty::Instance(i) => write!(f, "inst{:?}", i),
+            Ty::Pointer(p) => write!(f, "ptr{:?}", p),
             Ty::Param(i) => write!(f, "param{}", i),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }
@@ -286,26 +286,26 @@ impl Ty {
     }
 }
 
-impl From<VRef<Struct>> for Ty {
-    fn from(s: VRef<Struct>) -> Self {
+impl From<FragRef<Struct>> for Ty {
+    fn from(s: FragRef<Struct>) -> Self {
         Ty::Struct(s)
     }
 }
 
-impl From<VRef<Enum>> for Ty {
-    fn from(e: VRef<Enum>) -> Self {
+impl From<FragRef<Enum>> for Ty {
+    fn from(e: FragRef<Enum>) -> Self {
         Ty::Enum(e)
     }
 }
 
-impl From<VRef<Instance>> for Ty {
-    fn from(i: VRef<Instance>) -> Self {
+impl From<FragRef<Instance>> for Ty {
+    fn from(i: FragRef<Instance>) -> Self {
         Ty::Instance(i)
     }
 }
 
-impl From<VRef<Pointer>> for Ty {
-    fn from(p: VRef<Pointer>) -> Self {
+impl From<FragRef<Pointer>> for Ty {
+    fn from(p: FragRef<Pointer>) -> Self {
         Ty::Pointer(p)
     }
 }
@@ -349,7 +349,7 @@ macro_rules! gen_builtin {
             )*
         }
 
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         pub enum Builtin {
             $($builtin),*
         }
@@ -414,13 +414,13 @@ impl Default for Ty {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub span: Option<Span>,
-    pub parent: VRef<SpecBase>,
+    pub parent: FragRef<SpecBase>,
 }
 
 impl SpecFunc {
@@ -429,17 +429,16 @@ impl SpecFunc {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy)]
 pub struct Field {
     pub vis: Vis,
     pub ty: Ty,
     pub flags: FieldFlags,
     pub span: Option<Span>,
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
 }
 
 bitflags! {
-    #[Serialize, Deserialize]
     FieldFlags: u8 {
         MUTABLE
         USED
@@ -447,14 +446,13 @@ bitflags! {
 }
 
 bitflags! {
-    #[Serialize, Deserialize]
     TyFlags: u8 {
         GENERIC
     }
 }
 
 pub trait Humid: Sized {
-    fn lookup_water_drop(key: &str) -> Option<VRef<Self>>;
-    fn name(&self) -> VRef<str>;
-    fn storage(typec: &mut Typec) -> &mut PushMap<Self>;
+    fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
+    fn name(&self) -> FragSlice<u8>;
+    fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE>;
 }

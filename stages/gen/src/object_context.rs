@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Not};
 
 use ::object::{RelocationEncoding, RelocationKind, SymbolScope};
 use cranelift_codegen::binemit::Reloc;
@@ -17,7 +17,7 @@ struct ObjectFunction {
 }
 
 pub struct ObjectContext {
-    functions: ShadowMap<CompiledFunc, Option<ObjectFunction>>,
+    functions: Map<FragRef<CompiledFunc>, ObjectFunction>,
     text_section: SectionId,
     object: Object<'static>,
 }
@@ -52,7 +52,7 @@ impl ObjectContext {
 
         let mut object = Object::new(binary_format, architecture, endian);
         Ok(Self {
-            functions: ShadowMap::new(),
+            functions: Map::default(),
             text_section: object.section_id(StandardSection::Text),
             object,
         })
@@ -60,7 +60,7 @@ impl ObjectContext {
 
     pub fn load_functions(
         &mut self,
-        funcs: impl IntoIterator<Item = VRef<CompiledFunc>>,
+        funcs: impl IntoIterator<Item = FragRef<CompiledFunc>>,
         gen: &Gen,
         typec: &Typec,
         interner: &Interner,
@@ -68,11 +68,10 @@ impl ObjectContext {
         // register functions
         let mut funcs = funcs
             .into_iter()
-            .filter_map(|func| self.functions[func].is_none().then_some(func))
+            .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let ent = &gen.compiled_funcs[func];
-
-                let id = gen.compiled_funcs.id(func);
+                let ent = &gen.funcs[func];
+                let id = ent.name;
 
                 let meta = &typec.funcs[ent.func];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
@@ -100,13 +99,13 @@ impl ObjectContext {
 
         // filter out extern functions and insert symbols
         funcs.retain(|&(func, symbol, _, is_extern)| {
-            self.functions[func] = Some(ObjectFunction { symbol });
+            self.functions.insert(func, ObjectFunction { symbol });
             !is_extern
         });
 
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
-            let Some(ent) = &gen.compiled_funcs[func].inner else {
+            let Some(ent) = &gen.funcs[func].inner else {
                 return Err(ObjectRelocationError::MissingFunctionBody(func));
             };
 
@@ -120,7 +119,7 @@ impl ObjectContext {
 
         // add relocations
         for (func, _, offset, ..) in funcs {
-            let Some(ent) = &gen.compiled_funcs[func].inner else {
+            let Some(ent) = &gen.funcs[func].inner else {
                 unreachable!();
             };
             for &record in &ent.relocs {
@@ -204,7 +203,8 @@ impl ObjectContext {
 
         let symbol = match record.name {
             GenItemName::Func(func) => {
-                self.functions[func]
+                self.functions
+                    .get(&func)
                     .ok_or(ObjectRelocationError::MissingSymbol(func))?
                     .symbol
             }
@@ -239,9 +239,9 @@ impl ObjectContext {
 #[derive(Debug)]
 pub enum ObjectRelocationError {
     Unsupported(Reloc, BinaryFormat, BinaryFormat),
-    MissingSymbol(VRef<CompiledFunc>),
+    MissingSymbol(FragRef<CompiledFunc>),
     AddRelocation(object::write::Error),
-    MissingFunctionBody(VRef<CompiledFunc>),
+    MissingFunctionBody(FragRef<CompiledFunc>),
 }
 
 impl Display for ObjectRelocationError {

@@ -45,11 +45,11 @@ mod util {
     use storage::*;
     use typec_t::*;
 
-    pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<VRef<Impl>>, usize)>;
+    pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<FragRef<Impl>>, usize)>;
 
     #[derive(Default)]
     pub struct TyCheckerCtx {
-        pub extern_funcs: Vec<VRef<Func>>,
+        pub extern_funcs: Vec<FragRef<Func>>,
         pub ty_graph: TyGraph,
     }
 
@@ -84,7 +84,7 @@ mod util {
             self.impl_frames.clear();
         }
 
-        pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<VRef<Impl>>) {
+        pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<FragRef<Impl>>) {
             self.impl_frames.push((ast, r#impl, self.impl_funcs.len()));
         }
     }
@@ -106,7 +106,7 @@ mod util {
             ctx: &mut TyCheckerCtx,
             tir_builder_ctx: &mut TirBuilderCtx,
             transfer: ActiveAstTransfer<'a, '_>,
-            type_checked_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
+            type_checked_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)

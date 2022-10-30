@@ -1,7 +1,8 @@
-info: mir repr of functions:
-const function u0:0() -> i64 windows_fastcall {
+info: generated ir:
+
+function u0:0() -> i64 fast {
     sig0 = (i64, i64) -> i64 fast
-    fn0 = colocated u0:2 sig0
+    fn0 = colocated u0:65537 sig0
 
 block0:
     v0 = iconst.i64 1
@@ -9,20 +10,12 @@ block0:
     v2 = call fn0(v0, v1)  ; v0 = 1, v1 = 1
     return v2
 }
-
-
 function u0:0(i64, i64) -> i64 fast {
 block0(v0: i64, v1: i64):
     v2 = isub v0, v1
     return v2
 }
 
-
-function u0:0() -> i64 fast {
-block0:
-    v0 = iconst.i64 0
-    return v0  ; v0 = 0
-}
 
 
 

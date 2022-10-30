@@ -1,4 +1,4 @@
-info: mir repr of functions:
+info: generated ir:
 function u0:0() -> i64 fast {
     ss0 = explicit_slot 16
 
@@ -56,8 +56,6 @@ block1:
 block7(v25: i64):
     return v25
 }
-
-
 
 
 info: status: 0

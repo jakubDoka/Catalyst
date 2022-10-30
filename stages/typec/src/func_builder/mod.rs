@@ -19,8 +19,8 @@ impl TyChecker<'_> {
         &mut self,
         arena: &'a Arena,
         transfer: &AstTransfer,
-        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
-        extern_funcs: &mut Vec<VRef<Func>>,
+        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
+        extern_funcs: &mut Vec<FragRef<Func>>,
         ctx: &mut TirBuilderCtx,
     ) -> &mut Self {
         let iter = iter::once(0)
@@ -56,9 +56,9 @@ impl TyChecker<'_> {
     fn build_spec_impl<'a>(
         &mut self,
         arena: &'a Arena,
-        impl_ref: VRef<Impl>,
-        input: &[(FuncDefAst, VRef<Func>)],
-        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
+        impl_ref: FragRef<Impl>,
+        input: &[(FuncDefAst, FragRef<Func>)],
+        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
         ctx: &mut TirBuilderCtx,
         offset: usize,
     ) {
@@ -130,14 +130,14 @@ impl TyChecker<'_> {
             return;
         };
 
-        self.typec.impls[impl_ref].methods = self.typec.func_slices.bump(methods);
+        self.typec.impls[impl_ref].methods = self.typec.func_slices.extend(methods);
     }
 
     pub fn check_impl_signature(
         &mut self,
         implementor: Ty,
         spec_func: SpecFunc,
-        func_id: VRef<Func>,
+        func_id: FragRef<Func>,
         span: Span,
     ) {
         let func = self.typec.funcs[func_id];
@@ -146,7 +146,7 @@ impl TyChecker<'_> {
             .typec
             .pack_spec_func_param_specs(spec_func)
             .collect::<BumpVec<_>>();
-        let generic_start = spec_func_params.len() - self.typec[spec_func.generics].len();
+        let generic_start = spec_func_params.len() - spec_func.generics.len();
         let mut spec_func_slots = vec![None; spec_func_params.len()];
         spec_func_slots[generic_start - 1] = Some(implementor);
         let func_params = self
@@ -210,9 +210,9 @@ impl TyChecker<'_> {
     pub fn build_funcs<'a>(
         &mut self,
         arena: &'a Arena,
-        input: &[(FuncDefAst, VRef<Func>)],
-        compiled_funcs: &mut BumpVec<(VRef<Func>, TirNode<'a>)>,
-        extern_funcs: &mut Vec<VRef<Func>>,
+        input: &[(FuncDefAst, FragRef<Func>)],
+        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
+        extern_funcs: &mut Vec<FragRef<Func>>,
         ctx: &mut TirBuilderCtx,
         offset: usize,
     ) -> &mut Self {
@@ -245,7 +245,7 @@ impl TyChecker<'_> {
             body,
             ..
         }: FuncDefAst,
-        func: VRef<Func>,
+        func: FragRef<Func>,
         arena: &'a Arena,
         ctx: &mut TirBuilderCtx,
         offset: usize,
@@ -534,7 +534,7 @@ impl TyChecker<'_> {
             variant_name.span,
         );
 
-        let mut param_slots = bumpvec![None; self.typec[self.typec[ty].generics].len()];
+        let mut param_slots = bumpvec![None; self.typec[ty].generics.len()];
         if let Some(inference) = inference && let Ty::Instance(inst) = inference {
             param_slots.iter_mut().zip(&self.typec[self.typec[inst].args])
                 .for_each(|(slot, &arg)| *slot = Some(arg))
@@ -583,7 +583,7 @@ impl TyChecker<'_> {
         &mut self,
         path: PathExprAst,
         inference: Inference,
-    ) -> Option<(VRef<Enum>, NameAst)> {
+    ) -> Option<(FragRef<Enum>, NameAst)> {
         if path.slash.is_some() {
             let Some(expected) = inference else {
                 todo!();
@@ -667,9 +667,9 @@ impl TyChecker<'_> {
 
     fn find_struct_field(
         &self,
-        struct_id: VRef<Struct>,
-        field_name: VRef<str>,
-    ) -> Option<(usize, VRef<Field>, Ty)> {
+        struct_id: FragRef<Struct>,
+        field_name: FragSlice<u8>,
+    ) -> Option<(usize, FragRef<Field>, Ty)> {
         let Struct { fields, .. } = self.typec[struct_id];
         self.typec
             .fields
@@ -902,7 +902,7 @@ impl TyChecker<'_> {
 
         let struct_meta = self.typec[struct_id];
 
-        let mut param_slots = bumpvec![None; self.typec[struct_meta.generics].len()];
+        let mut param_slots = bumpvec![None; struct_meta.generics.len()];
 
         if let Some(params) = params {
             if let Some(PathInstanceAst { params: Some((.., params)), .. }) = path
@@ -1089,7 +1089,7 @@ impl TyChecker<'_> {
 
     fn direct_call<'a>(
         &mut self,
-        func: VRef<Func>,
+        func: FragRef<Func>,
         params: impl Iterator<Item = TyAst>,
         caller: Option<TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
@@ -1106,7 +1106,7 @@ impl TyChecker<'_> {
             .typec
             .pack_func_param_specs(func)
             .collect::<BumpVec<_>>();
-        let generic_start = self.typec[upper_generics].len();
+        let generic_start = upper_generics.len();
 
         let mut param_slots = bumpvec![None; param_specs.len()];
         param_slots
@@ -1144,7 +1144,7 @@ impl TyChecker<'_> {
 
     fn direct_spec_call<'a>(
         &mut self,
-        func: VRef<SpecFunc>,
+        func: FragRef<SpecFunc>,
         params: impl Iterator<Item = TyAst>,
         caller: Result<Ty, TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
@@ -1162,7 +1162,7 @@ impl TyChecker<'_> {
             .pack_spec_func_param_specs(func_ent)
             .collect::<BumpVec<_>>();
         let mut param_slots = bumpvec![None; param_specs.len()];
-        let generic_start = param_slots.len() - self.typec[generics].len();
+        let generic_start = param_slots.len() - generics.len();
         param_slots
             .iter_mut()
             .skip(generic_start)
@@ -1218,7 +1218,7 @@ impl TyChecker<'_> {
     #[allow(clippy::too_many_arguments)]
     fn call_internals<'a>(
         &mut self,
-        generics: &[VSlice<Spec>],
+        generics: &[FragSlice<Spec>],
         param_slots: &mut [Option<Ty>],
         mut caller: Option<TirNode<'a>>,
         args: CallArgsAst,
@@ -1542,7 +1542,7 @@ impl TyChecker<'_> {
         ))
     }
 
-    fn find_binary_func(&mut self, op: NameAst, lhs_ty: Ty, rhs_ty: Ty) -> OptVRef<Func> {
+    fn find_binary_func(&mut self, op: NameAst, lhs_ty: Ty, rhs_ty: Ty) -> OptFragRef<Func> {
         let base_id = op.ident;
         let id = self
             .interner
@@ -1550,7 +1550,7 @@ impl TyChecker<'_> {
         Some(lookup!(Func self, id, op.span()))
     }
 
-    fn args(&mut self, types: VSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
+    fn args(&mut self, types: FragSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
         for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
             let var = builder.create_var(false, ty, arg.name.span);
             self.scope.push(arg.name.ident, var, arg.name.span);
@@ -1692,7 +1692,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push unknown_field(self, ty: Ty, fields: VSlice<Field>, span: Span) {
+        push unknown_field(self, ty: Ty, fields: FragSlice<Field>, span: Span) {
             err: ("unknown field");
             info: (
                 "available fields in '{}': {}",
@@ -1715,7 +1715,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push unknown_spec_impl_func(self, func_span: Span, left: &[VRef<str>]) {
+        push unknown_spec_impl_func(self, func_span: Span, left: &[FragSlice<u8>]) {
             err: "unknown spec function";
             help: (
                 "functions that can be implemented: {}",
@@ -1729,7 +1729,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_spec_impl_funcs(self, span: Span, missing: &[VRef<str>]) {
+        push missing_spec_impl_funcs(self, span: Span, missing: &[FragSlice<u8>]) {
             err: "missing spec functions";
             help: (
                 "functions that are missing: {}",
@@ -1782,7 +1782,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_constructor_fields(self, span: Span, missing: &[VRef<str>]) {
+        push missing_constructor_fields(self, span: Span, missing: &[FragSlice<u8>]) {
             err: "missing constructor fields";
             help: (
                 "fields that are missing: {}",
@@ -1829,7 +1829,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push field_not_found(self, ty: VRef<Struct>, name: NameAst) {
+        push field_not_found(self, ty: FragRef<Struct>, name: NameAst) {
             err: (
                 "field '{}' not found on '{}'",
                 &self.interner[name.ident],
@@ -1858,7 +1858,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_pat_ctor_fields(self, fields: BumpVec<VRef<str>>, span: Span) {
+        push missing_pat_ctor_fields(self, fields: BumpVec<FragSlice<u8>>, span: Span) {
             err: "missing fields in pattern";
             help: (
                 "fields that are missing: {}",
@@ -1890,8 +1890,8 @@ enum DotPathResult {
 }
 
 enum FuncLookupResult<'a> {
-    Func(VRef<Func>),
-    SpecFunc(VRef<SpecFunc>, Ty),
+    Func(FragRef<Func>),
+    SpecFunc(FragRef<SpecFunc>, Ty),
     #[allow(dead_code)]
     Var(TirNode<'a>),
 }

@@ -1,5 +1,5 @@
 use lexing_t::*;
-use serde::{Deserialize, Serialize};
+
 use std::{default::default, path::*, time::SystemTime};
 use storage::*;
 
@@ -60,7 +60,7 @@ impl Resources {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Source {
     pub path: PathBuf,
     pub last_modified: SystemTime,
@@ -96,7 +96,7 @@ pub struct Module {
 
 pub struct Dep<T: ?Sized> {
     pub name_span: Span,
-    pub name: VRef<str>,
+    pub name: FragSlice<u8>,
     pub ptr: VRef<T>,
 }
 
