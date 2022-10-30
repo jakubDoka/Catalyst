@@ -204,6 +204,22 @@ impl<T, const SIZE: usize> FragMap<T, SIZE> {
     pub fn indexed(&self, slice: FragSlice<T>) -> impl Iterator<Item = (FragRef<T>, &T)> {
         slice.keys().zip(&self[slice])
     }
+
+    /// # Safety
+    /// The caller must ensure he is the only one accessing the index.
+    pub unsafe fn cross_access(&mut self, index: FragRef<T>) -> &mut T {
+        let FragAddr { global, local } = index.0;
+        if global == self.global {
+            self.current.get_mut(local).expect(INVALID_ACCESS)
+        } else {
+            self.base
+                .inner
+                .get_mut(global)
+                .expect(INVALID_ACCESS)
+                .get_mut(local)
+                .expect(INVALID_ACCESS)
+        }
+    }
 }
 
 impl<T, const SIZE: usize> Clone for FragMap<T, SIZE> {

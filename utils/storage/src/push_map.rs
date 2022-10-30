@@ -72,6 +72,10 @@ impl<T> PushMap<T> {
     pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> {
         self.keys().zip(self.values())
     }
+
+    pub fn extend(&mut self, other: impl IntoIterator<Item = T>) {
+        self.data.extend(other);
+    }
 }
 
 impl<T: Clone> Clone for PushMap<T> {

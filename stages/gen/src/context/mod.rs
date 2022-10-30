@@ -21,7 +21,7 @@ use typec_t::*;
 
 #[derive(Default, Clone)]
 pub struct Gen {
-    pub lookup: Map<FragSlice<u8>, FragRef<CompiledFunc>>,
+    pub lookup: CMap<FragSlice<u8>, FragRef<CompiledFunc>>,
     pub funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
 }
 
@@ -115,7 +115,7 @@ pub enum CodeSaveError {
 // Requests
 //////////////////////////////////
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CompileRequests {
     pub queue: Vec<CompileRequest>,
     pub ty_slices: BumpMap<Ty>,

@@ -323,7 +323,7 @@ impl TyChecker<'_> {
         {
             let name = &self.interner[name];
             let Some(id) = I::lookup_water_drop(name) else {
-                todo!()
+                todo!("{:?}", name)
             };
             id
         } else {

@@ -49,8 +49,9 @@ gen_span_constants! {
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
+#[derive(Clone)]
 pub struct Interner {
-    map: Map<InternerEntry, FragSlice<u8>>,
+    map: CMap<InternerEntry, FragSlice<u8>>,
     frag_map: FragMap<u8, MAX_FRAGMENT_SIZE>,
     temp: String,
 }
@@ -62,7 +63,7 @@ impl Interner {
     /// This does allocate very small amount of memory.
     pub fn new() -> Self {
         let mut s = Interner {
-            map: Map::default(),
+            map: CMap::default(),
             frag_map: FragMap::default(),
             temp: String::new(),
         };
@@ -88,7 +89,7 @@ impl Interner {
 
     pub fn intern(&mut self, s: &str) -> FragSlice<u8> {
         match self.map.get(&InternerEntry::new(s)) {
-            Some(&v) => v,
+            Some(v) => v.to_owned(),
             None => {
                 let v = self.frag_map.extend(s.as_bytes().iter().copied());
                 let key = InternerEntry::new(&self[v]);
@@ -100,12 +101,6 @@ impl Interner {
 
     fn to_raw(&self) -> RawInterner {
         todo!()
-    }
-}
-
-impl Clone for Interner {
-    fn clone(&self) -> Self {
-        self.to_raw().into_interner()
     }
 }
 

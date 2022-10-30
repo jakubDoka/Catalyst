@@ -9,7 +9,3 @@ error: type mismatch
 info: generated ir:
 
 
-info: status: 63b11000
- = info: stdout:
- = info: stderr:
-

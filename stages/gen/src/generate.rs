@@ -17,48 +17,6 @@ mod function_loading;
 mod size_calc;
 
 impl Generator<'_> {
-    pub fn check_casts(
-        &mut self,
-        source: VRef<Source>,
-        workspace: &mut Workspace,
-        checks: &mut Vec<CastCheck>,
-    ) {
-        for CastCheck { loc, from, to } in checks.drain(..) {
-            if self.typec.contains_params(from) || self.typec.contains_params(to) {
-                workspace.push(snippet! {
-                    err: "cast between generic types is not allowed";
-                    info: (
-                        "cast from {} to {}, which contain generic parameters that depend on function instance",
-                        self.typec.display_ty(from, self.interner),
-                        self.typec.display_ty(to, self.interner),
-                    );
-                    (loc, source) {
-                        err[loc]: "happened here";
-                    }
-                });
-                continue;
-            }
-
-            let from_layout = self.ty_layout(from);
-            let to_layout = self.ty_layout(to);
-            if from_layout.size != to_layout.size {
-                workspace.push(snippet! {
-                    err: "cast size mismatch";
-                    info: (
-                        "cast from {}({}) to {}({}), size does not match",
-                        self.typec.display_ty(from, self.interner),
-                        from_layout.size,
-                        self.typec.display_ty(to, self.interner),
-                        to_layout.size,
-                    );
-                    (loc, source) {
-                        err[loc]: "happened here";
-                    }
-                });
-            }
-        }
-    }
-
     pub fn generate(
         &mut self,
         signature: Signature,

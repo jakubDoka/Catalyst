@@ -2,7 +2,6 @@ use core::fmt;
 use std::fmt::Write;
 use std::mem;
 use std::{
-    collections::hash_map::Entry,
     default::default,
     iter,
     ops::{Index, IndexMut},
@@ -11,9 +10,9 @@ use std::{
 use crate::*;
 use packaging_t::Module;
 
-use storage::*;
+use storage::{dashmap::mapref::entry::Entry, *};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Typec {
     pub lookup: TypecLookup,
     pub structs: Structs,
@@ -105,6 +104,18 @@ gen_index! {
 }
 
 impl Typec {
+    pub fn sync_with(&mut self, other: &Typec) {
+        for (mv, v) in self
+            .module_items
+            .values_mut()
+            .zip(other.module_items.values())
+        {
+            if mv.items.is_empty() {
+                mv.items.extend(v.items.values().copied());
+            }
+        }
+    }
+
     pub fn get_band(&mut self) -> FragRef<Func> {
         *self
             .builtin_funcs
@@ -322,6 +333,7 @@ impl Typec {
         self.init_builtin_funcs(interner);
         SpecBase::init_water_drops(self);
         Enum::init_water_drops(self);
+        Struct::init_water_drops(self);
     }
 
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
@@ -620,8 +632,8 @@ impl Typec {
 
         let key = ImplKey { ty, spec };
 
-        if let Some(&result) = self.impl_lookup.get(&key) {
-            return Some(Some(result));
+        if let Some(result) = self.impl_lookup.get(&key) {
+            return Some(Some(result.to_owned()));
         }
 
         let ty_base = match ty {
@@ -638,7 +650,7 @@ impl Typec {
             spec: spec_base,
         };
 
-        let mut base_impl = self.impl_lookup.get(&base_key).copied();
+        let mut base_impl = self.impl_lookup.get(&base_key).map(|i| i.to_owned());
 
         while let Some(current) = base_impl {
             let impl_ent = self.impls[current];

@@ -25,7 +25,6 @@ impl MirChecker<'_> {
                     inner: Arc::new(body),
                 },
             );
-            ctx.dependant_types.clear();
             ctx.just_compiled.push(func);
         }
 
@@ -151,7 +150,7 @@ impl MirChecker<'_> {
             let gaps = patterns::find_gaps(tree);
             self.non_exhaustive(
                 gaps,
-                builder.ctx.dependant_types[builder.ctx.func.values[value].ty].ty,
+                builder.ctx.func.types[builder.ctx.func.values[value].ty].ty,
                 span,
             )?
         }

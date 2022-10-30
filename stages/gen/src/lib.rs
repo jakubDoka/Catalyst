@@ -10,7 +10,7 @@ mod object_context;
 mod state_gen;
 
 pub use {
-    crate::object_context::{ObjectContext, ObjectCreationError},
+    crate::object_context::{ObjectContext, ObjectCreationError, ObjectRelocationError},
     context::{
         CodeSaveError, CompileRequest, CompileRequestChild, CompileRequests, CompiledFunc,
         CompiledFuncInner, ComputedValue, Gen, GenBlock, GenBuilder, GenFuncConstant, GenItemName,

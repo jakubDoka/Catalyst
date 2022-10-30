@@ -16,6 +16,10 @@ block0(v0: i64):
     v1 = call fn0(v0)
     return v1
 }
+function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    return v0
+}
 
 
 info: status: 0

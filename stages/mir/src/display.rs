@@ -17,7 +17,7 @@ impl MirChecker<'_> {
                 .bodies
                 .get(&func)
                 .expect("Expected body to be present");
-            self.display_func(func, mir, buffer)?;
+            self.display_func(func, &mir, buffer)?;
             buffer.push_str("\n\n");
         }
 

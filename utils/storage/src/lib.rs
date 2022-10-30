@@ -152,6 +152,7 @@ macro_rules! bitflags {
 }
 
 pub extern crate bitflags;
+pub extern crate dashmap;
 
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod bit_set;
@@ -186,7 +187,7 @@ pub use {
     clear::Clear,
     frames::Frames,
     interner::Interner,
-    map::Map,
+    map::{CMap, Map},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,

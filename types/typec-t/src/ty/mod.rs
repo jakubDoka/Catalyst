@@ -6,8 +6,8 @@ use parsing_t::Vis;
 
 use storage::*;
 
-pub type TypecLookup = Map<FragSlice<u8>, ComputedTypecItem>;
-pub type ImplLookup = Map<ImplKey, FragRef<Impl>>;
+pub type TypecLookup = CMap<FragSlice<u8>, ComputedTypecItem>;
+pub type ImplLookup = CMap<ImplKey, FragRef<Impl>>;
 
 pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
 pub type SpecSums = FragMap<Spec, MAX_FRAGMENT_SIZE>;
@@ -39,7 +39,7 @@ impl Impl {
 
 pub type Generics = FragSlice<FragSlice<Spec>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
@@ -62,7 +62,7 @@ pub struct Struct {
 gen_water_drops! {
     Struct
     structs
-    EH => "|||",
+    MACRO_LEXER => "MacroLexer",
 }
 
 #[derive(Clone, Copy, Default)]

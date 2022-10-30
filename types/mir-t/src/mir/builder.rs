@@ -88,7 +88,6 @@ pub struct MirBuilderCtx {
     pub just_compiled: Vec<FragRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
     pub pattern_solver_arena: Option<Arena>,
-    pub dependant_types: DependantTypes,
 }
 
 impl MirBuilderCtx {
@@ -105,7 +104,7 @@ impl MirBuilderCtx {
             Self::project_ty_low(
                 ty,
                 &mut self.used_types,
-                &mut self.dependant_types,
+                &mut self.func.types,
                 &mut self.generic_types,
                 typec,
             )
@@ -116,7 +115,7 @@ impl MirBuilderCtx {
         Self::project_ty_low(
             ty,
             &mut self.used_types,
-            &mut self.dependant_types,
+            &mut self.func.types,
             &mut self.generic_types,
             typec,
         )
@@ -186,6 +185,12 @@ impl MirBuilderCtx {
 
 #[derive(Clone)]
 pub struct DependantTypes(PushMap<MirTy>);
+
+impl DependantTypes {
+    pub fn clear(&mut self) {
+        self.0.truncate(2);
+    }
+}
 
 impl Default for DependantTypes {
     fn default() -> Self {

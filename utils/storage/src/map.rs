@@ -1,6 +1,9 @@
-use std::{collections::HashMap, hash::*};
+use std::{collections::HashMap, hash::*, sync::Arc};
+
+use dashmap::DashMap;
 
 pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
+pub type CMap<K, V> = Arc<DashMap<K, V, FvnBuildHasher>>;
 
 const FVN_PRIME: u64 = 0x00000100000001B3;
 const FVN_OFFSET: u64 = 0xcbf29ce484222325;

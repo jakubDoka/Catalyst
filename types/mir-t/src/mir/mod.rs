@@ -11,7 +11,7 @@ pub mod builder;
 
 #[derive(Default, Clone)]
 pub struct Mir {
-    pub bodies: Map<FragRef<Func>, FuncMir>,
+    pub bodies: CMap<FragRef<Func>, FuncMir>,
 }
 
 impl Mir {
@@ -74,6 +74,8 @@ impl FuncMirInner {
         self.value_args.clear();
         self.ty_params.clear();
         self.constants.clear();
+        self.types.clear();
+        self.calls.clear();
         self.value_flags.clear();
     }
 

@@ -135,8 +135,6 @@ impl PackageLoader<'_, '_> {
             .enumerate()
             .for_each(|(i, &id)| self.resources.modules[id].ordering = i);
 
-        dbg!(&sweep_set);
-
         for i in sweep_set
             .drain(..)
             .enumerate()

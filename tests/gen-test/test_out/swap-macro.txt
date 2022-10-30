@@ -1,35 +1,3 @@
-error: type or module not found
-  --> swap-macro\root.ctl:16:6
-   |
-16 | impl TokenMacro for Swap {
-   |      ^^^^^^^^^^ this does not exist
-   |
-   = info: queried 'TokenMacro'
-
-error: type or module not found
- --> swap-macro\root.ctl:7:11
-  |
-7 |     last: MacroToken
-  |           ^^^^^^^^^^ this does not exist
-  |
-  = info: queried 'MacroToken'
-
-error: type or module not found
-  --> swap-macro\root.ctl:10:13
-   |
-10 |     second: MacroToken
-   |             ^^^^^^^^^^ this does not exist
-   |
-   = info: queried 'MacroToken'
-
-error: type or module not found
-  --> swap-macro\root.ctl:11:12
-   |
-11 |     first: MacroToken
-   |            ^^^^^^^^^^ this does not exist
-   |
-   = info: queried 'MacroToken'
-
 error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
   --> swap-macro\root.ctl:41:1
    |
@@ -40,8 +8,4 @@ error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
 
 info: generated ir:
 
-
-info: status: 6d301000
- = info: stdout:
- = info: stderr:
 
