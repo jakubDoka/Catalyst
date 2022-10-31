@@ -884,7 +884,7 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
         .ok()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MacroImpl {
     pub name: FragSlice<u8>,
     pub r#impl: OptFragRef<Impl>,

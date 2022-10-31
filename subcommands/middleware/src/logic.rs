@@ -571,7 +571,13 @@ impl Worker {
 
         loop {
             let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
-            self.load_macros(&mut macro_ctx, macros.iter().copied(), task, jit_ctx);
+            self.load_macros(
+                &mut macro_ctx,
+                macros.iter().copied(),
+                task,
+                jit_ctx,
+                shared.jit_isa,
+            );
             let Some(grouped_items) = self.parse::<GroupedItemsAst>(source, arena, task, Some(&macro_ctx.tokens), shared) else {
                 continue;
             };
@@ -877,11 +883,16 @@ impl Worker {
     fn load_macros<'macros>(
         &mut self,
         ctx: &mut MacroCtx<'macros>,
-        token_macros: impl IntoIterator<Item = MacroCompileRequest>,
+        macros: impl IntoIterator<Item = MacroCompileRequest>,
         task: &mut Task,
         jit_ctx: &'macros JitContext,
+        isa: &Isa,
     ) {
-        for MacroCompileRequest { name, r#impl, .. } in token_macros {
+        for MacroCompileRequest {
+            name, r#impl, ty, ..
+        } in macros
+        {
+            dbg!();
             let impl_ent = task.typec.impls[r#impl];
             let spec = impl_ent.key.spec.base(&task.typec);
 
@@ -896,16 +907,31 @@ impl Worker {
                 _ => unreachable!(),
             }
 
-            let layout = self.state.jit_layouts.ty_layout(
-                impl_ent.key.ty,
-                &[],
-                &mut task.typec,
-                &mut task.interner,
-            );
+            let layout =
+                self.state
+                    .jit_layouts
+                    .ty_layout(ty, &[], &mut task.typec, &mut task.interner);
+            let mut infer_slots = bumpvec![None; impl_ent.generics.len()];
+            task.typec
+                .compatible(&mut infer_slots, ty, impl_ent.key.ty)
+                .expect("This should work, right?");
+            let params = infer_slots
+                .into_iter()
+                .collect::<Option<BumpVec<_>>>()
+                .expect("Guess I am a hypocrite...");
             let funcs = task.typec.func_slices[impl_ent.methods]
                 .iter()
-                .map(|&func| task.typec.funcs[func].name)
-                .filter_map(|name| todo!());
+                .map(|&func| {
+                    Generator::func_instance_name(
+                        true,
+                        &isa.triple,
+                        func,
+                        params.iter().copied(),
+                        &task.typec,
+                        &mut task.interner,
+                    )
+                })
+                .filter_map(|key| task.gen.lookup.get(&key).map(|entry| entry.to_owned()));
 
             match spec {
                 s if s == SpecBase::TOKEN_MACRO => {

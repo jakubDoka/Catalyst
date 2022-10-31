@@ -142,6 +142,7 @@ impl FmtAst for TopLevelAttrKindAst {
             TopLevelAttrKindAst::Macro(span, name) => {
                 fmt.write_span(span);
                 fmt.buffer.push(' ');
+                dbg!(name);
                 name.display(fmt);
             }
             TopLevelAttrKindAst::Inline(mode) => {

@@ -741,259 +741,259 @@ fn main() {
     gen_test! {
         TestState,
         false,
-        simple "functions" {
-            #[entry];
-            fn main -> uint => pass(0);
-            fn pass(a: uint) -> uint { return a };
-            fn pass_with_implicit_return(a: uint) -> uint { a };
-        }
-
-        simple "recursion" {
-            #[entry];
-            fn main -> uint => 0;
-
-            fn infinity(a: uint) => infinity(a);
-        }
-
-        simple "operators" {
-            #[entry];
-            fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
-        }
-
-        // simple "compile-time" {
-        //     fn sub(a: uint, b: uint) -> uint => a - b;
-
+        // simple "functions" {
         //     #[entry];
-        //     fn main -> uint => const sub(1, 1);
+        //     fn main -> uint => pass(0);
+        //     fn pass(a: uint) -> uint { return a };
+        //     fn pass_with_implicit_return(a: uint) -> uint { a };
         // }
 
-        // simple "external" {
-        //     fn "default" putchar(c: char) -> u32 extern;
+        // simple "recursion" {
+        //     #[entry];
+        //     fn main -> uint => 0;
+
+        //     fn infinity(a: uint) => infinity(a);
+        // }
+
+        // simple "operators" {
+        //     #[entry];
+        //     fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
+        // }
+
+        // // simple "compile-time" {
+        // //     fn sub(a: uint, b: uint) -> uint => a - b;
+
+        // //     #[entry];
+        // //     fn main -> uint => const sub(1, 1);
+        // // }
+
+        // // simple "external" {
+        // //     fn "default" putchar(c: char) -> u32 extern;
+
+        // //     #[entry];
+        // //     fn main -> uint {
+        // //         const putchar('a'); // compile time print
+        // //         putchar('\n');
+        // //         0
+        // //     };
+        // // }
+
+        // simple "generic" {
+        //     fn [T] pass(value: T) -> T => value;
+
+        //     #[entry];
+        //     fn main -> u32 => pass(0uint);
+        // }
+
+        // simple "struct-constructor" {
+        //     struct OnStack {
+        //         a: uint;
+        //         b: uint
+        //     };
+
+        //     struct InRegister {
+        //         a: u32;
+        //         b: u32
+        //     };
+
+        //     struct [T, E] Generic {
+        //         a: T;
+        //         b: E
+        //     };
 
         //     #[entry];
         //     fn main -> uint {
-        //         const putchar('a'); // compile time print
-        //         putchar('\n');
+        //         Generic::{
+        //             a: OnStack::{ a: 1; b: 2 };
+        //             b: InRegister::{ a: 3; b: 1 }
+        //         };
         //         0
         //     };
         // }
+        // simple "auto-ref-deref" {
+        //     impl uint {
+        //         fn reference(s: ^^^^^^^^^^^^Self) -> ^^^^^^^^^^^^Self => s;
+        //         fn dereference(s: Self) -> Self => s;
+        //     };
 
-        simple "generic" {
-            fn [T] pass(value: T) -> T => value;
+        //     #[entry];
+        //     fn main -> uint => 0.reference().dereference();
+        // }
 
-            #[entry];
-            fn main -> u32 => pass(0uint);
-        }
+        // simple "additional-param-garbage" {
+        //     fn [T] pass(value: T) -> T => value;
 
-        simple "struct-constructor" {
-            struct OnStack {
-                a: uint;
-                b: uint
-            };
+        //     struct B;
 
-            struct InRegister {
-                a: u32;
-                b: u32
-            };
+        //     #[entry];
+        //     fn main -> uint => pass::[uint, B](0uint, 'h');
+        // }
 
-            struct [T, E] Generic {
-                a: T;
-                b: E
-            };
+        // simple "spec-test" {
+        //     spec Flood {
+        //         fn new -> uint;
+        //     };
 
-            #[entry];
-            fn main -> uint {
-                Generic::{
-                    a: OnStack::{ a: 1; b: 2 };
-                    b: InRegister::{ a: 3; b: 1 }
-                };
-                0
-            };
-        }
-        simple "auto-ref-deref" {
-            impl uint {
-                fn reference(s: ^^^^^^^^^^^^Self) -> ^^^^^^^^^^^^Self => s;
-                fn dereference(s: Self) -> Self => s;
-            };
+        //     struct Fool;
 
-            #[entry];
-            fn main -> uint => 0.reference().dereference();
-        }
+        //     impl Flood for Fool {
+        //         fn new -> uint => 0;
+        //     };
 
-        simple "additional-param-garbage" {
-            fn [T] pass(value: T) -> T => value;
+        //     fn [T: Flood] make_flood() -> uint => T::new();
 
-            struct B;
+        //     #[entry];
+        //     fn main -> uint => make_flood::[Fool]();
+        // }
 
-            #[entry];
-            fn main -> uint => pass::[uint, B](0uint, 'h');
-        }
+        // simple "generic-spec" {
+        //     spec [T] GenericSpec {
+        //         fn take(t: T) -> Self;
+        //     };
 
-        simple "spec-test" {
-            spec Flood {
-                fn new -> uint;
-            };
+        //     impl GenericSpec[uint] for uint {
+        //         fn take(t: uint) -> Self => t;
+        //     };
 
-            struct Fool;
+        //     fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
 
-            impl Flood for Fool {
-                fn new -> uint => 0;
-            };
+        //     #[entry];
+        //     fn main() -> uint => take(0);
+        // }
 
-            fn [T: Flood] make_flood() -> uint => T::new();
+        // simple "struct access" {
+        //     struct Foo {
+        //         a: uint;
+        //         b: uint;
+        //     };
 
-            #[entry];
-            fn main -> uint => make_flood::[Fool]();
-        }
+        //     #[entry];
+        //     fn main -> uint => Foo::{ a: 1; b: 0 }.b;
+        // }
 
-        simple "generic-spec" {
-            spec [T] GenericSpec {
-                fn take(t: T) -> Self;
-            };
+        // simple "register struct init and use" {
+        //     struct RegStruct {
+        //         field: uint
+        //     };
 
-            impl GenericSpec[uint] for uint {
-                fn take(t: uint) -> Self => t;
-            };
+        //     struct RegStruct2 {
+        //         field: u32;
+        //         field2: u32
+        //     };
 
-            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+        //     #[entry];
+        //     fn main -> uint {
+        //         RegStruct2::{ field: 0; field2: 1 };
+        //         RegStruct::{ field: 0 }.field
+        //     }
+        // }
 
-            #[entry];
-            fn main() -> uint => take(0);
-        }
+        // simple "match" {
+        //     struct Matched {
+        //         a: uint;
+        //         b: uint
+        //     };
 
-        simple "struct access" {
-            struct Foo {
-                a: uint;
-                b: uint;
-            };
+        //     #[entry];
+        //     fn main() -> uint => match Matched::{ a: 0; b: 1 } {
+        //         ::{ a: 1; b: 0 } => 1;
+        //         ::{ a: 0; b: 1 } => 0;
+        //         ::{ a; b: 0 } => a;
+        //         ::{ a; b } => a + b;
+        //     };
+        // }
 
-            #[entry];
-            fn main -> uint => Foo::{ a: 1; b: 0 }.b;
-        }
+        // simple "match-with-struct-return" {
+        //     struct Returned {
+        //         a: uint;
+        //         b: uint
+        //     };
 
-        simple "register struct init and use" {
-            struct RegStruct {
-                field: uint
-            };
+        //     #[entry];
+        //     fn main() -> uint => match 0 {
+        //         0 => Returned::{ a: 0; b: 1 };
+        //         a => Returned::{ a; b: 0 };
+        //     }.a;
+        // }
 
-            struct RegStruct2 {
-                field: u32;
-                field2: u32
-            };
+        // simple "recursive-fib" {
+        //     #[entry];
+        //     fn main -> uint => fib(10) - 55;
 
-            #[entry];
-            fn main -> uint {
-                RegStruct2::{ field: 0; field2: 1 };
-                RegStruct::{ field: 0 }.field
-            }
-        }
+        //     fn fib(x: uint) -> uint => match x {
+        //         0 => 0;
+        //         1 => 1;
+        //         a => fib(a - 1) + fib(a - 2);
+        //     };
+        // }
 
-        simple "match" {
-            struct Matched {
-                a: uint;
-                b: uint
-            };
+        // simple "enum" {
+        //     enum [T] Option {
+        //         Some: T;
+        //         None;
+        //     };
 
-            #[entry];
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a; b: 0 } => a;
-                ::{ a; b } => a + b;
-            };
-        }
+        //     #[entry];
+        //     fn main() -> uint => match Option::Some~0 {
+        //         ::Some~4 => 5;
+        //         ::Some~1 => 2;
+        //         ::None => 3;
+        //         ::Some~a => a;
+        //     }
+        // }
 
-        simple "match-with-struct-return" {
-            struct Returned {
-                a: uint;
-                b: uint
-            };
+        // simple "enum-stress" {
+        //     enum [T] Option {
+        //         None;
+        //         Some: T;
+        //     };
 
-            #[entry];
-            fn main() -> uint => match 0 {
-                0 => Returned::{ a: 0; b: 1 };
-                a => Returned::{ a; b: 0 };
-            }.a;
-        }
+        //     #[entry];
+        //     fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
+        //         ::Some~::None => 5;
+        //         ::Some~::Some~::None => 2;
+        //         ::None => return 3;
+        //         ::Some~a => match a {
+        //             ::Some~::Some~a => a;
+        //             ::Some~::None => 6;
+        //             ::None => 1;
+        //         };
+        //     }
+        // }
 
-        simple "recursive-fib" {
-            #[entry];
-            fn main -> uint => fib(10) - 55;
+        // simple "if-statement" {
+        //     #[entry];
+        //     fn main() -> uint =>
+        //         if 0 == 0 => 0;
+        //         elif 0 == 69 => 89;
+        //         else => 1;
+        // }
 
-            fn fib(x: uint) -> uint => match x {
-                0 => 0;
-                1 => 1;
-                a => fib(a - 1) + fib(a - 2);
-            };
-        }
+        // simple "let-binding" {
+        //     struct A {
+        //         a: uint;
+        //         b: uint;
+        //     };
 
-        simple "enum" {
-            enum [T] Option {
-                Some: T;
-                None;
-            };
+        //     #[entry];
+        //     fn main() -> uint {
+        //         let ::{ mut a, b } = A::{ a: 0; b: 3 };
+        //         a = a + b;
+        //         a - 3
+        //     };
+        // }
 
-            #[entry];
-            fn main() -> uint => match Option::Some~0 {
-                ::Some~4 => 5;
-                ::Some~1 => 2;
-                ::None => 3;
-                ::Some~a => a;
-            }
-        }
+        // simple "cast" {
+        //     #[entry];
+        //     fn main() -> uint => cast(0);
+        // }
 
-        simple "enum-stress" {
-            enum [T] Option {
-                None;
-                Some: T;
-            };
+        // simple "cast-mismatch" {
+        //     #[entry];
+        //     fn main() -> u32 => cast(0);
 
-            #[entry];
-            fn main() -> uint => match Option::Some~Option::Some~Option::Some~0 {
-                ::Some~::None => 5;
-                ::Some~::Some~::None => 2;
-                ::None => return 3;
-                ::Some~a => match a {
-                    ::Some~::Some~a => a;
-                    ::Some~::None => 6;
-                    ::None => 1;
-                };
-            }
-        }
-
-        simple "if-statement" {
-            #[entry];
-            fn main() -> uint =>
-                if 0 == 0 => 0;
-                elif 0 == 69 => 89;
-                else => 1;
-        }
-
-        simple "let-binding" {
-            struct A {
-                a: uint;
-                b: uint;
-            };
-
-            #[entry];
-            fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
-                a = a + b;
-                a - 3
-            };
-        }
-
-        simple "cast" {
-            #[entry];
-            fn main() -> uint => cast(0);
-        }
-
-        simple "cast-mismatch" {
-            #[entry];
-            fn main() -> u32 => cast(0);
-
-            fn [F, T] my_cast(value: F) -> T => cast(value);
-        }
+        //     fn [F, T] my_cast(value: F) -> T => cast(value);
+        // }
 
         simple "swap-macro" {
             use {
@@ -1017,6 +1017,7 @@ fn main() {
                 first: MacroToken;
             };
 
+            #[macro swap];
             enum Swap {
                 Two: TwoTokens;
                 Last: LastToken;
@@ -1027,14 +1028,11 @@ fn main() {
             fn "default" free(ptr: ^()) extern;
 
             impl TokenMacro for Swap {
-                fn new() -> ^Self => cast(malloc(sizeof::[Self]()));
-
-                fn start(s: ^Self, lexer: MacroLexer) -> bool {
+                fn new(s: ^Self, lexer: MacroLexer) {
                     *s = ::Two~::{
                         first: lexer.next();
                         second: lexer.next();
                     };
-                    true
                 };
 
                 fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
@@ -1050,9 +1048,7 @@ fn main() {
                         ::Empty => return ::None;
                     };
 
-                fn clear(s: ^Self) {};
-
-                fn drop(s: ^Self) => free(cast(s));
+                fn drop(s: ^Self) {};
             };
 
             break;
