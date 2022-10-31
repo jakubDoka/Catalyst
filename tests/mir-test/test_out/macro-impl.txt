@@ -1,0 +1,85 @@
+info: mir repr of functions:
+ fn [] next(var0: 0\MacroLexer) -> 0\MacroToken  {
+    block0(var2: 0\MacroLexer) {
+        access var2
+        var3 = ctl_lexer_next(val2)
+        return var3
+    }
+
+}
+
+fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> ()  {
+    block0(var2: ^1\Swap, var3: 0\MacroLexer) {
+        return
+    }
+
+}
+
+fn "default" [] next(var0: ^1\Swap, var1: 0\MacroLexer) -> 2\Option[0\MacroToken]  {
+    block0(var2: ^1\Swap, var3: 0\MacroLexer) {
+        var4 ={var5, var6}
+        var5 = 1
+        access var2
+        var7 = *var2
+        var8 = var7.0
+        var9 = 0
+        var10 = u8 == u8(val9, val8)
+        split var10 block1 block2
+    }
+
+    block1() {
+        var11 = var7.1
+        var12 = var11.0
+        var13 = var12
+        var14 = var11.1
+        var15 = var14
+        access var2
+        var16 = *var2
+        var16 ={var17, var18}
+        var17 = 1
+        var18 ={var19}
+        var19 = access var13
+        var6 = access var15
+        goto block3 with var6
+    }
+
+    block2() {
+        var20 = var7.0
+        var21 = 1
+        var22 = u8 == u8(val21, val20)
+        split var22 block4 block5
+    }
+
+    block3(var6: 0\MacroToken) {
+        return var4
+    }
+
+    block4() {
+        var23 = var7.1
+        var24 = var23.0
+        var25 = var24
+        access var2
+        var26 = *var2
+        var26 ={var27}
+        var27 = 2
+        var6 = access var25
+        goto block3 with var6
+    }
+
+    block5() {
+        var4 ={var28}
+        var28 = 0
+        return var4
+    }
+
+}
+
+fn "default" [] drop(var0: ^1\Swap) -> ()  {
+    block0(var2: ^1\Swap) {
+        return
+    }
+
+}
+
+
+
