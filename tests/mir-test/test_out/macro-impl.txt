@@ -10,6 +10,15 @@ info: mir repr of functions:
 
 fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> ()  {
     block0(var2: ^1\Swap, var3: 0\MacroLexer) {
+        access var2
+        var4 = *var2
+        var4 ={var5, var6}
+        var5 = 0
+        var6 ={var7, var8}
+        access var3
+        var7 = next(val3)
+        access var3
+        var8 = next(val3)
         return
     }
 

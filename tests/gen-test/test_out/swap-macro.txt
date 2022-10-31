@@ -1,17 +1,9 @@
-error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
-  --> swap-macro\root.ctl:41:7
-   |
-41 | swap! swap! fn -> main uint => 0 
-   |       ^^^^^ token located here
-   |
-   = info: grouped items -> list -> item
-
 info: generated ir:
 function u0:0(i64) windows_fastcall {
 block0(v0: i64):
     return
 }
-function u0:0(i64 sret, i64, i64) -> i64 sret windows_fastcall {
+function u0:0(i64 sret, i64, i64) windows_fastcall {
     ss0 = explicit_slot 12
     ss1 = explicit_slot 12
     ss2 = explicit_slot 12
@@ -35,7 +27,7 @@ block2:
 block4:
     v10 = iconst.i8 0
     store v10, v0  ; v10 = 0
-    return v0
+    return
 
 block3:
     v11 = stack_addr.i64 ss0
@@ -96,11 +88,39 @@ block1:
     jump block5
 
 block5:
-    return v0
-}
-function u0:0(i64, i64) windows_fastcall {
-block0(v0: i64, v1: i64):
     return
 }
+function u0:0(i64, i64) windows_fastcall {
+    sig0 = (i64 sret, i64) fast
+    sig1 = (i64 sret, i64) fast
+    fn0 = colocated u0:4 sig0
+    fn1 = colocated u0:4 sig1
 
+block0(v0: i64, v1: i64):
+    v2 = iconst.i8 0
+    store v2, v0  ; v2 = 0
+    v3 = iadd_imm v0, 4
+    call fn0(v3, v1)
+    v4 = iadd_imm v0, 16
+    call fn1(v4, v1)
+    return
+}
+function u0:0(i64 sret, i64) fast {
+    sig0 = (i64 sret, i64) windows_fastcall
+    fn0 = u0:5 sig0
+
+block0(v0: i64, v1: i64):
+    call fn0(v0, v1)
+    return
+}
+function u0:0() -> i64 fast {
+block0:
+    v0 = iconst.i64 0
+    return v0  ; v0 = 0
+}
+
+
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 
