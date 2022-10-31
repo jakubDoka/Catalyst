@@ -107,13 +107,9 @@ impl Generator<'_> {
             .map(AbiParam::new);
         target.params.extend(args);
 
-        if instance != Ty::UNIT {
+        if instance != Ty::UNIT && !on_stack {
             let ret = self.ty_repr(instance);
-            let ret = if on_stack {
-                AbiParam::special(ret, ArgumentPurpose::StructReturn)
-            } else {
-                AbiParam::new(ret)
-            };
+            let ret = AbiParam::new(ret);
             target.returns.push(ret);
         }
         on_stack

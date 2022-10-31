@@ -586,7 +586,7 @@ impl TyChecker<'_> {
     ) -> Option<(FragRef<Enum>, NameAst)> {
         if path.slash.is_some() {
             let Some(expected) = inference else {
-                todo!();
+                self.cannot_infer(path.span())?;
             };
 
             let Ty::Enum(enum_ty) = expected.base(self.typec) else {

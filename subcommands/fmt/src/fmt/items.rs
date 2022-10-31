@@ -25,7 +25,7 @@ impl<'a> FmtAst for EnumAst<'a> {
         self.name.display(fmt);
         if !self.body.is_empty() {
             write!(fmt, " ");
-            self.body.display(fmt);
+            self.body.display_low(true, fmt);
         }
     }
 }
@@ -142,7 +142,6 @@ impl FmtAst for TopLevelAttrKindAst {
             TopLevelAttrKindAst::Macro(span, name) => {
                 fmt.write_span(span);
                 fmt.buffer.push(' ');
-                dbg!(name);
                 name.display(fmt);
             }
             TopLevelAttrKindAst::Inline(mode) => {

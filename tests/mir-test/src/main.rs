@@ -170,5 +170,59 @@ fn main() {
                 a - 3
             };
         }
+
+        simple "macro-impl" {
+            use {
+                "water/option";
+                "water/macros/tokens";
+            };
+            // use {
+            //     w "water"
+            // };
+
+            // TODO: Solution for macro name collisions
+            // type WSwap = w::Swap[uint];
+            // break;
+
+            struct LastToken {
+                last: MacroToken;
+            };
+
+            struct TwoTokens {
+                second: MacroToken;
+                first: MacroToken;
+            };
+
+            #[macro swap];
+            enum Swap {
+                Two: TwoTokens;
+                Last: LastToken;
+                Empty;
+            };
+
+            impl TokenMacro for Swap {
+                fn new(s: ^Self, lexer: MacroLexer) {
+                    *s = ::Two~::{
+                        first: lexer.next();
+                        second: lexer.next();
+                    };
+                };
+
+                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
+                    ::Some~match *s {
+                        ::Two~::{ first, second } {
+                            *s = ::Last~::{ last: first };
+                            second
+                        };
+                        ::Last~::{ last } {
+                            *s = ::Empty;
+                            last
+                        };
+                        ::Empty => return ::None;
+                    };
+
+                fn drop(s: ^Self) {};
+            };
+        }
     }
 }

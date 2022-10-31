@@ -605,6 +605,10 @@ impl Worker {
         jit_ctx: &mut JitContext,
         shared: &Shared,
     ) {
+        if macros.is_empty() {
+            return;
+        }
+
         self.push_macro_compile_requests(macros, task, shared);
         let mut layouts = mem::take(&mut self.state.jit_layouts);
         let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
@@ -612,7 +616,14 @@ impl Worker {
 
         jit_ctx
             .load_functions(compiled, &task.gen, &task.typec, &task.interner, false)
+            // .map_err(|e| {
+            //     if let JitRelocError::MissingSymbol(GenItemName::Func(func)) = e {
+            //         dbg!(&task.interner[task.typec[task.gen.funcs[func].func].name]);
+            //     }
+            //     e
+            // })
             .expect("Hmm lets reconsider our life choices...");
+        jit_ctx.prepare_for_execution();
     }
 
     fn compile_current_requests(
@@ -630,7 +641,15 @@ impl Worker {
             children,
         } in &task.compile_requests.queue
         {
-            let Func { signature, .. } = task.typec.funcs[func];
+            compiled.push(id);
+            let Func {
+                signature,
+                visibility,
+                ..
+            } = task.typec.funcs[func];
+            if visibility == FuncVisibility::Imported {
+                continue;
+            }
             let body = task
                 .mir
                 .bodies
@@ -675,12 +694,12 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{}", self.context.func.display()).unwrap();
             }
+            println!("{}", self.context.func.display());
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
                 .save_compiled_code(id, &self.context)
                 .expect("Superb error occurred!");
             self.context.clear();
-            compiled.push(id);
         }
         if !task.for_generation {
             task.compile_requests.clear();
@@ -751,9 +770,22 @@ impl Worker {
                 continue;
             }
             let task = &mut tasks[task_id];
-            if task.typec[func].flags.contains(FuncFlags::BUILTIN) {
+            let Func {
+                flags, visibility, ..
+            } = task.typec[func];
+            if flags.contains(FuncFlags::BUILTIN) {
                 continue;
             }
+            if visibility == FuncVisibility::Imported {
+                task.compile_requests.queue.push(CompileRequest {
+                    func,
+                    id,
+                    params,
+                    children: default(),
+                });
+                continue;
+            }
+
             let body = task
                 .mir
                 .bodies
@@ -888,11 +920,14 @@ impl Worker {
         jit_ctx: &'macros JitContext,
         isa: &Isa,
     ) {
+        if task.workspace.has_errors() {
+            return;
+        }
+
         for MacroCompileRequest {
             name, r#impl, ty, ..
         } in macros
         {
-            dbg!();
             let impl_ent = task.typec.impls[r#impl];
             let spec = impl_ent.key.spec.base(&task.typec);
 

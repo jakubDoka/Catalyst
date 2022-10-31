@@ -81,15 +81,14 @@ impl JitContext {
             .map(|func| {
                 let &CompiledFunc {
                     func: parent_func,
-                    inner: Some(ref inner),
+                    ref inner,
                     ..
-                } = &gen.funcs[func] else {
-                    return Err(JitRelocError::MissingBytecode(func));
-                };
+                } = &gen.funcs[func];
                 let Func {
                     visibility, name, ..
                 } = typec.funcs[parent_func];
 
+                dbg!(&interner[name]);
                 if visibility == FuncVisibility::Imported {
                     let code = self
                         .runtime_lookup
@@ -99,6 +98,10 @@ impl JitContext {
                     let slice = slice_from_raw_parts_mut(code as *mut _, 0);
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
                 }
+
+                let Some(inner) = inner else {
+                    return Err(JitRelocError::MissingBytecode(func));
+                };
 
                 let layout = alloc::Layout::for_value(inner.bytecode.as_slice())
                     .align_to(inner.alignment as usize)

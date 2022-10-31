@@ -140,5 +140,14 @@ fn main() {
                 a - 3
             };
         }
+
+        simple "attributes" {
+            #[macro swap];
+            enum Swap {
+                Two: TwoTokens;
+                Last: LastToken;
+                Empty;
+            };
+        }
     }
 }

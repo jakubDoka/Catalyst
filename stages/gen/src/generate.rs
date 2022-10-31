@@ -121,7 +121,7 @@ impl Generator<'_> {
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
-                if let Some(ret) = ret {
+                if let Some(ret) = ret && !self.ty_layout(builder.value_ty(ret)).on_stack {
                     let ret = self.load_value(ret, builder);
                     builder.ins().return_(&[ret]);
                 } else {

@@ -1024,9 +1024,6 @@ fn main() {
                 Empty;
             };
 
-            fn "default" malloc(size: uint) -> ^() extern;
-            fn "default" free(ptr: ^()) extern;
-
             impl TokenMacro for Swap {
                 fn new(s: ^Self, lexer: MacroLexer) {
                     *s = ::Two~::{

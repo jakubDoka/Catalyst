@@ -567,10 +567,11 @@ impl MirChecker<'_> {
 
     fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let ret_val = val
-            .filter(|val| val.ty != Ty::UNIT)
-            .map(|&val| self.node(val, Some(builder.ctx.func.ret), builder))
+            .and_then(|&val| {
+                Some(self.node(val, Some(builder.ctx.func.ret), builder))
+                    .filter(|_| val.ty != Ty::UNIT)
+            })
             .transpose()?;
-
         builder.close_block(span, ControlFlowMir::Return(ret_val));
         None
     }
