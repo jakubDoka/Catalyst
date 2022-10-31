@@ -218,10 +218,10 @@ pub enum Ty {
 impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Struct(s) => write!(f, "struct{:?}", s),
-            Ty::Enum(e) => write!(f, "enum{:?}", e),
-            Ty::Instance(i) => write!(f, "inst{:?}", i),
-            Ty::Pointer(p) => write!(f, "ptr{:?}", p),
+            Ty::Struct(s) => write!(f, "struct{:X}", s.to_u32()),
+            Ty::Enum(e) => write!(f, "enum{:x}", e.to_u32()),
+            Ty::Instance(i) => write!(f, "inst{:x}", i.to_u32()),
+            Ty::Pointer(p) => write!(f, "ptr{:x}", p.to_u32()),
             Ty::Param(i) => write!(f, "param{}", i),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }

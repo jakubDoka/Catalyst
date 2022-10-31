@@ -141,10 +141,14 @@ impl Middleware {
                 recv.send(task).expect("Bruh...");
             }
 
-            let mut main_task = (0..num_workers)
+            let mut tasks = (0..num_workers)
                 .map(|_| receiver.recv().expect("Eh..."))
+                .collect::<BumpVec<_>>();
+            tasks.sort_unstable_by_key(|t| t.id);
+            let mut main_task = tasks
+                .into_iter()
                 .reduce(|mut acc, mut task| {
-                    if let (Some(ir), Some(dump)) = (&mut ir, task.ir_dump) {
+                    if let (Some(ir), Some(dump)) = (&mut acc.ir_dump, task.ir_dump) {
                         ir.push_str(&dump);
                     }
                     acc.workspace.transfer(&mut task.workspace);
@@ -181,6 +185,7 @@ impl Middleware {
                 .expect("So close...");
 
             self.workspace = main_task.workspace;
+            ir = main_task.ir_dump;
             object.emit().expect("This is so sad...")
         });
 
@@ -288,12 +293,15 @@ impl Middleware {
             target: &mut ShadowMap<Module, ModuleItems>,
             source: &ShadowMap<Module, ModuleItems>,
         ) {
-            for (mv, v) in target.values_mut().zip(source.values()) {
+            for (k, v) in source.iter() {
+                let mv = &mut target[k];
                 if mv.items.is_empty() {
                     mv.items = v.items.clone();
                 }
             }
         }
+
+        let mut packages = bumpvec![None; senders.len()];
 
         while self.task_graph.has_tasks() {
             for (sender, maybe_task) in senders.iter_mut() {
@@ -315,6 +323,7 @@ impl Middleware {
 
                 sync_module_items(&mut task.typec.module_items, &module_items);
 
+                packages[task.id] = Some(package);
                 sender.send(task).expect("Whoops...");
             }
 
@@ -322,14 +331,12 @@ impl Middleware {
             loop {
                 self.entry_points.append(&mut task.entry_points);
                 sync_module_items(&mut module_items, &task.typec.module_items);
+                task.modules_to_compile.clear();
                 let id = task.id;
                 senders[id].1 = Some(task);
+                self.task_graph.finish(packages[id].take().expect("Why??"));
                 if let Ok(next_task) = receiver.try_recv() {
                     task = next_task;
-                } else if !self.task_graph.has_tasks()
-                    && senders.iter().any(|(_, task)| task.is_none())
-                {
-                    task = receiver.recv().expect("Interesting...");
                 } else {
                     break;
                 }
@@ -436,24 +443,24 @@ pub struct TaskGraph {
     meta: Vec<(usize, VRefSlice<Package>)>,
     frontier: VecDeque<VRef<Package>>,
     inverse_graph: BumpMap<VRef<Package>>,
+    done: usize,
 }
 
 impl TaskGraph {
     pub fn next_task(&mut self) -> Option<VRef<Package>> {
-        let current = self.frontier.pop_front();
+        self.frontier.pop_front()
+    }
 
-        if let Some(current) = current {
-            let (.., deps) = self.meta[current.index()];
-            for &dep in &self.inverse_graph[deps] {
-                let index = dep.index();
-                self.meta[index].0 -= 1;
-                if self.meta[index].0 == 0 {
-                    self.frontier.push_back(dep);
-                }
+    pub fn finish(&mut self, package: VRef<Package>) {
+        self.done += 1;
+        let (.., deps) = self.meta[package.index()];
+        for &dep in &self.inverse_graph[deps] {
+            let index = dep.index();
+            self.meta[index].0 -= 1;
+            if self.meta[index].0 == 0 {
+                self.frontier.push_back(dep);
             }
         }
-
-        current
     }
 
     pub fn clear(&mut self) {
@@ -463,7 +470,7 @@ impl TaskGraph {
     }
 
     fn has_tasks(&self) -> bool {
-        !self.frontier.is_empty()
+        self.meta.len() != self.done
     }
 }
 
@@ -1016,7 +1023,6 @@ impl Worker {
         checks: &mut Vec<CastCheck>,
     ) {
         for CastCheck { loc, from, to } in checks.drain(..) {
-            println!("Checking cast from {:?} to {:?}", from, to);
             if typec.contains_params(from) || typec.contains_params(to) {
                 workspace.push(snippet! {
                     err: "cast between generic types is not allowed";

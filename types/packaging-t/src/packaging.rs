@@ -86,7 +86,7 @@ pub struct Package {
     pub source: VRef<Source>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Module {
     pub package: VRef<Package>,
     pub ordering: usize,

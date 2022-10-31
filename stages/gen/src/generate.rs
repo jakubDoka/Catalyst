@@ -4,9 +4,7 @@ use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
 };
 use cranelift_frontend::Variable;
-use diags::{snippet, Workspace};
 use mir_t::*;
-use packaging_t::Source;
 use storage::*;
 
 use typec_t::*;

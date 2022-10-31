@@ -8,6 +8,7 @@ use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize
 
 use crate::VRef;
 
+#[derive(Debug)]
 pub struct ShadowMap<T, V> {
     data: Vec<V>,
     default: V,

@@ -32,6 +32,10 @@ impl TestState {
             })
         }
 
+        if s.workspace.has_errors() {
+            return;
+        }
+
         let thread_id = std::thread::current().id().as_u64().to_string();
         let exe_path = format!("o-{}.exe", thread_id);
         let obj_path = format!("o-{}.obj", thread_id);

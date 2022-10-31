@@ -65,8 +65,8 @@ impl TyChecker<'_> {
 
         self.scope.push(Interner::SELF, parsed_ty, target.span());
 
+        let parsed_ty_base = parsed_ty.base(self.typec);
         let impl_id = if let Some(parsed_spec) = parsed_spec {
-            let parsed_ty_base = parsed_ty.base(self.typec);
             let parsed_spec_base = parsed_spec.base(self.typec);
 
             {
@@ -109,7 +109,7 @@ impl TyChecker<'_> {
         let scope_data = ScopeData {
             offset: generics.len(),
             upper_generics: parsed_generics,
-            owner: Some(parsed_ty),
+            owner: Some(parsed_ty_base),
             not_in_scope: impl_id.is_some(),
             upper_vis: vis,
         };

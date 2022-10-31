@@ -159,7 +159,7 @@ impl ScopeRecord {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ModuleItem {
     pub id: FragSlice<u8>,
     pub ptr: ModuleItemPtr,
@@ -178,7 +178,7 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ModuleItemPtr {
     Func(FragRef<Func>),
     Ty(Ty),

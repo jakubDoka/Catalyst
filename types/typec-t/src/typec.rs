@@ -187,7 +187,8 @@ impl Typec {
             write!(to, "{}\\", loc.module.index()).unwrap();
         }
         if let Some(owner) = owner {
-            write!(to, "{}\\", owner).unwrap();
+            self.display_ty_to(owner, to, interner);
+            write!(to, "\\").unwrap();
         }
         to.push_str(&interner[name]);
     }
@@ -889,7 +890,7 @@ pub struct MacroImpl {
     pub r#impl: OptFragRef<Impl>,
 }
 
-#[derive(Default, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }
