@@ -1,8 +1,0 @@
-error: expected Ident | '\' | 'return' | Int | Char | 'const' | 'match' | 'if' | 'let' but got Operator
- --> cast\root.ctl:1:38
-  |
-1 | #[entry] ; fn main() -> uint => cast(& 0) ;
-  |                                      ^ token located here
-  |
-  = info: list -> item -> function definition -> function body -> expr -> unit expr -> call -> list -> expr -> unit expr
-

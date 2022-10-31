@@ -1,90 +1,96 @@
 info: generated ir:
-function u0:0(i64) windows_fastcall {
-block0(v0: i64):
+function u0:0(i64 sret, i64) windows_fastcall {
+    sig0 = (i64, i64, i64) windows_fastcall
+    fn0 = %Memmove sig0
+
+block0(v0: i64, v1: i64):
+    v2 = iadd_imm v1, 28
+    v3 = iconst.i64 64
+    call fn0(v0, v2, v3)  ; v3 = 64
     return
 }
-function u0:0(i64 sret, i64, i64) windows_fastcall {
+function u0:0(i64 sret, i64) windows_fastcall {
     ss0 = explicit_slot 12
     ss1 = explicit_slot 12
     ss2 = explicit_slot 12
 
-block0(v0: i64, v1: i64, v2: i64):
-    v3 = iconst.i8 1
-    store v3, v0  ; v3 = 1
-    v4 = iconst.i8 0
-    v5 = load.i8 v1
-    v6 = icmp eq v4, v5  ; v4 = 0
-    brnz v6, block1
+block0(v0: i64, v1: i64):
+    v2 = iconst.i8 1
+    store v2, v0  ; v2 = 1
+    v3 = iconst.i8 0
+    v4 = load.i8 v1
+    v5 = icmp eq v3, v4  ; v3 = 0
+    brnz v5, block1
     jump block2
 
 block2:
-    v7 = iconst.i8 1
-    v8 = load.i8 v1
-    v9 = icmp eq v7, v8  ; v7 = 1
-    brnz v9, block3
+    v6 = iconst.i8 1
+    v7 = load.i8 v1
+    v8 = icmp eq v6, v7  ; v6 = 1
+    brnz v8, block3
     jump block4
 
 block4:
-    v10 = iconst.i8 0
-    store v10, v0  ; v10 = 0
+    v9 = iconst.i8 0
+    store v9, v0  ; v9 = 0
     return
 
 block3:
-    v11 = stack_addr.i64 ss0
-    v12 = iadd_imm.i64 v1, 4
-    v13 = load.i32 aligned v12
-    v14 = load.i32 aligned v12+4
-    v15 = load.i32 aligned v12+8
-    store aligned v13, v11
-    store aligned v14, v11+4
-    store aligned v15, v11+8
-    v16 = iconst.i8 2
-    store v16, v1  ; v16 = 2
-    v17 = iadd_imm.i64 v0, 4
-    v18 = stack_addr.i64 ss0
-    v19 = load.i32 aligned v18
-    v20 = load.i32 aligned v18+4
-    v21 = load.i32 aligned v18+8
-    store aligned v19, v17
-    store aligned v20, v17+4
-    store aligned v21, v17+8
+    v10 = stack_addr.i64 ss0
+    v11 = iadd_imm.i64 v1, 4
+    v12 = load.i32 aligned v11
+    v13 = load.i32 aligned v11+4
+    v14 = load.i32 aligned v11+8
+    store aligned v12, v10
+    store aligned v13, v10+4
+    store aligned v14, v10+8
+    v15 = iconst.i8 2
+    store v15, v1  ; v15 = 2
+    v16 = iadd_imm.i64 v0, 4
+    v17 = stack_addr.i64 ss0
+    v18 = load.i32 aligned v17
+    v19 = load.i32 aligned v17+4
+    v20 = load.i32 aligned v17+8
+    store aligned v18, v16
+    store aligned v19, v16+4
+    store aligned v20, v16+8
     jump block5
 
 block1:
-    v22 = stack_addr.i64 ss1
-    v23 = iadd_imm.i64 v1, 4
-    v24 = load.i32 aligned v23
-    v25 = load.i32 aligned v23+4
-    v26 = load.i32 aligned v23+8
-    store aligned v24, v22
-    store aligned v25, v22+4
-    store aligned v26, v22+8
-    v27 = stack_addr.i64 ss2
-    v28 = iadd_imm.i64 v1, 16
-    v29 = load.i32 aligned v28
-    v30 = load.i32 aligned v28+4
-    v31 = load.i32 aligned v28+8
-    store aligned v29, v27
-    store aligned v30, v27+4
-    store aligned v31, v27+8
-    v32 = iconst.i8 1
-    store v32, v1  ; v32 = 1
-    v33 = iadd_imm.i64 v1, 4
-    v34 = stack_addr.i64 ss1
-    v35 = load.i32 aligned v34
-    v36 = load.i32 aligned v34+4
-    v37 = load.i32 aligned v34+8
-    store aligned v35, v33
-    store aligned v36, v33+4
-    store aligned v37, v33+8
-    v38 = iadd_imm.i64 v0, 4
-    v39 = stack_addr.i64 ss2
-    v40 = load.i32 aligned v39
-    v41 = load.i32 aligned v39+4
-    v42 = load.i32 aligned v39+8
-    store aligned v40, v38
-    store aligned v41, v38+4
-    store aligned v42, v38+8
+    v21 = stack_addr.i64 ss1
+    v22 = iadd_imm.i64 v1, 4
+    v23 = load.i32 aligned v22
+    v24 = load.i32 aligned v22+4
+    v25 = load.i32 aligned v22+8
+    store aligned v23, v21
+    store aligned v24, v21+4
+    store aligned v25, v21+8
+    v26 = stack_addr.i64 ss2
+    v27 = iadd_imm.i64 v1, 16
+    v28 = load.i32 aligned v27
+    v29 = load.i32 aligned v27+4
+    v30 = load.i32 aligned v27+8
+    store aligned v28, v26
+    store aligned v29, v26+4
+    store aligned v30, v26+8
+    v31 = iconst.i8 1
+    store v31, v1  ; v31 = 1
+    v32 = iadd_imm.i64 v1, 4
+    v33 = stack_addr.i64 ss1
+    v34 = load.i32 aligned v33
+    v35 = load.i32 aligned v33+4
+    v36 = load.i32 aligned v33+8
+    store aligned v34, v32
+    store aligned v35, v32+4
+    store aligned v36, v32+8
+    v37 = iadd_imm.i64 v0, 4
+    v38 = stack_addr.i64 ss2
+    v39 = load.i32 aligned v38
+    v40 = load.i32 aligned v38+4
+    v41 = load.i32 aligned v38+8
+    store aligned v39, v37
+    store aligned v40, v37+4
+    store aligned v41, v37+8
     jump block5
 
 block5:
@@ -93,8 +99,10 @@ block5:
 function u0:0(i64, i64) windows_fastcall {
     sig0 = (i64 sret, i64) fast
     sig1 = (i64 sret, i64) fast
+    sig2 = (i64, i64, i64) windows_fastcall
     fn0 = colocated u0:4 sig0
     fn1 = colocated u0:4 sig1
+    fn2 = %Memmove sig2
 
 block0(v0: i64, v1: i64):
     v2 = iconst.i8 0
@@ -103,6 +111,9 @@ block0(v0: i64, v1: i64):
     call fn0(v3, v1)
     v4 = iadd_imm v0, 16
     call fn1(v4, v1)
+    v5 = iadd_imm v0, 28
+    v6 = iconst.i64 64
+    call fn2(v5, v1, v6)  ; v6 = 64
     return
 }
 function u0:0(i64 sret, i64) fast {

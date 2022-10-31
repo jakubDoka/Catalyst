@@ -1,8 +1,0 @@
-error: expected Ident | '\' | 'return' | Int | Char | 'const' | 'match' but got 'if'
- --> if-statement\root.ctl:1:33
-  |
-1 | #[entry] ; fn main() -> uint => if 0 == 0 => 0 else => 1 ;
-  |                                 ^^ token located here
-  |
-  = info: list -> item -> function definition -> function body -> expr -> unit expr
-

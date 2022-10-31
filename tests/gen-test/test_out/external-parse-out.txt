@@ -1,8 +1,0 @@
-error: expected '=>' | '{' | 'extern' but got '\n' | ';'
- --> external\root.ctl:1:39
-  |
-1 | fn "default" malloc(c : uint) -> uint ; #[entry] ; fn main -> uint { const malloc(1) ; 0 } ;
-  |                                       ^ token located here
-  |
-  = info: list -> item -> function definition -> function body
-

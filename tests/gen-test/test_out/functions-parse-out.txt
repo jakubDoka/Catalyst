@@ -1,8 +1,0 @@
-error: expected 'struct' | 'fn' but got '#'
- --> functions\root.ctl:1:1
-  |
-1 | #[entry] fn main -> uint => pass(0) ; fn pass(a : uint) -> uint { return a } ; fn pass_with_implicit_return(a : uint) -> uint { a } ;
-  | ^ token located here
-  |
-  = info: list -> item
-

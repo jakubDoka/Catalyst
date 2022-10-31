@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got '['
- --> spec\root.ctl:1:38
-  |
-1 | priv spec Clay ; priv struct AnyClay [C : Clay] { c : C }
-  |                                      ^ token located here
-  |
-  = info: list
-

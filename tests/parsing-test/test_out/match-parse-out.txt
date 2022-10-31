@@ -1,8 +1,0 @@
-error: expected Ident | '\' | 'return' | Int | Char | 'const' but got 'match'
- --> match\root.ctl:1:55
-  |
-1 | struct B { a : uint ; b : uint } ; fn main -> uint => match B \ { a : 0, b : 3 } {     \ { a : 6, b : 7 } => 0, \ { a : 0, b : 3 } => 1, B \ { a : 0, b } =>     b, B \ { a, b } => a + b, }
-  |                                                       ^^^^^ token located here
-  |
-  = info: list -> item -> function definition -> function body -> expr -> unit expr
-

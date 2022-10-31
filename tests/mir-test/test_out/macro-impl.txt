@@ -13,79 +13,87 @@ fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> ()  {
         access var2
         var4 = *var2
         var4 ={var5, var6}
-        var5 = 0
-        var6 ={var7, var8}
+        var5 ={var7, var8}
+        var7 = 0
+        var8 ={var9, var10}
         access var3
-        var7 = next(val3)
+        var9 = next(val3)
         access var3
-        var8 = next(val3)
+        var10 = next(val3)
+        var6 = access var3
         return
     }
 
 }
 
-fn "default" [] next(var0: ^1\Swap, var1: 0\MacroLexer) -> 2\Option[0\MacroToken]  {
-    block0(var2: ^1\Swap, var3: 0\MacroLexer) {
-        var4 ={var5, var6}
-        var5 = 1
+fn "default" [] next(var0: ^1\Swap) -> 2\Option[0\MacroToken]  {
+    block0(var2: ^1\Swap) {
+        var3 ={var4, var5}
+        var4 = 1
         access var2
         var7 = *var2
-        var8 = var7.0
+        var6 = var7.0
+        var8 = var6.0
         var9 = 0
         var10 = u8 == u8(val9, val8)
         split var10 block1 block2
     }
 
     block1() {
-        var11 = var7.1
+        var11 = var6.1
         var12 = var11.0
         var13 = var12
         var14 = var11.1
         var15 = var14
         access var2
-        var16 = *var2
-        var16 ={var17, var18}
-        var17 = 1
-        var18 ={var19}
-        var19 = access var13
-        var6 = access var15
-        goto block3 with var6
+        var17 = *var2
+        var16 = var17.0
+        var16 ={var18, var19}
+        var18 = 1
+        var19 ={var20}
+        var20 = access var13
+        var5 = access var15
+        goto block3 with var5
     }
 
     block2() {
-        var20 = var7.0
-        var21 = 1
-        var22 = u8 == u8(val21, val20)
-        split var22 block4 block5
+        var21 = var6.0
+        var22 = 1
+        var23 = u8 == u8(val22, val21)
+        split var23 block4 block5
     }
 
-    block3(var6: 0\MacroToken) {
-        return var4
+    block3(var5: 0\MacroToken) {
+        return var3
     }
 
     block4() {
-        var23 = var7.1
-        var24 = var23.0
-        var25 = var24
+        var24 = var6.1
+        var25 = var24.0
+        var26 = var25
         access var2
-        var26 = *var2
-        var26 ={var27}
-        var27 = 2
-        var6 = access var25
-        goto block3 with var6
+        var28 = *var2
+        var27 = var28.0
+        var27 ={var29}
+        var29 = 2
+        var5 = access var26
+        goto block3 with var5
     }
 
     block5() {
-        var4 ={var28}
-        var28 = 0
-        return var4
+        var3 ={var30}
+        var30 = 0
+        return var3
     }
 
 }
 
-fn "default" [] drop(var0: ^1\Swap) -> ()  {
+fn "default" [] drop(var0: ^1\Swap) -> 0\MacroLexer  {
     block0(var2: ^1\Swap) {
-        return
+        access var2
+        var4 = *var2
+        var3 = var4.1
+        return var3
     }
 
 }

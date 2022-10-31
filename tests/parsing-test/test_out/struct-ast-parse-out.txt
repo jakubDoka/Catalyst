@@ -1,8 +1,0 @@
-error: expected '*' but got '^'
- --> struct-ast\root.ctl:1:75
-  |
-1 |                 other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
-  |                                                                           ^ token located here
-  |
-  = info: list -> item -> struct -> list -> struct field -> type
-

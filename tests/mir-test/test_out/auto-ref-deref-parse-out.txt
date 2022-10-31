@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got 'fn'
- --> auto-ref-deref\root.ctl:1:109
-  |
-1 | impl uint {     fn reference(s : ^ ^ Self) -> ^ ^ Self => s ; fn dereference(s : Self) ->     Self => s ; } fn main -> uint => 0.reference().dereference() ;
-  |                                                                                                             ^^ token located here
-  |
-  = info: list
-

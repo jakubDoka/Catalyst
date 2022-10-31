@@ -2,24 +2,25 @@ info: tir repr of functions:
  fn [] next(var0: 0\MacroLexer) -> 0\MacroToken return ctl_lexer_next(var0)
 
 fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> () return {
-    *var0 = 1\Swap\{0, 1\TwoTokens\{next(var1), next(var1)}}
+    *var0 = 1\Swap\{1\SwapState\{0, 1\TwoTokens\{next(var1), next(var1)}}, var1}
 }
 
-fn "default" [] next(var0: ^1\Swap, var1: 0\MacroLexer) -> 2\Option[0\MacroToken] return 2\Option[0\MacroToken]\{1, match *var0 {
-    \{0, \{var3, var2}} => {
-        *var0 = 1\Swap\{1, 1\LastToken\{var2}}
-        var3
-    }
-    \{1, \{var2}} => {
-        *var0 = 1\Swap\{2}
+fn "default" [] next(var0: ^1\Swap) -> 2\Option[0\MacroToken] return 2\Option[0\MacroToken]\{1, match *var0.0 {
+    \{0, \{var2, var1}} => {
+        *var0.0 = 1\SwapState\{1, 1\LastToken\{var1}}
         var2
+    }
+    \{1, \{var1}} => {
+        *var0.0 = 1\SwapState\{2}
+        var1
     }
     \{2} => {
         return 2\Option[0\MacroToken]\{0}
     }
 }}
 
-fn "default" [] drop(var0: ^1\Swap) -> () return {
+fn "default" [] drop(var0: ^1\Swap) -> 0\MacroLexer return {
+    *var0.1
 }
 
 
