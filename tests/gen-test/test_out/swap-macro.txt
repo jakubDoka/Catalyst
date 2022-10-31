@@ -1,11 +1,106 @@
 error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
-  --> swap-macro\root.ctl:38:1
+  --> swap-macro\root.ctl:41:7
    |
-38 | swap! swap! fn -> main uint => 0 
-   | ^^^^^ token located here
+41 | swap! swap! fn -> main uint => 0 
+   |       ^^^^^ token located here
    |
    = info: grouped items -> list -> item
 
 info: generated ir:
+function u0:0(i64) windows_fastcall {
+block0(v0: i64):
+    return
+}
+function u0:0(i64 sret, i64, i64) -> i64 sret windows_fastcall {
+    ss0 = explicit_slot 12
+    ss1 = explicit_slot 12
+    ss2 = explicit_slot 12
+
+block0(v0: i64, v1: i64, v2: i64):
+    v3 = iconst.i8 1
+    store v3, v0  ; v3 = 1
+    v4 = iconst.i8 0
+    v5 = load.i8 v1
+    v6 = icmp eq v4, v5  ; v4 = 0
+    brnz v6, block1
+    jump block2
+
+block2:
+    v7 = iconst.i8 1
+    v8 = load.i8 v1
+    v9 = icmp eq v7, v8  ; v7 = 1
+    brnz v9, block3
+    jump block4
+
+block4:
+    v10 = iconst.i8 0
+    store v10, v0  ; v10 = 0
+    return v0
+
+block3:
+    v11 = stack_addr.i64 ss0
+    v12 = iadd_imm.i64 v1, 4
+    v13 = load.i32 aligned v12
+    v14 = load.i32 aligned v12+4
+    v15 = load.i32 aligned v12+8
+    store aligned v13, v11
+    store aligned v14, v11+4
+    store aligned v15, v11+8
+    v16 = iconst.i8 2
+    store v16, v1  ; v16 = 2
+    v17 = iadd_imm.i64 v0, 4
+    v18 = stack_addr.i64 ss0
+    v19 = load.i32 aligned v18
+    v20 = load.i32 aligned v18+4
+    v21 = load.i32 aligned v18+8
+    store aligned v19, v17
+    store aligned v20, v17+4
+    store aligned v21, v17+8
+    jump block5
+
+block1:
+    v22 = stack_addr.i64 ss1
+    v23 = iadd_imm.i64 v1, 4
+    v24 = load.i32 aligned v23
+    v25 = load.i32 aligned v23+4
+    v26 = load.i32 aligned v23+8
+    store aligned v24, v22
+    store aligned v25, v22+4
+    store aligned v26, v22+8
+    v27 = stack_addr.i64 ss2
+    v28 = iadd_imm.i64 v1, 16
+    v29 = load.i32 aligned v28
+    v30 = load.i32 aligned v28+4
+    v31 = load.i32 aligned v28+8
+    store aligned v29, v27
+    store aligned v30, v27+4
+    store aligned v31, v27+8
+    v32 = iconst.i8 1
+    store v32, v1  ; v32 = 1
+    v33 = iadd_imm.i64 v1, 4
+    v34 = stack_addr.i64 ss1
+    v35 = load.i32 aligned v34
+    v36 = load.i32 aligned v34+4
+    v37 = load.i32 aligned v34+8
+    store aligned v35, v33
+    store aligned v36, v33+4
+    store aligned v37, v33+8
+    v38 = iadd_imm.i64 v0, 4
+    v39 = stack_addr.i64 ss2
+    v40 = load.i32 aligned v39
+    v41 = load.i32 aligned v39+4
+    v42 = load.i32 aligned v39+8
+    store aligned v40, v38
+    store aligned v41, v38+4
+    store aligned v42, v38+8
+    jump block5
+
+block5:
+    return v0
+}
+function u0:0(i64, i64) windows_fastcall {
+block0(v0: i64, v1: i64):
+    return
+}
 
 

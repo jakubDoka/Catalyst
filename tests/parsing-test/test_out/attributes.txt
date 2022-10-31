@@ -1,0 +1,11 @@
+ --> attributes\root.ctl
+  |
+1 | 
+2 | #[macro swap]
+3 | enum Swap {
+4 |     Two: TwoTokens
+5 |     Last: LastToken
+6 |     Empty
+7 | }
+  |
+

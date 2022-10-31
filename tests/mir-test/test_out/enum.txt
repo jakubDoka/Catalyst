@@ -1,10 +1,10 @@
 error: match is not exhaustive
- --> enum\root.ctl:3:52
+ --> enum\root.ctl:6:52
   |
-3 |   fn main -> uint => match Option\Some~Option\Some~0 {
+6 |   fn main -> uint => match Option\Some~Option\Some~0 {
   |  ____________________________________________________^
 ... |
-6 | | }
+9 | | }
   | |_^ this does not cover all possible cases
   |
   = info: missing patterns: \Some~\Some~0..1, \Some~\Some~2..max, \None
