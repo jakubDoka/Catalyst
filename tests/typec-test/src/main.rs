@@ -337,5 +337,18 @@ fn main() {
                 };
             };
         }
+
+        simple "vec" {
+            use {
+                "water/vec";
+            };
+
+            #[entry];
+            fn main -> uint {
+                let mut vec = vec::Vec::[uint]::new();
+                vec.push(0);
+                *vec.get(0);
+            }
+        }
     }
 }

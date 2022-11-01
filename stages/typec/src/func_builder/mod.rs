@@ -1465,10 +1465,10 @@ impl TyChecker<'_> {
                     Ty::Builtin(_) => todo!(),
                 },
                 ScopeItem::SpecBase(_) => todo!(),
-                ScopeItem::Module(_) => todo!(),
                 ScopeItem::VarHeaderTir(var) => {
                     TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
                 }
+                item => self.invalid_symbol_type(item, start.span, "variable or enum")?,
             },
         )
     }

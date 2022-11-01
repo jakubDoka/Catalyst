@@ -310,6 +310,14 @@ pub mod items {
                         include_str!("../../../water/root/option.ctl"),
                     ),
                     (
+                        "root/vec.ctl",
+                        include_str!("../../../water/root/option.ctl"),
+                    ),
+                    (
+                        "root/ptr.ctl",
+                        include_str!("../../../water/root/option.ctl"),
+                    ),
+                    (
                         "root/macros/tokens.ctl",
                         include_str!("../../../water/root/macros/tokens.ctl"),
                     ),
