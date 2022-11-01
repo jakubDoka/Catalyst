@@ -112,7 +112,12 @@ impl TyChecker<'_> {
         Some(match mutability_ast {
             MutabilityAst::Mut(..) => Mutability::Mutable,
             MutabilityAst::None => Mutability::Immutable,
-            MutabilityAst::Generic(..) => todo!(),
+            MutabilityAst::Generic(.., path) => {
+                match lookup!(Ty self, path.start.ident, path.start.span) {
+                    Ty::Param(i) => Mutability::Param(i),
+                    _ => todo!(),
+                }
+            }
         })
     }
 

@@ -309,14 +309,8 @@ pub mod items {
                         "root/option.ctl",
                         include_str!("../../../water/root/option.ctl"),
                     ),
-                    (
-                        "root/vec.ctl",
-                        include_str!("../../../water/root/option.ctl"),
-                    ),
-                    (
-                        "root/ptr.ctl",
-                        include_str!("../../../water/root/option.ctl"),
-                    ),
+                    ("root/vec.ctl", include_str!("../../../water/root/vec.ctl")),
+                    ("root/ptr.ctl", include_str!("../../../water/root/ptr.ctl")),
                     (
                         "root/macros/tokens.ctl",
                         include_str!("../../../water/root/macros/tokens.ctl"),
