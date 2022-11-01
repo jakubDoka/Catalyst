@@ -1,0 +1,36 @@
+error: failed to read source file
+ --> vec\root.ctl:2:5
+  |
+2 |     "water/vec"
+  |     ^^^^^^^^^^^ declared here
+  |
+  = info: path: `vec\deps\github.com\jakubDoka\water\main\root\vec.ctl`
+  = info: trace: file not found
+
+error: type or module not found
+ --> vec\root.ctl:7:19
+  |
+7 |     let mut vec = Vec\[uint]\new()
+  |                   ^^^ this does not exist
+  |
+  = info: queried 'Vec'
+
+error: variable or enum not found
+ --> vec\root.ctl:8:5
+  |
+8 |     vec.push(0)
+  |     ^^^ this does not exist
+  |
+  = info: queried 'vec'
+
+error: variable or enum not found
+ --> vec\root.ctl:9:6
+  |
+9 |     *vec.get(0)
+  |      ^^^ this does not exist
+  |
+  = info: queried 'vec'
+
+info: tir repr of functions:
+ 
+
