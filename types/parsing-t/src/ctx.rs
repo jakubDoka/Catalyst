@@ -1,4 +1,4 @@
-use std::{default::default, fmt};
+use std::fmt;
 
 use diags::*;
 use lexing::*;
@@ -10,13 +10,13 @@ use storage::*;
 use crate::*;
 
 pub struct ParsingCtx<'ctx, 'ast: 'ctx, 'macros: 'ctx> {
-    pub lexer: Lexer<'ctx>,
+    pub source_code: &'ctx str,
+    pub lexer: CtlLexer<'macros, 'ast, 'ctx>,
     pub state: &'ctx mut ParsingState,
     pub arena: &'ast AstData,
     pub workspace: &'ctx mut Workspace,
     pub interner: &'ctx mut Interner,
     pub token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
-    pub token_macro_stack: BumpVec<TokenMacro<'macros, 'ast>>,
     pub source: VRef<Source>,
 }
 
@@ -30,13 +30,13 @@ impl<'ctx, 'ast, 'macros> ParsingCtx<'ctx, 'ast, 'macros> {
         source: VRef<Source>,
     ) -> Self {
         Self {
-            lexer: Lexer::new(source_code, state.progress),
+            source_code,
+            lexer: CtlLexer::Base(Lexer::new(source_code, state.progress)),
             state,
             arena: ast_data,
             workspace,
             interner,
             token_macro_ctx: None,
-            token_macro_stack: default(),
             source,
         }
     }
@@ -51,13 +51,13 @@ impl<'ctx, 'ast, 'macros> ParsingCtx<'ctx, 'ast, 'macros> {
         source: VRef<Source>,
     ) -> Self {
         Self {
-            lexer: Lexer::new(source_code, state.progress),
+            source_code,
+            lexer: CtlLexer::Base(Lexer::new(source_code, state.progress)),
             state,
             arena: ast_data,
             workspace,
             interner,
             token_macro_ctx,
-            token_macro_stack: default(),
             source,
         }
     }
@@ -133,7 +133,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     pub fn advance(&mut self) -> Token {
         let current = self.state.current;
         self.state.current = self.state.next;
-        self.state.next = self.next_token();
+        self.state.next = self.lexer.next_tok();
         self.check_for_macro();
         current
     }
@@ -148,7 +148,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         };
 
         let macro_name =
-            &self.lexer.inner_span_str(self.state.next.span)[..self.state.next.span.len() - 1];
+            &self.source_code[self.state.next.span.range()][..self.state.next.span.len() - 1];
         let macro_name_ident = self.interner.intern(macro_name);
 
         let Some(spec) = token_macro_ctx.get_macro(macro_name_ident) else {
@@ -156,25 +156,11 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         };
 
         let data = self.arena.alloc_byte_layout(spec.layout);
-        let token_macro = TokenMacro::new(data, spec, &mut self.lexer);
+        storage::map_in_place(&mut self.lexer, |l| {
+            CtlLexer::Macro(TokenMacro::new(data, spec, l))
+        });
 
-        self.token_macro_stack.push(token_macro);
-
-        self.state.next = self.next_token();
-    }
-
-    fn next_token(&mut self) -> Token {
-        let Some(mut token_macro) = self.token_macro_stack.pop() else {
-            return self.lexer.next_tok();
-        };
-
-        let Some(token) = token_macro.next(&mut self.lexer) else {
-            return self.lexer.next_tok();
-        };
-
-        self.token_macro_stack.push(token_macro);
-
-        token
+        self.state.next = self.lexer.next_tok();
     }
 
     pub fn expect_advance(&mut self, expected: impl Into<TokenPat> + Clone) -> Option<Token> {
@@ -248,7 +234,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     ) -> bool {
         terminals.into_iter().any(|pat| match *pat.as_ref() {
             TokenPat::Kind(kind) => kind == token.kind,
-            TokenPat::Str(lit) => lit == self.lexer.inner_span_str(token.span),
+            TokenPat::Str(lit) => lit == self.inner_span_str(token.span),
         })
     }
 
@@ -269,7 +255,11 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     }
 
     pub fn current_token_str(&self) -> &str {
-        self.lexer.inner_span_str(self.state.current.span)
+        self.inner_span_str(self.state.current.span)
+    }
+
+    pub fn inner_span_str(&self, span: Span) -> &str {
+        &self.source_code[span.range()]
     }
 
     pub fn name_unchecked(&mut self) -> NameAst {

@@ -135,7 +135,7 @@ impl Middleware {
                 .collect::<Vec<_>>();
 
             let mut tasks = self.expand(&mut receiver, &mut senders, &resources);
-            let entry_points = self.distribute_compile_requests(&mut tasks, &args.isa);
+            let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
             for (mut task, (recv, ..)) in tasks.into_iter().zip(senders.iter_mut()) {
                 task.for_generation = true;
                 recv.send(task).expect("Bruh...");
@@ -169,6 +169,7 @@ impl Middleware {
                         .queue
                         .into_iter()
                         .map(|req| req.id)
+                        .chain(imported)
                         .chain(iter::once(entry_point)),
                     &main_task.gen,
                     &main_task.typec,
@@ -247,7 +248,10 @@ impl Middleware {
         &mut self,
         tasks: &mut [Task],
         isa: &Isa,
-    ) -> BumpVec<FragRef<CompiledFunc>> {
+    ) -> (
+        BumpVec<FragRef<CompiledFunc>>,
+        BumpVec<FragRef<CompiledFunc>>,
+    ) {
         let frontier = self
             .entry_points
             .iter()
@@ -276,9 +280,9 @@ impl Middleware {
 
         let ret = frontier.iter().map(|(req, _)| req.id).collect();
 
-        Worker::traverse_compile_requests(frontier, tasks, isa);
+        let imported = Worker::traverse_compile_requests(frontier, tasks, isa);
 
-        ret
+        (ret, imported)
     }
 
     pub fn expand(
@@ -609,13 +613,19 @@ impl Worker {
             return;
         }
 
-        self.push_macro_compile_requests(macros, task, shared);
+        let imported = self.push_macro_compile_requests(macros, task, shared);
         let mut layouts = mem::take(&mut self.state.jit_layouts);
         let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
         self.state.jit_layouts = layouts;
 
         jit_ctx
-            .load_functions(compiled, &task.gen, &task.typec, &task.interner, false)
+            .load_functions(
+                compiled.into_iter().chain(imported),
+                &task.gen,
+                &task.typec,
+                &task.interner,
+                false,
+            )
             // .map_err(|e| {
             //     if let JitRelocError::MissingSymbol(GenItemName::Func(func)) = e {
             //         dbg!(&task.interner[task.typec[task.gen.funcs[func].func].name]);
@@ -642,14 +652,8 @@ impl Worker {
         } in &task.compile_requests.queue
         {
             compiled.push(id);
-            let Func {
-                signature,
-                visibility,
-                ..
-            } = task.typec.funcs[func];
-            if visibility == FuncVisibility::Imported {
-                continue;
-            }
+            let Func { signature, .. } = task.typec.funcs[func];
+
             let body = task
                 .mir
                 .bodies
@@ -694,7 +698,6 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{}", self.context.func.display()).unwrap();
             }
-            println!("{}", self.context.func.display());
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
                 .save_compiled_code(id, &self.context)
@@ -712,59 +715,63 @@ impl Worker {
         macros: &[MacroCompileRequest],
         task: &mut Task,
         shared: &Shared,
-    ) {
-        for &MacroCompileRequest { ty, r#impl, .. } in macros {
-            let Impl {
-                generics,
-                methods,
-                key: ImplKey { ty: template, .. },
-                ..
-            } = task.typec.impls[r#impl];
+    ) -> BumpVec<FragRef<CompiledFunc>> {
+        macros
+            .iter()
+            .flat_map(|&MacroCompileRequest { ty, r#impl, .. }| {
+                let Impl {
+                    generics,
+                    methods,
+                    key: ImplKey { ty: template, .. },
+                    ..
+                } = task.typec.impls[r#impl];
 
-            let mut params = bumpvec![None; generics.len()];
-            task.typec
-                .compatible(&mut params, ty, template)
-                .expect("Heh...");
-            let params = params
-                .into_iter()
-                .collect::<Option<BumpVec<_>>>()
-                .expect("Lovely!");
-            let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
-            let frontier = task.typec.func_slices[methods]
-                .iter()
-                .map(|&func| {
-                    let key = Generator::func_instance_name(
-                        true,
-                        &shared.jit_isa.triple,
-                        func,
-                        params.iter().cloned(),
-                        &task.typec,
-                        &mut task.interner,
-                    );
-                    let id = task.gen.funcs.push(CompiledFunc::new(func, key));
-                    task.gen.lookup.insert(key, id);
-                    (
-                        CompileRequestChild {
+                let mut params = bumpvec![None; generics.len()];
+                task.typec
+                    .compatible(&mut params, ty, template)
+                    .expect("Heh...");
+                let params = params
+                    .into_iter()
+                    .collect::<Option<BumpVec<_>>>()
+                    .expect("Lovely!");
+                let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
+                let frontier = task.typec.func_slices[methods]
+                    .iter()
+                    .map(|&func| {
+                        let key = Generator::func_instance_name(
+                            true,
+                            &shared.jit_isa.triple,
                             func,
-                            id,
-                            params: pushed_params,
-                        },
-                        0,
-                    )
-                })
-                .collect::<BumpVec<_>>();
+                            params.iter().cloned(),
+                            &task.typec,
+                            &mut task.interner,
+                        );
+                        let id = task.gen.funcs.push(CompiledFunc::new(func, key));
+                        task.gen.lookup.insert(key, id);
+                        (
+                            CompileRequestChild {
+                                func,
+                                id,
+                                params: pushed_params,
+                            },
+                            0,
+                        )
+                    })
+                    .collect::<BumpVec<_>>();
 
-            Self::traverse_compile_requests(frontier, slice::from_mut(task), shared.jit_isa);
-        }
+                Self::traverse_compile_requests(frontier, slice::from_mut(task), shared.jit_isa)
+            })
+            .collect()
     }
 
     fn traverse_compile_requests(
         mut frontier: BumpVec<(CompileRequestChild, usize)>,
         tasks: &mut [Task],
         isa: &Isa,
-    ) {
+    ) -> BumpVec<FragRef<CompiledFunc>> {
         let mut seen = Map::default();
         let mut cycle = (0..tasks.len()).cycle();
+        let mut imported = bumpvec![];
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
             if task_id == usize::MAX {
                 continue;
@@ -777,12 +784,7 @@ impl Worker {
                 continue;
             }
             if visibility == FuncVisibility::Imported {
-                task.compile_requests.queue.push(CompileRequest {
-                    func,
-                    id,
-                    params,
-                    children: default(),
-                });
+                imported.push(id);
                 continue;
             }
 
@@ -910,6 +912,8 @@ impl Worker {
                 children,
             });
         }
+
+        imported
     }
 
     fn load_macros<'macros>(

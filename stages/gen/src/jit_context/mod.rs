@@ -88,7 +88,6 @@ impl JitContext {
                     visibility, name, ..
                 } = typec.funcs[parent_func];
 
-                dbg!(&interner[name]);
                 if visibility == FuncVisibility::Imported {
                     let code = self
                         .runtime_lookup

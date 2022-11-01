@@ -187,7 +187,7 @@ impl Generator<'_> {
         header: VRef<ValueMir>,
         field: u32,
         ret: VRef<ValueMir>,
-        builder: &GenBuilder,
+        builder: &mut GenBuilder,
     ) {
         // field just changes offset
         let GenValue {
@@ -198,11 +198,21 @@ impl Generator<'_> {
         let header_ty = builder.value_ty(header);
         let offsets = self.ty_layout(header_ty).offsets;
         let field_offset = self.gen_layouts.offsets[offsets][field as usize];
-        self.gen_resources.values[ret] = GenValue {
-            computed,
-            offset: offset + field_offset as i32,
-            must_load,
-        };
+        if self.gen_resources.values[ret].computed.is_some() {
+            self.save_value(
+                ret,
+                computed.unwrap(),
+                offset + field_offset as i32,
+                must_load,
+                builder,
+            );
+        } else {
+            self.gen_resources.values[ret] = GenValue {
+                computed,
+                offset: offset + field_offset as i32,
+                must_load,
+            };
+        }
     }
 
     fn constructor(

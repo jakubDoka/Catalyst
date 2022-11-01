@@ -52,7 +52,7 @@ pub struct NameAst {
 
 impl NameAst {
     pub fn from_path(ctx: &mut ParsingCtx<'_, '_, '_>, path: Span) -> Self {
-        let path_str = ctx.lexer.inner_span_str(path);
+        let path_str = ctx.inner_span_str(path);
         let last_slash = path_str.rfind('/').map_or(0, |i| i + 1);
         let span = path.sliced(last_slash..);
         Self::new(ctx, span)
@@ -60,7 +60,7 @@ impl NameAst {
 
     pub fn new(ctx: &mut ParsingCtx<'_, '_, '_>, span: Span) -> Self {
         Self {
-            ident: ctx.interner.intern(ctx.lexer.inner_span_str(span)),
+            ident: ctx.interner.intern(&ctx.source_code[span.range()]),
             span,
         }
     }

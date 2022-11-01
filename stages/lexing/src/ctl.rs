@@ -1,4 +1,4 @@
-use std::alloc::Layout;
+use std::{alloc::Layout, marker::PhantomData, mem};
 
 use storage::*;
 
@@ -31,9 +31,9 @@ impl<'specs> TokenMacroCtx<'specs> {
 }
 
 function_pointer! {
-    TokenMacroNew(s: *mut u8, l: CtlLexer<'_, '_>),
-    TokenMacroNext(s: *mut u8, l: CtlLexer<'_, '_>) -> CtlOption<Token>,
-    TokenMacroDrop(s: *mut u8),
+    TokenMacroNew(s: *mut u8, l: CtlLexer<'_, '_, '_>),
+    TokenMacroNext(s: *mut u8) -> CtlOption<Token>,
+    TokenMacroDrop(s: *mut u8) -> CtlLexer<'static, 'static, 'static>,
 }
 
 #[derive(Clone, Copy)]
@@ -44,38 +44,85 @@ pub struct TokenMacroSpec<'funcs> {
     pub drop: TokenMacroDrop<'funcs>,
 }
 
-pub struct TokenMacro<'spec, 'data> {
+pub struct TokenMacro<'spec, 'data, 'source> {
     data: &'data mut [u8],
     spec: TokenMacroSpec<'spec>,
+    ph: PhantomData<&'source str>,
 }
 
-unsafe impl Send for TokenMacro<'_, '_> {}
+unsafe impl Send for TokenMacro<'_, '_, '_> {}
 
-impl<'spec, 'data> TokenMacro<'spec, 'data> {
-    pub fn new(data: &'data mut [u8], spec: TokenMacroSpec<'spec>, lexer: &mut Lexer) -> Self {
-        spec.new.call(data.as_mut_ptr(), CtlLexer { inner: lexer });
-        Self { data, spec }
+impl<'spec, 'data, 'source> TokenMacro<'spec, 'data, 'source> {
+    pub fn new(
+        data: &'data mut [u8],
+        spec: TokenMacroSpec<'spec>,
+        lexer: CtlLexer<'spec, 'data, 'source>,
+    ) -> Self {
+        spec.new.call(data.as_mut_ptr(), lexer);
+        Self {
+            data,
+            spec,
+            ph: PhantomData,
+        }
     }
 
-    pub fn next(&mut self, lexer: &mut Lexer) -> Option<Token> {
-        self.spec
-            .next
-            .call(self.data.as_mut_ptr(), CtlLexer { inner: lexer })
-            .into()
+    pub fn next_tok(&mut self) -> Option<Token> {
+        self.spec.next.call(self.data.as_mut_ptr()).into()
     }
-}
 
-impl Drop for TokenMacro<'_, '_> {
-    fn drop(&mut self) {
-        self.spec.drop.call(self.data.as_mut_ptr());
+    pub fn drop(self) -> CtlLexer<'spec, 'data, 'source> {
+        unsafe { mem::transmute(self.spec.drop.call(self.data.as_mut_ptr())) }
     }
 }
 
 #[repr(C)]
-pub struct CtlLexer<'a, 'b> {
-    inner: &'a mut Lexer<'b>,
+pub enum CtlLexer<'spec, 'data, 'source> {
+    Base(Lexer<'source>),
+    Macro(TokenMacro<'spec, 'data, 'source>),
 }
 
-pub extern "C" fn ctl_lexer_next(lexer: CtlLexer) -> Token {
-    lexer.inner.next_tok()
+const _: () = {
+    assert!(std::mem::size_of::<CtlLexer>() == 64);
+    assert!(std::mem::align_of::<CtlLexer>() == 8);
+};
+
+// #[test]
+// fn test() {
+//     panic!("size: {}, align: {}", mem::size_of::<CtlLexer>(), mem::align_of::<CtlLexer>());
+// }
+
+impl CtlLexer<'_, '_, '_> {
+    pub fn progress(&mut self) -> usize {
+        match self {
+            Self::Base(lexer) => lexer.progress(),
+            Self::Macro(..) => {
+                self.drop();
+                self.progress()
+            }
+        }
+    }
+
+    pub fn next_tok(&mut self) -> Token {
+        match self {
+            CtlLexer::Base(base) => base.next_tok(),
+            CtlLexer::Macro(token_macro) => match token_macro.next_tok() {
+                Some(tok) => tok,
+                None => {
+                    self.drop();
+                    self.next_tok()
+                }
+            },
+        }
+    }
+
+    fn drop(&mut self) {
+        storage::map_in_place(self, |s| match s {
+            Self::Macro(lexer) => lexer.drop(),
+            Self::Base(..) => unreachable!(),
+        });
+    }
+}
+
+pub extern "C" fn ctl_lexer_next(lexer: &mut CtlLexer) -> Token {
+    lexer.next_tok()
 }

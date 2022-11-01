@@ -184,7 +184,7 @@ pub use {
     bit_set::BitSet,
     bump_alloc::*,
     bump_map::{BumpMap, CacheBumpMap},
-    clear::Clear,
+    clear::{map_in_place, Clear},
     frames::Frames,
     interner::Interner,
     map::{CMap, Map},

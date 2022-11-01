@@ -193,35 +193,45 @@ fn main() {
                 first: MacroToken;
             };
 
-            #[macro swap];
-            enum Swap {
+            enum SwapState {
                 Two: TwoTokens;
                 Last: LastToken;
                 Empty;
             };
 
+            #[macro swap];
+            struct Swap {
+                state: SwapState;
+                lexer: MacroLexer;
+            };
+
             impl TokenMacro for Swap {
                 fn new(s: ^Self, lexer: MacroLexer) {
-                    *s = ::Two~::{
-                        first: lexer.next();
-                        second: lexer.next();
+                    *s = ::{
+                        state: ::Two~::{
+                            first: lexer.next();
+                            second: lexer.next();
+                        };
+                        lexer;
                     };
                 };
 
-                fn next(s: ^Self, lexer: MacroLexer) -> Option[MacroToken] =>
-                    ::Some~match *s {
+                fn next(s: ^Self) -> Option[MacroToken] =>
+                    ::Some~match s.state {
                         ::Two~::{ first, second } {
-                            *s = ::Last~::{ last: first };
+                            s.state = ::Last~::{ last: first };
                             second
                         };
                         ::Last~::{ last } {
-                            *s = ::Empty;
+                            s.state = ::Empty;
                             last
                         };
                         ::Empty => return ::None;
                     };
 
-                fn drop(s: ^Self) {};
+                fn drop(s: ^Self) -> MacroLexer {
+                    s.lexer
+                };
             };
         }
     }

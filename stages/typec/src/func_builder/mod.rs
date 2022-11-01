@@ -626,9 +626,13 @@ impl TyChecker<'_> {
         _inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let header = self.unit_expr(lhs, None, builder)?;
+        let mut header = self.unit_expr(lhs, None, builder)?;
 
-        let res = self.dot_path(header.ty, rhs, builder)?;
+        let deref = header.ty.ptr_base(self.typec);
+        let caller = deref.base(self.typec);
+        let res = self.dot_path(caller, rhs, builder)?;
+
+        self.balance_pointers(&mut header, deref, builder)?;
 
         Some(match res {
             DotPathResult::Field(field, ty) => TirNode::new(
