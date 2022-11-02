@@ -1063,7 +1063,7 @@ impl TyChecker<'_> {
                 let params = path.params();
                 match func {
                     FuncLookupResult::Func(func) => {
-                        self.direct_call(func, params, None, call, inference, builder)
+                        self.direct_call(func, params, Some(Ok(ty)), call, inference, builder)
                     }
                     FuncLookupResult::SpecFunc(func, ..) => {
                         self.direct_spec_call(func, params, Ok(ty), call, inference, builder)
@@ -1077,7 +1077,7 @@ impl TyChecker<'_> {
                 let params = rhs.params();
                 match func {
                     FuncLookupResult::Func(func) => {
-                        self.direct_call(func, params, Some(lhs), call, inference, builder)
+                        self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
                     }
                     FuncLookupResult::SpecFunc(func, ..) => {
                         self.direct_spec_call(func, params, Err(lhs), call, inference, builder)
@@ -1095,7 +1095,7 @@ impl TyChecker<'_> {
         &mut self,
         func: FragRef<Func>,
         params: impl Iterator<Item = TyAst>,
-        caller: Option<TirNode<'a>>,
+        caller: Option<Result<Ty, TirNode<'a>>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
@@ -1103,6 +1103,7 @@ impl TyChecker<'_> {
         let Func {
             signature,
             upper_generics,
+            owner,
             ..
         } = self.typec.funcs[func];
 
@@ -1123,6 +1124,7 @@ impl TyChecker<'_> {
             param_specs.as_slice(),
             &mut param_slots,
             caller,
+            owner,
             args,
             signature,
             inference,
@@ -1177,7 +1179,8 @@ impl TyChecker<'_> {
         let (args, params, ty) = self.call_internals(
             param_specs.as_slice(),
             &mut param_slots,
-            caller.err(),
+            Some(caller),
+            None,
             args,
             signature,
             inference,
@@ -1224,7 +1227,8 @@ impl TyChecker<'_> {
         &mut self,
         generics: &[FragSlice<Spec>],
         param_slots: &mut [Option<Ty>],
-        mut caller: Option<TirNode<'a>>,
+        mut caller: Option<Result<Ty, TirNode<'a>>>,
+        owner: Option<Ty>,
         args: CallArgsAst,
         signature: Signature,
         inference: Inference,
@@ -1237,16 +1241,26 @@ impl TyChecker<'_> {
             let _ = self.typec.compatible(param_slots, inference, signature.ret);
         }
 
-        if let Some(ref mut caller) = caller && let Some(&first) = arg_types.first() {
-            // TODO: do pointer correction
-            self.balance_pointers(caller, first, builder);
-            self.infer_params(param_slots, caller.ty, first, caller.span);
+        if let Some(ref mut caller) = caller {
+            if let Some(&first) = arg_types.first() && let Err(caller) = caller {
+                self.balance_pointers(caller, first, builder);
+            }
+
+            if let Some(owner) = owner {
+                let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
+                let owner = self.typec.balance_pointers(owner, ty, self.interner);
+                self.infer_params(param_slots, ty, owner, args.span());
+            }
         }
 
         let parsed_args = args
             .iter()
             .copied()
-            .zip(arg_types.into_iter().skip(caller.is_some() as usize))
+            .zip(
+                arg_types
+                    .into_iter()
+                    .skip(caller.and_then(|c| c.err()).is_some() as usize),
+            )
             .map(|(arg, ty)| {
                 let instantiated = self.typec.try_instantiate(ty, param_slots, self.interner);
                 let parsed_arg = self.expr(arg, instantiated, builder);
@@ -1256,7 +1270,7 @@ impl TyChecker<'_> {
                 parsed_arg
             })
             .nsc_collect::<Option<BumpVec<_>>>()
-            .map(|args| caller.into_iter().chain(args))
+            .map(|args| caller.and_then(|c| c.err()).into_iter().chain(args))
             .map(|args| builder.arena.alloc_iter(args.collect::<BumpVec<_>>()))?;
 
         let params = self.call_params(param_slots.iter().copied(), args.span(), builder)?;

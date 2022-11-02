@@ -1,36 +1,45 @@
-error: failed to read source file
- --> vec\root.ctl:2:5
-  |
-2 |     "water/vec"
-  |     ^^^^^^^^^^^ declared here
-  |
-  = info: path: `vec\deps\github.com\jakubDoka\water\main\root\vec.ctl`
-  = info: trace: file not found
-
-error: type or module not found
- --> vec\root.ctl:7:19
-  |
-7 |     let mut vec = Vec\[uint]\new()
-  |                   ^^^ this does not exist
-  |
-  = info: queried 'Vec'
-
-error: variable or enum not found
- --> vec\root.ctl:8:5
-  |
-8 |     vec.push(0)
-  |     ^^^ this does not exist
-  |
-  = info: queried 'vec'
-
-error: variable or enum not found
- --> vec\root.ctl:9:6
-  |
-9 |     *vec.get(0)
-  |      ^^^ this does not exist
-  |
-  = info: queried 'vec'
-
 info: tir repr of functions:
- 
+ fn [] new() -> 1\Vec[param0] return {
+    1\Vec[param0]\{cast[uint, ^mut param0](0), 0, 0}
+}
+
+fn [] with_capacity(var0: uint) -> 1\Vec[param0] return {
+    1\Vec[param0]\{cast[^mut (), ^mut param0](malloc(uint * uint(var0, sizeof[param0]()))), 0, var0}
+}
+
+fn [] push(var0: ^mut 1\Vec[param0], var1: param0) -> () return {
+    if uint == uint(*var0.1, *var0.2) {
+        grow[param0](var0)
+    }
+    *get[param0](var0, uint - uint(*var0.1, 1)) = var1
+    *var0.1 = uint + uint(*var0.1, 1)
+}
+
+fn [] grow(var0: ^mut 1\Vec[param0]) -> () return {
+    let var1 = if uint == uint(*var0.2, 0) {
+        1
+    } else {
+        uint * uint(*var0.2, 2)
+    }
+    let var2 = malloc(uint * uint(var1, sizeof[param0]()))
+    memcpy(var2, cast[^mut param0, ^()](*var0.0), uint * uint(*var0.1, sizeof[param0]()))
+    free(cast[^mut param0, ^()](*var0.0))
+    *var0.0 = cast[^mut (), ^mut param0](var2)
+}
+
+fn [] get(var0: ^1\Vec[param0], var1: uint) -> ^param0 return {
+    cast[uint, ^param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
+}
+
+fn [] get_mut(var0: ^mut 1\Vec[param0], var1: uint) -> ^mut param0 return {
+    cast[uint, ^mut param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
+}
+
+fn [] main() -> uint return {
+    let mut var0 = new[uint]()
+    push[uint](^var0, 0)
+    *get[uint](^var0, 0)
+}
+
+
 

@@ -720,6 +720,34 @@ impl Typec {
         }
     }
 
+    pub fn balance_pointers(&mut self, mut ty: Ty, reference: Ty, interner: &mut Interner) -> Ty {
+        let (ty_depth, reference_depth) = (ty.ptr_depth(self), reference.ptr_depth(self));
+        match ty_depth.cmp(&reference_depth) {
+            std::cmp::Ordering::Less => {
+                let muts = (0..(reference_depth - ty_depth))
+                    .scan(reference, |r, _| {
+                        let mutability = ty.mutability(self);
+                        *r = r.ptr_base(self);
+                        Some(mutability)
+                    })
+                    .collect::<BumpVec<_>>();
+
+                for mutability in muts.into_iter().rev() {
+                    ty = Ty::Pointer(self.pointer_to(mutability, ty, interner));
+                }
+
+                ty
+            }
+            std::cmp::Ordering::Equal => ty,
+            std::cmp::Ordering::Greater => {
+                for _ in 0..(ty_depth - reference_depth) {
+                    ty = ty.ptr_base(self);
+                }
+                ty
+            }
+        }
+    }
+
     pub fn compatible(
         &self,
         params: &mut [Option<Ty>],
@@ -731,7 +759,7 @@ impl Typec {
         let check = |a, b| Ty::compatible(a, b).then_some(()).ok_or((a, b));
 
         while let Some((reference, template)) = stack.pop() {
-            if reference == template && !matches!(template, Ty::Param(..)) {
+            if reference == template && !self.contains_params(template) {
                 continue;
             }
 

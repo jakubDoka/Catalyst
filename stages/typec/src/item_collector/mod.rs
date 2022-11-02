@@ -109,7 +109,7 @@ impl TyChecker<'_> {
         let scope_data = ScopeData {
             offset: generics.len(),
             upper_generics: parsed_generics,
-            owner: Some(parsed_ty_base),
+            owner: Some(parsed_ty),
             not_in_scope: impl_id.is_some(),
             upper_vis: vis,
         };
@@ -209,7 +209,8 @@ impl TyChecker<'_> {
             let id = unsafe { self.typec.funcs.next() };
             let vis = vis.or(upper_vis);
             let local_id = owner.map_or(name.ident, |owner| {
-                self.interner.intern_scoped(owner, name.ident)
+                self.interner
+                    .intern_scoped(owner.caller(self.typec), name.ident)
             });
             let item = ModuleItem::new(local_id, id, name.span, vis);
             Some(self.insert_scope_item(item)?)

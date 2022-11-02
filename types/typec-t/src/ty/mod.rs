@@ -259,6 +259,13 @@ impl Ty {
         }
     }
 
+    pub fn mutability(self, typec: &Typec) -> Mutability {
+        match self {
+            Self::Pointer(p) => typec[p].mutability,
+            _ => Mutability::Immutable,
+        }
+    }
+
     pub fn ptr_depth(self, typec: &Typec) -> u16 {
         match self {
             Self::Pointer(p) => typec[p].depth,
