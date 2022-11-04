@@ -1,4 +1,6 @@
 use std::{
+    collections::hash_map::Entry,
+    default::default,
     mem,
     ops::{Deref, DerefMut},
 };
@@ -9,6 +11,12 @@ use storage::*;
 use typec_t::*;
 
 use crate::*;
+
+macro_rules! present_graph {
+    () => {
+        MoveGraph::Present | MoveGraph::Partial(.., 0)
+    };
+}
 
 pub struct MirBuilder<'a> {
     pub current_block: Option<VRef<BlockMir>>,
@@ -33,7 +41,7 @@ impl<'a> MirBuilder<'a> {
         span: Span,
     ) -> Option<()> {
         self.inst(InstMir::Field(header, index, dest), span)?;
-        self.ctx.owners[dest] = OwnerMir::Nested(index, header);
+        self.ctx.moves.owners[dest] = Owner::Nested(index, header);
         Some(())
     }
 
@@ -41,7 +49,82 @@ impl<'a> MirBuilder<'a> {
         self.ctx.func.types[self.ctx.func.values[value].ty].ty
     }
 
-    pub fn r#move(
+    pub fn r#move_in(&mut self, value: VRef<ValueMir>, typec: &mut Typec, interner: &mut Interner) {
+        if self.ctx.untracked_moves {
+            return;
+        }
+
+        let ty = self.value_ty(value);
+
+        if ty.is_copy(&self.ctx.generics, typec, interner) {
+            return;
+        }
+
+        let mut root_value = value;
+        let mut path = bumpvec![];
+        let root = loop {
+            match self.ctx.moves.owners[root_value] {
+                Owner::Temporary(graph) => break graph,
+                Owner::Nested(id, header) => {
+                    path.push((id, self.ctx.func.types[self.ctx.func.values[value].ty].ty));
+                    root_value = header;
+                }
+                Owner::Var(var) => break self.ctx.vars[var].graph,
+            }
+        };
+
+        let Some(root) = root else {
+            return;
+        };
+
+        let mut graph_path = bumpvec![];
+        let mut current = root;
+        for (id, ty) in path.into_iter().rev() {
+            graph_path.push((id, current));
+            match self.ctx.moves.graphs[current] {
+                MoveGraph::Present => return,
+                MoveGraph::Gone(span) => {
+                    current = match self.expand_graph_node(ty, id, Some(span), root, typec) {
+                        Some(graph) => graph,
+                        None => return,
+                    }
+                }
+                MoveGraph::Partial(children, ..) => current = children.index(id as usize),
+            }
+        }
+
+        let mut gone = bumpvec![];
+        let mut frontier = bumpvec![root];
+        while let Some(node) = frontier.pop() {
+            match self.ctx.moves.graphs[node] {
+                present_graph!() => (),
+                MoveGraph::Gone(..) => gone.push(node),
+                MoveGraph::Partial(children, ref mut count) => {
+                    if children.len() as u32 == *count {
+                        gone.push(node);
+                    }
+
+                    *count = 0;
+                    frontier.extend(children.keys());
+                }
+            }
+        }
+
+        for (.., node) in graph_path.into_iter().rev() {
+            match self.ctx.moves.graphs[node] {
+                present_graph!() => unreachable!(),
+                MoveGraph::Gone(..) => unreachable!(),
+                MoveGraph::Partial(.., ref mut count) => {
+                    *count -= 1;
+                    if *count != 0 {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn r#move_out(
         &mut self,
         value: VRef<ValueMir>,
         span: Span,
@@ -58,53 +141,78 @@ impl<'a> MirBuilder<'a> {
             return Ok(());
         }
 
-        let mut current = &mut self.ctx.owners[value];
+        let mut current = &mut self.ctx.moves.owners[value];
         let mut path = bumpvec![];
-        let mut root = loop {
+        let mut root = *loop {
             match current {
-                OwnerMir::Temporary(graph) => {
-                    break *graph
-                        .get_or_insert_with(|| self.ctx.move_slices.push(MoveGraphMir::Present))
-                }
-                &mut OwnerMir::Nested(id, header) => {
+                Owner::Temporary(graph) => break graph,
+                &mut Owner::Nested(id, header, ..) => {
                     path.push((id, self.ctx.func.types[self.ctx.func.values[value].ty].ty));
-                    current = &mut self.ctx.owners[header];
+                    current = &mut self.ctx.moves.owners[header];
                 }
-                &mut OwnerMir::Var(var) => break self.ctx.vars[var].graph,
+                &mut Owner::Var(var) => break &mut self.ctx.vars[var].graph,
             }
-        };
+        }
+        .get_or_insert_with(|| self.ctx.moves.graphs.push(MoveGraph::Present));
 
-        let traverse_struct =
-            |sel: &mut Self, s: FragRef<Struct>, id: u32, root: VRef<MoveGraphMir>| {
-                let children = (0..typec[s].fields.len()).map(|_| MoveGraphMir::Present);
-                let slice = sel.ctx.move_slices.extend(children);
-                sel.ctx.move_slices[root] = MoveGraphMir::Partial(slice);
-                slice.index(id as usize)
-            };
-
-        for (id, ty) in path {
-            root = match self.ctx.move_slices[root] {
-                MoveGraphMir::Present => match ty {
-                    Ty::Struct(s) => traverse_struct(self, s, id, root),
-                    Ty::Enum(_) => todo!(),
-                    Ty::Instance(inst) => match typec[inst].base {
-                        GenericTy::Struct(s) => traverse_struct(self, s, id, root),
-                        GenericTy::Enum(_) => todo!(),
-                    },
-                    Ty::Pointer(..) => return Err(MoveError::Pointer(span)),
-                    Ty::Param(..) | Ty::Builtin(..) => unreachable!(),
-                },
-                g @ MoveGraphMir::Gone(..) => return Err(MoveError::Graph(g)),
-                MoveGraphMir::Partial(children) => children.index(id as usize),
+        for (id, ty) in path.into_iter().rev() {
+            root = match self.ctx.moves.graphs[root] {
+                present_graph!() => self
+                    .expand_graph_node(ty, id, None, root, typec)
+                    .ok_or(MoveError::Pointer(span))?,
+                g @ MoveGraph::Gone(..) => return Err(MoveError::Graph(g)),
+                MoveGraph::Partial(children, ref mut count) => {
+                    *count += 1;
+                    if children.len() as u32 == *count {}
+                    children.index(id as usize)
+                }
             }
         }
 
-        let g = mem::replace(&mut self.ctx.move_slices[root], MoveGraphMir::Gone(span));
-        let MoveGraphMir::Present = g else {
+        let g = mem::replace(&mut self.ctx.moves.graphs[root], MoveGraph::Gone(span));
+        let present_graph!() = g else {
             return Err(MoveError::Graph(g));
         };
 
+        self.ctx.moves.current_branch.insert(Move {
+            graph: root,
+            direction: MoveDirection::Out,
+        });
+
         Ok(())
+    }
+
+    pub fn expand_graph_node(
+        &mut self,
+        ty: Ty,
+        id: u32,
+        gone: Option<Span>,
+        root: VRef<MoveGraph>,
+        typec: &Typec,
+    ) -> Option<VRef<MoveGraph>> {
+        let fill = if let Some(gone) = gone {
+            MoveGraph::Gone(gone)
+        } else {
+            MoveGraph::Present
+        };
+        let mut traverse_struct = |s: FragRef<Struct>| {
+            let children = (0..typec[s].fields.len()).map(|_| fill);
+            let slice = self.ctx.moves.graphs.extend(children);
+            let missing = if gone.is_some() { slice.len() - 1 } else { 1 };
+            self.ctx.moves.graphs[root] = MoveGraph::Partial(slice, missing as u32);
+            Some(slice.index(id as usize))
+        };
+
+        match ty {
+            Ty::Struct(s) => traverse_struct(s),
+            Ty::Enum(_) => todo!(),
+            Ty::Instance(inst) => match typec[inst].base {
+                GenericTy::Struct(s) => traverse_struct(s),
+                GenericTy::Enum(_) => todo!(),
+            },
+            Ty::Pointer(..) => None,
+            Ty::Param(..) | Ty::Builtin(..) => unreachable!(),
+        }
     }
 
     pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {
@@ -126,9 +234,8 @@ impl<'a> MirBuilder<'a> {
     }
 
     pub fn create_var(&mut self, value: VRef<ValueMir>) {
-        let graph = self.ctx.move_slices.push(MoveGraphMir::Present);
-        let var = self.ctx.vars.push(VarMir { value, graph });
-        self.ctx.owners[value] = OwnerMir::Var(var);
+        let var = self.ctx.vars.push(VarMir { value, graph: None });
+        self.ctx.moves.owners[value] = Owner::Var(var);
     }
 
     pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {
@@ -165,40 +272,70 @@ impl<'a> MirBuilder<'a> {
 #[derive(Clone, Copy)]
 pub struct VarMir {
     pub value: VRef<ValueMir>,
-    pub graph: VRef<MoveGraphMir>,
+    pub graph: OptVRef<MoveGraph>,
 }
 
 pub enum MoveError {
-    Graph(MoveGraphMir),
+    Graph(MoveGraph),
     Pointer(Span),
 }
 
 #[derive(Clone, Copy)]
-pub enum MoveGraphMir {
+pub enum MoveGraph {
     Present,
     Gone(Span),
-    Partial(VSlice<MoveGraphMir>),
+    Partial(VSlice<MoveGraph>, u32),
 }
 
 #[derive(Clone, Copy)]
-pub enum OwnerMir {
-    Temporary(OptVRef<MoveGraphMir>),
+pub enum Owner {
+    Temporary(OptVRef<MoveGraph>),
     Nested(u32, VRef<ValueMir>),
     Var(VRef<VarMir>),
 }
 
-impl Default for OwnerMir {
+impl Default for Owner {
     fn default() -> Self {
         Self::Temporary(None)
     }
 }
 
-pub struct CachedMove {
-    pub graph: VRef<MoveGraphMir>,
+pub enum MoveFrame {
+    Split(VSlice<VSlice<VRef<ValueMir>>>),
 }
 
-pub enum MoveFrame {
-    Split(VSlice<VSlice<CachedMove>>),
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MoveDirection {
+    In,
+    Out,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Move {
+    pub graph: VRef<MoveGraph>,
+    pub direction: MoveDirection,
+}
+
+#[derive(Default)]
+pub struct MirMoveCtx {
+    pub cached_moves: Frames<Move>,
+    pub owners: ShadowMap<ValueMir, Owner>,
+    pub graphs: PushMap<MoveGraph>,
+    pub frames: Vec<MoveFrame>,
+    pub branch_moves: PushMap<VSlice<Move>>,
+    pub current_branch: Set<Move>,
+    pub brach_move_slices: PushMap<Move>,
+}
+
+impl MirMoveCtx {
+    pub fn clear(&mut self) {
+        self.owners.clear();
+        self.graphs.clear();
+        self.frames.clear();
+        self.branch_moves.clear();
+        self.current_branch.clear();
+        self.brach_move_slices.clear();
+    }
 }
 
 #[derive(Default)]
@@ -208,17 +345,12 @@ pub struct MirBuilderCtx {
     pub dd: DebugData,
     pub vars: PushMap<VarMir>,
     pub generics: Vec<FragSlice<Spec>>,
-    pub move_slices: PushMap<MoveGraphMir>,
-    pub current_branch: Vec<CachedMove>,
-    pub move_frames: Vec<MoveFrame>,
-    pub branch_moves: PushMap<VSlice<CachedMove>>,
-    pub brach_move_slices: PushMap<CachedMove>,
-    pub owners: ShadowMap<ValueMir, OwnerMir>,
     pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
     pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<FragRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
+    pub moves: MirMoveCtx,
 }
 
 impl MirBuilderCtx {
@@ -298,11 +430,8 @@ impl MirBuilderCtx {
         self.vars.clear();
         self.dd.clear();
         self.used_types.clear();
-        self.move_slices.clear();
-        self.owners.clear();
         self.generics.clear();
-        self.brach_move_slices.clear();
-        self.branch_moves.clear();
+        self.moves.clear();
 
         let mut cln = self.func.clone();
         cln.generics = cln.ty_params.extend(self.generic_types.drain(..));

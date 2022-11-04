@@ -183,7 +183,7 @@ pub use {
     clear::{map_in_place, Clear},
     frames::Frames,
     interner::Interner,
-    map::{CMap, Map},
+    map::{CMap, Map, Set},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,
