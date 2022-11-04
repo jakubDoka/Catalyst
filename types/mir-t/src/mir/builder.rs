@@ -12,13 +12,15 @@ use crate::*;
 
 pub struct MirBuilder<'a> {
     pub current_block: Option<VRef<BlockMir>>,
+    pub arena: &'a Arena,
     pub ctx: &'a mut MirBuilderCtx,
 }
 
 impl<'a> MirBuilder<'a> {
-    pub fn new(entry_block: VRef<BlockMir>, ctx: &'a mut MirBuilderCtx) -> Self {
+    pub fn new(entry_block: VRef<BlockMir>, arena: &'a Arena, ctx: &'a mut MirBuilderCtx) -> Self {
         Self {
             current_block: Some(entry_block),
+            arena,
             ctx,
         }
     }
@@ -217,7 +219,6 @@ pub struct MirBuilderCtx {
     pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<FragRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
-    pub pattern_solver_arena: Option<Arena>,
 }
 
 impl MirBuilderCtx {

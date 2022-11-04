@@ -60,7 +60,7 @@ impl Scheduler for TestState {
         );
 
         mir_checker!(self, module)
-            .funcs(&mut self.mir_ctx, &mut type_checked_funcs)
+            .funcs(&arena, &mut self.mir_ctx, &mut type_checked_funcs)
             .display_funcs(&self.mir_ctx.just_compiled, &mut self.functions)
             .unwrap();
 

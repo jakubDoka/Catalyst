@@ -12,13 +12,14 @@ use crate::*;
 pub type NodeRes = OptVRef<ValueMir>;
 
 impl MirChecker<'_> {
-    pub fn funcs(
+    pub fn funcs<'a>(
         &mut self,
-        ctx: &mut MirBuilderCtx,
+        arena: &'a Arena,
+        ctx: &'a mut MirBuilderCtx,
         input: &mut BumpVec<(FragRef<Func>, TirNode)>,
     ) -> &mut Self {
         for (func, body) in input.drain(..) {
-            let body = self.func(func, body, ctx);
+            let body = self.func(func, body, arena, ctx);
             self.mir.bodies.insert(
                 func,
                 FuncMir {
@@ -31,16 +32,17 @@ impl MirChecker<'_> {
         self
     }
 
-    fn func(
+    fn func<'a>(
         &mut self,
         func: FragRef<Func>,
         body: TirNode,
-        ctx: &mut MirBuilderCtx,
+        arena: &'a Arena,
+        ctx: &'a mut MirBuilderCtx,
     ) -> FuncMirInner {
         let Func { signature, .. } = self.typec.funcs[func];
 
         ctx.generics.extend(self.typec.pack_func_param_specs(func));
-        let mut builder = self.push_args(signature.args, ctx);
+        let mut builder = self.push_args(signature.args, arena, ctx);
         let ret = builder.value(signature.ret, self.typec);
         builder.ctx.func.ret = ret;
 
@@ -128,25 +130,23 @@ impl MirChecker<'_> {
     ) -> NodeRes {
         let value = self.node(value, None, builder)?;
 
-        let mut arena = builder.ctx.pattern_solver_arena.take().unwrap_or_default();
-
         let branch_patterns = arms
             .iter()
             .enumerate()
             .filter_map(|(ord, &MatchArmTir { pat, .. })| {
                 let mut branch_nodes = bumpvec![];
-                self.pattern_to_branch(pat, &mut branch_nodes, None, &arena, builder);
+                self.pattern_to_branch(pat, &mut branch_nodes, None, builder);
                 let (&start, rest) = branch_nodes.split_first()?;
                 Some(Branch {
                     start,
-                    nodes: arena.alloc_slice(rest),
+                    nodes: builder.arena.alloc_slice(rest),
                     ord,
                 })
             })
             .collect::<BumpVec<_>>();
 
         let mut reachable = bumpvec![false; branch_patterns.len()];
-        let tree = patterns::as_tree(&arena, &branch_patterns, &mut reachable);
+        let tree = patterns::as_tree(builder.arena, &branch_patterns, &mut reachable);
         if tree.has_missing {
             let gaps = patterns::find_gaps(tree);
             self.non_exhaustive(
@@ -155,9 +155,6 @@ impl MirChecker<'_> {
                 span,
             )?
         }
-
-        arena.clear();
-        builder.ctx.pattern_solver_arena = Some(arena);
 
         let arms = arms
             .iter()
@@ -331,7 +328,6 @@ impl MirChecker<'_> {
         PatTir { kind, ty, .. }: PatTir,
         nodes: &mut BumpVec<Node<'a>>,
         parent: Option<Ty>,
-        _arena: &'a Arena,
         _builder: &MirBuilder,
     ) {
         match kind {
@@ -339,7 +335,7 @@ impl MirChecker<'_> {
                 UnitPatKindTir::Struct { fields } => {
                     let mut ty = Some(ty);
                     for &pat in fields {
-                        self.pattern_to_branch(pat, nodes, ty.take(), _arena, _builder);
+                        self.pattern_to_branch(pat, nodes, ty.take(), _builder);
                     }
                 }
                 UnitPatKindTir::Int(value, ..) => {
@@ -577,9 +573,14 @@ impl MirChecker<'_> {
         None
     }
 
-    fn push_args<'a>(&mut self, args: FragSlice<Ty>, ctx: &'a mut MirBuilderCtx) -> MirBuilder<'a> {
+    fn push_args<'a>(
+        &mut self,
+        args: FragSlice<Ty>,
+        arena: &'a Arena,
+        ctx: &'a mut MirBuilderCtx,
+    ) -> MirBuilder<'a> {
         let block = ctx.create_block();
-        let mut builder = MirBuilder::new(block, ctx);
+        let mut builder = MirBuilder::new(block, arena, ctx);
 
         for &ty in &self.typec[args] {
             let value = builder.value(ty, self.typec);

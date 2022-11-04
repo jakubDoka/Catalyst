@@ -1019,7 +1019,11 @@ impl Worker {
             &mut task.workspace,
             shared.resources,
         )
-        .funcs(&mut self.state.mir_builder_ctx, &mut type_checked_funcs);
+        .funcs(
+            arena,
+            &mut self.state.mir_builder_ctx,
+            &mut type_checked_funcs,
+        );
         task.entry_points.extend(
             self.state
                 .mir_builder_ctx
