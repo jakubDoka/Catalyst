@@ -128,6 +128,7 @@ impl SpecBase {
 gen_water_drops! {
     SpecBase
     base_specs
+    COPY => "Copy",
     TOKEN_MACRO => "TokenMacro",
 }
 
@@ -289,6 +290,26 @@ impl Ty {
                 Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)
             }
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
+        }
+    }
+
+    pub fn is_copy(
+        self,
+        params: &[FragSlice<Spec>],
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> bool {
+        match self {
+            Ty::Pointer(..) | Ty::Builtin(..) => true,
+            Ty::Struct(_) | Ty::Enum(_) | Ty::Instance(_) | Ty::Param(_) => typec
+                .find_implementation(
+                    self,
+                    Spec::Base(SpecBase::COPY),
+                    params,
+                    &mut None,
+                    interner,
+                )
+                .is_some(),
         }
     }
 }

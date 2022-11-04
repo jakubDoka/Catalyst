@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(fs_try_exists)]
 #![feature(thread_id_value)]
 #![feature(default_free_fn)]

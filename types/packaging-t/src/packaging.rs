@@ -12,8 +12,8 @@ pub struct Resources {
     pub sources: PoolMap<Source>,
     pub packages: PushMap<Package>,
     pub modules: PushMap<Module>,
-    pub package_deps: BumpMap<Dep<Package>>,
-    pub module_deps: BumpMap<Dep<Module>>,
+    pub package_deps: PushMap<Dep<Package>>,
+    pub module_deps: PushMap<Dep<Module>>,
     pub module_order: Vec<VRef<Module>>,
     pub db: Box<dyn ResourceDb>,
 }

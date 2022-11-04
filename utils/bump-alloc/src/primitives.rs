@@ -2,6 +2,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     mem::{discriminant, transmute},
+    ops::Range,
 };
 
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ macro_rules! gen_derives {
             }
         }
 
-        impl<T: ?Sized> const Eq for $ident<T> {}
+        impl<T: ?Sized> Eq for $ident<T> {}
 
         impl<T: ?Sized> std::hash::Hash for $ident<T> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -238,30 +239,45 @@ impl<'de, T: ?Sized> Deserialize<'de> for VRef<T> {
     }
 }
 
-pub struct VSlice<T: ?Sized>(u32, PhantomData<*const T>);
+pub struct VSlice<T: ?Sized>(u32, u32, PhantomData<*const T>);
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.
     /// # Safety
     /// The index must be valid for using collection.
     #[inline(always)]
-    pub unsafe fn new(id: usize) -> Self {
-        Self(id as u32, PhantomData)
+    pub unsafe fn new(range: Range<usize>) -> Self {
+        Self(range.start as u32, range.end as u32, PhantomData)
     }
 
     #[inline(always)]
-    pub fn index(self) -> usize {
-        self.0 as usize
+    pub fn range(&self) -> Range<usize> {
+        self.0 as usize..self.1 as usize
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        (self.1 - self.0) as usize
     }
 
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.0 == u32::MAX
+        self.len() == 0
     }
 
     #[inline(always)]
     pub const fn empty() -> Self {
-        Self(u32::MAX, PhantomData)
+        Self(0, 0, PhantomData)
+    }
+
+    #[inline(always)]
+    pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {
+        self.range().map(|i| unsafe { VRef::new(i) })
+    }
+
+    #[inline(always)]
+    pub fn index(&self, index: usize) -> VRef<T> {
+        self.keys().nth(index).expect("Index out of bounds.")
     }
 }
 
@@ -275,12 +291,12 @@ gen_derives!(VSlice);
 
 impl<T> Serialize for VSlice<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
+        (self.0, self.1).serialize(serializer)
     }
 }
 
 impl<'de, T> Deserialize<'de> for VSlice<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u32::deserialize(deserializer).map(|x| unsafe { Self::new(x as usize) })
+        <(u32, u32)>::deserialize(deserializer).map(|(start, end)| Self(start, end, PhantomData))
     }
 }

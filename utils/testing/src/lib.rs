@@ -1,5 +1,4 @@
 #![feature(closure_lifetime_binder)]
-#![feature(let_else)]
 #![feature(iter_intersperse)]
 
 #[macro_export]

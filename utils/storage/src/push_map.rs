@@ -4,6 +4,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use bump_alloc::VSlice;
 use serde::{Deserialize, Serialize};
 
 use crate::VRef;
@@ -73,8 +74,24 @@ impl<T> PushMap<T> {
         self.keys().zip(self.values())
     }
 
-    pub fn extend(&mut self, other: impl IntoIterator<Item = T>) {
+    pub fn extend(&mut self, other: impl IntoIterator<Item = T>) -> VSlice<T> {
+        let prev = self.data.len();
         self.data.extend(other);
+        unsafe { VSlice::new(prev..self.data.len()) }
+    }
+
+    pub fn bump_slice(&mut self, items: &[T]) -> VSlice<T>
+    where
+        T: Clone,
+    {
+        self.extend(items.iter().cloned())
+    }
+
+    pub fn indexed(&self, slice: VSlice<T>) -> impl Iterator<Item = (VRef<T>, &T)> {
+        self.data[slice.range()]
+            .iter()
+            .zip(slice.keys())
+            .map(|(elem, key)| (key, elem))
     }
 }
 
@@ -113,5 +130,19 @@ impl<T: Debug> Debug for PushMap<T> {
 impl<T> Default for PushMap<T> {
     fn default() -> Self {
         Self { data: default() }
+    }
+}
+
+impl<T> Index<VSlice<T>> for PushMap<T> {
+    type Output = [T];
+
+    fn index(&self, index: VSlice<T>) -> &Self::Output {
+        &self.data[index.range()]
+    }
+}
+
+impl<T> IndexMut<VSlice<T>> for PushMap<T> {
+    fn index_mut(&mut self, index: VSlice<T>) -> &mut Self::Output {
+        &mut self.data[index.range()]
     }
 }

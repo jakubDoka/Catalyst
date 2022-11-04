@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(iter_intersperse)]
 
 fn main() {

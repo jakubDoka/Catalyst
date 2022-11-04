@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(iter_intersperse)]
 #![feature(default_free_fn)]
 #![feature(drain_filter)]

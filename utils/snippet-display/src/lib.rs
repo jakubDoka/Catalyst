@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(default_free_fn)]
 
 use annotate_snippets::{

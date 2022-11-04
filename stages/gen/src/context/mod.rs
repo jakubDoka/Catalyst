@@ -118,8 +118,8 @@ pub enum CodeSaveError {
 #[derive(Default, Clone)]
 pub struct CompileRequests {
     pub queue: Vec<CompileRequest>,
-    pub ty_slices: BumpMap<Ty>,
-    pub children: BumpMap<CompileRequestChild>,
+    pub ty_slices: PushMap<Ty>,
+    pub children: PushMap<CompileRequestChild>,
 }
 
 impl CompileRequests {
@@ -221,7 +221,7 @@ pub struct GenBlock {
 #[derive(Default)]
 pub struct GenLayouts {
     pub mapping: Map<Ty, Layout>,
-    pub offsets: BumpMap<Offset>,
+    pub offsets: PushMap<Offset>,
     pub ptr_ty: Type,
 }
 
@@ -264,7 +264,7 @@ impl GenLayouts {
 
                 Layout {
                     repr,
-                    offsets: self.offsets.bump(offsets),
+                    offsets: self.offsets.extend(offsets),
                     align: align.try_into().unwrap(),
                     size,
                     on_stack,
@@ -274,7 +274,7 @@ impl GenLayouts {
                 repr: self.ptr_ty,
                 offsets: VSlice::empty(),
                 align: (self.ptr_ty.bytes() as u8).try_into().unwrap(),
-                size: self.ptr_ty.bytes() as u32,
+                size: self.ptr_ty.bytes(),
                 on_stack: false,
             },
             Ty::Builtin(Builtin::Bool) => Layout {
@@ -326,7 +326,7 @@ impl GenLayouts {
                 let (repr, on_stack) = self.repr_for_size(size);
                 Layout {
                     size,
-                    offsets: self.offsets.bump(offsets),
+                    offsets: self.offsets.extend(offsets),
                     align: align.try_into().unwrap(),
                     repr,
                     on_stack,
@@ -342,7 +342,7 @@ impl GenLayouts {
     }
 
     fn repr_for_size(&self, size: u32) -> (Type, bool) {
-        if size > self.ptr_ty.bytes() as u32 {
+        if size > self.ptr_ty.bytes() {
             return (self.ptr_ty, true);
         }
 

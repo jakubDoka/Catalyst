@@ -293,7 +293,7 @@ impl Generator<'_> {
                 let layout = self.ty_layout(builder.value_ty(ret));
                 let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                     kind: StackSlotKind::ExplicitSlot,
-                    size: layout.size as u32,
+                    size: layout.size,
                 });
                 builder.ins().stack_addr(ptr_ty, stack_slot, 0)
             }

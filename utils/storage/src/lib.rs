@@ -1,6 +1,5 @@
 #![feature(string_extend_from_within)]
 #![feature(int_log)]
-#![feature(let_else)]
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(const_trait_impl)]
@@ -156,8 +155,6 @@ pub extern crate dashmap;
 
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod bit_set;
-/// Bump allocator for fixed size slices.
-mod bump_map;
 /// Trait representing reusable object.
 mod clear;
 /// Homogenous stack with frame markers.
@@ -183,7 +180,6 @@ mod sparse_map;
 pub use {
     bit_set::BitSet,
     bump_alloc::*,
-    bump_map::{BumpMap, CacheBumpMap},
     clear::{map_in_place, Clear},
     frames::Frames,
     interner::Interner,

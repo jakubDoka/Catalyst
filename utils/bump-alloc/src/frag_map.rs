@@ -528,7 +528,8 @@ impl const PartialEq for FragAddr {
         self.global.get() == other.global.get() && self.local.get() == other.local.get()
     }
 }
-impl const Eq for FragAddr {}
+
+impl Eq for FragAddr {}
 
 #[allow(clippy::derive_hash_xor_eq)]
 #[derive(Copy, Clone, PartialOrd, Ord, Hash, Debug)]
@@ -568,7 +569,7 @@ impl const PartialEq for FragSliceAddr {
     }
 }
 
-impl const Eq for FragSliceAddr {}
+impl Eq for FragSliceAddr {}
 
 impl FragSliceAddr {
     pub fn addr(self) -> FragAddr {

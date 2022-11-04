@@ -1,5 +1,3 @@
-#![feature(let_else)]
-
 use std::collections::HashMap;
 
 /// Cli input simply parses command line input in the most generic

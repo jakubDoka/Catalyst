@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(const_trait_impl)]
 #![feature(let_chains)]
 #![feature(slice_group_by)]

@@ -104,18 +104,6 @@ gen_index! {
 }
 
 impl Typec {
-    pub fn sync_with(&mut self, other: &Typec) {
-        for (mv, v) in self
-            .module_items
-            .values_mut()
-            .zip(other.module_items.values())
-        {
-            if mv.items.is_empty() {
-                mv.items.extend(v.items.values().copied());
-            }
-        }
-    }
-
     pub fn get_band(&mut self) -> FragRef<Func> {
         *self
             .builtin_funcs

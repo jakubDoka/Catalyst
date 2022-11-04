@@ -434,7 +434,7 @@ impl Middleware {
             *children = self
                 .task_graph
                 .inverse_graph
-                .bump(package_deps.iter().map(|&(_, dep)| dep));
+                .extend(package_deps.iter().map(|&(_, dep)| dep));
             if count == 0 {
                 self.task_graph.frontier.push_back(package);
             }
@@ -446,7 +446,7 @@ impl Middleware {
 pub struct TaskGraph {
     meta: Vec<(usize, VRefSlice<Package>)>,
     frontier: VecDeque<VRef<Package>>,
-    inverse_graph: BumpMap<VRef<Package>>,
+    inverse_graph: PushMap<VRef<Package>>,
     done: usize,
 }
 
@@ -904,7 +904,7 @@ impl Worker {
             let children = task
                 .compile_requests
                 .children
-                .bump(frontier[prev..].iter().map(|&(child, _)| child));
+                .extend(frontier[prev..].iter().map(|&(child, _)| child));
             task.compile_requests.queue.push(CompileRequest {
                 func,
                 id,

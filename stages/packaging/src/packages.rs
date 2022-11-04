@@ -122,7 +122,7 @@ impl PackageLoader<'_, '_> {
 
         self.resources
             .module_order
-            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i as usize) }));
+            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i) }));
         for &module in &self.resources.module_order {
             let Module { source, .. } = self.resources.modules[module];
             sweep_set[source.index()] = true;
@@ -187,7 +187,7 @@ impl PackageLoader<'_, '_> {
                     ptr: unsafe { VRef::<Module>::new(index) },
                 })
             });
-            let deps = self.resources.module_deps.bump(deps_iter);
+            let deps = self.resources.module_deps.extend(deps_iter);
             module.deps = deps;
         }
 
@@ -343,7 +343,7 @@ impl PackageLoader<'_, '_> {
                     ptr: unsafe { VRef::<Package>::new(index) },
                 })
             });
-            let deps = self.resources.package_deps.bump(deps_iter);
+            let deps = self.resources.package_deps.extend(deps_iter);
             package.deps = deps;
         }
 

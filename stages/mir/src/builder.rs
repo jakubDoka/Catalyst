@@ -39,6 +39,7 @@ impl MirChecker<'_> {
     ) -> FuncMirInner {
         let Func { signature, .. } = self.typec.funcs[func];
 
+        ctx.generics.extend(self.typec.pack_func_param_specs(func));
         let mut builder = self.push_args(signature.args, ctx);
         let ret = builder.value(signature.ret, self.typec);
         builder.ctx.func.ret = ret;
@@ -240,7 +241,7 @@ impl MirChecker<'_> {
                         .filter(|(_, field)| field.has_binding)
                     {
                         let dest = builder.value(field.ty, self.typec);
-                        builder.inst(InstMir::Field(value, i as u32, dest), field.span);
+                        builder.field(value, i as u32, dest, field.span);
                         self.bind_pattern_vars(field, dest, builder);
                     }
                 }
@@ -250,7 +251,7 @@ impl MirChecker<'_> {
                         builder.ctx.func.set_mutable(dest);
                     }
                     builder.inst(InstMir::Var(value, dest), span);
-                    builder.ctx.vars.push(VarMir { value: dest });
+                    builder.create_var(value);
                 }
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
             },
@@ -286,7 +287,7 @@ impl MirChecker<'_> {
                     let band = self.typec.get_band();
                     for (i, &field) in fields {
                         let dest = builder.value(field.ty, self.typec);
-                        builder.inst(InstMir::Field(value, i as u32, dest), field.span);
+                        builder.field(value, i as u32, dest, field.span);
                         let Some(val) = self.pattern_to_cond(field, dest, builder) else {
                             continue;
                         };
@@ -295,7 +296,7 @@ impl MirChecker<'_> {
                                 let call = builder.ctx.func.calls.push(CallMir {
                                     callable: CallableMir::Func(band),
                                     params: default(),
-                                    args: builder.ctx.func.value_args.bump([val, other]),
+                                    args: builder.ctx.func.value_args.extend([val, other]),
                                 });
                                 let ret = builder.value(Ty::BOOL, self.typec);
                                 builder.inst(InstMir::Call(call, Some(ret)), field.span);
@@ -313,7 +314,7 @@ impl MirChecker<'_> {
                     let call = builder.ctx.func.calls.push(CallMir {
                         callable: CallableMir::Func(cmp),
                         params: default(),
-                        args: builder.ctx.func.value_args.bump([lit, value]),
+                        args: builder.ctx.func.value_args.extend([lit, value]),
                     });
                     let cond = builder.value(Ty::BOOL, self.typec);
                     builder.inst(InstMir::Call(call, Some(cond)), int.unwrap_or(span));
@@ -374,7 +375,7 @@ impl MirChecker<'_> {
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let node = self.node(header, None, builder)?;
-        builder.inst(InstMir::Field(node, field, dest), span);
+        builder.field(node, field, dest, span);
         Some(dest)
     }
 
@@ -510,7 +511,7 @@ impl MirChecker<'_> {
             .iter()
             .map(|&arg| self.node(arg, None, builder))
             .collect::<Option<BumpVec<_>>>()?;
-        let args = builder.ctx.func.value_args.bump(args);
+        let args = builder.ctx.func.value_args.extend(args);
 
         let value = dest.or_else(|| {
             (ty != Ty::UNIT && ty != Ty::TERMINAL).then(|| builder.value(ty, self.typec))
@@ -582,7 +583,7 @@ impl MirChecker<'_> {
 
         for &ty in &self.typec[args] {
             let value = builder.value(ty, self.typec);
-            builder.ctx.vars.push(VarMir { value });
+            builder.create_var(value);
             builder.ctx.args.push(value);
         }
 

@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(associated_type_defaults)]
 #![feature(const_type_id)]
 #![feature(default_free_fn)]

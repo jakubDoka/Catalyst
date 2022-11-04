@@ -4,7 +4,6 @@
 #![feature(option_result_contains)]
 #![feature(iter_intersperse)]
 #![feature(result_flattening)]
-#![feature(let_else)]
 #![feature(if_let_guard)]
 #![feature(decl_macro)]
 #![feature(const_swap)]

@@ -1,4 +1,3 @@
-#![feature(let_else)]
 #![feature(default_free_fn)]
 #![feature(stmt_expr_attributes)]
 #![allow(clippy::redundant_closure_call)]
