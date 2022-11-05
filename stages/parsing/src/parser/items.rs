@@ -350,10 +350,12 @@ impl<'a> Ast<'a> for TopLevelAttributeAst {
 }
 
 #[derive(Clone, Copy, Debug)]
+// #[repr(C, u8)]
 pub enum TopLevelAttrKindAst {
     Entry(Span),
     WaterDrop(Span),
     CompileTime(Span),
+    NoMoves(Span),
     Macro(Span, NameAst),
     Inline(Option<WrappedAst<InlineModeAst>>),
 }
@@ -364,34 +366,35 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
     const NAME: &'static str = "top level attribute";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+        use TopLevelAttrKindAst::*;
         branch! {str ctx => {
-            "entry" => Some(TopLevelAttrKindAst::Entry(ctx.advance().span)),
-            "water_drop" => Some(TopLevelAttrKindAst::WaterDrop(
+            "entry" => Some(Entry(ctx.advance().span)),
+            "water_drop" => Some(WaterDrop(
                 ctx.advance().span,
             )),
-            "compile_time" => Some(TopLevelAttrKindAst::CompileTime(
+            "compile_time" => Some(CompileTime(
                 ctx.advance().span,
             )),
-            "macro" => Some(TopLevelAttrKindAst::Macro(ctx.advance().span, ctx.parse()?)),
+            "no_moves" => Some(NoMoves(ctx.advance().span)),
+            "macro" => Some(Macro(ctx.advance().span, ctx.parse()?)),
             "inline" => {
                 if !ctx.at_tok(TokenKind::LeftParen) {
-                    Some(TopLevelAttrKindAst::Inline(None))
+                    Some(Inline(None))
                 } else {
                     ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))
                         .map(Some)
-                        .map(TopLevelAttrKindAst::Inline)
+                        .map(Inline)
                 }
             },
         }}
     }
 
     fn span(&self) -> Span {
+        use TopLevelAttrKindAst::*;
         match *self {
-            TopLevelAttrKindAst::WaterDrop(span)
-            | TopLevelAttrKindAst::CompileTime(span)
-            | TopLevelAttrKindAst::Entry(span) => span,
-            TopLevelAttrKindAst::Macro(span, name) => span.joined(name.span()),
-            TopLevelAttrKindAst::Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
+            WaterDrop(span) | CompileTime(span) | Entry(span) | NoMoves(span) => span,
+            Macro(span, name) => span.joined(name.span()),
+            Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
         }
     }
 }

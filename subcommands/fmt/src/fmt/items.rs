@@ -138,7 +138,8 @@ impl FmtAst for TopLevelAttrKindAst {
         match *self {
             TopLevelAttrKindAst::Entry(span)
             | TopLevelAttrKindAst::WaterDrop(span)
-            | TopLevelAttrKindAst::CompileTime(span) => fmt.write_span(span),
+            | TopLevelAttrKindAst::CompileTime(span)
+            | TopLevelAttrKindAst::NoMoves(span) => fmt.write_span(span),
             TopLevelAttrKindAst::Macro(span, name) => {
                 fmt.write_span(span);
                 fmt.buffer.push(' ');

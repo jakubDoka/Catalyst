@@ -40,6 +40,7 @@ bitflags! {
     FuncFlags: u8 {
         ENTRY
         BUILTIN
+        NO_MOVES
     }
 }
 

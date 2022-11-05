@@ -58,8 +58,13 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.display(fmt),
             If(r#if) => r#if.display(fmt),
             Let(r#let) => r#let.display(fmt),
-            Deref(star, target) => {
-                fmt.write_span(star);
+            Deref(prefix, target) => {
+                fmt.write_span(prefix);
+                target.display(fmt);
+            }
+            Ref(prefix, mutability, target) => {
+                fmt.write_span(prefix);
+                mutability.display(fmt);
                 target.display(fmt);
             }
         }
@@ -81,7 +86,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.flat_len(fmt),
             If(r#if) => r#if.flat_len(fmt),
             Let(r#let) => r#let.flat_len(fmt),
-            Deref(span, target) => span.len() + target.flat_len(fmt),
+            Deref(span, target) | Ref(span, .., target) => span.len() + target.flat_len(fmt),
         }
     }
 }

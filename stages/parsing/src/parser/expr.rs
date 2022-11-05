@@ -86,6 +86,7 @@ pub enum UnitExprAst<'a> {
     If(IfAst<'a>),
     Let(LetAst<'a>),
     Deref(Span, &'a UnitExprAst<'a>),
+    Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -115,6 +116,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Let => ctx.parse().map(Self::Let),
             Operator(_ = 0) => branch! {str ctx => {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
+                "^" => Some(Self::Ref(ctx.advance().span, ctx.parse()?, ctx.parse_alloc()?)),
             }},
         });
 
@@ -163,7 +165,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
             Let(r#let) => r#let.span(),
-            Deref(span, expr) => span.joined(expr.span()),
+            Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
         }
     }
 }

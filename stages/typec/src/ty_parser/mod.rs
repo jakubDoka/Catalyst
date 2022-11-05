@@ -108,7 +108,7 @@ impl TyChecker<'_> {
         Some(self.typec.pointer_to(mutability, base, self.interner))
     }
 
-    fn mutability(&mut self, mutability_ast: MutabilityAst) -> Option<Mutability> {
+    pub fn mutability(&mut self, mutability_ast: MutabilityAst) -> Option<Mutability> {
         Some(match mutability_ast {
             MutabilityAst::Mut(..) => Mutability::Mutable,
             MutabilityAst::None => Mutability::Immutable,

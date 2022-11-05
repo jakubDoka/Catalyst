@@ -244,5 +244,113 @@ fn main() {
                 };
             };
         }
+
+        simple "simple-moves" {
+            struct A;
+
+            fn [T] drop(t: T) {};
+
+            fn double_move() {
+                let a = A::{};
+                drop(a);
+                drop(a);
+            };
+
+            fn conditional_double_move() {
+                let a = A::{};
+                if 0 == 0 {
+                    drop(a);
+                };
+                drop(a);
+            };
+
+            fn conditional_move() {
+                let a = A::{};
+                if 0 == 0 {
+                    drop(a);
+                    return;
+                };
+                drop(a);
+            };
+
+            fn reassign() {
+                let mut a = A::{};
+                drop(a);
+                a = A::{};
+                drop(a);
+            };
+
+            fn conditional_reassign() {
+                let mut a = A::{};
+                drop(a);
+                if 0 == 0 {
+                    a = A::{};
+                } else {
+                    a = A::{};
+                };
+                drop(a);
+            };
+
+            fn conditional_incomplete_reassign() {
+                let mut a = A::{};
+                drop(a);
+                if 0 == 0 {
+                    a = A::{};
+                };
+                drop(a);
+            };
+        }
+
+        simple "partial-moves" {
+            struct A;
+            struct B {
+                a0: A;
+                a1: A;
+            };
+            impl B {
+                fn new() -> Self => ::{ a0: ::{}; a1: ::{} };
+            };
+
+            fn [T] drop(t: T) {};
+
+            fn double_move() {
+                let b = B::new();
+                drop(b.a0);
+                drop(b.a1);
+                drop(b.a0);
+            };
+
+            fn move_of_partially_moved() {
+                let b = B::new();
+                drop(b.a0);
+                drop(b);
+            };
+
+            fn partial_move_and_assign() {
+                let b = B::new();
+                drop(b.a0);
+                b.a0 = A::{};
+                drop(b);
+            };
+
+            fn conditional_partial_move() {
+                let b = B::new();
+                if 0 == 0 {
+                    drop(b.a0);
+                };
+                drop(b);
+            };
+
+            fn conditional_assign() {
+                let b = B::new();
+                drop(b.a0);
+                if 0 == 0 {
+                    b.a0 = A::{};
+                } else {
+                    return;
+                };
+                drop(b);
+            };
+        }
     }
 }

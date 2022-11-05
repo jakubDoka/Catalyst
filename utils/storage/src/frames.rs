@@ -25,7 +25,7 @@ impl<T> Frames<T> {
 
     /// Pops the top frame and returns iterator over its elements.
     pub fn pop(&mut self) -> impl Iterator<Item = T> + '_ {
-        let check = self.indices.pop().expect("marked frame");
+        let check = self.indices.pop().unwrap_or(0);
         self.data.drain(check as usize..)
     }
 

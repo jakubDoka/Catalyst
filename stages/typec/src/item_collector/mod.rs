@@ -185,6 +185,9 @@ impl TyChecker<'_> {
         let entry = attributes
             .iter()
             .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::Entry(..)));
+        let no_moves = attributes
+            .iter()
+            .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::NoMoves(..)));
 
         if let Some(entry) = entry && !parsed_generics.is_empty() {
             self.generic_entry(generics.span(), entry.span(), func.span())?;
@@ -221,7 +224,8 @@ impl TyChecker<'_> {
             owner,
             upper_generics,
             signature,
-            flags: FuncFlags::ENTRY & entry.is_some(),
+            flags: (FuncFlags::ENTRY & entry.is_some())
+                | (FuncFlags::NO_MOVES & no_moves.is_some()),
             visibility,
             name: name.ident,
             loc,

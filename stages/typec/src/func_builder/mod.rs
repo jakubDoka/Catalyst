@@ -371,25 +371,27 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
+        use UnitExprAst::*;
         match unit_ast {
-            UnitExprAst::Path(path) => self.value_path(path, inference, builder),
-            UnitExprAst::Return(ReturnExprAst { return_span, expr }) => {
+            Path(path) => self.value_path(path, inference, builder),
+            Return(ReturnExprAst { return_span, expr }) => {
                 self.r#return(expr, return_span, builder)
             }
-            UnitExprAst::Int(span) => self.int(span, inference),
-            UnitExprAst::Char(span) => self.char(span),
-            UnitExprAst::Bool(span) => self.bool(span),
-            UnitExprAst::Call(&call) => self.call(call, inference, builder),
-            UnitExprAst::Const(run) => self.r#const(run, inference, builder),
-            UnitExprAst::StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
-            UnitExprAst::EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
-            UnitExprAst::Match(match_expr) => self.r#match(match_expr, inference, builder),
-            UnitExprAst::If(r#if) => self.r#if(r#if, inference, builder),
-            UnitExprAst::DotExpr(&expr) => self.dot_expr(expr, inference, builder),
-            UnitExprAst::Let(r#let) => self.r#let(r#let, inference, builder),
-            UnitExprAst::Deref(.., &expr) => self.deref(expr, inference, builder),
-            UnitExprAst::PathInstance(_) => todo!(),
-            UnitExprAst::TypedPath(_) => todo!(),
+            Int(span) => self.int(span, inference),
+            Char(span) => self.char(span),
+            Bool(span) => self.bool(span),
+            Call(&call) => self.call(call, inference, builder),
+            Const(run) => self.r#const(run, inference, builder),
+            StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
+            EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
+            Match(match_expr) => self.r#match(match_expr, inference, builder),
+            If(r#if) => self.r#if(r#if, inference, builder),
+            DotExpr(&expr) => self.dot_expr(expr, inference, builder),
+            Let(r#let) => self.r#let(r#let, inference, builder),
+            Deref(.., &expr) => self.deref(expr, inference, builder),
+            Ref(.., mutability, &expr) => self.r#ref(mutability, expr, inference, builder),
+            PathInstance(_) => todo!(),
+            TypedPath(_) => todo!(),
         }
     }
 
@@ -409,6 +411,24 @@ impl TyChecker<'_> {
         Some(TirNode::new(
             base,
             TirKind::Deref(builder.arena.alloc(expr)),
+            expr.span,
+        ))
+    }
+
+    fn r#ref<'a>(
+        &mut self,
+        mutability: MutabilityAst,
+        expr: UnitExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let expr = self.unit_expr(expr, None, builder)?;
+        let mutability = self.mutability(mutability)?;
+        let ptr = self.typec.pointer_to(mutability, expr.ty, self.interner);
+
+        Some(TirNode::new(
+            Ty::Pointer(ptr),
+            TirKind::Ref(builder.arena.alloc(expr)),
             expr.span,
         ))
     }

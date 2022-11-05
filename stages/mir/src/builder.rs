@@ -1,6 +1,6 @@
 use std::{default::default, iter, sync::Arc};
 
-use diags::gen_error_fns;
+use diags::*;
 use lexing_t::Span;
 use mir_t::*;
 use packaging_t::span_str;
@@ -39,9 +39,12 @@ impl MirChecker<'_> {
         arena: &'a Arena,
         ctx: &'a mut MirBuilderCtx,
     ) -> FuncMirInner {
-        let Func { signature, .. } = self.typec.funcs[func];
+        let Func {
+            signature, flags, ..
+        } = self.typec.funcs[func];
 
         ctx.generics.extend(self.typec.pack_func_param_specs(func));
+        ctx.untracked_moves = flags.contains(FuncFlags::NO_MOVES);
         let mut builder = self.push_args(signature.args, arena, ctx);
         let ret = builder.value(signature.ret, self.typec);
         builder.ctx.func.ret = ret;
@@ -113,6 +116,8 @@ impl MirChecker<'_> {
 
         if let Some(r#else) = r#else {
             self.branch(r#else, &mut dest_block, dest, r#move, builder);
+        } else {
+            builder.save_move_branch();
         }
 
         if let Some(dest_block) = dest_block {
@@ -260,9 +265,7 @@ impl MirChecker<'_> {
                     if mutable {
                         builder.ctx.func.set_mutable(dest);
                     }
-                    dbg!();
                     self.move_out(value, span, builder);
-                    dbg!();
                     builder.inst(InstMir::Var(value, dest), span);
                     builder.create_var(dest);
                 }
@@ -471,7 +474,6 @@ impl MirChecker<'_> {
         // TODO: check integrity
         builder.ctx.func.set_referenced(node);
         builder.inst(InstMir::Ref(node, dest), span);
-        builder.ctx.moves.owners[dest] = Owner::Nested(0, node);
         Some(dest)
     }
 
@@ -569,9 +571,12 @@ impl MirChecker<'_> {
     ) -> NodeRes {
         let var = builder.ctx.get_var(var);
         builder.inst(InstMir::Access(var.value, dest), span);
-        if r#move && let Some(dest) = dest {
-            self.move_out(dest, span, builder);
+        if r#move {
+            self.move_out(var.value, span, builder);
+        } else if let Some(dest) = dest {
+            builder.ctx.moves.owners[dest] = builder.ctx.moves.owners[var.value];
         }
+
         Some(dest.unwrap_or(var.value))
     }
 
@@ -675,9 +680,11 @@ impl MirChecker<'_> {
 
         match err {
             MoveError::Graph(graph) => match graph {
-                MoveGraph::Present => unreachable!(),
+                MoveGraph::Present | MoveGraph::GoneSplit(..) | MoveGraph::PresentSplit(..) => {
+                    unreachable!()
+                }
                 MoveGraph::Gone(source_span) => self.double_move(span, source_span),
-                MoveGraph::Partial(_children) => self.partial_double_move(span), // TODO: better error message
+                MoveGraph::Partial(children) => self.partial_double_move(span, children, builder),
             },
             MoveError::Pointer(span) => self.move_from_pointer(span),
         };
@@ -713,6 +720,47 @@ impl MirChecker<'_> {
         })
     }
 
+    fn partial_double_move(
+        &mut self,
+        loc: Span,
+        children: VSlice<MoveGraph>,
+        builder: &mut MirBuilder,
+    ) -> Option<!> {
+        let mut moved = bumpvec![];
+        let mut frontier = children.keys().collect::<BumpVec<_>>();
+        while let Some(value) = frontier.pop() {
+            match builder.ctx.moves.graphs[value] {
+                MoveGraph::Gone(span) => moved.push(span),
+                MoveGraph::PresentSplit(..) | MoveGraph::Present => (),
+                MoveGraph::GoneSplit(children) | MoveGraph::Partial(children) => {
+                    frontier.extend(children.keys())
+                }
+            }
+        }
+
+        self.workspace.push(Snippet {
+            title: annotation!(err: "moving partially moved value"),
+            footer: vec![],
+            slices: vec![Some(Slice {
+                span: moved
+                    .iter()
+                    .copied()
+                    .reduce(|a, b| a.joined(b))
+                    .map_or(loc, |fin| loc.joined(fin)),
+                origin: self.source,
+                annotations: moved
+                    .into_iter()
+                    .map(|span| source_annotation!(info[span]: "value partially moved here"))
+                    .chain(iter::once(source_annotation!(err[loc]: "occurred here")))
+                    .collect(),
+                fold: true,
+            })],
+            origin: default(),
+        });
+
+        None
+    }
+
     gen_error_fns! {
         push non_exhaustive(self, err: Vec<Vec<Range>>, ty: Ty, span: Span) {
             err: "match is not exhaustive";
@@ -742,13 +790,6 @@ impl MirChecker<'_> {
             (span.joined(source_span), self.source) {
                 err[span]: "detected here";
                 info[source_span]: "first move here";
-            }
-        }
-
-        push partial_double_move(self, span: Span) {
-            err: "cannot move out of a value that is partially moved";
-            (span, self.source) {
-                err[span]: "move occurred here";
             }
         }
     }
