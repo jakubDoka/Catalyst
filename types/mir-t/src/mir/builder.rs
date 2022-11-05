@@ -1,6 +1,4 @@
 use std::{
-    collections::hash_map::Entry,
-    default::default,
     mem,
     ops::{Deref, DerefMut},
 };
@@ -11,12 +9,6 @@ use storage::*;
 use typec_t::*;
 
 use crate::*;
-
-macro_rules! present_graph {
-    () => {
-        MoveGraph::Present | MoveGraph::Partial(.., 0)
-    };
-}
 
 pub struct MirBuilder<'a> {
     pub current_block: Option<VRef<BlockMir>>,
@@ -80,43 +72,32 @@ impl<'a> MirBuilder<'a> {
         let mut graph_path = bumpvec![];
         let mut current = root;
         for (id, ty) in path.into_iter().rev() {
-            graph_path.push((id, current));
+            graph_path.push(current);
             match self.ctx.moves.graphs[current] {
                 MoveGraph::Present => return,
                 MoveGraph::Gone(span) => {
                     current = match self.expand_graph_node(ty, id, Some(span), root, typec) {
                         Some(graph) => graph,
-                        None => return,
+                        None => todo!(),
                     }
                 }
                 MoveGraph::Partial(children, ..) => current = children.index(id as usize),
             }
         }
 
-        let mut gone = bumpvec![];
-        let mut frontier = bumpvec![root];
-        while let Some(node) = frontier.pop() {
-            match self.ctx.moves.graphs[node] {
-                present_graph!() => (),
-                MoveGraph::Gone(..) => gone.push(node),
-                MoveGraph::Partial(children, ref mut count) => {
-                    if children.len() as u32 == *count {
-                        gone.push(node);
-                    }
+        self.change_graph(current, MoveGraph::Present);
 
-                    *count = 0;
-                    frontier.extend(children.keys());
-                }
-            }
-        }
-
-        for (.., node) in graph_path.into_iter().rev() {
+        for node in graph_path.into_iter().rev() {
             match self.ctx.moves.graphs[node] {
-                present_graph!() => unreachable!(),
+                MoveGraph::Present => unreachable!(),
                 MoveGraph::Gone(..) => unreachable!(),
-                MoveGraph::Partial(.., ref mut count) => {
-                    *count -= 1;
-                    if *count != 0 {
+                MoveGraph::Partial(children) => {
+                    let collapse = self.ctx.moves.graphs[children]
+                        .iter()
+                        .all(|&g| matches!(g, MoveGraph::Present));
+                    if collapse {
+                        self.change_graph(node, MoveGraph::Present);
+                    } else {
                         break;
                     }
                 }
@@ -143,7 +124,7 @@ impl<'a> MirBuilder<'a> {
 
         let mut current = &mut self.ctx.moves.owners[value];
         let mut path = bumpvec![];
-        let mut root = *loop {
+        let mut current = *loop {
             match current {
                 Owner::Temporary(graph) => break graph,
                 &mut Owner::Nested(id, header, ..) => {
@@ -155,34 +136,50 @@ impl<'a> MirBuilder<'a> {
         }
         .get_or_insert_with(|| self.ctx.moves.graphs.push(MoveGraph::Present));
 
+        let mut graph_path = bumpvec![];
         for (id, ty) in path.into_iter().rev() {
-            root = match self.ctx.moves.graphs[root] {
-                present_graph!() => self
-                    .expand_graph_node(ty, id, None, root, typec)
+            graph_path.push(current);
+            current = match self.ctx.moves.graphs[current] {
+                MoveGraph::Present => self
+                    .expand_graph_node(ty, id, None, current, typec)
                     .ok_or(MoveError::Pointer(span))?,
                 g @ MoveGraph::Gone(..) => return Err(MoveError::Graph(g)),
-                MoveGraph::Partial(children, ref mut count) => {
-                    *count += 1;
-                    if children.len() as u32 == *count {}
-                    children.index(id as usize)
+                MoveGraph::Partial(children) => children.index(id as usize),
+            }
+        }
+
+        let g = self.change_graph(current, MoveGraph::Gone(span));
+        let MoveGraph::Present = g else {
+            return Err(MoveError::Graph(g));
+        };
+
+        for node in graph_path.into_iter().rev() {
+            match self.ctx.moves.graphs[node] {
+                MoveGraph::Present => unreachable!(),
+                MoveGraph::Gone(..) => unreachable!(),
+                MoveGraph::Partial(children) => {
+                    let collapse = self.ctx.moves.graphs[children]
+                        .iter()
+                        .all(|&g| matches!(g, MoveGraph::Gone(..)));
+                    if collapse {
+                        self.change_graph(node, MoveGraph::Gone(span));
+                    } else {
+                        break;
+                    }
                 }
             }
         }
 
-        let g = mem::replace(&mut self.ctx.moves.graphs[root], MoveGraph::Gone(span));
-        let present_graph!() = g else {
-            return Err(MoveError::Graph(g));
-        };
-
-        self.ctx.moves.current_branch.insert(Move {
-            graph: root,
-            direction: MoveDirection::Out,
-        });
-
         Ok(())
     }
 
-    pub fn expand_graph_node(
+    fn change_graph(&mut self, addr: VRef<MoveGraph>, new: MoveGraph) -> MoveGraph {
+        let old = mem::replace(&mut self.ctx.moves.graphs[addr], new);
+        self.ctx.moves.current_branch.insert(addr, old);
+        old
+    }
+
+    fn expand_graph_node(
         &mut self,
         ty: Ty,
         id: u32,
@@ -198,8 +195,7 @@ impl<'a> MirBuilder<'a> {
         let mut traverse_struct = |s: FragRef<Struct>| {
             let children = (0..typec[s].fields.len()).map(|_| fill);
             let slice = self.ctx.moves.graphs.extend(children);
-            let missing = if gone.is_some() { slice.len() - 1 } else { 1 };
-            self.ctx.moves.graphs[root] = MoveGraph::Partial(slice, missing as u32);
+            self.change_graph(root, MoveGraph::Partial(slice));
             Some(slice.index(id as usize))
         };
 
@@ -212,6 +208,63 @@ impl<'a> MirBuilder<'a> {
             },
             Ty::Pointer(..) => None,
             Ty::Param(..) | Ty::Builtin(..) => unreachable!(),
+        }
+    }
+
+    pub fn start_move_frame(&self) -> MoveFrame {
+        MoveFrame(self.ctx.moves.cached_moves.len())
+    }
+
+    pub fn discard_move_branch(&mut self) {
+        self.ctx.moves.cached_moves.mark();
+        self.ctx.moves.terminating_branches.push(true);
+    }
+
+    pub fn save_move_branch(&mut self) {
+        self.ctx
+            .moves
+            .cached_moves
+            .extend(
+                self.ctx
+                    .moves
+                    .current_branch
+                    .drain()
+                    .map(|(graph, old)| Move {
+                        graph,
+                        old: mem::replace(&mut self.ctx.moves.graphs[graph], old),
+                    }),
+            );
+        self.ctx.moves.cached_moves.mark();
+        self.ctx.moves.terminating_branches.push(false);
+    }
+
+    pub fn finish_move_frame(&mut self, frame: MoveFrame) {
+        let mut excess = self.ctx.moves.cached_moves.len() - frame.0;
+        (0..excess - 1).for_each(|_| self.ctx.moves.cached_moves.join_frames());
+        excess -= self
+            .ctx
+            .moves
+            .terminating_branches
+            .drain(frame.0..)
+            .map(|b| b as usize)
+            .sum::<usize>();
+        let mut count_map = ShadowMap::new();
+        for r#move in self.ctx.moves.cached_moves.pop().collect::<BumpVec<_>>() {
+            match (r#move.old, self.ctx.moves.graphs[r#move.graph]) {
+                (MoveGraph::Present, MoveGraph::Gone(..) | MoveGraph::Partial(..)) => {
+                    count_map[r#move.graph] += 1;
+                    if count_map[r#move.graph] == excess as isize {
+                        self.change_graph(r#move.graph, r#move.old);
+                    }
+                }
+                (MoveGraph::Gone(..) | MoveGraph::Partial(..), MoveGraph::Present) => {
+                    if count_map[r#move.graph] == 0 {
+                        self.change_graph(r#move.graph, r#move.old);
+                        count_map[r#move.graph] = -1;
+                    }
+                }
+                _ => (),
+            }
         }
     }
 
@@ -284,7 +337,7 @@ pub enum MoveError {
 pub enum MoveGraph {
     Present,
     Gone(Span),
-    Partial(VSlice<MoveGraph>, u32),
+    Partial(VSlice<MoveGraph>),
 }
 
 #[derive(Clone, Copy)]
@@ -300,30 +353,19 @@ impl Default for Owner {
     }
 }
 
-pub enum MoveFrame {
-    Split(VSlice<VSlice<VRef<ValueMir>>>),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MoveDirection {
-    In,
-    Out,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 pub struct Move {
     pub graph: VRef<MoveGraph>,
-    pub direction: MoveDirection,
+    pub old: MoveGraph,
 }
 
 #[derive(Default)]
 pub struct MirMoveCtx {
+    pub terminating_branches: Vec<bool>,
     pub cached_moves: Frames<Move>,
     pub owners: ShadowMap<ValueMir, Owner>,
     pub graphs: PushMap<MoveGraph>,
-    pub frames: Vec<MoveFrame>,
-    pub branch_moves: PushMap<VSlice<Move>>,
-    pub current_branch: Set<Move>,
+    pub current_branch: Map<VRef<MoveGraph>, MoveGraph>,
     pub brach_move_slices: PushMap<Move>,
 }
 
@@ -331,12 +373,13 @@ impl MirMoveCtx {
     pub fn clear(&mut self) {
         self.owners.clear();
         self.graphs.clear();
-        self.frames.clear();
-        self.branch_moves.clear();
         self.current_branch.clear();
         self.brach_move_slices.clear();
     }
 }
+
+#[must_use]
+pub struct MoveFrame(usize);
 
 #[derive(Default)]
 pub struct MirBuilderCtx {

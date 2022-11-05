@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::Clear;
 
 /// Holds a Vector of `T` that is split into frames and makes it easy
@@ -47,16 +49,30 @@ impl<T> Frames<T> {
         self.nth_from_top(0)
     }
 
+    pub fn top_mut(&mut self) -> &mut [T] {
+        self.nth_from_top_mut(0)
+    }
+
     /// Returns contents of the nth frame from the top.
     pub fn nth_from_top(&self, n: usize) -> &[T] {
+        let range = self.frame_range(n);
+        &self.data[range]
+    }
+
+    /// Returns contents of the nth frame from the top.
+    pub fn nth_from_top_mut(&mut self, n: usize) -> &mut [T] {
+        let range = self.frame_range(n);
+        &mut self.data[range]
+    }
+
+    pub fn frame_range(&self, n: usize) -> Range<usize> {
         let inv = self.indices.len() - n - 1;
         let start = self.indices[inv];
         let end = *self
             .indices
             .get(inv + 1)
             .unwrap_or(&(self.data.len() as u32));
-
-        &self.data[start as usize..end as usize]
+        start as usize..end as usize
     }
 
     /// Reports whether there is nothing inside this structure.
