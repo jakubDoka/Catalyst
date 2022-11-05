@@ -1,6 +1,38 @@
+error: expected 'entry' | 'water_drop' | 'compile_time' | 'macro' | 'inline' but got 'no_moves'
+ --> macro-impl\deps\github.com\jakubDoka\water\main\root\ptr.ctl:2:3
+  |
+2 | #[no_moves]
+  |   ^^^^^^^^ token located here
+  |
+  = info: grouped items -> list -> item -> top level attribute -> wrapped -> top level attribute
+
+error: expected 'entry' | 'water_drop' | 'compile_time' | 'macro' | 'inline' but got 'no_moves'
+ --> macro-impl\deps\github.com\jakubDoka\water\main\root\ptr.ctl:7:3
+  |
+7 | #[no_moves]
+  |   ^^^^^^^^ token located here
+  |
+  = info: grouped items -> list -> item -> top level attribute -> wrapped -> top level attribute
+
+error: cannot move out of a pointer
+ --> macro-impl\deps\github.com\jakubDoka\water\main\root\ptr.ctl:4:13
+  |
+4 |     *dest = value
+  |             ^^^^^ discovered here
+  |
+  = info: you can disable move validation with `#[no_move]`
+
+error: expected '*' but got '^'
+  --> macro-impl\root.ctl:45:18
+   |
+45 |         ptr\read(^ s.lexer)
+   |                  ^ token located here
+   |
+   = info: grouped items -> list -> item -> impl -> list -> impl item -> function definition -> function body -> list -> expr -> unit expr -> call -> list -> expr -> unit expr
+
 info: mir repr of functions:
- fn [] next(var0: 0\MacroLexer) -> 0\MacroToken  {
-    block0(var2: 0\MacroLexer) {
+ fn [] next(var0: 1\MacroLexer) -> 1\MacroToken  {
+    block0(var2: 1\MacroLexer) {
         access var2
         var3 = ctl_lexer_next(val2)
         return var3
@@ -8,26 +40,45 @@ info: mir repr of functions:
 
 }
 
-fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> ()  {
-    block0(var2: ^1\Swap, var3: 0\MacroLexer) {
+fn [] write(var0: ^mut param0, var1: param0) -> ()  {
+    block0(var2: ^mut param0, var3: param0) {
         access var2
         var4 = *var2
-        var4 ={var5, var6}
-        var5 ={var7, var8}
+        var4 = access var3
+        return
+    }
+
+}
+
+fn [] read(var0: ^param0) -> param0  {
+    block0(var2: ^param0) {
+        access var2
+        var4 = *var2
+        return var4
+    }
+
+}
+
+fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
+    block0(var2: ^2\Swap, var3: 1\MacroLexer) {
+        access var2
+        var6 ={var4, var5}
+        var4 ={var7, var8}
         var7 = 0
         var8 ={var9, var10}
         access var3
         var9 = next(val3)
         access var3
         var10 = next(val3)
-        var6 = access var3
+        var5 = access var3
+        var0 = write[2\Swap](val2, val6)
         return
     }
 
 }
 
-fn "default" [] next(var0: ^1\Swap) -> 2\Option[0\MacroToken]  {
-    block0(var2: ^1\Swap) {
+fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  {
+    block0(var2: ^2\Swap) {
         var3 ={var4, var5}
         var4 = 1
         access var2
@@ -63,7 +114,7 @@ fn "default" [] next(var0: ^1\Swap) -> 2\Option[0\MacroToken]  {
         split var23 block4 block5
     }
 
-    block3(var5: 0\MacroToken) {
+    block3(var5: 1\MacroToken) {
         return var3
     }
 
@@ -88,11 +139,9 @@ fn "default" [] next(var0: ^1\Swap) -> 2\Option[0\MacroToken]  {
 
 }
 
-fn "default" [] drop(var0: ^1\Swap) -> 0\MacroLexer  {
-    block0(var2: ^1\Swap) {
-        access var2
-        var4 = *var2
-        var3 = var4.1
+fn "default" [] drop(var0: ^2\Swap) -> 1\MacroLexer  {
+    block0(var2: ^2\Swap) {
+        var3 = read[1\MacroLexer]()
         return var3
     }
 
