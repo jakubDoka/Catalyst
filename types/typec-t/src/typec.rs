@@ -29,7 +29,7 @@ pub struct Typec {
     pub impl_lookup: ImplLookup,
     pub func_slices: FuncSlices,
     pub spec_funcs: SpecFuncs,
-    pub builtin_funcs: Map<FragSlice<u8>, FragRef<Func>>,
+    pub builtin_funcs: Vec<FragRef<Func>>,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub variants: Variants,
     pub macros: Map<Ty, MacroImpl>,
@@ -104,30 +104,12 @@ gen_index! {
 }
 
 impl Typec {
-    pub fn get_band(&mut self) -> FragRef<Func> {
-        *self
-            .builtin_funcs
-            .get(&Interner::BAND)
-            .expect("gen_band called before init")
-    }
-
     pub fn get_enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
         Some(match self[self[en].variants].len() {
             256.. => Builtin::U16,
             2.. => Builtin::U8,
             _ => return None,
         })
-    }
-
-    pub fn get_enum_cmp(
-        &mut self,
-        en: FragRef<Enum>,
-        interner: &mut Interner,
-    ) -> Option<(FragRef<Func>, Ty)> {
-        let ty = Ty::Builtin(self.get_enum_flag_ty(en)?);
-
-        let id = interner.intern_with(|s, t| self.binary_op_id(Interner::EQUAL, ty, ty, t, s));
-        Some((*self.builtin_funcs.get(&id).unwrap(), ty))
     }
 
     pub fn display_sig(
@@ -319,44 +301,38 @@ impl Typec {
     }
 
     pub fn init(&mut self, interner: &mut Interner) {
-        self.init_builtin_funcs(interner);
         SpecBase::init_water_drops(self);
         Enum::init_water_drops(self);
         Struct::init_water_drops(self);
+        Func::init_water_drops(self);
+        self.init_builtin_funcs(interner);
     }
 
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
-        assert_eq!(Func::ANON_TEMP, self.funcs.push(default()));
-        assert_eq!(
-            Func::CAST,
-            self.funcs.push(Func {
-                generics: self.params.extend([default(), default()]), // F, T
-                signature: Signature {
-                    cc: default(),
-                    args: self.args.extend([Ty::Param(0)]),
-                    ret: Ty::Param(1),
-                },
-                name: Interner::CAST,
-                flags: FuncFlags::BUILTIN,
-                ..default()
-            })
-        );
-        self.builtin_funcs.insert(Interner::CAST, Func::CAST);
-        assert_eq!(
-            Func::SIZEOF,
-            self.funcs.push(Func {
-                generics: self.params.extend([default()]), // T
-                signature: Signature {
-                    cc: default(),
-                    args: default(),
-                    ret: Ty::UINT,
-                },
-                name: Interner::SIZEOF,
-                flags: FuncFlags::BUILTIN,
-                ..default()
-            })
-        );
-        self.builtin_funcs.insert(Interner::SIZEOF, Func::SIZEOF);
+        self.builtin_funcs
+            .extend(Func::WATER_DROPS.map(|(.., func)| func));
+        self[Func::CAST] = Func {
+            generics: self.params.extend([default(), default()]), // F, T
+            signature: Signature {
+                cc: default(),
+                args: self.args.extend([Ty::Param(0)]),
+                ret: Ty::Param(1),
+            },
+            name: Interner::CAST,
+            flags: FuncFlags::BUILTIN,
+            ..default()
+        };
+        self[Func::SIZEOF] = Func {
+            generics: self.params.extend([default()]), // T
+            signature: Signature {
+                cc: default(),
+                args: default(),
+                ret: Ty::UINT,
+            },
+            name: Interner::SIZEOF,
+            flags: FuncFlags::BUILTIN,
+            ..default()
+        };
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);
@@ -368,14 +344,21 @@ impl Typec {
                 ret: r,
             };
 
-            let func = self.funcs.push(Func {
+            let func = Func {
                 signature,
                 flags: FuncFlags::BUILTIN,
                 name: id,
                 ..default()
-            });
+            };
 
-            self.builtin_funcs.insert(id, func);
+            let func = if let Some(water_drop) = Func::lookup_water_drop(&interner[id]) {
+                self[water_drop] = func;
+                water_drop
+            } else {
+                self.funcs.push(func)
+            };
+
+            self.builtin_funcs.push(func);
         };
 
         fn op_to_ty(
@@ -855,15 +838,18 @@ pub const fn sorted_water_drops<T, const LEN: usize>(
 ) -> [(&'static str, FragRef<T>); LEN] {
     let mut i = 0;
     while i < LEN {
-        let mut j = i;
-        while j < LEN - 1 {
-            if let std::cmp::Ordering::Greater =
-                compare_strings(drops[j].0.as_bytes(), drops[j + 1].0.as_bytes())
+        let mut j = i + 1;
+        let mut min = drops[i].0;
+        let mut min_index = i;
+        while j < LEN {
+            if let std::cmp::Ordering::Less = compare_strings(drops[j].0.as_bytes(), min.as_bytes())
             {
-                drops.swap(j, j + 1);
+                min = drops[j].0;
+                min_index = j;
             }
             j += 1;
         }
+        drops.swap(i, min_index);
         i += 1;
     }
 
@@ -881,15 +867,23 @@ pub const fn sorted_water_drops<T, const LEN: usize>(
 }
 
 const fn compare_strings(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
-    match (a, b) {
-        (&[a, ref a_else @ ..], &[b, ref b_else @ ..]) if a == b => compare_strings(a_else, b_else),
-        (&[a, ..], &[b, ..]) => match a < b {
-            true => std::cmp::Ordering::Less,
-            false => std::cmp::Ordering::Greater,
-        },
-        (&[], &[]) => std::cmp::Ordering::Equal,
-        (&[], _) => std::cmp::Ordering::Less,
-        _ => std::cmp::Ordering::Greater,
+    let mut i = 0;
+    while i < a.len() && i < b.len() {
+        if a[i] < b[i] {
+            return std::cmp::Ordering::Less;
+        } else if a[i] > b[i] {
+            return std::cmp::Ordering::Greater;
+        }
+
+        i += 1;
+    }
+
+    if a.len() < b.len() {
+        std::cmp::Ordering::Less
+    } else if a.len() > b.len() {
+        std::cmp::Ordering::Greater
+    } else {
+        std::cmp::Ordering::Equal
     }
 }
 

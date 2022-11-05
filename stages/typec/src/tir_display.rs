@@ -215,6 +215,12 @@ impl TyChecker<'_> {
         var_count: &mut usize,
     ) -> fmt::Result {
         match pat {
+            UnitPatKindTir::Enum { id, value, .. } => {
+                write!(buffer, "\\{}~", id)?;
+                if let Some(value) = value {
+                    self.display_pat(*value, buffer, indent, var_count)?;
+                }
+            }
             UnitPatKindTir::Struct { fields } => {
                 buffer.push_str("\\{");
                 if let Some((&first, others)) = fields.split_first() {

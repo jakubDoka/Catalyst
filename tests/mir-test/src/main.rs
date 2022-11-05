@@ -175,12 +175,16 @@ fn main() {
             use {
                 "water/option";
                 "water/macros/tokens";
+                "water/marker";
+                "water/ptr";
             };
+
+            // TODO: Solution for macro name collisions
             // use {
             //     w "water"
             // };
-
-            // TODO: Solution for macro name collisions
+            //
+            // #[macro w_swap]
             // type WSwap = w::Swap[uint];
             // break;
 
@@ -188,16 +192,22 @@ fn main() {
                 last: MacroToken;
             };
 
+            impl Copy for LastToken;
+
             struct TwoTokens {
                 second: MacroToken;
                 first: MacroToken;
             };
+
+            impl Copy for TwoTokens;
 
             enum SwapState {
                 Two: TwoTokens;
                 Last: LastToken;
                 Empty;
             };
+
+            impl Copy for SwapState;
 
             #[macro swap];
             struct Swap {
@@ -207,13 +217,13 @@ fn main() {
 
             impl TokenMacro for Swap {
                 fn new(s: ^Self, lexer: MacroLexer) {
-                    *s = ::{
+                    ptr::write(s, ::{
                         state: ::Two~::{
                             first: lexer.next();
                             second: lexer.next();
                         };
                         lexer;
-                    };
+                    });
                 };
 
                 fn next(s: ^Self) -> Option[MacroToken] =>
@@ -230,7 +240,7 @@ fn main() {
                     };
 
                 fn drop(s: ^Self) -> MacroLexer {
-                    s.lexer
+                    ptr::read(^s.lexer)
                 };
             };
         }

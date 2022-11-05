@@ -58,7 +58,7 @@ impl<'a> MirBuilder<'a> {
             match self.ctx.moves.owners[root_value] {
                 Owner::Temporary(graph) => break graph,
                 Owner::Nested(id, header) => {
-                    path.push((id, self.ctx.func.types[self.ctx.func.values[value].ty].ty));
+                    path.push((id, self.ctx.func.types[self.ctx.func.values[header].ty].ty));
                     root_value = header;
                 }
                 Owner::Var(var) => break self.ctx.vars[var].graph,
@@ -121,14 +121,14 @@ impl<'a> MirBuilder<'a> {
         if ty.is_copy(&self.ctx.generics, typec, interner) {
             return Ok(());
         }
-
+        dbg!(value);
         let mut current = &mut self.ctx.moves.owners[value];
         let mut path = bumpvec![];
         let mut current = *loop {
             match current {
                 Owner::Temporary(graph) => break graph,
                 &mut Owner::Nested(id, header, ..) => {
-                    path.push((id, self.ctx.func.types[self.ctx.func.values[value].ty].ty));
+                    path.push((id, self.ctx.func.types[self.ctx.func.values[header].ty].ty));
                     current = &mut self.ctx.moves.owners[header];
                 }
                 &mut Owner::Var(var) => break &mut self.ctx.vars[var].graph,
@@ -192,19 +192,27 @@ impl<'a> MirBuilder<'a> {
         } else {
             MoveGraph::Present
         };
-        let mut traverse_struct = |s: FragRef<Struct>| {
+
+        let traverse_struct = |sel: &mut Self, s: FragRef<Struct>| {
             let children = (0..typec[s].fields.len()).map(|_| fill);
-            let slice = self.ctx.moves.graphs.extend(children);
-            self.change_graph(root, MoveGraph::Partial(slice));
+            let slice = sel.ctx.moves.graphs.extend(children);
+            sel.change_graph(root, MoveGraph::Partial(slice));
+            Some(slice.index(id as usize))
+        };
+
+        let traverse_enum = |sel: &mut Self, e: FragRef<Enum>| {
+            let children = (0..typec[e].variants.len()).map(|_| fill);
+            let slice = sel.ctx.moves.graphs.extend(children);
+            sel.change_graph(root, MoveGraph::Partial(slice));
             Some(slice.index(id as usize))
         };
 
         match ty {
-            Ty::Struct(s) => traverse_struct(s),
-            Ty::Enum(_) => todo!(),
+            Ty::Struct(s) => traverse_struct(self, s),
+            Ty::Enum(e) => traverse_enum(self, e),
             Ty::Instance(inst) => match typec[inst].base {
-                GenericTy::Struct(s) => traverse_struct(s),
-                GenericTy::Enum(_) => todo!(),
+                GenericTy::Struct(s) => traverse_struct(self, s),
+                GenericTy::Enum(e) => traverse_enum(self, e),
             },
             Ty::Pointer(..) => None,
             Ty::Param(..) | Ty::Builtin(..) => unreachable!(),
@@ -219,10 +227,16 @@ impl<'a> MirBuilder<'a> {
                 .drain()
                 .map(|(graph, old)| Move { graph, old }),
         );
+        self.ctx.moves.cached_moves.mark();
         MoveFrame(self.ctx.moves.cached_moves.len())
     }
 
     pub fn discard_move_branch(&mut self) {
+        self.ctx
+            .moves
+            .current_branch
+            .drain()
+            .for_each(|(graph, old)| self.ctx.moves.graphs[graph] = old);
         self.ctx.moves.cached_moves.mark();
         self.ctx.moves.terminating_branches.push(true);
     }

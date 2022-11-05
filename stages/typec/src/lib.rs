@@ -208,7 +208,7 @@ mod util {
             scope.insert_builtin(interner.intern(ty.name()), Ty::Builtin(ty));
         }
 
-        for &func in typec.builtin_funcs.values() {
+        for &func in typec.builtin_funcs.iter() {
             let id = typec[func].name;
             scope.insert_builtin(id, func);
         }

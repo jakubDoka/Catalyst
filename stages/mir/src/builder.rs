@@ -134,14 +134,14 @@ impl MirChecker<'_> {
         r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
-        let value = self.node(value, None, true, builder)?;
+        let value = self.node(value, None, false, builder)?;
 
         let branch_patterns = arms
             .iter()
             .enumerate()
             .filter_map(|(ord, &MatchArmTir { pat, .. })| {
                 let mut branch_nodes = bumpvec![];
-                self.pattern_to_branch(pat, &mut branch_nodes, None, builder);
+                self.pattern_to_branch(pat, &mut branch_nodes, builder);
                 let (&start, rest) = branch_nodes.split_first()?;
                 Some(Branch {
                     start,
@@ -260,11 +260,24 @@ impl MirChecker<'_> {
                     if mutable {
                         builder.ctx.func.set_mutable(dest);
                     }
+                    dbg!();
                     self.move_out(value, span, builder);
+                    dbg!();
                     builder.inst(InstMir::Var(value, dest), span);
-                    builder.create_var(value);
+                    builder.create_var(dest);
                 }
                 UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
+                UnitPatKindTir::Enum {
+                    id,
+                    value: Some(&pat),
+                    ..
+                } => {
+                    let dest = builder.value(ty, self.typec);
+                    builder.inst(InstMir::Field(value, 1, dest), span);
+                    builder.ctx.moves.owners[dest] = Owner::Nested(id, value);
+                    self.bind_pattern_vars(pat, dest, builder);
+                }
+                UnitPatKindTir::Enum { .. } => (),
             },
             PatKindTir::Or(_) => todo!(),
         }
@@ -295,7 +308,6 @@ impl MirChecker<'_> {
                         .filter(|(_, field)| field.is_refutable);
 
                     let mut ret_value = None;
-                    let band = self.typec.get_band();
                     for (i, &field) in fields {
                         let dest = builder.value(field.ty, self.typec);
                         builder.field(value, i as u32, dest, field.span);
@@ -305,7 +317,7 @@ impl MirChecker<'_> {
                         ret_value = match ret_value {
                             Some(other) => {
                                 let call = builder.ctx.func.calls.push(CallMir {
-                                    callable: CallableMir::Func(band),
+                                    callable: CallableMir::Func(Func::BOOL_BAND),
                                     params: default(),
                                     args: builder.ctx.func.value_args.extend([val, other]),
                                 });
@@ -319,11 +331,11 @@ impl MirChecker<'_> {
 
                     ret_value
                 }
-                UnitPatKindTir::Int(int, cmp) => {
+                UnitPatKindTir::Int(int) => {
                     let val = builder.value(ty, self.typec);
                     let lit = self.int(int.err(), int.unwrap_or(span), val, builder)?;
                     let call = builder.ctx.func.calls.push(CallMir {
-                        callable: CallableMir::Func(cmp),
+                        callable: CallableMir::Func(ty.int_eq().unwrap()),
                         params: default(),
                         args: builder.ctx.func.value_args.extend([lit, value]),
                     });
@@ -332,6 +344,46 @@ impl MirChecker<'_> {
                     Some(cond)
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => None,
+                UnitPatKindTir::Enum {
+                    id,
+                    ty: enum_ty,
+                    value: enum_value,
+                } => {
+                    let enum_flag = self.typec.get_enum_flag_ty(enum_ty).map(|enum_flag_ty| {
+                        let dest = builder.value(Ty::Builtin(enum_flag_ty), self.typec);
+                        builder.field(value, 0, dest, span);
+                        let const_flag = builder.value(Ty::Builtin(enum_flag_ty), self.typec);
+                        self.int(Some(id as i64), span, const_flag, builder);
+                        let call = builder.ctx.func.calls.push(CallMir {
+                            callable: CallableMir::Func(
+                                Ty::Builtin(enum_flag_ty).int_eq().unwrap(),
+                            ),
+                            params: default(),
+                            args: builder.ctx.func.value_args.extend([dest, const_flag]),
+                        });
+                        let ret = builder.value(Ty::BOOL, self.typec);
+                        builder.inst(InstMir::Call(call, Some(ret)), span);
+                        ret
+                    });
+
+                    let Some(val) = enum_value.and_then(|&pat| self.pattern_to_cond(pat, value, builder)) else {
+                        return enum_flag;
+                    };
+
+                    match enum_flag {
+                        Some(other) => {
+                            let call = builder.ctx.func.calls.push(CallMir {
+                                callable: CallableMir::Func(Func::BOOL_BAND),
+                                params: default(),
+                                args: builder.ctx.func.value_args.extend([val, other]),
+                            });
+                            let ret = builder.value(Ty::BOOL, self.typec);
+                            builder.inst(InstMir::Call(call, Some(ret)), span);
+                            Some(ret)
+                        }
+                        None => Some(val),
+                    }
+                }
             },
             PatKindTir::Or(..) => todo!(),
         }
@@ -339,17 +391,15 @@ impl MirChecker<'_> {
 
     fn pattern_to_branch<'a>(
         &mut self,
-        PatTir { kind, ty, .. }: PatTir,
+        PatTir { kind, .. }: PatTir,
         nodes: &mut BumpVec<Node<'a>>,
-        parent: Option<Ty>,
         _builder: &MirBuilder,
     ) {
         match kind {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {
-                    let mut ty = Some(ty);
                     for &pat in fields {
-                        self.pattern_to_branch(pat, nodes, ty.take(), _builder);
+                        self.pattern_to_branch(pat, nodes, _builder);
                     }
                 }
                 UnitPatKindTir::Int(value, ..) => {
@@ -357,20 +407,29 @@ impl MirChecker<'_> {
                         Ok(span) => span_str!(self, span).parse().unwrap(),
                         Err(lit) => lit as u128,
                     };
-                    if let Some(parent) = parent
-                        && let Ty::Enum(enum_ty) = parent.caller(self.typec)
-                        && int as usize == self.typec[enum_ty].variants.len() - 1
-                    {
-                        nodes.push(Node::Scalar(Range {
-                            start: int,
-                            end: UpperBound::Outside,
-                        }));
-                    } else {
-                        nodes.push(Node::Scalar(Range::at(int)));
-                    }
+                    nodes.push(Node::Scalar(Range::at(int)));
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => {
                     nodes.push(Node::Scalar(Range::full()))
+                }
+                UnitPatKindTir::Enum {
+                    id,
+                    ty: enum_ty,
+                    value,
+                } => {
+                    nodes.push(Node::Scalar(
+                        if id as usize == self.typec[enum_ty].variants.len() - 1 {
+                            Range {
+                                start: id as u128,
+                                end: UpperBound::Outside,
+                            }
+                        } else {
+                            Range::at(id as u128)
+                        },
+                    ));
+                    if let Some(&value) = value {
+                        self.pattern_to_branch(value, nodes, _builder);
+                    }
                 }
             },
             PatKindTir::Or(..) => todo!(),
@@ -437,7 +496,7 @@ impl MirChecker<'_> {
         for (&field, value) in fields.iter().zip(mir_fields) {
             self.node(field, Some(value), true, builder);
         }
-        if r#move {
+        if r#move && dest.is_none() {
             self.move_out(final_dest, span, builder);
         }
         Some(final_dest)
@@ -622,8 +681,6 @@ impl MirChecker<'_> {
             },
             MoveError::Pointer(span) => self.move_from_pointer(span),
         };
-
-        todo!()
     }
 
     fn push_args<'a>(
@@ -674,7 +731,7 @@ impl MirChecker<'_> {
 
         push move_from_pointer(self, span: Span) {
             err: "cannot move out of a pointer";
-            info: "you can disable move validation with `#[no_move]`";
+            info: "you can disable move validation with `#[no_moves]`";
             (span, self.source) {
                 err[span]: "discovered here";
             }
@@ -682,7 +739,7 @@ impl MirChecker<'_> {
 
         push double_move(self, span: Span, source_span: Span) {
             err: "cannot move out of a value more than once";
-            (span, self.source) {
+            (span.joined(source_span), self.source) {
                 err[span]: "detected here";
                 info[source_span]: "first move here";
             }

@@ -128,9 +128,16 @@ pub enum PatKindTir<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum UnitPatKindTir<'a> {
-    Struct { fields: &'a [PatTir<'a>] },
+    Enum {
+        id: u32,
+        ty: FragRef<Enum>,
+        value: Option<&'a PatTir<'a>>,
+    },
+    Struct {
+        fields: &'a [PatTir<'a>],
+    },
     Binding(bool, VRef<VarHeaderTir>),
-    Int(Result<Span, i64>, FragRef<Func>),
+    Int(Result<Span, i64>),
     Wildcard,
 }
 

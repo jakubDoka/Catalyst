@@ -230,6 +230,22 @@ impl Display for Ty {
 }
 
 impl Ty {
+    pub fn int_eq(self) -> Option<FragRef<Func>> {
+        Some(match self {
+            Ty::Builtin(b) => match b {
+                Builtin::Unit => todo!(),
+                Builtin::Terminal => todo!(),
+                Builtin::Uint => Func::UINT_EQ,
+                Builtin::U32 => Func::U32_EQ,
+                Builtin::U16 => Func::U16_EQ,
+                Builtin::U8 => Func::U8_EQ,
+                Builtin::Char => Func::U32_EQ,
+                Builtin::Bool => todo!(),
+            },
+            _ => return None,
+        })
+    }
+
     pub fn compatible(a: Self, b: Self) -> bool {
         b == Self::TERMINAL || a == b
     }

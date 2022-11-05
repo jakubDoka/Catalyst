@@ -806,20 +806,13 @@ impl TyChecker<'_> {
                     ty,
                 })
             }
-            PatAst::Int(span) => {
-                let op = NameAst {
-                    ident: Interner::EQUAL,
-                    span,
-                };
-                let comparator = self.find_binary_func(op, ty, ty)?;
-                Some(PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Int(Ok(span), comparator)),
-                    span,
-                    ty,
-                    has_binding: false,
-                    is_refutable: true,
-                })
-            }
+            PatAst::Int(span) => Some(PatTir {
+                kind: PatKindTir::Unit(UnitPatKindTir::Int(Ok(span))),
+                span,
+                ty,
+                has_binding: false,
+                is_refutable: true,
+            }),
             PatAst::EnumCtor(ctor) => {
                 let Ty::Enum(enum_ty) = ty.caller(self.typec) else {
                     todo!();
@@ -844,21 +837,11 @@ impl TyChecker<'_> {
                     None
                 };
 
-                let flag_meta = self.typec.get_enum_cmp(enum_ty, self.interner);
-
-                let flag = flag_meta.map(|(cmp, flag_ty)| PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Int(Err(index as i64), cmp)),
-                    has_binding: false,
-                    is_refutable: true,
-                    span: ctor.name.span,
-                    ty: flag_ty,
-                });
-
-                let fields = flag.into_iter().chain(value).collect::<BumpVec<_>>();
-
                 Some(PatTir {
-                    kind: PatKindTir::Unit(UnitPatKindTir::Struct {
-                        fields: builder.arena.alloc_iter(fields),
+                    kind: PatKindTir::Unit(UnitPatKindTir::Enum {
+                        id: index as u32,
+                        ty: enum_ty,
+                        value: value.map(|value| builder.arena.alloc(value)),
                     }),
                     span: ctor.span(),
                     ty,

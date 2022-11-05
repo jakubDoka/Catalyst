@@ -26,7 +26,12 @@ impl Func {
 gen_water_drops! {
     Func
     funcs
-    ANON_TEMP => "anon_temp",
+    BOOL_BAND => "bool & bool",
+    U8_EQ => "u8 == u8",
+    U16_EQ => "u16 == u16",
+    U32_EQ => "u32 == u32",
+    U64_EQ => "u64 == u64",
+    UINT_EQ => "uint == uint",
     CAST => "cast",
     SIZEOF => "sizeof",
 }
