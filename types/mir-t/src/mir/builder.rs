@@ -328,12 +328,13 @@ pub struct VarMir {
     pub graph: OptVRef<MoveGraph>,
 }
 
+#[derive(Debug)]
 pub enum MoveError {
     Graph(MoveGraph),
     Pointer(Span),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum MoveGraph {
     Present,
     Gone(Span),

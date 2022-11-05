@@ -46,7 +46,7 @@ impl MirChecker<'_> {
         let ret = builder.value(signature.ret, self.typec);
         builder.ctx.func.ret = ret;
 
-        self.node(body, None, &mut builder);
+        self.node(body, None, false, &mut builder);
 
         ctx.clear()
     }
@@ -55,37 +55,39 @@ impl MirChecker<'_> {
         &mut self,
         TirNode { kind, ty, span }: TirNode,
         dest: OptVRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let mut dest_fn = || dest.unwrap_or_else(|| builder.value(ty, self.typec));
         match kind {
-            TirKind::Block(stmts) => self.block(stmts, dest_fn(), builder),
+            TirKind::Block(stmts) => self.block(stmts, dest_fn(), r#move, builder),
             TirKind::Int(computed) => self.int(computed, span, dest_fn(), builder),
             TirKind::Char => self.char(span, dest_fn(), builder),
             TirKind::Bool(value) => self.bool(value, span, dest_fn(), builder),
-            TirKind::Access(access) => self.access(access, span, dest, builder),
-            TirKind::Call(&call) => self.call(call, ty, span, dest, builder),
+            TirKind::Access(access) => self.access(access, span, dest, r#move, builder),
+            TirKind::Call(&call) => self.call(call, ty, span, dest, r#move, builder),
             TirKind::Return(ret) => self.r#return(ret, span, builder),
             TirKind::Const(&r#const) => self.r#const(r#const, ty, span, dest_fn(), builder),
-            TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, builder),
+            TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, r#move, builder),
             TirKind::Deref(&node) => self.deref(node, ty, span, builder),
             TirKind::Ref(&node) => self.r#ref(node, span, dest_fn(), builder),
-            TirKind::Field(&field) => self.field(field, span, dest_fn(), builder),
-            TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), builder),
-            TirKind::If(&r#if) => self.r#if(r#if, dest_fn(), builder),
+            TirKind::Field(&field) => self.field(field, span, dest_fn(), r#move, builder),
+            TirKind::Match(&r#match) => self.r#match(r#match, span, dest_fn(), r#move, builder),
+            TirKind::If(&r#if) => self.r#if(r#if, dest_fn(), r#move, builder),
             TirKind::Let(&r#let) => self.r#let(r#let, builder),
             TirKind::Assign(&assign) => self.assign(assign, builder),
         }
     }
 
     fn assign(&mut self, AssignTir { lhs, rhs }: AssignTir, builder: &mut MirBuilder) -> NodeRes {
-        let dest = self.node(lhs, None, builder)?;
-        self.node(rhs, Some(dest), builder)?;
+        let dest = self.node(lhs, None, false, builder)?;
+        builder.move_in(dest, self.typec, self.interner);
+        self.node(rhs, Some(dest), true, builder)?;
         Some(dest)
     }
 
     fn r#let(&mut self, LetTir { pat, value }: LetTir, builder: &mut MirBuilder) -> NodeRes {
-        let value = self.node(value, None, builder)?;
+        let value = self.node(value, None, false, builder)?;
         self.bind_pattern_vars(pat, value, builder);
         Some(ValueMir::UNIT)
     }
@@ -94,21 +96,22 @@ impl MirChecker<'_> {
         &mut self,
         IfTir { top, elifs, r#else }: IfTir,
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let mut dest_block = None;
         for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
-            let cond_val = self.node(cond, None, builder)?;
+            let cond_val = self.node(cond, None, true, builder)?;
             let then = builder.ctx.create_block();
             let next = builder.ctx.create_block();
             builder.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
             builder.select_block(then);
-            self.branch(body, &mut dest_block, dest, builder);
+            self.branch(body, &mut dest_block, dest, r#move, builder);
             builder.select_block(next);
         }
 
         if let Some(r#else) = r#else {
-            self.branch(r#else, &mut dest_block, dest, builder);
+            self.branch(r#else, &mut dest_block, dest, r#move, builder);
         }
 
         if let Some(dest_block) = dest_block {
@@ -126,9 +129,10 @@ impl MirChecker<'_> {
         MatchTir { value, arms }: MatchTir,
         span: Span,
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
-        let value = self.node(value, None, builder)?;
+        let value = self.node(value, None, true, builder)?;
 
         let branch_patterns = arms
             .iter()
@@ -171,10 +175,10 @@ impl MirChecker<'_> {
             let next_block = builder.ctx.create_block();
             builder.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
             builder.select_block(block);
-            self.match_arm(arm, &mut dest_block, value, dest, builder);
+            self.match_arm(arm, &mut dest_block, value, dest, r#move, builder);
             builder.select_block(next_block);
         }
-        self.match_arm(last, &mut dest_block, value, dest, builder);
+        self.match_arm(last, &mut dest_block, value, dest, r#move, builder);
 
         let dest_block = dest_block?;
         builder.select_block(dest_block);
@@ -191,11 +195,12 @@ impl MirChecker<'_> {
         dest_block: &mut OptVRef<BlockMir>,
         value: VRef<ValueMir>,
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) {
         let frame = builder.ctx.start_frame();
         self.bind_pattern_vars(pat, value, builder);
-        self.branch(body, dest_block, dest, builder);
+        self.branch(body, dest_block, dest, r#move, builder);
         builder.ctx.end_frame(frame);
     }
 
@@ -204,9 +209,10 @@ impl MirChecker<'_> {
         body: TirNode,
         dest_block: &mut OptVRef<BlockMir>,
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) {
-        if let Some(ret) = self.node(body, Some(dest), builder) {
+        if let Some(ret) = self.node(body, Some(dest), r#move, builder) {
             let ret = (ret != ValueMir::UNIT).then_some(ret);
             let &mut dest_block = dest_block.get_or_insert_with(|| builder.ctx.create_block());
             builder.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
@@ -247,6 +253,7 @@ impl MirChecker<'_> {
                     if mutable {
                         builder.ctx.func.set_mutable(dest);
                     }
+                    self.move_out(value, span, builder);
                     builder.inst(InstMir::Var(value, dest), span);
                     builder.create_var(value);
                 }
@@ -368,17 +375,22 @@ impl MirChecker<'_> {
         FieldTir { field, header }: FieldTir,
         span: Span,
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
-        let node = self.node(header, None, builder)?;
+        let node = self.node(header, None, false, builder)?;
         builder.field(node, field, dest, span);
+        if r#move {
+            self.move_out(dest, span, builder);
+        }
         Some(dest)
     }
 
     fn deref(&mut self, node: TirNode, ty: Ty, span: Span, builder: &mut MirBuilder) -> NodeRes {
-        let node = self.node(node, None, builder)?;
+        let node = self.node(node, None, false, builder)?;
         let dest = builder.value(ty, self.typec);
         builder.inst(InstMir::Deref(node, dest), span);
+        builder.ctx.moves.owners[dest] = Owner::Nested(0, node);
         Some(dest)
     }
 
@@ -389,9 +401,11 @@ impl MirChecker<'_> {
         dest: VRef<ValueMir>,
         builder: &mut MirBuilder,
     ) -> NodeRes {
-        let node = self.node(node, None, builder)?;
+        let node = self.node(node, None, false, builder)?;
+        // TODO: check integrity
         builder.ctx.func.set_referenced(node);
         builder.inst(InstMir::Ref(node, dest), span);
+        builder.ctx.moves.owners[dest] = Owner::Nested(0, node);
         Some(dest)
     }
 
@@ -401,6 +415,7 @@ impl MirChecker<'_> {
         ty: Ty,
         span: Span,
         dest: OptVRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let mir_fields = fields
@@ -413,7 +428,10 @@ impl MirChecker<'_> {
             builder.inst(InstMir::Ctor(mir_fields, final_dest, dest.is_some()), span);
         }
         for (&field, value) in fields.iter().zip(mir_fields) {
-            self.node(field, Some(value), builder);
+            self.node(field, Some(value), true, builder);
+        }
+        if r#move {
+            self.move_out(final_dest, span, builder);
         }
         Some(final_dest)
     }
@@ -433,7 +451,7 @@ impl MirChecker<'_> {
         };
 
         let local_dest = builder.value(ty, self.typec);
-        self.node(value, Some(local_dest), builder)?;
+        self.node(value, Some(local_dest), true, builder)?;
         builder.close_block(span, ControlFlowMir::Return(Some(local_dest)));
         builder.select_block(prev_block);
 
@@ -454,6 +472,7 @@ impl MirChecker<'_> {
         &mut self,
         nodes: &[TirNode],
         dest: VRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let Some((&last, nodes)) = nodes.split_last() else {
@@ -463,10 +482,11 @@ impl MirChecker<'_> {
         let frame = builder.ctx.start_frame();
         let res = try {
             for &node in nodes {
-                self.node(node, None, builder)?;
+                self.node(node, None, false, builder)?;
+                // TODO: drop temporary values
             }
 
-            self.node(last, Some(dest), builder)?
+            self.node(last, Some(dest), r#move, builder)?
         };
         builder.ctx.end_frame(frame);
 
@@ -478,10 +498,14 @@ impl MirChecker<'_> {
         var: VRef<VarHeaderTir>,
         span: Span,
         dest: OptVRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let var = builder.ctx.get_var(var);
         builder.inst(InstMir::Access(var.value, dest), span);
+        if r#move && let Some(dest) = dest {
+            self.move_out(dest, span, builder);
+        }
         Some(dest.unwrap_or(var.value))
     }
 
@@ -493,6 +517,7 @@ impl MirChecker<'_> {
         ty: Ty,
         span: Span,
         dest: OptVRef<ValueMir>,
+        r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let callable = match func {
@@ -505,7 +530,7 @@ impl MirChecker<'_> {
 
         let args = args
             .iter()
-            .map(|&arg| self.node(arg, None, builder))
+            .map(|&arg| self.node(arg, None, true, builder))
             .collect::<Option<BumpVec<_>>>()?;
         let args = builder.ctx.func.value_args.extend(args);
 
@@ -523,6 +548,10 @@ impl MirChecker<'_> {
         if ty == Ty::TERMINAL {
             builder.close_block(span, ControlFlowMir::Terminal);
             return None;
+        }
+
+        if let Some(value) = value && r#move {
+            self.move_out(value, span, builder);
         }
 
         Some(value.unwrap_or(ValueMir::UNIT))
@@ -565,12 +594,29 @@ impl MirChecker<'_> {
     fn r#return(&mut self, val: Option<&TirNode>, span: Span, builder: &mut MirBuilder) -> NodeRes {
         let ret_val = val
             .and_then(|&val| {
-                Some(self.node(val, Some(builder.ctx.func.ret), builder))
+                Some(self.node(val, Some(builder.ctx.func.ret), true, builder))
                     .filter(|_| val.ty != Ty::UNIT)
             })
             .transpose()?;
         builder.close_block(span, ControlFlowMir::Return(ret_val));
         None
+    }
+
+    fn move_out(&mut self, value: VRef<ValueMir>, span: Span, builder: &mut MirBuilder) {
+        let Err(err) = builder.move_out(value, span, self.typec, self.interner) else {
+            return;
+        };
+
+        match err {
+            MoveError::Graph(graph) => match graph {
+                MoveGraph::Present => unreachable!(),
+                MoveGraph::Gone(source_span) => self.double_move(span, source_span),
+                MoveGraph::Partial(_children) => self.partial_double_move(span), // TODO: better error message
+            },
+            MoveError::Pointer(span) => self.move_from_pointer(span),
+        };
+
+        todo!()
     }
 
     fn push_args<'a>(
@@ -616,6 +662,29 @@ impl MirChecker<'_> {
             );
             (span, self.source) {
                 err[span]: "this does not cover all possible cases";
+            }
+        }
+
+        push move_from_pointer(self, span: Span) {
+            err: "cannot move out of a pointer";
+            info: "you can disable move validation with `#[no_move]`";
+            (span, self.source) {
+                err[span]: "discovered here";
+            }
+        }
+
+        push double_move(self, span: Span, source_span: Span) {
+            err: "cannot move out of a value more than once";
+            (span, self.source) {
+                err[span]: "detected here";
+                info[source_span]: "first move here";
+            }
+        }
+
+        push partial_double_move(self, span: Span) {
+            err: "cannot move out of a value that is partially moved";
+            (span, self.source) {
+                err[span]: "move occurred here";
             }
         }
     }
