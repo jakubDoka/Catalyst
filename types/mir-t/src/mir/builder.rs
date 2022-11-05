@@ -211,7 +211,14 @@ impl<'a> MirBuilder<'a> {
         }
     }
 
-    pub fn start_move_frame(&self) -> MoveFrame {
+    pub fn start_move_frame(&mut self) -> MoveFrame {
+        self.ctx.moves.cached_moves.extend(
+            self.ctx
+                .moves
+                .current_branch
+                .drain()
+                .map(|(graph, old)| Move { graph, old }),
+        );
         MoveFrame(self.ctx.moves.cached_moves.len())
     }
 
@@ -238,7 +245,7 @@ impl<'a> MirBuilder<'a> {
         self.ctx.moves.terminating_branches.push(false);
     }
 
-    pub fn finish_move_frame(&mut self, frame: MoveFrame) {
+    pub fn end_move_frame(&mut self, frame: MoveFrame) {
         let mut excess = self.ctx.moves.cached_moves.len() - frame.0;
         (0..excess - 1).for_each(|_| self.ctx.moves.cached_moves.join_frames());
         excess -= self
@@ -266,6 +273,14 @@ impl<'a> MirBuilder<'a> {
                 _ => (),
             }
         }
+
+        self.ctx.moves.current_branch.extend(
+            self.ctx
+                .moves
+                .cached_moves
+                .pop()
+                .map(|Move { graph, old }| (graph, old)),
+        );
     }
 
     pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {

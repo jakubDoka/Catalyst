@@ -100,6 +100,7 @@ impl MirChecker<'_> {
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let mut dest_block = None;
+        let frame = builder.start_move_frame();
         for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
             let cond_val = self.node(cond, None, true, builder)?;
             let then = builder.ctx.create_block();
@@ -120,6 +121,7 @@ impl MirChecker<'_> {
                 builder.ctx.args.push(dest);
             }
         }
+        builder.end_move_frame(frame);
 
         Some(dest)
     }
@@ -166,6 +168,7 @@ impl MirChecker<'_> {
             .filter_map(|(&arm, reachable)| reachable.then_some(arm))
             .collect::<BumpVec<_>>();
         let (&last, rest) = arms.split_last()?;
+        let frame = builder.start_move_frame();
         let mut dest_block = None;
         for &arm in rest {
             let cond = self
@@ -185,6 +188,7 @@ impl MirChecker<'_> {
         if dest != ValueMir::UNIT {
             builder.ctx.args.push(dest);
         }
+        builder.end_move_frame(frame);
 
         Some(dest)
     }
@@ -215,7 +219,10 @@ impl MirChecker<'_> {
         if let Some(ret) = self.node(body, Some(dest), r#move, builder) {
             let ret = (ret != ValueMir::UNIT).then_some(ret);
             let &mut dest_block = dest_block.get_or_insert_with(|| builder.ctx.create_block());
+            builder.save_move_branch();
             builder.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
+        } else {
+            builder.discard_move_branch();
         }
     }
 
