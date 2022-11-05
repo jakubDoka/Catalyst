@@ -1,0 +1,181 @@
+error: cannot move out of a value more than once
+ --> simple-moves\root.ctl:8:10
+  |
+7 |     drop(a)
+  |          - info: first move here
+8 |     drop(a)
+  |          ^ detected here
+  |
+
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:15:10
+   |
+13 |         drop(a)
+   |              - info: first move here
+14 |     } 
+15 |     drop(a)
+   |          ^ detected here
+   |
+
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:44:10
+   |
+43 |     drop(a)
+   |          - info: first move here
+...
+47 |     drop(a)
+   |          ^ detected here
+   |
+
+info: mir repr of functions:
+ fn [] drop(var0: param0) -> ()  {
+    block0(var2: param0) {
+        return
+    }
+
+}
+
+fn [] double_move() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        drop[0\A](val3)
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] conditional_double_move() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        var4 = 0
+        var5 = 0
+        var6 = uint == uint(val4, val5)
+        split var6 block1 block2
+    }
+
+    block1() {
+        access var3
+        var1 = drop[0\A](val3)
+        goto block3 with var1
+    }
+
+    block2() {
+        return
+    }
+
+    block3(var1: !) {
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] conditional_move() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        var4 = 0
+        var5 = 0
+        var6 = uint == uint(val4, val5)
+        split var6 block1 block2
+    }
+
+    block1() {
+        access var3
+        drop[0\A](val3)
+        return
+    }
+
+    block2() {
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] reassign() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        drop[0\A](val3)
+        access var3
+        var3 ={}
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] conditional_reassign() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        drop[0\A](val3)
+        var4 = 0
+        var5 = 0
+        var6 = uint == uint(val4, val5)
+        split var6 block1 block2
+    }
+
+    block1() {
+        access var3
+        var3 ={}
+        goto block3 with var3
+    }
+
+    block2() {
+        access var3
+        var3 ={}
+        goto block3 with var3
+    }
+
+    block3() {
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] conditional_incomplete_reassign() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        drop[0\A](val3)
+        var4 = 0
+        var5 = 0
+        var6 = uint == uint(val4, val5)
+        split var6 block1 block2
+    }
+
+    block1() {
+        access var3
+        var3 ={}
+        goto block3 with var3
+    }
+
+    block2() {
+        return
+    }
+
+    block3(var1: !) {
+        access var3
+        var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+
+

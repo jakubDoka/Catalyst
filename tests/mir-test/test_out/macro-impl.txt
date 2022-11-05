@@ -1,6 +1,6 @@
 info: mir repr of functions:
- fn [] next(var0: 1\MacroLexer) -> 1\MacroToken  {
-    block0(var2: 1\MacroLexer) {
+ fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  {
+    block0(var2: ^1\MacroLexer) {
         access var2
         var3 = ctl_lexer_next(val2)
         return var3
@@ -35,9 +35,11 @@ fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
         var7 = 0
         var8 ={var9, var10}
         access var3
-        var9 = next(val3)
+        var11 = &var3
+        var9 = next(val11)
         access var3
-        var10 = next(val3)
+        var12 = &var3
+        var10 = next(val12)
         var5 = access var3
         var0 = write[2\Swap](val2, val6)
         return
