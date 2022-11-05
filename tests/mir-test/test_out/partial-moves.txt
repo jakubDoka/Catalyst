@@ -18,12 +18,11 @@ error: moving partially moved value
    |
 
 error: moving partially moved value
-  --> partial-moves\root.ctl:32:16
+  --> partial-moves\root.ctl:31:25
    |
-32 |         drop(b.a0)
-   |                -- info: value partially moved here
-33 |     } 
-34 |     drop(b)
+31 |     if 0 == 0 => drop(b.a0)
+   |                         -- info: value partially moved here
+32 |     drop(b)
    |          ^ occurred here
    |
 

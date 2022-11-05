@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got 'fn'
- --> simple-moves\root.ctl:1:336
-  |
-1 | struct A ; fn [T] drop(t : T) {} ; fn double_move() { let a = A\{} ; drop(a) ; drop(a) ; } ; fn conditional_double_move() { let a = A\{} ; if 0 == 0 { drop(a) ; } ; drop(a) ; } ; fn conditional_move() { let a = A\{} ; if 0 == 0 { drop(a) ; return ; } ; drop(a) ; } ; fn reassign() { let mut a = A\{} ; drop(a) ; a = A\{} ; drop(a) ; } fn conditional_reassign() {     let mut a = A\{} ; drop(a) ; if 0 == 0 { a = A\{} ; } else     { a = A\{} ; } ; drop(a) ; }
-  |                                                                                                                                                                                                                                                                                                                                                ^^ token located here
-  |
-  = info: list
-

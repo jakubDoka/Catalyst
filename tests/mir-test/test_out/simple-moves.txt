@@ -18,12 +18,12 @@ error: cannot move out of a value more than once
    |
 
 error: cannot move out of a value more than once
-  --> simple-moves\root.ctl:44:10
+  --> simple-moves\root.ctl:41:10
    |
-43 |     drop(a)
+39 |     drop(a)
    |          - info: first move here
-...
-47 |     drop(a)
+40 |     if 0 == 0 => a = A\{ }
+41 |     drop(a)
    |          ^ detected here
    |
 
