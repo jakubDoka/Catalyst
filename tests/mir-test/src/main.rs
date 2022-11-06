@@ -283,20 +283,15 @@ fn main() {
             fn conditional_reassign() {
                 let mut a = A::{};
                 drop(a);
-                if 0 == 0 {
-                    a = A::{};
-                } else {
-                    a = A::{};
-                };
+                if 0 == 0 => a = A::{};
+                else => a = A::{};
                 drop(a);
             };
 
             fn conditional_incomplete_reassign() {
                 let mut a = A::{};
                 drop(a);
-                if 0 == 0 {
-                    a = A::{};
-                };
+                if 0 == 0 => a = A::{};
                 drop(a);
             };
         }
@@ -335,20 +330,15 @@ fn main() {
 
             fn conditional_partial_move() {
                 let b = B::new();
-                if 0 == 0 {
-                    drop(b.a0);
-                };
+                if 0 == 0 => drop(b.a0);
                 drop(b);
             };
 
             fn conditional_assign() {
                 let b = B::new();
                 drop(b.a0);
-                if 0 == 0 {
-                    b.a0 = A::{};
-                } else {
-                    return;
-                };
+                if 0 == 0 => b.a0 = A::{};
+                else => return;
                 drop(b);
             };
         }

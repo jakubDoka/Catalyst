@@ -128,6 +128,7 @@ impl SpecBase {
 gen_water_drops! {
     SpecBase
     base_specs
+    DROP => "Drop",
     COPY => "Copy",
     TOKEN_MACRO => "TokenMacro",
 }
@@ -306,6 +307,37 @@ impl Ty {
                 Some(typec.module_items[typec[e].loc?.module].items[typec[e].loc?.item].span)
             }
             Self::Instance(..) | Self::Pointer(..) | Self::Param(..) | Self::Builtin(..) => None,
+        }
+    }
+
+    pub fn is_drop(
+        self,
+        params: &[FragSlice<Spec>],
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Option<bool> {
+        match self {
+            Ty::Pointer(..) | Ty::Builtin(..) => Some(false),
+            Ty::Param(..) => typec
+                .find_implementation(
+                    self,
+                    Spec::Base(SpecBase::COPY),
+                    params,
+                    &mut None,
+                    interner,
+                )
+                .map(|_| false),
+            Ty::Struct(..) | Ty::Enum(..) | Ty::Instance(..) => Some(
+                typec
+                    .find_implementation(
+                        self,
+                        Spec::Base(SpecBase::DROP),
+                        params,
+                        &mut None,
+                        interner,
+                    )
+                    .is_some(),
+            ),
         }
     }
 

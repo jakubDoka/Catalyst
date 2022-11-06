@@ -1,4 +1,5 @@
 #![feature(default_free_fn)]
+#![feature(let_chains)]
 
 mod mir;
 

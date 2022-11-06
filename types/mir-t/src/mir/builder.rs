@@ -52,14 +52,14 @@ impl<'a> MirBuilder<'a> {
             return;
         }
 
-        let mut root_value = value;
+        let mut current = value;
         let mut path = bumpvec![];
         let root = loop {
-            match self.ctx.moves.owners[root_value] {
+            match self.ctx.moves.owners[current] {
                 Owner::Temporary(graph) => break graph,
                 Owner::Nested(id, header) => {
                     path.push((id, self.ctx.func.types[self.ctx.func.values[header].ty].ty));
-                    root_value = header;
+                    current = header;
                 }
                 Owner::Var(var) => break self.ctx.vars[var].graph,
             }
@@ -319,6 +319,73 @@ impl<'a> MirBuilder<'a> {
         );
     }
 
+    // pub fn drop_value(&mut self, value: VRef<ValueMir>, span: Span, typec: &mut Typec, interner: &mut Interner) -> Result<(), DropError> {
+    //     let root = match self.ctx.moves.owners[value] {
+    //         Owner::Temporary(graph) => graph,
+    //         Owner::Nested(..) => unreachable!(),
+    //         Owner::Var(var) => self.ctx.vars[var].graph,
+    //     };
+    //     let drop_fn = typec[SpecBase::DROP].methods.index(0);
+    //     self.drop_value_recur(value, root, &mut DropState { drop_fn, span, typec, interner })
+    // }
+
+    // fn drop_value_recur(&mut self, value: VRef<ValueMir>, root: OptVRef<MoveGraph>, ds: &mut DropState) -> Result<(), DropError> {
+    //     let root = root.map(|r| self.ctx.moves.graphs[r]);
+    //     if let Some(MoveGraph::Gone(..) | MoveGraph::GoneSplit(..)) = root {
+    //         return Ok(());
+    //     }
+
+    //     let ty = self.ctx.func.types[self.ctx.func.values[value].ty].ty;
+    //     let is_drop = ty.is_drop(&self.ctx.generics, ds.typec, ds.interner);
+
+    //     if let (Some(true) | None, Some(MoveGraph::Partial(children))) = (is_drop, root) {
+    //         return Err(DropError::Partial(children));
+    //     }
+
+    //     match is_drop {
+    //         Some(true) => {
+    //             let ptr_ty = Ty::Pointer(ds.typec.pointer_to(Mutability::Mutable, ty, ds.interner));
+    //             let ptr = self.value(ptr_ty, ds.typec);
+    //             self.inst(InstMir::Ref(value, ptr), ds.span);
+    //             let caller = CallMir {
+    //                 callable: CallableMir::SpecFunc(ds.drop_fn),
+    //                 params: self.ctx.func.ty_params.extend([self.ctx.func.values[value].ty]),
+    //                 args: self.ctx.func.value_args.extend([ptr]),
+    //             };
+    //             let caller = self.ctx.func.calls.push(caller);
+    //             self.inst(InstMir::Call(caller, None), ds.span)
+    //         },
+    //         Some(false) => None,
+    //         None => self.inst(InstMir::MayDrop(value), ds.span),
+    //     };
+
+    //     let children = match root {
+    //         Some(MoveGraph::Partial(children) | MoveGraph::PresentSplit(children)) => Some(children),
+    //         _ => None,
+    //     };
+
+    //     match ty {
+    //         Ty::Struct(s) => {
+    //             for (i, field) in ds.typec[s].fields.keys().enumerate() {
+    //                 let field = ds.typec[field];
+    //                 let node = children.map(|c| c.index(i));
+    //                 let field_value = self.value(field.ty, ds.typec);
+    //                 self.inst(InstMir::Field(value, i as u32, field_value), ds.span);
+    //                 self.drop_value_recur(field_value, node, ds)?;
+    //             }
+    //         },
+    //         Ty::Enum(e) => {
+
+    //         },
+    //         Ty::Instance(_) => todo!(),
+    //         Ty::Pointer(..) |
+    //         Ty::Param(..) |
+    //         Ty::Builtin(..) => (),
+    //     }
+
+    //     Ok(())
+    // }
+
     pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {
         self.current_block?;
         self.ctx.insts.push((kind, span));
@@ -373,11 +440,23 @@ impl<'a> MirBuilder<'a> {
     }
 }
 
+// struct DropState<'ctx> {
+//     drop_fn: FragRef<SpecFunc>,
+//     span: Span,
+//     typec: &'ctx mut Typec,
+//     interner: &'ctx mut Interner,
+// }
+
 #[derive(Clone, Copy)]
 pub struct VarMir {
     pub value: VRef<ValueMir>,
     pub graph: OptVRef<MoveGraph>,
 }
+
+// #[derive(Debug)]
+// pub enum DropError {
+//     Partial(VSlice<MoveGraph>),
+// }
 
 #[derive(Debug)]
 pub enum MoveError {
@@ -425,6 +504,8 @@ pub struct MirMoveCtx {
 
 impl MirMoveCtx {
     pub fn clear(&mut self) {
+        self.terminating_branches.clear();
+        self.cached_moves.clear();
         self.owners.clear();
         self.graphs.clear();
         self.current_branch.clear();
