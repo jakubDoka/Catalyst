@@ -27,6 +27,26 @@ error: cannot move out of a value more than once
    |          ^ detected here
    |
 
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:51:10
+   |
+50 |         \A~a => drop(a)
+   |         ---- info: first move here
+...
+54 |     drop(e)
+   |          ^ detected here
+   |
+
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:72:10
+   |
+71 |         e {
+   |         - info: first move here
+...
+74 |     drop(e)
+   |          ^ detected here
+   |
+
 info: mir repr of functions:
  fn [] drop(var0: param0) -> ()  {
     block0(var2: param0) {
@@ -172,6 +192,101 @@ fn [] conditional_incomplete_reassign() -> ()  {
     block3(var1: !) {
         access var3
         var0 = drop[0\A](val3)
+        return
+    }
+
+}
+
+fn [] enum_move() -> ()  {
+    block0() {
+        var4 ={var2, var3}
+        var2 = 0
+        var3 ={}
+        var5 = var4
+        access var5
+        var6 = var5.0
+        var7 = 0
+        var8 = u8 == u8(val6, val7)
+        var9 = var5.1
+        split var8 block1 block2
+    }
+
+    block1() {
+        var10 = var5.1
+        var11 = var10
+        access var11
+        var0 = drop[0\A](val11)
+        goto block3
+    }
+
+    block2() {
+        goto block3
+    }
+
+    block3() {
+        access var5
+        var0 = drop[0\E](val5)
+        return
+    }
+
+}
+
+fn [] enum_just_match() -> ()  {
+    block0() {
+        var4 ={var2, var3}
+        var2 = 0
+        var3 ={}
+        var5 = var4
+        access var5
+        var6 = var5.0
+        var7 = 0
+        var8 = u8 == u8(val6, val7)
+        var9 = var5.1
+        split var8 block1 block2
+    }
+
+    block1() {
+        goto block3
+    }
+
+    block2() {
+        goto block3
+    }
+
+    block3() {
+        access var5
+        var0 = drop[0\E](val5)
+        return
+    }
+
+}
+
+fn [] enum_whole_move() -> ()  {
+    block0() {
+        var4 ={var2, var3}
+        var2 = 0
+        var3 ={}
+        var5 = var4
+        access var5
+        var6 = var5.0
+        var7 = 0
+        var8 = u8 == u8(val6, val7)
+        var9 = var5.1
+        split var8 block1 block2
+    }
+
+    block1() {
+        goto block3
+    }
+
+    block2() {
+        var10 = var5
+        goto block3
+    }
+
+    block3() {
+        access var5
+        var0 = drop[0\E](val5)
         return
     }
 

@@ -1,0 +1,8 @@
+error: expected Ident | '\' | 'return' | Int | Char | Bool | 'const' | 'match' | 'if' | 'let' | Operator but got '('
+ --> simple-moves\root.ctl:1:667
+  |
+1 | struct A ; fn [T] drop(t : T) {} ; fn double_move() { let a = A\{} ; drop(a) ; drop(a) ; } ; fn conditional_double_move() { let a = A\{} ; if 0 == 0 { drop(a) ; } ; drop(a) ; } ; fn conditional_move() { let a = A\{} ; if 0 == 0 { drop(a) ; return ; } ; drop(a) ; } ; fn reassign() { let mut a = A\{} ; drop(a) ; a = A\{} ; drop(a) ; } ; fn conditional_reassign() {     let mut a = A\{} ; drop(a) ; if 0 == 0 => a = A\{} ; else => a = A    \{} ; drop(a) ; } ; fn conditional_incomplete_reassign() { let mut a = A\{} ; drop(a) ; if 0 == 0 => a = A\{} ; drop(a) ; } ; enum E { A : A ; B ; } ; fn enum_move() {     let e = E\A ~ A\{} ; match e {\A ~ a => drop(a) ;\B => () ; }     ; drop(a) ; } ;
+  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr -> match expr -> list -> match arm -> if block -> expr -> unit expr
+

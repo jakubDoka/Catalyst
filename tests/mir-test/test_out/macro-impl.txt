@@ -57,31 +57,33 @@ fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  {
         var8 = var6.0
         var9 = 0
         var10 = u8 == u8(val8, val9)
+        var11 = var6.1
         split var10 block1 block2
     }
 
     block1() {
-        var11 = var6.1
-        var12 = var11.0
-        var13 = var12
-        var14 = var11.1
-        var15 = var14
+        var12 = var6.1
+        var13 = var12.0
+        var14 = var13
+        var15 = var12.1
+        var16 = var15
         access var2
-        var17 = *var2
-        var16 = var17.0
-        var16 ={var18, var19}
-        var18 = 1
-        var19 ={var20}
-        var20 = access var13
-        var5 = access var15
+        var18 = *var2
+        var17 = var18.0
+        var17 ={var19, var20}
+        var19 = 1
+        var20 ={var21}
+        var21 = access var14
+        var5 = access var16
         goto block3 with var5
     }
 
     block2() {
-        var21 = var6.0
-        var22 = 1
-        var23 = u8 == u8(val21, val22)
-        split var23 block4 block5
+        var22 = var6.0
+        var23 = 1
+        var24 = u8 == u8(val22, val23)
+        var25 = var6.1
+        split var24 block4 block5
     }
 
     block3(var5: 1\MacroToken) {
@@ -89,21 +91,21 @@ fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  {
     }
 
     block4() {
-        var24 = var6.1
-        var25 = var24.0
-        var26 = var25
+        var26 = var6.1
+        var27 = var26.0
+        var28 = var27
         access var2
-        var28 = *var2
-        var27 = var28.0
-        var27 ={var29}
-        var29 = 2
-        var5 = access var26
+        var30 = *var2
+        var29 = var30.0
+        var29 ={var31}
+        var31 = 2
+        var5 = access var28
         goto block3 with var5
     }
 
     block5() {
-        var3 ={var30}
-        var30 = 0
+        var3 ={var32}
+        var32 = 0
         return var3
     }
 
