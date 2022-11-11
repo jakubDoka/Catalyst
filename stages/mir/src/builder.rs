@@ -84,7 +84,7 @@ impl MirChecker<'_> {
 
     fn assign(&mut self, AssignTir { lhs, rhs }: AssignTir, builder: &mut MirBuilder) -> NodeRes {
         let dest = self.node(lhs, None, false, builder)?;
-        builder.move_in(dest, self.typec, self.interner);
+        builder.ctx.move_in(dest, self.typec, self.interner);
         self.node(rhs, Some(dest), true, builder)?;
         Some(dest)
     }
@@ -103,21 +103,24 @@ impl MirChecker<'_> {
         builder: &mut MirBuilder,
     ) -> NodeRes {
         let mut dest_block = None;
-        let frame = builder.start_move_frame();
+        let frame = builder.ctx.start_move_frame();
         for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
+            let bind_frame = EnumMove::start_frame(builder.ctx);
             let cond_val = self.node(cond, None, true, builder)?;
             let then = builder.ctx.create_block();
             let next = builder.ctx.create_block();
             builder.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
             builder.select_block(then);
-            self.branch(body, &mut dest_block, dest, r#move, builder);
+            self.branch(body, &mut dest_block, dest, r#move, bind_frame, builder);
             builder.select_block(next);
         }
 
         if let Some(r#else) = r#else {
-            self.branch(r#else, &mut dest_block, dest, r#move, builder);
+            // The frame is always empty byt we at least don't need option
+            let frame = EnumMove::start_frame(builder.ctx);
+            self.branch(r#else, &mut dest_block, dest, r#move, frame, builder);
         } else {
-            builder.save_move_branch();
+            builder.ctx.save_move_branch();
         }
 
         if let Some(dest_block) = dest_block {
@@ -126,7 +129,7 @@ impl MirChecker<'_> {
                 builder.ctx.args.push(dest);
             }
         }
-        builder.end_move_frame(frame);
+        builder.ctx.end_move_frame(frame);
 
         Some(dest)
     }
@@ -139,7 +142,7 @@ impl MirChecker<'_> {
         r#move: bool,
         builder: &mut MirBuilder,
     ) -> NodeRes {
-        let value = self.node(value, None, false, builder)?;
+        let mir_value = self.node(value, None, false, builder)?;
 
         let branch_patterns = arms
             .iter()
@@ -160,11 +163,7 @@ impl MirChecker<'_> {
         let tree = patterns::as_tree(builder.arena, &branch_patterns, &mut reachable);
         if tree.has_missing {
             let gaps = patterns::find_gaps(tree);
-            self.non_exhaustive(
-                gaps,
-                builder.ctx.func.types[builder.ctx.func.values[value].ty].ty,
-                span,
-            )?
+            self.non_exhaustive(gaps, builder.ctx.func.value_ty(mir_value), span)?
         }
 
         let arms = arms
@@ -173,27 +172,27 @@ impl MirChecker<'_> {
             .filter_map(|(&arm, reachable)| reachable.then_some(arm))
             .collect::<BumpVec<_>>();
         let (&last, rest) = arms.split_last()?;
-        let frame = builder.start_move_frame();
+        let move_frame = builder.ctx.start_move_frame();
         let mut dest_block = None;
         for &arm in rest {
             let cond = self
-                .pattern_to_cond(arm.pat, value, builder)
+                .pattern_to_cond(arm.pat, mir_value, builder)
                 .expect("only last pattern can be non refutable");
             let block = builder.ctx.create_block();
             let next_block = builder.ctx.create_block();
             builder.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
             builder.select_block(block);
-            self.match_arm(arm, &mut dest_block, value, dest, r#move, builder);
+            self.match_arm(arm, &mut dest_block, mir_value, dest, r#move, builder);
             builder.select_block(next_block);
         }
-        self.match_arm(last, &mut dest_block, value, dest, r#move, builder);
+        self.match_arm(last, &mut dest_block, mir_value, dest, r#move, builder);
 
         let dest_block = dest_block?;
         builder.select_block(dest_block);
         if dest != ValueMir::UNIT {
             builder.ctx.args.push(dest);
         }
-        builder.end_move_frame(frame);
+        builder.ctx.end_move_frame(move_frame);
 
         Some(dest)
     }
@@ -207,10 +206,11 @@ impl MirChecker<'_> {
         r#move: bool,
         builder: &mut MirBuilder,
     ) {
-        let frame = builder.ctx.start_frame();
+        let frame = VarMir::start_frame(builder.ctx);
+        let bind_frame = EnumMove::start_frame(builder.ctx);
         self.bind_pattern_vars(pat, value, builder);
-        self.branch(body, dest_block, dest, r#move, builder);
-        builder.ctx.end_frame(frame);
+        self.branch(body, dest_block, dest, r#move, bind_frame, builder);
+        frame.end(builder.ctx, ());
     }
 
     fn branch(
@@ -219,15 +219,18 @@ impl MirChecker<'_> {
         dest_block: &mut OptVRef<BlockMir>,
         dest: VRef<ValueMir>,
         r#move: bool,
+        bind_frame: CtxFrame<EnumMove>,
         builder: &mut MirBuilder,
     ) {
         if let Some(ret) = self.node(body, Some(dest), r#move, builder) {
             let ret = (ret != ValueMir::UNIT).then_some(ret);
             let &mut dest_block = dest_block.get_or_insert_with(|| builder.ctx.create_block());
-            builder.save_move_branch();
+            bind_frame.end(builder.ctx, (self.typec, self.interner));
+            builder.ctx.save_move_branch();
             builder.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
         } else {
-            builder.discard_move_branch();
+            bind_frame.end(builder.ctx, (self.typec, self.interner));
+            builder.ctx.discard_move_branch();
         }
     }
 
@@ -269,18 +272,17 @@ impl MirChecker<'_> {
                     builder.inst(InstMir::Var(value, dest), span);
                     builder.create_var(dest);
                 }
-                UnitPatKindTir::Int(..) | UnitPatKindTir::Wildcard => unreachable!(),
                 UnitPatKindTir::Enum {
-                    id,
-                    value: Some(&pat),
-                    ..
+                    value: Some(&pat), ..
                 } => {
-                    let dest = builder.value(ty, self.typec);
+                    let dest = builder.value(pat.ty, self.typec);
+                    self.enum_move_out(value, dest, span, builder);
                     builder.inst(InstMir::Field(value, 1, dest), span);
-                    builder.ctx.moves.owners[dest] = Owner::Nested(id, value);
                     self.bind_pattern_vars(pat, dest, builder);
                 }
-                UnitPatKindTir::Enum { .. } => (),
+                UnitPatKindTir::Int(..)
+                | UnitPatKindTir::Wildcard
+                | UnitPatKindTir::Enum { .. } => unreachable!(),
             },
             PatKindTir::Or(_) => todo!(),
         }
@@ -369,7 +371,11 @@ impl MirChecker<'_> {
                         ret
                     });
 
-                    let Some(val) = enum_value.and_then(|&pat| self.pattern_to_cond(pat, value, builder)) else {
+                    let Some(val) = enum_value.and_then(|&pat| {
+                        let enum_value = builder.value(pat.ty, self.typec);
+                        builder.field(value, 1, enum_value, span);
+                        self.pattern_to_cond(pat, enum_value, builder)
+                    }) else {
                         return enum_flag;
                     };
 
@@ -459,7 +465,7 @@ impl MirChecker<'_> {
         let node = self.node(node, None, false, builder)?;
         let dest = builder.value(ty, self.typec);
         builder.inst(InstMir::Deref(node, dest), span);
-        builder.ctx.moves.owners[dest] = Owner::Nested(0, node);
+        builder.ctx.moves.owners[dest] = Owner::Indirect(0, node);
         Some(dest)
     }
 
@@ -547,7 +553,7 @@ impl MirChecker<'_> {
             return Some(ValueMir::UNIT);
         };
 
-        let frame = builder.ctx.start_frame();
+        let frame = VarMir::start_frame(builder.ctx);
         let res = try {
             for &node in nodes {
                 self.node(node, None, false, builder)?;
@@ -556,7 +562,7 @@ impl MirChecker<'_> {
 
             self.node(last, Some(dest), r#move, builder)?
         };
-        builder.ctx.end_frame(frame);
+        frame.end(builder.ctx, ());
 
         res
     }
@@ -673,11 +679,27 @@ impl MirChecker<'_> {
         None
     }
 
-    fn move_out(&mut self, value: VRef<ValueMir>, span: Span, builder: &mut MirBuilder) {
-        let Err(err) = builder.move_out(value, span, self.typec, self.interner) else {
+    fn enum_move_out(
+        &mut self,
+        value: VRef<ValueMir>,
+        inner_value: VRef<ValueMir>,
+        span: Span,
+        builder: &mut MirBuilder,
+    ) {
+        let Err(err) = builder.ctx.enum_move_out(value, inner_value, span, self.typec, self.interner) else {
             return;
         };
+        self.handle_move_error(span, err, builder);
+    }
 
+    fn move_out(&mut self, value: VRef<ValueMir>, span: Span, builder: &mut MirBuilder) {
+        let Err(err) = builder.ctx.move_out(value, span, self.typec, self.interner) else {
+            return;
+        };
+        self.handle_move_error(span, err, builder);
+    }
+
+    fn handle_move_error(&mut self, span: Span, err: MoveError, builder: &mut MirBuilder) {
         match err {
             MoveError::Graph(graph) => match graph {
                 MoveGraph::Present | MoveGraph::GoneSplit(..) | MoveGraph::PresentSplit(..) => {

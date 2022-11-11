@@ -239,7 +239,7 @@ impl<'a> FmtAst for PatAst<'a> {
                 name.display(fmt)
             }
             PatAst::StructCtor(ctor) => ctor.display(fmt),
-            PatAst::Int(span) => fmt.write_span(span),
+            PatAst::Wildcard(span) | PatAst::Int(span) => fmt.write_span(span),
             PatAst::EnumCtor(ctor) => ctor.display(fmt),
         }
     }

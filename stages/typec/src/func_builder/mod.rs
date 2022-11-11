@@ -287,7 +287,7 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let frame = builder.start_frame();
+        let frame = VarHeaderTir::start_frame(builder.ctx);
         let scope_frame = self.scope.start_frame();
 
         let Some((last, other)) = block.elements.split_last() else {
@@ -301,7 +301,7 @@ impl TyChecker<'_> {
                 .filter_map(|expr| self.expr(expr.value, None, builder)),
         );
         let last = self.expr(last.value, inference, builder);
-        builder.end_frame(frame);
+        frame.end(builder.ctx, ());
         let last = last?;
         store.push(last);
 
@@ -321,11 +321,9 @@ impl TyChecker<'_> {
             self.control_flow_in_const(span, span);
         }
 
-        let value = if let Some(expr) = expr {
-            Some(self.expr(expr, Some(builder.ret), builder)?)
-        } else {
-            None
-        };
+        let value = expr
+            .map(|expr| self.expr(expr, Some(builder.ret), builder))
+            .transpose()?;
 
         let span = expr.map_or(span, |expr| span.joined(expr.span()));
 
@@ -472,11 +470,9 @@ impl TyChecker<'_> {
             .collect::<BumpVec<_>>();
         let elifs = builder.arena.alloc_iter(elifs);
 
-        let r#else = if let Some((.., r#else)) = r#else {
-            Some(self.if_block(r#else, inference, builder)?)
-        } else {
-            None
-        };
+        let r#else = r#else
+            .map(|(.., r#else)| self.if_block(r#else, inference, builder))
+            .transpose()?;
 
         let ty = Self::combine_branch_types(
             elifs
@@ -677,7 +673,7 @@ impl TyChecker<'_> {
             self.non_struct_field_access(ty, path.span())?;
         };
 
-        let Some((field, .., mut field_ty)) = self.find_struct_field(struct_id, path.start.ident) else {
+        let Some((field, Field { ty: mut field_ty, .. })) = Struct::find_field(struct_id, path.start.ident, self.typec) else {
             self.field_not_found(struct_id, path.start)?;
         };
 
@@ -714,11 +710,11 @@ impl TyChecker<'_> {
             .iter()
             .map(|&MatchArmAst { pattern, body, .. }| {
                 let frame = self.scope.start_frame();
-                let var_frame = builder.start_frame();
+                let var_frame = VarHeaderTir::start_frame(builder.ctx);
                 let pat = self.pattern(pattern, value.ty, builder);
                 let body = self.if_block(body, inference, builder);
                 self.scope.end_frame(frame);
-                builder.end_frame(var_frame);
+                var_frame.end(builder.ctx, ());
                 Some(MatchArmTir {
                     pat: pat?,
                     body: body?,
@@ -834,28 +830,19 @@ impl TyChecker<'_> {
                 is_refutable: true,
             }),
             PatAst::EnumCtor(ctor) => {
-                let Ty::Enum(enum_ty) = ty.caller(self.typec) else {
+                let ty_base = ty.ptr_base(self.typec);
+                let Ty::Enum(enum_ty) = ty_base.base(self.typec) else {
                     todo!();
                 };
 
-                let Enum { variants, .. } = self.typec[enum_ty];
-                let (index, variant_ty) = self.typec[variants]
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, v)| (v.name == ctor.name.ident).then_some((i, v.ty)))
+                let (index, variant_ty) = ty_base
+                    .find_component(ctor.name.ident, self.typec, self.interner)
                     .or_else(|| todo!())?;
 
-                let value = if let Some((.., body)) = ctor.value {
-                    let variant_ty = if let Ty::Instance(inst) = ty.ptr_base(self.typec) {
-                        let params = self.typec[self.typec[inst].args].to_bumpvec();
-                        self.typec.instantiate(variant_ty, &params, self.interner)
-                    } else {
-                        variant_ty
-                    };
-                    Some(self.pattern(body, variant_ty, builder)?)
-                } else {
-                    None
-                };
+                let value = ctor
+                    .value
+                    .map(|(.., body)| self.pattern(body, variant_ty, builder))
+                    .transpose()?;
 
                 Some(PatTir {
                     kind: PatKindTir::Unit(UnitPatKindTir::Enum {
@@ -866,9 +853,16 @@ impl TyChecker<'_> {
                     span: ctor.span(),
                     ty,
                     has_binding: value.map_or(false, |v| v.has_binding),
-                    is_refutable: true,
+                    is_refutable: self.typec[enum_ty].variants.len() > 1,
                 })
             }
+            PatAst::Wildcard(span) => Some(PatTir {
+                kind: PatKindTir::Unit(UnitPatKindTir::Wildcard),
+                has_binding: false,
+                is_refutable: false,
+                span,
+                ty,
+            }),
         }
     }
 
@@ -1009,14 +1003,14 @@ impl TyChecker<'_> {
             self.nested_runner(runner, run.span())?
         }
 
-        let frame = builder.start_frame();
+        let frame = VarHeaderTir::start_frame(builder.ctx);
         builder.runner = Some((run.r#const, frame));
         let expr = self.expr(run.value, inference, builder);
         let (.., frame) = builder
             .runner
             .take()
             .expect("runner should be present since nesting is impossible");
-        builder.end_frame(frame);
+        frame.end(builder.ctx, ());
 
         let expr = builder.arena.alloc(expr?);
 

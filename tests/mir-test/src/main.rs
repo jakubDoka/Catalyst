@@ -294,6 +294,38 @@ fn main() {
                 if 0 == 0 => a = A::{};
                 drop(a);
             };
+
+            enum E {
+                A: A;
+                B;
+            };
+
+            fn enum_move() {
+                let e = E::A~::{};
+                match e {
+                    ::A~a => drop(a);
+                    ::B {};
+                };
+                drop(e);
+            };
+
+            fn enum_just_match() {
+                let e = E::A~::{};
+                match e {
+                    ::A~_ {};
+                    ::B {};
+                };
+                drop(e);
+            };
+
+            fn enum_whole_move() {
+                let e = E::A~::{};
+                match e {
+                    ::A~_ {};
+                    e {};
+                };
+                drop(e);
+            }
         }
 
         simple "partial-moves" {

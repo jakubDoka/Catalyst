@@ -57,8 +57,7 @@ impl MirChecker<'_> {
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    self.typec
-                        .display_ty(func.types[func.values[arg].ty].ty, self.interner)
+                    self.typec.display_ty(func.value_ty(arg), self.interner)
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),

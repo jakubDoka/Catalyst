@@ -59,6 +59,19 @@ pub struct Struct {
     pub loc: Option<Loc>,
 }
 
+impl Struct {
+    pub fn find_field(
+        s: FragRef<Self>,
+        name: FragSlice<u8>,
+        typec: &Typec,
+    ) -> Option<(usize, Field)> {
+        typec[typec[s].fields]
+            .iter()
+            .enumerate()
+            .find_map(|(i, &v)| (v.name == name).then_some((i, v)))
+    }
+}
+
 gen_water_drops! {
     Struct
     structs
@@ -71,6 +84,19 @@ pub struct Enum {
     pub generics: Generics,
     pub variants: FragSlice<Variant>,
     pub loc: Option<Loc>,
+}
+
+impl Enum {
+    pub fn find_variant(
+        e: FragRef<Self>,
+        name: FragSlice<u8>,
+        typec: &Typec,
+    ) -> Option<(usize, Ty)> {
+        typec[typec[e].variants]
+            .iter()
+            .enumerate()
+            .find_map(|(i, v)| (v.name == name).then_some((i, v.ty)))
+    }
 }
 
 gen_water_drops! {
@@ -231,6 +257,52 @@ impl Display for Ty {
 }
 
 impl Ty {
+    pub fn component_ty(
+        self,
+        index: usize,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Option<Ty> {
+        Some(match self {
+            Ty::Struct(s) => typec[typec[s].fields][index].ty,
+            Ty::Enum(e) => typec[typec[e].variants][index].ty,
+            Ty::Instance(i) => {
+                let Instance { base, args } = typec[i];
+                let ty = match base {
+                    GenericTy::Struct(s) => typec[typec[s].fields][index].ty,
+                    GenericTy::Enum(e) => typec[typec[e].variants][index].ty,
+                };
+                let params = typec[args].to_bumpvec();
+                typec.instantiate(ty, &params, interner)
+            }
+            _ => return None,
+        })
+    }
+
+    pub fn find_component(
+        self,
+        name: FragSlice<u8>,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Option<(usize, Ty)> {
+        match self {
+            Ty::Struct(s) => Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty)),
+            Ty::Enum(e) => Enum::find_variant(e, name, typec),
+            Ty::Instance(i) => {
+                let Instance { base, args } = typec[i];
+                let (index, ty) = match base {
+                    GenericTy::Struct(s) => {
+                        Struct::find_field(s, name, typec).map(|(i, f)| (i, f.ty))
+                    }
+                    GenericTy::Enum(e) => Enum::find_variant(e, name, typec),
+                }?;
+                let params = typec[args].to_bumpvec();
+                Some((index, typec.instantiate(ty, &params, interner)))
+            }
+            _ => None,
+        }
+    }
+
     pub fn int_eq(self) -> Option<FragRef<Func>> {
         Some(match self {
             Ty::Builtin(b) => match b {

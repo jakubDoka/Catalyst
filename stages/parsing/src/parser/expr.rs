@@ -382,6 +382,7 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum PatAst<'a> {
     Binding(Option<Span>, NameAst),
+    Wildcard(Span),
     StructCtor(StructCtorPatAst<'a>),
     EnumCtor(&'a EnumCtorPatAst<'a>),
     Int(Span),
@@ -402,7 +403,10 @@ impl<'a> Ast<'a> for PatAst<'a> {
                 let mutable = ctx.advance().span;
                 ctx.parse_args(Some(mutable))
             },
-            Ident => ctx.parse().map(|b| Self::Binding(mutable, b)),
+            Ident => match ctx.current_token_str() {
+                "_" => Some(Self::Wildcard(ctx.advance().span)),
+                _ => ctx.parse().map(|b| Self::Binding(mutable, b)),
+            },
             BackSlash => {
                 if ctx.at_next_tok(TokenKind::Ident) {
                     ctx.parse_args_alloc(mutable).map(Self::EnumCtor)
@@ -421,7 +425,7 @@ impl<'a> Ast<'a> for PatAst<'a> {
                 mutable.map_or(name.span(), |mutable| mutable.joined(name.span()))
             }
             StructCtor(ctor) => ctor.span(),
-            Int(span) => span,
+            Wildcard(span) | Int(span) => span,
             EnumCtor(ctor) => ctor.span(),
         }
     }

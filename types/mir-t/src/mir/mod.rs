@@ -98,6 +98,10 @@ impl FuncMirInner {
         self.value_flags
             .insert(value.index() * Self::FLAG_WIDTH + Self::IS_MUTABLE);
     }
+
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
+        self.types[self.values[value].ty].ty
+    }
 }
 
 impl Default for FuncMirInner {

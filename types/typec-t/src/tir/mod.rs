@@ -1,7 +1,67 @@
+use std::{marker::PhantomData, mem};
+
 use lexing_t::*;
 use storage::*;
 
 use crate::*;
+
+#[must_use]
+pub struct CtxFrame<T: CtxFrameItem> {
+    ph: PhantomData<T>,
+    base: usize,
+}
+
+impl<T: CtxFrameItem> CtxFrame<T> {
+    pub fn start(ctx: &T::Ctx) -> Self {
+        Self {
+            ph: PhantomData,
+            base: T::seq(ctx).len(),
+        }
+    }
+
+    pub fn end(self, ctx: &mut T::Ctx, args: T::Args<'_>) {
+        T::process(ctx, args, self.base);
+    }
+
+    pub fn contains(&self, index: usize) -> bool {
+        self.base <= index
+    }
+}
+
+pub trait CtxFrameItem: Sized + 'static {
+    type Ctx;
+    type Args<'a> = ();
+
+    fn seq_mut(ctx: &mut Self::Ctx) -> &mut Vec<Self>;
+    fn seq(ctx: &Self::Ctx) -> &[Self];
+
+    fn process_impl(
+        _ctx: &mut Self::Ctx,
+        _args: Self::Args<'_>,
+        _selfs: impl Iterator<Item = Self>,
+    ) {
+    }
+    fn process(ctx: &mut Self::Ctx, args: Self::Args<'_>, base: usize) {
+        let mut seq = mem::take(Self::seq_mut(ctx));
+        Self::process_impl(ctx, args, seq.drain(base..));
+        *Self::seq_mut(ctx) = seq;
+    }
+    fn start_frame(ctx: &Self::Ctx) -> CtxFrame<Self> {
+        CtxFrame::start(ctx)
+    }
+}
+
+#[macro_export]
+macro_rules! ctx_frame_seq_getters {
+    (|$ctx:ident| $res:expr) => {
+        fn seq_mut($ctx: &mut Self::Ctx) -> &mut Vec<Self> {
+            &mut $res
+        }
+        fn seq($ctx: &Self::Ctx) -> &[Self] {
+            &$res
+        }
+    };
+}
 
 pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
 
@@ -30,7 +90,7 @@ pub struct TirBuilder<'arena, 'ctx> {
     pub arena: &'arena Arena,
     pub ret: Ty,
     pub ret_span: Option<Span>,
-    pub runner: Option<(Span, TirFrame)>,
+    pub runner: Option<(Span, CtxFrame<VarHeaderTir>)>,
     pub ctx: &'ctx mut TirBuilderCtx,
 }
 
@@ -48,14 +108,6 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             runner: None,
             ctx,
         }
-    }
-
-    pub fn start_frame(&mut self) -> TirFrame {
-        TirFrame(self.ctx.vars.len())
-    }
-
-    pub fn end_frame(&mut self, frame: TirFrame) {
-        self.ctx.vars.truncate(frame.0);
     }
 
     pub fn create_var(&mut self, mutable: bool, ty: Ty, span: Span) -> VRef<VarHeaderTir> {
@@ -76,13 +128,10 @@ pub struct VarHeaderTir {
     pub mutable: bool,
 }
 
-#[must_use]
-pub struct TirFrame(usize);
+impl CtxFrameItem for VarHeaderTir {
+    type Ctx = TirBuilderCtx;
 
-impl TirFrame {
-    pub fn contains(&self, var: VRef<VarHeaderTir>) -> bool {
-        var.index() >= self.0
-    }
+    ctx_frame_seq_getters! { |ctx| ctx.vars }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -8,6 +8,7 @@
 #![feature(decl_macro)]
 #![feature(const_swap)]
 #![feature(const_mut_refs)]
+#![feature(associated_type_defaults)]
 
 use storage::gen_v_ref_constants;
 
@@ -63,9 +64,9 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     scope::{ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
-        AssignTir, CallTir, CallableTir, CastCheck, FieldTir, IfBranchTir, IfTir, LetTir,
-        MacroCompileRequest, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx,
-        TirFrame, TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
+        AssignTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir, IfBranchTir,
+        IfTir, LetTir, MacroCompileRequest, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder,
+        TirBuilderCtx, TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
