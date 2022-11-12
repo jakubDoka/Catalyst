@@ -387,7 +387,7 @@ impl MirBuilderCtx {
                     }
                 }
                 MoveGraph::GoneSplit(children) => {
-                    self.moves.graphs[current] = MoveGraph::Partial(children);
+                    self.change_graph(current, MoveGraph::Partial(children));
                     children.index(id as usize)
                 }
                 MoveGraph::Partial(children, ..) => children.index(id as usize),
@@ -470,7 +470,7 @@ impl MirBuilderCtx {
                     None => graph_path.pop().unwrap(),
                 },
                 MoveGraph::PresentSplit(children) => {
-                    self.moves.graphs[current] = MoveGraph::Partial(children);
+                    self.change_graph(current, MoveGraph::Partial(children));
                     children.index(id as usize)
                 }
                 g @ MoveGraph::Gone(..) => return Err(MoveError::Graph(g)),
