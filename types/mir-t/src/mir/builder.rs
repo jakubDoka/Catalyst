@@ -394,7 +394,19 @@ impl MirBuilderCtx {
             }
         }
 
-        self.change_graph(current, MoveGraph::Present);
+        let mut frontier = bumpvec![current];
+        while let Some(node) = frontier.pop() {
+            match self.moves.graphs[node] {
+                MoveGraph::Present | MoveGraph::PresentSplit(..) => (),
+                MoveGraph::Gone(..) => {
+                    self.change_graph(node, MoveGraph::Present);
+                }
+                MoveGraph::GoneSplit(children) | MoveGraph::Partial(children) => {
+                    self.change_graph(node, MoveGraph::PresentSplit(children));
+                    frontier.extend(children.keys());
+                }
+            }
+        }
 
         for node in graph_path.into_iter().rev() {
             match self.moves.graphs[node] {
@@ -480,10 +492,21 @@ impl MirBuilderCtx {
             }
         }
 
-        let g = self.change_graph(current, MoveGraph::Gone(span));
-        let (MoveGraph::Present | MoveGraph::PresentSplit(..)) = g else {
-            return Err(MoveError::Graph(g));
-        };
+        let mut frontier = bumpvec![current];
+        while let Some(node) = frontier.pop() {
+            match self.moves.graphs[node] {
+                MoveGraph::Present => {
+                    self.change_graph(node, MoveGraph::Gone(span));
+                }
+                MoveGraph::PresentSplit(children) => {
+                    self.change_graph(node, MoveGraph::GoneSplit(children));
+                    frontier.extend(children.keys());
+                }
+                MoveGraph::Gone(..) | MoveGraph::GoneSplit(..) | MoveGraph::Partial(..) => {
+                    return Err(MoveError::Graph(self.moves.graphs[node]))
+                }
+            }
+        }
 
         for node in graph_path.into_iter().rev() {
             match self.moves.graphs[node] {
