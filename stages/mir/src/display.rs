@@ -9,9 +9,9 @@ use typec_t::*;
 
 use crate::*;
 
-impl MirChecker<'_> {
-    pub fn display_funcs(&self, funcs: &[FragRef<Func>], buffer: &mut String) -> fmt::Result {
-        for &func in funcs {
+impl MirChecker<'_, '_> {
+    pub fn display_funcs(&self, buffer: &mut String) -> fmt::Result {
+        for &func in &self.mir_ctx.just_compiled {
             let mir = self
                 .mir
                 .bodies

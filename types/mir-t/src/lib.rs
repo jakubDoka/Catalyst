@@ -4,10 +4,6 @@
 mod mir;
 
 pub use mir::{
-    builder::{
-        DependantTypes, EnumFrame, EnumMove, MirBuilder, MirBuilderCtx, MirMoveCtx, Move,
-        MoveError, MoveFrame, MoveGraph, Owner, VarMir,
-    },
     BlockMir, CallMir, CallableMir, ControlFlowMir, DebugData, FuncConstMir, FuncMir, FuncMirInner,
     InstMir, Mir, MirTy, ValueMir,
 };

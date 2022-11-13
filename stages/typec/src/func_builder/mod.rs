@@ -379,7 +379,6 @@ impl TyChecker<'_> {
             Char(span) => self.char(span),
             Bool(span) => self.bool(span),
             Call(&call) => self.call(call, inference, builder),
-            Const(run) => self.r#const(run, inference, builder),
             StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
             EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
             Match(match_expr) => self.r#match(match_expr, inference, builder),
@@ -991,30 +990,6 @@ impl TyChecker<'_> {
             TirKind::Ctor(builder.arena.alloc_iter(fields)),
             ctor.span(),
         ))
-    }
-
-    fn r#const<'a>(
-        &mut self,
-        run: ConstAst,
-        inference: Inference,
-        builder: &mut TirBuilder<'a, '_>,
-    ) -> ExprRes<'a> {
-        if let Some((runner, ..)) = builder.runner {
-            self.nested_runner(runner, run.span())?
-        }
-
-        let frame = VarHeaderTir::start_frame(builder.ctx);
-        builder.runner = Some((run.r#const, frame));
-        let expr = self.expr(run.value, inference, builder);
-        let (.., frame) = builder
-            .runner
-            .take()
-            .expect("runner should be present since nesting is impossible");
-        frame.end(builder.ctx, ());
-
-        let expr = builder.arena.alloc(expr?);
-
-        Some(TirNode::new(expr.ty, TirKind::Const(expr), expr.span))
     }
 
     fn call<'a>(

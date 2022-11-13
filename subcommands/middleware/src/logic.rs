@@ -1017,16 +1017,15 @@ impl Worker {
             &mut task.interner,
             &mut task.typec,
             &mut task.workspace,
+            &mut self.state.mir_ctx,
+            &mut self.state.mir_move_ctx,
+            arena,
             shared.resources,
         )
-        .funcs(
-            arena,
-            &mut self.state.mir_builder_ctx,
-            &mut type_checked_funcs,
-        );
+        .funcs(&mut type_checked_funcs);
         task.entry_points.extend(
             self.state
-                .mir_builder_ctx
+                .mir_ctx
                 .just_compiled
                 .drain(..)
                 .filter(|&func| task.typec.funcs[func].flags.contains(FuncFlags::ENTRY)),
@@ -1172,7 +1171,8 @@ pub struct WorkerState {
     pub scope: Scope,
     pub ty_checker_ctx: TyCheckerCtx,
     pub ast_transfer: AstTransfer<'static>,
-    pub mir_builder_ctx: MirBuilderCtx,
+    pub mir_ctx: MirCtx,
+    pub mir_move_ctx: MirMoveCtx,
     pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
     pub macro_ctx: MacroCtx<'static>,
     pub tir_builder_ctx: TirBuilderCtx,

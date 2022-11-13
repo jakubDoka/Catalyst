@@ -22,7 +22,9 @@ struct TestState {
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     ast_transfer: AstTransfer<'static>,
-    mir_ctx: MirBuilderCtx,
+    mir_ctx: MirCtx,
+    arena: Arena,
+    mir_move_ctx: MirMoveCtx,
     functions: String,
     mir: Mir,
 }
@@ -48,10 +50,9 @@ impl Scheduler for TestState {
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
         let mut type_checked_funcs = bumpvec![];
-        let arena = Arena::new();
         let mut ctx = TirBuilderCtx::default();
         ty_checker!(self, module).execute(
-            &arena,
+            &self.arena,
             items,
             &mut self.typec_ctx,
             &mut ctx,
@@ -60,8 +61,8 @@ impl Scheduler for TestState {
         );
 
         mir_checker!(self, module)
-            .funcs(&arena, &mut self.mir_ctx, &mut type_checked_funcs)
-            .display_funcs(&self.mir_ctx.just_compiled, &mut self.functions)
+            .funcs(&mut type_checked_funcs)
+            .display_funcs(&mut self.functions)
             .unwrap();
 
         self.mir_ctx.just_compiled.clear();

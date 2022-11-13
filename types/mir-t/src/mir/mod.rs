@@ -1,13 +1,13 @@
-use std::{default::default, ops::Deref, sync::Arc};
+use std::{
+    default::default,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use lexing_t::*;
 
 use storage::*;
 use typec_t::*;
-
-use crate::*;
-
-pub mod builder;
 
 #[derive(Default, Clone)]
 pub struct Mir {
@@ -226,5 +226,39 @@ impl ValueMir {
 impl VRefDefault for ValueMir {
     fn default_state() -> VRef<Self> {
         Self::UNIT
+    }
+}
+
+#[derive(Clone)]
+pub struct DependantTypes(PushMap<MirTy>);
+
+impl DependantTypes {
+    pub fn clear(&mut self) {
+        self.0.truncate(2);
+    }
+}
+
+impl Default for DependantTypes {
+    fn default() -> Self {
+        Self({
+            let mut values = PushMap::new();
+            values.push(MirTy { ty: Ty::UNIT });
+            values.push(MirTy { ty: Ty::TERMINAL });
+            values
+        })
+    }
+}
+
+impl Deref for DependantTypes {
+    type Target = PushMap<MirTy>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for DependantTypes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

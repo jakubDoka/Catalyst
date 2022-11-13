@@ -109,10 +109,6 @@ impl TyChecker<'_> {
             TirKind::Access(var) => {
                 write!(buffer, "var{}", var.index())?;
             }
-            TirKind::Const(value) => {
-                write!(buffer, "const ")?;
-                self.display_tir(*value, buffer, indent, var_count)?;
-            }
             TirKind::Ctor(fields) => {
                 write!(buffer, "{}\\{{", self.typec.display_ty(ty, self.interner))?;
                 if let Some((&first, others)) = fields.split_first() {

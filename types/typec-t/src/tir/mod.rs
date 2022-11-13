@@ -243,7 +243,6 @@ pub enum TirKind<'a> {
     Return(Option<&'a TirNode<'a>>),
     Call(&'a CallTir<'a>),
     Access(VRef<VarHeaderTir>),
-    Const(&'a TirNode<'a>),
     Ctor(&'a [TirNode<'a>]),
     Deref(&'a TirNode<'a>),
     Ref(&'a TirNode<'a>),

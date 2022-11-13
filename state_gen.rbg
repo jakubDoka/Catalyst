@@ -38,16 +38,22 @@ file "stages/mir/src/state_gen.rs" {
     use "typec_t"
     use "packaging_t"
     use "mir_t"
+    use "crate"
 
 
     struct MirChecker {
         owned module: `VRef<Module>`
         owned source: `VRef<Source>` = "resources.modules[module].source"
+        owned current_block: `OptVRef<BlockMir>` = "None"
 
         mut Mir
         mut Interner
         mut Typec
         mut Workspace
+        mut MirCtx
+        mut MirMoveCtx
+
+        unique Arena
         Resources
     }
 }
