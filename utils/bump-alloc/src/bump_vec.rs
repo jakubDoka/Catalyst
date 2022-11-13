@@ -9,7 +9,7 @@ use std::{
 use crate::*;
 
 thread_local! {
-    static BUMP_ALLOC: BumpAlloc = BumpAlloc::default();
+    pub static BUMP_ALLOC: BumpAlloc = BumpAlloc::default();
 }
 
 pub struct BumpAllocRef;
@@ -48,7 +48,7 @@ unsafe impl std::alloc::Allocator for BumpAllocRef {
 }
 
 #[derive(Default)]
-struct BumpAlloc {
+pub struct BumpAlloc {
     refs: Cell<usize>,
     allocator: AllocatorLow<true>,
 }
@@ -75,6 +75,12 @@ pub struct BumpVec<T> {
 impl<T: Debug> Debug for BumpVec<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.inner.iter()).finish()
+    }
+}
+
+impl<T> From<BumpVec<T>> for Vec<T, BumpAllocRef> {
+    fn from(bump_vec: BumpVec<T>) -> Self {
+        bump_vec.inner
     }
 }
 

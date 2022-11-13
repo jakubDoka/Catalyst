@@ -1,16 +1,18 @@
 use std::{
+    alloc::{Allocator, Global},
     default::default,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
+use bump_alloc::{bumpvec, BumpAllocRef};
 use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
 
 use crate::VRef;
 
 #[derive(Debug)]
-pub struct ShadowMap<T, V> {
-    data: Vec<V>,
+pub struct ShadowMap<T, V, A: Allocator = Global> {
+    data: Vec<V, A>,
     default: V,
     phantom: PhantomData<fn(T) -> T>,
 }
@@ -19,7 +21,19 @@ impl<T, V: Default> ShadowMap<T, V> {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
+impl<T, V: Default> ShadowMap<T, V, BumpAllocRef> {
+    pub fn bump(cap: usize) -> Self {
+        Self {
+            data: bumpvec![cap cap].into(),
+            default: V::default(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T, V: Default, A: Allocator> ShadowMap<T, V, A> {
     pub fn clear(&mut self)
     where
         V: Clone,
@@ -50,7 +64,7 @@ impl<T, V: Default> ShadowMap<T, V> {
     }
 }
 
-impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
+impl<T, V, A: Allocator> Index<VRef<T>> for ShadowMap<T, V, A> {
     type Output = V;
 
     fn index(&self, key: VRef<T>) -> &V {
@@ -58,7 +72,7 @@ impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
     }
 }
 
-impl<T, V: Default + Clone> IndexMut<VRef<T>> for ShadowMap<T, V> {
+impl<T, V: Default + Clone, A: Allocator> IndexMut<VRef<T>> for ShadowMap<T, V, A> {
     fn index_mut(&mut self, key: VRef<T>) -> &mut V {
         let index = key.index();
         self.data.resize(self.data.len().max(index + 1), default());

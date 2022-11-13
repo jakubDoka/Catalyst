@@ -115,6 +115,7 @@ impl Generator<'_> {
             InstMir::Var(value, ret) => {
                 self.assign_value(ret, value, builder);
             }
+            InstMir::MayDrop(_) => todo!(),
         };
     }
 

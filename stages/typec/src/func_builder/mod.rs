@@ -542,7 +542,7 @@ impl TyChecker<'_> {
             })
             .or_else(|| todo!())?;
 
-        let flag_ty = self.typec.get_enum_flag_ty(ty).unwrap();
+        let flag_ty = self.typec.enum_flag_ty(ty).unwrap();
 
         let variant_value = TirNode::new(
             Ty::Builtin(flag_ty),

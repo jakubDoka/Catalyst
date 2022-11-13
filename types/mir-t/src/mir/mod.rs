@@ -194,6 +194,7 @@ pub enum InstMir {
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
     Bool(bool, VRef<ValueMir>),
+    MayDrop(VRef<ValueMir>),
 }
 
 #[derive(Clone, Copy)]

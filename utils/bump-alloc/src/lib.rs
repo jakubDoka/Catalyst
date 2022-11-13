@@ -18,7 +18,7 @@ mod frag_map;
 mod primitives;
 
 pub use {
-    crate::bump_vec::{BumpVec, ToBumpVec},
+    crate::bump_vec::{BumpAlloc, BumpAllocRef, BumpVec, ToBumpVec, BUMP_ALLOC},
     allocator::{Allocator, AllocatorLow, ProtectedAllocator},
     arena::Arena,
     frag_map::{FragAddr, FragBase, FragMap, FragSliceAddr, NonMaxU16, MAX_FRAGMENT_SIZE},

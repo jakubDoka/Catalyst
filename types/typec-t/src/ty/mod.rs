@@ -387,9 +387,9 @@ impl Ty {
         params: &[FragSlice<Spec>],
         typec: &mut Typec,
         interner: &mut Interner,
-    ) -> Option<bool> {
+    ) -> Option<Option<FragRef<Impl>>> {
         match self {
-            Ty::Pointer(..) | Ty::Builtin(..) => Some(false),
+            Ty::Pointer(..) | Ty::Builtin(..) => Some(None),
             Ty::Param(..) => typec
                 .find_implementation(
                     self,
@@ -398,7 +398,7 @@ impl Ty {
                     &mut None,
                     interner,
                 )
-                .map(|_| false),
+                .map(|_| None),
             Ty::Struct(..) | Ty::Enum(..) | Ty::Instance(..) => Some(
                 typec
                     .find_implementation(
@@ -408,7 +408,7 @@ impl Ty {
                         &mut None,
                         interner,
                     )
-                    .is_some(),
+                    .flatten(),
             ),
         }
     }

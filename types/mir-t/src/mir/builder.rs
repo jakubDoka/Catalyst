@@ -1,5 +1,6 @@
 use std::{
-    mem,
+    default::default,
+    iter, mem,
     ops::{Deref, DerefMut},
 };
 
@@ -41,72 +42,278 @@ impl<'a> MirBuilder<'a> {
         self.ctx.func.value_ty(value)
     }
 
-    // pub fn drop_value(&mut self, value: VRef<ValueMir>, span: Span, typec: &mut Typec, interner: &mut Interner) -> Result<(), DropError> {
-    //     let root = match self.ctx.moves.owners[value] {
-    //         Owner::Temporary(graph) => graph,
-    //         Owner::Nested(..) => unreachable!(),
-    //         Owner::Var(var) => self.ctx.vars[var].graph,
-    //     };
-    //     let drop_fn = typec[SpecBase::DROP].methods.index(0);
-    //     self.drop_value_recur(value, root, &mut DropState { drop_fn, span, typec, interner })
-    // }
+    pub fn pointer_to(
+        &mut self,
+        value: VRef<ValueMir>,
+        mutability: Mutability,
+        span: Span,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> VRef<ValueMir> {
+        let ty = self.value_ty(value);
+        let ptr_ty = typec.pointer_to(mutability, ty, interner).into();
+        let dest = self.value(ptr_ty, typec);
+        self.ctx.func.set_referenced(value);
+        self.inst(InstMir::Ref(value, dest), span);
+        dest
+    }
 
-    // fn drop_value_recur(&mut self, value: VRef<ValueMir>, root: OptVRef<MoveGraph>, ds: &mut DropState) -> Result<(), DropError> {
-    //     let root = root.map(|r| self.ctx.moves.graphs[r]);
-    //     if let Some(MoveGraph::Gone(..) | MoveGraph::GoneSplit(..)) = root {
-    //         return Ok(());
-    //     }
+    pub fn drop_value(
+        &mut self,
+        value: VRef<ValueMir>,
+        span: Span,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) {
+        let ty = self.value_ty(value);
+        match ty.is_drop(&self.ctx.generics, typec, interner) {
+            Some(Some(drop_impl)) => {
+                let drop_fn = typec[typec[drop_impl].methods][0];
+                let mut params = bumpvec![None; typec.pack_func_param_specs(drop_fn).count()];
+                typec
+                    .compatible(&mut params, ty, typec[drop_impl].key.ty)
+                    .unwrap();
+                let params = params.into_iter().collect::<Option<BumpVec<_>>>().unwrap();
+                let value = self.pointer_to(value, Mutability::Mutable, span, typec, interner);
+                let call = CallMir {
+                    callable: CallableMir::Func(drop_fn),
+                    params: self.ctx.project_ty_slice(&params, typec),
+                    args: self.ctx.func.value_args.extend([value]),
+                };
+                let call = self.ctx.func.calls.push(call);
+                self.inst(InstMir::Call(call, None), span);
+            }
+            Some(None) => (),
+            None => {
+                self.inst(InstMir::MayDrop(value), span);
+                return;
+            }
+        }
 
-    //     let ty = self.ctx.func.types[self.ctx.func.values[value].ty].ty;
-    //     let is_drop = ty.is_drop(&self.ctx.generics, ds.typec, ds.interner);
+        match ty.base(typec).as_generic() {
+            Some(GenericTy::Struct(s)) => {
+                let field_len = typec[s].fields.len();
+                for i in 0..field_len {
+                    let field = self.value(ty.component_ty(i, typec, interner).unwrap(), typec);
+                    self.inst(InstMir::Field(value, i as u32, field), span);
+                    self.drop_value(field, span, typec, interner);
+                }
+            }
+            Some(GenericTy::Enum(e)) => {
+                let variant_len = typec[e].variants.len();
+                let Some(last_variant) = variant_len.checked_sub(1) else {
+                    return;
+                };
+                let mut ret_block = None;
+                for i in 0..last_variant {
+                    let flag_ty = typec.enum_flag_ty(e).unwrap().into();
+                    let enum_flag = self.value(flag_ty, typec);
+                    self.inst(InstMir::Field(value, 0, enum_flag), span);
+                    let variant = self.value(ty.component_ty(i, typec, interner).unwrap(), typec);
+                    self.inst(InstMir::Field(value, 1, variant), span);
+                    let lit = self.value(flag_ty, typec);
+                    self.inst(InstMir::Int(i as i64, lit), span);
+                    let cond = self.value(Ty::BOOL, typec);
+                    let call = CallMir {
+                        callable: CallableMir::Func(flag_ty.int_eq().unwrap()),
+                        params: default(),
+                        args: self.ctx.func.value_args.extend([enum_flag, lit]),
+                    };
+                    let call = self.ctx.func.calls.push(call);
+                    self.inst(InstMir::Call(call, Some(cond)), span);
+                    let cond_block = self.ctx.create_block();
+                    let next_block = self.ctx.create_block();
+                    self.close_block(span, ControlFlowMir::Split(cond, cond_block, next_block));
+                    self.select_block(cond_block);
+                    self.drop_value(variant, span, typec, interner);
+                    let &mut return_block =
+                        ret_block.get_or_insert_with(|| self.ctx.create_block());
+                    self.close_block(span, ControlFlowMir::Goto(return_block, None));
+                    self.select_block(next_block);
+                }
+                let variant = self.value(
+                    ty.component_ty(last_variant, typec, interner).unwrap(),
+                    typec,
+                );
+                self.inst(InstMir::Field(value, 1, variant), span);
+                self.drop_value(variant, span, typec, interner);
+                if let Some(return_block) = ret_block {
+                    self.close_block(span, ControlFlowMir::Goto(return_block, None));
+                    self.select_block(return_block);
+                }
+            }
+            None => (),
+        }
+    }
 
-    //     if let (Some(true) | None, Some(MoveGraph::Partial(children))) = (is_drop, root) {
-    //         return Err(DropError::Partial(children));
-    //     }
+    pub fn move_in(
+        &mut self,
+        value: VRef<ValueMir>,
+        span: Span,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Result<(), MoveError> {
+        if self.ctx.untracked_moves {
+            return Ok(());
+        }
 
-    //     match is_drop {
-    //         Some(true) => {
-    //             let ptr_ty = Ty::Pointer(ds.typec.pointer_to(Mutability::Mutable, ty, ds.interner));
-    //             let ptr = self.value(ptr_ty, ds.typec);
-    //             self.inst(InstMir::Ref(value, ptr), ds.span);
-    //             let caller = CallMir {
-    //                 callable: CallableMir::SpecFunc(ds.drop_fn),
-    //                 params: self.ctx.func.ty_params.extend([self.ctx.func.values[value].ty]),
-    //                 args: self.ctx.func.value_args.extend([ptr]),
-    //             };
-    //             let caller = self.ctx.func.calls.push(caller);
-    //             self.inst(InstMir::Call(caller, None), ds.span)
-    //         },
-    //         Some(false) => None,
-    //         None => self.inst(InstMir::MayDrop(value), ds.span),
-    //     };
+        let ty = self.ctx.value_ty(value);
 
-    //     let children = match root {
-    //         Some(MoveGraph::Partial(children) | MoveGraph::PresentSplit(children)) => Some(children),
-    //         _ => None,
-    //     };
+        if ty.is_copy(&self.ctx.generics, typec, interner) {
+            return Ok(());
+        }
 
-    //     match ty {
-    //         Ty::Struct(s) => {
-    //             for (i, field) in ds.typec[s].fields.keys().enumerate() {
-    //                 let field = ds.typec[field];
-    //                 let node = children.map(|c| c.index(i));
-    //                 let field_value = self.value(field.ty, ds.typec);
-    //                 self.inst(InstMir::Field(value, i as u32, field_value), ds.span);
-    //                 self.drop_value_recur(field_value, node, ds)?;
-    //             }
-    //         },
-    //         Ty::Enum(e) => {
+        let mut current = value;
+        let mut path = bumpvec![];
+        let root = loop {
+            match self.ctx.moves.owners[current] {
+                Owner::Direct(graph) => break graph,
+                Owner::Indirect(id, header) => {
+                    path.push((id, self.ctx.func.value_ty(header)));
+                    current = header;
+                }
+            }
+        };
 
-    //         },
-    //         Ty::Instance(_) => todo!(),
-    //         Ty::Pointer(..) |
-    //         Ty::Param(..) |
-    //         Ty::Builtin(..) => (),
-    //     }
+        let Some(root) = root else {
+            self.drop_value(value, span, typec, interner);
+            return Ok(());
+        };
 
-    //     Ok(())
-    // }
+        let mut graph_path = bumpvec![];
+        let mut current = root;
+        for (id, ty) in path.into_iter().rev() {
+            graph_path.push(current);
+            current = match self.ctx.moves.graphs[current] {
+                MoveGraph::Present | MoveGraph::PresentSplit(..) => {
+                    self.drop_value(value, span, typec, interner);
+                    return Ok(());
+                }
+                MoveGraph::Gone(span) => {
+                    match self.ctx.expand_graph_node(ty, id, Some(span), root, typec) {
+                        Some(Some(graph)) => graph,
+                        Some(None) => graph_path.pop().unwrap(),
+                        None => {
+                            graph_path.clear();
+                            break;
+                        }
+                    }
+                }
+                MoveGraph::GoneSplit(children) => {
+                    self.ctx.change_graph(current, MoveGraph::Partial(children));
+                    children.index(id as usize)
+                }
+                MoveGraph::Partial(children, ..) => children.index(id as usize),
+            }
+        }
+
+        let mut frontier = bumpvec![(current, value)];
+        while let Some((node, value)) = frontier.pop() {
+            match self.ctx.moves.graphs[node] {
+                MoveGraph::Present | MoveGraph::PresentSplit(..) => {
+                    self.drop_value(value, default(), typec, interner);
+                }
+                MoveGraph::Gone(..) => {
+                    self.ctx.change_graph(node, MoveGraph::Present);
+                }
+                MoveGraph::GoneSplit(children) | MoveGraph::Partial(children) => {
+                    self.assert_not_drop(value, node, typec, interner)?;
+                    self.ctx
+                        .change_graph(node, MoveGraph::PresentSplit(children));
+                    if let MoveGraph::Partial(..) = self.ctx.moves.graphs[node] {
+                        frontier.extend(children.keys().enumerate().map(|(i, k)| {
+                            (
+                                k,
+                                match self.ctx.moves.graphs[k] {
+                                    MoveGraph::Present | MoveGraph::PresentSplit(..) => {
+                                        let header_ty = self.ctx.value_ty(value);
+                                        let field = self.ctx.value(
+                                            header_ty.component_ty(i, typec, interner).unwrap(),
+                                            typec,
+                                        );
+                                        self.inst(
+                                            InstMir::Field(value, i as u32, field),
+                                            default(),
+                                        );
+                                        field
+                                    }
+                                    _ => ValueMir::UNIT,
+                                },
+                            )
+                        }));
+                    } else {
+                        frontier.extend(children.keys().map(|k| (k, ValueMir::UNIT)));
+                    }
+                }
+            }
+        }
+
+        for node in graph_path.into_iter().rev() {
+            match self.ctx.moves.graphs[node] {
+                MoveGraph::Present
+                | MoveGraph::PresentSplit(..)
+                | MoveGraph::Gone(..)
+                | MoveGraph::GoneSplit(..) => unreachable!(),
+                MoveGraph::Partial(children) => {
+                    let collapse = self.ctx.moves.graphs[children]
+                        .iter()
+                        .all(|&g| matches!(g, MoveGraph::Present | MoveGraph::PresentSplit(..)));
+                    if collapse {
+                        self.ctx
+                            .change_graph(node, MoveGraph::PresentSplit(children));
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn start_enum_frame(&self) -> EnumFrame {
+        EnumFrame {
+            base: self.ctx.moves.enums.len(),
+        }
+    }
+
+    pub fn end_enum_frame(
+        &mut self,
+        frame: EnumFrame,
+        span: Span,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) {
+        let mut enum_moves = mem::take(&mut self.ctx.moves.enums);
+        for EnumMove { value, inner_value } in enum_moves.drain(frame.base..) {
+            if let Owner::Direct(graph) = self.ctx.moves.owners[inner_value] {
+                match graph.map(|g| self.ctx.moves.graphs[g]) {
+                    None | Some(MoveGraph::Present | MoveGraph::PresentSplit(..)) => {
+                        self.move_in(value, span, typec, interner).unwrap();
+                    }
+                    _ => (),
+                }
+            }
+        }
+        self.ctx.moves.enums = enum_moves;
+    }
+
+    pub fn assert_not_drop(
+        &mut self,
+        value: VRef<ValueMir>,
+        graph: VRef<MoveGraph>,
+        typec: &mut Typec,
+        interner: &mut Interner,
+    ) -> Result<(), MoveError> {
+        if let Some(Some(..)) = self
+            .value_ty(value)
+            .is_drop(&self.ctx.generics, typec, interner)
+        {
+            return Err(MoveError::DropGraph(self.ctx.moves.graphs[graph]));
+        }
+
+        Ok(())
+    }
 
     pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {
         self.current_block?;
@@ -115,15 +322,7 @@ impl<'a> MirBuilder<'a> {
     }
 
     pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
-        if ty == Ty::UNIT {
-            return ValueMir::UNIT;
-        }
-        if ty == Ty::TERMINAL {
-            return ValueMir::TERMINAL;
-        }
-
-        let ty = self.ctx.project_ty(ty, typec);
-        self.ctx.func.values.push(ValueMir { ty })
+        self.ctx.value(ty, typec)
     }
 
     pub fn create_var(&mut self, value: VRef<ValueMir>) {
@@ -161,13 +360,6 @@ impl<'a> MirBuilder<'a> {
     }
 }
 
-// struct DropState<'ctx> {
-//     drop_fn: FragRef<SpecFunc>,
-//     span: Span,
-//     typec: &'ctx mut Typec,
-//     interner: &'ctx mut Interner,
-// }
-
 #[derive(Clone, Copy)]
 pub struct VarMir {
     pub value: VRef<ValueMir>,
@@ -178,14 +370,10 @@ impl CtxFrameItem for VarMir {
     ctx_frame_seq_getters! { |ctx| ctx.vars }
 }
 
-// #[derive(Debug)]
-// pub enum DropError {
-//     Partial(VSlice<MoveGraph>),
-// }
-
 #[derive(Debug)]
 pub enum MoveError {
     Graph(MoveGraph),
+    DropGraph(MoveGraph),
     Pointer(Span),
 }
 
@@ -218,28 +406,40 @@ pub struct Move {
 
 #[derive(Default)]
 pub struct MirMoveCtx {
-    pub terminating_branches: Vec<bool>,
+    pub branches: Vec<OptVRef<BlockMir>>,
     pub cached_moves: Frames<Move>,
     pub owners: ShadowMap<ValueMir, Owner>,
     pub graphs: PushMap<MoveGraph>,
     pub current_branch: Map<VRef<MoveGraph>, MoveGraph>,
     pub brach_move_slices: PushMap<Move>,
     pub enums: Vec<EnumMove>,
+    meta: ShadowMap<MoveGraph, MoveMeta>,
+    drop_masks: PushMap<bool>,
+    values_to_drop: Vec<(VRef<ValueMir>, VRef<MoveGraph>)>,
 }
 
 impl MirMoveCtx {
     pub fn clear(&mut self) {
-        self.terminating_branches.clear();
+        self.branches.clear();
         self.cached_moves.clear();
         self.owners.clear();
         self.graphs.clear();
         self.current_branch.clear();
         self.brach_move_slices.clear();
     }
+
+    fn prepare_for_branch_drops(&mut self) {
+        self.meta.clear();
+        self.drop_masks.clear();
+        self.values_to_drop.clear();
+    }
 }
 
 #[must_use]
-pub struct MoveFrame(usize);
+pub struct MoveFrame {
+    base: usize,
+    branch_base: usize,
+}
 
 #[derive(Default)]
 pub struct MirBuilderCtx {
@@ -257,6 +457,18 @@ pub struct MirBuilderCtx {
 }
 
 impl MirBuilderCtx {
+    pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
+        if ty == Ty::UNIT {
+            return ValueMir::UNIT;
+        }
+        if ty == Ty::TERMINAL {
+            return ValueMir::TERMINAL;
+        }
+
+        let ty = self.project_ty(ty, typec);
+        self.func.values.push(ValueMir { ty })
+    }
+
     pub fn create_block(&mut self) -> VRef<BlockMir> {
         self.func.blocks.push(BlockMir::default())
     }
@@ -344,88 +556,6 @@ impl MirBuilderCtx {
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.func.value_ty(value)
-    }
-
-    pub fn move_in(&mut self, value: VRef<ValueMir>, typec: &mut Typec, interner: &mut Interner) {
-        if self.untracked_moves {
-            return;
-        }
-
-        let ty = self.value_ty(value);
-
-        if ty.is_copy(&self.generics, typec, interner) {
-            return;
-        }
-
-        let mut current = value;
-        let mut path = bumpvec![];
-        let root = loop {
-            match self.moves.owners[current] {
-                Owner::Direct(graph) => break graph,
-                Owner::Indirect(id, header) => {
-                    path.push((id, self.func.value_ty(header)));
-                    current = header;
-                }
-            }
-        };
-
-        let Some(root) = root else {
-            return;
-        };
-
-        let mut graph_path = bumpvec![];
-        let mut current = root;
-        for (id, ty) in path.into_iter().rev() {
-            graph_path.push(current);
-            current = match self.moves.graphs[current] {
-                MoveGraph::Present | MoveGraph::PresentSplit(..) => return,
-                MoveGraph::Gone(span) => {
-                    match self.expand_graph_node(ty, id, Some(span), root, typec) {
-                        Some(Some(graph)) => graph,
-                        Some(None) => graph_path.pop().unwrap(),
-                        None => todo!(),
-                    }
-                }
-                MoveGraph::GoneSplit(children) => {
-                    self.change_graph(current, MoveGraph::Partial(children));
-                    children.index(id as usize)
-                }
-                MoveGraph::Partial(children, ..) => children.index(id as usize),
-            }
-        }
-
-        let mut frontier = bumpvec![current];
-        while let Some(node) = frontier.pop() {
-            match self.moves.graphs[node] {
-                MoveGraph::Present | MoveGraph::PresentSplit(..) => (),
-                MoveGraph::Gone(..) => {
-                    self.change_graph(node, MoveGraph::Present);
-                }
-                MoveGraph::GoneSplit(children) | MoveGraph::Partial(children) => {
-                    self.change_graph(node, MoveGraph::PresentSplit(children));
-                    frontier.extend(children.keys());
-                }
-            }
-        }
-
-        for node in graph_path.into_iter().rev() {
-            match self.moves.graphs[node] {
-                MoveGraph::Present
-                | MoveGraph::PresentSplit(..)
-                | MoveGraph::Gone(..)
-                | MoveGraph::GoneSplit(..) => unreachable!(),
-                MoveGraph::Partial(children) => {
-                    let collapse = self.moves.graphs[children]
-                        .iter()
-                        .all(|&g| matches!(g, MoveGraph::Present | MoveGraph::PresentSplit(..)));
-                    if collapse {
-                        self.change_graph(node, MoveGraph::PresentSplit(children));
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
     }
 
     pub fn enum_move_out(
@@ -576,7 +706,10 @@ impl MirBuilderCtx {
                 .map(|(graph, old)| Move { graph, old }),
         );
         self.moves.cached_moves.mark();
-        MoveFrame(self.moves.cached_moves.len())
+        MoveFrame {
+            base: self.moves.cached_moves.len(),
+            branch_base: self.moves.branches.len(),
+        }
     }
 
     pub fn discard_move_branch(&mut self) {
@@ -585,10 +718,10 @@ impl MirBuilderCtx {
             .drain()
             .for_each(|(graph, old)| self.moves.graphs[graph] = old);
         self.moves.cached_moves.mark();
-        self.moves.terminating_branches.push(true);
+        self.moves.branches.push(None);
     }
 
-    pub fn save_move_branch(&mut self) {
+    pub fn save_move_branch(&mut self, current_block: VRef<BlockMir>) {
         self.moves
             .cached_moves
             .extend(self.moves.current_branch.drain().map(|(graph, old)| Move {
@@ -596,30 +729,36 @@ impl MirBuilderCtx {
                 old: mem::replace(&mut self.moves.graphs[graph], old),
             }));
         self.moves.cached_moves.mark();
-        self.moves.terminating_branches.push(false);
+        self.moves.branches.push(Some(current_block));
     }
 
     pub fn end_move_frame(&mut self, frame: MoveFrame) {
-        let mut excess = self.moves.cached_moves.len() - frame.0;
-        (0..excess).for_each(|_| self.moves.cached_moves.join_frames());
-        excess -= self
-            .moves
-            .terminating_branches
-            .drain(frame.0..)
-            .map(|b| b as usize)
-            .sum::<usize>();
-        let mut count_map = ShadowMap::new();
-        for r#move in self.moves.cached_moves.pop().collect::<BumpVec<_>>() {
+        let branch_count = self.moves.cached_moves.len() - frame.base;
+        // remove the wrapping mark
+        drop(self.moves.cached_moves.pop());
+        let mut moves = bumpvec![];
+        for i in 0..branch_count {
+            moves.extend(self.moves.cached_moves.pop().map(move |elem| (i, elem)));
+        }
+        let active_branch_count = branch_count
+            - self.moves.branches[frame.branch_base..]
+                .iter()
+                .filter(|b| b.is_some())
+                .count();
+
+        self.moves.prepare_for_branch_drops();
+        for (branch, r#move) in moves {
+            let mut meta = &mut self.moves.meta[r#move.graph];
             match (r#move.old, self.moves.graphs[r#move.graph]) {
                 (
                     MoveGraph::Present | MoveGraph::PresentSplit(..),
                     MoveGraph::Gone(..) | MoveGraph::Partial(..) | MoveGraph::GoneSplit(..),
                 ) => {
-                    if count_map[r#move.graph] == -1 {
+                    if meta.counter == -1 {
                         continue;
                     }
-                    count_map[r#move.graph] += 1;
-                    if count_map[r#move.graph] == excess as isize {
+                    meta.counter += 1;
+                    if meta.counter == active_branch_count as isize {
                         self.change_graph(r#move.graph, r#move.old);
                     }
                 }
@@ -627,9 +766,16 @@ impl MirBuilderCtx {
                     MoveGraph::Gone(..) | MoveGraph::Partial(..) | MoveGraph::GoneSplit(..),
                     MoveGraph::Present | MoveGraph::PresentSplit(..),
                 ) => {
-                    if count_map[r#move.graph] >= 0 {
+                    if meta.counter >= 0 {
+                        meta.mask = self
+                            .moves
+                            .drop_masks
+                            .extend(iter::repeat(false).take(branch_count));
+
+                        meta.counter = -1;
                         self.change_graph(r#move.graph, r#move.old);
-                        count_map[r#move.graph] = -1;
+                    } else {
+                        self.moves.drop_masks[meta.mask][branch] = true;
                     }
                 }
                 _ => (),
@@ -645,34 +791,20 @@ impl MirBuilderCtx {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct MoveMeta {
+    counter: isize,
+    mask: VSlice<bool>,
+}
+
 pub struct EnumMove {
     pub value: VRef<ValueMir>,
     pub inner_value: VRef<ValueMir>,
 }
 
-impl CtxFrameItem for EnumMove {
-    type Ctx = MirBuilderCtx;
-
-    type Args<'a> = (&'a mut Typec, &'a mut Interner);
-
-    ctx_frame_seq_getters! { |ctx| ctx.moves.enums }
-
-    fn process_impl(
-        ctx: &mut Self::Ctx,
-        (typec, interner): Self::Args<'_>,
-        selfs: impl Iterator<Item = Self>,
-    ) {
-        for EnumMove { value, inner_value } in selfs {
-            if let Owner::Direct(graph) = ctx.moves.owners[inner_value] {
-                match graph.map(|g| ctx.moves.graphs[g]) {
-                    None | Some(MoveGraph::Present | MoveGraph::PresentSplit(..)) => {
-                        ctx.move_in(value, typec, interner);
-                    }
-                    _ => (),
-                }
-            }
-        }
-    }
+#[must_use]
+pub struct EnumFrame {
+    base: usize,
 }
 
 #[derive(Clone)]
@@ -708,25 +840,3 @@ impl DerefMut for DependantTypes {
         &mut self.0
     }
 }
-
-/*
-    struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir> mir_t::mir::builder::MirBuilder::value(union enum2$<typec_t::ty::Ty>, struct typec_t::typec::Typec *) (c:\src\rust\catalyst\types\mir-t\src\mir\builder.rs:127)
-static void mir::state_gen::MirChecker::bind_pattern_vars(struct typec_t::tir::PatTir, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:271)
-static void mir::state_gen::MirChecker::bind_pattern_vars(struct typec_t::tir::PatTir, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:284)
-static void mir::state_gen::MirChecker::match_arm(struct typec_t::tir::MatchArmTir, union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::BlockMir> > > *, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:215)
-static union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::match(struct typec_t::tir::MatchTir, struct lexing_t::span::Span, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:189)
-union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::node(struct typec_t::tir::TirNode, union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > >, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:78)
-static union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::block(struct slice$<typec_t::tir::TirNode>, struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir>, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:560)
-union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::node(struct typec_t::tir::TirNode, union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > >, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:66)
-union enum2$<core::option::Option<enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > > > mir::builder::impl$0::return::closure$0(struct mir::builder::impl$0::return::closure_env$0, struct typec_t::tir::TirNode *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:675)
-union enum2$<core::option::Option<enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > > > enum2$<core::option::Option<ref$<typec_t::tir::TirNode> > >::and_then<ref$<typec_t::tir::TirNode>,enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > >,mir::builder::impl$0::return::closure_env$0>(union enum2$<core::option::Option<ref$<typec_t::tir::TirNode> > >, struct mir::builder::impl$0::return::closure_env$0) (@core::option::Option<T>::and_then:26)
-static union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::return(union enum2$<core::option::Option<ref$<typec_t::tir::TirNode> > >, struct lexing_t::span::Span, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:673)
-union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > > mir::state_gen::MirChecker::node(struct typec_t::tir::TirNode, union enum2$<core::option::Option<bump_alloc::primitives::VRef<mir_t::mir::ValueMir> > >, bool, struct mir_t::mir::builder::MirBuilder *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:72)
-static struct mir_t::mir::FuncMirInner mir::state_gen::MirChecker::func(struct bump_alloc::primitives::FragRef<typec_t::func::Func>, struct typec_t::tir::TirNode, struct bump_alloc::arena::Arena *, struct mir_t::mir::builder::MirBuilderCtx *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:52)
-struct mir::state_gen::MirChecker * mir::state_gen::MirChecker::funcs(struct bump_alloc::arena::Arena *, struct mir_t::mir::builder::MirBuilderCtx *, struct bump_alloc::bump_vec::BumpVec<tuple$<bump_alloc::primitives::FragRef<typec_t::func::Func>,typec_t::tir::TirNode> > *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:22)
-void mir_test::impl$0::parse_segment(struct mir_test::TestState *, struct bump_alloc::primitives::VRef<packaging_t::packaging::Module>, struct parsing::parser::items::GroupedItemsAst) (c:\src\rust\catalyst\tests\mir-test\src\main.rs:62)
-static void packaging::scheduler::Scheduler::execute<mir_test::TestState>(struct mir_test::TestState *, struct ref$<std::path::Path>) (c:\src\rust\catalyst\stages\packaging\src\scheduler.rs:73)
-static struct tuple$<diags::items::Workspace,packaging_t::packaging::Resources> testing::items::impl$0::exec<mir_test::TestState>(struct mir_test::TestState, struct str) (c:\src\rust\catalyst\utils\testing\src\lib.rs:128)
-mir_test::main::{{closure}}::{{closure}} (c:\src\rust\catalyst\utils\testing\src\lib.rs:19)
-core::ops::function::FnOnce::call_once (@core::ops::function::FnOnce::call_once:15)
-void testing::items::test_case::closure$0(struct testing::items::test_case::closure_env$0 *) (c:\src\rust\catalyst\utils\testing\src\lib.rs:160)*/

@@ -10,6 +10,7 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(macro_metavar_expr)]
+#![feature(allocator_api)]
 
 #[macro_export]
 macro_rules! function_pointer {

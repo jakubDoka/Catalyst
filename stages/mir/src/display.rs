@@ -209,6 +209,7 @@ impl MirChecker<'_> {
             InstMir::Var(value, ret) => {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
+            InstMir::MayDrop(_) => todo!(),
         }
 
         Ok(())
@@ -278,7 +279,7 @@ impl MirChecker<'_> {
             },
             Ty::Enum(r#enum) => {
                 let Enum { variants, .. } = self.typec[r#enum];
-                let variant = if self.typec.get_enum_flag_ty(r#enum).is_some() {
+                let variant = if self.typec.enum_flag_ty(r#enum).is_some() {
                     let flag = advance();
                     let index = flag.start as usize;
                     self.typec[variants][index]

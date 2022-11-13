@@ -104,7 +104,7 @@ gen_index! {
 }
 
 impl Typec {
-    pub fn get_enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
+    pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
         Some(match self[self[en].variants].len() {
             256.. => Builtin::U16,
             2.. => Builtin::U8,

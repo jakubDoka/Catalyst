@@ -309,7 +309,7 @@ impl GenLayouts {
                 self.ty_layout(base.as_ty(), &params, typec, interner)
             }
             Ty::Enum(ty) => {
-                let size = typec.get_enum_flag_ty(ty).map(|ty| ty.size());
+                let size = typec.enum_flag_ty(ty).map(|ty| ty.size());
                 let (base_size, base_align) = typec[typec[ty].variants]
                     .to_bumpvec()
                     .into_iter()
