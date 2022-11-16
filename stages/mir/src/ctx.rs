@@ -26,13 +26,6 @@ pub struct MirCtx {
 
 impl MirCtx {
     pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
-        if ty == Ty::UNIT {
-            return ValueMir::UNIT;
-        }
-        if ty == Ty::TERMINAL {
-            return ValueMir::TERMINAL;
-        }
-
         let ty = self.project_ty(ty, typec);
         self.func.values.push(ValueMir { ty })
     }

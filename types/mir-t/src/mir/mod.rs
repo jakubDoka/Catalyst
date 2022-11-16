@@ -1,6 +1,5 @@
 use std::{
-    default::default,
-    ops::{Deref, DerefMut},
+    ops::Deref,
     sync::Arc,
 };
 
@@ -45,18 +44,27 @@ pub struct FuncConstMir {
     pub block: VRef<BlockMir>,
 }
 
-#[derive(Clone)]
+pub struct MirFuncCheckPoint {
+    blocks: usize,
+    insts: usize,
+    values: usize,
+    value_args: usize,
+    ty_params: usize,
+    calls: usize,
+    types: usize,
+}
+
+#[derive(Clone, Default)]
 pub struct FuncMirInner {
-    pub ret: VRef<ValueMir>,
+    pub ret: OptVRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
     pub blocks: PushMap<BlockMir>,
     pub insts: PushMap<InstMir>,
     pub values: PushMap<ValueMir>,
     pub value_args: PushMap<VRef<ValueMir>>,
     pub ty_params: PushMap<VRef<MirTy>>,
-    pub constants: PushMap<FuncConstMir>,
     pub calls: PushMap<CallMir>,
-    pub types: DependantTypes,
+    pub types: PushMap<MirTy>,
     value_flags: BitSet,
 }
 
@@ -65,15 +73,37 @@ impl FuncMirInner {
     const IS_REFERENCED: usize = 0;
     const IS_MUTABLE: usize = 1;
 
+    pub fn check_point(&self) -> MirFuncCheckPoint {
+        MirFuncCheckPoint {
+            blocks: self.blocks.len(),
+            insts: self.insts.len(),
+            values: self.values.len(),
+            value_args: self.value_args.len(),
+            ty_params: self.ty_params.len(),
+            calls: self.calls.len(),
+            types: self.types.len(),
+        }
+    }
+
+    pub fn rollback(&mut self, check_point: MirFuncCheckPoint) {
+        self.blocks.truncate(check_point.blocks);
+        self.insts.truncate(check_point.insts);
+        self.values.truncate(check_point.values);
+        self.value_args.truncate(check_point.value_args);
+        self.ty_params.truncate(check_point.ty_params);
+        self.calls.truncate(check_point.calls);
+        self.types.truncate(check_point.types);
+        self.value_flags.truncate(check_point.values * Self::FLAG_WIDTH);
+    }
+
     pub fn clear(&mut self) {
-        self.ret = VRef::default();
+        self.ret = None;
         self.generics = VRefSlice::default();
         self.blocks.clear();
         self.insts.clear();
-        self.values.truncate(ValueMir::TERMINAL.index() + 1);
+        self.values.clear();
         self.value_args.clear();
         self.ty_params.clear();
-        self.constants.clear();
         self.types.clear();
         self.calls.clear();
         self.value_flags.clear();
@@ -104,47 +134,9 @@ impl FuncMirInner {
     }
 }
 
-impl Default for FuncMirInner {
-    fn default() -> Self {
-        Self {
-            ret: default(),
-            generics: default(),
-            blocks: default(),
-            insts: default(),
-            values: {
-                let mut values = PushMap::new();
-                values.push(ValueMir { ty: MirTy::UNIT });
-                values.push(ValueMir {
-                    ty: MirTy::TERMINAL,
-                });
-                values
-            },
-            value_args: default(),
-            ty_params: default(),
-            constants: default(),
-            value_flags: default(),
-            calls: default(),
-            types: default(),
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct MirTy {
     pub ty: Ty,
-}
-
-impl MirTy {
-    gen_v_ref_constants! {
-        UNIT
-        TERMINAL
-    }
-}
-
-impl VRefDefault for MirTy {
-    fn default_state() -> VRef<Self> {
-        Self::UNIT
-    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -195,6 +187,7 @@ pub enum InstMir {
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
     Bool(bool, VRef<ValueMir>),
     MayDrop(VRef<ValueMir>),
+    Drop(VRef<ValueMir>, FragRef<Impl>),
 }
 
 #[derive(Clone, Copy)]
@@ -211,54 +204,7 @@ pub enum CallableMir {
     Pointer(VRef<ValueMir>),
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
-}
-
-impl ValueMir {
-    gen_v_ref_constants!(
-        UNIT
-        TERMINAL
-    );
-}
-
-impl VRefDefault for ValueMir {
-    fn default_state() -> VRef<Self> {
-        Self::UNIT
-    }
-}
-
-#[derive(Clone)]
-pub struct DependantTypes(PushMap<MirTy>);
-
-impl DependantTypes {
-    pub fn clear(&mut self) {
-        self.0.truncate(2);
-    }
-}
-
-impl Default for DependantTypes {
-    fn default() -> Self {
-        Self({
-            let mut values = PushMap::new();
-            values.push(MirTy { ty: Ty::UNIT });
-            values.push(MirTy { ty: Ty::TERMINAL });
-            values
-        })
-    }
-}
-
-impl Deref for DependantTypes {
-    type Target = PushMap<MirTy>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for DependantTypes {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
 }

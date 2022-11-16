@@ -16,15 +16,13 @@ impl BitSet {
         Self::default()
     }
 
-    pub fn with_capacity(free_len: usize) -> Self {
+    pub fn with_capacity(cap: usize) -> Self {
         Self {
-            data: Vec::with_capacity((free_len + WIDTH - (free_len & (WIDTH - 1))) << WIDTH_POW),
+            data: Vec::with_capacity(Self::project_len(cap)),
             len: 0,
         }
     }
-}
 
-impl BitSet {
     /// Returns true if given [`VPtr`] is in set.
     ///
     /// # Examples
@@ -113,5 +111,56 @@ impl BitSet {
     pub fn clear(&mut self) {
         self.data.clear();
         self.len = 0;
+    }
+
+    pub fn truncate(&mut self, len: usize) {
+        self.len = len;
+        self.data
+            .truncate(Self::project_len(len));
+        if let Some(last) = self.data.last_mut() {
+            *last &= Self::reminder_mask(len);
+        }
+    }
+
+    pub fn project_len(len: usize) -> usize {
+        let missing = WIDTH - (len & (WIDTH - 1));
+        (len + (missing & (WIDTH - 1))) >> WIDTH_POW
+    }
+
+    pub fn reminder_mask(len: usize) -> usize {
+        let rem = len & (WIDTH - 1);
+        ((1 << rem) - 1) | 0usize.wrapping_sub((rem == 0) as usize)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn project_len_test() {
+        assert_eq!(BitSet::project_len(0), 0);
+        assert_eq!(BitSet::project_len(1), 1);
+        assert_eq!(BitSet::project_len(WIDTH), 1);
+        assert_eq!(BitSet::project_len(WIDTH + 1), 2);
+    }
+
+    #[test]
+    fn reminder_mask_test() {
+        assert_eq!(BitSet::reminder_mask(0), usize::MAX);
+        assert_eq!(BitSet::reminder_mask(1), 1);
+        assert_eq!(BitSet::reminder_mask(WIDTH), usize::MAX);
+        assert_eq!(BitSet::reminder_mask(WIDTH + 1), 1);
+        assert_eq!(BitSet::reminder_mask(5), 0b11111);
+    }
+
+    #[test]
+    fn test_truncate() {
+        let mut set = BitSet::new();
+        set.insert(2);
+        set.insert(3);
+        set.insert(4);
+        set.truncate(3);
+        assert_eq!(set.raw(), &[0b100]);
     }
 }

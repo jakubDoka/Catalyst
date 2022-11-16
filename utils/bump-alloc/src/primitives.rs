@@ -283,6 +283,11 @@ impl<T> VSlice<T> {
     pub fn index(&self, index: usize) -> VRef<T> {
         self.keys().nth(index).expect("Index out of bounds.")
     }
+
+    #[inline(always)]
+    pub fn start(&self) -> u32 {
+        self.0
+    }
 }
 
 impl<T> Default for VSlice<T> {

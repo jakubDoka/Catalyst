@@ -210,6 +210,7 @@ impl MirChecker<'_, '_> {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
             InstMir::MayDrop(_) => todo!(),
+            InstMir::Drop(_, _) => todo!(),
         }
 
         Ok(())

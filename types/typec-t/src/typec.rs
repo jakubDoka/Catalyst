@@ -719,6 +719,15 @@ impl Typec {
         }
     }
 
+    pub fn infer_ty_params(&self, param_count: usize, reference: Ty, template: Ty) -> BumpVec<Ty> {
+        let mut params = bumpvec![None; param_count];
+        let res = self.compatible(&mut params, reference, template);
+        assert!(res.is_ok());
+        assert!(params.iter().all(|p| p.is_some()));
+        const _: () = assert!(mem::size_of::<Option<Ty>>() == mem::size_of::<Ty>());
+        unsafe { mem::transmute(params) }
+    }
+
     pub fn compatible(
         &self,
         params: &mut [Option<Ty>],
