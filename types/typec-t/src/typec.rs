@@ -32,8 +32,9 @@ pub struct Typec {
     pub builtin_funcs: Vec<FragRef<Func>>,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub variants: Variants,
-    pub macros: Map<Ty, MacroImpl>,
+    pub macros: CMap<Ty, MacroImpl>,
     pub enums: Enums,
+    pub may_need_drop: CMap<Ty, bool>,
 }
 
 macro_rules! gen_index {
@@ -104,6 +105,35 @@ gen_index! {
 }
 
 impl Typec {
+    pub fn may_need_drop(&mut self, ty: Ty) -> bool {
+        match ty {
+            Ty::Param(..) => return true,
+            Ty::Pointer(..) | Ty::Builtin(..) => return false,
+            ty if let Some(is) = self.may_need_drop.get(&ty) => return *is,
+            Ty::Struct(_) |
+            Ty::Enum(_) |
+            Ty::Instance(_) => (),
+        };
+        // its split since map entry handle must be dropped.
+        let is = match ty {
+            Ty::Struct(s) => self[s].fields.keys().any(|f| {
+                let ty = self[f].ty;
+                self.may_need_drop(ty)
+            }),
+            Ty::Enum(e) => self[e].variants.keys().any(|f| {
+                let ty = self[f].ty;
+                self.may_need_drop(ty)
+            }),
+            Ty::Instance(i) => {
+                let Instance { base, .. } = self[i];
+                self.may_need_drop(base.as_ty())
+            }
+            Ty::Param(..) | Ty::Pointer(..) | Ty::Builtin(..) => unreachable!(),
+        };
+        self.may_need_drop.insert(ty, is);
+        is
+    }
+
     pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
         Some(match self[self[en].variants].len() {
             256.. => Builtin::U16,

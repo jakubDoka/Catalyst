@@ -115,8 +115,7 @@ impl BitSet {
 
     pub fn truncate(&mut self, len: usize) {
         self.len = len;
-        self.data
-            .truncate(Self::project_len(len));
+        self.data.truncate(Self::project_len(len));
         if let Some(last) = self.data.last_mut() {
             *last &= Self::reminder_mask(len);
         }

@@ -172,9 +172,6 @@ impl MirChecker<'_, '_> {
 
                 buffer.push(')');
             }
-            InstMir::Const(r#const, value) => {
-                write!(buffer, "var{} = const {}", value.index(), r#const.index())?;
-            }
             InstMir::Ctor(fields, value, ..) => {
                 write!(buffer, "var{} =", value.index())?;
 

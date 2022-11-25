@@ -221,8 +221,8 @@ mod util {
             for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
                 if let ModuleItemPtr::Ty(ty) = item.ptr
-                    && let Some(&r#impl) = typec.macros.get(&ty)
-                    && let MacroImpl { name, r#impl: Some(r#impl) } = r#impl
+                    && let Some(r#impl) = typec.macros.get(&ty)
+                    && let MacroImpl { name, r#impl: Some(r#impl) } = r#impl.to_owned()
                 {
                     token_macros.push(MacroCompileRequest { name, ty, r#impl });
                 }

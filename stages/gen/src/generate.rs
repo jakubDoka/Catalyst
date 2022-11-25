@@ -105,7 +105,6 @@ impl Generator<'_> {
                 }
             }
             InstMir::Call(call, ret) => self.call(call, ret, builder),
-            InstMir::Const(id, ret) => self.r#const(id, ret, builder),
             InstMir::Ctor(fields, ret, needs_instance) => {
                 self.constructor(fields, ret, needs_instance, builder)
             }
@@ -116,6 +115,7 @@ impl Generator<'_> {
                 self.assign_value(ret, value, builder);
             }
             InstMir::MayDrop(_) => todo!(),
+            InstMir::Drop(_, _) => todo!(),
         };
     }
 
@@ -238,28 +238,6 @@ impl Generator<'_> {
                     ..base_value
                 };
             });
-    }
-
-    fn r#const(&mut self, id: VRef<FuncConstMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        let block_id = builder.body.constants[id].block;
-        let BlockMir {
-            insts,
-            control_flow,
-            ..
-        } = builder.body.blocks[block_id];
-
-        for &inst in &builder.body.insts[insts] {
-            self.inst(inst, builder);
-        }
-
-        #[allow(irrefutable_let_patterns)]
-        let ControlFlowMir::Return(final_value) = control_flow else {
-            unreachable!()
-        };
-
-        if let Some(final_value) = final_value {
-            self.assign_value(ret, final_value, builder)
-        }
     }
 
     fn call(&mut self, call: VRef<CallMir>, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {

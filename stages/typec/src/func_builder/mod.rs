@@ -71,7 +71,7 @@ impl TyChecker<'_> {
         };
 
         let spec_base = spec.base(self.typec);
-        if SpecBase::is_macro(spec_base) && let Some(macro_impl) = self.typec.macros.get_mut(&ty) {
+        if SpecBase::is_macro(spec_base) && let Some(mut macro_impl) = self.typec.macros.get_mut(&ty) {
             macro_impl.r#impl = Some(impl_ref);
             ctx.macros.push(MacroCompileRequest {
                 name: macro_impl.name,

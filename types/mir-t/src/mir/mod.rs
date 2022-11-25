@@ -1,5 +1,5 @@
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
@@ -44,27 +44,17 @@ pub struct FuncConstMir {
     pub block: VRef<BlockMir>,
 }
 
-pub struct MirFuncCheckPoint {
-    blocks: usize,
-    insts: usize,
-    values: usize,
-    value_args: usize,
-    ty_params: usize,
-    calls: usize,
-    types: usize,
-}
-
 #[derive(Clone, Default)]
 pub struct FuncMirInner {
-    pub ret: OptVRef<ValueMir>,
+    pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
     pub blocks: PushMap<BlockMir>,
     pub insts: PushMap<InstMir>,
-    pub values: PushMap<ValueMir>,
+    pub values: FuncValues,
     pub value_args: PushMap<VRef<ValueMir>>,
     pub ty_params: PushMap<VRef<MirTy>>,
     pub calls: PushMap<CallMir>,
-    pub types: PushMap<MirTy>,
+    pub types: FuncTypes,
     value_flags: BitSet,
 }
 
@@ -73,31 +63,8 @@ impl FuncMirInner {
     const IS_REFERENCED: usize = 0;
     const IS_MUTABLE: usize = 1;
 
-    pub fn check_point(&self) -> MirFuncCheckPoint {
-        MirFuncCheckPoint {
-            blocks: self.blocks.len(),
-            insts: self.insts.len(),
-            values: self.values.len(),
-            value_args: self.value_args.len(),
-            ty_params: self.ty_params.len(),
-            calls: self.calls.len(),
-            types: self.types.len(),
-        }
-    }
-
-    pub fn rollback(&mut self, check_point: MirFuncCheckPoint) {
-        self.blocks.truncate(check_point.blocks);
-        self.insts.truncate(check_point.insts);
-        self.values.truncate(check_point.values);
-        self.value_args.truncate(check_point.value_args);
-        self.ty_params.truncate(check_point.ty_params);
-        self.calls.truncate(check_point.calls);
-        self.types.truncate(check_point.types);
-        self.value_flags.truncate(check_point.values * Self::FLAG_WIDTH);
-    }
-
     pub fn clear(&mut self) {
-        self.ret = None;
+        self.ret = VRef::default();
         self.generics = VRefSlice::default();
         self.blocks.clear();
         self.insts.clear();
@@ -137,6 +104,13 @@ impl FuncMirInner {
 #[derive(Clone, Copy)]
 pub struct MirTy {
     pub ty: Ty,
+}
+
+impl MirTy {
+    gen_v_ref_constants!(
+        UNIT
+        TERMINAL
+    );
 }
 
 #[derive(Clone, Copy, Default)]
@@ -180,7 +154,6 @@ pub enum InstMir {
     Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>, OptVRef<ValueMir>),
     Call(VRef<CallMir>, OptVRef<ValueMir>),
-    Const(VRef<FuncConstMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
@@ -207,4 +180,79 @@ pub enum CallableMir {
 #[derive(Clone, Copy)]
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
+}
+
+impl VRefDefault for ValueMir {
+    fn default_state() -> VRef<Self> {
+        Self::UNIT
+    }
+}
+
+impl ValueMir {
+    gen_v_ref_constants!(
+        UNIT
+        TERMINAL
+    );
+}
+
+#[derive(Clone, Default)]
+pub struct FuncTypes(PushMap<MirTy>);
+
+impl FuncTypes {
+    pub fn new() -> Self {
+        let mut pm = PushMap::new();
+        pm.push(MirTy { ty: Ty::UINT });
+        pm.push(MirTy { ty: Ty::TERMINAL });
+        Self(pm)
+    }
+
+    pub fn clear(&mut self) {
+        self.0.truncate(ValueMir::TERMINAL.index() + 1);
+    }
+}
+
+impl Deref for FuncTypes {
+    type Target = PushMap<MirTy>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for FuncTypes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct FuncValues(PushMap<ValueMir>);
+
+impl FuncValues {
+    pub fn new() -> Self {
+        let mut pm = PushMap::new();
+        pm.push(ValueMir { ty: MirTy::UNIT });
+        pm.push(ValueMir {
+            ty: MirTy::TERMINAL,
+        });
+        Self(pm)
+    }
+
+    pub fn clear(&mut self) {
+        self.0.truncate(ValueMir::TERMINAL.index() + 1);
+    }
+}
+
+impl Deref for FuncValues {
+    type Target = PushMap<ValueMir>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for FuncValues {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }

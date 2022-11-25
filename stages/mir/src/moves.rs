@@ -1,4 +1,4 @@
-use std::{iter, mem, default::default};
+use std::{default::default, iter, mem};
 
 use diags::*;
 use lexing_t::*;
@@ -44,7 +44,9 @@ impl MirChecker<'_, '_> {
         let conflicting_ty = {
             let mut current = self.value_ty(self.mir_move_ctx.graphs[graph].owner);
             for index in path {
-                current = current.component_ty(index as usize, self.typec, self.interner).unwrap();
+                current = current
+                    .component_ty(index as usize, self.typec, self.interner)
+                    .unwrap();
             }
             current
         };
@@ -64,12 +66,7 @@ impl MirChecker<'_, '_> {
         self.fill_graph(graph, span);
     }
 
-    fn handle_move_error(
-        &mut self,
-        message: &str,
-        loc: Span,
-        mut missing: BumpVec<Span>,
-    ) {
+    fn handle_move_error(&mut self, message: &str, loc: Span, mut missing: BumpVec<Span>) {
         if missing.is_empty() {
             return;
         }
@@ -113,7 +110,8 @@ impl MirChecker<'_, '_> {
 
     fn make_owner_recur(&mut self, ty: Ty, owner: VRef<ValueMir>, dest: VRef<MoveGraph>) {
         self.mir_move_ctx.graphs[dest].kind = match ty {
-            Ty::Pointer(..) | Ty::Builtin(..) => MoveGraphKind::Present(PresentKind::Copy),
+            Ty::Pointer(..) => MoveGraphKind::Present(PresentKind::Pointer),
+            Ty::Builtin(..) => MoveGraphKind::Present(PresentKind::Copy),
             ty if ty.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => {
                 MoveGraphKind::Present(PresentKind::Copy)
             }
@@ -170,47 +168,37 @@ impl MirChecker<'_, '_> {
     }
 
     fn drop_graph(&mut self, graph: VRef<MoveGraph>, span: Span) {
-        let check_point = self.check_point();
         let root_value = self.access_graph(graph, span);
-        let dropped_something = self.drop_graph_low(root_value, graph, span);
-        if !dropped_something {
-            self.rollback(check_point);
-        }
+        self.drop_graph_low(root_value, graph, span);
     }
 
-    fn drop_graph_low(&mut self, value: VRef<ValueMir>, graph: VRef<MoveGraph>, span: Span) -> bool {
+    fn drop_graph_low(&mut self, value: VRef<ValueMir>, graph: VRef<MoveGraph>, span: Span) {
+        let ty = self.value_ty(value);
+        if !self.typec.may_need_drop(ty) {
+            return;
+        }
         match self.mir_move_ctx.graphs[graph].kind {
-            MoveGraphKind::Present(PresentKind::Copy) => false,
+            MoveGraphKind::Present(PresentKind::Copy) | MoveGraphKind::Gone(..) => (),
             MoveGraphKind::Present(..) => self.translate_drop_meta(graph, value, span),
-            MoveGraphKind::Gone(span) => false,
             MoveGraphKind::Split(children) => {
-                let mut dropped = self.translate_drop_meta(graph, value, span);
                 for (i, child) in children.keys().enumerate() {
-                    let check_point = self.check_point();
-                    let ty = self.value_ty(value).component_ty(i, self.typec, self.interner).unwrap();
-                    let Some(child_value) = self.value(ty) else { continue };
+                    let component_ty = ty.component_ty(i, self.typec, self.interner).unwrap();
+                    let child_value = self.value(component_ty);
                     self.inst(InstMir::Field(value, i as u32, child_value), span);
-                    let dropped_field = self.drop_graph_low(child_value, child, span);
-                    if !dropped_field {
-                        self.rollback(check_point);
-                    }
-                    dropped |= dropped_field;
+                    self.drop_graph_low(child_value, child, span);
                 }
-                dropped
-            },
+            }
         }
     }
 
-    fn translate_drop_meta(&mut self, graph: VRef<MoveGraph>, value: VRef<ValueMir>, span: Span) -> bool {
+    fn translate_drop_meta(&mut self, graph: VRef<MoveGraph>, value: VRef<ValueMir>, span: Span) {
         match self.mir_move_ctx.graphs[graph].drop_meta {
-            DropMeta::No => false,
+            DropMeta::No => (),
             DropMeta::Maybe => {
                 self.inst(InstMir::MayDrop(value), span);
-                true
             }
             DropMeta::Yes(r#impl) => {
                 self.inst(InstMir::Drop(value, r#impl), span);
-                true
             }
         }
     }
@@ -230,8 +218,10 @@ impl MirChecker<'_, '_> {
         let mut current = self.mir_move_ctx.graphs[graph].owner;
         for index in value_path.into_iter().rev() {
             let current_ty = self.value_ty(current);
-            let next_ty = current_ty.component_ty(index as usize, self.typec, self.interner).unwrap();
-            let Some(next) = self.value(next_ty) else { continue };
+            let next_ty = current_ty
+                .component_ty(index as usize, self.typec, self.interner)
+                .unwrap();
+            let next = self.value(next_ty);
             self.inst(InstMir::Field(current, index, next), span);
             current = next;
         }
@@ -279,41 +269,6 @@ impl MirChecker<'_, '_> {
             }
         }
     }
-
-    fn check_point(&mut self) -> MirCheckPoint {
-        MirCheckPoint {
-            current: self.current_block,
-            current_insts: self.mir_ctx.insts.len(),
-            func_check_point: self.mir_ctx.func.check_point(),
-        }
-    }
-
-    fn rollback(&mut self, check_point: MirCheckPoint) {
-        if self.current_block != check_point.current {
-            self.current_block = check_point.current;
-            self.mir_ctx.insts.clear();
-            if let Some(block) = check_point.current {
-                let insts = mem::take(&mut self.mir_ctx.func.blocks[block].insts);
-                let spanned_insts = insts.keys().map(|inst| self.mir_ctx.dd.instr_spans[inst]);
-                self.mir_ctx.insts.extend(
-                    self.mir_ctx.func.insts[insts]
-                        .iter()
-                        .take(check_point.current_insts)
-                        .copied()
-                        .zip(spanned_insts),
-                );
-            }
-        } else {
-            self.mir_ctx.insts.truncate(check_point.current_insts);
-        }
-        self.mir_ctx.func.rollback(check_point.func_check_point);
-    }
-}
-
-struct MirCheckPoint {
-    current: OptVRef<BlockMir>,
-    current_insts: usize,
-    func_check_point: MirFuncCheckPoint,
 }
 
 #[derive(Default)]

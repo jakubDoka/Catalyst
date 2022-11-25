@@ -82,10 +82,6 @@ impl MirChecker<'_, '_> {
         Some(dest)
     }
 
-    fn move_in(&mut self, dest: VRef<ValueMir>, span: Span) {
-        todo!()
-    }
-
     fn r#let(&mut self, LetTir { pat, value }: LetTir) -> NodeRes {
         let value = self.node(value, None, false)?;
         self.bind_pattern_vars(pat, value);
@@ -588,14 +584,6 @@ impl MirChecker<'_, '_> {
             .transpose()?;
         self.close_block(span, ControlFlowMir::Return(ret_val));
         None
-    }
-
-    fn enum_move_out(&mut self, value: VRef<ValueMir>, inner_value: VRef<ValueMir>, span: Span) {
-        todo!();
-    }
-
-    fn move_out(&mut self, value: VRef<ValueMir>, span: Span) {
-        todo!()
     }
 
     fn push_args(&mut self, args: FragSlice<Ty>) {

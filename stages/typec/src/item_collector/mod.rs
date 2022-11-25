@@ -82,6 +82,12 @@ impl TyChecker<'_> {
                 }
             }
 
+            if parsed_spec_base == SpecBase::DROP {
+                self.typec
+                    .may_need_drop
+                    .insert(parsed_ty.base(self.typec), true);
+            }
+
             let key = ImplKey {
                 ty: parsed_ty,
                 spec: parsed_spec,
