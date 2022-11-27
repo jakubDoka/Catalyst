@@ -41,7 +41,7 @@ fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
         var12 = &var3
         var10 = next(val12)
         var5 = access var3
-        var0 = write[2\Swap](val2, val6)
+        write[2\Swap](val2, val6)
         return
     }
 
