@@ -125,13 +125,13 @@ pub struct BlockMir {
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
     Goto(VRef<BlockMir>, OptVRef<ValueMir>),
-    Return(OptVRef<ValueMir>),
+    Return(VRef<ValueMir>),
     Terminal,
 }
 
 impl Default for ControlFlowMir {
     fn default() -> Self {
-        Self::Return(None)
+        Self::Return(ValueMir::UNIT)
     }
 }
 
@@ -153,7 +153,7 @@ pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>, OptVRef<ValueMir>),
-    Call(VRef<CallMir>, OptVRef<ValueMir>),
+    Call(VRef<CallMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),

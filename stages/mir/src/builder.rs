@@ -63,7 +63,7 @@ impl MirChecker<'_, '_> {
             TirKind::Char => pass!(dest => self.char(span, dest)),
             TirKind::Bool(value) => pass!(dest => self.bool(value, span, dest)),
             TirKind::Access(access) => self.access(access, span, dest, r#move),
-            TirKind::Call(&call) => self.call(call, ty, span, dest, r#move),
+            TirKind::Call(&call) => pass!(dest => self.call(call, ty, span, dest, r#move)),
             TirKind::Return(ret) => self.r#return(ret, span),
             TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, r#move),
             TirKind::Deref(&node) => self.deref(node, ty, span),
@@ -107,7 +107,6 @@ impl MirChecker<'_, '_> {
         }
 
         if let Some(r#else) = r#else {
-            // The frame is always empty byt we at least don't need option
             self.branch(r#else, &mut dest_block, dest, r#move);
         }
 
@@ -301,7 +300,7 @@ impl MirChecker<'_, '_> {
                                     args: self.mir_ctx.func.value_args.extend([val, other]),
                                 });
                                 let ret = self.value(Ty::BOOL);
-                                self.inst(InstMir::Call(call, Some(ret)), field.span);
+                                self.inst(InstMir::Call(call, ret), field.span);
                                 Some(ret)
                             }
                             None => Some(val),
@@ -319,7 +318,7 @@ impl MirChecker<'_, '_> {
                         args: self.mir_ctx.func.value_args.extend([lit, value]),
                     });
                     let cond = self.value(Ty::BOOL);
-                    self.inst(InstMir::Call(call, Some(cond)), int.unwrap_or(span));
+                    self.inst(InstMir::Call(call, cond), int.unwrap_or(span));
                     Some(cond)
                 }
                 UnitPatKindTir::Binding(..) | UnitPatKindTir::Wildcard => None,
@@ -341,7 +340,7 @@ impl MirChecker<'_, '_> {
                             args: self.mir_ctx.func.value_args.extend([dest, const_flag]),
                         });
                         let ret = self.value(Ty::BOOL);
-                        self.inst(InstMir::Call(call, Some(ret)), span);
+                        self.inst(InstMir::Call(call, ret), span);
                         ret
                     });
 
@@ -361,7 +360,7 @@ impl MirChecker<'_, '_> {
                                 args: self.mir_ctx.func.value_args.extend([val, other]),
                             });
                             let ret = self.value(Ty::BOOL);
-                            self.inst(InstMir::Call(call, Some(ret)), span);
+                            self.inst(InstMir::Call(call, ret), span);
                             Some(ret)
                         }
                         None => Some(val),
@@ -516,7 +515,7 @@ impl MirChecker<'_, '_> {
         }: CallTir,
         ty: Ty,
         span: Span,
-        dest: OptVRef<ValueMir>,
+        dest: VRef<ValueMir>,
         r#move: bool,
     ) -> NodeRes {
         let callable = match func {
@@ -532,19 +531,12 @@ impl MirChecker<'_, '_> {
             .map(|&arg| self.node(arg, None, true))
             .collect::<Option<BumpVec<_>>>()?;
         let args = self.mir_ctx.func.value_args.extend(args);
-
-        if let Some(dest) = dest {
-            dbg!(dest, self.value_ty(dest));
-        }
-
-        let value = dest.or_else(|| (ty != Ty::UNIT && ty != Ty::TERMINAL).then(|| self.value(ty)));
-
         let callable = self.mir_ctx.func.calls.push(CallMir {
             callable,
             params,
             args,
         });
-        let call = InstMir::Call(callable, value);
+        let call = InstMir::Call(callable, dest);
         self.inst(call, span);
 
         if ty == Ty::TERMINAL {
@@ -552,11 +544,11 @@ impl MirChecker<'_, '_> {
             return None;
         }
 
-        if let Some(value) = value && r#move {
-            self.move_out(value, span);
+        if r#move {
+            self.move_out(dest, span);
         }
 
-        Some(value.unwrap_or(ValueMir::UNIT))
+        Some(dest)
     }
 
     fn int(&mut self, computed: Option<i64>, span: Span, dest: VRef<ValueMir>) -> NodeRes {
@@ -582,18 +574,13 @@ impl MirChecker<'_, '_> {
     }
 
     fn r#return(&mut self, val: Option<&TirNode>, span: Span) -> NodeRes {
-        let no_return = self.mir_ctx.func.ret == ValueMir::UNIT;
         let ret_val = val
-            .map(|&val| {
-                self.node(
-                    val,
-                    Some(self.mir_ctx.func.ret).filter(|_| !no_return),
-                    true,
-                )
-            })
-            .filter(|_| !no_return)
+            .map(|&val| self.node(val, Some(self.mir_ctx.func.ret), true))
             .transpose()?;
-        self.close_block(span, ControlFlowMir::Return(ret_val));
+        self.close_block(
+            span,
+            ControlFlowMir::Return(ret_val.unwrap_or(ValueMir::UNIT)),
+        );
         None
     }
 

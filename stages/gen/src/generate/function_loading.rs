@@ -100,17 +100,17 @@ impl Generator<'_> {
         let args = self.typec.args[signature.args]
             .to_bumpvec()
             .into_iter()
-            .map(|ty| {
+            .filter_map(|ty| {
                 let instance = self.typec.instantiate(ty, params, self.interner);
-                self.ty_repr(instance)
+                let layout = self.ty_layout(instance);
+                (layout.size != 0).then_some(layout.repr)
             })
             .map(AbiParam::new);
         target.params.extend(args);
 
-        if instance != Ty::UNIT && !on_stack {
-            let ret = self.ty_repr(instance);
-            let ret = AbiParam::new(ret);
-            target.returns.push(ret);
+        let instance_layout = self.ty_layout(instance);
+        if instance_layout.size != 0 && !on_stack {
+            target.returns.push(AbiParam::new(instance_layout.repr));
         }
         on_stack
     }

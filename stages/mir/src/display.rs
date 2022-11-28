@@ -74,10 +74,7 @@ impl MirChecker<'_, '_> {
             ControlFlowMir::Return(ret) => {
                 buffer.extend(ident.clone());
                 buffer.extend(ident.clone());
-                write!(buffer, "return")?;
-                if let Some(ret) = ret {
-                    write!(buffer, " var{}", ret.index())?;
-                }
+                write!(buffer, "return var{}", ret.index())?;
             }
             ControlFlowMir::Terminal => {
                 buffer.extend(ident.clone());
@@ -124,9 +121,7 @@ impl MirChecker<'_, '_> {
                 write!(buffer, "access var{}", access.index())?;
             }
             InstMir::Call(call, ret) => {
-                if let Some(ret) = ret {
-                    write!(buffer, "var{} = ", ret.index())?;
-                }
+                write!(buffer, "var{} = ", ret.index())?;
 
                 let CallMir {
                     callable,

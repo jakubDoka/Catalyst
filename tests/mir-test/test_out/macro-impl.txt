@@ -13,7 +13,7 @@ fn [] write(var0: ^mut param0, var1: param0) -> ()  {
         access var2
         var4 = *var2
         var4 = access var3
-        return
+        return var4
     }
 
 }
@@ -41,8 +41,8 @@ fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
         var12 = &var3
         var10 = next(val12)
         var5 = access var3
-        write[2\Swap](val2, val6)
-        return
+        var0 = write[2\Swap](val2, val6)
+        return var0
     }
 
 }

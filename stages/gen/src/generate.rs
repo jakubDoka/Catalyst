@@ -122,8 +122,7 @@ impl Generator<'_> {
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
-                if let Some(ret) = ret && !self.ty_layout(builder.value_ty(ret)).on_stack {
-                    let ret = self.load_value(ret, builder);
+                if !self.ty_layout(builder.value_ty(ret)).on_stack && let Some(ret) = self.load_value(ret, builder) {
                     builder.ins().return_(&[ret]);
                 } else {
                     builder.ins().return_(&[]);
@@ -135,7 +134,7 @@ impl Generator<'_> {
             ControlFlowMir::Split(cond, a, b) => {
                 let a = self.instantiate_block(a, builder);
                 let b = self.instantiate_block(b, builder);
-                let cond = self.load_value(cond, builder);
+                let cond = self.load_value(cond, builder).unwrap();
                 builder.ins().brnz(cond, a, &[]);
                 builder.ins().jump(b, &[]);
             }
@@ -146,7 +145,7 @@ impl Generator<'_> {
                         !self.gen_resources.values[val].must_load
                             || !self.ty_layout(builder.value_ty(val)).on_stack
                     })
-                    .map(|val| {
+                    .and_then(|val| {
                         let value = self.load_value(val, builder);
                         self.gen_resources.values[val] = default();
                         value
@@ -159,7 +158,7 @@ impl Generator<'_> {
     }
 
     fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        let value = self.load_value(target, builder);
+        let Some(value) = self.load_value(target, builder) else { return; };
         self.gen_resources.values[ret] = GenValue {
             must_load: true,
             computed: Some(ComputedValue::Value(value)),
@@ -240,7 +239,7 @@ impl Generator<'_> {
             });
     }
 
-    fn call(&mut self, call: VRef<CallMir>, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
+    fn call(&mut self, call: VRef<CallMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let CallMir { args, .. } = builder.body.calls[call];
         let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
@@ -252,7 +251,7 @@ impl Generator<'_> {
             } else {
                 let args = builder.body.value_args[args]
                     .iter()
-                    .map(|&arg| self.load_value(arg, builder))
+                    .filter_map(|&arg| self.load_value(arg, builder))
                     .collect::<BumpVec<_>>();
                 self.builtin_call(func, args, ret, builder);
             }
@@ -264,9 +263,8 @@ impl Generator<'_> {
         let (func, struct_ret) = self.import_compiled_func(id, params, builder);
 
         let struct_ptr = struct_ret.then(|| {
-            let ret = ret.unwrap();
             if self.gen_resources.values[ret].computed.is_some() {
-                self.load_value(ret, builder)
+                self.load_value(ret, builder).unwrap()
             } else {
                 let ptr_ty = builder.ptr_ty();
                 let layout = self.ty_layout(builder.value_ty(ret));
@@ -283,41 +281,35 @@ impl Generator<'_> {
             .chain(
                 builder.body.value_args[args]
                     .iter()
-                    .map(|&arg| self.load_value(arg, builder)),
+                    .filter_map(|&arg| self.load_value(arg, builder)),
             )
             .collect::<BumpVec<_>>();
 
         let inst = builder.ins().call(func, &args);
         if let Some(&first) = builder.inst_results(inst).first() && !struct_ret {
-            let ret = ret.unwrap();
             self.save_value(ret, first, 0, false, builder)
         }
     }
 
-    fn cast(
-        &mut self,
-        args: VRefSlice<ValueMir>,
-        ret: OptVRef<ValueMir>,
-        builder: &mut GenBuilder,
-    ) {
+    fn cast(&mut self, args: VRefSlice<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let [value] = builder.body.value_args[args] else {
             unreachable!()
         };
-        self.assign_value(ret.unwrap(), value, builder)
+        self.assign_value(ret, value, builder)
     }
 
-    fn sizeof(&mut self, ty: Ty, ret: OptVRef<ValueMir>, builder: &mut GenBuilder) {
+    fn sizeof(&mut self, ty: Ty, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let ptr_ty = builder.ptr_ty();
         let ty = self.ty_layout(ty);
         let value = builder.ins().iconst(ptr_ty, ty.size as i64);
-        self.save_value(ret.unwrap(), value, 0, false, builder);
+        self.save_value(ret, value, 0, false, builder);
     }
 
     fn builtin_call(
         &mut self,
         func_id: FragRef<Func>,
         args: BumpVec<ir::Value>,
-        target: OptVRef<ValueMir>,
+        target: VRef<ValueMir>,
         builder: &mut GenBuilder,
     ) {
         let Func {
@@ -355,7 +347,7 @@ impl Generator<'_> {
             ref slice => unimplemented!("{slice:?}"),
         };
 
-        self.save_value(target.unwrap(), value, 0, false, builder);
+        self.save_value(target, value, 0, false, builder);
     }
 
     fn instantiate_block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
@@ -373,7 +365,11 @@ impl Generator<'_> {
         gen_block.id
     }
 
-    fn load_value(&mut self, target: VRef<ValueMir>, builder: &mut GenBuilder) -> ir::Value {
+    fn load_value(
+        &mut self,
+        target: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) -> Option<ir::Value> {
         let GenValue {
             computed,
             offset,
@@ -381,24 +377,27 @@ impl Generator<'_> {
         } = self.gen_resources.values[target];
         let ptr_ty = builder.ptr_ty();
         let layout = self.ty_layout(builder.value_ty(target));
+        if layout.size == 0 {
+            return None;
+        }
         let value = match computed.expect("value must be computed by now") {
             ComputedValue::Value(value) => value,
             ComputedValue::StackSlot(ss) => {
-                return match layout.on_stack {
+                return Some(match layout.on_stack {
                     true => builder.ins().stack_addr(ptr_ty, ss, offset),
                     false => builder.ins().stack_load(layout.repr, ss, offset),
-                };
+                });
             }
             ComputedValue::Variable(var) => builder.use_var(var),
         };
 
-        match (must_load, layout.on_stack) {
+        Some(match (must_load, layout.on_stack) {
             (true, false) => builder
                 .ins()
                 .load(layout.repr, MemFlags::new(), value, offset),
             (true, true) if offset != 0 => builder.ins().iadd_imm(value, offset as i64),
             _ => value,
-        }
+        })
     }
 
     fn assign_value(
