@@ -9,6 +9,7 @@
 #![feature(const_discriminant)]
 #![feature(atomic_mut_ptr)]
 #![feature(never_type)]
+#![feature(default_free_fn)]
 
 mod alloc_tree;
 mod allocator;

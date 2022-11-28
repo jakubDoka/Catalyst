@@ -382,6 +382,9 @@ impl Ty {
         }
     }
 
+    /// None - don't know
+    /// Some(None) - not drop
+    /// Some(Some(..)) - drop
     pub fn is_drop(
         self,
         params: &[FragSlice<Spec>],

@@ -12,6 +12,7 @@ pub struct VarMir {
 
 #[derive(Default)]
 pub struct MirCtx {
+    pub depth: u32,
     pub no_moves: bool,
     pub func: FuncMirInner,
     pub dd: DebugData,
@@ -22,12 +23,44 @@ pub struct MirCtx {
     pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<FragRef<Func>>,
     pub generic_types: Vec<VRef<MirTy>>,
+    pub value_depths: ShadowMap<ValueMir, u32>,
 }
+
+/*
+struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir> mir::ctx::MirCtx::value(union enum2$<typec_t::ty::Ty>, struct typec_t::typec::Typec *) (c:\src\rust\catalyst\stages\mir\src\ctx.rs:34)
+struct bump_alloc::primitives::VRef<mir_t::mir::ValueMir> mir::state_gen::MirChecker::value(union enum2$<typec_t::ty::Ty>) (c:\src\rust\catalyst\stages\mir\src\builder.rs:650)
+static struct mir_t::mir::FuncMirInner mir::state_gen::MirChecker::func(struct bump_alloc::primitives::FragRef<typec_t::func::Func>, struct typec_t::tir::TirNode) (c:\src\rust\catalyst\stages\mir\src\builder.rs:40)
+struct mir::state_gen::MirChecker * mir::state_gen::MirChecker::funcs(struct bump_alloc::bump_vec::BumpVec<tuple$<bump_alloc::primitives::FragRef<typec_t::func::Func>,typec_t::tir::TirNode> > *) (c:\src\rust\catalyst\stages\mir\src\builder.rs:17)
+void mir_test::impl$0::parse_segment(struct mir_test::TestState *, struct bump_alloc::primitives::VRef<packaging_t::packaging::Module>, struct parsing::parser::items::GroupedItemsAst) (c:\src\rust\catalyst\tests\mir-test\src\main.rs:63)
+static void packaging::scheduler::Scheduler::execute<mir_test::TestState>(struct mir_test::TestState *, struct ref$<std::path::Path>) (c:\src\rust\catalyst\stages\packaging\src\scheduler.rs:73)
+static struct tuple$<diags::items::Workspace,packaging_t::packaging::Resources> testing::items::impl$0::exec<mir_test::TestState>(struct mir_test::TestState, struct str) (c:\src\rust\catalyst\utils\testing\src\lib.rs:128)
+mir_test::main::{{closure}}::{{closure}} (c:\src\rust\catalyst\utils\testing\src\lib.rs:19)
+core::ops::function::FnOnce::call_once (@core::ops::function::FnOnce::call_once:15)
+void testing::items::test_case::closure$0(struct testing::items::test_case::closure_env$0 *) (c:\src\rust\catalyst\utils\testing\src\lib.rs:160)
+void testing::items::test_case(struct str, union enum2$<core::option::Option<ref$<std::thread::scoped::Scope> > >,  *) (c:\src\rust\catalyst\utils\testing\src\lib.rs:174)
+mir_test::main::{{closure}} (c:\src\rust\catalyst\utils\testing\src\lib.rs:16)
+void std::thread::scoped::scope::closure$0<mir_test::main::closure_env$0,tuple$<> >(struct std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> >) (@std::thread::scoped::scope::{{closure}}:9)
+void core::panic::unwind_safe::impl$23::call_once<tuple$<>,std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >(struct core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >) (@<core::panic::unwind_safe::AssertUnwindSafe<F> as core::ops::function::FnOnce<()>>::call_once:6)
+static void std::panicking::try::do_call<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >,tuple$<> >(unsigned char *) (@7ff65e0ba2d8..7ff65e0ba339:3)
+14000A3A3 (@7ff65e0ba3a3..7ff65e0ba411:3)
+union enum2$<core::result::Result<tuple$<>,alloc::boxed::Box<dyn$<core::any::Any,core::marker::Send>,alloc::alloc::Global> > > std::panicking::try<tuple$<>,core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > > >(struct core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >) (@std::panicking::try:15)
+union enum2$<core::result::Result<tuple$<>,alloc::boxed::Box<dyn$<core::any::Any,core::marker::Send>,alloc::alloc::Global> > > std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >,tuple$<> >(struct core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope::closure_env$0<mir_test::main::closure_env$0,tuple$<> > >) (@std::panic::catch_unwind:6)
+std::thread::scoped::scope (@std::thread::scoped::scope:33)
+static void mir_test::main() (c:\src\rust\catalyst\tests\mir-test\src\main.rs:79)
+*/
 
 impl MirCtx {
     pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
+        if ty == Ty::UNIT {
+            return ValueMir::UNIT;
+        } else if ty == Ty::TERMINAL {
+            return ValueMir::TERMINAL;
+        }
+
         let ty = self.project_ty(ty, typec);
-        self.func.values.push(ValueMir { ty })
+        let val = self.func.values.push(ValueMir { ty });
+        self.value_depths[val] = self.depth;
+        val
     }
 
     pub fn create_block(&mut self) -> VRef<BlockMir> {

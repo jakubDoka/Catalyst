@@ -153,6 +153,7 @@ macro_rules! bitflags {
 
 pub extern crate bitflags;
 pub extern crate dashmap;
+pub extern crate smallvec;
 
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod bit_set;
@@ -191,5 +192,6 @@ pub use {
     push_map::PushMap,
     rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,
+    smallvec::*,
     sparse_map::SparseMap,
 };

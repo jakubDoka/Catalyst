@@ -1,4 +1,11 @@
-use std::{default::default, iter, mem};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    default::default,
+    hash::Hash,
+    iter,
+    mem::{self, MaybeUninit},
+    ops::Range,
+};
 
 use diags::*;
 use lexing_t::*;
@@ -8,86 +15,486 @@ use typec_t::*;
 
 use crate::*;
 
+/*
+    # Validating Move State
+    We cannot move out of value twice or move partially moved value. We need to
+    drop all values that are not moved. We cannot move out of pointer, we cannot
+    move out of droppable value. Any value marked copy is not tracked.
+
+    ## Algorithm
+    if we generated temporary value:
+        - drop it unless moved already
+    elif we performed invalid move:
+        - report error
+    elif we moved value:
+        - check the range of the move
+        if value is moved of value is partially moved:
+            - report error
+            - clear the range of the move
+        - insert path to move map
+    elif we restored value:
+        - drop previous value
+        - remove move range from index
+    elif we shadowed a variable at the same level:
+        - drop previous value
+    elif we closed a scope:
+        - drop all variables
+    else:
+        - do nothing
+
+
+    # Conditionals
+    If we have exclusive branches, we need to drop things conditionally and
+    correctly restore ownership from move ins. Terminating branch should not affect
+    outer move state.
+
+    ## Algorithm
+    for each branch:
+        - validate move state
+        - if not terminating:
+            cache branch moves
+    for each disjoint move out:
+        - consider outer value moved out by branch
+        - attach drops to all branches that don't move out the value
+    if for all branches ode moves in a value:
+        - consider outer value moved in by branch
+
+    # Loops
+    Moved out values at the end of the loop block are considered double moves.
+    Break or continue should also trigger drops up to loop block.
+
+    ## Body Algorithm
+    - validate move state in loop body
+    for each move out at the end of body:
+        - report double move
+
+*/
+
+type MovePath = SmallVec<[MovePathSegment; 4]>;
+
+const _: () = assert!(mem::size_of::<MovePath>() == mem::size_of::<Vec<MovePathSegment>>());
+
 impl MirChecker<'_, '_> {
-    pub fn enum_move_out(
-        &mut self,
-        value: VRef<ValueMir>,
-        inner_value: VRef<ValueMir>,
-        span: Span,
-    ) {
-        todo!();
-    }
-
     pub fn move_out(&mut self, value: VRef<ValueMir>, span: Span) {
-        let mut missing = bumpvec![];
-        let graph = self.mir_move_ctx.mapping[value.index()];
-        match self.mir_move_ctx.graphs[graph].kind {
-            MoveGraphKind::Present(PresentKind::BehindDrop) => todo!(),
-            MoveGraphKind::Present(PresentKind::BehindPointer) => todo!(),
-            _ => (),
-        }
-        self.take_graph(graph, span, &mut missing);
-        self.handle_move_error("cannot move out from incomplete value", span, missing)
-    }
-
-    fn handle_frozen_move(&mut self, span: Span, graph: VRef<MoveGraph>) {
-        let path = {
-            let mut current = Some(graph);
-            let mut path = bumpvec![];
-            while let Some(graph) = current {
-                path.push(self.mir_move_ctx.graphs[graph].index);
-                current = self.mir_move_ctx.graphs[graph].parent;
-            }
-            path
-        };
-
-        let conflicting_ty = {
-            let mut current = self.value_ty(self.mir_move_ctx.graphs[graph].owner);
-            for index in path {
-                current = current
-                    .component_ty(index as usize, self.typec, self.interner)
-                    .unwrap();
-            }
-            current
-        };
-
-        match conflicting_ty {
-            Ty::Struct(_) => todo!(),
-            Ty::Enum(_) => todo!(),
-            Ty::Instance(_) => todo!(),
-            Ty::Pointer(_) => todo!(),
-            Ty::Param(_) => todo!(),
-            Ty::Builtin(_) => todo!(),
-        }
-    }
-
-    pub fn move_in(&mut self, dest: VRef<ValueMir>, span: Span) {
-        let graph = self.mir_move_ctx.mapping[dest.index()];
-        self.fill_graph(graph, span);
-    }
-
-    fn handle_move_error(&mut self, message: &str, loc: Span, mut missing: BumpVec<Span>) {
-        if missing.is_empty() {
+        if self.mir_ctx.no_moves {
             return;
         }
 
-        missing.sort_unstable();
-        missing.dedup();
+        if self
+            .value_ty(value)
+            .is_copy(&self.mir_ctx.generics, self.typec, self.interner)
+        {
+            return;
+        }
 
+        let key = match self.get_move_key(value) {
+            Ok(key) => key,
+            Err(owner) => {
+                self.handle_invalid_move(owner, span);
+                return;
+            }
+        };
+
+        if let Some(&moved) = self.mir_move_ctx.lookup.get(&key) {
+            self.handle_double_move(moved, span);
+            return;
+        }
+
+        {
+            let mut moves = remove_range(
+                &mut self.mir_move_ctx.lookup,
+                key.range(&mut self.mir_move_ctx.range_temp),
+            )
+            .map(|(_, moved)| moved)
+            .peekable();
+            if moves.peek().is_some() {
+                let moves = moves.collect();
+                self.handle_partial_move(moves, span);
+                return;
+            }
+        }
+
+        self.mir_move_ctx.lookup.insert(key.clone(), Move { span });
+        self.mir_move_ctx.history.push(MoveRecord {
+            key,
+            r#move: Move { span },
+            direction: MoveDirection::Out,
+        });
+    }
+
+    pub fn move_in(&mut self, dest: VRef<ValueMir>, span: Span) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+
+        if self
+            .value_ty(dest)
+            .is_copy(&self.mir_ctx.generics, self.typec, self.interner)
+        {
+            return;
+        }
+
+        let Ok(mut key) = self.get_move_key(dest) else {
+            self.drop_low(dest, &mut None, span);
+            return;
+        };
+
+        if self.drop_low(dest, &mut Some(&mut key), span) {
+            let r#move = self.mir_move_ctx.lookup.remove(&key).unwrap();
+            self.mir_move_ctx.history.push(MoveRecord {
+                key,
+                r#move,
+                direction: MoveDirection::In,
+            });
+            return;
+        };
+
+        for (key, r#move) in remove_range(
+            &mut self.mir_move_ctx.lookup,
+            key.range(&mut self.mir_move_ctx.range_temp),
+        ) {
+            self.mir_move_ctx.history.push(MoveRecord {
+                key,
+                r#move,
+                direction: MoveDirection::In,
+            });
+        }
+    }
+
+    pub fn drop(&mut self, value: VRef<ValueMir>, span: Span) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+
+        let Ok(mut key) = self.get_move_key(value) else {
+            self.drop_low(value, &mut None, span);
+            return;
+        };
+
+        self.drop_low(value, &mut Some(&mut key), span);
+    }
+
+    fn drop_low(
+        &mut self,
+        value: VRef<ValueMir>,
+        key: &mut Option<&mut MoveKey>,
+        span: Span,
+    ) -> bool {
+        if let Some(ref mut key) = key && self.mir_move_ctx.lookup.contains_key(key) {
+            return true;
+        }
+
+        match self.mir_ctx.value_ty(value) {
+            Ty::Pointer(..) | Ty::Builtin(..) => (),
+            p if p.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => (),
+            Ty::Param(..) => {
+                self.inst(InstMir::MayDrop(value), span);
+            },
+            p if let Some(maybe_impl) = p.is_drop(&self.mir_ctx.generics, self.typec, self.interner).transpose() => {
+                match maybe_impl {
+                    Some(r#impl) => self.inst(InstMir::Drop(value, r#impl), span),
+                    None => self.inst(InstMir::MayDrop(value), span),
+                };
+            }
+            p if !self.typec.may_need_drop(p) => (),
+            Ty::Struct(s) => self.partial_struct_drop(s, &[], value, key, span),
+            Ty::Enum(_) => todo!(),
+            Ty::Instance(i) => {
+                let Instance { base, args } = self.typec[i];
+                let args = self.typec[args].to_bumpvec();
+                match base {
+                    GenericTy::Struct(s) => self.partial_struct_drop(s, &args, value, key, span),
+                    GenericTy::Enum(_) => todo!(),
+                }
+            },
+        }
+
+        false
+    }
+
+    fn partial_struct_drop(
+        &mut self,
+        s: FragRef<Struct>,
+        params: &[Ty],
+        value: VRef<ValueMir>,
+        key: &mut Option<&mut MoveKey>,
+        span: Span,
+    ) {
+        for (i, field) in self.typec[self.typec[s].fields]
+            .to_bumpvec()
+            .into_iter()
+            .enumerate()
+        {
+            let ty = self.typec.instantiate(field.ty, params, self.interner);
+            if !self.typec.may_need_drop(ty) {
+                continue;
+            }
+            let field_value = self.value(ty);
+            self.inst(InstMir::Field(value, i as u32, field_value), span);
+            if let Some(key) = key {
+                key.path.push(MovePathSegment::field(i as u32));
+            }
+            self.drop_low(field_value, key, span);
+            if let Some(key) = key {
+                key.path.pop();
+            }
+        }
+    }
+
+    fn get_move_key(&self, value: VRef<ValueMir>) -> Result<MoveKey, Owner> {
+        let mut path = smallvec![];
+        let mut root = value;
+        loop {
+            let Some(owner) = self.mir_move_ctx.owners[root] else {
+                break;
+            };
+            if owner.behind_pointer || owner.inside_droppable {
+                return Err(owner);
+            }
+            root = owner.parent;
+            path.push(owner.index);
+        }
+        path.reverse();
+        Ok(MoveKey { path, root })
+    }
+
+    pub fn start_branching(&mut self) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+        self.mir_move_ctx.history.mark();
+    }
+
+    pub fn save_branch(&mut self) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+        self.revert_current_branch();
+        self.mir_move_ctx.history.mark();
+    }
+
+    pub fn discard_branch(&mut self) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+        self.revert_current_branch();
+        self.mir_move_ctx.history.clear_top();
+    }
+
+    pub fn end_branching(&mut self, reached: &[bool], span: Span) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+        let mut branches = (0..reached.len())
+            .map(|_| self.mir_move_ctx.history.pop().collect::<BumpVec<_>>())
+            .collect::<BumpVec<_>>();
+
+        for branch in branches.iter_mut() {
+            self.simplify_branch_history(branch);
+        }
+
+        let mut outs = self.count_and_cover_branch_moves(reached, &branches);
+
+        self.mir_move_ctx.history.join_frames();
+        outs.sort_by_key(|record| record.key.path.len());
+        self.simplify_branch_history(&mut outs);
+
+        let mut accessed = BTreeMap::<MoveKey, VRef<ValueMir>>::new();
+        for branch_index in (0..reached.len()).filter(|&i| reached[i]) {
+            self.apply_branch(&branches[branch_index]);
+            accessed.clear();
+            let branch_block = self.mir_move_ctx.branch_blocks
+                [self.mir_move_ctx.branch_blocks.len() - branch_index - 1];
+            let drop_block = self.mir_ctx.create_block();
+            self.select_block(drop_block);
+            for record in outs.iter() {
+                let mut key = MoveKey {
+                    root: record.key.root,
+                    path: default(),
+                };
+
+                let mut value = key.root;
+                for &segment in record.key.path.iter() {
+                    key.path.push(segment);
+                    if let Some(&accessed) = accessed.get(&key) {
+                        value = accessed;
+                    } else {
+                        let ty = self
+                            .value_ty(value)
+                            .component_ty(segment.as_index(), self.typec, self.interner)
+                            .unwrap();
+                        let next_value = self.value(ty);
+                        self.inst(
+                            InstMir::Field(value, segment.as_index() as u32, next_value),
+                            span,
+                        );
+                        value = next_value;
+                    }
+                }
+                self.drop_low(value, &mut Some(&mut key), span);
+            }
+
+            self.mir_ctx.close_block(
+                self.current_block.unwrap(),
+                self.mir_ctx.func.blocks[branch_block].control_flow,
+            );
+            self.mir_ctx.dd.block_closers[drop_block] = span;
+
+            let new_branch_control_flow = ControlFlowMir::Goto(drop_block, None);
+            self.increment_block_refcount(new_branch_control_flow);
+            self.mir_ctx.func.blocks[branch_block].control_flow = new_branch_control_flow;
+        }
+
+        self.mir_move_ctx.history.extend(outs.iter().cloned());
+        self.mir_move_ctx
+            .lookup
+            .extend(outs.into_iter().map(|record| (record.key, record.r#move)));
+
+        self.promote_branch_move_ins(reached);
+    }
+
+    fn promote_branch_move_ins(&mut self, reached: &[bool]) {
+        let move_in_escape_count = reached.iter().fold(0, |acc, &b| acc + b as usize);
+        for (key, count) in self.mir_move_ctx.count_temp.drain_filter(|_, _| true) {
+            if count != move_in_escape_count {
+                continue;
+            }
+
+            if let Some(r#move) = self.mir_move_ctx.lookup.remove(&key) {
+                self.mir_move_ctx.history.push(MoveRecord {
+                    key,
+                    r#move,
+                    direction: MoveDirection::In,
+                });
+                continue;
+            }
+
+            remove_range(
+                &mut self.mir_move_ctx.lookup,
+                key.range(&mut self.mir_move_ctx.range_temp),
+            )
+            .for_each(|(key, r#move)| {
+                self.mir_move_ctx.history.push(MoveRecord {
+                    key,
+                    r#move,
+                    direction: MoveDirection::In,
+                });
+            });
+        }
+    }
+
+    fn count_and_cover_branch_moves(
+        &mut self,
+        reached: &[bool],
+        branches: &BumpVec<BumpVec<MoveRecord>>,
+    ) -> BumpVec<MoveRecord> {
+        self.mir_move_ctx.count_temp.clear();
+        // self.mir_move_ctx.cover_temp.clear();
+
+        let mut outs = bumpvec![cap branches.iter().map(|b| b.len()).sum::<usize>()];
+        for (branch_index, records) in branches.iter().enumerate() {
+            if !reached[branch_index] {
+                continue;
+            }
+
+            for record in records.iter() {
+                match record.direction {
+                    MoveDirection::Out => {
+                        outs.push(record.clone());
+                        // self.mir_move_ctx
+                        //     .cover_temp
+                        //     .entry(record.key)
+                        //     .and_modify(|marked| marked.insert(branch_index))
+                        //     .or_insert_with(|| BranchMoveMask::from_index(branch_index));
+                    }
+                    MoveDirection::In => {
+                        self.mir_move_ctx
+                            .count_temp
+                            .range_mut(record.key.range(&mut self.mir_move_ctx.range_temp))
+                            .for_each(|(_, count)| *count += 1);
+                        self.mir_move_ctx
+                            .count_temp
+                            .entry(record.key.clone())
+                            .and_modify(|count| *count += 1)
+                            .or_insert(1);
+                    }
+                }
+            }
+        }
+
+        outs
+    }
+
+    fn simplify_branch_history(&mut self, branch: &mut BumpVec<MoveRecord>) {
+        self.mir_move_ctx.simplify_temp.clear();
+        self.mir_move_ctx
+            .simplify_temp
+            .extend(branch.iter().filter_map(|r| {
+                (self.mir_ctx.value_depths[r.key.root] >= self.mir_ctx.depth).then(|| r.key.clone())
+            }));
+
+        branch.reverse();
+        branch.retain(|record| {
+            if !self.mir_move_ctx.simplify_temp.contains(&record.key) {
+                false
+            } else {
+                self.remove_range_from_lookup(&record.key);
+                true
+            }
+        });
+        branch.reverse();
+    }
+
+    fn remove_range_from_lookup(&mut self, range_key: &MoveKey) {
+        remove_range(
+            &mut self.mir_move_ctx.lookup,
+            range_key.range(&mut self.mir_move_ctx.range_temp),
+        )
+        .for_each(drop);
+    }
+
+    fn revert_current_branch(&mut self) {
+        for record in self.mir_move_ctx.history.top() {
+            match record.direction {
+                MoveDirection::In => self
+                    .mir_move_ctx
+                    .lookup
+                    .insert(record.key.clone(), record.r#move),
+                MoveDirection::Out => self.mir_move_ctx.lookup.remove(&record.key),
+            };
+        }
+    }
+
+    fn apply_branch(&mut self, branch: &[MoveRecord]) {
+        for record in branch {
+            match record.direction {
+                MoveDirection::Out => self
+                    .mir_move_ctx
+                    .lookup
+                    .insert(record.key.clone(), record.r#move),
+                MoveDirection::In => {
+                    self.remove_range_from_lookup(&record.key);
+                    self.mir_move_ctx.lookup.remove(&record.key)
+                }
+            };
+        }
+    }
+
+    fn handle_partial_move(&mut self, moves: BumpVec<Move>, span: Span) {
         self.workspace.push(Snippet {
-            title: annotation!(err: ("{}", message)),
+            title: annotation!(err: "cannot move out of partially moved value"),
             footer: vec![],
             slices: vec![Some(Slice {
-                span: missing
+                span: moves
                     .iter()
-                    .copied()
+                    .map(|m| m.span)
                     .reduce(|a, b| a.joined(b))
-                    .map_or(loc, |fin| loc.joined(fin)),
+                    .map_or(span, |fin| span.joined(fin)),
                 origin: self.source,
-                annotations: missing
+                annotations: moves
                     .into_iter()
-                    .map(|span| source_annotation!(info[span]: "move out of value"))
-                    .chain(iter::once(source_annotation!(err[loc]: "occurred here")))
+                    .map(|r#move| source_annotation!(info[r#move.span]: "move out of value"))
+                    .chain(iter::once(source_annotation!(err[span]: "occurred here")))
                     .collect(),
                 fold: true,
             })],
@@ -95,238 +502,216 @@ impl MirChecker<'_, '_> {
         });
     }
 
-    pub fn make_owner(&mut self, value: VRef<ValueMir>) {
-        let ty = self.value_ty(value);
-        let dest = self.mir_move_ctx.graphs.push(MoveGraph {
-            index: 0,
-            owner: value,
-            parent: None,
-            drop_meta: DropMeta::No,
-            kind: MoveGraphKind::Present(PresentKind::Normal),
-        });
-        self.make_owner_recur(ty, value, dest);
-        self.mir_move_ctx.mapping.push(dest);
-    }
-
-    fn make_owner_recur(&mut self, ty: Ty, owner: VRef<ValueMir>, dest: VRef<MoveGraph>) {
-        self.mir_move_ctx.graphs[dest].kind = match ty {
-            Ty::Pointer(..) => MoveGraphKind::Present(PresentKind::Pointer),
-            Ty::Builtin(..) => MoveGraphKind::Present(PresentKind::Copy),
-            ty if ty.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => {
-                MoveGraphKind::Present(PresentKind::Copy)
+    gen_error_fns! {
+        push handle_double_move(self, moved: Move, span: Span) {
+            err: "cannot move out of value twice";
+            (moved.span.joined(span), self.source) {
+                info[moved.span]: "first move here";
+                err[span]: "double move occurred here";
             }
-            ty if let Some(res) = ty.is_drop(&self.mir_ctx.generics, self.typec, self.interner).transpose() => {
-                self.mir_move_ctx.graphs[dest].drop_meta = match res {
-                    Some(r#impl) => DropMeta::Yes(r#impl),
-                    None => DropMeta::Maybe,
-                };
-                MoveGraphKind::Present(PresentKind::Drop)
-            }
-            Ty::Struct(s) => self.make_struct_owner(s, ty, owner, dest),
-            Ty::Instance(i) => {
-                let Instance { base, .. } = self.typec[i];
-                match base {
-                    GenericTy::Struct(s) => self.make_struct_owner(s, ty, owner, dest),
-                    GenericTy::Enum(..) => MoveGraphKind::Present(PresentKind::Normal),
-                }
-            }
-            Ty::Enum(..) | Ty::Param(..) => MoveGraphKind::Present(PresentKind::Normal),
-        };
-    }
-
-    fn make_struct_owner(
-        &mut self,
-        s: FragRef<Struct>,
-        ty: Ty,
-        owner: VRef<ValueMir>,
-        dest: VRef<MoveGraph>,
-    ) -> MoveGraphKind {
-        let len = self.typec[s].fields.len();
-        let children = self.mir_move_ctx.graphs.extend(
-            iter::repeat(MoveGraph {
-                index: 0,
-                owner,
-                parent: Some(dest),
-                drop_meta: DropMeta::No,
-                kind: MoveGraphKind::Present(PresentKind::Normal),
-            })
-            .take(len),
-        );
-
-        for (i, key) in children.keys().enumerate() {
-            let ty = ty.component_ty(i, self.typec, self.interner).unwrap();
-            self.mir_move_ctx.graphs[key].index = i as u32;
-            self.make_owner_recur(ty, owner, key);
         }
 
-        MoveGraphKind::Split(children)
-    }
-
-    fn fill_graph(&mut self, graph: VRef<MoveGraph>, span: Span) {
-        self.drop_graph(graph, span);
-        self.fill_graph_children(graph);
-    }
-
-    fn drop_graph(&mut self, graph: VRef<MoveGraph>, span: Span) {
-        let root_value = self.access_graph(graph, span);
-        self.drop_graph_low(root_value, graph, span);
-    }
-
-    fn drop_graph_low(&mut self, value: VRef<ValueMir>, graph: VRef<MoveGraph>, span: Span) {
-        let ty = self.value_ty(value);
-        if !self.typec.may_need_drop(ty) {
-            return;
-        }
-        match self.mir_move_ctx.graphs[graph].kind {
-            MoveGraphKind::Present(PresentKind::Copy) | MoveGraphKind::Gone(..) => (),
-            MoveGraphKind::Present(..) => self.translate_drop_meta(graph, value, span),
-            MoveGraphKind::Split(children) => {
-                for (i, child) in children.keys().enumerate() {
-                    let component_ty = ty.component_ty(i, self.typec, self.interner).unwrap();
-                    let child_value = self.value(component_ty);
-                    self.inst(InstMir::Field(value, i as u32, child_value), span);
-                    self.drop_graph_low(child_value, child, span);
-                }
+        push handle_invalid_move(self, owner: Owner, span: Span) {
+            err: "cannot move out the value";
+            info: ("notice that {}", [
+                "value is located within datatype that implements 'Drop'",
+                "value is behind indirection and does not implement 'Copy'",
+            ][owner.behind_pointer as usize]);
+            (span, self.source) {
+                err[span]: "invalid move occurred here";
             }
         }
     }
+}
 
-    fn translate_drop_meta(&mut self, graph: VRef<MoveGraph>, value: VRef<ValueMir>, span: Span) {
-        match self.mir_move_ctx.graphs[graph].drop_meta {
-            DropMeta::No => (),
-            DropMeta::Maybe => {
-                self.inst(InstMir::MayDrop(value), span);
-            }
-            DropMeta::Yes(r#impl) => {
-                self.inst(InstMir::Drop(value, r#impl), span);
-            }
-        }
-    }
-
-    fn access_graph(&mut self, graph: VRef<MoveGraph>, span: Span) -> VRef<ValueMir> {
-        let value_path = {
-            let mut current = Some(graph);
-            let mut path = bumpvec![];
-            while let Some(current_graph) = current {
-                let graph_ent = self.mir_move_ctx.graphs[current_graph];
-                path.push(graph_ent.index);
-                current = graph_ent.parent;
-            }
-            path
-        };
-
-        let mut current = self.mir_move_ctx.graphs[graph].owner;
-        for index in value_path.into_iter().rev() {
-            let current_ty = self.value_ty(current);
-            let next_ty = current_ty
-                .component_ty(index as usize, self.typec, self.interner)
-                .unwrap();
-            let next = self.value(next_ty);
-            self.inst(InstMir::Field(current, index, next), span);
-            current = next;
-        }
-        current
-    }
-
-    fn fill_graph_children(&mut self, graph: VRef<MoveGraph>) {
-        let mut frontier = bumpvec![graph];
-        while let Some(graph) = frontier.pop() {
-            match &mut self.mir_move_ctx.graphs[graph].kind {
-                MoveGraphKind::Present(..) => (),
-                &mut MoveGraphKind::Gone(span) => {
-                    if let Some(SwappedMove::Present) = self
-                        .mir_move_ctx
-                        .swaps
-                        .insert(graph, SwappedMove::Gone(span))
-                    {
-                        self.mir_move_ctx.swaps.remove(graph);
-                    };
-                }
-                MoveGraphKind::Split(children) => {
-                    frontier.extend(children.keys());
-                }
-            }
-        }
-    }
-
-    fn take_graph(&mut self, graph: VRef<MoveGraph>, span: Span, missing: &mut BumpVec<Span>) {
-        let mut frontier = bumpvec![graph];
-        while let Some(graph) = frontier.pop() {
-            match &mut self.mir_move_ctx.graphs[graph].kind {
-                MoveGraphKind::Present(PresentKind::Copy) => (),
-                s @ MoveGraphKind::Present(..) => {
-                    if let Some(SwappedMove::Gone(..)) =
-                        self.mir_move_ctx.swaps.insert(graph, SwappedMove::Present)
-                    {
-                        self.mir_move_ctx.swaps.remove(graph);
-                    };
-                    *s = MoveGraphKind::Gone(span);
-                }
-                MoveGraphKind::Split(children) => {
-                    frontier.extend(children.keys());
-                }
-                &mut MoveGraphKind::Gone(span) => missing.push(span),
-            }
-        }
-    }
+fn remove_range<'a, K: Ord + Clone, V>(
+    map: &'a mut BTreeMap<K, V>,
+    range: Range<&K>,
+) -> impl Iterator<Item = (K, V)> + 'a {
+    let to_remove = map
+        .range(range)
+        // SAFETY: manual drop ensures that we don't double free
+        .map(|(k, _)| unsafe { MaybeUninit::new(std::ptr::read(k)) })
+        .collect::<BumpVec<_>>();
+    to_remove.into_iter().map(|key| {
+        // SAFETY: we know contents of `to_remove` are valid
+        let entry = map.remove_entry(unsafe { key.assume_init_ref() });
+        // SAFETY: range guarantees that entry is not None
+        unsafe { entry.unwrap_unchecked() }
+    })
 }
 
 #[derive(Default)]
 pub struct MirMoveCtx {
-    graphs: PushMap<MoveGraph>,
-    mapping: Vec<VRef<MoveGraph>>,
+    lookup: BTreeMap<MoveKey, Move>,
+    history: Frames<MoveRecord>,
+    owners: ShadowMap<ValueMir, Option<Owner>>,
+    branch_blocks: Vec<VRef<BlockMir>>,
 
-    swaps: SparseMap<MoveGraph, SwappedMove>,
-    cached_swaps: Frames<(VRef<MoveGraph>, SwappedMove)>,
+    simplify_temp: BTreeSet<MoveKey>,
+    count_temp: BTreeMap<MoveKey, usize>,
+    // cover_temp: BTreeMap<MoveKey, BranchMoveMask>,
+    range_temp: Range<MoveKey>,
 }
+
+// #[derive(Default)]
+// struct BranchMoveMask(SmallVec<[usize; 2]>);
+
+// impl BranchMoveMask {
+//     fn from_index(index: usize) -> Self {
+//         let mut s = Self::default();
+//         s.insert(index);
+//         s
+//     }
+
+//     fn insert(&mut self, index: usize) {
+//         let (global, local) = BitSet::decompose_key(index);
+//         if self.0.len() <= global {
+//             self.0.resize(global + 1, 0);
+//         }
+//         self.0[global] |= 1 << local;
+//     }
+
+//     fn contains(&self, index: usize) -> bool {
+//         let (global, local) = BitSet::decompose_key(index);
+//         self.0.get(global).map_or(false, |set| set & (1 << local) != 0)
+//     }
+// }
 
 impl MirMoveCtx {
     pub fn clear(&mut self) {
-        self.graphs.clear();
-    }
-
-    pub fn save_move_branch(&mut self) {
-        self.cached_swaps
-            .extend(self.swaps.iter().map(|(graph, &op)| (graph, op)));
-        self.swaps.clear();
+        self.lookup.clear();
+        self.history.clear();
+        self.owners.clear();
     }
 }
 
-#[derive(Clone, Copy)]
-struct MoveGraph {
-    index: u32,
-    drop_meta: DropMeta,
-    parent: OptVRef<MoveGraph>,
-    owner: VRef<ValueMir>,
-    kind: MoveGraphKind,
+#[derive(Copy, Clone)]
+pub struct Owner {
+    parent: VRef<ValueMir>,
+    index: MovePathSegment,
+    behind_pointer: bool,
+    inside_droppable: bool,
+}
+
+#[derive(Clone)]
+struct MoveRecord {
+    key: MoveKey,
+    r#move: Move,
+    direction: MoveDirection,
+}
+
+#[derive(Copy, Clone)]
+enum MoveDirection {
+    In,
+    Out,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Default)]
+struct MoveKey {
+    root: VRef<ValueMir>,
+    path: MovePath,
+}
+
+impl MoveKey {
+    fn range<'a>(&self, dest: &'a mut Range<MoveKey>) -> Range<&'a MoveKey> {
+        self.clone_into(&mut dest.start);
+        dest.start.path.push(MovePathSegment::START);
+        self.clone_into(&mut dest.end);
+        dest.end.path.push(MovePathSegment::END);
+
+        &dest.start..&dest.end
+    }
+}
+
+impl Clone for MoveKey {
+    fn clone(&self) -> Self {
+        Self {
+            root: self.root,
+            path: self.path.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.root = source.root;
+        self.path.clone_from(&source.path);
+    }
 }
 
 #[derive(Clone, Copy)]
-enum DropMeta {
-    Yes(FragRef<Impl>),
-    No,
-    Maybe,
+pub struct Move {
+    span: Span,
 }
 
-#[derive(Clone, Copy)]
-enum SwappedMove {
-    Present,
-    Gone(Span),
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct MovePathSegment(u32);
+
+impl MovePathSegment {
+    const VARIANT_MASK: u32 = 1 << 31;
+    const START: MovePathSegment = MovePathSegment(u32::MIN);
+    const END: MovePathSegment = MovePathSegment(u32::MAX);
+
+    fn variant(index: u32) -> Self {
+        Self(index | Self::VARIANT_MASK)
+    }
+
+    fn field(index: u32) -> Self {
+        Self(index)
+    }
+
+    fn as_field(self) -> Result<u32, u32> {
+        if self.0 & Self::VARIANT_MASK == 0 {
+            Ok(self.0)
+        } else {
+            Err(self.0 & !Self::VARIANT_MASK)
+        }
+    }
+
+    fn as_index(self) -> usize {
+        (self.0 & !Self::VARIANT_MASK) as usize
+    }
 }
 
-#[derive(Clone, Copy)]
-enum MoveGraphKind {
-    Present(PresentKind),
-    Gone(Span),
-    Split(VSlice<MoveGraph>),
-}
+// #[test]
+// fn range_vs_single() {
+//     let bt: BTreeSet<_> = (0..10000u16).collect();
 
-#[derive(Clone, Copy)]
-enum PresentKind {
-    Copy,
-    Pointer,
-    BehindPointer,
-    Normal,
-    Drop,
-    BehindDrop,
-}
+//     let now = Instant::now();
+//     let mut c = 0;
+//     for i in 0..10000 {
+//         c += bt.contains(&i) as usize;
+//     }
+//     println!("{} {:?}", c, now.elapsed());
+
+//     let now = Instant::now();
+//     let mut c = 0;
+//     for i in 0..10000 - 100 {
+//         c += bt.range(i..i + 100).next().is_some() as usize;
+//     }
+//     println!("{} {:?}", c, now.elapsed());
+// }
+
+// #[test]
+// fn single_vs_two_pass() {
+//     let mut bt: BTreeMap<_, ()> = (0..10000u16).map(|i| ([i].to_vec(), ())).collect();
+
+//     let mut start = vec![0];
+//     let mut end = vec![0];
+//     let now = Instant::now();
+//     for i in (0..10000).step_by(100) {
+//         start[0] = i;
+//         end[0] = i + 100;
+//         remove_range_two_pass(&mut bt, &start..&end);
+//     }
+//     println!("{} {:?}", bt.len(), now.elapsed());
+
+//     let mut bt: BTreeMap<_, ()> = (0..10000u16).map(|i| ([i].to_vec(), ())).collect();
+
+//     let now = Instant::now();
+//     for i in (0..10000).step_by(100) {
+//         start[0] = i;
+//         end[0] = i + 100;
+//         remove_range(&mut bt, &mut start..&mut end);
+//     }
+//     println!("{} {:?}", bt.len(), now.elapsed());
+// }

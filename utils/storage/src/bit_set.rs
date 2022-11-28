@@ -99,7 +99,7 @@ impl BitSet {
         &self.data
     }
 
-    fn decompose_key(index: usize) -> (usize, usize) {
+    pub fn decompose_key(index: usize) -> (usize, usize) {
         // SAFETY: this works since WIDTH is a power of 2.
         (index >> WIDTH_POW, index & (WIDTH - 1))
     }

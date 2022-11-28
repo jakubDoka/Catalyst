@@ -487,6 +487,12 @@ impl<T, const SYNC: bool, const SIZE: usize> Drop for Fragment<T, SYNC, SIZE> {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct NonMaxU16(u16);
 
+impl Default for NonMaxU16 {
+    fn default() -> Self {
+        unsafe { Self(0) }
+    }
+}
+
 struct FragmentInner<T, const SIZE: usize> {
     ref_count: AtomicUsize,
     len: AtomicUsize,

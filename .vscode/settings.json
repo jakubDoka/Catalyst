@@ -66,6 +66,7 @@
         "RTLD",
         "sdbm",
         "sdiv",
+        "smallvec",
         "STATICLIB",
         "Struct",
         "TLSGD",

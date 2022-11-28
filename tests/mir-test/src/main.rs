@@ -83,6 +83,7 @@ fn main() {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
         }
+
         simple "auto-ref-deref" {
             impl uint {
                 fn reference(s: ^^Self) -> ^^Self => s;
@@ -91,12 +92,13 @@ fn main() {
 
             fn main -> uint => 0.reference().dereference();
         }
-        simple "compile-time" {
-            fn sub(a: uint, b: uint) -> uint => a - b;
 
-            #[entry];
-            fn main -> uint => const sub(1, 1);
-        }
+        // simple "compile-time" {
+        //     fn sub(a: uint, b: uint) -> uint => a - b;
+
+        //     #[entry];
+        //     fn main -> uint => const sub(1, 1);
+        // }
 
         simple "match" {
             struct Matched {

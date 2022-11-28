@@ -195,7 +195,7 @@ impl ValueMir {
     );
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FuncTypes(PushMap<MirTy>);
 
 impl FuncTypes {
@@ -208,6 +208,12 @@ impl FuncTypes {
 
     pub fn clear(&mut self) {
         self.0.truncate(ValueMir::TERMINAL.index() + 1);
+    }
+}
+
+impl Default for FuncTypes {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -225,7 +231,7 @@ impl DerefMut for FuncTypes {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FuncValues(PushMap<ValueMir>);
 
 impl FuncValues {
@@ -240,6 +246,12 @@ impl FuncValues {
 
     pub fn clear(&mut self) {
         self.0.truncate(ValueMir::TERMINAL.index() + 1);
+    }
+}
+
+impl Default for FuncValues {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

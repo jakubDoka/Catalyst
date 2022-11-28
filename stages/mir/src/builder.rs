@@ -42,6 +42,7 @@ impl MirChecker<'_, '_> {
 
         self.node(body, None, false);
 
+        self.mir_move_ctx.clear();
         self.mir_ctx.clear()
     }
 
@@ -57,7 +58,7 @@ impl MirChecker<'_, '_> {
         }}
 
         match kind {
-            TirKind::Block(stmts) => pass!(dest => self.block(stmts, dest, r#move)),
+            TirKind::Block(stmts) => self.block(stmts, dest, r#move),
             TirKind::Int(computed) => pass!(dest => self.int(computed, span, dest)),
             TirKind::Char => pass!(dest => self.char(span, dest)),
             TirKind::Bool(value) => pass!(dest => self.bool(value, span, dest)),
@@ -68,8 +69,8 @@ impl MirChecker<'_, '_> {
             TirKind::Deref(&node) => self.deref(node, ty, span),
             TirKind::Ref(&node) => pass!(dest => self.r#ref(node, span, dest)),
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
-            TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
-            TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, r#move)),
+            TirKind::Match(&r#match) => self.r#match(r#match, span, dest, r#move),
+            TirKind::If(&r#if) => self.r#if(r#if, dest, r#move),
             TirKind::Let(&r#let) => self.r#let(r#let),
             TirKind::Assign(&assign) => self.assign(assign, span),
         }
@@ -91,7 +92,7 @@ impl MirChecker<'_, '_> {
     fn r#if(
         &mut self,
         IfTir { top, elifs, r#else }: IfTir,
-        dest: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
         r#move: bool,
     ) -> NodeRes {
         let mut dest_block = None;
@@ -112,19 +113,19 @@ impl MirChecker<'_, '_> {
 
         if let Some(dest_block) = dest_block {
             self.select_block(dest_block);
-            if dest != ValueMir::UNIT {
+            if let Some(dest) = dest {
                 self.mir_ctx.args.push(dest);
             }
         }
 
-        Some(dest)
+        dest
     }
 
     fn r#match(
         &mut self,
         MatchTir { value, arms }: MatchTir,
         span: Span,
-        dest: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
         r#move: bool,
     ) -> NodeRes {
         let mir_value = self.node(value, None, false)?;
@@ -173,11 +174,11 @@ impl MirChecker<'_, '_> {
 
         let dest_block = dest_block?;
         self.select_block(dest_block);
-        if dest != ValueMir::UNIT {
+        if let Some(dest) = dest {
             self.mir_ctx.args.push(dest);
         }
 
-        Some(dest)
+        dest
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -186,7 +187,7 @@ impl MirChecker<'_, '_> {
         MatchArmTir { pat, body }: MatchArmTir,
         dest_block: &mut OptVRef<BlockMir>,
         value: VRef<ValueMir>,
-        dest: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
         r#move: bool,
     ) {
         let frame = self.start_scope_frame();
@@ -199,11 +200,11 @@ impl MirChecker<'_, '_> {
         &mut self,
         body: TirNode,
         dest_block: &mut OptVRef<BlockMir>,
-        dest: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
         r#move: bool,
     ) {
-        if let Some(ret) = self.node(body, Some(dest), r#move) {
-            let ret = (ret != ValueMir::UNIT).then_some(ret);
+        if let Some(ret) = self.node(body, dest, r#move) {
+            let ret = dest.map(|_| ret);
             let &mut dest_block = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
             self.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
         }
@@ -250,7 +251,7 @@ impl MirChecker<'_, '_> {
                     value: Some(&pat), ..
                 } => {
                     let dest = self.value(pat.ty);
-                    self.enum_move_out(value, dest, span);
+                    // self.enum_move_out(value, dest, span);
                     self.inst(InstMir::Field(value, 1, dest), span);
                     self.bind_pattern_vars(pat, dest);
                 }
@@ -473,7 +474,7 @@ impl MirChecker<'_, '_> {
         Some(final_dest)
     }
 
-    fn block(&mut self, nodes: &[TirNode], dest: VRef<ValueMir>, r#move: bool) -> NodeRes {
+    fn block(&mut self, nodes: &[TirNode], dest: OptVRef<ValueMir>, r#move: bool) -> NodeRes {
         let Some((&last, nodes)) = nodes.split_last() else {
             return Some(ValueMir::UNIT);
         };
@@ -485,7 +486,7 @@ impl MirChecker<'_, '_> {
                 // TODO: drop temporary values
             }
 
-            self.node(last, Some(dest), r#move)?
+            self.node(last, dest, r#move)?
         };
         self.end_scope_frame(frame);
 
@@ -532,7 +533,12 @@ impl MirChecker<'_, '_> {
             .collect::<Option<BumpVec<_>>>()?;
         let args = self.mir_ctx.func.value_args.extend(args);
 
+        if let Some(dest) = dest {
+            dbg!(dest, self.value_ty(dest));
+        }
+
         let value = dest.or_else(|| (ty != Ty::UNIT && ty != Ty::TERMINAL).then(|| self.value(ty)));
+
         let callable = self.mir_ctx.func.calls.push(CallMir {
             callable,
             params,
@@ -576,11 +582,16 @@ impl MirChecker<'_, '_> {
     }
 
     fn r#return(&mut self, val: Option<&TirNode>, span: Span) -> NodeRes {
+        let no_return = self.mir_ctx.func.ret == ValueMir::UNIT;
         let ret_val = val
-            .and_then(|&val| {
-                Some(self.node(val, Some(self.mir_ctx.func.ret), true))
-                    .filter(|_| val.ty != Ty::UNIT)
+            .map(|&val| {
+                self.node(
+                    val,
+                    Some(self.mir_ctx.func.ret).filter(|_| !no_return),
+                    true,
+                )
             })
+            .filter(|_| !no_return)
             .transpose()?;
         self.close_block(span, ControlFlowMir::Return(ret_val));
         None
@@ -614,6 +625,7 @@ impl MirChecker<'_, '_> {
     }
 
     pub fn start_scope_frame(&mut self) -> MirVarFrame {
+        self.mir_ctx.depth += 1;
         MirVarFrame {
             base: self.mir_ctx.vars.len(),
         }
@@ -621,6 +633,7 @@ impl MirChecker<'_, '_> {
 
     pub fn end_scope_frame(&mut self, frame: MirVarFrame) {
         self.mir_ctx.vars.truncate(frame.base);
+        self.mir_ctx.depth -= 1;
     }
 
     pub fn pointer_to(
@@ -664,7 +677,7 @@ impl MirChecker<'_, '_> {
         false
     }
 
-    fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
+    pub fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
         match control_flow {
             ControlFlowMir::Terminal | ControlFlowMir::Return(..) => {}
             ControlFlowMir::Split(.., a, b) => {

@@ -206,8 +206,12 @@ impl MirChecker<'_, '_> {
             InstMir::Var(value, ret) => {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
-            InstMir::MayDrop(_) => todo!(),
-            InstMir::Drop(_, _) => todo!(),
+            InstMir::MayDrop(value) => {
+                write!(buffer, "may_drop var{}", value.index())?;
+            }
+            InstMir::Drop(value, r#impl) => {
+                write!(buffer, "drop var{} impl{}", value.index(), r#impl.to_u32())?;
+            }
         }
 
         Ok(())

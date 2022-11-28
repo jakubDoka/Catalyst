@@ -249,44 +249,44 @@ impl<T> VSlice<T> {
     /// Creates new VSlice from index.
     /// # Safety
     /// The index must be valid for using collection.
-    #[inline(always)]
     pub unsafe fn new(range: Range<usize>) -> Self {
         Self(range.start as u32, range.end as u32, PhantomData)
     }
 
-    #[inline(always)]
-    pub fn range(&self) -> Range<usize> {
+    pub fn range(self) -> Range<usize> {
         self.0 as usize..self.1 as usize
     }
 
-    #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub fn len(self) -> usize {
         (self.1 - self.0) as usize
     }
 
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.len() == 0
     }
 
-    #[inline(always)]
     pub const fn empty() -> Self {
         Self(0, 0, PhantomData)
     }
 
-    #[inline(always)]
-    pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {
+    pub fn keys(self) -> impl Iterator<Item = VRef<T>> {
         self.range().map(|i| unsafe { VRef::new(i) })
     }
 
-    #[inline(always)]
-    pub fn index(&self, index: usize) -> VRef<T> {
+    pub fn index(self, index: usize) -> VRef<T> {
         self.keys().nth(index).expect("Index out of bounds.")
     }
 
-    #[inline(always)]
-    pub fn start(&self) -> u32 {
+    pub fn start(self) -> u32 {
         self.0
+    }
+
+    pub fn slice(self, range: Range<usize>) -> Self {
+        assert!(range.start <= range.end);
+        assert!(range.end <= self.len());
+        let start = self.0 + range.start as u32;
+        let end = self.0 + range.end as u32;
+        Self(start, end, PhantomData)
     }
 }
 

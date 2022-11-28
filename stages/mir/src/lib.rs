@@ -6,6 +6,7 @@
 #![feature(never_type)]
 #![feature(let_chains)]
 #![feature(decl_macro)]
+#![feature(btree_drain_filter)]
 
 mod builder;
 mod ctx;

@@ -80,6 +80,15 @@ impl<T> PushMap<T> {
         unsafe { VSlice::new(prev..self.data.len()) }
     }
 
+    pub fn extend_from_within(&mut self, other: VSlice<T>) -> VSlice<T>
+    where
+        T: Clone,
+    {
+        let prev = self.data.len();
+        self.data.extend_from_within(other.range());
+        unsafe { VSlice::new(prev..self.data.len()) }
+    }
+
     pub fn bump_slice(&mut self, items: &[T]) -> VSlice<T>
     where
         T: Clone,

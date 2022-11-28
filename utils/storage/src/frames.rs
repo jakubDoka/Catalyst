@@ -29,6 +29,11 @@ impl<T> Frames<T> {
         self.data.drain(check as usize..)
     }
 
+    pub fn clear_top(&mut self) {
+        let check = self.indices.last().copied().unwrap_or(0);
+        self.data.truncate(check as usize);
+    }
+
     /// Pushes value to current frame
     pub fn push(&mut self, value: T) {
         self.data.push(value);
@@ -82,7 +87,7 @@ impl<T> Frames<T> {
 
     /// Joins tow two frames into one.
     pub fn join_frames(&mut self) {
-        self.indices.pop().unwrap();
+        self.indices.pop();
     }
 
     /// Splits the top frame into two such that `top_frame_length`
