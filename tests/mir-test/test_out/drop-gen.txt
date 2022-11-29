@@ -40,6 +40,18 @@ fn [] drop_refed_variable() -> ()  { ret var0
 
 }
 
+fn [] move_in_drop() -> ()  { ret var0
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        drop var3 impl0
+        var3 ={}
+        return var0
+    }
+
+}
+
 fn [] f(var0: ^0\A) -> ()  { ret var0
     block0(var2: ^0\A) {
         return var0
