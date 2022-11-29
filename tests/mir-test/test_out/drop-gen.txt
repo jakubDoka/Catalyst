@@ -1,0 +1,58 @@
+info: mir repr of functions:
+ fn [] drop_unused() -> ()  {
+    block0() {
+        return var0
+    }
+
+}
+
+fn [] drop_referenced() -> ()  {
+    block0() {
+        var3 ={}
+        var2 = &var3
+        var0 = f(val2)
+        return var0
+    }
+
+}
+
+fn [] drop_variable() -> ()  {
+    block0() {
+        var2 ={}
+        var3 = var2
+        access var3
+        var4 = &var3
+        var0 = f(val4)
+        return var0
+    }
+
+}
+
+fn [] drop_refed_variable() -> ()  {
+    block0() {
+        var3 ={}
+        var2 = &var3
+        var4 = var2
+        access var4
+        var0 = f(val4)
+        return var0
+    }
+
+}
+
+fn [] f(var0: ^0\A) -> ()  {
+    block0(var2: ^0\A) {
+        return var0
+    }
+
+}
+
+fn [] drop(var0: ^mut 0\A) -> ()  {
+    block0(var2: ^mut 0\A) {
+        return var0
+    }
+
+}
+
+
+
