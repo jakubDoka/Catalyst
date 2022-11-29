@@ -1,26 +1,32 @@
 info: tir repr of functions:
- fn [] next(var0: ^0\MacroLexer) -> 0\MacroToken return ctl_lexer_next(var0)
-
-fn "default" [] new(var0: ^1\Swap, var1: 0\MacroLexer) -> () return {
-    *var0 = 1\Swap\{1\SwapState\{0, 1\TwoTokens\{next(^var1), next(^var1)}}, var1}
+ fn [] write(var0: ^mut param0, var1: param0) -> () return {
+    *var0 = var1
 }
 
-fn "default" [] next(var0: ^1\Swap) -> 3\Option[0\MacroToken] return 3\Option[0\MacroToken]\{1, match *var0.0 {
+fn [] read(var0: ^param0) -> param0 return *var0
+
+fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken return ctl_lexer_next(var0)
+
+fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> () return {
+    write[2\Swap](var0, 2\Swap\{2\SwapState\{0, 2\TwoTokens\{next(^var1), next(^var1)}}, var1})
+}
+
+fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken] return 4\Option[1\MacroToken]\{1, match *var0.0 {
     \0~\{var2, var1} => {
-        *var0.0 = 1\SwapState\{1, 1\LastToken\{var1}}
+        *var0.0 = 2\SwapState\{1, 2\LastToken\{var1}}
         var2
     }
     \1~\{var1} => {
-        *var0.0 = 1\SwapState\{2}
+        *var0.0 = 2\SwapState\{2}
         var1
     }
     \2~ => {
-        return 3\Option[0\MacroToken]\{0}
+        return 4\Option[1\MacroToken]\{0}
     }
 }}
 
-fn "default" [] drop(var0: ^1\Swap) -> 0\MacroLexer return {
-    *var0.1
+fn "default" [] drop(var0: ^2\Swap) -> 1\MacroLexer return {
+    read[1\MacroLexer](^*var0.1)
 }
 
 

@@ -152,7 +152,7 @@ fn [] conditional_assign() -> ()  {
         access var3
         var8 = var3.0
         var8 ={}
-        goto block3 with var8
+        goto block3 with var0
     }
 
     block2() {

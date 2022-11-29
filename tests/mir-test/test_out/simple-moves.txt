@@ -140,13 +140,13 @@ fn [] conditional_reassign() -> ()  {
     block1() {
         access var3
         var3 ={}
-        goto block3 with var3
+        goto block3 with var0
     }
 
     block2() {
         access var3
         var3 ={}
-        goto block3 with var3
+        goto block3 with var0
     }
 
     block3(var0: ()) {
@@ -172,7 +172,7 @@ fn [] conditional_incomplete_reassign() -> ()  {
     block1() {
         access var3
         var3 ={}
-        goto block3 with var3
+        goto block3 with var0
     }
 
     block2() {

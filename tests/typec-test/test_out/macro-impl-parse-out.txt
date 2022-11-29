@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got String
+ --> macro-impl\root.ctl:1:36
+  |
+1 | use { "water/option" ; "water/ptr" "water/macros/tokens" ; } ; struct LastToken { last : MacroToken ; } ; struct TwoTokens { second : MacroToken ; first : MacroToken ; } ; enum SwapState { Two : TwoTokens ; Last : LastToken ; Empty ; } ; #[macro swap] ; struct Swap { state : SwapState ; lexer : MacroLexer ; } ; impl TokenMacro for Swap {     fn new(s : ^ Self, lexer : MacroLexer)     {         ptr\        write(s,\        {             state :\Two ~\            { first : lexer.next() ; second : lexer.next() ; } ; lexer ;         }) ;     } ; fn next(s : ^ Self) -> Option [MacroToken] =>\Some ~ match s.state     {        \Two ~\{ first, second }         { s.state =\Last ~\{ last : first } ; second } ;\Last ~\        { last } { s.state =\Empty ; last } ;\Empty => return\None ;     } ; fn drop(s : ^ Self) -> MacroLexer { ptr\read(^ s.lexer) } ; } ;
+  |                                    ^^^^^^^^^^^^^^^^^^^^^ token located here
+  |
+  = info: use -> list
+
