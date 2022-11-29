@@ -664,7 +664,7 @@ impl Worker {
             self.state.temp_dependant_types.clear();
             self.state
                 .temp_dependant_types
-                .extend(body.types.values().copied());
+                .extend(body.types.values().copied().skip(MirTy::ALL.len()));
             Self::swap_mir_types(
                 &body,
                 &mut self.state.temp_dependant_types,
@@ -685,6 +685,7 @@ impl Worker {
                 .gen_resources
                 .calls
                 .extend(task.compile_requests.children[children].iter().copied());
+            dbg!(&task.interner[task.typec.funcs[func].name]);
             Generator::new(
                 gen_layouts,
                 &mut task.gen,
@@ -697,6 +698,7 @@ impl Worker {
             .generate(signature, &params, root, &mut builder);
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{}", self.context.func.display()).unwrap();
+                print!("{}", self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
@@ -794,7 +796,7 @@ impl Worker {
                 .get(&func)
                 .expect("Effing amazing..")
                 .clone();
-            let mut types = body.types.values().copied().collect::<BumpVec<_>>();
+            let mut types = body.types.clone();
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             Worker::swap_mir_types(
                 &body.inner,
@@ -814,7 +816,7 @@ impl Worker {
                 let task = &mut tasks[task_id];
                 let params = body.ty_params[params]
                     .iter()
-                    .map(|&ty| types[ty.index()].ty)
+                    .map(|&ty| types[ty].ty)
                     .collect::<BumpVec<_>>();
                 let (func_id, params) = match callable {
                     CallableMir::Func(func_id) => (func_id, params),
@@ -1022,7 +1024,10 @@ impl Worker {
             arena,
             shared.resources,
         )
-        .funcs(&mut type_checked_funcs);
+        .funcs(&mut type_checked_funcs)
+        // .dbg_funcs()
+        ;
+
         task.entry_points.extend(
             self.state
                 .mir_ctx
@@ -1066,7 +1071,7 @@ impl Worker {
 
     pub fn swap_mir_types(
         func: &FuncMirInner,
-        dependant_types: &mut [MirTy],
+        dependant_types: &mut FuncTypes,
         params: &[Ty],
         typec: &mut Typec,
         interner: &mut Interner,
@@ -1076,9 +1081,9 @@ impl Worker {
         }
 
         for &mir_ty in &func.ty_params[func.generics] {
-            let ty = dependant_types[mir_ty.index()].ty;
+            let ty = dependant_types[mir_ty].ty;
             let new_ty = typec.instantiate(ty, params, interner);
-            dependant_types[mir_ty.index()].ty = new_ty;
+            dependant_types[mir_ty].ty = new_ty;
         }
     }
 
@@ -1176,7 +1181,7 @@ pub struct WorkerState {
     pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
     pub macro_ctx: MacroCtx<'static>,
     pub tir_builder_ctx: TirBuilderCtx,
-    pub temp_dependant_types: Vec<MirTy>,
+    pub temp_dependant_types: FuncTypes,
     pub gen_resources: GenResources,
     pub jit_layouts: GenLayouts,
     pub gen_layouts: GenLayouts,

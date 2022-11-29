@@ -201,13 +201,13 @@ pub struct FuncTypes(PushMap<MirTy>);
 impl FuncTypes {
     pub fn new() -> Self {
         let mut pm = PushMap::new();
-        pm.push(MirTy { ty: Ty::UINT });
+        pm.push(MirTy { ty: Ty::UNIT });
         pm.push(MirTy { ty: Ty::TERMINAL });
         Self(pm)
     }
 
     pub fn clear(&mut self) {
-        self.0.truncate(ValueMir::TERMINAL.index() + 1);
+        self.0.truncate(ValueMir::ALL.len());
     }
 }
 

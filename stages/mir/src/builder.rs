@@ -80,7 +80,7 @@ impl MirChecker<'_, '_> {
         let dest = self.node(lhs, None, false)?;
         self.move_in(dest, span);
         self.node(rhs, Some(dest), true)?;
-        Some(dest)
+        Some(ValueMir::UNIT)
     }
 
     fn r#let(&mut self, LetTir { pat, value }: LetTir) -> NodeRes {

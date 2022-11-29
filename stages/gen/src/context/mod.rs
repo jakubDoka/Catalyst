@@ -477,7 +477,7 @@ pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
     pub body: &'a FuncMirInner,
     pub struct_ret: Option<ir::Value>,
-    pub dependant_types: &'a Vec<MirTy>,
+    pub dependant_types: &'a FuncTypes,
     inner: FunctionBuilder<'b>,
 }
 
@@ -486,7 +486,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
         isa: &'a Isa,
         body: &'a FuncMirInner,
         func: &'b mut ir::Function,
-        dependant_types: &'a Vec<MirTy>,
+        dependant_types: &'a FuncTypes,
         ctx: &'b mut FunctionBuilderContext,
     ) -> Self {
         Self {
@@ -499,7 +499,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
     }
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.dependant_types[self.body.values[value].ty.index()].ty
+        self.dependant_types[self.body.values[value].ty].ty
     }
 
     pub fn ptr_ty(&self) -> Type {

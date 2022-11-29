@@ -24,6 +24,12 @@ impl MirChecker<'_, '_> {
         Ok(())
     }
 
+    pub fn dbg_funcs(&self) {
+        let mut buffer = String::new();
+        self.display_funcs(&mut buffer).unwrap();
+        println!("{}", buffer);
+    }
+
     fn display_func(&self, func: FragRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
         buffer.push_str(" {\n");

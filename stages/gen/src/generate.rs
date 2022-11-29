@@ -375,6 +375,7 @@ impl Generator<'_> {
         } = self.gen_resources.values[target];
         let ptr_ty = builder.ptr_ty();
         let layout = self.ty_layout(builder.value_ty(target));
+        // dbg!(layout, builder.value_ty(target), target);
         if layout.size == 0 {
             return None;
         }

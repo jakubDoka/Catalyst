@@ -268,6 +268,7 @@ fn main() {
         simple "macro-impl" {
             use {
                 "water/option";
+                "water/ptr";
                 "water/macros/tokens";
             };
             // use {
@@ -301,13 +302,13 @@ fn main() {
 
             impl TokenMacro for Swap {
                 fn new(s: ^Self, lexer: MacroLexer) {
-                    *s = ::{
+                    ptr::write(s, ::{
                         state: ::Two~::{
                             first: lexer.next();
                             second: lexer.next();
                         };
                         lexer;
-                    };
+                    });
                 };
 
                 fn next(s: ^Self) -> Option[MacroToken] =>
@@ -324,7 +325,7 @@ fn main() {
                     };
 
                 fn drop(s: ^Self) -> MacroLexer {
-                    s.lexer
+                    ptr::read(^s.lexer)
                 };
             };
         }
