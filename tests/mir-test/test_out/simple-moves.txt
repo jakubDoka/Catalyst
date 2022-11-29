@@ -40,6 +40,7 @@ error: cannot move out of value twice
 info: mir repr of functions:
  fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
+        may_drop var2
         return var0
     }
 
