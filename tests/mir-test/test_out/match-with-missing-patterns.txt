@@ -10,7 +10,7 @@ error: match is not exhaustive
    = info: missing patterns: \{ a: 0..1, b: 2..max }, \{ a: 1..2, b: 1..max }, \{ a: 2..max, b: 1..max }
 
 info: mir repr of functions:
- fn [] main() -> uint  {
+ fn [] main() -> uint  { ret var2
     block0() {
         return var0
     }

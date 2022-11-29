@@ -38,14 +38,14 @@ error: cannot move out of value twice
    |
 
 info: mir repr of functions:
- fn [] drop(var0: param0) -> ()  {
+ fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
         return var0
     }
 
 }
 
-fn [] double_move() -> ()  {
+fn [] double_move() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -58,7 +58,7 @@ fn [] double_move() -> ()  {
 
 }
 
-fn [] conditional_double_move() -> ()  {
+fn [] conditional_double_move() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -86,7 +86,7 @@ fn [] conditional_double_move() -> ()  {
 
 }
 
-fn [] conditional_move() -> ()  {
+fn [] conditional_move() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -110,7 +110,7 @@ fn [] conditional_move() -> ()  {
 
 }
 
-fn [] reassign() -> ()  {
+fn [] reassign() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -125,7 +125,7 @@ fn [] reassign() -> ()  {
 
 }
 
-fn [] conditional_reassign() -> ()  {
+fn [] conditional_reassign() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -157,7 +157,7 @@ fn [] conditional_reassign() -> ()  {
 
 }
 
-fn [] conditional_incomplete_reassign() -> ()  {
+fn [] conditional_incomplete_reassign() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -187,7 +187,7 @@ fn [] conditional_incomplete_reassign() -> ()  {
 
 }
 
-fn [] enum_move() -> ()  {
+fn [] enum_move() -> ()  { ret var0
     block0() {
         var4 ={var2, var3}
         var2 = 0
@@ -221,7 +221,7 @@ fn [] enum_move() -> ()  {
 
 }
 
-fn [] enum_just_match() -> ()  {
+fn [] enum_just_match() -> ()  { ret var0
     block0() {
         var4 ={var2, var3}
         var2 = 0
@@ -251,7 +251,7 @@ fn [] enum_just_match() -> ()  {
 
 }
 
-fn [] enum_whole_move() -> ()  {
+fn [] enum_whole_move() -> ()  { ret var0
     block0() {
         var4 ={var2, var3}
         var2 = 0

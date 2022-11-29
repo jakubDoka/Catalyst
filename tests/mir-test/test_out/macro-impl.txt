@@ -1,5 +1,5 @@
 info: mir repr of functions:
- fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  {
+ fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  { ret var3
     block0(var2: ^1\MacroLexer) {
         access var2
         var3 = ctl_lexer_next(val2)
@@ -8,7 +8,7 @@ info: mir repr of functions:
 
 }
 
-fn [] write(var0: ^mut param0, var1: param0) -> ()  {
+fn [] write(var0: ^mut param0, var1: param0) -> ()  { ret var0
     block0(var2: ^mut param0, var3: param0) {
         access var2
         var4 = *var2
@@ -18,16 +18,16 @@ fn [] write(var0: ^mut param0, var1: param0) -> ()  {
 
 }
 
-fn [] read(var0: ^param0) -> param0  {
+fn [] read(var0: ^param0) -> param0  { ret var3
     block0(var2: ^param0) {
         access var2
-        var4 = *var2
-        return var4
+        var3 = *var2
+        return var3
     }
 
 }
 
-fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
+fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  { ret var0
     block0(var2: ^2\Swap, var3: 1\MacroLexer) {
         access var2
         var6 ={var4, var5}
@@ -47,7 +47,7 @@ fn "default" [] new(var0: ^2\Swap, var1: 1\MacroLexer) -> ()  {
 
 }
 
-fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  {
+fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  { ret var3
     block0(var2: ^2\Swap) {
         var3 ={var4, var5}
         var4 = 1
@@ -111,7 +111,7 @@ fn "default" [] next(var0: ^2\Swap) -> 4\Option[1\MacroToken]  {
 
 }
 
-fn "default" [] drop(var0: ^2\Swap) -> 1\MacroLexer  {
+fn "default" [] drop(var0: ^2\Swap) -> 1\MacroLexer  { ret var3
     block0(var2: ^2\Swap) {
         access var2
         var6 = *var2

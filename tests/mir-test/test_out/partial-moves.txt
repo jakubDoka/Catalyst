@@ -45,14 +45,14 @@ error: cannot reference moved value
    |
 
 info: mir repr of functions:
- fn [] drop(var0: param0) -> ()  {
+ fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
         return var0
     }
 
 }
 
-fn [] double_move() -> ()  {
+fn [] double_move() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -70,7 +70,7 @@ fn [] double_move() -> ()  {
 
 }
 
-fn [] move_of_partially_moved() -> ()  {
+fn [] move_of_partially_moved() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -84,7 +84,7 @@ fn [] move_of_partially_moved() -> ()  {
 
 }
 
-fn [] partial_move_and_assign() -> ()  {
+fn [] partial_move_and_assign() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -101,7 +101,7 @@ fn [] partial_move_and_assign() -> ()  {
 
 }
 
-fn [] conditional_partial_move() -> ()  {
+fn [] conditional_partial_move() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -135,7 +135,7 @@ fn [] conditional_partial_move() -> ()  {
 
 }
 
-fn [] conditional_assign() -> ()  {
+fn [] conditional_assign() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -167,7 +167,7 @@ fn [] conditional_assign() -> ()  {
 
 }
 
-fn [] reference_partial_move() -> ()  {
+fn [] reference_partial_move() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -182,7 +182,7 @@ fn [] reference_partial_move() -> ()  {
 
 }
 
-fn [] partial_reference_move() -> ()  {
+fn [] partial_reference_move() -> ()  { ret var0
     block0() {
         var2 = new()
         var3 = var2
@@ -197,7 +197,7 @@ fn [] partial_reference_move() -> ()  {
 
 }
 
-fn [] new() -> 0\B  {
+fn [] new() -> 0\B  { ret var2
     block0() {
         var2 ={var3, var4}
         var3 ={}

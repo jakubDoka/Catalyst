@@ -1,5 +1,5 @@
 info: generated ir:
-function u0:0() -> i64 fast {
+main function u0:0() -> i64 fast {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
     ss2 = explicit_slot 8
@@ -59,11 +59,11 @@ block0:
     v26 = call fn1(v25)
     return v26
 }
-function u0:0(i64) -> i64 fast {
+reference function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }
-function u0:0(i64) -> i64 fast {
+dereference function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }

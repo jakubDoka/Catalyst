@@ -1,33 +1,159 @@
-error: type mismatch
-  --> swap-macro\root.ctl:41:18
-   |
-41 |         ptr\read(s.lexer)
-   |                  ^^^^^^^ mismatch occurred here
-   |
-   = info: expected '^1\MacroLexer' but got '1\MacroLexer'
-
-error: missing spec functions
-  --> swap-macro\root.ctl:24:1
-   |
-24 | / impl TokenMacro for Swap {
-25 | |     fn new(s: ^Self, lexer: MacroLexer) {
-26 | |         ptr\write(s, \{ state: \Two~\{ first: lexer.next(); second: lexer.next(
-27 | |         ) }; lexer })
-...  |
-42 | |     }
-43 | | }
-   | |_^ this impl block does not implement all required functions
-   |
-   = help: functions that are missing: drop
-
-error: expected 'struct' | 'fn' | 'spec' | 'enum' | 'impl' | '#' but got Macro
-  --> swap-macro\root.ctl:48:1
-   |
-48 | swap! swap! fn -> main uint => 0 
-   | ^^^^^ token located here
-   |
-   = info: grouped items -> list -> item
-
 info: generated ir:
+drop function u0:0(i64 sret, i64) windows_fastcall {
+    sig0 = (i64 sret, i64) fast
+    fn0 = colocated u0:3 sig0
 
+block0(v0: i64, v1: i64):
+    v2 = iadd_imm v1, 28
+    call fn0(v0, v2)
+    return
+}
+read function u0:0(i64 sret, i64) fast {
+    sig0 = (i64, i64, i64) windows_fastcall
+    fn0 = %Memmove sig0
+
+block0(v0: i64, v1: i64):
+    v2 = iconst.i64 64
+    call fn0(v0, v1, v2)  ; v2 = 64
+    return
+}
+next function u0:0(i64 sret, i64) windows_fastcall {
+    ss0 = explicit_slot 12
+    ss1 = explicit_slot 12
+    ss2 = explicit_slot 12
+
+block0(v0: i64, v1: i64):
+    v2 = iconst.i8 1
+    store v2, v0  ; v2 = 1
+    v3 = iconst.i8 0
+    v4 = load.i8 v1
+    v5 = icmp eq v4, v3  ; v3 = 0
+    brnz v5, block1
+    jump block2
+
+block2:
+    v6 = iconst.i8 1
+    v7 = load.i8 v1
+    v8 = icmp eq v7, v6  ; v6 = 1
+    brnz v8, block3
+    jump block4
+
+block4:
+    v9 = iconst.i8 0
+    store v9, v0  ; v9 = 0
+    return
+
+block3:
+    v10 = stack_addr.i64 ss0
+    v11 = iadd_imm.i64 v1, 4
+    v12 = load.i32 aligned v11
+    v13 = load.i32 aligned v11+4
+    v14 = load.i32 aligned v11+8
+    store aligned v12, v10
+    store aligned v13, v10+4
+    store aligned v14, v10+8
+    v15 = iconst.i8 2
+    store v15, v1  ; v15 = 2
+    v16 = iadd_imm.i64 v0, 4
+    v17 = stack_addr.i64 ss0
+    v18 = load.i32 aligned v17
+    v19 = load.i32 aligned v17+4
+    v20 = load.i32 aligned v17+8
+    store aligned v18, v16
+    store aligned v19, v16+4
+    store aligned v20, v16+8
+    jump block5
+
+block1:
+    v21 = stack_addr.i64 ss1
+    v22 = iadd_imm.i64 v1, 4
+    v23 = load.i32 aligned v22
+    v24 = load.i32 aligned v22+4
+    v25 = load.i32 aligned v22+8
+    store aligned v23, v21
+    store aligned v24, v21+4
+    store aligned v25, v21+8
+    v26 = stack_addr.i64 ss2
+    v27 = iadd_imm.i64 v1, 16
+    v28 = load.i32 aligned v27
+    v29 = load.i32 aligned v27+4
+    v30 = load.i32 aligned v27+8
+    store aligned v28, v26
+    store aligned v29, v26+4
+    store aligned v30, v26+8
+    v31 = iconst.i8 1
+    store v31, v1  ; v31 = 1
+    v32 = iadd_imm.i64 v1, 4
+    v33 = stack_addr.i64 ss1
+    v34 = load.i32 aligned v33
+    v35 = load.i32 aligned v33+4
+    v36 = load.i32 aligned v33+8
+    store aligned v34, v32
+    store aligned v35, v32+4
+    store aligned v36, v32+8
+    v37 = iadd_imm.i64 v0, 4
+    v38 = stack_addr.i64 ss2
+    v39 = load.i32 aligned v38
+    v40 = load.i32 aligned v38+4
+    v41 = load.i32 aligned v38+8
+    store aligned v39, v37
+    store aligned v40, v37+4
+    store aligned v41, v37+8
+    jump block5
+
+block5:
+    return
+}
+new function u0:0(i64, i64) windows_fastcall {
+    ss0 = explicit_slot 96
+    sig0 = (i64 sret, i64) fast
+    sig1 = (i64 sret, i64) fast
+    sig2 = (i64, i64, i64) windows_fastcall
+    sig3 = (i64, i64) fast
+    fn0 = colocated u0:5 sig0
+    fn1 = colocated u0:5 sig1
+    fn2 = %Memmove sig2
+    fn3 = colocated u0:6 sig3
+
+block0(v0: i64, v1: i64):
+    v2 = iconst.i8 0
+    stack_store v2, ss0  ; v2 = 0
+    v3 = stack_addr.i64 ss0+4
+    call fn0(v3, v1)
+    v4 = stack_addr.i64 ss0+16
+    call fn1(v4, v1)
+    v5 = stack_addr.i64 ss0+28
+    v6 = iconst.i64 64
+    call fn2(v5, v1, v6)  ; v6 = 64
+    v7 = stack_addr.i64 ss0
+    call fn3(v0, v7)
+    return
+}
+write function u0:0(i64, i64) fast {
+    sig0 = (i64, i64, i64) windows_fastcall
+    fn0 = %Memmove sig0
+
+block0(v0: i64, v1: i64):
+    v2 = iconst.i64 96
+    call fn0(v0, v1, v2)  ; v2 = 96
+    return
+}
+next function u0:0(i64 sret, i64) fast {
+    sig0 = (i64 sret, i64) windows_fastcall
+    fn0 = u0:7 sig0
+
+block0(v0: i64, v1: i64):
+    call fn0(v0, v1)
+    return
+}
+main function u0:0() -> i64 fast {
+block0:
+    v0 = iconst.i64 0
+    return v0  ; v0 = 0
+}
+
+
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 

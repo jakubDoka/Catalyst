@@ -1,5 +1,5 @@
 info: generated ir:
-function u0:0() -> i64 fast {
+main function u0:0() -> i64 fast {
     ss0 = explicit_slot 32
     ss1 = explicit_slot 24
 

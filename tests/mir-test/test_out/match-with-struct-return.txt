@@ -1,5 +1,5 @@
 info: mir repr of functions:
- fn [] main() -> uint  {
+ fn [] main() -> uint  { ret var2
     block0() {
         var4 = 0
         var5 = 0

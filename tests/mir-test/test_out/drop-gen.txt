@@ -1,12 +1,12 @@
 info: mir repr of functions:
- fn [] drop_unused() -> ()  {
+ fn [] drop_unused() -> ()  { ret var0
     block0() {
         return var0
     }
 
 }
 
-fn [] drop_referenced() -> ()  {
+fn [] drop_referenced() -> ()  { ret var0
     block0() {
         var3 ={}
         var2 = &var3
@@ -16,7 +16,7 @@ fn [] drop_referenced() -> ()  {
 
 }
 
-fn [] drop_variable() -> ()  {
+fn [] drop_variable() -> ()  { ret var0
     block0() {
         var2 ={}
         var3 = var2
@@ -28,7 +28,7 @@ fn [] drop_variable() -> ()  {
 
 }
 
-fn [] drop_refed_variable() -> ()  {
+fn [] drop_refed_variable() -> ()  { ret var0
     block0() {
         var3 ={}
         var2 = &var3
@@ -40,14 +40,14 @@ fn [] drop_refed_variable() -> ()  {
 
 }
 
-fn [] f(var0: ^0\A) -> ()  {
+fn [] f(var0: ^0\A) -> ()  { ret var0
     block0(var2: ^0\A) {
         return var0
     }
 
 }
 
-fn [] drop(var0: ^mut 0\A) -> ()  {
+fn [] drop(var0: ^mut 0\A) -> ()  { ret var0
     block0(var2: ^mut 0\A) {
         return var0
     }
