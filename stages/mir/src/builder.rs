@@ -7,7 +7,7 @@ use packaging_t::span_str;
 use storage::*;
 use typec_t::*;
 
-use crate::*;
+use crate::{moves::BranchBlock, *};
 
 pub type NodeRes = OptVRef<ValueMir>;
 
@@ -69,8 +69,8 @@ impl MirChecker<'_, '_> {
             TirKind::Deref(&node) => self.deref(node, ty, span),
             TirKind::Ref(&node) => pass!(dest => self.r#ref(node, span, dest)),
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
-            TirKind::Match(&r#match) => self.r#match(r#match, span, dest, r#move),
-            TirKind::If(&r#if) => self.r#if(r#if, dest, r#move),
+            TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
+            TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
             TirKind::Let(&r#let) => self.r#let(r#let),
             TirKind::Assign(&assign) => self.assign(assign, span),
         }
@@ -92,9 +92,13 @@ impl MirChecker<'_, '_> {
     fn r#if(
         &mut self,
         IfTir { top, elifs, r#else }: IfTir,
-        dest: OptVRef<ValueMir>,
+        dest: VRef<ValueMir>,
+        span: Span,
         r#move: bool,
     ) -> NodeRes {
+        self.start_branching();
+
+        let mut reached = bumpvec![cap elifs.len() + 1 + r#else.is_some() as usize];
         let mut dest_block = None;
         for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
             let cond_val = self.node(cond, None, true)?;
@@ -102,29 +106,32 @@ impl MirChecker<'_, '_> {
             let next = self.mir_ctx.create_block();
             self.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
             self.select_block(then);
-            self.branch(body, &mut dest_block, dest, r#move);
+            reached.push(self.branch(body, &mut dest_block, dest, r#move));
             self.select_block(next);
         }
 
         if let Some(r#else) = r#else {
-            self.branch(r#else, &mut dest_block, dest, r#move);
+            reached.push(self.branch(r#else, &mut dest_block, dest, r#move));
+        } else {
+            self.discard_branch();
+            reached.push(Err(true));
         }
+
+        self.end_branching(&reached, span);
 
         if let Some(dest_block) = dest_block {
             self.select_block(dest_block);
-            if let Some(dest) = dest {
-                self.mir_ctx.args.push(dest);
-            }
+            self.mir_ctx.args.push(dest);
         }
 
-        dest
+        Some(dest)
     }
 
     fn r#match(
         &mut self,
         MatchTir { value, arms }: MatchTir,
         span: Span,
-        dest: OptVRef<ValueMir>,
+        dest: VRef<ValueMir>,
         r#move: bool,
     ) -> NodeRes {
         let mir_value = self.node(value, None, false)?;
@@ -151,14 +158,17 @@ impl MirChecker<'_, '_> {
             self.non_exhaustive(gaps, self.value_ty(mir_value), span)?
         }
 
+        self.start_branching();
+
         let arms = arms
             .iter()
             .zip(reachable)
             .filter_map(|(&arm, reachable)| reachable.then_some(arm))
             .collect::<BumpVec<_>>();
+        let mut reached = bumpvec![cap arms.len()];
         let (&last, rest) = arms.split_last()?;
         let mut dest_block = None;
-        for &arm in rest {
+        for &arm in rest.iter() {
             let cond = self
                 .pattern_to_cond(arm.pat, mir_value)
                 .expect("only last pattern can be non refutable");
@@ -166,18 +176,18 @@ impl MirChecker<'_, '_> {
             let next_block = self.mir_ctx.create_block();
             self.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
             self.select_block(block);
-            self.match_arm(arm, &mut dest_block, mir_value, dest, r#move);
+            reached.push(self.match_arm(arm, &mut dest_block, mir_value, dest, r#move));
             self.select_block(next_block);
         }
-        self.match_arm(last, &mut dest_block, mir_value, dest, r#move);
+        reached.push(self.match_arm(last, &mut dest_block, mir_value, dest, r#move));
+
+        self.end_branching(&reached, span);
 
         let dest_block = dest_block?;
         self.select_block(dest_block);
-        if let Some(dest) = dest {
-            self.mir_ctx.args.push(dest);
-        }
+        self.mir_ctx.args.push(dest);
 
-        dest
+        Some(dest)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -186,26 +196,31 @@ impl MirChecker<'_, '_> {
         MatchArmTir { pat, body }: MatchArmTir,
         dest_block: &mut OptVRef<BlockMir>,
         value: VRef<ValueMir>,
-        dest: OptVRef<ValueMir>,
+        dest: VRef<ValueMir>,
         r#move: bool,
-    ) {
+    ) -> BranchBlock {
         let frame = self.start_scope_frame();
         self.bind_pattern_vars(pat, value);
-        self.branch(body, dest_block, dest, r#move);
+        let reached = self.branch(body, dest_block, dest, r#move);
         self.end_scope_frame(frame);
+        reached
     }
 
     fn branch(
         &mut self,
         body: TirNode,
         dest_block: &mut OptVRef<BlockMir>,
-        dest: OptVRef<ValueMir>,
+        dest: VRef<ValueMir>,
         r#move: bool,
-    ) {
-        if let Some(ret) = self.node(body, dest, r#move) {
-            let ret = dest.map(|_| ret);
+    ) -> BranchBlock {
+        if let Some(ret) = self.node(body, Some(dest), r#move) {
             let &mut dest_block = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
-            self.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
+            let block = self.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
+            self.save_branch();
+            block.ok_or(false)
+        } else {
+            self.discard_branch();
+            Err(false)
         }
     }
 
@@ -425,7 +440,7 @@ impl MirChecker<'_, '_> {
         r#move: bool,
     ) -> NodeRes {
         let node = self.node(header, None, false)?;
-        self.inst(InstMir::Field(node, field, dest), span);
+        self.gen_field(node, Some(dest), field, span);
         if r#move {
             self.move_out(dest, span);
         }
@@ -436,6 +451,7 @@ impl MirChecker<'_, '_> {
         let node = self.node(node, None, false)?;
         let dest = self.value(ty);
         self.inst(InstMir::Deref(node, dest), span);
+        self.connect_deref_owner(node, dest);
         Some(dest)
     }
 
@@ -612,7 +628,6 @@ impl MirChecker<'_, '_> {
     }
 
     pub fn start_scope_frame(&mut self) -> MirVarFrame {
-        self.mir_ctx.depth += 1;
         MirVarFrame {
             base: self.mir_ctx.vars.len(),
         }
@@ -620,7 +635,6 @@ impl MirChecker<'_, '_> {
 
     pub fn end_scope_frame(&mut self, frame: MirVarFrame) {
         self.mir_ctx.vars.truncate(frame.base);
-        self.mir_ctx.depth -= 1;
     }
 
     pub fn pointer_to(
@@ -651,17 +665,15 @@ impl MirChecker<'_, '_> {
         self.mir_ctx.vars.push(VarMir { value });
     }
 
-    pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> bool {
-        let Some(current_block) = self.current_block else {
-            return true;
-        };
+    pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> OptVRef<BlockMir> {
+        let current_block = self.current_block?;
 
         self.increment_block_refcount(control_flow);
 
         self.mir_ctx.close_block(current_block, control_flow);
         self.mir_ctx.dd.block_closers[current_block] = span;
 
-        false
+        mem::take(&mut self.current_block)
     }
 
     pub fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {

@@ -140,11 +140,9 @@ impl Generator<'_> {
             }
             ControlFlowMir::Goto(b, val) => {
                 let b = self.instantiate_block(b, builder);
-                let val = val
-                    .filter(|&val| {
-                        !self.gen_resources.values[val].must_load
-                            || !self.ty_layout(builder.value_ty(val)).on_stack
-                    })
+                let val = (!self.gen_resources.values[val].must_load
+                    || !self.ty_layout(builder.value_ty(val)).on_stack)
+                    .then_some(val)
                     .and_then(|val| {
                         let value = self.load_value(val, builder);
                         self.gen_resources.values[val] = default();

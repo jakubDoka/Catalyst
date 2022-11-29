@@ -124,7 +124,7 @@ pub struct BlockMir {
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
-    Goto(VRef<BlockMir>, OptVRef<ValueMir>),
+    Goto(VRef<BlockMir>, VRef<ValueMir>),
     Return(VRef<ValueMir>),
     Terminal,
 }

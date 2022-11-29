@@ -317,7 +317,7 @@ mod test {
             ],
         );
 
-        let res = as_tree(&arena, dbg!(branches), &mut [false; 2]);
+        let res = as_tree(&arena, branches, &mut [false; 2]);
         println!("{:#?}", res)
     }
 }

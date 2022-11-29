@@ -15,6 +15,8 @@ use typec_t::*;
 
 use crate::*;
 
+pub type BranchBlock = Result<VRef<BlockMir>, bool>;
+
 /*
     # Validating Move State
     We cannot move out of value twice or move partially moved value. We need to
@@ -75,6 +77,36 @@ type MovePath = SmallVec<[MovePathSegment; 4]>;
 const _: () = assert!(mem::size_of::<MovePath>() == mem::size_of::<Vec<MovePathSegment>>());
 
 impl MirChecker<'_, '_> {
+    pub fn gen_field(
+        &mut self,
+        value: VRef<ValueMir>,
+        dest: OptVRef<ValueMir>,
+        field: u32,
+        span: Span,
+    ) -> VRef<ValueMir> {
+        let ty = self
+            .value_ty(value)
+            .component_ty(field as usize, self.typec, self.interner)
+            .unwrap();
+        let f_value = dest.unwrap_or_else(|| self.value(ty));
+        self.inst(InstMir::Field(value, field, f_value), span);
+        self.mir_move_ctx.owners[f_value] = Some(Owner {
+            parent: value,
+            index: MovePathSegment::field(field),
+            ..self.mir_move_ctx.owners[value].unwrap_or_default()
+        });
+        f_value
+    }
+
+    pub fn connect_deref_owner(&mut self, value: VRef<ValueMir>, deref: VRef<ValueMir>) {
+        self.mir_move_ctx.owners[deref] = Some(Owner {
+            parent: value,
+            index: MovePathSegment::default(),
+            behind_pointer: true,
+            inside_droppable: false,
+        });
+    }
+
     pub fn move_out(&mut self, value: VRef<ValueMir>, span: Span) {
         if self.mir_ctx.no_moves {
             return;
@@ -198,13 +230,13 @@ impl MirChecker<'_, '_> {
             }
             p if !self.typec.may_need_drop(p) => (),
             Ty::Struct(s) => self.partial_struct_drop(s, &[], value, key, span),
-            Ty::Enum(_) => todo!(),
+            Ty::Enum(_) => (), // TODO
             Ty::Instance(i) => {
                 let Instance { base, args } = self.typec[i];
                 let args = self.typec[args].to_bumpvec();
                 match base {
                     GenericTy::Struct(s) => self.partial_struct_drop(s, &args, value, key, span),
-                    GenericTy::Enum(_) => todo!(),
+                    GenericTy::Enum(_) => (), // TODO
                 }
             },
         }
@@ -263,6 +295,7 @@ impl MirChecker<'_, '_> {
             return;
         }
         self.mir_move_ctx.history.mark();
+        self.mir_ctx.depth += 1;
     }
 
     pub fn save_branch(&mut self) {
@@ -279,32 +312,39 @@ impl MirChecker<'_, '_> {
         }
         self.revert_current_branch();
         self.mir_move_ctx.history.clear_top();
+        self.mir_move_ctx.history.mark();
     }
 
-    pub fn end_branching(&mut self, reached: &[bool], span: Span) {
+    pub fn end_branching(&mut self, blocks: &[BranchBlock], span: Span) {
         if self.mir_ctx.no_moves {
             return;
         }
-        let mut branches = (0..reached.len())
+
+        self.mir_ctx.depth -= 1;
+
+        self.mir_move_ctx.history.join_frames();
+        let mut branches = (0..blocks.len())
             .map(|_| self.mir_move_ctx.history.pop().collect::<BumpVec<_>>())
             .collect::<BumpVec<_>>();
+        branches.reverse();
 
         for branch in branches.iter_mut() {
             self.simplify_branch_history(branch);
         }
 
-        let mut outs = self.count_and_cover_branch_moves(reached, &branches);
+        let mut outs = self.count_and_cover_branch_moves(blocks, &branches);
 
-        self.mir_move_ctx.history.join_frames();
         outs.sort_by_key(|record| record.key.path.len());
         self.simplify_branch_history(&mut outs);
 
         let mut accessed = BTreeMap::<MoveKey, VRef<ValueMir>>::new();
-        for branch_index in (0..reached.len()).filter(|&i| reached[i]) {
-            self.apply_branch(&branches[branch_index]);
+        for (branch_block, branch) in blocks
+            .iter()
+            .zip(branches.iter())
+            .filter_map(|(&block, branch)| Some((block.ok()?, branch)))
+        {
+            self.apply_branch(branch);
             accessed.clear();
-            let branch_block = self.mir_move_ctx.branch_blocks
-                [self.mir_move_ctx.branch_blocks.len() - branch_index - 1];
             let drop_block = self.mir_ctx.create_block();
             self.select_block(drop_block);
             for record in outs.iter() {
@@ -334,15 +374,21 @@ impl MirChecker<'_, '_> {
                 self.drop_low(value, &mut Some(&mut key), span);
             }
 
-            self.mir_ctx.close_block(
-                self.current_block.unwrap(),
-                self.mir_ctx.func.blocks[branch_block].control_flow,
-            );
-            self.mir_ctx.dd.block_closers[drop_block] = span;
+            if self.current_block == Some(drop_block) && self.mir_ctx.insts.is_empty() {
+                self.mir_ctx.func.blocks.pop();
+            } else {
+                self.mir_ctx.close_block(
+                    self.current_block.unwrap(),
+                    self.mir_ctx.func.blocks[branch_block].control_flow,
+                );
+                self.mir_ctx.dd.block_closers[drop_block] = span;
 
-            let new_branch_control_flow = ControlFlowMir::Goto(drop_block, None);
-            self.increment_block_refcount(new_branch_control_flow);
-            self.mir_ctx.func.blocks[branch_block].control_flow = new_branch_control_flow;
+                let new_branch_control_flow = ControlFlowMir::Goto(drop_block, ValueMir::UNIT);
+                self.increment_block_refcount(new_branch_control_flow);
+                self.mir_ctx.func.blocks[branch_block].control_flow = new_branch_control_flow;
+            }
+
+            self.revert_branch(branch);
         }
 
         self.mir_move_ctx.history.extend(outs.iter().cloned());
@@ -350,11 +396,14 @@ impl MirChecker<'_, '_> {
             .lookup
             .extend(outs.into_iter().map(|record| (record.key, record.r#move)));
 
-        self.promote_branch_move_ins(reached);
+        self.promote_branch_move_ins(blocks);
     }
 
-    fn promote_branch_move_ins(&mut self, reached: &[bool]) {
-        let move_in_escape_count = reached.iter().fold(0, |acc, &b| acc + b as usize);
+    fn promote_branch_move_ins(&mut self, blocks: &[BranchBlock]) {
+        let move_in_escape_count = blocks
+            .iter()
+            .filter(|&&block| block.map_or_else(|err| err, |_| true))
+            .count();
         for (key, count) in self.mir_move_ctx.count_temp.drain_filter(|_, _| true) {
             if count != move_in_escape_count {
                 continue;
@@ -385,18 +434,18 @@ impl MirChecker<'_, '_> {
 
     fn count_and_cover_branch_moves(
         &mut self,
-        reached: &[bool],
+        blocks: &[BranchBlock],
         branches: &BumpVec<BumpVec<MoveRecord>>,
     ) -> BumpVec<MoveRecord> {
         self.mir_move_ctx.count_temp.clear();
         // self.mir_move_ctx.cover_temp.clear();
 
         let mut outs = bumpvec![cap branches.iter().map(|b| b.len()).sum::<usize>()];
-        for (branch_index, records) in branches.iter().enumerate() {
-            if !reached[branch_index] {
-                continue;
-            }
-
+        for records in branches
+            .iter()
+            .zip(blocks)
+            .filter_map(|(branch, block)| block.ok().map(|_| branch))
+        {
             for record in records.iter() {
                 match record.direction {
                     MoveDirection::Out => {
@@ -430,7 +479,7 @@ impl MirChecker<'_, '_> {
         self.mir_move_ctx
             .simplify_temp
             .extend(branch.iter().filter_map(|r| {
-                (self.mir_ctx.value_depths[r.key.root] >= self.mir_ctx.depth).then(|| r.key.clone())
+                (self.mir_ctx.value_depths[r.key.root] <= self.mir_ctx.depth).then(|| r.key.clone())
             }));
 
         branch.reverse();
@@ -455,6 +504,18 @@ impl MirChecker<'_, '_> {
 
     fn revert_current_branch(&mut self) {
         for record in self.mir_move_ctx.history.top() {
+            match record.direction {
+                MoveDirection::In => self
+                    .mir_move_ctx
+                    .lookup
+                    .insert(record.key.clone(), record.r#move),
+                MoveDirection::Out => self.mir_move_ctx.lookup.remove(&record.key),
+            };
+        }
+    }
+
+    fn revert_branch(&mut self, branch: &[MoveRecord]) {
+        for record in branch {
             match record.direction {
                 MoveDirection::In => self
                     .mir_move_ctx
@@ -546,7 +607,6 @@ pub struct MirMoveCtx {
     lookup: BTreeMap<MoveKey, Move>,
     history: Frames<MoveRecord>,
     owners: ShadowMap<ValueMir, Option<Owner>>,
-    branch_blocks: Vec<VRef<BlockMir>>,
 
     simplify_temp: BTreeSet<MoveKey>,
     count_temp: BTreeMap<MoveKey, usize>,
@@ -586,7 +646,7 @@ impl MirMoveCtx {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct Owner {
     parent: VRef<ValueMir>,
     index: MovePathSegment,
@@ -594,20 +654,20 @@ pub struct Owner {
     inside_droppable: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MoveRecord {
     key: MoveKey,
     r#move: Move,
     direction: MoveDirection,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum MoveDirection {
     In,
     Out,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct MoveKey {
     root: VRef<ValueMir>,
     path: MovePath,
@@ -638,12 +698,12 @@ impl Clone for MoveKey {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Move {
     span: Span,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct MovePathSegment(u32);
 
 impl MovePathSegment {

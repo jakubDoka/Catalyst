@@ -4,7 +4,6 @@
 #![feature(default_free_fn)]
 
 mod cmd_args;
-mod incremental;
 mod logic;
 
 pub use logic::{

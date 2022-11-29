@@ -96,9 +96,7 @@ impl MirChecker<'_, '_> {
                 buffer.extend(ident.clone());
                 buffer.extend(ident.clone());
                 write!(buffer, "goto block{}", target.index())?;
-                if let Some(with) = with {
-                    write!(buffer, " with var{}", with.index())?;
-                }
+                write!(buffer, " with var{}", with.index())?;
             }
         }
 
