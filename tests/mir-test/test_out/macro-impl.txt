@@ -13,7 +13,7 @@ fn [] write(var0: ^mut param0, var1: param0) -> ()  {
         access var2
         var4 = *var2
         var4 = access var3
-        return var4
+        return var0
     }
 
 }

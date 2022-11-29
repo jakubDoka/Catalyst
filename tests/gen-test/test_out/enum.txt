@@ -9,7 +9,7 @@ block0:
     stack_store v1, ss0+8  ; v1 = 0
     v2 = iconst.i8 0
     v3 = stack_load.i8 ss0
-    v4 = icmp eq v2, v3  ; v2 = 0
+    v4 = icmp eq v3, v2  ; v2 = 0
     v5 = iconst.i64 4
     v6 = stack_load.i64 ss0+8
     v7 = icmp eq v5, v6  ; v5 = 4
@@ -20,7 +20,7 @@ block0:
 block2:
     v9 = iconst.i8 0
     v10 = stack_load.i8 ss0
-    v11 = icmp eq v9, v10  ; v9 = 0
+    v11 = icmp eq v10, v9  ; v9 = 0
     v12 = iconst.i64 1
     v13 = stack_load.i64 ss0+8
     v14 = icmp eq v12, v13  ; v12 = 1
@@ -31,7 +31,7 @@ block2:
 block4:
     v16 = iconst.i8 1
     v17 = stack_load.i8 ss0
-    v18 = icmp eq v16, v17  ; v16 = 1
+    v18 = icmp eq v17, v16  ; v16 = 1
     brnz v18, block5
     jump block6
 

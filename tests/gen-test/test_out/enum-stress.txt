@@ -14,10 +14,10 @@ block0:
     stack_store v3, ss0+24  ; v3 = 0
     v4 = iconst.i8 1
     v5 = stack_load.i8 ss0
-    v6 = icmp eq v4, v5  ; v4 = 1
+    v6 = icmp eq v5, v4  ; v4 = 1
     v7 = iconst.i8 0
     v8 = stack_load.i8 ss0+8
-    v9 = icmp eq v7, v8  ; v7 = 0
+    v9 = icmp eq v8, v7  ; v7 = 0
     v10 = band v9, v6
     brnz v10, block1
     jump block2
@@ -25,13 +25,13 @@ block0:
 block2:
     v11 = iconst.i8 1
     v12 = stack_load.i8 ss0
-    v13 = icmp eq v11, v12  ; v11 = 1
+    v13 = icmp eq v12, v11  ; v11 = 1
     v14 = iconst.i8 1
     v15 = stack_load.i8 ss0+8
-    v16 = icmp eq v14, v15  ; v14 = 1
+    v16 = icmp eq v15, v14  ; v14 = 1
     v17 = iconst.i8 0
     v18 = stack_load.i8 ss0+16
-    v19 = icmp eq v17, v18  ; v17 = 0
+    v19 = icmp eq v18, v17  ; v17 = 0
     v20 = band v19, v16
     v21 = band v20, v13
     brnz v21, block3
@@ -40,7 +40,7 @@ block2:
 block4:
     v22 = iconst.i8 0
     v23 = stack_load.i8 ss0
-    v24 = icmp eq v22, v23  ; v22 = 0
+    v24 = icmp eq v23, v22  ; v22 = 0
     brnz v24, block5
     jump block6
 
@@ -55,10 +55,10 @@ block6:
     store aligned v29, v25+16
     v30 = iconst.i8 1
     v31 = stack_load.i8 ss1
-    v32 = icmp eq v30, v31  ; v30 = 1
+    v32 = icmp eq v31, v30  ; v30 = 1
     v33 = iconst.i8 1
     v34 = stack_load.i8 ss1+8
-    v35 = icmp eq v33, v34  ; v33 = 1
+    v35 = icmp eq v34, v33  ; v33 = 1
     v36 = band v35, v32
     brnz v36, block7
     jump block8
@@ -66,10 +66,10 @@ block6:
 block8:
     v37 = iconst.i8 1
     v38 = stack_load.i8 ss1
-    v39 = icmp eq v37, v38  ; v37 = 1
+    v39 = icmp eq v38, v37  ; v37 = 1
     v40 = iconst.i8 0
     v41 = stack_load.i8 ss1+8
-    v42 = icmp eq v40, v41  ; v40 = 0
+    v42 = icmp eq v41, v40  ; v40 = 0
     v43 = band v42, v39
     brnz v43, block9
     jump block10

@@ -1,7 +1,0 @@
-info: tir repr of functions:
- fn [] sub(var0: uint, var1: uint) -> uint return uint - uint(var0, var1)
-
-fn [] main() -> uint return const sub(1, 1)
-
-
-
