@@ -23,6 +23,7 @@ fn [] drop_variable() -> ()  { ret var0
         access var3
         var4 = &var3
         var0 = f(val4)
+        drop var3 impl0
         return var0
     }
 
@@ -47,6 +48,7 @@ fn [] move_in_drop() -> ()  { ret var0
         access var3
         drop var3 impl0
         var3 ={}
+        drop var3 impl0
         return var0
     }
 
