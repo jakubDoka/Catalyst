@@ -376,6 +376,52 @@ fn main() {
                 else => return;
                 drop(b);
             };
+
+            fn reference_partial_move() {
+                let b = B::new();
+                drop(b.a0);
+                let a = ^b;
+            };
+
+            fn partial_reference_move() {
+                let b = B::new();
+                drop(b);
+                let a = ^b.a0;
+            };
+        }
+
+        simple "drop-gen" {
+            use {
+                "water/marker";
+            };
+
+            struct A;
+
+            impl A {
+                fn f(s: ^Self) {};
+            };
+
+            impl Drop for A {
+                fn drop(v: ^mut Self) {};
+            };
+
+            fn drop_unused() {
+                A::{};
+            };
+
+            fn drop_referenced() {
+                A::{}.f();
+            };
+
+            fn drop_variable() {
+                let a = A::{};
+                a.f();
+            };
+
+            fn drop_refed_variable() {
+                let a = ^A::{};
+                a.f();
+            };
         }
     }
 }

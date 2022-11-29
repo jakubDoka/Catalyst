@@ -119,32 +119,19 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let key = match self.get_move_key(value) {
+        let key = match self.integrity_check(value) {
             Ok(key) => key,
-            Err(owner) => {
-                self.handle_invalid_move(owner, span);
+            Err(err) => {
+                match err {
+                    IntegrityError::InvalidMove(owner) => self.handle_invalid_move(owner, span),
+                    IntegrityError::Moved(r#move) => self.handle_double_move(r#move, span),
+                    IntegrityError::PartiallyMoved(moves) => {
+                        self.handle_partial_move("move out of", moves, span)
+                    }
+                };
                 return;
             }
         };
-
-        if let Some(&moved) = self.mir_move_ctx.lookup.get(&key) {
-            self.handle_double_move(moved, span);
-            return;
-        }
-
-        {
-            let mut moves = remove_range(
-                &mut self.mir_move_ctx.lookup,
-                key.range(&mut self.mir_move_ctx.range_temp),
-            )
-            .map(|(_, moved)| moved)
-            .peekable();
-            if moves.peek().is_some() {
-                let moves = moves.collect();
-                self.handle_partial_move(moves, span);
-                return;
-            }
-        }
 
         self.mir_move_ctx.lookup.insert(key.clone(), Move { span });
         self.mir_move_ctx.history.push(MoveRecord {
@@ -152,6 +139,55 @@ impl MirChecker<'_, '_> {
             r#move: Move { span },
             direction: MoveDirection::Out,
         });
+    }
+
+    pub fn check_referencing(&mut self, value: VRef<ValueMir>, span: Span) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+
+        let Err(err) = self.integrity_check(value) else {
+            return;
+        };
+
+        match err {
+            IntegrityError::InvalidMove(..) => None,
+            IntegrityError::Moved(r#move) => self.referencing_moved(r#move, span),
+            IntegrityError::PartiallyMoved(moves) => {
+                self.handle_partial_move("reference", moves, span)
+            }
+        };
+    }
+
+    fn integrity_check(&mut self, value: VRef<ValueMir>) -> Result<MoveKey, IntegrityError> {
+        let key = match self.get_move_key(value) {
+            Ok(key) => key,
+            Err(owner) => return Err(IntegrityError::InvalidMove(owner)),
+        };
+
+        let mut traverse_key = key.clone();
+        for _ in 0..traverse_key.path.len() + 1 {
+            if let Some(&r#move) = self.mir_move_ctx.lookup.get(&traverse_key) {
+                return Err(IntegrityError::Moved(r#move));
+            }
+            traverse_key.path.pop();
+        }
+
+        {
+            let mut inner = remove_range(
+                &mut self.mir_move_ctx.lookup,
+                key.range(&mut self.mir_move_ctx.range_temp),
+            )
+            .map(|(.., m)| m)
+            .peekable();
+
+            if inner.peek().is_some() {
+                let inner = inner.collect();
+                return Err(IntegrityError::PartiallyMoved(inner));
+            }
+        }
+
+        Ok(key)
     }
 
     pub fn move_in(&mut self, dest: VRef<ValueMir>, span: Span) {
@@ -541,9 +577,14 @@ impl MirChecker<'_, '_> {
         }
     }
 
-    fn handle_partial_move(&mut self, moves: BumpVec<Move>, span: Span) {
+    fn handle_partial_move(
+        &mut self,
+        message: &str,
+        moves: BumpVec<Move>,
+        span: Span,
+    ) -> Option<!> {
         self.workspace.push(Snippet {
-            title: annotation!(err: "cannot move out of partially moved value"),
+            title: annotation!(err: ("cannot {} partially moved value", message)),
             footer: vec![],
             slices: vec![Some(Slice {
                 span: moves
@@ -561,6 +602,8 @@ impl MirChecker<'_, '_> {
             })],
             origin: default(),
         });
+
+        None
     }
 
     gen_error_fns! {
@@ -569,6 +612,14 @@ impl MirChecker<'_, '_> {
             (moved.span.joined(span), self.source) {
                 info[moved.span]: "first move here";
                 err[span]: "double move occurred here";
+            }
+        }
+
+        push referencing_moved(self, moved: Move, span: Span) {
+            err: "cannot reference moved value";
+            (moved.span.joined(span), self.source) {
+                info[moved.span]: "first move here";
+                err[span]: "referenced later here";
             }
         }
 
@@ -600,6 +651,12 @@ fn remove_range<'a, K: Ord + Clone, V>(
         // SAFETY: range guarantees that entry is not None
         unsafe { entry.unwrap_unchecked() }
     })
+}
+
+enum IntegrityError {
+    Moved(Move),
+    PartiallyMoved(BumpVec<Move>),
+    InvalidMove(Owner),
 }
 
 #[derive(Default)]

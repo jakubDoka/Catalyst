@@ -457,6 +457,7 @@ impl MirChecker<'_, '_> {
 
     fn r#ref(&mut self, node: TirNode, span: Span, dest: VRef<ValueMir>) -> NodeRes {
         let node = self.node(node, None, false)?;
+        self.check_referencing(node, span);
         // TODO: check integrity
         self.mir_ctx.func.set_referenced(node);
         self.inst(InstMir::Ref(node, dest), span);

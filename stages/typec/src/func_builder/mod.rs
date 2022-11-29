@@ -267,8 +267,12 @@ impl TyChecker<'_> {
         self.args(signature.args, args, &mut builder);
 
         let tir_body = match body {
-            FuncBodyAst::Arrow(.., expr) => self.expr(expr, Some(signature.ret), &mut builder),
-            FuncBodyAst::Block(body) => self.block(body, Some(signature.ret), &mut builder),
+            FuncBodyAst::Arrow(.., expr) => {
+                self.expr(expr, Inference::Weak(signature.ret), &mut builder)
+            }
+            FuncBodyAst::Block(body) => {
+                self.block(body, Inference::Weak(signature.ret), &mut builder)
+            }
             FuncBodyAst::Extern(..) => return Some(None),
         }?;
 
@@ -277,7 +281,11 @@ impl TyChecker<'_> {
         Some(if tir_body.ty == Ty::TERMINAL {
             Some(tir_body)
         } else {
-            self.return_low(Some(tir_body), body.span(), &mut builder)
+            self.return_low(
+                (tir_body.ty == signature.ret).then_some(tir_body),
+                body.span(),
+                &mut builder,
+            )
         })
     }
 
@@ -298,7 +306,7 @@ impl TyChecker<'_> {
         store.extend(
             other
                 .iter()
-                .filter_map(|expr| self.expr(expr.value, None, builder)),
+                .filter_map(|expr| self.expr(expr.value, Inference::None, builder)),
         );
         let last = self.expr(last.value, inference, builder);
         frame.end(builder.ctx, ());
@@ -322,7 +330,7 @@ impl TyChecker<'_> {
         }
 
         let value = expr
-            .map(|expr| self.expr(expr, Some(builder.ret), builder))
+            .map(|expr| self.expr(expr, Inference::Strong(builder.ret), builder))
             .transpose()?;
 
         let span = expr.map_or(span, |expr| span.joined(expr.span()));
@@ -356,7 +364,7 @@ impl TyChecker<'_> {
             ExprAst::Binary(&binary) => self.binary_expr(binary, builder),
         }?;
 
-        if let Some(ty) = inference {
+        if let Inference::Strong(ty) = inference {
             self.type_check(ty, value.ty, expr.span())?;
         }
 
@@ -398,7 +406,7 @@ impl TyChecker<'_> {
         _inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let expr = self.unit_expr(expr, None, builder)?;
+        let expr = self.unit_expr(expr, Inference::None, builder)?;
         let Ty::Pointer(ptr) = expr.ty else {
             todo!();
         };
@@ -419,7 +427,7 @@ impl TyChecker<'_> {
         _inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let expr = self.unit_expr(expr, None, builder)?;
+        let expr = self.unit_expr(expr, Inference::None, builder)?;
         let mutability = self.mutability(mutability)?;
         let ptr = self.typec.pointer_to(mutability, expr.ty, self.interner);
 
@@ -437,7 +445,7 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let ty = ty.map(|(.., ty)| self.ty(ty)).transpose()?;
-        let value = self.expr(value, ty, builder)?;
+        let value = self.expr(value, ty.into(), builder)?;
         let pat = self.pattern(pat, value.ty, builder)?;
 
         Some(TirNode::new(
@@ -495,7 +503,7 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<IfBranchTir<'a>> {
-        let cond = self.expr(cond, Some(Ty::BOOL), builder)?;
+        let cond = self.expr(cond, Inference::Strong(Ty::BOOL), builder)?;
         let body = self.if_block(body, inference, builder)?;
         Some(IfBranchTir { cond, body })
     }
@@ -503,9 +511,10 @@ impl TyChecker<'_> {
     fn if_block<'a>(
         &mut self,
         body: IfBlockAst,
-        inference: Inference,
+        mut inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
+        inference = inference.weaken();
         match body {
             IfBlockAst::Block(body) => self.block(body, inference, builder),
             IfBlockAst::Arrow(.., body) => {
@@ -550,7 +559,7 @@ impl TyChecker<'_> {
         );
 
         let mut param_slots = bumpvec![None; self.typec[ty].generics.len()];
-        if let Some(inference) = inference && let Ty::Instance(inst) = inference {
+        if let Some(inference) = inference.ty() && let Ty::Instance(inst) = inference {
             param_slots.iter_mut().zip(&self.typec[self.typec[inst].args])
                 .for_each(|(slot, &arg)| *slot = Some(arg))
         }
@@ -564,7 +573,7 @@ impl TyChecker<'_> {
             let inference = self
                 .typec
                 .try_instantiate(variant_ty, &param_slots, self.interner);
-            let res = self.expr(value, inference, builder)?;
+            let res = self.expr(value, inference.into(), builder)?;
             if inference.is_none() {
                 self.infer_params(&mut param_slots, res.ty, variant_ty, value.span())?;
             }
@@ -600,7 +609,7 @@ impl TyChecker<'_> {
         inference: Inference,
     ) -> Option<(FragRef<Enum>, NameAst)> {
         if path.slash.is_some() {
-            let Some(expected) = inference else {
+            let Some(expected) = inference.ty() else {
                 self.cannot_infer(path.span())?;
             };
 
@@ -641,7 +650,7 @@ impl TyChecker<'_> {
         _inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let mut header = self.unit_expr(lhs, None, builder)?;
+        let mut header = self.unit_expr(lhs, Inference::None, builder)?;
 
         let deref = header.ty.ptr_base(self.typec);
         let caller = deref.base(self.typec);
@@ -703,7 +712,7 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let value = self.expr(expr, None, builder)?;
+        let value = self.expr(expr, Inference::None, builder)?;
 
         let arms = body
             .iter()
@@ -886,7 +895,7 @@ impl TyChecker<'_> {
                 }),
             )
         } else {
-            let ty = inference.or_else(|| self.cannot_infer(ctor.span())?)?;
+            let ty = inference.ty().or_else(|| self.cannot_infer(ctor.span())?)?;
             match ty {
                 Ty::Instance(instance) => (
                     Some(self.typec[instance].base),
@@ -933,7 +942,7 @@ impl TyChecker<'_> {
                 .typec
                 .try_instantiate(field.ty, &param_slots, self.interner);
             let expr = if let Some(expr) = expr {
-                self.expr(expr, inference, builder)
+                self.expr(expr, inference.into(), builder)
             } else {
                 self.value_path(
                     PathExprAst {
@@ -941,7 +950,7 @@ impl TyChecker<'_> {
                         segments: &[],
                         slash: None,
                     },
-                    inference,
+                    inference.into(),
                     builder,
                 )
             };
@@ -1044,7 +1053,7 @@ impl TyChecker<'_> {
                 }
             }
             UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
-                let lhs = self.unit_expr(lhs, None, builder)?;
+                let lhs = self.unit_expr(lhs, Inference::None, builder)?;
                 let func = self.method_path(lhs.ty, rhs.path, builder)?;
                 let params = rhs.params();
                 match func {
@@ -1208,7 +1217,7 @@ impl TyChecker<'_> {
     ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
         let arg_types = self.typec.args[signature.args].to_bumpvec();
 
-        if let Some(inference) = inference {
+        if let Some(inference) = inference.ty() {
             // we don't want to report error twice so this one is ignored
             let _ = self.typec.compatible(param_slots, inference, signature.ret);
         }
@@ -1235,7 +1244,7 @@ impl TyChecker<'_> {
             )
             .map(|(arg, ty)| {
                 let instantiated = self.typec.try_instantiate(ty, param_slots, self.interner);
-                let parsed_arg = self.expr(arg, instantiated, builder);
+                let parsed_arg = self.expr(arg, instantiated.into(), builder);
                 if let Some(parsed_arg) = parsed_arg && instantiated.is_none() {
                     self.infer_params(param_slots, parsed_arg.ty, ty, arg.span());
                 }
@@ -1406,18 +1415,18 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         if slash.is_some() {
-            let Some(inference) = inference else {
+            let Some(inferred) = inference.ty() else {
                 todo!();
             };
 
-            match inference.base(self.typec) {
+            match inferred.base(self.typec) {
                 Ty::Enum(..) => {
                     return self.enum_ctor(
                         EnumCtorAst {
                             path: PathInstanceAst { path, params: None },
                             value: None,
                         },
-                        Some(inference),
+                        inference,
                         builder,
                     )
                 }
@@ -1475,6 +1484,7 @@ impl TyChecker<'_> {
             .find_map(|(ty, str)| span_str.ends_with(str).then_some((ty, str.len())))
             .or_else(|| {
                 inference
+                    .ty()
                     .filter(|ty| Ty::INTEGERS.contains(ty))
                     .map(|ty| (ty, 0))
             })
@@ -1503,10 +1513,10 @@ impl TyChecker<'_> {
         binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let lhs = self.expr(lhs, None, builder);
+        let lhs = self.expr(lhs, Inference::None, builder);
 
         if op.ident == Interner::ASSIGN {
-            let rhs = self.expr(rhs, lhs.map(|lhs| lhs.ty), builder)?;
+            let rhs = self.expr(rhs, lhs.map(|lhs| lhs.ty).into(), builder)?;
             return Some(TirNode::new(
                 Ty::UNIT,
                 TirKind::Assign(builder.arena.alloc(AssignTir { lhs: lhs?, rhs })),
@@ -1514,7 +1524,7 @@ impl TyChecker<'_> {
             ));
         }
 
-        let rhs = self.expr(rhs, None, builder);
+        let rhs = self.expr(rhs, Inference::None, builder);
         let (lhs, rhs) = (lhs?, rhs?); // recovery
 
         let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
@@ -1873,7 +1883,37 @@ impl TyChecker<'_> {
     }
 }
 
-pub type Inference = Option<Ty>;
+#[derive(Clone, Copy)]
+enum Inference {
+    Strong(Ty),
+    Weak(Ty),
+    None,
+}
+
+impl Inference {
+    fn ty(self) -> Option<Ty> {
+        match self {
+            Inference::Strong(ty) | Inference::Weak(ty) => Some(ty),
+            Inference::None => None,
+        }
+    }
+
+    fn weaken(self) -> Inference {
+        match self {
+            Inference::Strong(ty) => Inference::Weak(ty),
+            other => other,
+        }
+    }
+}
+
+impl From<Option<Ty>> for Inference {
+    fn from(ty: Option<Ty>) -> Self {
+        match ty {
+            Some(ty) => Inference::Strong(ty),
+            None => Inference::None,
+        }
+    }
+}
 
 enum DotPathResult {
     Field(u32, Ty),
