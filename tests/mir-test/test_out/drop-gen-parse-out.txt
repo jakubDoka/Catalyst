@@ -1,0 +1,16 @@
+error: expected '=>' | '{' | 'extern' but got '\n' | ';'
+ --> drop-gen\root.ctl:1:65
+  |
+1 | use { "water/marker" ; } ; struct A ; impl A { fn f(s : ^ Self) ; } impl Drop for A { fn drop(^ mut self) {} ; } ; fn drop_unused() { A\{} ; } ; fn drop_referenced() { A\{}.f() ; } ; fn drop_variable() { let a = A\{} ; a.f() ; } ; fn drop_refed_variable() { let a = ^ A\{} ; a.f() ; }
+  |                                                                 ^ token located here
+  |
+  = info: list -> item -> impl -> list -> impl item -> function definition -> function body
+
+error: expected '\n' | ';' but got 'impl'
+ --> drop-gen\root.ctl:1:69
+  |
+1 | use { "water/marker" ; } ; struct A ; impl A { fn f(s : ^ Self) ; } impl Drop for A { fn drop(^ mut self) {} ; } ; fn drop_unused() { A\{} ; } ; fn drop_referenced() { A\{}.f() ; } ; fn drop_variable() { let a = A\{} ; a.f() ; } ; fn drop_refed_variable() { let a = ^ A\{} ; a.f() ; }
+  |                                                                     ^^^^ token located here
+  |
+  = info: list
+
