@@ -32,7 +32,7 @@ impl MirChecker<'_, '_> {
 
     fn display_func(&self, func: FragRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
-        write!(buffer, " {{ ret var{}\n", mir.ret.index())?;
+        writeln!(buffer, " {{ ret var{}", mir.ret.index())?;
 
         for (i, block) in mir.blocks.values().enumerate() {
             self.display_block(i, mir, block, buffer)?;

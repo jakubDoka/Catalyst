@@ -156,6 +156,17 @@ impl Generator<'_> {
     }
 
     fn deref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
+        if let GenValue {
+            computed: Some(..),
+            must_load: true,
+            ..
+        } = self.gen_resources.values[ret]
+        {
+            let value = self.gen_resources.values[target].computed.unwrap();
+            self.save_value(ret, value, 0, true, builder);
+            return;
+        }
+
         let Some(value) = self.load_value(target, builder) else { return; };
         self.gen_resources.values[ret] = GenValue {
             must_load: true,
@@ -173,8 +184,21 @@ impl Generator<'_> {
         assert!(must_load);
         let ptr_ty = builder.ptr_ty();
         let addr = match computed.unwrap() {
-            ComputedValue::Value(value) => value,
-            ComputedValue::Variable(var) => builder.use_var(var),
+            ComputedValue::Value(value) => {
+                if offset != 0 {
+                    builder.ins().iadd_imm(value, offset as i64)
+                } else {
+                    value
+                }
+            }
+            ComputedValue::Variable(var) => {
+                let value = builder.use_var(var);
+                if offset != 0 {
+                    builder.ins().iadd_imm(value, offset as i64)
+                } else {
+                    value
+                }
+            }
             ComputedValue::StackSlot(ss) => builder.ins().stack_addr(ptr_ty, ss, offset),
         };
         self.save_value(ret, addr, 0, false, builder);

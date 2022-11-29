@@ -51,6 +51,8 @@ fn main() {
             .filter_map(|file| file.ok())
             .filter(|file| file.file_type().unwrap().is_file());
 
+        let mut any_changes = false;
+
         for file in files {
             let path = file.path();
             let name = path.file_name().unwrap().to_str().unwrap();
@@ -60,8 +62,7 @@ fn main() {
                 println!("{}", content);
 
                 cmd("git", &dir_path, ["add", name]);
-                cmd("git", &dir_path, ["commit", "-m", "\"new test result\""]);
-
+                any_changes = true;
                 continue;
             }
 
@@ -74,10 +75,20 @@ fn main() {
 
             if changed && confirm("Do you want to commit?", false) {
                 cmd("git", &dir_path, ["add", name]);
-                cmd("git", &dir_path, ["commit", "-m", "\"test update\""]);
+                any_changes = true;
             }
         }
+
+        if any_changes {
+            let input = prompt("Enter commit message");
+            cmd("git", &dir_path, ["commit", "-m", &input]);
+        }
     }
+}
+
+fn prompt(msg: &str) -> String {
+    print!(": {}", msg);
+    read_input()
 }
 
 fn confirm(message: &str, default_to_yes: bool) -> bool {
@@ -87,15 +98,19 @@ fn confirm(message: &str, default_to_yes: bool) -> bool {
         if default_to_yes { "Y/n" } else { "y/N" }
     );
 
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-    let input = input.trim();
+    let input = read_input();
 
     if input.is_empty() {
         return default_to_yes;
     }
 
     input == "y" || input == "Y"
+}
+
+fn read_input() -> String {
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    input.trim().to_owned()
 }
 
 fn cmd<'a>(command: &str, wd: &Path, args: impl IntoIterator<Item = &'a str> + Clone) -> usize {

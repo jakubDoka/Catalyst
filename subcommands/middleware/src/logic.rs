@@ -10,7 +10,7 @@ use std::{
 };
 
 use cranelift_codegen::{
-    ir::{self, InstBuilder},
+    ir::{self, InstBuilder, UserFuncName},
     isa::CallConv,
     Context,
 };
@@ -685,7 +685,7 @@ impl Worker {
                 .gen_resources
                 .calls
                 .extend(task.compile_requests.children[children].iter().copied());
-            dbg!(&task.interner[task.typec.funcs[func].name]);
+            // dbg!(&task.interner[task.typec.funcs[func].name]);
             Generator::new(
                 gen_layouts,
                 &mut task.gen,
@@ -697,8 +697,9 @@ impl Worker {
             )
             .generate(signature, &params, root, &mut builder);
             if let Some(ref mut dump) = task.ir_dump {
-                write!(dump, "{}", self.context.func.display()).unwrap();
-                print!("{}", self.context.func.display());
+                let name = &task.interner[task.typec.funcs[func].name];
+                write!(dump, "{} {}", name, self.context.func.display()).unwrap();
+                // print!("{}", self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen

@@ -66,7 +66,7 @@ impl MirChecker<'_, '_> {
             TirKind::Call(&call) => pass!(dest => self.call(call, ty, span, dest, r#move)),
             TirKind::Return(ret) => self.r#return(ret, span),
             TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, r#move),
-            TirKind::Deref(&node) => self.deref(node, ty, span),
+            TirKind::Deref(&node) => pass!(dest => self.deref(node, dest, span)),
             TirKind::Ref(&node) => pass!(dest => self.r#ref(node, span, dest)),
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
             TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
@@ -447,9 +447,8 @@ impl MirChecker<'_, '_> {
         Some(dest)
     }
 
-    fn deref(&mut self, node: TirNode, ty: Ty, span: Span) -> NodeRes {
+    fn deref(&mut self, node: TirNode, dest: VRef<ValueMir>, span: Span) -> NodeRes {
         let node = self.node(node, None, false)?;
-        let dest = self.value(ty);
         self.inst(InstMir::Deref(node, dest), span);
         self.connect_deref_owner(node, dest);
         Some(dest)
