@@ -17,6 +17,8 @@ error: cannot take pointer of temporary value
 info: mir repr of functions:
  fn [] drop_unused() -> ()  { ret var0
     block0() {
+        var2 ={}
+        drop var2 impl0
         return var0
     }
 
