@@ -1,0 +1,8 @@
+error: expected Ident | '\' | 'return' | Int | Char | Bool | 'match' | 'if' | 'let' | Operator but got '{'
+ --> auto-ref-deref\root.ctl:1:130
+  |
+1 | impl uint {     fn reference(s : ^ ^ Self) -> ^ ^ Self => s ; fn dereference(s : Self) ->     Self => s ; } ; fn main -> uint => { let zero = 0 ; zero.reference().dereference() ; } ;
+  |                                                                                                                                  ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> expr -> unit expr
+
