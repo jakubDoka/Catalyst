@@ -1,3 +1,19 @@
+error: cannot take pointer of temporary value
+  --> drop-gen\root.ctl:18:5
+   |
+18 |     A\{ }.f()
+   |     ^^^^^ this value
+   |
+   = help: storing value in variable should help
+
+error: cannot take pointer of temporary value
+  --> drop-gen\root.ctl:25:14
+   |
+25 |     let a = ^A\{ }
+   |              ^^^^^ this value
+   |
+   = help: storing value in variable should help
+
 info: mir repr of functions:
  fn [] drop_unused() -> ()  { ret var0
     block0() {
