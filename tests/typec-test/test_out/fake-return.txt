@@ -1,11 +1,10 @@
-error: type or module not found
- --> fake-return\root.ctl:3:5
-  |
-3 |     A\{ }
-  |     ^ this does not exist
-  |
-  = info: queried 'A'
-
 info: tir repr of functions:
- 
+ fn [] drop_unused() -> () {
+    {
+        0\A\{}
+    }
+    return
+}
+
+
 
