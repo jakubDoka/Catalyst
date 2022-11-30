@@ -1,3 +1,19 @@
+error: cannot take pointer of temporary value
+ --> auto-ref-deref\root.ctl:6:20
+  |
+6 | fn main -> uint => 0.reference().dereference()
+  |                    ^ this value
+  |
+  = help: storing value in variable should help
+
+error: cannot take pointer of temporary value
+ --> auto-ref-deref\root.ctl:6:20
+  |
+6 | fn main -> uint => 0.reference().dereference()
+  |                    ^ this value
+  |
+  = help: storing value in variable should help
+
 info: mir repr of functions:
  fn [] main() -> uint  { ret var2
     block0() {
