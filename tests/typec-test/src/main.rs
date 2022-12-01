@@ -342,5 +342,13 @@ fn main() {
                 *vec.get(0);
             }
         }
+
+        simple "fake-return" {
+            struct A;
+
+            fn drop_unused() {
+                A::{};
+            };
+        }
     }
 }

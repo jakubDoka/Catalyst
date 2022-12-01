@@ -58,7 +58,7 @@ impl MirChecker<'_, '_> {
         }}
 
         match kind {
-            TirKind::Block(stmts) => self.block(stmts, dest, r#move),
+            TirKind::Block(stmts) => self.block(stmts, dest, span, r#move),
             TirKind::Int(computed) => pass!(dest => self.int(computed, span, dest)),
             TirKind::Char => pass!(dest => self.char(span, dest)),
             TirKind::Bool(value) => pass!(dest => self.bool(value, span, dest)),
@@ -106,12 +106,12 @@ impl MirChecker<'_, '_> {
             let next = self.mir_ctx.create_block();
             self.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
             self.select_block(then);
-            reached.push(self.branch(body, &mut dest_block, dest, r#move));
+            reached.push(self.branch(body, &mut dest_block, dest, None, r#move));
             self.select_block(next);
         }
 
         if let Some(r#else) = r#else {
-            reached.push(self.branch(r#else, &mut dest_block, dest, r#move));
+            reached.push(self.branch(r#else, &mut dest_block, dest, None, r#move));
         } else {
             self.discard_branch();
             reached.push(Err(true));
@@ -201,9 +201,7 @@ impl MirChecker<'_, '_> {
     ) -> BranchBlock {
         let frame = self.start_scope_frame();
         self.bind_pattern_vars(pat, value);
-        let reached = self.branch(body, dest_block, dest, r#move);
-        self.end_scope_frame(frame);
-        reached
+        self.branch(body, dest_block, dest, Some(frame), r#move)
     }
 
     fn branch(
@@ -211,15 +209,22 @@ impl MirChecker<'_, '_> {
         body: TirNode,
         dest_block: &mut OptVRef<BlockMir>,
         dest: VRef<ValueMir>,
+        wrapper: Option<MirVarFrame>,
         r#move: bool,
     ) -> BranchBlock {
         if let Some(ret) = self.node(body, Some(dest), r#move) {
+            if let Some(wrapper) = wrapper {
+                self.end_scope_frame(wrapper, body.span);
+            }
             let &mut dest_block = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
             let block = self.close_block(body.span, ControlFlowMir::Goto(dest_block, ret));
             self.save_branch();
             block.ok_or(false)
         } else {
             self.discard_branch();
+            if let Some(wrapper) = wrapper {
+                self.discard_scope_frame(wrapper);
+            }
             Err(false)
         }
     }
@@ -456,9 +461,7 @@ impl MirChecker<'_, '_> {
 
     fn r#ref(&mut self, node: TirNode, span: Span, dest: VRef<ValueMir>) -> NodeRes {
         let node = self.node(node, None, false)?;
-        self.check_referencing(node, span);
-        // TODO: check integrity
-        self.mir_ctx.func.set_referenced(node);
+        self.handle_referencing(node, span);
         self.inst(InstMir::Ref(node, dest), span);
         Some(dest)
     }
@@ -489,7 +492,13 @@ impl MirChecker<'_, '_> {
         Some(final_dest)
     }
 
-    fn block(&mut self, nodes: &[TirNode], dest: OptVRef<ValueMir>, r#move: bool) -> NodeRes {
+    fn block(
+        &mut self,
+        nodes: &[TirNode],
+        dest: OptVRef<ValueMir>,
+        span: Span,
+        r#move: bool,
+    ) -> NodeRes {
         let Some((&last, nodes)) = nodes.split_last() else {
             return Some(ValueMir::UNIT);
         };
@@ -497,13 +506,18 @@ impl MirChecker<'_, '_> {
         let frame = self.start_scope_frame();
         let res = try {
             for &node in nodes {
-                self.node(node, None, false)?;
+                let value = self.node(node, None, false)?;
+                self.drop(value, node.span);
                 // TODO: drop temporary values
             }
 
             self.node(last, dest, r#move)?
         };
-        self.end_scope_frame(frame);
+
+        match res {
+            Some(..) => self.end_scope_frame(frame, span),
+            None => self.discard_scope_frame(frame),
+        }
 
         res
     }
@@ -593,6 +607,13 @@ impl MirChecker<'_, '_> {
         let ret_val = val
             .map(|&val| self.node(val, Some(self.mir_ctx.func.ret), true))
             .transpose()?;
+
+        let to_drop = mem::take(&mut self.mir_ctx.to_drop);
+        for &value in &to_drop {
+            self.drop(value, span);
+        }
+        self.mir_ctx.to_drop = to_drop;
+
         self.close_block(
             span,
             ControlFlowMir::Return(ret_val.unwrap_or(ValueMir::UNIT)),
@@ -630,26 +651,36 @@ impl MirChecker<'_, '_> {
     pub fn start_scope_frame(&mut self) -> MirVarFrame {
         MirVarFrame {
             base: self.mir_ctx.vars.len(),
+            to_drop: self.mir_ctx.to_drop.len(),
         }
     }
 
-    pub fn end_scope_frame(&mut self, frame: MirVarFrame) {
+    pub fn end_scope_frame(&mut self, frame: MirVarFrame, span: Span) {
+        self.mir_ctx.vars.truncate(frame.base);
+        let mut to_drop = mem::take(&mut self.mir_ctx.to_drop);
+        for value in to_drop.drain(frame.base..) {
+            self.drop(value, span);
+        }
+        self.mir_ctx.to_drop = to_drop;
+    }
+
+    pub fn discard_scope_frame(&mut self, frame: MirVarFrame) {
         self.mir_ctx.vars.truncate(frame.base);
     }
 
-    pub fn pointer_to(
-        &mut self,
-        value: VRef<ValueMir>,
-        mutability: Mutability,
-        span: Span,
-    ) -> VRef<ValueMir> {
-        let ty = self.value_ty(value);
-        let ptr_ty = self.typec.pointer_to(mutability, ty, self.interner).into();
-        let dest = self.value(ptr_ty);
-        self.mir_ctx.func.set_referenced(value);
-        self.inst(InstMir::Ref(value, dest), span);
-        dest
-    }
+    // pub fn pointer_to(
+    //     &mut self,
+    //     value: VRef<ValueMir>,
+    //     mutability: Mutability,
+    //     span: Span,
+    // ) -> VRef<ValueMir> {
+    //     let ty = self.value_ty(value);
+    //     let ptr_ty = self.typec.pointer_to(mutability, ty, self.interner).into();
+    //     let dest = self.value(ptr_ty);
+    //     self.mir_ctx.func.set_referenced(value);
+    //     self.inst(InstMir::Ref(value, dest), span);
+    //     dest
+    // }
 
     pub fn inst(&mut self, kind: InstMir, span: Span) -> Option<()> {
         self.current_block?;
@@ -662,6 +693,7 @@ impl MirChecker<'_, '_> {
     }
 
     pub fn create_var(&mut self, value: VRef<ValueMir>) {
+        self.store_in_var(value);
         self.mir_ctx.vars.push(VarMir { value });
     }
 

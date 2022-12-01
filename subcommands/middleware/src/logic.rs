@@ -10,7 +10,7 @@ use std::{
 };
 
 use cranelift_codegen::{
-    ir::{self, InstBuilder, UserFuncName},
+    ir::{self, InstBuilder},
     isa::CallConv,
     Context,
 };

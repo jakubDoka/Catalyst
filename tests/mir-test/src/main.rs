@@ -90,7 +90,10 @@ fn main() {
                 fn dereference(s: Self) -> Self => s;
             };
 
-            fn main -> uint => 0.reference().dereference();
+            fn main -> uint {
+                let zero = 0;
+                zero.reference().dereference();
+            };
         }
 
         // simple "compile-time" {
@@ -421,6 +424,11 @@ fn main() {
             fn drop_refed_variable() {
                 let a = ^A::{};
                 a.f();
+            };
+
+            fn move_in_drop() {
+                let a = A::{};
+                a = A::{};
             };
         }
     }

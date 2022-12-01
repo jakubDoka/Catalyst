@@ -280,12 +280,15 @@ impl TyChecker<'_> {
 
         Some(if tir_body.ty == Ty::TERMINAL {
             Some(tir_body)
+        } else if tir_body.ty == signature.ret {
+            self.return_low(Some(tir_body), body.span(), &mut builder)
         } else {
-            self.return_low(
-                (tir_body.ty == signature.ret).then_some(tir_body),
-                body.span(),
-                &mut builder,
-            )
+            let ret = self.return_low(None, body.span(), &mut builder)?;
+            Some(TirNode::new(
+                Ty::TERMINAL,
+                TirKind::Block(builder.arena.alloc([tir_body, ret])),
+                tir_body.span,
+            ))
         })
     }
 

@@ -90,7 +90,7 @@ impl MirChecker<'_, '_> {
             .unwrap();
         let f_value = dest.unwrap_or_else(|| self.value(ty));
         self.inst(InstMir::Field(value, field, f_value), span);
-        self.mir_move_ctx.owners[f_value] = Some(Owner {
+        self.mir_move_ctx.owners[f_value] = Owner::Indirect(IndirectOwner {
             parent: value,
             index: MovePathSegment::field(field),
             ..self.mir_move_ctx.owners[value].unwrap_or_default()
@@ -99,12 +99,19 @@ impl MirChecker<'_, '_> {
     }
 
     pub fn connect_deref_owner(&mut self, value: VRef<ValueMir>, deref: VRef<ValueMir>) {
-        self.mir_move_ctx.owners[deref] = Some(Owner {
+        self.mir_move_ctx.owners[deref] = Owner::Indirect(IndirectOwner {
             parent: value,
             index: MovePathSegment::default(),
             behind_pointer: true,
             inside_droppable: false,
         });
+    }
+
+    pub fn store_in_var(&mut self, value: VRef<ValueMir>) {
+        if let Owner::Direct { ref mut in_var } = self.mir_move_ctx.owners[value] {
+            *in_var = true;
+            self.mir_ctx.to_drop.push(value);
+        }
     }
 
     pub fn move_out(&mut self, value: VRef<ValueMir>, span: Span) {
@@ -119,19 +126,17 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let key = match self.integrity_check(value) {
-            Ok(key) => key,
-            Err(err) => {
-                match err {
-                    IntegrityError::InvalidMove(owner) => self.handle_invalid_move(owner, span),
-                    IntegrityError::Moved(r#move) => self.handle_double_move(r#move, span),
-                    IntegrityError::PartiallyMoved(moves) => {
-                        self.handle_partial_move("move out of", moves, span)
-                    }
-                };
-                return;
-            }
-        };
+        let (key, .., err) = self.integrity_check(value);
+        if let Some(err) = err {
+            match err {
+                IntegrityError::InvalidMove(owner) => self.handle_invalid_move(owner, span),
+                IntegrityError::Moved(r#move) => self.handle_double_move(r#move, span),
+                IntegrityError::PartiallyMoved(moves) => {
+                    self.handle_partial_move("move out of", moves, span)
+                }
+            };
+            return;
+        }
 
         self.mir_move_ctx.lookup.insert(key.clone(), Move { span });
         self.mir_move_ctx.history.push(MoveRecord {
@@ -141,34 +146,42 @@ impl MirChecker<'_, '_> {
         });
     }
 
-    pub fn check_referencing(&mut self, value: VRef<ValueMir>, span: Span) {
+    pub fn handle_referencing(&mut self, value: VRef<ValueMir>, span: Span) {
         if self.mir_ctx.no_moves {
             return;
         }
 
-        let Err(err) = self.integrity_check(value) else {
-            return;
+        let (key, in_var, err) = self.integrity_check(value);
+        if let Some(err) = err {
+            match err {
+                IntegrityError::InvalidMove(..) => None,
+                IntegrityError::Moved(r#move) => self.referencing_moved(r#move, span),
+                IntegrityError::PartiallyMoved(moves) => {
+                    self.handle_partial_move("reference", moves, span)
+                }
+            };
         };
 
-        match err {
-            IntegrityError::InvalidMove(..) => None,
-            IntegrityError::Moved(r#move) => self.referencing_moved(r#move, span),
-            IntegrityError::PartiallyMoved(moves) => {
-                self.handle_partial_move("reference", moves, span)
-            }
-        };
+        if !in_var {
+            self.store_in_var(value);
+        }
+
+        self.mir_ctx.func.set_referenced(key.root);
     }
 
-    fn integrity_check(&mut self, value: VRef<ValueMir>) -> Result<MoveKey, IntegrityError> {
-        let key = match self.get_move_key(value) {
-            Ok(key) => key,
-            Err(owner) => return Err(IntegrityError::InvalidMove(owner)),
-        };
+    fn integrity_check(
+        &mut self,
+        value: VRef<ValueMir>,
+    ) -> (MoveKey, bool, Option<IntegrityError>) {
+        let (key, in_var, owner) = self.get_move_key(value);
+        if let Some(owner) = owner {
+            return (key, in_var, Some(IntegrityError::InvalidMove(owner)));
+        }
 
         let mut traverse_key = key.clone();
         for _ in 0..traverse_key.path.len() + 1 {
             if let Some(&r#move) = self.mir_move_ctx.lookup.get(&traverse_key) {
-                return Err(IntegrityError::Moved(r#move));
+                return (key, in_var, Some(IntegrityError::Moved(r#move)));
             }
             traverse_key.path.pop();
         }
@@ -183,11 +196,11 @@ impl MirChecker<'_, '_> {
 
             if inner.peek().is_some() {
                 let inner = inner.collect();
-                return Err(IntegrityError::PartiallyMoved(inner));
+                return (key, in_var, Some(IntegrityError::PartiallyMoved(inner)));
             }
         }
 
-        Ok(key)
+        (key, in_var, None)
     }
 
     pub fn move_in(&mut self, dest: VRef<ValueMir>, span: Span) {
@@ -202,7 +215,7 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let Ok(mut key) = self.get_move_key(dest) else {
+        let (mut key, .., None) = self.get_move_key(dest) else {
             self.drop_low(dest, &mut None, span);
             return;
         };
@@ -234,7 +247,7 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let Ok(mut key) = self.get_move_key(value) else {
+        let (mut key, .., None) = self.get_move_key(value) else {
             self.drop_low(value, &mut None, span);
             return;
         };
@@ -256,9 +269,11 @@ impl MirChecker<'_, '_> {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
             p if p.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => (),
             Ty::Param(..) => {
+                self.mir_ctx.func.set_referenced(value);
                 self.inst(InstMir::MayDrop(value), span);
             },
             p if let Some(maybe_impl) = p.is_drop(&self.mir_ctx.generics, self.typec, self.interner).transpose() => {
+                self.mir_ctx.func.set_referenced(value);
                 match maybe_impl {
                     Some(r#impl) => self.inst(InstMir::Drop(value, r#impl), span),
                     None => self.inst(InstMir::MayDrop(value), span),
@@ -309,21 +324,23 @@ impl MirChecker<'_, '_> {
         }
     }
 
-    fn get_move_key(&self, value: VRef<ValueMir>) -> Result<MoveKey, Owner> {
+    fn get_move_key(&self, value: VRef<ValueMir>) -> (MoveKey, bool, Option<IndirectOwner>) {
         let mut path = smallvec![];
         let mut root = value;
-        loop {
-            let Some(owner) = self.mir_move_ctx.owners[root] else {
-                break;
+        let mut barrier = None;
+        let in_var = loop {
+            let owner = match self.mir_move_ctx.owners[root] {
+                Owner::Indirect(owner) => owner,
+                Owner::Direct { in_var } => break in_var,
             };
             if owner.behind_pointer || owner.inside_droppable {
-                return Err(owner);
+                barrier.get_or_insert(owner);
             }
             root = owner.parent;
             path.push(owner.index);
-        }
+        };
         path.reverse();
-        Ok(MoveKey { path, root })
+        (MoveKey { path, root }, in_var, barrier)
     }
 
     pub fn start_branching(&mut self) {
@@ -623,7 +640,15 @@ impl MirChecker<'_, '_> {
             }
         }
 
-        push handle_invalid_move(self, owner: Owner, span: Span) {
+        push no_address(self, span: Span) {
+            err: "cannot take pointer of temporary value";
+            help: "storing value in variable should help";
+            (span, self.source) {
+                err[span]: "this value";
+            }
+        }
+
+        push handle_invalid_move(self, owner: IndirectOwner, span: Span) {
             err: "cannot move out the value";
             info: ("notice that {}", [
                 "value is located within datatype that implements 'Drop'",
@@ -656,14 +681,14 @@ fn remove_range<'a, K: Ord + Clone, V>(
 enum IntegrityError {
     Moved(Move),
     PartiallyMoved(BumpVec<Move>),
-    InvalidMove(Owner),
+    InvalidMove(IndirectOwner),
 }
 
 #[derive(Default)]
 pub struct MirMoveCtx {
     lookup: BTreeMap<MoveKey, Move>,
     history: Frames<MoveRecord>,
-    owners: ShadowMap<ValueMir, Option<Owner>>,
+    owners: ShadowMap<ValueMir, Owner>,
 
     simplify_temp: BTreeSet<MoveKey>,
     count_temp: BTreeMap<MoveKey, usize>,
@@ -704,11 +729,32 @@ impl MirMoveCtx {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct Owner {
+pub struct IndirectOwner {
     parent: VRef<ValueMir>,
     index: MovePathSegment,
     behind_pointer: bool,
     inside_droppable: bool,
+}
+
+#[derive(Copy, Clone)]
+pub enum Owner {
+    Indirect(IndirectOwner),
+    Direct { in_var: bool },
+}
+
+impl Owner {
+    fn unwrap_or_default(&self) -> IndirectOwner {
+        match self {
+            Owner::Indirect(owner) => *owner,
+            Owner::Direct { .. } => IndirectOwner::default(),
+        }
+    }
+}
+
+impl Default for Owner {
+    fn default() -> Self {
+        Self::Direct { in_var: false }
+    }
 }
 
 #[derive(Clone, Debug)]
