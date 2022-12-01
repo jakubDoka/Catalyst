@@ -1,4 +1,3 @@
 [submodule "water"]
-	branch = main
 	path = water
 	url = https://github.com/jakubDoka/water
