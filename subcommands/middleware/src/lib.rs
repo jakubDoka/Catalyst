@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 #![feature(slice_group_by)]
 #![feature(default_free_fn)]
+#![feature(iter_collect_into)]
 
 mod cmd_args;
 mod logic;

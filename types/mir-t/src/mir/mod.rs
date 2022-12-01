@@ -38,12 +38,6 @@ impl Deref for FuncMir {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct FuncConstMir {
-    pub ty: VRef<MirTy>,
-    pub block: VRef<BlockMir>,
-}
-
 #[derive(Clone, Default)]
 pub struct FuncMirInner {
     pub ret: VRef<ValueMir>,
@@ -55,6 +49,7 @@ pub struct FuncMirInner {
     pub ty_params: PushMap<VRef<MirTy>>,
     pub calls: PushMap<CallMir>,
     pub types: FuncTypes,
+    pub drops: PushMap<DropMir>,
     value_flags: BitSet,
 }
 
@@ -99,6 +94,12 @@ impl FuncMirInner {
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.types[self.values[value].ty].ty
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct DropMir {
+    pub value: VRef<ValueMir>,
+    pub r#impl: OptFragRef<Impl>,
 }
 
 #[derive(Clone, Copy)]
@@ -159,8 +160,7 @@ pub enum InstMir {
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
     Bool(bool, VRef<ValueMir>),
-    MayDrop(VRef<ValueMir>),
-    Drop(VRef<ValueMir>, FragRef<Impl>),
+    Drop(VRef<DropMir>),
 }
 
 #[derive(Clone, Copy)]

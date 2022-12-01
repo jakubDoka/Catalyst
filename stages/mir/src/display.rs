@@ -205,11 +205,12 @@ impl MirChecker<'_, '_> {
             InstMir::Var(value, ret) => {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
-            InstMir::MayDrop(value) => {
-                write!(buffer, "may_drop var{}", value.index())?;
-            }
-            InstMir::Drop(value, r#impl) => {
-                write!(buffer, "drop var{} impl{}", value.index(), r#impl.to_u32())?;
+            InstMir::Drop(drop) => {
+                let DropMir { value, r#impl } = func.drops[drop];
+                write!(buffer, "drop var{}", value.index())?;
+                if let Some(r#impl) = r#impl {
+                    write!(buffer, "impl{}", r#impl.to_u32())?;
+                }
             }
         }
 
