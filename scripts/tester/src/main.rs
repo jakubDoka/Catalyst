@@ -1,5 +1,6 @@
 use std::{
     fs::{self, *},
+    io::Write,
     path::*,
     process::*,
     thread::scope,
@@ -87,7 +88,8 @@ fn main() {
 }
 
 fn prompt(msg: &str) -> String {
-    print!(": {}", msg);
+    print!("{}:", msg);
+    std::io::stdout().flush().unwrap();
     read_input()
 }
 

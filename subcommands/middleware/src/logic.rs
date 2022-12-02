@@ -1123,7 +1123,7 @@ impl Task {
             &mut self.interner,
         );
         let entry = seen.entry(key);
-        let task_id = matches!(entry, Entry::Occupied(..)).then_some(task_id);
+        let task_id = matches!(entry, Entry::Vacant(..)).then_some(task_id);
         let &mut id = entry.or_insert_with(|| self.gen.funcs.push(CompiledFunc::new(func_id, key)));
 
         (

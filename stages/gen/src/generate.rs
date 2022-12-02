@@ -424,30 +424,19 @@ impl Generator<'_> {
             offset,
             must_load,
         } = self.gen_resources.values[target];
-        let ptr_ty = builder.ptr_ty();
         let layout = self.ty_layout(builder.value_ty(target));
         // dbg!(layout, builder.value_ty(target), target);
         if layout.size == 0 {
             return None;
         }
-        let value = match computed.expect("value must be computed by now") {
-            ComputedValue::Value(value) => value,
-            ComputedValue::StackSlot(ss) => {
-                return Some(match layout.on_stack && must_load {
-                    true => builder.ins().stack_addr(ptr_ty, ss, offset),
-                    false => builder.ins().stack_load(layout.repr, ss, offset),
-                });
-            }
-            ComputedValue::Variable(var) => builder.use_var(var),
-        };
-
-        Some(match (must_load, layout.on_stack) {
-            (true, false) => builder
-                .ins()
-                .load(layout.repr, MemFlags::new(), value, offset),
-            (true, true) if offset != 0 => builder.ins().iadd_imm(value, offset as i64),
-            _ => value,
-        })
+        Some(Self::load_value_low(
+            builder,
+            must_load,
+            false,
+            layout,
+            offset,
+            computed.expect("value should be computed"),
+        ))
     }
 
     fn assign_value(
@@ -482,6 +471,10 @@ impl Generator<'_> {
 
         let ptr_ty = builder.ptr_ty();
         let layout = self.ty_layout(builder.value_ty(target));
+
+        if layout.size == 0 {
+            return;
+        }
 
         let GenValue {
             computed,
@@ -528,6 +521,54 @@ impl Generator<'_> {
             return;
         }
 
+        let source = Self::load_value_low(
+            builder,
+            must_load_source,
+            must_load_target,
+            layout,
+            source_offset,
+            source_value,
+        );
+
+        let (target_value, used) = self.ensure_target(target, Some(source), builder);
+        if must_load_target {
+            match target_value {
+                ComputedValue::Value(val) => {
+                    builder.ins().store(MemFlags::new(), source, val, offset);
+                }
+                ComputedValue::Variable(var) => {
+                    let val = builder.use_var(var);
+                    builder.ins().store(MemFlags::new(), source, val, offset);
+                }
+                ComputedValue::StackSlot(ss) => {
+                    builder.ins().stack_store(source, ss, offset);
+                }
+            }
+        } else if !used {
+            match target_value {
+                ComputedValue::Value(value) => {
+                    let new_value = self.set_bit_field(source, value, offset, builder);
+                    self.gen_resources.values[target].computed =
+                        Some(ComputedValue::Value(new_value));
+                }
+                ComputedValue::StackSlot(..) => unreachable!(),
+                ComputedValue::Variable(var) => {
+                    let value = builder.use_var(var);
+                    let new_value = self.set_bit_field(source, value, offset, builder);
+                    builder.def_var(var, new_value);
+                }
+            }
+        }
+    }
+
+    fn load_value_low(
+        builder: &mut GenBuilder,
+        must_load_source: bool,
+        must_load_target: bool,
+        layout: Layout,
+        source_offset: i32,
+        source_value: ComputedValue,
+    ) -> ir::Value {
         let source = if must_load_source {
             let repr = match layout.repr == types::B1 {
                 true => types::I8,
@@ -566,39 +607,9 @@ impl Generator<'_> {
             }
         };
 
-        let source = match layout.repr == types::B1 && !must_load_target && must_load_source {
+        match layout.repr == types::B1 && !must_load_target && must_load_source {
             true => builder.ins().icmp_imm(IntCC::NotEqual, source, 0),
             false => source,
-        };
-
-        let (target_value, used) = self.ensure_target(target, Some(source), builder);
-        if must_load_target {
-            match target_value {
-                ComputedValue::Value(val) => {
-                    builder.ins().store(MemFlags::new(), source, val, offset);
-                }
-                ComputedValue::Variable(var) => {
-                    let val = builder.use_var(var);
-                    builder.ins().store(MemFlags::new(), source, val, offset);
-                }
-                ComputedValue::StackSlot(ss) => {
-                    builder.ins().stack_store(source, ss, offset);
-                }
-            }
-        } else if !used {
-            match target_value {
-                ComputedValue::Value(value) => {
-                    let new_value = self.set_bit_field(source, value, offset, builder);
-                    self.gen_resources.values[target].computed =
-                        Some(ComputedValue::Value(new_value));
-                }
-                ComputedValue::StackSlot(..) => unreachable!(),
-                ComputedValue::Variable(var) => {
-                    let value = builder.use_var(var);
-                    let new_value = self.set_bit_field(source, value, offset, builder);
-                    builder.def_var(var, new_value);
-                }
-            }
         }
     }
 
