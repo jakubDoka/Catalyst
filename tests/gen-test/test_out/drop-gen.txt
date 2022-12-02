@@ -1,7 +1,184 @@
 info: generated ir:
+main function u0:0() -> i64 fast {
+    sig0 = () fast
+    sig1 = () fast
+    sig2 = () fast
+    sig3 = () fast
+    sig4 = () fast
+    sig5 = () fast
+    fn0 = colocated u0:1 sig0
+    fn1 = colocated u0:2 sig1
+    fn2 = colocated u0:3 sig2
+    fn3 = colocated u0:4 sig3
+    fn4 = colocated u0:5 sig4
+    fn5 = colocated u0:6 sig5
+
+block0:
+    call fn0()
+    call fn1()
+    call fn2()
+    call fn3()
+    call fn4()
+    call fn5()
+    v0 = iconst.i64 0
+    return v0  ; v0 = 0
+}
+drop_cond function u0:0() fast {
+    sig0 = (i32) -> i32 fast
+    sig1 = (i32) fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:8 sig1
+
+block0:
+    v0 = iconst.i32 103
+    v1 = call fn0(v0)  ; v0 = 103
+    v2 = bconst.b1 true
+    brnz v2, block1  ; v2 = true
+    jump block2
+
+block2:
+    return
+
+block1:
+    call fn1(v1)
+    jump block3
+
+block3:
+    return
+}
+drop function u0:0(i32) fast {
+    ss0 = explicit_slot 4
+    sig0 = (i64) fast
+    fn0 = colocated u0:9 sig0
+
+block0(v0: i32):
+    stack_store v0, ss0
+    v1 = stack_addr.i64 ss0
+    call fn0(v1)
+    return
+}
+drop function u0:0(i64) fast {
+    sig0 = (i32) -> i32 windows_fastcall
+    sig1 = (i32) -> i32 windows_fastcall
+    fn0 = u0:10 sig0
+    fn1 = u0:10 sig1
+
+block0(v0: i64):
+    v1 = load.i32 v0
+    v2 = call fn0(v1)
+    v3 = iconst.i32 32
+    v4 = call fn1(v3)  ; v3 = 32
+    return
+}
+new function u0:0(i32) -> i32 fast {
+block0(v0: i32):
+    v1 = iconst.i32 0
+    return v0
+}
+move_in_drop function u0:0() fast {
+    ss0 = explicit_slot 4
+    sig0 = (i32) -> i32 fast
+    sig1 = (i64) fast
+    sig2 = (i32) -> i32 fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:9 sig1
+    fn2 = colocated u0:7 sig2
+
+block0:
+    v0 = iconst.i32 101
+    v1 = call fn0(v0)  ; v0 = 101
+    stack_store v1, ss0
+    v2 = stack_addr.i64 ss0
+    call fn1(v2)
+    v3 = iconst.i32 102
+    v4 = call fn2(v3)  ; v3 = 102
+    stack_store v4, ss0
+    return
+}
+drop_refed_variable function u0:0() fast {
+    ss0 = explicit_slot 4
+    sig0 = (i32) -> i32 fast
+    sig1 = (i64, i32) fast
+    sig2 = (i64) fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:11 sig1
+    fn2 = colocated u0:9 sig2
+
+block0:
+    v0 = iconst.i32 97
+    v1 = call fn0(v0)  ; v0 = 97
+    stack_store v1, ss0
+    v2 = stack_addr.i64 ss0
+    v3 = iconst.i32 100
+    call fn1(v2, v3)  ; v3 = 100
+    v4 = stack_addr.i64 ss0
+    call fn2(v4)
+    return
+}
+set_char function u0:0(i64, i32) fast {
+block0(v0: i64, v1: i32):
+    store v1, v0
+    return
+}
+drop_variable function u0:0() fast {
+    ss0 = explicit_slot 4
+    sig0 = (i32) -> i32 fast
+    sig1 = (i64, i32) fast
+    sig2 = (i64) fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:11 sig1
+    fn2 = colocated u0:9 sig2
+
+block0:
+    v0 = iconst.i32 97
+    v1 = call fn0(v0)  ; v0 = 97
+    stack_store v1, ss0
+    v2 = stack_addr.i64 ss0
+    v3 = iconst.i32 99
+    call fn1(v2, v3)  ; v3 = 99
+    v4 = stack_addr.i64 ss0
+    call fn2(v4)
+    return
+}
+drop_referenced function u0:0() fast {
+    ss0 = explicit_slot 4
+    sig0 = (i32) -> i32 fast
+    sig1 = (i64, i32) fast
+    sig2 = (i64) fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:11 sig1
+    fn2 = colocated u0:9 sig2
+
+block0:
+    v0 = iconst.i32 97
+    v1 = call fn0(v0)  ; v0 = 97
+    stack_store v1, ss0
+    v2 = stack_addr.i64 ss0
+    v3 = iconst.i32 98
+    call fn1(v2, v3)  ; v3 = 98
+    v4 = stack_addr.i64 ss0
+    call fn2(v4)
+    return
+}
+drop_unused function u0:0() fast {
+    ss0 = explicit_slot 4
+    sig0 = (i32) -> i32 fast
+    sig1 = (i64) fast
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:9 sig1
+
+block0:
+    v0 = iconst.i32 97
+    v1 = call fn0(v0)  ; v0 = 97
+    stack_store v1, ss0
+    v2 = stack_addr.i64 ss0
+    call fn1(v2)
+    return
+}
 
 
-info: status: 324e1000
+info: status: 0
  = info: stdout:
+         a b c d e g 
  = info: stderr:
 
