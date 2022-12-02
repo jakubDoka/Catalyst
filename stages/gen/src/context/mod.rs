@@ -1,7 +1,7 @@
 use std::{
     alloc, iter,
     num::NonZeroU8,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     sync::Arc,
 };
 
@@ -120,6 +120,7 @@ pub struct CompileRequests {
     pub queue: Vec<CompileRequest>,
     pub ty_slices: PushMap<Ty>,
     pub children: PushMap<CompileRequestChild>,
+    pub drop_children: PushMap<VSlice<CompileRequestChild>>,
 }
 
 impl CompileRequests {
@@ -136,6 +137,7 @@ pub struct CompileRequest {
     pub func: FragRef<Func>,
     pub params: VSlice<Ty>,
     pub children: VSlice<CompileRequestChild>,
+    pub drops: VSlice<VSlice<CompileRequestChild>>,
 }
 
 #[derive(Clone, Copy)]
@@ -156,6 +158,7 @@ pub struct GenResources {
     pub func_imports: Map<FragSlice<u8>, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
+    pub drops: Vec<Range<usize>>,
 }
 
 impl GenResources {

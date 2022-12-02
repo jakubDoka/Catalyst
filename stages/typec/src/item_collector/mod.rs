@@ -71,7 +71,7 @@ impl TyChecker<'_> {
 
             {
                 let generics = self.typec[parsed_generics].to_bumpvec();
-                if let Some(Some(already)) = self.typec.find_implementation(
+                if let Some(Some((already, ..))) = self.typec.find_implementation(
                     parsed_ty,
                     parsed_spec,
                     generics.as_slice(),
@@ -97,14 +97,18 @@ impl TyChecker<'_> {
                 generics: parsed_generics,
                 key,
                 methods: default(),
-                next: self.typec.impl_lookup.insert(
-                    ImplKey {
-                        ty: parsed_ty_base,
-                        spec: Spec::Base(parsed_spec_base),
-                    },
-                    // SAFETY: We push right after this
-                    unsafe { self.typec.impls.next() },
-                ),
+                next: self
+                    .typec
+                    .impl_lookup
+                    .insert(
+                        ImplKey {
+                            ty: parsed_ty_base,
+                            spec: Spec::Base(parsed_spec_base),
+                        },
+                        // SAFETY: We push right after this
+                        (unsafe { self.typec.impls.next() }, default()),
+                    )
+                    .map(|(id, _)| id),
                 span: Some(r#impl.span()),
             };
             self.typec.impls.push(impl_ent)

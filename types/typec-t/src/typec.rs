@@ -626,7 +626,7 @@ impl Typec {
         params: &[FragSlice<Spec>],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
         interner: &mut Interner,
-    ) -> Option<Option<FragRef<Impl>>> {
+    ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         if let Ty::Param(index) = ty {
             let specs = params[index as usize];
             return self[specs].contains(&spec).then_some(None);
@@ -652,7 +652,7 @@ impl Typec {
             spec: spec_base,
         };
 
-        let mut base_impl = self.impl_lookup.get(&base_key).map(|i| i.to_owned());
+        let mut base_impl = self.impl_lookup.get(&base_key).map(|i| i.to_owned().0);
 
         while let Some(current) = base_impl {
             let impl_ent = self.impls[current];
@@ -680,7 +680,11 @@ impl Typec {
                 continue;
             }
 
-            return Some(Some(current));
+            let params = self.args.extend(params);
+            if !self.contains_params(ty) {
+                self.impl_lookup.insert(key, (current, params));
+            }
+            return Some(Some((current, params)));
         }
 
         if let Some(v) = missing_keys {

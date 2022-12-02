@@ -569,6 +569,7 @@ impl Worker {
             id,
             params,
             children,
+            drops,
         } in &task.compile_requests.queue
         {
             compiled.push(id);
@@ -605,6 +606,17 @@ impl Worker {
                 .gen_resources
                 .calls
                 .extend(task.compile_requests.children[children].iter().copied());
+            for &drop in task.compile_requests.drop_children[drops].iter() {
+                let prev = self.state.gen_resources.calls.len();
+                self.state
+                    .gen_resources
+                    .calls
+                    .extend(&task.compile_requests.children[drop]);
+                self.state
+                    .gen_resources
+                    .drops
+                    .push(prev..self.state.gen_resources.calls.len());
+            }
             // dbg!(&task.interner[task.typec.funcs[func].name]);
             Generator::new(
                 gen_layouts,
@@ -936,12 +948,17 @@ impl Task {
         let mut seen = Map::default();
         let mut cycle = (0..tasks.len()).cycle();
         let mut imported = bumpvec![];
+        let mut type_frontier = bumpvec![];
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
             let Some(task_id) = task_id else { continue; };
             let task = &mut tasks[task_id];
             let Func {
                 flags, visibility, ..
             } = task.typec[func];
+            let generics = task
+                .typec
+                .pack_func_param_specs(func)
+                .collect::<BumpVec<_>>();
             if flags.contains(FuncFlags::BUILTIN) {
                 continue;
             }
@@ -965,25 +982,118 @@ impl Task {
                 &mut task.typec,
                 &mut task.interner,
             );
+
+            let mut drops = bumpvec![cap body.drops.len()];
+            for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
+                let task = &mut tasks[task_id];
+                let prev = frontier.len();
+                type_frontier.push(types[body.values[drop.value].ty].ty);
+                while let Some(ty) = type_frontier.pop() {
+                    if !task.typec.may_need_drop(ty) {
+                        continue;
+                    }
+
+                    if let Some(Some((r#impl, params))) =
+                        ty.is_drop(&generics, &mut task.typec, &mut task.interner)
+                    {
+                        let func = task.typec[task.typec[r#impl].methods][0];
+                        let params = task.typec[params].to_bumpvec();
+                        frontier.push(task.load_call(
+                            CallableMir::Func(func),
+                            params,
+                            task_id,
+                            isa,
+                            &mut seen,
+                        ));
+                    }
+
+                    match ty {
+                        Ty::Struct(s) => {
+                            task.typec[task.typec[s].fields]
+                                .iter()
+                                // we do rev to preserve recursive order of fields
+                                .rev()
+                                .map(|f| f.ty)
+                                .collect_into(&mut *type_frontier);
+                        }
+                        Ty::Enum(e) => {
+                            task.typec[task.typec[e].variants]
+                                .iter()
+                                .rev()
+                                .map(|v| v.ty)
+                                .collect_into(&mut *type_frontier);
+                        }
+                        Ty::Instance(i) => {
+                            let Instance { base, args } = task.typec[i];
+                            let params = task.typec[args].to_bumpvec();
+                            match base {
+                                GenericTy::Struct(s) => {
+                                    task.typec[task.typec[s].fields]
+                                        .to_bumpvec()
+                                        .into_iter()
+                                        .rev()
+                                        .map(|f| {
+                                            task.typec.instantiate(
+                                                f.ty,
+                                                &params,
+                                                &mut task.interner,
+                                            )
+                                        })
+                                        .collect_into(&mut *type_frontier);
+                                }
+                                GenericTy::Enum(e) => {
+                                    task.typec[task.typec[e].variants]
+                                        .to_bumpvec()
+                                        .into_iter()
+                                        .rev()
+                                        .map(|v| {
+                                            task.typec.instantiate(
+                                                v.ty,
+                                                &params,
+                                                &mut task.interner,
+                                            )
+                                        })
+                                        .collect_into(&mut *type_frontier);
+                                }
+                            }
+                        }
+                        Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
+                    }
+                }
+                drops.push(
+                    task.compile_requests
+                        .children
+                        .extend(frontier[prev..].iter().map(|&(child, _)| child)),
+                );
+            }
+            let task = &mut tasks[task_id];
+            let drops = task.compile_requests.drop_children.extend(drops);
+
             let prev = frontier.len();
             body.calls
                 .values()
                 .zip(cycle.by_ref())
                 .map(|(&call, task_id)| {
-                    tasks[task_id].load_call(&body, &types, call, task_id, isa, &mut seen)
+                    let task = &mut tasks[task_id];
+                    let params = body.ty_params[call.params]
+                        .iter()
+                        .map(|&p| types[p].ty)
+                        .collect::<BumpVec<_>>();
+                    task.load_call(call.callable, params, task_id, isa, &mut seen)
                 })
                 .collect_into(&mut *frontier);
-
             let task = &mut tasks[task_id];
             let children = task
                 .compile_requests
                 .children
                 .extend(frontier[prev..].iter().map(|&(child, _)| child));
+
             task.compile_requests.queue.push(CompileRequest {
                 func,
                 id,
                 params,
                 children,
+                drops,
             });
         }
 
@@ -992,19 +1102,12 @@ impl Task {
 
     fn load_call(
         &mut self,
-        body: &FuncMir,
-        types: &FuncTypes,
-        CallMir {
-            callable, params, ..
-        }: CallMir,
+        callable: CallableMir,
+        params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
         seen: &mut Map<FragSlice<u8>, FragRef<CompiledFunc>>,
     ) -> (CompileRequestChild, Option<usize>) {
-        let params = body.ty_params[params]
-            .iter()
-            .map(|&ty| types[ty].ty)
-            .collect::<BumpVec<_>>();
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),
             CallableMir::SpecFunc(func) => self.load_spec_func(func, &params),
@@ -1043,43 +1146,25 @@ impl Task {
             parent, generics, ..
         } = self.typec.spec_funcs[func];
         let SpecBase { methods, .. } = self.typec[parent];
-        let index = methods.keys().position(|key| key == func).unwrap();
-        let generic_count = params.len() - generics.len();
-        let (upper, caller, lower) = (
-            &params[..generic_count - 1],
-            params[generic_count - 1],
-            &params[generic_count..],
-        );
+        let index = methods
+            .keys()
+            .position(|key| key == func)
+            .expect("Shit happens.");
+        let generic_count = params.len() - generics.len() - 1;
+        let (upper, caller) = (&params[..generic_count], params[generic_count]);
         let used_spec = if upper.is_empty() {
             Spec::Base(parent)
         } else {
             Spec::Instance(self.typec.spec_instance(parent, upper, &mut self.interner))
         };
 
-        let r#impl = self
+        let (r#impl, params) = self
             .typec
             .find_implementation(caller, used_spec, &[], &mut None, &mut self.interner)
             .expect("ba")
             .expect("ka");
-        let Impl {
-            generics,
-            methods,
-            key: ImplKey { ty, spec },
-            ..
-        } = self.typec.impls[r#impl];
-        let func_id = self.typec.func_slices[methods][index];
-        let mut infer_slots = bumpvec![None; generics.len()];
-        self.typec
-            .compatible(&mut infer_slots, caller, ty)
-            .expect("I have been lied to!");
-        self.typec
-            .compatible_spec(&mut infer_slots, used_spec, spec)
-            .expect("Did you get it?");
-        let params = infer_slots
-            .iter()
-            .map(|&slot| slot.expect("Why are you doing this?"))
-            .chain(lower.iter().copied())
-            .collect::<BumpVec<_>>();
+        let func_id = self.typec[self.typec[r#impl].methods][index];
+        let params = self.typec[params].to_bumpvec();
         (func_id, params)
     }
 }

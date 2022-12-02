@@ -7,7 +7,7 @@ use parsing_t::Vis;
 use storage::*;
 
 pub type TypecLookup = CMap<FragSlice<u8>, ComputedTypecItem>;
-pub type ImplLookup = CMap<ImplKey, FragRef<Impl>>;
+pub type ImplLookup = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 
 pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
 pub type SpecSums = FragMap<Spec, MAX_FRAGMENT_SIZE>;
@@ -390,7 +390,7 @@ impl Ty {
         params: &[FragSlice<Spec>],
         typec: &mut Typec,
         interner: &mut Interner,
-    ) -> Option<Option<FragRef<Impl>>> {
+    ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         match self {
             Ty::Pointer(..) | Ty::Builtin(..) => Some(None),
             Ty::Param(..) => typec

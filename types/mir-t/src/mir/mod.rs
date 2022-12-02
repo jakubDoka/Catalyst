@@ -99,7 +99,6 @@ impl FuncMirInner {
 #[derive(Clone, Copy)]
 pub struct DropMir {
     pub value: VRef<ValueMir>,
-    pub r#impl: OptFragRef<Impl>,
 }
 
 #[derive(Clone, Copy)]

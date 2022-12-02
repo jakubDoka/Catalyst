@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, default::default, slice};
+use std::{cmp::Ordering, default::default, mem, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -114,8 +114,36 @@ impl Generator<'_> {
             InstMir::Var(value, ret) => {
                 self.assign_value(ret, value, builder);
             }
-            InstMir::Drop(..) => todo!(),
+            InstMir::Drop(drop) => self.drop(drop, builder),
         };
+    }
+
+    fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder) {
+        // let value = builder.body.drops[drop].value;
+        // let ty = builder.value_ty(value);
+        // let mut funcs = self.gen_resources.drops[drop.index()].clone();
+        // let ir_value = match self.gen_resources.values[value].computed.unwrap() {
+        //     ComputedValue::Value(value) => value,
+        //     ComputedValue::StackSlot(_) => todo!(),
+        //     ComputedValue::Variable(var) => todo!(),
+        // };
+        // let mut frontier = bumpvec![(ir_value, ty)];
+        // while let Some((value, ty)) = frontier.pop() {
+        //     if !self.typec.may_need_drop(ty) {
+        //         continue;
+        //     }
+        //     // we can pass empty generics since all types are concrete
+        //     if let Some(Some(..)) = ty.is_drop(&[], self.typec, self.interner) {
+        //         let CompileRequestChild { id, params, .. } = self.gen_resources.calls[funcs.next().unwrap()];
+        //         let params = self.compile_requests.ty_slices[params].iter().copied();
+        //         let (func, ..) = self.import_compiled_func(id, params, builder);
+        //         let arg = value.unwrap_or_else(|| {
+        //             let ptr_ty = builder.ptr_ty();
+        //             builder.ins().iconst(ptr_ty, 1)});
+        //         builder.ins().call(func, &[arg]);
+        //     }
+        // }
+        todo!();
     }
 
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
@@ -405,7 +433,7 @@ impl Generator<'_> {
         let value = match computed.expect("value must be computed by now") {
             ComputedValue::Value(value) => value,
             ComputedValue::StackSlot(ss) => {
-                return Some(match layout.on_stack {
+                return Some(match layout.on_stack && must_load {
                     true => builder.ins().stack_addr(ptr_ty, ss, offset),
                     false => builder.ins().stack_load(layout.repr, ss, offset),
                 });

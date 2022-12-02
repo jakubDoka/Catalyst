@@ -269,12 +269,13 @@ impl MirChecker<'_, '_> {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
             p if !self.typec.may_need_drop(p) => (),
             p if p.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => (),
-            p if let Some(maybe_impl) = p.is_drop(&self.mir_ctx.generics, self.typec, self.interner).transpose() => {
+            p if p
+                .is_drop(&self.mir_ctx.generics, self.typec, self.interner)
+                .transpose()
+                .is_some() =>
+            {
                 self.mir_ctx.func.set_referenced(value);
-                let drop = self.mir_ctx.func.drops.push(DropMir {
-                    value,
-                    r#impl: maybe_impl,
-                });
+                let drop = self.mir_ctx.func.drops.push(DropMir { value });
                 self.inst(InstMir::Drop(drop), span);
             }
             // Param is always considered drop if its not copy
@@ -289,7 +290,7 @@ impl MirChecker<'_, '_> {
                     GenericTy::Struct(s) => self.partial_struct_drop(s, &args, value, key, span),
                     GenericTy::Enum(_) => (), // TODO
                 }
-            },
+            }
         }
 
         false
