@@ -153,6 +153,7 @@ gen_kind!(
         Elif = "elif",
         Else = "else",
         For = "for",
+        Loop = "loop",
         Break = "break",
         Continue = "continue",
         Let = "let",

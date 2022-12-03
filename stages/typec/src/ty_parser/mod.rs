@@ -168,7 +168,7 @@ impl TyChecker<'_> {
         })
     }
 
-    pub fn lookup(&mut self, sym: FragSlice<u8>, span: Span, what: &str) -> Option<ScopeItem> {
+    pub fn lookup(&mut self, sym: Ident, span: Span, what: &str) -> Option<ScopeItem> {
         self.scope
             .get(sym)
             .map_err(|err| self.scope_error(err, sym, span, what))
@@ -219,7 +219,7 @@ impl TyChecker<'_> {
     pub fn scope_error(
         &mut self,
         err: ScopeError,
-        sym: FragSlice<u8>,
+        sym: Ident,
         span: Span,
         what: &str,
     ) -> Option<!> {

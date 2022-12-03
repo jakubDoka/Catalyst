@@ -46,7 +46,7 @@ where
 
 #[derive(Clone, Copy, Debug)]
 pub struct NameAst {
-    pub ident: FragSlice<u8>,
+    pub ident: Ident,
     pub span: Span,
 }
 

@@ -10,8 +10,8 @@ use storage::*;
 
 #[derive(Default)]
 pub struct Scope {
-    data: Map<FragSlice<u8>, Option<Item>>,
-    pushed: Vec<(FragSlice<u8>, Option<Item>)>,
+    data: Map<Ident, Option<Item>>,
+    pushed: Vec<(Ident, Option<Item>)>,
 }
 
 impl Scope {
@@ -19,7 +19,7 @@ impl Scope {
         Self::default()
     }
 
-    pub fn get(&self, ident: FragSlice<u8>) -> Result<Item, ScopeError> {
+    pub fn get(&self, ident: Ident) -> Result<Item, ScopeError> {
         self.data
             .get(&ident)
             .map(|option| option.as_ref().ok_or(ScopeError::Collision))
@@ -28,10 +28,7 @@ impl Scope {
             .cloned()
     }
 
-    pub fn get_typed<T: 'static>(
-        &self,
-        ident: FragSlice<u8>,
-    ) -> Result<(VRef<T>, Item), ScopeError> {
+    pub fn get_typed<T: 'static>(&self, ident: Ident) -> Result<(VRef<T>, Item), ScopeError> {
         let item = self.get(ident)?;
         Ok((
             item.ptr
@@ -61,7 +58,7 @@ impl Scope {
         }
     }
 
-    pub fn insert_builtin(&mut self, id: FragSlice<u8>, ptr: VRef<impl Any>) {
+    pub fn insert_builtin(&mut self, id: Ident, ptr: VRef<impl Any>) {
         self.data.insert(
             id,
             Item {
@@ -79,7 +76,7 @@ impl Scope {
 
     pub fn insert(
         &mut self,
-        current_module: FragSlice<u8>,
+        current_module: Ident,
         item: ScopeItem,
     ) -> Result<(), Option<(Span, Span)>> {
         if let Some(existing_option) = self.data.get_mut(&item.id) {
@@ -122,11 +119,11 @@ pub enum ScopeError {
 
 #[derive(Clone, Copy, Default)]
 pub struct Item {
-    pub id: FragSlice<u8>,
+    pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Option<Span>,
     pub whole_span: Option<Span>,
-    pub module: Option<FragSlice<u8>>,
+    pub module: Option<Ident>,
     pub vis: Vis,
 }
 
@@ -140,21 +137,21 @@ impl Item {
 
 #[derive(Clone, Copy)]
 pub struct ScopeItem {
-    pub id: FragSlice<u8>,
+    pub id: Ident,
     pub ptr: ScopePtr,
     pub span: Span,
     pub whole_span: Span,
-    pub module: FragSlice<u8>,
+    pub module: Ident,
     pub vis: Vis,
 }
 
 impl ScopeItem {
     pub fn new(
-        id: FragSlice<u8>,
+        id: Ident,
         ptr: impl Into<ScopePtr>,
         span: Span,
         whole_span: Span,
-        module: FragSlice<u8>,
+        module: Ident,
         vis: Vis,
     ) -> Self {
         Self {

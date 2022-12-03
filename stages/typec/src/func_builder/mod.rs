@@ -394,6 +394,7 @@ impl TyChecker<'_> {
             EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
             Match(match_expr) => self.r#match(match_expr, inference, builder),
             If(r#if) => self.r#if(r#if, inference, builder),
+            Loop(loop_expr) => self.r#loop(loop_expr, inference, builder),
             DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             Let(r#let) => self.r#let(r#let, inference, builder),
             Deref(.., &expr) => self.deref(expr, inference, builder),
@@ -401,6 +402,43 @@ impl TyChecker<'_> {
             PathInstance(_) => todo!(),
             TypedPath(_) => todo!(),
         }
+    }
+
+    fn r#loop<'a>(
+        &mut self,
+        loop_expr: LoopAst,
+        inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let loop_id = builder.ctx.loops.push(LoopHeaderTir {
+            return_type: Ty::TERMINAL,
+            inference,
+            label: loop_expr.label.map(|label| label.ident),
+        });
+
+        let var_frame = VarHeaderTir::start_frame(builder.ctx);
+        let frame = self.scope.start_frame();
+        if let Some(label) = loop_expr.label {
+            self.scope
+                .push(label.ident, ScopeItem::LoopHeaderTir(loop_id), label.span);
+        }
+
+        let body = self.expr(loop_expr.body, Inference::None, builder)?;
+        self.scope.end_frame(frame);
+        var_frame.end(builder.ctx, ());
+
+        let ty = builder
+            .ctx
+            .loops
+            .pop()
+            .expect("this functions is the only one that pops and pushes")
+            .return_type;
+
+        Some(TirNode::new(
+            ty,
+            TirKind::Loop(builder.arena.alloc(LoopTir { id: loop_id, body })),
+            loop_expr.span(),
+        ))
     }
 
     fn deref<'a>(
@@ -699,7 +737,7 @@ impl TyChecker<'_> {
     fn find_struct_field(
         &self,
         struct_id: FragRef<Struct>,
-        field_name: FragSlice<u8>,
+        field_name: Ident,
     ) -> Option<(usize, FragRef<Field>, Ty)> {
         let Struct { fields, .. } = self.typec[struct_id];
         self.typec
@@ -1718,7 +1756,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push unknown_spec_impl_func(self, func_span: Span, left: &[FragSlice<u8>]) {
+        push unknown_spec_impl_func(self, func_span: Span, left: &[Ident]) {
             err: "unknown spec function";
             help: (
                 "functions that can be implemented: {}",
@@ -1732,7 +1770,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_spec_impl_funcs(self, span: Span, missing: &[FragSlice<u8>]) {
+        push missing_spec_impl_funcs(self, span: Span, missing: &[Ident]) {
             err: "missing spec functions";
             help: (
                 "functions that are missing: {}",
@@ -1785,7 +1823,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_constructor_fields(self, span: Span, missing: &[FragSlice<u8>]) {
+        push missing_constructor_fields(self, span: Span, missing: &[Ident]) {
             err: "missing constructor fields";
             help: (
                 "fields that are missing: {}",
@@ -1861,7 +1899,7 @@ impl TyChecker<'_> {
             }
         }
 
-        push missing_pat_ctor_fields(self, fields: BumpVec<FragSlice<u8>>, span: Span) {
+        push missing_pat_ctor_fields(self, fields: BumpVec<Ident>, span: Span) {
             err: "missing fields in pattern";
             help: (
                 "fields that are missing: {}",
@@ -1882,38 +1920,6 @@ impl TyChecker<'_> {
             (span, self.source) {
                 err[span]: "this path does not lead to struct definition";
             }
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Inference {
-    Strong(Ty),
-    Weak(Ty),
-    None,
-}
-
-impl Inference {
-    fn ty(self) -> Option<Ty> {
-        match self {
-            Inference::Strong(ty) | Inference::Weak(ty) => Some(ty),
-            Inference::None => None,
-        }
-    }
-
-    fn weaken(self) -> Inference {
-        match self {
-            Inference::Strong(ty) => Inference::Weak(ty),
-            other => other,
-        }
-    }
-}
-
-impl From<Option<Ty>> for Inference {
-    fn from(ty: Option<Ty>) -> Self {
-        match ty {
-            Some(ty) => Inference::Strong(ty),
-            None => Inference::None,
         }
     }
 }

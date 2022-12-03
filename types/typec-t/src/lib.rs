@@ -44,7 +44,7 @@ macro_rules! gen_water_drops {
             fn lookup_water_drop(name: &str) -> Option<FragRef<Self>> {
                 lookup_water_drop(&Self::WATER_DROPS, name)
             }
-            fn name(&self) -> FragSlice<u8> {
+            fn name(&self) -> Ident {
                 self.name
             }
             fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE> {
@@ -65,8 +65,9 @@ pub use {
     scope::{ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
         AssignTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir, IfBranchTir,
-        IfTir, LetTir, MacroCompileRequest, MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder,
-        TirBuilderCtx, TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
+        IfTir, Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest, MatchArmTir,
+        MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirKind, TirNode, TypecOutput,
+        UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,

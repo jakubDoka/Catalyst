@@ -450,14 +450,7 @@ impl Typec {
             .chain(self[generics].iter().copied())
     }
 
-    pub fn binary_op_id(
-        &self,
-        op: FragSlice<u8>,
-        lhs: Ty,
-        rhs: Ty,
-        to: &mut String,
-        interner: &Interner,
-    ) {
+    pub fn binary_op_id(&self, op: Ident, lhs: Ty, rhs: Ty, to: &mut String, interner: &Interner) {
         self.display_ty_to(lhs, to, interner);
         to.push(' ');
         to.push_str(&interner[op]);
@@ -945,7 +938,7 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
 
 #[derive(Clone, Copy, Debug)]
 pub struct MacroImpl {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
 }
 

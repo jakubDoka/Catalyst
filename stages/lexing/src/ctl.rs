@@ -8,7 +8,7 @@ pub struct TokenMacroData;
 
 #[derive(Default)]
 pub struct TokenMacroCtx<'specs> {
-    specs: Map<FragSlice<u8>, TokenMacroSpec<'specs>>,
+    specs: Map<Ident, TokenMacroSpec<'specs>>,
 }
 
 impl<'specs> TokenMacroCtx<'specs> {
@@ -16,11 +16,11 @@ impl<'specs> TokenMacroCtx<'specs> {
         Self::default()
     }
 
-    pub fn declare_macro(&mut self, name: FragSlice<u8>, spec: TokenMacroSpec<'specs>) {
+    pub fn declare_macro(&mut self, name: Ident, spec: TokenMacroSpec<'specs>) {
         self.specs.insert(name, spec);
     }
 
-    pub fn get_macro(&self, name: FragSlice<u8>) -> Option<TokenMacroSpec<'specs>> {
+    pub fn get_macro(&self, name: Ident) -> Option<TokenMacroSpec<'specs>> {
         self.specs.get(&name).copied()
     }
 

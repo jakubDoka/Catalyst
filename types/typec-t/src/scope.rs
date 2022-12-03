@@ -10,8 +10,8 @@ use crate::*;
 
 #[derive(Default)]
 pub struct Scope {
-    data: Map<FragSlice<u8>, ScopeRecord>,
-    pushed: Vec<(FragSlice<u8>, Option<ScopeRecord>)>,
+    data: Map<Ident, ScopeRecord>,
+    pushed: Vec<(Ident, Option<ScopeRecord>)>,
 }
 
 impl Scope {
@@ -19,7 +19,7 @@ impl Scope {
         Self::default()
     }
 
-    pub fn get(&self, ident: FragSlice<u8>) -> Result<ScopeItem, ScopeError> {
+    pub fn get(&self, ident: Ident) -> Result<ScopeItem, ScopeError> {
         self.data
             .get(&ident)
             .map(|option| option.scope_item().ok_or(ScopeError::Collision))
@@ -27,7 +27,7 @@ impl Scope {
             .flatten()
     }
 
-    pub fn push(&mut self, id: FragSlice<u8>, item: impl Into<ScopeItem>, span: Span) {
+    pub fn push(&mut self, id: Ident, item: impl Into<ScopeItem>, span: Span) {
         let record = ScopeRecord::Pushed {
             kind: item.into(),
             span,
@@ -49,7 +49,7 @@ impl Scope {
         }
     }
 
-    pub fn insert_builtin(&mut self, id: FragSlice<u8>, item: impl Into<ScopeItem>) {
+    pub fn insert_builtin(&mut self, id: Ident, item: impl Into<ScopeItem>) {
         self.data
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
@@ -164,14 +164,14 @@ impl ScopeRecord {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ModuleItem {
-    pub id: FragSlice<u8>,
+    pub id: Ident,
     pub ptr: ModuleItemPtr,
     pub span: Span,
     pub vis: Vis,
 }
 
 impl ModuleItem {
-    pub fn new(id: FragSlice<u8>, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
+    pub fn new(id: Ident, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
         Self {
             id,
             ptr: ptr.into(),
@@ -214,6 +214,7 @@ pub enum ScopeItem {
     SpecBase(FragRef<SpecBase>),
     VarHeaderTir(VRef<VarHeaderTir>),
     Module(VRef<Module>),
+    LoopHeaderTir(VRef<LoopHeaderTir>),
 }
 
 macro_rules! gen_scope_item {
@@ -237,7 +238,7 @@ macro_rules! gen_scope_item {
     }
 }
 
-gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase);
+gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase, VRef LoopHeaderTir);
 
 impl From<Ty> for ScopeItem {
     fn from(item: Ty) -> Self {

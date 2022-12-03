@@ -327,7 +327,7 @@ impl TyChecker<'_> {
 
     fn next_humid_item_id<I: Humid>(
         &mut self,
-        name: FragSlice<u8>,
+        name: Ident,
         attributes: &[TopLevelAttributeAst],
     ) -> FragRef<I> {
         if attributes

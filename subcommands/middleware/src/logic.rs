@@ -1114,7 +1114,7 @@ impl Task {
         params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
-        seen: &mut Map<FragSlice<u8>, FragRef<CompiledFunc>>,
+        seen: &mut Map<Ident, FragRef<CompiledFunc>>,
     ) -> (CompileRequestChild, Option<usize>) {
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),

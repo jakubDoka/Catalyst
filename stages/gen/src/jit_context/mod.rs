@@ -372,12 +372,12 @@ macro_rules! gen_macro_structs {
             #[derive(Clone, Copy)]
             pub struct $name {
                 pub layout: Layout,
-                pub name: FragSlice<u8>,
+                pub name: Ident,
                 $(pub $fn_name: FragRef<CompiledFunc>),+
             }
 
             impl $name {
-                pub fn new(layout: Layout, name: FragSlice<u8>, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
+                pub fn new(layout: Layout, name: Ident, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
                     Some(Self {
                         layout,
                         name,

@@ -56,6 +56,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             Match(r#match) => r#match.display(fmt),
             EnumCtor(ctor) => ctor.display(fmt),
             If(r#if) => r#if.display(fmt),
+            Loop(r#loop) => r#loop.display(fmt),
             Let(r#let) => r#let.display(fmt),
             Deref(prefix, target) => {
                 fmt.write_span(prefix);
@@ -83,9 +84,21 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             Match(r#match) => r#match.flat_len(fmt),
             EnumCtor(ctor) => ctor.flat_len(fmt),
             If(r#if) => r#if.flat_len(fmt),
+            Loop(r#loop) => r#loop.flat_len(fmt),
             Let(r#let) => r#let.flat_len(fmt),
             Deref(span, target) | Ref(span, .., target) => span.len() + target.flat_len(fmt),
         }
+    }
+}
+
+impl<'a> FmtAst for LoopAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#loop);
+        if let Some(label) = self.label {
+            label.display(fmt);
+        }
+        fmt.buffer.push(' ');
+        self.body.display(fmt);
     }
 }
 

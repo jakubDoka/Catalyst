@@ -71,11 +71,18 @@ pub struct TirBuilderCtx {
     pub generics: Vec<FragSlice<Spec>>,
     pub cast_checks: Vec<CastCheck>,
     pub macros: Vec<MacroCompileRequest>,
+    pub loops: PushMap<LoopHeaderTir>,
+}
+
+pub struct LoopHeaderTir {
+    pub return_type: Ty,
+    pub inference: Inference,
+    pub label: Option<Ident>,
 }
 
 #[derive(Clone, Copy)]
 pub struct MacroCompileRequest {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub ty: Ty,
     pub r#impl: FragRef<Impl>,
 }
@@ -235,6 +242,12 @@ impl<'a> TirNode<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct LoopTir<'a> {
+    pub id: VRef<LoopHeaderTir>,
+    pub body: TirNode<'a>,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum TirKind<'a> {
     Int(Option<i64>),
     Char,
@@ -251,4 +264,37 @@ pub enum TirKind<'a> {
     Field(&'a FieldTir<'a>),
     Let(&'a LetTir<'a>),
     Assign(&'a AssignTir<'a>),
+    Loop(&'a LoopTir<'a>),
+}
+
+#[derive(Clone, Copy)]
+pub enum Inference {
+    Strong(Ty),
+    Weak(Ty),
+    None,
+}
+
+impl Inference {
+    pub fn ty(self) -> Option<Ty> {
+        match self {
+            Inference::Strong(ty) | Inference::Weak(ty) => Some(ty),
+            Inference::None => None,
+        }
+    }
+
+    pub fn weaken(self) -> Inference {
+        match self {
+            Inference::Strong(ty) => Inference::Weak(ty),
+            other => other,
+        }
+    }
+}
+
+impl From<Option<Ty>> for Inference {
+    fn from(ty: Option<Ty>) -> Self {
+        match ty {
+            Some(ty) => Inference::Strong(ty),
+            None => Inference::None,
+        }
+    }
 }

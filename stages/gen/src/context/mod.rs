@@ -21,7 +21,7 @@ use typec_t::*;
 
 #[derive(Default, Clone)]
 pub struct Gen {
-    pub lookup: CMap<FragSlice<u8>, FragRef<CompiledFunc>>,
+    pub lookup: CMap<Ident, FragRef<CompiledFunc>>,
     pub funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
 }
 
@@ -84,7 +84,7 @@ impl Gen {
 #[derive(Clone)]
 pub struct CompiledFunc {
     pub func: FragRef<Func>,
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub inner: Option<Arc<CompiledFuncInner>>,
 }
 
@@ -96,7 +96,7 @@ pub struct CompiledFuncInner {
 }
 
 impl CompiledFunc {
-    pub fn new(func: FragRef<Func>, name: FragSlice<u8>) -> Self {
+    pub fn new(func: FragRef<Func>, name: Ident) -> Self {
         Self {
             func,
             name,
@@ -156,7 +156,7 @@ pub struct CompileRequestChild {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
-    pub func_imports: Map<FragSlice<u8>, (ir::FuncRef, bool)>,
+    pub func_imports: Map<Ident, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub drops: Vec<Range<usize>>,

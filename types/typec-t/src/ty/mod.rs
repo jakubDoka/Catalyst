@@ -6,7 +6,7 @@ use parsing_t::Vis;
 
 use storage::*;
 
-pub type TypecLookup = CMap<FragSlice<u8>, ComputedTypecItem>;
+pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
 pub type ImplLookup = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 
 pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
@@ -53,18 +53,14 @@ pub struct Instance {
 
 #[derive(Clone, Copy, Default)]
 pub struct Struct {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub generics: Generics,
     pub fields: FragSlice<Field>,
     pub loc: Option<Loc>,
 }
 
 impl Struct {
-    pub fn find_field(
-        s: FragRef<Self>,
-        name: FragSlice<u8>,
-        typec: &Typec,
-    ) -> Option<(usize, Field)> {
+    pub fn find_field(s: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Field)> {
         typec[typec[s].fields]
             .iter()
             .enumerate()
@@ -80,18 +76,14 @@ gen_water_drops! {
 
 #[derive(Clone, Copy, Default)]
 pub struct Enum {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub generics: Generics,
     pub variants: FragSlice<Variant>,
     pub loc: Option<Loc>,
 }
 
 impl Enum {
-    pub fn find_variant(
-        e: FragRef<Self>,
-        name: FragSlice<u8>,
-        typec: &Typec,
-    ) -> Option<(usize, Ty)> {
+    pub fn find_variant(e: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Ty)> {
         typec[typec[e].variants]
             .iter()
             .enumerate()
@@ -108,7 +100,7 @@ gen_water_drops! {
 
 #[derive(Clone, Copy)]
 pub struct Variant {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub ty: Ty,
     pub span: Option<Span>,
 }
@@ -139,7 +131,7 @@ impl fmt::Display for Mutability {
 
 #[derive(Clone, Copy, Default)]
 pub struct SpecBase {
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub generics: Generics,
     pub methods: FragSlice<SpecFunc>,
     pub loc: Option<Loc>,
@@ -281,7 +273,7 @@ impl Ty {
 
     pub fn find_component(
         self,
-        name: FragSlice<u8>,
+        name: Ident,
         typec: &mut Typec,
         interner: &mut Interner,
     ) -> Option<(usize, Ty)> {
@@ -569,7 +561,7 @@ impl Default for Ty {
 pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub span: Option<Span>,
     pub parent: FragRef<SpecBase>,
 }
@@ -586,7 +578,7 @@ pub struct Field {
     pub ty: Ty,
     pub flags: FieldFlags,
     pub span: Option<Span>,
-    pub name: FragSlice<u8>,
+    pub name: Ident,
 }
 
 bitflags! {
@@ -604,6 +596,6 @@ bitflags! {
 
 pub trait Humid: Sized {
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
-    fn name(&self) -> FragSlice<u8>;
+    fn name(&self) -> Ident;
     fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE>;
 }

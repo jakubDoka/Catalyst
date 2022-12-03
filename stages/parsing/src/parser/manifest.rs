@@ -17,7 +17,7 @@ pub struct ManifestAst<'a> {
 }
 
 impl ManifestAst<'_> {
-    pub fn find_field(&self, name: FragSlice<u8>) -> Option<ManifestFieldAst> {
+    pub fn find_field(&self, name: Ident) -> Option<ManifestFieldAst> {
         self.fields
             .iter()
             .find(|field| field.name.ident == name)

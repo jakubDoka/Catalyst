@@ -13,7 +13,7 @@ impl Generator<'_> {
         mut params: impl Iterator<Item = Ty>,
         typec: &Typec,
         interner: &mut Interner,
-    ) -> FragSlice<u8> {
+    ) -> Ident {
         use std::fmt::Write;
         let prefix = if jit { "jit-" } else { "native-" };
         interner.intern_with(|s, t| {
@@ -115,7 +115,7 @@ impl Generator<'_> {
         on_stack
     }
 
-    fn cc(&self, cc: Option<FragSlice<u8>>, system_cc: CallConv) -> CallConv {
+    fn cc(&self, cc: Option<Ident>, system_cc: CallConv) -> CallConv {
         let Some(cc) = cc else {
             return CallConv::Fast;
         };

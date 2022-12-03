@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::*;
 
+pub type Ident = FragSlice<u8>;
+
 macro_rules! gen_span_constants {
     (
         $($name:ident => $repr:literal,)*
@@ -24,7 +26,7 @@ macro_rules! gen_span_constants {
     };
 
     (@recur ($acc:expr) $name:ident => $repr:literal, $($rest:tt)*) => {
-        pub const $name: FragSlice<u8> = unsafe { FragSlice::new(FragSliceAddr::new(0, $acc as u16, $repr.len() as u16)) };
+        pub const $name: Ident = unsafe { FragSlice::new(FragSliceAddr::new(0, $acc as u16, $repr.len() as u16)) };
         gen_span_constants!(@recur ($acc + $repr.len()) $($rest)*);
     };
 
@@ -51,7 +53,7 @@ gen_span_constants! {
 /// and are assigned unique id.
 #[derive(Clone)]
 pub struct Interner {
-    map: CMap<InternerEntry, FragSlice<u8>>,
+    map: CMap<InternerEntry, Ident>,
     frag_map: FragMap<u8, MAX_FRAGMENT_SIZE>,
     temp: String,
 }
@@ -71,14 +73,11 @@ impl Interner {
         s
     }
 
-    pub fn intern_scoped(&mut self, scope: impl Display, name: FragSlice<u8>) -> FragSlice<u8> {
+    pub fn intern_scoped(&mut self, scope: impl Display, name: Ident) -> Ident {
         self.intern_with(|s, t| write!(t, "{}\\{}", scope, &s[name]))
     }
 
-    pub fn intern_with<T>(
-        &mut self,
-        mut builder: impl FnMut(&Self, &mut String) -> T,
-    ) -> FragSlice<u8> {
+    pub fn intern_with<T>(&mut self, mut builder: impl FnMut(&Self, &mut String) -> T) -> Ident {
         let mut temp = std::mem::take(&mut self.temp);
         builder(self, &mut temp);
         let res = self.intern(&temp);
@@ -87,7 +86,7 @@ impl Interner {
         res
     }
 
-    pub fn intern(&mut self, s: &str) -> FragSlice<u8> {
+    pub fn intern(&mut self, s: &str) -> Ident {
         match self.map.get(&InternerEntry::new(s)) {
             Some(v) => v.to_owned(),
             None => {
@@ -110,10 +109,10 @@ impl Default for Interner {
     }
 }
 
-impl Index<FragSlice<u8>> for Interner {
+impl Index<Ident> for Interner {
     type Output = str;
 
-    fn index(&self, ident: FragSlice<u8>) -> &str {
+    fn index(&self, ident: Ident) -> &str {
         unsafe { std::str::from_utf8_unchecked(&self.frag_map[ident]) }
     }
 }

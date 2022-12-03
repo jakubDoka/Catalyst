@@ -69,7 +69,7 @@ pub use parser::{
     expr::{
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, ConstAst,
         DotExprAst, ElifAst, EnumCtorAst, EnumCtorPatAst, ExprAst, IfAst, IfBlockAst, LetAst,
-        MatchArmAst, MatchBodyAst, MatchExprAst, PatAst, PathInstanceAst, ReturnExprAst,
+        LoopAst, MatchArmAst, MatchBodyAst, MatchExprAst, PatAst, PathInstanceAst, ReturnExprAst,
         StructCtorAst, StructCtorBodyAst, StructCtorPatAst, StructCtorPatBodyAst,
         StructCtorPatBodyMeta, StructCtorPatFieldAst, TypedPathAst, UnitExprAst,
     },

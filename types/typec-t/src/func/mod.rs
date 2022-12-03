@@ -13,7 +13,7 @@ pub struct Func {
     pub signature: Signature,
     pub flags: FuncFlags,
     pub visibility: FuncVisibility,
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub loc: Option<Loc>,
 }
 
@@ -54,7 +54,7 @@ pub enum FuncVisibility {
 
 #[derive(Clone, Copy, Default)]
 pub struct Signature {
-    pub cc: Option<FragSlice<u8>>,
+    pub cc: Option<Ident>,
     pub args: FragSlice<Ty>,
     pub ret: Ty,
 }

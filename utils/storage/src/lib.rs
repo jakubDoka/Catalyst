@@ -184,7 +184,7 @@ pub use {
     bump_alloc::*,
     clear::{map_in_place, Clear},
     frames::Frames,
-    interner::Interner,
+    interner::{Ident, Interner},
     map::{CMap, Map, Set},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,

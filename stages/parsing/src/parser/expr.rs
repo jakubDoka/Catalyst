@@ -83,6 +83,7 @@ pub enum UnitExprAst<'a> {
     Bool(Span),
     Match(MatchExprAst<'a>),
     If(IfAst<'a>),
+    Loop(LoopAst<'a>),
     Let(LetAst<'a>),
     Deref(Span, &'a UnitExprAst<'a>),
     Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
@@ -111,6 +112,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Bool => Some(Self::Bool(ctx.advance().span)),
             Match => ctx.parse().map(Self::Match),
             If => ctx.parse().map(Self::If),
+            Loop => ctx.parse().map(Self::Loop),
             Let => ctx.parse().map(Self::Let),
             Operator(_ = 0) => branch! {str ctx => {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
@@ -161,9 +163,37 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Match(r#match) => r#match.span(),
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
+            Loop(r#loop) => r#loop.span(),
             Let(r#let) => r#let.span(),
             Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LoopAst<'a> {
+    pub r#loop: Span,
+    pub label: Option<NameAst>,
+    pub body: ExprAst<'a>,
+}
+
+impl<'a> Ast<'a> for LoopAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "loop";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#loop: ctx.advance().span,
+            label: ctx
+                .expect_advance(TokenKind::Label)
+                .map(|tok| NameAst::new(ctx, tok.span)),
+            body: ctx.parse()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.r#loop.joined(self.body.span())
     }
 }
 

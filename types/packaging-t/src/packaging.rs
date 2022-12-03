@@ -97,7 +97,7 @@ pub struct Module {
 
 pub struct Dep<T: ?Sized> {
     pub name_span: Span,
-    pub name: FragSlice<u8>,
+    pub name: Ident,
     pub ptr: VRef<T>,
 }
 

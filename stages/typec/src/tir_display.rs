@@ -163,6 +163,10 @@ impl TyChecker<'_> {
                     self.display_tir(body, buffer, indent, var_count)?;
                 }
             }
+            TirKind::Loop(&LoopTir { body, id }) => {
+                write!(buffer, "loop id{} ", id.index())?;
+                self.display_tir(body, buffer, indent, var_count)?;
+            }
             TirKind::Let(&LetTir { pat, value }) => {
                 write!(buffer, "let ")?;
                 self.display_pat(pat, buffer, indent, var_count)?;

@@ -71,6 +71,7 @@ impl MirChecker<'_, '_> {
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
             TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
             TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
+            TirKind::Loop(&r#loop) => todo!(),
             TirKind::Let(&r#let) => self.r#let(r#let),
             TirKind::Assign(&assign) => self.assign(assign, span),
         }
