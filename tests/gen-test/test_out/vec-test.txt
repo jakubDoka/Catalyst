@@ -1,35 +1,3 @@
-error: expected '\n' | ';' but got 'if'
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:62:14
-   |
-62 |         loop if i == self.len => break
-   |              ^^ token located here
-   |
-   = info: grouped items -> list -> item -> impl -> list -> impl item -> function definition -> function body -> list
-
-error: expected Ident | '\' | 'return' | Int | Char | Bool | 'match' | 'if' | 'let' | Operator but got 'else'
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:63:9
-   |
-63 |         else {
-   |         ^^^^ token located here
-   |
-   = info: grouped items -> list -> item -> impl -> list -> impl item -> function definition -> function body -> list -> expr -> unit expr
-
-error: function not found
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:37:15
-   |
-37 |         *self.get(self.len - 1) = val
-   |               ^^^ this does not exist
-   |
-   = info: queried 'struct1\get'
-
-error: variable or enum not found
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:62:9
-   |
-62 |         loop if i == self.len => break
-   |         ^^^^ this does not exist
-   |
-   = info: queried 'loop'
-
 error: function not found
   --> vec-test\root.ctl:13:8
    |
@@ -99,9 +67,11 @@ block0:
 }
 push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
-    sig1 = (i64) fast
+    sig1 = (i64, i64) -> i64 fast
+    sig2 = (i64) fast
     fn0 = colocated u0:8 sig0
-    fn1 = colocated u0:6 sig1
+    fn1 = colocated u0:10 sig1
+    fn2 = colocated u0:6 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -120,18 +90,36 @@ block1:
 block3:
     v5 = iconst.i64 1
     v6 = load.i64 v0+8
-    v7 = iadd v6, v5  ; v5 = 1
-    store v7, v0+8
-    call fn1(v1)
+    v7 = isub v6, v5  ; v5 = 1
+    v8 = call fn1(v0, v7)
+    call fn2(v8)
+    v9 = load.i64 aligned v1
+    v10 = load.i64 aligned v1+8
+    v11 = load.i64 aligned v1+16
+    store aligned v9, v8
+    store aligned v10, v8+8
+    store aligned v11, v8+16
+    v12 = iconst.i64 1
+    v13 = load.i64 v0+8
+    v14 = iadd v13, v12  ; v12 = 1
+    store v14, v0+8
     return
+}
+get_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 24
+    v4 = imul v1, v3  ; v3 = 24
+    v5 = iadd v2, v4
+    return v5
 }
 grow function u0:0(i64) fast {
     sig0 = (i64) -> i64 windows_fastcall
     sig1 = (i64, i64, i64) windows_fastcall
     sig2 = (i64) windows_fastcall
-    fn0 = u0:12 sig0
-    fn1 = u0:14 sig1
-    fn2 = u0:15 sig2
+    fn0 = u0:16 sig0
+    fn1 = u0:18 sig1
+    fn2 = u0:19 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -165,14 +153,58 @@ block3(v8: i64):
     return
 }
 drop function u0:0(i64) fast {
-    sig0 = (i64) windows_fastcall
-    fn0 = u0:15 sig0
+    ss0 = explicit_slot 8
+    sig0 = (i64, i64) -> i64 fast
+    sig1 = (i64) -> i64 fast
+    sig2 = (i64) windows_fastcall
+    fn0 = colocated u0:21 sig0
+    fn1 = colocated u0:22 sig1
+    fn2 = u0:19 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
-    v2 = load.i64 v0
-    call fn0(v2)
+    jump block1(v1)  ; v1 = 0
+
+block1(v2: i64):
+    v5 -> v2
+    v3 = load.i64 v0+8
+    v4 = icmp eq v2, v3
+    brnz v4, block2
+    jump block3
+
+block3:
+    v6 = call fn0(v0, v5)
+    v7 = call fn1(v6)
+    stack_store v7, ss0
+    v8 = stack_addr.i64 ss0
+    v9 = iconst.i64 1
+    v10 = iadd.i64 v5, v9  ; v9 = 1
+    v11 -> v10
+    jump block4
+
+block4:
+    jump block1(v11)
+
+block2:
+    jump block5
+
+block5:
+    v12 = load.i64 v0
+    call fn2(v12)
     return
+}
+read function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    v1 = load.i64 v0
+    return v1
+}
+get_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 8
+    v4 = imul v1, v3  ; v3 = 8
+    v5 = iadd v2, v4
+    return v5
 }
 new function u0:0(i64 sret) fast {
 block0(v0: i64):
@@ -185,12 +217,12 @@ block0(v0: i64):
     return
 }
 push function u0:0(i64, i64) fast {
-    ss0 = explicit_slot 8
     sig0 = (i64) fast
-    fn0 = colocated u0:19 sig0
+    sig1 = (i64, i64) -> i64 fast
+    fn0 = colocated u0:28 sig0
+    fn1 = colocated u0:21 sig1
 
 block0(v0: i64, v1: i64):
-    stack_store v1, ss0
     v2 = load.i64 v0+8
     v3 = load.i64 v0+16
     v4 = icmp eq v2, v3
@@ -207,18 +239,22 @@ block1:
 block3:
     v5 = iconst.i64 1
     v6 = load.i64 v0+8
-    v7 = iadd v6, v5  ; v5 = 1
-    store v7, v0+8
-    v8 = stack_addr.i64 ss0
+    v7 = isub v6, v5  ; v5 = 1
+    v8 = call fn1(v0, v7)
+    store.i64 v1, v8
+    v9 = iconst.i64 1
+    v10 = load.i64 v0+8
+    v11 = iadd v10, v9  ; v9 = 1
+    store v11, v0+8
     return
 }
 grow function u0:0(i64) fast {
     sig0 = (i64) -> i64 windows_fastcall
     sig1 = (i64, i64, i64) windows_fastcall
     sig2 = (i64) windows_fastcall
-    fn0 = u0:12 sig0
-    fn1 = u0:14 sig1
-    fn2 = u0:15 sig2
+    fn0 = u0:16 sig0
+    fn1 = u0:18 sig1
+    fn2 = u0:19 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -262,13 +298,57 @@ block0(v0: i64):
     return
 }
 drop function u0:0(i64) fast {
-    sig0 = (i64) windows_fastcall
-    fn0 = u0:15 sig0
+    ss0 = explicit_slot 24
+    sig0 = (i64, i64) -> i64 fast
+    sig1 = (i64 sret, i64) fast
+    sig2 = (i64) fast
+    sig3 = (i64) windows_fastcall
+    fn0 = colocated u0:10 sig0
+    fn1 = colocated u0:31 sig1
+    fn2 = colocated u0:6 sig2
+    fn3 = u0:19 sig3
 
 block0(v0: i64):
     v1 = iconst.i64 0
-    v2 = load.i64 v0
-    call fn0(v2)
+    jump block1(v1)  ; v1 = 0
+
+block1(v2: i64):
+    v5 -> v2
+    v3 = load.i64 v0+8
+    v4 = icmp eq v2, v3
+    brnz v4, block2
+    jump block3
+
+block3:
+    v6 = call fn0(v0, v5)
+    v7 = stack_addr.i64 ss0
+    call fn1(v7, v6)
+    v8 = stack_addr.i64 ss0
+    call fn2(v8)
+    v9 = iconst.i64 1
+    v10 = iadd.i64 v5, v9  ; v9 = 1
+    v11 -> v10
+    jump block4
+
+block4:
+    jump block1(v11)
+
+block2:
+    jump block5
+
+block5:
+    v12 = load.i64 v0
+    call fn3(v12)
+    return
+}
+read function u0:0(i64 sret, i64) fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 aligned v1
+    v3 = load.i64 aligned v1+8
+    v4 = load.i64 aligned v1+16
+    store aligned v2, v0
+    store aligned v3, v0+8
+    store aligned v4, v0+16
     return
 }
 
