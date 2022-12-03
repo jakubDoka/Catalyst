@@ -1,8 +1,54 @@
-error: type mismatch
- --> iterative-fib\root.ctl:9:15
-  |
-9 |         break b
-  |               ^ mismatch occurred here
-  |
-  = info: expected '!' but got 'uint'
+info: generated ir:
+main function u0:0() -> i64 fast {
+    sig0 = (i64) -> i64 fast
+    fn0 = colocated u0:1 sig0
+
+block0:
+    v0 = iconst.i64 10
+    v1 = call fn0(v0)  ; v0 = 10
+    v2 = iconst.i64 55
+    v3 = isub v1, v2  ; v2 = 55
+    return v3
+}
+fib function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    v1 = iconst.i64 0
+    v2 = iconst.i64 0
+    v3 = iconst.i64 1
+    jump block1(v1, v2, v3)  ; v1 = 0, v2 = 0, v3 = 1
+
+block1(v6: i64, v14: i64, v15: i64):
+    v12 -> v6
+    v8 -> v14
+    v9 -> v15
+    v17 -> v15
+    v19 -> v15
+    v4 = iconst.i64 1
+    v5 = isub.i64 v0, v4  ; v4 = 1
+    v7 = icmp eq v6, v5
+    brnz v7, block2
+    jump block3
+
+block3:
+    v10 = iadd.i64 v8, v9
+    v18 -> v10
+    v11 = iconst.i64 1
+    v13 = iadd.i64 v12, v11  ; v11 = 1
+    v16 -> v13
+    jump block4
+
+block4:
+    jump block1(v16, v17, v18)
+
+block2:
+    jump block5(v19)
+
+block5(v20: i64):
+    return v20
+}
+
+
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 
