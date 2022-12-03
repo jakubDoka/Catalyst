@@ -69,6 +69,7 @@ fn [] move_in_drop() -> ()  { ret var0
         drop var4
         var5 = 102
         var4 = new(val5)
+        drop var4
         return var0
     }
 
