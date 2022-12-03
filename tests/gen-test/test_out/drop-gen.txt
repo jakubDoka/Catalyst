@@ -80,9 +80,11 @@ move_in_drop function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
     sig2 = (i32) -> i32 fast
+    sig3 = (i64) fast
     fn0 = colocated u0:7 sig0
     fn1 = colocated u0:9 sig1
     fn2 = colocated u0:7 sig2
+    fn3 = colocated u0:9 sig3
 
 block0:
     v0 = iconst.i32 101
@@ -93,6 +95,8 @@ block0:
     v3 = iconst.i32 102
     v4 = call fn2(v3)  ; v3 = 102
     stack_store v4, ss0
+    v5 = stack_addr.i64 ss0
+    call fn3(v5)
     return
 }
 drop_refed_variable function u0:0() fast {
@@ -179,6 +183,6 @@ block0:
 
 info: status: 0
  = info: stdout:
-         a b c d e g 
+         a b c d e f g 
  = info: stderr:
 
