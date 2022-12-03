@@ -361,18 +361,6 @@ impl<'a> FmtAst for DotExprAst<'a> {
     }
 }
 
-impl<'a> FmtAst for ConstAst<'a> {
-    fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        fmt.write_span(self.r#const);
-        write!(fmt, " ");
-        self.value.display(fmt);
-    }
-
-    fn flat_len(&self, fmt: &Fmt) -> usize {
-        self.r#const.len() + " ".len() + self.value.flat_len(fmt)
-    }
-}
-
 impl<'a> FmtAst for CallExprAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         self.callable.display(fmt);

@@ -1,10 +1,10 @@
+pub mod control_flow;
+pub mod pat;
+
 use super::*;
 
 list_meta!(BlockMeta LeftCurly NewLine RightCurly);
 pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
-pub type MatchBodyAst<'a> = ListAst<'a, MatchArmAst<'a>, BlockMeta>;
-list_meta!(StructCtorPatBodyMeta LeftCurly [Comma NewLine] RightCurly);
-pub type StructCtorPatBodyAst<'a> = ListAst<'a, StructCtorPatFieldAst<'a>, StructCtorPatBodyMeta>;
 list_meta!(CallArgsMeta LeftParen Comma RightParen);
 pub type CallArgsAst<'a> = ListAst<'a, ExprAst<'a>, CallArgsMeta>;
 pub type StructCtorBodyAst<'a> = ListAst<'a, StructCtorFieldAst<'a>, BlockMeta>;
@@ -171,33 +171,6 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct LoopAst<'a> {
-    pub r#loop: Span,
-    pub label: Option<NameAst>,
-    pub body: ExprAst<'a>,
-}
-
-impl<'a> Ast<'a> for LoopAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "loop";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#loop: ctx.advance().span,
-            label: ctx
-                .expect_advance(TokenKind::Label)
-                .map(|tok| NameAst::new(ctx, tok.span)),
-            body: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.r#loop.joined(self.body.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct LetAst<'a> {
     pub r#let: Span,
     pub pat: PatAst<'a>,
@@ -230,103 +203,6 @@ impl<'a> Ast<'a> for LetAst<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct IfAst<'a> {
-    pub r#if: Span,
-    pub cond: ExprAst<'a>,
-    pub body: IfBlockAst<'a>,
-    pub elifs: &'a [ElifAst<'a>],
-    pub r#else: Option<(Span, IfBlockAst<'a>)>,
-}
-
-impl<'a> Ast<'a> for IfAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "if";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#if: ctx.advance().span,
-            cond: ctx.parse()?,
-            body: ctx.parse()?,
-            elifs: {
-                let mut else_ifs = bumpvec![];
-                while let Some(elif) = ctx.try_advance_ignore_lines(TokenKind::Elif) {
-                    else_ifs.push(ctx.parse_args((elif.span,))?);
-                }
-                ctx.arena.alloc_iter(else_ifs)
-            },
-            r#else: ctx
-                .try_advance_ignore_lines(TokenKind::Else)
-                .map(|r#else| ctx.parse().map(|body| (r#else.span, body)))
-                .transpose()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        let mut span = self.cond.span().joined(self.body.span());
-        if let Some((_, body)) = self.r#else {
-            span = span.joined(body.span());
-        }
-        span
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ElifAst<'a> {
-    pub elif: Span,
-    pub cond: ExprAst<'a>,
-    pub body: IfBlockAst<'a>,
-}
-
-impl<'a> Ast<'a> for ElifAst<'a> {
-    type Args = (Span,);
-
-    const NAME: &'static str = "else if";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (elif,): Self::Args) -> Option<Self> {
-        Some(Self {
-            elif,
-            cond: ctx.parse()?,
-            body: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.elif.joined(self.body.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum IfBlockAst<'a> {
-    Block(BlockAst<'a>),
-    Arrow(Span, ExprAst<'a>),
-}
-
-impl<'a> Ast<'a> for IfBlockAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "if block";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        branch!(ctx => {
-            LeftCurly => ctx.parse().map(Self::Block),
-            ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
-                ctx.skip(TokenKind::NewLine);
-                ctx.parse()?
-            })),
-        })
-    }
-
-    fn span(&self) -> Span {
-        use IfBlockAst::*;
-        match *self {
-            Block(block) => block.span(),
-            Arrow(.., expr) => expr.span(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct EnumCtorAst<'a> {
     pub path: PathInstanceAst<'a>,
     pub value: Option<(Span, ExprAst<'a>)>,
@@ -355,213 +231,6 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
         self.value.map_or(self.path.span(), |(.., value)| {
             self.path.span().joined(value.span())
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct MatchExprAst<'a> {
-    pub r#match: Span,
-    pub expr: ExprAst<'a>,
-    pub body: MatchBodyAst<'a>,
-}
-
-impl<'a> Ast<'a> for MatchExprAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "match expr";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#match: ctx.advance().span,
-            expr: ctx.parse()?,
-            body: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.r#match.joined(self.body.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct MatchArmAst<'a> {
-    pub pattern: PatAst<'a>,
-    pub body: IfBlockAst<'a>,
-}
-
-impl<'a> Ast<'a> for MatchArmAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "match arm";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            pattern: ctx.parse()?,
-            body: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.pattern.span().joined(self.body.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PatAst<'a> {
-    Binding(Option<Span>, NameAst),
-    Wildcard(Span),
-    StructCtor(StructCtorPatAst<'a>),
-    EnumCtor(&'a EnumCtorPatAst<'a>),
-    Int(Span),
-}
-
-impl<'a> Ast<'a> for PatAst<'a> {
-    type Args = Option<Span>;
-
-    const NAME: &'static str = "pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
-        branch!(ctx => {
-            Mut => {
-                if let Some(_mutable) = mutable {
-                    todo!();
-                }
-
-                let mutable = ctx.advance().span;
-                ctx.parse_args(Some(mutable))
-            },
-            Ident => match ctx.current_token_str() {
-                "_" => Some(Self::Wildcard(ctx.advance().span)),
-                _ => ctx.parse().map(|b| Self::Binding(mutable, b)),
-            },
-            BackSlash => {
-                if ctx.at_next_tok(TokenKind::Ident) {
-                    ctx.parse_args_alloc(mutable).map(Self::EnumCtor)
-                } else {
-                    ctx.parse_args(mutable).map(Self::StructCtor)
-                }
-            },
-            Int => Some(Self::Int(ctx.advance().span)),
-        })
-    }
-
-    fn span(&self) -> Span {
-        use PatAst::*;
-        match *self {
-            Binding(mutable, name) => {
-                mutable.map_or(name.span(), |mutable| mutable.joined(name.span()))
-            }
-            StructCtor(ctor) => ctor.span(),
-            Wildcard(span) | Int(span) => span,
-            EnumCtor(ctor) => ctor.span(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct EnumCtorPatAst<'a> {
-    pub slash: Span,
-    pub name: NameAst,
-    pub value: Option<(Span, PatAst<'a>)>,
-}
-
-impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
-    type Args = Option<Span>;
-
-    const NAME: &'static str = "enum pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
-        Some(Self {
-            slash: ctx.advance().span,
-            name: ctx.parse()?,
-
-            value: ctx
-                .try_advance(TokenKind::Tilde)
-                .map(|tilde| ctx.parse_args(mutable).map(|value| (tilde.span, value)))
-                .transpose()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.slash.joined(
-            self.value
-                .map_or(self.name.span(), |(.., body)| body.span()),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StructCtorPatAst<'a> {
-    pub slash: Span,
-    pub fields: StructCtorPatBodyAst<'a>,
-}
-
-impl<'a> Ast<'a> for StructCtorPatAst<'a> {
-    type Args = Option<Span>;
-
-    const NAME: &'static str = "struct ctor pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
-        Some(Self {
-            slash: ctx.advance().span,
-            fields: ctx.parse_args(mutable)?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.slash.joined(self.fields.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StructCtorPatFieldAst<'a> {
-    Simple {
-        mutable: Option<Span>,
-        name: NameAst,
-    },
-    Named {
-        name: NameAst,
-        colon: Span,
-        pat: PatAst<'a>,
-    },
-    DoubleDot(Span),
-}
-
-impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
-    type Args = Option<Span>;
-
-    const NAME: &'static str = "struct ctor pattern field";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
-        Some(branch! {ctx => {
-            Mut => {
-                if let Some(_mutable) = mutable {
-                    todo!();
-                }
-
-                let mutable = ctx.advance().span;
-                ctx.parse_args(Some(mutable))?
-            },
-            Ident => {
-                let name = ctx.parse()?;
-                branch! {ctx => {
-                    Colon => Self::Named { name, colon: ctx.advance().span, pat: ctx.parse_args(mutable)? },
-                    _ => Self::Simple { name, mutable },
-                }}
-            },
-            DoubleDot => Self::DoubleDot(ctx.advance().span),
-        }})
-    }
-
-    fn span(&self) -> Span {
-        use StructCtorPatFieldAst::*;
-        match *self {
-            Simple { name, mutable } => {
-                mutable.map_or(name.span(), |mutable| mutable.joined(name.span()))
-            }
-            Named { name, pat, .. } => name.span().joined(pat.span()),
-            DoubleDot(span) => span,
-        }
     }
 }
 
@@ -724,29 +393,6 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ConstAst<'a> {
-    pub r#const: Span,
-    pub value: ExprAst<'a>,
-}
-
-impl<'a> Ast<'a> for ConstAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "comp time run";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#const: ctx.advance().span,
-            value: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.r#const.joined(self.value.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct CallExprAst<'a> {
     pub callable: UnitExprAst<'a>,
     pub args: CallArgsAst<'a>,
@@ -769,33 +415,5 @@ impl<'a> Ast<'a> for CallExprAst<'a> {
 
     fn span(&self) -> Span {
         self.callable.span().joined(self.args.span())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ReturnExprAst<'a> {
-    pub return_span: Span,
-    pub expr: Option<ExprAst<'a>>,
-}
-
-impl<'a> Ast<'a> for ReturnExprAst<'a> {
-    type Args = ();
-
-    const NAME: &'static str = "return";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            return_span: ctx.advance().span,
-            expr: if ctx.at_tok(TokenKind::NewLine) {
-                None
-            } else {
-                Some(ctx.parse()?)
-            },
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.expr
-            .map_or(self.return_span, |e| self.return_span.joined(e.span()))
     }
 }
