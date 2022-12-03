@@ -673,7 +673,7 @@ impl MirChecker<'_, '_> {
         r#loop.end
     }
 
-    fn check_loop_moves(&mut self, span: Span, loop_depth: u32) {
+    pub fn check_loop_moves(&mut self, span: Span, loop_depth: u32) {
         let mut history = self
             .mir_move_ctx
             .history

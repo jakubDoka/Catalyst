@@ -91,7 +91,7 @@ impl<T> Frames<T> {
     }
 
     pub fn from_nth(&self, index: usize) -> &[T] {
-        let start = self.indices[index];
+        let start = index.checked_sub(1).map_or(0, |index| self.indices[index]);
         &self.data[start as usize..]
     }
 
