@@ -216,7 +216,7 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let (mut key, .., Some(..)) = self.get_move_key(dest) else {
+        let (mut key, .., None) = self.get_move_key(dest) else {
             self.drop_low(dest, &mut None, span);
             return;
         };

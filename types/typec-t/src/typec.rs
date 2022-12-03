@@ -317,16 +317,22 @@ impl Typec {
     }
 
     pub fn contains_params(&self, ty: Ty) -> bool {
+        !matches!(self.contains_params_low(ty), ParamPresence::Absent)
+    }
+
+    pub fn contains_params_low(&self, ty: Ty) -> ParamPresence {
+        use ParamPresence::*;
         match ty {
             Ty::Instance(instance) => self[self[instance].args]
                 .iter()
-                .any(|&ty| self.contains_params(ty)),
-            Ty::Pointer(pointer) => {
-                self.contains_params(self[pointer].base)
-                    || matches!(self[pointer].mutability, Mutability::Param(..))
-            }
-            Ty::Param(..) => true,
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => false,
+                .map(|&ty| self.contains_params_low(ty))
+                .fold(Absent, ParamPresence::combine),
+            Ty::Pointer(pointer) => self
+                .contains_params_low(self[pointer].base)
+                .combine(self[pointer].mutability.into())
+                .put_behind_pointer(),
+            Ty::Param(..) => Present,
+            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
         }
     }
 
@@ -951,5 +957,41 @@ pub struct ModuleItems {
 impl ModuleItems {
     pub fn clear(&mut self) {
         self.items.clear();
+    }
+}
+
+pub enum ParamPresence {
+    Present,
+    Absent,
+    BehindPointer,
+}
+
+impl ParamPresence {
+    pub fn combine(self, other: ParamPresence) -> ParamPresence {
+        use ParamPresence::*;
+        match (self, other) {
+            (Present, ..) | (.., Present) => Present,
+            (BehindPointer, ..) | (.., BehindPointer) => BehindPointer,
+            (Absent, Absent) => Absent,
+        }
+    }
+
+    pub fn put_behind_pointer(self) -> ParamPresence {
+        use ParamPresence::*;
+        match self {
+            Absent => Absent,
+            Present | BehindPointer => BehindPointer,
+        }
+    }
+}
+
+impl From<Mutability> for ParamPresence {
+    fn from(m: Mutability) -> ParamPresence {
+        use {Mutability::*, ParamPresence::*};
+        match m {
+            Immutable => Absent,
+            Mutable => Present,
+            Param(..) => BehindPointer,
+        }
     }
 }

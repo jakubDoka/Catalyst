@@ -150,7 +150,6 @@ impl Generator<'_> {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
         let mut funcs = self.gen_resources.drops[drop.index()].clone();
-        dbg!(&funcs);
         let GenValue {
             computed, offset, ..
         } = self.gen_resources.values[value];
@@ -218,7 +217,6 @@ impl Generator<'_> {
         match control_flow {
             ControlFlowMir::Return(ret) => {
                 if !self.ty_layout(builder.value_ty(ret)).on_stack && let Some(ir_ret) = self.load_value(ret, builder) {
-                    dbg!(ir_ret, ret);
                     builder.ins().return_(&[ir_ret]);
                 } else {
                     builder.ins().return_(&[]);
@@ -322,7 +320,6 @@ impl Generator<'_> {
             offset,
             must_load,
         } = self.gen_resources.values[header];
-        dbg!(field);
         let header_ty = builder.value_ty(header);
         let offsets = self.ty_layout(header_ty).offsets;
         let field_offset = self.gen_layouts.offsets[offsets][field as usize];
@@ -360,7 +357,6 @@ impl Generator<'_> {
             .iter()
             .zip(&builder.body.value_args[fields])
             .for_each(|(&offset, &field)| {
-                dbg!(offset, field);
                 self.gen_resources.values[field] = GenValue {
                     offset: offset as i32 + base_value.offset,
                     ..base_value
@@ -401,6 +397,11 @@ impl Generator<'_> {
                     kind: StackSlotKind::ExplicitSlot,
                     size: layout.size,
                 });
+                self.gen_resources.values[ret] = GenValue {
+                    computed: Some(ComputedValue::StackSlot(stack_slot)),
+                    offset: 0,
+                    must_load: true,
+                };
                 builder.ins().stack_addr(ptr_ty, stack_slot, 0)
             }
         });
@@ -632,9 +633,7 @@ impl Generator<'_> {
         } else {
             match target_value {
                 ComputedValue::Value(value) => {
-                    dbg!(value, target);
                     let new_value = self.set_bit_field(source, value, offset, builder);
-                    dbg!(new_value);
                     self.gen_resources.values[target].computed =
                         Some(ComputedValue::Value(new_value));
                 }

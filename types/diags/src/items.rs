@@ -10,7 +10,7 @@ pub trait SnippetDisplay {
 
 #[derive(Default)]
 pub struct Workspace {
-    sippets: Vec<Snippet>,
+    snippets: Vec<Snippet>,
     error_count: usize,
     display: Option<Box<dyn SnippetDisplay + Send>>,
 }
@@ -21,7 +21,7 @@ impl Workspace {
     }
 
     pub fn transfer(&mut self, other: &mut Self) {
-        self.sippets.append(&mut other.sippets);
+        self.snippets.append(&mut other.snippets);
         self.error_count += mem::take(&mut other.error_count);
     }
 
@@ -35,7 +35,7 @@ impl Workspace {
         } else {
             display
         };
-        self.sippets
+        self.snippets
             .iter()
             .map(|s| display.display_snippet(packages, s))
             .flat_map(|s| [s, "\n\n".to_string()])
@@ -57,7 +57,7 @@ impl Workspace {
             .as_ref()
             .map_or(false, |t| t.annotation_type == AnnotationType::Error)
             as usize;
-        self.sippets.push(sippet);
+        self.snippets.push(sippet);
     }
 
     pub fn error_count(&self) -> ErrorCount {

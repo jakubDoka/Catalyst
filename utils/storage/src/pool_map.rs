@@ -150,8 +150,21 @@ impl<K, V> PoolMap<K, V> {
         })
     }
 
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (VRef<K>, &mut V)> {
+        self.data.iter_mut().enumerate().filter_map(|(i, elem)| {
+            self.free_lookup
+                .contains(i)
+                .not()
+                .then(|| unsafe { (VRef::new(i), elem.assume_init_mut()) })
+        })
+    }
+
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.iter().map(|(_, v)| v)
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.iter_mut().map(|(_, v)| v)
     }
 
     pub fn clear(&mut self) {

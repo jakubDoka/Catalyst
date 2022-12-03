@@ -64,6 +64,7 @@ impl Middleware {
         main_task.typec.init(&mut main_task.interner);
 
         if main_task.workspace.has_errors() {
+            self.workspace.transfer(&mut main_task.workspace);
             return None;
         }
 
@@ -632,7 +633,7 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 let name = &task.interner[task.typec.funcs[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-                print!("{} {}", name, self.context.func.display());
+                // print!("{} {}", name, self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
@@ -810,7 +811,8 @@ impl Worker {
             shared.resources,
         )
         .funcs(&mut type_checked_funcs)
-        .dbg_funcs();
+        // .dbg_funcs()
+        ;
 
         self.state
             .mir_ctx
@@ -880,19 +882,25 @@ impl Worker {
         checks: &mut Vec<CastCheck>,
     ) {
         for CastCheck { loc, from, to } in checks.drain(..) {
-            if typec.contains_params(from) || typec.contains_params(to) {
-                workspace.push(snippet! {
-                    err: "cast between generic types is not allowed";
-                    info: (
-                        "cast from {} to {}, which contain generic parameters that depend on function instance",
-                        typec.display_ty(from, interner),
-                        typec.display_ty(to, interner),
-                    );
-                    (loc, source) {
-                        err[loc]: "happened here";
-                    }
-                });
-                continue;
+            let from_param_presence = typec.contains_params_low(from);
+            let to_param_presence = typec.contains_params_low(to);
+            match from_param_presence.combine(to_param_presence) {
+                ParamPresence::Present => {
+                    workspace.push(snippet! {
+                        err: "cast between generic types is not allowed";
+                        info: (
+                            "cast from {} to {}, which contain generic parameters that depend on function instance",
+                            typec.display_ty(from, interner),
+                            typec.display_ty(to, interner),
+                        );
+                        (loc, source) {
+                            err[loc]: "happened here";
+                        }
+                    });
+                    continue;
+                }
+                ParamPresence::BehindPointer => continue,
+                ParamPresence::Absent => (),
             }
 
             let from_layout = layouts.ty_layout(from, &[], typec, interner);
@@ -984,7 +992,6 @@ impl Task {
             );
 
             let mut drops = bumpvec![cap body.drops.len()];
-            dbg!(&body.drops);
             for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();

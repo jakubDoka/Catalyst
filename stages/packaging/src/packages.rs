@@ -5,7 +5,6 @@ use std::{
     env::{self, VarError},
     ffi::OsStr,
     io, iter, mem,
-    ops::Not,
     path::*,
     process::Command,
     time::SystemTime,
@@ -76,7 +75,6 @@ impl PackageLoader<'_, '_> {
         let root_path = self.resolve_package_path(root_path, None)?;
         let root_package = self.load_packages(root_path, ctx)?;
 
-        let mut sweep_set = bumpvec![false; self.resources.sources.size_hint()];
         let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
         for package in self.resources.packages.values() {
@@ -89,7 +87,7 @@ impl PackageLoader<'_, '_> {
             .ordering(iter::once(root_package.index()), &mut buffer)
             .map_err(|cycle| self.package_cycle(cycle))
             .ok();
-        buffer.drain(..).for_each(|i| sweep_set[i] = true);
+        buffer.clear();
 
         let &Package {
             ref root_module,
@@ -106,7 +104,6 @@ impl PackageLoader<'_, '_> {
             root_module_span,
             ctx,
         )?;
-        sweep_set.resize(self.resources.sources.size_hint(), false);
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -123,10 +120,6 @@ impl PackageLoader<'_, '_> {
         self.resources
             .module_order
             .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i) }));
-        for &module in &self.resources.module_order {
-            let Module { source, .. } = self.resources.modules[module];
-            sweep_set[source.index()] = true;
-        }
         self.resources.mark_changed();
 
         self.resources
@@ -135,12 +128,15 @@ impl PackageLoader<'_, '_> {
             .enumerate()
             .for_each(|(i, &id)| self.resources.modules[id].ordering = i);
 
-        for i in sweep_set
-            .drain(..)
-            .enumerate()
-            .filter_map(|(i, b)| b.not().then_some(i))
-        {
-            self.resources.sources.remove(unsafe { VRef::new(i) });
+        let to_remove = self
+            .resources
+            .sources
+            .iter()
+            .filter_map(|(key, module)| module.dead.then_some(key))
+            .collect::<BumpVec<_>>();
+
+        for key in to_remove {
+            self.resources.sources.remove(key);
         }
 
         Some(())
@@ -465,6 +461,7 @@ impl PackageLoader<'_, '_> {
             && self.resources.sources[source].last_modified == last_modified
         {
             self.resources.sources[source].changed = false;
+            self.resources.sources[source].dead = false;
             return Some(source);
         }
 
@@ -482,6 +479,7 @@ impl PackageLoader<'_, '_> {
             line_mapping: LineMapping::new(&content),
             content,
             changed: true,
+            dead: false,
         };
 
         Some(match ctx.sources.entry(path) {

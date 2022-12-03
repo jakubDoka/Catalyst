@@ -31,7 +31,7 @@ impl Resources {
     }
 
     pub fn clear(&mut self) {
-        // self.sources.clear(); // to avoid io
+        self.sources.values_mut().for_each(|s| s.dead = true); // to avoid io
         self.packages.clear();
         self.modules.clear();
         self.package_deps.clear();
@@ -67,6 +67,7 @@ pub struct Source {
     pub content: String,
     pub line_mapping: LineMapping,
     pub changed: bool,
+    pub dead: bool,
 }
 
 impl Source {

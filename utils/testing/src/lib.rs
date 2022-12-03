@@ -259,6 +259,7 @@ pub mod items {
                     line_mapping: LineMapping::new(&c),
                     content: c.to_string(),
                     changed: true,
+                    dead: false,
                 });
 
                 let (res, c) = formatter(fmt, c, source);

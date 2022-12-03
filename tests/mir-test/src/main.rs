@@ -475,5 +475,25 @@ fn main() {
                 6u32
             }
         }
+
+        simple "vec-test" {
+            use {
+                "water/vec";
+            };
+
+            #[entry];
+            fn main() -> uint {
+                let mut v = Vec::[uint]::new();
+                v.push(0);
+                v.push(1);
+                v.push(2);
+
+                let mut vv = Vec::[Vec[uint]]::new();
+                vv.push(v);
+                vv.get_mut(0).push(3);
+
+                0
+            }
+        }
     }
 }
