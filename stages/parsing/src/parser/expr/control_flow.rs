@@ -47,7 +47,7 @@ impl<'a> Ast<'a> for BreakAst<'a> {
         Some(Self {
             r#break: ctx.advance().span,
             label: ctx
-                .expect_advance(TokenKind::Label)
+                .optional_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
             value: ctx
                 .at([TokenKind::NewLine, TokenKind::Else])

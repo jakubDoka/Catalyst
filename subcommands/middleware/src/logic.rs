@@ -106,6 +106,15 @@ impl Middleware {
                 .collect::<Vec<_>>();
 
             let mut tasks = self.expand(&mut receiver, &mut senders, &resources);
+
+            for task in tasks.iter_mut() {
+                self.workspace.transfer(&mut task.workspace);
+            }
+
+            if self.workspace.has_errors() {
+                return None;
+            }
+
             let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
             for (mut task, (recv, ..)) in tasks.into_iter().zip(senders.iter_mut()) {
                 task.for_generation = true;
@@ -158,12 +167,15 @@ impl Middleware {
 
             self.workspace = main_task.workspace;
             ir = main_task.ir_dump;
-            object.emit().expect("This is so sad...")
+            Some(object.emit().expect("This is so sad..."))
         });
 
         self.resources = resources;
 
-        Some(MiddlewareOutput { binary, ir })
+        Some(MiddlewareOutput {
+            binary: binary?,
+            ir,
+        })
     }
 
     fn generate_entry_point(
@@ -450,7 +462,7 @@ impl Worker {
             self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
             self.state.gen_layouts.ptr_ty = shared.isa.pointer_ty;
             let mut compile_task = loop {
-                let mut task = self.tasks.recv().expect("This is f...");
+                let Ok(mut task) = self.tasks.recv() else { return; };
                 if task.for_generation {
                     break task;
                 }
@@ -633,7 +645,7 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 let name = &task.interner[task.typec.funcs[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-                // print!("{} {}", name, self.context.func.display());
+                print!("{} {}", name, self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen

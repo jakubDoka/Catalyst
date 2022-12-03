@@ -130,7 +130,7 @@ impl MirChecker<'_, '_> {
         if let Some(err) = err {
             match err {
                 IntegrityError::InvalidMove(owner) => self.invalid_move(owner, span),
-                IntegrityError::Moved(r#move) => self.double_move(r#move, span),
+                IntegrityError::Moved(r#move) => self.double_move(r#move.span, span),
                 IntegrityError::PartiallyMoved(moves) => {
                     self.handle_partial_move("move out of", moves, span)
                 }
@@ -690,14 +690,6 @@ impl MirChecker<'_, '_> {
     }
 
     gen_error_fns! {
-        push double_move(self, moved: Move, span: Span) {
-            err: "cannot move out of value twice";
-            (moved.span.joined(span), self.source) {
-                info[moved.span]: "first move here";
-                err[span]: "double move occurred here";
-            }
-        }
-
         push loop_double_move(self, moved: Move, span: Span) {
             err: "cannot move out of the value, it could have been moved out in a previous iteration of the loop";
             (moved.span.joined(span), self.source) {
@@ -865,21 +857,21 @@ impl MovePathSegment {
     const START: MovePathSegment = MovePathSegment(u32::MIN);
     const END: MovePathSegment = MovePathSegment(u32::MAX);
 
-    fn variant(index: u32) -> Self {
-        Self(index | Self::VARIANT_MASK)
-    }
+    // fn variant(index: u32) -> Self {
+    //     Self(index | Self::VARIANT_MASK)
+    // }
 
     fn field(index: u32) -> Self {
         Self(index)
     }
 
-    fn as_field(self) -> Result<u32, u32> {
-        if self.0 & Self::VARIANT_MASK == 0 {
-            Ok(self.0)
-        } else {
-            Err(self.0 & !Self::VARIANT_MASK)
-        }
-    }
+    // fn as_field(self) -> Result<u32, u32> {
+    //     if self.0 & Self::VARIANT_MASK == 0 {
+    //         Ok(self.0)
+    //     } else {
+    //         Err(self.0 & !Self::VARIANT_MASK)
+    //     }
+    // }
 
     fn as_index(self) -> usize {
         (self.0 & !Self::VARIANT_MASK) as usize

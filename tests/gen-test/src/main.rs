@@ -53,6 +53,7 @@ impl TestState {
         let args = if compiler.is_like_msvc() {
             vec![
                 "ucrt.lib".into(),
+                "vcruntime.lib".into(),
                 format!("-link /ENTRY:{} /SUBSYSTEM:CONSOLE", gen::ENTRY_POINT_NAME,),
             ]
         } else if compiler.is_like_clang() {
@@ -302,6 +303,24 @@ fn main() {
             };
         }
 
+        simple "iterative-fib" {
+            #[entry];
+            fn main -> uint => fib(10) - 55;
+
+            fn fib(x: uint) -> uint {
+                let mut i = 0;
+                let mut a = 0;
+                let mut b = 1;
+                loop if i == x - 1 => break b;
+                else {
+                    let c = a + b;
+                    a = b;
+                    b = c;
+                    i = i + 1;
+                }
+            }
+        }
+
         simple "enum" {
             enum [T] Option {
                 Some: T;
@@ -521,9 +540,9 @@ fn main() {
 
                 let mut vv = Vec::[Vec[uint]]::new();
                 vv.push(v);
-                vv.get_mut(0).push(3);
+                vv.get_mut_ptr(0).push(0);
 
-                0
+                *vv.get_ptr(0).get_ptr(3)
             }
         }
     }

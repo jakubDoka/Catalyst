@@ -40,9 +40,11 @@ impl Generator<'_> {
                 must_load: true,
             };
         }
-        self.gen_resources.block_stack.push((root, entry_block));
-        while let Some((block, ir_block)) = self.gen_resources.block_stack.pop() {
-            self.block(block, ir_block, builder);
+        self.gen_resources
+            .block_stack
+            .push((root, true, entry_block));
+        while let Some((block, seal, ir_block)) = self.gen_resources.block_stack.pop() {
+            self.block(block, ir_block, seal, builder);
         }
 
         builder.finalize();
@@ -52,6 +54,7 @@ impl Generator<'_> {
         &mut self,
         block: VRef<BlockMir>,
         ir_block: ir::Block,
+        seal: bool,
         builder: &mut GenBuilder,
     ) -> ir::Block {
         let BlockMir {
@@ -80,7 +83,9 @@ impl Generator<'_> {
 
         self.control_flow(control_flow, builder);
 
-        builder.seal_block(ir_block);
+        if seal {
+            builder.seal_block(ir_block);
+        }
 
         ir_block
     }
@@ -226,14 +231,11 @@ impl Generator<'_> {
                 builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
             }
             ControlFlowMir::Split(cond, a, b) => {
-                let a = self.instantiate_block(a, builder);
-                let b = self.instantiate_block(b, builder);
                 let cond = self.load_value(cond, builder).unwrap();
-                builder.ins().brnz(cond, a, &[]);
-                builder.ins().jump(b, &[]);
+                self.instantiate_block(a, builder, |b, _, builder| builder.ins().brnz(cond, b, &[]));
+                self.instantiate_block(b, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
             ControlFlowMir::Goto(b, val) => {
-                let b = self.instantiate_block(b, builder);
                 let val = (!self.gen_resources.values[val].must_load
                     || !self.ty_layout(builder.value_ty(val)).on_stack)
                     .then_some(val)
@@ -242,9 +244,10 @@ impl Generator<'_> {
                         self.gen_resources.values[val] = default();
                         value
                     });
-                builder
+                self.instantiate_block(b, builder, |b, _, builder|     builder
                     .ins()
-                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default());
+                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default())
+                );
             }
         }
     }
@@ -480,19 +483,40 @@ impl Generator<'_> {
         self.save_value(target, value, 0, false, builder);
     }
 
-    fn instantiate_block(&mut self, block: VRef<BlockMir>, builder: &mut GenBuilder) -> ir::Block {
+    fn instantiate_block<W>(
+        &mut self,
+        block: VRef<BlockMir>,
+        builder: &mut GenBuilder,
+        access: impl FnOnce(ir::Block, &mut Self, &mut GenBuilder) -> W,
+    ) {
         let gen_block = self.gen_resources.blocks[block].get_or_insert_with(|| GenBlock {
             id: builder.create_block(),
-            visit_count: builder.body.blocks[block].ref_count,
+            forward_visit_count: builder.body.blocks[block].ref_count
+                - builder.body.blocks[block].cycles,
+            backward_visit_count: builder.body.blocks[block].cycles,
         });
 
-        if gen_block.visit_count != 1 {
-            gen_block.visit_count -= 1;
+        if gen_block.forward_visit_count == 0 {
+            if gen_block.backward_visit_count != 1 {
+                gen_block.backward_visit_count -= 1;
+            } else {
+                let id = gen_block.id;
+                access(id, self, builder);
+                builder.seal_block(id);
+                return;
+            }
         } else {
-            self.gen_resources.block_stack.push((block, gen_block.id));
+            if gen_block.forward_visit_count == 1 {
+                self.gen_resources.block_stack.push((
+                    block,
+                    gen_block.backward_visit_count == 0,
+                    gen_block.id,
+                ));
+            }
+            gen_block.forward_visit_count -= 1;
         }
 
-        gen_block.id
+        access(gen_block.id, self, builder);
     }
 
     fn load_value(

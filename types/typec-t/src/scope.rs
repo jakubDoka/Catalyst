@@ -206,7 +206,7 @@ impl From<FragRef<SpecBase>> for ModuleItemPtr {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeItem {
     Func(FragRef<Func>),
     SpecFunc(FragRef<SpecFunc>),

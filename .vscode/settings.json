@@ -80,6 +80,7 @@
         "Uninit",
         "unproject",
         "ushr",
+        "vcruntime",
         "wldap"
     ],
     "rust-analyzer.procMacro.attributes.enable": true,

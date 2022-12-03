@@ -119,7 +119,8 @@ pub struct BlockMir {
     pub args: VRefSlice<ValueMir>,
     pub insts: VSlice<InstMir>,
     pub control_flow: ControlFlowMir,
-    pub ref_count: u32,
+    pub ref_count: u16,
+    pub cycles: u16,
 }
 
 #[derive(Clone, Copy)]

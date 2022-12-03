@@ -273,7 +273,10 @@ impl TyChecker<'_> {
             FuncBodyAst::Block(body) => {
                 self.block(body, Inference::Weak(signature.ret), &mut builder)
             }
-            FuncBodyAst::Extern(..) => return Some(None),
+            FuncBodyAst::Extern(..) => {
+                self.scope.end_frame(frame);
+                return Some(None);
+            }
         }?;
 
         self.scope.end_frame(frame);
@@ -1446,7 +1449,10 @@ impl TyChecker<'_> {
                     builder,
                 );
             }
-            item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
+            item => {
+                dbg!(&self.interner[start.ident], item);
+                self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?
+            }
         };
 
         let (&func_or_type, segments) = segments
@@ -1669,7 +1675,7 @@ impl TyChecker<'_> {
         got: Ty,
         display: impl Fn(&mut Self) -> A,
     ) -> Option<()> {
-        if Ty::compatible(expected, got) {
+        if Ty::compatible(expected, got) || Ty::compatible(got, expected) {
             return Some(());
         }
 

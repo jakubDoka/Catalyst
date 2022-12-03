@@ -187,7 +187,7 @@ impl Typec {
             write!(to, "{}\\", loc.module.index()).unwrap();
         }
         if let Some(owner) = owner {
-            self.display_ty_to(owner, to, interner);
+            self.display_ty_to(owner.base(self), to, interner);
             write!(to, "\\").unwrap();
         }
         to.push_str(&interner[name]);

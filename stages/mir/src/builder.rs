@@ -71,7 +71,7 @@ impl MirChecker<'_, '_> {
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
             TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
             TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
-            TirKind::Loop(&r#loop) => pass!(dest => self.r#loop(r#loop, dest, ty, span, r#move)),
+            TirKind::Loop(&r#loop) => pass!(dest => self.r#loop(r#loop, dest, span, r#move)),
             TirKind::Continue(loop_id) => self.r#continue(loop_id, span),
             TirKind::Break(&r#break) => self.r#break(r#break, span),
             TirKind::Let(&r#let) => self.r#let(r#let),
@@ -83,7 +83,6 @@ impl MirChecker<'_, '_> {
         &mut self,
         r#loop: LoopTir,
         dest: VRef<ValueMir>,
-        ty: Ty,
         span: Span,
         r#move: bool,
     ) -> NodeRes {
@@ -95,7 +94,10 @@ impl MirChecker<'_, '_> {
 
         let terminated = self.node(r#loop.body, None, r#move).is_none();
 
-        self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
+        if !terminated {
+            self.mark_cycle(start);
+            self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
+        }
 
         if let Some(end) = self.end_loop(span, terminated) {
             self.select_block(end);
@@ -109,6 +111,7 @@ impl MirChecker<'_, '_> {
     fn r#continue(&mut self, loop_id: VRef<LoopHeaderTir>, span: Span) -> NodeRes {
         let LoopMir { start, depth, .. } = self.mir_ctx.loops[loop_id.index()];
         self.check_loop_moves(span, depth);
+        self.mark_cycle(start);
         self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
         None
     }
@@ -117,15 +120,26 @@ impl MirChecker<'_, '_> {
         let LoopMir {
             ref mut end,
             dest,
-            depth,
-            frame: MirVarFrame { to_drop, .. },
+            frame:
+                MirVarFrame {
+                    to_drop: drop_frame,
+                    ..
+                },
             ..
         } = self.mir_ctx.loops[loop_id.index()];
-        let &mut end = end.get_or_insert_with(|| self.mir_ctx.create_block());
+        let &mut end =
+            end.get_or_insert_with(|| self.mir_ctx.func.blocks.push(BlockMir::default()));
         let value = value
             .map(|value| self.node(value, Some(dest), false))
             .transpose()?
             .unwrap_or(ValueMir::UNIT);
+
+        let to_drop = mem::take(&mut self.mir_ctx.to_drop);
+        for &value in to_drop.iter().skip(drop_frame) {
+            self.drop(value, span);
+        }
+        self.mir_ctx.to_drop = to_drop;
+
         self.close_block(span, ControlFlowMir::Goto(end, value));
         None
     }
@@ -746,6 +760,10 @@ impl MirChecker<'_, '_> {
         self.mir_ctx.vars.push(VarMir { value });
     }
 
+    pub fn mark_cycle(&mut self, value: VRef<BlockMir>) {
+        self.mir_ctx.func.blocks[value].cycles += 1;
+    }
+
     pub fn close_block(&mut self, span: Span, control_flow: ControlFlowMir) -> OptVRef<BlockMir> {
         let current_block = self.current_block?;
 
@@ -773,47 +791,6 @@ impl MirChecker<'_, '_> {
     pub fn select_block(&mut self, block: VRef<BlockMir>) -> bool {
         mem::replace(&mut self.current_block, Some(block)).is_some()
     }
-
-    // fn partial_double_move(
-    //     &mut self,
-    //     loc: Span,
-    //     children: VSlice<MoveGraph>,
-    //
-    // ) -> Option<!> {
-    //     let mut moved = bumpvec![];
-    //     let mut frontier = children.keys().collect::<BumpVec<_>>();
-    //     while let Some(value) = frontier.pop() {
-    //         match self.mir_ctx.moves.graphs[value] {
-    //             MoveGraph::Gone(span) => moved.push(span),
-    //             MoveGraph::PresentSplit(..) | MoveGraph::Present => (),
-    //             MoveGraph::GoneSplit(children) | MoveGraph::Partial(children) => {
-    //                 frontier.extend(children.keys())
-    //             }
-    //         }
-    //     }
-
-    //     self.workspace.push(Snippet {
-    //         title: annotation!(err: "moving partially moved value"),
-    //         footer: vec![],
-    //         slices: vec![Some(Slice {
-    //             span: moved
-    //                 .iter()
-    //                 .copied()
-    //                 .reduce(|a, b| a.joined(b))
-    //                 .map_or(loc, |fin| loc.joined(fin)),
-    //             origin: self.source,
-    //             annotations: moved
-    //                 .into_iter()
-    //                 .map(|span| source_annotation!(info[span]: "value partially moved here"))
-    //                 .chain(iter::once(source_annotation!(err[loc]: "occurred here")))
-    //                 .collect(),
-    //             fold: true,
-    //         })],
-    //         origin: default(),
-    //     });
-
-    //     None
-    // }
 
     gen_error_fns! {
         push non_exhaustive(self, err: Vec<Vec<Range>>, ty: Ty, span: Span) {

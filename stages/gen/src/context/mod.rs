@@ -157,7 +157,7 @@ pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
     pub func_imports: Map<Ident, (ir::FuncRef, bool)>,
-    pub block_stack: Vec<(VRef<BlockMir>, ir::Block)>,
+    pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub drops: Vec<Range<usize>>,
 }
@@ -214,7 +214,8 @@ pub enum GenFuncConstant {
 #[derive(Clone, Copy)]
 pub struct GenBlock {
     pub id: ir::Block,
-    pub visit_count: u32,
+    pub forward_visit_count: u16,
+    pub backward_visit_count: u16,
 }
 
 //////////////////////////////////
