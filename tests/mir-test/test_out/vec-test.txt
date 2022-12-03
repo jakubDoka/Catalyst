@@ -1,35 +1,3 @@
-error: expected '\n' | ';' but got 'if'
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:62:14
-   |
-62 |         loop if i == self.len => break
-   |              ^^ token located here
-   |
-   = info: grouped items -> list -> item -> impl -> list -> impl item -> function definition -> function body -> list
-
-error: expected Ident | '\' | 'return' | Int | Char | Bool | 'match' | 'if' | 'let' | Operator but got 'else'
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:63:9
-   |
-63 |         else {
-   |         ^^^^ token located here
-   |
-   = info: grouped items -> list -> item -> impl -> list -> impl item -> function definition -> function body -> list -> expr -> unit expr
-
-error: function not found
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:37:15
-   |
-37 |         *self.get(self.len - 1) = val
-   |               ^^^ this does not exist
-   |
-   = info: queried 'struct1\get'
-
-error: variable or enum not found
-  --> vec-test\deps\github.com\jakubDoka\water\main\root\vec.ctl:62:9
-   |
-62 |         loop if i == self.len => break
-   |         ^^^^ this does not exist
-   |
-   = info: queried 'loop'
-
 error: function not found
   --> vec-test\root.ctl:13:8
    |
@@ -109,14 +77,23 @@ fn [] push(var0: ^mut 0\Vec[param0], var1: param0) -> ()  { ret var0
 
     block3(var1: !) {
         access var2
-        var10 = *var2
-        var9 = var10.1
         access var2
-        var12 = *var2
-        var11 = var12.1
-        var13 = 1
-        var9 = uint + uint(val11, val13)
-        drop var3
+        var13 = *var2
+        var12 = var13.1
+        var14 = 1
+        var11 = uint - uint(val12, val14)
+        var10 = get_ptr[param0](val2, val11)
+        var9 = *var10
+        drop var9
+        var9 = access var3
+        access var2
+        var16 = *var2
+        var15 = var16.1
+        access var2
+        var18 = *var2
+        var17 = var18.1
+        var19 = 1
+        var15 = uint + uint(val17, val19)
         return var0
     }
 
@@ -215,12 +192,46 @@ fn [] drop(var0: ^mut 0\Vec[param0]) -> ()  { ret var0
     block0(var2: ^mut 0\Vec[param0]) {
         var3 = 0
         var4 = var3
+        goto block1 with var0
+    }
+
+    block1() {
+        access var4
         access var2
         var7 = *var2
-        var6 = var7.0
-        var5 = cast[^mut param0, ^()](val6)
-        var0 = free(val5)
+        var6 = var7.1
+        var5 = uint == uint(val4, val6)
+        split var5 block2 block3
+    }
+
+    block2() {
+        goto block4 with var0
+    }
+
+    block3() {
+        access var2
+        access var4
+        var9 = get_ptr[param0](val2, val4)
+        var8 = read[param0](val9)
+        drop var8
+        access var4
+        access var4
+        var10 = 1
+        var4 = uint + uint(val4, val10)
+        goto block5 with var0
+    }
+
+    block4(var1: !) {
+        access var2
+        var13 = *var2
+        var12 = var13.0
+        var11 = cast[^mut param0, ^()](val12)
+        var0 = free(val11)
         return var0
+    }
+
+    block5(var0: ()) {
+        goto block1 with var0
     }
 
 }
