@@ -168,7 +168,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
             Some(self.advance())
         } else {
             let terminals = [expected.into()];
-            self.expect_error(&terminals);
+            self.expect_error(terminals);
             None
         }
     }
@@ -193,7 +193,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
 
     pub fn recover(
         &mut self,
-        terminals: impl IntoIterator<Item = impl AsRef<TokenPat>> + Clone,
+        terminals: impl IntoIterator<Item = impl Into<TokenPat>> + Clone,
     ) -> Option<Token> {
         let mut pair_stack: BumpVec<(Span, TokenKind)> = bumpvec![];
         loop {
@@ -229,10 +229,10 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
 
     pub fn matches(
         &self,
-        terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>,
+        terminals: impl IntoIterator<Item = impl Into<TokenPat>>,
         token: Token,
     ) -> bool {
-        terminals.into_iter().any(|pat| match *pat.as_ref() {
+        terminals.into_iter().any(|pat| match pat.into() {
             TokenPat::Kind(kind) => kind == token.kind,
             TokenPat::Str(lit) => lit == self.inner_span_str(token.span),
         })
@@ -246,11 +246,11 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         self.state.next.kind == tok
     }
 
-    pub fn at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>) -> bool {
+    pub fn at(&self, terminals: impl IntoIterator<Item = impl Into<TokenPat>>) -> bool {
         self.matches(terminals, self.state.current)
     }
 
-    pub fn next_at(&self, terminals: impl IntoIterator<Item = impl AsRef<TokenPat>>) -> bool {
+    pub fn next_at(&self, terminals: impl IntoIterator<Item = impl Into<TokenPat>>) -> bool {
         self.matches(terminals, self.state.next)
     }
 
@@ -268,10 +268,10 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     }
 
     gen_error_fns! {
-        push expect_error(self, kinds: impl IntoIterator<Item = impl AsRef<TokenPat>> + Clone) {
+        push expect_error(self, kinds: impl IntoIterator<Item = impl Into<TokenPat>> + Clone) {
             err: (
                 "expected {} but got {}",
-                kinds.into_iter().map(|k| k.as_ref().as_string()).collect::<BumpVec<_>>().join(" | "),
+                kinds.into_iter().map(|k| k.into().as_string()).collect::<BumpVec<_>>().join(" | "),
                 self.state.current.kind.as_str(),
             );
             info: ("{}", self.display_parse_stack());

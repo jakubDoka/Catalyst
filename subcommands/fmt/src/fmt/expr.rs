@@ -57,6 +57,8 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.display(fmt),
             If(r#if) => r#if.display(fmt),
             Loop(r#loop) => r#loop.display(fmt),
+            Break(r#break) => r#break.display(fmt),
+            Continue(r#continue) => r#continue.display(fmt),
             Let(r#let) => r#let.display(fmt),
             Deref(prefix, target) => {
                 fmt.write_span(prefix);
@@ -85,8 +87,34 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.flat_len(fmt),
             If(r#if) => r#if.flat_len(fmt),
             Loop(r#loop) => r#loop.flat_len(fmt),
+            Break(r#break) => r#break.flat_len(fmt),
+            Continue(r#continue) => r#continue.flat_len(fmt),
             Let(r#let) => r#let.flat_len(fmt),
             Deref(span, target) | Ref(span, .., target) => span.len() + target.flat_len(fmt),
+        }
+    }
+}
+
+impl<'a> FmtAst for BreakAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#break);
+        if let Some(label) = self.label {
+            fmt.buffer.push(' ');
+            label.display(fmt);
+        }
+        if let Some(expr) = self.value {
+            fmt.buffer.push(' ');
+            expr.display(fmt);
+        }
+    }
+}
+
+impl FmtAst for ContinueAst {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        fmt.write_span(self.r#continue);
+        if let Some(label) = self.label {
+            fmt.buffer.push(' ');
+            label.display(fmt);
         }
     }
 }

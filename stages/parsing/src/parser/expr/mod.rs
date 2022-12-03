@@ -84,6 +84,8 @@ pub enum UnitExprAst<'a> {
     Match(MatchExprAst<'a>),
     If(IfAst<'a>),
     Loop(LoopAst<'a>),
+    Break(BreakAst<'a>),
+    Continue(ContinueAst),
     Let(LetAst<'a>),
     Deref(Span, &'a UnitExprAst<'a>),
     Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
@@ -113,6 +115,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Match => ctx.parse().map(Self::Match),
             If => ctx.parse().map(Self::If),
             Loop => ctx.parse().map(Self::Loop),
+            Break => ctx.parse().map(Self::Break),
+            Continue => ctx.parse().map(Self::Continue),
             Let => ctx.parse().map(Self::Let),
             Operator(_ = 0) => branch! {str ctx => {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
@@ -164,6 +168,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
             Loop(r#loop) => r#loop.span(),
+            Break(r#break) => r#break.span(),
+            Continue(r#continue) => r#continue.span(),
             Let(r#let) => r#let.span(),
             Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
         }

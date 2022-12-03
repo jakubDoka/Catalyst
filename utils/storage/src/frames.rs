@@ -90,6 +90,11 @@ impl<T> Frames<T> {
         self.indices.pop();
     }
 
+    pub fn from_nth(&self, index: usize) -> &[T] {
+        let start = self.indices[index];
+        &self.data[start as usize..]
+    }
+
     /// Splits the top frame into two such that `top_frame_length`
     /// matches the `self.top().len()` afterwards.
     ///

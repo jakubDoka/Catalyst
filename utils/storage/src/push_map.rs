@@ -74,8 +74,11 @@ impl<T> PushMap<T> {
         (0..self.data.len()).map(|i| unsafe { VRef::new(i) })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> {
-        self.keys().zip(self.values())
+    pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> + DoubleEndedIterator {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
     }
 
     pub fn extend(&mut self, other: impl IntoIterator<Item = T>) -> VSlice<T> {

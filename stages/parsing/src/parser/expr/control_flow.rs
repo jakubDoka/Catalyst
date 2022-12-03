@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use super::*;
 
 pub type MatchBodyAst<'a> = ListAst<'a, MatchArmAst<'a>, BlockMeta>;
@@ -18,7 +20,7 @@ impl<'a> Ast<'a> for LoopAst<'a> {
         Some(Self {
             r#loop: ctx.advance().span,
             label: ctx
-                .expect_advance(TokenKind::Label)
+                .optional_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
             body: ctx.parse()?,
         })
@@ -26,6 +28,65 @@ impl<'a> Ast<'a> for LoopAst<'a> {
 
     fn span(&self) -> Span {
         self.r#loop.joined(self.body.span())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BreakAst<'a> {
+    pub r#break: Span,
+    pub label: Option<NameAst>,
+    pub value: Option<ExprAst<'a>>,
+}
+
+impl<'a> Ast<'a> for BreakAst<'a> {
+    type Args = ();
+
+    const NAME: &'static str = "break";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#break: ctx.advance().span,
+            label: ctx
+                .expect_advance(TokenKind::Label)
+                .map(|tok| NameAst::new(ctx, tok.span)),
+            value: ctx
+                .at([TokenKind::NewLine, TokenKind::Else])
+                .not()
+                .then(|| ctx.parse())
+                .transpose()?,
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.value
+            .map(|v| v.span())
+            .or_else(|| self.label.map(|l| l.span()))
+            .map_or(self.r#break, |s| self.r#break.joined(s))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContinueAst {
+    pub r#continue: Span,
+    pub label: Option<NameAst>,
+}
+
+impl Ast<'_> for ContinueAst {
+    type Args = ();
+
+    const NAME: &'static str = "continue";
+
+    fn parse_args_internal(ctx: &mut ParsingCtx<'_, '_, '_>, (): Self::Args) -> Option<Self> {
+        Some(Self {
+            r#continue: ctx.advance().span,
+            label: ctx
+                .expect_advance(TokenKind::Label)
+                .map(|tok| NameAst::new(ctx, tok.span)),
+        })
+    }
+
+    fn span(&self) -> Span {
+        self.label.map(|l| l.span()).unwrap_or(self.r#continue)
     }
 }
 
@@ -188,11 +249,11 @@ impl<'a> Ast<'a> for ReturnExprAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             return_span: ctx.advance().span,
-            expr: if ctx.at_tok(TokenKind::NewLine) {
-                None
-            } else {
-                Some(ctx.parse()?)
-            },
+            expr: ctx
+                .at([TokenKind::NewLine, TokenKind::Else])
+                .not()
+                .then(|| ctx.parse())
+                .transpose()?,
         })
     }
 

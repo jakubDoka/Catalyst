@@ -248,6 +248,12 @@ pub struct LoopTir<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct BreakTir<'a> {
+    pub loop_id: VRef<LoopHeaderTir>,
+    pub value: Option<TirNode<'a>>,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum TirKind<'a> {
     Int(Option<i64>),
     Char,
@@ -265,6 +271,8 @@ pub enum TirKind<'a> {
     Let(&'a LetTir<'a>),
     Assign(&'a AssignTir<'a>),
     Loop(&'a LoopTir<'a>),
+    Continue(VRef<LoopHeaderTir>),
+    Break(&'a BreakTir<'a>),
 }
 
 #[derive(Clone, Copy)]

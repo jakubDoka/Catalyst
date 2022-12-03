@@ -395,6 +395,8 @@ impl TyChecker<'_> {
             Match(match_expr) => self.r#match(match_expr, inference, builder),
             If(r#if) => self.r#if(r#if, inference, builder),
             Loop(loop_expr) => self.r#loop(loop_expr, inference, builder),
+            Break(r#break) => self.r#break(r#break, builder),
+            Continue(r#continue) => self.r#continue(r#continue, builder),
             DotExpr(&expr) => self.dot_expr(expr, inference, builder),
             Let(r#let) => self.r#let(r#let, inference, builder),
             Deref(.., &expr) => self.deref(expr, inference, builder),
@@ -402,6 +404,63 @@ impl TyChecker<'_> {
             PathInstance(_) => todo!(),
             TypedPath(_) => todo!(),
         }
+    }
+
+    fn r#break<'a>(&mut self, r#break: BreakAst, builder: &mut TirBuilder<'a, '_>) -> ExprRes<'a> {
+        let loop_id = self.find_loop(r#break.label, builder)?;
+
+        let value = r#break
+            .value
+            .map(|expr| self.expr(expr, builder.ctx.loops[loop_id].inference, builder))
+            .transpose()?;
+
+        if let Some(value) = value {
+            self.type_check(
+                builder.ctx.loops[loop_id].return_type,
+                value.ty,
+                r#break.value.unwrap().span(),
+            )?;
+            // if return_type is terminal or equal to value.ty, type-check passes
+            // and overriding it will account for changing the terminal state of
+            // the loop
+            builder.ctx.loops[loop_id].return_type = value.ty;
+            builder.ctx.loops[loop_id].inference = Inference::Strong(value.ty);
+        }
+
+        Some(TirNode::new(
+            Ty::TERMINAL,
+            TirKind::Break(builder.arena.alloc(BreakTir { loop_id, value })),
+            r#break.span(),
+        ))
+    }
+
+    fn r#continue<'a>(
+        &mut self,
+        r#continue: ContinueAst,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let loop_id = self.find_loop(r#continue.label, builder)?;
+
+        Some(TirNode::new(
+            Ty::TERMINAL,
+            TirKind::Continue(loop_id),
+            r#continue.span(),
+        ))
+    }
+
+    fn find_loop(
+        &mut self,
+        label: Option<NameAst>,
+        builder: &mut TirBuilder,
+    ) -> OptVRef<LoopHeaderTir> {
+        let Some(label) = label else {
+            return builder.ctx.loops
+                .iter()
+                .rev()
+                .find_map(|(key, header)| header.label.is_none().then_some(key));
+        };
+
+        Some(lookup!(LoopHeaderTir self, label.ident, label.span))
     }
 
     fn r#loop<'a>(

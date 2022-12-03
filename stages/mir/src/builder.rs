@@ -71,10 +71,63 @@ impl MirChecker<'_, '_> {
             TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
             TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
             TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
-            TirKind::Loop(&r#loop) => todo!(),
+            TirKind::Loop(&r#loop) => pass!(dest => self.r#loop(r#loop, dest, ty, span, r#move)),
+            TirKind::Continue(loop_id) => self.r#continue(loop_id, span),
+            TirKind::Break(&r#break) => self.r#break(r#break, span),
             TirKind::Let(&r#let) => self.r#let(r#let),
             TirKind::Assign(&assign) => self.assign(assign, span),
         }
+    }
+
+    fn r#loop(
+        &mut self,
+        r#loop: LoopTir,
+        dest: VRef<ValueMir>,
+        ty: Ty,
+        span: Span,
+        r#move: bool,
+    ) -> NodeRes {
+        let start = self.mir_ctx.create_block();
+        self.start_loop(start, dest);
+
+        self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
+        self.select_block(start);
+
+        let terminated = self.node(r#loop.body, None, r#move).is_none();
+
+        self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
+
+        if let Some(end) = self.end_loop(span, terminated) {
+            self.select_block(end);
+            self.mir_ctx.args.push(dest);
+            return Some(dest);
+        }
+
+        None
+    }
+
+    fn r#continue(&mut self, loop_id: VRef<LoopHeaderTir>, span: Span) -> NodeRes {
+        let LoopMir { start, depth, .. } = self.mir_ctx.loops[loop_id.index()];
+        self.check_loop_moves(span, depth);
+        self.close_block(span, ControlFlowMir::Goto(start, ValueMir::UNIT));
+        None
+    }
+
+    fn r#break(&mut self, BreakTir { loop_id, value }: BreakTir, span: Span) -> NodeRes {
+        let LoopMir {
+            ref mut end,
+            dest,
+            depth,
+            frame: MirVarFrame { to_drop, .. },
+            ..
+        } = self.mir_ctx.loops[loop_id.index()];
+        let &mut end = end.get_or_insert_with(|| self.mir_ctx.create_block());
+        let value = value
+            .map(|value| self.node(value, Some(dest), false))
+            .transpose()?
+            .unwrap_or(ValueMir::UNIT);
+        self.close_block(span, ControlFlowMir::Goto(end, value));
+        None
     }
 
     fn assign(&mut self, AssignTir { lhs, rhs }: AssignTir, span: Span) -> NodeRes {

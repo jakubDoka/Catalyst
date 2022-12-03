@@ -391,9 +391,9 @@ impl<'a> From<&'a str> for TokenPat<'a> {
     }
 }
 
-impl<'a> AsRef<TokenPat<'a>> for TokenPat<'a> {
-    fn as_ref(&self) -> &Self {
-        self
+impl<'a> From<&'a TokenPat<'a>> for TokenPat<'a> {
+    fn from(s: &Self) -> Self {
+        *s
     }
 }
 

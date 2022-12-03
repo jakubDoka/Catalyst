@@ -25,6 +25,7 @@ pub struct MirCtx {
     pub generic_types: Vec<VRef<MirTy>>,
     pub value_depths: ShadowMap<ValueMir, u32>,
     pub to_drop: Vec<VRef<ValueMir>>,
+    pub loops: Vec<LoopMir>,
 }
 
 impl MirCtx {
@@ -135,4 +136,12 @@ impl MirCtx {
 pub struct MirVarFrame {
     pub base: usize,
     pub to_drop: usize,
+}
+
+pub struct LoopMir {
+    pub frame: MirVarFrame,
+    pub start: VRef<BlockMir>,
+    pub end: OptVRef<BlockMir>,
+    pub dest: VRef<ValueMir>,
+    pub depth: u32,
 }

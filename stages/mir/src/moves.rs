@@ -129,8 +129,8 @@ impl MirChecker<'_, '_> {
         let (key, .., err) = self.integrity_check(value);
         if let Some(err) = err {
             match err {
-                IntegrityError::InvalidMove(owner) => self.handle_invalid_move(owner, span),
-                IntegrityError::Moved(r#move) => self.handle_double_move(r#move, span),
+                IntegrityError::InvalidMove(owner) => self.invalid_move(owner, span),
+                IntegrityError::Moved(r#move) => self.double_move(r#move, span),
                 IntegrityError::PartiallyMoved(moves) => {
                     self.handle_partial_move("move out of", moves, span)
                 }
@@ -231,16 +231,17 @@ impl MirChecker<'_, '_> {
             return;
         };
 
-        for (key, r#move) in remove_range(
-            &mut self.mir_move_ctx.lookup,
-            key.range(&mut self.mir_move_ctx.range_temp),
-        ) {
-            self.mir_move_ctx.history.push(MoveRecord {
+        self.mir_move_ctx.history.extend(
+            remove_range(
+                &mut self.mir_move_ctx.lookup,
+                key.range(&mut self.mir_move_ctx.range_temp),
+            )
+            .map(|(key, r#move)| MoveRecord {
                 key,
                 r#move,
                 direction: MoveDirection::In,
-            });
-        }
+            }),
+        );
     }
 
     pub fn drop(&mut self, value: VRef<ValueMir>, span: Span) {
@@ -358,7 +359,11 @@ impl MirChecker<'_, '_> {
             return;
         }
         self.revert_current_branch();
+        self.mir_move_ctx
+            .concurrent_history
+            .extend(self.mir_move_ctx.history.pop());
         self.mir_move_ctx.history.mark();
+        self.mir_move_ctx.concurrent_history.mark();
     }
 
     pub fn discard_branch(&mut self) {
@@ -367,7 +372,7 @@ impl MirChecker<'_, '_> {
         }
         self.revert_current_branch();
         self.mir_move_ctx.history.clear_top();
-        self.mir_move_ctx.history.mark();
+        self.mir_move_ctx.concurrent_history.mark();
     }
 
     pub fn end_branching(&mut self, blocks: &[BranchBlock], span: Span) {
@@ -377,9 +382,14 @@ impl MirChecker<'_, '_> {
 
         self.mir_ctx.depth -= 1;
 
-        self.mir_move_ctx.history.join_frames();
+        self.mir_move_ctx.concurrent_history.join_frames();
         let mut branches = (0..blocks.len())
-            .map(|_| self.mir_move_ctx.history.pop().collect::<BumpVec<_>>())
+            .map(|_| {
+                self.mir_move_ctx
+                    .concurrent_history
+                    .pop()
+                    .collect::<BumpVec<_>>()
+            })
             .collect::<BumpVec<_>>();
         branches.reverse();
 
@@ -473,17 +483,17 @@ impl MirChecker<'_, '_> {
                 continue;
             }
 
-            remove_range(
-                &mut self.mir_move_ctx.lookup,
-                key.range(&mut self.mir_move_ctx.range_temp),
-            )
-            .for_each(|(key, r#move)| {
-                self.mir_move_ctx.history.push(MoveRecord {
+            self.mir_move_ctx.history.extend(
+                remove_range(
+                    &mut self.mir_move_ctx.lookup,
+                    key.range(&mut self.mir_move_ctx.range_temp),
+                )
+                .map(|(key, r#move)| MoveRecord {
                     key,
                     r#move,
                     direction: MoveDirection::In,
-                });
-            });
+                }),
+            );
         }
     }
 
@@ -625,12 +635,74 @@ impl MirChecker<'_, '_> {
         None
     }
 
+    pub fn start_loop(&mut self, start: VRef<BlockMir>, dest: VRef<ValueMir>) {
+        self.start_loop_branching();
+        let frame = self.start_scope_frame();
+        self.mir_ctx.loops.push(LoopMir {
+            start,
+            dest,
+            frame,
+            end: None,
+            depth: self.mir_ctx.depth,
+        });
+    }
+
+    fn start_loop_branching(&mut self) {
+        if self.mir_ctx.no_moves {
+            return;
+        }
+
+        self.mir_move_ctx.history.mark();
+        self.mir_ctx.depth += 1;
+    }
+
+    pub fn end_loop(&mut self, span: Span, terminated: bool) -> OptVRef<BlockMir> {
+        let r#loop = self
+            .mir_ctx
+            .loops
+            .pop()
+            .expect("loop end did not pair up with loop start");
+        if !self.mir_ctx.no_moves {
+            if !terminated {
+                self.check_loop_moves(span, r#loop.depth);
+            }
+            self.mir_move_ctx.history.join_frames();
+            self.mir_ctx.depth -= 1;
+        }
+        self.end_scope_frame(r#loop.frame, span);
+        r#loop.end
+    }
+
+    fn check_loop_moves(&mut self, span: Span, loop_depth: u32) {
+        let mut history = self
+            .mir_move_ctx
+            .history
+            .from_nth(loop_depth as usize - 1)
+            .to_bumpvec();
+        self.simplify_branch_history(&mut history);
+
+        for record in history.iter() {
+            if let MoveDirection::Out = record.direction
+                && self.mir_ctx.value_depths[record.key.root] < loop_depth {
+                self.loop_double_move(record.r#move, span);
+            }
+        }
+    }
+
     gen_error_fns! {
-        push handle_double_move(self, moved: Move, span: Span) {
+        push double_move(self, moved: Move, span: Span) {
             err: "cannot move out of value twice";
             (moved.span.joined(span), self.source) {
                 info[moved.span]: "first move here";
                 err[span]: "double move occurred here";
+            }
+        }
+
+        push loop_double_move(self, moved: Move, span: Span) {
+            err: "cannot move out of the value, it could have been moved out in a previous iteration of the loop";
+            (moved.span.joined(span), self.source) {
+                info[moved.span]: "move occurred here";
+                err[span]: "in this loop";
             }
         }
 
@@ -650,7 +722,7 @@ impl MirChecker<'_, '_> {
             }
         }
 
-        push handle_invalid_move(self, owner: IndirectOwner, span: Span) {
+        push invalid_move(self, owner: IndirectOwner, span: Span) {
             err: "cannot move out the value";
             info: ("notice that {}", [
                 "value is located within datatype that implements 'Drop'",
@@ -690,6 +762,7 @@ enum IntegrityError {
 pub struct MirMoveCtx {
     lookup: BTreeMap<MoveKey, Move>,
     history: Frames<MoveRecord>,
+    concurrent_history: Frames<MoveRecord>,
     owners: ShadowMap<ValueMir, Owner>,
 
     simplify_temp: BTreeSet<MoveKey>,
@@ -697,30 +770,6 @@ pub struct MirMoveCtx {
     // cover_temp: BTreeMap<MoveKey, BranchMoveMask>,
     range_temp: Range<MoveKey>,
 }
-
-// #[derive(Default)]
-// struct BranchMoveMask(SmallVec<[usize; 2]>);
-
-// impl BranchMoveMask {
-//     fn from_index(index: usize) -> Self {
-//         let mut s = Self::default();
-//         s.insert(index);
-//         s
-//     }
-
-//     fn insert(&mut self, index: usize) {
-//         let (global, local) = BitSet::decompose_key(index);
-//         if self.0.len() <= global {
-//             self.0.resize(global + 1, 0);
-//         }
-//         self.0[global] |= 1 << local;
-//     }
-
-//     fn contains(&self, index: usize) -> bool {
-//         let (global, local) = BitSet::decompose_key(index);
-//         self.0.get(global).map_or(false, |set| set & (1 << local) != 0)
-//     }
-// }
 
 impl MirMoveCtx {
     pub fn clear(&mut self) {

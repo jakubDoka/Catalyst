@@ -17,7 +17,7 @@ mod patterns;
 mod state_gen;
 
 pub use {
-    ctx::{MirCtx, MirVarFrame, VarMir},
+    ctx::{LoopMir, MirCtx, MirVarFrame, VarMir},
     moves::MirMoveCtx,
     patterns::{Branch, Node, PatNode, PatNodeChildren, PatTree, Range, UpperBound},
     state_gen::MirChecker,

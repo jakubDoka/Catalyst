@@ -68,8 +68,8 @@ mod parser;
 pub use parser::{
     expr::{
         control_flow::{
-            ElifAst, IfAst, IfBlockAst, LoopAst, MatchArmAst, MatchBodyAst, MatchExprAst,
-            ReturnExprAst,
+            BreakAst, ContinueAst, ElifAst, IfAst, IfBlockAst, LoopAst, MatchArmAst, MatchBodyAst,
+            MatchExprAst, ReturnExprAst,
         },
         pat::{
             EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatBodyAst, StructCtorPatBodyMeta,

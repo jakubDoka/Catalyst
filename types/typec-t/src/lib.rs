@@ -64,10 +64,10 @@ pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
     scope::{ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
     tir::{
-        AssignTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir, IfBranchTir,
-        IfTir, Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest, MatchArmTir,
-        MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirKind, TirNode, TypecOutput,
-        UnitPatKindTir, VarHeaderTir,
+        AssignTir, BreakTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir,
+        IfBranchTir, IfTir, Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest,
+        MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirKind, TirNode,
+        TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,

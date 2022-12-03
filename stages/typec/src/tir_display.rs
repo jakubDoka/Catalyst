@@ -167,6 +167,15 @@ impl TyChecker<'_> {
                 write!(buffer, "loop id{} ", id.index())?;
                 self.display_tir(body, buffer, indent, var_count)?;
             }
+            TirKind::Break(&BreakTir { loop_id, value }) => {
+                write!(buffer, "break id{} ", loop_id.index())?;
+                if let Some(val) = value {
+                    self.display_tir(val, buffer, indent, var_count)?;
+                }
+            }
+            TirKind::Continue(loop_id) => {
+                write!(buffer, "continue id{}", loop_id.index())?;
+            }
             TirKind::Let(&LetTir { pat, value }) => {
                 write!(buffer, "let ")?;
                 self.display_pat(pat, buffer, indent, var_count)?;
