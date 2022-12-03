@@ -398,38 +398,82 @@ fn main() {
                 "water/marker";
             };
 
-            struct A;
+            fn [T] drop(value: T) {};
+
+            fn "default" putchar(c: char) -> u32 extern;
+
+            struct A {
+                ch: char;
+            };
 
             impl A {
-                fn f(s: ^Self) {};
+                fn new(ch: char) -> Self => ::{ ch };
+                fn set_char(s: ^mut Self, ch: char) => s.ch = ch;
             };
 
             impl Drop for A {
-                fn drop(v: ^mut Self) {};
+                fn drop(v: ^mut Self) {
+                    putchar(v.ch);
+                    putchar(' ');
+                };
             };
 
             fn drop_unused() {
-                A::{};
+                A::new('a');
             };
 
             fn drop_referenced() {
-                A::{}.f();
+                A::new('a').set_char('b');
             };
 
             fn drop_variable() {
-                let a = A::{};
-                a.f();
+                let a = A::new('a');
+                a.set_char('c');
             };
 
             fn drop_refed_variable() {
-                let a = ^A::{};
-                a.f();
+                let a = ^A::new('a');
+                a.set_char('d');
             };
 
             fn move_in_drop() {
-                let a = A::{};
-                a = A::{};
+                let a = A::new('e');
+                a = A::new('f');
             };
+
+            fn drop_cond() {
+                let a = A::new('g');
+                if true => drop(a);
+            };
+
+            #[entry];
+            fn main() -> uint {
+                drop_unused();
+                drop_referenced();
+                drop_variable();
+                drop_refed_variable();
+                move_in_drop();
+                drop_cond();
+                0
+            };
+        }
+
+        simple "register struct init and use" {
+            struct RegStruct {
+                field: u32;
+            };
+
+            struct RegStruct2 {
+                field: u32;
+                field2: u32;
+            };
+
+            #[entry];
+            fn main -> u32 {
+                RegStruct::{ field: 3 }.field +
+                RegStruct2::{ field: 1; field2: 3 }.field2 -
+                6u32
+            }
         }
     }
 }

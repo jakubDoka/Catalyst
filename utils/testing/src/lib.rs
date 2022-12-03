@@ -1,5 +1,6 @@
 #![feature(closure_lifetime_binder)]
 #![feature(iter_intersperse)]
+#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! gen_test {
@@ -155,6 +156,11 @@ pub mod items {
         scope: Option<&'a Scope<'b, 'c>>,
         test_code: fn(&str) -> (Workspace, Resources),
     ) {
+        if let Some(first_arg) = std::env::args().nth(1) && !name.starts_with(first_arg.as_str()) {
+            println!("Skipping test: {}", name);
+            return;
+        }
+
         println!("Running sub test: {}", name);
         let runner = move || {
             let (mut ws, packages) = test_code(name);

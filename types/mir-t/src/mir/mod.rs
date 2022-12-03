@@ -68,6 +68,7 @@ impl FuncMirInner {
         self.ty_params.clear();
         self.types.clear();
         self.calls.clear();
+        self.drops.clear();
         self.value_flags.clear();
     }
 
@@ -96,7 +97,7 @@ impl FuncMirInner {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct DropMir {
     pub value: VRef<ValueMir>,
 }

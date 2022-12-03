@@ -73,7 +73,7 @@ impl Middleware {
             .min(args.max_cores.unwrap_or(usize::MAX));
 
         if num_workers == 1 {
-            todo!();
+            // todo!();
         }
 
         let workers: Vec<_> = iter::repeat_with(|| Worker::new(sender.clone()))
@@ -606,6 +606,7 @@ impl Worker {
                 .gen_resources
                 .calls
                 .extend(task.compile_requests.children[children].iter().copied());
+            self.state.gen_resources.drops.clear();
             for &drop in task.compile_requests.drop_children[drops].iter() {
                 let prev = self.state.gen_resources.calls.len();
                 self.state
@@ -631,7 +632,7 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 let name = &task.interner[task.typec.funcs[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-                // print!("{}", self.context.func.display());
+                print!("{} {}", name, self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
@@ -809,8 +810,7 @@ impl Worker {
             shared.resources,
         )
         .funcs(&mut type_checked_funcs)
-        // .dbg_funcs()
-        ;
+        .dbg_funcs();
 
         self.state
             .mir_ctx
@@ -984,6 +984,7 @@ impl Task {
             );
 
             let mut drops = bumpvec![cap body.drops.len()];
+            dbg!(&body.drops);
             for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();

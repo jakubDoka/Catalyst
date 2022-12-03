@@ -1,6 +1,7 @@
 #![feature(drain_filter)]
 #![feature(default_free_fn)]
 #![feature(let_chains)]
+#![feature(iter_collect_into)]
 
 mod context;
 mod generate;

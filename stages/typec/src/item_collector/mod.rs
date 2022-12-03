@@ -349,10 +349,10 @@ impl TyChecker<'_> {
         item: I,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<FragRef<I>> {
-        let is_drop = attributes
+        let is_water_drop = attributes
             .iter()
             .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)));
-        Some(if is_drop {
+        Some(if is_water_drop {
             let name = &self.interner[item.name()];
             let Some(id) = I::lookup_water_drop(name) else {
                 todo!()

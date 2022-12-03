@@ -1,3 +1,5 @@
+use std::collections::hash_map;
+
 use lexing_t::*;
 use packaging_t::Module;
 use parsing_t::*;
@@ -53,12 +55,13 @@ impl Scope {
     }
 
     pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), Option<Span>> {
-        self.data
-            .insert(item.id, ScopeRecord::CurrentItem { item })
-            .filter(|record| record.is_strong())
-            .map(|record| Result::<(), _>::Err(record.span()))
-            .transpose()
-            .map(|_| ())
+        match self.data.entry(item.id) {
+            hash_map::Entry::Occupied(e) => Err(e.get().span()),
+            hash_map::Entry::Vacant(e) => {
+                e.insert(ScopeRecord::Current { item });
+                Ok(())
+            }
+        }
     }
 
     pub fn insert(
@@ -73,7 +76,7 @@ impl Scope {
         let scoped_id = interner.intern_scoped(foreign_module.index(), item.id);
         self.data.insert(
             scoped_id,
-            ScopeRecord::ImportedItem {
+            ScopeRecord::Imported {
                 module: foreign_module,
                 item,
             },
@@ -81,10 +84,10 @@ impl Scope {
 
         if let Some(existing_option) = self.data.get_mut(&item.id) {
             match existing_option {
-                ScopeRecord::ImportedItem { .. } => {
+                ScopeRecord::Imported { .. } => {
                     *existing_option = ScopeRecord::Collision;
                 }
-                ScopeRecord::CurrentItem { .. }
+                ScopeRecord::Current { .. }
                 | ScopeRecord::Builtin { .. }
                 | ScopeRecord::Pushed { .. }
                 | ScopeRecord::Collision => (),
@@ -92,7 +95,7 @@ impl Scope {
         } else {
             self.data.insert(
                 item.id,
-                ScopeRecord::ImportedItem {
+                ScopeRecord::Imported {
                     module: foreign_module,
                     item,
                 },
@@ -116,11 +119,11 @@ pub enum ScopeError {
 
 #[derive(Clone, Copy)]
 pub enum ScopeRecord {
-    ImportedItem {
+    Imported {
         module: VRef<Module>,
         item: ModuleItem,
     },
-    CurrentItem {
+    Current {
         item: ModuleItem,
     },
     Builtin {
@@ -136,7 +139,7 @@ pub enum ScopeRecord {
 impl ScopeRecord {
     pub fn scope_item(&self) -> Option<ScopeItem> {
         match *self {
-            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.ptr.into()),
+            Self::Imported { item, .. } | Self::Current { item } => Some(item.ptr.into()),
             Self::Builtin { kind } | Self::Pushed { kind, .. } => Some(kind),
             Self::Collision => None,
         }
@@ -144,7 +147,7 @@ impl ScopeRecord {
 
     pub fn span(&self) -> Option<Span> {
         match *self {
-            Self::ImportedItem { item, .. } | Self::CurrentItem { item } => Some(item.span),
+            Self::Imported { item, .. } | Self::Current { item } => Some(item.span),
             Self::Builtin { .. } => None,
             Self::Pushed { span, .. } => Some(span),
             Self::Collision => None,
@@ -153,8 +156,8 @@ impl ScopeRecord {
 
     pub fn is_strong(&self) -> bool {
         match *self {
-            Self::Collision | Self::ImportedItem { .. } => false,
-            Self::Builtin { .. } | Self::Pushed { .. } | Self::CurrentItem { .. } => true,
+            Self::Collision | Self::Imported { .. } => false,
+            Self::Builtin { .. } | Self::Pushed { .. } | Self::Current { .. } => true,
         }
     }
 }

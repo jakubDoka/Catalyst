@@ -128,6 +128,7 @@ impl CompileRequests {
         self.queue.clear();
         self.ty_slices.clear();
         self.children.clear();
+        self.drop_children.clear();
     }
 }
 
@@ -170,7 +171,6 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
-        // self.func_constants.clear();
     }
 }
 

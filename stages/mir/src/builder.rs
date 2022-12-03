@@ -63,7 +63,7 @@ impl MirChecker<'_, '_> {
             TirKind::Char => pass!(dest => self.char(span, dest)),
             TirKind::Bool(value) => pass!(dest => self.bool(value, span, dest)),
             TirKind::Access(access) => self.access(access, span, dest, r#move),
-            TirKind::Call(&call) => pass!(dest => self.call(call, ty, span, dest, r#move)),
+            TirKind::Call(&call) => pass!(dest => self.call(call, ty, span, dest)),
             TirKind::Return(ret) => self.r#return(ret, span),
             TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, r#move),
             TirKind::Deref(&node) => pass!(dest => self.deref(node, dest, span)),
@@ -546,7 +546,6 @@ impl MirChecker<'_, '_> {
         ty: Ty,
         span: Span,
         dest: VRef<ValueMir>,
-        r#move: bool,
     ) -> NodeRes {
         let callable = match func {
             CallableTir::Func(func) => CallableMir::Func(func),
@@ -572,10 +571,6 @@ impl MirChecker<'_, '_> {
         if ty == Ty::TERMINAL {
             self.close_block(span, ControlFlowMir::Terminal);
             return None;
-        }
-
-        if r#move {
-            self.move_out(dest, span);
         }
 
         Some(dest)

@@ -154,6 +154,7 @@ impl MirChecker<'_, '_> {
         let (key, in_var, err) = self.integrity_check(value);
         if let Some(err) = err {
             match err {
+                IntegrityError::InvalidMove(owner) if owner.behind_pointer => return,
                 IntegrityError::InvalidMove(..) => None,
                 IntegrityError::Moved(r#move) => self.referencing_moved(r#move, span),
                 IntegrityError::PartiallyMoved(moves) => {
@@ -215,7 +216,7 @@ impl MirChecker<'_, '_> {
             return;
         }
 
-        let (mut key, .., None) = self.get_move_key(dest) else {
+        let (mut key, .., Some(..)) = self.get_move_key(dest) else {
             self.drop_low(dest, &mut None, span);
             return;
         };

@@ -97,7 +97,7 @@ impl Testable for TestState {
             jit_isa,
             isa,
             incremental_path: None,
-            max_cores: None,
+            max_cores: Some(1),
             dump_ir: true,
         };
         if let Some(binary) = self.middleware.update(&args) {
@@ -257,8 +257,9 @@ fn main() {
 
             #[entry];
             fn main -> u32 {
-                RegStruct::{ field: 0 }.field +
-                RegStruct2::{ field: 1; field2: 0 }.field2
+                RegStruct::{ field: 3 }.field +
+                RegStruct2::{ field: 1; field2: 3 }.field2 -
+                6u32
             }
         }
 
@@ -437,73 +438,73 @@ fn main() {
 
             #[entry];
             swap! swap! fn -> main uint => 0;
-            //fn swap! -> main uint => 0;
+            // fn swap! -> main uint => 0;
             //fn main -> uint => 0;
         }
 
-        // simple "drop-gen" {
-        //     use {
-        //         "water/marker";
-        //     };
+        simple "drop-gen" {
+            use {
+                "water/marker";
+            };
 
-        //     fn [T] drop(value: T) {};
+            fn [T] drop(value: T) {};
 
-        //     fn "default" putchar(c: char) -> u32 extern;
+            fn "default" putchar(c: char) -> u32 extern;
 
-        //     struct A {
-        //         ch: char;
-        //     };
+            struct A {
+                ch: char;
+            };
 
-        //     impl A {
-        //         fn new(ch: char) -> Self => ::{ ch };
-        //         fn set_char(s: ^mut Self, ch: char) => s.ch = ch;
-        //     };
+            impl A {
+                fn new(ch: char) -> Self => ::{ ch };
+                fn set_char(s: ^mut Self, ch: char) => s.ch = ch;
+            };
 
-        //     impl Drop for A {
-        //         fn drop(v: ^mut Self) {
-        //             putchar(v.ch);
-        //             putchar(' ');
-        //         };
-        //     };
+            impl Drop for A {
+                fn drop(v: ^mut Self) {
+                    putchar(v.ch);
+                    putchar(' ');
+                };
+            };
 
-        //     fn drop_unused() {
-        //         A::new('a');
-        //     };
+            fn drop_unused() {
+                A::new('a');
+            };
 
-        //     fn drop_referenced() {
-        //         A::new('a').set_char('b');
-        //     };
+            fn drop_referenced() {
+                A::new('a').set_char('b');
+            };
 
-        //     fn drop_variable() {
-        //         let a = A::new('a');
-        //         a.set_char('c');
-        //     };
+            fn drop_variable() {
+                let a = A::new('a');
+                a.set_char('c');
+            };
 
-        //     fn drop_refed_variable() {
-        //         let a = ^A::new('a');
-        //         a.set_char('d');
-        //     };
+            fn drop_refed_variable() {
+                let a = ^A::new('a');
+                a.set_char('d');
+            };
 
-        //     fn move_in_drop() {
-        //         let a = A::new('e');
-        //         a = A::new('f');
-        //     };
+            fn move_in_drop() {
+                let a = A::new('e');
+                a = A::new('f');
+            };
 
-        //     fn drop_cond() {
-        //         let a = A::new('g');
-        //         if true => drop(a);
-        //     };
+            fn drop_cond() {
+                let a = A::new('g');
+                if true => drop(a);
+            };
 
-        //     #[entry];
-        //     fn main() -> uint {
-        //         drop_unused();
-        //         drop_referenced();
-        //         drop_variable();
-        //         drop_refed_variable();
-        //         move_in_drop();
-        //         drop_cond();
-        //         0
-        //     };
-        // }
+            #[entry];
+            fn main() -> uint {
+                drop_unused();
+                drop_referenced();
+                drop_variable();
+                drop_refed_variable();
+                move_in_drop();
+                drop_cond();
+                0
+            };
+        }
     }
 }

@@ -17,7 +17,7 @@ fn main() {
             .filter_map(|file| file.ok())
             .filter(|file| file.file_type().unwrap().is_dir())
             .map(|file| (file.path(), file.file_name().to_str().unwrap().to_owned()))
-            .filter(|(_, name)| !matches!(target, Some(ref target) if !name.contains(target)))
+            .filter(|(.., name)| !matches!(target, Some(ref target) if !name.contains(target)))
     };
 
     for (path, name) in dirs_ctor() {
@@ -35,6 +35,7 @@ fn main() {
                 println!("Running test: {}", name);
                 Command::new(format!("target/debug/{}.exe", name))
                     .current_dir(path)
+                    .args(std::env::args().nth(2))
                     .status()
                     .unwrap();
                 println!("Compiled and Run {}", name);

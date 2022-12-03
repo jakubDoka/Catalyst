@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, default::default, mem, slice};
+use std::{cmp::Ordering, default::default, slice};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -65,14 +65,12 @@ impl Generator<'_> {
 
         for &arg in &builder.body.value_args[args] {
             let layout = self.ty_layout(builder.value_ty(arg));
-            if let val @ GenValue { computed: None, .. } = &mut self.gen_resources.values[arg] {
-                *val = GenValue {
-                    computed: Some(ComputedValue::Value(
-                        builder.append_block_param(ir_block, layout.repr),
-                    )),
-                    offset: 0,
-                    must_load: layout.on_stack,
-                };
+            if layout.size == 0 {
+                continue;
+            }
+            if self.gen_resources.values[arg].computed.is_none() {
+                let source = builder.append_block_param(ir_block, layout.repr);
+                self.prepare_block_arg(arg, source, layout, builder);
             }
         }
 
@@ -85,6 +83,36 @@ impl Generator<'_> {
         builder.seal_block(ir_block);
 
         ir_block
+    }
+
+    fn prepare_block_arg(
+        &mut self,
+        arg: VRef<ValueMir>,
+        source: ir::Value,
+        layout: Layout,
+        builder: &mut GenBuilder,
+    ) {
+        let (computed, must_load) = if !layout.on_stack && builder.body.is_referenced(arg) {
+            let ss = builder.create_sized_stack_slot(StackSlotData {
+                kind: StackSlotKind::ExplicitSlot,
+                size: layout.size,
+            });
+            builder.ins().stack_store(source, ss, 0);
+            (ComputedValue::StackSlot(ss), true)
+        } else if builder.body.is_mutable(arg) {
+            let var = Variable::from_u32(arg.as_u32());
+            builder.declare_var(var, layout.repr);
+            builder.def_var(var, source);
+            (ComputedValue::Variable(var), layout.on_stack)
+        } else {
+            (ComputedValue::Value(source), layout.on_stack)
+        };
+
+        self.gen_resources.values[arg] = GenValue {
+            computed: Some(computed),
+            offset: 0,
+            must_load,
+        };
     }
 
     fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder) {
@@ -119,38 +147,79 @@ impl Generator<'_> {
     }
 
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder) {
-        // let value = builder.body.drops[drop].value;
-        // let ty = builder.value_ty(value);
-        // let mut funcs = self.gen_resources.drops[drop.index()].clone();
-        // let ir_value = match self.gen_resources.values[value].computed.unwrap() {
-        //     ComputedValue::Value(value) => value,
-        //     ComputedValue::StackSlot(_) => todo!(),
-        //     ComputedValue::Variable(var) => todo!(),
-        // };
-        // let mut frontier = bumpvec![(ir_value, ty)];
-        // while let Some((value, ty)) = frontier.pop() {
-        //     if !self.typec.may_need_drop(ty) {
-        //         continue;
-        //     }
-        //     // we can pass empty generics since all types are concrete
-        //     if let Some(Some(..)) = ty.is_drop(&[], self.typec, self.interner) {
-        //         let CompileRequestChild { id, params, .. } = self.gen_resources.calls[funcs.next().unwrap()];
-        //         let params = self.compile_requests.ty_slices[params].iter().copied();
-        //         let (func, ..) = self.import_compiled_func(id, params, builder);
-        //         let arg = value.unwrap_or_else(|| {
-        //             let ptr_ty = builder.ptr_ty();
-        //             builder.ins().iconst(ptr_ty, 1)});
-        //         builder.ins().call(func, &[arg]);
-        //     }
-        // }
-        todo!();
+        let value = builder.body.drops[drop].value;
+        let ty = builder.value_ty(value);
+        let mut funcs = self.gen_resources.drops[drop.index()].clone();
+        dbg!(&funcs);
+        let GenValue {
+            computed, offset, ..
+        } = self.gen_resources.values[value];
+        let value = self.ref_low(computed, ty, offset, builder);
+        let mut frontier = bumpvec![(0, ty)];
+        while let Some((offset, ty)) = frontier.pop() {
+            if !self.typec.may_need_drop(ty) {
+                continue;
+            }
+
+            // we can pass empty generics since all types are concrete
+            if let Some(Some(..)) = ty.is_drop(&[], self.typec, self.interner) {
+                let CompileRequestChild { id, params, .. } =
+                    self.gen_resources.calls[funcs.next().unwrap()];
+                let params = self.compile_requests.ty_slices[params].iter().copied();
+                let (func, ..) = self.import_compiled_func(id, params, builder);
+                let value = match offset == 0 {
+                    true => value,
+                    false => builder.ins().iadd_imm(value, offset as i64),
+                };
+                builder.ins().call(func, &[value]);
+            }
+
+            match ty {
+                Ty::Struct(s) => {
+                    let layout = self.ty_layout(ty);
+                    self.gen_layouts.offsets[layout.offsets]
+                        .iter()
+                        .copied()
+                        .rev()
+                        .zip(self.typec[self.typec[s].fields].iter().map(|f| f.ty).rev())
+                        .collect_into(&mut *frontier);
+                }
+                Ty::Enum(..) => todo!(),
+                Ty::Instance(i) => {
+                    let Instance { base, args } = self.typec[i];
+                    let params = self.typec[args].to_bumpvec();
+                    match base {
+                        GenericTy::Struct(s) => {
+                            let layout = self.ty_layout(ty);
+                            self.gen_layouts.offsets[layout.offsets]
+                                .iter()
+                                .copied()
+                                .rev()
+                                .zip(
+                                    self.typec[self.typec[s].fields]
+                                        .to_bumpvec()
+                                        .into_iter()
+                                        .map(|f| {
+                                            self.typec.instantiate(f.ty, &params, self.interner)
+                                        })
+                                        .rev(),
+                                )
+                                .collect_into(&mut *frontier);
+                        }
+                        GenericTy::Enum(..) => todo!(),
+                    }
+                }
+                Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
+            }
+        }
     }
 
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
-                if !self.ty_layout(builder.value_ty(ret)).on_stack && let Some(ret) = self.load_value(ret, builder) {
-                    builder.ins().return_(&[ret]);
+                if !self.ty_layout(builder.value_ty(ret)).on_stack && let Some(ir_ret) = self.load_value(ret, builder) {
+                    dbg!(ir_ret, ret);
+                    builder.ins().return_(&[ir_ret]);
                 } else {
                     builder.ins().return_(&[]);
                 }
@@ -209,26 +278,35 @@ impl Generator<'_> {
             must_load,
         } = self.gen_resources.values[target];
         assert!(must_load);
-        let ptr_ty = builder.ptr_ty();
-        let addr = match computed.unwrap() {
-            ComputedValue::Value(value) => {
-                if offset != 0 {
-                    builder.ins().iadd_imm(value, offset as i64)
-                } else {
-                    value
-                }
-            }
-            ComputedValue::Variable(var) => {
-                let value = builder.use_var(var);
-                if offset != 0 {
-                    builder.ins().iadd_imm(value, offset as i64)
-                } else {
-                    value
-                }
-            }
-            ComputedValue::StackSlot(ss) => builder.ins().stack_addr(ptr_ty, ss, offset),
-        };
+        let ty = builder.value_ty(target);
+        let addr = self.ref_low(computed, ty, offset, builder);
         self.save_value(ret, addr, 0, false, builder);
+    }
+
+    fn ref_low(
+        &mut self,
+        computed: Option<ComputedValue>,
+        ty: Ty,
+        offset: i32,
+        builder: &mut GenBuilder,
+    ) -> ir::Value {
+        let ptr_ty = builder.ptr_ty();
+        let value = match computed {
+            Some(ComputedValue::Value(value)) => value,
+            Some(ComputedValue::Variable(var)) => builder.use_var(var),
+            Some(ComputedValue::StackSlot(ss)) => {
+                return builder.ins().stack_addr(ptr_ty, ss, offset)
+            }
+            None => {
+                let align = self.ty_layout(ty).align;
+                return builder.ins().iconst(ptr_ty, align.get() as i64);
+            }
+        };
+
+        match offset == 0 {
+            true => value,
+            false => builder.ins().iadd_imm(value, offset as i64),
+        }
     }
 
     fn field(
@@ -244,6 +322,7 @@ impl Generator<'_> {
             offset,
             must_load,
         } = self.gen_resources.values[header];
+        dbg!(field);
         let header_ty = builder.value_ty(header);
         let offsets = self.ty_layout(header_ty).offsets;
         let field_offset = self.gen_layouts.offsets[offsets][field as usize];
@@ -273,7 +352,7 @@ impl Generator<'_> {
     ) {
         let layout = self.ty_layout(builder.value_ty(ret));
 
-        self.ensure_target(ret, None, builder);
+        self.ensure_target_low(ret, None, true, builder);
 
         let base_value = self.gen_resources.values[ret];
 
@@ -281,6 +360,7 @@ impl Generator<'_> {
             .iter()
             .zip(&builder.body.value_args[fields])
             .for_each(|(&offset, &field)| {
+                dbg!(offset, field);
                 self.gen_resources.values[field] = GenValue {
                     offset: offset as i32 + base_value.offset,
                     ..base_value
@@ -488,7 +568,9 @@ impl Generator<'_> {
         };
 
         if must_load_source && must_load_target {
-            let (target_value, ..) = self.ensure_target(target, None, builder);
+            let target_value = self
+                .ensure_target(target, None, builder)
+                .expect("impossible");
 
             let mut get_addr = |value, offset: i32| match value {
                 ComputedValue::StackSlot(slot) => builder.ins().stack_addr(ptr_ty, slot, offset),
@@ -530,7 +612,10 @@ impl Generator<'_> {
             source_value,
         );
 
-        let (target_value, used) = self.ensure_target(target, Some(source), builder);
+        let Some(target_value) = self.ensure_target(target, Some(source), builder) else {
+            return;
+        };
+
         if must_load_target {
             match target_value {
                 ComputedValue::Value(val) => {
@@ -544,10 +629,12 @@ impl Generator<'_> {
                     builder.ins().stack_store(source, ss, offset);
                 }
             }
-        } else if !used {
+        } else {
             match target_value {
                 ComputedValue::Value(value) => {
+                    dbg!(value, target);
                     let new_value = self.set_bit_field(source, value, offset, builder);
+                    dbg!(new_value);
                     self.gen_resources.values[target].computed =
                         Some(ComputedValue::Value(new_value));
                 }
@@ -574,19 +661,38 @@ impl Generator<'_> {
                 true => types::I8,
                 false => layout.repr,
             };
-            match source_value {
-                ComputedValue::Value(val) => {
-                    builder
-                        .ins()
-                        .load(repr, MemFlags::new(), val, source_offset)
+            if layout.on_stack {
+                'a: {
+                    let value = match source_value {
+                        ComputedValue::Value(val) => val,
+                        ComputedValue::Variable(var) => builder.use_var(var),
+                        ComputedValue::StackSlot(ss) => {
+                            break 'a builder.ins().stack_addr(repr, ss, source_offset)
+                        }
+                    };
+
+                    match source_offset == 0 {
+                        true => value,
+                        false => builder.ins().iadd_imm(value, source_offset as i64),
+                    }
                 }
-                ComputedValue::Variable(var) => {
-                    let val = builder.use_var(var);
-                    builder
-                        .ins()
-                        .load(repr, MemFlags::new(), val, source_offset)
+            } else {
+                match source_value {
+                    ComputedValue::Value(val) => {
+                        builder
+                            .ins()
+                            .load(repr, MemFlags::new(), val, source_offset)
+                    }
+                    ComputedValue::Variable(var) => {
+                        let val = builder.use_var(var);
+                        builder
+                            .ins()
+                            .load(repr, MemFlags::new(), val, source_offset)
+                    }
+                    ComputedValue::StackSlot(ss) => {
+                        builder.ins().stack_load(repr, ss, source_offset)
+                    }
                 }
-                ComputedValue::StackSlot(ss) => builder.ins().stack_load(repr, ss, source_offset),
             }
         } else {
             let value = match source_value {
@@ -618,34 +724,44 @@ impl Generator<'_> {
         target: VRef<ValueMir>,
         source_value: Option<ir::Value>,
         builder: &mut GenBuilder,
-    ) -> (ComputedValue, bool) {
-        if let Some(value) = self.gen_resources.values[target].computed {
-            return (value, false);
+    ) -> Option<ComputedValue> {
+        self.ensure_target_low(target, source_value, false, builder)
+    }
+
+    fn ensure_target_low(
+        &mut self,
+        target: VRef<ValueMir>,
+        source_value: Option<ir::Value>,
+        force_mutable: bool,
+        builder: &mut GenBuilder,
+    ) -> Option<ComputedValue> {
+        if let value @ Some(..) = self.gen_resources.values[target].computed {
+            return value;
         }
 
         let referenced = builder.body.is_referenced(target);
 
         let layout = self.ty_layout(builder.value_ty(target));
         let must_load = layout.on_stack || referenced;
-        let (computed, used) = if must_load {
+        let computed = if must_load {
             let ss = builder.create_sized_stack_slot(StackSlotData {
                 kind: StackSlotKind::ExplicitSlot,
                 size: layout.size,
             });
-            (ComputedValue::StackSlot(ss), false)
+            if let Some(source) = source_value {
+                builder.ins().stack_store(source, ss, 0);
+            }
+            ComputedValue::StackSlot(ss)
         } else {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
-            (
-                if builder.body.is_mutable(target) {
-                    let var = Variable::from_u32(target.as_u32());
-                    builder.declare_var(var, layout.repr);
-                    builder.def_var(var, init);
-                    ComputedValue::Variable(var)
-                } else {
-                    ComputedValue::Value(init)
-                },
-                source_value.is_some(),
-            )
+            if builder.body.is_mutable(target) || force_mutable {
+                let var = Variable::from_u32(target.as_u32());
+                builder.declare_var(var, layout.repr);
+                builder.def_var(var, init);
+                ComputedValue::Variable(var)
+            } else {
+                ComputedValue::Value(init)
+            }
         };
 
         self.gen_resources.values[target] = GenValue {
@@ -654,7 +770,7 @@ impl Generator<'_> {
             must_load,
         };
 
-        (computed, used)
+        source_value.is_none().then_some(computed)
     }
 
     fn set_bit_field(
@@ -668,24 +784,20 @@ impl Generator<'_> {
         let target_repr = builder.func.dfg.value_type(target);
         let balanced = match target_repr.bytes() > source_size {
             true => builder.ins().uextend(target_repr, source),
-            false => source,
+            false => return source,
         };
 
         let shifted = match target_offset.cmp(&0) {
-            Ordering::Less => builder.ins().ishl_imm(balanced, -target_offset as i64 * 8),
+            Ordering::Less => builder.ins().ushr_imm(balanced, -target_offset as i64 * 8),
             Ordering::Equal => balanced,
-            Ordering::Greater => builder.ins().ushr_imm(balanced, target_offset as i64 * 8),
+            Ordering::Greater => builder.ins().ishl_imm(balanced, target_offset as i64 * 8),
         };
 
-        if target_repr.bytes() != source_size {
-            let insert_mask = !((
-                // results into source size full of ones
-                (1 << (source_size as i64 * 8)) - 1
-            ) << (target_offset as i64 * 8));
-            let target = builder.ins().band_imm(target, insert_mask);
-            builder.ins().bor(target, shifted)
-        } else {
-            shifted
-        }
+        let insert_mask = !((
+            // results into source size full of ones
+            (1 << (source_size as i64 * 8)) - 1
+        ) << (target_offset as i64 * 8));
+        let target = builder.ins().band_imm(target, insert_mask);
+        builder.ins().bor(target, shifted)
     }
 }
