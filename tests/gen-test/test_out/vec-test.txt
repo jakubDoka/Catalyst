@@ -1,11 +1,3 @@
-error: function not found
-  --> vec-test\root.ctl:13:8
-   |
-13 |     vv.get_mut(0).push(3)
-   |        ^^^^^^^ this does not exist
-   |
-   = info: queried 'struct1\get_mut'
-
 info: generated ir:
 main function u0:0() -> i64 fast {
     ss0 = explicit_slot 24
@@ -18,14 +10,22 @@ main function u0:0() -> i64 fast {
     sig3 = (i64, i64) fast
     sig4 = (i64 sret) fast
     sig5 = (i64, i64) fast
-    sig6 = (i64) fast
+    sig6 = (i64, i64) -> i64 fast
+    sig7 = (i64, i64) fast
+    sig8 = (i64, i64) -> i64 fast
+    sig9 = (i64, i64) -> i64 fast
+    sig10 = (i64) fast
     fn0 = colocated u0:2 sig0
     fn1 = colocated u0:3 sig1
     fn2 = colocated u0:3 sig2
     fn3 = colocated u0:3 sig3
     fn4 = colocated u0:4 sig4
     fn5 = colocated u0:5 sig5
-    fn6 = colocated u0:1 sig6
+    fn6 = colocated u0:6 sig6
+    fn7 = colocated u0:3 sig7
+    fn8 = colocated u0:7 sig8
+    fn9 = colocated u0:8 sig9
+    fn10 = colocated u0:1 sig10
 
 block0:
     v0 = stack_addr.i64 ss0
@@ -60,18 +60,52 @@ block0:
     v18 = stack_addr.i64 ss3
     v19 = stack_addr.i64 ss1
     call fn5(v18, v19)
-    v20 = iconst.i64 0
-    v21 = stack_addr.i64 ss3
-    call fn6(v21)
-    return v20  ; v20 = 0
+    v20 = stack_addr.i64 ss3
+    v21 = iconst.i64 0
+    v22 = call fn6(v20, v21)  ; v21 = 0
+    v23 = iconst.i64 0
+    call fn7(v22, v23)  ; v23 = 0
+    v24 = stack_addr.i64 ss3
+    v25 = iconst.i64 0
+    v26 = call fn8(v24, v25)  ; v25 = 0
+    v27 = iconst.i64 3
+    v28 = call fn9(v26, v27)  ; v27 = 3
+    v29 = stack_addr.i64 ss3
+    call fn10(v29)
+    v30 = load.i64 v28
+    return v30
+}
+get_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 8
+    v4 = imul v1, v3  ; v3 = 8
+    v5 = iadd v2, v4
+    return v5
+}
+get_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 24
+    v4 = imul v1, v3  ; v3 = 24
+    v5 = iadd v2, v4
+    return v5
+}
+get_mut_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 24
+    v4 = imul v1, v3  ; v3 = 24
+    v5 = iadd v2, v4
+    return v5
 }
 push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
-    sig2 = (i64) fast
-    fn0 = colocated u0:8 sig0
-    fn1 = colocated u0:10 sig1
-    fn2 = colocated u0:6 sig2
+    sig2 = (i64, i64) fast
+    fn0 = colocated u0:19 sig0
+    fn1 = colocated u0:6 sig1
+    fn2 = colocated u0:20 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -88,38 +122,32 @@ block1:
     jump block3
 
 block3:
-    v5 = iconst.i64 1
-    v6 = load.i64 v0+8
-    v7 = isub v6, v5  ; v5 = 1
-    v8 = call fn1(v0, v7)
-    call fn2(v8)
-    v9 = load.i64 aligned v1
-    v10 = load.i64 aligned v1+8
-    v11 = load.i64 aligned v1+16
-    store aligned v9, v8
-    store aligned v10, v8+8
-    store aligned v11, v8+16
-    v12 = iconst.i64 1
-    v13 = load.i64 v0+8
-    v14 = iadd v13, v12  ; v12 = 1
-    store v14, v0+8
+    v5 = load.i64 v0+8
+    v6 = call fn1(v0, v5)
+    call fn2(v6, v1)
+    v7 = iconst.i64 1
+    v8 = load.i64 v0+8
+    v9 = iadd v8, v7  ; v7 = 1
+    store v9, v0+8
     return
 }
-get_ptr function u0:0(i64, i64) -> i64 fast {
+write function u0:0(i64, i64) fast {
 block0(v0: i64, v1: i64):
-    v2 = load.i64 v0
-    v3 = iconst.i64 24
-    v4 = imul v1, v3  ; v3 = 24
-    v5 = iadd v2, v4
-    return v5
+    v2 = load.i64 aligned v1
+    v3 = load.i64 aligned v1+8
+    v4 = load.i64 aligned v1+16
+    store aligned v2, v0
+    store aligned v3, v0+8
+    store aligned v4, v0+16
+    return
 }
 grow function u0:0(i64) fast {
     sig0 = (i64) -> i64 windows_fastcall
     sig1 = (i64, i64, i64) windows_fastcall
     sig2 = (i64) windows_fastcall
-    fn0 = u0:16 sig0
-    fn1 = u0:18 sig1
-    fn2 = u0:19 sig2
+    fn0 = u0:21 sig0
+    fn1 = u0:23 sig1
+    fn2 = u0:24 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -152,60 +180,6 @@ block3(v8: i64):
     store v11, v0
     return
 }
-drop function u0:0(i64) fast {
-    ss0 = explicit_slot 8
-    sig0 = (i64, i64) -> i64 fast
-    sig1 = (i64) -> i64 fast
-    sig2 = (i64) windows_fastcall
-    fn0 = colocated u0:21 sig0
-    fn1 = colocated u0:22 sig1
-    fn2 = u0:19 sig2
-
-block0(v0: i64):
-    v1 = iconst.i64 0
-    jump block1(v1)  ; v1 = 0
-
-block1(v2: i64):
-    v5 -> v2
-    v3 = load.i64 v0+8
-    v4 = icmp eq v2, v3
-    brnz v4, block2
-    jump block3
-
-block3:
-    v6 = call fn0(v0, v5)
-    v7 = call fn1(v6)
-    stack_store v7, ss0
-    v8 = stack_addr.i64 ss0
-    v9 = iconst.i64 1
-    v10 = iadd.i64 v5, v9  ; v9 = 1
-    v11 -> v10
-    jump block4
-
-block4:
-    jump block1(v11)
-
-block2:
-    jump block5
-
-block5:
-    v12 = load.i64 v0
-    call fn2(v12)
-    return
-}
-read function u0:0(i64) -> i64 fast {
-block0(v0: i64):
-    v1 = load.i64 v0
-    return v1
-}
-get_ptr function u0:0(i64, i64) -> i64 fast {
-block0(v0: i64, v1: i64):
-    v2 = load.i64 v0
-    v3 = iconst.i64 8
-    v4 = imul v1, v3  ; v3 = 8
-    v5 = iadd v2, v4
-    return v5
-}
 new function u0:0(i64 sret) fast {
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -219,8 +193,10 @@ block0(v0: i64):
 push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
-    fn0 = colocated u0:28 sig0
-    fn1 = colocated u0:21 sig1
+    sig2 = (i64, i64) fast
+    fn0 = colocated u0:26 sig0
+    fn1 = colocated u0:27 sig1
+    fn2 = colocated u0:28 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -237,24 +213,35 @@ block1:
     jump block3
 
 block3:
-    v5 = iconst.i64 1
-    v6 = load.i64 v0+8
-    v7 = isub v6, v5  ; v5 = 1
-    v8 = call fn1(v0, v7)
-    store.i64 v1, v8
-    v9 = iconst.i64 1
-    v10 = load.i64 v0+8
-    v11 = iadd v10, v9  ; v9 = 1
-    store v11, v0+8
+    v5 = load.i64 v0+8
+    v6 = call fn1(v0, v5)
+    call fn2(v6, v1)
+    v7 = iconst.i64 1
+    v8 = load.i64 v0+8
+    v9 = iadd v8, v7  ; v7 = 1
+    store v9, v0+8
     return
+}
+write function u0:0(i64, i64) fast {
+block0(v0: i64, v1: i64):
+    store v1, v0
+    return
+}
+get_mut_ptr function u0:0(i64, i64) -> i64 fast {
+block0(v0: i64, v1: i64):
+    v2 = load.i64 v0
+    v3 = iconst.i64 8
+    v4 = imul v1, v3  ; v3 = 8
+    v5 = iadd v2, v4
+    return v5
 }
 grow function u0:0(i64) fast {
     sig0 = (i64) -> i64 windows_fastcall
     sig1 = (i64, i64, i64) windows_fastcall
     sig2 = (i64) windows_fastcall
-    fn0 = u0:16 sig0
-    fn1 = u0:18 sig1
-    fn2 = u0:19 sig2
+    fn0 = u0:21 sig0
+    fn1 = u0:23 sig1
+    fn2 = u0:24 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -303,10 +290,10 @@ drop function u0:0(i64) fast {
     sig1 = (i64 sret, i64) fast
     sig2 = (i64) fast
     sig3 = (i64) windows_fastcall
-    fn0 = colocated u0:10 sig0
-    fn1 = colocated u0:31 sig1
-    fn2 = colocated u0:6 sig2
-    fn3 = u0:19 sig3
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:33 sig1
+    fn2 = colocated u0:32 sig2
+    fn3 = u0:24 sig3
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -351,5 +338,55 @@ block0(v0: i64, v1: i64):
     store aligned v4, v0+16
     return
 }
+drop function u0:0(i64) fast {
+    ss0 = explicit_slot 8
+    sig0 = (i64, i64) -> i64 fast
+    sig1 = (i64) -> i64 fast
+    sig2 = (i64) windows_fastcall
+    fn0 = colocated u0:8 sig0
+    fn1 = colocated u0:34 sig1
+    fn2 = u0:24 sig2
 
+block0(v0: i64):
+    v1 = iconst.i64 0
+    jump block1(v1)  ; v1 = 0
+
+block1(v2: i64):
+    v5 -> v2
+    v3 = load.i64 v0+8
+    v4 = icmp eq v2, v3
+    brnz v4, block2
+    jump block3
+
+block3:
+    v6 = call fn0(v0, v5)
+    v7 = call fn1(v6)
+    stack_store v7, ss0
+    v8 = stack_addr.i64 ss0
+    v9 = iconst.i64 1
+    v10 = iadd.i64 v5, v9  ; v9 = 1
+    v11 -> v10
+    jump block4
+
+block4:
+    jump block1(v11)
+
+block2:
+    jump block5
+
+block5:
+    v12 = load.i64 v0
+    call fn2(v12)
+    return
+}
+read function u0:0(i64) -> i64 fast {
+block0(v0: i64):
+    v1 = load.i64 v0
+    return v1
+}
+
+
+info: status: 0
+ = info: stdout:
+ = info: stderr:
 
