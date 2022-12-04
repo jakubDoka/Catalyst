@@ -1,40 +1,40 @@
-error: cannot move out of value twice
- --> simple-moves\root.ctl:7:10
+error: cannot move out of a value more than once
+ --> simple-moves\root.ctl:8:10
   |
 7 |     drop(a)
   |          - info: first move here
 8 |     drop(a)
-  |          ^ double move occurred here
+  |          ^ detected here
   |
 
-error: cannot move out of value twice
-  --> simple-moves\root.ctl:13:14
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:15:10
    |
 13 |         drop(a)
    |              - info: first move here
 14 |     } 
 15 |     drop(a)
-   |          ^ double move occurred here
+   |          ^ detected here
    |
 
-error: cannot move out of value twice
-  --> simple-moves\root.ctl:39:10
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:41:10
    |
 39 |     drop(a)
    |          - info: first move here
 40 |     if 0 == 0 => a = A\{ }
 41 |     drop(a)
-   |          ^ double move occurred here
+   |          ^ detected here
    |
 
-error: cannot move out of value twice
-  --> simple-moves\root.ctl:71:9
+error: cannot move out of a value more than once
+  --> simple-moves\root.ctl:72:10
    |
 71 |         e {
    |         - info: first move here
 ...
 74 |     drop(e)
-   |          ^ double move occurred here
+   |          ^ detected here
    |
 
 info: mir repr of functions:

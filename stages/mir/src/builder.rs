@@ -816,7 +816,7 @@ impl MirChecker<'_, '_> {
             }
         }
 
-        push double_move(self, span: Span, source_span: Span) {
+        push double_move(self, source_span: Span, span: Span) {
             err: "cannot move out of a value more than once";
             (span.joined(source_span), self.source) {
                 err[span]: "detected here";
