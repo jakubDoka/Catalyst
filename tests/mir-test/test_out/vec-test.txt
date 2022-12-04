@@ -78,22 +78,19 @@ fn [] push(var0: ^mut 0\Vec[param0], var1: param0) -> ()  { ret var0
     block3(var1: !) {
         access var2
         access var2
+        var11 = *var2
+        var10 = var11.1
+        var9 = get_mut_ptr[param0](val2, val10)
+        access var3
+        var0 = write[param0](val9, val3)
+        access var2
         var13 = *var2
         var12 = var13.1
-        var14 = 1
-        var11 = uint - uint(val12, val14)
-        var10 = get_ptr[param0](val2, val11)
-        var9 = *var10
-        drop var9
-        var9 = access var3
         access var2
-        var16 = *var2
-        var15 = var16.1
-        access var2
-        var18 = *var2
-        var17 = var18.1
-        var19 = 1
-        var15 = uint + uint(val17, val19)
+        var15 = *var2
+        var14 = var15.1
+        var16 = 1
+        var12 = uint + uint(val14, val16)
         return var0
     }
 

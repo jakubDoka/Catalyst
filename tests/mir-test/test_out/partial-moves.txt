@@ -1,11 +1,11 @@
-error: cannot move out of value twice
-  --> partial-moves\root.ctl:14:12
+error: cannot move out of a value more than once
+  --> partial-moves\root.ctl:16:12
    |
 14 |     drop(b.a0)
    |            -- info: first move here
 15 |     drop(b.a1)
 16 |     drop(b.a0)
-   |            ^^ double move occurred here
+   |            ^^ detected here
    |
 
 error: cannot move out of partially moved value

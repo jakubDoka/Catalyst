@@ -6,6 +6,3 @@ error: type mismatch
   |
   = info: expected 'u32' but got 'uint'
 
-info: generated ir:
-
-
