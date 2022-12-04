@@ -1,0 +1,88 @@
+error: cannot move out of the value, it could have been moved out in a previous iteration of the loop
+ --> loop-drops\root.ctl:8:14
+  |
+7 |       loop {
+  |  _____^
+8 |           drop(a)
+  | |              - info: move occurred here
+9 | |     }
+  | |_____^ in this loop
+  |
+
+info: mir repr of functions:
+ fn [] drop(var0: param0) -> ()  { ret var0
+    block0(var2: param0) {
+        drop var2
+        return var0
+    }
+
+}
+
+fn [] loop_drop() -> ()  { ret var0
+    block0() {
+        var2 ={}
+        var3 = var2
+        goto block1 with var0
+    }
+
+    block1() {
+        access var3
+        var0 = drop[0\A](val3)
+        goto block1 with var0
+    }
+
+}
+
+fn [] loop_break_drop() -> ()  { ret var0
+    block0() {
+        var2 ={}
+        var3 = var2
+        goto block1 with var0
+    }
+
+    block1() {
+        access var3
+        var0 = drop[0\A](val3)
+        goto block2 with var0
+    }
+
+    block2() {
+        return var0
+    }
+
+}
+
+fn [] loop_branch_drop() -> ()  { ret var0
+    block0(var1: !) {
+        var2 ={}
+        var3 = var2
+        goto block1 with var0
+    }
+
+    block1() {
+        var4 = true
+        split var4 block2 block3
+    }
+
+    block2() {
+        access var3
+        var1 = drop[0\A](val3)
+        goto block4 with var1
+    }
+
+    block3() {
+        goto block1 with var0
+    }
+
+    block4(var1: !) {
+        goto block5 with var0
+    }
+
+    block5() {
+        return var0
+    }
+
+}
+
+
+
