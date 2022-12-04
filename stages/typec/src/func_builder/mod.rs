@@ -404,6 +404,7 @@ impl TyChecker<'_> {
             Let(r#let) => self.r#let(r#let, inference, builder),
             Deref(.., &expr) => self.deref(expr, inference, builder),
             Ref(.., mutability, &expr) => self.r#ref(mutability, expr, inference, builder),
+            Block(block) => self.block(block, inference, builder),
             PathInstance(_) => todo!(),
             TypedPath(_) => todo!(),
         }

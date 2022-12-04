@@ -544,15 +544,24 @@ impl MirChecker<'_, '_> {
         self.mir_move_ctx
             .simplify_temp
             .extend(branch.iter().filter_map(|r| {
-                (self.mir_ctx.value_depths[r.key.root] <= self.mir_ctx.depth).then(|| r.key.clone())
+                (self.mir_ctx.value_depths[r.key.root] <= self.mir_ctx.depth)
+                    .then(|| (r.key.clone(), ()))
             }));
 
         branch.reverse();
         branch.retain(|record| {
-            if !self.mir_move_ctx.simplify_temp.contains(&record.key) {
+            if self
+                .mir_move_ctx
+                .simplify_temp
+                .remove(&record.key)
+                .is_none()
+            {
                 false
             } else {
-                self.remove_range_from_lookup(&record.key);
+                drop(remove_range(
+                    &mut self.mir_move_ctx.simplify_temp,
+                    record.key.range(&mut self.mir_move_ctx.range_temp),
+                ));
                 true
             }
         });
@@ -677,7 +686,7 @@ impl MirChecker<'_, '_> {
         let mut history = self
             .mir_move_ctx
             .history
-            .from_nth(loop_depth as usize - 1)
+            .from_nth(loop_depth as usize)
             .to_bumpvec();
         self.simplify_branch_history(&mut history);
 
@@ -757,7 +766,7 @@ pub struct MirMoveCtx {
     concurrent_history: Frames<MoveRecord>,
     owners: ShadowMap<ValueMir, Owner>,
 
-    simplify_temp: BTreeSet<MoveKey>,
+    simplify_temp: BTreeMap<MoveKey, ()>,
     count_temp: BTreeMap<MoveKey, usize>,
     // cover_temp: BTreeMap<MoveKey, BranchMoveMask>,
     range_temp: Range<MoveKey>,

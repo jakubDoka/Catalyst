@@ -80,7 +80,7 @@ impl Ast<'_> for ContinueAst {
         Some(Self {
             r#continue: ctx.advance().span,
             label: ctx
-                .expect_advance(TokenKind::Label)
+                .optional_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
         })
     }

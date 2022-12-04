@@ -69,6 +69,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
                 mutability.display(fmt);
                 target.display(fmt);
             }
+            Block(block) => block.display_low(true, fmt),
         }
     }
 
@@ -91,6 +92,7 @@ impl<'a> FmtAst for UnitExprAst<'a> {
             Continue(r#continue) => r#continue.flat_len(fmt),
             Let(r#let) => r#let.flat_len(fmt),
             Deref(span, target) | Ref(span, .., target) => span.len() + target.flat_len(fmt),
+            Block(block) => block.flat_len(fmt),
         }
     }
 }

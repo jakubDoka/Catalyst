@@ -458,6 +458,55 @@ fn main() {
             };
         }
 
+        simple "loop-drops" {
+            fn [T] drop(t: T) {};
+
+            struct A;
+
+            fn loop_drop() {
+                let a = A::{};
+                loop {
+                    drop(a);
+                };
+            };
+
+            fn loop_break_drop() {
+                let a = A::{};
+                loop {
+                    drop(a);
+                    break;
+                };
+            };
+
+            fn linear_loop_branch_drop() {
+                let a = A::{};
+                loop {
+                    if true => drop(a);
+                    else => continue;
+                    break;
+                };
+                drop(a);
+            };
+
+            fn loop_branch_drop() {
+                let a = A::{};
+                loop {
+                    if true => drop(a);
+                    else => break;
+                };
+            };
+
+            fn loop_drop_and_move_in() {
+                let a = A::{};
+                loop {
+                    if true => drop(a);
+                    a = A::{};
+                };
+
+                drop(a);
+            };
+        }
+
         simple "register struct init and use" {
             struct RegStruct {
                 field: u32;

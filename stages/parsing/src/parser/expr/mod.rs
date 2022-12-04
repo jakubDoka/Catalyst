@@ -89,6 +89,7 @@ pub enum UnitExprAst<'a> {
     Let(LetAst<'a>),
     Deref(Span, &'a UnitExprAst<'a>),
     Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
+    Block(BlockAst<'a>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -122,6 +123,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
                 "^" => Some(Self::Ref(ctx.advance().span, ctx.parse()?, ctx.parse_alloc()?)),
             }},
+            LeftCurly => ctx.parse().map(Self::Block),
         });
 
         loop {
@@ -172,6 +174,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Continue(r#continue) => r#continue.span(),
             Let(r#let) => r#let.span(),
             Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
+            Block(block) => block.span(),
         }
     }
 }

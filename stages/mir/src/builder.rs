@@ -127,10 +127,11 @@ impl MirChecker<'_, '_> {
                 },
             ..
         } = self.mir_ctx.loops[loop_id.index()];
+
         let &mut end =
             end.get_or_insert_with(|| self.mir_ctx.func.blocks.push(BlockMir::default()));
         let value = value
-            .map(|value| self.node(value, Some(dest), false))
+            .map(|value| self.node(value, Some(dest), true))
             .transpose()?
             .unwrap_or(ValueMir::UNIT);
 
