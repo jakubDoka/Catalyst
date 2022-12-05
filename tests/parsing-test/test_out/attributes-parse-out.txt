@@ -1,0 +1,16 @@
+error: expected '\n' | ';' but got Ident
+ --> attributes\root.ctl:1:35
+  |
+1 | #[macro swap] ; enum Swap { Two : TwoTokens ; Last : LastToken ; Empty ; } ;
+  |                                   ^^^^^^^^^ token located here
+  |
+  = info: list -> item -> enum -> list
+
+error: expected '\n' | ';' but got Ident
+ --> attributes\root.ctl:1:54
+  |
+1 | #[macro swap] ; enum Swap { Two : TwoTokens ; Last : LastToken ; Empty ; } ;
+  |                                                      ^^^^^^^^^ token located here
+  |
+  = info: list -> item -> enum -> list
+

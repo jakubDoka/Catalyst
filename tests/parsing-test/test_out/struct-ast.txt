@@ -3,12 +3,12 @@
  1 | 
  2 | pub struct RichStruct { // comment
  3 |     // comment
- 4 |     pub use mut field: Something[
+ 4 |     pub use mut field: Something\[
  5 |         Very, // uuu
  6 |         Complex,
  7 |     ] // comment
  8 |     // comment
- 9 |     other_field: SimpleStuff[Hell /* gear */ ]
+ 9 |     other_field: SimpleStuff\[Hell /* gear */ ]
 10 |     priv pointer: ^mut ^int
 11 |     // comment
 12 | } // comment

@@ -1,0 +1,8 @@
+error: expected '\n' | ';' but got '['
+ --> cross-module-item-access\root\b.ctl:1:162
+  |
+1 | impl uint {     fn pass(s : Self) -> uint => s ; fn [T] pass_other(s : Self, p : T) -> T     => p ; } ; fn [T] pass(v : T) -> T => v ; struct [T] A ; impl [T] A [T] { fn pass(s : T) -> T => s ; } ;
+  |                                                                                                                                                                  ^ token located here
+  |
+  = info: list
+

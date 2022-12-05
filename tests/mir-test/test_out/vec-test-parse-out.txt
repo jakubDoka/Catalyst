@@ -1,0 +1,8 @@
+error: expected ',' but got '['
+ --> vec-test\root.ctl:1:153
+  |
+1 | use { "water/vec" ; } ; #[entry] ; fn main() -> uint {     let mut v = Vec\[uint]\new() ; v.push(0) ; v.push(1) ; v.push(2) ;     let mut vv = Vec\[Vec [uint]]\new() ; vv.push(v) ;     vv.get_mut(0).push(3) ; 0 }
+  |                                                                                                                                                         ^ token located here
+  |
+  = info: list -> item -> function definition -> function body -> list -> expr -> unit expr -> let -> expr -> unit expr -> ident chain -> list
+
