@@ -2,7 +2,6 @@ use std::ops::Deref;
 
 use diags::*;
 use lexing_t::Span;
-use packaging_t::span_str;
 use parsing::*;
 use parsing_t::*;
 
@@ -36,10 +35,21 @@ impl TyChecker<'_> {
     pub fn ty(&mut self, ty_ast: TyAst) -> Option<Ty> {
         match ty_ast {
             TyAst::Path(ident) => match self.ty_path(ident)? {
-                TyPathResult::Ty(ty) => Some(ty),
-                TyPathResult::Spec(..) => todo!(),
+                (TyPathResult::Ty(ty), None) => Some(ty),
+                (TyPathResult::Ty(ty), Some(params)) => {
+                    let ty = ty.as_generic().or_else(|| todo!())?;
+                    let args = params
+                        .iter()
+                        .map(|&p| self.ty(p))
+                        .nsc_collect::<Option<BumpVec<_>>>()?;
+                    Some(Ty::Instance(self.typec.instance(
+                        ty,
+                        args.as_slice(),
+                        self.interner,
+                    )))
+                }
+                (TyPathResult::Spec(..), ..) => todo!(),
             },
-            TyAst::Instance(instance) => self.instance(instance).map(Ty::Instance),
             TyAst::Pointer(&pointer) => self.pointer(pointer).map(Ty::Pointer),
             TyAst::Tuple(tuple) => self.tuple(tuple),
             TyAst::Wildcard(..) => todo!(),
@@ -70,33 +80,21 @@ impl TyChecker<'_> {
     }
 
     pub fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {
-        match spec_ast {
-            SpecExprAst::Path(ident) => match self.ty_path(ident)? {
-                TyPathResult::Ty(..) => todo!(),
-                TyPathResult::Spec(spec) => Some(Spec::Base(spec)),
-            },
-            SpecExprAst::Instance(instance) => self.spec_instance(instance).map(Spec::Instance),
+        match self.ty_path(spec_ast.path)? {
+            (TyPathResult::Ty(..), ..) => todo!(),
+            (TyPathResult::Spec(spec), None) => Some(Spec::Base(spec)),
+            (TyPathResult::Spec(spec), Some(params)) => {
+                let args = params
+                    .iter()
+                    .map(|&p| self.ty(p))
+                    .nsc_collect::<Option<BumpVec<_>>>()?;
+                Some(Spec::Instance(self.typec.spec_instance(
+                    spec,
+                    args.as_slice(),
+                    self.interner,
+                )))
+            }
         }
-    }
-
-    fn spec_instance(
-        &mut self,
-        TyInstanceAst { path, params }: TyInstanceAst,
-    ) -> Option<FragRef<SpecInstance>> {
-        let base = match self.ty_path(path)? {
-            TyPathResult::Ty(..) => todo!(),
-            TyPathResult::Spec(base) => base,
-        };
-
-        let args = params
-            .iter()
-            .map(|&p| self.ty(p))
-            .nsc_collect::<Option<BumpVec<_>>>()?;
-
-        Some(
-            self.typec
-                .spec_instance(base, args.as_slice(), self.interner),
-        )
     }
 
     fn pointer(
@@ -112,60 +110,55 @@ impl TyChecker<'_> {
         Some(match mutability_ast {
             MutabilityAst::Mut(..) => Mutability::Mutable,
             MutabilityAst::None => Mutability::Immutable,
-            MutabilityAst::Generic(.., path) => {
-                match lookup!(Ty self, path.start.ident, path.start.span) {
-                    Ty::Param(i) => Mutability::Param(i),
-                    _ => todo!(),
-                }
-            }
+            MutabilityAst::Generic(
+                ..,
+                PathAst {
+                    slash: None,
+                    start: PathItemAst::Ident(start),
+                    segments: &[],
+                },
+            ) => match lookup!(Ty self, start.ident, start.span) {
+                Ty::Param(i) => Mutability::Param(i),
+                _ => todo!(),
+            },
+            MutabilityAst::Generic(..) => todo!(),
         })
     }
 
-    fn instance(
+    pub fn ty_path<'a>(
         &mut self,
-        TyInstanceAst {
-            path: ident,
-            params,
-        }: TyInstanceAst,
-    ) -> Option<FragRef<Instance>> {
-        let base = match self.ty_path(ident)? {
-            TyPathResult::Ty(base) => base
-                .as_generic()
-                .or_else(|| todo!("{} {base:?}", span_str!(self, ident.span())))?,
-            TyPathResult::Spec(..) => todo!(),
+        path @ PathAst {
+            start, segments, ..
+        }: PathAst<'a>,
+    ) -> Option<(TyPathResult, Option<TyGenericsAst<'a>>)> {
+        let PathItemAst::Ident(start) = start else {
+            todo!();
         };
 
-        let args = params
-            .iter()
-            .map(|&p| self.ty(p))
-            .nsc_collect::<Option<BumpVec<_>>>()?;
-
-        Some(self.typec.instance(base, args.as_slice(), self.interner))
-    }
-
-    pub fn ty_path(
-        &mut self,
-        path @ PathExprAst {
-            start, segments, ..
-        }: PathExprAst,
-    ) -> Option<TyPathResult> {
-        let item = match self.lookup(start.ident, start.span, TY_OR_MOD)? {
+        let (item, segments) = match self.lookup(start.ident, start.span, TY_OR_MOD)? {
             ScopeItem::Module(module) => {
-                let Some(ty) = segments.first() else {
+                let &[PathItemAst::Ident(ty), ref segments @ ..] = segments else {
                     self.invalid_ty_path(path);
                     return None;
                 };
                 let id = self.interner.intern_scoped(module.index(), ty.ident);
-                self.lookup(id, path.span(), TY_OR_MOD)?
+                (self.lookup(id, path.span(), TY_OR_MOD)?, segments)
             }
-            item => item,
+            item => (item, segments),
         };
 
-        Some(match item {
-            ScopeItem::Ty(ty) => TyPathResult::Ty(ty),
-            ScopeItem::SpecBase(spec) => TyPathResult::Spec(spec),
-            item => self.invalid_symbol_type(item, start.span, TY_OR_MOD)?,
-        })
+        Some((
+            match item {
+                ScopeItem::Ty(ty) => TyPathResult::Ty(ty),
+                ScopeItem::SpecBase(spec) => TyPathResult::Spec(spec),
+                item => self.invalid_symbol_type(item, start.span, TY_OR_MOD)?,
+            },
+            match segments {
+                [] => None,
+                &[PathItemAst::Params(generics)] => Some(generics),
+                _ => todo!(),
+            },
+        ))
     }
 
     pub fn lookup(&mut self, sym: Ident, span: Span, what: &str) -> Option<ScopeItem> {
@@ -199,7 +192,7 @@ impl TyChecker<'_> {
     }
 
     gen_error_fns! {
-        push invalid_ty_path(self, segment: PathExprAst) {
+        push invalid_ty_path(self, segment: PathAst) {
             err: "invalid type path composition";
             info: "valid forms: `Ty` | `mod\\Ty`";
             (segment.span(), self.source) {

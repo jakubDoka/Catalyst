@@ -76,8 +76,7 @@ pub use parser::{
             StructCtorPatFieldAst,
         },
         BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, DotExprAst,
-        EnumCtorAst, ExprAst, LetAst, PathInstanceAst, StructCtorAst, StructCtorBodyAst,
-        TypedPathAst, UnitExprAst,
+        EnumCtorAst, ExprAst, LetAst, StructCtorAst, StructCtorBodyAst, UnitExprAst,
     },
     func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
     imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},
@@ -92,10 +91,7 @@ pub use parser::{
     },
     r#struct::{StructAst, StructBodyAst, StructBodyMeta, StructCtorFieldAst, StructFieldAst},
     spec::SpecExprAst,
-    ty::{
-        MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyInstanceAst, TyPointerAst,
-        TyTupleAst,
-    },
-    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamSpecsAst, PathExprAst,
+    ty::{MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyPointerAst, TyTupleAst},
+    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamSpecsAst, PathAst, PathItemAst,
     TupleCtorAst, TupleCtorMeta,
 };

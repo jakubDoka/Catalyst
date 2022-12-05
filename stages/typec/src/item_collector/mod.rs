@@ -153,11 +153,9 @@ impl TyChecker<'_> {
         };
         let spec = SpecBase {
             name: name.ident,
-            generics: default(),
-            methods: default(),
             loc: Some(loc),
+            ..default()
         };
-
         self.insert_humid_item(spec, attributes)
     }
 

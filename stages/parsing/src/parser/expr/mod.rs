@@ -74,9 +74,7 @@ pub enum UnitExprAst<'a> {
     EnumCtor(EnumCtorAst<'a>),
     DotExpr(&'a DotExprAst<'a>),
     Call(&'a CallExprAst<'a>),
-    Path(PathExprAst<'a>),
-    PathInstance(PathInstanceAst<'a>),
-    TypedPath(TypedPathAst<'a>),
+    Path(PathAst<'a>),
     Return(ReturnExprAst<'a>),
     Int(Span),
     Char(Span),
@@ -144,10 +142,6 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                     branch!(ctx => {
                         LeftCurly => ctx.parse_args((Some(unit?), slash))
                             .map(Self::StructCtor),
-                        LeftBracket => ctx.parse_args((unit?, Some(slash)))
-                            .map(Self::PathInstance),
-                        Ident => ctx.parse_args((unit?, slash))
-                            .map(Self::TypedPath),
                     })
                 },
                 _ => break unit,
@@ -162,10 +156,8 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             DotExpr(dot) => dot.span(),
             Call(call) => call.span(),
             Path(path) => path.span(),
-            PathInstance(instance) => instance.span(),
             Return(ret) => ret.span(),
             Int(span) | Char(span) | Bool(span) => span,
-            TypedPath(path) => path.span(),
             Match(r#match) => r#match.span(),
             EnumCtor(ctor) => ctor.span(),
             If(r#if) => r#if.span(),
@@ -213,7 +205,7 @@ impl<'a> Ast<'a> for LetAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct EnumCtorAst<'a> {
-    pub path: PathInstanceAst<'a>,
+    pub path: PathAst<'a>,
     pub value: Option<(Span, ExprAst<'a>)>,
 }
 
@@ -225,8 +217,7 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (path,): Self::Args) -> Option<Self> {
         Some(Self {
             path: match path {
-                UnitExprAst::PathInstance(path) => path,
-                UnitExprAst::Path(path) => PathInstanceAst { path, params: None },
+                UnitExprAst::Path(path) => path,
                 _ => todo!(),
             },
             value: ctx
@@ -244,100 +235,8 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TypedPathAst<'a> {
-    pub ty: TyAst<'a>,
-    pub slash: Span,
-    pub path: PathInstanceAst<'a>,
-}
-
-impl<'a> Ast<'a> for TypedPathAst<'a> {
-    type Args = (UnitExprAst<'a>, Span);
-
-    const NAME: &'static str = "typed path";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (unit, slash): Self::Args,
-    ) -> Option<Self> {
-        let ty = match unit {
-            UnitExprAst::PathInstance(PathInstanceAst {
-                path, params: None, ..
-            })
-            | UnitExprAst::Path(path) => TyAst::Path(path),
-            UnitExprAst::PathInstance(PathInstanceAst {
-                path,
-                params: Some((.., params)),
-                ..
-            }) => TyAst::Instance(TyInstanceAst { path, params }),
-            _ => ctx.invalid_typed_path(unit.span())?,
-        };
-
-        let path = ctx.parse()?;
-
-        Some(Self {
-            ty,
-            slash,
-            path: ctx.parse_args((UnitExprAst::Path(path), None))?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.ty.span().joined(self.slash)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PathInstanceAst<'a> {
-    pub path: PathExprAst<'a>,
-    pub params: Option<(Span, TyGenericsAst<'a>)>,
-}
-
-impl<'a> PathInstanceAst<'a> {
-    pub fn params(&self) -> impl Iterator<Item = TyAst<'a>> + '_ {
-        self.params
-            .as_ref()
-            .map(|(_, params)| params.iter().copied())
-            .into_iter()
-            .flatten()
-    }
-}
-
-impl<'a> Ast<'a> for PathInstanceAst<'a> {
-    type Args = (UnitExprAst<'a>, Option<Span>);
-
-    const NAME: &'static str = "path instance";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (path, slash): Self::Args,
-    ) -> Option<Self> {
-        let UnitExprAst::Path(path) = path else {
-            ctx.invalid_instance_path(path.span())?;
-        };
-
-        let params = if let Some(slash) = slash {
-            Some((slash, ctx.parse()?))
-        } else if ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::LeftBracket) {
-            let slash = ctx.advance().span;
-            Some((slash, ctx.parse()?))
-        } else {
-            None
-        };
-
-        Some(Self { path, params })
-    }
-
-    fn span(&self) -> Span {
-        self.params.map_or_else(
-            || self.path.span(),
-            |(span, _)| self.path.span().joined(span),
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct StructCtorAst<'a> {
-    pub path: Option<PathInstanceAst<'a>>,
+    pub path: Option<PathAst<'a>>,
     pub slash: Span,
     pub body: StructCtorBodyAst<'a>,
 }
@@ -352,8 +251,7 @@ impl<'a> Ast<'a> for StructCtorAst<'a> {
         (ty, slash): Self::Args,
     ) -> Option<Self> {
         let path = match ty {
-            Some(UnitExprAst::PathInstance(path)) => Some(path),
-            Some(UnitExprAst::Path(path)) => Some(PathInstanceAst { path, params: None }),
+            Some(UnitExprAst::Path(path)) => Some(path),
             None => None,
             Some(ty) => ctx.invalid_struct_constructor_type(ty.span())?,
         };
@@ -377,7 +275,7 @@ impl<'a> Ast<'a> for StructCtorAst<'a> {
 pub struct DotExprAst<'a> {
     pub lhs: UnitExprAst<'a>,
     pub dot: Span,
-    pub rhs: PathInstanceAst<'a>,
+    pub rhs: PathAst<'a>,
 }
 
 impl<'a> Ast<'a> for DotExprAst<'a> {
@@ -389,10 +287,7 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
         Some(Self {
             lhs,
             dot: ctx.advance().span,
-            rhs: {
-                let path = ctx.parse()?;
-                ctx.parse_args((UnitExprAst::Path(path), None))?
-            },
+            rhs: ctx.parse()?,
         })
     }
 

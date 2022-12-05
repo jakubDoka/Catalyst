@@ -242,8 +242,7 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
         if let Some(tok) = ctx.try_advance(TokenKind::For) {
             Some(Self::Spec(
                 match ty {
-                    TyAst::Path(path) => SpecExprAst::Path(path),
-                    TyAst::Instance(instance) => SpecExprAst::Instance(instance),
+                    TyAst::Path(path) => SpecExprAst { path },
                     _ => ctx.invalid_spec_syntax(ty.span())?,
                 },
                 tok.span,
@@ -296,6 +295,7 @@ pub struct SpecAst<'a> {
     pub spec: Span,
     pub generics: GenericsAst<'a>,
     pub name: NameAst,
+    pub inherits: ParamSpecsAst<'a>,
     pub body: SpecBodyAst<'a>,
 }
 
@@ -314,6 +314,7 @@ impl<'a> Ast<'a> for SpecAst<'a> {
             spec: ctx.advance().span,
             generics: ctx.parse()?,
             name: ctx.parse()?,
+            inherits: ctx.parse()?,
             body: ctx.parse()?,
         })
     }

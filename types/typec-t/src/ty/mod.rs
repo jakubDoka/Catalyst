@@ -133,6 +133,7 @@ impl fmt::Display for Mutability {
 pub struct SpecBase {
     pub name: Ident,
     pub generics: Generics,
+    pub inherits: FragSlice<Spec>,
     pub methods: FragSlice<SpecFunc>,
     pub loc: Option<Loc>,
 }

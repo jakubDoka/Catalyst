@@ -8,8 +8,7 @@ pub type TyTupleAst<'a> = ListAst<'a, TyAst<'a>, TyTupleMeta>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum TyAst<'a> {
-    Path(PathExprAst<'a>),
-    Instance(TyInstanceAst<'a>),
+    Path(PathAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
     Tuple(TyTupleAst<'a>),
     Wildcard(Span),
@@ -27,13 +26,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
                     return Some(Self::Wildcard(ctx.advance().span));
                 }
 
-                let ident = ctx.parse();
-
-                if ctx.at_tok(TokenKind::LeftBracket) {
-                    Ast::parse_args(ctx, (ident?,)).map(TyAst::Instance)
-                } else {
-                    ident.map(TyAst::Path)
-                }
+                ctx.parse().map(TyAst::Path)
             },
             LeftParen => ctx.parse().map(TyAst::Tuple),
             Operator(_ = 0) => branch!(str ctx => {
@@ -47,34 +40,10 @@ impl<'a> Ast<'a> for TyAst<'a> {
     fn span(&self) -> Span {
         match *self {
             TyAst::Path(ident) => ident.span(),
-            TyAst::Instance(instance) => instance.span(),
             TyAst::Pointer(pointer) => pointer.span(),
             TyAst::Tuple(tuple) => tuple.span(),
             TyAst::Wildcard(span) => span,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct TyInstanceAst<'a> {
-    pub path: PathExprAst<'a>,
-    pub params: TyGenericsAst<'a>,
-}
-
-impl<'a> Ast<'a> for TyInstanceAst<'a> {
-    type Args = (PathExprAst<'a>,);
-
-    const NAME: &'static str = "type instance";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (ident,): Self::Args) -> Option<Self> {
-        Some(TyInstanceAst {
-            path: ident,
-            params: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.path.span().joined(self.params.span())
     }
 }
 
@@ -107,7 +76,7 @@ impl<'a> Ast<'a> for TyPointerAst<'a> {
 pub enum MutabilityAst<'a> {
     Mut(Span),
     None,
-    Generic(Span, PathExprAst<'a>),
+    Generic(Span, PathAst<'a>),
 }
 
 impl<'a> Ast<'a> for MutabilityAst<'a> {

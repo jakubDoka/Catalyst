@@ -87,7 +87,7 @@ impl<'a> FmtAst for GenericParamAst<'a> {
     }
 }
 
-impl<'a> FmtAst for PathExprAst<'a> {
+impl<'a> FmtAst for PathAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         if let Some(slash) = self.slash {
             fmt.write_span(slash);
@@ -105,6 +105,22 @@ impl<'a> FmtAst for PathExprAst<'a> {
             .map(|ident| ident.flat_len(fmt))
             .intersperse(1)
             .sum::<usize>()
+    }
+}
+
+impl<'a> FmtAst for PathItemAst<'a> {
+    fn display_low(&self, _: bool, fmt: &mut Fmt) {
+        match *self {
+            PathItemAst::Ident(ident) => ident.display(fmt),
+            PathItemAst::Params(params) => params.display(fmt),
+        }
+    }
+
+    fn flat_len(&self, fmt: &Fmt) -> usize {
+        match *self {
+            PathItemAst::Ident(ident) => ident.flat_len(fmt),
+            PathItemAst::Params(params) => params.flat_len(fmt),
+        }
     }
 }
 

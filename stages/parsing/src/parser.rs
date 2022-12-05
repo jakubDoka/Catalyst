@@ -47,24 +47,35 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PathExprAst<'a> {
+pub struct PathAst<'a> {
     pub slash: Option<Span>,
-    pub start: NameAst,
-    pub segments: &'a [NameAst],
+    pub start: PathItemAst<'a>,
+    pub segments: &'a [PathItemAst<'a>],
 }
 
-impl<'a> Ast<'a> for PathExprAst<'a> {
+impl<'a> Ast<'a> for PathAst<'a> {
     type Args = ();
 
     const NAME: &'static str = "ident chain";
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let slash = ctx.try_advance(TokenKind::BackSlash).map(|t| t.span);
-        let start = ctx.name_unchecked();
+        let start = if ctx.at_next_tok(TokenKind::Ident) {
+            PathItemAst::Ident(ctx.name_unchecked())
+        } else {
+            PathItemAst::Params(ctx.parse()?)
+        };
         let mut segments = bumpvec![];
-        while ctx.at_tok(TokenKind::BackSlash) && ctx.at_next_tok(TokenKind::Ident) {
-            ctx.advance();
-            segments.push(ctx.name_unchecked());
+        while ctx.at_tok(TokenKind::BackSlash) {
+            if ctx.at_next_tok(TokenKind::Ident) {
+                ctx.advance();
+                segments.push(PathItemAst::Ident(ctx.name_unchecked()));
+            } else if ctx.at_next_tok(TokenKind::LeftBracket) {
+                ctx.advance();
+                segments.push(PathItemAst::Params(ctx.parse()?));
+            } else {
+                break;
+            }
         }
         let segments = ctx.arena.alloc_slice(&segments);
         Some(Self {
@@ -78,5 +89,20 @@ impl<'a> Ast<'a> for PathExprAst<'a> {
         self.segments.last().map_or(self.start.span(), |last| {
             self.start.span().joined(last.span())
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PathItemAst<'a> {
+    Ident(NameAst),
+    Params(TyGenericsAst<'a>),
+}
+
+impl PathItemAst<'_> {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Ident(name) => name.span(),
+            Self::Params(params) => params.span(),
+        }
     }
 }

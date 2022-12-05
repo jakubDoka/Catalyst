@@ -405,8 +405,6 @@ impl TyChecker<'_> {
             Deref(.., &expr) => self.deref(expr, inference, builder),
             Ref(.., mutability, &expr) => self.r#ref(mutability, expr, inference, builder),
             Block(block) => self.block(block, inference, builder),
-            PathInstance(_) => todo!(),
-            TypedPath(_) => todo!(),
         }
     }
 
@@ -637,14 +635,11 @@ impl TyChecker<'_> {
 
     fn enum_ctor<'a>(
         &mut self,
-        ctor @ EnumCtorAst {
-            path: PathInstanceAst { path, params },
-            value,
-        }: EnumCtorAst,
+        ctor @ EnumCtorAst { path, value }: EnumCtorAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let (ty, variant_name) = self.enum_path(path, inference)?;
+        let (ty, variant_name, params) = self.enum_path(path, inference)?;
 
         let (variant, variant_ty) = self.typec[self.typec[ty].variants]
             .iter()
@@ -667,10 +662,12 @@ impl TyChecker<'_> {
             param_slots.iter_mut().zip(&self.typec[self.typec[inst].args])
                 .for_each(|(slot, &arg)| *slot = Some(arg))
         }
-        if let Some((.., params)) = params {
-            for (slot, &param) in param_slots.iter_mut().zip(params.iter()) {
-                *slot = self.ty(param);
-            }
+
+        for (slot, &param) in param_slots
+            .iter_mut()
+            .zip(params.iter().flat_map(|p| p.iter()))
+        {
+            *slot = self.ty(param);
         }
 
         let value = if let Some((.., value)) = value {
@@ -707,11 +704,25 @@ impl TyChecker<'_> {
         Some(TirNode::new(ty, TirKind::Ctor(values), ctor.span()))
     }
 
-    fn enum_path(
+    fn enum_path<'a>(
         &mut self,
-        path: PathExprAst,
+        path: PathAst<'a>,
         inference: Inference,
-    ) -> Option<(FragRef<Enum>, NameAst)> {
+    ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
+        fn resolve<'a>(
+            enum_ty: FragRef<Enum>,
+            start: PathItemAst<'a>,
+            segments: &[PathItemAst],
+        ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
+            Some(match (start, segments) {
+                (PathItemAst::Ident(name), []) => (enum_ty, name, None),
+                (PathItemAst::Params(params), &[PathItemAst::Ident(name)]) => {
+                    (enum_ty, name, Some(params))
+                }
+                _ => todo!(),
+            })
+        }
+
         if path.slash.is_some() {
             let Some(expected) = inference.ty() else {
                 self.cannot_infer(path.span())?;
@@ -721,22 +732,22 @@ impl TyChecker<'_> {
                 todo!();
             };
 
-            return Some((enum_ty, path.start));
+            return resolve(enum_ty, path.start, path.segments);
         }
 
-        let module = match self.lookup(path.start.ident, path.start.span, "module or enum")? {
-            ScopeItem::Ty(Ty::Enum(enum_ty)) => {
-                let &[variant] = path.segments else {
-                    todo!();
-                };
+        let PathItemAst::Ident(name) = path.start else {
+            todo!();
+        };
 
-                return Some((enum_ty, variant));
+        let module = match self.lookup(name.ident, name.span, "module or enum")? {
+            ScopeItem::Ty(Ty::Enum(enum_ty)) => {
+                return resolve(enum_ty, path.start, path.segments);
             }
             ScopeItem::Module(module) => module,
             _ => todo!(),
         };
 
-        let &[r#enum, variant] = path.segments else {
+        let &[PathItemAst::Ident(r#enum), ref other_segments @ ..] = path.segments else {
             todo!();
         };
 
@@ -745,7 +756,7 @@ impl TyChecker<'_> {
             todo!();
         };
 
-        Some((enum_ty, variant))
+        resolve(enum_ty, path.start, other_segments)
     }
 
     fn dot_expr<'a>(
@@ -774,19 +785,23 @@ impl TyChecker<'_> {
     fn dot_path<'a>(
         &mut self,
         ty: Ty,
-        PathInstanceAst { path, params }: PathInstanceAst,
+        path @ PathAst { slash, start, .. }: PathAst,
         _builder: &mut TirBuilder<'a, '_>,
     ) -> Option<DotPathResult> {
-        if let Some((.., params)) = params {
-            self.unexpected_params(params.span())?;
+        if slash.is_none() {
+            todo!();
         }
 
         let Ty::Struct(struct_id) = ty.base(self.typec) else {
             self.non_struct_field_access(ty, path.span())?;
         };
 
-        let Some((field, Field { ty: mut field_ty, .. })) = Struct::find_field(struct_id, path.start.ident, self.typec) else {
-            self.field_not_found(struct_id, path.start)?;
+        let PathItemAst::Ident(name) = start else {
+            todo!();
+        };
+
+        let Some((field, Field { ty: mut field_ty, .. })) = Struct::find_field(struct_id, name.ident, self.typec) else {
+            self.field_not_found(struct_id, name)?;
         };
 
         if let Ty::Instance(instance) = ty {
@@ -984,18 +999,21 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let (ty, params) = if let Some(PathInstanceAst { path, params }) = path {
-            let ty = self.ty_path(path)?;
+        let (ty, params) = if let Some(path @ PathAst { slash: None, .. }) = path {
+            let (ty, params) = self.ty_path(path)?;
             (
                 match ty {
                     TyPathResult::Ty(ty) => ty.as_generic(),
                     _ => None,
                 },
-                params.and_then(|(_, params)| {
-                    params
-                        .iter()
-                        .map(|&param| self.ty(param))
-                        .nsc_collect::<Option<BumpVec<_>>>()
+                params.and_then(|params| {
+                    Some((
+                        params.span(),
+                        params
+                            .iter()
+                            .map(|&param| self.ty(param))
+                            .nsc_collect::<Option<BumpVec<_>>>()?,
+                    ))
                 }),
             )
         } else {
@@ -1003,7 +1021,10 @@ impl TyChecker<'_> {
             match ty {
                 Ty::Instance(instance) => (
                     Some(self.typec[instance].base),
-                    Some(self.typec[self.typec[instance].args].to_bumpvec()),
+                    Some((
+                        default(),
+                        self.typec[self.typec[instance].args].to_bumpvec(),
+                    )),
                 ),
                 _ => (ty.as_generic(), None),
             }
@@ -1017,11 +1038,9 @@ impl TyChecker<'_> {
 
         let mut param_slots = bumpvec![None; struct_meta.generics.len()];
 
-        if let Some(params) = params {
-            if let Some(PathInstanceAst { params: Some((.., params)), .. }) = path
-                && params.len() > param_slots.len()
-            {
-                self.too_many_params(params, param_slots.len())?;
+        if let Some((span, params)) = params {
+            if params.len() > param_slots.len() {
+                self.too_many_params(span, param_slots.len())?;
             }
 
             param_slots
@@ -1049,8 +1068,8 @@ impl TyChecker<'_> {
                 self.expr(expr, inference.into(), builder)
             } else {
                 self.value_path(
-                    PathExprAst {
-                        start: name,
+                    PathAst {
+                        start: PathItemAst::Ident(name),
                         segments: &[],
                         slash: None,
                     },
@@ -1113,25 +1132,7 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         match callable {
             UnitExprAst::Path(path) => {
-                let func = self.func_path(path, builder)?;
-                match func {
-                    FuncLookupResult::Func(func) => {
-                        self.direct_call(func, iter::empty(), None, call, inference, builder)
-                    }
-                    FuncLookupResult::Var(..) => todo!(),
-                    FuncLookupResult::SpecFunc(func, caller) => self.direct_spec_call(
-                        func,
-                        iter::empty(),
-                        Ok(caller),
-                        call,
-                        inference,
-                        builder,
-                    ),
-                }
-            }
-            UnitExprAst::PathInstance(path) => {
-                let func = self.func_path(path.path, builder)?;
-                let params = path.params();
+                let (func, params) = self.func_path(path, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
                         self.direct_call(func, params, None, call, inference, builder)
@@ -1142,24 +1143,9 @@ impl TyChecker<'_> {
                     }
                 }
             }
-            UnitExprAst::TypedPath(TypedPathAst { ty, path, .. }) => {
-                let ty = self.ty(ty)?;
-                let func = self.method_path(ty, path.path, builder)?;
-                let params = path.params();
-                match func {
-                    FuncLookupResult::Func(func) => {
-                        self.direct_call(func, params, Some(Ok(ty)), call, inference, builder)
-                    }
-                    FuncLookupResult::SpecFunc(func, ..) => {
-                        self.direct_spec_call(func, params, Ok(ty), call, inference, builder)
-                    }
-                    FuncLookupResult::Var(..) => todo!(),
-                }
-            }
             UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
                 let lhs = self.unit_expr(lhs, Inference::None, builder)?;
-                let func = self.method_path(lhs.ty, rhs.path, builder)?;
-                let params = rhs.params();
+                let (func, params) = self.method_path(lhs.ty, rhs, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
                         self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
@@ -1174,12 +1160,75 @@ impl TyChecker<'_> {
                 todo!("{kind:?}")
             }
         }
+        // match callable {
+        //     UnitExprAst::Path(path) => {
+        //         let func = self.func_path(path, builder)?;
+        //         match func {
+        //             FuncLookupResult::Func(func) => {
+        //                 self.direct_call(func, iter::empty(), None, call, inference, builder)
+        //             }
+        //             FuncLookupResult::Var(..) => todo!(),
+        //             FuncLookupResult::SpecFunc(func, caller) => self.direct_spec_call(
+        //                 func,
+        //                 iter::empty(),
+        //                 Ok(caller),
+        //                 call,
+        //                 inference,
+        //                 builder,
+        //             ),
+        //         }
+        //     }
+        //     UnitExprAst::PathInstance(path) => {
+        //         let func = self.func_path(path.path, builder)?;
+        //         let params = path.params();
+        //         match func {
+        //             FuncLookupResult::Func(func) => {
+        //                 self.direct_call(func, params, None, call, inference, builder)
+        //             }
+        //             FuncLookupResult::Var(..) => todo!(),
+        //             FuncLookupResult::SpecFunc(func, caller) => {
+        //                 self.direct_spec_call(func, params, Ok(caller), call, inference, builder)
+        //             }
+        //         }
+        //     }
+        //     UnitExprAst::TypedPath(PathAst { ty, path, .. }) => {
+        //         let ty = self.ty(ty)?;
+        //         let func = self.method_path(ty, path.path, builder)?;
+        //         let params = path.params();
+        //         match func {
+        //             FuncLookupResult::Func(func) => {
+        //                 self.direct_call(func, params, Some(Ok(ty)), call, inference, builder)
+        //             }
+        //             FuncLookupResult::SpecFunc(func, ..) => {
+        //                 self.direct_spec_call(func, params, Ok(ty), call, inference, builder)
+        //             }
+        //             FuncLookupResult::Var(..) => todo!(),
+        //         }
+        //     }
+        //     UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
+        //         let lhs = self.unit_expr(lhs, Inference::None, builder)?;
+        //         let func = self.method_path(lhs.ty, rhs.path, builder)?;
+        //         let params = rhs.params();
+        //         match func {
+        //             FuncLookupResult::Func(func) => {
+        //                 self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
+        //             }
+        //             FuncLookupResult::SpecFunc(func, ..) => {
+        //                 self.direct_spec_call(func, params, Err(lhs), call, inference, builder)
+        //             }
+        //             FuncLookupResult::Var(..) => todo!(),
+        //         }
+        //     }
+        //     kind => {
+        //         todo!("{kind:?}")
+        //     }
+        // }
     }
 
     fn direct_call<'a>(
         &mut self,
         func: FragRef<Func>,
-        params: impl Iterator<Item = TyAst>,
+        params: Option<TyGenericsAst>,
         caller: Option<Result<Ty, TirNode<'a>>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
@@ -1202,8 +1251,8 @@ impl TyChecker<'_> {
         param_slots
             .iter_mut()
             .skip(generic_start)
-            .zip(params)
-            .for_each(|(param_slot, param)| *param_slot = self.ty(param));
+            .zip(params.iter().flat_map(|params| params.iter()))
+            .for_each(|(param_slot, &param)| *param_slot = self.ty(param));
 
         let (args, params, ty) = self.call_internals(
             param_specs.as_slice(),
@@ -1236,7 +1285,7 @@ impl TyChecker<'_> {
     fn direct_spec_call<'a>(
         &mut self,
         func: FragRef<SpecFunc>,
-        params: impl Iterator<Item = TyAst>,
+        params: Option<TyGenericsAst>,
         caller: Result<Ty, TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
@@ -1257,8 +1306,8 @@ impl TyChecker<'_> {
         param_slots
             .iter_mut()
             .skip(generic_start)
-            .zip(params)
-            .for_each(|(param_slot, param)| *param_slot = self.ty(param));
+            .zip(params.iter().flat_map(|params| params.iter()))
+            .for_each(|(param_slot, &param)| *param_slot = self.ty(param));
         param_slots[generic_start - 1] = Some(caller.map_or_else(|e| e.ty, |ty| ty));
 
         let (args, params, ty) = self.call_internals(
@@ -1426,23 +1475,29 @@ impl TyChecker<'_> {
             .ok()
     }
 
-    fn func_path<'a>(
+    fn func_path<'a, 'b>(
         &mut self,
-        path @ PathExprAst {
+        path @ PathAst {
             start, segments, ..
-        }: PathExprAst,
+        }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<FuncLookupResult<'a>> {
+    ) -> Option<(FuncLookupResult<'a>, Option<TyGenericsAst<'b>>)> {
+        let PathItemAst::Ident(start) = start else {
+            todo!();
+        };
+
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
-            ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
+            ScopeItem::Func(func) => {
+                return Some((FuncLookupResult::Func(func), grab_trailing_params(segments)))
+            }
             ScopeItem::Module(module) => module,
             ScopeItem::Ty(ty) => {
-                let (&start, segments) = segments
-                    .split_first()
-                    .or_else(|| self.invalid_expr_path(path.span())?)?;
+                let &[start, ref segments @ ..] = segments else {
+                    self.invalid_expr_path(path.span())?
+                };
                 return self.method_path(
                     ty,
-                    PathExprAst {
+                    PathAst {
                         start,
                         segments,
                         slash: None,
@@ -1456,26 +1511,39 @@ impl TyChecker<'_> {
             }
         };
 
-        let (&func_or_type, segments) = segments
-            .split_first()
-            .or_else(|| self.invalid_expr_path(path.span())?)?;
+        let &[PathItemAst::Ident(func_or_type), ref segments @ ..] = segments else {
+            self.invalid_expr_path(path.span())?
+        };
 
         let id = self
             .interner
             .intern_scoped(module.as_u32(), func_or_type.ident);
-        let ty = match self.lookup(id, func_or_type.span, FUNC)? {
-            ScopeItem::Func(func) => return Some(FuncLookupResult::Func(func)),
-            ScopeItem::Ty(ty) => ty,
+        let (ty, segments) = match self.lookup(id, func_or_type.span, FUNC)? {
+            ScopeItem::Func(func) => {
+                return Some((FuncLookupResult::Func(func), grab_trailing_params(segments)))
+            }
+            ScopeItem::Ty(ty) => match (ty.as_generic(), segments) {
+                (Some(ty), &[PathItemAst::Params(params), ref segments @ ..]) => {
+                    let params = params
+                        .iter()
+                        .map(|&p| self.ty(p))
+                        .nsc_collect::<Option<BumpVec<_>>>()?;
+                    (
+                        Ty::Instance(self.typec.instance(ty, &params, self.interner)),
+                        segments,
+                    )
+                }
+                (.., []) => (ty, segments),
+                _ => todo!(),
+            },
             item => self.invalid_symbol_type(item, func_or_type.span, FUNC)?,
         };
-
-        let (&start, segments) = segments
-            .split_first()
-            .or_else(|| self.invalid_expr_path(path.span())?)?;
-
+        let &[start, ref segments @ ..] = segments else {
+            self.invalid_expr_path(path.span())?
+        };
         self.method_path(
             ty,
-            PathExprAst {
+            PathAst {
                 start,
                 segments,
                 slash: None,
@@ -1484,40 +1552,78 @@ impl TyChecker<'_> {
         )
     }
 
-    fn method_path<'a>(
+    fn method_path<'a, 'b>(
         &mut self,
         ty: Ty,
-        path @ PathExprAst {
+        path @ PathAst {
             start, segments, ..
-        }: PathExprAst,
+        }: PathAst<'b>,
         _builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<FuncLookupResult<'a>> {
+    ) -> Option<(FuncLookupResult<'a>, Option<TyGenericsAst<'b>>)> {
         let ty = ty.caller(self.typec);
-        match *segments {
-            [] => {
-                let id = self.interner.intern_scoped(ty, start.ident);
-                match self.lookup(id, path.span(), FUNC)? {
-                    ScopeItem::Func(func) => Some(FuncLookupResult::Func(func)),
-                    ScopeItem::SpecFunc(func) => Some(FuncLookupResult::SpecFunc(func, ty)),
-                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
+        let PathItemAst::Ident(ident) = start else {
+            self.invalid_expr_path(path.span())?
+        };
+
+        let Ok(spec_or_module) = self.scope.get(ident.ident) else {
+            let id = self.interner.intern_scoped(ty, ident.ident);
+            return match self.lookup(id, path.span(), FUNC)? {
+                ScopeItem::Func(func) => Some((FuncLookupResult::Func(func), grab_trailing_params(segments))),
+                ScopeItem::SpecFunc(func) => Some((FuncLookupResult::SpecFunc(func, ty), grab_trailing_params(segments))),
+                item => self.invalid_symbol_type(item, path.span(), FUNC)?,
+            };
+        };
+
+        let (spec_base, segments) = match spec_or_module {
+            ScopeItem::SpecBase(spec) => (spec, segments),
+            ScopeItem::Module(module) => {
+                let &[PathItemAst::Ident(spec), ref segments @ ..] = segments else {
+                    self.invalid_expr_path(path.span())?
+                };
+
+                let id = self.interner.intern_scoped(module.index(), spec.ident);
+                match self.lookup(id, spec.span, "spec")? {
+                    ScopeItem::SpecBase(spec) => (spec, segments),
+                    item => self.invalid_symbol_type(item, spec.span, "spec")?,
                 }
             }
-            [name] => {
-                let id = self.interner.intern_scoped(ty, name.ident);
-                let module = lookup!(Module self, start.ident, start.span);
-                let method_id = self.interner.intern_scoped(module.index(), id);
-                match self.lookup(method_id, path.span(), FUNC)? {
-                    ScopeItem::Func(func) => Some(FuncLookupResult::Func(func)),
-                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
-                }
-            }
-            _ => self.invalid_expr_path(path.span())?,
-        }
+            item => self.invalid_symbol_type(item, path.span(), "spec or module")?,
+        };
+
+        let (_spec, segments) = if let &[PathItemAst::Params(params), ref segments @ ..] = segments
+        {
+            let params = params
+                .iter()
+                .map(|&p| self.ty(p))
+                .nsc_collect::<Option<BumpVec<_>>>()?;
+            (
+                Spec::Instance(self.typec.spec_instance(spec_base, &params, self.interner)),
+                segments,
+            )
+        } else {
+            (Spec::Base(spec_base), segments)
+        };
+
+        let &[PathItemAst::Ident(method), ref segments @ ..] = segments else {
+            self.invalid_expr_path(path.span())?
+        };
+
+        let method = self
+            .typec
+            .spec_funcs
+            .indexed(self.typec[spec_base].methods)
+            .find_map(|(key, func)| (method.ident == func.name).then_some(key))
+            .or_else(|| todo!())?;
+
+        Some((
+            FuncLookupResult::SpecFunc(method, ty),
+            grab_trailing_params(segments),
+        ))
     }
 
     fn value_path<'a>(
         &mut self,
-        path @ PathExprAst { slash, start, .. }: PathExprAst,
+        path @ PathAst { slash, start, .. }: PathAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
@@ -1528,14 +1634,7 @@ impl TyChecker<'_> {
 
             match inferred.base(self.typec) {
                 Ty::Enum(..) => {
-                    return self.enum_ctor(
-                        EnumCtorAst {
-                            path: PathInstanceAst { path, params: None },
-                            value: None,
-                        },
-                        inference,
-                        builder,
-                    )
+                    return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder)
                 }
                 Ty::Struct(_) => todo!(),
                 Ty::Instance(_) => todo!(),
@@ -1545,34 +1644,31 @@ impl TyChecker<'_> {
             }
         }
 
-        Some(
-            match self.lookup(start.ident, start.span, "variable or enum")? {
-                ScopeItem::Func(_) => todo!(),
-                ScopeItem::SpecFunc(_) => todo!(),
-                ScopeItem::Ty(ty) => match ty {
-                    Ty::Struct(_) => todo!(),
-                    Ty::Enum(..) => {
-                        return self.enum_ctor(
-                            EnumCtorAst {
-                                path: PathInstanceAst { path, params: None },
-                                value: None,
-                            },
-                            inference,
-                            builder,
-                        )
-                    }
-                    Ty::Instance(_) => todo!(),
-                    Ty::Pointer(_) => todo!(),
-                    Ty::Param(_) => todo!(),
-                    Ty::Builtin(_) => todo!(),
-                },
-                ScopeItem::SpecBase(_) => todo!(),
-                ScopeItem::VarHeaderTir(var) => {
-                    TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
+        let PathItemAst::Ident(start) = start else {
+            self.invalid_expr_path(path.span())?
+        };
+
+        let res = match self.lookup(start.ident, start.span, "variable or enum")? {
+            ScopeItem::Func(_) => todo!(),
+            ScopeItem::SpecFunc(_) => todo!(),
+            ScopeItem::Ty(ty) => match ty {
+                Ty::Struct(_) => todo!(),
+                Ty::Enum(..) => {
+                    return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder)
                 }
-                item => self.invalid_symbol_type(item, start.span, "variable or enum")?,
+                Ty::Instance(_) => todo!(),
+                Ty::Pointer(_) => todo!(),
+                Ty::Param(_) => todo!(),
+                Ty::Builtin(_) => todo!(),
             },
-        )
+            ScopeItem::SpecBase(_) => todo!(),
+            ScopeItem::VarHeaderTir(var) => {
+                TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
+            }
+            item => self.invalid_symbol_type(item, start.span, "variable or enum")?,
+        };
+
+        Some(res)
     }
 
     fn int<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
@@ -1758,11 +1854,11 @@ impl TyChecker<'_> {
             }
         }
 
-        push too_many_params(self, params: TyGenericsAst, max: usize) {
+        push too_many_params(self, params: Span, max: usize) {
             err: "too many type parameters";
             info: ("expected at most {} parameters", max);
-            (params.span(), self.source) {
-                err[params.span()]: "found here";
+            (params, self.source) {
+                err[params]: "found here";
             }
         }
 
@@ -1987,6 +2083,14 @@ impl TyChecker<'_> {
                 err[span]: "this path does not lead to struct definition";
             }
         }
+    }
+}
+
+fn grab_trailing_params<'a>(segments: &[PathItemAst<'a>]) -> Option<TyGenericsAst<'a>> {
+    match *segments {
+        [] => None,
+        [PathItemAst::Params(params)] => Some(params),
+        _ => todo!(),
     }
 }
 

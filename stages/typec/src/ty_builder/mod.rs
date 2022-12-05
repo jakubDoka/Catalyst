@@ -24,6 +24,7 @@ impl TyChecker<'_> {
             generics,
             body,
             name,
+            inherits,
             ..
         }: SpecAst,
     ) {
@@ -32,10 +33,15 @@ impl TyChecker<'_> {
         self.insert_generics(generics, 0);
         self.scope
             .push(Interner::SELF, Ty::Param(generics.len() as u16), name.span);
+        self.typec[spec].inherits = self.build_inherits(inherits);
         self.typec[spec].generics = self.generics(generics);
         self.typec[spec].methods = self.build_spec_methods(spec, body, generics.len() + 1);
 
         self.scope.end_frame(frame);
+    }
+
+    fn build_inherits(&mut self, inherits: ParamSpecsAst) -> FragSlice<Spec> {
+        self.spec_sum(inherits.iter()).unwrap_or_default()
     }
 
     fn build_spec_methods(

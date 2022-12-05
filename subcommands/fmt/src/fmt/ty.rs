@@ -4,7 +4,6 @@ impl<'a> FmtAst for TyAst<'a> {
     fn display_low(&self, _: bool, fmt: &mut Fmt) {
         match *self {
             TyAst::Path(ident) => ident.display(fmt),
-            TyAst::Instance(instance) => instance.display(fmt),
             TyAst::Pointer(pointer) => pointer.display(fmt),
             TyAst::Tuple(tuple) => tuple.display(fmt),
             TyAst::Wildcard(span) => fmt.write_span(span),
@@ -14,22 +13,10 @@ impl<'a> FmtAst for TyAst<'a> {
     fn flat_len(&self, fmt: &Fmt) -> usize {
         match *self {
             TyAst::Path(ident) => ident.flat_len(fmt),
-            TyAst::Instance(instance) => instance.flat_len(fmt),
             TyAst::Pointer(pointer) => pointer.flat_len(fmt),
             TyAst::Tuple(tuple) => tuple.flat_len(fmt),
             TyAst::Wildcard(span) => span.len(),
         }
-    }
-}
-
-impl<'a> FmtAst for TyInstanceAst<'a> {
-    fn display_low(&self, _: bool, fmt: &mut Fmt) {
-        self.path.display(fmt);
-        self.params.display(fmt);
-    }
-
-    fn flat_len(&self, fmt: &Fmt) -> usize {
-        self.path.flat_len(fmt) + self.params.flat_len(fmt)
     }
 }
 
