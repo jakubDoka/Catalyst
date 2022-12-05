@@ -185,7 +185,7 @@ impl From<FragRef<SpecInstance>> for Spec {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenericTy {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),

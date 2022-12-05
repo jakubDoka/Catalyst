@@ -711,15 +711,14 @@ impl TyChecker<'_> {
     ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
         fn resolve<'a>(
             enum_ty: FragRef<Enum>,
-            start: PathItemAst<'a>,
-            segments: &[PathItemAst],
+            segments: &[PathItemAst<'a>],
         ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
-            Some(match (start, segments) {
-                (PathItemAst::Ident(name), []) => (enum_ty, name, None),
-                (PathItemAst::Params(params), &[PathItemAst::Ident(name)]) => {
+            Some(match *segments {
+                [PathItemAst::Ident(name)] => (enum_ty, name, None),
+                [PathItemAst::Params(params), PathItemAst::Ident(name)] => {
                     (enum_ty, name, Some(params))
                 }
-                _ => todo!(),
+                ref other => todo!("{other:?}"),
             })
         }
 
@@ -732,7 +731,11 @@ impl TyChecker<'_> {
                 todo!();
             };
 
-            return resolve(enum_ty, path.start, path.segments);
+            let PathItemAst::Ident(name) = path.start else {
+                todo!();
+            };
+
+            return Some((enum_ty, name, grab_trailing_params(path.segments)));
         }
 
         let PathItemAst::Ident(name) = path.start else {
@@ -741,13 +744,13 @@ impl TyChecker<'_> {
 
         let module = match self.lookup(name.ident, name.span, "module or enum")? {
             ScopeItem::Ty(Ty::Enum(enum_ty)) => {
-                return resolve(enum_ty, path.start, path.segments);
+                return resolve(enum_ty, path.segments);
             }
             ScopeItem::Module(module) => module,
             _ => todo!(),
         };
 
-        let &[PathItemAst::Ident(r#enum), ref other_segments @ ..] = path.segments else {
+        let &[PathItemAst::Ident(r#enum), ref segments @ ..] = path.segments else {
             todo!();
         };
 
@@ -756,7 +759,7 @@ impl TyChecker<'_> {
             todo!();
         };
 
-        resolve(enum_ty, path.start, other_segments)
+        resolve(enum_ty, segments)
     }
 
     fn dot_expr<'a>(
@@ -788,7 +791,7 @@ impl TyChecker<'_> {
         path @ PathAst { slash, start, .. }: PathAst,
         _builder: &mut TirBuilder<'a, '_>,
     ) -> Option<DotPathResult> {
-        if slash.is_none() {
+        if slash.is_some() {
             todo!();
         }
 
@@ -1132,10 +1135,11 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         match callable {
             UnitExprAst::Path(path) => {
-                let (func, params) = self.func_path(path, builder)?;
+                let (func, caller, params) = self.func_path(path, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
-                        self.direct_call(func, params, None, call, inference, builder)
+                        let caller = caller.map(Ok);
+                        self.direct_call(func, params, caller, call, inference, builder)
                     }
                     FuncLookupResult::Var(..) => todo!(),
                     FuncLookupResult::SpecFunc(func, caller) => {
@@ -1145,7 +1149,7 @@ impl TyChecker<'_> {
             }
             UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
                 let lhs = self.unit_expr(lhs, Inference::None, builder)?;
-                let (func, params) = self.method_path(lhs.ty, rhs, builder)?;
+                let (func, _, params) = self.method_path(lhs.ty, rhs, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
                         self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
@@ -1160,69 +1164,6 @@ impl TyChecker<'_> {
                 todo!("{kind:?}")
             }
         }
-        // match callable {
-        //     UnitExprAst::Path(path) => {
-        //         let func = self.func_path(path, builder)?;
-        //         match func {
-        //             FuncLookupResult::Func(func) => {
-        //                 self.direct_call(func, iter::empty(), None, call, inference, builder)
-        //             }
-        //             FuncLookupResult::Var(..) => todo!(),
-        //             FuncLookupResult::SpecFunc(func, caller) => self.direct_spec_call(
-        //                 func,
-        //                 iter::empty(),
-        //                 Ok(caller),
-        //                 call,
-        //                 inference,
-        //                 builder,
-        //             ),
-        //         }
-        //     }
-        //     UnitExprAst::PathInstance(path) => {
-        //         let func = self.func_path(path.path, builder)?;
-        //         let params = path.params();
-        //         match func {
-        //             FuncLookupResult::Func(func) => {
-        //                 self.direct_call(func, params, None, call, inference, builder)
-        //             }
-        //             FuncLookupResult::Var(..) => todo!(),
-        //             FuncLookupResult::SpecFunc(func, caller) => {
-        //                 self.direct_spec_call(func, params, Ok(caller), call, inference, builder)
-        //             }
-        //         }
-        //     }
-        //     UnitExprAst::TypedPath(PathAst { ty, path, .. }) => {
-        //         let ty = self.ty(ty)?;
-        //         let func = self.method_path(ty, path.path, builder)?;
-        //         let params = path.params();
-        //         match func {
-        //             FuncLookupResult::Func(func) => {
-        //                 self.direct_call(func, params, Some(Ok(ty)), call, inference, builder)
-        //             }
-        //             FuncLookupResult::SpecFunc(func, ..) => {
-        //                 self.direct_spec_call(func, params, Ok(ty), call, inference, builder)
-        //             }
-        //             FuncLookupResult::Var(..) => todo!(),
-        //         }
-        //     }
-        //     UnitExprAst::DotExpr(&DotExprAst { lhs, rhs, .. }) => {
-        //         let lhs = self.unit_expr(lhs, Inference::None, builder)?;
-        //         let func = self.method_path(lhs.ty, rhs.path, builder)?;
-        //         let params = rhs.params();
-        //         match func {
-        //             FuncLookupResult::Func(func) => {
-        //                 self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
-        //             }
-        //             FuncLookupResult::SpecFunc(func, ..) => {
-        //                 self.direct_spec_call(func, params, Err(lhs), call, inference, builder)
-        //             }
-        //             FuncLookupResult::Var(..) => todo!(),
-        //         }
-        //     }
-        //     kind => {
-        //         todo!("{kind:?}")
-        //     }
-        // }
     }
 
     fn direct_call<'a>(
@@ -1383,7 +1324,7 @@ impl TyChecker<'_> {
             if let Some(owner) = owner {
                 let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
                 let owner = self.typec.balance_pointers(owner, ty, self.interner);
-                self.infer_params(param_slots, ty, owner, args.span());
+                _ = self.typec.compatible(param_slots, ty, owner);
             }
         }
 
@@ -1481,17 +1422,35 @@ impl TyChecker<'_> {
             start, segments, ..
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<(FuncLookupResult<'a>, Option<TyGenericsAst<'b>>)> {
+    ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
         let PathItemAst::Ident(start) = start else {
             todo!();
         };
 
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
             ScopeItem::Func(func) => {
-                return Some((FuncLookupResult::Func(func), grab_trailing_params(segments)))
+                return Some((
+                    FuncLookupResult::Func(func),
+                    None,
+                    grab_trailing_params(segments),
+                ))
             }
             ScopeItem::Module(module) => module,
             ScopeItem::Ty(ty) => {
+                let (ty, segments) = match (ty.as_generic(), segments) {
+                    (Some(ty), &[PathItemAst::Params(params), ref segments @ ..]) => {
+                        let params = params
+                            .iter()
+                            .map(|&p| self.ty(p))
+                            .nsc_collect::<Option<BumpVec<_>>>()?;
+                        (
+                            Ty::Instance(self.typec.instance(ty, &params, self.interner)),
+                            segments,
+                        )
+                    }
+                    _ => (ty, segments),
+                };
+
                 let &[start, ref segments @ ..] = segments else {
                     self.invalid_expr_path(path.span())?
                 };
@@ -1520,7 +1479,11 @@ impl TyChecker<'_> {
             .intern_scoped(module.as_u32(), func_or_type.ident);
         let (ty, segments) = match self.lookup(id, func_or_type.span, FUNC)? {
             ScopeItem::Func(func) => {
-                return Some((FuncLookupResult::Func(func), grab_trailing_params(segments)))
+                return Some((
+                    FuncLookupResult::Func(func),
+                    None,
+                    grab_trailing_params(segments),
+                ))
             }
             ScopeItem::Ty(ty) => match (ty.as_generic(), segments) {
                 (Some(ty), &[PathItemAst::Params(params), ref segments @ ..]) => {
@@ -1533,8 +1496,7 @@ impl TyChecker<'_> {
                         segments,
                     )
                 }
-                (.., []) => (ty, segments),
-                _ => todo!(),
+                _ => (ty, segments),
             },
             item => self.invalid_symbol_type(item, func_or_type.span, FUNC)?,
         };
@@ -1559,35 +1521,49 @@ impl TyChecker<'_> {
             start, segments, ..
         }: PathAst<'b>,
         _builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<(FuncLookupResult<'a>, Option<TyGenericsAst<'b>>)> {
-        let ty = ty.caller(self.typec);
+    ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
+        let lty = ty.caller(self.typec);
         let PathItemAst::Ident(ident) = start else {
             self.invalid_expr_path(path.span())?
         };
 
-        let Ok(spec_or_module) = self.scope.get(ident.ident) else {
-            let id = self.interner.intern_scoped(ty, ident.ident);
-            return match self.lookup(id, path.span(), FUNC)? {
-                ScopeItem::Func(func) => Some((FuncLookupResult::Func(func), grab_trailing_params(segments))),
-                ScopeItem::SpecFunc(func) => Some((FuncLookupResult::SpecFunc(func, ty), grab_trailing_params(segments))),
-                item => self.invalid_symbol_type(item, path.span(), FUNC)?,
-            };
-        };
-
-        let (spec_base, segments) = match spec_or_module {
-            ScopeItem::SpecBase(spec) => (spec, segments),
-            ScopeItem::Module(module) => {
+        let (module, spec_base_or_method, segments) = match self.scope.get(ident.ident) {
+            Ok(ScopeItem::SpecBase(spec)) => (None, Ok(spec), segments),
+            Ok(ScopeItem::Module(module)) => {
                 let &[PathItemAst::Ident(spec), ref segments @ ..] = segments else {
                     self.invalid_expr_path(path.span())?
                 };
 
                 let id = self.interner.intern_scoped(module.index(), spec.ident);
-                match self.lookup(id, spec.span, "spec")? {
-                    ScopeItem::SpecBase(spec) => (spec, segments),
-                    item => self.invalid_symbol_type(item, spec.span, "spec")?,
+                match self.scope.get(id) {
+                    Ok(ScopeItem::SpecBase(spec)) => (Some(module), Ok(spec), segments),
+                    _ => (Some(module), Err(spec), segments),
                 }
             }
-            item => self.invalid_symbol_type(item, path.span(), "spec or module")?,
+            _ => (None, Err(ident), segments),
+        };
+
+        let spec_base = match spec_base_or_method {
+            Ok(spec) => spec,
+            Err(method) => {
+                let local_id = self.interner.intern_scoped(lty, method.ident);
+                let id = module.map_or(local_id, |m| {
+                    self.interner.intern_scoped(m.index(), local_id)
+                });
+                return match self.lookup(id, path.span(), FUNC)? {
+                    ScopeItem::Func(func) => Some((
+                        FuncLookupResult::Func(func),
+                        Some(ty),
+                        grab_trailing_params(segments),
+                    )),
+                    ScopeItem::SpecFunc(func) => Some((
+                        FuncLookupResult::SpecFunc(func, lty),
+                        Some(ty),
+                        grab_trailing_params(segments),
+                    )),
+                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
+                };
+            }
         };
 
         let (_spec, segments) = if let &[PathItemAst::Params(params), ref segments @ ..] = segments
@@ -1616,7 +1592,8 @@ impl TyChecker<'_> {
             .or_else(|| todo!())?;
 
         Some((
-            FuncLookupResult::SpecFunc(method, ty),
+            FuncLookupResult::SpecFunc(method, lty),
+            Some(ty),
             grab_trailing_params(segments),
         ))
     }

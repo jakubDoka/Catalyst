@@ -49,12 +49,12 @@ fn main() {
             // comment
             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment
                 // comment
-                pub /* comment */ use /* comment */ mut /* comment */ field: Something[
+                pub /* comment */ use /* comment */ mut /* comment */ field: Something\[
                     Very, // uuu
                     Complex,
                 ] // comment
                 // comment
-                other_field: SimpleStuff[Hell, /* gear */]; priv pointer: ^mut^int
+                other_field: SimpleStuff\[Hell, /* gear */]; priv pointer: ^mut^int
                 // comment
             } // comment
         "

@@ -226,11 +226,11 @@ fn main() {
                 fn take(t: T) -> Self;
             };
 
-            impl GenericSpec[uint] for uint {
+            impl GenericSpec::[uint] for uint {
                 fn take(t: uint) -> Self => t;
             };
 
-            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+            fn [B, T: GenericSpec::[B]] take(t: B) -> T => T::take(t);
 
             #[entry];
             fn main() -> uint => take(0);
@@ -435,7 +435,7 @@ fn main() {
                     });
                 };
 
-                fn next(s: ^Self) -> Option[MacroToken] =>
+                fn next(s: ^Self) -> Option::[MacroToken] =>
                     ::Some~match s.state {
                         ::Two~::{ first, second } {
                             s.state = ::Last~::{ last: first };
@@ -538,7 +538,7 @@ fn main() {
                 v.push(1);
                 v.push(2);
 
-                let mut vv = Vec::[Vec[uint]]::new();
+                let mut vv = Vec::[Vec::[uint]]::new();
                 vv.push(v);
                 vv.get_mut_ptr(0).push(0);
 

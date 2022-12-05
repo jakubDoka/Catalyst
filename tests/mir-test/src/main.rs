@@ -232,7 +232,7 @@ fn main() {
                     });
                 };
 
-                fn next(s: ^Self) -> Option[MacroToken] =>
+                fn next(s: ^Self) -> Option::[MacroToken] =>
                     ::Some~match s.state {
                         ::Two~::{ first, second } {
                             s.state = ::Last~::{ last: first };
@@ -537,7 +537,7 @@ fn main() {
                 v.push(1);
                 v.push(2);
 
-                let mut vv = Vec::[Vec[uint]]::new();
+                let mut vv = Vec::[Vec::[uint]]::new();
                 vv.push(v);
                 vv.get_mut(0).push(3);
 

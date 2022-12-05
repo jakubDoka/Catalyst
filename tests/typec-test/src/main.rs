@@ -133,7 +133,7 @@ fn main() {
                     };
                     fn [T] pass(v: T) -> T => v;
                     struct [T] A;
-                    impl [T] A[T] {
+                    impl [T] A::[T] {
                         fn pass(s: T) -> T => s;
                     };
                 }
@@ -159,13 +159,13 @@ fn main() {
                 a: T
             };
 
-            impl [T: Clay] Clay for Foo[T];
+            impl [T: Clay] Clay for Foo::[T];
 
             fn [T: Clay] pass(v: T) -> T => v;
 
             fn main() -> uint => pass(0);
             fn other_main() -> u32 => pass(0);
-            fn last_main() -> Foo[uint] => pass(::{ a: 0 });
+            fn last_main() -> Foo::[uint] => pass(::{ a: 0 });
         }
 
         simple "spec-with-funcs" {
@@ -175,12 +175,12 @@ fn main() {
 
             spec Glue {
                 fn new -> Self;
-                fn [T] use_on(s: ^Self, value: T) -> Glued[T];
+                fn [T] use_on(s: ^Self, value: T) -> Glued::[T];
             };
 
             impl Glue for uint {
                 fn new -> Self => 0;
-                fn [T] use_on(s: ^Self, value: T) -> Glued[T] => ::{ inner: value };
+                fn [T] use_on(s: ^Self, value: T) -> Glued::[T] => ::{ inner: value };
             };
 
             impl Glue for uint;
@@ -191,14 +191,14 @@ fn main() {
 
             impl Glue for A {
                 fn new -> uint => 0;
-                fn [T] use_on(s: ^uint) -> Glued[T] => ::{ inner: value };
+                fn [T] use_on(s: ^uint) -> Glued::[T] => ::{ inner: value };
             };
 
             impl uint {
                 fn new {}
             };
 
-            fn [G: Glue, T] glue_up(value: T) -> Glued[T] {
+            fn [G: Glue, T] glue_up(value: T) -> Glued::[T] {
                 G::new().use_on(value)
             };
 
@@ -206,11 +206,11 @@ fn main() {
                 fn take(t: T) -> Self;
             };
 
-            impl GenericSpec[uint] for uint {
+            impl GenericSpec::[uint] for uint {
                 fn take(t: uint) -> Self => t;
             };
 
-            fn [B, T: GenericSpec[B]] take(t: B) -> T => T::take(t);
+            fn [B, T: GenericSpec::[B]] take(t: B) -> T => T::take(t);
 
             fn main() -> uint => uint::new() + take(0);
         }
@@ -311,7 +311,7 @@ fn main() {
                     });
                 };
 
-                fn next(s: ^Self) -> Option[MacroToken] =>
+                fn next(s: ^Self) -> Option::[MacroToken] =>
                     ::Some~match s.state {
                         ::Two~::{ first, second } {
                             s.state = ::Last~::{ last: first };

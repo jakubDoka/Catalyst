@@ -60,8 +60,9 @@ impl<'a> Ast<'a> for PathAst<'a> {
 
     fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let slash = ctx.try_advance(TokenKind::BackSlash).map(|t| t.span);
-        let start = if ctx.at_next_tok(TokenKind::Ident) {
-            PathItemAst::Ident(ctx.name_unchecked())
+        let start = if ctx.at_tok(TokenKind::Ident) {
+            let span = ctx.advance().span;
+            PathItemAst::Ident(NameAst::new(ctx, span))
         } else {
             PathItemAst::Params(ctx.parse()?)
         };

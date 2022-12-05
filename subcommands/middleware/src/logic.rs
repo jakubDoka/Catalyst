@@ -645,7 +645,7 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 let name = &task.interner[task.typec.funcs[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-                print!("{} {}", name, self.context.func.display());
+                // print!("{} {}", name, self.context.func.display());
             }
             self.context.compile(&*isa.inner).expect("Failure!");
             task.gen
