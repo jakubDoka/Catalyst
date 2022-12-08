@@ -69,6 +69,8 @@ impl TyChecker<'_> {
         let impl_id = parsed_spec.map(|parsed_spec| {
             let parsed_spec_base = parsed_spec.base(self.typec);
 
+            // check for collisions in implementations,
+            // we just check if spec is already implemented
             {
                 let generics = self.typec[parsed_generics].to_bumpvec();
                 if let Some(Some((already, ..))) = self.typec.find_implementation(
@@ -93,6 +95,11 @@ impl TyChecker<'_> {
                 spec: parsed_spec,
             };
 
+            let group_key = ImplKey {
+                ty: parsed_ty_base,
+                spec: Spec::Base(parsed_spec_base),
+            };
+
             let impl_ent = Impl {
                 generics: parsed_generics,
                 key,
@@ -101,10 +108,7 @@ impl TyChecker<'_> {
                     .typec
                     .impl_lookup
                     .insert(
-                        ImplKey {
-                            ty: parsed_ty_base,
-                            spec: Spec::Base(parsed_spec_base),
-                        },
+                        group_key,
                         // SAFETY: We push right after this
                         (unsafe { self.typec.impls.next() }, default()),
                     )

@@ -627,8 +627,23 @@ impl Typec {
         interner: &mut Interner,
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         if let Ty::Param(index) = ty {
-            let specs = params[index as usize];
-            return self[specs].contains(&spec).then_some(None);
+            let mut frontier = self[params[index as usize]].to_bumpvec();
+            while let Some(other_spec) = frontier.pop() {
+                if spec == other_spec {
+                    return Some(None);
+                }
+
+                let params = match other_spec {
+                    Spec::Base(..) => bumpvec![],
+                    Spec::Instance(instance) => self[self[instance].args].to_bumpvec(),
+                };
+
+                for inherit in self[self[other_spec.base(self)].inherits].to_bumpvec() {
+                    let inherit = self.instantiate_spec(inherit, &params, interner);
+                    frontier.push(inherit);
+                }
+            }
+            return None;
         }
 
         let key = ImplKey { ty, spec };

@@ -65,6 +65,7 @@ impl TyChecker<'_> {
         let Impl {
             key: ImplKey { ty, spec },
             span: Some(span),
+            generics,
             ..
         } = self.typec.impls[impl_ref] else {
             todo!();
@@ -80,6 +81,31 @@ impl TyChecker<'_> {
             });
         }
         let spec_ent = self.typec[spec_base];
+
+        // check that all inherits are implemented
+        // this is necessary for the validation but also grants
+        // nice optimizations since impl of this spec will imply
+        // impl of all inherits
+        {
+            let params = match spec {
+                Spec::Base(..) => bumpvec![],
+                Spec::Instance(i) => self.typec[self.typec[i].args].to_bumpvec(),
+            };
+
+            let generics = self.typec[generics].to_bumpvec();
+
+            for inherit in self.typec[spec_ent.inherits].to_bumpvec() {
+                let local_inherit = self.typec.instantiate_spec(inherit, &params, self.interner);
+                if self
+                    .typec
+                    .find_implementation(ty, local_inherit, &generics, &mut None, self.interner)
+                    .is_none()
+                {
+                    self.missing_spec(ty, spec, span);
+                }
+            }
+        }
+
         let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
 
         self.scope.push(Interner::SELF, ty, span);
@@ -1520,7 +1546,7 @@ impl TyChecker<'_> {
         path @ PathAst {
             start, segments, ..
         }: PathAst<'b>,
-        _builder: &mut TirBuilder<'a, '_>,
+        builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
         let lty = ty.caller(self.typec);
         let PathItemAst::Ident(ident) = start else {
@@ -1566,8 +1592,7 @@ impl TyChecker<'_> {
             }
         };
 
-        let (_spec, segments) = if let &[PathItemAst::Params(params), ref segments @ ..] = segments
-        {
+        let (spec, segments) = if let &[PathItemAst::Params(params), ref segments @ ..] = segments {
             let params = params
                 .iter()
                 .map(|&p| self.ty(p))
@@ -1584,12 +1609,42 @@ impl TyChecker<'_> {
             self.invalid_expr_path(path.span())?
         };
 
-        let method = self
+        let (method_index, method) = self
             .typec
             .spec_funcs
             .indexed(self.typec[spec_base].methods)
-            .find_map(|(key, func)| (method.ident == func.name).then_some(key))
+            .enumerate()
+            .find_map(|(i, (key, func))| (method.ident == func.name).then_some((i, key)))
             .or_else(|| todo!())?;
+
+        if let Some(r#impl) = self.typec.find_implementation(
+            ty,
+            spec,
+            &builder.ctx.generics,
+            &mut None,
+            self.interner,
+        ) {
+            if let Some((r#impl, _)) = r#impl {
+                let func = self.typec[self.typec[r#impl].methods][method_index];
+                return Some((
+                    FuncLookupResult::Func(func),
+                    Some(ty),
+                    grab_trailing_params(segments),
+                ));
+            }
+        } else {
+            todo!(
+                "{:?} {:?} {:?}",
+                ty,
+                spec,
+                builder
+                    .ctx
+                    .generics
+                    .iter()
+                    .map(|&g| &self.typec[g])
+                    .collect::<Vec<_>>()
+            );
+        }
 
         Some((
             FuncLookupResult::SpecFunc(method, lty),

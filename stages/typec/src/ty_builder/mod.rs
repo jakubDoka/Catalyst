@@ -41,7 +41,7 @@ impl TyChecker<'_> {
     }
 
     fn build_inherits(&mut self, inherits: ParamSpecsAst) -> FragSlice<Spec> {
-        self.spec_sum(inherits.iter()).unwrap_or_default()
+        self.spec_sum(dbg!(inherits).iter()).unwrap_or_default()
     }
 
     fn build_spec_methods(

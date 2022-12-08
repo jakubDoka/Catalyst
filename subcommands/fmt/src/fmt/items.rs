@@ -113,6 +113,7 @@ impl<'a> FmtAst for SpecAst<'a> {
         self.generics.display(fmt);
         write!(fmt, " ");
         self.name.display(fmt);
+        self.inherits.display(fmt);
         if !self.body.is_empty() {
             write!(fmt, " ");
             self.body.display_low(true, fmt);

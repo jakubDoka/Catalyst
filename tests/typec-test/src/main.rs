@@ -350,5 +350,31 @@ fn main() {
                 A::{};
             };
         }
+
+        simple "simple-spec-inheritance" {
+            spec A {
+                fn a -> uint;
+            };
+
+            spec B {
+                fn a -> uint;
+            };
+
+            spec C: A + B;
+
+            impl C for uint;
+            impl A for uint {
+                fn a -> uint => 0;
+            };
+            impl B for uint {
+                fn a -> uint => 1;
+            };
+
+            fn [T: C] sum() -> uint => T::A::a() + T::B::a();
+
+            fn main() -> uint => {
+                sum::[uint]() - uint::A::a() - uint::B::a()
+            };
+        }
     }
 }
