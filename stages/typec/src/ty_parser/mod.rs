@@ -12,13 +12,13 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn generics(&mut self, generic_ast: GenericsAst) -> Generics {
-        let mut generics = bumpvec!(cap generic_ast.len());
-        for &GenericParamAst { bounds, .. } in generic_ast.iter() {
-            let bound = self.spec_sum(bounds.iter()).unwrap_or_default();
-            generics.push(bound);
+    pub fn generics(&mut self, generic_ast: GenericsAst, set: &mut SpecSet, offset: usize) {
+        for (i, &GenericParamAst { bounds, .. }) in generic_ast.iter().enumerate() {
+            set.extend(
+                (i + offset) as u32,
+                bounds.iter().filter_map(|&b| self.spec(b)),
+            )
         }
-        self.typec.params.extend(generics)
     }
 
     pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
@@ -72,11 +72,15 @@ impl TyChecker<'_> {
     pub fn spec_sum<'a>(
         &mut self,
         specs: impl Iterator<Item = &'a SpecExprAst<'a>>,
+        spec_set: &mut SpecSet,
     ) -> Option<FragSlice<Spec>> {
         let specs = specs
             .map(|&ast| self.spec(ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
-        Some(self.typec.spec_sums.extend(specs))
+        for &spec in specs.iter() {
+            self.typec.register_spec_generics(spec, spec_set)
+        }
+        Some(self.typec.spec_sum(specs.iter().copied(), self.interner))
     }
 
     pub fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {

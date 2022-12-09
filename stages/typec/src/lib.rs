@@ -9,6 +9,16 @@
 #![feature(result_option_inspect)]
 #![feature(if_let_guard)]
 
+/*
+    At collection stage, we maintain a spec set (Vec<(u32, Spec)>) collected from
+    uses of the parameter. When the collection is done, sort the set and collect it
+    into final spec sums. This reduces boiler plate as one can specify specs on struct
+    or enum it self once and use it implicitly in impls.
+
+    Spec sums need to be unique, which we can achieve by indexing existing spec sets.
+    This way it is easy to compare signatures.
+*/
+
 const FUNC: &str = "function";
 const TY_OR_MOD: &str = "type or module";
 const FUNC_OR_MOD: &str = "function or module";

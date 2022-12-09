@@ -158,7 +158,7 @@ pub struct SpecInstance {
     pub args: FragSlice<Ty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum Spec {
     Base(FragRef<SpecBase>),
     Instance(FragRef<SpecInstance>),
@@ -224,6 +224,7 @@ pub enum ComputedTypecItem {
     Pointer(FragRef<Pointer>),
     Instance(FragRef<Instance>),
     SpecInstance(FragRef<SpecInstance>),
+    SpecSum(FragSlice<Spec>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -599,4 +600,37 @@ pub trait Humid: Sized {
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
     fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE>;
+}
+
+#[derive(Default)]
+pub struct SpecSet {
+    storage: Vec<(u32, Spec)>,
+}
+
+impl SpecSet {
+    pub fn extend(&mut self, index: u32, specs: impl IntoIterator<Item = Spec>) {
+        for spec in specs {
+            if let Err(i) = self.storage.binary_search(&(index, spec)) {
+                self.storage.insert(i, (index, spec));
+            }
+        }
+    }
+
+    pub fn truncate(&mut self, length: usize) {
+        self.storage.truncate(length);
+    }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = impl Iterator<Item = Spec> + '_ + Clone + ExactSizeIterator>
+           + '_
+           + DoubleEndedIterator {
+        self.storage
+            .group_by(|(a, ..), (b, ..)| a == b)
+            .map(|group| group.iter().map(|&(.., s)| s))
+    }
+
+    pub fn clear(&mut self) {
+        self.storage.clear();
+    }
 }

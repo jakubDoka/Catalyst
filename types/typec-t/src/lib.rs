@@ -9,6 +9,10 @@
 #![feature(const_swap)]
 #![feature(const_mut_refs)]
 #![feature(associated_type_defaults)]
+#![feature(slice_group_by)]
+#![feature(is_sorted)]
+#![feature(try_blocks)]
+#![feature(never_type)]
 
 use storage::gen_v_ref_constants;
 
@@ -73,8 +77,8 @@ pub use {
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
         GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Impls, Instance, Instances,
         Mutability, ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs,
-        SpecInstance, SpecInstances, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup, Variant,
-        Variants,
+        SpecInstance, SpecInstances, SpecSet, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup,
+        Variant, Variants,
     },
     typec::{
         lookup_water_drop, sorted_water_drops, Loc, MacroImpl, ModuleItems, ParamPresence,

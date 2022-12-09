@@ -1,4 +1,4 @@
-use std::default::default;
+use std::{default::default, iter};
 
 use diags::gen_error_fns;
 use lexing_t::*;
@@ -55,15 +55,46 @@ impl TyChecker<'_> {
     ) -> Option<()> {
         let frame = self.scope.start_frame();
 
+        let mut spec_set = SpecSet::default();
+
         self.insert_generics(generics, 0);
-        let parsed_generics = self.generics(generics);
+        self.generics(generics, &mut spec_set, 0);
 
         let (parsed_ty, parsed_spec) = match target {
             ImplTarget::Direct(ty) => (self.ty(ty)?, None),
             ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
         };
 
+        self.typec.register_ty_generics(parsed_ty, &mut spec_set);
+        if let Some(parsed_spec) = parsed_spec {
+            self.typec
+                .register_spec_generics(parsed_spec, &mut spec_set);
+        }
+
         self.scope.push(Interner::SELF, parsed_ty, target.span());
+
+        let func_iter = body.iter().map(|&item| match item {
+            ImplItemAst::Func(&func) => func,
+        });
+
+        let scope_data = ScopeData {
+            offset: generics.len(),
+            owner: Some(parsed_ty),
+            not_in_scope: parsed_spec.is_some(),
+            upper_vis: vis,
+        };
+
+        let mut methods = bumpvec![cap func_iter.clone().count()];
+        for func in func_iter {
+            let Some(id) = self.collect_func_low(func, &[], &mut spec_set, scope_data) else {
+                continue;
+            };
+
+            transfer.impl_funcs.push((func, id));
+            methods.push(id);
+        }
+
+        let parsed_generics = self.take_generics(0, &mut spec_set);
 
         let parsed_ty_base = parsed_ty.base(self.typec);
         let impl_id = parsed_spec.map(|parsed_spec| {
@@ -118,26 +149,6 @@ impl TyChecker<'_> {
             self.typec.impls.push(impl_ent)
         });
 
-        let scope_data = ScopeData {
-            offset: generics.len(),
-            upper_generics: parsed_generics,
-            owner: Some(parsed_ty),
-            not_in_scope: impl_id.is_some(),
-            upper_vis: vis,
-        };
-
-        let func_iter = body.iter().map(|&item| match item {
-            ImplItemAst::Func(&func) => func,
-        });
-
-        for func in func_iter {
-            let Some(id) = self.collect_func_low(func, &[], scope_data) else {
-                continue;
-            };
-
-            transfer.impl_funcs.push((func, id));
-        }
-
         transfer.close_impl_frame(r#impl, impl_id);
 
         self.scope.end_frame(frame);
@@ -168,29 +179,27 @@ impl TyChecker<'_> {
         func: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<FragRef<Func>> {
-        self.collect_func_low(func, attributes, default())
+        self.collect_func_low(func, attributes, &mut default(), default())
     }
 
     fn collect_func_low(
         &mut self,
         func @ FuncDefAst {
             vis,
-            signature: sig @ FuncSigAst {
-                generics, cc, name, ..
-            },
+            signature: sig @ FuncSigAst { cc, name, .. },
             body,
             ..
         }: FuncDefAst,
         attributes: &[TopLevelAttributeAst],
+        spec_set: &mut SpecSet,
         ScopeData {
             offset,
-            upper_generics,
             not_in_scope,
             owner,
             upper_vis,
         }: ScopeData,
     ) -> Option<FragRef<Func>> {
-        let (signature, parsed_generics) = self.collect_signature(sig, offset)?;
+        let (signature, generics) = self.collect_signature(sig, spec_set, offset)?;
 
         let entry = attributes
             .iter()
@@ -199,13 +208,13 @@ impl TyChecker<'_> {
             .iter()
             .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::NoMoves(..)));
 
-        if let Some(entry) = entry && !parsed_generics.is_empty() {
-            self.generic_entry(generics.span(), entry.span(), func.span())?;
+        if let Some(entry) = entry && !generics.is_empty() {
+            self.generic_entry(sig.generics.span(), entry.span(), func.span())?;
         }
 
         let visibility = if let FuncBodyAst::Extern(..) = body {
-            if !parsed_generics.is_empty() {
-                self.generic_extern(generics.span(), body.span(), func.span())?;
+            if !generics.is_empty() {
+                self.generic_extern(sig.generics.span(), body.span(), func.span())?;
             }
 
             FuncVisibility::Imported
@@ -230,9 +239,9 @@ impl TyChecker<'_> {
         };
 
         let func = Func {
-            generics: parsed_generics,
+            generics,
             owner,
-            upper_generics,
+            upper_generics: default(), // filled later
             signature,
             flags: (FuncFlags::ENTRY & entry.is_some())
                 | (FuncFlags::NO_MOVES & no_moves.is_some()),
@@ -252,6 +261,7 @@ impl TyChecker<'_> {
             ret,
             ..
         }: FuncSigAst,
+        spec_set: &mut SpecSet,
         offset: usize,
     ) -> Option<(Signature, Generics)> {
         let frame = self.scope.start_frame();
@@ -263,16 +273,31 @@ impl TyChecker<'_> {
             .nsc_collect::<Option<BumpVec<_>>>()?;
         let ret = ret.map(|ret| self.ty(ret)).unwrap_or(Some(Ty::UNIT))?;
 
+        for ty in args.iter().copied().chain(iter::once(ret)) {
+            self.typec.register_ty_generics(ty, spec_set)
+        }
+
         let signature = Signature {
             cc: cc.map(|cc| cc.ident),
             args: self.typec.args.extend(args),
             ret,
         };
-        let parsed_generics = self.generics(generics);
+        self.generics(generics, spec_set, offset);
 
         self.scope.end_frame(frame);
 
-        Some((signature, parsed_generics))
+        let generics = self.take_generics(generics.len(), spec_set);
+        Some((signature, generics))
+    }
+
+    pub fn take_generics(&mut self, offset: usize, spec_set: &mut SpecSet) -> Generics {
+        let mut generics = spec_set.iter();
+        let prev_len = generics.by_ref().take(offset).flatten().count();
+        let generics = generics
+            .map(|specs| self.typec.spec_sum(specs, self.interner))
+            .collect::<BumpVec<_>>();
+        spec_set.truncate(prev_len);
+        self.typec.params.extend(generics)
     }
 
     pub fn collect_struct(
@@ -419,7 +444,6 @@ impl TyChecker<'_> {
 #[derive(Default, Clone, Copy)]
 struct ScopeData {
     offset: usize,
-    upper_generics: Generics,
     owner: Option<Ty>,
     not_in_scope: bool,
     upper_vis: Vis,

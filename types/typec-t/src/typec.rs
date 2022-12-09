@@ -105,6 +105,48 @@ gen_index! {
 }
 
 impl Typec {
+    pub fn register_ty_generics(&self, ty: Ty, spec_set: &mut SpecSet) {
+        self.register_ty_generics_low(ty, default(), spec_set);
+    }
+
+    pub fn register_ty_generics_low(
+        &self,
+        ty: Ty,
+        generic: FragSlice<Spec>,
+        spec_set: &mut SpecSet,
+    ) {
+        match ty {
+            Ty::Param(index) => spec_set.extend(index as u32, self[generic].iter().copied()),
+            Ty::Instance(i) => {
+                let Instance { base, args } = self[i];
+                let params = match base {
+                    GenericTy::Struct(s) => self[s].generics,
+                    GenericTy::Enum(e) => self[e].generics,
+                };
+
+                for (&param, &arg) in self[params].iter().zip(self[args].iter()) {
+                    self.register_ty_generics_low(arg, param, spec_set);
+                }
+            }
+            Ty::Pointer(p) => self.register_ty_generics_low(self[p].base, generic, spec_set),
+            Ty::Struct(..) | Ty::Enum(..) | Ty::Builtin(..) => (),
+        }
+    }
+
+    pub fn register_spec_generics(&self, spec: Spec, spec_set: &mut SpecSet) {
+        match spec {
+            Spec::Instance(i) => {
+                let SpecInstance { base, args } = self[i];
+                let params = self[base].generics;
+
+                for (&param, &arg) in self[params].iter().zip(self[args].iter()) {
+                    self.register_ty_generics_low(arg, param, spec_set);
+                }
+            }
+            Spec::Base(..) => (),
+        }
+    }
+
     pub fn may_need_drop(&mut self, ty: Ty) -> bool {
         match ty {
             Ty::Param(..) => return true,
@@ -256,17 +298,40 @@ impl Typec {
 
     pub fn display_spec_sum(&self, spec: FragSlice<Spec>, interner: &Interner) -> String {
         let mut str = String::new();
-        self.display_spec_sum_to(spec, &mut str, interner);
+        self.display_spec_sum_to(self[spec].iter().copied(), &mut str, interner);
         str
     }
 
-    pub fn display_spec_sum_to(&self, spec: FragSlice<Spec>, to: &mut String, interner: &Interner) {
-        if let Some((&last, spec)) = self[spec].split_last() {
-            for &spec in spec {
-                self.display_spec_to(spec, to, interner);
+    pub fn display_spec_sum_to(
+        &self,
+        mut spec: impl Iterator<Item = Spec>,
+        to: &mut String,
+        interner: &Interner,
+    ) {
+        if let Some(first) = spec.next() {
+            self.display_spec_to(first, to, interner);
+            for spec in spec {
                 to.push_str(" + ");
+                self.display_spec_to(spec, to, interner);
             }
-            self.display_spec_to(last, to, interner);
+        }
+    }
+
+    pub fn spec_sum(
+        &mut self,
+        specs: impl Iterator<Item = Spec> + Clone + ExactSizeIterator,
+        interner: &mut Interner,
+    ) -> FragSlice<Spec> {
+        let id = interner.intern_with(|s, t| self.display_spec_sum_to(specs.clone(), t, s));
+        let res = self
+            .lookup
+            .entry(id)
+            .or_insert_with(|| ComputedTypecItem::SpecSum(self.spec_sums.extend(specs)))
+            .to_owned();
+
+        match res {
+            ComputedTypecItem::SpecSum(ss) => ss,
+            _ => unreachable!(),
         }
     }
 

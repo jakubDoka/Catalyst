@@ -33,26 +33,34 @@ impl TyChecker<'_> {
         self.insert_generics(generics, 0);
         self.scope
             .push(Interner::SELF, Ty::Param(generics.len() as u16), name.span);
-        self.typec[spec].inherits = self.build_inherits(inherits);
-        self.typec[spec].generics = self.generics(generics);
-        self.typec[spec].methods = self.build_spec_methods(spec, body, generics.len() + 1);
+        let mut spec_set = SpecSet::default();
+        self.generics(generics, &mut spec_set, 0);
+        self.typec[spec].inherits = self.build_inherits(inherits, &mut spec_set);
+        self.typec[spec].methods =
+            self.build_spec_methods(spec, body, &mut spec_set, generics.len() + 1);
+        self.typec[spec].generics = self.take_generics(0, &mut spec_set);
 
         self.scope.end_frame(frame);
     }
 
-    fn build_inherits(&mut self, inherits: ParamSpecsAst) -> FragSlice<Spec> {
-        self.spec_sum(dbg!(inherits).iter()).unwrap_or_default()
+    fn build_inherits(
+        &mut self,
+        inherits: ParamSpecsAst,
+        spec_set: &mut SpecSet,
+    ) -> FragSlice<Spec> {
+        self.spec_sum(inherits.iter(), spec_set).unwrap_or_default()
     }
 
     fn build_spec_methods(
         &mut self,
         parent: FragRef<SpecBase>,
         body: SpecBodyAst,
+        spec_set: &mut SpecSet,
         offset: usize,
     ) -> FragSlice<SpecFunc> {
         let mut methods = bumpvec![cap body.len()];
         for &func in body.iter() {
-            let Some((signature, generics)) = self.collect_signature(func, offset) else {
+            let Some((signature, generics)) = self.collect_signature(func, spec_set, offset) else {
                 continue;
             };
 
@@ -73,18 +81,24 @@ impl TyChecker<'_> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
-        self.typec[ty].variants = self.enum_variants(body);
-        self.typec[ty].generics = self.generics(generics);
+        let mut spec_set = SpecSet::default();
+        self.generics(generics, &mut spec_set, 0);
+        self.typec[ty].variants = self.enum_variants(body, &mut spec_set);
+        self.typec[ty].generics = self.take_generics(0, &mut spec_set);
 
         self.scope.end_frame(frame);
     }
 
-    pub fn enum_variants(&mut self, body: EnumBodyAst) -> FragSlice<Variant> {
+    pub fn enum_variants(
+        &mut self,
+        body: EnumBodyAst,
+        spec_set: &mut SpecSet,
+    ) -> FragSlice<Variant> {
         let variants = body
             .iter()
             .filter_map(|EnumVariantAst { name, ty }| {
                 let ty = ty.map_or(Some(Ty::UNIT), |(.., ty)| self.ty(ty))?;
-
+                self.typec.register_ty_generics(ty, spec_set);
                 Some(Variant {
                     name: name.ident,
                     ty,
@@ -103,13 +117,15 @@ impl TyChecker<'_> {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
-        self.typec[ty].fields = self.struct_fields(body);
-        self.typec[ty].generics = self.generics(generics);
+        let mut spec_set = SpecSet::default();
+        self.generics(generics, &mut spec_set, 0);
+        self.typec[ty].fields = self.struct_fields(body, &mut spec_set);
+        self.typec[ty].generics = self.take_generics(0, &mut spec_set);
 
         self.scope.end_frame(frame);
     }
 
-    fn struct_fields(&mut self, body: StructBodyAst) -> FragSlice<Field> {
+    fn struct_fields(&mut self, body: StructBodyAst, spec_set: &mut SpecSet) -> FragSlice<Field> {
         let fields = body
             .iter()
             .map(
@@ -123,7 +139,11 @@ impl TyChecker<'_> {
                  }| {
                     Some(Field {
                         vis,
-                        ty: self.ty(ty)?,
+                        ty: {
+                            let ty = self.ty(ty)?;
+                            self.typec.register_ty_generics(ty, spec_set);
+                            ty
+                        },
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
                         span: name.span.into(),
                         name: name.ident,

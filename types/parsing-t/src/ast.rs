@@ -130,7 +130,7 @@ impl<'a, T: Debug, META> Debug for ListAst<'a, T, META> {
 }
 
 impl<'a, T: Debug, META: ListAstMeta> ListAst<'a, T, META> {
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> + Clone {
         self.elements.iter().map(|e| &e.value)
     }
 
