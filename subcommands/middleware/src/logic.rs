@@ -1045,7 +1045,6 @@ impl Task {
                         }
                         Ty::Instance(i) => {
                             let Instance { base, args } = task.typec[i];
-                            let params = task.typec[args].to_bumpvec();
                             match base {
                                 GenericTy::Struct(s) => {
                                     task.typec[task.typec[s].fields]
@@ -1053,11 +1052,7 @@ impl Task {
                                         .into_iter()
                                         .rev()
                                         .map(|f| {
-                                            task.typec.instantiate(
-                                                f.ty,
-                                                &params,
-                                                &mut task.interner,
-                                            )
+                                            task.typec.instantiate(f.ty, args, &mut task.interner)
                                         })
                                         .collect_into(&mut *type_frontier);
                                 }
@@ -1067,11 +1062,7 @@ impl Task {
                                         .into_iter()
                                         .rev()
                                         .map(|v| {
-                                            task.typec.instantiate(
-                                                v.ty,
-                                                &params,
-                                                &mut task.interner,
-                                            )
+                                            task.typec.instantiate(v.ty, args, &mut task.interner)
                                         })
                                         .collect_into(&mut *type_frontier);
                                 }
@@ -1180,7 +1171,7 @@ impl Task {
 
         let (r#impl, params) = self
             .typec
-            .find_implementation(caller, used_spec, &[], &mut None, &mut self.interner)
+            .find_implementation(caller, used_spec, &[][..], &mut None, &mut self.interner)
             .expect("ba")
             .expect("ka");
         let func_id = self.typec[self.typec[r#impl].methods][index];

@@ -92,6 +92,8 @@ gen_index! {
         Enum => enums
         Variant => variants
         Impl => impls
+        FragSlice<Spec> => params
+        Spec => spec_sums
     }
     slices {
         Field => fields
@@ -664,7 +666,7 @@ impl Typec {
         &mut self,
         ty: Ty,
         sum: FragSlice<Spec>,
-        params: &[FragSlice<Spec>],
+        params: impl TypecCtxSlice<FragSlice<Spec>>,
         inferred: &[Ty],
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
         interner: &mut Interner,
@@ -687,24 +689,24 @@ impl Typec {
         &mut self,
         ty: Ty,
         spec: Spec,
-        params: &[FragSlice<Spec>],
+        params: impl TypecCtxSlice<FragSlice<Spec>>,
         missing_keys: &mut Option<&mut BumpVec<ImplKey>>,
         interner: &mut Interner,
     ) -> Option<Option<(FragRef<Impl>, FragSlice<Ty>)>> {
         if let Ty::Param(index) = ty {
-            let mut frontier = self[params[index as usize]].to_bumpvec();
+            let mut frontier = self[params.get(self)[index as usize]].to_bumpvec();
             while let Some(other_spec) = frontier.pop() {
                 if spec == other_spec {
                     return Some(None);
                 }
 
                 let params = match other_spec {
-                    Spec::Base(..) => bumpvec![],
-                    Spec::Instance(instance) => self[self[instance].args].to_bumpvec(),
+                    Spec::Base(..) => default(),
+                    Spec::Instance(instance) => self[instance].args,
                 };
 
-                for inherit in self[self[other_spec.base(self)].inherits].to_bumpvec() {
-                    let inherit = self.instantiate_spec(inherit, &params, interner);
+                for inherit in self[other_spec.base(self)].inherits.keys() {
+                    let inherit = self.instantiate_spec(self[inherit], params, interner);
                     frontier.push(inherit);
                 }
             }
@@ -737,8 +739,7 @@ impl Typec {
             let impl_ent = self.impls[current];
             base_impl = impl_ent.next;
 
-            let generics = self[impl_ent.generics].to_bumpvec();
-            let mut generic_slots = bumpvec![None; generics.len()];
+            let mut generic_slots = bumpvec![None; impl_ent.generics.len()];
             let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.key.ty);
             let ty_compatible = self.compatible_spec(&mut generic_slots, spec, impl_ent.key.spec);
 
@@ -751,9 +752,20 @@ impl Typec {
                 .collect::<Option<BumpVec<_>>>()
                 .expect("generic slots should not be empty since we validate the implementation");
 
-            let implements = generics.iter().zip(params.iter()).all(|(&specs, &ty)| {
-                self.implements_sum(ty, specs, &generics, &params, missing_keys, interner)
-            });
+            let implements = impl_ent
+                .generics
+                .keys()
+                .zip(params.iter())
+                .all(|(specs, &ty)| {
+                    self.implements_sum(
+                        ty,
+                        self[specs],
+                        impl_ent.generics,
+                        &params,
+                        missing_keys,
+                        interner,
+                    )
+                });
 
             if !implements {
                 continue;
@@ -880,10 +892,32 @@ impl Typec {
         Ok(())
     }
 
-    pub fn instantiate(&mut self, ty: Ty, params: &[Ty], interner: &mut Interner) -> Ty {
-        unsafe {
-            self.try_instantiate(ty, mem::transmute(params), interner)
-                .unwrap_unchecked()
+    pub fn instantiate(
+        &mut self,
+        ty: Ty,
+        params: impl TypecCtxSlice<Ty>,
+        interner: &mut Interner,
+    ) -> Ty {
+        match ty {
+            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
+            ty if params.is_empty() => ty,
+            Ty::Instance(instance) => {
+                let Instance { base, args } = self[instance];
+                let args = self[args]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|arg| self.instantiate(arg, params, interner))
+                    .collect::<BumpVec<_>>();
+                Ty::Instance(self.instance(base, args.as_slice(), interner))
+            }
+            Ty::Pointer(pointer) => {
+                let Pointer {
+                    base, mutability, ..
+                } = self[pointer];
+                let base = self.instantiate(base, params, interner);
+                Ty::Pointer(self.pointer_to(mutability, base, interner))
+            }
+            Ty::Param(index) => params.get(self)[index as usize],
         }
     }
 
@@ -894,6 +928,8 @@ impl Typec {
         interner: &mut Interner,
     ) -> Option<Ty> {
         Some(match ty {
+            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
+            ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
                 let Instance { base, args } = self[instance];
                 let args = self[args]
@@ -911,14 +947,27 @@ impl Typec {
                 Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
             Ty::Param(index) => return params[index as usize],
-            Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => ty,
         })
     }
 
-    pub fn instantiate_spec(&mut self, spec: Spec, params: &[Ty], interner: &mut Interner) -> Spec {
-        unsafe {
-            self.try_instantiate_spec(spec, mem::transmute(params), interner)
-                .unwrap_unchecked()
+    pub fn instantiate_spec(
+        &mut self,
+        spec: Spec,
+        params: impl TypecCtxSlice<Ty>,
+        interner: &mut Interner,
+    ) -> Spec {
+        match spec {
+            Spec::Base(..) => spec,
+            spec if params.is_empty() => spec,
+            Spec::Instance(instance) => {
+                let SpecInstance { base, args } = self[instance];
+                let args = self[args]
+                    .to_bumpvec()
+                    .into_iter()
+                    .map(|arg| self.instantiate(arg, params, interner))
+                    .collect::<BumpVec<_>>();
+                Spec::Instance(self.spec_instance(base, args.as_slice(), interner))
+            }
         }
     }
 
@@ -930,6 +979,7 @@ impl Typec {
     ) -> Option<Spec> {
         Some(match spec {
             Spec::Base(..) => spec,
+            spec if params.is_empty() => spec,
             Spec::Instance(instance) => {
                 let SpecInstance { base, args } = self[instance];
                 let args = self[args]
@@ -1066,5 +1116,33 @@ impl From<Mutability> for ParamPresence {
             Mutable => Present,
             Param(..) => BehindPointer,
         }
+    }
+}
+
+pub trait TypecCtxSlice<T: 'static>: Copy {
+    fn get<'a, 'b: 'a>(&'b self, typec: &'a Typec) -> &'a [T];
+    fn is_empty(&self) -> bool;
+}
+
+impl<T: 'static> TypecCtxSlice<T> for FragSlice<T>
+where
+    Typec: Index<FragSlice<T>, Output = [T]>,
+{
+    fn get<'a, 'b: 'a>(&'b self, typec: &'a Typec) -> &'a [T] {
+        &typec[*self]
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+}
+
+impl<T: 'static> TypecCtxSlice<T> for &[T] {
+    fn get<'a, 'b: 'a>(&'b self, _: &'a Typec) -> &'a [T] {
+        self
+    }
+
+    fn is_empty(&self) -> bool {
+        (*self).is_empty()
     }
 }

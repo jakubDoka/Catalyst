@@ -266,8 +266,7 @@ impl Ty {
                     GenericTy::Struct(s) => typec[typec[s].fields][index].ty,
                     GenericTy::Enum(e) => typec[typec[e].variants][index].ty,
                 };
-                let params = typec[args].to_bumpvec();
-                typec.instantiate(ty, &params, interner)
+                typec.instantiate(ty, args, interner)
             }
             _ => return None,
         })
@@ -290,8 +289,7 @@ impl Ty {
                     }
                     GenericTy::Enum(e) => Enum::find_variant(e, name, typec),
                 }?;
-                let params = typec[args].to_bumpvec();
-                Some((index, typec.instantiate(ty, &params, interner)))
+                Some((index, typec.instantiate(ty, args, interner)))
             }
             _ => None,
         }

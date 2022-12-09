@@ -191,7 +191,6 @@ impl Generator<'_> {
                 Ty::Enum(..) => todo!(),
                 Ty::Instance(i) => {
                     let Instance { base, args } = self.typec[i];
-                    let params = self.typec[args].to_bumpvec();
                     match base {
                         GenericTy::Struct(s) => {
                             let layout = self.ty_layout(ty);
@@ -203,9 +202,7 @@ impl Generator<'_> {
                                     self.typec[self.typec[s].fields]
                                         .to_bumpvec()
                                         .into_iter()
-                                        .map(|f| {
-                                            self.typec.instantiate(f.ty, &params, self.interner)
-                                        })
+                                        .map(|f| self.typec.instantiate(f.ty, args, self.interner))
                                         .rev(),
                                 )
                                 .collect_into(&mut *frontier);

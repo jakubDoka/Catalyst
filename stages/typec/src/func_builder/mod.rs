@@ -88,17 +88,15 @@ impl TyChecker<'_> {
         // impl of all inherits
         {
             let params = match spec {
-                Spec::Base(..) => bumpvec![],
-                Spec::Instance(i) => self.typec[self.typec[i].args].to_bumpvec(),
+                Spec::Base(..) => default(),
+                Spec::Instance(i) => self.typec[i].args,
             };
 
-            let generics = self.typec[generics].to_bumpvec();
-
             for inherit in self.typec[spec_ent.inherits].to_bumpvec() {
-                let local_inherit = self.typec.instantiate_spec(inherit, &params, self.interner);
+                let local_inherit = self.typec.instantiate_spec(inherit, params, self.interner);
                 if self
                     .typec
-                    .find_implementation(ty, local_inherit, &generics, &mut None, self.interner)
+                    .find_implementation(ty, local_inherit, generics, &mut None, self.interner)
                     .is_none()
                 {
                     self.missing_spec(ty, spec, span);
@@ -834,8 +832,9 @@ impl TyChecker<'_> {
         };
 
         if let Ty::Instance(instance) = ty {
-            let params = self.typec[self.typec[instance].args].to_bumpvec();
-            field_ty = self.typec.instantiate(ty, &params, self.interner);
+            field_ty = self
+                .typec
+                .instantiate(ty, self.typec[instance].args, self.interner);
         }
 
         Some(DotPathResult::Field(field as u32, field_ty))
@@ -1620,7 +1619,7 @@ impl TyChecker<'_> {
         if let Some(r#impl) = self.typec.find_implementation(
             ty,
             spec,
-            &builder.ctx.generics,
+            builder.ctx.generics.as_slice(),
             &mut None,
             self.interner,
         ) {
