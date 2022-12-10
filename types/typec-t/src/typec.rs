@@ -39,12 +39,7 @@ pub struct Typec {
 
 macro_rules! gen_index {
     (
-        indexes {
-            $($ty:ty => $storage:ident)*
-        }
-        slices {
-            $($slice_ty:ty => $slice_storage:ident)*
-        }
+        $($ty:ty => $storage:ident)*
     ) => {
         $(
             impl Index<FragRef<$ty>> for Typec {
@@ -60,20 +55,18 @@ macro_rules! gen_index {
                     &mut self.$storage[index]
                 }
             }
-        )*
 
-        $(
-            impl Index<FragSlice<$slice_ty>> for Typec {
-                type Output = [$slice_ty];
+            impl Index<FragSlice<$ty>> for Typec {
+                type Output = [$ty];
 
-                fn index(&self, index: FragSlice<$slice_ty>) -> &Self::Output {
-                    &self.$slice_storage[index]
+                fn index(&self, index: FragSlice<$ty>) -> &Self::Output {
+                    &self.$storage[index]
                 }
             }
 
-            impl IndexMut<FragSlice<$slice_ty>> for Typec {
-                fn index_mut(&mut self, index: FragSlice<$slice_ty>) -> &mut Self::Output {
-                    &mut self.$slice_storage[index]
+            impl IndexMut<FragSlice<$ty>> for Typec {
+                fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
+                    &mut self.$storage[index]
                 }
             }
         )*
@@ -81,29 +74,21 @@ macro_rules! gen_index {
 }
 
 gen_index! {
-    indexes {
-        Struct => structs
-        Pointer => pointers
-        SpecBase => base_specs
-        SpecInstance => spec_instances
-        Func => funcs
-        Field => fields
-        Instance => instances
-        Enum => enums
-        Variant => variants
-        Impl => impls
-        FragSlice<Spec> => params
-        Spec => spec_sums
-    }
-    slices {
-        Field => fields
-        FragSlice<Spec> => params
-        Spec => spec_sums
-        Ty => args
-        FragRef<Func> => func_slices
-        SpecFunc => spec_funcs
-        Variant => variants
-    }
+    Struct => structs
+    Pointer => pointers
+    SpecBase => base_specs
+    SpecInstance => spec_instances
+    Func => funcs
+    Instance => instances
+    Enum => enums
+    Impl => impls
+    FragSlice<Spec> => params
+    Spec => spec_sums
+    Field => fields
+    Ty => args
+    FragRef<Func> => func_slices
+    SpecFunc => spec_funcs
+    Variant => variants
 }
 
 impl Typec {

@@ -84,14 +84,14 @@ impl TyChecker<'_> {
             upper_vis: vis,
         };
 
-        let mut methods = bumpvec![cap func_iter.clone().count()];
+        let mut explicit_methods = bumpvec![cap func_iter.clone().count()];
         for func in func_iter {
             let Some(id) = self.collect_func_low(func, &[], &mut spec_set, scope_data) else {
                 continue;
             };
 
             transfer.impl_funcs.push((func, id));
-            methods.push(id);
+            explicit_methods.push((id, func.span()));
         }
 
         let parsed_generics = self.take_generics(0, &mut spec_set);
@@ -103,11 +103,10 @@ impl TyChecker<'_> {
             // check for collisions in implementations,
             // we just check if spec is already implemented
             {
-                let generics = self.typec[parsed_generics].to_bumpvec();
                 if let Some(Some((already, ..))) = self.typec.find_implementation(
                     parsed_ty,
                     parsed_spec,
-                    generics.as_slice(),
+                    parsed_generics,
                     &mut None,
                     self.interner,
                 ) {
@@ -131,10 +130,62 @@ impl TyChecker<'_> {
                 spec: Spec::Base(parsed_spec_base),
             };
 
+            let methods = {
+                let spec_methods = self.typec[parsed_spec_base].methods;
+
+                let mut slots = bumpvec![None; spec_methods.len()];
+
+                for (method, span) in explicit_methods {
+                    let method_name = self.typec[method].name;
+                    let Some(i) = self.typec[spec_methods].iter().position(|f| f.name == method_name) else {
+                        continue;
+                    };
+
+                    if let Err(err) = self.check_impl_signature(parsed_ty, self.typec[spec_methods][i], method, true) {
+                        self.handle_signature_check_error(err, span);
+                        continue;
+                    }
+
+                    slots[i] = Some(method);
+                }
+
+                let iter = slots
+                    .iter_mut()
+                    .zip(spec_methods.keys())
+                    .filter(|(slot, ..)| slot.is_none());
+                for (slot, i) in iter {
+                    let spec_func = self.typec[i];
+                    let id = self.interner.intern_scoped(parsed_ty_base, spec_func.name);
+
+                    let Ok(ScopeItem::Func(id)) = self.scope.get(id) else {
+                        continue;
+                    };
+
+                    if self.check_impl_signature(parsed_ty, spec_func, id, false).is_err() {
+                        continue;
+                    }
+
+                    *slot = Some(id);
+                }
+
+                let Some(methods) = slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
+                    let missing = self.typec[spec_methods]
+                        .iter()
+                        .zip(slots.as_slice())
+                        .filter_map(|(f, m)| m.is_none().then_some(f.name))
+                        .collect::<BumpVec<_>>();
+                    self.missing_spec_impl_funcs(r#impl.span(), missing.as_slice());
+                    return None;
+                };
+
+                self.typec.func_slices.extend(methods)
+            };
+
+
             let impl_ent = Impl {
                 generics: parsed_generics,
                 key,
-                methods: default(),
+                methods,
                 next: self
                     .typec
                     .impl_lookup
@@ -146,8 +197,8 @@ impl TyChecker<'_> {
                     .map(|(id, _)| id),
                 span: Some(r#impl.span()),
             };
-            self.typec.impls.push(impl_ent)
-        });
+            Some(self.typec.impls.push(impl_ent))
+        })?;
 
         transfer.close_impl_frame(r#impl, impl_id);
 

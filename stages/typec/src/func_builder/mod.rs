@@ -42,10 +42,9 @@ impl TyChecker<'_> {
             self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {
-                self.build_spec_impl(arena, impl_ref, funcs, compiled_funcs, ctx, offset);
-            } else {
-                self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, ctx, offset);
+                self.build_spec_impl(impl_ref, ctx);
             }
+            self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, ctx, offset);
 
             self.scope.end_frame(frame);
         }
@@ -53,15 +52,7 @@ impl TyChecker<'_> {
         self
     }
 
-    fn build_spec_impl<'a>(
-        &mut self,
-        arena: &'a Arena,
-        impl_ref: FragRef<Impl>,
-        input: &[(FuncDefAst, FragRef<Func>)],
-        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
-        ctx: &mut TirBuilderCtx,
-        offset: usize,
-    ) {
+    fn build_spec_impl(&mut self, impl_ref: FragRef<Impl>, ctx: &mut TirBuilderCtx) {
         let Impl {
             key: ImplKey { ty, spec },
             span: Some(span),
@@ -104,57 +95,29 @@ impl TyChecker<'_> {
             }
         }
 
-        let spec_methods = self.typec.spec_funcs[spec_ent.methods].to_bumpvec();
-
         self.scope.push(Interner::SELF, ty, span);
+    }
 
-        let mut methods = bumpvec![None; spec_methods.len()];
-        for &(ast, func) in input {
-            let Some(func_res) = self.build_func(ast, func, arena, ctx, offset) else { continue; };
-            let Some(body) = func_res else {
-                self.extern_in_impl(ast.span);
-                continue;
-            };
-            compiled_funcs.push((func, body));
-
-            let Func {
-                name,
-                signature: Signature { ref mut cc, .. },
-                ..
-            } = self.typec.funcs[func];
-            let Some((i, spec_func)) = spec_methods
-                .iter()
-                .copied()
-                .enumerate()
-                .find(|&(_, SpecFunc { name: n, .. })| n == name)
-            else {
-                let left_to_implement = spec_methods
-                    .iter()
-                    .zip(methods.as_slice())
-                    .filter_map(|(f, m)| m.is_none().then_some(f.name))
-                    .collect::<BumpVec<_>>();
-                self.unknown_spec_impl_func(ast.signature.name.span, left_to_implement.as_slice());
-                continue;
-            };
-
-            *cc = spec_func.signature.cc;
-
-            self.check_impl_signature(ty, spec_func, func, ast.signature.span());
-
-            methods[i] = Some(func);
+    pub fn handle_signature_check_error(&mut self, err: SignatureCheckError, span: Span) {
+        match err {
+            SignatureCheckError::ArgCountMismatch(expected, actual) => {
+                self.spec_arg_count_mismatch(span, expected, actual);
+            }
+            SignatureCheckError::ArgMismatch(args) => {
+                for (i, expected, actual) in args {
+                    if let Some(i) = i {
+                        self.spec_arg_mismatch(span, i, expected, actual);
+                    } else {
+                        self.spec_ret_mismatch(span, expected, actual);
+                    }
+                }
+            }
+            SignatureCheckError::MissingSpecs(specs) => {
+                for ImplKey { ty, spec } in specs {
+                    self.missing_spec(ty, spec, span);
+                }
+            }
         }
-
-        let Some(methods) = methods.iter().copied().collect::<Option<BumpVec<_>>>() else {
-            let missing = spec_methods
-                .iter()
-                .zip(methods.as_slice())
-                .filter_map(|(f, m)| m.is_none().then_some(f.name))
-                .collect::<BumpVec<_>>();
-            self.missing_spec_impl_funcs(span, missing.as_slice());
-            return;
-        };
-
-        self.typec.impls[impl_ref].methods = self.typec.func_slices.extend(methods);
     }
 
     pub fn check_impl_signature(
@@ -162,8 +125,8 @@ impl TyChecker<'_> {
         implementor: Ty,
         spec_func: SpecFunc,
         func_id: FragRef<Func>,
-        span: Span,
-    ) {
+        collect: bool,
+    ) -> Result<(), SignatureCheckError> {
         let func = self.typec.funcs[func_id];
 
         let spec_func_params = self
@@ -178,22 +141,29 @@ impl TyChecker<'_> {
             .pack_func_param_specs(func_id)
             .collect::<BumpVec<_>>();
 
-        let spec_args = self.typec.args[spec_func.signature.args].to_bumpvec();
-        let func_args = self.typec.args[func.signature.args].to_bumpvec();
-
-        if spec_args.len() != func_args.len() {
-            self.spec_arg_count_mismatch(span, spec_args.len(), func_args.len());
-            return;
+        match (spec_func.signature.args.len(), func.signature.args.len()) {
+            (a, b) if a == b => (),
+            (a, b) => return Err(SignatureCheckError::ArgCountMismatch(a, b)),
         }
 
-        let mut faulty = false;
-        for (i, (spec_arg, func_arg)) in spec_args.into_iter().zip(func_args).enumerate() {
-            if let Err((a, b)) = self
-                .typec
-                .compatible(&mut spec_func_slots, func_arg, spec_arg)
-            {
-                self.spec_arg_mismatch(span, i, a, b);
-                faulty = true;
+        let mut mismatches = collect.then(|| bumpvec![cap spec_func.signature.args.len() + 1]);
+        for (i, (spec_arg, func_arg)) in spec_func
+            .signature
+            .args
+            .keys()
+            .zip(spec_func.signature.args.keys())
+            .enumerate()
+        {
+            if let Err((a, b)) = self.typec.compatible(
+                &mut spec_func_slots,
+                self.typec[func_arg],
+                self.typec[spec_arg],
+            ) {
+                if let Some(ref mut mismatches) = mismatches {
+                    mismatches.push((Some(i), a, b));
+                } else {
+                    return Err(SignatureCheckError::ArgMismatch(default()));
+                }
             }
         }
 
@@ -202,33 +172,42 @@ impl TyChecker<'_> {
             func.signature.ret,
             spec_func.signature.ret,
         ) {
-            self.spec_ret_mismatch(span, a, b);
-            faulty = true;
+            if let Some(ref mut mismatches) = mismatches {
+                mismatches.push((None, a, b));
+            } else {
+                return Err(SignatureCheckError::ArgMismatch(default()));
+            }
         }
 
-        if faulty {
-            return;
+        if let Some(mismatches) = mismatches && !mismatches.is_empty() {
+            return Err(SignatureCheckError::ArgMismatch(mismatches));
         }
 
         let Some(spec_func_slots) = spec_func_slots.into_iter().collect::<Option<BumpVec<_>>>() else {
             unimplemented!("hmmm lets see when this happens");
         };
 
-        let mut missing_keys = bumpvec![];
+        let mut missing_specs = collect.then(|| bumpvec![]);
         for (specs, &ty) in spec_func_params.into_iter().zip(spec_func_slots.iter()) {
-            self.typec.implements_sum(
+            let implements = self.typec.implements_sum(
                 ty,
                 specs,
                 func_params.as_slice(),
                 &spec_func_slots,
-                &mut Some(&mut missing_keys),
+                &mut missing_specs.as_mut(),
                 self.interner,
             );
+
+            if !collect && !implements {
+                return Err(SignatureCheckError::MissingSpecs(default()));
+            }
         }
 
-        for ImplKey { ty, spec } in missing_keys {
-            self.missing_spec(ty, spec, span);
+        if let Some(missing_keys) = missing_specs && !missing_keys.is_empty() {
+            return Err(SignatureCheckError::MissingSpecs(missing_keys));
         }
+
+        Ok(())
     }
 
     pub fn build_funcs<'a>(
@@ -2134,4 +2113,10 @@ enum FuncLookupResult<'a> {
     SpecFunc(FragRef<SpecFunc>, Ty),
     #[allow(dead_code)]
     Var(TirNode<'a>),
+}
+
+pub enum SignatureCheckError {
+    ArgCountMismatch(usize, usize),
+    ArgMismatch(BumpVec<(Option<usize>, Ty, Ty)>),
+    MissingSpecs(BumpVec<ImplKey>),
 }
