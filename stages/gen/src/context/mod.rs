@@ -282,7 +282,7 @@ impl GenLayouts {
                 on_stack: false,
             },
             Ty::Builtin(Builtin::Bool) => Layout {
-                repr: types::B1,
+                repr: types::I8,
                 offsets: VSlice::empty(),
                 align: 1.try_into().unwrap(),
                 size: 1,

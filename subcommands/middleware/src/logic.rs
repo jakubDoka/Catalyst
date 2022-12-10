@@ -132,7 +132,12 @@ impl Middleware {
             Some((
                 threads
                     .into_iter()
-                    .map(|thread| thread.join().expect("worker panicked"))
+                    .map(|thread| {
+                        thread
+                            .join()
+                            .expect("worker panicked")
+                            .expect("impossible since we still hold the gen_senders")
+                    })
                     .collect::<Vec<_>>(),
                 entry_points,
                 imported,
@@ -305,6 +310,7 @@ impl Middleware {
                     break;
                 };
 
+                package_task.task.modules_to_compile.clear();
                 resources
                     .module_order
                     .iter()
@@ -325,6 +331,7 @@ impl Middleware {
                     .append(&mut package_task.task.entry_points);
                 sync_module_items(&mut module_items, &package_task.task.typec.module_items);
                 self.task_graph.finish(package);
+                tasks.push(package_task);
                 if let Ok(next_task) = receiver.try_recv() {
                     (package_task, package) = next_task;
                 } else {
@@ -475,7 +482,7 @@ impl Worker {
         mut self,
         thread_scope: &'a thread::Scope<'b, '_>,
         shared: Shared<'b>,
-    ) -> ScopedJoinHandle<'b, Task> {
+    ) -> ScopedJoinHandle<'b, Option<Task>> {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
@@ -500,13 +507,10 @@ impl Worker {
                     .expect("tasks are always reused");
             }
 
-            let mut compile_task = self
-                .gen_tasks
-                .recv()
-                .expect("main thread should always send a task");
+            let mut compile_task = self.gen_tasks.recv().ok()?;
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
-            compile_task
+            Some(compile_task)
         })
     }
 

@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, default::default, slice};
 
 use cranelift_codegen::ir::{
-    self, condcodes::IntCC, types, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
+    self, condcodes::IntCC, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
 };
 use cranelift_frontend::Variable;
 use mir_t::*;
@@ -129,7 +129,7 @@ impl Generator<'_> {
             }
             InstMir::Bool(value, ret) => {
                 let ty = self.ty_repr(builder.value_ty(ret));
-                let value = builder.ins().bconst(ty, value);
+                let value = builder.ins().iconst(ty, value as i64);
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Access(target, ret) => {
@@ -456,7 +456,7 @@ impl Generator<'_> {
                 ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64
             };
             (binary) => {
-                helper!(ints) | ir::types::B1
+                helper!(ints)
             };
             (scalars) => {
                 helper!(binary)
@@ -534,7 +534,6 @@ impl Generator<'_> {
         Some(Self::load_value_low(
             builder,
             must_load,
-            false,
             layout,
             offset,
             computed.expect("value should be computed"),
@@ -628,7 +627,6 @@ impl Generator<'_> {
         let source = Self::load_value_low(
             builder,
             must_load_source,
-            must_load_target,
             layout,
             source_offset,
             source_value,
@@ -671,23 +669,18 @@ impl Generator<'_> {
     fn load_value_low(
         builder: &mut GenBuilder,
         must_load_source: bool,
-        must_load_target: bool,
         layout: Layout,
         source_offset: i32,
         source_value: ComputedValue,
     ) -> ir::Value {
         let source = if must_load_source {
-            let repr = match layout.repr == types::B1 {
-                true => types::I8,
-                false => layout.repr,
-            };
             if layout.on_stack {
                 'a: {
                     let value = match source_value {
                         ComputedValue::Value(val) => val,
                         ComputedValue::Variable(var) => builder.use_var(var),
                         ComputedValue::StackSlot(ss) => {
-                            break 'a builder.ins().stack_addr(repr, ss, source_offset)
+                            break 'a builder.ins().stack_addr(layout.repr, ss, source_offset)
                         }
                     };
 
@@ -701,16 +694,16 @@ impl Generator<'_> {
                     ComputedValue::Value(val) => {
                         builder
                             .ins()
-                            .load(repr, MemFlags::new(), val, source_offset)
+                            .load(layout.repr, MemFlags::new(), val, source_offset)
                     }
                     ComputedValue::Variable(var) => {
                         let val = builder.use_var(var);
                         builder
                             .ins()
-                            .load(repr, MemFlags::new(), val, source_offset)
+                            .load(layout.repr, MemFlags::new(), val, source_offset)
                     }
                     ComputedValue::StackSlot(ss) => {
-                        builder.ins().stack_load(repr, ss, source_offset)
+                        builder.ins().stack_load(layout.repr, ss, source_offset)
                     }
                 }
             }
@@ -733,10 +726,7 @@ impl Generator<'_> {
             }
         };
 
-        match layout.repr == types::B1 && !must_load_target && must_load_source {
-            true => builder.ins().icmp_imm(IntCC::NotEqual, source, 0),
-            false => source,
-        }
+        source
     }
 
     fn ensure_target(
