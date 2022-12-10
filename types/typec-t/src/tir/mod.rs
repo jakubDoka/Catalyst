@@ -85,6 +85,7 @@ pub struct MacroCompileRequest {
     pub name: Ident,
     pub ty: Ty,
     pub r#impl: FragRef<Impl>,
+    pub params: FragSlice<Ty>,
 }
 
 pub struct CastCheck {

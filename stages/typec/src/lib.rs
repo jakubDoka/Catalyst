@@ -226,15 +226,17 @@ mod util {
         let mut token_macros = bumpvec![];
         let mod_ent = &packages.modules[module];
         for dep in &packages.module_deps[mod_ent.deps] {
-            let items = &typec.module_items[dep.ptr];
             scope.push(dep.name, dep.ptr, dep.name_span);
+
+            let items = &typec.module_items[dep.ptr];
             for &item in items.items.values() {
                 scope.insert(module, dep.ptr, item, interner);
+
                 if let ModuleItemPtr::Ty(ty) = item.ptr
                     && let Some(r#impl) = typec.macros.get(&ty)
-                    && let MacroImpl { name, r#impl: Some(r#impl) } = r#impl.to_owned()
+                    && let MacroImpl { name, r#impl: Some(r#impl), params } = r#impl.to_owned()
                 {
-                    token_macros.push(MacroCompileRequest { name, ty, r#impl });
+                    token_macros.push(MacroCompileRequest { name, ty, r#impl, params });
                 }
             }
         }

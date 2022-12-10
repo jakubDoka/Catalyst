@@ -75,6 +75,7 @@ impl TyChecker<'_> {
                 name: macro_impl.name,
                 ty,
                 r#impl: impl_ref,
+                params: macro_impl.params,
             });
         }
         let spec_ent = self.typec[spec_base];

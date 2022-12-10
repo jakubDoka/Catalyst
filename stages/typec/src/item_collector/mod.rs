@@ -471,6 +471,7 @@ impl TyChecker<'_> {
                     MacroImpl {
                         name: name.ident,
                         r#impl: None,
+                        params: default(),
                     },
                 );
                 break;

@@ -54,6 +54,7 @@
         "libucrt",
         "Memmove",
         "msvc",
+        "networkx",
         "nonoverlapping",
         "normaliz",
         "peekable",
@@ -84,4 +85,5 @@
         "wldap"
     ],
     "rust-analyzer.procMacro.attributes.enable": true,
+    "python.analysis.typeCheckingMode": "basic",
 }

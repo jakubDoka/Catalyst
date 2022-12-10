@@ -6,7 +6,7 @@ use std::{
     path::*,
     slice,
     sync::mpsc::{self, Receiver, Sender, SyncSender},
-    thread,
+    thread::{self, ScopedJoinHandle},
 };
 
 use cranelift_codegen::{
@@ -54,9 +54,8 @@ impl Middleware {
     }
 
     pub fn update(&mut self, args: &MiddlewareArgs) -> Option<MiddlewareOutput> {
-        let mut ir = args.dump_ir.then(String::new);
         let mut main_task = Task {
-            ir_dump: ir.clone(),
+            ir_dump: args.dump_ir.then(String::new),
             ..default()
         };
 
@@ -68,24 +67,31 @@ impl Middleware {
             return None;
         }
 
-        let (sender, mut receiver) = mpsc::channel();
-        let num_workers = thread::available_parallelism()
+        let (package_sender, package_receiver) = mpsc::channel();
+        let workers_count = thread::available_parallelism()
             .map_or(1, |n| n.get())
             .min(args.max_cores.unwrap_or(usize::MAX));
 
-        if num_workers == 1 {
+        if workers_count == 1 {
             // todo!();
         }
 
-        let workers: Vec<_> = iter::repeat_with(|| Worker::new(sender.clone()))
-            .take(num_workers)
-            .collect();
+        let workers = iter::repeat_with(|| Worker::new(package_sender.clone()))
+            .take(workers_count)
+            .collect::<Vec<_>>();
 
         self.build_task_graph();
 
         let resources = mem::take(&mut self.resources);
 
-        let tasks = vec![main_task; num_workers];
+        // the vec![] internals will put the main_task last, this is important
+        // since later when resolving first dependency we want the main task first
+        // (we pop from this later)
+        let mut tasks = vec![main_task; workers_count];
+        tasks
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, task)| task.id = i);
 
         let shared = Shared {
             resources: &resources,
@@ -93,19 +99,22 @@ impl Middleware {
             isa: &args.isa,
         };
 
-        let binary = thread::scope(|s| {
-            let mut senders = workers
-                .into_iter()
-                .enumerate()
-                // the main_task is actually last in tasks but we want it first
-                .zip(tasks.into_iter().rev())
-                .map(|((id, (worker, sender)), task)| {
-                    worker.run(s, shared);
-                    (sender, Some(Task { id, ..task }))
-                })
-                .collect::<Vec<_>>();
+        let scope_result = thread::scope(|s| {
+            let (mut package_tasks, mut gen_senders, mut threads) = (
+                Vec::with_capacity(workers_count),
+                Vec::with_capacity(workers_count),
+                Vec::with_capacity(workers_count),
+            );
+            for ((worker, package_sender, gen_sender), task) in workers.into_iter().zip(tasks) {
+                package_tasks.push(PackageTask {
+                    self_sender: package_sender,
+                    task,
+                });
+                gen_senders.push(gen_sender);
+                threads.push(worker.run(s, shared));
+            }
 
-            let mut tasks = self.expand(&mut receiver, &mut senders, &resources);
+            let mut tasks = self.expand(package_receiver, package_tasks, &resources, workers_count);
 
             for task in tasks.iter_mut() {
                 self.workspace.transfer(&mut task.workspace);
@@ -116,65 +125,65 @@ impl Middleware {
             }
 
             let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
-            for (mut task, (recv, ..)) in tasks.into_iter().zip(senders.iter_mut()) {
-                task.for_generation = true;
-                recv.send(task).expect("Bruh...");
+            for (task, recv) in tasks.into_iter().zip(gen_senders.iter_mut()) {
+                recv.send(task).expect("worker terminated prematurely");
             }
 
-            let mut tasks = (0..num_workers)
-                .map(|_| receiver.recv().expect("Eh..."))
-                .collect::<BumpVec<_>>();
-            tasks.sort_unstable_by_key(|t| t.id);
-            let mut main_task = tasks
-                .into_iter()
-                .reduce(|mut acc, mut task| {
-                    if let (Some(ir), Some(dump)) = (&mut acc.ir_dump, task.ir_dump) {
-                        ir.push_str(&dump);
-                    }
-                    acc.workspace.transfer(&mut task.workspace);
-                    acc.compile_requests
-                        .queue
-                        .extend(task.compile_requests.queue);
-                    acc
-                })
-                .expect("I thought we checked this...");
-
-            let entry_point = self.generate_entry_point(&mut main_task, &args.isa, entry_points);
-
-            let mut object = ObjectContext::new(&args.isa).expect("This really sucks...");
-            object
-                .load_functions(
-                    main_task
-                        .compile_requests
-                        .queue
-                        .into_iter()
-                        .map(|req| req.id)
-                        .chain(imported)
-                        .chain(iter::once(entry_point)),
-                    &main_task.gen,
-                    &main_task.typec,
-                    &main_task.interner,
-                )
-                .map_err(|e| {
-                    if let ObjectRelocationError::MissingSymbol(f) = e {
-                        let func = main_task.gen.funcs[f].func;
-                        let name = &main_task.interner[main_task.typec.funcs[func].name];
-                        eprintln!("Missing symbol: {}", name);
-                    }
-                    e
-                })
-                .expect("So close...");
-
-            self.workspace = main_task.workspace;
-            ir = main_task.ir_dump;
-            Some(object.emit().expect("This is so sad..."))
+            Some((
+                threads
+                    .into_iter()
+                    .map(|thread| thread.join().expect("worker panicked"))
+                    .collect::<Vec<_>>(),
+                entry_points,
+                imported,
+            ))
         });
 
+        // important for displaying errors
         self.resources = resources;
 
+        let (mut tasks, entry_points, imported) = scope_result?;
+
+        // we want consistent output during tests
+        tasks.sort_unstable_by_key(|t| t.id);
+
+        let mut main_task = tasks
+            .into_iter()
+            .reduce(|mut acc, mut task| {
+                if let (Some(ir), Some(dump)) = (&mut acc.ir_dump, task.ir_dump) {
+                    ir.push_str(&dump);
+                }
+                acc.workspace.transfer(&mut task.workspace);
+                acc.compile_requests
+                    .queue
+                    .extend(task.compile_requests.queue);
+                acc
+            })
+            .expect("zero worker situation is impossible");
+
+        let entry_point = self.generate_entry_point(&mut main_task, &args.isa, entry_points);
+
+        let mut object = ObjectContext::new(&args.isa).unwrap();
+        object
+            .load_functions(
+                main_task
+                    .compile_requests
+                    .queue
+                    .into_iter()
+                    .map(|req| req.id)
+                    .chain(imported)
+                    .chain(iter::once(entry_point)),
+                &main_task.gen,
+                &main_task.typec,
+                &main_task.interner,
+            )
+            .unwrap();
+
+        self.workspace = main_task.workspace;
+
         Some(MiddlewareOutput {
-            binary: binary?,
-            ir,
+            binary: object.emit().unwrap(),
+            ir: main_task.ir_dump,
         })
     }
 
@@ -218,11 +227,11 @@ impl Middleware {
             main_task.interner.intern(gen::ENTRY_POINT_NAME),
         ));
 
-        context.compile(&*isa.inner).expect("Real nice...");
+        context.compile(&*isa.inner).unwrap();
         main_task
             .gen
             .save_compiled_code(entry_point, &context)
-            .expect("Not again...");
+            .unwrap();
 
         entry_point
     }
@@ -270,9 +279,10 @@ impl Middleware {
 
     pub fn expand(
         &mut self,
-        receiver: &mut Receiver<Task>,
-        senders: &mut [(SyncSender<Task>, Option<Task>)],
+        receiver: Receiver<(PackageTask, VRef<Package>)>,
+        mut tasks: Vec<PackageTask>,
         resources: &Resources,
+        worker_count: usize,
     ) -> Vec<Task> {
         let mut module_items = ShadowMap::new();
 
@@ -288,16 +298,10 @@ impl Middleware {
             }
         }
 
-        let mut packages = bumpvec![None; senders.len()];
-
         while self.task_graph.has_tasks() {
-            for (sender, maybe_task) in senders.iter_mut() {
-                let Some(mut task) = maybe_task.take() else {
-                    continue;
-                };
-
+            while let Some(mut package_task) = tasks.pop() {
                 let Some(package) = self.task_graph.next_task() else {
-                    *maybe_task = Some(task);
+                    tasks.push(package_task);
                     break;
                 };
 
@@ -305,37 +309,39 @@ impl Middleware {
                     .module_order
                     .iter()
                     .filter(|&&module| resources.modules[module].package == package)
-                    .collect_into(&mut task.modules_to_compile);
+                    .collect_into(&mut package_task.task.modules_to_compile);
 
-                sync_module_items(&mut task.typec.module_items, &module_items);
-
-                packages[task.id] = Some(package);
-                sender.send(task).expect("Whoops...");
+                sync_module_items(&mut package_task.task.typec.module_items, &module_items);
+                package_task
+                    .send(package)
+                    .expect("worker thread terminated prematurely");
             }
 
-            let mut task = receiver.recv().expect("Very bad...");
+            let (mut package_task, mut package) = receiver
+                .recv()
+                .expect("All worker threads terminated prematurely");
             loop {
-                self.entry_points.append(&mut task.entry_points);
-                sync_module_items(&mut module_items, &task.typec.module_items);
-                task.modules_to_compile.clear();
-                let id = task.id;
-                senders[id].1 = Some(task);
-                self.task_graph.finish(packages[id].take().expect("Why??"));
+                self.entry_points
+                    .append(&mut package_task.task.entry_points);
+                sync_module_items(&mut module_items, &package_task.task.typec.module_items);
+                self.task_graph.finish(package);
                 if let Ok(next_task) = receiver.try_recv() {
-                    task = next_task;
+                    (package_task, package) = next_task;
                 } else {
                     break;
                 }
             }
         }
 
-        senders
-            .iter_mut()
-            .map(|(.., task)| {
-                task.take()
-                    .unwrap_or_else(|| receiver.recv().expect("We are doomed!"))
-            })
-            .collect::<Vec<_>>()
+        let leftover_tasks = receiver
+            .into_iter()
+            .take(worker_count - tasks.len())
+            .map(|(task, ..)| task.task);
+        tasks
+            .into_iter()
+            .map(|task| task.task)
+            .chain(leftover_tasks)
+            .collect()
     }
 
     pub fn build_task_graph(&mut self) {
@@ -433,54 +439,75 @@ pub struct MiddlewareOutput {
 }
 
 pub struct Worker {
-    pub tasks: Receiver<Task>,
-    pub products: Sender<Task>,
+    pub package_tasks: Receiver<(PackageTask, VRef<Package>)>,
+    pub package_products: Sender<(PackageTask, VRef<Package>)>,
+    pub gen_tasks: Receiver<Task>,
     pub state: WorkerState,
     pub context: Context,
     pub function_builder_ctx: FunctionBuilderContext,
 }
 
+type WorkerNewReturn = (
+    Worker,
+    SyncSender<(PackageTask, VRef<Package>)>,
+    SyncSender<Task>,
+);
+
 impl Worker {
-    pub fn new(products: Sender<Task>) -> (Self, SyncSender<Task>) {
-        let (tx, rx) = mpsc::sync_channel(0);
+    pub fn new(package_products: Sender<(PackageTask, VRef<Package>)>) -> WorkerNewReturn {
+        let (package_dump, package_tasks) = mpsc::sync_channel(0);
+        let (gen_dump, gen_tasks) = mpsc::sync_channel(0);
         (
             Self {
-                tasks: rx,
-                products,
+                package_tasks,
+                package_products,
                 state: WorkerState::default(),
                 context: Context::new(),
                 function_builder_ctx: FunctionBuilderContext::new(),
+                gen_tasks,
             },
-            tx,
+            package_dump,
+            gen_dump,
         )
     }
 
-    pub fn run<'a: 'b, 'b>(mut self, thread_scope: &'a thread::Scope<'b, '_>, shared: Shared<'b>) {
+    pub fn run<'a: 'b, 'b>(
+        mut self,
+        thread_scope: &'a thread::Scope<'b, '_>,
+        shared: Shared<'b>,
+    ) -> ScopedJoinHandle<'b, Task> {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
             self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
             self.state.gen_layouts.ptr_ty = shared.isa.pointer_ty;
-            let mut compile_task = loop {
-                let Ok(mut task) = self.tasks.recv() else { return; };
-                if task.for_generation {
-                    break task;
-                }
+            loop {
+                let Ok((mut package_task, package)) = self.package_tasks.recv() else {break;};
 
-                let modules = mem::take(&mut task.modules_to_compile);
+                let modules = mem::take(&mut package_task.task.modules_to_compile);
                 for &module in modules.iter() {
-                    self.compile_module(module, &mut arena, &mut task, &mut jit_ctx, &shared);
+                    self.compile_module(
+                        module,
+                        &mut arena,
+                        &mut package_task.task,
+                        &mut jit_ctx,
+                        &shared,
+                    );
                 }
-                task.modules_to_compile = modules;
-                self.products.send(task).expect("As I was saying...");
-            };
+                package_task.task.modules_to_compile = modules;
+                self.package_products
+                    .send((package_task, package))
+                    .expect("tasks are always reused");
+            }
 
+            let mut compile_task = self
+                .gen_tasks
+                .recv()
+                .expect("main thread should always send a task");
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
-            self.products
-                .send(compile_task)
-                .expect("Seems like it all was useless.");
-        });
+            compile_task
+        })
     }
 
     fn compile_module(
@@ -549,6 +576,7 @@ impl Worker {
         let imported = self.push_macro_compile_requests(macros, task, shared);
         let mut layouts = mem::take(&mut self.state.jit_layouts);
         let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
+        task.compile_requests.clear();
         self.state.jit_layouts = layouts;
 
         jit_ctx
@@ -559,13 +587,7 @@ impl Worker {
                 &task.interner,
                 false,
             )
-            // .map_err(|e| {
-            //     if let JitRelocError::MissingSymbol(GenItemName::Func(func)) = e {
-            //         dbg!(&task.interner[task.typec[task.gen.funcs[func].func].name]);
-            //     }
-            //     e
-            // })
-            .expect("Hmm lets reconsider our life choices...");
+            .unwrap();
         jit_ctx.prepare_for_execution();
     }
 
@@ -592,7 +614,7 @@ impl Worker {
                 .mir
                 .bodies
                 .get(&func)
-                .expect("here we go again")
+                .expect("every source code function has body")
                 .to_owned();
             let params = task.compile_requests.ty_slices[params].to_bumpvec();
             self.state.temp_dependant_types.clear();
@@ -613,7 +635,11 @@ impl Worker {
                 &self.state.temp_dependant_types,
                 &mut self.function_builder_ctx,
             );
-            let root = body.blocks.keys().next().expect("Better try next time!");
+            let root = body
+                .blocks
+                .keys()
+                .next()
+                .expect("no block function is invalid");
             self.state.gen_resources.calls.clear();
             self.state
                 .gen_resources
@@ -647,14 +673,9 @@ impl Worker {
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
                 // print!("{} {}", name, self.context.func.display());
             }
-            self.context.compile(&*isa.inner).expect("Failure!");
-            task.gen
-                .save_compiled_code(id, &self.context)
-                .expect("Superb error occurred!");
+            self.context.compile(&*isa.inner).unwrap();
+            task.gen.save_compiled_code(id, &self.context).unwrap();
             self.context.clear();
-        }
-        if !task.for_generation {
-            task.compile_requests.clear();
         }
         compiled
     }
@@ -665,23 +686,11 @@ impl Worker {
         task: &mut Task,
         shared: &Shared,
     ) -> BumpVec<FragRef<CompiledFunc>> {
-        let extractor = |&MacroCompileRequest { ty, r#impl, .. }| {
-            let Impl {
-                generics,
-                methods,
-                key: ImplKey { ty: template, .. },
-                ..
-            } = task.typec.impls[r#impl];
+        let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
+            let Impl { methods, .. } = task.typec.impls[r#impl];
 
-            // infer params
-            let mut params = bumpvec![None; generics.len()];
-            task.typec
-                .compatible(&mut params, ty, template)
-                .expect("Heh...");
-            let params = params
-                .into_iter()
-                .collect::<Option<BumpVec<_>>>()
-                .expect("Lovely!");
+            let params = task.typec[params].to_bumpvec();
+            // todo try to avoid moving and allocate ty VSlice right away
             let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
 
             let collector = |&func| {
@@ -689,7 +698,7 @@ impl Worker {
                     true,
                     &shared.jit_isa.triple,
                     func,
-                    params.iter().cloned(),
+                    params.iter().copied(),
                     &task.typec,
                     &mut task.interner,
                 );
@@ -729,7 +738,11 @@ impl Worker {
         }
 
         for MacroCompileRequest {
-            name, r#impl, ty, ..
+            name,
+            r#impl,
+            ty,
+            params,
+            ..
         } in macros
         {
             let impl_ent = task.typec.impls[r#impl];
@@ -738,7 +751,7 @@ impl Worker {
             match spec {
                 s if s == SpecBase::TOKEN_MACRO => {
                     if let Some(spec) = self.state.token_macros.get(&r#impl) {
-                        let tm = jit_ctx.token_macro(spec).expect("Well then...");
+                        let tm = jit_ctx.token_macro(spec).unwrap();
                         ctx.tokens.declare_macro(spec.name, tm);
                         continue;
                     }
@@ -750,14 +763,7 @@ impl Worker {
                 self.state
                     .jit_layouts
                     .ty_layout(ty, &[], &mut task.typec, &mut task.interner);
-            let mut infer_slots = bumpvec![None; impl_ent.generics.len()];
-            task.typec
-                .compatible(&mut infer_slots, ty, impl_ent.key.ty)
-                .expect("This should work, right?");
-            let params = infer_slots
-                .into_iter()
-                .collect::<Option<BumpVec<_>>>()
-                .expect("Guess I am a hypocrite...");
+            let params = task.typec[params].to_bumpvec();
             let funcs = task.typec.func_slices[impl_ent.methods]
                 .iter()
                 .map(|&func| {
@@ -775,8 +781,10 @@ impl Worker {
             match spec {
                 s if s == SpecBase::TOKEN_MACRO => {
                     let r#macro = TokenMacroOwnedSpec::new(layout.rust_layout(), name, funcs)
-                        .expect("Deng it!");
-                    let tm = jit_ctx.token_macro(&r#macro).expect("That sucks...");
+                        .expect("all functions should be present");
+                    let tm = jit_ctx
+                        .token_macro(&r#macro)
+                        .expect("all functions should be present");
                     ctx.tokens.declare_macro(r#macro.name, tm);
                     self.state.token_macros.insert(r#impl, r#macro);
                 }
@@ -936,6 +944,24 @@ impl Worker {
     }
 }
 
+pub struct PackageTask {
+    self_sender: SyncSender<(PackageTask, VRef<Package>)>,
+    pub task: Task,
+}
+
+impl PackageTask {
+    pub fn send(
+        self,
+        package: VRef<Package>,
+    ) -> Result<(), mpsc::SendError<(PackageTask, VRef<Package>)>> {
+        self.self_sender.clone().send((self, package))
+    }
+
+    pub fn into_task(self) -> Task {
+        self.task
+    }
+}
+
 #[derive(Default)]
 pub struct GenTask {}
 
@@ -943,7 +969,7 @@ pub struct GenTask {}
 pub struct Task {
     // config
     pub id: usize,
-    pub for_generation: bool,
+
     pub ir_dump: Option<String>,
 
     // temp
@@ -987,12 +1013,7 @@ impl Task {
                 continue;
             }
 
-            let body = task
-                .mir
-                .bodies
-                .get(&func)
-                .expect("Effing amazing..")
-                .clone();
+            let body = task.mir.bodies.get(&func).unwrap().clone();
             let mut types = body.types.clone();
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             Worker::swap_mir_types(
@@ -1157,10 +1178,7 @@ impl Task {
             parent, generics, ..
         } = self.typec.spec_funcs[func];
         let SpecBase { methods, .. } = self.typec[parent];
-        let index = methods
-            .keys()
-            .position(|key| key == func)
-            .expect("Shit happens.");
+        let index = methods.keys().position(|key| key == func).unwrap();
         let generic_count = params.len() - generics.len() - 1;
         let (upper, caller) = (&params[..generic_count], params[generic_count]);
         let used_spec = if upper.is_empty() {
@@ -1172,8 +1190,8 @@ impl Task {
         let (r#impl, params) = self
             .typec
             .find_implementation(caller, used_spec, &[][..], &mut None, &mut self.interner)
-            .expect("ba")
-            .expect("ka");
+            .unwrap()
+            .unwrap();
         let func_id = self.typec[self.typec[r#impl].methods][index];
         let params = self.typec[params].to_bumpvec();
         (func_id, params)
