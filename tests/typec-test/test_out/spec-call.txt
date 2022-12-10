@@ -6,7 +6,7 @@ error: 'u32' does not implement 'Clay'
    |
 
 info: tir repr of functions:
- fn [Clay] pass(var0: param0) -> param0 return var0
+ fn [: Clay] pass(var0: param0) -> param0 return var0
 
 fn [] main() -> uint return pass[uint](0)
 

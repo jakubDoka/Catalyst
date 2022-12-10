@@ -6,20 +6,53 @@ error: type 'uint' already has an implementation for 'Glue'
    | |_^ this already satisfies both types
    |
 
+error: missing spec functions
+  --> spec-with-funcs\root.ctl:13:1
+   |
+13 | impl Glue for uint
+   | ^^^^^^^^^^^^^^^^^^ this impl block does not implement all required functions
+   |
+   = help: functions that are missing: new, use_on
+
+error: missing spec functions
+  --> spec-with-funcs\root.ctl:14:1
+   |
+14 | impl Glue for u32
+   | ^^^^^^^^^^^^^^^^^ this impl block does not implement all required functions
+   |
+   = help: functions that are missing: new, use_on
+
+error: spec function return type mismatch
+  --> spec-with-funcs\root.ctl:17:5
+   |
+17 |     fn new -> uint => 0
+   |     ^^^^^^^^^^^^^^^^^^^ this function returns different type
+   |
+   = info: expected '0\A' but found 'uint'
+
+error: spec function argument count mismatch
+  --> spec-with-funcs\root.ctl:18:5
+   |
+18 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{ inner: value }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this function takes different number of arguments
+   |
+   = info: expected 2 arguments but got 1
+
+error: missing spec functions
+  --> spec-with-funcs\root.ctl:17:1
+   |
+...  |
+19 | | }
+   | |_^ this impl block does not implement all required functions
+   |
+   = help: functions that are missing: new, use_on
+
 error: cannot infer type of parameters[1]
   --> spec-with-funcs\root.ctl:34:37
    |
 34 | fn main -> uint => uint\new() + take(0)
    |                                     ^^^ while instantiating this call
    |
-
-error: spec function return type mismatch
-  --> spec-with-funcs\root.ctl:17:8
-   |
-17 |     fn new -> uint => 0
-   |        ^^^^^^^^^^^ this function returns different type
-   |
-   = info: expected '0\A' but found 'uint'
 
 error: variable or enum not found
   --> spec-with-funcs\root.ctl:18:55
@@ -38,21 +71,12 @@ error: missing constructor fields
    = help: fields that are missing: inner
    = info: all fields must be initialized
 
-error: missing spec functions
-  --> spec-with-funcs\root.ctl:17:1
-   |
-...  |
-19 | | }
-   | |_^ this impl block does not implement all required functions
-   |
-   = help: functions that are missing: use_on
-
 info: tir repr of functions:
- fn [Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
+ fn [: Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
     Glue\use_on[param0, param1](^Glue\new[param0](), var0)
 }
 
-fn [, GenericSpec[param0]] take(var0: param0) -> param1 return GenericSpec\take[param0, param1](var0)
+fn [, : GenericSpec[param0]] take(var0: param0) -> param1 return GenericSpec\take[param0, param1](var0)
 
 fn [] new() -> uint return 0
 
