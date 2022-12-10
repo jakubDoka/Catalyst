@@ -37,12 +37,18 @@ impl TyChecker<'_> {
             let frame = self.scope.start_frame();
 
             let offset = impl_ast.generics.len();
-            let Func { generics, .. } = self.typec.funcs[first];
+            let Func {
+                generics, owner, ..
+            } = self.typec.funcs[first];
             self.insert_generics(impl_ast.generics, 0);
             self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {
                 self.build_spec_impl(impl_ref, ctx);
+            }
+            if let Some(owner) = owner {
+                self.scope
+                    .push(Interner::SELF, owner, impl_ast.target.span());
             }
             self.build_funcs(arena, funcs, compiled_funcs, extern_funcs, ctx, offset);
 
@@ -94,8 +100,6 @@ impl TyChecker<'_> {
                 }
             }
         }
-
-        self.scope.push(Interner::SELF, ty, span);
     }
 
     pub fn handle_signature_check_error(&mut self, err: SignatureCheckError, span: Span) {
@@ -116,6 +120,9 @@ impl TyChecker<'_> {
                 for ImplKey { ty, spec } in specs {
                     self.missing_spec(ty, spec, span);
                 }
+            }
+            SignatureCheckError::CCMismatch(a, b) => {
+                self.spec_cc_mismatch(span, a, b);
             }
         }
     }
@@ -146,12 +153,17 @@ impl TyChecker<'_> {
             (a, b) => return Err(SignatureCheckError::ArgCountMismatch(a, b)),
         }
 
+        match (spec_func.signature.cc, func.signature.cc) {
+            (a, b) if a == b => (),
+            (a, b) => return Err(SignatureCheckError::CCMismatch(a, b)),
+        }
+
         let mut mismatches = collect.then(|| bumpvec![cap spec_func.signature.args.len() + 1]);
         for (i, (spec_arg, func_arg)) in spec_func
             .signature
             .args
             .keys()
-            .zip(spec_func.signature.args.keys())
+            .zip(func.signature.args.keys())
             .enumerate()
         {
             if let Err((a, b)) = self.typec.compatible(
@@ -1468,10 +1480,7 @@ impl TyChecker<'_> {
                     builder,
                 );
             }
-            item => {
-                dbg!(&self.interner[start.ident], item);
-                self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?
-            }
+            item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
         };
 
         let &[PathItemAst::Ident(func_or_type), ref segments @ ..] = segments else {
@@ -2093,6 +2102,18 @@ impl TyChecker<'_> {
                 err[span]: "this path does not lead to struct definition";
             }
         }
+
+        push spec_cc_mismatch(self, span: Span, expected: Option<Ident>, got: Option<Ident>) {
+            err: "spec function call convention mismatch";
+            info: (
+                "expected '{}' but found '{}'",
+                expected.map_or("", |cc| &self.interner[cc]),
+                got.map_or("", |cc| &self.interner[cc]),
+            );
+            (span, self.source) {
+                err[span]: "this function has different call convention";
+            }
+        }
     }
 }
 
@@ -2119,4 +2140,5 @@ pub enum SignatureCheckError {
     ArgCountMismatch(usize, usize),
     ArgMismatch(BumpVec<(Option<usize>, Ty, Ty)>),
     MissingSpecs(BumpVec<ImplKey>),
+    CCMismatch(Option<Ident>, Option<Ident>),
 }

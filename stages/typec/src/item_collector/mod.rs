@@ -94,7 +94,11 @@ impl TyChecker<'_> {
             explicit_methods.push((id, func.span()));
         }
 
-        let parsed_generics = self.take_generics(0, &mut spec_set);
+        let parsed_generics = self.take_generics(0, generics.len(), &mut spec_set);
+
+        for &(method, ..) in explicit_methods.iter() {
+            self.typec[method].upper_generics = parsed_generics;
+        }
 
         let parsed_ty_base = parsed_ty.base(self.typec);
         let impl_id = parsed_spec.map(|parsed_spec| {
@@ -198,7 +202,8 @@ impl TyChecker<'_> {
                 span: Some(r#impl.span()),
             };
             Some(self.typec.impls.push(impl_ent))
-        })?;
+        })
+        .transpose()?;
 
         transfer.close_impl_frame(r#impl, impl_id);
 
@@ -337,16 +342,29 @@ impl TyChecker<'_> {
 
         self.scope.end_frame(frame);
 
-        let generics = self.take_generics(generics.len(), spec_set);
+        let generics = self.take_generics(offset, generics.len(), spec_set);
         Some((signature, generics))
     }
 
-    pub fn take_generics(&mut self, offset: usize, spec_set: &mut SpecSet) -> Generics {
-        let mut generics = spec_set.iter();
-        let prev_len = generics.by_ref().take(offset).flatten().count();
-        let generics = generics
-            .map(|specs| self.typec.spec_sum(specs, self.interner))
-            .collect::<BumpVec<_>>();
+    pub fn take_generics(&mut self, offset: usize, len: usize, spec_set: &mut SpecSet) -> Generics {
+        let mut collected_generics = spec_set.iter();
+        let prev_len = collected_generics
+            .by_ref()
+            .take(offset)
+            .flat_map(|(.., it)| it)
+            .count();
+        let mut generics = bumpvec![cap len];
+        let mut prev = offset;
+        for (index, it) in collected_generics {
+            for _ in prev..index as usize {
+                generics.push(default());
+            }
+            prev = index as usize + 1;
+            generics.push(self.typec.spec_sum(it, self.interner));
+        }
+        for _ in prev..len + offset {
+            generics.push(default());
+        }
         spec_set.truncate(prev_len);
         self.typec.params.extend(generics)
     }

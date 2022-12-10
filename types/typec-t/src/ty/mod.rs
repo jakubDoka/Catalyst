@@ -620,12 +620,17 @@ impl SpecSet {
 
     pub fn iter(
         &self,
-    ) -> impl Iterator<Item = impl Iterator<Item = Spec> + '_ + Clone + ExactSizeIterator>
+    ) -> impl Iterator<
+        Item = (
+            u32,
+            impl Iterator<Item = Spec> + '_ + Clone + ExactSizeIterator,
+        ),
+    >
            + '_
            + DoubleEndedIterator {
         self.storage
             .group_by(|(a, ..), (b, ..)| a == b)
-            .map(|group| group.iter().map(|&(.., s)| s))
+            .map(|group| (group[0].0, group.iter().map(|&(.., s)| s)))
     }
 
     pub fn clear(&mut self) {

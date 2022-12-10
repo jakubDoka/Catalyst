@@ -38,7 +38,7 @@ impl TyChecker<'_> {
         self.typec[spec].inherits = self.build_inherits(inherits, &mut spec_set);
         self.typec[spec].methods =
             self.build_spec_methods(spec, body, &mut spec_set, generics.len() + 1);
-        self.typec[spec].generics = self.take_generics(0, &mut spec_set);
+        self.typec[spec].generics = self.take_generics(0, generics.len(), &mut spec_set);
 
         self.scope.end_frame(frame);
     }
@@ -84,7 +84,7 @@ impl TyChecker<'_> {
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
         self.typec[ty].variants = self.enum_variants(body, &mut spec_set);
-        self.typec[ty].generics = self.take_generics(0, &mut spec_set);
+        self.typec[ty].generics = self.take_generics(0, generics.len(), &mut spec_set);
 
         self.scope.end_frame(frame);
     }
@@ -120,7 +120,7 @@ impl TyChecker<'_> {
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
         self.typec[ty].fields = self.struct_fields(body, &mut spec_set);
-        self.typec[ty].generics = self.take_generics(0, &mut spec_set);
+        self.typec[ty].generics = self.take_generics(0, generics.len(), &mut spec_set);
 
         self.scope.end_frame(frame);
     }

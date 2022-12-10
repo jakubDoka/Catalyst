@@ -296,6 +296,7 @@ impl Typec {
         interner: &Interner,
     ) {
         if let Some(first) = spec.next() {
+            to.push_str(": ");
             self.display_spec_to(first, to, interner);
             for spec in spec {
                 to.push_str(" + ");
@@ -310,6 +311,11 @@ impl Typec {
         interner: &mut Interner,
     ) -> FragSlice<Spec> {
         let id = interner.intern_with(|s, t| self.display_spec_sum_to(specs.clone(), t, s));
+
+        if id == Interner::EMPTY {
+            return default();
+        }
+
         let res = self
             .lookup
             .entry(id)
@@ -318,7 +324,7 @@ impl Typec {
 
         match res {
             ComputedTypecItem::SpecSum(ss) => ss,
-            _ => unreachable!(),
+            res => unreachable!("{res:?}"),
         }
     }
 

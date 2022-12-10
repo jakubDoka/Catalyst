@@ -301,7 +301,7 @@ fn main() {
             };
 
             impl TokenMacro for Swap {
-                fn new(s: ^Self, lexer: MacroLexer) {
+                fn "default" new(s: ^Self, lexer: MacroLexer) {
                     ptr::write(s, ::{
                         state: ::Two~::{
                             first: lexer.next();
@@ -311,7 +311,7 @@ fn main() {
                     });
                 };
 
-                fn next(s: ^Self) -> Option::[MacroToken] =>
+                fn "default" next(s: ^Self) -> Option::[MacroToken] =>
                     ::Some~match s.state {
                         ::Two~::{ first, second } {
                             s.state = ::Last~::{ last: first };
@@ -324,7 +324,7 @@ fn main() {
                         ::Empty => return ::None;
                     };
 
-                fn drop(s: ^Self) -> MacroLexer {
+                fn "default" drop(s: ^Self) -> MacroLexer {
                     ptr::read(^s.lexer)
                 };
             };
@@ -366,9 +366,10 @@ fn main() {
             impl A for uint {
                 fn a -> uint => 0;
             };
-            impl B for uint {
+            impl uint {
                 fn a -> uint => 1;
             };
+            impl B for uint;
 
             fn [T: C] sum() -> uint => T::A::a() + T::B::a();
 
