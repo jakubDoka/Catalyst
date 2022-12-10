@@ -32,8 +32,8 @@ drop_cond function u0:0() fast {
 block0:
     v0 = iconst.i32 103
     v1 = call fn0(v0)  ; v0 = 103
-    v2 = bconst.b1 true
-    brnz v2, block1  ; v2 = true
+    v2 = iconst.i8 1
+    brnz v2, block1  ; v2 = 1
     jump block2
 
 block2:
