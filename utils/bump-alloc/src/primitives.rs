@@ -97,7 +97,9 @@ impl<T: ?Sized> FragSlice<T> {
         self.0.is_empty()
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = FragRef<T>> {
+    pub fn keys(
+        &self,
+    ) -> impl Iterator<Item = FragRef<T>> + DoubleEndedIterator + ExactSizeIterator {
         self.0.keys().map(|addr| FragRef(addr, PhantomData))
     }
 

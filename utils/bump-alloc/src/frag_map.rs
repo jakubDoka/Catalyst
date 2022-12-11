@@ -590,7 +590,7 @@ impl FragSliceAddr {
         self.len.get() == 0
     }
 
-    pub fn keys(self) -> impl Iterator<Item = FragAddr> {
+    pub fn keys(self) -> impl Iterator<Item = FragAddr> + DoubleEndedIterator + ExactSizeIterator {
         (self.addr.local.get()..self.addr.local.get() + self.len.get()).map(move |i| FragAddr {
             global: self.addr.global,
             local: unsafe { NonMaxU16(i) },

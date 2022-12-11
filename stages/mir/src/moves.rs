@@ -267,6 +267,12 @@ impl MirChecker<'_, '_> {
             return true;
         }
 
+        let dropper = |s: &mut Self| {
+            s.mir_ctx.func.set_referenced(value);
+            let drop = s.mir_ctx.func.drops.push(DropMir { value });
+            s.inst(InstMir::Drop(drop), span);
+        };
+
         match self.mir_ctx.value_ty(value) {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
             p if !self.typec.may_need_drop(p) => (),
@@ -276,21 +282,20 @@ impl MirChecker<'_, '_> {
                 .transpose()
                 .is_some() =>
             {
-                self.mir_ctx.func.set_referenced(value);
-                let drop = self.mir_ctx.func.drops.push(DropMir { value });
-                self.inst(InstMir::Drop(drop), span);
+                dropper(self)
             }
             // Param is always considered drop if its not copy
             // Both conditions are covered by guards above
             Ty::Param(..) => unreachable!(),
-            Ty::Struct(s) => self.partial_struct_drop(s, &[], value, key, span),
-            Ty::Enum(_) => (), // TODO
+            Ty::Struct(s) => self.partial_struct_drop(s, &[][..], value, key, span),
+            // previous branches imply, enum needs drop and we know enums are newer
+            // partially moved, thus we can drop the whole thing
+            Ty::Enum(..) => dropper(self),
             Ty::Instance(i) => {
                 let Instance { base, args } = self.typec[i];
-                let args = self.typec[args].to_bumpvec();
                 match base {
-                    GenericTy::Struct(s) => self.partial_struct_drop(s, &args, value, key, span),
-                    GenericTy::Enum(_) => (), // TODO
+                    GenericTy::Struct(s) => self.partial_struct_drop(s, args, value, key, span),
+                    GenericTy::Enum(..) => dropper(self),
                 }
             }
         }
@@ -301,7 +306,7 @@ impl MirChecker<'_, '_> {
     fn partial_struct_drop(
         &mut self,
         s: FragRef<Struct>,
-        params: &[Ty],
+        params: impl TypecCtxSlice<Ty>,
         value: VRef<ValueMir>,
         key: &mut Option<&mut MoveKey>,
         span: Span,

@@ -156,7 +156,7 @@ pub struct CompileRequestChild {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
-    pub func_imports: Map<Ident, (ir::FuncRef, bool)>,
+    pub func_imports: Map<FragRef<CompiledFunc>, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub drops: Vec<Range<usize>>,

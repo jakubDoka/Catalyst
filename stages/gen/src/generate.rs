@@ -53,7 +53,7 @@ impl Generator<'_> {
     fn block(
         &mut self,
         block: VRef<BlockMir>,
-        ir_block: ir::Block,
+        mut ir_block: ir::Block,
         seal: bool,
         builder: &mut GenBuilder,
     ) -> ir::Block {
@@ -78,7 +78,7 @@ impl Generator<'_> {
         }
 
         for &inst in &builder.body.insts[insts] {
-            self.inst(inst, builder);
+            self.inst(inst, builder, &mut ir_block);
         }
 
         self.control_flow(control_flow, builder);
@@ -120,7 +120,7 @@ impl Generator<'_> {
         };
     }
 
-    fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder) {
+    fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         match inst {
             InstMir::Int(value, ret) => {
                 let ty = self.ty_repr(builder.value_ty(ret));
@@ -147,11 +147,11 @@ impl Generator<'_> {
             InstMir::Var(value, ret) => {
                 self.assign_value(ret, value, builder);
             }
-            InstMir::Drop(drop) => self.drop(drop, builder),
+            InstMir::Drop(drop) => self.drop(drop, builder, dest_block),
         };
     }
 
-    fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder) {
+    fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
         let mut funcs = self.gen_resources.drops[drop.index()].clone();
@@ -159,8 +159,34 @@ impl Generator<'_> {
             computed, offset, ..
         } = self.gen_resources.values[value];
         let value = self.ref_low(computed, ty, offset, builder);
-        let mut frontier = bumpvec![(0, ty)];
-        while let Some((offset, ty)) = frontier.pop() {
+        // [BE INFORMED]: we push everything in reverse order so that we
+        // iterate in deterministic order
+        let mut frontier = bumpvec![DropFrame::Drop((0, ty))];
+        while let Some(node) = frontier.pop() {
+            let (offset, ty) = match node {
+                DropFrame::Drop(drop) => drop,
+                DropFrame::Check((val, flag, else_block)) => {
+                    let equal = builder.ins().icmp_imm(IntCC::Equal, val, flag as i64);
+                    let cond_block = builder.create_block();
+                    builder.ins().brnz(equal, cond_block, &[]);
+                    builder.ins().jump(else_block, &[]);
+                    let current_block = builder.current_block().expect("seems impossible");
+                    builder.seal_block(current_block);
+                    builder.switch_to_block(cond_block);
+                    continue;
+                }
+                DropFrame::Goto((final_block, next_block)) => {
+                    builder.ins().jump(final_block, &[]);
+                    let current_block = builder.current_block().expect("seems impossible");
+                    builder.seal_block(current_block);
+                    builder.switch_to_block(next_block);
+                    if final_block == next_block {
+                        *dest_block = next_block;
+                    }
+                    continue;
+                }
+            };
+
             if !self.typec.may_need_drop(ty) {
                 continue;
             }
@@ -183,12 +209,46 @@ impl Generator<'_> {
                     let layout = self.ty_layout(ty);
                     self.gen_layouts.offsets[layout.offsets]
                         .iter()
-                        .copied()
+                        .map(|&of| of + offset)
                         .rev()
                         .zip(self.typec[self.typec[s].fields].iter().map(|f| f.ty).rev())
+                        .map(DropFrame::Drop)
                         .collect_into(&mut *frontier);
                 }
-                Ty::Enum(..) => todo!(),
+                Ty::Enum(e) => {
+                    let layout = self.ty_layout(ty);
+                    let variants = self.typec[e].variants;
+                    let Some(flag_ty) = self.typec.enum_flag_ty(e) else {
+                        frontier.push(DropFrame::Drop((offset, self.typec[variants][0].ty)));
+                        continue;
+                    };
+                    let flag_repr = self.ty_repr(Ty::Builtin(flag_ty));
+                    let &[flag_offset, value_offset] = &self.gen_layouts.offsets[layout.offsets] else {
+                        unreachable!();
+                    };
+                    let dest = builder.create_block();
+                    let mut current = Some(dest);
+                    let flag_value = builder.ins().load(
+                        flag_repr,
+                        MemFlags::trusted(),
+                        value,
+                        (flag_offset + offset) as i32,
+                    );
+                    for (i, variant) in variants.keys().enumerate().rev() {
+                        let ty = self.typec[variant].ty;
+                        if !self.typec.may_need_drop(ty) {
+                            continue;
+                        }
+
+                        // prevents creation of extra block;
+                        let &mut cur = current.get_or_insert_with(|| builder.create_block());
+                        current = None;
+
+                        frontier.push(DropFrame::Goto((dest, cur)));
+                        frontier.push(DropFrame::Drop((value_offset + offset, ty)));
+                        frontier.push(DropFrame::Check((flag_value, i, cur)));
+                    }
+                }
                 Ty::Instance(i) => {
                     let Instance { base, args } = self.typec[i];
                     match base {
@@ -196,7 +256,7 @@ impl Generator<'_> {
                             let layout = self.ty_layout(ty);
                             self.gen_layouts.offsets[layout.offsets]
                                 .iter()
-                                .copied()
+                                .map(|&of| of + offset)
                                 .rev()
                                 .zip(
                                     self.typec[self.typec[s].fields]
@@ -205,6 +265,7 @@ impl Generator<'_> {
                                         .map(|f| self.typec.instantiate(f.ty, args, self.interner))
                                         .rev(),
                                 )
+                                .map(DropFrame::Drop)
                                 .collect_into(&mut *frontier);
                         }
                         GenericTy::Enum(..) => todo!(),
@@ -810,4 +871,10 @@ impl Generator<'_> {
         let target = builder.ins().band_imm(target, insert_mask);
         builder.ins().bor(target, shifted)
     }
+}
+
+enum DropFrame {
+    Drop((u32, Ty)),
+    Check((ir::Value, usize, ir::Block)),
+    Goto((ir::Block, ir::Block)),
 }

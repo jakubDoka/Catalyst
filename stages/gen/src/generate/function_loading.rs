@@ -38,6 +38,10 @@ impl Generator<'_> {
         params: impl Iterator<Item = Ty>,
         builder: &mut GenBuilder,
     ) -> (ir::FuncRef, bool) {
+        if let Some(&res) = self.gen_resources.func_imports.get(&func) {
+            return res;
+        }
+
         let name = builder
             .func
             .declare_imported_user_function(UserExternalName::new(
@@ -57,14 +61,18 @@ impl Generator<'_> {
         let (signature, struct_ret) = self.load_signature(signature, &params, builder.system_cc());
         let signature = builder.import_signature(signature);
 
-        (
+        let res = (
             builder.import_function(ExtFuncData {
                 name: ExternalName::User(name),
                 signature,
                 colocated: visibility != FuncVisibility::Imported,
             }),
             struct_ret,
-        )
+        );
+
+        self.gen_resources.func_imports.insert(func, res);
+
+        res
     }
 
     pub fn load_signature(

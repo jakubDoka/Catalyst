@@ -545,5 +545,45 @@ fn main() {
                 *vv.get_ptr(0).get_ptr(3)
             }
         }
+
+        simple "enum-drop" {
+            use {
+                "water/marker";
+            };
+
+            fn [T] drop(value: T) {};
+
+            fn "default" putchar(c: char) -> u32 extern;
+
+            struct A {
+                ch: char;
+            };
+
+            impl Drop for A {
+                fn drop(v: ^mut Self) {
+                    putchar(v.ch);
+                    putchar(' ');
+                };
+            };
+
+            struct B {
+                a: A;
+                b: A;
+            };
+
+            enum E {
+                A: A;
+                B: B;
+                C;
+            };
+
+            #[entry];
+            fn main() -> uint {
+                E::A~::{ ch: 'a' };
+                E::B~::{ a: ::{ ch: 'b' }; b: ::{ ch: 'c' } };
+                E::C;
+                0;
+            };
+        }
     }
 }

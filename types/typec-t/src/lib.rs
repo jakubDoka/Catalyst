@@ -82,7 +82,7 @@ pub use {
     },
     typec::{
         lookup_water_drop, sorted_water_drops, Loc, MacroImpl, ModuleItems, ParamPresence,
-        SpecCmpError, Typec,
+        SpecCmpError, Typec, TypecCtxSlice,
     },
 };
 
