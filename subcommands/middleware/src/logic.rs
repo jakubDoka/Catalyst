@@ -1034,7 +1034,7 @@ impl Task {
                 let prev = frontier.len();
                 type_frontier.push(types[body.values[drop.value].ty].ty);
                 while let Some(ty) = type_frontier.pop() {
-                    if !task.typec.may_need_drop(ty) {
+                    if !task.typec.may_need_drop(ty, &mut task.interner) {
                         continue;
                     }
 

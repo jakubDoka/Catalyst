@@ -134,33 +134,60 @@ impl Typec {
         }
     }
 
-    pub fn may_need_drop(&mut self, ty: Ty) -> bool {
+    pub fn may_need_drop(&mut self, ty: Ty, interner: &mut Interner) -> bool {
+        self.may_need_drop_low(ty, &[], interner).0
+    }
+
+    fn may_need_drop_low(
+        &mut self,
+        ty: Ty,
+        params: &[Ty],
+        interner: &mut Interner,
+    ) -> (bool, bool) {
         match ty {
-            Ty::Param(..) => return true,
-            Ty::Pointer(..) | Ty::Builtin(..) => return false,
-            ty if let Some(is) = self.may_need_drop.get(&ty) => return *is,
+            Ty::Param(index) if let Some(&param) = params.get(index as usize) =>
+                return self.may_need_drop_low(param, &[], interner),
+            Ty::Param(..) => return (true, true),
+            Ty::Pointer(..) | Ty::Builtin(..) => return (false, false),
+            ty if let Some(is) = self.may_need_drop.get(&ty) => return (*is, false),
             Ty::Struct(_) |
             Ty::Enum(_) |
             Ty::Instance(_) => (),
         };
         // its split since map entry handle must be dropped.
-        let is = match ty {
-            Ty::Struct(s) => self[s].fields.keys().any(|f| {
-                let ty = self[f].ty;
-                self.may_need_drop(ty)
-            }),
-            Ty::Enum(e) => self[e].variants.keys().any(|f| {
-                let ty = self[f].ty;
-                self.may_need_drop(ty)
-            }),
+        let (is, param) = match ty {
+            Ty::Struct(s) => self[s]
+                .fields
+                .keys()
+                .map(|f| {
+                    let ty = self[f].ty;
+                    self.may_need_drop_low(ty, params, interner)
+                })
+                .reduce(|(a, b), (c, d)| (a | c, b | d))
+                .unwrap_or((false, false)),
+            Ty::Enum(e) => self[e]
+                .variants
+                .keys()
+                .map(|f| {
+                    let ty = self[f].ty;
+                    self.may_need_drop_low(ty, params, interner)
+                })
+                .reduce(|(a, b), (c, d)| (a | c, b | d))
+                .unwrap_or((false, false)),
             Ty::Instance(i) => {
-                let Instance { base, .. } = self[i];
-                self.may_need_drop(base.as_ty())
+                let Instance { base, args } = self[i];
+                let params = args
+                    .keys()
+                    .map(|key| self.instantiate(self[key], params, interner))
+                    .collect::<BumpVec<_>>();
+                self.may_need_drop_low(base.as_ty(), &params, interner)
             }
             Ty::Param(..) | Ty::Pointer(..) | Ty::Builtin(..) => unreachable!(),
         };
-        self.may_need_drop.insert(ty, is);
-        is
+        if !param {
+            self.may_need_drop.insert(ty, is);
+        }
+        (is, param)
     }
 
     pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
@@ -894,10 +921,9 @@ impl Typec {
             ty if params.is_empty() => ty,
             Ty::Instance(instance) => {
                 let Instance { base, args } = self[instance];
-                let args = self[args]
-                    .to_bumpvec()
-                    .into_iter()
-                    .map(|arg| self.instantiate(arg, params, interner))
+                let args = args
+                    .keys()
+                    .map(|arg| self.instantiate(self[arg], params, interner))
                     .collect::<BumpVec<_>>();
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }

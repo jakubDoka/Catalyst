@@ -275,7 +275,7 @@ impl MirChecker<'_, '_> {
 
         match self.mir_ctx.value_ty(value) {
             Ty::Pointer(..) | Ty::Builtin(..) => (),
-            p if !self.typec.may_need_drop(p) => (),
+            p if !self.typec.may_need_drop(p, self.interner) => (),
             p if p.is_copy(&self.mir_ctx.generics, self.typec, self.interner) => (),
             p if p
                 .is_drop(&self.mir_ctx.generics, self.typec, self.interner)
@@ -317,7 +317,7 @@ impl MirChecker<'_, '_> {
             .enumerate()
         {
             let ty = self.typec.instantiate(field.ty, params, self.interner);
-            if !self.typec.may_need_drop(ty) {
+            if !self.typec.may_need_drop(ty, self.interner) {
                 continue;
             }
             let field_value = self.value(ty);

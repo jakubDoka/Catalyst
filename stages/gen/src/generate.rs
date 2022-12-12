@@ -187,7 +187,7 @@ impl Generator<'_> {
                 }
             };
 
-            if !self.typec.may_need_drop(ty) {
+            if !self.typec.may_need_drop(ty, self.interner) {
                 continue;
             }
 
@@ -204,6 +204,48 @@ impl Generator<'_> {
                 builder.ins().call(func, &[value]);
             }
 
+            let mut enum_expander = |s: &mut Self, params: FragSlice<Ty>, e: FragRef<Enum>| {
+                let layout = s.ty_layout(ty);
+                let variants = s.typec[e].variants;
+                let Some(flag_ty) = s.typec.enum_flag_ty(e) else {
+                    let ty = s.typec.instantiate(s.typec[variants][0].ty, params, s.interner);
+                    frontier.push(DropFrame::Drop((offset, ty)));
+                    return;
+                };
+                let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
+                let &[flag_offset, value_offset] = &s.gen_layouts.offsets[layout.offsets] else {
+                    unreachable!();
+                };
+                let dest = builder.create_block();
+                let mut current = Some(dest);
+                let mut flag_value = None;
+                for (i, variant) in variants.keys().enumerate().rev() {
+                    let ty = s.typec.instantiate(s.typec[variant].ty, params, s.interner);
+                    if !s.typec.may_need_drop(ty, s.interner) {
+                        continue;
+                    }
+
+                    dbg!(s.typec.display_ty(ty, s.interner));
+
+                    // prevents creation of extra block;
+                    let &mut cur = current.get_or_insert_with(|| builder.create_block());
+                    current = None;
+
+                    let &mut flag_value = flag_value.get_or_insert_with(|| {
+                        builder.ins().load(
+                            flag_repr,
+                            MemFlags::new(),
+                            value,
+                            (flag_offset + offset) as i32,
+                        )
+                    });
+
+                    frontier.push(DropFrame::Goto((dest, cur)));
+                    frontier.push(DropFrame::Drop((value_offset + offset, ty)));
+                    frontier.push(DropFrame::Check((flag_value, i, cur)));
+                }
+            };
+
             match ty {
                 Ty::Struct(s) => {
                     let layout = self.ty_layout(ty);
@@ -215,40 +257,7 @@ impl Generator<'_> {
                         .map(DropFrame::Drop)
                         .collect_into(&mut *frontier);
                 }
-                Ty::Enum(e) => {
-                    let layout = self.ty_layout(ty);
-                    let variants = self.typec[e].variants;
-                    let Some(flag_ty) = self.typec.enum_flag_ty(e) else {
-                        frontier.push(DropFrame::Drop((offset, self.typec[variants][0].ty)));
-                        continue;
-                    };
-                    let flag_repr = self.ty_repr(Ty::Builtin(flag_ty));
-                    let &[flag_offset, value_offset] = &self.gen_layouts.offsets[layout.offsets] else {
-                        unreachable!();
-                    };
-                    let dest = builder.create_block();
-                    let mut current = Some(dest);
-                    let flag_value = builder.ins().load(
-                        flag_repr,
-                        MemFlags::trusted(),
-                        value,
-                        (flag_offset + offset) as i32,
-                    );
-                    for (i, variant) in variants.keys().enumerate().rev() {
-                        let ty = self.typec[variant].ty;
-                        if !self.typec.may_need_drop(ty) {
-                            continue;
-                        }
-
-                        // prevents creation of extra block;
-                        let &mut cur = current.get_or_insert_with(|| builder.create_block());
-                        current = None;
-
-                        frontier.push(DropFrame::Goto((dest, cur)));
-                        frontier.push(DropFrame::Drop((value_offset + offset, ty)));
-                        frontier.push(DropFrame::Check((flag_value, i, cur)));
-                    }
-                }
+                Ty::Enum(e) => enum_expander(self, default(), e),
                 Ty::Instance(i) => {
                     let Instance { base, args } = self.typec[i];
                     match base {
@@ -259,16 +268,22 @@ impl Generator<'_> {
                                 .map(|&of| of + offset)
                                 .rev()
                                 .zip(
-                                    self.typec[self.typec[s].fields]
-                                        .to_bumpvec()
-                                        .into_iter()
-                                        .map(|f| self.typec.instantiate(f.ty, args, self.interner))
+                                    self.typec[s]
+                                        .fields
+                                        .keys()
+                                        .map(|f| {
+                                            self.typec.instantiate(
+                                                self.typec[f].ty,
+                                                args,
+                                                self.interner,
+                                            )
+                                        })
                                         .rev(),
                                 )
                                 .map(DropFrame::Drop)
                                 .collect_into(&mut *frontier);
                         }
-                        GenericTy::Enum(..) => todo!(),
+                        GenericTy::Enum(e) => enum_expander(self, args, e),
                     }
                 }
                 Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
