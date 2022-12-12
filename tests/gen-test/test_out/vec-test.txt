@@ -6,26 +6,20 @@ main function u0:0() -> i64 fast {
     ss3 = explicit_slot 24
     sig0 = (i64 sret) fast
     sig1 = (i64, i64) fast
-    sig2 = (i64, i64) fast
+    sig2 = (i64 sret) fast
     sig3 = (i64, i64) fast
-    sig4 = (i64 sret) fast
-    sig5 = (i64, i64) fast
+    sig4 = (i64, i64) -> i64 fast
+    sig5 = (i64, i64) -> i64 fast
     sig6 = (i64, i64) -> i64 fast
-    sig7 = (i64, i64) fast
-    sig8 = (i64, i64) -> i64 fast
-    sig9 = (i64, i64) -> i64 fast
-    sig10 = (i64) fast
+    sig7 = (i64) fast
     fn0 = colocated u0:2 sig0
     fn1 = colocated u0:3 sig1
-    fn2 = colocated u0:3 sig2
-    fn3 = colocated u0:3 sig3
-    fn4 = colocated u0:4 sig4
-    fn5 = colocated u0:5 sig5
-    fn6 = colocated u0:6 sig6
-    fn7 = colocated u0:3 sig7
-    fn8 = colocated u0:7 sig8
-    fn9 = colocated u0:8 sig9
-    fn10 = colocated u0:1 sig10
+    fn2 = colocated u0:4 sig2
+    fn3 = colocated u0:5 sig3
+    fn4 = colocated u0:6 sig4
+    fn5 = colocated u0:7 sig5
+    fn6 = colocated u0:8 sig6
+    fn7 = colocated u0:1 sig7
 
 block0:
     v0 = stack_addr.i64 ss0
@@ -43,12 +37,12 @@ block0:
     call fn1(v6, v7)  ; v7 = 0
     v8 = stack_addr.i64 ss1
     v9 = iconst.i64 1
-    call fn2(v8, v9)  ; v9 = 1
+    call fn1(v8, v9)  ; v9 = 1
     v10 = stack_addr.i64 ss1
     v11 = iconst.i64 2
-    call fn3(v10, v11)  ; v11 = 2
+    call fn1(v10, v11)  ; v11 = 2
     v12 = stack_addr.i64 ss2
-    call fn4(v12)
+    call fn2(v12)
     v13 = stack_addr.i64 ss3
     v14 = stack_addr.i64 ss2
     v15 = load.i64 aligned v14
@@ -59,19 +53,19 @@ block0:
     store aligned v17, v13+16
     v18 = stack_addr.i64 ss3
     v19 = stack_addr.i64 ss1
-    call fn5(v18, v19)
+    call fn3(v18, v19)
     v20 = stack_addr.i64 ss3
     v21 = iconst.i64 0
-    v22 = call fn6(v20, v21)  ; v21 = 0
+    v22 = call fn4(v20, v21)  ; v21 = 0
     v23 = iconst.i64 0
-    call fn7(v22, v23)  ; v23 = 0
+    call fn1(v22, v23)  ; v23 = 0
     v24 = stack_addr.i64 ss3
     v25 = iconst.i64 0
-    v26 = call fn8(v24, v25)  ; v25 = 0
+    v26 = call fn5(v24, v25)  ; v25 = 0
     v27 = iconst.i64 3
-    v28 = call fn9(v26, v27)  ; v27 = 3
+    v28 = call fn6(v26, v27)  ; v27 = 3
     v29 = stack_addr.i64 ss3
-    call fn10(v29)
+    call fn7(v29)
     v30 = load.i64 v28
     return v30
 }

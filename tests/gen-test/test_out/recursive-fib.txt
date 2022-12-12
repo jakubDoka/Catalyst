@@ -12,9 +12,7 @@ block0:
 }
 fib function u0:0(i64) -> i64 fast {
     sig0 = (i64) -> i64 fast
-    sig1 = (i64) -> i64 fast
     fn0 = colocated u0:1 sig0
-    fn1 = colocated u0:1 sig1
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -34,7 +32,7 @@ block4:
     v7 = call fn0(v6)
     v8 = iconst.i64 2
     v9 = isub.i64 v0, v8  ; v8 = 2
-    v10 = call fn1(v9)
+    v10 = call fn0(v9)
     v11 = iadd v7, v10
     jump block5(v11)
 

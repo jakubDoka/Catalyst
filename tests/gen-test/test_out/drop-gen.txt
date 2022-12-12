@@ -59,15 +59,13 @@ block0(v0: i32):
 }
 drop function u0:0(i64) fast {
     sig0 = (i32) -> i32 windows_fastcall
-    sig1 = (i32) -> i32 windows_fastcall
     fn0 = u0:10 sig0
-    fn1 = u0:10 sig1
 
 block0(v0: i64):
     v1 = load.i32 v0
     v2 = call fn0(v1)
     v3 = iconst.i32 32
-    v4 = call fn1(v3)  ; v3 = 32
+    v4 = call fn0(v3)  ; v3 = 32
     return
 }
 new function u0:0(i32) -> i32 fast {
@@ -79,12 +77,8 @@ move_in_drop function u0:0() fast {
     ss0 = explicit_slot 4
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    sig2 = (i32) -> i32 fast
-    sig3 = (i64) fast
     fn0 = colocated u0:7 sig0
     fn1 = colocated u0:9 sig1
-    fn2 = colocated u0:7 sig2
-    fn3 = colocated u0:9 sig3
 
 block0:
     v0 = iconst.i32 101
@@ -93,10 +87,10 @@ block0:
     v2 = stack_addr.i64 ss0
     call fn1(v2)
     v3 = iconst.i32 102
-    v4 = call fn2(v3)  ; v3 = 102
+    v4 = call fn0(v3)  ; v3 = 102
     stack_store v4, ss0
     v5 = stack_addr.i64 ss0
-    call fn3(v5)
+    call fn1(v5)
     return
 }
 drop_refed_variable function u0:0() fast {

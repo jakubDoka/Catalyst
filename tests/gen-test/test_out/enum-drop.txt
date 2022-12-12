@@ -12,7 +12,7 @@ block0:
     v1 = iconst.i32 97
     stack_store v1, ss0+4  ; v1 = 97
     v2 = stack_addr.i64 ss0
-    v3 = load.i8 notrap aligned v2
+    v3 = load.i8 v2
     v4 = icmp_imm eq v3, 0
     brnz v4, block3
     jump block2
@@ -42,7 +42,7 @@ block1:
     v11 = iconst.i32 99
     stack_store v11, ss1+8  ; v11 = 99
     v12 = stack_addr.i64 ss1
-    v13 = load.i8 notrap aligned v12
+    v13 = load.i8 v12
     v14 = icmp_imm eq v13, 0
     brnz v14, block7
     jump block6
@@ -68,7 +68,7 @@ block5:
     v19 = iconst.i8 2
     stack_store v19, ss2  ; v19 = 2
     v20 = stack_addr.i64 ss2
-    v21 = load.i8 notrap aligned v20
+    v21 = load.i8 v20
     v22 = icmp_imm eq v21, 0
     brnz v22, block11
     jump block10
