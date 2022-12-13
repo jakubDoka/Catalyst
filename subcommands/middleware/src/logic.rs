@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, VecDeque},
+    collections::VecDeque,
     default::default,
     fmt::Write,
     iter, mem,
@@ -37,6 +37,7 @@ pub struct Middleware {
     pub entry_points: Vec<FragRef<Func>>,
     pub incremental: Option<Incremental>,
     pub relocator: TypecRelocator,
+    pub gen_relocator: FragRelocator<CompiledFunc>,
 }
 
 impl Middleware {
@@ -73,6 +74,8 @@ impl Middleware {
 
         if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, &args.path) {
             self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
+            main_task.mir.relocate(&self.relocator);
+            main_task.gen.retain_incremental(&self.relocator.funcs);
         };
 
         main_task.typec.init(&mut main_task.interner);
@@ -211,6 +214,7 @@ impl Middleware {
 
         let ir = main_task.ir_dump.take();
 
+        main_task.gen.reallocate(&mut self.gen_relocator);
         self.workspace.transfer(&mut main_task.workspace);
         self.incremental = Some(Incremental {
             resources,
@@ -260,10 +264,10 @@ impl Middleware {
             name: main_task.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
         });
-        let entry_point = main_task.gen.funcs.push(CompiledFunc::new(
-            func_id,
-            main_task.interner.intern(gen::ENTRY_POINT_NAME),
-        ));
+        let name = main_task.interner.intern(gen::ENTRY_POINT_NAME);
+        let entry_point = main_task
+            .gen
+            .get_or_insert(name, || CompiledFunc::new(func_id, name));
 
         context.compile(&*isa.inner).unwrap();
         main_task
@@ -293,7 +297,9 @@ impl Middleware {
                 &main_task.typec,
                 &mut main_task.interner,
             );
-            let id = tasks[task_id].gen.funcs.push(CompiledFunc::new(func, key));
+            let id = tasks[task_id]
+                .gen
+                .get_or_insert(key, || CompiledFunc::new(func, key));
             (
                 CompileRequestChild {
                     id,
@@ -447,6 +453,8 @@ impl Middleware {
             .values()
             .flat_map(|items| items.items.values())
             .for_each(|item| self.mark_module_item(item, resources, main_task));
+
+        self.relocator.relocate(&mut main_task.typec);
     }
 
     fn mark_module_item(
@@ -485,6 +493,32 @@ impl Middleware {
         }
         self.mark_generics(upper_generics, resources, main_task);
         self.mark_signature(signature, resources, main_task);
+        self.mark_mir_body(func, resources, main_task);
+        Some(())
+    }
+
+    fn mark_mir_body(
+        &mut self,
+        func: FragRef<Func>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        let body = main_task.mir.bodies.get(&func)?;
+
+        for ty in body.types.values() {
+            self.mark_ty(ty.ty, resources, main_task);
+        }
+
+        for call in body.calls.values() {
+            match call.callable {
+                CallableMir::Func(f) => self.mark_func(f, resources, main_task)?,
+                CallableMir::SpecFunc(s) => {
+                    self.mark_spec_func(main_task.typec[s], resources, main_task)?
+                }
+                CallableMir::Pointer(..) => (),
+            }
+        }
+
         Some(())
     }
 
@@ -1040,8 +1074,7 @@ impl Worker {
                     &task.typec,
                     &mut task.interner,
                 );
-                let id = task.gen.funcs.push(CompiledFunc::new(func, key));
-                task.gen.lookup.insert(key, id);
+                let id = task.gen.get_or_insert(key, || CompiledFunc::new(func, key));
                 (
                     CompileRequestChild {
                         func,
@@ -1114,7 +1147,7 @@ impl Worker {
                         &mut task.interner,
                     )
                 })
-                .filter_map(|key| task.gen.lookup.get(&key).map(|entry| entry.to_owned()));
+                .filter_map(|key| task.gen.get(key));
 
             match spec {
                 s if s == SpecBase::TOKEN_MACRO => {
@@ -1329,7 +1362,6 @@ impl Task {
         tasks: &mut [Task],
         isa: &Isa,
     ) -> BumpVec<FragRef<CompiledFunc>> {
-        let mut seen = Map::default();
         let mut cycle = (0..tasks.len()).cycle();
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
@@ -1382,7 +1414,6 @@ impl Task {
                             params,
                             task_id,
                             isa,
-                            &mut seen,
                         ));
                     }
 
@@ -1449,7 +1480,7 @@ impl Task {
                         .iter()
                         .map(|&p| types[p].ty)
                         .collect::<BumpVec<_>>();
-                    task.load_call(call.callable, params, task_id, isa, &mut seen)
+                    task.load_call(call.callable, params, task_id, isa)
                 })
                 .collect_into(&mut *frontier);
             let task = &mut tasks[task_id];
@@ -1476,7 +1507,6 @@ impl Task {
         params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
-        seen: &mut Map<Ident, FragRef<CompiledFunc>>,
     ) -> (CompileRequestChild, Option<usize>) {
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),
@@ -1492,9 +1522,10 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let entry = seen.entry(key);
-        let task_id = matches!(entry, Entry::Vacant(..)).then_some(task_id);
-        let &mut id = entry.or_insert_with(|| self.gen.funcs.push(CompiledFunc::new(func_id, key)));
+        let task_id = self.gen.get(key).map(|_| task_id);
+        let id = self
+            .gen
+            .get_or_insert(key, || CompiledFunc::new(func_id, key));
 
         (
             CompileRequestChild {

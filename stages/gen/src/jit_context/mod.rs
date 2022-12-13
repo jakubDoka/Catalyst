@@ -83,7 +83,7 @@ impl JitContext {
                     func: parent_func,
                     ref inner,
                     ..
-                } = &gen.funcs[func];
+                } = &gen[func];
                 let Func {
                     visibility, name, ..
                 } = typec.funcs[parent_func];
@@ -125,7 +125,7 @@ impl JitContext {
         }
 
         for (func, code) in filtered_funcs {
-            let func_ent = &gen.funcs[func];
+            let func_ent = &gen[func];
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },

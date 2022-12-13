@@ -1,7 +1,7 @@
 use std::{
     alloc, iter,
     num::NonZeroU8,
-    ops::{Deref, DerefMut, Range},
+    ops::{Deref, DerefMut, Index, Range},
     sync::Arc,
 };
 
@@ -21,12 +21,57 @@ use typec_t::*;
 
 #[derive(Default, Clone)]
 pub struct Gen {
-    pub lookup: CMap<Ident, FragRef<CompiledFunc>>,
-    pub funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
+    lookup: CMap<Ident, (FragRef<CompiledFunc>, bool)>,
+    funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
 }
 
 impl Gen {
     pub const FUNC_NAMESPACE: u32 = 0;
+
+    pub fn retain_incremental(&mut self, func_reloc: &FragRelocator<Func>) {
+        self.lookup.retain(|_, v| {
+            v.1 = true;
+            func_reloc.project(self[v.0].func).is_some()
+        });
+    }
+
+    pub fn reallocate(&mut self, relocator: &mut FragRelocator<CompiledFunc>) {
+        for entry in self.lookup.iter() {
+            if !entry.1 {
+                relocator.mark(entry.0);
+            }
+        }
+
+        relocator.relocate(&mut self.funcs);
+
+        self.lookup.retain(|_, v| {
+            if let Some(cf) = relocator.project(v.0) {
+                v.0 = cf;
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    pub fn get(&self, id: Ident) -> Option<FragRef<CompiledFunc>> {
+        self.lookup.get(&id).map(|value| value.0)
+    }
+
+    pub fn get_or_insert(
+        &mut self,
+        id: Ident,
+        or: impl FnOnce() -> CompiledFunc,
+    ) -> FragRef<CompiledFunc> {
+        let (res, ref mut unused) = *self.lookup.entry(id).or_insert_with(|| {
+            let value = or();
+            let value_id = self.funcs.push(value);
+            (value_id, false)
+        });
+
+        *unused = false;
+        res
+    }
 
     pub fn save_compiled_code(
         &mut self,
@@ -78,6 +123,14 @@ impl Gen {
         self.funcs[id] = func;
 
         Ok(())
+    }
+}
+
+impl Index<FragRef<CompiledFunc>> for Gen {
+    type Output = CompiledFunc;
+
+    fn index(&self, index: FragRef<CompiledFunc>) -> &Self::Output {
+        &self.funcs[index]
     }
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    mem,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -14,6 +15,19 @@ pub struct Mir {
 }
 
 impl Mir {
+    pub fn relocate(&mut self, relocator: &TypecRelocator) {
+        let map = Arc::get_mut(&mut self.bodies)
+            .expect("there should be only one instance of mir when calling this");
+        *map = mem::take(map)
+            .into_iter()
+            .filter_map(|(id, mut func)| {
+                let id = relocator.funcs.project(id)?;
+                func.relocate(relocator);
+                Some((id, func))
+            })
+            .collect();
+    }
+
     pub fn clear(&mut self) {
         self.bodies.clear();
     }
@@ -28,6 +42,13 @@ impl Clear for Mir {
 #[derive(Clone, Default)]
 pub struct FuncMir {
     pub inner: Arc<FuncMirInner>,
+}
+impl FuncMir {
+    fn relocate(&mut self, relocator: &TypecRelocator) {
+        let inner = Arc::get_mut(&mut self.inner)
+            .expect("there should be only one instance of func mir when calling this");
+        inner.relocate(relocator);
+    }
 }
 
 impl Deref for FuncMir {
@@ -94,6 +115,24 @@ impl FuncMirInner {
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.types[self.values[value].ty].ty
+    }
+
+    fn relocate(&mut self, relocator: &TypecRelocator) -> Option<()> {
+        for ty in self.types.values_mut() {
+            ty.ty = relocator.project_ty(ty.ty)?;
+        }
+
+        for call in self.calls.values_mut() {
+            let callable = match call.callable {
+                CallableMir::Func(f) => CallableMir::Func(relocator.funcs.project(f)?),
+                CallableMir::SpecFunc(f) => CallableMir::SpecFunc(relocator.spec_funcs.project(f)?),
+                CallableMir::Pointer(p) => CallableMir::Pointer(p),
+            };
+
+            call.callable = callable;
+        }
+
+        Some(())
     }
 }
 

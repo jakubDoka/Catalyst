@@ -49,7 +49,7 @@ impl Generator<'_> {
                 func.to_u32(),
             ));
 
-        let func_id = self.gen.funcs[func].func;
+        let func_id = self.gen[func].func;
         let Func {
             signature,
             visibility,

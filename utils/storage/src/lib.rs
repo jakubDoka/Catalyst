@@ -1,5 +1,4 @@
 #![feature(string_extend_from_within)]
-#![feature(int_log)]
 #![feature(default_free_fn)]
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(const_trait_impl)]

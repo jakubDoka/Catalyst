@@ -53,10 +53,34 @@ macro_rules! gen_typec {
 }
 
 impl TypecRelocator {
-    fn clean_maps(&mut self, typec: &mut Typec) {
+    fn clean_maps(&self, typec: &mut Typec) {
         fn take_arc<T: Default>(arc: &mut Arc<T>) -> T {
             mem::take(Arc::get_mut(arc).expect("there should be no other refs to typec"))
         }
+
+        typec.lookup.retain(|_, value| {
+            let new_value = match *value {
+                ComputedTypecItem::Pointer(p) => {
+                    self.pointers.project(p).map(ComputedTypecItem::Pointer)
+                }
+                ComputedTypecItem::Instance(i) => {
+                    self.instances.project(i).map(ComputedTypecItem::Instance)
+                }
+                ComputedTypecItem::SpecInstance(i) => self
+                    .spec_instances
+                    .project(i)
+                    .map(ComputedTypecItem::SpecInstance),
+                ComputedTypecItem::SpecSum(s) => {
+                    Some(ComputedTypecItem::SpecSum(self.spec_sums.project_slice(s)))
+                }
+            };
+
+            if let Some(new_v) = new_value {
+                *value = new_v;
+            }
+
+            new_value.is_some()
+        });
 
         typec.may_need_drop.clear();
 
@@ -74,7 +98,9 @@ impl TypecRelocator {
             let params = self.args.project_slice(params);
             typec.impl_lookup.insert(key, (r#impl, params));
         }
+
         typec.module_items.clear();
+
         let old_map = take_arc(&mut typec.macros);
         for (key, r#macro) in old_map.into_iter() {
             let Some(key) = self.project_ty(key) else {
@@ -85,13 +111,14 @@ impl TypecRelocator {
             };
             typec.macros.insert(key, r#macro);
         }
+
         for func in typec.builtin_funcs.iter_mut() {
             *func = self
                 .funcs
                 .project(*func)
                 .expect("builtin funcs should be valid");
         }
-        // typec.may_need_drop.relocate();
+
         let old_map = take_arc(&mut typec.may_need_drop);
         for (key, value) in old_map.into_iter() {
             let Some(key) = self.project_ty(key) else {
@@ -102,7 +129,7 @@ impl TypecRelocator {
     }
 
     fn project_macro_impl(
-        &mut self,
+        &self,
         MacroImpl {
             name,
             r#impl,
@@ -120,13 +147,13 @@ impl TypecRelocator {
         })
     }
 
-    fn project_impl_key(&mut self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
+    fn project_impl_key(&self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
         let ty = self.project_ty(ty)?;
         let spec = self.project_spec(spec)?;
         Some(ImplKey { ty, spec })
     }
 
-    fn project_ty(&mut self, ty: Ty) -> Option<Ty> {
+    pub fn project_ty(&self, ty: Ty) -> Option<Ty> {
         match ty {
             Ty::Struct(s) => self.structs.project(s).map(Ty::Struct),
             Ty::Enum(e) => self.enums.project(e).map(Ty::Enum),
@@ -137,7 +164,7 @@ impl TypecRelocator {
         }
     }
 
-    fn project_spec(&mut self, spec: Spec) -> Option<Spec> {
+    fn project_spec(&self, spec: Spec) -> Option<Spec> {
         match spec {
             Spec::Base(b) => self.base_specs.project(b).map(Spec::Base),
             Spec::Instance(i) => self.spec_instances.project(i).map(Spec::Instance),
@@ -343,7 +370,7 @@ impl Typec {
             signature
                 .cc
                 .map(|cc| &interner[cc])
-                .map_or(default(), |cc| format!("\"{}\" ", cc)),
+                .map_or(default(), |cc| format!("\"{cc}\" ")),
             self[upper_generics]
                 .iter()
                 .chain(&self[generics])
@@ -355,7 +382,7 @@ impl Typec {
                 .iter()
                 .map(|&ty| self.display_ty(ty, interner))
                 .enumerate()
-                .map(|(i, str)| format!("var{}: {}", i, str))
+                .map(|(i, str)| format!("var{i}: {str}"))
                 .intersperse(", ".into())
                 .collect::<String>(),
             self.display_ty(signature.ret, interner),

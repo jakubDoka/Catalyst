@@ -70,7 +70,7 @@ impl ObjectContext {
             .into_iter()
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let ent = &gen.funcs[func];
+                let ent = &gen[func];
                 let id = ent.name;
 
                 let meta = &typec.funcs[ent.func];
@@ -105,7 +105,7 @@ impl ObjectContext {
 
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
-            let Some(ent) = &gen.funcs[func].inner else {
+            let Some(ent) = &gen[func].inner else {
                 return Err(ObjectRelocationError::MissingFunctionBody(func));
             };
 
@@ -119,7 +119,7 @@ impl ObjectContext {
 
         // add relocations
         for (func, _, offset, ..) in funcs {
-            let Some(ent) = &gen.funcs[func].inner else {
+            let Some(ent) = &gen[func].inner else {
                 unreachable!();
             };
             for &record in &ent.relocs {

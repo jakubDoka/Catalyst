@@ -194,7 +194,7 @@ mod test {
                     ptr += vec.as_ptr() as usize;
                 }
                 timer.stop();
-                println!("{:?}", ptr);
+                println!("{ptr:?}");
             }),
             ("bump-vec", |timer| {
                 let vec: BumpVec<usize> = bumpvec!(cap 100);
@@ -206,7 +206,7 @@ mod test {
                 }
                 timer.stop();
                 drop(vec);
-                println!("{:?}", ptr);
+                println!("{ptr:?}");
             }),
             ("no-alloc", |timer| {
                 let vec = vec![0; 100].as_ptr();
@@ -218,7 +218,7 @@ mod test {
                     ptr *= 2;
                 }
                 timer.stop();
-                println!("{:?}", ptr);
+                println!("{ptr:?}");
             }),
         ])
     }

@@ -66,11 +66,10 @@ impl<T: Clone> FragRelocator<T> {
             let slice = allocator.alloc(buffer.len() as u16).expect(OUT_OF_SPACE);
             let slice_ref = FragSlice(slice, PhantomData);
             unsafe {
-                ptr::copy(
-                    map.ptr_to(key),
-                    map.ptr_to(FragRef(slice_ref.0.addr, PhantomData)),
-                    buffer.len(),
-                );
+                let new_key = FragRef(slice_ref.0.addr, PhantomData);
+                if key != new_key {
+                    ptr::copy(map.ptr_to(key), map.ptr_to(new_key), buffer.len());
+                }
             }
             buffer
                 .drain(..)
@@ -377,6 +376,13 @@ impl<T, const SIZE: usize> FragMap<T, SIZE> {
     fn truncate(&mut self, taken_blocks: usize) {
         self.base.inner.truncate(taken_blocks);
     }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.base
+            .inner
+            .iter_mut()
+            .flat_map(|block| block.iter_mut())
+    }
 }
 
 impl<T, const SIZE: usize> Clone for FragMap<T, SIZE> {
@@ -484,6 +490,18 @@ impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
         }
         Self {
             inner: unsafe { NonNull::new_unchecked(Box::into_raw(inner.assume_init())) },
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+        let len = self.len();
+        unsafe {
+            self.inner
+                .as_mut()
+                .data
+                .get_unchecked_mut(..len)
+                .iter_mut()
+                .map(|i| i.assume_init_mut())
         }
     }
 

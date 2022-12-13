@@ -157,11 +157,11 @@ pub mod items {
         test_code: fn(&str) -> (Workspace, Resources),
     ) {
         if let Some(first_arg) = std::env::args().nth(1) && !name.starts_with(first_arg.as_str()) {
-            println!("Skipping test: {}", name);
+            println!("Skipping test: {name}");
             return;
         }
 
-        println!("Running sub test: {}", name);
+        println!("Running sub test: {name}");
         let runner = move || {
             let (mut ws, packages) = test_code(name);
 
@@ -370,13 +370,13 @@ pub mod items {
                         .nth(1)
                         .copied()
                         .unwrap_or("main");
-                    let repository = format!("{}#{}", repository, branch);
+                    let repository = format!("{repository}#{branch}");
 
                     let Some(repository) = self.repositories.get(&repository) else {
                         return Ok(Output {
                             status: new_exist_status(128),
                             stdout: Vec::new(),
-                            stderr: format!("fatal: repository '{}' not found", repository).into_bytes(),
+                            stderr: format!("fatal: repository '{repository}' not found").into_bytes(),
                         });
                     };
 
@@ -408,14 +408,14 @@ pub mod items {
                         .repositories
                         .keys()
                         .filter_map(|key| key.strip_prefix(&format!("{repository}#")))
-                        .map(|branch| format!("9821309128301928302193\trefs/tags/{}\n", branch))
+                        .map(|branch| format!("9821309128301928302193\trefs/tags/{branch}\n"))
                         .collect::<String>();
 
                     if res.is_empty() {
                         return Ok(Output {
                             status: new_exist_status(128),
                             stdout: Vec::new(),
-                            stderr: format!("fatal: repository '{}' not found", repository)
+                            stderr: format!("fatal: repository '{repository}' not found")
                                 .into_bytes(),
                         });
                     }
