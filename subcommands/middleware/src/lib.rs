@@ -8,6 +8,6 @@ mod cmd_args;
 mod logic;
 
 pub use logic::{
-    GenTask, MacroCtx, Middleware, MiddlewareArgs, MiddlewareOutput, Shared, Task, TaskGraph,
-    Worker, WorkerState,
+    GenTask, Incremental, MacroCtx, Middleware, MiddlewareArgs, MiddlewareOutput, PackageTask,
+    Shared, Task, TaskGraph, Worker, WorkerConnections, WorkerState,
 };

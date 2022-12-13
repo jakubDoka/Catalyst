@@ -21,7 +21,7 @@ use storage::*;
 type Loc = Option<(VRef<Source>, Span)>;
 
 #[derive(Default)]
-pub struct PackageLoaderCtx {
+pub struct ResourceLoaderCtx {
     sources: Map<PathBuf, VRef<Source>>,
     packages: Map<PathBuf, DummyPackage>,
     modules: Map<PathBuf, DummyModule>,
@@ -32,7 +32,7 @@ pub struct PackageLoaderCtx {
     dep_root: PathBuf,
 }
 
-impl PackageLoaderCtx {
+impl ResourceLoaderCtx {
     fn get_ast_data(&mut self) -> AstData {
         self.ast_data.take().unwrap_or_default()
     }
@@ -67,7 +67,11 @@ struct DummyModule {
 
 impl PackageLoader<'_, '_> {
     /// Loads the project into graph of manifests and source files.
-    pub fn reload(&mut self, root_path: &Path, ctx: &mut PackageLoaderCtx) -> Option<()> {
+    pub fn reload(
+        &mut self,
+        root_path: &Path,
+        ctx: &mut ResourceLoaderCtx,
+    ) -> Option<Vec<VRef<Source>>> {
         ctx.clear();
         self.resources.clear();
 
@@ -132,14 +136,14 @@ impl PackageLoader<'_, '_> {
             .resources
             .sources
             .iter()
-            .filter_map(|(key, module)| module.dead.then_some(key))
-            .collect::<BumpVec<_>>();
+            .filter_map(|(key, source)| source.dead.then_some(key))
+            .collect::<Vec<_>>();
 
-        for key in to_remove {
+        for &key in &to_remove {
             self.resources.sources.remove(key);
         }
 
-        Some(())
+        Some(to_remove)
     }
 
     fn load_modules(
@@ -148,7 +152,7 @@ impl PackageLoader<'_, '_> {
         root_package: VRef<Package>,
         source: VRef<Source>,
         span: Span,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> Option<VRef<Module>> {
         ctx.module_frontier
             .push((root_path.clone(), root_package, source, span));
@@ -198,7 +202,7 @@ impl PackageLoader<'_, '_> {
         source: VRef<Source>,
         span: Span,
         ast_data: &mut AstData,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let source = self.load_source(path.clone(), Some((source, span)), ctx)?;
 
@@ -234,7 +238,7 @@ impl PackageLoader<'_, '_> {
         imports: UseAst,
         package_id: VRef<Package>,
         source: VRef<Source>,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> BumpVec<(NameAst, PathBuf)> {
         let mut deps = bumpvec![cap imports.items.len()];
         for &ImportAst {
@@ -306,7 +310,7 @@ impl PackageLoader<'_, '_> {
     fn load_packages(
         &mut self,
         root_path: PathBuf,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> Option<VRef<Package>> {
         ctx.package_frontier.push((root_path.clone(), None));
         let mut ast_data = ctx.get_ast_data();
@@ -353,7 +357,7 @@ impl PackageLoader<'_, '_> {
         path: PathBuf,
         loc: Loc,
         ast_data: &mut AstData,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
 
@@ -395,7 +399,7 @@ impl PackageLoader<'_, '_> {
         root_path: &Path,
         source_id: VRef<Source>,
         manifest: ManifestAst,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> BumpVec<(NameAst, PathBuf)> {
         let mut deps = bumpvec![cap manifest.deps.len()];
         for &ManifestDepAst {
@@ -453,7 +457,7 @@ impl PackageLoader<'_, '_> {
         &mut self,
         path: PathBuf,
         loc: Loc,
-        ctx: &mut PackageLoaderCtx,
+        ctx: &mut ResourceLoaderCtx,
     ) -> Option<VRef<Source>> {
         let last_modified = self.resources.db.get_modification_time(&path);
         if let Some(&source) = ctx.sources.get(&path)
@@ -519,7 +523,7 @@ impl PackageLoader<'_, '_> {
         span: Span,
         version: Option<Span>,
         url_span: Span,
-        ctx: &PackageLoaderCtx,
+        ctx: &ResourceLoaderCtx,
     ) -> Option<PathBuf> {
         let url = self.resources.sources[source].span_str(url_span);
         let full_url = &format!("https://{}", url);

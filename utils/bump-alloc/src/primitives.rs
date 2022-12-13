@@ -73,6 +73,14 @@ impl<T: ?Sized> FragRef<T> {
     pub const fn to_u32(self) -> u32 {
         self.0.to_u32()
     }
+
+    pub fn as_slice(&self) -> FragSlice<T> {
+        unsafe { FragSlice::new(FragSliceAddr::from_addr(self.0)) }
+    }
+
+    pub fn right_after(&self, key: FragRef<T>) -> bool {
+        self.0.right_after(key.0)
+    }
 }
 
 pub type OptFragRef<T> = Option<FragRef<T>>;

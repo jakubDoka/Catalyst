@@ -139,7 +139,7 @@ pub enum ScopeRecord {
 impl ScopeRecord {
     pub fn scope_item(&self) -> Option<ScopeItem> {
         match *self {
-            Self::Imported { item, .. } | Self::Current { item } => Some(item.ptr.into()),
+            Self::Imported { item, .. } | Self::Current { item } => item.ptr.into(),
             Self::Builtin { kind } | Self::Pushed { kind, .. } => Some(kind),
             Self::Collision => None,
         }
@@ -186,6 +186,7 @@ pub enum ModuleItemPtr {
     Func(FragRef<Func>),
     Ty(Ty),
     SpecBase(FragRef<SpecBase>),
+    Impl(FragRef<Impl>),
 }
 
 impl From<FragRef<Func>> for ModuleItemPtr {
@@ -203,6 +204,12 @@ impl From<Ty> for ModuleItemPtr {
 impl From<FragRef<SpecBase>> for ModuleItemPtr {
     fn from(base: FragRef<SpecBase>) -> Self {
         Self::SpecBase(base)
+    }
+}
+
+impl From<FragRef<Impl>> for ModuleItemPtr {
+    fn from(r#impl: FragRef<Impl>) -> Self {
+        Self::Impl(r#impl)
     }
 }
 
@@ -246,12 +253,13 @@ impl From<Ty> for ScopeItem {
     }
 }
 
-impl From<ModuleItemPtr> for ScopeItem {
+impl From<ModuleItemPtr> for Option<ScopeItem> {
     fn from(item: ModuleItemPtr) -> Self {
-        match item {
+        Some(match item {
             ModuleItemPtr::Func(func) => func.into(),
             ModuleItemPtr::Ty(ty) => ty.into(),
             ModuleItemPtr::SpecBase(base) => base.into(),
-        }
+            ModuleItemPtr::Impl(..) => return None,
+        })
     }
 }

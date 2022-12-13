@@ -31,11 +31,12 @@ use typec_t::*;
 #[derive(Default)]
 pub struct Middleware {
     pub workspace: Workspace,
-    pub resources: Resources,
     pub package_graph: PackageGraph,
-    pub resource_loading_ctx: PackageLoaderCtx,
+    pub resource_loading_ctx: ResourceLoaderCtx,
     pub task_graph: TaskGraph,
     pub entry_points: Vec<FragRef<Func>>,
+    pub incremental: Option<Incremental>,
+    pub relocator: TypecRelocator,
 }
 
 impl Middleware {
@@ -43,27 +44,47 @@ impl Middleware {
         Self::default()
     }
 
-    fn reload_resources(&mut self, main_task: &mut Task, path: &Path) {
+    fn reload_resources(
+        &mut self,
+        resources: &mut Resources,
+        main_task: &mut Task,
+        path: &Path,
+    ) -> Option<Vec<VRef<Source>>> {
         PackageLoader::new(
-            &mut self.resources,
+            resources,
             &mut main_task.workspace,
             &mut main_task.interner,
             &mut self.package_graph,
         )
-        .reload(path, &mut self.resource_loading_ctx);
+        .reload(path, &mut self.resource_loading_ctx)
     }
 
     pub fn update(&mut self, args: &MiddlewareArgs) -> Option<MiddlewareOutput> {
-        let mut main_task = Task {
-            ir_dump: args.dump_ir.then(String::new),
-            ..default()
+        self.workspace.clear();
+
+        let Incremental {
+            mut resources,
+            mut main_task,
+            mut worker_pool,
+            mut module_items,
+        } = self.incremental.take().unwrap_or_default();
+
+        main_task.ir_dump = args.dump_ir.then(String::new);
+
+        if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, &args.path) {
+            self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
         };
 
-        self.reload_resources(&mut main_task, &args.path);
         main_task.typec.init(&mut main_task.interner);
 
         if main_task.workspace.has_errors() {
             self.workspace.transfer(&mut main_task.workspace);
+            self.incremental = Some(Incremental {
+                resources,
+                main_task,
+                worker_pool,
+                module_items,
+            });
             return None;
         }
 
@@ -76,13 +97,11 @@ impl Middleware {
             // todo!();
         }
 
-        let workers = iter::repeat_with(|| Worker::new(package_sender.clone()))
+        let workers = iter::repeat_with(|| WorkerConnections::new(package_sender.clone()))
             .take(workers_count)
             .collect::<Vec<_>>();
 
-        self.build_task_graph();
-
-        let resources = mem::take(&mut self.resources);
+        self.build_task_graph(&resources);
 
         // the vec![] internals will put the main_task last, this is important
         // since later when resolving first dependency we want the main task first
@@ -99,19 +118,25 @@ impl Middleware {
             isa: &args.isa,
         };
 
-        let scope_result = thread::scope(|s| {
+        let (mut tasks, entry_points, imported) = thread::scope(|s| {
             let (mut package_tasks, mut gen_senders, mut threads) = (
                 Vec::with_capacity(workers_count),
                 Vec::with_capacity(workers_count),
                 Vec::with_capacity(workers_count),
             );
-            for ((worker, package_sender, gen_sender), task) in workers.into_iter().zip(tasks) {
+            for ((connections, package_sender, gen_sender), task) in workers.into_iter().zip(tasks)
+            {
                 package_tasks.push(PackageTask {
                     self_sender: package_sender,
                     task,
                 });
                 gen_senders.push(gen_sender);
-                threads.push(worker.run(s, shared));
+                threads.push(
+                    worker_pool
+                        .pop()
+                        .unwrap_or_default()
+                        .run(s, shared, connections),
+                );
             }
 
             let mut tasks = self.expand(package_receiver, package_tasks, &resources, workers_count);
@@ -121,7 +146,13 @@ impl Middleware {
             }
 
             if self.workspace.has_errors() {
-                return None;
+                drop(gen_senders);
+                worker_pool.extend(
+                    threads
+                        .into_iter()
+                        .map(|thread| thread.join().expect("worker panicked").0),
+                );
+                return (tasks, vec![], vec![]);
             }
 
             let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
@@ -129,25 +160,19 @@ impl Middleware {
                 recv.send(task).expect("worker terminated prematurely");
             }
 
-            Some((
+            (
                 threads
                     .into_iter()
                     .map(|thread| {
-                        thread
-                            .join()
-                            .expect("worker panicked")
-                            .expect("impossible since we still hold the gen_senders")
+                        let (worker, task) = thread.join().expect("worker panicked");
+                        worker_pool.push(worker);
+                        task.expect("impossible since gen_senders still hasn't been dropped")
                     })
                     .collect::<Vec<_>>(),
                 entry_points,
                 imported,
-            ))
+            )
         });
-
-        // important for displaying errors
-        self.resources = resources;
-
-        let (mut tasks, entry_points, imported) = scope_result?;
 
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
@@ -174,7 +199,7 @@ impl Middleware {
                 main_task
                     .compile_requests
                     .queue
-                    .into_iter()
+                    .drain(..)
                     .map(|req| req.id)
                     .chain(imported)
                     .chain(iter::once(entry_point)),
@@ -184,11 +209,19 @@ impl Middleware {
             )
             .unwrap();
 
-        self.workspace = main_task.workspace;
+        let ir = main_task.ir_dump.take();
+
+        self.workspace.transfer(&mut main_task.workspace);
+        self.incremental = Some(Incremental {
+            resources,
+            main_task,
+            worker_pool,
+            module_items,
+        });
 
         Some(MiddlewareOutput {
             binary: object.emit().unwrap(),
-            ir: main_task.ir_dump,
+            ir,
         })
     }
 
@@ -196,7 +229,7 @@ impl Middleware {
         &mut self,
         main_task: &mut Task,
         isa: &Isa,
-        entry_points: BumpVec<FragRef<CompiledFunc>>,
+        entry_points: Vec<FragRef<CompiledFunc>>,
     ) -> FragRef<CompiledFunc> {
         let mut context = Context::new();
         let mut func_ctx = FunctionBuilderContext::new();
@@ -246,8 +279,8 @@ impl Middleware {
         tasks: &mut [Task],
         isa: &Isa,
     ) -> (
-        BumpVec<FragRef<CompiledFunc>>, // in executable
-        BumpVec<FragRef<CompiledFunc>>, // in lib or dll
+        Vec<FragRef<CompiledFunc>>, // in executable
+        Vec<FragRef<CompiledFunc>>, // in lib or dll
     ) {
         let task_distribution = (0..tasks.len()).cycle();
         let distributor = |(&func, task_id): (_, usize)| {
@@ -279,7 +312,7 @@ impl Middleware {
 
         let internal = frontier.iter().map(|(req, _)| req.id).collect();
         let external = Task::traverse_compile_requests(frontier, tasks, isa);
-        (internal, external)
+        (internal, external.to_vec())
     }
 
     pub fn expand(
@@ -351,25 +384,24 @@ impl Middleware {
             .collect()
     }
 
-    pub fn build_task_graph(&mut self) {
+    pub fn build_task_graph(&mut self, resources: &Resources) {
         self.task_graph.clear();
 
-        let mut edges = self
-            .resources
+        let mut edges = resources
             .packages
             .keys()
             .flat_map(|key| {
-                self.resources.package_deps[self.resources.packages[key].deps]
+                resources.package_deps[resources.packages[key].deps]
                     .iter()
                     .map(move |dep| (dep.ptr, key))
             })
             .collect::<BumpVec<_>>();
         edges.sort_unstable();
 
-        self.resources
+        resources
             .packages
             .values()
-            .map(|package| self.resources.package_deps[package.deps].len())
+            .map(|package| resources.package_deps[package.deps].len())
             .map(|count| (count, default()))
             .collect_into(&mut self.task_graph.meta);
 
@@ -385,6 +417,288 @@ impl Middleware {
                 self.task_graph.frontier.push_back(package);
             }
         }
+    }
+
+    fn sweep_resources(
+        &mut self,
+        resources: &Resources,
+        main_task: &mut Task,
+        module_items: &mut Map<VRef<Source>, ModuleItems>,
+        to_remove: Vec<VRef<Source>>,
+    ) {
+        /*
+            Overview:
+                1.
+                    - mark all reachable items
+                    - store their dependencies
+                2.
+                    - find gaps and ordered living items
+                    - move outer items into gaps
+                    - rewrite their dependencies
+                3.
+                    - truncate FragMaps, save free segments for later use
+        */
+
+        for removed in to_remove {
+            module_items.remove(&removed);
+        }
+
+        module_items
+            .values()
+            .flat_map(|items| items.items.values())
+            .for_each(|item| self.mark_module_item(item, resources, main_task));
+    }
+
+    fn mark_module_item(
+        &mut self,
+        module_item: &ModuleItem,
+        resources: &Resources,
+        main_task: &Task,
+    ) {
+        match module_item.ptr {
+            ModuleItemPtr::Func(func) => self.mark_func(func, resources, main_task),
+            ModuleItemPtr::Ty(ty) => self.mark_ty(ty, resources, main_task),
+            ModuleItemPtr::SpecBase(spec_base) => {
+                self.mark_spec_base(spec_base, resources, main_task)
+            }
+            ModuleItemPtr::Impl(r#impl_base) => self.mark_impl(r#impl_base, resources, main_task),
+        };
+    }
+
+    fn mark_func(
+        &mut self,
+        func: FragRef<Func>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.funcs.mark(func)?;
+        let Func {
+            generics,
+            owner,
+            upper_generics,
+            signature,
+            ..
+        } = main_task.typec[func];
+        self.mark_generics(generics, resources, main_task);
+        if let Some(owner) = owner {
+            self.mark_ty(owner, resources, main_task);
+        }
+        self.mark_generics(upper_generics, resources, main_task);
+        self.mark_signature(signature, resources, main_task);
+        Some(())
+    }
+
+    fn mark_ty(&mut self, ty: Ty, resources: &Resources, main_task: &Task) -> Option<()> {
+        match ty {
+            Ty::Struct(s) => self.mark_struct(s, resources, main_task),
+            Ty::Enum(e) => self.mark_enum(e, resources, main_task),
+            Ty::Instance(i) => self.mark_instance(i, resources, main_task),
+            Ty::Pointer(p) => self.mark_pointer(p, resources, main_task),
+            Ty::Param(..) | Ty::Builtin(..) => Some(()),
+        }
+    }
+
+    fn mark_struct(
+        &mut self,
+        s: FragRef<Struct>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.structs.mark(s)?;
+        let Struct {
+            generics, fields, ..
+        } = main_task.typec[s];
+        self.mark_generics(generics, resources, main_task);
+        self.relocator.fields.mark_slice_summed(fields);
+        for field in &main_task.typec[fields] {
+            self.mark_ty(field.ty, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_enum(
+        &mut self,
+        e: FragRef<Enum>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.enums.mark(e)?;
+        let Enum {
+            generics, variants, ..
+        } = main_task.typec[e];
+        self.mark_generics(generics, resources, main_task);
+        self.relocator.variants.mark_slice_summed(variants);
+        for variant in &main_task.typec[variants] {
+            self.mark_ty(variant.ty, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_instance(
+        &mut self,
+        i: FragRef<Instance>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.instances.mark(i)?;
+        let Instance { base, args } = main_task.typec[i];
+        self.mark_ty(base.as_ty(), resources, main_task);
+        self.mark_args(args, resources, main_task);
+        Some(())
+    }
+
+    fn mark_pointer(
+        &mut self,
+        p: FragRef<Pointer>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.pointers.mark(p)?;
+        let Pointer { base, .. } = main_task.typec[p];
+        self.mark_ty(base, resources, main_task);
+        Some(())
+    }
+
+    fn mark_generics(
+        &mut self,
+        generics: Generics,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.params.mark_slice_summed(generics)?;
+        for &spec_sum in &main_task.typec[generics] {
+            self.mark_spec_sum(spec_sum, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_args(
+        &mut self,
+        args: FragSlice<Ty>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.args.mark_slice_summed(args)?;
+        for &arg in &main_task.typec[args] {
+            self.mark_ty(arg, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_spec_sum(
+        &mut self,
+        spec_sum: FragSlice<Spec>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.spec_sums.mark_slice_summed(spec_sum)?;
+        for &spec in &main_task.typec[spec_sum] {
+            self.mark_spec(spec, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_spec(&mut self, spec: Spec, resources: &Resources, main_task: &Task) -> Option<()> {
+        match spec {
+            Spec::Base(spec_base) => self.mark_spec_base(spec_base, resources, main_task),
+            Spec::Instance(spec_instance) => {
+                self.mark_spec_instance(spec_instance, resources, main_task)
+            }
+        }
+    }
+
+    fn mark_spec_base(
+        &mut self,
+        spec_base: FragRef<SpecBase>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.base_specs.mark(spec_base)?;
+        let SpecBase {
+            generics,
+            inherits,
+            methods,
+            ..
+        } = main_task.typec[spec_base];
+        self.mark_generics(generics, resources, main_task);
+        self.mark_spec_sum(inherits, resources, main_task);
+        self.relocator.spec_funcs.mark_slice_summed(methods);
+        for &spec_func in &main_task.typec[methods] {
+            self.mark_spec_func(spec_func, resources, main_task);
+        }
+        Some(())
+    }
+
+    fn mark_spec_instance(
+        &mut self,
+        spec_instance: FragRef<SpecInstance>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.spec_instances.mark(spec_instance)?;
+        let SpecInstance { base, args } = main_task.typec[spec_instance];
+        self.mark_spec_base(base, resources, main_task);
+        self.mark_args(args, resources, main_task);
+        Some(())
+    }
+
+    fn mark_spec_func(
+        &mut self,
+        SpecFunc {
+            generics,
+            signature,
+            ..
+        }: SpecFunc,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.mark_generics(generics, resources, main_task);
+        self.mark_signature(signature, resources, main_task);
+        Some(())
+    }
+
+    fn mark_signature(
+        &mut self,
+        Signature { args, ret, .. }: Signature,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.mark_args(args, resources, main_task);
+        self.mark_ty(ret, resources, main_task);
+        Some(())
+    }
+
+    fn mark_impl(
+        &mut self,
+        r#impl: FragRef<Impl>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.impls.mark(r#impl)?;
+        let Impl {
+            generics,
+            key: ImplKey { ty, spec },
+            methods,
+            ..
+        } = main_task.typec[r#impl];
+        self.mark_generics(generics, resources, main_task);
+        self.mark_ty(ty, resources, main_task);
+        self.mark_spec(spec, resources, main_task);
+        self.mark_impl_methods(methods, resources, main_task);
+        Some(())
+    }
+
+    fn mark_impl_methods(
+        &mut self,
+        methods: FragRefSlice<Func>,
+        resources: &Resources,
+        main_task: &Task,
+    ) -> Option<()> {
+        self.relocator.func_slices.mark_slice_summed(methods)?;
+        for &method in &main_task.typec[methods] {
+            self.mark_func(method, resources, main_task);
+        }
+        Some(())
     }
 }
 
@@ -445,51 +759,68 @@ pub struct MiddlewareOutput {
     pub ir: Option<String>,
 }
 
-pub struct Worker {
+pub struct WorkerConnections {
     pub package_tasks: Receiver<(PackageTask, VRef<Package>)>,
     pub package_products: Sender<(PackageTask, VRef<Package>)>,
     pub gen_tasks: Receiver<Task>,
-    pub state: WorkerState,
-    pub context: Context,
-    pub function_builder_ctx: FunctionBuilderContext,
 }
 
-type WorkerNewReturn = (
-    Worker,
+type ConnsReturn = (
+    WorkerConnections,
     SyncSender<(PackageTask, VRef<Package>)>,
     SyncSender<Task>,
 );
 
-impl Worker {
-    pub fn new(package_products: Sender<(PackageTask, VRef<Package>)>) -> WorkerNewReturn {
+impl WorkerConnections {
+    pub fn new(package_products: Sender<(PackageTask, VRef<Package>)>) -> ConnsReturn {
         let (package_dump, package_tasks) = mpsc::sync_channel(0);
         let (gen_dump, gen_tasks) = mpsc::sync_channel(0);
         (
             Self {
                 package_tasks,
                 package_products,
-                state: WorkerState::default(),
-                context: Context::new(),
-                function_builder_ctx: FunctionBuilderContext::new(),
                 gen_tasks,
             },
             package_dump,
             gen_dump,
         )
     }
+}
+
+pub struct Worker {
+    pub state: WorkerState,
+    pub context: Context,
+    pub function_builder_ctx: FunctionBuilderContext,
+}
+
+impl Default for Worker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Worker {
+    pub fn new() -> Self {
+        Self {
+            state: default(),
+            context: Context::new(),
+            function_builder_ctx: FunctionBuilderContext::new(),
+        }
+    }
 
     pub fn run<'a: 'b, 'b>(
         mut self,
         thread_scope: &'a thread::Scope<'b, '_>,
         shared: Shared<'b>,
-    ) -> ScopedJoinHandle<'b, Option<Task>> {
+        connections: WorkerConnections,
+    ) -> ScopedJoinHandle<'b, (Worker, Option<Task>)> {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
             self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
             self.state.gen_layouts.ptr_ty = shared.isa.pointer_ty;
             loop {
-                let Ok((mut package_task, package)) = self.package_tasks.recv() else {break;};
+                let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
 
                 let modules = mem::take(&mut package_task.task.modules_to_compile);
                 for &module in modules.iter() {
@@ -502,15 +833,18 @@ impl Worker {
                     );
                 }
                 package_task.task.modules_to_compile = modules;
-                self.package_products
+                connections.package_products
                     .send((package_task, package))
                     .expect("tasks are always reused");
             }
 
-            let mut compile_task = self.gen_tasks.recv().ok()?;
+            let Some(mut compile_task) = connections.gen_tasks.recv().ok() else {
+                return (self, None);
+            };
+
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
-            Some(compile_task)
+            (self, Some(compile_task))
         })
     }
 
@@ -1245,4 +1579,12 @@ impl<'macros> MacroCtx<'macros> {
             tokens: self.tokens.clear(),
         }
     }
+}
+
+#[derive(Default)]
+pub struct Incremental {
+    pub resources: Resources,
+    pub main_task: Task,
+    pub worker_pool: Vec<Worker>,
+    pub module_items: Map<VRef<Source>, ModuleItems>,
 }

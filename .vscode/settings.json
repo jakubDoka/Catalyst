@@ -60,6 +60,7 @@
         "peekable",
         "putchar",
         "Reloc",
+        "Relocator",
         "relocs",
         "repr",
         "reprs",

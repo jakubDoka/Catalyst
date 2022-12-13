@@ -7,7 +7,7 @@
 
 use std::{fs, path::Path, process::Command, vec};
 
-use middleware::{Middleware, MiddlewareArgs, MiddlewareOutput};
+use middleware::*;
 use target_lexicon::Triple;
 
 use diags::*;
@@ -104,11 +104,17 @@ impl Testable for TestState {
         if let Some(binary) = self.middleware.update(&args) {
             self.finally(binary);
         }
-        (self.middleware.workspace, self.middleware.resources)
+        (
+            self.middleware.workspace,
+            self.middleware.incremental.unwrap().resources,
+        )
     }
 
-    fn set_packages(&mut self, packages: Resources) {
-        self.middleware.resources = packages;
+    fn set_packages(&mut self, resources: Resources) {
+        self.middleware.incremental = Some(Incremental {
+            resources,
+            ..Default::default()
+        });
     }
 }
 

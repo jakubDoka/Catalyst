@@ -77,12 +77,12 @@ pub use {
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
         GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Impls, Instance, Instances,
         Mutability, ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs,
-        SpecInstance, SpecInstances, SpecSet, SpecSums, Struct, Structs, Ty, TyFlags, TypecLookup,
-        Variant, Variants,
+        SpecInstance, SpecInstances, SpecSet, SpecSums, Struct, Ty, TyFlags, TypecLookup, Variant,
+        Variants,
     },
     typec::{
         lookup_water_drop, sorted_water_drops, Loc, MacroImpl, ModuleItems, ParamPresence,
-        SpecCmpError, Typec, TypecCtxSlice,
+        SpecCmpError, Typec, TypecCtxSlice, TypecRelocator,
     },
 };
 

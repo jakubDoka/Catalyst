@@ -20,6 +20,11 @@ impl Workspace {
         Self::default()
     }
 
+    pub fn clear(&mut self) {
+        self.snippets.clear();
+        self.error_count = 0;
+    }
+
     pub fn transfer(&mut self, other: &mut Self) {
         self.snippets.append(&mut other.snippets);
         self.error_count += mem::take(&mut other.error_count);

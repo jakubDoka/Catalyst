@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 region = "3.0.0"
 serde = { version = "1", features = ["derive"] }
+dashmap = "5.4.0"

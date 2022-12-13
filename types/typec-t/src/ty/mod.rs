@@ -18,7 +18,6 @@ pub type Variants = FragMap<Variant, MAX_FRAGMENT_SIZE>;
 
 pub type Impls = FragMap<Impl, MAX_FRAGMENT_SIZE>;
 pub type Instances = FragMap<Instance, MAX_FRAGMENT_SIZE>;
-pub type Structs = FragMap<Struct, MAX_FRAGMENT_SIZE>;
 pub type Enums = FragMap<Enum, MAX_FRAGMENT_SIZE>;
 pub type Pointers = FragMap<Pointer, MAX_FRAGMENT_SIZE>;
 pub type BaseSpecs = FragMap<SpecBase, MAX_FRAGMENT_SIZE>;

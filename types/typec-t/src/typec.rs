@@ -1,40 +1,167 @@
 use core::fmt;
-use std::fmt::Write;
 use std::mem;
 use std::{
     default::default,
     iter,
     ops::{Index, IndexMut},
 };
+use std::{fmt::Write, sync::Arc};
 
 use crate::*;
 use packaging_t::Module;
 
 use storage::{dashmap::mapref::entry::Entry, *};
 
-#[derive(Default, Clone)]
-pub struct Typec {
-    pub lookup: TypecLookup,
-    pub structs: Structs,
-    pub pointers: Pointers,
-    pub instances: Instances,
-    pub base_specs: BaseSpecs,
-    pub spec_instances: SpecInstances,
-    pub funcs: Funcs,
-    pub fields: Fields,
-    pub impls: Impls,
-    pub params: ParamSlices,
-    pub spec_sums: SpecSums,
-    pub args: ArgSlices,
-    pub impl_lookup: ImplLookup,
-    pub func_slices: FuncSlices,
-    pub spec_funcs: SpecFuncs,
-    pub builtin_funcs: Vec<FragRef<Func>>,
-    pub module_items: ShadowMap<Module, ModuleItems>,
-    pub variants: Variants,
-    pub macros: CMap<Ty, MacroImpl>,
-    pub enums: Enums,
-    pub may_need_drop: CMap<Ty, bool>,
+macro_rules! gen_typec {
+    ($self:ident $($name:ident: $ty:ty, $size:expr, $({ $($tt:tt)* })?)*) => {
+        #[derive(Default, Clone)]
+        pub struct Typec {
+            pub lookup: TypecLookup,
+            $(
+                pub $name: FragMap<$ty, $size>,
+            )*
+            pub impl_lookup: ImplLookup,
+            pub module_items: ShadowMap<Module, ModuleItems>,
+            pub macros: CMap<Ty, MacroImpl>,
+            pub builtin_funcs: Vec<FragRef<Func>>,
+            pub may_need_drop: CMap<Ty, bool>,
+        }
+
+        #[derive(Default)]
+        pub struct TypecRelocator {
+            $(
+                pub $name: FragRelocator<$ty>,
+            )*
+        }
+
+        impl TypecRelocator {
+            pub fn relocate(&mut $self, typec: &mut Typec) {
+                $(
+                    $self.$name.relocate(&mut typec.$name);
+                    $({ $($tt)* })?
+                )*
+                $self.clean_maps(typec);
+            }
+
+            pub fn clear(&mut $self) {
+                $(
+                    $self.$name.clear();
+                )*
+            }
+        }
+    };
+}
+
+impl TypecRelocator {
+    fn clean_maps(&mut self, typec: &mut Typec) {
+        fn take_arc<T: Default>(arc: &mut Arc<T>) -> T {
+            mem::take(Arc::get_mut(arc).expect("there should be no other refs to typec"))
+        }
+
+        typec.may_need_drop.clear();
+
+        let old_map = take_arc(&mut typec.impl_lookup);
+        for (key, (r#impl, params)) in old_map.into_iter() {
+            let Some(key) = self.project_impl_key(key) else {
+                continue;
+            };
+            if key.spec.base(typec) == SpecBase::DROP {
+                typec.may_need_drop.insert(key.ty, true);
+            }
+            let Some(r#impl) = self.impls.project(r#impl) else {
+                continue;
+            };
+            let params = self.args.project_slice(params);
+            typec.impl_lookup.insert(key, (r#impl, params));
+        }
+        typec.module_items.clear();
+        let old_map = take_arc(&mut typec.macros);
+        for (key, r#macro) in old_map.into_iter() {
+            let Some(key) = self.project_ty(key) else {
+                continue;
+            };
+            let Some(r#macro) = self.project_macro_impl(r#macro) else {
+                continue;
+            };
+            typec.macros.insert(key, r#macro);
+        }
+        for func in typec.builtin_funcs.iter_mut() {
+            *func = self
+                .funcs
+                .project(*func)
+                .expect("builtin funcs should be valid");
+        }
+        // typec.may_need_drop.relocate();
+        let old_map = take_arc(&mut typec.may_need_drop);
+        for (key, value) in old_map.into_iter() {
+            let Some(key) = self.project_ty(key) else {
+                continue;
+            };
+            typec.may_need_drop.insert(key, value);
+        }
+    }
+
+    fn project_macro_impl(
+        &mut self,
+        MacroImpl {
+            name,
+            r#impl,
+            params,
+        }: MacroImpl,
+    ) -> Option<MacroImpl> {
+        let params = self.args.project_slice(params);
+        let r#impl = r#impl
+            .map(|r#impl| self.impls.project(r#impl))
+            .transpose()?;
+        Some(MacroImpl {
+            name,
+            r#impl,
+            params,
+        })
+    }
+
+    fn project_impl_key(&mut self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
+        let ty = self.project_ty(ty)?;
+        let spec = self.project_spec(spec)?;
+        Some(ImplKey { ty, spec })
+    }
+
+    fn project_ty(&mut self, ty: Ty) -> Option<Ty> {
+        match ty {
+            Ty::Struct(s) => self.structs.project(s).map(Ty::Struct),
+            Ty::Enum(e) => self.enums.project(e).map(Ty::Enum),
+            Ty::Instance(i) => self.instances.project(i).map(Ty::Instance),
+            Ty::Pointer(p) => self.pointers.project(p).map(Ty::Pointer),
+            Ty::Param(index) => Some(Ty::Param(index)),
+            Ty::Builtin(b) => Some(Ty::Builtin(b)),
+        }
+    }
+
+    fn project_spec(&mut self, spec: Spec) -> Option<Spec> {
+        match spec {
+            Spec::Base(b) => self.base_specs.project(b).map(Spec::Base),
+            Spec::Instance(i) => self.spec_instances.project(i).map(Spec::Instance),
+        }
+    }
+}
+
+gen_typec! {
+    self
+    structs: Struct, MAX_FRAGMENT_SIZE,
+    pointers: Pointer, MAX_FRAGMENT_SIZE,
+    instances: Instance, MAX_FRAGMENT_SIZE,
+    base_specs: SpecBase, MAX_FRAGMENT_SIZE,
+    spec_instances: SpecInstance, MAX_FRAGMENT_SIZE,
+    funcs: Func, MAX_FRAGMENT_SIZE,
+    fields: Field, MAX_FRAGMENT_SIZE,
+    impls: Impl, MAX_FRAGMENT_SIZE,
+    spec_sums: Spec, MAX_FRAGMENT_SIZE,
+    params: FragSlice<Spec>, MAX_FRAGMENT_SIZE,
+    args: Ty, MAX_FRAGMENT_SIZE,
+    func_slices: FragRef<Func>, MAX_FRAGMENT_SIZE,
+    spec_funcs: SpecFunc, MAX_FRAGMENT_SIZE,
+    variants: Variant, MAX_FRAGMENT_SIZE,
+    enums: Enum, MAX_FRAGMENT_SIZE,
 }
 
 macro_rules! gen_index {
@@ -150,9 +277,9 @@ impl Typec {
             Ty::Param(..) => return (true, true),
             Ty::Pointer(..) | Ty::Builtin(..) => return (false, false),
             ty if let Some(is) = self.may_need_drop.get(&ty) => return (*is, false),
-            Ty::Struct(_) |
-            Ty::Enum(_) |
-            Ty::Instance(_) => (),
+            Ty::Struct(..) |
+            Ty::Enum(..) |
+            Ty::Instance(..) => (),
         };
         // its split since map entry handle must be dropped.
         let (is, param) = match ty {
