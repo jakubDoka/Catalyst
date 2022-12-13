@@ -38,7 +38,7 @@ impl<'a> Lexer<'a> {
     pub fn error_many(&self, got: TokKind, options: &[TokKind]) -> ! {
         let kind = options
             .iter()
-            .map(|o| format!("{:?}", o))
+            .map(|o| format!("{o:?}"))
             .collect::<Vec<_>>()
             .join(" or ");
         let line = self.inner.source()[..self.current.span.end].lines().count();
@@ -47,10 +47,7 @@ impl<'a> Lexer<'a> {
                 .rfind('\n')
                 .unwrap_or(0)
             + 1;
-        println!(
-            "expected {} but got {:?} at line {}, column {}",
-            kind, got, line, col
-        );
+        println!("expected {kind} but got {got:?} at line {line}, column {col}");
         panic!();
     }
 

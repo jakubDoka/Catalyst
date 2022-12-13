@@ -21,7 +21,7 @@ fn main() {
     };
 
     for (path, name) in dirs_ctor() {
-        println!("Compiling test case: {}", name);
+        println!("Compiling test case: {name}");
         Command::new("cargo")
             .current_dir(path)
             .args(["build"])
@@ -32,13 +32,13 @@ fn main() {
     scope(|h| {
         for (path, name) in dirs_ctor() {
             h.spawn(move || {
-                println!("Running test: {}", name);
-                Command::new(format!("target/debug/{}.exe", name))
+                println!("Running test: {name}");
+                Command::new(format!("target/debug/{name}.exe"))
                     .current_dir(path)
                     .args(std::env::args().nth(2))
                     .status()
                     .unwrap();
-                println!("Compiled and Run {}", name);
+                println!("Compiled and Run {name}");
             });
         }
     });
@@ -60,8 +60,8 @@ fn main() {
             let name = path.file_name().unwrap().to_str().unwrap();
             if cmd("git", &dir_path, ["ls-files", "--error-unmatch", name]) == 1 {
                 let content = read_to_string(&path).unwrap();
-                println!("New file {}:", name);
-                println!("{}", content);
+                println!("New file {name}:");
+                println!("{content}");
 
                 cmd("git", &dir_path, ["add", name]);
                 any_changes = true;
@@ -89,7 +89,7 @@ fn main() {
 }
 
 fn prompt(msg: &str) -> String {
-    print!("{}:", msg);
+    print!("{msg}:");
     std::io::stdout().flush().unwrap();
     read_input()
 }

@@ -80,7 +80,7 @@ mod util {
     }
 
     impl<'a> AstTransfer<'a> {
-        pub fn activate<'c, 'b>(&'c mut self) -> ActiveAstTransfer<'c, 'b> {
+        pub fn activate(&mut self) -> ActiveAstTransfer {
             ActiveAstTransfer(unsafe { mem::transmute(self) })
         }
 

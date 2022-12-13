@@ -50,7 +50,7 @@ impl Workspace {
     pub fn push_or_display(&mut self, packages: &Resources, snippet: Snippet) {
         if let Some(ref mut display) = self.display {
             let out = display.display_snippet(packages, &snippet);
-            println!("{}", out);
+            println!("{out}");
         } else {
             self.push(snippet);
         }

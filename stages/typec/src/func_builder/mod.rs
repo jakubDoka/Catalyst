@@ -801,11 +801,11 @@ impl TyChecker<'_> {
         })
     }
 
-    fn dot_path<'a>(
+    fn dot_path(
         &mut self,
         ty: Ty,
         path @ PathAst { slash, start, .. }: PathAst,
-        _builder: &mut TirBuilder<'a, '_>,
+        _builder: &mut TirBuilder,
     ) -> Option<DotPathResult> {
         if slash.is_some() {
             todo!();
@@ -2026,7 +2026,7 @@ impl TyChecker<'_> {
                 "parameters that are missing: {}",
                 missing
                     .iter()
-                    .map(|&i| format!("parameters[{}]", i))
+                    .map(|&i| format!("parameters[{i}]"))
                     .intersperse(", ".into())
                     .collect::<String>(),
             );

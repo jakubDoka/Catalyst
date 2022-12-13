@@ -20,7 +20,7 @@ fn main() {
         let ast = SourceCode::new(&mut lexer, path);
         for file in ast.files {
             println!("generating {}", file.path.display());
-            std::fs::write(&file.path, format!("{}", file)).expect("could not write file");
+            std::fs::write(&file.path, format!("{file}")).expect("could not write file");
         }
         frontier.extend(ast.calls.into_iter().map(|call| call.path));
     }

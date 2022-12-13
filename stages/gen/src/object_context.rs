@@ -249,17 +249,16 @@ impl Display for ObjectRelocationError {
         match self {
             ObjectRelocationError::Unsupported(reloc, format, correct) => write!(
                 f,
-                "relocation {:?} is not supported for the {:?} format, only on {:?} format",
-                reloc, format, correct
+                "relocation {reloc:?} is not supported for the {format:?} format, only on {correct:?} format"
             ),
             ObjectRelocationError::MissingSymbol(func) => {
-                write!(f, "missing symbol for function {:?}", func)
+                write!(f, "missing symbol for function {func:?}")
             }
             ObjectRelocationError::AddRelocation(err) => {
-                write!(f, "failed to add relocation: {}", err)
+                write!(f, "failed to add relocation: {err}")
             }
             ObjectRelocationError::MissingFunctionBody(func) => {
-                write!(f, "missing function body for function {:?}", func)
+                write!(f, "missing function body for function {func:?}")
             }
         }
     }
@@ -278,10 +277,10 @@ impl Display for ObjectCreationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnsupportedBinaryFormat(format) => {
-                write!(f, "unsupported binary format: {:?}", format)
+                write!(f, "unsupported binary format: {format:?}")
             }
             Self::UnsupportedArchitecture(architecture) => {
-                write!(f, "unsupported architecture: {:?}", architecture)
+                write!(f, "unsupported architecture: {architecture:?}")
             }
             Self::MissingEndianness => write!(f, "missing endianness"),
         }

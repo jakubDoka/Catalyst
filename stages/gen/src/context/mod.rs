@@ -520,8 +520,8 @@ impl std::error::Error for IsaCreationError {}
 impl std::fmt::Display for IsaCreationError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            IsaCreationError::Lookup(e) => write!(f, "Lookup error: {}", e),
-            IsaCreationError::Codegen(e) => write!(f, "Codegen error: {}", e),
+            IsaCreationError::Lookup(e) => write!(f, "Lookup error: {e}"),
+            IsaCreationError::Codegen(e) => write!(f, "Codegen error: {e}"),
         }
     }
 }

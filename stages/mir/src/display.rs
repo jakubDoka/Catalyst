@@ -27,7 +27,7 @@ impl MirChecker<'_, '_> {
     pub fn dbg_funcs(&self) {
         let mut buffer = String::new();
         self.display_funcs(&mut buffer).unwrap();
-        println!("{}", buffer);
+        println!("{buffer}");
     }
 
     fn display_func(&self, func: FragRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
@@ -264,7 +264,7 @@ impl MirChecker<'_, '_> {
                 | Builtin::U16
                 | Builtin::U8 => {
                     let first = advance();
-                    write!(res, "{}", first).unwrap();
+                    write!(res, "{first}").unwrap();
                 }
                 Builtin::Char => todo!(),
                 Builtin::Bool => {

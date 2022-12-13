@@ -40,7 +40,7 @@ impl TyChecker<'_> {
         match kind {
             TirKind::Int(computed) => {
                 if let Some(computed) = computed {
-                    write!(buffer, "{}", computed)?;
+                    write!(buffer, "{computed}")?;
                 } else {
                     buffer.push_str(span_str!(self, span));
                 }
@@ -145,7 +145,7 @@ impl TyChecker<'_> {
             }
             TirKind::Field(&FieldTir { field, header }) => {
                 self.display_tir(header, buffer, indent, var_count)?;
-                write!(buffer, ".{}", field)?;
+                write!(buffer, ".{field}")?;
             }
             TirKind::If(&IfTir { top, elifs, r#else }) => {
                 write!(buffer, "if ")?;
@@ -225,7 +225,7 @@ impl TyChecker<'_> {
     ) -> fmt::Result {
         match pat {
             UnitPatKindTir::Enum { id, value, .. } => {
-                write!(buffer, "\\{}~", id)?;
+                write!(buffer, "\\{id}~")?;
                 if let Some(value) = value {
                     self.display_pat(*value, buffer, indent, var_count)?;
                 }
@@ -249,7 +249,7 @@ impl TyChecker<'_> {
                 *var_count = var.index() + 1;
             }
             UnitPatKindTir::Int(Ok(span), ..) => buffer.push_str(span_str!(self, span)),
-            UnitPatKindTir::Int(Err(lit), ..) => write!(buffer, "{}", lit)?,
+            UnitPatKindTir::Int(Err(lit), ..) => write!(buffer, "{lit}")?,
             UnitPatKindTir::Wildcard => buffer.push('_'),
         }
         Ok(())

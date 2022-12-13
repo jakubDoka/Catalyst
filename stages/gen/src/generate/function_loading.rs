@@ -18,7 +18,7 @@ impl Generator<'_> {
         let prefix = if jit { "jit-" } else { "native-" };
         interner.intern_with(|s, t| {
             t.push_str(prefix);
-            write!(t, "{}", triple).unwrap();
+            write!(t, "{triple}").unwrap();
             typec.func_name(func_id, t, s);
             if let Some(first) = params.next() {
                 t.push('[');

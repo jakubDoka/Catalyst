@@ -526,7 +526,7 @@ impl PackageLoader<'_, '_> {
         ctx: &ResourceLoaderCtx,
     ) -> Option<PathBuf> {
         let url = self.resources.sources[source].span_str(url_span);
-        let full_url = &format!("https://{}", url);
+        let full_url = &format!("https://{url}");
         let versions = self.resolve_version(source, version, full_url)?;
         if let Some(version) = version && versions.is_empty() {
             self.invalid_version(source, version);
@@ -535,7 +535,7 @@ impl PackageLoader<'_, '_> {
         let max_version = versions
             .iter()
             .max()
-            .map(|(major, minor, patch)| format!("v{}.{}.{}", major, minor, patch))
+            .map(|(major, minor, patch)| format!("v{major}.{minor}.{patch}"))
             .unwrap_or_else(|| "main".to_string());
 
         let url = self.resources.sources[source].span_str(url_span);
@@ -591,7 +591,7 @@ impl PackageLoader<'_, '_> {
         };
 
         let version_str = &self.resources.sources[source].content[version.range()];
-        let tag_pattern = format!("refs/tags/{}", version_str);
+        let tag_pattern = format!("refs/tags/{version_str}");
         let args = ["ls-remote", url, &tag_pattern]
             .into_iter()
             .map(|s| s.as_ref());

@@ -123,7 +123,7 @@ impl fmt::Display for Mutability {
         match self {
             Mutability::Mutable => write!(f, "mut "),
             Mutability::Immutable => write!(f, ""),
-            Mutability::Param(i) => write!(f, "param{} ", i),
+            Mutability::Param(i) => write!(f, "param{i} "),
         }
     }
 }
@@ -243,7 +243,7 @@ impl Display for Ty {
             Ty::Enum(e) => write!(f, "enum{:x}", e.to_u32()),
             Ty::Instance(i) => write!(f, "inst{:x}", i.to_u32()),
             Ty::Pointer(p) => write!(f, "ptr{:x}", p.to_u32()),
-            Ty::Param(i) => write!(f, "param{}", i),
+            Ty::Param(i) => write!(f, "param{i}"),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }
     }

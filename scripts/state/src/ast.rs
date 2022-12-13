@@ -104,13 +104,13 @@ impl Display for File {
         writeln!(f, "//! This file is generated, do not edit!")?;
 
         for import in &self.imports {
-            writeln!(f, "{};", import)?;
+            writeln!(f, "{import};")?;
         }
 
         writeln!(f)?;
 
         for structure in &self.structs {
-            writeln!(f, "{}", structure)?;
+            writeln!(f, "{structure}")?;
 
             structure.write_constructor(f)?;
             writeln!(f)?;
@@ -193,14 +193,14 @@ impl Struct {
         writeln!(f, "\t#[allow(clippy::too_many_arguments)]")?;
         writeln!(f, "\tpub fn new(")?;
         for field in self.fields.iter().filter(|f| f.is_argument()) {
-            writeln!(f, "\t\t{},", field)?;
+            writeln!(f, "\t\t{field},")?;
         }
         writeln!(f, "\t) -> Self {{")?;
         writeln!(f, "\t\tSelf {{")?;
         for field in &self.fields {
             write!(f, "\t\t\t{}", &field.name)?;
             if let Some(ref default) = field.default {
-                write!(f, ": {}", default)?;
+                write!(f, ": {default}")?;
             }
             writeln!(f, ",")?;
         }
@@ -234,7 +234,7 @@ impl Struct {
 
     pub fn lifetimes(&self) -> String {
         (0..=self.unique)
-            .map(|i| format!("'a{}", i))
+            .map(|i| format!("'a{i}"))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -244,7 +244,7 @@ impl Display for Struct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "pub struct {}<{}> {{", self.name, self.lifetimes())?;
         for field in &self.fields {
-            writeln!(f, "\tpub {},", field)?;
+            writeln!(f, "\tpub {field},")?;
         }
         writeln!(f, "}}")
     }

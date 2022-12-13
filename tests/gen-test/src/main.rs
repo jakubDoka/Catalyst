@@ -36,8 +36,8 @@ impl TestState {
         }
 
         let thread_id = std::thread::current().id().as_u64().to_string();
-        let exe_path = format!("o-{}.exe", thread_id);
-        let obj_path = format!("o-{}.obj", thread_id);
+        let exe_path = format!("o-{thread_id}.exe");
+        let obj_path = format!("o-{thread_id}.obj");
 
         fs::write(&obj_path, out.binary).unwrap();
 

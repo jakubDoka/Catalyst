@@ -460,11 +460,7 @@ impl MirChecker<'_, '_> {
         }
     }
 
-    fn pattern_to_branch<'a>(
-        &mut self,
-        PatTir { kind, .. }: PatTir,
-        nodes: &mut BumpVec<Node<'a>>,
-    ) {
+    fn pattern_to_branch(&mut self, PatTir { kind, .. }: PatTir, nodes: &mut BumpVec<Node>) {
         match kind {
             PatKindTir::Unit(unit) => match unit {
                 UnitPatKindTir::Struct { fields } => {

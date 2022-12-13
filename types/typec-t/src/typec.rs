@@ -443,7 +443,7 @@ impl Typec {
                 } = self[ptr];
                 self.pointer_id(mutability, base, to, interner);
             }
-            Ty::Param(i) => write!(to, "param{}", i).unwrap(),
+            Ty::Param(i) => write!(to, "param{i}").unwrap(),
             Ty::Builtin(b) => to.push_str(b.name()),
         }
     }
@@ -732,7 +732,7 @@ impl Typec {
         interner: &Interner,
     ) {
         to.push('^');
-        write!(to, "{}", mutability).unwrap();
+        write!(to, "{mutability}").unwrap();
         self.display_ty_to(base, to, interner);
     }
 

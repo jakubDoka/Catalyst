@@ -400,7 +400,7 @@ impl<'a> From<&'a TokenPat<'a>> for TokenPat<'a> {
 impl TokenPat<'_> {
     pub fn as_string(&self) -> String {
         match self {
-            Self::Str(s) => format!("'{}'", s),
+            Self::Str(s) => format!("'{s}'"),
             Self::Kind(kind) => kind.as_str().to_string(),
         }
     }
