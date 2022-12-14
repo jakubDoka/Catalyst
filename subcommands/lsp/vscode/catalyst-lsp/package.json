@@ -11,6 +11,7 @@
   "categories": [
     "Programming Languages"
   ],
+  "main": "./client/out/extension",
   "contributes": {
     "languages": [{
       "id": "catalyst",
