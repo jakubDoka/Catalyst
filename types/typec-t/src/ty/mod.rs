@@ -7,7 +7,8 @@ use parsing_t::Vis;
 use storage::*;
 
 pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
-pub type ImplLookup = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
+pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), SmallVec<[FragRef<Impl>; 4]>>;
+pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 
 pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
 pub type SpecSums = FragMap<Spec, MAX_FRAGMENT_SIZE>;
@@ -28,7 +29,6 @@ pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
     pub methods: FragRefSlice<Func>,
-    pub next: Option<FragRef<Impl>>,
     pub span: Option<Span>,
 }
 

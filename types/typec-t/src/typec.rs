@@ -21,6 +21,7 @@ macro_rules! gen_typec {
                 pub $name: FragMap<$ty, $size>,
             )*
             pub impl_lookup: ImplLookup,
+            pub implemented: Implemented,
             pub module_items: ShadowMap<Module, ModuleItems>,
             pub macros: CMap<Ty, MacroImpl>,
             pub builtin_funcs: Vec<FragRef<Func>>,
@@ -84,19 +85,35 @@ impl TypecRelocator {
 
         typec.may_need_drop.clear();
 
-        let old_map = take_arc(&mut typec.impl_lookup);
+        let old_map = take_arc(&mut typec.implemented);
         for (key, (r#impl, params)) in old_map.into_iter() {
             let Some(key) = self.project_impl_key(key) else {
                 continue;
             };
-            if key.spec.base(typec) == SpecBase::DROP {
-                typec.may_need_drop.insert(key.ty, true);
-            }
             let Some(r#impl) = self.impls.project(r#impl) else {
                 continue;
             };
             let params = self.args.project_slice(params);
-            typec.impl_lookup.insert(key, (r#impl, params));
+            typec.implemented.insert(key, (r#impl, params));
+        }
+
+        let old_map = take_arc(&mut typec.impl_lookup);
+        for ((spec, ty), mut value) in old_map.into_iter() {
+            let Some(spec) = self.base_specs.project(spec) else {
+                continue;
+            };
+            let Some(ty) = self.project_ty(ty) else {
+                continue;
+            };
+            value.retain(|v| {
+                if let Some(r#impl) = self.impls.project(*v) {
+                    *v = r#impl;
+                    true
+                } else {
+                    false
+                }
+            });
+            typec.impl_lookup.insert((spec, ty), value);
         }
 
         typec.module_items.clear();
@@ -147,7 +164,7 @@ impl TypecRelocator {
         })
     }
 
-    fn project_impl_key(&self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
+    pub fn project_impl_key(&self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
         let ty = self.project_ty(ty)?;
         let spec = self.project_spec(spec)?;
         Some(ImplKey { ty, spec })
@@ -164,11 +181,24 @@ impl TypecRelocator {
         }
     }
 
-    fn project_spec(&self, spec: Spec) -> Option<Spec> {
+    pub fn project_generic_ty(&self, generic_ty: GenericTy) -> Option<GenericTy> {
+        match generic_ty {
+            GenericTy::Struct(s) => self.structs.project(s).map(GenericTy::Struct),
+            GenericTy::Enum(e) => self.enums.project(e).map(GenericTy::Enum),
+        }
+    }
+
+    pub fn project_spec(&self, spec: Spec) -> Option<Spec> {
         match spec {
             Spec::Base(b) => self.base_specs.project(b).map(Spec::Base),
             Spec::Instance(i) => self.spec_instances.project(i).map(Spec::Instance),
         }
+    }
+
+    pub fn project_signature(&self, Signature { ret, args, cc }: Signature) -> Option<Signature> {
+        let ret = self.project_ty(ret)?;
+        let args = self.args.project_slice(args);
+        Some(Signature { ret, cc, args })
     }
 }
 
@@ -887,7 +917,7 @@ impl Typec {
 
         let key = ImplKey { ty, spec };
 
-        if let Some(result) = self.impl_lookup.get(&key) {
+        if let Some(result) = self.implemented.get(&key) {
             return Some(Some(result.to_owned()));
         }
 
@@ -895,21 +925,15 @@ impl Typec {
             Ty::Instance(instance) => self[instance].base.as_ty(),
             _ => ty,
         };
-        let spec_base = match spec {
-            Spec::Instance(instance) => Spec::Base(self[instance].base),
-            _ => spec,
-        };
+        let spec_base = spec.base(self);
 
-        let base_key = ImplKey {
-            ty: ty_base,
-            spec: spec_base,
-        };
+        let base_impls = self
+            .impl_lookup
+            .get(&(spec_base, ty_base))
+            .map(|i| i.to_owned())?;
 
-        let mut base_impl = self.impl_lookup.get(&base_key).map(|i| i.to_owned().0);
-
-        while let Some(current) = base_impl {
-            let impl_ent = self.impls[current];
-            base_impl = impl_ent.next;
+        for r#impl in base_impls {
+            let impl_ent = self.impls[r#impl];
 
             let mut generic_slots = bumpvec![None; impl_ent.generics.len()];
             let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.key.ty);
@@ -945,9 +969,9 @@ impl Typec {
 
             let params = self.args.extend(params);
             if !self.contains_params(ty) {
-                self.impl_lookup.insert(key, (current, params));
+                self.implemented.insert(key, (r#impl, params));
             }
-            return Some(Some((current, params)));
+            return Some(Some((r#impl, params)));
         }
 
         if let Some(v) = missing_keys {

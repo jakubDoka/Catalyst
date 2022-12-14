@@ -218,7 +218,7 @@ impl<T, const SIZE: usize> FragMap<T, SIZE> {
         FragBase::new().as_map()
     }
 
-    pub fn split(&self) -> FragMap<T, SIZE> {
+    pub fn split(&self) -> Self {
         self.base.as_map()
     }
 

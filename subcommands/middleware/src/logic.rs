@@ -15,34 +15,56 @@ use cranelift_codegen::{
     Context,
 };
 use cranelift_frontend::FunctionBuilderContext;
-use diags::*;
-use gen::*;
-use lexing::*;
-use mir::*;
-use mir_t::*;
-use packaging::*;
-use packaging_t::*;
-use parsing::*;
-use parsing_t::*;
-use storage::*;
-use typec::*;
-use typec_t::*;
+
+use crate::*;
+
+pub struct DiagnosticView<'a> {
+    pub workspace: &'a mut Workspace,
+    pub resources: &'a Resources,
+}
+
+impl<'a> DiagnosticView<'a> {
+    pub fn changed_files(&self) -> impl Iterator<Item = &Path> {
+        self.resources
+            .sources
+            .values()
+            .filter_map(|s| s.changed.then_some(s.path.as_path()))
+    }
+}
 
 #[derive(Default)]
 pub struct Middleware {
     pub workspace: Workspace,
-    pub package_graph: PackageGraph,
-    pub resource_loading_ctx: ResourceLoaderCtx,
-    pub task_graph: TaskGraph,
-    pub entry_points: Vec<FragRef<Func>>,
-    pub incremental: Option<Incremental>,
-    pub relocator: TypecRelocator,
-    pub gen_relocator: FragRelocator<CompiledFunc>,
+    pub(crate) package_graph: PackageGraph,
+    pub(crate) resource_loading_ctx: ResourceLoaderCtx,
+    pub(crate) task_graph: TaskGraph,
+    pub(crate) entry_points: Vec<FragRef<Func>>,
+    pub(crate) incremental: Option<Incremental>,
+    pub(crate) relocator: TypecRelocator,
+    pub(crate) gen_relocator: FragRelocator<CompiledFunc>,
 }
 
 impl Middleware {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn take_incremental(&mut self) -> Option<Incremental> {
+        self.incremental.take()
+    }
+
+    pub fn set_resources(&mut self, resources: Resources) {
+        self.incremental = Some(Incremental {
+            resources,
+            ..default()
+        });
+    }
+
+    pub fn diagnostic_view(&mut self) -> Option<DiagnosticView> {
+        self.incremental.as_mut().map(|inc| DiagnosticView {
+            workspace: &mut self.workspace,
+            resources: &inc.resources,
+        })
     }
 
     fn reload_resources(
@@ -148,7 +170,7 @@ impl Middleware {
                 self.workspace.transfer(&mut task.workspace);
             }
 
-            if self.workspace.has_errors() {
+            if self.workspace.has_errors() || args.check {
                 drop(gen_senders);
                 worker_pool.extend(
                     threads
@@ -193,6 +215,17 @@ impl Middleware {
                 acc
             })
             .expect("zero worker situation is impossible");
+
+        if self.workspace.has_errors() || args.check {
+            self.incremental = Some(Incremental {
+                resources,
+                main_task,
+                worker_pool,
+                module_items,
+            });
+
+            return None;
+        }
 
         let entry_point = self.generate_entry_point(&mut main_task, &args.isa, entry_points);
 
@@ -353,8 +386,17 @@ impl Middleware {
                 resources
                     .module_order
                     .iter()
-                    .filter(|&&module| resources.modules[module].package == package)
+                    .filter(|&&module| {
+                        resources.modules[module].package == package
+                            && resources.sources[resources.modules[module].source].changed
+                    })
                     .collect_into(&mut package_task.task.modules_to_compile);
+
+                if package_task.task.modules_to_compile.is_empty() {
+                    self.task_graph.finish(package);
+                    tasks.push(package_task);
+                    continue;
+                }
 
                 sync_module_items(&mut package_task.task.typec.module_items, &module_items);
                 package_task
@@ -432,19 +474,6 @@ impl Middleware {
         module_items: &mut Map<VRef<Source>, ModuleItems>,
         to_remove: Vec<VRef<Source>>,
     ) {
-        /*
-            Overview:
-                1.
-                    - mark all reachable items
-                    - store their dependencies
-                2.
-                    - find gaps and ordered living items
-                    - move outer items into gaps
-                    - rewrite their dependencies
-                3.
-                    - truncate FragMaps, save free segments for later use
-        */
-
         for removed in to_remove {
             module_items.remove(&removed);
         }
@@ -455,6 +484,119 @@ impl Middleware {
             .for_each(|item| self.mark_module_item(item, resources, main_task));
 
         self.relocator.relocate(&mut main_task.typec);
+
+        self.rewrite_references(main_task)
+            .expect("since we relocated, this should be fine");
+    }
+
+    fn rewrite_references(&mut self, main_task: &mut Task) -> Option<()> {
+        for param in main_task.typec.params.iter_mut() {
+            *param = self.relocator.spec_sums.project_slice(*param);
+        }
+
+        for spec in main_task.typec.spec_sums.iter_mut() {
+            *spec = self.relocator.project_spec(*spec)?;
+        }
+
+        for Field { ty, .. } in main_task.typec.fields.iter_mut() {
+            *ty = self.relocator.project_ty(*ty)?;
+        }
+
+        for Struct {
+            generics, fields, ..
+        } in main_task.typec.structs.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *fields = self.relocator.fields.project_slice(*fields);
+        }
+
+        for Variant { ty, .. } in main_task.typec.variants.iter_mut() {
+            *ty = self.relocator.project_ty(*ty)?;
+        }
+
+        for Enum {
+            generics, variants, ..
+        } in main_task.typec.enums.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *variants = self.relocator.variants.project_slice(*variants);
+        }
+
+        for ty in main_task.typec.args.iter_mut() {
+            *ty = self.relocator.project_ty(*ty)?;
+        }
+
+        for Func {
+            generics,
+            owner,
+            upper_generics,
+            signature,
+            ..
+        } in main_task.typec.funcs.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *owner = owner
+                .map(|owner| self.relocator.project_ty(owner))
+                .transpose()?;
+            *upper_generics = self.relocator.params.project_slice(*upper_generics);
+            *signature = self.relocator.project_signature(*signature)?;
+        }
+
+        for Pointer { base, .. } in main_task.typec.pointers.iter_mut() {
+            *base = self.relocator.project_ty(*base)?;
+        }
+
+        for Instance { args, base } in main_task.typec.instances.iter_mut() {
+            *args = self.relocator.args.project_slice(*args);
+            *base = self.relocator.project_generic_ty(*base)?;
+        }
+
+        for SpecFunc {
+            generics,
+            signature,
+            parent,
+            ..
+        } in main_task.typec.spec_funcs.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *signature = self.relocator.project_signature(*signature)?;
+            *parent = self.relocator.base_specs.project(*parent)?;
+        }
+
+        for SpecBase {
+            generics,
+            inherits,
+            methods,
+            ..
+        } in main_task.typec.base_specs.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *inherits = self.relocator.spec_sums.project_slice(*inherits);
+            *methods = self.relocator.spec_funcs.project_slice(*methods);
+        }
+
+        for SpecInstance { base, args } in main_task.typec.spec_instances.iter_mut() {
+            *base = self.relocator.base_specs.project(*base)?;
+            *args = self.relocator.args.project_slice(*args);
+        }
+
+        for func in main_task.typec.func_slices.iter_mut() {
+            *func = self.relocator.funcs.project(*func)?;
+        }
+
+        for Impl {
+            generics,
+            key,
+            methods,
+            ..
+        } in main_task.typec.impls.iter_mut()
+        {
+            *generics = self.relocator.params.project_slice(*generics);
+            *key = self.relocator.project_impl_key(*key)?;
+            *methods = self.relocator.func_slices.project_slice(*methods);
+        }
+
+        Some(())
     }
 
     fn mark_module_item(
@@ -786,6 +928,7 @@ pub struct MiddlewareArgs {
     pub incremental_path: Option<PathBuf>,
     pub max_cores: Option<usize>,
     pub dump_ir: bool,
+    pub check: bool,
 }
 
 pub struct MiddlewareOutput {
@@ -822,9 +965,9 @@ impl WorkerConnections {
 }
 
 pub struct Worker {
-    pub state: WorkerState,
-    pub context: Context,
-    pub function_builder_ctx: FunctionBuilderContext,
+    pub(crate) state: WorkerState,
+    pub(crate) context: Context,
+    pub(crate) function_builder_ctx: FunctionBuilderContext,
 }
 
 impl Default for Worker {

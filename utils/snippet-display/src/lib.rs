@@ -7,13 +7,15 @@ use annotate_snippets::{
 use lexing_t::Span;
 use packaging_t::Resources;
 
+pub use annotate_snippets;
+
 #[derive(Default)]
-pub struct SnippetDisplay {
-    opts: FormatOptions,
-    tab_width: usize,
+pub struct SnippetDisplayImpl {
+    pub opts: FormatOptions,
+    pub tab_width: usize,
 }
 
-impl diags::SnippetDisplay for SnippetDisplay {
+impl diags::SnippetDisplay for SnippetDisplayImpl {
     fn display_snippet(&mut self, packages: &Resources, snippet: &diags::Snippet) -> String {
         if self.tab_width == 0 {
             self.tab_width = 4;
@@ -25,7 +27,7 @@ impl diags::SnippetDisplay for SnippetDisplay {
     }
 }
 
-impl SnippetDisplay {
+impl SnippetDisplayImpl {
     pub fn snippet<'a>(
         &'a self,
         buffer: &'a mut String,

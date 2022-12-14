@@ -2,6 +2,7 @@ import * as path from 'path';
 import { workspace, ExtensionContext } from 'vscode';
 
 import {
+  Executable,
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
@@ -11,14 +12,23 @@ import {
 let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
-  // The server is implemented in node
-  let serverModule = context.asAbsolutePath(path.join('server', 'out', 'server.exe'));
+  if (workspace.workspaceFolders === undefined) {
+    throw new Error("Extension works only on opened workspace.");
+  }
+
+  let cwd = workspace.workspaceFolders[0].uri.fsPath;
+
+  let command: Executable = {
+    command: "ctl",
+    args: ["lsp"],
+    options: { cwd }
+  };
 
   // If the extension is launched in debug mode then the debug server options are used
   // Otherwise the run options are used
   let serverOptions: ServerOptions = {
-    run: { command: serverModule, },
-    debug: { command: serverModule, },
+    run: command,
+    debug: command,
   };
 
   // Options to control the language client

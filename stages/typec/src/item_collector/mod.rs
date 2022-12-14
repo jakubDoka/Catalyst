@@ -129,10 +129,7 @@ impl TyChecker<'_> {
                 spec: parsed_spec,
             };
 
-            let group_key = ImplKey {
-                ty: parsed_ty_base,
-                spec: Spec::Base(parsed_spec_base),
-            };
+            let group_key = (parsed_spec_base, parsed_ty_base);
 
             let methods = {
                 let spec_methods = self.typec[parsed_spec_base].methods;
@@ -186,22 +183,17 @@ impl TyChecker<'_> {
             };
 
 
-            let impl_ent = Impl {
+            let impl_ent = self.typec.impls.push(Impl {
                 generics: parsed_generics,
                 key,
                 methods,
-                next: self
-                    .typec
-                    .impl_lookup
-                    .insert(
-                        group_key,
-                        // SAFETY: We push right after this
-                        (unsafe { self.typec.impls.next() }, default()),
-                    )
-                    .map(|(id, _)| id),
                 span: Some(r#impl.span()),
-            };
-            Some(self.typec.impls.push(impl_ent))
+            });
+            self.typec.impl_lookup
+                .entry(group_key)
+                .or_default()
+                .push(impl_ent);
+            Some(impl_ent)
         })
         .transpose()?;
 

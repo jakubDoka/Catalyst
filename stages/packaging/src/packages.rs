@@ -52,7 +52,7 @@ impl ResourceLoaderCtx {
 struct DummyPackage {
     root_module: PathBuf,
     root_module_span: Span,
-    deps: BumpVec<(NameAst, PathBuf)>,
+    deps: Vec<(NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
 }
@@ -60,7 +60,7 @@ struct DummyPackage {
 #[derive(Debug)]
 struct DummyModule {
     package: VRef<Package>,
-    deps: BumpVec<(NameAst, PathBuf)>,
+    deps: Vec<(NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
 }
@@ -239,8 +239,8 @@ impl PackageLoader<'_, '_> {
         package_id: VRef<Package>,
         source: VRef<Source>,
         ctx: &mut ResourceLoaderCtx,
-    ) -> BumpVec<(NameAst, PathBuf)> {
-        let mut deps = bumpvec![cap imports.items.len()];
+    ) -> Vec<(NameAst, PathBuf)> {
+        let mut deps = Vec::with_capacity(imports.items.len());
         for &ImportAst {
             name, path, span, ..
         } in imports.items.iter()
@@ -400,8 +400,8 @@ impl PackageLoader<'_, '_> {
         source_id: VRef<Source>,
         manifest: ManifestAst,
         ctx: &mut ResourceLoaderCtx,
-    ) -> BumpVec<(NameAst, PathBuf)> {
-        let mut deps = bumpvec![cap manifest.deps.len()];
+    ) -> Vec<(NameAst, PathBuf)> {
+        let mut deps = Vec::with_capacity(manifest.deps.len());
         for &ManifestDepAst {
             git,
             name,

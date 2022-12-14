@@ -25,6 +25,11 @@ impl Workspace {
         self.error_count = 0;
     }
 
+    pub fn drain(&mut self) -> impl Iterator<Item = Snippet> + '_ {
+        self.error_count = 0;
+        self.snippets.drain(..)
+    }
+
     pub fn transfer(&mut self, other: &mut Self) {
         self.snippets.append(&mut other.snippets);
         self.error_count += mem::take(&mut other.error_count);

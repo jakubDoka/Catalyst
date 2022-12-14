@@ -1,13 +1,12 @@
 [package]
-name = "lsp"
+name = "cc"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lsp-server = "0.6.0"
-lsp-types = "0.93.2"
 middleware = { path = "../middleware" }
-serde = "1.0.150"
-serde_json = "1.0.89"
+cli = { path = "../../utils/cli" }
+cc = "1.0.73"
+

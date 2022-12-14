@@ -1,14 +1,12 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+#![feature(default_free_fn)]
+#![feature(result_option_inspect)]
+#![feature(never_type)]
+#![feature(try_blocks)]
+#![feature(let_chains)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod logic;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use {
+    logic::{LspArgs, LspRuntime},
+    middleware::*,
+};

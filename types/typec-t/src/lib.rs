@@ -75,8 +75,8 @@ pub use {
     },
     ty::{
         ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
-        GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Impls, Instance, Instances,
-        Mutability, ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs,
+        GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Implemented, Impls, Instance,
+        Instances, Mutability, ParamSlices, Pointer, Pointers, Spec, SpecBase, SpecFunc, SpecFuncs,
         SpecInstance, SpecInstances, SpecSet, SpecSums, Struct, Ty, TyFlags, TypecLookup, Variant,
         Variants,
     },

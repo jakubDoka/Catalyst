@@ -112,7 +112,7 @@ pub mod items {
     use lexing_t::LineMapping;
     use packaging::Scheduler;
     use packaging_t::*;
-    use snippet_display::SnippetDisplay;
+    use snippet_display::SnippetDisplayImpl;
     use std::{mem, thread::Scope, time::SystemTime};
     use storage::*;
 
@@ -165,7 +165,7 @@ pub mod items {
         let runner = move || {
             let (mut ws, packages) = test_code(name);
 
-            let out = ws.display(&packages, &mut SnippetDisplay::default());
+            let out = ws.display(&packages, &mut SnippetDisplayImpl::default());
 
             let path = format!("{}/{}.txt", "test_out", name);
             if !Path::new("test_out").exists() {
@@ -207,7 +207,7 @@ pub mod items {
 
             let str = fmt
                 .workspace
-                .display(&packages, &mut SnippetDisplay::default());
+                .display(&packages, &mut SnippetDisplayImpl::default());
             let path = format!("test_out/{}-parse-out.txt", path.display());
 
             if str.trim() != "" {

@@ -16,6 +16,8 @@ parsing = { version = "0.1.0", path = "../../stages/parsing" }
 parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
 lexing = { version = "0.1.0", path = "../../stages/lexing" }
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
+lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
+snippet-display = { version = "0.1.0", path = "../../utils/snippet-display" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }

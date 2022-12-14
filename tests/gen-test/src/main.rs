@@ -6,14 +6,9 @@
 #![feature(fn_traits)]
 
 use std::{fs, path::Path, process::Command, vec};
-
-use middleware::*;
 use target_lexicon::Triple;
 
-use diags::*;
-use gen::*;
-use packaging_t::*;
-
+use middleware::*;
 use testing::*;
 
 #[derive(Default)]
@@ -100,21 +95,17 @@ impl Testable for TestState {
             incremental_path: None,
             max_cores: Some(1),
             dump_ir: true,
+            check: false,
         };
         if let Some(binary) = self.middleware.update(&args) {
             self.finally(binary);
         }
-        (
-            self.middleware.workspace,
-            self.middleware.incremental.unwrap().resources,
-        )
+        let res = self.middleware.take_incremental().unwrap().resources;
+        (self.middleware.workspace, res)
     }
 
     fn set_packages(&mut self, resources: Resources) {
-        self.middleware.incremental = Some(Incremental {
-            resources,
-            ..Default::default()
-        });
+        self.middleware.set_resources(resources);
     }
 }
 
