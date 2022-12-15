@@ -1169,9 +1169,6 @@ impl TyChecker<'_> {
                 let (func, _, params) = self.method_path(lhs.ty, rhs, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
-                        dbg!(&self.interner[self.typec[func].name]);
-                        dbg!(self.typec[func].upper_generics);
-
                         self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
                     }
                     FuncLookupResult::SpecFunc(func, ..) => {

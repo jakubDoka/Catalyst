@@ -98,8 +98,6 @@ impl TyChecker<'_> {
 
         for &(method, ..) in explicit_methods.iter() {
             Typec::get_mut(&mut self.typec.funcs, method).upper_generics = parsed_generics;
-            dbg!(self.typec[method].upper_generics, parsed_generics);
-            dbg!();
         }
 
         let parsed_ty_base = parsed_ty.base(self.typec);

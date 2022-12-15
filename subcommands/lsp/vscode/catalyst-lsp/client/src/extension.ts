@@ -1,10 +1,11 @@
 import * as path from 'path';
-import { workspace, ExtensionContext } from 'vscode';
+import { workspace, ExtensionContext, window } from 'vscode';
 
 import {
   Executable,
   LanguageClient,
   LanguageClientOptions,
+  RevealOutputChannelOn,
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
@@ -19,7 +20,7 @@ export function activate(context: ExtensionContext) {
   let cwd = workspace.workspaceFolders[0].uri.fsPath;
 
   let command: Executable = {
-    command: "ctl",
+    command: "catalyst",
     args: ["lsp"],
     options: { cwd }
   };
@@ -34,13 +35,22 @@ export function activate(context: ExtensionContext) {
   // Options to control the language client
   let clientOptions: LanguageClientOptions = {
     // Register the server for plain text documents
-    documentSelector: [{ scheme: 'file', language: 'Catalyst' }],
+    documentSelector: [{ scheme: 'file', language: 'Catalyst', pattern: "**.ctl" }],
+    outputChannel: window.createOutputChannel('Catalyst'),
+    revealOutputChannelOn: RevealOutputChannelOn.Error,
+    synchronize: {
+      // Notify the server about file changes to '.clientrc files contained in the workspace
+      fileEvents: [
+        workspace.createFileSystemWatcher('**/*.ctl'),
+        workspace.createFileSystemWatcher('**/*.ctlm'),
+      ]
+    }
   };
 
   // Create the language client and start the client.
   client = new LanguageClient(
-    'languageServerExample',
-    'Language Server Example',
+    'catalystLsp',
+    'Catalyst LSP',
     serverOptions,
     clientOptions
   );

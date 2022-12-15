@@ -83,7 +83,10 @@ impl LspRuntime {
     }
 
     pub fn run(mut self, connection: Connection) -> Option<!> {
+        eprintln!("Catalyst LSP server started");
         let params = self.initialize(&connection)?;
+        eprintln!("Catalyst LSP server initialized");
+
         self.middleware_args.path = params
             .root_uri
             .or_else(|| {
@@ -97,8 +100,11 @@ impl LspRuntime {
                 None
             })?;
 
+        eprintln!("listening for messages");
         for msg in &connection.receiver {
             self.should_terminate()?;
+
+            eprintln!("received message: {msg:?}");
 
             match msg {
                 Message::Request(req) => self.handle_request(req, &connection)?,
@@ -107,7 +113,7 @@ impl LspRuntime {
             }
         }
 
-        eprintln!("middleware terminated");
+        eprintln!("server terminated");
 
         None
     }
@@ -195,6 +201,13 @@ impl LspRuntime {
                     diags.diagnostics.push(report);
                 }
             }
+
+            if let Some(title) = diag.title {
+                connection.notify::<ShowMessage>(ShowMessageParams {
+                    typ: message_type(title.annotation_type),
+                    message: title.label.unwrap_or_default().to_string(),
+                });
+            }
         }
 
         for (.., file) in diags {
@@ -206,7 +219,7 @@ impl LspRuntime {
         connection.handle_shutdown(&req).ok()?.not().then_some(())?;
 
         self.dispatch_request(req, connection)
-            .inspect(|e| eprintln!("failed to dispatch request: {e:?}"))
+            .inspect_err(|e| eprintln!("failed to dispatch request: {e:?}"))
             .ok()
     }
 
@@ -223,22 +236,21 @@ impl LspRuntime {
         lsp_server::Notification,
         cast_notification,
         self, connection,
-        (_)DidChangeTextDocument => {
+        (_)DidChangeWatchedFiles => {
             self.recompile(connection);
         },
     }
 
     fn should_terminate(&mut self) -> Option<()> {
         matches!(
-            self.args.terminator.as_mut()?.try_recv(),
-            Ok(..) | Err(TryRecvError::Disconnected)
+            self.args.terminator.as_mut().map(|ch| ch.try_recv()),
+            Some(Ok(..) | Err(TryRecvError::Disconnected)) | None
         )
         .then_some(())
     }
 
     fn initialize(&mut self, connection: &Connection) -> Option<InitializeParams> {
         let server_capabilities = serde_json::to_value(&ServerCapabilities {
-            definition_provider: Some(OneOf::Left(true)),
             ..Default::default()
         })
         .inspect_err(|e| eprintln!("failed to serialize server capabilities: {e}"))
@@ -284,7 +296,7 @@ impl LspNotifier for Connection {
         let not = lsp_server::Notification::new(T::METHOD.to_string(), params);
         self.sender
             .send(Message::Notification(not))
-            .inspect(|e| eprintln!("failed to send notification: {e:?}"))
+            .inspect_err(|e| eprintln!("failed to send notification: {e:?}"))
             .ok()
     }
 }
@@ -305,7 +317,7 @@ impl LspSpanProjector for Resources {
     fn project_pos(&self, source: VRef<Source>, pos: u32) -> Position {
         let (line, col) = self.sources[source].line_mapping.line_info_at(pos as usize);
         Position {
-            line: line as u32,
+            line: line as u32 - 1,
             character: col as u32,
         }
     }
@@ -318,5 +330,15 @@ fn severity(annotation_type: AnnotationType) -> DiagnosticSeverity {
         AnnotationType::Info => DiagnosticSeverity::INFORMATION,
         AnnotationType::Note => DiagnosticSeverity::HINT,
         AnnotationType::Help => DiagnosticSeverity::HINT,
+    }
+}
+
+fn message_type(annotation_type: AnnotationType) -> MessageType {
+    match annotation_type {
+        AnnotationType::Error => MessageType::ERROR,
+        AnnotationType::Warning => MessageType::WARNING,
+        AnnotationType::Info => MessageType::INFO,
+        AnnotationType::Note => MessageType::INFO,
+        AnnotationType::Help => MessageType::INFO,
     }
 }
