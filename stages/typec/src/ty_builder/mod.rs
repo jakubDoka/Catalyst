@@ -35,10 +35,16 @@ impl TyChecker<'_> {
             .push(Interner::SELF, Ty::Param(generics.len() as u16), name.span);
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
-        self.typec[spec].inherits = self.build_inherits(inherits, &mut spec_set);
-        self.typec[spec].methods =
-            self.build_spec_methods(spec, body, &mut spec_set, generics.len() + 1);
-        self.typec[spec].generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let inherits = self.build_inherits(inherits, &mut spec_set);
+        let methods = self.build_spec_methods(spec, body, &mut spec_set, generics.len() + 1);
+        let generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let ent = Typec::get_mut(&mut self.typec.base_specs, spec);
+        *ent = SpecBase {
+            generics,
+            methods,
+            inherits,
+            ..*ent
+        };
 
         self.scope.end_frame(frame);
     }
@@ -77,14 +83,20 @@ impl TyChecker<'_> {
         self.typec.spec_funcs.extend(methods)
     }
 
-    pub fn build_enum(&mut self, ty: FragRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
+    pub fn build_enum(&mut self, r#enum: FragRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
         let frame = self.scope.start_frame();
 
         self.insert_generics(generics, 0);
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
-        self.typec[ty].variants = self.enum_variants(body, &mut spec_set);
-        self.typec[ty].generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let variants = self.enum_variants(body, &mut spec_set);
+        let generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let ent = Typec::get_mut(&mut self.typec.enums, r#enum);
+        *ent = Enum {
+            generics,
+            variants,
+            ..*ent
+        };
 
         self.scope.end_frame(frame);
     }
@@ -119,8 +131,14 @@ impl TyChecker<'_> {
         self.insert_generics(generics, 0);
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
-        self.typec[ty].fields = self.struct_fields(body, &mut spec_set);
-        self.typec[ty].generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let fields = self.struct_fields(body, &mut spec_set);
+        let generics = self.take_generics(0, generics.len(), &mut spec_set);
+        let ent = Typec::get_mut(&mut self.typec.structs, ty);
+        *ent = Struct {
+            generics,
+            fields,
+            ..*ent
+        };
 
         self.scope.end_frame(frame);
     }

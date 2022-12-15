@@ -400,24 +400,20 @@ impl Middleware {
             }
         }
 
-        dbg!();
-
         while self.task_graph.has_tasks() {
             while let Some(mut package_task) = tasks.pop() {
                 let Some(package) = self.task_graph.next_task() else {
-                    dbg!();
                     tasks.push(package_task);
                     break;
                 };
 
                 package_task.task.modules_to_compile.clear();
-                dbg!(&resources.module_order)
+                resources
+                    .module_order
                     .iter()
                     .filter(|&&module| {
                         resources.modules[module].package == package
-                            && dbg!(
-                                resources.sources[resources.modules[dbg!(module)].source].changed
-                            )
+                            && resources.sources[resources.modules[module].source].changed
                     })
                     .collect_into(&mut package_task.task.modules_to_compile);
 
@@ -806,11 +802,7 @@ impl Middleware {
         resources: &Resources,
         main_task: &Task,
     ) -> Option<()> {
-        if !generics.is_empty() {
-            dbg!(generics);
-        }
         self.relocator.params.mark_slice_summed(generics)?;
-        dbg!();
         for &spec_sum in &main_task.typec[generics] {
             self.mark_spec_sum(spec_sum, resources, main_task);
         }
@@ -863,10 +855,8 @@ impl Middleware {
             generics,
             inherits,
             methods,
-            name,
             ..
         } = main_task.typec[spec_base];
-        dbg!(&main_task.interner[name]);
         self.mark_generics(generics, resources, main_task);
         self.mark_spec_sum(inherits, resources, main_task);
         self.relocator.spec_funcs.mark_slice_summed(methods);
@@ -1082,6 +1072,7 @@ impl Worker {
                     );
                 }
                 package_task.task.modules_to_compile = modules;
+                package_task.task.freeze();
                 connections.package_products
                     .send((package_task, package))
                     .expect("tasks are always reused");
@@ -1093,6 +1084,7 @@ impl Worker {
 
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
+            compile_task.freeze();
             (self, Some(compile_task))
         })
     }
@@ -1195,6 +1187,11 @@ impl Worker {
         } in &task.compile_requests.queue
         {
             compiled.push(id);
+
+            if task.gen[id].inner.is_some() {
+                continue;
+            }
+
             let Func { signature, .. } = task.typec.funcs[func];
 
             let body = task
@@ -1572,6 +1569,12 @@ pub struct Task {
 }
 
 impl Task {
+    fn freeze(&mut self) {
+        self.interner.freeze();
+        self.typec.freeze();
+        self.gen.freeze();
+    }
+
     fn traverse_compile_requests(
         mut frontier: BumpVec<(CompileRequestChild, Option<usize>)>,
         tasks: &mut [Task],

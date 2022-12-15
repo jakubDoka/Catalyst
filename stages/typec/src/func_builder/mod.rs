@@ -1155,7 +1155,6 @@ impl TyChecker<'_> {
                 let (func, caller, params) = self.func_path(path, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
-                        dbg!(&self.interner[self.typec[func].name]);
                         let caller = caller.map(Ok);
                         self.direct_call(func, params, caller, call, inference, builder)
                     }
@@ -1170,6 +1169,9 @@ impl TyChecker<'_> {
                 let (func, _, params) = self.method_path(lhs.ty, rhs, builder)?;
                 match func {
                     FuncLookupResult::Func(func) => {
+                        dbg!(&self.interner[self.typec[func].name]);
+                        dbg!(self.typec[func].upper_generics);
+
                         self.direct_call(func, params, Some(Err(lhs)), call, inference, builder)
                     }
                     FuncLookupResult::SpecFunc(func, ..) => {

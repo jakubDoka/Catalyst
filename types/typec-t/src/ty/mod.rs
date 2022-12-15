@@ -594,6 +594,7 @@ bitflags! {
 }
 
 pub trait Humid: Sized {
+    fn is_water_drop(key: FragRef<Self>) -> bool;
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
     fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE>;

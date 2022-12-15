@@ -97,7 +97,9 @@ impl TyChecker<'_> {
         let parsed_generics = self.take_generics(0, generics.len(), &mut spec_set);
 
         for &(method, ..) in explicit_methods.iter() {
-            self.typec[method].upper_generics = parsed_generics;
+            Typec::get_mut(&mut self.typec.funcs, method).upper_generics = parsed_generics;
+            dbg!(self.typec[method].upper_generics, parsed_generics);
+            dbg!();
         }
 
         let parsed_ty_base = parsed_ty.base(self.typec);
@@ -445,7 +447,7 @@ impl TyChecker<'_> {
             let Some(id) = I::lookup_water_drop(name) else {
                 todo!()
             };
-            I::storage(self.typec)[id] = item;
+            *Typec::get_mut(I::storage(self.typec), id) = item;
             id
         } else {
             I::storage(self.typec).push(item)

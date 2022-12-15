@@ -72,9 +72,9 @@ macro_rules! gen_constant_groups {
         $crate::gen_constant_groups!(exp Self => $($name = [$($elem)*];)*);
     };
 
-    (exp $ty:ty => $($name:ident = [$($elem:ident)*];)*) => {
+    (exp $ty:ty, $wrap:ident => $($name:ident = [$($elem:ident)*];)*) => {
         $(
-            pub const $name: &'static [VRef<$ty>] = &[$(Self::$elem),*];
+            pub const $name: &'static [$wrap<$ty>] = &[$(Self::$elem),*];
         )*
     };
 }
@@ -87,7 +87,7 @@ macro_rules! gen_v_ref_constants {
 
     (exp $ty:ty => $($ident:ident)*) => {
         $crate::gen_v_ref_constants!($ty => (0) $($ident)*);
-        $crate::gen_constant_groups!(exp $ty => ALL = [$($ident)*];);
+        $crate::gen_constant_groups!(exp $ty, VRef => ALL = [$($ident)*];);
     };
 
     ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
@@ -106,6 +106,7 @@ macro_rules! gen_frag_ref_constants {
 
     (exp $ty:ty => $($ident:ident)*) => {
         $crate::gen_frag_ref_constants!($ty => (0) $($ident)*);
+        $crate::gen_constant_groups!(exp $ty, FragRef => ALL = [$($ident)*];);
     };
 
     ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {

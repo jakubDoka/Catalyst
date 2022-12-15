@@ -143,15 +143,6 @@ impl PackageLoader<'_, '_> {
             self.resources.sources.remove(key);
         }
 
-        dbg!(self.resources.packages.len());
-        dbg!(self.resources.modules.len());
-        dbg!(self
-            .resources
-            .sources
-            .values()
-            .filter(|s| s.changed)
-            .count());
-
         let changed = self
             .resources
             .sources

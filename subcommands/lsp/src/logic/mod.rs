@@ -255,15 +255,15 @@ impl LspRuntime {
     }
 }
 
-fn cast_request<R>(
-    req: lsp_server::Request,
-) -> Result<(RequestId, R::Params), ExtractError<lsp_server::Request>>
-where
-    R: lsp_types::request::Request,
-    R::Params: serde::de::DeserializeOwned,
-{
-    req.extract(R::METHOD)
-}
+// fn cast_request<R>(
+//     req: lsp_server::Request,
+// ) -> Result<(RequestId, R::Params), ExtractError<lsp_server::Request>>
+// where
+//     R: lsp_types::request::Request,
+//     R::Params: serde::de::DeserializeOwned,
+// {
+//     req.extract(R::METHOD)
+// }
 
 fn cast_notification<R>(
     req: lsp_server::Notification,

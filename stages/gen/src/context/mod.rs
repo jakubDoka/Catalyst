@@ -110,19 +110,21 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let func = CompiledFunc {
-            inner: Some(Arc::new(CompiledFuncInner {
+        unsafe {
+            debug_assert!(self.funcs.is_valid(id));
+            (*self.funcs.ptr_to(id)).inner = Some(Arc::new(CompiledFuncInner {
                 signature: ctx.func.signature.clone(),
                 bytecode: cc.buffer.data().to_vec(),
                 alignment: cc.alignment as u64,
                 relocs,
-            })),
-            ..self.funcs[id]
-        };
-
-        self.funcs[id] = func;
+            }));
+        }
 
         Ok(())
+    }
+
+    pub fn freeze(&mut self) {
+        self.funcs.freeze();
     }
 }
 

@@ -62,7 +62,6 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    /// This does allocate very small amount of memory.
     pub fn new() -> Self {
         let mut s = Interner {
             map: CMap::default(),
@@ -71,6 +70,10 @@ impl Interner {
         };
         s.init();
         s
+    }
+
+    pub fn freeze(&mut self) {
+        self.frag_map.freeze();
     }
 
     pub fn intern_scoped(&mut self, scope: impl Display, name: Ident) -> Ident {

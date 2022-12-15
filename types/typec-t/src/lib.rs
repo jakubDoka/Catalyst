@@ -39,9 +39,7 @@ macro_rules! gen_water_drops {
                 )*
             }
 
-            pub fn is_water_drop(s: FragRef<Self>) -> bool {
-                s <= Self::WATER_DROPS.last().unwrap().1
-            }
+
         }
 
         impl Humid for $target {
@@ -53,6 +51,9 @@ macro_rules! gen_water_drops {
             }
             fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE> {
                 &mut typec.$field
+            }
+            fn is_water_drop(s: FragRef<Self>) -> bool {
+                s <= *Self::ALL.last().unwrap()
             }
         }
     };

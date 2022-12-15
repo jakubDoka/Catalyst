@@ -1,10 +1,6 @@
 use core::fmt;
 use std::mem;
-use std::{
-    default::default,
-    iter,
-    ops::{Index, IndexMut},
-};
+use std::{default::default, iter, ops::Index};
 use std::{fmt::Write, sync::Arc};
 
 use crate::*;
@@ -26,6 +22,14 @@ macro_rules! gen_typec {
             pub macros: CMap<Ty, MacroImpl>,
             pub builtin_funcs: Vec<FragRef<Func>>,
             pub may_need_drop: CMap<Ty, bool>,
+        }
+
+        impl Typec {
+            pub fn freeze(&mut self) {
+                $(
+                    self.$name.freeze();
+                )*
+            }
         }
 
         #[derive(Default)]
@@ -237,11 +241,11 @@ macro_rules! gen_index {
                 }
             }
 
-            impl IndexMut<FragRef<$ty>> for Typec {
-                fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
-                    &mut self.$storage[index]
-                }
-            }
+            // impl IndexMut<FragRef<$ty>> for Typec {
+            //     fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
+            //         &mut self.$storage[index]
+            //     }
+            // }
 
             impl Index<FragSlice<$ty>> for Typec {
                 type Output = [$ty];
@@ -251,11 +255,11 @@ macro_rules! gen_index {
                 }
             }
 
-            impl IndexMut<FragSlice<$ty>> for Typec {
-                fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
-                    &mut self.$storage[index]
-                }
-            }
+            // impl IndexMut<FragSlice<$ty>> for Typec {
+            //     fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
+            //         &mut self.$storage[index]
+            //     }
+            // }
         )*
     };
 }
@@ -619,7 +623,7 @@ impl Typec {
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
         self.builtin_funcs
             .extend(Func::WATER_DROPS.map(|(.., func)| func));
-        self[Func::CAST] = Func {
+        *Self::get_mut(&mut self.funcs, Func::CAST) = Func {
             generics: self.params.extend([default(), default()]), // F, T
             signature: Signature {
                 cc: default(),
@@ -630,7 +634,7 @@ impl Typec {
             flags: FuncFlags::BUILTIN,
             ..default()
         };
-        self[Func::SIZEOF] = Func {
+        *Self::get_mut(&mut self.funcs, Func::SIZEOF) = Func {
             generics: self.params.extend([default()]), // T
             signature: Signature {
                 cc: default(),
@@ -660,7 +664,7 @@ impl Typec {
             };
 
             let func = if let Some(water_drop) = Func::lookup_water_drop(&interner[id]) {
-                self[water_drop] = func;
+                *Self::get_mut(&mut self.funcs, water_drop) = func;
                 water_drop
             } else {
                 self.funcs.push(func)
@@ -1190,6 +1194,20 @@ impl Typec {
                 Spec::Instance(self.spec_instance(base, args.as_slice(), interner))
             }
         })
+    }
+
+    pub fn get_mut<T: Humid>(
+        storage: &mut FragMap<T, MAX_FRAGMENT_SIZE>,
+        key: FragRef<T>,
+    ) -> &mut T {
+        debug_assert!(
+            storage.is_valid(key) || T::is_water_drop(key),
+            "key: {:?}, valid: {}, is_water_drop: {}",
+            key,
+            storage.is_valid(key),
+            T::is_water_drop(key)
+        );
+        unsafe { &mut *storage.ptr_to(key) }
     }
 }
 
