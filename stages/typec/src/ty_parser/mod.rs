@@ -155,7 +155,7 @@ impl TyChecker<'_> {
             match item {
                 ScopeItem::Ty(ty) => TyPathResult::Ty(ty),
                 ScopeItem::SpecBase(spec) => TyPathResult::Spec(spec),
-                item => self.invalid_symbol_type(item, start.span, TY_OR_MOD)?,
+                item => self.invalid_symbol_type(item, start.span, "type or spec")?,
             },
             match segments {
                 [] => None,
