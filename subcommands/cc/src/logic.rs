@@ -26,7 +26,7 @@ impl CcRuntime {
         }
 
         let dialogue = CliDialogue {
-            prompt: "cc >> ".to_string(),
+            prompt: "cc >>".to_string(),
             help: "todo".to_string(),
             exit_word: "exit".to_string(),
         };
@@ -59,7 +59,13 @@ impl CcRuntime {
                 };
 
                 self.args.insert(MiddlewareArgs {
-                    path: self.cli_input.args().first()?.into(),
+                    path: self
+                        .cli_input
+                        .args()
+                        .get(1)
+                        .cloned()
+                        .unwrap_or(".".into())
+                        .into(),
                     jit_isa: host_isa()?,
                     isa,
                     incremental_path: self.cli_input.value("incremental-path").map(|s| s.into()),
@@ -79,6 +85,11 @@ impl CcRuntime {
                 return None;
             };
 
+            if !view.workspace.has_errors() {
+                println!("No errors found.");
+                return None;
+            }
+
             let mut display = SnippetDisplayImpl {
                 opts: FormatOptions {
                     color: true,
@@ -87,7 +98,10 @@ impl CcRuntime {
                 tab_width: 4,
             };
 
-            view.workspace.display(view.resources, &mut display);
+            let diagnostics = view.workspace.display(view.resources, &mut display);
+
+            println!("{diagnostics}");
+            println!("Compilation failed.");
 
             return None;
         };
@@ -146,6 +160,8 @@ impl CcRuntime {
                 Ok(status) => println!("Exited with status: {status}"),
                 Err(err) => println!("Failed to run the executable: {err}"),
             }
+        } else {
+            println!("Compiled to: {}", path.display());
         }
 
         None

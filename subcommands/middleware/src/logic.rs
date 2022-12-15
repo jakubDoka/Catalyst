@@ -54,10 +54,12 @@ impl Middleware {
     }
 
     pub fn set_resources(&mut self, resources: Resources) {
-        self.incremental = Some(Incremental {
+        let mut incr = Incremental {
             resources,
             ..default()
-        });
+        };
+        incr.main_task.typec.init(&mut incr.main_task.interner);
+        self.incremental = Some(incr);
     }
 
     pub fn diagnostic_view(&mut self) -> Option<DiagnosticView> {
@@ -90,7 +92,11 @@ impl Middleware {
             mut main_task,
             mut worker_pool,
             mut module_items,
-        } = self.incremental.take().unwrap_or_default();
+        } = self.incremental.take().unwrap_or_else(|| {
+            let mut incr = Incremental::default();
+            incr.main_task.typec.init(&mut incr.main_task.interner);
+            incr
+        });
 
         main_task.ir_dump = args.dump_ir.then(String::new);
 
@@ -99,8 +105,6 @@ impl Middleware {
             main_task.mir.relocate(&self.relocator);
             main_task.gen.retain_incremental(&self.relocator.funcs);
         };
-
-        main_task.typec.init(&mut main_task.interner);
 
         if main_task.workspace.has_errors() {
             self.workspace.transfer(&mut main_task.workspace);
@@ -243,6 +247,12 @@ impl Middleware {
                 &main_task.typec,
                 &main_task.interner,
             )
+            .map_err(|err| {
+                if let ObjectRelocationError::MissingSymbol(id) = err {
+                    let func = main_task.gen[id].func;
+                    dbg!(&main_task.interner[main_task.typec[func].name]);
+                }
+            })
             .unwrap();
 
         let ir = main_task.ir_dump.take();
@@ -393,6 +403,7 @@ impl Middleware {
                     .collect_into(&mut package_task.task.modules_to_compile);
 
                 if package_task.task.modules_to_compile.is_empty() {
+                    dbg!("huh");
                     self.task_graph.finish(package);
                     tasks.push(package_task);
                     continue;
@@ -404,9 +415,15 @@ impl Middleware {
                     .expect("worker thread terminated prematurely");
             }
 
+            if tasks.len() == worker_count {
+                assert!(!self.task_graph.has_tasks());
+                break;
+            }
+
             let (mut package_task, mut package) = receiver
                 .recv()
                 .expect("All worker threads terminated prematurely");
+
             loop {
                 self.entry_points
                     .append(&mut package_task.task.entry_points);
@@ -482,6 +499,11 @@ impl Middleware {
             .values()
             .flat_map(|items| items.items.values())
             .for_each(|item| self.mark_module_item(item, resources, main_task));
+
+        main_task.typec.mark_builtin(&mut self.relocator);
+        for &builtin_func in &main_task.typec.builtin_funcs {
+            self.mark_func(builtin_func, resources, main_task);
+        }
 
         self.relocator.relocate(&mut main_task.typec);
 
@@ -1665,7 +1687,7 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let task_id = self.gen.get(key).map(|_| task_id);
+        let task_id = self.gen.get(key).is_none().then_some(task_id);
         let id = self
             .gen
             .get_or_insert(key, || CompiledFunc::new(func_id, key));

@@ -54,6 +54,16 @@ pub struct LspRuntime {
 }
 
 impl LspRuntime {
+    pub fn immediate() -> io::Result<()> {
+        let (connection, io_threads) = Connection::stdio();
+
+        Self::new(LspArgs::default())?.run(connection);
+
+        io_threads.join()?;
+
+        Ok(())
+    }
+
     pub fn new(args: LspArgs) -> io::Result<Self> {
         Ok(Self {
             middleware: default(),

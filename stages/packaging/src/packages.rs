@@ -143,7 +143,7 @@ impl PackageLoader<'_, '_> {
             self.resources.sources.remove(key);
         }
 
-        Some(to_remove)
+        Some(to_remove).filter(|v| !v.is_empty())
     }
 
     fn load_modules(

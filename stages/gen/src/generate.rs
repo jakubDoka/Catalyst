@@ -225,8 +225,6 @@ impl Generator<'_> {
                         continue;
                     }
 
-                    dbg!(s.typec.display_ty(ty, s.interner));
-
                     // prevents creation of extra block;
                     let &mut cur = current.get_or_insert_with(|| builder.create_block());
                     current = None;

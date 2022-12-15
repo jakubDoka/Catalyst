@@ -19,7 +19,7 @@ impl Iterator for CliDialogue {
                 eprintln!("CliDialogueError: could not flush stdout: {err}");
                 return None;
             };
-            let mut input = String::new();
+            let mut input = String::from("path ");
             if let Err(err) = io::stdin().read_line(&mut input) {
                 eprintln!("CliDialogueError: could not read from stdin: {err}");
                 return None;
@@ -31,10 +31,11 @@ impl Iterator for CliDialogue {
             }
             match CliInput::from_string(input) {
                 Ok(input) => {
-                    if let [arg] = input.args() && arg == &self.exit_word {
+                    if let [arg, ..] = input.args() && arg == &self.exit_word {
                         println!("Exiting...");
                         return None;
                     }
+                    print!("{:?} ", input.args());
                     return Some(input);
                 }
                 Err(e) => println!("CliDialogueError: invalid input: {e}"),
