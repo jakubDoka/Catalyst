@@ -113,6 +113,9 @@ impl TypecRelocator {
                     false
                 }
             });
+            if value.is_empty() {
+                continue;
+            }
             typec.impl_lookup.insert((spec, ty), value);
         }
 
@@ -613,13 +616,6 @@ impl Typec {
         self.init_builtin_funcs(interner);
     }
 
-    pub fn mark_builtin(&mut self, relocator: &mut TypecRelocator) {
-        SpecBase::mark_water_drops(&mut relocator.base_specs);
-        Enum::mark_water_drops(&mut relocator.enums);
-        Struct::mark_water_drops(&mut relocator.structs);
-        Func::mark_water_drops(&mut relocator.funcs);
-    }
-
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
         self.builtin_funcs
             .extend(Func::WATER_DROPS.map(|(.., func)| func));
@@ -937,7 +933,9 @@ impl Typec {
         let base_impls = self
             .impl_lookup
             .get(&(spec_base, ty_base))
-            .map(|i| i.to_owned())?;
+            .map(|i| i.to_owned())
+            .into_iter()
+            .flatten();
 
         for r#impl in base_impls {
             let impl_ent = self.impls[r#impl];

@@ -146,7 +146,7 @@ impl TyChecker<'_> {
                     return None;
                 };
                 let id = self.interner.intern_scoped(module.index(), ty.ident);
-                (self.lookup(id, path.span(), TY_OR_MOD)?, segments)
+                (self.lookup(id, path.span(), "type or spec")?, segments)
             }
             item => (item, segments),
         };

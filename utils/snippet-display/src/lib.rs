@@ -58,7 +58,7 @@ impl SnippetDisplayImpl {
                 .zip(slices)
                 .map(|(s, (span, str))| self.slice(packages, str, span, buffer, s))
                 .collect(),
-            opt: self.opts,
+            opt: dbg!(self.opts),
         }
     }
 

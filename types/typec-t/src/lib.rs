@@ -39,12 +39,6 @@ macro_rules! gen_water_drops {
                 )*
             }
 
-            pub fn mark_water_drops(relocator: &mut FragRelocator<Self>) {
-                $(
-                    relocator.mark(Self::$name);
-                )*
-            }
-
             pub fn is_water_drop(s: FragRef<Self>) -> bool {
                 s <= Self::WATER_DROPS.last().unwrap().1
             }

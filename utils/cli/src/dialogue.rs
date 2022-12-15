@@ -35,7 +35,6 @@ impl Iterator for CliDialogue {
                         println!("Exiting...");
                         return None;
                     }
-                    print!("{:?} ", input.args());
                     return Some(input);
                 }
                 Err(e) => println!("CliDialogueError: invalid input: {e}"),

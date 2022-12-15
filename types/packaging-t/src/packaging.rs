@@ -23,6 +23,10 @@ impl Resources {
         Self::default()
     }
 
+    pub fn no_changes(&self) -> bool {
+        self.sources.values().all(|s| !s.changed)
+    }
+
     pub fn source_path(&self, source: VRef<Source>) -> &Path {
         self.sources[source].path.as_path()
     }

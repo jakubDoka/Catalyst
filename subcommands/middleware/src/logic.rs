@@ -101,12 +101,14 @@ impl Middleware {
         main_task.ir_dump = args.dump_ir.then(String::new);
 
         if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, &args.path) {
+            self.relocator.clear();
+            self.gen_relocator.clear();
             self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
             main_task.mir.relocate(&self.relocator);
             main_task.gen.retain_incremental(&self.relocator.funcs);
         };
 
-        if main_task.workspace.has_errors() {
+        if main_task.workspace.has_errors() || resources.no_changes() {
             self.workspace.transfer(&mut main_task.workspace);
             self.incremental = Some(Incremental {
                 resources,
@@ -168,7 +170,13 @@ impl Middleware {
                 );
             }
 
-            let mut tasks = self.expand(package_receiver, package_tasks, &resources, workers_count);
+            let mut tasks = self.expand(
+                package_receiver,
+                package_tasks,
+                &resources,
+                workers_count,
+                &mut module_items,
+            );
 
             for task in tasks.iter_mut() {
                 self.workspace.transfer(&mut task.workspace);
@@ -370,8 +378,15 @@ impl Middleware {
         mut tasks: Vec<PackageTask>,
         resources: &Resources,
         worker_count: usize,
+        cached_items: &mut Map<VRef<Source>, ModuleItems>,
     ) -> Vec<Task> {
         let mut module_items = ShadowMap::new();
+
+        for (key, module) in resources.modules.iter() {
+            if let Some(items) = cached_items.remove(&module.source) {
+                module_items[key] = items;
+            }
+        }
 
         fn sync_module_items(
             target: &mut ShadowMap<Module, ModuleItems>,
@@ -385,25 +400,28 @@ impl Middleware {
             }
         }
 
+        dbg!();
+
         while self.task_graph.has_tasks() {
             while let Some(mut package_task) = tasks.pop() {
                 let Some(package) = self.task_graph.next_task() else {
+                    dbg!();
                     tasks.push(package_task);
                     break;
                 };
 
                 package_task.task.modules_to_compile.clear();
-                resources
-                    .module_order
+                dbg!(&resources.module_order)
                     .iter()
                     .filter(|&&module| {
                         resources.modules[module].package == package
-                            && resources.sources[resources.modules[module].source].changed
+                            && dbg!(
+                                resources.sources[resources.modules[dbg!(module)].source].changed
+                            )
                     })
                     .collect_into(&mut package_task.task.modules_to_compile);
 
                 if package_task.task.modules_to_compile.is_empty() {
-                    dbg!("huh");
                     self.task_graph.finish(package);
                     tasks.push(package_task);
                     continue;
@@ -441,12 +459,19 @@ impl Middleware {
         let leftover_tasks = receiver
             .into_iter()
             .take(worker_count - tasks.len())
-            .map(|(task, ..)| task.task);
-        tasks
+            .map(|(task, ..)| task.task)
+            .inspect(|task| sync_module_items(&mut module_items, &task.typec.module_items));
+        let res = tasks
             .into_iter()
             .map(|task| task.task)
             .chain(leftover_tasks)
-            .collect()
+            .collect();
+
+        for (key, items) in module_items.iter_mut() {
+            cached_items.insert(resources.modules[key].source, mem::take(items));
+        }
+
+        res
     }
 
     pub fn build_task_graph(&mut self, resources: &Resources) {
@@ -469,18 +494,21 @@ impl Middleware {
             .map(|package| resources.package_deps[package.deps].len())
             .map(|count| (count, default()))
             .collect_into(&mut self.task_graph.meta);
+        self.task_graph
+            .meta
+            .iter()
+            .zip(resources.packages.keys())
+            .filter_map(|(&(count, ..), package)| (count == 0).then_some(package))
+            .collect_into(&mut self.task_graph.frontier);
 
         for package_deps in edges.group_by(|(a, _), (b, _)| *a == *b) {
             let package = package_deps[0].0;
 
-            let (count, ref mut children) = self.task_graph.meta[package.index()];
+            let (.., ref mut children) = self.task_graph.meta[package.index()];
             *children = self
                 .task_graph
                 .inverse_graph
                 .extend(package_deps.iter().map(|&(_, dep)| dep));
-            if count == 0 {
-                self.task_graph.frontier.push_back(package);
-            }
         }
     }
 
@@ -500,15 +528,30 @@ impl Middleware {
             .flat_map(|items| items.items.values())
             .for_each(|item| self.mark_module_item(item, resources, main_task));
 
-        main_task.typec.mark_builtin(&mut self.relocator);
-        for &builtin_func in &main_task.typec.builtin_funcs {
-            self.mark_func(builtin_func, resources, main_task);
-        }
+        self.mark_builtin(resources, main_task);
 
         self.relocator.relocate(&mut main_task.typec);
 
         self.rewrite_references(main_task)
             .expect("since we relocated, this should be fine");
+    }
+
+    pub fn mark_builtin(&mut self, resources: &Resources, main_task: &mut Task) {
+        for (.., wd) in SpecBase::WATER_DROPS {
+            self.mark_spec_base(wd, resources, main_task);
+        }
+        for (.., wd) in Enum::WATER_DROPS {
+            self.mark_enum(wd, resources, main_task);
+        }
+        for (.., wd) in Struct::WATER_DROPS {
+            self.mark_struct(wd, resources, main_task);
+        }
+        for (.., wd) in Func::WATER_DROPS {
+            self.mark_func(wd, resources, main_task);
+        }
+        for &builtin_func in &main_task.typec.builtin_funcs {
+            self.mark_func(builtin_func, resources, main_task);
+        }
     }
 
     fn rewrite_references(&mut self, main_task: &mut Task) -> Option<()> {
@@ -763,7 +806,11 @@ impl Middleware {
         resources: &Resources,
         main_task: &Task,
     ) -> Option<()> {
+        if !generics.is_empty() {
+            dbg!(generics);
+        }
         self.relocator.params.mark_slice_summed(generics)?;
+        dbg!();
         for &spec_sum in &main_task.typec[generics] {
             self.mark_spec_sum(spec_sum, resources, main_task);
         }
@@ -816,8 +863,10 @@ impl Middleware {
             generics,
             inherits,
             methods,
+            name,
             ..
         } = main_task.typec[spec_base];
+        dbg!(&main_task.interner[name]);
         self.mark_generics(generics, resources, main_task);
         self.mark_spec_sum(inherits, resources, main_task);
         self.relocator.spec_funcs.mark_slice_summed(methods);
@@ -929,6 +978,7 @@ impl TaskGraph {
         self.meta.clear();
         self.frontier.clear();
         self.inverse_graph.clear();
+        self.done = 0;
     }
 
     fn has_tasks(&self) -> bool {

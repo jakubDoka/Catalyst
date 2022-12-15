@@ -85,6 +85,11 @@ impl CcRuntime {
                 return None;
             };
 
+            if view.resources.no_changes() {
+                println!("No changes detected.");
+                return None;
+            }
+
             if !view.workspace.has_errors() {
                 println!("No errors found.");
                 return None;

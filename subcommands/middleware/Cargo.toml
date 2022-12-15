@@ -20,7 +20,6 @@ lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
 snippet-display = { version = "0.1.0", path = "../../utils/snippet-display" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
-testing = { version = "0.1.0", path = "../../utils/testing" }
 typec = { version = "0.1.0", path = "../../stages/typec" }
 typec-t = { version = "0.1.0", path = "../../types/typec-t" }
 cranelift-codegen = "0.90.0"

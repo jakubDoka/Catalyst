@@ -143,7 +143,22 @@ impl PackageLoader<'_, '_> {
             self.resources.sources.remove(key);
         }
 
-        Some(to_remove).filter(|v| !v.is_empty())
+        dbg!(self.resources.packages.len());
+        dbg!(self.resources.modules.len());
+        dbg!(self
+            .resources
+            .sources
+            .values()
+            .filter(|s| s.changed)
+            .count());
+
+        let changed = self
+            .resources
+            .sources
+            .iter()
+            .filter_map(|(k, s)| s.changed.then_some(k));
+
+        Some(to_remove.into_iter().chain(changed).collect::<Vec<_>>()).filter(|v| !v.is_empty())
     }
 
     fn load_modules(
@@ -464,8 +479,10 @@ impl PackageLoader<'_, '_> {
             && let Ok(last_modified) = last_modified
             && self.resources.sources[source].last_modified == last_modified
         {
-            self.resources.sources[source].changed = false;
-            self.resources.sources[source].dead = false;
+            if self.resources.sources[source].dead {
+                self.resources.sources[source].changed = false;
+                self.resources.sources[source].dead = false;
+            }
             return Some(source);
         }
 

@@ -1,5 +1,6 @@
 use core::slice;
 use std::{
+    any::type_name,
     default::default,
     hint::unreachable_unchecked,
     marker::PhantomData,
@@ -17,14 +18,7 @@ impl NonMaxU16 {
     }
 }
 
-#[cold]
-#[inline(never)]
-fn fail() -> Option<!> {
-    None
-}
-
 pub const MAX_FRAGMENT_SIZE: usize = (1 << 16) - 2;
-const INVALID_ACCESS: &str = "Invalid access.";
 const OUT_OF_SPACE: &str = "Out of space.";
 
 pub struct FragRelocator<T> {
@@ -47,12 +41,14 @@ impl<T: Clone> FragRelocator<T> {
     pub fn relocate<const SIZE: usize>(&mut self, map: &mut FragMap<T, SIZE>) {
         let mut allocator = Allocator::<SIZE>::default();
 
+        dbg!(type_name::<T>());
+
         self.sort_temp.clear();
         self.sort_temp.extend(self.seen.drain());
         self.sort_temp.sort();
         self.mapping.reserve(self.seen.len());
 
-        let mut iter = self.seen.iter().copied().peekable();
+        let mut iter = self.sort_temp.iter().copied().peekable();
         let just_the_right_cap = 32;
         let mut buffer = bumpvec![cap just_the_right_cap];
         while let Some(key) = iter.next() {
@@ -63,7 +59,9 @@ impl<T: Clone> FragRelocator<T> {
                 buffer.push(key_peek);
                 iter.next();
             }
-            let slice = allocator.alloc(buffer.len() as u16).expect(OUT_OF_SPACE);
+            let slice = allocator
+                .alloc(buffer.len() as u16, map)
+                .expect(OUT_OF_SPACE);
             let slice_ref = FragSlice(slice, PhantomData);
             unsafe {
                 let new_key = FragRef(slice_ref.0.addr, PhantomData);
@@ -77,26 +75,19 @@ impl<T: Clone> FragRelocator<T> {
                 .collect_into(&mut self.mapping);
         }
 
-        // for (entry, next_entry) in self.mapping.iter_mut() {
-        //     let next = FragSlice(
-        //         allocator.alloc(entry.len() as u16).expect(OUT_OF_SPACE),
-        //         PhantomData,
-        //     );
-        //     *next_entry = Some(next);
-        //     let src = map.ptr_to(FragRef(entry.0.addr, PhantomData));
-        //     let dst = map.ptr_to(FragRef(next.0.addr, PhantomData));
-        //     unsafe {
-        //         ptr::copy(src, dst, entry.len());
-        //     }
-        // }
+        unsafe {
+            map.set_len_and_drop_overflow(allocator.taken_blocks());
+        }
 
-        // if let Some(entry) = self.mapping.last_entry() && let Some(last) = entry.get() {
-        //     map.base.inner.get_mut(last.0.global)
-        //         .expect(INVALID_ACCESS)
-        //         .truncate(allocator.local as usize);
-        // }
+        if let Some(last) = allocator.taken_blocks().checked_sub(1) {
+            unsafe {
+                let last = map.base.inner.get_mut(NonMaxU16(last as u16));
+                last.set_len_and_drop_overflow(allocator.local as usize);
+                map.current = last.clone();
+            }
+        }
 
-        map.truncate(allocator.taken_blocks());
+        map.base.inner.iter_mut().for_each(|x| x.freeze());
     }
 
     pub fn project(&self, entry: FragRef<T>) -> Option<FragRef<T>> {
@@ -127,9 +118,7 @@ impl<T: Clone> FragRelocator<T> {
     }
 
     pub fn mark_slice_summed(&mut self, entry: FragSlice<T>) -> Option<()> {
-        self.mark_slice(entry)
-            .any(|opt| opt.is_some())
-            .then_some(())
+        self.mark_slice(entry).fold(None, |acc, x| acc.or(x))
     }
 
     pub fn clear(&mut self) {
@@ -145,7 +134,7 @@ struct Allocator<const SIZE: usize> {
 }
 
 impl<const SIZE: usize> Allocator<SIZE> {
-    pub fn alloc(&mut self, size: u16) -> Option<FragSliceAddr> {
+    pub fn alloc<T>(&mut self, size: u16, map: &mut FragMap<T, SIZE>) -> Option<FragSliceAddr> {
         if self.local > SIZE as u16 - size {
             if size > SIZE as u16 {
                 return None;
@@ -155,13 +144,20 @@ impl<const SIZE: usize> Allocator<SIZE> {
                 return None;
             }
 
+            unsafe {
+                map.base
+                    .inner
+                    .get_mut(NonMaxU16(self.global))
+                    .set_len_and_drop_overflow(self.local as usize);
+            }
+
             self.local = size;
             self.global += 1;
         } else {
             self.local += size;
         }
 
-        Some(unsafe { FragSliceAddr::new(self.global, self.local, size) })
+        Some(unsafe { FragSliceAddr::new(self.global, self.local - size, size) })
     }
 
     pub fn taken_blocks(&self) -> usize {
@@ -170,7 +166,7 @@ impl<const SIZE: usize> Allocator<SIZE> {
 }
 
 pub struct FragBase<T, const SIZE: usize> {
-    inner: Fragment<Fragment<T, false, SIZE>, true, MAX_FRAGMENT_SIZE>,
+    inner: Fragment<Fragment<T, SIZE>, MAX_FRAGMENT_SIZE>,
 }
 
 impl<T, const SIZE: usize> FragBase<T, SIZE> {
@@ -209,7 +205,7 @@ impl<T, const SIZE: usize> Clone for FragBase<T, SIZE> {
 
 pub struct FragMap<T, const SIZE: usize> {
     base: FragBase<T, SIZE>,
-    current: Fragment<T, false, SIZE>,
+    current: Fragment<T, SIZE>,
     global: NonMaxU16,
 }
 
@@ -220,6 +216,10 @@ impl<T, const SIZE: usize> FragMap<T, SIZE> {
 
     pub fn split(&self) -> Self {
         self.base.as_map()
+    }
+
+    pub fn freeze(&mut self) {
+        self.current.freeze();
     }
 
     /// # Safety
@@ -353,28 +353,19 @@ impl<T, const SIZE: usize> FragMap<T, SIZE> {
     pub unsafe fn cross_access(&mut self, index: FragRef<T>) -> &mut T {
         let FragAddr { global, local } = index.0;
         if global == self.global {
-            self.current.get_mut(local).expect(INVALID_ACCESS)
+            self.current.get_mut(local)
         } else {
-            self.base
-                .inner
-                .get_mut(global)
-                .expect(INVALID_ACCESS)
-                .get_mut(local)
-                .expect(INVALID_ACCESS)
+            self.base.inner.get_mut(global).get_mut(local)
         }
     }
 
-    fn ptr_to(&mut self, src: FragRef<T>) -> *mut T {
+    unsafe fn ptr_to(&mut self, src: FragRef<T>) -> *mut T {
         let FragAddr { global, local } = src.0;
-        self.base
-            .inner
-            .get_mut(global)
-            .expect(INVALID_ACCESS)
-            .ptr_to(local)
+        (*self.base.inner.ptr_to(global)).ptr_to(local)
     }
 
-    fn truncate(&mut self, taken_blocks: usize) {
-        self.base.inner.truncate(taken_blocks);
+    unsafe fn set_len_and_drop_overflow(&mut self, taken_blocks: usize) {
+        self.base.inner.set_len_and_drop_overflow(taken_blocks);
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
@@ -403,14 +394,9 @@ impl<T, const SIZE: usize> Index<FragRef<T>> for FragMap<T, SIZE> {
     fn index(&self, index: FragRef<T>) -> &Self::Output {
         let FragAddr { global, local } = index.0;
         if global == self.global {
-            self.current.get(local).expect(INVALID_ACCESS)
+            self.current.get(local, true)
         } else {
-            self.base
-                .inner
-                .get(global)
-                .expect(INVALID_ACCESS)
-                .get(local)
-                .expect(INVALID_ACCESS)
+            self.base.inner.get(global, false).get(local, false)
         }
     }
 }
@@ -418,11 +404,13 @@ impl<T, const SIZE: usize> Index<FragRef<T>> for FragMap<T, SIZE> {
 impl<T, const SIZE: usize> IndexMut<FragRef<T>> for FragMap<T, SIZE> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         let FragAddr { global, local } = index.0;
-        if global == self.global {
-            self.current.get_mut(local).expect(INVALID_ACCESS)
-        } else {
-            panic!("{}", INVALID_ACCESS)
-        }
+
+        debug_assert!(
+            global == self.global,
+            "cannot mutate a value from another fragment"
+        );
+
+        self.current.get_mut(local)
     }
 }
 
@@ -432,17 +420,15 @@ impl<T, const SIZE: usize> Index<FragSlice<T>> for FragMap<T, SIZE> {
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
         let FragSliceAddr {
             addr: FragAddr { global, local },
-            len: end,
+            len,
         } = index.0;
         if global == self.global {
-            self.current.get_slice(local, end).expect(INVALID_ACCESS)
+            self.current.get_slice(local, len, true)
         } else {
             self.base
                 .inner
-                .get(global)
-                .expect(INVALID_ACCESS)
-                .get_slice(local, end)
-                .expect(INVALID_ACCESS)
+                .get(global, false)
+                .get_slice(local, len, false)
         }
     }
 }
@@ -451,26 +437,23 @@ impl<T, const SIZE: usize> IndexMut<FragSlice<T>> for FragMap<T, SIZE> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         let FragSliceAddr {
             addr: FragAddr { global, local },
-            len: end,
+            len,
         } = index.0;
-        if global == self.global {
-            self.current
-                .get_slice_mut(local, end)
-                .expect(INVALID_ACCESS)
-        } else {
-            panic!("{}", INVALID_ACCESS)
-        }
+
+        debug_assert!(global == self.global, "cannot mutate non local fragment");
+
+        self.current.get_slice_mut(local, len)
     }
 }
 
-struct Fragment<T, const SYNC: bool, const SIZE: usize> {
+struct Fragment<T, const SIZE: usize> {
     inner: NonNull<FragmentInner<T, SIZE>>,
 }
 
-unsafe impl<T, const SYNC: bool, const SIZE: usize> Sync for Fragment<T, SYNC, SIZE> where T: Sync {}
-unsafe impl<T, const SYNC: bool, const SIZE: usize> Send for Fragment<T, SYNC, SIZE> where T: Send {}
+unsafe impl<T, const SIZE: usize> Sync for Fragment<T, SIZE> where T: Sync {}
+unsafe impl<T, const SIZE: usize> Send for Fragment<T, SIZE> where T: Send {}
 
-impl<T, const SIZE: usize> Fragment<T, false, SIZE> {
+impl<T, const SIZE: usize> Fragment<T, SIZE> {
     unsafe fn next(&self) -> Option<NonMaxU16> {
         let len = self.len();
         if len < SIZE {
@@ -481,7 +464,7 @@ impl<T, const SIZE: usize> Fragment<T, false, SIZE> {
     }
 }
 
-impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
+impl<T, const SIZE: usize> Fragment<T, SIZE> {
     fn new() -> Self {
         let mut inner: Box<MaybeUninit<FragmentInner<T, SIZE>>> = Box::new_uninit();
         unsafe {
@@ -505,57 +488,83 @@ impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
         }
     }
 
-    fn truncate(&mut self, to_size: usize) {
+    unsafe fn set_len_and_drop_overflow(&mut self, to_size: usize) {
         let len = self.len();
         if to_size < len {
-            unsafe {
-                self.inner.as_mut().data[to_size..len]
-                    .iter_mut()
-                    .for_each(|x| x.assume_init_drop());
-                addr_of_mut!((*self.inner.as_ptr()).len).write(AtomicUsize::new(to_size));
-            }
+            self.inner.as_mut().data[to_size..len]
+                .iter_mut()
+                .for_each(|x| x.assume_init_drop());
         }
+        addr_of_mut!((*self.inner.as_ptr()).len).write(AtomicUsize::new(to_size));
     }
 
-    fn get(&self, index: NonMaxU16) -> Option<&T> {
+    fn get(&self, index: NonMaxU16, local: bool) -> &T {
         let index = index.get() as usize;
 
-        if index >= self.len() {
-            fail()?;
+        if local {
+            debug_assert!(
+                index < self.len(),
+                "index out of bounds, index: {}, len: {}",
+                index,
+                self.len()
+            );
+        } else {
+            debug_assert!(
+                index < self.frozen(),
+                "index out of bounds, index: {}, frozen: {}",
+                index,
+                self.frozen()
+            );
         }
 
-        Some(unsafe {
+        unsafe {
             (*self.inner.as_ptr())
                 .data
                 .get_unchecked(index)
                 .assume_init_ref()
-        })
+        }
     }
 
-    fn get_mut(&mut self, index: NonMaxU16) -> Option<&mut T> {
+    fn get_mut(&mut self, index: NonMaxU16) -> &mut T {
         let index = index.get() as usize;
 
-        if index >= self.len() {
-            fail()?;
-        }
+        debug_assert!(
+            index < self.len() && index >= self.frozen(),
+            "index out of bounds, index: {}, len: {}, frozen: {}",
+            index,
+            self.len(),
+            self.frozen()
+        );
 
-        Some(unsafe {
+        unsafe {
             (*self.inner.as_ptr())
                 .data
                 .get_unchecked_mut(index)
                 .assume_init_mut()
-        })
+        }
     }
 
-    fn get_slice(&self, index: NonMaxU16, len: NonMaxU16) -> Option<&[T]> {
+    fn get_slice(&self, index: NonMaxU16, len: NonMaxU16, local: bool) -> &[T] {
         let index = index.get() as usize;
         let len = len.get() as usize;
 
-        if index + len > self.len() {
-            fail()?;
+        if local {
+            debug_assert!(
+                index + len < self.len(),
+                "index out of bounds, index: {}, len: {}",
+                index + len,
+                self.len()
+            );
+        } else {
+            debug_assert!(
+                index + len < self.frozen(),
+                "index out of bounds, index: {}, frozen: {}",
+                index + len,
+                self.frozen()
+            );
         }
 
-        Some(unsafe {
+        unsafe {
             slice::from_raw_parts(
                 (*self.inner.as_ptr())
                     .data
@@ -563,18 +572,21 @@ impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
                     .assume_init_ref(),
                 len,
             )
-        })
+        }
     }
 
-    fn get_slice_mut(&mut self, index: NonMaxU16, len: NonMaxU16) -> Option<&mut [T]> {
+    fn get_slice_mut(&mut self, index: NonMaxU16, len: NonMaxU16) -> &mut [T] {
         let index = index.get() as usize;
         let len = len.get() as usize;
 
-        if index + len > self.len() {
-            fail()?;
-        }
+        debug_assert!(
+            index + len >= self.frozen() && index + len < self.len(),
+            "index out of bounds, index: {}, len: {}",
+            index + len,
+            self.frozen()
+        );
 
-        Some(unsafe {
+        unsafe {
             slice::from_raw_parts_mut(
                 (*self.inner.as_ptr())
                     .data
@@ -582,7 +594,7 @@ impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
                     .assume_init_mut(),
                 len,
             )
-        })
+        }
     }
 
     fn push(&mut self, value: T) -> Result<NonMaxU16, T> {
@@ -621,39 +633,38 @@ impl<T, const SYNC: bool, const SIZE: usize> Fragment<T, SYNC, SIZE> {
     }
 
     fn extend_len(&self, amount: usize) -> usize {
-        if SYNC {
-            unsafe { (*addr_of!((*self.inner.as_ptr()).len)).fetch_add(amount, Ordering::Relaxed) }
-        } else {
-            unsafe {
-                let value = addr_of!((*self.inner.as_ptr()).len).read().into_inner();
-                addr_of_mut!((*self.inner.as_ptr()).len).write(AtomicUsize::new(value + amount));
-                value
-            }
-        }
+        let inner = unsafe { self.inner.as_ref() };
+        let prev = inner.len.load(Ordering::Relaxed);
+        let new = prev + amount;
+        inner.len.store(new, Ordering::Relaxed);
+        prev
     }
 
     fn len(&self) -> usize {
-        if SYNC {
-            unsafe { (*self.inner.as_ptr()).len.load(Ordering::Relaxed) }
-        } else {
-            unsafe { addr_of!((*self.inner.as_ptr()).len).read().into_inner() }
-        }
+        unsafe { (*self.inner.as_ptr()).len.load(Ordering::Relaxed) }
     }
 
-    fn ptr_to(&mut self, local: NonMaxU16) -> *mut T {
+    fn frozen(&self) -> usize {
+        unsafe { (*self.inner.as_ptr()).frozen.load(Ordering::Relaxed) }
+    }
+
+    fn freeze(&mut self) {
+        let inner = unsafe { self.inner.as_mut() };
+        let prev = inner.len.load(Ordering::Relaxed);
+        inner.frozen.store(prev, Ordering::Relaxed);
+    }
+
+    unsafe fn ptr_to(&mut self, local: NonMaxU16) -> *mut T {
         let local = local.get() as usize;
-        unsafe {
-            self.inner
-                .as_mut()
-                .data
-                .get_mut(local)
-                .expect(INVALID_ACCESS)
-                .assume_init_mut()
-        }
+        self.inner
+            .as_mut()
+            .data
+            .get_unchecked_mut(local)
+            .assume_init_mut()
     }
 }
 
-impl<T, const SYNC: bool, const SIZE: usize> Clone for Fragment<T, SYNC, SIZE> {
+impl<T, const SIZE: usize> Clone for Fragment<T, SIZE> {
     fn clone(&self) -> Self {
         unsafe {
             (*addr_of!((*self.inner.as_ptr()).ref_count))
@@ -663,7 +674,7 @@ impl<T, const SYNC: bool, const SIZE: usize> Clone for Fragment<T, SYNC, SIZE> {
     }
 }
 
-impl<T, const SYNC: bool, const SIZE: usize> Drop for Fragment<T, SYNC, SIZE> {
+impl<T, const SIZE: usize> Drop for Fragment<T, SIZE> {
     fn drop(&mut self) {
         unsafe {
             let ref_count = addr_of!((*self.inner.as_ptr()).ref_count);
@@ -695,6 +706,7 @@ impl Default for NonMaxU16 {
 struct FragmentInner<T, const SIZE: usize> {
     ref_count: AtomicUsize,
     len: AtomicUsize,
+    frozen: AtomicUsize,
     data: [MaybeUninit<T>; SIZE],
 }
 
