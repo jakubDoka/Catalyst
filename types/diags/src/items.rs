@@ -1,18 +1,22 @@
-use std::{borrow::Cow, mem};
+use std::mem;
 
 use lexing_t::*;
-use packaging_t::{Resources, Source};
+use packaging_t::*;
 use storage::*;
 
 pub trait SnippetDisplay {
-    fn display_snippet(&mut self, packages: &Resources, snippet: &Snippet) -> String;
+    fn display(&mut self, error: &dyn CtlError, packages: &Resources, out: &mut String);
+}
+
+pub trait CtlError: Send + Sync + 'static {
+    fn is_fatal(&self) -> bool;
+    fn fill_snippet(&self, snippet: &mut CtlSnippet);
 }
 
 #[derive(Default)]
 pub struct Workspace {
-    snippets: Vec<Snippet>,
+    snippets: Vec<Box<dyn CtlError>>,
     error_count: usize,
-    display: Option<Box<dyn SnippetDisplay + Send>>,
 }
 
 impl Workspace {
@@ -25,7 +29,7 @@ impl Workspace {
         self.error_count = 0;
     }
 
-    pub fn drain(&mut self) -> impl Iterator<Item = Snippet> + '_ {
+    pub fn drain(&mut self) -> impl Iterator<Item = Box<dyn CtlError>> + '_ {
         self.error_count = 0;
         self.snippets.drain(..)
     }
@@ -35,39 +39,22 @@ impl Workspace {
         self.error_count += mem::take(&mut other.error_count);
     }
 
-    pub fn display<'a>(
-        &'a mut self,
+    pub fn display(
+        &self,
         packages: &Resources,
-        display: &'a mut (dyn SnippetDisplay + Send),
-    ) -> String {
-        let display: &'a mut _ = if let Some(ref mut display) = self.display {
-            &mut **display
-        } else {
-            display
-        };
-        self.snippets
-            .iter()
-            .map(|s| display.display_snippet(packages, s))
-            .flat_map(|s| [s, "\n\n".to_string()])
-            .collect()
-    }
-
-    pub fn push_or_display(&mut self, packages: &Resources, snippet: Snippet) {
-        if let Some(ref mut display) = self.display {
-            let out = display.display_snippet(packages, &snippet);
-            println!("{out}");
-        } else {
-            self.push(snippet);
+        display: &mut impl SnippetDisplay,
+        out: &mut String,
+    ) {
+        for snippet in &self.snippets {
+            display.display(snippet.as_ref(), packages, out);
+            out.push_str("\n\n");
         }
     }
 
-    pub fn push(&mut self, sippet: Snippet) {
-        self.error_count += sippet
-            .title
-            .as_ref()
-            .map_or(false, |t| t.annotation_type == AnnotationType::Error)
-            as usize;
-        self.snippets.push(sippet);
+    pub fn push(&mut self, error: impl CtlError) -> Option<!> {
+        self.error_count += error.is_fatal() as usize;
+        self.snippets.push(Box::new(error));
+        None
     }
 
     pub fn error_count(&self) -> ErrorCount {
@@ -92,40 +79,43 @@ impl ErrorCount {
     }
 }
 
-pub type Str = Cow<'static, str>;
+#[derive(Debug, Default)]
+pub struct CtlSnippet {
+    pub title: CtlAnnotation,
+    pub footer: Vec<CtlAnnotation>,
+    pub source_annotations: Vec<CtlSourceAnnotation>,
+}
 
-#[derive(Debug)]
-pub struct Snippet {
-    pub title: Option<Annotation>,
-    pub footer: Vec<Option<Annotation>>,
-    pub slices: Vec<Option<Slice>>,
-    pub origin: String,
+impl CtlSnippet {
+    pub fn clear(&mut self) {
+        self.footer.clear();
+        self.source_annotations.clear();
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct CtlAnnotation {
+    pub id: Option<String>,
+    pub label: String,
+    pub annotation_type: CtlAnnotationType,
 }
 
 #[derive(Debug)]
-pub struct Annotation {
-    pub id: Option<Str>,
-    pub label: Option<Str>,
-    pub annotation_type: AnnotationType,
-}
-
-#[derive(Debug)]
-pub struct Slice {
+pub struct CtlSourceAnnotation {
     pub span: Span,
     pub origin: VRef<Source>,
-    pub annotations: Vec<Option<SourceAnnotation>>,
-    pub fold: bool,
+    pub label: String,
+    pub annotation_type: CtlAnnotationType,
 }
 
-#[derive(Debug)]
-pub struct SourceAnnotation {
-    pub range: Span,
-    pub label: Str,
-    pub annotation_type: AnnotationType,
+#[derive(Clone, Copy)]
+pub struct SourceLoc {
+    pub origin: VRef<Source>,
+    pub span: Span,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnnotationType {
+pub enum CtlAnnotationType {
     #[default]
     Error,
     Warning,

@@ -626,7 +626,7 @@ impl MirChecker<'_, '_> {
         moves: BumpVec<Move>,
         span: Span,
     ) -> Option<!> {
-        self.workspace.push(Snippet {
+        self.workspace.push(CtlSnippet {
             title: annotation!(err: ("cannot {} partially moved value", message)),
             footer: vec![],
             slices: vec![Some(Slice {

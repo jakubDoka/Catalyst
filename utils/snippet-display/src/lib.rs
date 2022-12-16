@@ -1,11 +1,16 @@
 #![feature(default_free_fn)]
+#![feature(slice_group_by)]
+
+use std::mem;
 
 use annotate_snippets::{
     display_list::{DisplayList, FormatOptions},
     snippet::*,
 };
+use diags::CtlSnippet;
 use lexing_t::Span;
 use packaging_t::Resources;
+use std::fmt::Write;
 
 pub use annotate_snippets;
 
@@ -13,17 +18,28 @@ pub use annotate_snippets;
 pub struct SnippetDisplayImpl {
     pub opts: FormatOptions,
     pub tab_width: usize,
+    snippet: CtlSnippet,
+    buffer: String,
 }
 
 impl diags::SnippetDisplay for SnippetDisplayImpl {
-    fn display_snippet(&mut self, packages: &Resources, snippet: &diags::Snippet) -> String {
+    fn display(&mut self, error: &dyn diags::CtlError, packages: &Resources, out: &mut String) {
         if self.tab_width == 0 {
             self.tab_width = 4;
         }
-        let mut buffer = String::new();
-        let snippet = self.snippet(&mut buffer, packages, snippet);
+        let mut internal_snippet = mem::take(&mut self.snippet);
+        error.fill_snippet(&mut internal_snippet);
+        internal_snippet
+            .source_annotations
+            .sort_unstable_by_key(|a| a.origin);
+        let mut buffer = mem::take(&mut self.buffer);
+        let snippet = self.snippet(&mut buffer, packages, &internal_snippet);
         let d_list: DisplayList = snippet.into();
-        d_list.to_string()
+        write!(out, "{d_list}").unwrap();
+        buffer.clear();
+        self.buffer = buffer;
+        internal_snippet.clear();
+        self.snippet = internal_snippet;
     }
 }
 
@@ -32,73 +48,74 @@ impl SnippetDisplayImpl {
         &'a self,
         buffer: &'a mut String,
         packages: &'a Resources,
-        snippet: &'a diags::Snippet,
+        snippet: &'a diags::CtlSnippet,
     ) -> Snippet<'a> {
+        let mut slices = vec![];
+        for g in snippet
+            .source_annotations
+            .group_by(|a, b| a.origin == b.origin)
+        {
+            let origin = g[0].origin;
+            let span = g.iter().map(|a| a.span).reduce(|a, b| a.joined(b)).unwrap();
+            let span = packages.sources[origin].reveal_span_lines(span);
+            let span_str = packages.sources[origin].span_str(span);
+            let fixed_span_str = Self::replace_tabs_with_spaces(buffer, span_str, self.tab_width);
+            slices.push((span, origin, fixed_span_str));
+        }
+
         let slices = snippet
-            .slices
-            .iter()
-            .filter_map(|s| s.as_ref())
-            .map(|s| (s, packages.sources[s.origin].reveal_span_lines(s.span)))
-            .map(|(s, span)| (span, packages.sources[s.origin].span_str(span)))
-            .map(|(s, str)| (s, self.replace_tabs_with_spaces(buffer, str)))
-            .collect::<Vec<_>>();
+            .source_annotations
+            .group_by(|a, b| a.origin == b.origin)
+            .zip(slices)
+            .map(|(g, (span, origin, fixed_span_str))| {
+                let source = &packages.sources[origin];
+                Slice {
+                    source: &buffer[fixed_span_str.range()],
+                    line_start: source.line_mapping.line_info_at(span.start as usize).0,
+                    origin: Some(
+                        packages.sources[origin]
+                            .path
+                            .to_str()
+                            .unwrap_or("<invalid path>"),
+                    ),
+                    annotations: g
+                        .iter()
+                        .map(|a| {
+                            Self::source_annotation(
+                                span.start as usize,
+                                &source.content,
+                                self.tab_width,
+                                a,
+                            )
+                        })
+                        .collect(),
+                    fold: false,
+                }
+            })
+            .collect();
 
         Snippet {
-            title: snippet.title.as_ref().map(|s| self.annotation(s)),
-            footer: snippet
-                .footer
-                .iter()
-                .filter_map(|s| s.as_ref())
-                .map(|s| self.annotation(s))
-                .collect(),
-            slices: snippet
-                .slices
-                .iter()
-                .filter_map(|i| i.as_ref())
-                .zip(slices)
-                .map(|(s, (span, str))| self.slice(packages, str, span, buffer, s))
-                .collect(),
+            title: Some(Self::annotation(&snippet.title)),
+            footer: snippet.footer.iter().map(Self::annotation).collect(),
+            slices,
             opt: self.opts,
         }
     }
 
-    fn annotation<'a>(&'a self, s: &'a diags::Annotation) -> Annotation<'a> {
+    fn annotation(s: &diags::CtlAnnotation) -> Annotation {
         Annotation {
             id: s.id.as_ref().map(|s| s.as_ref()),
-            label: s.label.as_ref().map(|s| s.as_ref()),
-            annotation_type: self.annotation_type(s.annotation_type),
+            label: Some(&s.label),
+            annotation_type: Self::annotation_type(s.annotation_type),
         }
     }
 
-    fn slice<'a>(
-        &'a self,
-        packages: &'a Resources,
-        str: Span,
-        span: Span,
-        buffer: &'a str,
-        slice: &'a diags::Slice,
-    ) -> Slice<'a> {
-        let source = &packages.sources[slice.origin];
-        Slice {
-            source: &buffer[str.range()],
-            line_start: source.line_mapping.line_info_at(slice.span.start()).0,
-            origin: Some(source.path.to_str().unwrap_or("<invalid path>")),
-            annotations: slice
-                .annotations
-                .iter()
-                .filter_map(|i| i.as_ref())
-                .map(|i| self.source_annotation(span.start(), &source.content, i))
-                .collect(),
-            fold: slice.fold,
-        }
-    }
-
-    fn compute_str_length(&self, s: &str) -> usize {
+    fn compute_str_length(s: &str, tab_width: usize) -> usize {
         let (mut len, mut local_len) = (0, 0);
         for c in s.chars() {
             match c {
                 '\t' => {
-                    let tab_len = self.tab_width - (local_len % self.tab_width);
+                    let tab_len = tab_width - (local_len % tab_width);
                     local_len += tab_len;
                     len += tab_len;
                 }
@@ -115,14 +132,14 @@ impl SnippetDisplayImpl {
         len
     }
 
-    fn replace_tabs_with_spaces(&self, buffer: &mut String, s: &str) -> Span {
+    fn replace_tabs_with_spaces(buffer: &mut String, s: &str, tab_width: usize) -> Span {
         let prev_len = buffer.len();
-        buffer.reserve(self.compute_str_length(s));
+        buffer.reserve(Self::compute_str_length(s, tab_width));
         let mut local_len = 0;
         for c in s.chars() {
             match c {
                 '\t' => {
-                    let tab_len = self.tab_width - (local_len % self.tab_width);
+                    let tab_len = tab_width - (local_len % tab_width);
                     local_len += tab_len;
                     for _ in 0..tab_len {
                         buffer.push(' ');
@@ -142,27 +159,29 @@ impl SnippetDisplayImpl {
     }
 
     fn source_annotation<'a>(
-        &self,
         start: usize,
         source: &str,
-        source_annotation: &'a diags::SourceAnnotation,
+        tab_width: usize,
+        source_annotation: &'a diags::CtlSourceAnnotation,
     ) -> SourceAnnotation<'a> {
-        let end = self.compute_str_length(&source[..source_annotation.range.end() - start]);
-        let start = self.compute_str_length(&source[..source_annotation.range.start() - start]);
+        let end =
+            Self::compute_str_length(&source[..source_annotation.span.end() - start], tab_width);
+        let start =
+            Self::compute_str_length(&source[..source_annotation.span.start() - start], tab_width);
         SourceAnnotation {
             range: (start, end),
             label: source_annotation.label.as_ref(),
-            annotation_type: self.annotation_type(source_annotation.annotation_type),
+            annotation_type: Self::annotation_type(source_annotation.annotation_type),
         }
     }
 
-    fn annotation_type(&self, annotation_type: diags::AnnotationType) -> AnnotationType {
+    fn annotation_type(annotation_type: diags::CtlAnnotationType) -> AnnotationType {
         match annotation_type {
-            diags::AnnotationType::Error => AnnotationType::Error,
-            diags::AnnotationType::Warning => AnnotationType::Warning,
-            diags::AnnotationType::Note => AnnotationType::Note,
-            diags::AnnotationType::Help => AnnotationType::Help,
-            diags::AnnotationType::Info => AnnotationType::Info,
+            diags::CtlAnnotationType::Error => AnnotationType::Error,
+            diags::CtlAnnotationType::Warning => AnnotationType::Warning,
+            diags::CtlAnnotationType::Note => AnnotationType::Note,
+            diags::CtlAnnotationType::Help => AnnotationType::Help,
+            diags::CtlAnnotationType::Info => AnnotationType::Info,
         }
     }
 }

@@ -323,22 +323,22 @@ impl LspSpanProjector for Resources {
     }
 }
 
-fn severity(annotation_type: AnnotationType) -> DiagnosticSeverity {
+fn severity(annotation_type: CtlAnnotationType) -> DiagnosticSeverity {
     match annotation_type {
-        AnnotationType::Error => DiagnosticSeverity::ERROR,
-        AnnotationType::Warning => DiagnosticSeverity::WARNING,
-        AnnotationType::Info => DiagnosticSeverity::INFORMATION,
-        AnnotationType::Note => DiagnosticSeverity::HINT,
-        AnnotationType::Help => DiagnosticSeverity::HINT,
+        CtlAnnotationType::Error => DiagnosticSeverity::ERROR,
+        CtlAnnotationType::Warning => DiagnosticSeverity::WARNING,
+        CtlAnnotationType::Info => DiagnosticSeverity::INFORMATION,
+        CtlAnnotationType::Note => DiagnosticSeverity::HINT,
+        CtlAnnotationType::Help => DiagnosticSeverity::HINT,
     }
 }
 
-fn message_type(annotation_type: AnnotationType) -> MessageType {
+fn message_type(annotation_type: CtlAnnotationType) -> MessageType {
     match annotation_type {
-        AnnotationType::Error => MessageType::ERROR,
-        AnnotationType::Warning => MessageType::WARNING,
-        AnnotationType::Info => MessageType::INFO,
-        AnnotationType::Note => MessageType::INFO,
-        AnnotationType::Help => MessageType::INFO,
+        CtlAnnotationType::Error => MessageType::ERROR,
+        CtlAnnotationType::Warning => MessageType::WARNING,
+        CtlAnnotationType::Info => MessageType::INFO,
+        CtlAnnotationType::Note => MessageType::INFO,
+        CtlAnnotationType::Help => MessageType::INFO,
     }
 }

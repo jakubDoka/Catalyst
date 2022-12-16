@@ -192,7 +192,7 @@ mod util {
                     })
                 })();
 
-                let snippet = Snippet {
+                let snippet = CtlSnippet {
                     title: annotation!(err: "infinitely sized type detected between defined types"),
                     footer: vec![annotation!(info: ("cycle: {}", cycle_chart))],
                     slices: vec![slice],

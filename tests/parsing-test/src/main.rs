@@ -26,7 +26,7 @@ impl Scheduler for TestState {
         let module_ent = &self.resources.modules[module];
         let content = &self.resources.sources[module_ent.source].content;
 
-        self.workspace.push(Snippet {
+        self.workspace.push(CtlSnippet {
             slices: vec![Slice {
                 span: Span::new(0..content.len()),
                 origin: module_ent.source,
