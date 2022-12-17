@@ -79,11 +79,21 @@ impl ErrorCount {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CtlSnippet {
     pub title: CtlAnnotation,
     pub footer: Vec<CtlAnnotation>,
     pub source_annotations: Vec<CtlSourceAnnotation>,
+}
+
+impl CtlError for CtlSnippet {
+    fn is_fatal(&self) -> bool {
+        self.title.annotation_type == CtlAnnotationType::Error
+    }
+
+    fn fill_snippet(&self, snippet: &mut CtlSnippet) {
+        self.clone_into(snippet);
+    }
 }
 
 impl CtlSnippet {
@@ -93,14 +103,14 @@ impl CtlSnippet {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CtlAnnotation {
     pub id: Option<String>,
     pub label: String,
     pub annotation_type: CtlAnnotationType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CtlSourceAnnotation {
     pub span: Span,
     pub origin: VRef<Source>,

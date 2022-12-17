@@ -1,5 +1,6 @@
 use lexing_t::*;
 use logos::Logos;
+use std::fmt;
 
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
@@ -91,6 +92,12 @@ macro_rules! gen_kind {
                     $(TokenKind::$pair1)|* => true,
                     _ => false,
                 }
+            }
+        }
+
+        impl fmt::Display for TokenKind {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.as_str())
             }
         }
 
@@ -228,21 +235,6 @@ gen_kind!(
         ) = EQUAL_SIGN_PRECEDENCE,
     }
 );
-
-// #[test]
-// fn test() {
-//     panic!("{:?}", TokenKind::lexer("Option\\None").into_iter().collect::<Vec<_>>());
-// }
-
-impl IntoIterator for TokenKind {
-    type Item = TokenKind;
-    type IntoIter = std::iter::Once<TokenKind>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        std::iter::once(self)
-    }
-}
 
 impl Default for TokenKind {
     #[inline]

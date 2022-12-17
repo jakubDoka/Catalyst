@@ -17,47 +17,33 @@ macro_rules! branch {
     (
         $self:expr => {
             $($cond:ident$(($($value:pat = $default:expr),*))? => $res:expr,)*
-            $(_ => $default_branch:expr,)?
+            @$options:ident => $default_branch:expr,
         }
     ) => {
         match $self.state.current.kind {
             $(TokenKind::$cond$(($($value),*))? => $res,)*
             _ => {
-                branch!(__default_branch__ $self, ($($cond$(($($value = $default),*))?),*) $($default_branch)?)
+                let $options = &[
+                    $(TokenKind::$cond$(($($default),*))?),*
+                ];
+                $default_branch
             },
-        }
-    };
-
-    (__default_branch__ $self:expr, ($($cond:ident$(($($value:pat = $default:expr),*))?),*)) => {
-        {
-            let terminals: &[TokenPat] = &[
-                $(TokenPat::Kind(TokenKind::$cond$(($($default),*))?)),*
-            ];
-            $self.expect_error(terminals);
-            return None
-        }
-    };
-
-
-    (__default_branch__ $self:expr, ($($ignored:tt)*) $default_branch:expr) => {
-        {
-            $default_branch
         }
     };
 
     (
         str $self:expr => {
             $($str:literal => $res:expr,)*
+            @$options:ident => $default_branch:expr,
         }
     ) => {
         match $self.current_token_str() {
             $($str => $res,)*
             _ => {
-                let terminals = [
+                let $options = [
                     $($str),*
                 ];
-                $self.expect_str_error(&terminals);
-                return None
+                $default_branch
             },
         }
     };

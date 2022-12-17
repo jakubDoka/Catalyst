@@ -68,12 +68,11 @@ macro_rules! source_annotation {
     };
 
     ($annotation_type:ident $loc:expr, $($label:tt)+) => {
-        $crate::CtlSourceAnnotation {
-            origin: $loc.origin,
-            span: $loc.span,
-            label: $crate::ctl_error_message!($($label)+),
-            annotation_type: $crate::annotation_type!($annotation_type),
-        }
+        $crate::source_annotation!($annotation_type $loc.origin, $loc.span, $($label)+)
+    };
+
+    ($annotation_type:ident $loc:expr) => {
+        $crate::source_annotation!($annotation_type $loc, "here")
     };
 }
 
@@ -109,7 +108,7 @@ macro_rules! ctl_errors {
                     $crate::ctl_error_fatality!($($fatality)?)
                 }
 
-                fn fill_snippet<'a>(&self, snippet: &mut CtlSnippet) {
+                fn fill_snippet<'a>(&self, snippet: &mut $crate::CtlSnippet) {
                     let &$name { $( $($ref)? $field),* } = self;
 
                     snippet.title = $crate::annotation!($($title)*);

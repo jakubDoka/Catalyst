@@ -15,3 +15,4 @@ storage = { path = "../../utils/storage" }
 diags = { path = "../../types/diags" }
 lexing-t = { path = "../../types/lexing-t" }
 parsing-t = { path = "../../types/parsing-t" }
+packaging-t = { path = "../../types/packaging-t" }

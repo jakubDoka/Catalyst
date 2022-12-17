@@ -32,9 +32,7 @@ pub struct GenericParamAst<'a> {
 impl<'a> Ast<'a> for GenericParamAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "generic param";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             bounds: ctx.parse()?,
@@ -56,22 +54,20 @@ pub struct PathAst<'a> {
 impl<'a> Ast<'a> for PathAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "ident chain";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let slash = ctx.try_advance(TokenKind::BackSlash).map(|t| t.span);
-        let start = if ctx.at_tok(TokenKind::Ident) {
+        let start = if ctx.at(TokenKind::Ident) {
             let span = ctx.advance().span;
             PathItemAst::Ident(NameAst::new(ctx, span))
         } else {
             PathItemAst::Params(ctx.parse()?)
         };
         let mut segments = bumpvec![];
-        while ctx.at_tok(TokenKind::BackSlash) {
-            if ctx.at_next_tok(TokenKind::Ident) {
+        while ctx.at(TokenKind::BackSlash) {
+            if ctx.at_next(TokenKind::Ident) {
                 ctx.advance();
                 segments.push(PathItemAst::Ident(ctx.name_unchecked()));
-            } else if ctx.at_next_tok(TokenKind::LeftBracket) {
+            } else if ctx.at_next(TokenKind::LeftBracket) {
                 ctx.advance();
                 segments.push(PathItemAst::Params(ctx.parse()?));
             } else {

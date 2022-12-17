@@ -1,3 +1,5 @@
+use diags::*;
+
 use super::*;
 
 list_meta!(StructCtorPatBodyMeta LeftCurly [Comma NewLine] RightCurly);
@@ -15,9 +17,7 @@ pub enum PatAst<'a> {
 impl<'a> Ast<'a> for PatAst<'a> {
     type Args = Option<Span>;
 
-    const NAME: &'static str = "pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         branch!(ctx => {
             Mut => {
                 if let Some(_mutable) = mutable {
@@ -32,13 +32,18 @@ impl<'a> Ast<'a> for PatAst<'a> {
                 _ => ctx.parse().map(|b| Self::Binding(mutable, b)),
             },
             BackSlash => {
-                if ctx.at_next_tok(TokenKind::Ident) {
+                if ctx.at_next(TokenKind::Ident) {
                     ctx.parse_args_alloc(mutable).map(Self::EnumCtor)
                 } else {
                     ctx.parse_args(mutable).map(Self::StructCtor)
                 }
             },
             Int => Some(Self::Int(ctx.advance().span)),
+            @options => ctx.workspace.push(ExpectedPattern {
+                got: ctx.state.current.kind,
+                options: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         })
     }
 
@@ -55,6 +60,17 @@ impl<'a> Ast<'a> for PatAst<'a> {
     }
 }
 
+ctl_errors! {
+    #[err => "expected a pattern but got {got}"]
+    #[info => "valid patterns can start with {options}"]
+    fatal struct ExpectedPattern {
+        #[err loc]
+        got: TokenKind,
+        options ref: String,
+        loc: SourceLoc,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct EnumCtorPatAst<'a> {
     pub slash: Span,
@@ -65,9 +81,7 @@ pub struct EnumCtorPatAst<'a> {
 impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
     type Args = Option<Span>;
 
-    const NAME: &'static str = "enum pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
             name: ctx.parse()?,
@@ -96,9 +110,7 @@ pub struct StructCtorPatAst<'a> {
 impl<'a> Ast<'a> for StructCtorPatAst<'a> {
     type Args = Option<Span>;
 
-    const NAME: &'static str = "struct ctor pattern";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(Self {
             slash: ctx.advance().span,
             fields: ctx.parse_args(mutable)?,
@@ -127,9 +139,7 @@ pub enum StructCtorPatFieldAst<'a> {
 impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
     type Args = Option<Span>;
 
-    const NAME: &'static str = "struct ctor pattern field";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Mut => {
                 if let Some(_mutable) = mutable {
@@ -143,10 +153,15 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
                 let name = ctx.parse()?;
                 branch! {ctx => {
                     Colon => Self::Named { name, colon: ctx.advance().span, pat: ctx.parse_args(mutable)? },
-                    _ => Self::Simple { name, mutable },
+                    @_option => Self::Simple { name, mutable },
                 }}
             },
             DoubleDot => Self::DoubleDot(ctx.advance().span),
+            @options => ctx.workspace.push(ExpectedFieldPattern {
+                got: ctx.state.current.kind,
+                options: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         }})
     }
 
@@ -159,5 +174,16 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
             Named { name, pat, .. } => name.span().joined(pat.span()),
             DoubleDot(span) => span,
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "expected start of field pattern but got {got}"]
+    #[info => "valid field patterns can start with {options}"]
+    fatal struct ExpectedFieldPattern {
+        #[err loc]
+        got: TokenKind,
+        options ref: String,
+        loc: SourceLoc,
     }
 }

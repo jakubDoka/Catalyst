@@ -1,3 +1,5 @@
+use diags::{ctl_errors, SourceLoc};
+
 use super::*;
 
 list_meta!(FuncArgMeta ? LeftParen Comma RightParen);
@@ -14,12 +16,7 @@ pub struct FuncDefAst<'a> {
 impl<'a> Ast<'a> for FuncDefAst<'a> {
     type Args = (Vis, Span);
 
-    const NAME: &'static str = "function definition";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (vis, start): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         let signature = ctx.parse()?;
         let body = ctx.parse::<FuncBodyAst>()?;
         let span = start.joined(body.span());
@@ -50,9 +47,7 @@ pub struct FuncSigAst<'a> {
 impl<'a> Ast<'a> for FuncSigAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "function signature";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             fn_span: ctx.advance().span,
             cc: ctx
@@ -83,13 +78,14 @@ pub struct FuncArgAst<'a> {
 impl<'a> Ast<'a> for FuncArgAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "function argument";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             ty: {
-                ctx.expect_advance(TokenKind::Colon)?;
+                ctx.expect_advance(TokenKind::Colon, |ctx| MissingFunctionArgColon {
+                    got: ctx.state.current.kind,
+                    loc: ctx.loc(),
+                })?;
                 ctx.parse()?
             },
         })
@@ -97,6 +93,16 @@ impl<'a> Ast<'a> for FuncArgAst<'a> {
 
     fn span(&self) -> Span {
         self.name.span().joined(self.ty.span())
+    }
+}
+
+ctl_errors! {
+    #[err => "expected ':' after function argument name but got {got}"]
+    #[info => "colon is required for consistency and readability"]
+    fatal struct MissingFunctionArgColon {
+        #[err loc]
+        got: TokenKind,
+        loc: SourceLoc,
     }
 }
 
@@ -110,9 +116,7 @@ pub enum FuncBodyAst<'a> {
 impl<'a> Ast<'a> for FuncBodyAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "function body";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             ThickRightArrow => {
                 let arrow = ctx.advance().span;
@@ -121,6 +125,11 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
             },
             LeftCurly => ctx.parse().map(Self::Block),
             Extern => Some(Self::Extern(ctx.advance().span)),
+            @options => ctx.workspace.push(ExpectingFunctionBody {
+                got: ctx.state.current.kind,
+                loc: ctx.loc(),
+                options: options.to_str(ctx),
+            })?,
         }}
     }
 
@@ -130,5 +139,16 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
             Self::Block(block) => block.span(),
             Self::Extern(span) => *span,
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "expected {options} but got {got} when parsing function body"]
+    #[info => "function bodies are required"]
+    fatal struct ExpectingFunctionBody {
+        #[err loc]
+        got: TokenKind,
+        loc: SourceLoc,
+        options ref: String,
     }
 }

@@ -27,16 +27,15 @@ impl Scheduler for TestState {
         let content = &self.resources.sources[module_ent.source].content;
 
         self.workspace.push(CtlSnippet {
-            slices: vec![Slice {
+            source_annotations: vec![CtlSourceAnnotation {
+                label: "test".into(),
+                annotation_type: AnnotationType::Info,
                 span: Span::new(0..content.len()),
                 origin: module_ent.source,
-                annotations: default(),
-                fold: false,
             }
             .into()],
             title: default(),
             footer: default(),
-            origin: default(),
         });
     }
 }

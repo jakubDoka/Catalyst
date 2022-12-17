@@ -1,13 +1,11 @@
 use std::fmt;
 
+use crate::*;
 use diags::*;
 use lexing::*;
 use lexing_t::*;
-use packaging_t::Source;
-
+use packaging_t::*;
 use storage::*;
-
-use crate::*;
 
 pub struct ParsingCtx<'ctx, 'ast: 'ctx, 'macros: 'ctx> {
     pub source_code: &'ctx str,
@@ -107,8 +105,8 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     }
 
     pub fn reduce_repetition(&mut self, pat: TokenKind) -> bool {
-        if self.at_tok(pat) {
-            while self.at_next_tok(pat) {
+        if self.at(pat) {
+            while self.at_next(pat) {
                 self.advance();
             }
             true
@@ -118,11 +116,11 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
     }
 
     pub fn try_advance_ignore_lines(&mut self, pat: TokenKind) -> Option<Token> {
-        if self.at_tok(pat) {
+        if self.at(pat) {
             return Some(self.advance());
         }
         self.reduce_repetition(TokenKind::NewLine);
-        if self.at_next_tok(pat) {
+        if self.at_next(pat) {
             self.advance();
             Some(self.advance())
         } else {
@@ -163,26 +161,29 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         self.state.next = self.lexer.next_tok();
     }
 
-    pub fn expect_advance(&mut self, expected: impl Into<TokenPat> + Clone) -> Option<Token> {
-        if self.at(expected.clone().into()) {
+    pub fn expect_advance<T: TokenPattern, E: CtlError>(
+        &mut self,
+        expected: T,
+        handler: impl FnOnce(&mut Self) -> E,
+    ) -> Option<Token> {
+        if self.at(expected) {
             Some(self.advance())
         } else {
-            let terminals = [expected.into()];
-            self.expect_error(terminals);
+            let err = handler(self);
+            self.workspace.push(err);
             None
         }
     }
 
-    pub fn optional_advance(&mut self, kind: impl Into<TokenPat>) -> Option<Token> {
-        if self.at([kind.into()]) {
-            Some(self.advance())
-        } else {
-            None
-        }
+    pub fn try_advance(&mut self, kind: impl TokenPattern) -> Option<Token> {
+        self.at(kind).then(|| self.advance())
     }
 
-    pub fn try_advance(&mut self, kind: TokenKind) -> Option<Token> {
-        (self.state.current.kind == kind).then(|| self.advance())
+    pub fn loc(&self) -> SourceLoc {
+        SourceLoc {
+            origin: self.source,
+            span: self.state.current.span,
+        }
     }
 
     pub fn skip(&mut self, tok: TokenKind) {
@@ -191,10 +192,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         }
     }
 
-    pub fn recover(
-        &mut self,
-        terminals: impl IntoIterator<Item = impl Into<TokenPat>> + Clone,
-    ) -> Option<Token> {
+    pub fn recover(&mut self, terminals: impl TokenPattern) -> Option<Token> {
         let mut pair_stack: BumpVec<(Span, TokenKind)> = bumpvec![];
         loop {
             if let Some(complement) = self.state.current.kind.complement() {
@@ -205,52 +203,44 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
                 if kind == self.state.current.kind {
                     pair_stack.pop();
                 } else if self.state.current.kind.is_closing() {
-                    self.unmatched_paren(kind, span);
-                    return None;
+                    self.workspace.push(UnmatchedParen {
+                        token_kind: kind,
+                        previous_paren: span,
+                        contradictor: self.state.current.span,
+                        source: self.source,
+                    })?;
                 }
                 self.advance();
                 continue;
             }
 
-            if self.matches(terminals.clone(), self.state.current) {
+            if self.matches(&terminals, self.state.current) {
                 let cur = self.state.current;
                 self.advance();
                 return Some(cur);
             }
 
-            if self.at_tok(TokenKind::Eof) {
-                self.expect_error(terminals);
-                return None;
+            if self.at(TokenKind::Eof) {
+                self.workspace.push(FailedRecoveryEof {
+                    source: self.source,
+                    recovery_symbols: terminals.to_str(self),
+                    eof: self.state.current.span,
+                })?;
             }
 
             self.advance();
         }
     }
 
-    pub fn matches(
-        &self,
-        terminals: impl IntoIterator<Item = impl Into<TokenPat>>,
-        token: Token,
-    ) -> bool {
-        terminals.into_iter().any(|pat| match pat.into() {
-            TokenPat::Kind(kind) => kind == token.kind,
-            TokenPat::Str(lit) => lit == self.inner_span_str(token.span),
-        })
+    pub fn matches(&self, terminals: impl TokenPattern, token: Token) -> bool {
+        terminals.matches(self, token)
     }
 
-    pub fn at_tok(&self, tok: TokenKind) -> bool {
-        self.state.current.kind == tok
-    }
-
-    pub fn at_next_tok(&self, tok: TokenKind) -> bool {
-        self.state.next.kind == tok
-    }
-
-    pub fn at(&self, terminals: impl IntoIterator<Item = impl Into<TokenPat>>) -> bool {
+    pub fn at(&self, terminals: impl TokenPattern) -> bool {
         self.matches(terminals, self.state.current)
     }
 
-    pub fn next_at(&self, terminals: impl IntoIterator<Item = impl Into<TokenPat>>) -> bool {
+    pub fn at_next(&self, terminals: impl TokenPattern) -> bool {
         self.matches(terminals, self.state.next)
     }
 
@@ -267,83 +257,95 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         NameAst::new(self, span)
     }
 
-    gen_error_fns! {
-        push expect_error(self, kinds: impl IntoIterator<Item = impl Into<TokenPat>> + Clone) {
-            err: (
-                "expected {} but got {}",
-                kinds.into_iter().map(|k| k.into().as_string()).collect::<BumpVec<_>>().join(" | "),
-                self.state.current.kind.as_str(),
-            );
-            info: ("{}", self.display_parse_stack());
-            (self.state.current.span, self.source) {
-                err[self.state.current.span]: "token located here";
-            }
-        }
+    // gen_error_fns! {
+    //     push expect_error(self, kinds: impl IntoIterator<Item = impl Into<TokenPat>> + Clone) {
+    //         err: (
+    //             "expected {} but got {}",
+    //             kinds.into_iter().map(|k| k.into().as_string()).collect::<BumpVec<_>>().join(" | "),
+    //             self.state.current.kind.as_str(),
+    //         );
+    //         info: ("{}", self.display_parse_stack());
+    //         (self.state.current.span, self.source) {
+    //             err[self.state.current.span]: "token located here";
+    //         }
+    //     }
 
-        push expect_str_error(self, strings: &[&str]) {
-            err: (
-                "expected '{}' but got '{}'",
-                strings.join("' | '"),
-                self.current_token_str(),
-            );
-            info: ("{}", self.display_parse_stack());
-            (self.state.current.span, self.source) {
-                err[self.state.current.span]: "token located here";
-            }
-        }
+    //     push expect_str_error(self, strings: &[&str]) {
+    //         err: (
+    //             "expected '{}' but got '{}'",
+    //             strings.join("' | '"),
+    //             self.current_token_str(),
+    //         );
+    //         info: ("{}", self.display_parse_stack());
+    //         (self.state.current.span, self.source) {
+    //             err[self.state.current.span]: "token located here";
+    //         }
+    //     }
 
-        push unmatched_paren(self, kind: TokenKind, span: Span) {
-            err: ("unmatched paren {}", kind.as_str());
-            info: ("{}", self.display_parse_stack());
-            (span.joined(self.state.current.span), self.source) {
-                err[span]: "the starting paren";
-            }
-        }
+    //     push unmatched_paren(self, kind: TokenKind, span: Span) {
+    //         err: ("unmatched paren {}", kind.as_str());
+    //         info: ("{}", self.display_parse_stack());
+    //         (span.joined(self.state.current.span), self.source) {
+    //             err[span]: "the starting paren";
+    //         }
+    //     }
 
-        push invalid_struct_constructor_type(self, span: Span) {
-            err: "invalid struct constructor type";
-            help: ("{}", concat!(
-                "this part of the constructor has same syntax as type, with a little",
-                " difference which is a '\\' between path and generic parameters"
-            ));
-            info: ("{}", self.display_parse_stack());
-            (span, self.source) {
-                err[span]: "this is invalid";
-            }
-        }
+    //     push invalid_struct_constructor_type(self, span: Span) {
+    //         err: "invalid struct constructor type";
+    //         help: ("{}", concat!(
+    //             "this part of the constructor has same syntax as type, with a little",
+    //             " difference which is a '\\' between path and generic parameters"
+    //         ));
+    //         info: ("{}", self.display_parse_stack());
+    //         (span, self.source) {
+    //             err[span]: "this is invalid";
+    //         }
+    //     }
 
-        push invalid_instance_path(self, path: Span) {
-            err: "invalid path for instance";
-            help: "valid syntax for path in instance is `<module>::<item> | <item>`";
-            (path, self.source) {
-                err[path]: "this is invalid";
-            }
-        }
+    //     push invalid_instance_path(self, path: Span) {
+    //         err: "invalid path for instance";
+    //         help: "valid syntax for path in instance is `<module>::<item> | <item>`";
+    //         (path, self.source) {
+    //             err[path]: "this is invalid";
+    //         }
+    //     }
 
-        push invalid_typed_path(self, path: Span) {
-            err: "invalid path for type";
-            help: "valid syntax for path in type is `<module>::<item>::[<generics>...] | <item>::[<generics>...]`";
-            (path, self.source) {
-                err[path]: "this is invalid";
-            }
-        }
+    //     push invalid_typed_path(self, path: Span) {
+    //         err: "invalid path for type";
+    //         help: "valid syntax for path in type is `<module>::<item>::[<generics>...] | <item>::[<generics>...]`";
+    //         (path, self.source) {
+    //             err[path]: "this is invalid";
+    //         }
+    //     }
 
-        push invalid_spec_syntax(self, span: Span) {
-            err: "invalid syntax for spec";
-            help: "valid syntax of spec is only `<path> | <path>[<type>, ..]";
-            (span, self.source) {
-                err[span]: "this is invalid";
-            }
-        }
+    //     push invalid_spec_syntax(self, span: Span) {
+    //         err: "invalid syntax for spec";
+    //         help: "valid syntax of spec is only `<path> | <path>[<type>, ..]";
+    //         (span, self.source) {
+    //             err[span]: "this is invalid";
+    //         }
+    //     }
+    // }
+}
+
+ctl_errors! {
+    #[err => "unmatched {token_kind}"]
+    #[info => "paired tokens ('()[]{{}}') must always be balanced"]
+    fatal struct UnmatchedParen {
+        #[info source, previous_paren, "the starting {token_kind} is located here"]
+        #[info source, contradictor, "this token would create imbalance"]
+        token_kind: TokenKind,
+        previous_paren: Span,
+        contradictor: Span,
+        source: VRef<Source>,
     }
 
-    pub fn display_parse_stack(&self) -> String {
-        self.state
-            .parse_stack
-            .iter()
-            .copied()
-            .intersperse(" -> ")
-            .collect()
+    #[err => "expected one of {recovery_symbols} but file already ended"]
+    fatal struct FailedRecoveryEof {
+        #[info source, eof, "file ends here"]
+        recovery_symbols ref: String,
+        eof: Span,
+        source: VRef<Source>,
     }
 }
 
@@ -352,7 +354,6 @@ pub struct ParsingState {
     pub current: Token,
     pub next: Token,
     pub progress: usize,
-    pub parse_stack: Vec<&'static str>,
 }
 
 impl ParsingState {

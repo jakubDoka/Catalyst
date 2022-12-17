@@ -1,17 +1,19 @@
 use std::{
+    any,
     default::default,
     fmt::Debug,
     ops::{Deref, Range},
 };
 
+use diags::*;
 use lexing_t::*;
 use storage::*;
 
 pub type AstData = Arena;
 
-use lexing::TokenKind;
+use lexing::{Token, TokenKind};
 
-use crate::*;
+use crate::{token_pattern::TokenPattern, *};
 
 #[derive(Clone, Copy, Debug)]
 pub struct WrappedAst<T> {
@@ -26,21 +28,38 @@ where
 {
     type Args = (TokenPat<'static>, TokenPat<'static>);
 
-    const NAME: &'static str = "wrapped";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (start, end): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (start, end): Self::Args) -> Option<Self> {
         Some(Self {
-            start: ctx.expect_advance(start)?.span,
+            start: ctx
+                .expect_advance(start, |ctx| WrapperMissing {
+                    pattern: start.to_str(ctx),
+                    value: any::type_name::<T>(),
+                    loc: ctx.loc(),
+                })?
+                .span,
             value: ctx.parse()?,
-            end: ctx.expect_advance(end)?.span,
+            end: ctx
+                .expect_advance(end, |ctx| WrapperMissing {
+                    pattern: end.to_str(ctx),
+                    value: any::type_name::<T>(),
+                    loc: ctx.loc(),
+                })?
+                .span,
         })
     }
 
     fn span(&self) -> Span {
         self.start.joined(self.end)
+    }
+}
+
+ctl_errors! {
+    #[err => "expected {pattern} as the wrapper around {value}"]
+    fatal struct WrapperMissing {
+        #[err loc]
+        pattern ref: String,
+        value: &'static str,
+        loc: SourceLoc,
     }
 }
 
@@ -67,18 +86,18 @@ impl NameAst {
 }
 
 impl<'a> Ast<'a> for NameAst {
-    type Args = (bool,);
+    type Args = (bool, &'static str);
 
-    const NAME: &'static str = "name";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (just_try,): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (just_try, hint): Self::Args) -> Option<Self> {
         let span = if just_try {
             ctx.try_advance(TokenKind::Ident)?.span
         } else {
-            ctx.expect_advance(TokenKind::Ident)?.span
+            ctx.expect_advance(TokenKind::Ident, |ctx| ExpectedName {
+                hint,
+                got: ctx.state.current.kind,
+                loc: ctx.loc(),
+            })?
+            .span
         };
         Some(Self::new(ctx, span))
     }
@@ -88,12 +107,20 @@ impl<'a> Ast<'a> for NameAst {
     }
 }
 
+ctl_errors! {
+    #[err => "expected name of {hint} but got {got}"]
+    fatal struct ExpectedName {
+        #[err loc, "here"]
+        hint: &'static str,
+        got: TokenKind,
+        loc: SourceLoc,
+    }
+}
+
 pub trait Ast<'a>: Copy {
     type Args = ();
 
-    const NAME: &'static str;
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, args: Self::Args) -> Option<Self>;
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, args: Self::Args) -> Option<Self>;
     fn span(&self) -> Span;
 
     fn parse(ctx: &mut ParsingCtx<'_, 'a, '_>) -> Option<Self>
@@ -101,13 +128,6 @@ pub trait Ast<'a>: Copy {
         Self::Args: Default,
     {
         Self::parse_args(ctx, default())
-    }
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, args: Self::Args) -> Option<Self> {
-        ctx.state.parse_stack.push(Self::NAME);
-        let res = Self::parse_args_internal(ctx, args);
-        ctx.state.parse_stack.pop().unwrap();
-        res
     }
 }
 
@@ -171,11 +191,9 @@ impl<'a, T: Ast<'a>, META: ListAstMeta> Ast<'a> for ListAst<'a, T, META>
 where
     T::Args: Default + Clone,
 {
-    const NAME: &'static str = "list";
-
     type Args = T::Args;
 
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, args: T::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, args: T::Args) -> Option<Self> {
         let on_delim = ctx.at(META::START);
         let pos = ctx.state.current.span.sliced(..0);
         if META::OPTIONAL && !on_delim && !META::START.is_empty() {
@@ -248,7 +266,11 @@ where
                     break Span::new(element_span.end()..element_span.end());
                 }
 
-                ctx.expect_error(META::SEP);
+                ctx.workspace.push(MissingListSep {
+                    sep: META::SEP.to_str(ctx),
+                    item: any::type_name::<T>(),
+                    loc: ctx.loc(),
+                });
                 if let Some(span) = META::recover(
                     ctx,
                     start,
@@ -285,6 +307,16 @@ where
     }
 }
 
+ctl_errors! {
+    #[err => "missing {item} list separator '{sep}'"]
+    fatal struct MissingListSep {
+        #[err loc]
+        sep ref: String,
+        item: &'static str,
+        loc: SourceLoc,
+    }
+}
+
 impl<'a, T, META: ListAstMeta> Deref for ListAst<'a, T, META> {
     type Target = [ListElement<T>];
 
@@ -312,7 +344,7 @@ pub trait ListAstMeta {
         start: usize,
         error: &mut Option<Span>,
     ) -> Option<Option<Span>> {
-        let ending = ctx.recover(Self::SEP.iter().chain(Self::END))?;
+        let ending = ctx.recover([Self::SEP, Self::END])?;
         *error = Some(Span::new(start..ending.span.start()));
         Some(ctx.matches(Self::END, ending).then_some(ending.span))
     }
@@ -370,30 +402,19 @@ pub enum TokenPat<'a> {
     Kind(TokenKind),
 }
 
-impl<'a> IntoIterator for TokenPat<'a> {
-    type Item = TokenPat<'a>;
-    type IntoIter = std::iter::Once<TokenPat<'a>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        std::iter::once(self)
+impl TokenPattern for TokenPat<'_> {
+    fn matches(&self, ctx: &ParsingCtx, token: Token) -> bool {
+        match self {
+            Self::Str(s) => <&str as TokenPattern>::matches(s, ctx, token),
+            Self::Kind(kind) => kind.matches(ctx, token),
+        }
     }
-}
 
-impl<'a> From<TokenKind> for TokenPat<'a> {
-    fn from(t: TokenKind) -> Self {
-        Self::Kind(t)
-    }
-}
-
-impl<'a> From<&'a str> for TokenPat<'a> {
-    fn from(t: &'a str) -> Self {
-        Self::Str(t)
-    }
-}
-
-impl<'a> From<&'a TokenPat<'a>> for TokenPat<'a> {
-    fn from(s: &Self) -> Self {
-        *s
+    fn to_str(&self, ctx: &ParsingCtx) -> String {
+        match self {
+            Self::Str(s) => <&str as TokenPattern>::to_str(s, ctx),
+            Self::Kind(kind) => kind.to_str(ctx),
+        }
     }
 }
 

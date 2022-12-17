@@ -1,3 +1,5 @@
+use diags::*;
+
 use super::*;
 
 list_meta!(ImportsMeta LeftCurly NewLine RightCurly);
@@ -9,11 +11,9 @@ pub struct UseAstSkip;
 impl<'a> Ast<'a> for UseAstSkip {
     type Args = ();
 
-    const NAME: &'static str = "use skip";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
-        if !ctx.at_tok(TokenKind::Use) {
+        if !ctx.at(TokenKind::Use) {
             return Some(UseAstSkip);
         }
 
@@ -36,12 +36,10 @@ pub struct UseAst<'a> {
 impl<'a> Ast<'a> for UseAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "use";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
 
-        if !ctx.at_tok(TokenKind::Use) {
+        if !ctx.at(TokenKind::Use) {
             return Some(UseAst {
                 use_span: Span::default(),
                 items: ImportsAst::default(),
@@ -70,13 +68,16 @@ pub struct ImportAst {
 impl<'a> Ast<'a> for ImportAst {
     type Args = ();
 
-    const NAME: &'static str = "import";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
-        let name = ctx.parse_args((true,));
-        let path = ctx.expect_advance(TokenKind::String)?.span;
+        let name = ctx.parse_args((true, "import name"));
+        let path = ctx
+            .expect_advance(TokenKind::String, |ctx| ExpectedModStringPath {
+                found: ctx.state.current.kind,
+                loc: ctx.loc(),
+            })?
+            .span;
         let span = start.joined(path);
         let path = path.shrink(1);
         let name = name.unwrap_or_else(|| NameAst::from_path(ctx, path));
@@ -90,5 +91,14 @@ impl<'a> Ast<'a> for ImportAst {
 
     fn span(&self) -> Span {
         self.span
+    }
+}
+
+ctl_errors! {
+    #[err => "module path must be a string literal, but got {found}"]
+    fatal struct ExpectedModStringPath {
+        #[err loc]
+        found: TokenKind,
+        loc: SourceLoc,
     }
 }

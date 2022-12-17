@@ -1,3 +1,5 @@
+use diags::*;
+
 use super::*;
 
 list_meta!(StructBodyMeta ? LeftCurly NewLine RightCurly);
@@ -15,12 +17,7 @@ pub struct StructAst<'a> {
 impl<'a> Ast<'a> for StructAst<'a> {
     type Args = (Vis, Span);
 
-    const NAME: &'static str = "struct";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (vis, start): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         ctx.advance();
         let generics = GenericsAst::parse(ctx)?;
         let name = NameAst::parse(ctx)?;
@@ -53,9 +50,7 @@ pub struct StructFieldAst<'a> {
 impl<'a> Ast<'a> for StructFieldAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "struct field";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(StructFieldAst {
             start: ctx.state.current.span,
             vis: ctx.visibility(),
@@ -63,7 +58,10 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
             mutable: ctx.try_advance(TokenKind::Mut).is_some(),
             name: ctx.parse()?,
             ty: {
-                ctx.expect_advance(TokenKind::Colon)?;
+                ctx.expect_advance(TokenKind::Colon, |ctx| MissingFieldColon {
+                    found: ctx.state.current.kind,
+                    loc: ctx.loc(),
+                })?;
                 TyAst::parse(ctx)?
             },
         })
@@ -71,6 +69,16 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
 
     fn span(&self) -> Span {
         self.start.joined(self.ty.span())
+    }
+}
+
+ctl_errors! {
+    #[err => "expected ':' but found '{found}' when parsing struct field"]
+    #[info => "struct fields have colon after name for consistency reasons"]
+    fatal struct MissingFieldColon {
+        #[err loc]
+        found: TokenKind,
+        loc: SourceLoc,
     }
 }
 
@@ -83,9 +91,7 @@ pub struct StructCtorFieldAst<'a> {
 impl<'a> Ast<'a> for StructCtorFieldAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "struct constructor field";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let name = ctx.parse()?;
         let expr = if ctx.try_advance(TokenKind::Colon).is_some() {
             Some(ctx.parse()?)

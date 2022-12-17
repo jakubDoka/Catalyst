@@ -8,9 +8,7 @@ pub struct SpecExprAst<'a> {
 impl<'a> Ast<'a> for SpecExprAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "bound expr";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self { path: ctx.parse()? })
     }
 

@@ -14,13 +14,11 @@ pub struct LoopAst<'a> {
 impl<'a> Ast<'a> for LoopAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "loop";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#loop: ctx.advance().span,
             label: ctx
-                .optional_advance(TokenKind::Label)
+                .try_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
             body: ctx.parse()?,
         })
@@ -41,13 +39,11 @@ pub struct BreakAst<'a> {
 impl<'a> Ast<'a> for BreakAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "break";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#break: ctx.advance().span,
             label: ctx
-                .optional_advance(TokenKind::Label)
+                .try_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
             value: ctx
                 .at([TokenKind::NewLine, TokenKind::Else])
@@ -74,13 +70,11 @@ pub struct ContinueAst {
 impl Ast<'_> for ContinueAst {
     type Args = ();
 
-    const NAME: &'static str = "continue";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, '_, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, '_, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#continue: ctx.advance().span,
             label: ctx
-                .optional_advance(TokenKind::Label)
+                .try_advance(TokenKind::Label)
                 .map(|tok| NameAst::new(ctx, tok.span)),
         })
     }
@@ -102,9 +96,7 @@ pub struct IfAst<'a> {
 impl<'a> Ast<'a> for IfAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "if";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#if: ctx.advance().span,
             cond: ctx.parse()?,
@@ -142,9 +134,7 @@ pub struct ElifAst<'a> {
 impl<'a> Ast<'a> for ElifAst<'a> {
     type Args = (Span,);
 
-    const NAME: &'static str = "else if";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (elif,): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (elif,): Self::Args) -> Option<Self> {
         Some(Self {
             elif,
             cond: ctx.parse()?,
@@ -166,15 +156,18 @@ pub enum IfBlockAst<'a> {
 impl<'a> Ast<'a> for IfBlockAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "if block";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch!(ctx => {
             LeftCurly => ctx.parse().map(Self::Block),
             ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
                 ctx.skip(TokenKind::NewLine);
                 ctx.parse()?
             })),
+            @options => ctx.workspace.push(ExpectedIfBlock {
+                got: ctx.state.current.kind,
+                options: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         })
     }
 
@@ -184,6 +177,17 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
             Block(block) => block.span(),
             Arrow(.., expr) => expr.span(),
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "expected if block but got {got}"]
+    #[info => "if block can start with either of {options}"]
+    fatal struct ExpectedIfBlock {
+        #[err loc]
+        got: TokenKind,
+        options ref: String,
+        loc: SourceLoc,
     }
 }
 
@@ -197,9 +201,7 @@ pub struct MatchExprAst<'a> {
 impl<'a> Ast<'a> for MatchExprAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "match expr";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             r#match: ctx.advance().span,
             expr: ctx.parse()?,
@@ -221,9 +223,7 @@ pub struct MatchArmAst<'a> {
 impl<'a> Ast<'a> for MatchArmAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "match arm";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             pattern: ctx.parse()?,
             body: ctx.parse()?,
@@ -244,9 +244,7 @@ pub struct ReturnExprAst<'a> {
 impl<'a> Ast<'a> for ReturnExprAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "return";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             return_span: ctx.advance().span,
             expr: ctx

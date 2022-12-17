@@ -1,3 +1,5 @@
+use diags::*;
+
 use super::*;
 
 list_meta!(TyGenericsMeta ? LeftBracket Comma RightBracket);
@@ -17,9 +19,7 @@ pub enum TyAst<'a> {
 impl<'a> Ast<'a> for TyAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "type";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             Ident => {
                 if ctx.current_token_str() == "_" {
@@ -33,7 +33,17 @@ impl<'a> Ast<'a> for TyAst<'a> {
                 "^" => ctx.parse()
                     .map(|p| ctx.arena.alloc(p))
                     .map(TyAst::Pointer),
+                @options => ctx.workspace.push(ExpectedPrefixedTy {
+                    expected: options.join(" or "),
+                    found: ctx.state.current.kind,
+                    loc: ctx.loc(),
+                })?,
             }),
+            @options => ctx.workspace.push(ExpectedTy {
+                expected: options.to_str(ctx),
+                found: ctx.state.current.kind,
+                loc: ctx.loc(),
+            })?,
         }}
     }
 
@@ -47,6 +57,24 @@ impl<'a> Ast<'a> for TyAst<'a> {
     }
 }
 
+ctl_errors! {
+    #[err => "expected '{expected}' but found '{found}' when parsing prefixed type"]
+    fatal struct ExpectedPrefixedTy {
+        #[err loc]
+        expected ref: String,
+        found: TokenKind,
+        loc: SourceLoc,
+    }
+
+    #[err => "expected '{expected}' but found '{found}' when parsing type"]
+    fatal struct ExpectedTy {
+        #[err loc]
+        expected ref: String,
+        found: TokenKind,
+        loc: SourceLoc,
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TyPointerAst<'a> {
     pub carrot: Span,
@@ -57,9 +85,7 @@ pub struct TyPointerAst<'a> {
 impl<'a> Ast<'a> for TyPointerAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "pointer type";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(TyPointerAst {
             carrot: ctx.advance().span,
             mutability: ctx.parse()?,
@@ -82,13 +108,11 @@ pub enum MutabilityAst<'a> {
 impl<'a> Ast<'a> for MutabilityAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "mutability";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Mut => Self::Mut(ctx.advance().span),
             Use => Self::Generic(ctx.advance().span, ctx.parse()?),
-            _ => Self::None,
+            @_options => Self::None,
         }})
     }
 

@@ -1,3 +1,6 @@
+use diags::*;
+use packaging_t::Source;
+
 use super::*;
 
 list_meta!(ItemsMeta none NewLine [Break Eof]);
@@ -22,9 +25,7 @@ pub struct GroupedItemsAst<'a> {
 impl<'a> Ast<'a> for GroupedItemsAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "grouped items";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let items = ctx.parse::<ItemsAst>()?;
 
         let last = items.end.is_empty();
@@ -91,30 +92,33 @@ pub enum ItemAst<'a> {
 impl<'a> Ast<'a> for ItemAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "item";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
-        Struct => ctx.parse_args((vis, start))
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Struct),
-        Func => ctx.parse_args((vis, start))
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Func),
-        Spec => ctx.parse_args((vis, start))
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Spec),
-        Enum => ctx.parse_args((vis, start))
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Enum),
-        Impl => ctx.parse_args((vis, start))
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Impl),
-        Hash => ctx.parse()
-            .map(|s| ctx.arena.alloc(s))
-            .map(ItemAst::Attribute),
+            Struct => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Struct),
+            Func => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Func),
+            Spec => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Spec),
+            Enum => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Enum),
+            Impl => ctx.parse_args((vis, start))
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Impl),
+            Hash => ctx.parse()
+                .map(|s| ctx.arena.alloc(s))
+                .map(ItemAst::Attribute),
+            @options => ctx.workspace.push(ExpectedFileItem {
+                found: ctx.state.current.kind,
+                loc: ctx.loc(),
+                options: options.to_str(ctx),
+            })?,
         }}
     }
 
@@ -127,6 +131,17 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             ItemAst::Attribute(a) => a.span(),
             ItemAst::Enum(e) => e.span(),
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "expected start of file item but found {found}"]
+    #[info => "file items start only with {options}"]
+    fatal struct ExpectedFileItem {
+        #[err loc]
+        found: TokenKind,
+        loc: SourceLoc,
+        options ref: String,
     }
 }
 
@@ -143,12 +158,7 @@ pub struct EnumAst<'a> {
 impl<'a> Ast<'a> for EnumAst<'a> {
     type Args = (Vis, Span);
 
-    const NAME: &'static str = "enum";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (vis, start): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -173,9 +183,7 @@ pub struct EnumVariantAst<'a> {
 impl<'a> Ast<'a> for EnumVariantAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "enum variant";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
             ty: ctx
@@ -204,12 +212,7 @@ pub struct ImplAst<'a> {
 impl<'a> Ast<'a> for ImplAst<'a> {
     type Args = (Vis, Span);
 
-    const NAME: &'static str = "impl";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (vis, start): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -234,16 +237,17 @@ pub enum ImplTarget<'a> {
 impl<'a> Ast<'a> for ImplTarget<'a> {
     type Args = ();
 
-    const NAME: &'static str = "impl target";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         ctx.skip(TokenKind::NewLine);
         let ty = ctx.parse()?;
         if let Some(tok) = ctx.try_advance(TokenKind::For) {
             Some(Self::Spec(
                 match ty {
                     TyAst::Path(path) => SpecExprAst { path },
-                    _ => ctx.invalid_spec_syntax(ty.span())?,
+                    _ => ctx.workspace.push(InvalidSpecImplSyntax {
+                        span: ty.span(),
+                        source: ctx.source,
+                    })?,
                 },
                 tok.span,
                 ctx.parse()?,
@@ -261,6 +265,16 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
     }
 }
 
+ctl_errors! {
+    #[err => "invalid syntax for impl of spec"]
+    #[info => "spec must be in form of a type path ( [\\] <ident> {{\\ ( <ident> | <generics> ) }} )"]
+    fatal struct InvalidSpecImplSyntax {
+        #[err source, span, "here"]
+        span: Span,
+        source: VRef<Source>,
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum ImplItemAst<'a> {
     Func(&'a FuncDefAst<'a>),
@@ -269,15 +283,17 @@ pub enum ImplItemAst<'a> {
 impl<'a> Ast<'a> for ImplItemAst<'a> {
     type Args = ();
 
-    const NAME: &'static str = "impl item";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         let start = ctx.state.current.span;
         let vis = ctx.visibility();
         branch! { ctx => {
             Func => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
                 .map(ImplItemAst::Func),
+            @options => ctx.workspace.push(InvalidImplItem {
+                expected: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         }}
     }
 
@@ -285,6 +301,15 @@ impl<'a> Ast<'a> for ImplItemAst<'a> {
         match self {
             ImplItemAst::Func(f) => f.span(),
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "invalid impl item expected one of: {expected}"]
+    fatal struct InvalidImplItem {
+        #[err loc]
+        expected ref: String,
+        loc: SourceLoc,
     }
 }
 
@@ -302,12 +327,7 @@ pub struct SpecAst<'a> {
 impl<'a> Ast<'a> for SpecAst<'a> {
     type Args = (Vis, Span);
 
-    const NAME: &'static str = "spec";
-
-    fn parse_args_internal(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        (vis, start): Self::Args,
-    ) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         Some(Self {
             start,
             vis,
@@ -333,14 +353,12 @@ pub struct TopLevelAttributeAst {
 impl<'a> Ast<'a> for TopLevelAttributeAst {
     type Args = ();
 
-    const NAME: &'static str = "top level attribute";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             hash: ctx.advance().span,
             value: ctx.parse_args((
-                TokenKind::LeftBracket.into(),
-                TokenKind::RightBracket.into(),
+                TokenPat::Kind(TokenKind::LeftBracket),
+                TokenPat::Kind(TokenKind::RightBracket),
             ))?,
         })
     }
@@ -364,9 +382,7 @@ pub enum TopLevelAttrKindAst {
 impl<'a> Ast<'a> for TopLevelAttrKindAst {
     type Args = ();
 
-    const NAME: &'static str = "top level attribute";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         use TopLevelAttrKindAst::*;
         branch! {str ctx => {
             "entry" => Some(Entry(ctx.advance().span)),
@@ -379,14 +395,18 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
             "no_moves" => Some(NoMoves(ctx.advance().span)),
             "macro" => Some(Macro(ctx.advance().span, ctx.parse()?)),
             "inline" => {
-                if !ctx.at_tok(TokenKind::LeftParen) {
+                if !ctx.at(TokenKind::LeftParen) {
                     Some(Inline(None))
                 } else {
-                    ctx.parse_args((TokenKind::LeftParen.into(), TokenKind::RightParen.into()))
+                    ctx.parse_args((TokenPat::Kind(TokenKind::LeftParen), TokenPat::Kind(TokenKind::RightParen)))
                         .map(Some)
                         .map(Inline)
                 }
             },
+            @options => ctx.workspace.push(InvalidTopLevelAttribute {
+                expected: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         }}
     }
 
@@ -400,6 +420,15 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
     }
 }
 
+ctl_errors! {
+    #[err => "invalid top level attribute expected one of: {expected}"]
+    fatal struct InvalidTopLevelAttribute {
+        #[err loc]
+        expected ref: String,
+        loc: SourceLoc,
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum InlineModeAst {
     Always(Span),
@@ -409,12 +438,14 @@ pub enum InlineModeAst {
 impl<'a> Ast<'a> for InlineModeAst {
     type Args = ();
 
-    const NAME: &'static str = "inline mode";
-
-    fn parse_args_internal(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {str ctx => {
             "always" => Some(InlineModeAst::Always(ctx.advance().span)),
             "never" => Some(InlineModeAst::Never(ctx.advance().span)),
+            @options => ctx.workspace.push(InvalidInlineMode {
+                expected: options.to_str(ctx),
+                loc: ctx.loc(),
+            })?,
         }}
     }
 
@@ -423,5 +454,14 @@ impl<'a> Ast<'a> for InlineModeAst {
             InlineModeAst::Always(span) => span,
             InlineModeAst::Never(span) => span,
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "invalid inline mode expected one of: {expected}"]
+    fatal struct InvalidInlineMode {
+        #[err loc]
+        expected ref: String,
+        loc: SourceLoc,
     }
 }
