@@ -1,10 +1,10 @@
 use std::{default::default, iter};
 
-use diags::gen_error_fns;
+use diags::*;
 use lexing_t::*;
+use packaging_t::*;
 use parsing::*;
-use parsing_t::{Ast, NameAst, Vis};
-
+use parsing_t::*;
 use storage::*;
 use typec_t::*;
 
@@ -114,6 +114,14 @@ impl TyChecker<'_> {
                     &mut None,
                     self.interner,
                 ) {
+                    self.workspace.push(CollidingImpl {
+                        colliding: todo!(),
+                        colliding_source: todo!(),
+                        existing: todo!(),
+                        existing_source: todo!(),
+                        ty: todo!(),
+                        spec: todo!(),
+                    });
                     self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
                 }
             }
@@ -183,11 +191,20 @@ impl TyChecker<'_> {
             };
 
 
+            let loc = {
+                let next = unsafe { self.typec.impls.next() };
+                let item = ModuleItem::new(Ident::empty(), next, r#impl.span(), Vis::Priv);
+                Some(Loc {
+                    module: self.module,
+                    item: self.typec.module_items[self.module].items.push(item),
+                })
+            };
+
             let impl_ent = self.typec.impls.push(Impl {
                 generics: parsed_generics,
                 key,
                 methods,
-                span: Some(r#impl.span()),
+                loc,
             });
             self.typec.impl_lookup
                 .entry(group_key)
@@ -470,36 +487,43 @@ impl TyChecker<'_> {
             }
         }
     }
+}
 
-    gen_error_fns! {
-        push generic_extern(self, generics: Span, body: Span, func: Span) {
-            err: "function with extern body cannot be generic";
-            help: "remove generic parameters from function signature";
-            (func, self.source) {
-                err[generics]: "this mean function is generic";
-                info[body]: "function is extern because of this";
-            }
-        }
+ctl_errors! {
+    #[err => "generic extern functions are not allowed"]
+    fatal struct GenericExtern {
+        #[note source, generics, "function has generics defined here"]
+        #[note source, body, "function is extern because of this"]
+        #[err source, func, "here"]
+        func: Span,
+        body: Span,
+        generics: Span,
+        source: VRef<Source>,
+    }
 
-        push generic_entry(self, generics: Span, entry: Span, func: Span) {
-            err: "generic entry functions are not allowed";
-            help: "you can wrap concrete instance of this function in a non-generic entry function";
-            (func, self.source) {
-                err[entry]: "caused by this entry attribute";
-                info[generics]: "generics located here";
-            }
-        }
+    #[err => "generic entry points are not allowed"]
+    #[help => "wrap concrete instance of this function in a non-generic entry function"]
+    fatal struct GenericEntry {
+        #[note source, generics, "function has generics defined here"]
+        #[note source, entry, "function is an entry point because of this attribute"]
+        #[err source, func, "here"]
+        func: Span,
+        entry: Span,
+        generics: Span,
+        source: VRef<Source>,
+    }
 
-        push colliding_impl(self, span: Option<Span>, ty: Ty, spec: Spec) {
-            err: (
-                "type '{}' already has an implementation for '{}'",
-                self.typec.display_ty(ty, self.interner),
-                self.typec.display_spec(spec, self.interner),
-            );
-            (span?, self.source) {
-                err[span?]: "this already satisfies both types";
-            }
-        }
+    #[err => "colliding implementations for type '{ty}'"]
+    #[info => "'{ty}' already implements '{spec}'"]
+    fatal struct CollidingImpl {
+        #[info existing_source, existing, "implementation that already satisfies"]
+        #[err colliding_source, colliding, "it is colliding with this implementation"]
+        colliding: Span,
+        colliding_source: VRef<Source>,
+        existing: Span,
+        existing_source: VRef<Source>,
+        ty ref: String,
+        spec ref: String,
     }
 }
 

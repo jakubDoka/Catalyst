@@ -118,6 +118,36 @@ pub struct CtlSourceAnnotation {
     pub annotation_type: CtlAnnotationType,
 }
 
+impl CtlSourceAnnotation {
+    pub fn new(
+        span: impl Into<Option<Span>>,
+        origin: impl Into<Option<VRef<Source>>>,
+        label: String,
+        annotation_type: CtlAnnotationType,
+    ) -> Option<Self> {
+        Some(Self {
+            span: span.into()?,
+            origin: origin.into()?,
+            label,
+            annotation_type,
+        })
+    }
+
+    pub fn from_source_loc(
+        source_loc: impl Into<Option<SourceLoc>>,
+        label: String,
+        annotation_type: CtlAnnotationType,
+    ) -> Option<Self> {
+        let source_loc: SourceLoc = source_loc.into()?;
+        Some(Self {
+            span: source_loc.span,
+            origin: source_loc.origin,
+            label,
+            annotation_type,
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct SourceLoc {
     pub origin: VRef<Source>,

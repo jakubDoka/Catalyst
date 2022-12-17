@@ -129,7 +129,7 @@ impl<'a, T: FmtAst + Ast<'a> + Debug, META: ListAstMeta> FmtAst for ListAst<'a, 
         let delimiter_spacing = META::START
             .iter()
             .any(|t| matches!(t, TokenPat::Kind(TokenKind::Colon | TokenKind::LeftCurly)));
-        let is_top_list = META::END.contains(&TokenKind::Eof.into());
+        let is_top_list = META::END.contains(&TokenPat::Kind(TokenKind::Eof));
         if self.elements.is_empty() && META::OPTIONAL {
             return;
         }

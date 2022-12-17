@@ -233,9 +233,19 @@ mod util {
 
     impl TyChecker<'_> {
         pub fn insert_scope_item(&mut self, item: ModuleItem) -> Option<Loc> {
-            if let Err(spans) = self.scope.insert_current(item) {
-                self.duplicate_definition(item.span, spans, self.source);
-                return None;
+            if let Err(record) = self.scope.insert_current(item) {
+                match record.span() {
+                    Some(span) => self.workspace.push(DuplicateDefinition {
+                        duplicate: item.span,
+                        existing: span,
+                        source: self.source,
+                    }),
+                    None => self.workspace.push(ShadowedBuiltin {
+                        item: self.interner[item.id].to_string(),
+                        span: item.span,
+                        source: self.source,
+                    }),
+                }?;
             }
 
             let item = self.typec.module_items[self.module].items.push(item);
@@ -244,22 +254,26 @@ mod util {
                 item,
             })
         }
+    }
 
-        gen_error_fns! {
-            push duplicate_definition(
-                self,
-                duplicate: Span,
-                existing: Option<Span>,
-                file: VRef<Source>,
-            ) {
-                err: "duplicate definition";
-                (duplicate, file) {
-                    info[duplicate]: "this name";
-                }
-                (existing?, file) {
-                    info[existing?]: "matches this already existing item";
-                }
-            }
+    ctl_errors! {
+        #[err => "duplicate definition"]
+        #[info => "this happens when two exportable items have the same name"]
+        fatal struct DuplicateDefinition {
+            #[info source, duplicate, "this name"]
+            #[info source, existing, "matches this already existing item"]
+            duplicate: Span,
+            existing: Span,
+            source: VRef<Source>,
+        }
+
+        #[err => "shadowing of builtin item"]
+        #[info => "shadowing {item} is disallowed"]
+        fatal struct ShadowedBuiltin {
+            #[info source, span, "this name"]
+            span: Span,
+            source: VRef<Source>,
+            item: String,
         }
     }
 }

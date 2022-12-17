@@ -638,8 +638,8 @@ impl MirChecker<'_, '_> {
                 origin: self.source,
                 annotations: moves
                     .into_iter()
-                    .map(|r#move| ctl_error_source!(info[r#move.span]: "move out of value"))
-                    .chain(iter::once(ctl_error_source!(err[span]: "occurred here")))
+                    .map(|r#move| ctl_error_source_annotation!(info[r#move.span]: "move out of value"))
+                    .chain(iter::once(ctl_error_source_annotation!(err[span]: "occurred here")))
                     .collect(),
                 fold: true,
             })],

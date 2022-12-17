@@ -1,13 +1,6 @@
 use std::{
-    borrow::Cow,
-    collections::hash_map::Entry,
-    default::default,
-    env::{self, VarError},
-    ffi::OsStr,
-    io, iter, mem,
-    path::*,
-    process::Command,
-    time::SystemTime,
+    borrow::Cow, collections::hash_map::Entry, default::default, env::VarError, ffi::OsStr, io,
+    iter, mem, path::*, process::Command, time::SystemTime,
 };
 
 use crate::*;
@@ -18,14 +11,14 @@ use parsing::*;
 use parsing_t::*;
 use storage::*;
 
-type Loc = Option<(VRef<Source>, Span)>;
+const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
 
 #[derive(Default)]
 pub struct ResourceLoaderCtx {
     sources: Map<PathBuf, VRef<Source>>,
     packages: Map<PathBuf, DummyPackage>,
     modules: Map<PathBuf, DummyModule>,
-    package_frontier: Vec<(PathBuf, Loc)>,
+    package_frontier: Vec<(PathBuf, Option<SourceLoc>)>,
     module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
     parsing_state: ParsingState,
     ast_data: Option<AstData>,
@@ -76,7 +69,7 @@ impl PackageLoader<'_, '_> {
         self.resources.clear();
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;
-        let root_path = self.resolve_package_path(root_path, None)?;
+        let root_path = self.resolve_source_path(root_path, None, "package")?;
         let root_package = self.load_packages(root_path, ctx)?;
 
         let mut buffer = bumpvec![cap self.resources.packages.len()];
@@ -89,7 +82,18 @@ impl PackageLoader<'_, '_> {
         }
         self.package_graph
             .ordering(iter::once(root_package.index()), &mut buffer)
-            .map_err(|cycle| self.package_cycle(cycle))
+            .map_err(|cycle| {
+                self.workspace.push(CycleDetected {
+                    cycle: cycle
+                        .into_iter()
+                        .map(|id| unsafe { VRef::<Package>::new(id) })
+                        .map(|package| self.resources.packages[package].source)
+                        .map(|source| self.resources.sources[source].path.to_string_lossy())
+                        .intersperse(Cow::Borrowed("\n"))
+                        .collect::<String>(),
+                    something: "package",
+                })
+            })
             .ok();
         buffer.clear();
 
@@ -116,9 +120,21 @@ impl PackageLoader<'_, '_> {
                 .map(|dep| dep.ptr.index());
             self.package_graph.new_node().add_edges(edges)
         }
+
         self.package_graph
             .ordering(iter::once(root_module.index()), &mut buffer)
-            .map_err(|cycle| self.module_cycle(cycle))
+            .map_err(|cycle| {
+                self.workspace.push(CycleDetected {
+                    cycle: cycle
+                        .into_iter()
+                        .map(|id| unsafe { VRef::<Module>::new(id) })
+                        .map(|package| self.resources.modules[package].source)
+                        .map(|source| self.resources.sources[source].path.to_string_lossy())
+                        .intersperse(Cow::Borrowed("\n"))
+                        .collect::<String>(),
+                    something: "module",
+                })
+            })
             .ok();
 
         self.resources
@@ -205,12 +221,17 @@ impl PackageLoader<'_, '_> {
         &mut self,
         path: PathBuf,
         package: VRef<Package>,
-        source: VRef<Source>,
+        origin: VRef<Source>,
         span: Span,
         ast_data: &mut AstData,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
-        let source = self.load_source(path.clone(), Some((source, span)), ctx)?;
+        let source = self.load_source(
+            path.clone(),
+            Some(SourceLoc { origin, span }),
+            ctx,
+            "module",
+        )?;
 
         let content = &self.resources.sources[source].content;
         ctx.parsing_state.start(content);
@@ -243,7 +264,7 @@ impl PackageLoader<'_, '_> {
         &mut self,
         imports: UseAst,
         package_id: VRef<Package>,
-        source: VRef<Source>,
+        origin: VRef<Source>,
         ctx: &mut ResourceLoaderCtx,
     ) -> Vec<(NameAst, PathBuf)> {
         let mut deps = Vec::with_capacity(imports.items.len());
@@ -251,7 +272,7 @@ impl PackageLoader<'_, '_> {
             name, path, span, ..
         } in imports.items.iter()
         {
-            let path_content = self.resources.sources[source].span_str(path);
+            let path_content = self.resources.sources[origin].span_str(path);
             let (package, path_str) = path_content.split_once('/').unwrap_or((path_content, ""));
 
             let package_ident = self.interner.intern(package);
@@ -262,7 +283,15 @@ impl PackageLoader<'_, '_> {
                 .or_else(|| (package == ".").then_some(package_id));
 
             let Some(import_package) = import_package else {
-                self.unknown_package(path.sliced(..package.len()), package_id, source);
+                self.workspace.push(UnknownPackage {
+                    packages: self.resources.package_deps
+                        [self.resources.packages[package_id].deps]
+                        .iter()
+                        .map(|dep| &self.interner[dep.name])
+                        .intersperse(", ")
+                        .collect::<String>(),
+                    loc: SourceLoc { origin, span: path.sliced(..package.len()) },
+                });
                 continue;
             };
 
@@ -275,12 +304,17 @@ impl PackageLoader<'_, '_> {
             let Some(dep_path) = self
                 .resources.db
                 .canonicalize(&built_path)
-                .map_err(|err| self.unknown_module(path, source, built_path, err))
+                .map_err(|trace| self.workspace.push(InvalidDefinedPath {
+                    path: built_path,
+                    trace,
+                    loc: SourceLoc { origin, span }.into(),
+                    something: "module",
+                }))
                 .ok() else { continue };
 
             if !ctx.modules.contains_key(&dep_path) {
                 ctx.module_frontier
-                    .push((dep_path.clone(), import_package, source, span));
+                    .push((dep_path.clone(), import_package, origin, span));
             }
             deps.push((name, dep_path));
         }
@@ -288,7 +322,7 @@ impl PackageLoader<'_, '_> {
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {
-        let path = match self.resources.db.var("CATALYST_DEP_ROOT") {
+        let path = match self.resources.db.var(DEP_ROOT_VAR) {
             Ok(path) if Path::new(&path).is_absolute() => path.into(),
             Ok(path) => root_path.join(path),
             Err(VarError::NotPresent) => {
@@ -296,18 +330,28 @@ impl PackageLoader<'_, '_> {
                 self.resources
                     .db
                     .create_dir_all(&default_path)
-                    .map_err(|err| self.cannot_create_dep_root(err, &default_path))
+                    .map_err(|trace| {
+                        self.workspace.push(PathRelatedError {
+                            path: default_path,
+                            trace,
+                            message: "failed to create default dependency root",
+                        })
+                    })
                     .ok()?;
                 default_path
             }
-            Err(err) => self.invalid_dep_root_encoding(err)?,
+            Err(..) => self.workspace.push(InvalidDepRootEncoding {})?,
         };
 
         let root = self
             .resources
             .db
             .canonicalize(&path)
-            .map_err(|err| self.invalid_dep_root(err, &path))
+            .map_err(|err| PathRelatedError {
+                path,
+                trace: err,
+                message: "failed to canonicalize dependency root",
+            })
             .ok()?;
 
         Some(root)
@@ -361,13 +405,13 @@ impl PackageLoader<'_, '_> {
     fn load_package(
         &mut self,
         path: PathBuf,
-        loc: Loc,
+        loc: Option<SourceLoc>,
         ast_data: &mut AstData,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
 
-        let source_id = self.load_source(package_path, loc, ctx)?;
+        let source_id = self.load_source(package_path, loc, ctx, "package")?;
 
         let source = &self.resources.sources[source_id];
         ctx.parsing_state.start(&source.content);
@@ -403,7 +447,7 @@ impl PackageLoader<'_, '_> {
     fn resolve_manifest_deps(
         &mut self,
         root_path: &Path,
-        source_id: VRef<Source>,
+        origin: VRef<Source>,
         manifest: ManifestAst,
         ctx: &mut ResourceLoaderCtx,
     ) -> Vec<(NameAst, PathBuf)> {
@@ -417,11 +461,15 @@ impl PackageLoader<'_, '_> {
         } in manifest.deps.iter()
         {
             let path = if git {
-                self.download_package(source_id, span, version, path, ctx)
+                self.download_package(origin, span, version, path, ctx)
             } else {
-                let path_content = self.resources.sources[source_id].span_str(path);
+                let path_content = self.resources.sources[origin].span_str(path);
                 let package_path = root_path.join(path_content);
-                self.resolve_package_path(&package_path, Some((source_id, path)))
+                self.resolve_source_path(
+                    &package_path,
+                    Some(SourceLoc { origin, span: path }),
+                    "package",
+                )
             };
 
             let Some(path) = path else {
@@ -430,7 +478,8 @@ impl PackageLoader<'_, '_> {
 
             let manifest = path.join("package").with_extension("ctlm");
             if !ctx.packages.contains_key(&manifest) {
-                ctx.package_frontier.push((path, Some((source_id, span))));
+                ctx.package_frontier
+                    .push((path, Some(SourceLoc { origin, span })));
             }
             deps.push((name, manifest));
         }
@@ -440,7 +489,7 @@ impl PackageLoader<'_, '_> {
     fn resolve_root_module_path(
         &mut self,
         root_path: &Path,
-        source_id: VRef<Source>,
+        origin: VRef<Source>,
         manifest: ManifestAst,
     ) -> Option<(PathBuf, Span)> {
         let field_name = self.interner.intern("root");
@@ -448,22 +497,29 @@ impl PackageLoader<'_, '_> {
             .find_field(field_name)
             .and_then(|root| match root.value {
                 ManifestValueAst::String(str) => Some(str),
-                _ => self.invalid_manifest_root_field(root, source_id)?,
+                value => self.workspace.push(InvalidManifestRootField {
+                    loc: SourceLoc {
+                        origin,
+                        span: value.span(),
+                    },
+                })?,
             });
 
-        let content = &self.resources.sources[source_id].content;
+        let content = &self.resources.sources[origin].content;
 
         let name = value_span.map_or("root", |str| &content[str.shrink(1).range()]);
+        let loc = value_span.map(|span| SourceLoc { origin, span });
         let full_path = root_path.join(name).with_extension("ctl");
-        self.resolve_module_path(&full_path)
+        self.resolve_source_path(&full_path, loc, "root module")
             .map(|path| (path, value_span.unwrap_or_default()))
     }
 
     fn load_source(
         &mut self,
         path: PathBuf,
-        loc: Loc,
+        loc: Option<SourceLoc>,
         ctx: &mut ResourceLoaderCtx,
+        owner: &'static str,
     ) -> Option<VRef<Source>> {
         let last_modified = self.resources.db.get_modification_time(&path);
         if let Some(&source) = ctx.sources.get(&path)
@@ -481,7 +537,14 @@ impl PackageLoader<'_, '_> {
             .resources
             .db
             .read_to_string(&path)
-            .map_err(|err| self.unreachable_source(&path, err, loc))
+            .map_err(|trace| {
+                self.workspace.push(InvalidDefinedPath {
+                    loc,
+                    path: path.clone(),
+                    trace,
+                    something: owner,
+                })
+            })
             .ok()?;
         let last_modified = last_modified.unwrap_or_else(|_| SystemTime::now());
 
@@ -508,60 +571,65 @@ impl PackageLoader<'_, '_> {
         })
     }
 
-    fn resolve_package_path(&mut self, root: &Path, span: Loc) -> Option<PathBuf> {
+    fn resolve_source_path(
+        &mut self,
+        root: &Path,
+        loc: Option<SourceLoc>,
+        owner: &str,
+    ) -> Option<PathBuf> {
         self.resources
             .db
             .canonicalize(root)
-            .map_err(|err| self.invalid_package_root(root, err, span))
-            .ok()
-    }
-
-    fn resolve_module_path(&mut self, path: &Path) -> Option<PathBuf> {
-        self.resources
-            .db
-            .canonicalize(path)
-            .map_err(|err| self.invalid_module_path(path, err))
+            .map_err(|err| {
+                self.workspace.push(InvalidDefinedPath {
+                    loc,
+                    path: root.to_owned(),
+                    trace: err,
+                    something: owner,
+                })
+            })
             .ok()
     }
 
     /// git is invoked and package may be downloaded into `%CATALYST_CACHE%/url/(version || 'main')`
     fn download_package(
         &mut self,
-        source: VRef<Source>,
+        origin: VRef<Source>,
         span: Span,
         version: Option<Span>,
         url_span: Span,
         ctx: &ResourceLoaderCtx,
     ) -> Option<PathBuf> {
-        let url = self.resources.sources[source].span_str(url_span);
+        let url = self.resources.sources[origin].span_str(url_span);
         let full_url = &format!("https://{url}");
-        let versions = self.resolve_version(source, version, full_url)?;
-        if let Some(version) = version && versions.is_empty() {
-            self.invalid_version(source, version);
-        }
-
-        let max_version = versions
-            .iter()
-            .max()
-            .map(|(major, minor, patch)| format!("v{major}.{minor}.{patch}"))
+        let version = version
+            .map(|v| self.resolve_version(origin, v, full_url))
+            .transpose()?
             .unwrap_or_else(|| "main".to_string());
 
-        let url = self.resources.sources[source].span_str(url_span);
-        let download_root = ctx.dep_root.join(url).join(&max_version);
+        let url = self.resources.sources[origin].span_str(url_span);
+        let download_root = ctx.dep_root.join(url).join(&version);
 
         let exists = download_root.exists();
 
         self.resources
             .db
             .create_dir_all(&download_root)
-            .map_err(|err| self.cannot_create_download_dir(err, &download_root))
+            .map_err(|err| {
+                self.workspace.push(InvalidDefinedPath {
+                    loc: Some(SourceLoc { origin, span }),
+                    path: download_root.clone(),
+                    trace: err,
+                    something: "package",
+                })
+            })
             .ok()?;
 
         let install_path = self
             .resources
             .db
             .canonicalize(&download_root)
-            .expect("since we just created it there is no reason for this to fail");
+            .expect("we just created it, there is no reason for this to fail");
 
         if exists {
             return Some(install_path);
@@ -574,7 +642,7 @@ impl PackageLoader<'_, '_> {
             "--filter",
             "blob:none",
             "--branch",
-            &max_version,
+            &version,
             full_url,
         ];
 
@@ -583,51 +651,56 @@ impl PackageLoader<'_, '_> {
             .map(|s| s.as_ref())
             .chain(iter::once(download_root.as_ref()));
 
-        self.execute_git(args, source, span, true)?;
+        self.execute_git(args, origin, span)?;
 
         Some(install_path)
     }
 
     fn resolve_version(
         &mut self,
-        source: VRef<Source>,
-        version: Option<Span>,
+        origin: VRef<Source>,
+        version: Span,
         url: &str,
-    ) -> Option<BumpVec<(u32, u32, u32)>> {
-        let Some(version) = version else {
-            return Some(bumpvec![]);
-        };
+    ) -> Option<String> {
+        const TAG_PREFIX: &str = "refs/tags/";
 
-        let version_str = &self.resources.sources[source].content[version.range()];
-        let tag_pattern = format!("refs/tags/{version_str}");
+        let version_str = &self.resources.sources[origin].content[version.range()];
+        let tag_pattern = format!("{TAG_PREFIX}{version_str}");
         let args = ["ls-remote", url, &tag_pattern]
             .into_iter()
             .map(|s| s.as_ref());
 
-        let output = self.execute_git(args, source, version, true)?;
+        let output = self.execute_git(args, origin, version)?;
 
-        let versions = output
+        let opt_version = output
             .lines()
             .filter_map(|line| line.split_whitespace().nth(1))
-            .filter_map(|path| path.strip_prefix("refs/tags/"))
+            .filter_map(|path| path.strip_prefix(TAG_PREFIX))
+            .filter_map(|version| version.strip_prefix('v'))
             .map(|version| {
-                version[1..]
+                version
                     .split('.')
                     .take(3)
                     .filter_map(|component| component.parse::<u32>().ok())
             })
             .filter_map(|mut comps| Some((comps.next()?, comps.next()?, comps.next()?)))
-            .collect::<BumpVec<_>>();
+            .max();
 
-        Some(versions)
+        let Some((major, minor, patch)) = opt_version else {
+            self.workspace.push(InvalidVersion {
+                url: url.to_owned(),
+                loc: SourceLoc { origin, span: version },
+            })?;
+        };
+
+        Some(format!("v{major}.{minor}.{patch}"))
     }
 
     fn execute_git(
         &mut self,
         args: impl IntoIterator<Item = &OsStr> + Clone,
-        source: VRef<Source>,
-        loc: Span,
-        quiet: bool,
+        origin: VRef<Source>,
+        span: Span,
     ) -> Option<String> {
         let command_str = args
             .clone()
@@ -636,165 +709,105 @@ impl PackageLoader<'_, '_> {
             .intersperse(Cow::Borrowed(" "))
             .collect::<String>();
 
-        if !quiet {
-            self.git_info(source, loc, command_str.clone());
-        }
-
         let mut command = Command::new("git");
         command.args(args);
         let output = self.resources.db.command(&mut command);
         let output = output
-            .map_err(|err| self.git_exec_error(source, loc, command_str.clone(), err))
+            .map_err(|err| {
+                self.workspace.push(GitExecError {
+                    command: command_str,
+                    loc: SourceLoc { origin, span },
+                    err,
+                })
+            })
             .ok()?;
 
         if !output.status.success() {
             let output = String::from_utf8_lossy(&output.stderr);
-            self.git_exit_error(source, loc, command_str, output.as_ref());
-            return None;
+            self.workspace.push(GitExitError {
+                command: command_str,
+                loc: SourceLoc { origin, span },
+                output: output.to_string(),
+            })?;
         }
 
         Some(String::from_utf8_lossy(&output.stdout).to_string())
     }
+}
 
-    gen_error_fns! {
-        push invalid_package_root(self, root: &Path, err: io::Error, loc: Loc) {
-            err: "invalid root path";
-            info: ("path: `{}`", root.display());
-            info: ("trace: {}", err);
-            (loc?.1, loc?.0) {
-                err[loc?.1]: "declared here";
-            }
-        }
+ctl_errors! {
+    #[err => "git exited with non-zero status code"]
+    #[info => "args: `{command}`"]
+    #[info => "stderr: {output}"]
+    fatal struct GitExitError {
+        #[err loc]
+        command ref: String,
+        loc: SourceLoc,
+        output ref: String,
+    }
 
-        push unreachable_source(self, path: &Path, err: io::Error, loc: Loc) {
-            err: "failed to read source file";
-            info: ("path: `{}`", path.display());
-            info: ("trace: {}", err);
-            (loc?.1, loc?.0) {
-                err[loc?.1]: "declared here";
-            }
-        }
+    #[err => "failed to execute git command"]
+    #[info => "args: `{command}`"]
+    #[info => "error: {err}"]
+    fatal struct GitExecError {
+        #[err loc]
+        command ref: String,
+        loc: SourceLoc,
+        err: io::Error,
+    }
 
-        push invalid_module_path(self, path: &Path, err: io::Error) {
-            err: "invalid module path";
-            info: ("path: `{}`", path.display());
-            info: ("trace: {}", err);
-        }
+    #[err => "invalid version of dependency"]
+    #[info => "the version did not match any tag in '{url}' repository"]
+    fatal struct InvalidVersion {
+        #[err loc]
+        url ref: String,
+        loc: SourceLoc,
+    }
 
-        push invalid_dep_root_encoding(self, err: env::VarError) {
-            warn: "invalid dep root";
-            help: "path must be utf-8 encoded";
-            info: ("trace: {}", err);
-        }
+    #[err => "unknown package"]
+    #[info => "available packages: {packages}"]
+    #[hint => "to refer to current package use '.'"]
+    fatal struct UnknownPackage {
+        #[err loc]
+        packages ref: String,
+        loc: SourceLoc,
+    }
 
-        push invalid_manifest_root_field(self, field: ManifestFieldAst, source: VRef<Source>) {
-            err: "invalid root field in manifest";
-            (field.span(), source) {
-                err[field.span()]: "expected string here";
-            }
-        }
+    #[err => "{something} cycle detected"]
+    #[info => ("cycle:\n{cycle}")]
+    fatal struct CycleDetected {
+        cycle ref: String,
+        something: &'static str,
+    }
 
-        print git_info(self, source: VRef<Source>, span: Span, command: String) {
-            info: ("executing git: {}", command);
-            (span, source) {
-                info[span]: "invocation declared here";
-            }
-        }
+    #[err => "invalid {something} path"]
+    #[info => ("path searched: `{}`", path.display())]
+    #[info => ("exact io error: {}", trace)]
+    fatal struct InvalidDefinedPath {
+        #[err loc, "derived from this"]
+        path ref: PathBuf,
+        trace ref: io::Error,
+        loc: Option<SourceLoc>,
+        something: &'static str,
+    }
 
-        push git_exec_error(self, source: VRef<Source>, span: Span, command: String, err: std::io::Error) {
-            err: "git execution failed";
-            info: ("executing git: {}", command);
-            info: ("trace: {}", err);
-            (span, source) {
-                info[span]: "invocation declared here";
-            }
-        }
+    #[err => "{message}"]
+    #[info => ("path searched: `{}`", path.display())]
+    #[info => ("exact io error: {}", trace)]
+    fatal struct PathRelatedError {
+        path ref: PathBuf,
+        trace ref: io::Error,
+        message: &'static str,
+    }
 
-        push git_exit_error(self, source: VRef<Source>, span: Span, command: String, output: &str) {
-            err: "git execution failed";
-            info: ("executing git: {}", command);
-            info: ("output:\n{}", output);
-            (span, source) {
-                info[span]: "invocation declared here";
-            }
-        }
+    #[err => "'{DEP_ROOT_VAR}' exists but has invalid encoding"]
+    #[hint => "path must be utf-8 encoded"]
+    fatal struct InvalidDepRootEncoding {}
 
-        push invalid_version(self, source: VRef<Source>, span: Span) {
-            warn: "invalid version";
-            (span, source) {
-                info[span]: "declared here";
-            }
-        }
-
-        push invalid_dep_root(self, err: io::Error, path: &Path) {
-            warn: "invalid dep root";
-            info: ("path: `{}`", path.display());
-            info: ("trace: {}", err);
-        }
-
-        push cannot_create_dep_root(self, err: io::Error, path: &Path) {
-            warn: "cannot create dep root";
-            info: ("path: `{}`", path.display());
-            info: ("trace: {}", err);
-        }
-
-        push cannot_create_download_dir(self, err: io::Error, path: &Path) {
-            warn: "cannot create download directory";
-            info: ("path: `{}`", path.display());
-            info: ("trace: {}", err);
-        }
-
-        push unknown_module(self, path: Span, source: VRef<Source>, built_path: PathBuf, err: io::Error) {
-            err: "unknown module";
-            info: ("path: `{}`", built_path.display());
-            info: ("trace: {}", err);
-            (path, source) {
-                err[path]: "declared here";
-            }
-        }
-
-        push unknown_package(self, span: Span, package: VRef<Package>, source: VRef<Source>) {
-            err: "unknown package";
-            help: "to refer to current package use '.'";
-            help: (
-                "available packages: {}",
-                self.resources.package_deps[self.resources.packages[package].deps]
-                    .iter()
-                    .map(|dep| &self.interner[dep.name])
-                    .intersperse(", ")
-                    .collect::<String>()
-            );
-            (span, source) {
-                info[span]: "declared here";
-            }
-        }
-
-        push package_cycle(self, cycle: Vec<usize>) {
-            err: "package cycle detected";
-            info: (
-                "cycle:\n{}",
-                cycle
-                    .into_iter()
-                    .map(|id| unsafe { VRef::<Package>::new(id) })
-                    .map(|package| self.resources.packages[package].source)
-                    .map(|source| self.resources.sources[source].path.to_string_lossy())
-                    .intersperse(Cow::Borrowed("\n"))
-                    .collect::<String>()
-            );
-        }
-
-        push module_cycle(self, cycle: Vec<usize>) {
-            err: "module cycle detected";
-            info: (
-                "cycle:\n{}",
-                cycle
-                    .into_iter()
-                    .map(|id| unsafe { VRef::<Module>::new(id) })
-                    .map(|package| self.resources.modules[package].source)
-                    .map(|source| self.resources.sources[source].path.to_string_lossy())
-                    .intersperse(Cow::Borrowed("\n"))
-                    .collect::<String>()
-            );
-        }
+    #[err => "invalid 'root' field in manifest"]
+    #[hint => "expected string"]
+    fatal struct InvalidManifestRootField {
+        #[err loc]
+        loc: SourceLoc,
     }
 }

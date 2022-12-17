@@ -101,9 +101,11 @@ impl CcRuntime {
                     ..Default::default()
                 },
                 tab_width: 4,
+                ..Default::default()
             };
 
-            let diagnostics = view.workspace.display(view.resources, &mut display);
+            let diagnostics = String::new();
+            view.workspace.display(view.resources, &mut display, &mut diagnostics);
 
             println!("{diagnostics}");
             println!("Compilation failed.");

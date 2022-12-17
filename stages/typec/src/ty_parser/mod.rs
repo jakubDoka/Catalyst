@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use diags::*;
 use lexing_t::Span;
+use packaging_t::Source;
 use parsing::*;
 use parsing_t::*;
 
@@ -139,11 +140,13 @@ impl TyChecker<'_> {
             todo!();
         };
 
-        let (item, segments) = match self.lookup(start.ident, start.span, TY_OR_MOD)? {
+        let (item, segments) = match self.lookup(start.ident, start.span, "type or module")? {
             ScopeItem::Module(module) => {
                 let &[PathItemAst::Ident(ty), ref segments @ ..] = segments else {
-                    self.invalid_ty_path(path);
-                    return None;
+                    self.workspace.push(MissingIdentAfterMod {
+                        span: segments.first().map(|s| s.span()).unwrap_or(path.span()),
+                        source: self.source,
+                    })?;
                 };
                 let id = self.interner.intern_scoped(module.index(), ty.ident);
                 (self.lookup(id, path.span(), "type or spec")?, segments)
@@ -195,39 +198,20 @@ impl TyChecker<'_> {
         }
     }
 
-    gen_error_fns! {
-        push invalid_ty_path(self, segment: PathAst) {
-            err: "invalid type path composition";
-            info: "valid forms: `Ty` | `mod\\Ty`";
-            (segment.span(), self.source) {
-                info[segment.span()]: "malformed path encountered here";
-            }
-        }
-
-        push invalid_symbol_type(self, item: ScopeItem, span: Span, what: &str) {
-            err: "invalid symbol type";
-            info: ("expected {} but got {}", what, item.what());
-            (span, self.source) {
-                info[span]: "symbol used here";
-            }
-        }
-    }
-
     pub fn scope_error(
         &mut self,
         err: ScopeError,
         sym: Ident,
         span: Span,
-        what: &str,
+        expected: &'static str,
     ) -> Option<!> {
-        self.workspace.push(match err {
-            ScopeError::NotFound => snippet! {
-                err: ("{} not found", what);
-                info: ("queried '{}'", &self.interner[sym]);
-                (span, self.source) {
-                    err[span]: "this does not exist";
-                }
-            },
+        match err {
+            ScopeError::NotFound => self.workspace.push(ScopeItemNotFound {
+                span,
+                source: self.source,
+                expected,
+                queried: self.interner[sym].to_string(),
+            }),
             ScopeError::Collision => {
                 let suggestions = self.resources.module_deps
                     [self.resources.modules[self.module].deps]
@@ -241,25 +225,74 @@ impl TyChecker<'_> {
                     .map(|dep| &self.interner[dep.name])
                     .intersperse(", ")
                     .collect::<String>();
-
-                snippet! {
-                    err: ("'{}' is ambiguous", &self.interner[sym]);
-                    help: ("try to specify module from which the item is imported");
-                    help: ("suggestions: {}", suggestions);
-                    help: ("syntax for specifying module: `<mod>\\<item>`");
-                    help: ("syntax for specifying method module: `<expr>.<mod>\\<item>`");
-                    (span, self.source) {
-                        err[span]: "this is ambiguous";
-                    }
-                }
+                self.workspace.push(ScopeItemCollision {
+                    suggestions,
+                    span,
+                    source: self.source,
+                })
             }
-        });
+        }
+    }
 
-        None
+    pub fn invalid_symbol_type(
+        &mut self,
+        item: ScopeItem,
+        span: Span,
+        expected: &str,
+    ) -> Option<!> {
+        self.workspace.push(InvalidScopeItemType {
+            span,
+            source: self.source,
+            expected,
+            actual: item.name(),
+        })
     }
 }
 
 pub enum TyPathResult {
     Ty(Ty),
     Spec(FragRef<SpecBase>),
+}
+
+ctl_errors! {
+    #[err => "scope item not found"]
+    #[help => "expected {expected}"]
+    #[info => "debug: queried '{queried}'"]
+    fatal struct ScopeItemNotFound {
+        #[err source, span, "this does not exist or is not imported"]
+        expected: &'static str,
+        queried ref: String,
+        span: Span,
+        source: VRef<Source>,
+    }
+
+    #[err => "identifier is ambiguous"]
+    #[info => "items from multiple modules match the identifier"]
+    #[help => "you have to specify one of ({suggestions}) as a module"]
+    #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
+    fatal struct ScopeItemCollision {
+        #[err source, span, "here"]
+        suggestions ref: String,
+        span: Span,
+        source: VRef<Source>,
+    }
+
+    #[err => "invalid scope item type"]
+    #[info => "expected {expected}, got {actual}"]
+    fatal struct InvalidScopeItemType {
+        #[err source, span, "here"]
+        expected: &'static str,
+        actual: &'static str,
+        span: Span,
+        source: VRef<Source>,
+    }
+
+    #[err => "missing identifier after module"]
+    #[info => "module is always followed by the name of an item"]
+    #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
+    fatal struct MissingIdentAfterMod {
+        #[err source, span, "here"]
+        span: Span,
+        source: VRef<Source>,
+    }
 }

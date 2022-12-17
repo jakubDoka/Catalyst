@@ -29,7 +29,7 @@ pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
     pub methods: FragRefSlice<Func>,
-    pub span: Option<Span>,
+    pub loc: Option<Loc>,
 }
 
 impl Impl {

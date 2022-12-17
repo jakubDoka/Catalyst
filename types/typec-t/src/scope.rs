@@ -54,9 +54,9 @@ impl Scope {
             .insert(id, ScopeRecord::Builtin { kind: item.into() });
     }
 
-    pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), Option<Span>> {
+    pub fn insert_current(&mut self, item: ModuleItem) -> Result<(), ScopeRecord> {
         match self.data.entry(item.id) {
-            hash_map::Entry::Occupied(e) => Err(e.get().span()),
+            hash_map::Entry::Occupied(e) => Err(*e.get()),
             hash_map::Entry::Vacant(e) => {
                 e.insert(ScopeRecord::Current { item });
                 Ok(())
@@ -233,14 +233,19 @@ macro_rules! gen_scope_item {
                 }
             }
         )*
+    }
+}
 
-        impl ScopeItem {
-           pub fn what(&self) -> &'static str {
-                match *self {
-                    $(Self::$name(..) => stringify!($name),)*
-                    Self::Ty(..) => "parameter",
-                }
-            }
+impl ScopeItem {
+    pub fn name(&self) -> &'static str {
+        match *self {
+            ScopeItem::Func(..) => "function",
+            ScopeItem::SpecFunc(..) => "spec function",
+            ScopeItem::Ty(..) => "type",
+            ScopeItem::SpecBase(..) => "spec",
+            ScopeItem::VarHeaderTir(..) => "variable",
+            ScopeItem::Module(..) => "module",
+            ScopeItem::LoopHeaderTir(..) => "loop label",
         }
     }
 }
