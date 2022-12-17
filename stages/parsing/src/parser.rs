@@ -8,6 +8,7 @@ pub mod r#struct;
 pub mod ty;
 
 use crate::*;
+use diags::{ctl_errors, SourceLoc};
 use lexing::*;
 use lexing_t::*;
 use parsing_t::*;
@@ -101,5 +102,17 @@ impl PathItemAst<'_> {
             Self::Ident(name) => name.span(),
             Self::Params(params) => params.span(),
         }
+    }
+}
+
+ctl_errors! {
+    #[err => "expected start of {ast_name} but found {found}"]
+    #[info => ("{ast_name} can only start with {}", expected.join(" or "))]
+    fatal struct ExpectedStartOfAst {
+        #[err loc]
+        ast_name: &'static str,
+        found: TokenKind,
+        expected: &'static [&'static str],
+        loc: SourceLoc,
     }
 }

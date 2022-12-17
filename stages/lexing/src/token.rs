@@ -47,7 +47,7 @@ macro_rules! gen_kind {
 
 
         impl TokenKind {
-            pub fn as_str(self) -> &'static str {
+            pub const fn as_str(self) -> &'static str {
                 match self {
                     $(
                         TokenKind::$keyword => concat!("'", $keyword_repr, "'"),

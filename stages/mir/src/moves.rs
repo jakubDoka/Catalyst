@@ -627,7 +627,7 @@ impl MirChecker<'_, '_> {
         span: Span,
     ) -> Option<!> {
         self.workspace.push(CtlSnippet {
-            title: annotation!(err: ("cannot {} partially moved value", message)),
+            title: ctl_error_annotation!(err: ("cannot {} partially moved value", message)),
             footer: vec![],
             slices: vec![Some(Slice {
                 span: moves
@@ -638,8 +638,8 @@ impl MirChecker<'_, '_> {
                 origin: self.source,
                 annotations: moves
                     .into_iter()
-                    .map(|r#move| source_annotation!(info[r#move.span]: "move out of value"))
-                    .chain(iter::once(source_annotation!(err[span]: "occurred here")))
+                    .map(|r#move| ctl_error_source!(info[r#move.span]: "move out of value"))
+                    .chain(iter::once(ctl_error_source!(err[span]: "occurred here")))
                     .collect(),
                 fold: true,
             })],

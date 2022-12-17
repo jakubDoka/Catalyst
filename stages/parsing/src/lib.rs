@@ -17,34 +17,90 @@ macro_rules! branch {
     (
         $self:expr => {
             $($cond:ident$(($($value:pat = $default:expr),*))? => $res:expr,)*
-            @$options:ident => $default_branch:expr,
+            @$($fallback:tt)*
         }
     ) => {
         match $self.state.current.kind {
             $(TokenKind::$cond$(($($value),*))? => $res,)*
-            _ => {
-                let $options = &[
-                    $(TokenKind::$cond$(($($default),*))?),*
-                ];
-                $default_branch
-            },
+            _ => $crate::branch!(@fallback ($self, $($cond$(($($default),*))?)*) $($fallback)*),
+        }
+    };
+
+    (
+        @fallback $ignored:tt => $handler:expr
+    ) => {
+        $handler
+    };
+
+    (
+        @fallback ($self:expr, $($cond:ident$(($($default:expr),*))?)*) $ast_name:literal
+    ) => {
+        const EXPECTED: &[&str] = &[
+            $(
+                TokenKind::$cond$(($($value),*))?.as_str(),
+            )*
+        ];
+        $crate::parser::ExpectedStartOfAst {
+            ast_name: $ast_name,
+            expected: EXPECTED,
         }
     };
 
     (
         str $self:expr => {
             $($str:literal => $res:expr,)*
-            @$options:ident => $default_branch:expr,
+            @$($fallback:tt)*
         }
     ) => {
         match $self.current_token_str() {
             $($str => $res,)*
             _ => {
-                let $options = [
-                    $($str),*
-                ];
-                $default_branch
+                $crate::branch!(@str_fallback ($self, $($str)*) $($fallback)*)
             },
+        }
+    };
+
+    (
+        @str_fallback $ignored:tt => $handler:expr,
+    ) => {
+        $handler
+    };
+
+    (
+        @str_fallback ($self:expr, $($str:literal)*) $ast_name:literal,
+    ) => {
+        {
+            const EXPECTED: &[&str] = &[$($str,)*];
+            $self.workspace.push($crate::parser::ExpectedStartOfAst {
+                ast_name: $ast_name,
+                expected: EXPECTED,
+                found: $self.state.current.kind,
+                loc: $self.loc(),
+            })?
+        }
+    };
+
+    (
+        @fallback $ignored:tt => $handler:expr,
+    ) => {
+        $handler
+    };
+
+    (
+        @fallback ($self:expr, $($cond:ident$(($($default:expr),*))?)*) $ast_name:literal,
+    ) => {
+        {
+            const EXPECTED: &[&str] = &[
+                $(
+                    TokenKind::$cond$(($($default),*))?.as_str(),
+                )*
+            ];
+            $self.workspace.push($crate::parser::ExpectedStartOfAst {
+                ast_name: $ast_name,
+                expected: EXPECTED,
+                found: $self.state.current.kind,
+                loc: $self.loc(),
+            })?
         }
     };
 }

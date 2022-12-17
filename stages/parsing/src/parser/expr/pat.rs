@@ -1,5 +1,3 @@
-use diags::*;
-
 use super::*;
 
 list_meta!(StructCtorPatBodyMeta LeftCurly [Comma NewLine] RightCurly);
@@ -39,11 +37,7 @@ impl<'a> Ast<'a> for PatAst<'a> {
                 }
             },
             Int => Some(Self::Int(ctx.advance().span)),
-            @options => ctx.workspace.push(ExpectedPattern {
-                got: ctx.state.current.kind,
-                options: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"pattern",
         })
     }
 
@@ -57,17 +51,6 @@ impl<'a> Ast<'a> for PatAst<'a> {
             Wildcard(span) | Int(span) => span,
             EnumCtor(ctor) => ctor.span(),
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected a pattern but got {got}"]
-    #[info => "valid patterns can start with {options}"]
-    fatal struct ExpectedPattern {
-        #[err loc]
-        got: TokenKind,
-        options ref: String,
-        loc: SourceLoc,
     }
 }
 
@@ -153,15 +136,11 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
                 let name = ctx.parse()?;
                 branch! {ctx => {
                     Colon => Self::Named { name, colon: ctx.advance().span, pat: ctx.parse_args(mutable)? },
-                    @_option => Self::Simple { name, mutable },
+                    @ => Self::Simple { name, mutable },
                 }}
             },
             DoubleDot => Self::DoubleDot(ctx.advance().span),
-            @options => ctx.workspace.push(ExpectedFieldPattern {
-                got: ctx.state.current.kind,
-                options: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"struct field pattern",
         }})
     }
 
@@ -174,16 +153,5 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
             Named { name, pat, .. } => name.span().joined(pat.span()),
             DoubleDot(span) => span,
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected start of field pattern but got {got}"]
-    #[info => "valid field patterns can start with {options}"]
-    fatal struct ExpectedFieldPattern {
-        #[err loc]
-        got: TokenKind,
-        options ref: String,
-        loc: SourceLoc,
     }
 }

@@ -114,11 +114,7 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
             String => Some(ManifestValueAst::String(ctx.advance().span)),
             LeftBracket => ctx.parse().map(ManifestValueAst::Array),
             LeftCurly => ctx.parse().map(ManifestValueAst::Object),
-            @options => ctx.workspace.push(ExpectedManifestValue {
-                expected: options.to_str(ctx),
-                got: ctx.state.current.kind,
-                loc: ctx.loc(),
-            })?,
+            @"manifest value",
         }}
     }
 
@@ -128,17 +124,6 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
             ManifestValueAst::Object(o) => o.span(),
             ManifestValueAst::Array(a) => a.span(),
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected {expected} but got {got} when parsing manifest value"]
-    #[info => "manifest values are strings, objects, or arrays"]
-    fatal struct ExpectedManifestValue {
-        #[err loc]
-        expected ref: String,
-        got: TokenKind,
-        loc: SourceLoc,
     }
 }
 

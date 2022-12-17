@@ -173,30 +173,16 @@ mod util {
                     .intersperse(" -> ".into())
                     .collect::<String>();
 
-                let slice = (|| {
-                    Some(diags::Slice {
-                        span: cycle
-                            .iter()
-                            .filter_map(|&ty| ty.span(self.typec))
-                            .reduce(|a, b| a.joined(b))?,
-                        origin: self.source,
-                        annotations: cycle
-                            .iter()
-                            .skip(1)
-                            .filter_map(|&ty| ty.span(self.typec))
-                            .map(
-                                |span| source_annotation!(info[span]: "this type is part of cycle"),
-                            )
-                            .collect(),
-                        fold: true,
-                    })
-                })();
-
                 let snippet = CtlSnippet {
-                    title: annotation!(err: "infinitely sized type detected between defined types"),
-                    footer: vec![annotation!(info: ("cycle: {}", cycle_chart))],
-                    slices: vec![slice],
-                    origin: format!("{}:{}", file!(), line!()),
+                    title: ctl_error_annotation!(err => "infinitely sized type detected between defined types"),
+                    footer: vec![ctl_error_annotation!(info => ("cycle: {}", cycle_chart))],
+                    source_annotations: cycle
+                        .iter()
+                        .map(|&ty| {
+                            let span = ty.span(self.typec).expect("builtin types should not have cycles");
+                            ctl_error_source_annotation!(info self.source, span, "type defined here")
+                        })
+                        .collect(),
                 };
 
                 self.workspace.push(snippet);

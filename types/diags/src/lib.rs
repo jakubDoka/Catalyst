@@ -4,7 +4,7 @@
 #![feature(never_type)]
 
 #[macro_export]
-macro_rules! annotation_type {
+macro_rules! ctl_error_type {
     (err) => {
         $crate::CtlAnnotationType::Error
     };
@@ -46,33 +46,33 @@ macro_rules! ctl_error_id {
 }
 
 #[macro_export]
-macro_rules! annotation {
+macro_rules! ctl_error_annotation {
     ($annotation_type:ident $($id:ident)? => $($label:tt)+) => {
         $crate::CtlAnnotation {
             id: $crate::ctl_error_id!($($id)?),
             label: $crate::ctl_error_message!($($label)+),
-            annotation_type: $crate::annotation_type!($annotation_type),
+            annotation_type: $crate::ctl_error_type!($annotation_type),
         }
     };
 }
 
 #[macro_export]
-macro_rules! source_annotation {
+macro_rules! ctl_error_source_annotation {
     ($annotation_type:ident $source:expr, $span:expr, $($label:tt)+) => {
         $crate::CtlSourceAnnotation {
             origin: $source,
             span: $span,
             label: $crate::ctl_error_message!($($label)+),
-            annotation_type: $crate::annotation_type!($annotation_type),
+            annotation_type: $crate::ctl_error_type!($annotation_type),
         }
     };
 
     ($annotation_type:ident $loc:expr, $($label:tt)+) => {
-        $crate::source_annotation!($annotation_type $loc.origin, $loc.span, $($label)+)
+        $crate::ctl_error_source_annotation!($annotation_type $loc.origin, $loc.span, $($label)+)
     };
 
     ($annotation_type:ident $loc:expr) => {
-        $crate::source_annotation!($annotation_type $loc, "here")
+        $crate::ctl_error_source_annotation!($annotation_type $loc, "here")
     };
 }
 
@@ -111,14 +111,14 @@ macro_rules! ctl_errors {
                 fn fill_snippet<'a>(&self, snippet: &mut $crate::CtlSnippet) {
                     let &$name { $( $($ref)? $field),* } = self;
 
-                    snippet.title = $crate::annotation!($($title)*);
+                    snippet.title = $crate::ctl_error_annotation!($($title)*);
                     $(
-                        snippet.footer.push($crate::annotation!($($footer)*));
+                        snippet.footer.push($crate::ctl_error_annotation!($($footer)*));
                     )*
 
                     $(
                         snippet.source_annotations.push(
-                            $crate::source_annotation!($($source)*)
+                            $crate::ctl_error_source_annotation!($($source)*)
                         );
                     )*
                 }

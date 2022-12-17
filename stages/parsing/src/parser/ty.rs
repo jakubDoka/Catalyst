@@ -1,5 +1,3 @@
-use diags::*;
-
 use super::*;
 
 list_meta!(TyGenericsMeta ? LeftBracket Comma RightBracket);
@@ -33,17 +31,9 @@ impl<'a> Ast<'a> for TyAst<'a> {
                 "^" => ctx.parse()
                     .map(|p| ctx.arena.alloc(p))
                     .map(TyAst::Pointer),
-                @options => ctx.workspace.push(ExpectedPrefixedTy {
-                    expected: options.join(" or "),
-                    found: ctx.state.current.kind,
-                    loc: ctx.loc(),
-                })?,
+                @"prefixed type",
             }),
-            @options => ctx.workspace.push(ExpectedTy {
-                expected: options.to_str(ctx),
-                found: ctx.state.current.kind,
-                loc: ctx.loc(),
-            })?,
+            @"type",
         }}
     }
 
@@ -54,24 +44,6 @@ impl<'a> Ast<'a> for TyAst<'a> {
             TyAst::Tuple(tuple) => tuple.span(),
             TyAst::Wildcard(span) => span,
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected '{expected}' but found '{found}' when parsing prefixed type"]
-    fatal struct ExpectedPrefixedTy {
-        #[err loc]
-        expected ref: String,
-        found: TokenKind,
-        loc: SourceLoc,
-    }
-
-    #[err => "expected '{expected}' but found '{found}' when parsing type"]
-    fatal struct ExpectedTy {
-        #[err loc]
-        expected ref: String,
-        found: TokenKind,
-        loc: SourceLoc,
     }
 }
 
@@ -112,7 +84,7 @@ impl<'a> Ast<'a> for MutabilityAst<'a> {
         Some(branch! {ctx => {
             Mut => Self::Mut(ctx.advance().span),
             Use => Self::Generic(ctx.advance().span, ctx.parse()?),
-            @_options => Self::None,
+            @ => Self::None,
         }})
     }
 

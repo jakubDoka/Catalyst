@@ -163,11 +163,7 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
                 ctx.skip(TokenKind::NewLine);
                 ctx.parse()?
             })),
-            @options => ctx.workspace.push(ExpectedIfBlock {
-                got: ctx.state.current.kind,
-                options: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"if block",
         })
     }
 
@@ -177,17 +173,6 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
             Block(block) => block.span(),
             Arrow(.., expr) => expr.span(),
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected if block but got {got}"]
-    #[info => "if block can start with either of {options}"]
-    fatal struct ExpectedIfBlock {
-        #[err loc]
-        got: TokenKind,
-        options ref: String,
-        loc: SourceLoc,
     }
 }
 

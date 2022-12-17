@@ -119,14 +119,10 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Operator(_ = 0) => branch! {str ctx => {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
                 "^" => Some(Self::Ref(ctx.advance().span, ctx.parse()?, ctx.parse_alloc()?)),
-                @_options => todo!(),
+                @ => todo!(),
             }},
             LeftCurly => ctx.parse().map(Self::Block),
-            @options => ctx.workspace.push(ExpectedExpr {
-                got: ctx.state.current.kind,
-                options: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"expression",
         });
 
         loop {
@@ -147,14 +143,10 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                     branch!(ctx => {
                         LeftCurly => ctx.parse_args((Some(unit?), slash))
                             .map(Self::StructCtor),
-                        @options => ctx.workspace.push(ExpectedBackSlashExpression {
-                            got: ctx.state.current.kind,
-                            options: options.to_str(ctx),
-                            loc: ctx.loc(),
-                        })?,
+                        @"backslash expression",
                     })
                 },
-                @_options => break unit,
+                @ => break unit,
             });
         }
     }
@@ -178,24 +170,6 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
             Block(block) => block.span(),
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected expression, got {got}"]
-    #[info => "expression can start with {options}"]
-    fatal struct ExpectedExpr {
-        got: TokenKind,
-        options ref: String,
-        loc: SourceLoc,
-    }
-
-    #[err => "expected backslash expression, got {got}"]
-    #[info => "backslash expression can start with {options}"]
-    fatal struct ExpectedBackSlashExpression {
-        got: TokenKind,
-        options ref: String,
-        loc: SourceLoc,
     }
 }
 

@@ -125,11 +125,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
             },
             LeftCurly => ctx.parse().map(Self::Block),
             Extern => Some(Self::Extern(ctx.advance().span)),
-            @options => ctx.workspace.push(ExpectingFunctionBody {
-                got: ctx.state.current.kind,
-                loc: ctx.loc(),
-                options: options.to_str(ctx),
-            })?,
+            @"function body",
         }}
     }
 
@@ -139,16 +135,5 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
             Self::Block(block) => block.span(),
             Self::Extern(span) => *span,
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected {options} but got {got} when parsing function body"]
-    #[info => "function bodies are required"]
-    fatal struct ExpectingFunctionBody {
-        #[err loc]
-        got: TokenKind,
-        loc: SourceLoc,
-        options ref: String,
     }
 }

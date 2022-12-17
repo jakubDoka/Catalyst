@@ -114,11 +114,7 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             Hash => ctx.parse()
                 .map(|s| ctx.arena.alloc(s))
                 .map(ItemAst::Attribute),
-            @options => ctx.workspace.push(ExpectedFileItem {
-                found: ctx.state.current.kind,
-                loc: ctx.loc(),
-                options: options.to_str(ctx),
-            })?,
+            @"module item",
         }}
     }
 
@@ -131,17 +127,6 @@ impl<'a> Ast<'a> for ItemAst<'a> {
             ItemAst::Attribute(a) => a.span(),
             ItemAst::Enum(e) => e.span(),
         }
-    }
-}
-
-ctl_errors! {
-    #[err => "expected start of file item but found {found}"]
-    #[info => "file items start only with {options}"]
-    fatal struct ExpectedFileItem {
-        #[err loc]
-        found: TokenKind,
-        loc: SourceLoc,
-        options ref: String,
     }
 }
 
@@ -290,10 +275,7 @@ impl<'a> Ast<'a> for ImplItemAst<'a> {
             Func => ctx.parse_args((vis, start))
                 .map(|s| ctx.arena.alloc(s))
                 .map(ImplItemAst::Func),
-            @options => ctx.workspace.push(InvalidImplItem {
-                expected: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"impl item",
         }}
     }
 
@@ -403,10 +385,7 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
                         .map(Inline)
                 }
             },
-            @options => ctx.workspace.push(InvalidTopLevelAttribute {
-                expected: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"top level attribute",
         }}
     }
 
@@ -442,10 +421,7 @@ impl<'a> Ast<'a> for InlineModeAst {
         branch! {str ctx => {
             "always" => Some(InlineModeAst::Always(ctx.advance().span)),
             "never" => Some(InlineModeAst::Never(ctx.advance().span)),
-            @options => ctx.workspace.push(InvalidInlineMode {
-                expected: options.to_str(ctx),
-                loc: ctx.loc(),
-            })?,
+            @"inline mode",
         }}
     }
 
