@@ -1,9 +1,11 @@
- --> binary-operators\root.ctl
+error
+ --> binary-operators\root.ctl:1:1
   |
-1 | 
-2 | fn do_something(a: uint, b: uint) -> uint {
-3 |     a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b *
-4 |         a + b * a + b + a
-5 | }
+1 | / 
+2 | | fn do_something(a: uint, b: uint) -> uint {
+3 | |     a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b * a + b *
+4 | |         a + b * a + b + a
+5 | | }
+  | |_- info: test
   |
 

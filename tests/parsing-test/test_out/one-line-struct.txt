@@ -1,10 +1,12 @@
- --> one-line-struct\root.ctl
+error
+ --> one-line-struct\root.ctl:1:1
   |
-1 | 
-2 | pub struct OneLineStruct {
-3 |     pub use mut filed: Trough
-4 |     other_field: SimpleStuff
-5 |     priv pointer: ^mut ^int
-6 | }
+1 | / 
+2 | | pub struct OneLineStruct {
+3 | |     pub use mut filed: Trough
+4 | |     other_field: SimpleStuff
+5 | |     priv pointer: ^mut ^int
+6 | | }
+  | |_- info: test
   |
 

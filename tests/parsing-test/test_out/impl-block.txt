@@ -1,12 +1,14 @@
- --> impl-block\root.ctl
+error
+ --> impl-block\root.ctl:1:1
   |
-1 | 
-2 | struct Struct {
-3 |     field: u32
-4 | }
-5 | impl Struct {
-6 |     fn constructor -> Self => Self\{ field: 0 }
-7 |     fn method(s: ^Self) -> uint => self.field
-8 | }
+1 | / 
+2 | | struct Struct {
+3 | |     field: u32
+4 | | }
+5 | | impl Struct {
+6 | |     fn constructor -> Self => Self\{ field: 0 }
+7 | |     fn method(s: ^Self) -> uint => self.field
+8 | | }
+  | |_- info: test
   |
 
