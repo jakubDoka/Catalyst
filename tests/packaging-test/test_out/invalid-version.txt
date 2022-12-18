@@ -1,7 +1,8 @@
-warning: invalid version
+error: invalid version of dependency
  --> invalid-version\package.ctlm:3:39
   |
 3 |     git "github.com/jakubDoka/water" "non existent version"
-  |                                       -------------------- info: declared here
+  |                                       ^^^^^^^^^^^^^^^^^^^^ here
   |
+  = info: the version did not match any tag in 'https://github.com/jakubDoka/water' repository
 

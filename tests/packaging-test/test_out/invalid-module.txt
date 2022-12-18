@@ -1,9 +1,9 @@
-error: failed to read source file
+error: invalid module path
  --> invalid-module\root\a.ctl:2:5
   |
 2 |     "./a/b"
-  |     ^^^^^^^ declared here
+  |     ^^^^^^^ derived from this
   |
-  = info: path: `invalid-module\root\a\b.ctl`
-  = info: trace: file not found
+  = info: path searched: `invalid-module\root\a\b.ctl`
+  = info: exact io error: file not found
 
