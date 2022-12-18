@@ -1,44 +1,49 @@
-error: cannot move out of a value more than once
- --> simple-moves\root.ctl:8:10
+error: move out of already moved value
+ --> simple-moves\root.ctl:7:10
   |
 7 |     drop(a)
-  |          - info: first move here
+  |          - info: previous move of value
 8 |     drop(a)
-  |          ^ detected here
+  |          ^ here
   |
+  = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of a value more than once
-  --> simple-moves\root.ctl:15:10
+error: move out of already moved value
+  --> simple-moves\root.ctl:13:14
    |
 13 |         drop(a)
-   |              - info: first move here
+   |              - info: previous move of value
 14 |     } 
 15 |     drop(a)
-   |          ^ detected here
+   |          ^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of a value more than once
-  --> simple-moves\root.ctl:41:10
+error: move out of already moved value
+  --> simple-moves\root.ctl:39:10
    |
 39 |     drop(a)
-   |          - info: first move here
+   |          - info: previous move of value
 40 |     if 0 == 0 => a = A\{ }
 41 |     drop(a)
-   |          ^ detected here
+   |          ^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of a value more than once
-  --> simple-moves\root.ctl:72:10
+error: move out of already moved value
+  --> simple-moves\root.ctl:71:9
    |
 71 |         e {
-   |         - info: first move here
-...
+   |         - info: previous move of value
+72 |         }
+73 |     }
 74 |     drop(e)
-   |          ^ detected here
+   |          ^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
 info: mir repr of functions:
- fn [] drop(var0: param0) -> ()  { ret var0
+fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
         drop var2
         return var0

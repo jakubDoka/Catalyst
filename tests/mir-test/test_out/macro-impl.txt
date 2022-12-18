@@ -1,5 +1,5 @@
 info: mir repr of functions:
- fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  { ret var3
+fn [] next(var0: ^1\MacroLexer) -> 1\MacroToken  { ret var3
     block0(var2: ^1\MacroLexer) {
         access var2
         var3 = ctl_lexer_next(val2)

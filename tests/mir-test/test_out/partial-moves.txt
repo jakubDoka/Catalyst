@@ -1,51 +1,56 @@
-error: cannot move out of a value more than once
-  --> partial-moves\root.ctl:16:12
+error: move out of already moved value
+  --> partial-moves\root.ctl:14:12
    |
 14 |     drop(b.a0)
-   |            -- info: first move here
+   |            -- info: previous move of value
 15 |     drop(b.a1)
 16 |     drop(b.a0)
-   |            ^^ detected here
+   |            ^^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of partially moved value
+error: move out of partially moved value is prohibited
   --> partial-moves\root.ctl:20:12
    |
 20 |     drop(b.a0)
-   |            -- info: move out of value
+   |            -- info: move occurs earlier here
 21 |     drop(b)
-   |          ^ occurred here
+   |          - info: here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of partially moved value
+error: move out of partially moved value is prohibited
   --> partial-moves\root.ctl:31:25
    |
 31 |     if 0 == 0 => drop(b.a0)
-   |                         -- info: move out of value
+   |                         -- info: move occurs earlier here
 32 |     drop(b)
-   |          ^ occurred here
+   |          - info: here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot reference partially moved value
+error: reference to partially moved value is prohibited
   --> partial-moves\root.ctl:42:12
    |
 42 |     drop(b.a0)
-   |            -- info: move out of value
+   |            -- info: move occurs earlier here
 43 |     let a = ^b
-   |              ^ occurred here
+   |              - info: here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot reference moved value
+error: reference to already moved value
   --> partial-moves\root.ctl:47:10
    |
 47 |     drop(b)
-   |          - info: first move here
+   |          - info: previous move of value
 48 |     let a = ^b.a0
-   |                ^^ referenced later here
+   |                ^^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
 info: mir repr of functions:
- fn [] drop(var0: param0) -> ()  { ret var0
+fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
         drop var2
         return var0

@@ -1,37 +1,45 @@
-error: cannot move out of the value, it could have been moved out in a previous iteration of the loop
- --> loop-drops\root.ctl:8:14
+error: value is possibly moved more then once
+ --> loop-drops\root.ctl:7:5
   |
 7 |       loop {
-  |  _____^
-8 |           drop(a)
-  | |              - info: move occurred here
+  |  _____-
+8 | |         drop(a)
+  |                ^ here
 9 | |     }
-  | |_____^ in this loop
+  | |_____- info: the loop
   |
+  = note: you can disable move semantics with '#[no_moves]' function attribute
+  = note: nonlocal value remains moved even after loop jumps back
+  = help: 'break' after the move or move the value beck before next iteration
 
-error: cannot move out of a value more than once
-  --> loop-drops\root.ctl:22:10
+error: move out of already moved value
+  --> loop-drops\root.ctl:21:25
    |
 21 |         if true => drop(a) else => continue
-   |                         - info: first move here
-...
+   |                         - info: previous move of value
+22 |         break
+23 |     }
 24 |     drop(a)
-   |          ^ detected here
+   |          ^ here
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
 
-error: cannot move out of the value, it could have been moved out in a previous iteration of the loop
-  --> loop-drops\root.ctl:29:25
+error: value is possibly moved more then once
+  --> loop-drops\root.ctl:28:5
    |
 28 |       loop {
-   |  _____^
-29 |           if true => drop(a) else => break
-   | |                         - info: move occurred here
+   |  _____-
+29 | |         if true => drop(a) else => break
+   |                           ^ here
 30 | |     }
-   | |_____^ in this loop
+   | |_____- info: the loop
    |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+   = note: nonlocal value remains moved even after loop jumps back
+   = help: 'break' after the move or move the value beck before next iteration
 
 info: mir repr of functions:
- fn [] drop(var0: param0) -> ()  { ret var0
+fn [] drop(var0: param0) -> ()  { ret var0
     block0(var2: param0) {
         drop var2
         return var0

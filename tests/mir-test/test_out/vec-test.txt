@@ -1,13 +1,14 @@
-error: function not found
+error: scope item not found
   --> vec-test\root.ctl:13:8
    |
 13 |     vv.get_mut(0).push(3)
-   |        ^^^^^^^ this does not exist
+   |        ^^^^^^^ this does not exist or is not imported
    |
-   = info: queried 'struct1\get_mut'
+   = help: expected method
+   = info: debug: queried 'struct1\get_mut'
 
 info: mir repr of functions:
- fn [] write(var0: ^mut param0, var1: param0) -> ()  { ret var0
+fn [] write(var0: ^mut param0, var1: param0) -> ()  { ret var0
     block0(var2: ^mut param0, var3: param0) {
         access var2
         var4 = *var2
