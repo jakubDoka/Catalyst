@@ -52,6 +52,15 @@ pub struct PathAst<'a> {
     pub segments: &'a [PathItemAst<'a>],
 }
 
+impl<'a> PathAst<'a> {
+    pub fn after_start_span(&self) -> Span {
+        self.segments
+            .iter()
+            .map(|s| s.span())
+            .fold(self.start.span().as_end(), |a, b| a.joined(b))
+    }
+}
+
 impl<'a> Ast<'a> for PathAst<'a> {
     type Args = ();
 

@@ -22,56 +22,85 @@ impl TyChecker<'_> {
         inference: Inference,
     ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
         pub fn resolve<'a>(
+            s: &mut TyChecker,
             enum_ty: FragRef<Enum>,
             segments: &[PathItemAst<'a>],
+            backup_span: Span,
         ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
             Some(match *segments {
                 [PathItemAst::Ident(name)] => (enum_ty, name, None),
                 [PathItemAst::Params(params), PathItemAst::Ident(name)] => {
                     (enum_ty, name, Some(params))
                 }
-                ref other => todo!("{other:?}"),
+                ref other => s.workspace.push(InvalidPathSegment {
+                    loc: SourceLoc {
+                        origin: s.source,
+                        span: segments
+                            .iter()
+                            .map(|s| s.span())
+                            .reduce(|a, b| a.joined(b))
+                            .unwrap_or(backup_span),
+                    },
+                    message: "expected optional generics followed by an ident (enum-variant name)",
+                })?,
             })
         }
 
         if path.slash.is_some() {
             let Some(expected) = inference.ty() else {
-                self.cannot_infer(path.span())?;
+                self.workspace.push(CannotInferExpression {
+                    help: "add an enum type-name before the leading '\\'",
+                    loc: SourceLoc { origin: self.source, span: path.span() },
+                })?;
             };
 
             let Ty::Enum(enum_ty) = expected.base(self.typec) else {
-                todo!();
+                self.workspace.push(UnexpectedInferenceType {
+                    expected: "enum",
+                    found: self.typec.display_ty(expected, self.interner),
+                    loc: SourceLoc { origin: self.source, span: path.span() },
+                })?;
             };
 
             let PathItemAst::Ident(name) = path.start else {
-                todo!();
+                self.workspace.push(InvalidPathSegment {
+                    loc: SourceLoc { origin: self.source, span: path.start.span() },
+                    message: "expected an ident (enum-variant name)",
+                })?;
             };
 
             return Some((enum_ty, name, grab_trailing_params(path.segments)));
         }
 
         let PathItemAst::Ident(name) = path.start else {
-            todo!();
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc { origin: self.source, span: path.start.span() },
+                message: "expected an ident (enum or module)",
+            })?;
         };
 
         let module = match self.lookup(name.ident, name.span, "module or enum")? {
             ScopeItem::Ty(Ty::Enum(enum_ty)) => {
-                return resolve(enum_ty, path.segments);
+                return resolve(self, enum_ty, path.segments, name.span);
             }
             ScopeItem::Module(module) => module,
-            _ => todo!(),
+            item => self.invalid_symbol_type(item, name.span, "module or enum")?,
         };
 
         let &[PathItemAst::Ident(r#enum), ref segments @ ..] = path.segments else {
-            todo!();
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc { origin: self.source, span: path.after_start_span() },
+                message: "expected an enum name",
+            })?;
         };
 
         let id = self.interner.intern_scoped(module.index(), r#enum.ident);
-        let Ty::Enum(enum_ty) = lookup!(Ty self, id, r#enum.span) else {
-            todo!();
+        let enum_ty = match self.lookup(id, r#enum.span, "enum")? {
+            ScopeItem::Ty(Ty::Enum(enum_ty)) => enum_ty,
+            item => self.invalid_symbol_type(item, r#enum.span, "enum")?,
         };
 
-        resolve(enum_ty, segments)
+        resolve(self, enum_ty, segments, r#enum.span)
     }
 
     pub fn dot_path(
@@ -334,7 +363,10 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         if slash.is_some() {
             let Some(inferred) = inference.ty() else {
-                todo!();
+                self.workspace.push(CannotInferExpression {
+                    help: "Try specifying the type before '\\'",
+                    loc: SourceLoc { origin: self.source, span: path.span() },
+                })?;
             };
 
             match inferred.base(self.typec) {
@@ -382,5 +414,32 @@ impl TyChecker<'_> {
             .interner
             .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs_ty, rhs_ty, t, s));
         Some(lookup!(Func self, id, op.span()))
+    }
+}
+
+ctl_errors! {
+    #[err => "cannot infer type of expression"]
+    #[help => "{help}"]
+    error CannotInferExpression: fatal {
+        #[err loc]
+        help: &'static str,
+        loc: SourceLoc,
+    }
+
+    #[err => "inferred type of expression is not a {expected}"]
+    #[info => "the inferred type is '{found}' which is not a {expected}"]
+    error UnexpectedInferenceType: fatal {
+        #[err loc]
+        expected: &'static str,
+        found ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "invalid path segment"]
+    #[note => "{message}"]
+    error InvalidPathSegment: fatal {
+        #[err loc]
+        message: &'static str,
+        loc: SourceLoc,
     }
 }

@@ -107,4 +107,18 @@ impl Span {
 
         Span::new(start..end)
     }
+
+    pub fn as_end(self) -> Self {
+        Span {
+            start: self.end,
+            end: self.end,
+        }
+    }
+
+    pub fn as_start(self) -> Self {
+        Span {
+            start: self.start,
+            end: self.start,
+        }
+    }
 }

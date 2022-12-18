@@ -254,6 +254,8 @@ pub enum TyPathResult {
     Spec(FragRef<SpecBase>),
 }
 
+const MOD_HELP: &str = "syntax for specifying module (applies on methods as well): `<mod>\\<item>`";
+
 ctl_errors! {
     #[err => "scope item not found"]
     #[help => "expected {expected}"]
@@ -269,7 +271,7 @@ ctl_errors! {
     #[err => "identifier is ambiguous"]
     #[info => "items from multiple modules match the identifier"]
     #[help => "you have to specify one of ({suggestions}) as a module"]
-    #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
+    #[help => MOD_HELP]
     error ScopeItemCollision: fatal {
         #[err source, span, "here"]
         suggestions ref: String,
@@ -289,7 +291,7 @@ ctl_errors! {
 
     #[err => "missing identifier after module"]
     #[info => "module is always followed by the name of an item"]
-    #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
+    #[help => MOD_HELP]
     error MissingIdentAfterMod: fatal {
         #[err source, span, "here"]
         span: Span,
