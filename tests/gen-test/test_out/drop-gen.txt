@@ -176,7 +176,6 @@ block0:
 
 
 info: status: 0
- = info: stdout:
-         a b c d e f g 
- = info: stderr:
+ = info: stdout: a b c d e f g 
+ = info: stderr: 
 

@@ -152,6 +152,6 @@ block0:
 
 
 info: status: 0
- = info: stdout:
- = info: stderr:
+ = info: stdout: 
+ = info: stderr: 
 

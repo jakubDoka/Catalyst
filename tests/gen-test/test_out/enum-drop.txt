@@ -108,7 +108,6 @@ block0(v0: i64):
 
 
 info: status: 0
- = info: stdout:
-         a b c 
- = info: stderr:
+ = info: stdout: a b c 
+ = info: stderr: 
 
