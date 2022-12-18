@@ -1,5 +1,5 @@
 info: tir repr of functions:
- fn [] pass(var0: param0) -> param0 return var0
+fn [] pass(var0: param0) -> param0 return var0
 
 fn [] pass(var0: uint) -> uint return var0
 

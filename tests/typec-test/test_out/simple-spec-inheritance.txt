@@ -1,5 +1,5 @@
 info: tir repr of functions:
- fn [: C] sum() -> uint return uint + uint(A\a[param0](), B\a[param0]())
+fn [: C] sum() -> uint return uint + uint(A\a[param0](), B\a[param0]())
 
 fn [] main() -> uint return {
     uint - uint(uint - uint(sum[uint](), a()), a())

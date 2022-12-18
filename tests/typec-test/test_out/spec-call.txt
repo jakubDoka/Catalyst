@@ -1,16 +1,16 @@
-error: 'u32' does not implement 'Clay'
+error: not all parameter specs are satisfied
   --> spec-call\root.ctl:10:29
    |
 10 | fn other_main -> u32 => pass(0)
-   |                             ^^^ when calling this
+   |                             ^^^ here
    |
+   = info: missing implementations:
+            u32: Clay
 
 info: tir repr of functions:
- fn [: Clay] pass(var0: param0) -> param0 return var0
+fn [: Clay] pass(var0: param0) -> param0 return var0
 
 fn [] main() -> uint return pass[uint](0)
-
-fn [] other_main() -> u32 return pass[u32](0)
 
 fn [] last_main() -> 0\Foo[uint] return pass[0\Foo[uint]](0\Foo[uint]\{0})
 

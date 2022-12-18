@@ -1,5 +1,5 @@
 info: tir repr of functions:
- fn "default" [] main() -> uint {
+fn "default" [] main() -> uint {
     return 0
 }
 

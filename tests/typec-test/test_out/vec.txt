@@ -1,13 +1,14 @@
-error: function not found
+error: scope item not found
  --> vec\root.ctl:9:10
   |
 9 |     *vec.get(0)
-  |          ^^^ this does not exist
+  |          ^^^ this does not exist or is not imported
   |
-  = info: queried 'struct1\get'
+  = help: expected method
+  = info: debug: queried 'struct1\get'
 
 info: tir repr of functions:
- fn [] write(var0: ^mut param0, var1: param0) -> () return {
+fn [] write(var0: ^mut param0, var1: param0) -> () return {
     *var0 = var1
 }
 
