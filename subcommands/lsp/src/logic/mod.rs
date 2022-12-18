@@ -180,14 +180,24 @@ impl LspRuntime {
                 continue;
             };
 
-            let report = Diagnostic {
-                range: view
-                    .resources
-                    .project_span(main_source_diag.origin, main_source_diag.span),
-                severity: severity(main_source_diag.annotation_type).into(),
-                source: Some(LANG_NAME.into()),
-                message: mem::take(&mut snippet.title.label),
-                related_information: Some(
+            let range = view
+                .resources
+                .project_span(main_source_diag.origin, main_source_diag.span);
+            let Some(t_diags) = Self::get_diag(view.resources, &mut diags, &main_source_diag) else {
+                continue;
+            };
+            let uri = t_diags.uri.clone();
+            let related_information = snippet
+                .footer
+                .drain(..)
+                .map(|annotation| DiagnosticRelatedInformation {
+                    location: Location {
+                        uri: uri.clone(),
+                        range,
+                    },
+                    message: annotation.label,
+                })
+                .chain(
                     snippet
                         .source_annotations
                         .drain(..)
@@ -202,9 +212,16 @@ impl LspRuntime {
                                 },
                                 message: annotation.label,
                             })
-                        })
-                        .collect(),
-                ),
+                        }),
+                )
+                .collect();
+
+            let report = Diagnostic {
+                range,
+                severity: severity(main_source_diag.annotation_type).into(),
+                source: Some(LANG_NAME.into()),
+                message: mem::take(&mut snippet.title.label),
+                related_information: Some(related_information),
                 ..default()
             };
 

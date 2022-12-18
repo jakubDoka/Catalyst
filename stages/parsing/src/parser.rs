@@ -116,7 +116,7 @@ impl PathItemAst<'_> {
 
 ctl_errors! {
     #[err => "expected start of {ast_name} but found {found}"]
-    #[info => ("{ast_name} can only start with {}", expected.join(" or "))]
+    #[info => ("{ast_name} can only start with: {}", expected.join(", "))]
     error ExpectedStartOfAst: fatal {
         #[err loc]
         ast_name: &'static str,
