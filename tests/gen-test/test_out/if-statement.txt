@@ -32,6 +32,6 @@ block5(v9: i64):
 
 
 info: status: 0
- = info: stdout:
- = info: stderr:
+ = info: stdout: 
+ = info: stderr: 
 
