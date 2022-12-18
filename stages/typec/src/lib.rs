@@ -175,9 +175,10 @@ mod util {
                     footer: vec![ctl_error_annotation!(info => ("cycle: {}", cycle_chart))],
                     source_annotations: cycle
                         .iter()
+                        .skip(1) // the first and last elements are the same
                         .filter_map(|&ty| {
                             let span = ty.span(self.typec).expect("builtin types should not have cycles");
-                            ctl_error_source_annotation!(info self.source, span, "type defined here")
+                            ctl_error_source_annotation!(info self.source, span, "this type is part of the cycle")
                         })
                         .collect(),
                 };

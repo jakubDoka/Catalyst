@@ -131,14 +131,17 @@ impl TyChecker<'_> {
                     origin: self.source,
                     span: ctor.span(),
                 },
-            });
+            })?;
         }
 
-        let final_ty = Ty::Instance(self.typec.instance(
-            GenericTy::Struct(struct_ty),
-            params,
-            self.interner,
-        ));
+        let final_ty = if params.is_empty() {
+            Ty::Struct(struct_ty)
+        } else {
+            Ty::Instance(
+                self.typec
+                    .instance(GenericTy::Struct(struct_ty), params, self.interner),
+            )
+        };
 
         Some(TirNode::new(
             final_ty,

@@ -503,7 +503,7 @@ impl TyChecker<'_> {
 
 ctl_errors! {
     #[err => "implementation is missing functions"]
-    #[help => "missing: {missing:?}"]
+    #[help => "missing: {missing}"]
     error MissingImplMethods: fatal {
         #[err loc]
         missing ref: String,

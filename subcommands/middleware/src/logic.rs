@@ -1149,7 +1149,7 @@ impl Worker {
         jit_ctx: &mut JitContext,
         shared: &Shared,
     ) {
-        if macros.is_empty() {
+        if macros.is_empty() || task.workspace.has_errors() {
             return;
         }
 
@@ -1629,10 +1629,6 @@ impl Task {
             let Func {
                 flags, visibility, ..
             } = task.typec[func];
-            let generics = task
-                .typec
-                .pack_func_param_specs(func)
-                .collect::<BumpVec<_>>();
             if flags.contains(FuncFlags::BUILTIN) {
                 continue;
             }
@@ -1640,6 +1636,11 @@ impl Task {
                 imported.push(id);
                 continue;
             }
+
+            let generics = task
+                .typec
+                .pack_func_param_specs(func)
+                .collect::<BumpVec<_>>();
 
             let body = task.mir.bodies.get(&func).unwrap().clone();
             let mut types = body.types.clone();

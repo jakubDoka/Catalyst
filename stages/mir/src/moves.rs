@@ -902,17 +902,17 @@ impl MovePathSegment {
 // }
 
 ctl_errors! {
-    #[err => "{something} already moved value is prohibited"]
+    #[err => "{something} already moved value"]
     #[note => NO_MOVE_NOTE]
     error MoveOfMoved: fatal {
-        #[info loc.origin, r#move.span, "previous move of moved value"]
+        #[info loc.origin, r#move.span, "previous move of value"]
         #[err loc]
         something: &'static str,
         r#move: Move,
         loc: SourceLoc,
     }
 
-    #[err => "value is possibly moved move then once"]
+    #[err => "value is possibly moved more then once"]
     #[note => NO_MOVE_NOTE]
     #[note => "nonlocal value remains moved even after loop jumps back"]
     #[help => "'break' after the move or move the value beck before next iteration"]
@@ -924,8 +924,8 @@ ctl_errors! {
     }
 
     #[err => [
-        "move of value locate inside type that implements 'Drop' is prohibited",
-        "move from behind pointer is prohibited",
+        "move of value locate inside type that implements 'Drop'",
+        "move from behind pointer",
     ][owner.behind_pointer as usize]]
     #[note => NO_MOVE_NOTE]
     #[note => COPY_NOTE]
