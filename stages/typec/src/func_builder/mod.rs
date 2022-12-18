@@ -438,14 +438,6 @@ impl TyChecker<'_> {
     }
 }
 
-fn grab_trailing_params<'a>(segments: &[PathItemAst<'a>]) -> Option<TyGenericsAst<'a>> {
-    match *segments {
-        [] => None,
-        [PathItemAst::Params(params)] => Some(params),
-        _ => todo!(),
-    }
-}
-
 enum DotPathResult {
     Field(u32, Ty),
 }

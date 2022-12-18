@@ -69,7 +69,11 @@ impl TyChecker<'_> {
                 })?;
             };
 
-            return Some((enum_ty, name, grab_trailing_params(path.segments)));
+            return Some((
+                enum_ty,
+                name,
+                self.grab_trailing_params(path.segments, name.span.as_end()),
+            ));
         }
 
         let PathItemAst::Ident(name) = path.start else {
@@ -141,12 +145,28 @@ impl TyChecker<'_> {
     pub fn func_path<'a, 'b>(
         &mut self,
         path @ PathAst {
-            start, segments, ..
+            start,
+            segments,
+            slash,
+            ..
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
+        if let Some(slash) = slash {
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: slash,
+                },
+                message: "leading slash in this context is invalid",
+            })?;
+        }
+
         let PathItemAst::Ident(start) = start else {
-            todo!();
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc { origin: self.source, span: start.span() },
+                message: "expected ident (function, module or type)",
+            })?;
         };
 
         let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
@@ -154,7 +174,7 @@ impl TyChecker<'_> {
                 return Some((
                     FuncLookupResult::Func(func),
                     None,
-                    grab_trailing_params(segments),
+                    self.grab_trailing_params(segments, start.span.as_end()),
                 ))
             }
             ScopeItem::Module(module) => module,
@@ -174,8 +194,15 @@ impl TyChecker<'_> {
                 };
 
                 let &[start, ref segments @ ..] = segments else {
-                    self.invalid_expr_path(path.span())?
+                    self.workspace.push(InvalidPathSegment {
+                        loc: SourceLoc {
+                            origin: self.source,
+                            span: path.after_start_span(), // TODO: make this bit more accurate
+                        },
+                        message: "expected a function name, module or spec name",
+                    })?;
                 };
+
                 return self.method_path(
                     ty,
                     PathAst {
@@ -190,7 +217,13 @@ impl TyChecker<'_> {
         };
 
         let &[PathItemAst::Ident(func_or_type), ref segments @ ..] = segments else {
-            self.invalid_expr_path(path.span())?
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: path.after_start_span(),
+                },
+                message: "expected a ident (function or type)",
+            })?;
         };
 
         let id = self
@@ -201,7 +234,7 @@ impl TyChecker<'_> {
                 return Some((
                     FuncLookupResult::Func(func),
                     None,
-                    grab_trailing_params(segments),
+                    self.grab_trailing_params(segments, func_or_type.span.as_end()),
                 ))
             }
             ScopeItem::Ty(ty) => match (ty.as_generic(), segments) {
@@ -220,7 +253,13 @@ impl TyChecker<'_> {
             item => self.invalid_symbol_type(item, func_or_type.span, FUNC)?,
         };
         let &[start, ref segments @ ..] = segments else {
-            self.invalid_expr_path(path.span())?
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: path.after_start_span(),
+                },
+                message: "expected ident (function, spec or module)",
+            })?;
         };
         self.method_path(
             ty,
@@ -432,6 +471,24 @@ impl TyChecker<'_> {
                 })?
             })
     }
+
+    pub fn grab_trailing_params<'a>(
+        &mut self,
+        segments: &[PathItemAst<'a>],
+        backup_span: Span,
+    ) -> Option<TyGenericsAst<'a>> {
+        match *segments {
+            [] => None,
+            [PathItemAst::Params(params)] => Some(params),
+            ref segments => self.workspace.push(InvalidPathSegment {
+                message: "expected parameters or end of the path",
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: segments.last().unwrap().span(),
+                },
+            })?,
+        }
+    }
 }
 
 ctl_errors! {
@@ -452,7 +509,7 @@ ctl_errors! {
         loc: SourceLoc,
     }
 
-    #[err => "invalid path segment"]
+    #[err => "invalid path segment(s)"]
     #[note => "{message}"]
     error InvalidPathSegment: fatal {
         #[err loc]
