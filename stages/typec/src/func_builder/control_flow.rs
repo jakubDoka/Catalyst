@@ -152,7 +152,10 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         let expr = self.unit_expr(expr, Inference::None, builder)?;
         let Ty::Pointer(ptr) = expr.ty else {
-            todo!();
+            self.workspace.push(NonPointerDereference {
+                ty: self.typec.display_ty(expr.ty, self.interner),
+                loc: SourceLoc { origin: self.source, span: expr.span },
+            })?;
         };
 
         let base = self.typec[ptr].base;
@@ -289,7 +292,22 @@ impl TyChecker<'_> {
             .find_map(|(i, variant)| {
                 (variant.name == variant_name.ident).then_some((i, variant.ty))
             })
-            .or_else(|| todo!())?;
+            .or_else(|| {
+                self.workspace.push(ComponentNotFound {
+                    ty: self.typec.display_ty(Ty::Enum(ty), self.interner),
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: variant_name.span,
+                    },
+                    suggestions: self.typec[self.typec[ty].variants]
+                        .iter()
+                        .map(|variant| variant.name)
+                        .map(|name| &self.interner[name])
+                        .intersperse(", ")
+                        .collect(),
+                    something: "variant",
+                })?
+            })?;
 
         let flag_ty = self.typec.enum_flag_ty(ty).unwrap();
 
@@ -322,20 +340,31 @@ impl TyChecker<'_> {
             }
             Some(res)
         } else if variant_ty != Ty::UNIT {
-            todo!();
+            self.workspace.push(MissingEnumCtorValue {
+                ty: self.typec.display_ty(variant_ty, self.interner),
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: variant_name.span,
+                },
+            })?;
         } else {
             None
         };
 
-        let ty = if param_slots.is_empty() {
+        let params = self.unpack_param_slots(
+            param_slots.iter().copied(),
+            ctor.span(),
+            builder,
+            "enum constructor",
+            "(<type_path>\\<variant_ident>\\[<param_ty>, ..]~<value>)",
+        )?;
+
+        let ty = if params.is_empty() {
             Ty::Enum(ty)
         } else {
-            let Some(args) = param_slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
-                todo!();
-            };
             Ty::Instance(
                 self.typec
-                    .instance(GenericTy::Enum(ty), &args, self.interner),
+                    .instance(GenericTy::Enum(ty), params, self.interner),
             )
         };
 
@@ -385,5 +414,23 @@ impl TyChecker<'_> {
                 false => Ty::UNIT,
             })
             .unwrap_or(Ty::TERMINAL)
+    }
+}
+
+ctl_errors! {
+    #[err => "dereference of non pointer type '{ty}'"]
+    error NonPointerDereference: fatal {
+        #[err loc]
+        ty ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "missing value in enum constructor"]
+    #[note => "expected value of type '{ty}'"]
+    #[note => "only variants containing '()' don't need value"]
+    error MissingEnumCtorValue: fatal {
+        #[err loc]
+        ty ref: String,
+        loc: SourceLoc,
     }
 }

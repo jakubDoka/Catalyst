@@ -119,7 +119,10 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
             Operator(_ = 0) => branch! {str ctx => {
                 "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
                 "^" => Some(Self::Ref(ctx.advance().span, ctx.parse()?, ctx.parse_alloc()?)),
-                @ => todo!(),
+                @ => ctx.workspace.push(TodoSnippet {
+                    message: "unary operators are not yet implemented",
+                    loc: SourceLoc { origin: ctx.source, span: ctx.state.current.span}
+                })?,
             }},
             LeftCurly => ctx.parse().map(Self::Block),
             @"expression",

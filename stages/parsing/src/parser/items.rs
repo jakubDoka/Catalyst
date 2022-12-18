@@ -51,6 +51,15 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
                     }
                 }
 
+                if let Some(span) = attrs.into_iter().map(|a| a.span()).reduce(Span::joined) {
+                    ctx.workspace.push(TrailingAttribute {
+                        loc: SourceLoc {
+                            span,
+                            origin: ctx.source,
+                        },
+                    })?;
+                }
+
                 $(
                     let $name = ctx.arena.alloc_slice($name.as_slice());
                 )*
@@ -250,16 +259,6 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
     }
 }
 
-ctl_errors! {
-    #[err => "invalid syntax for impl of spec"]
-    #[info => "spec must be in form of a type path ( [\\] <ident> {{\\ ( <ident> | <generics> ) }} )"]
-    error InvalidSpecImplSyntax: fatal {
-        #[err source, span, "here"]
-        span: Span,
-        source: VRef<Source>,
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum ImplItemAst<'a> {
     Func(&'a FuncDefAst<'a>),
@@ -399,15 +398,6 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
     }
 }
 
-ctl_errors! {
-    #[err => "invalid top level attribute expected one of: {expected}"]
-    error InvalidTopLevelAttribute: fatal {
-        #[err loc]
-        expected ref: String,
-        loc: SourceLoc,
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum InlineModeAst {
     Always(Span),
@@ -434,10 +424,32 @@ impl<'a> Ast<'a> for InlineModeAst {
 }
 
 ctl_errors! {
+    #[err => "invalid top level attribute expected one of: {expected}"]
+    error InvalidTopLevelAttribute: fatal {
+        #[err loc]
+        expected ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "invalid syntax for impl of spec"]
+    #[info => "spec must be in form of a type path ( [\\] <ident> {{\\ ( <ident> | <generics> ) }} )"]
+    error InvalidSpecImplSyntax: fatal {
+        #[err source, span, "here"]
+        span: Span,
+        source: VRef<Source>,
+    }
+
     #[err => "invalid inline mode expected one of: {expected}"]
     error InvalidInlineMode: fatal {
         #[err loc]
         expected ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "trailing attribute"]
+    #[info => "attribute must be placed before the item"]
+    error TrailingAttribute: fatal {
+        #[err loc]
         loc: SourceLoc,
     }
 }

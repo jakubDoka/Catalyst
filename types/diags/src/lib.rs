@@ -135,6 +135,16 @@ pub use items::{
     SnippetDisplay, SourceLoc, Workspace,
 };
 
+ctl_errors! {
+    #[err => "use of planned byt not yet implemented feature"]
+    #[info => "{message}"]
+    error TodoSnippet: fatal {
+        #[err loc]
+        message: &'static str,
+        loc: SourceLoc
+    }
+}
+
 #[allow(unused)]
 #[cfg(test)]
 mod tests {

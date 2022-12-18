@@ -18,8 +18,11 @@ impl<'a> Ast<'a> for PatAst<'a> {
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         branch!(ctx => {
             Mut => {
-                if let Some(_mutable) = mutable {
-                    todo!();
+                if let Some(mutable) = mutable {
+                    ctx.workspace.push(UselessMut {
+                        prev: mutable,
+                        loc: ctx.loc(),
+                    });
                 }
 
                 let mutable = ctx.advance().span;
@@ -125,8 +128,11 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
         Some(branch! {ctx => {
             Mut => {
-                if let Some(_mutable) = mutable {
-                    todo!();
+                if let Some(mutable) = mutable {
+                    ctx.workspace.push(UselessMut {
+                        prev: mutable,
+                        loc: ctx.loc(),
+                    });
                 }
 
                 let mutable = ctx.advance().span;
@@ -153,5 +159,16 @@ impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
             Named { name, pat, .. } => name.span().joined(pat.span()),
             DoubleDot(span) => span,
         }
+    }
+}
+
+ctl_errors! {
+    #[warn => "useless 'mut' in pattern"]
+    #[info => "'mut' is recursive"]
+    error UselessMut {
+        #[info loc.origin, prev, "this already makes the pattern mutable"]
+        #[warn loc]
+        prev: Span,
+        loc: SourceLoc,
     }
 }

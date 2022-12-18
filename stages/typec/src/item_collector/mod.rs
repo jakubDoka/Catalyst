@@ -1,4 +1,4 @@
-use std::{default::default, iter};
+use std::{default::default, iter, ops::Not};
 
 use diags::*;
 use lexing_t::*;
@@ -406,8 +406,13 @@ impl TyChecker<'_> {
             loc: Some(loc),
             ..default()
         };
-        self.insert_humid_item(s, attributes)
-            .inspect(|&ty| self.handle_macro_attr(attributes, Ty::Struct(ty), !generics.is_empty()))
+        self.insert_humid_item(s, attributes).inspect(|&ty| {
+            self.handle_macro_attr(
+                attributes,
+                Ty::Struct(ty),
+                generics.is_empty().not().then(|| generics.span()),
+            )
+        })
     }
 
     pub fn collect_enum(
@@ -426,8 +431,13 @@ impl TyChecker<'_> {
             loc: Some(loc),
             ..default()
         };
-        self.insert_humid_item(e, attributes)
-            .inspect(|&ty| self.handle_macro_attr(attributes, Ty::Enum(ty), !generics.is_empty()))
+        self.insert_humid_item(e, attributes).inspect(|&ty| {
+            self.handle_macro_attr(
+                attributes,
+                Ty::Enum(ty),
+                generics.is_empty().not().then(|| generics.span()),
+            )
+        })
     }
 
     pub fn humid_item_loc<T: Humid>(
@@ -451,6 +461,8 @@ impl TyChecker<'_> {
             .iter()
             .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
         {
+            // TODO: handle shadowing
+
             let name = &self.interner[name];
             let Some(id) = I::lookup_water_drop(name) else {
                 todo!("{:?}", name)
@@ -481,11 +493,23 @@ impl TyChecker<'_> {
         })
     }
 
-    fn handle_macro_attr(&mut self, attributes: &[TopLevelAttributeAst], ty: Ty, is_generic: bool) {
+    fn handle_macro_attr(
+        &mut self,
+        attributes: &[TopLevelAttributeAst],
+        ty: Ty,
+        generics: Option<Span>,
+    ) {
         for attr in attributes {
             if let TopLevelAttrKindAst::Macro(.., name) = attr.value.value {
-                if is_generic {
-                    todo!()
+                if let Some(generics) = generics {
+                    self.workspace.push(GenericMacro {
+                        generics,
+                        loc: SourceLoc {
+                            origin: self.source,
+                            span: attr.span(),
+                        },
+                    });
+                    break;
                 }
                 self.typec.macros.insert(
                     ty,
@@ -502,6 +526,15 @@ impl TyChecker<'_> {
 }
 
 ctl_errors! {
+    #[err => "generic macro not allowed"]
+    #[help => "add the macro attribute to concrete instance of the macro via type alias (TODO: type aliases)"]
+    error GenericMacro: fatal {
+        #[note loc.origin, generics, "type has generics defined here"]
+        #[err loc]
+        generics: Span,
+        loc: SourceLoc,
+    }
+
     #[err => "implementation is missing functions"]
     #[help => "missing: {missing}"]
     error MissingImplMethods: fatal {
