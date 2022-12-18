@@ -75,7 +75,7 @@ impl<'a> Ast<'a> for StructFieldAst<'a> {
 ctl_errors! {
     #[err => "expected ':' but found '{found}' when parsing struct field"]
     #[info => "struct fields have colon after name for consistency reasons"]
-    fatal struct MissingFieldColon {
+    error MissingFieldColon: fatal {
         #[err loc]
         found: TokenKind,
         loc: SourceLoc,

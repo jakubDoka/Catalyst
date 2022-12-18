@@ -253,7 +253,7 @@ impl<'a> Ast<'a> for ImplTarget<'a> {
 ctl_errors! {
     #[err => "invalid syntax for impl of spec"]
     #[info => "spec must be in form of a type path ( [\\] <ident> {{\\ ( <ident> | <generics> ) }} )"]
-    fatal struct InvalidSpecImplSyntax {
+    error InvalidSpecImplSyntax: fatal {
         #[err source, span, "here"]
         span: Span,
         source: VRef<Source>,
@@ -288,7 +288,7 @@ impl<'a> Ast<'a> for ImplItemAst<'a> {
 
 ctl_errors! {
     #[err => "invalid impl item expected one of: {expected}"]
-    fatal struct InvalidImplItem {
+    error InvalidImplItem: fatal {
         #[err loc]
         expected ref: String,
         loc: SourceLoc,
@@ -401,7 +401,7 @@ impl<'a> Ast<'a> for TopLevelAttrKindAst {
 
 ctl_errors! {
     #[err => "invalid top level attribute expected one of: {expected}"]
-    fatal struct InvalidTopLevelAttribute {
+    error InvalidTopLevelAttribute: fatal {
         #[err loc]
         expected ref: String,
         loc: SourceLoc,
@@ -435,7 +435,7 @@ impl<'a> Ast<'a> for InlineModeAst {
 
 ctl_errors! {
     #[err => "invalid inline mode expected one of: {expected}"]
-    fatal struct InvalidInlineMode {
+    error InvalidInlineMode: fatal {
         #[err loc]
         expected ref: String,
         loc: SourceLoc,

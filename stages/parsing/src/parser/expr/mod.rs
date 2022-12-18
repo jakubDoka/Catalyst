@@ -211,7 +211,7 @@ impl<'a> Ast<'a> for LetAst<'a> {
 ctl_errors! {
     #[err => "expected '=' since let statement must be always initialized"]
     #[info => "this may change in the future"]
-    fatal struct ExpectedLetEqual {
+    error ExpectedLetEqual: fatal {
         #[err loc]
         got: TokenKind,
         loc: SourceLoc,
@@ -253,7 +253,7 @@ impl<'a> Ast<'a> for EnumCtorAst<'a> {
 ctl_errors! {
     #[err => "expected enum constructor name"]
     #[info => "enum constructor name must with either '\\<ident>' of type path"]
-    fatal struct ExpectedEnumCtorName {
+    error ExpectedEnumCtorName: fatal {
         #[err source, span, "here"]
         span: Span,
         source: VRef<Source>,
@@ -298,7 +298,7 @@ impl<'a> Ast<'a> for StructCtorAst<'a> {
 ctl_errors! {
     #[err => "expected struct name"]
     #[info => "struct constructor can either start with '\\' or type path"]
-    fatal struct ExpectedStructName {
+    error ExpectedStructName: fatal {
         #[err source, span, "here"]
         span: Span,
         source: VRef<Source>,

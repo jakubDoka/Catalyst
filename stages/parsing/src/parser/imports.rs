@@ -96,7 +96,7 @@ impl<'a> Ast<'a> for ImportAst {
 
 ctl_errors! {
     #[err => "module path must be a string literal, but got {found}"]
-    fatal struct ExpectedModStringPath {
+    error ExpectedModStringPath: fatal {
         #[err loc]
         found: TokenKind,
         loc: SourceLoc,

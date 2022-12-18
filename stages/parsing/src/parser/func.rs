@@ -99,7 +99,7 @@ impl<'a> Ast<'a> for FuncArgAst<'a> {
 ctl_errors! {
     #[err => "expected ':' after function argument name but got {got}"]
     #[info => "colon is required for consistency and readability"]
-    fatal struct MissingFunctionArgColon {
+    error MissingFunctionArgColon: fatal {
         #[err loc]
         got: TokenKind,
         loc: SourceLoc,

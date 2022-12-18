@@ -4,7 +4,8 @@ use std::{default::default, iter, ops::Index};
 use std::{fmt::Write, sync::Arc};
 
 use crate::*;
-use packaging_t::Module;
+use diags::SourceLoc;
+use packaging_t::{Module, Resources};
 
 use storage::{dashmap::mapref::entry::Entry, *};
 
@@ -1221,6 +1222,15 @@ pub enum SpecCmpError {
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
+}
+
+impl Loc {
+    pub fn source_loc(&self, typec: &Typec, resources: &Resources) -> SourceLoc {
+        SourceLoc {
+            origin: resources.modules[self.module].source,
+            span: typec.module_items[self.module].items[self.item].span,
+        }
+    }
 }
 
 pub const fn sorted_water_drops<T, const LEN: usize>(

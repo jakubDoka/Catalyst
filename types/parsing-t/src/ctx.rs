@@ -331,7 +331,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
 ctl_errors! {
     #[err => "unmatched {token_kind}"]
     #[info => "paired tokens ('()[]{{}}') must always be balanced"]
-    fatal struct UnmatchedParen {
+    error UnmatchedParen: fatal {
         #[info source, previous_paren, "the starting {token_kind} is located here"]
         #[info source, contradictor, "this token would create imbalance"]
         token_kind: TokenKind,
@@ -341,7 +341,7 @@ ctl_errors! {
     }
 
     #[err => "expected one of {recovery_symbols} but file already ended"]
-    fatal struct FailedRecoveryEof {
+    error FailedRecoveryEof: fatal {
         #[info source, eof, "file ends here"]
         recovery_symbols ref: String,
         eof: Span,

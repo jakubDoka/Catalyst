@@ -16,6 +16,19 @@ struct TestState {
     middleware: Middleware,
 }
 
+#[repr(packed)]
+struct Unaligned<T>(T);
+
+pub struct SlimPtrMut<T> {
+    ptr: *mut T,
+}
+
+impl<T> SlimPtrMut<T> {
+    fn take_ref(&self) {
+        (&unsafe { &*((&self.ptr) as *const *mut T).cast::<Unaligned<T>>() }.0) as *const T
+    }
+}
+
 impl TestState {
     fn finally(&mut self, out: MiddlewareOutput) {
         let s = &mut self.middleware;

@@ -8,6 +8,7 @@
 #![feature(decl_macro)]
 #![feature(btree_drain_filter)]
 #![feature(result_option_inspect)]
+#![feature(iter_collect_into)]
 
 mod builder;
 mod ctx;

@@ -29,7 +29,7 @@ pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
     pub methods: FragRefSlice<Func>,
-    pub loc: Option<Loc>,
+    pub loc: Loc,
 }
 
 impl Impl {
@@ -38,7 +38,7 @@ impl Impl {
 
 pub type Generics = FragSlice<FragSlice<Spec>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
@@ -226,7 +226,7 @@ pub enum ComputedTypecItem {
     SpecSum(FragSlice<Spec>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Ty {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
@@ -311,7 +311,7 @@ impl Ty {
     }
 
     pub fn compatible(a: Self, b: Self) -> bool {
-        b == Self::TERMINAL || a == b
+        b == Self::TERMINAL || a == Self::TERMINAL || a == b
     }
 
     pub fn as_generic(self) -> Option<GenericTy> {
@@ -491,7 +491,7 @@ macro_rules! gen_builtin {
             )*
         }
 
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
         pub enum Builtin {
             $($builtin),*
         }
@@ -561,7 +561,7 @@ pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
     pub name: Ident,
-    pub span: Option<Span>,
+    pub span: Span,
     pub parent: FragRef<SpecBase>,
 }
 

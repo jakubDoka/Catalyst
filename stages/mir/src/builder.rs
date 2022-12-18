@@ -223,8 +223,18 @@ impl MirChecker<'_, '_> {
         let mut reachable = bumpvec![false; branch_patterns.len()];
         let tree = patterns::as_tree(self.arena, &branch_patterns, &mut reachable);
         if tree.has_missing {
-            let gaps = patterns::find_gaps(tree);
-            self.non_exhaustive(gaps, self.value_ty(mir_value), span)?
+            let gaps = patterns::find_gaps(tree)
+                .into_iter()
+                .map(|seq| self.display_pat(&seq, self.value_ty(mir_value)))
+                .intersperse(", ".into())
+                .collect::<String>();
+            self.workspace.push(NonExhaustive {
+                loc: SourceLoc {
+                    span,
+                    origin: self.source,
+                },
+                gaps,
+            });
         }
 
         self.start_branching();
@@ -788,37 +798,15 @@ impl MirChecker<'_, '_> {
     pub fn select_block(&mut self, block: VRef<BlockMir>) -> bool {
         mem::replace(&mut self.current_block, Some(block)).is_some()
     }
+}
 
-    gen_error_fns! {
-        push non_exhaustive(self, err: Vec<Vec<Range>>, ty: Ty, span: Span) {
-            err: "match is not exhaustive";
-            info: (
-                "missing patterns: {}",
-                err
-                    .iter()
-                    .map(|seq| self.display_pat(seq, ty))
-                    .intersperse(", ".into())
-                    .collect::<String>()
-            );
-            (span, self.source) {
-                err[span]: "this does not cover all possible cases";
-            }
-        }
-
-        push move_from_pointer(self, span: Span) {
-            err: "cannot move out of a pointer";
-            info: "you can disable move validation with `#[no_moves]`";
-            (span, self.source) {
-                err[span]: "discovered here";
-            }
-        }
-
-        push double_move(self, source_span: Span, span: Span) {
-            err: "cannot move out of a value more than once";
-            (span.joined(source_span), self.source) {
-                err[span]: "detected here";
-                info[source_span]: "first move here";
-            }
-        }
+ctl_errors! {
+    #[err => "match is not exhaustive"]
+    #[info => "missing patterns: {gaps}"]
+    #[help => "adding '_ {{}}' will make the match exhaustive"]
+    error NonExhaustive: fatal {
+        #[err loc]
+        gaps ref: String,
+        loc: SourceLoc,
     }
 }

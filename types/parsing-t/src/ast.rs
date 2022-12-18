@@ -55,7 +55,7 @@ where
 
 ctl_errors! {
     #[err => "expected {pattern} as the wrapper around {value}"]
-    fatal struct WrapperMissing {
+    error WrapperMissing: fatal {
         #[err loc]
         pattern ref: String,
         value: &'static str,
@@ -109,7 +109,7 @@ impl<'a> Ast<'a> for NameAst {
 
 ctl_errors! {
     #[err => "expected name of {hint} but got {got}"]
-    fatal struct ExpectedName {
+    error ExpectedName: fatal {
         #[err loc, "here"]
         hint: &'static str,
         got: TokenKind,
@@ -309,7 +309,7 @@ where
 
 ctl_errors! {
     #[err => "missing {item} list separator '{sep}'"]
-    fatal struct MissingListSep {
+    error MissingListSep: fatal {
         #[err loc]
         sep ref: String,
         item: &'static str,

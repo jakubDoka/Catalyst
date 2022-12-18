@@ -194,7 +194,7 @@ impl TyChecker<'_> {
             let id = self
                 .interner
                 .intern_scoped(Ty::Param(index as u16), func.name);
-            self.scope.push(id, key, func.span.unwrap_or_default());
+            self.scope.push(id, key, func.span);
         }
     }
 
@@ -258,7 +258,7 @@ ctl_errors! {
     #[err => "scope item not found"]
     #[help => "expected {expected}"]
     #[info => "debug: queried '{queried}'"]
-    fatal struct ScopeItemNotFound {
+    error ScopeItemNotFound: fatal {
         #[err source, span, "this does not exist or is not imported"]
         expected: &'static str,
         queried ref: String,
@@ -270,7 +270,7 @@ ctl_errors! {
     #[info => "items from multiple modules match the identifier"]
     #[help => "you have to specify one of ({suggestions}) as a module"]
     #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
-    fatal struct ScopeItemCollision {
+    error ScopeItemCollision: fatal {
         #[err source, span, "here"]
         suggestions ref: String,
         span: Span,
@@ -279,7 +279,7 @@ ctl_errors! {
 
     #[err => "invalid scope item type"]
     #[info => "expected {expected}, got {actual}"]
-    fatal struct InvalidScopeItemType {
+    error InvalidScopeItemType: fatal {
         #[err source, span, "here"]
         expected: &'static str,
         actual: &'static str,
@@ -290,7 +290,7 @@ ctl_errors! {
     #[err => "missing identifier after module"]
     #[info => "module is always followed by the name of an item"]
     #[help => "syntax for specifying module (applies on methods as well): `<mod>\\<item>`"]
-    fatal struct MissingIdentAfterMod {
+    error MissingIdentAfterMod: fatal {
         #[err source, span, "here"]
         span: Span,
         source: VRef<Source>,

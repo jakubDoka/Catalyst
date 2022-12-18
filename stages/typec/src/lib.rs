@@ -8,6 +8,7 @@
 #![feature(try_blocks)]
 #![feature(result_option_inspect)]
 #![feature(if_let_guard)]
+#![feature(slice_group_by)]
 
 /*
     At collection stage, we maintain a spec set (Vec<(u32, Spec)>) collected from
@@ -178,7 +179,7 @@ mod util {
                     footer: vec![ctl_error_annotation!(info => ("cycle: {}", cycle_chart))],
                     source_annotations: cycle
                         .iter()
-                        .map(|&ty| {
+                        .filter_map(|&ty| {
                             let span = ty.span(self.typec).expect("builtin types should not have cycles");
                             ctl_error_source_annotation!(info self.source, span, "type defined here")
                         })
@@ -259,7 +260,7 @@ mod util {
     ctl_errors! {
         #[err => "duplicate definition"]
         #[info => "this happens when two exportable items have the same name"]
-        fatal struct DuplicateDefinition {
+        error DuplicateDefinition: fatal {
             #[info source, duplicate, "this name"]
             #[info source, existing, "matches this already existing item"]
             duplicate: Span,
@@ -269,7 +270,7 @@ mod util {
 
         #[err => "shadowing of builtin item"]
         #[info => "shadowing {item} is disallowed"]
-        fatal struct ShadowedBuiltin {
+        error ShadowedBuiltin: fatal {
             #[info source, span, "this name"]
             span: Span,
             source: VRef<Source>,

@@ -92,7 +92,7 @@ impl<'a> Ast<'a> for ManifestFieldAst<'a> {
 ctl_errors! {
     #[err => "expected ':' but got {got} when parsing manifest field"]
     #[info => "colon is required for readability"]
-    fatal struct MissingManifestFieldColon {
+    error MissingManifestFieldColon: fatal {
         #[err loc]
         got: TokenKind,
         loc: SourceLoc,
@@ -171,7 +171,7 @@ impl<'a> Ast<'a> for ManifestDepAst {
 
 ctl_errors! {
     #[err => "expected string path for dependency but got {got}"]
-    fatal struct ExpectedDepStringPath {
+    error ExpectedDepStringPath: fatal {
         #[err loc]
         got: TokenKind,
         loc: SourceLoc,

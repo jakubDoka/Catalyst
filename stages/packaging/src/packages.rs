@@ -332,7 +332,7 @@ impl PackageLoader<'_, '_> {
                     .create_dir_all(&default_path)
                     .map_err(|trace| {
                         self.workspace.push(PathRelatedError {
-                            path: default_path,
+                            path: default_path.clone(),
                             trace,
                             message: "failed to create default dependency root",
                         })
@@ -575,7 +575,7 @@ impl PackageLoader<'_, '_> {
         &mut self,
         root: &Path,
         loc: Option<SourceLoc>,
-        owner: &str,
+        owner: &'static str,
     ) -> Option<PathBuf> {
         self.resources
             .db
@@ -715,7 +715,7 @@ impl PackageLoader<'_, '_> {
         let output = output
             .map_err(|err| {
                 self.workspace.push(GitExecError {
-                    command: command_str,
+                    command: command_str.clone(),
                     loc: SourceLoc { origin, span },
                     err,
                 })
@@ -739,7 +739,7 @@ ctl_errors! {
     #[err => "git exited with non-zero status code"]
     #[info => "args: `{command}`"]
     #[info => "stderr: {output}"]
-    fatal struct GitExitError {
+    error GitExitError: fatal {
         #[err loc]
         command ref: String,
         loc: SourceLoc,
@@ -749,16 +749,16 @@ ctl_errors! {
     #[err => "failed to execute git command"]
     #[info => "args: `{command}`"]
     #[info => "error: {err}"]
-    fatal struct GitExecError {
+    error GitExecError: fatal {
         #[err loc]
         command ref: String,
         loc: SourceLoc,
-        err: io::Error,
+        err ref: io::Error,
     }
 
     #[err => "invalid version of dependency"]
     #[info => "the version did not match any tag in '{url}' repository"]
-    fatal struct InvalidVersion {
+    error InvalidVersion: fatal {
         #[err loc]
         url ref: String,
         loc: SourceLoc,
@@ -766,8 +766,8 @@ ctl_errors! {
 
     #[err => "unknown package"]
     #[info => "available packages: {packages}"]
-    #[hint => "to refer to current package use '.'"]
-    fatal struct UnknownPackage {
+    #[note => "to refer to current package use '.'"]
+    error UnknownPackage: fatal {
         #[err loc]
         packages ref: String,
         loc: SourceLoc,
@@ -775,7 +775,7 @@ ctl_errors! {
 
     #[err => "{something} cycle detected"]
     #[info => ("cycle:\n{cycle}")]
-    fatal struct CycleDetected {
+    error CycleDetected: fatal {
         cycle ref: String,
         something: &'static str,
     }
@@ -783,7 +783,7 @@ ctl_errors! {
     #[err => "invalid {something} path"]
     #[info => ("path searched: `{}`", path.display())]
     #[info => ("exact io error: {}", trace)]
-    fatal struct InvalidDefinedPath {
+    error InvalidDefinedPath: fatal {
         #[err loc, "derived from this"]
         path ref: PathBuf,
         trace ref: io::Error,
@@ -794,19 +794,19 @@ ctl_errors! {
     #[err => "{message}"]
     #[info => ("path searched: `{}`", path.display())]
     #[info => ("exact io error: {}", trace)]
-    fatal struct PathRelatedError {
+    error PathRelatedError: fatal {
         path ref: PathBuf,
         trace ref: io::Error,
         message: &'static str,
     }
 
     #[err => "'{DEP_ROOT_VAR}' exists but has invalid encoding"]
-    #[hint => "path must be utf-8 encoded"]
-    fatal struct InvalidDepRootEncoding {}
+    #[note => "path must be utf-8 encoded"]
+    error InvalidDepRootEncoding: fatal {}
 
     #[err => "invalid 'root' field in manifest"]
-    #[hint => "expected string"]
-    fatal struct InvalidManifestRootField {
+    #[note => "expected string"]
+    error InvalidManifestRootField: fatal {
         #[err loc]
         loc: SourceLoc,
     }

@@ -163,9 +163,10 @@ pub mod items {
 
         println!("Running sub test: {name}");
         let runner = move || {
-            let (mut ws, packages) = test_code(name);
+            let (ws, packages) = test_code(name);
 
-            let out = ws.display(&packages, &mut SnippetDisplayImpl::default());
+            let mut out = String::new();
+            ws.display(&packages, &mut SnippetDisplayImpl::default(), &mut out);
 
             let path = format!("{}/{}.txt", "test_out", name);
             if !Path::new("test_out").exists() {
@@ -205,9 +206,9 @@ pub mod items {
             let path = PathBuf::from(&self.name);
             self.create_recur(&path, &mut fmt, &mut packages, &mut resources);
 
-            let str = fmt
-                .workspace
-                .display(&packages, &mut SnippetDisplayImpl::default());
+            let mut str = String::new();
+            fmt.workspace
+                .display(&packages, &mut SnippetDisplayImpl::default(), &mut str);
             let path = format!("test_out/{}-parse-out.txt", path.display());
 
             if str.trim() != "" {

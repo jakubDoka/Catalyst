@@ -115,14 +115,11 @@ impl TyChecker<'_> {
                     self.interner,
                 ) {
                     self.workspace.push(CollidingImpl {
-                        colliding: todo!(),
-                        colliding_source: todo!(),
-                        existing: todo!(),
-                        existing_source: todo!(),
-                        ty: todo!(),
-                        spec: todo!(),
+                        colliding: SourceLoc { span: r#impl.span(), origin: self.source },
+                        existing: self.typec.impls[already].loc.source_loc(self.typec, self.resources),
+                        ty: self.typec.display_ty(parsed_ty, self.interner),
+                        spec: self.typec.display_spec(parsed_spec, self.interner),
                     });
-                    self.colliding_impl(self.typec.impls[already].span, parsed_ty, parsed_spec);
                 }
             }
 
@@ -151,7 +148,8 @@ impl TyChecker<'_> {
                     };
 
                     if let Err(err) = self.check_impl_signature(parsed_ty, self.typec[spec_methods][i], method, true) {
-                        self.handle_signature_check_error(err, span);
+                        let spec_source_loc = self.typec[parsed_spec_base].loc.map(|loc| loc.source_loc(self.typec, self.resources));
+                        self.handle_signature_check_error(err, span, self.typec[spec_methods][i].span, spec_source_loc);
                         continue;
                     }
 
@@ -182,9 +180,13 @@ impl TyChecker<'_> {
                         .iter()
                         .zip(slots.as_slice())
                         .filter_map(|(f, m)| m.is_none().then_some(f.name))
-                        .collect::<BumpVec<_>>();
-                    self.missing_spec_impl_funcs(r#impl.span(), missing.as_slice());
-                    return None;
+                        .map(|name| &self.interner[name])
+                        .intersperse(", ")
+                        .collect::<String>();
+                    self.workspace.push(MissingImplMethods {
+                        loc: SourceLoc { span: r#impl.span(), origin: self.source },
+                        missing,
+                    })?;
                 };
 
                 self.typec.func_slices.extend(methods)
@@ -194,10 +196,10 @@ impl TyChecker<'_> {
             let loc = {
                 let next = unsafe { self.typec.impls.next() };
                 let item = ModuleItem::new(Ident::empty(), next, r#impl.span(), Vis::Priv);
-                Some(Loc {
+                Loc {
                     module: self.module,
                     item: self.typec.module_items[self.module].items.push(item),
-                })
+                }
             };
 
             let impl_ent = self.typec.impls.push(Impl {
@@ -274,12 +276,22 @@ impl TyChecker<'_> {
             .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::NoMoves(..)));
 
         if let Some(entry) = entry && !generics.is_empty() {
-            self.generic_entry(sig.generics.span(), entry.span(), func.span())?;
+            self.workspace.push(GenericEntry {
+                func: func.span(),
+                entry: entry.span(),
+                generics: sig.generics.span(),
+                source: self.source,
+            })?;
         }
 
         let visibility = if let FuncBodyAst::Extern(..) = body {
             if !generics.is_empty() {
-                self.generic_extern(sig.generics.span(), body.span(), func.span())?;
+                self.workspace.push(GenericExtern {
+                    func: func.span(),
+                    generics: sig.generics.span(),
+                    body: body.span(),
+                    source: self.source,
+                })?;
             }
 
             FuncVisibility::Imported
@@ -490,8 +502,16 @@ impl TyChecker<'_> {
 }
 
 ctl_errors! {
+    #[err => "implementation is missing functions"]
+    #[help => "missing: {missing:?}"]
+    error MissingImplMethods: fatal {
+        #[err loc]
+        missing ref: String,
+        loc: SourceLoc,
+    }
+
     #[err => "generic extern functions are not allowed"]
-    fatal struct GenericExtern {
+    error GenericExtern: fatal {
         #[note source, generics, "function has generics defined here"]
         #[note source, body, "function is extern because of this"]
         #[err source, func, "here"]
@@ -503,7 +523,7 @@ ctl_errors! {
 
     #[err => "generic entry points are not allowed"]
     #[help => "wrap concrete instance of this function in a non-generic entry function"]
-    fatal struct GenericEntry {
+    error GenericEntry: fatal {
         #[note source, generics, "function has generics defined here"]
         #[note source, entry, "function is an entry point because of this attribute"]
         #[err source, func, "here"]
@@ -515,13 +535,11 @@ ctl_errors! {
 
     #[err => "colliding implementations for type '{ty}'"]
     #[info => "'{ty}' already implements '{spec}'"]
-    fatal struct CollidingImpl {
-        #[info existing_source, existing, "implementation that already satisfies"]
-        #[err colliding_source, colliding, "it is colliding with this implementation"]
-        colliding: Span,
-        colliding_source: VRef<Source>,
-        existing: Span,
-        existing_source: VRef<Source>,
+    error CollidingImpl: fatal {
+        #[info existing, "implementation that already satisfies"]
+        #[err colliding, "it is colliding with this implementation"]
+        colliding: SourceLoc,
+        existing: SourceLoc,
         ty ref: String,
         spec ref: String,
     }

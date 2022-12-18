@@ -98,7 +98,6 @@ pub struct TirBuilder<'arena, 'ctx> {
     pub arena: &'arena Arena,
     pub ret: Ty,
     pub ret_span: Option<Span>,
-    pub runner: Option<(Span, CtxFrame<VarHeaderTir>)>,
     pub ctx: &'ctx mut TirBuilderCtx,
 }
 
@@ -113,7 +112,6 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             arena,
             ret,
             ret_span,
-            runner: None,
             ctx,
         }
     }

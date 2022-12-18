@@ -96,7 +96,7 @@ macro_rules! ctl_errors {
         $(
             #[$($title:tt)*]
             $(#[$($footer:tt)*])*
-            $($fatality:ident)? struct $name:ident {
+            error $name:ident $(: $fatality:ident)? {
                 $(#[$($source:tt)*])*
                 $($field:ident $($ref:ident)?: $field_type:ty),* $(,)?
             }
@@ -146,7 +146,7 @@ mod tests {
     ctl_errors! {
         #[err afg32 => "hello I need {amount} of {food}"]
         #[err => "something happened"]
-        fatal struct BeggingForFood {
+        error BeggingForFood: fatal {
             #[info location, "here"]
             location: SourceLoc,
             amount: i32,

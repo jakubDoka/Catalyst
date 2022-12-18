@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     default::default,
     hash::Hash,
-    iter,
     mem::{self, MaybeUninit},
     ops::Range,
 };
@@ -128,11 +127,26 @@ impl MirChecker<'_, '_> {
 
         let (key, .., err) = self.integrity_check(value);
         if let Some(err) = err {
+            let loc = SourceLoc {
+                origin: self.source,
+                span,
+            };
+            let msg = "move out of";
             match err {
-                IntegrityError::InvalidMove(owner) => self.invalid_move(owner, span),
-                IntegrityError::Moved(r#move) => self.double_move(r#move.span, span),
+                IntegrityError::InvalidMove(owner) => {
+                    self.workspace.push(InvalidMove { owner, loc })
+                }
+                IntegrityError::Moved(r#move) => self.workspace.push(MoveOfMoved {
+                    something: msg,
+                    r#move,
+                    loc,
+                }),
                 IntegrityError::PartiallyMoved(moves) => {
-                    self.handle_partial_move("move out of", moves, span)
+                    self.workspace.push(MoveOfPartiallyMoved {
+                        something: msg,
+                        moves,
+                        loc,
+                    })
                 }
             };
             return;
@@ -156,9 +170,23 @@ impl MirChecker<'_, '_> {
             match err {
                 IntegrityError::InvalidMove(owner) if owner.behind_pointer => return,
                 IntegrityError::InvalidMove(..) => None,
-                IntegrityError::Moved(r#move) => self.referencing_moved(r#move, span),
+                IntegrityError::Moved(r#move) => self.workspace.push(MoveOfMoved {
+                    something: "reference to",
+                    r#move,
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span,
+                    },
+                }),
                 IntegrityError::PartiallyMoved(moves) => {
-                    self.handle_partial_move("reference", moves, span)
+                    self.workspace.push(MoveOfPartiallyMoved {
+                        something: "reference to",
+                        moves,
+                        loc: SourceLoc {
+                            origin: self.source,
+                            span,
+                        },
+                    })
                 }
             };
         };
@@ -620,35 +648,6 @@ impl MirChecker<'_, '_> {
         }
     }
 
-    fn handle_partial_move(
-        &mut self,
-        message: &str,
-        moves: BumpVec<Move>,
-        span: Span,
-    ) -> Option<!> {
-        self.workspace.push(CtlSnippet {
-            title: ctl_error_annotation!(err: ("cannot {} partially moved value", message)),
-            footer: vec![],
-            slices: vec![Some(Slice {
-                span: moves
-                    .iter()
-                    .map(|m| m.span)
-                    .reduce(|a, b| a.joined(b))
-                    .map_or(span, |fin| span.joined(fin)),
-                origin: self.source,
-                annotations: moves
-                    .into_iter()
-                    .map(|r#move| ctl_error_source_annotation!(info[r#move.span]: "move out of value"))
-                    .chain(iter::once(ctl_error_source_annotation!(err[span]: "occurred here")))
-                    .collect(),
-                fold: true,
-            })],
-            origin: default(),
-        });
-
-        None
-    }
-
     pub fn start_loop(&mut self, start: VRef<BlockMir>, dest: VRef<ValueMir>) {
         self.start_loop_branching();
         let frame = self.start_scope_frame();
@@ -670,7 +669,7 @@ impl MirChecker<'_, '_> {
         self.mir_ctx.depth += 1;
     }
 
-    pub fn end_loop(&mut self, span: Span, terminated: bool) -> OptVRef<BlockMir> {
+    pub fn end_loop(&mut self, loop_span: Span, terminated: bool) -> OptVRef<BlockMir> {
         let r#loop = self
             .mir_ctx
             .loops
@@ -678,16 +677,16 @@ impl MirChecker<'_, '_> {
             .expect("loop end did not pair up with loop start");
         if !self.mir_ctx.no_moves {
             if !terminated {
-                self.check_loop_moves(span, r#loop.depth);
+                self.check_loop_moves(loop_span, r#loop.depth);
             }
             self.mir_move_ctx.history.join_frames();
             self.mir_ctx.depth -= 1;
         }
-        self.end_scope_frame(r#loop.frame, span);
+        self.end_scope_frame(r#loop.frame, loop_span);
         r#loop.end
     }
 
-    pub fn check_loop_moves(&mut self, span: Span, loop_depth: u32) {
+    pub fn check_loop_moves(&mut self, loop_span: Span, loop_depth: u32) {
         let mut history = self
             .mir_move_ctx
             .history
@@ -698,44 +697,10 @@ impl MirChecker<'_, '_> {
         for record in history.iter() {
             if let MoveDirection::Out = record.direction
                 && self.mir_ctx.value_depths[record.key.root] < loop_depth {
-                self.loop_double_move(record.r#move, span);
-            }
-        }
-    }
-
-    gen_error_fns! {
-        push loop_double_move(self, moved: Move, span: Span) {
-            err: "cannot move out of the value, it could have been moved out in a previous iteration of the loop";
-            (moved.span.joined(span), self.source) {
-                info[moved.span]: "move occurred here";
-                err[span]: "in this loop";
-            }
-        }
-
-        push referencing_moved(self, moved: Move, span: Span) {
-            err: "cannot reference moved value";
-            (moved.span.joined(span), self.source) {
-                info[moved.span]: "first move here";
-                err[span]: "referenced later here";
-            }
-        }
-
-        push no_address(self, span: Span) {
-            err: "cannot take pointer of temporary value";
-            help: "storing value in variable should help";
-            (span, self.source) {
-                err[span]: "this value";
-            }
-        }
-
-        push invalid_move(self, owner: IndirectOwner, span: Span) {
-            err: "cannot move out the value";
-            info: ("notice that {}", [
-                "value is located within datatype that implements 'Drop'",
-                "value is behind indirection and does not implement 'Copy'",
-            ][owner.behind_pointer as usize]);
-            (span, self.source) {
-                err[span]: "invalid move occurred here";
+                self.workspace.push(MovedInLoop {
+                    loc: SourceLoc { origin: self.source, span: record.r#move.span },
+                    loop_span,
+                });
             }
         }
     }
@@ -760,7 +725,7 @@ fn remove_range<'a, K: Ord + Clone, V>(
 
 enum IntegrityError {
     Moved(Move),
-    PartiallyMoved(BumpVec<Move>),
+    PartiallyMoved(Vec<Move>),
     InvalidMove(IndirectOwner),
 }
 
@@ -935,3 +900,76 @@ impl MovePathSegment {
 //     }
 //     println!("{} {:?}", bt.len(), now.elapsed());
 // }
+
+ctl_errors! {
+    #[err => "{something} already moved value is prohibited"]
+    #[note => NO_MOVE_NOTE]
+    error MoveOfMoved: fatal {
+        #[info loc.origin, r#move.span, "previous move of moved value"]
+        #[err loc]
+        something: &'static str,
+        r#move: Move,
+        loc: SourceLoc,
+    }
+
+    #[err => "value is possibly moved move then once"]
+    #[note => NO_MOVE_NOTE]
+    #[note => "nonlocal value remains moved even after loop jumps back"]
+    #[help => "'break' after the move or move the value beck before next iteration"]
+    error MovedInLoop: fatal {
+        #[info loc.origin, loop_span, "the loop"]
+        #[err loc]
+        loc: SourceLoc,
+        loop_span: Span,
+    }
+
+    #[err => [
+        "move of value locate inside type that implements 'Drop' is prohibited",
+        "move from behind pointer is prohibited",
+    ][owner.behind_pointer as usize]]
+    #[note => NO_MOVE_NOTE]
+    #[note => COPY_NOTE]
+    error InvalidMove: fatal {
+        #[err loc]
+        owner: IndirectOwner,
+        loc: SourceLoc,
+    }
+}
+
+const NO_MOVE_NOTE: &str = "you can disable move semantics with '#[no_moves]' function attribute";
+const COPY_NOTE: &str = "value does not implement 'Copy' spec";
+
+struct MoveOfPartiallyMoved {
+    something: &'static str,
+    moves: Vec<Move>,
+    loc: SourceLoc,
+}
+
+impl CtlError for MoveOfPartiallyMoved {
+    fn is_fatal(&self) -> bool {
+        true
+    }
+
+    fn fill_snippet(&self, snippet: &mut CtlSnippet) {
+        let &MoveOfPartiallyMoved {
+            something,
+            ref moves,
+            loc,
+        } = self;
+        snippet.title =
+            ctl_error_annotation!(err => "{something} partially moved value is prohibited");
+        snippet
+            .footer
+            .extend([ctl_error_annotation!(note => NO_MOVE_NOTE)]);
+        moves
+            .iter()
+            .filter_map(|r#move| {
+                ctl_error_source_annotation!(
+            info loc.origin, r#move.span, "move occurs earlier here")
+            })
+            .collect_into(&mut snippet.source_annotations);
+        snippet
+            .source_annotations
+            .extend(ctl_error_source_annotation!(info loc));
+    }
+}

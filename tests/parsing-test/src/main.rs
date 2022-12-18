@@ -29,11 +29,10 @@ impl Scheduler for TestState {
         self.workspace.push(CtlSnippet {
             source_annotations: vec![CtlSourceAnnotation {
                 label: "test".into(),
-                annotation_type: AnnotationType::Info,
+                annotation_type: CtlAnnotationType::Info,
                 span: Span::new(0..content.len()),
                 origin: module_ent.source,
-            }
-            .into()],
+            }],
             title: default(),
             footer: default(),
         });
