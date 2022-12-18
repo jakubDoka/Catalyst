@@ -438,11 +438,11 @@ impl TyChecker<'_> {
     }
 }
 
-enum DotPathResult {
+pub enum DotPathResult {
     Field(u32, Ty),
 }
 
-enum FuncLookupResult<'a> {
+pub enum FuncLookupResult<'a> {
     Func(FragRef<Func>),
     SpecFunc(FragRef<SpecFunc>, Ty),
     #[allow(dead_code)]

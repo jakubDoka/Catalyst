@@ -136,7 +136,7 @@ impl TyChecker<'_> {
 
         let final_ty = Ty::Instance(self.typec.instance(
             GenericTy::Struct(struct_ty),
-            &params,
+            params,
             self.interner,
         ));
 

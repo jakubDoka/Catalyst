@@ -3,7 +3,7 @@ use crate::*;
 use std::{
     collections::hash_map::Entry,
     default::default,
-    io,
+    io, mem,
     ops::Not,
     sync::mpsc::{Receiver, TryRecvError},
 };
@@ -156,62 +156,89 @@ impl LspRuntime {
     fn publish_diagnostics(connection: &Connection, view: &mut DiagnosticView) {
         let mut diags = Map::<_, PublishDiagnosticsParams>::default();
 
-        fn pass<T>(v: T) -> T {
-            v
-        }
+        let mut display = SnippetDisplayImpl::default();
+        let mut display_buffer = String::new();
+        let mut snippet = CtlSnippet::default();
 
-        for mut diag in view.workspace.drain() {
-            for mut slice in diag.slices.drain(..).filter_map(pass) {
-                let entry = diags.entry(slice.origin);
+        for diag in view.workspace.drain() {
+            diag.fill_snippet(&mut snippet);
 
-                let diags = match entry {
-                    Entry::Occupied(entry) => entry.into_mut(),
-                    Entry::Vacant(entry) => {
-                        let path = view.resources.source_path(slice.origin);
-                        let Ok(uri) = Url::from_file_path(path) else {
-                            eprintln!("failed to convert path to uri: {path:?}");
-                            continue;
-                        };
-                        entry.insert(PublishDiagnosticsParams {
-                            uri,
-                            diagnostics: vec![],
-                            version: None,
-                        })
-                    }
-                };
+            let main_source_diag = snippet
+                .source_annotations
+                .iter()
+                .position(|a| snippet.title.annotation_type == a.annotation_type)
+                .map(|i| snippet.source_annotations.swap_remove(i))
+                .or_else(|| snippet.source_annotations.pop());
 
-                for annotation in slice.annotations.drain(..).filter_map(pass) {
-                    let report = Diagnostic {
-                        range: view.resources.project_span(slice.origin, annotation.range),
-                        severity: severity(annotation.annotation_type).into(),
-                        source: Some(LANG_NAME.into()),
-                        message: {
-                            let mut label = annotation.label.to_string();
-                            if let Some(header) = diag.title.take() {
-                                if header.annotation_type == annotation.annotation_type && let Some(ref header_label) = header.label {
-                                    label = format!("{header_label}: {label}");
-                                } else {
-                                    diag.title = Some(header);
-                                }
-                            }
-                            label
-                        },
-                        ..default()
-                    };
-                    diags.diagnostics.push(report);
-                }
-            }
-
-            if let Some(title) = diag.title {
+            let Some(main_source_diag) = main_source_diag else {
+                display_buffer.clear();
+                display.display(&*diag, view.resources, &mut display_buffer);
                 connection.notify::<ShowMessage>(ShowMessageParams {
-                    typ: message_type(title.annotation_type),
-                    message: title.label.unwrap_or_default().to_string(),
+                    typ: message_type(snippet.title.annotation_type),
+                    message: display_buffer.clone(),
                 });
-            }
+                continue;
+            };
+
+            let report = Diagnostic {
+                range: view
+                    .resources
+                    .project_span(main_source_diag.origin, main_source_diag.span),
+                severity: severity(main_source_diag.annotation_type).into(),
+                source: Some(LANG_NAME.into()),
+                message: mem::take(&mut snippet.title.label),
+                related_information: Some(
+                    snippet
+                        .source_annotations
+                        .drain(..)
+                        .filter_map(|annotation| {
+                            let diags = Self::get_diag(view.resources, &mut diags, &annotation)?;
+                            Some(DiagnosticRelatedInformation {
+                                location: Location {
+                                    uri: diags.uri.clone(),
+                                    range: view
+                                        .resources
+                                        .project_span(annotation.origin, annotation.span),
+                                },
+                                message: annotation.label,
+                            })
+                        })
+                        .collect(),
+                ),
+                ..default()
+            };
+
+            let Some(diags) = Self::get_diag(view.resources, &mut diags, &main_source_diag) else {
+                continue;
+            };
+
+            diags.diagnostics.push(report);
         }
 
         for (.., file) in diags {
             connection.notify::<PublishDiagnostics>(file);
+        }
+    }
+
+    fn get_diag<'a>(
+        resources: &Resources,
+        map: &'a mut Map<VRef<Source>, PublishDiagnosticsParams>,
+        annotation: &CtlSourceAnnotation,
+    ) -> Option<&'a mut PublishDiagnosticsParams> {
+        match map.entry(annotation.origin) {
+            Entry::Occupied(entry) => Some(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let path = resources.source_path(annotation.origin);
+                let Ok(uri) = Url::from_file_path(path) else {
+                    eprintln!("failed to convert path to uri: {path:?}");
+                    return None;
+                };
+                Some(entry.insert(PublishDiagnosticsParams {
+                    uri,
+                    diagnostics: vec![],
+                    version: None,
+                }))
+            }
         }
     }
 

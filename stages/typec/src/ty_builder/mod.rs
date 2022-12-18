@@ -74,7 +74,7 @@ impl TyChecker<'_> {
                 generics,
                 signature,
                 name: func.name.ident,
-                span: func.name.span.into(),
+                span: func.name.span,
                 parent,
             };
 

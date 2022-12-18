@@ -17,23 +17,21 @@ pub use annotate_snippets;
 #[derive(Default)]
 pub struct SnippetDisplayImpl {
     pub opts: FormatOptions,
-    pub tab_width: usize,
-    snippet: CtlSnippet,
-    buffer: String,
+    pub tab_width: Option<usize>,
+    pub snippet: CtlSnippet,
+    pub buffer: String,
 }
 
 impl diags::SnippetDisplay for SnippetDisplayImpl {
     fn display(&mut self, error: &dyn diags::CtlError, packages: &Resources, out: &mut String) {
-        if self.tab_width == 0 {
-            self.tab_width = 4;
-        }
+        let tab_width = self.tab_width.unwrap_or(4);
         let mut internal_snippet = mem::take(&mut self.snippet);
         error.fill_snippet(&mut internal_snippet);
         internal_snippet
             .source_annotations
             .sort_unstable_by_key(|a| a.origin);
         let mut buffer = mem::take(&mut self.buffer);
-        let snippet = self.snippet(&mut buffer, packages, &internal_snippet);
+        let snippet = self.snippet(&mut buffer, packages, &internal_snippet, tab_width);
         let d_list: DisplayList = snippet.into();
         write!(out, "{d_list}").unwrap();
         buffer.clear();
@@ -49,6 +47,7 @@ impl SnippetDisplayImpl {
         buffer: &'a mut String,
         packages: &'a Resources,
         snippet: &'a diags::CtlSnippet,
+        tab_width: usize,
     ) -> Snippet<'a> {
         let mut slices = vec![];
         for g in snippet
@@ -59,7 +58,7 @@ impl SnippetDisplayImpl {
             let span = g.iter().map(|a| a.span).reduce(|a, b| a.joined(b)).unwrap();
             let span = packages.sources[origin].reveal_span_lines(span);
             let span_str = packages.sources[origin].span_str(span);
-            let fixed_span_str = Self::replace_tabs_with_spaces(buffer, span_str, self.tab_width);
+            let fixed_span_str = Self::replace_tabs_with_spaces(buffer, span_str, tab_width);
             slices.push((span, origin, fixed_span_str));
         }
 
@@ -84,7 +83,7 @@ impl SnippetDisplayImpl {
                             Self::source_annotation(
                                 span.start as usize,
                                 &source.content,
-                                self.tab_width,
+                                tab_width,
                                 a,
                             )
                         })

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{mem, path::Path};
 
 use diags::*;
 use mir::*;
@@ -69,9 +69,16 @@ impl Scheduler for TestState {
     }
 
     fn finally(&mut self) {
-        self.workspace.push(snippet! {
-            info: ("mir repr of functions:\n {}", self.functions);
+        self.workspace.push(MirRepr {
+            repr: mem::take(&mut self.functions),
         });
+    }
+}
+
+ctl_errors! {
+    #[info => "mir repr of functions:\n{repr}"]
+    error MirRepr {
+        repr ref: String
     }
 }
 

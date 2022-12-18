@@ -3,6 +3,7 @@ use std::{
     default::default,
     fmt::Write,
     iter, mem,
+    num::NonZeroU8,
     path::*,
     slice,
     sync::mpsc::{self, Receiver, Sender, SyncSender},
@@ -1480,25 +1481,24 @@ impl Worker {
         typec: &mut Typec,
         interner: &mut Interner,
         layouts: &mut GenLayouts,
-        source: VRef<Source>,
+        origin: VRef<Source>,
         workspace: &mut Workspace,
         checks: &mut Vec<CastCheck>,
     ) {
-        for CastCheck { loc, from, to } in checks.drain(..) {
+        for CastCheck {
+            loc: span,
+            from,
+            to,
+        } in checks.drain(..)
+        {
             let from_param_presence = typec.contains_params_low(from);
             let to_param_presence = typec.contains_params_low(to);
             match from_param_presence.combine(to_param_presence) {
                 ParamPresence::Present => {
-                    workspace.push(snippet! {
-                        err: "cast between generic types is not allowed";
-                        info: (
-                            "cast from {} to {}, which contain generic parameters that depend on function instance",
-                            typec.display_ty(from, interner),
-                            typec.display_ty(to, interner),
-                        );
-                        (loc, source) {
-                            err[loc]: "happened here";
-                        }
+                    workspace.push(CastBetweenGenericTypes {
+                        from: typec.display_ty(from, interner),
+                        to: typec.display_ty(to, interner),
+                        loc: SourceLoc { origin, span },
                     });
                     continue;
                 }
@@ -1509,21 +1509,61 @@ impl Worker {
             let from_layout = layouts.ty_layout(from, &[], typec, interner);
             let to_layout = layouts.ty_layout(to, &[], typec, interner);
             if from_layout.size != to_layout.size {
-                workspace.push(snippet! {
-                    err: "cast size mismatch";
-                    info: (
-                        "cast from {}({}) to {}({}), size does not match",
-                        typec.display_ty(from, interner),
-                        from_layout.size,
-                        typec.display_ty(to, interner),
-                        to_layout.size,
-                    );
-                    (loc, source) {
-                        err[loc]: "happened here";
-                    }
+                workspace.push(CastSizeMismatch {
+                    from: typec.display_ty(from, interner),
+                    from_size: from_layout.size,
+                    to: typec.display_ty(to, interner),
+                    to_size: to_layout.size,
+                    loc: SourceLoc { origin, span },
+                });
+            } else if from_layout.align < to_layout.align {
+                workspace.push(CastAlignMismatch {
+                    from: typec.display_ty(from, interner),
+                    from_align: from_layout.align,
+                    to: typec.display_ty(to, interner),
+                    to_align: to_layout.align,
+                    loc: SourceLoc { origin, span },
                 });
             }
         }
+    }
+}
+
+const CAST_HINT: &str = "if you know what you are doing, perform cast trough pointers";
+
+ctl_errors! {
+    #[err => "cast between generic types is not allowed"]
+    #[info => "cast from '{from}' to '{to}', which contain generic parameters that depend on function instance"]
+    #[note => CAST_HINT]
+    error CastBetweenGenericTypes: fatal {
+        #[err loc]
+        from ref : String,
+        to ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "cast between types of different size"]
+    #[info => "cast from '{from}'({from_size}) to '{to}'({to_size})"]
+    #[note => CAST_HINT]
+    error CastSizeMismatch: fatal {
+        #[err loc]
+        from ref: String,
+        from_size: u32,
+        to ref: String,
+        to_size: u32,
+        loc: SourceLoc,
+    }
+
+    #[err => "cast to type with greater align"]
+    #[info => "cast from '{from}'({from_align}) to '{to}'({to_align})"]
+    #[note => CAST_HINT]
+    error CastAlignMismatch: fatal {
+        #[err loc]
+        from ref: String,
+        from_align: NonZeroU8,
+        to ref: String,
+        to_align: NonZeroU8,
+        loc: SourceLoc,
     }
 }
 

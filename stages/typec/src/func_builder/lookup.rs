@@ -153,7 +153,7 @@ impl TyChecker<'_> {
             })?;
         };
 
-        let module = match self.lookup(start.ident, start.span, FUNC_OR_MOD)? {
+        let module = match self.lookup(start.ident, start.span, "function or module")? {
             ScopeItem::Func(func) => {
                 return Some((
                     FuncLookupResult::Func(func),
@@ -183,7 +183,7 @@ impl TyChecker<'_> {
                             origin: self.source,
                             span: path.after_start_span(), // TODO: make this bit more accurate
                         },
-                        message: "expected a function name, module or spec name",
+                        message: "expected ident (function, module or spec)",
                     })?;
                 };
 
@@ -197,7 +197,7 @@ impl TyChecker<'_> {
                     builder,
                 );
             }
-            item => self.invalid_symbol_type(item, start.span, FUNC_OR_MOD)?,
+            item => self.invalid_symbol_type(item, start.span, "function or module")?,
         };
 
         let &[PathItemAst::Ident(func_or_type), ref segments @ ..] = segments else {
@@ -213,7 +213,7 @@ impl TyChecker<'_> {
         let id = self
             .interner
             .intern_scoped(module.as_u32(), func_or_type.ident);
-        let (ty, segments) = match self.lookup(id, func_or_type.span, FUNC)? {
+        let (ty, segments) = match self.lookup(id, func_or_type.span, "function")? {
             ScopeItem::Func(func) => {
                 return Some((
                     FuncLookupResult::Func(func),
@@ -234,7 +234,7 @@ impl TyChecker<'_> {
                 }
                 _ => (ty, segments),
             },
-            item => self.invalid_symbol_type(item, func_or_type.span, FUNC)?,
+            item => self.invalid_symbol_type(item, func_or_type.span, "function")?,
         };
         let &[start, ref segments @ ..] = segments else {
             self.workspace.push(InvalidPathSegment {

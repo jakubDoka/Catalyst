@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{default::default, fs, path::Path, process::Command};
 
 use crate::*;
 use cli::*;
@@ -98,13 +98,12 @@ impl CcRuntime {
             let mut display = SnippetDisplayImpl {
                 opts: FormatOptions {
                     color: true,
-                    ..Default::default()
+                    ..default()
                 },
-                tab_width: 4,
-                ..Default::default()
+                ..default()
             };
 
-            let diagnostics = String::new();
+            let mut diagnostics = String::new();
             view.workspace.display(view.resources, &mut display, &mut diagnostics);
 
             println!("{diagnostics}");

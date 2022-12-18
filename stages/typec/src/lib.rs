@@ -20,10 +20,6 @@
     This way it is easy to compare signatures.
 */
 
-const FUNC: &str = "function";
-const TY_OR_MOD: &str = "type or module";
-const FUNC_OR_MOD: &str = "function or module";
-
 macro_rules! lookup {
     ($what:ident $self:expr, $id:expr, $span:expr) => {
         match $self.lookup($id, $span, stringify!($what))? {
@@ -274,7 +270,7 @@ mod util {
             #[info source, span, "this name"]
             span: Span,
             source: VRef<Source>,
-            item: String,
+            item ref: String,
         }
     }
 }

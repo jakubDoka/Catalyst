@@ -161,7 +161,7 @@ impl TyChecker<'_> {
             .clone()
             .enumerate()
             .filter_map(|(i, param)| param.is_none().then_some(i))
-            .map(|i| format!("#{}", i))
+            .map(|i| format!("#{i}"))
             .intersperse_with(|| ", ".into())
             .collect::<String>();
 

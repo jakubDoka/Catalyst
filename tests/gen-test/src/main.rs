@@ -21,9 +21,7 @@ impl TestState {
         let s = &mut self.middleware;
 
         if let Some(ir) = out.ir {
-            s.workspace.push(snippet! {
-                info: ("generated ir:\n{}", ir);
-            })
+            s.workspace.push(IrReport { ir });
         }
 
         if s.workspace.has_errors() {
@@ -76,11 +74,27 @@ impl TestState {
         fs::remove_file(obj_path).unwrap();
         fs::remove_file(exe_path).unwrap();
 
-        s.workspace.push(snippet! {
-            info: ("status: {:x?}", output.status.code().unwrap());
-            info: ("stdout:\n{}", String::from_utf8_lossy(&output.stdout));
-            info: ("stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+        s.workspace.push(ExecReport {
+            status: output.status.code().unwrap(),
+            stdout: String::from_utf8_lossy(&output.stdout).into(),
+            stderr: String::from_utf8_lossy(&output.stderr).into(),
         });
+    }
+}
+
+ctl_errors! {
+    #[info => "status: {status}"]
+    #[info => "stdout: {stdout}"]
+    #[info => "stderr: {stderr}"]
+    error ExecReport {
+        status: i32,
+        stdout ref: String,
+        stderr ref: String,
+    }
+
+    #[info => "generated ir:\n{ir}"]
+    error IrReport {
+        ir ref: String,
     }
 }
 

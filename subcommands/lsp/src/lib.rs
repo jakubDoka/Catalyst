@@ -3,6 +3,7 @@
 #![feature(never_type)]
 #![feature(try_blocks)]
 #![feature(let_chains)]
+#![feature(drain_filter)]
 
 mod logic;
 
