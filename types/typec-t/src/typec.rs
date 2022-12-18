@@ -486,6 +486,22 @@ impl Typec {
         }
     }
 
+    pub fn find_struct_field(
+        &mut self,
+        struct_id: FragRef<Struct>,
+        params: impl TypecCtxSlice<Ty>,
+        field_name: Ident,
+        interner: &mut Interner,
+    ) -> Option<(usize, FragRef<Field>, Ty)> {
+        let Struct { fields, .. } = self[struct_id];
+        let (i, id, ty) = self
+            .fields
+            .indexed(fields)
+            .enumerate()
+            .find_map(|(i, (id, field))| (field.name == field_name).then_some((i, id, field.ty)))?;
+        Some((i, id, self.instantiate(ty, params, interner)))
+    }
+
     pub fn display_spec(&self, spec: Spec, interner: &Interner) -> String {
         let mut str = String::new();
         self.display_spec_to(spec, &mut str, interner);

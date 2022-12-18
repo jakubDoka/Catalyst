@@ -109,42 +109,33 @@ impl TyChecker<'_> {
         path @ PathAst { slash, start, .. }: PathAst,
         _builder: &mut TirBuilder,
     ) -> Option<DotPathResult> {
-        if slash.is_some() {
-            todo!();
-        }
-
-        let Ty::Struct(struct_id) = ty.base(self.typec) else {
-            self.non_struct_field_access(ty, path.span())?;
+        let (Ty::Struct(struct_ty), params) = ty.base_with_params(self.typec) else {
+            self.workspace.push(FieldAccessOnNonStruct {
+                found: self.typec.display_ty(ty, self.interner),
+                loc: SourceLoc { origin: self.source, span: path.span() },
+            })?;
         };
+
+        if let Some(slash) = slash {
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: slash,
+                },
+                message: "expected a field name",
+            })?;
+        }
 
         let PathItemAst::Ident(name) = start else {
-            todo!();
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc { origin: self.source, span: start.span() },
+                message: "expected a field name",
+            })?;
         };
 
-        let Some((field, Field { ty: mut field_ty, .. })) = Struct::find_field(struct_id, name.ident, self.typec) else {
-            self.field_not_found(struct_id, name)?;
-        };
-
-        if let Ty::Instance(instance) = ty {
-            field_ty = self
-                .typec
-                .instantiate(ty, self.typec[instance].args, self.interner);
-        }
+        let (field, field_ty) = self.find_field(struct_ty, params, name)?;
 
         Some(DotPathResult::Field(field as u32, field_ty))
-    }
-
-    pub fn find_struct_field(
-        &self,
-        struct_id: FragRef<Struct>,
-        field_name: Ident,
-    ) -> Option<(usize, FragRef<Field>, Ty)> {
-        let Struct { fields, .. } = self.typec[struct_id];
-        self.typec
-            .fields
-            .indexed(fields)
-            .enumerate()
-            .find_map(|(i, (id, field))| (field.name == field_name).then_some((i, id, field.ty)))
     }
 
     pub fn func_path<'a, 'b>(
@@ -415,6 +406,32 @@ impl TyChecker<'_> {
             .intern_with(|s, t| self.typec.binary_op_id(base_id, lhs_ty, rhs_ty, t, s));
         Some(lookup!(Func self, id, op.span()))
     }
+
+    pub fn find_field(
+        &mut self,
+        struct_ty: FragRef<Struct>,
+        params: impl TypecCtxSlice<Ty>,
+        name: NameAst,
+    ) -> Option<(usize, Ty)> {
+        self.typec
+            .find_struct_field(struct_ty, params, name.ident, self.interner)
+            .map(|(field_id, .., field_ty)| (field_id, field_ty))
+            .or_else(|| {
+                self.workspace.push(ComponentNotFound {
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: name.span,
+                    },
+                    ty: self.typec.display_ty(Ty::Struct(struct_ty), self.interner),
+                    suggestions: self.typec[self.typec[struct_ty].fields]
+                        .iter()
+                        .map(|f| &self.interner[f.name])
+                        .intersperse(", ")
+                        .collect(),
+                    something: "field",
+                })?
+            })
+    }
 }
 
 ctl_errors! {
@@ -440,6 +457,14 @@ ctl_errors! {
     error InvalidPathSegment: fatal {
         #[err loc]
         message: &'static str,
+        loc: SourceLoc,
+    }
+
+    #[err => "field access on non-struct type"]
+    #[info => "the type is '{found}' which is not a struct"]
+    error FieldAccessOnNonStruct: fatal {
+        #[err loc]
+        found ref: String,
         loc: SourceLoc,
     }
 }

@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    default::default,
+    fmt::{self, Display},
+};
 
 use crate::*;
 use lexing_t::Span;
@@ -322,15 +325,23 @@ impl Ty {
         })
     }
 
-    pub fn base(self, typec: &Typec) -> Self {
+    pub fn base_with_params(self, typec: &Typec) -> (Self, FragSlice<Ty>) {
         match self {
-            Self::Instance(i) => typec[i].base.as_ty(),
-            _ => self,
+            Self::Instance(i) => (typec[i].base.as_ty(), typec[i].args),
+            _ => (self, default()),
         }
     }
 
+    pub fn base(self, typec: &Typec) -> Self {
+        self.base_with_params(typec).0
+    }
+
+    pub fn caller_with_params(self, typec: &Typec) -> (Self, FragSlice<Ty>) {
+        self.ptr_base(typec).base_with_params(typec)
+    }
+
     pub fn caller(self, typec: &Typec) -> Self {
-        self.ptr_base(typec).base(typec)
+        self.caller_with_params(typec).0
     }
 
     pub fn ptr_base(self, typec: &Typec) -> Self {

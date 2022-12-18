@@ -200,7 +200,7 @@ impl TyChecker<'_> {
                 })
             }
             PatAst::StructCtor(StructCtorPatAst { fields, .. }) => {
-                let Ty::Struct(struct_ty) = ty.caller(self.typec) else {
+                let (Ty::Struct(struct_ty), params) = ty.caller_with_params(self.typec) else {
                     self.workspace.push(UnexpectedPatternType {
                         loc: SourceLoc { origin: self.source, span: fields.span() },
                         ty: self.typec.display_ty(ty, self.interner),
@@ -209,42 +209,18 @@ impl TyChecker<'_> {
                     })?;
                 };
 
-                fn find_field(
-                    s: &mut TyChecker,
-                    struct_ty: FragRef<Struct>,
-                    name: NameAst,
-                ) -> Option<(usize, Ty)> {
-                    s.find_struct_field(struct_ty, name.ident)
-                        .map(|(field_id, .., field_ty)| (field_id, field_ty))
-                        .or_else(|| {
-                            s.workspace.push(ComponentNotFound {
-                                loc: SourceLoc {
-                                    origin: s.source,
-                                    span: name.span,
-                                },
-                                ty: s.typec.display_ty(Ty::Struct(struct_ty), s.interner),
-                                suggestions: s.typec[s.typec[struct_ty].fields]
-                                    .iter()
-                                    .map(|f| &s.interner[f.name])
-                                    .intersperse(", ")
-                                    .collect(),
-                                something: "field",
-                            })?
-                        })
-                }
-
                 let mut tir_fields = bumpvec![None; fields.len()];
                 let mut double_dot = None;
                 for &field in fields.iter() {
                     match field {
                         StructCtorPatFieldAst::Simple { name, mutable } => {
-                            let (field_id, field_ty) = find_field(self, struct_ty, name)?;
+                            let (field_id, field_ty) = self.find_field(struct_ty, params, name)?;
                             let field =
                                 self.pattern(PatAst::Binding(mutable, name), field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
                         StructCtorPatFieldAst::Named { name, pat, .. } => {
-                            let (field_id, field_ty) = find_field(self, struct_ty, name)?;
+                            let (field_id, field_ty) = self.find_field(struct_ty, params, name)?;
                             let field = self.pattern(pat, field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
