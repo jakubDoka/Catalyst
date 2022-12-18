@@ -120,15 +120,7 @@ impl TyChecker<'_> {
             })?;
         };
 
-        if let Some(slash) = slash {
-            self.workspace.push(InvalidPathSegment {
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: slash,
-                },
-                message: "expected a field name",
-            })?;
-        }
+        self.assert_no_slash(slash)?;
 
         let PathItemAst::Ident(name) = start else {
             self.workspace.push(InvalidPathSegment {
@@ -152,15 +144,7 @@ impl TyChecker<'_> {
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
-        if let Some(slash) = slash {
-            self.workspace.push(InvalidPathSegment {
-                loc: SourceLoc {
-                    origin: self.source,
-                    span: slash,
-                },
-                message: "leading slash in this context is invalid",
-            })?;
-        }
+        self.assert_no_slash(slash)?;
 
         let PathItemAst::Ident(start) = start else {
             self.workspace.push(InvalidPathSegment {
@@ -276,26 +260,42 @@ impl TyChecker<'_> {
         &mut self,
         ty: Ty,
         path @ PathAst {
-            start, segments, ..
+            slash,
+            start,
+            segments,
+            ..
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
+        self.assert_no_slash(slash)?;
+
         let lty = ty.caller(self.typec);
         let PathItemAst::Ident(ident) = start else {
-            self.invalid_expr_path(path.span())?
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc { origin: self.source, span: start.span() },
+                message: "expected ident (function or spec)",
+            })?;
         };
 
         let (module, spec_base_or_method, segments) = match self.scope.get(ident.ident) {
             Ok(ScopeItem::SpecBase(spec)) => (None, Ok(spec), segments),
             Ok(ScopeItem::Module(module)) => {
-                let &[PathItemAst::Ident(spec), ref segments @ ..] = segments else {
-                    self.invalid_expr_path(path.span())?
+                let &[PathItemAst::Ident(spec_or_method), ref segments @ ..] = segments else {
+                    self.workspace.push(InvalidPathSegment {
+                        loc: SourceLoc {
+                            origin: self.source,
+                            span: path.after_start_span(),
+                        },
+                        message: "expected ident (method or spec)",
+                    })?;
                 };
 
-                let id = self.interner.intern_scoped(module.index(), spec.ident);
+                let id = self
+                    .interner
+                    .intern_scoped(module.index(), spec_or_method.ident);
                 match self.scope.get(id) {
                     Ok(ScopeItem::SpecBase(spec)) => (Some(module), Ok(spec), segments),
-                    _ => (Some(module), Err(spec), segments),
+                    _ => (Some(module), Err(spec_or_method), segments),
                 }
             }
             _ => (None, Err(ident), segments),
@@ -308,37 +308,54 @@ impl TyChecker<'_> {
                 let id = module.map_or(local_id, |m| {
                     self.interner.intern_scoped(m.index(), local_id)
                 });
-                return match self.lookup(id, path.span(), FUNC)? {
-                    ScopeItem::Func(func) => Some((
-                        FuncLookupResult::Func(func),
-                        Some(ty),
-                        grab_trailing_params(segments),
-                    )),
-                    ScopeItem::SpecFunc(func) => Some((
-                        FuncLookupResult::SpecFunc(func, lty),
-                        Some(ty),
-                        grab_trailing_params(segments),
-                    )),
-                    item => self.invalid_symbol_type(item, path.span(), FUNC)?,
+                let func = match self.lookup(id, method.span(), "method")? {
+                    ScopeItem::Func(func) => FuncLookupResult::Func(func),
+                    ScopeItem::SpecFunc(func) => FuncLookupResult::SpecFunc(func, lty),
+                    item => self.invalid_symbol_type(item, path.span(), "method")?,
                 };
+                return Some((
+                    func,
+                    Some(ty),
+                    self.grab_trailing_params(segments, method.span().as_end()),
+                ));
             }
         };
 
-        let (spec, segments) = if let &[PathItemAst::Params(params), ref segments @ ..] = segments {
-            let params = params
-                .iter()
-                .map(|&p| self.ty(p))
-                .nsc_collect::<Option<BumpVec<_>>>()?;
-            (
-                Spec::Instance(self.typec.spec_instance(spec_base, &params, self.interner)),
-                segments,
-            )
-        } else {
-            (Spec::Base(spec_base), segments)
-        };
+        let (spec, start, segments) =
+            if let &[start @ PathItemAst::Params(params), ref segments @ ..] = segments {
+                let params = params
+                    .iter()
+                    .map(|&p| self.ty(p))
+                    .nsc_collect::<Option<BumpVec<_>>>()?;
 
-        let &[PathItemAst::Ident(method), ref segments @ ..] = segments else {
-            self.invalid_expr_path(path.span())?
+                if params.len() != self.typec[spec_base].generics.len() {
+                    self.workspace.push(WrongGenericParamCount {
+                        expected: self.typec[spec_base].generics.len(),
+                        found: params.len(),
+                        loc: SourceLoc {
+                            origin: self.source,
+                            span: path.after_start_span(),
+                        },
+                    })?;
+                }
+
+                (
+                    Spec::Instance(self.typec.spec_instance(spec_base, &params, self.interner)),
+                    start,
+                    segments,
+                )
+            } else {
+                (Spec::Base(spec_base), path.start, segments)
+            };
+
+        let &[PathItemAst::Ident(method_ident), ref segments @ ..] = segments else {
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: start.span().as_end(),
+                },
+                message: "expected ident (method)",
+            })?;
         };
 
         let (method_index, method) = self
@@ -346,8 +363,22 @@ impl TyChecker<'_> {
             .spec_funcs
             .indexed(self.typec[spec_base].methods)
             .enumerate()
-            .find_map(|(i, (key, func))| (method.ident == func.name).then_some((i, key)))
-            .or_else(|| todo!())?;
+            .find_map(|(i, (key, func))| (method_ident.ident == func.name).then_some((i, key)))
+            .or_else(|| {
+                self.workspace.push(ComponentNotFound {
+                    ty: self.typec.display_spec(spec, self.interner),
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: method_ident.span(),
+                    },
+                    suggestions: self.typec[self.typec[spec_base].methods]
+                        .iter()
+                        .map(|func| &self.interner[func.name])
+                        .intersperse(", ")
+                        .collect(),
+                    something: "method",
+                })?
+            })?;
 
         if let Some(r#impl) = self.typec.find_implementation(
             ty,
@@ -361,28 +392,38 @@ impl TyChecker<'_> {
                 return Some((
                     FuncLookupResult::Func(func),
                     Some(ty),
-                    grab_trailing_params(segments),
+                    self.grab_trailing_params(segments, method_ident.span().as_end()),
                 ));
             }
         } else {
-            todo!(
-                "{:?} {:?} {:?}",
-                ty,
-                spec,
-                builder
-                    .ctx
-                    .generics
-                    .iter()
-                    .map(|&g| &self.typec[g])
-                    .collect::<Vec<_>>()
-            );
+            self.workspace.push(MissingImpl {
+                ty: self.typec.display_ty(ty, self.interner),
+                spec: self.typec.display_spec(spec, self.interner),
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: path.span(),
+                },
+            })?;
         }
 
         Some((
             FuncLookupResult::SpecFunc(method, lty),
             Some(ty),
-            grab_trailing_params(segments),
+            self.grab_trailing_params(segments, method_ident.span().as_end()),
         ))
+    }
+
+    pub fn assert_no_slash(&mut self, slash: Option<Span>) -> Option<()> {
+        if let Some(slash) = slash {
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: slash,
+                },
+                message: "leading slash in this context is invalid",
+            })?;
+        }
+        Some(())
     }
 
     pub fn value_path<'a>(
@@ -403,32 +444,49 @@ impl TyChecker<'_> {
                 Ty::Enum(..) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder)
                 }
-                Ty::Struct(_) => todo!(),
-                Ty::Instance(_) => todo!(),
-                Ty::Pointer(_) => todo!(),
-                Ty::Param(_) => todo!(),
-                Ty::Builtin(_) => todo!(),
+                Ty::Struct(..)
+                | Ty::Instance(..)
+                | Ty::Pointer(..)
+                | Ty::Param(..)
+                | Ty::Builtin(..) => self.workspace.push(UnexpectedInferenceType {
+                    expected: "enum",
+                    found: self.typec.display_ty(inferred, self.interner),
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: path.span(),
+                    },
+                })?,
             }
         }
 
         let PathItemAst::Ident(start) = start else {
-            self.invalid_expr_path(path.span())?
+            self.workspace.push(InvalidPathSegment {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: path.start.span().as_end(),
+                },
+                message: "expected ident (variable or enum)",
+            })?;
         };
 
         let res = match self.lookup(start.ident, start.span, "variable or enum")? {
-            ScopeItem::Func(_) => todo!(),
-            ScopeItem::SpecFunc(_) => todo!(),
             ScopeItem::Ty(ty) => match ty {
-                Ty::Struct(_) => todo!(),
                 Ty::Enum(..) => {
                     return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder)
                 }
-                Ty::Instance(_) => todo!(),
-                Ty::Pointer(_) => todo!(),
-                Ty::Param(_) => todo!(),
-                Ty::Builtin(_) => todo!(),
+                Ty::Struct(..)
+                | Ty::Instance(..)
+                | Ty::Pointer(..)
+                | Ty::Param(..)
+                | Ty::Builtin(..) => self.workspace.push(UnexpectedInferenceType {
+                    expected: "enum",
+                    found: self.typec.display_ty(ty, self.interner),
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: path.span(),
+                    },
+                })?,
             },
-            ScopeItem::SpecBase(_) => todo!(),
             ScopeItem::VarHeaderTir(var) => {
                 TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
             }
@@ -492,6 +550,14 @@ impl TyChecker<'_> {
 }
 
 ctl_errors! {
+    #[err => "'{ty}' does not implement '{spec}'"]
+    error MissingImpl: fatal {
+        #[err loc]
+        ty ref: String,
+        spec ref: String,
+        loc: SourceLoc,
+    }
+
     #[err => "cannot infer type of expression"]
     #[help => "{help}"]
     error CannotInferExpression: fatal {
@@ -522,6 +588,15 @@ ctl_errors! {
     error FieldAccessOnNonStruct: fatal {
         #[err loc]
         found ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "wrong number of generic parameters"]
+    #[info => "expected {expected} parameters, found {found}"]
+    error WrongGenericParamCount: fatal {
+        #[err loc]
+        expected: usize,
+        found: usize,
         loc: SourceLoc,
     }
 }
