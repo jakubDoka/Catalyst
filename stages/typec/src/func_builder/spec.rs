@@ -77,13 +77,13 @@ impl TyChecker<'_> {
             let missing_impls = self.typec[spec_ent.inherits]
                 .to_bumpvec()
                 .into_iter()
-                .map(|inherit| self.typec.instantiate_spec(inherit, params, self.interner))
-                .filter(|&instance| {
+                .filter_map(|inherit| {
                     self.typec
-                        .find_implementation(ty, instance, generics, &mut None, self.interner)
+                        .find_implementation(ty, inherit, generics, &mut None, self.interner)
                         .is_none()
+                        .then(|| self.typec.instantiate_spec(inherit, params, self.interner))
+                        .map(|instance| self.typec.display_spec(instance, self.interner))
                 })
-                .map(|instance| self.typec.display_spec(instance, self.interner))
                 .intersperse_with(|| " + ".into())
                 .collect::<String>();
 
@@ -332,25 +332,4 @@ ctl_errors! {
         spec_source_loc: Option<SourceLoc>,
     }
 
-}
-
-enum Enum {
-    // 0..2
-    A(i8),
-    B,
-    C(u8),
-}
-
-fn fun(e: Enum) {
-    match e {
-        Enum::A(i) => todo!(),
-        Enum::B => todo!(),
-        Enum::C(i) => print!("C: {}", i),
-    }
-}
-
-fn main() {
-    let c = Enum::A(-20);
-
-    fun(c);
 }

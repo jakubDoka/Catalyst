@@ -411,9 +411,9 @@ impl TyChecker<'_> {
 
     pub fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
         self.type_check_detailed(expected, got, |s| {
-            self.workspace.push(GenericTypeMismatch {
-                expected: self.typec.display_ty(expected, self.interner),
-                got: self.typec.display_ty(got, self.interner),
+            s.workspace.push(GenericTypeMismatch {
+                expected: s.typec.display_ty(expected, s.interner),
+                got: s.typec.display_ty(got, s.interner),
                 loc: SourceLoc {
                     span,
                     origin: s.source,

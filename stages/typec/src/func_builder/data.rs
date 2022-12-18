@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    lookup::{CannotInferExpression, UnexpectedType, WrongGenericParamCount},
+    *,
+};
 
 impl TyChecker<'_> {
     pub fn struct_ctor<'a>(
@@ -11,8 +14,8 @@ impl TyChecker<'_> {
             let (ty, params) = self.ty_path(path)?;
             (
                 match ty {
-                    TyPathResult::Ty(ty) => ty.as_generic(),
-                    _ => None,
+                    TyPathResult::Ty(ty) => ty,
+                    _ => todo!(),
                 },
                 params.and_then(|params| {
                     Some((
@@ -25,30 +28,38 @@ impl TyChecker<'_> {
                 }),
             )
         } else {
-            let ty = inference.ty().or_else(|| self.cannot_infer(ctor.span())?)?;
-            match ty {
-                Ty::Instance(instance) => (
-                    Some(self.typec[instance].base),
-                    Some((
-                        default(),
-                        self.typec[self.typec[instance].args].to_bumpvec(),
-                    )),
-                ),
-                _ => (ty.as_generic(), None),
-            }
+            let Some(ty) = inference.ty() else {
+                self.workspace.push(CannotInferExpression {
+                    help: "add struct path before the slash",
+                    loc: SourceLoc { origin: self.source, span: ctor.span() },
+                })?;
+            };
+            let (ty, params) = ty.base_with_params(self.typec);
+            (ty, Some((default(), self.typec[params].to_bumpvec())))
         };
 
-        let Some(GenericTy::Struct(struct_id)) = ty else {
-            self.expected_struct_path(path.map_or(ctor.span(), |p| p.span()))?;
+        let Ty::Struct(struct_ty) = ty else {
+            self.workspace.push(UnexpectedType {
+                expected: "struct",
+                found: self.typec.display_ty(ty, self.interner),
+                loc: SourceLoc { origin: self.source, span: ctor.span() },
+            })?;
         };
 
-        let struct_meta = self.typec[struct_id];
+        let struct_meta = self.typec[struct_ty];
 
         let mut param_slots = bumpvec![None; struct_meta.generics.len()];
 
-        if let Some((span, params)) = params {
+        if let Some((span, ref params)) = params {
             if params.len() > param_slots.len() {
-                self.too_many_params(span, param_slots.len())?;
+                self.workspace.push(WrongGenericParamCount {
+                    expected: param_slots.len(),
+                    found: params.len(),
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span,
+                    },
+                });
             }
 
             param_slots
@@ -59,19 +70,14 @@ impl TyChecker<'_> {
 
         let mut fields = bumpvec![None; body.len()];
 
-        for field_ast @ &StructCtorFieldAst { name, expr } in body.iter() {
-            let (index, field) = self.typec.fields[struct_meta.fields]
-                .iter()
-                .copied()
-                .enumerate()
-                .find(|(.., field)| field.name == name.ident)
-                .or_else(|| {
-                    self.unknown_field(Ty::Struct(struct_id), struct_meta.fields, ctor.span())?
-                })?;
+        let params = params.map_or(default(), |(.., p)| p);
 
-            let inference = self
-                .typec
-                .try_instantiate(field.ty, &param_slots, self.interner);
+        for field_ast @ &StructCtorFieldAst { name, expr } in body.iter() {
+            let Some((index, ty)) = self.find_field(struct_ty, params.as_slice(), name) else {
+                continue;
+            };
+
+            let inference = self.typec.try_instantiate(ty, &param_slots, self.interner);
             let expr = if let Some(expr) = expr {
                 self.expr(expr, inference.into(), builder)
             } else {
@@ -89,45 +95,60 @@ impl TyChecker<'_> {
                 continue;
             };
 
-            self.infer_params(&mut param_slots, value.ty, field.ty, field_ast.span());
+            self.infer_params(&mut param_slots, value.ty, ty, field_ast.span());
 
-            if fields[index].replace(value).is_some() {
-                self.duplicate_field(name.span());
+            if let Some(prev) = fields[index].replace(value) {
+                self.workspace.push(DuplicateCtorField {
+                    prev: prev.span,
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: name.span(),
+                    },
+                });
             }
         }
 
-        let Some(params) = param_slots.iter().copied().collect::<Option<BumpVec<_>>>() else {
-            let missing_params = param_slots
-                .iter()
-                .copied()
-                .enumerate()
-                .filter_map(|(i, param)| param.is_none().then_some(i))
-                .collect::<BumpVec<_>>();
-            self.missing_constructor_params(ctor.span(), missing_params)?;
-        };
+        let params = self.unpack_param_slots(
+            param_slots.iter().copied(),
+            ctor.span(),
+            builder,
+            "struct constructor",
+            "(<struct_path>\\[<param_ty>, ...]\\{...})",
+        )?;
 
-        let Some(fields) = fields.iter().copied().collect::<Option<BumpVec<_>>>() else {
-            let missing_fields = self.typec.fields[struct_meta.fields]
-                .iter()
-                .zip(fields.iter())
-                .filter_map(|(field, value)| value.is_none().then_some(field.name))
-                .collect::<BumpVec<_>>();
+        let missing_fields = self.typec.fields[struct_meta.fields]
+            .iter()
+            .zip(fields.iter())
+            .filter_map(|(field, value)| value.is_none().then_some(field.name))
+            .map(|name| &self.interner[name])
+            .intersperse(", ")
+            .collect::<String>();
 
-            self.missing_constructor_fields(ctor.span(), missing_fields.as_slice())?;
-        };
+        if !missing_fields.is_empty() {
+            self.workspace.push(MissingCtorFields {
+                missing_fields,
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: ctor.span(),
+                },
+            });
+        }
 
-        let final_ty = if params.is_empty() {
-            Ty::Struct(struct_id)
-        } else {
-            Ty::Instance(
-                self.typec
-                    .instance(GenericTy::Struct(struct_id), &params, self.interner),
-            )
-        };
+        let final_ty = Ty::Instance(self.typec.instance(
+            GenericTy::Struct(struct_ty),
+            &params,
+            self.interner,
+        ));
 
         Some(TirNode::new(
             final_ty,
-            TirKind::Ctor(builder.arena.alloc_iter(fields)),
+            TirKind::Ctor(
+                builder.arena.alloc_iter(
+                    fields
+                        .into_iter()
+                        .map(|f| f.expect("since missing fields are empty, all fields are some")),
+                ),
+            ),
             ctor.span(),
         ))
     }
@@ -202,5 +223,23 @@ impl TyChecker<'_> {
             TirKind::Bool(span_str!(self, span).starts_with('t')),
             span,
         ))
+    }
+}
+
+ctl_errors! {
+    #[err => "field is getting initialized twice"]
+    error DuplicateCtorField: fatal {
+        #[info loc.origin, prev, "previous initialization was here"]
+        #[err loc]
+        prev: Span,
+        loc: SourceLoc,
+    }
+
+    #[err => "missing fields in struct constructor"]
+    #[err => "missing: {missing_fields}"]
+    error MissingCtorFields: fatal {
+        #[err loc]
+        missing_fields ref: String,
+        loc: SourceLoc,
     }
 }

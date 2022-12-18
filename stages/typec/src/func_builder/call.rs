@@ -149,11 +149,13 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn call_params<'a>(
+    pub fn unpack_param_slots<'a>(
         &mut self,
         params: impl Iterator<Item = Option<Ty>> + Clone + ExactSizeIterator,
         span: Span,
         builder: &mut TirBuilder<'a, '_>,
+        something: &'static str,
+        syntax: &'static str,
     ) -> Option<&'a [Ty]> {
         let missing = params
             .clone()
@@ -169,12 +171,14 @@ impl TyChecker<'_> {
             ));
         }
 
-        self.workspace.push(UnknownCallTypeParameters {
+        self.workspace.push(UnknownTypeParameters {
             loc: SourceLoc {
                 span,
                 origin: self.source,
             },
             missing,
+            something,
+            syntax,
         })?
     }
 
@@ -230,7 +234,13 @@ impl TyChecker<'_> {
             .map(|args| caller.and_then(|c| c.err()).into_iter().chain(args))
             .map(|args| builder.arena.alloc_iter(args.collect::<BumpVec<_>>()))?;
 
-        let params = self.call_params(param_slots.iter().copied(), args.span(), builder)?;
+        let params = self.unpack_param_slots(
+            param_slots.iter().copied(),
+            args.span(),
+            builder,
+            "call",
+            "(works on methods too) (<func_path>\\[<ty_param>, ...](<expr_arg>, ...))",
+        )?;
 
         let mut missing_keys = bumpvec![];
         for (&param, &specs) in params.iter().zip(generics) {
@@ -272,13 +282,15 @@ impl TyChecker<'_> {
 }
 
 ctl_errors! {
-    #[err => "not all call parameters can be inferred"]
+    #[err => "not all {something} parameters can be inferred"]
     #[info => "missing parameters: {missing}"]
-    #[help => "provide the parameters (works on methods too) (<func_path>\\[<ty_param>, ...](<expr_arg>, ...))"]
-    error UnknownCallTypeParameters: fatal {
+    #[help => "provide the parameters {syntax}"]
+    error UnknownTypeParameters: fatal {
         #[err loc]
         missing ref: String,
         loc: SourceLoc,
+        something: &'static str,
+        syntax: &'static str,
     }
 
     #[err => "not all parameter specs are satisfied"]

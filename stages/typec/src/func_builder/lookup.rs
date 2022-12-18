@@ -32,7 +32,7 @@ impl TyChecker<'_> {
                 [PathItemAst::Params(params), PathItemAst::Ident(name)] => {
                     (enum_ty, name, Some(params))
                 }
-                ref other => s.workspace.push(InvalidPathSegment {
+                _ => s.workspace.push(InvalidPathSegment {
                     loc: SourceLoc {
                         origin: s.source,
                         span: segments
@@ -448,7 +448,7 @@ impl TyChecker<'_> {
                 | Ty::Instance(..)
                 | Ty::Pointer(..)
                 | Ty::Param(..)
-                | Ty::Builtin(..) => self.workspace.push(UnexpectedInferenceType {
+                | Ty::Builtin(..) => self.workspace.push(UnexpectedType {
                     expected: "enum",
                     found: self.typec.display_ty(inferred, self.interner),
                     loc: SourceLoc {
@@ -542,7 +542,11 @@ impl TyChecker<'_> {
                 message: "expected parameters or end of the path",
                 loc: SourceLoc {
                     origin: self.source,
-                    span: segments.last().unwrap().span(),
+                    span: segments
+                        .iter()
+                        .map(|s| s.span())
+                        .reduce(Span::joined)
+                        .unwrap_or(backup_span),
                 },
             })?,
         }
@@ -569,6 +573,15 @@ ctl_errors! {
     #[err => "inferred type of expression is not a {expected}"]
     #[info => "the inferred type is '{found}' which is not a {expected}"]
     error UnexpectedInferenceType: fatal {
+        #[err loc]
+        expected: &'static str,
+        found ref: String,
+        loc: SourceLoc,
+    }
+
+    #[err => "type of expression is not a {expected}"]
+    #[info => "the type is '{found}' which is not a {expected}"]
+    error UnexpectedType: fatal {
         #[err loc]
         expected: &'static str,
         found ref: String,
