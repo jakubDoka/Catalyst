@@ -228,17 +228,17 @@ impl TyChecker<'_> {
         SpecAst { vis, name, .. }: SpecAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<FragRef<SpecBase>> {
-        let loc = {
-            let id = self.next_humid_item_id::<SpecBase>(name.ident, attributes);
-            let item = ModuleItem::new(name.ident, id, name.span, vis);
-            self.insert_scope_item(item)?
+        let (loc, meta) = {
+            let meta = self.next_humid_item_id::<SpecBase>(name, attributes);
+            let item = ModuleItem::new(name.ident, meta.id, name.span, vis);
+            (self.insert_scope_item(item)?, meta)
         };
         let spec = SpecBase {
             name: name.ident,
             loc: Some(loc),
             ..default()
         };
-        self.insert_humid_item(spec, attributes)
+        Some(self.insert_humid_item(spec, meta))
     }
 
     pub fn collect_func(
@@ -400,19 +400,13 @@ impl TyChecker<'_> {
         }: StructAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<FragRef<Struct>> {
-        let loc = self.humid_item_loc(name, Ty::Struct, attributes, vis)?;
+        let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let s = Struct {
             name: name.ident,
             loc: Some(loc),
             ..default()
         };
-        self.insert_humid_item(s, attributes).inspect(|&ty| {
-            self.handle_macro_attr(
-                attributes,
-                Ty::Struct(ty),
-                generics.is_empty().not().then(|| generics.span()),
-            )
-        })
+        Some(self.insert_humid_item(s, meta))
     }
 
     pub fn collect_enum(
@@ -425,72 +419,90 @@ impl TyChecker<'_> {
         }: EnumAst,
         attributes: &[TopLevelAttributeAst],
     ) -> Option<FragRef<Enum>> {
-        let loc = self.humid_item_loc(name, Ty::Enum, attributes, vis)?;
+        let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let e = Enum {
             name: name.ident,
             loc: Some(loc),
             ..default()
         };
-        self.insert_humid_item(e, attributes).inspect(|&ty| {
-            self.handle_macro_attr(
-                attributes,
-                Ty::Enum(ty),
-                generics.is_empty().not().then(|| generics.span()),
-            )
-        })
+        Some(self.insert_humid_item(e, meta))
     }
 
-    pub fn humid_item_loc<T: Humid>(
+    fn humid_item_loc<T: Humid>(
         &mut self,
         name: NameAst,
-        map: impl Fn(FragRef<T>) -> Ty,
         attributes: &[TopLevelAttributeAst],
         vis: Vis,
-    ) -> Option<Loc> {
-        let id = self.next_humid_item_id(name.ident, attributes);
-        let item = ModuleItem::new(name.ident, map(id), name.span, vis);
-        self.insert_scope_item(item)
+        check_macro: Option<GenericsAst>,
+    ) -> Option<(Loc, HumidMeta<T>)>
+    where
+        FragRef<T>: Into<Ty>,
+    {
+        let meta = self.next_humid_item_id(name, attributes);
+        let ty = meta.id.into();
+        let item = ModuleItem::new(name.ident, ty, name.span, vis);
+        if let Some(generics) = check_macro {
+            self.handle_macro_attr(
+                attributes,
+                ty,
+                generics.is_empty().not().then(|| generics.span()),
+            );
+        }
+        self.insert_scope_item(item).map(|id| (id, meta))
     }
 
     fn next_humid_item_id<I: Humid>(
         &mut self,
-        name: Ident,
+        name: NameAst,
         attributes: &[TopLevelAttributeAst],
-    ) -> FragRef<I> {
-        if attributes
+    ) -> HumidMeta<I> {
+        if let Some(attr) = attributes
             .iter()
-            .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
+            .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
         {
-            // TODO: handle shadowing
+            let name_str = &self.interner[name.ident];
+            let Some(id) = I::lookup_water_drop(name_str) else {
+                self.workspace.push(InvalidWaterDrop {
+                    message: "no water drop with this name exists",
+                    name: name.span,
+                    loc: SourceLoc { origin: self.source, span: attr.span() },
+                    suggestions: I::NAMES,
+                });
 
-            let name = &self.interner[name];
-            let Some(id) = I::lookup_water_drop(name) else {
-                todo!("{:?}", name)
+                return HumidMeta {
+                    id: unsafe { I::storage(self.typec).next() },
+                    humid: false,
+                };
             };
-            id
+
+            if I::storage(self.typec)[id].name() != Interner::EMPTY {
+                self.workspace.push(InvalidWaterDrop {
+                    message: "water drop already exists",
+                    name: name.span,
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: attr.span(),
+                    },
+                    suggestions: I::NAMES,
+                });
+            }
+
+            HumidMeta { id, humid: true }
         } else {
-            unsafe { I::storage(self.typec).next() }
+            HumidMeta {
+                id: unsafe { I::storage(self.typec).next() },
+                humid: false,
+            }
         }
     }
 
-    fn insert_humid_item<I: Humid>(
-        &mut self,
-        item: I,
-        attributes: &[TopLevelAttributeAst],
-    ) -> Option<FragRef<I>> {
-        let is_water_drop = attributes
-            .iter()
-            .any(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)));
-        Some(if is_water_drop {
-            let name = &self.interner[item.name()];
-            let Some(id) = I::lookup_water_drop(name) else {
-                todo!()
-            };
-            *Typec::get_mut(I::storage(self.typec), id) = item;
-            id
+    fn insert_humid_item<I: Humid>(&mut self, item: I, meta: HumidMeta<I>) -> FragRef<I> {
+        if meta.humid {
+            *Typec::get_mut(I::storage(self.typec), meta.id) = item;
+            meta.id
         } else {
             I::storage(self.typec).push(item)
-        })
+        }
     }
 
     fn handle_macro_attr(
@@ -525,7 +537,25 @@ impl TyChecker<'_> {
     }
 }
 
+#[must_use]
+struct HumidMeta<I> {
+    id: FragRef<I>,
+    humid: bool,
+}
+
 ctl_errors! {
+    #[err => "invalid water drop"]
+    #[info => "{message}"]
+    #[info => ("list of available water drops:{}", suggestions.join(", "))]
+    error InvalidWaterDrop: fatal {
+        #[err loc.origin, name, "name does not match any water drop"]
+        #[err loc]
+        message: &'static str,
+        name: Span,
+        loc: SourceLoc,
+        suggestions: &'static [&'static str],
+    }
+
     #[err => "generic macro not allowed"]
     #[help => "add the macro attribute to concrete instance of the macro via type alias (TODO: type aliases)"]
     error GenericMacro: fatal {

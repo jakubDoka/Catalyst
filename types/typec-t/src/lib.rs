@@ -43,6 +43,8 @@ macro_rules! gen_water_drops {
         }
 
         impl Humid for $target {
+            const NAMES: &'static [&'static str] = &[$($repr),*];
+
             fn lookup_water_drop(name: &str) -> Option<FragRef<Self>> {
                 lookup_water_drop(&Self::WATER_DROPS, name)
             }
