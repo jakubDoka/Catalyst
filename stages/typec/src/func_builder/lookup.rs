@@ -1,3 +1,5 @@
+use crate::ty_parser::InaccessibleScopeItem;
+
 use super::*;
 
 impl TyChecker<'_> {
@@ -512,7 +514,6 @@ impl TyChecker<'_> {
     ) -> Option<(usize, Ty)> {
         self.typec
             .find_struct_field(struct_ty, params, name.ident, self.interner)
-            .map(|(field_id, .., field_ty)| (field_id, field_ty))
             .or_else(|| {
                 self.workspace.push(ComponentNotFound {
                     loc: SourceLoc {
@@ -528,6 +529,44 @@ impl TyChecker<'_> {
                     something: "field",
                 })?
             })
+            .and_then(|(field_id, field, field_ty)| {
+                self.can_access(
+                    self.typec[struct_ty].loc,
+                    self.typec[field].vis,
+                    name.span,
+                    self.typec[field].span,
+                )
+                .then_some((field_id, field_ty))
+            })
+    }
+
+    pub fn can_access(
+        &mut self,
+        loc: Option<Loc>,
+        vis: Vis,
+        code_span: Span,
+        def_span: Span,
+    ) -> bool {
+        let Some(loc) = loc else {
+            return true;
+        };
+
+        let (position, accessible) =
+            Scope::compute_accessibility(self.module, loc.module, vis, self.resources);
+
+        if let Some(pos) = position && !accessible {
+            self.workspace.push(InaccessibleScopeItem {
+                pos,
+                span: code_span,
+                item_def: SourceLoc {
+                    origin: self.resources.modules[loc.module].source,
+                    span: def_span,
+                },
+                source: self.source,
+            });
+        }
+
+        accessible
     }
 
     pub fn grab_trailing_params<'a>(

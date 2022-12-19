@@ -587,7 +587,7 @@ pub struct Field {
     pub vis: Vis,
     pub ty: Ty,
     pub flags: FieldFlags,
-    pub span: Option<Span>,
+    pub span: Span,
     pub name: Ident,
 }
 

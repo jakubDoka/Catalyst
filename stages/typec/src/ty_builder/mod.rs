@@ -163,7 +163,7 @@ impl TyChecker<'_> {
                             ty
                         },
                         flags: FieldFlags::MUTABLE & mutable | FieldFlags::USED & used,
-                        span: name.span.into(),
+                        span: name.span,
                         name: name.ident,
                     })
                 },

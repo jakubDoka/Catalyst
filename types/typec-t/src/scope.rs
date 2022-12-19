@@ -76,7 +76,7 @@ impl Scope {
         debug_assert!(current_module != foreign_module);
 
         let (position, accessible) =
-            self.compute_accessibility(current_module, foreign_module, item, resources);
+            Self::compute_accessibility(current_module, foreign_module, item.vis, resources);
 
         let record = ScopeRecord::Imported {
             module: foreign_module,
@@ -104,11 +104,10 @@ impl Scope {
         }
     }
 
-    fn compute_accessibility(
-        &self,
+    pub fn compute_accessibility(
         current_module: VRef<Module>,
         foreign_module: VRef<Module>,
-        item: ModuleItem,
+        vis: Vis,
         resources: &Resources,
     ) -> (Option<ScopePosition>, bool) {
         if current_module == foreign_module {
@@ -116,10 +115,10 @@ impl Scope {
         }
 
         if resources.modules[current_module].package == resources.modules[foreign_module].package {
-            return (Some(ScopePosition::Module), item.vis != Vis::Priv);
+            return (Some(ScopePosition::Module), vis != Vis::Priv);
         }
 
-        (Some(ScopePosition::Package), item.vis == Vis::Pub)
+        (Some(ScopePosition::Package), vis == Vis::Pub)
     }
 
     pub fn clear(&mut self) {

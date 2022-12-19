@@ -157,6 +157,31 @@ fn main() {
             }
         }
 
+        "access violation" {
+            file "package.ctlm" {}
+            dir "root" {
+                file "a.ctl" {
+                    priv fn pass(v: uint) -> uint => v;
+
+                    struct A {
+                        priv a: uint;
+                    };
+
+                    impl A {
+                        fn new() -> A => ::{ a: 0 };
+                    };
+                }
+            }
+            file "root.ctl" {
+                use {
+                    "./a";
+                };
+
+                fn main() -> uint => pass(0);
+                fn other_main() -> uint => A::new().a;
+            }
+        }
+
         simple "spec-call" {
             priv spec Clay;
 
