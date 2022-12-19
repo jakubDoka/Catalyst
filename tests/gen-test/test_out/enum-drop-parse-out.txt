@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got Ident
- --> enum-drop\root.ctl:1:383
-  |
-1 | use { "water/marker" ; } ; fn [T] drop(value : T) {} ; fn "default" putchar(c : char) -> u32 extern ; struct A { ch : char ; } ; impl Drop for A { fn drop(v : ^ mut Self) { putchar(v.ch) ; putchar(' ') ; } ; } ; struct B { a : A ; b : A ; } ; enum E { A : A ; B : B ; C ; } ; #[entry] ; fn main() -> uint {     E\A ~\{ ch : 'a' } ; E\B ~\    { a :\{ ch : 'b' } ; b :\{ ch : 'c' } } E\C ; } ;
-  |                                                                                                                                                                                                                                                                                                                                                                                               ^ token located here
-  |
-  = info: list -> item -> function definition -> function body -> list
-

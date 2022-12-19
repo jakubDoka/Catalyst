@@ -1,8 +1,0 @@
-error: expected '\n' | ';' but got 'impl'
- --> simple-spec-inheritance\root.ctl:1:72
-  |
-1 | spec A { fn a -> uint ; } ; spec B { fn a -> uint ; } ; spec C : A + B impl C for uint impl A for uint { fn a -> uint => 0 ; } ; impl B for uint { fn a -> uint => 1 ; } ; fn [T : C] sum() -> uint => T\A\a() + T\C\a() ;
-  |                                                                        ^^^^ token located here
-  |
-  = info: list
-
