@@ -431,12 +431,12 @@ fn main() {
 
             #[macro swap];
             struct Swap {
-                state: SwapState;
+                mut state: SwapState;
                 lexer: MacroLexer;
             };
 
             impl TokenMacro for Swap {
-                fn "default" new(s: ^Self, lexer: MacroLexer) {
+                fn "default" new(s: ^Self, mut lexer: MacroLexer) {
                     ptr::write(s, ::{
                         state: ::Two~::{
                             first: lexer.next();

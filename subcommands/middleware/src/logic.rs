@@ -731,7 +731,7 @@ impl Middleware {
             Ty::Struct(s) => self.mark_struct(s, resources, main_task),
             Ty::Enum(e) => self.mark_enum(e, resources, main_task),
             Ty::Instance(i) => self.mark_instance(i, resources, main_task),
-            Ty::Pointer(p) => self.mark_pointer(p, resources, main_task),
+            Ty::Pointer(p, ..) => self.mark_pointer(p, resources, main_task),
             Ty::Param(..) | Ty::Builtin(..) => Some(()),
         }
     }

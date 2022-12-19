@@ -183,7 +183,7 @@ impl TypecRelocator {
             Ty::Struct(s) => self.structs.project(s).map(Ty::Struct),
             Ty::Enum(e) => self.enums.project(e).map(Ty::Enum),
             Ty::Instance(i) => self.instances.project(i).map(Ty::Instance),
-            Ty::Pointer(p) => self.pointers.project(p).map(Ty::Pointer),
+            Ty::Pointer(p, m) => self.pointers.project(p).map(|p| Ty::Pointer(p, m)),
             Ty::Param(index) => Some(Ty::Param(index)),
             Ty::Builtin(b) => Some(Ty::Builtin(b)),
         }
@@ -307,7 +307,10 @@ impl Typec {
                     self.register_ty_generics_low(arg, param, spec_set);
                 }
             }
-            Ty::Pointer(p) => self.register_ty_generics_low(self[p].base, generic, spec_set),
+            Ty::Pointer(p, ..) => {
+                // TODO: handle mutability
+                self.register_ty_generics_low(self[p].base, generic, spec_set)
+            }
             Ty::Struct(..) | Ty::Enum(..) | Ty::Builtin(..) => (),
         }
     }
@@ -475,11 +478,11 @@ impl Typec {
                 let Instance { base, args } = self[instance];
                 self.instance_id(base, &self[args], to, interner);
             }
-            Ty::Pointer(ptr) => {
-                let Pointer {
-                    base, mutability, ..
-                } = self[ptr];
-                self.pointer_id(mutability, base, to, interner);
+            Ty::Pointer(ptr, m) => {
+                let Pointer { base, .. } = self[ptr];
+                to.push('^');
+                write!(to, "{}", m.to_mutability()).unwrap();
+                self.display_ty_to(base, to, interner);
             }
             Ty::Param(i) => write!(to, "param{i}").unwrap(),
             Ty::Builtin(b) => to.push_str(b.name()),
@@ -576,11 +579,9 @@ impl Typec {
         }
 
         match (pattern, value) {
-            (Ty::Pointer(pattern), Ty::Pointer(value)) => {
+            (Ty::Pointer(pattern, pattern_m), Ty::Pointer(value, ..)) => {
                 to.push('^');
-                if self[pattern].mutability != self[value].mutability {
-                    write!(to, "{}", self[pattern].mutability).unwrap();
-                }
+                write!(to, "{}", pattern_m.to_mutability()).unwrap();
                 self.type_diff_recurse(self[pattern].base, self[value].base, to, interner);
             }
             (Ty::Instance(pattern), Ty::Instance(value)) => {
@@ -620,9 +621,9 @@ impl Typec {
                 .iter()
                 .map(|&ty| self.contains_params_low(ty))
                 .fold(Absent, ParamPresence::combine),
-            Ty::Pointer(pointer) => self
+            Ty::Pointer(pointer, m) => self
                 .contains_params_low(self[pointer].base)
-                .combine(self[pointer].mutability.into())
+                .combine(m.to_mutability().into())
                 .put_behind_pointer(),
             Ty::Param(..) => Present,
             Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
@@ -751,26 +752,17 @@ impl Typec {
         self.display_ty_to(rhs, to, interner);
     }
 
-    pub fn pointer_to(
-        &mut self,
-        mutability: Mutability,
-        base: Ty,
-        interner: &mut Interner,
-    ) -> FragRef<Pointer> {
-        let id = interner.intern_with(|s, t| self.pointer_id(mutability, base, t, s));
+    pub fn pointer_to(&mut self, base: Ty, interner: &mut Interner) -> FragRef<Pointer> {
+        let id = interner.intern_with(|s, t| self.pointer_id(base, t, s));
         let depth = base.ptr_depth(self) + 1;
 
         match self.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
-                &ComputedTypecItem::Pointer(pointer) => pointer,
+                &ComputedTypecItem::Pointer(pointer, ..) => pointer,
                 _ => unreachable!(),
             },
             Entry::Vacant(entry) => {
-                let pointer = Pointer {
-                    mutability,
-                    base,
-                    depth,
-                };
+                let pointer = Pointer { base, depth };
                 let ptr = self.pointers.push(pointer);
                 entry.insert(ComputedTypecItem::Pointer(ptr));
                 ptr
@@ -778,15 +770,8 @@ impl Typec {
         }
     }
 
-    pub fn pointer_id(
-        &self,
-        mutability: Mutability,
-        base: Ty,
-        to: &mut String,
-        interner: &Interner,
-    ) {
-        to.push('^');
-        write!(to, "{mutability}").unwrap();
+    pub fn pointer_id(&self, base: Ty, to: &mut String, interner: &Interner) {
+        to.push_str("ptr ");
         self.display_ty_to(base, to, interner);
     }
 
@@ -906,7 +891,7 @@ impl Typec {
 
     pub fn deref(&self, ty: Ty) -> Ty {
         match ty {
-            Ty::Pointer(ptr) => self[ptr].base,
+            Ty::Pointer(ptr, ..) => self[ptr].base,
             _ => ty,
         }
     }
@@ -1044,14 +1029,14 @@ impl Typec {
             std::cmp::Ordering::Less => {
                 let muts = (0..(reference_depth - ty_depth))
                     .scan(reference, |r, _| {
-                        let mutability = ty.mutability(self);
+                        let mutability = ty.mutability();
                         *r = r.ptr_base(self);
                         Some(mutability)
                     })
                     .collect::<BumpVec<_>>();
 
                 for mutability in muts.into_iter().rev() {
-                    ty = Ty::Pointer(self.pointer_to(mutability, ty, interner));
+                    ty = Ty::Pointer(self.pointer_to(ty, interner), mutability);
                 }
 
                 ty
@@ -1091,8 +1076,13 @@ impl Typec {
             }
 
             match (reference, template) {
-                (Ty::Pointer(reference), Ty::Pointer(template)) => {
-                    stack.push((self[reference].base, self[template].base));
+                (Ty::Pointer(reference_p, reference_m), Ty::Pointer(template_p, template_m)) => {
+                    match (reference_m.to_mutability(), template_m.to_mutability()) {
+                        (Mutability::Param(i), val) => params[i as usize] = Some(val.as_ty()),
+                        (a, b) if a == b => (),
+                        _ => return Err((reference, template)),
+                    }
+                    stack.push((self[reference_p].base, self[template_p].base));
                 }
                 (Ty::Instance(reference), Ty::Instance(template)) => {
                     check(self[reference].base.as_ty(), self[template].base.as_ty())?;
@@ -1131,12 +1121,11 @@ impl Typec {
                     .collect::<BumpVec<_>>();
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
-            Ty::Pointer(pointer) => {
-                let Pointer {
-                    base, mutability, ..
-                } = self[pointer];
+            Ty::Pointer(pointer, m) => {
+                let Pointer { base, .. } = self[pointer];
                 let base = self.instantiate(base, params, interner);
-                Ty::Pointer(self.pointer_to(mutability, base, interner))
+                let mutability = m.instantiate(params.get(self));
+                Ty::Pointer(self.pointer_to(base, interner), mutability)
             }
             Ty::Param(index) => params.get(self)[index as usize],
         }
@@ -1160,12 +1149,11 @@ impl Typec {
                     .collect::<Option<BumpVec<_>>>()?;
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
-            Ty::Pointer(pointer) => {
-                let Pointer {
-                    base, mutability, ..
-                } = self[pointer];
+            Ty::Pointer(pointer, m) => {
+                let Pointer { base, .. } = self[pointer];
                 let base = self.try_instantiate(base, params, interner)?;
-                Ty::Pointer(self.pointer_to(mutability, base, interner))
+                let mutability = m.try_instantiate(params)?;
+                Ty::Pointer(self.pointer_to(base, interner), mutability)
             }
             Ty::Param(index) => return params[index as usize],
         })

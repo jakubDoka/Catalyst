@@ -110,7 +110,6 @@ pub struct Variant {
 #[derive(Clone, Copy)]
 pub struct Pointer {
     pub base: Ty,
-    pub mutability: Mutability,
     pub depth: u16,
 }
 
@@ -118,7 +117,17 @@ pub struct Pointer {
 pub enum Mutability {
     Mutable,
     Immutable,
-    Param(u16),
+    Param(u8),
+}
+
+impl Mutability {
+    pub fn as_ty(self) -> Ty {
+        match self {
+            Mutability::Mutable => Ty::MUTABLE,
+            Mutability::Immutable => Ty::IMMUTABLE,
+            Mutability::Param(i) => Ty::Param(i),
+        }
+    }
 }
 
 impl fmt::Display for Mutability {
@@ -128,6 +137,54 @@ impl fmt::Display for Mutability {
             Mutability::Immutable => write!(f, ""),
             Mutability::Param(i) => write!(f, "param{i} "),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub struct RawMutability(u8);
+
+impl RawMutability {
+    pub const MUTABLE: Self = Self(0);
+    pub const IMMUTABLE: Self = Self(1);
+    pub const PARAM_OFFSET: u8 = 2;
+    pub fn new(mutability: Mutability) -> Option<Self> {
+        Some(match mutability {
+            Mutability::Mutable => Self::MUTABLE,
+            Mutability::Immutable => Self::IMMUTABLE,
+            Mutability::Param(i) => Self(i.checked_add(Self::PARAM_OFFSET)?),
+        })
+    }
+
+    pub fn from_ty(ty: Ty) -> Self {
+        match ty {
+            Ty::Builtin(Builtin::Mutable) => Self::MUTABLE,
+            Ty::Param(i) => Self(i + Self::PARAM_OFFSET),
+            _ => Self::IMMUTABLE,
+        }
+    }
+
+    pub fn to_mutability(self) -> Mutability {
+        match self {
+            Self::IMMUTABLE => Mutability::Immutable,
+            Self::MUTABLE => Mutability::Mutable,
+            Self(i) => Mutability::Param(i - Self::PARAM_OFFSET),
+        }
+    }
+
+    pub fn instantiate(self, params: &[Ty]) -> RawMutability {
+        match self {
+            Self::IMMUTABLE => Self::IMMUTABLE,
+            Self::MUTABLE => Self::MUTABLE,
+            Self(i) => Self::from_ty(params[(i - Self::PARAM_OFFSET) as usize]),
+        }
+    }
+
+    pub fn try_instantiate(self, params: &[Option<Ty>]) -> Option<RawMutability> {
+        Some(match self {
+            Self::IMMUTABLE => Self::IMMUTABLE,
+            Self::MUTABLE => Self::MUTABLE,
+            Self(i) => Self::from_ty(params[(i - Self::PARAM_OFFSET) as usize]?),
+        })
     }
 }
 
@@ -234,8 +291,8 @@ pub enum Ty {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
     Instance(FragRef<Instance>),
-    Pointer(FragRef<Pointer>),
-    Param(u16),
+    Pointer(FragRef<Pointer>, RawMutability),
+    Param(u8),
     Builtin(Builtin),
 }
 
@@ -245,7 +302,7 @@ impl Display for Ty {
             Ty::Struct(s) => write!(f, "struct{:X}", s.to_u32()),
             Ty::Enum(e) => write!(f, "enum{:x}", e.to_u32()),
             Ty::Instance(i) => write!(f, "inst{:x}", i.to_u32()),
-            Ty::Pointer(p) => write!(f, "ptr{:x}", p.to_u32()),
+            Ty::Pointer(p, m) => write!(f, "{} ptr{:x}", m.to_mutability(), p.to_u32()),
             Ty::Param(i) => write!(f, "param{i}"),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }
@@ -302,6 +359,8 @@ impl Ty {
             Ty::Builtin(b) => match b {
                 Builtin::Unit => todo!(),
                 Builtin::Terminal => todo!(),
+                Builtin::Mutable => todo!(),
+                Builtin::Immutable => todo!(),
                 Builtin::Uint => Func::UINT_EQ,
                 Builtin::U32 => Func::U32_EQ,
                 Builtin::U16 => Func::U16_EQ,
@@ -346,29 +405,29 @@ impl Ty {
 
     pub fn ptr_base(self, typec: &Typec) -> Self {
         match self {
-            Self::Pointer(p) => typec[p].base.ptr_base(typec),
+            Self::Pointer(p, ..) => typec[p].base.ptr_base(typec),
             _ => self,
         }
     }
 
-    pub fn mutability(self, typec: &Typec) -> Mutability {
+    pub fn mutability(self) -> RawMutability {
         match self {
-            Self::Pointer(p) => typec[p].mutability,
-            _ => Mutability::Immutable,
+            Self::Pointer(.., m) => m,
+            _ => RawMutability::IMMUTABLE,
         }
     }
 
     pub fn ptr_depth(self, typec: &Typec) -> u16 {
         match self {
-            Self::Pointer(p) => typec[p].depth,
+            Self::Pointer(p, ..) => typec[p].depth,
             _ => 0,
         }
     }
 
-    pub fn ptr_mutability(self, typec: &Typec) -> Mutability {
+    pub fn ptr(self, typec: &Typec) -> (Self, u16, Mutability) {
         match self {
-            Self::Pointer(p) => typec[p].mutability,
-            _ => Mutability::Immutable,
+            Self::Pointer(p, m) => (typec[p].base, typec[p].depth, m.to_mutability()),
+            _ => (self, 0, Mutability::Immutable),
         }
     }
 
@@ -464,9 +523,9 @@ impl From<FragRef<Instance>> for Ty {
     }
 }
 
-impl From<FragRef<Pointer>> for Ty {
-    fn from(p: FragRef<Pointer>) -> Self {
-        Ty::Pointer(p)
+impl From<(FragRef<Pointer>, RawMutability)> for Ty {
+    fn from((p, m): (FragRef<Pointer>, RawMutability)) -> Self {
+        Ty::Pointer(p, m)
     }
 }
 
@@ -534,6 +593,8 @@ gen_builtin!(
     atoms {
         UNIT => Unit => "()",
         TERMINAL => Terminal => "!",
+        MUTABLE => Mutable => "mutable",
+        IMMUTABLE => Immutable => "immutable",
         UINT => Uint => "uint",
         U32 => U32 => "u32",
         U16 => U16 => "u16",
@@ -558,6 +619,8 @@ impl Builtin {
         match self {
             Builtin::Unit => 0,
             Builtin::Terminal => 0,
+            Builtin::Mutable => 0,
+            Builtin::Immutable => 0,
             Builtin::Uint => 8,
             Builtin::U32 => 4,
             Builtin::U16 => 2,

@@ -30,7 +30,7 @@ impl TyChecker<'_> {
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
         self.scope
-            .push(name.ident, Ty::Param(index as u16), name.span);
+            .push(name.ident, Ty::Param(index as u8), name.span);
     }
 
     pub fn ty(&mut self, ty_ast: TyAst) -> Option<Ty> {
@@ -51,7 +51,7 @@ impl TyChecker<'_> {
                 }
                 (TyPathResult::Spec(..), ..) => todo!(),
             },
-            TyAst::Pointer(&pointer) => self.pointer(pointer).map(Ty::Pointer),
+            TyAst::Pointer(&pointer) => self.pointer(pointer).map(Into::into),
             TyAst::Tuple(tuple) => self.tuple(tuple),
             TyAst::Wildcard(..) => todo!(),
         }
@@ -105,10 +105,13 @@ impl TyChecker<'_> {
     fn pointer(
         &mut self,
         TyPointerAst { mutability, ty, .. }: TyPointerAst,
-    ) -> Option<FragRef<Pointer>> {
+    ) -> Option<(FragRef<Pointer>, RawMutability)> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        Some(self.typec.pointer_to(mutability, base, self.interner))
+        Some((
+            self.typec.pointer_to(base, self.interner),
+            RawMutability::new(mutability).expect("todo"),
+        ))
     }
 
     pub fn mutability(&mut self, mutability_ast: MutabilityAst) -> Option<Mutability> {
@@ -193,7 +196,7 @@ impl TyChecker<'_> {
         for (key, &func) in functions.keys().zip(&self.typec.spec_funcs[functions]) {
             let id = self
                 .interner
-                .intern_scoped(Ty::Param(index as u16), func.name);
+                .intern_scoped(Ty::Param(index as u8), func.name);
             self.scope.push(id, key, func.span);
         }
     }

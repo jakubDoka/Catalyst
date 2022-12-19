@@ -32,7 +32,7 @@ impl TyChecker<'_> {
 
         self.insert_generics(generics, 0);
         self.scope
-            .push(Interner::SELF, Ty::Param(generics.len() as u16), name.span);
+            .push(Interner::SELF, Ty::Param(generics.len() as u8), name.span);
         let mut spec_set = SpecSet::default();
         self.generics(generics, &mut spec_set, 0);
         let inherits = self.build_inherits(inherits, &mut spec_set);

@@ -247,9 +247,10 @@ impl MirChecker<'_, '_> {
                 let params = &self.typec[args];
                 self.display_pat_low(base.as_ty(), params, res, frontier)
             }
-            Ty::Pointer(ptr) => {
+            Ty::Pointer(ptr, m) => {
                 let Pointer { base, .. } = self.typec[ptr];
                 res.push('^');
+                write!(res, "{}", m.to_mutability()).unwrap();
                 self.display_pat_low(base, params, res, frontier)
             }
             Ty::Param(index) => {
@@ -261,6 +262,8 @@ impl MirChecker<'_, '_> {
                 | Builtin::Terminal
                 | Builtin::Uint
                 | Builtin::U32
+                | Builtin::Mutable
+                | Builtin::Immutable
                 | Builtin::U16
                 | Builtin::U8 => {
                     let first = advance();

@@ -164,8 +164,8 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<()> {
         let (desired_pointer_depth, mutability) = match ty {
-            Ty::Pointer(ptr) => (self.typec[ptr].depth, self.typec[ptr].mutability),
-            _ => (0, Mutability::Immutable),
+            Ty::Pointer(ptr, m) => (self.typec[ptr].depth, m),
+            _ => (0, RawMutability::IMMUTABLE),
         };
         let mut total_mutability = true;
         loop {
@@ -173,8 +173,8 @@ impl TyChecker<'_> {
             match desired_pointer_depth.cmp(&current_pointed_depth) {
                 Ordering::Less => {
                     let ty = self.typec.deref(node.ty);
-                    let mutability = node.ty.ptr_mutability(self.typec);
-                    let mutable = mutability == Mutability::Mutable && total_mutability;
+                    let mutability = node.ty.mutability();
+                    let mutable = mutability == RawMutability::MUTABLE && total_mutability;
                     total_mutability = mutable;
                     *node = TirNode::with_flags(
                         ty,
@@ -184,7 +184,8 @@ impl TyChecker<'_> {
                     );
                 }
                 Ordering::Greater => {
-                    if mutability == Mutability::Mutable && node.flags.contains(TirFlags::IMMUTABLE)
+                    if mutability == RawMutability::MUTABLE
+                        && node.flags.contains(TirFlags::IMMUTABLE)
                     {
                         self.workspace.push(NotMutable {
                             loc: SourceLoc {
@@ -193,9 +194,9 @@ impl TyChecker<'_> {
                             },
                         });
                     }
-                    let ty = self.typec.pointer_to(mutability, node.ty, self.interner);
+                    let ty = self.typec.pointer_to(node.ty, self.interner);
                     *node = TirNode::new(
-                        Ty::Pointer(ty),
+                        Ty::Pointer(ty, mutability),
                         TirKind::Ref(builder.arena.alloc(*node)),
                         node.span,
                     );
@@ -204,9 +205,7 @@ impl TyChecker<'_> {
             }
         }
 
-        if node.ty.ptr_mutability(self.typec) != Mutability::Mutable
-            && mutability == Mutability::Mutable
-        {
+        if node.ty.mutability() != RawMutability::MUTABLE && mutability == RawMutability::MUTABLE {
             self.workspace.push(NotMutable {
                 loc: SourceLoc {
                     origin: self.source,
@@ -265,22 +264,20 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let expr = self.unit_expr(expr, Inference::None, builder)?;
-        let Ty::Pointer(ptr) = expr.ty else {
+        let Ty::Pointer(ptr, mutability) = expr.ty else {
             self.workspace.push(NonPointerDereference {
                 ty: self.typec.display_ty(expr.ty, self.interner),
                 loc: SourceLoc { origin: self.source, span: expr.span },
             })?;
         };
 
-        let Pointer {
-            base, mutability, ..
-        } = self.typec[ptr];
+        let Pointer { base, .. } = self.typec[ptr];
 
         Some(TirNode::with_flags(
             base,
             TirKind::Deref(builder.arena.alloc(expr)),
             TirFlags::IMMUTABLE
-                & (mutability == Mutability::Immutable
+                & (mutability == RawMutability::IMMUTABLE
                     || (expr.flags.contains(TirFlags::IMMUTABLE)
                         && !matches!(expr.kind, TirKind::Access(..)))),
             expr.span,
@@ -296,7 +293,7 @@ impl TyChecker<'_> {
     ) -> ExprRes<'a> {
         let expr = self.unit_expr(expr, Inference::None, builder)?;
         let mutability = self.mutability(mutability)?;
-        let ptr = self.typec.pointer_to(mutability, expr.ty, self.interner);
+        let ptr = self.typec.pointer_to(expr.ty, self.interner);
 
         if mutability == Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
             self.workspace.push(NotMutable {
@@ -308,7 +305,7 @@ impl TyChecker<'_> {
         }
 
         Some(TirNode::new(
-            Ty::Pointer(ptr),
+            Ty::Pointer(ptr, RawMutability::new(mutability).expect("todo")),
             TirKind::Ref(builder.arena.alloc(expr)),
             expr.span,
         ))
