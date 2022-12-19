@@ -1,7 +1,8 @@
 use std::collections::hash_map;
 
+use diags::SourceLoc;
 use lexing_t::*;
-use packaging_t::Module;
+use packaging_t::{Module, Resources, Source};
 use parsing_t::*;
 
 use storage::*;
@@ -22,9 +23,9 @@ impl Scope {
     pub fn get(&self, ident: Ident) -> Result<ScopeItem, ScopeError> {
         self.data
             .get(&ident)
-            .map(|option| option.scope_item().ok_or(ScopeError::Collision))
             .ok_or(ScopeError::NotFound)
-            .flatten()
+            .and_then(|record| record.accessible())
+            .and_then(|option| option.scope_item().ok_or(ScopeError::Collision))
     }
 
     pub fn push(&mut self, id: Ident, item: impl Into<ScopeItem>, span: Span) {
@@ -69,18 +70,24 @@ impl Scope {
         current_module: VRef<Module>,
         foreign_module: VRef<Module>,
         item: ModuleItem,
+        resources: &Resources,
         interner: &mut Interner,
     ) {
         debug_assert!(current_module != foreign_module);
 
+        let (position, accessible) =
+            self.compute_accessibility(current_module, foreign_module, item, resources);
+
+        let record = ScopeRecord::Imported {
+            module: foreign_module,
+            source: resources.modules[foreign_module].source,
+            item,
+            position,
+            accessible,
+        };
+
         let scoped_id = interner.intern_scoped(foreign_module.index(), item.id);
-        self.data.insert(
-            scoped_id,
-            ScopeRecord::Imported {
-                module: foreign_module,
-                item,
-            },
-        );
+        self.data.insert(scoped_id, record);
 
         if let Some(existing_option) = self.data.get_mut(&item.id) {
             match existing_option {
@@ -93,14 +100,26 @@ impl Scope {
                 | ScopeRecord::Collision => (),
             }
         } else {
-            self.data.insert(
-                item.id,
-                ScopeRecord::Imported {
-                    module: foreign_module,
-                    item,
-                },
-            );
+            self.data.insert(item.id, record);
         }
+    }
+
+    fn compute_accessibility(
+        &self,
+        current_module: VRef<Module>,
+        foreign_module: VRef<Module>,
+        item: ModuleItem,
+        resources: &Resources,
+    ) -> (Option<ScopePosition>, bool) {
+        if current_module == foreign_module {
+            return (None, true);
+        }
+
+        if resources.modules[current_module].package == resources.modules[foreign_module].package {
+            return (Some(ScopePosition::Module), item.vis != Vis::Priv);
+        }
+
+        (Some(ScopePosition::Package), item.vis == Vis::Pub)
     }
 
     pub fn clear(&mut self) {
@@ -115,13 +134,23 @@ pub struct ScopeFrame(usize);
 pub enum ScopeError {
     NotFound,
     Collision,
+    Inaccessible(ScopePosition, SourceLoc),
+}
+
+#[derive(Clone, Copy)]
+pub enum ScopePosition {
+    Module,
+    Package,
 }
 
 #[derive(Clone, Copy)]
 pub enum ScopeRecord {
     Imported {
         module: VRef<Module>,
+        source: VRef<Source>,
         item: ModuleItem,
+        position: Option<ScopePosition>,
+        accessible: bool,
     },
     Current {
         item: ModuleItem,
@@ -158,6 +187,25 @@ impl ScopeRecord {
         match *self {
             Self::Collision | Self::Imported { .. } => false,
             Self::Builtin { .. } | Self::Pushed { .. } | Self::Current { .. } => true,
+        }
+    }
+
+    fn accessible(&self) -> Result<Self, ScopeError> {
+        match *self {
+            Self::Imported {
+                accessible: false,
+                position: Some(pos),
+                item,
+                source,
+                ..
+            } => Err(ScopeError::Inaccessible(
+                pos,
+                SourceLoc {
+                    origin: source,
+                    span: item.span,
+                },
+            )),
+            s => Ok(s),
         }
     }
 }

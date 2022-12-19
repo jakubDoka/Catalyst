@@ -69,7 +69,10 @@ mod typec;
 
 pub use {
     func::{Func, FuncFlags, FuncSlices, FuncVisibility, Funcs, Signature},
-    scope::{ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopeRecord},
+    scope::{
+        ModuleItem, ModuleItemPtr, Scope, ScopeError, ScopeFrame, ScopeItem, ScopePosition,
+        ScopeRecord,
+    },
     tir::{
         AssignTir, BreakTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir,
         IfBranchTir, IfTir, Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest,

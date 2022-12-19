@@ -81,6 +81,7 @@
         "udiv",
         "uextend",
         "Uninit",
+        "unmatch",
         "unproject",
         "ushr",
         "vcruntime",

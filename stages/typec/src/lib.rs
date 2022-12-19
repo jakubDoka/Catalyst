@@ -192,7 +192,7 @@ mod util {
     pub fn build_scope(
         module: VRef<Module>,
         scope: &mut Scope,
-        packages: &Resources,
+        resources: &Resources,
         typec: &Typec,
         interner: &mut Interner,
     ) -> BumpVec<MacroCompileRequest> {
@@ -208,13 +208,13 @@ mod util {
         }
 
         let mut token_macros = bumpvec![];
-        let mod_ent = &packages.modules[module];
-        for dep in &packages.module_deps[mod_ent.deps] {
+        let mod_ent = &resources.modules[module];
+        for dep in &resources.module_deps[mod_ent.deps] {
             scope.push(dep.name, dep.ptr, dep.name_span);
 
             let items = &typec.module_items[dep.ptr];
             for &item in items.items.values() {
-                scope.insert(module, dep.ptr, item, interner);
+                scope.insert(module, dep.ptr, item, resources, interner);
 
                 if let ModuleItemPtr::Ty(ty) = item.ptr
                     && let Some(r#impl) = typec.macros.get(&ty)

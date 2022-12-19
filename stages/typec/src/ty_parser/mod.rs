@@ -231,6 +231,12 @@ impl TyChecker<'_> {
                     source: self.source,
                 })
             }
+            ScopeError::Inaccessible(pos, item_def) => self.workspace.push(InaccessibleScopeItem {
+                span,
+                source: self.source,
+                item_def,
+                pos,
+            }),
         }
     }
 
@@ -286,6 +292,20 @@ ctl_errors! {
         expected: &'static str,
         actual: &'static str,
         span: Span,
+        source: VRef<Source>,
+    }
+
+    #[err => "inaccessible scope item"]
+    #[info => ("item is defined in a different {}", match pos {
+        ScopePosition::Module => "module and is private",
+        ScopePosition::Package => "package and is not public",
+    })]
+    error InaccessibleScopeItem: fatal {
+        #[info item_def, "item defined here"]
+        #[err source, span, "here"]
+        pos: ScopePosition,
+        span: Span,
+        item_def: SourceLoc,
         source: VRef<Source>,
     }
 

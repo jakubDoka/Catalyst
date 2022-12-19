@@ -43,6 +43,7 @@ fn main() {
         }
     });
 
+    let mut any_changes = false;
     for (path, _) in dirs_ctor() {
         let dir_path = path.join("test_out");
         if !dir_path.exists() {
@@ -52,8 +53,6 @@ fn main() {
             .unwrap()
             .filter_map(|file| file.ok())
             .filter(|file| file.file_type().unwrap().is_file());
-
-        let mut any_changes = false;
 
         for file in files {
             let path = file.path();
@@ -80,11 +79,11 @@ fn main() {
                 any_changes = true;
             }
         }
+    }
 
-        if any_changes {
-            let input = prompt("Enter commit message");
-            cmd("git", &dir_path, ["commit", "-m", &input]);
-        }
+    if any_changes {
+        let input = prompt("Enter commit message");
+        cmd("git", Path::new("."), ["commit", "-m", &input]);
     }
 }
 
