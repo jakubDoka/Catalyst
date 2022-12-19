@@ -1,4 +1,5 @@
 use super::{
+    control_flow::NonPointerDereference,
     lookup::{CannotInferExpression, UnexpectedType, WrongGenericParamCount},
     *,
 };
@@ -203,6 +204,17 @@ impl TyChecker<'_> {
             }
         }
 
+        if node.ty.ptr_mutability(self.typec) != Mutability::Mutable
+            && mutability == Mutability::Mutable
+        {
+            self.workspace.push(NotMutable {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: node.span,
+                },
+            });
+        }
+
         Some(())
     }
 
@@ -243,6 +255,79 @@ impl TyChecker<'_> {
             Ty::BOOL,
             TirKind::Bool(span_str!(self, span).starts_with('t')),
             span,
+        ))
+    }
+
+    pub fn deref<'a>(
+        &mut self,
+        expr: UnitExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let expr = self.unit_expr(expr, Inference::None, builder)?;
+        let Ty::Pointer(ptr) = expr.ty else {
+            self.workspace.push(NonPointerDereference {
+                ty: self.typec.display_ty(expr.ty, self.interner),
+                loc: SourceLoc { origin: self.source, span: expr.span },
+            })?;
+        };
+
+        let Pointer {
+            base, mutability, ..
+        } = self.typec[ptr];
+
+        Some(TirNode::with_flags(
+            base,
+            TirKind::Deref(builder.arena.alloc(expr)),
+            TirFlags::IMMUTABLE
+                & (mutability == Mutability::Immutable
+                    || (expr.flags.contains(TirFlags::IMMUTABLE)
+                        && !matches!(expr.kind, TirKind::Access(..)))),
+            expr.span,
+        ))
+    }
+
+    pub fn r#ref<'a>(
+        &mut self,
+        mutability: MutabilityAst,
+        expr: UnitExprAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let expr = self.unit_expr(expr, Inference::None, builder)?;
+        let mutability = self.mutability(mutability)?;
+        let ptr = self.typec.pointer_to(mutability, expr.ty, self.interner);
+
+        if mutability == Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
+            self.workspace.push(NotMutable {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: expr.span,
+                },
+            })?;
+        }
+
+        Some(TirNode::new(
+            Ty::Pointer(ptr),
+            TirKind::Ref(builder.arena.alloc(expr)),
+            expr.span,
+        ))
+    }
+
+    pub fn r#let<'a>(
+        &mut self,
+        r#let @ LetAst { pat, ty, value, .. }: LetAst,
+        _inference: Inference,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> ExprRes<'a> {
+        let ty = ty.map(|(.., ty)| self.ty(ty)).transpose()?;
+        let value = self.expr(value, ty.into(), builder)?;
+        let pat = self.pattern(pat, value.ty, builder)?;
+
+        Some(TirNode::new(
+            Ty::UNIT,
+            TirKind::Let(builder.arena.alloc(LetTir { pat, value })),
+            r#let.span(),
         ))
     }
 }

@@ -482,7 +482,7 @@ fn main() {
             fn "default" putchar(c: char) -> u32 extern;
 
             struct A {
-                ch: char;
+                mut ch: char;
             };
 
             impl A {
@@ -506,17 +506,17 @@ fn main() {
             };
 
             fn drop_variable() {
-                let a = A::new('a');
+                let mut a = A::new('a');
                 a.set_char('c');
             };
 
             fn drop_refed_variable() {
-                let a = ^A::new('a');
+                let a = ^mut A::new('a');
                 a.set_char('d');
             };
 
             fn move_in_drop() {
-                let a = A::new('e');
+                let mut a = A::new('e');
                 a = A::new('f');
             };
 

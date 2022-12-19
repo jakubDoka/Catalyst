@@ -387,7 +387,7 @@ impl TyChecker<'_> {
                         origin: self.source,
                         span: lhs.span,
                     },
-                })?;
+                });
             }
 
             return Some(TirNode::new(
