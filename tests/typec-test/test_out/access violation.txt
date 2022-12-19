@@ -1,0 +1,33 @@
+error: inaccessible scope item
+ --> access violation\root.ctl:5:20
+  |
+5 | fn main -> uint => pass(0)
+  |                    ^^^^ here
+  |
+ ::: access violation\root\a.ctl:2:9
+  |
+2 | priv fn pass(v: uint) -> uint => v
+  |         ---- info: item defined here
+  |
+  = info: item is defined in a different module and is private
+
+error: inaccessible scope item
+ --> access violation\root.ctl:6:34
+  |
+6 | fn other_main -> uint => A\new().a
+  |                                  ^ here
+  |
+ ::: access violation\root\a.ctl:4:10
+  |
+4 |     priv a: uint
+  |          - info: item defined here
+  |
+  = info: item is defined in a different module and is private
+
+info: tir repr of functions:
+fn [] pass(var0: uint) -> uint return var0
+
+fn [] new() -> 0\A return 0\A\{0}
+
+
+

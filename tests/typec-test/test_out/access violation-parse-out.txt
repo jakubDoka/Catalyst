@@ -1,0 +1,7 @@
+error: missing parsing::parser::items::ItemAst list separator ''\n' | ';''
+ --> access violation\root\a.ctl:1:66
+  |
+1 | priv fn pass(v : uint) -> uint => v ; struct A { priv a : uint } impl A { fn new() -> A =>\{ a : 0 } ; }
+  |                                                                  ^^^^ here
+  |
+
