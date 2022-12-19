@@ -73,7 +73,7 @@ impl TyChecker<'_> {
         let params = params.map_or(default(), |(.., p)| p);
 
         for field_ast @ &StructCtorFieldAst { name, expr } in body.iter() {
-            let Some((index, ty)) = self.find_field(struct_ty, params.as_slice(), name) else {
+            let Some((index, .., ty)) = self.find_field(struct_ty, params.as_slice(), name) else {
                 continue;
             };
 
@@ -166,14 +166,32 @@ impl TyChecker<'_> {
             Ty::Pointer(ptr) => (self.typec[ptr].depth, self.typec[ptr].mutability),
             _ => (0, Mutability::Immutable),
         };
+        let mut total_mutability = true;
         loop {
             let current_pointed_depth = node.ty.ptr_depth(self.typec);
             match desired_pointer_depth.cmp(&current_pointed_depth) {
                 Ordering::Less => {
                     let ty = self.typec.deref(node.ty);
-                    *node = TirNode::new(ty, TirKind::Deref(builder.arena.alloc(*node)), node.span);
+                    let mutability = node.ty.ptr_mutability(self.typec);
+                    let mutable = mutability == Mutability::Mutable && total_mutability;
+                    total_mutability = mutable;
+                    *node = TirNode::with_flags(
+                        ty,
+                        TirKind::Deref(builder.arena.alloc(*node)),
+                        TirFlags::IMMUTABLE & !mutable,
+                        node.span,
+                    );
                 }
                 Ordering::Greater => {
+                    if mutability == Mutability::Mutable && node.flags.contains(TirFlags::IMMUTABLE)
+                    {
+                        self.workspace.push(NotMutable {
+                            loc: SourceLoc {
+                                origin: self.source,
+                                span: node.span,
+                            },
+                        });
+                    }
                     let ty = self.typec.pointer_to(mutability, node.ty, self.interner);
                     *node = TirNode::new(
                         Ty::Pointer(ty),

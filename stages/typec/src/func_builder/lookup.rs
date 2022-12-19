@@ -131,9 +131,9 @@ impl TyChecker<'_> {
             })?;
         };
 
-        let (field, field_ty) = self.find_field(struct_ty, params, name)?;
+        let (field, mutable, field_ty) = self.find_field(struct_ty, params, name)?;
 
-        Some(DotPathResult::Field(field as u32, field_ty))
+        Some(DotPathResult::Field(field as u32, mutable, field_ty))
     }
 
     pub fn func_path<'a, 'b>(
@@ -489,9 +489,12 @@ impl TyChecker<'_> {
                     },
                 })?,
             },
-            ScopeItem::VarHeaderTir(var) => {
-                TirNode::new(builder.get_var(var).ty, TirKind::Access(var), path.span())
-            }
+            ScopeItem::VarHeaderTir(var) => TirNode::with_flags(
+                builder.get_var(var).ty,
+                TirKind::Access(var),
+                TirFlags::IMMUTABLE & !builder.get_var(var).mutable,
+                path.span(),
+            ),
             item => self.invalid_symbol_type(item, start.span, "variable or enum")?,
         };
 
@@ -511,7 +514,7 @@ impl TyChecker<'_> {
         struct_ty: FragRef<Struct>,
         params: impl TypecCtxSlice<Ty>,
         name: NameAst,
-    ) -> Option<(usize, Ty)> {
+    ) -> Option<(usize, bool, Ty)> {
         self.typec
             .find_struct_field(struct_ty, params, name.ident, self.interner)
             .or_else(|| {
@@ -536,7 +539,11 @@ impl TyChecker<'_> {
                     name.span,
                     self.typec[field].span,
                 )
-                .then_some((field_id, field_ty))
+                .then_some((
+                    field_id,
+                    self.typec[field].flags.contains(FieldFlags::MUTABLE),
+                    field_ty,
+                ))
             })
     }
 

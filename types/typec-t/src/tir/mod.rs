@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, mem};
+use std::{default::default, marker::PhantomData, mem};
 
 use lexing_t::*;
 use storage::*;
@@ -231,12 +231,33 @@ pub struct AssignTir<'a> {
 pub struct TirNode<'a> {
     pub kind: TirKind<'a>,
     pub ty: Ty,
+    pub flags: TirFlags,
     pub span: Span,
 }
 
 impl<'a> TirNode<'a> {
     pub fn new(ty: Ty, kind: TirKind<'a>, span: Span) -> Self {
-        Self { kind, ty, span }
+        Self {
+            kind,
+            ty,
+            flags: default(),
+            span,
+        }
+    }
+
+    pub fn with_flags(ty: Ty, kind: TirKind<'a>, flags: TirFlags, span: Span) -> Self {
+        Self {
+            kind,
+            ty,
+            flags,
+            span,
+        }
+    }
+}
+
+bitflags! {
+    TirFlags: u8 {
+        IMMUTABLE
     }
 }
 

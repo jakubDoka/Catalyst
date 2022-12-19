@@ -173,9 +173,10 @@ impl TyChecker<'_> {
         self.balance_pointers(&mut header, deref, builder)?;
 
         Some(match res {
-            DotPathResult::Field(field, ty) => TirNode::new(
+            DotPathResult::Field(field, mutable, ty) => TirNode::with_flags(
                 ty,
                 TirKind::Field(builder.arena.alloc(FieldTir { header, field })),
+                header.flags | (TirFlags::IMMUTABLE & !mutable),
                 rhs.span(),
             ),
         })
@@ -214,13 +215,15 @@ impl TyChecker<'_> {
                 for &field in fields.iter() {
                     match field {
                         StructCtorPatFieldAst::Simple { name, mutable } => {
-                            let (field_id, field_ty) = self.find_field(struct_ty, params, name)?;
+                            let (field_id, .., field_ty) =
+                                self.find_field(struct_ty, params, name)?;
                             let field =
                                 self.pattern(PatAst::Binding(mutable, name), field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
                         StructCtorPatFieldAst::Named { name, pat, .. } => {
-                            let (field_id, field_ty) = self.find_field(struct_ty, params, name)?;
+                            let (field_id, .., field_ty) =
+                                self.find_field(struct_ty, params, name)?;
                             let field = self.pattern(pat, field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
@@ -377,6 +380,16 @@ impl TyChecker<'_> {
 
         if op.ident == Interner::ASSIGN {
             let rhs = self.expr(rhs, lhs.map(|lhs| lhs.ty).into(), builder)?;
+
+            if let Some(lhs) = lhs && lhs.flags.contains(TirFlags::IMMUTABLE) {
+                self.workspace.push(NotMutable {
+                    loc: SourceLoc {
+                        origin: self.source,
+                        span: lhs.span,
+                    },
+                })?;
+            }
+
             return Some(TirNode::new(
                 Ty::UNIT,
                 TirKind::Assign(builder.arena.alloc(AssignTir { lhs: lhs?, rhs })),
@@ -439,7 +452,7 @@ impl TyChecker<'_> {
 }
 
 pub enum DotPathResult {
-    Field(u32, Ty),
+    Field(u32, bool, Ty),
 }
 
 pub enum FuncLookupResult<'a> {
@@ -457,6 +470,12 @@ pub enum SignatureCheckError {
 }
 
 ctl_errors! {
+    #[err => "expected mutable value"]
+    error NotMutable: fatal {
+        #[err loc]
+        loc: SourceLoc,
+    }
+
     #[err => "type mismatch"]
     #[info => "expected '{expected}' but got '{got}'"]
     error GenericTypeMismatch: fatal {
@@ -507,319 +526,3 @@ ctl_errors! {
         prev: Span,
     }
 }
-
-// gen_error_fns! {
-//     push unreachable_expr(self, span: Span, because: Span) {
-//         warn: "unreachable expression";
-//         (span, self.source) {
-//             info[span]: "this is unreachable";
-//             info[because]: "because of this";
-//         }
-//     }
-
-//     push incomplete_tir(self, func: FuncDefAst) {
-//         err: "not all blocks were closed when typechecking function";
-//         info: "this is a bug in the compiler, please report it";
-//         (func.span(), self.source) {
-//             info[func.signature.name.span]: "happened in this function";
-//         }
-//     }
-
-//     push generic_ty_mismatch(self, expected: Ty, got: Ty, span: Span) {
-//         err: "type mismatch";
-//         info: (
-//             "expected '{}' but got '{}'",
-//             self.typec.type_diff(expected, got, self.interner),
-//             self.typec.type_diff(got, expected, self.interner),
-//         );
-//         (span, self.source) {
-//             err[span]: "mismatch occurred here";
-//         }
-//     }
-
-//     push invalid_expr_path(self, span: Span) {
-//         err: "invalid expression path";
-//         info: "expected format: <ident> |";
-//         (span, self.source) {
-//             err[span]: "found here";
-//         }
-//     }
-
-//     push invalid_op_expr_path(self, span: Span) {
-//         err: "invalid operator expression path";
-//         info: "expected format: <op> | <op>\\<module>";
-//         (span, self.source) {
-//             err[span]: "found here";
-//         }
-//     }
-
-//     push nested_runner(self, previous: Span, current: Span) {
-//         err: "'const' cannot be directly nested";
-//         help: "removing 'const' should result in equivalent code";
-//         (previous.joined(current), self.source) {
-//             err[current]: "nesting happens here";
-//             info[previous]: "operation is already performed at compile time because of this";
-//         }
-//     }
-
-//     push const_runtime_access(self, r#const: Span, value: Span) {
-//         err: "cannot access runtime value in 'const'";
-//         help: "try moving the access to a non-const function";
-//         help: "or declaring the variable as constant";
-//         (r#const.joined(value), self.source) {
-//             err[r#const]: "this is what makes access const";
-//             info[value]: "this is a runtime value, outsize of 'const' context";
-//         }
-//     }
-
-//     push control_flow_in_const(self, r#const: Span, control_flow: Span) {
-//         err: ("cannot '{}' in 'const' context", span_str!(self, control_flow));
-//         info: "jump produced by this call would cross const/runtime boundary";
-//         (r#const.joined(control_flow), self.source) {
-//             err[r#const]: "this is what defines const context";
-//             info[control_flow]: "this is the control flow keyword that is not allowed in const context";
-//         }
-//     }
-
-//     push too_many_params(self, params: Span, max: usize) {
-//         err: "too many type parameters";
-//         info: ("expected at most {} parameters", max);
-//         (params, self.source) {
-//             err[params]: "found here";
-//         }
-//     }
-
-//     push missing_spec(self, ty: Ty, spec: Spec, span: Span) {
-//         err: (
-//             "'{}' does not implement '{}'",
-//             self.typec.display_ty(ty, self.interner),
-//             self.typec.display_spec(spec, self.interner),
-//         );
-//         (span, self.source) {
-//             err[span]: "when calling this";
-//         }
-//     }
-
-//     push cannot_infer(self, span: Span) {
-//         err: "cannot infer type";
-//         (span, self.source) {
-//             err[span]: "when type checking this";
-//         }
-//     }
-
-//     push cannot_infer_param(self, span: Span, index: usize) {
-//         err: ("cannot infer type of parameters[{}]", index);
-//         (span, self.source) {
-//             err[span]: "while instantiating this call";
-//         }
-//     }
-
-//     push expected_struct(self, ty: Ty, span: Span) {
-//         err: "expected struct type";
-//         info: ("found '{}'", self.typec.display_ty(ty, self.interner));
-//         (span, self.source) {
-//             err[span]: "when type checking this";
-//         }
-//     }
-
-//     push unknown_field(self, ty: Ty, fields: FragSlice<Field>, span: Span) {
-//         err: ("unknown field");
-//         info: (
-//             "available fields in '{}': {}",
-//             self.typec.display_ty(ty, self.interner),
-//             self.typec.fields[fields]
-//                 .iter()
-//                 .map(|f| &self.interner[f.name])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         (span, self.source) {
-//             err[span]: "occurred here";
-//         }
-//     }
-
-//     push duplicate_field(self, span: Span) {
-//         err: "duplicate field";
-//         (span, self.source) {
-//             err[span]: "this was already initialized";
-//         }
-//     }
-
-//     push unknown_spec_impl_func(self, func_span: Span, left: &[Ident]) {
-//         err: "unknown spec function";
-//         help: (
-//             "functions that can be implemented: {}",
-//             left.iter()
-//                 .map(|&f| &self.interner[f])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         (func_span, self.source) {
-//             err[func_span]: "this function does not belong to spec";
-//         }
-//     }
-
-//     push missing_spec_impl_funcs(self, span: Span, missing: &[Ident]) {
-//         err: "missing spec functions";
-//         help: (
-//             "functions that are missing: {}",
-//             missing.iter()
-//                 .map(|&f| &self.interner[f])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         (span, self.source) {
-//             err[span]: "this impl block does not implement all required functions";
-//         }
-//     }
-
-//     push extern_in_impl(self, span: Span) {
-//         err: "extern functions cannot be direct part of spec implementation";
-//         (span, self.source) {
-//             err[span]: "this function is extern";
-//         }
-//     }
-
-//     push spec_arg_count_mismatch(self, span: Span, expected: usize, got: usize) {
-//         err: "spec function argument count mismatch";
-//         info: ("expected {} arguments but got {}", expected, got);
-//         (span, self.source) {
-//             err[span]: "this function takes different number of arguments";
-//         }
-//     }
-
-//     push spec_arg_mismatch(self, span: Span, index: usize, expected: Ty, got: Ty) {
-//         err: "spec function argument type mismatch";
-//         info: (
-//             "expected '{}' but found '{}'",
-//             self.typec.display_ty(expected, self.interner),
-//             self.typec.display_ty(got, self.interner),
-//         );
-//         (span, self.source) {
-//             err[span]: ("this function takes different type as argument[{}]", index);
-//         }
-//     }
-
-//     push spec_ret_mismatch(self, span: Span, expected: Ty, got: Ty) {
-//         err: "spec function return type mismatch";
-//         info: (
-//             "expected '{}' but found '{}'",
-//             self.typec.display_ty(expected, self.interner),
-//             self.typec.display_ty(got, self.interner),
-//         );
-//         (span, self.source) {
-//             err[span]: "this function returns different type";
-//         }
-//     }
-
-//     push missing_constructor_fields(self, span: Span, missing: &[Ident]) {
-//         err: "missing constructor fields";
-//         help: (
-//             "fields that are missing: {}",
-//             missing.iter()
-//                 .map(|&f| &self.interner[f])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         info: "all fields must be initialized";
-//         (span, self.source) {
-//             err[span]: "this constructor does not initialize all required fields";
-//         }
-//     }
-
-//     push missing_constructor_params(self, span: Span, missing: BumpVec<usize>) {
-//         err: "cannot infer all type parameters of constructor";
-//         info: (
-//             "parameters that are missing: {}",
-//             missing
-//                 .iter()
-//                 .map(|&i| format!("parameters[{i}]"))
-//                 .intersperse(", ".into())
-//                 .collect::<String>(),
-//         );
-//         help: "syntax for specifying params: `T\\[T1, T2]\\{..}`";
-//         (span, self.source) {
-//             err[span]: "unable to infer all type parameters of this";
-//         }
-//     }
-
-//     push unexpected_params(self, span: Span) {
-//         err: "unexpected type parameters";
-//         help: "parameters are only allowed on constructors and function calls";
-//         (span, self.source) {
-//             err[span]: "this is not valid";
-//         }
-//     }
-
-//     push non_struct_field_access(self, ty: Ty, span: Span) {
-//         err: "cannot access field of non-struct type";
-//         info: ("found '{}'", self.typec.display_ty(ty, self.interner));
-//         (span, self.source) {
-//             err[span]: "when type checking this";
-//         }
-//     }
-
-//     push field_not_found(self, ty: FragRef<Struct>, name: NameAst) {
-//         err: (
-//             "field '{}' not found on '{}'",
-//             &self.interner[name.ident],
-//             self.typec.display_ty(Ty::Struct(ty), self.interner),
-//         );
-//         help: (
-//             "available fields: {}",
-//             self.typec[self.typec[ty].fields]
-//                 .iter()
-//                 .map(|f| &self.interner[f.name])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         (name.span, self.source) {
-//             err[name.span]: "this field does not exist";
-//         }
-//     }
-
-//     push duplicate_double_dot(self, span: Span, prev: Span) {
-//         err: "duplicate '..'";
-//         (span, self.source) {
-//             err[span]: "this is a duplicate";
-//         }
-//         (prev, self.source) {
-//             err[prev]: "previous '..' already here";
-//         }
-//     }
-
-//     push missing_pat_ctor_fields(self, fields: BumpVec<Ident>, span: Span) {
-//         err: "missing fields in pattern";
-//         help: (
-//             "fields that are missing: {}",
-//             fields
-//                 .iter()
-//                 .map(|&f| &self.interner[f])
-//                 .intersperse(", ")
-//                 .collect::<String>(),
-//         );
-//         help: "if this is intentional, use '..' to ignore the missing fields";
-//         (span, self.source) {
-//             err[span]: "this pattern does not include all fields";
-//         }
-//     }
-
-//     push expected_struct_path(self, span: Span) {
-//         err: "expected struct path";
-//         (span, self.source) {
-//             err[span]: "this path does not lead to struct definition";
-//         }
-//     }
-
-//     push spec_cc_mismatch(self, span: Span, expected: Option<Ident>, got: Option<Ident>) {
-//         err: "spec function call convention mismatch";
-//         info: (
-//             "expected '{}' but found '{}'",
-//             expected.map_or("", |cc| &self.interner[cc]),
-//             got.map_or("", |cc| &self.interner[cc]),
-//         );
-//         (span, self.source) {
-//             err[span]: "this function has different call convention";
-//         }
-//     }
-// }

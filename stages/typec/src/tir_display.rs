@@ -32,7 +32,7 @@ impl TyChecker<'_> {
 
     pub fn display_tir(
         &self,
-        TirNode { kind, ty, span }: TirNode,
+        TirNode { kind, ty, span, .. }: TirNode,
         buffer: &mut String,
         indent: usize,
         var_count: &mut usize,

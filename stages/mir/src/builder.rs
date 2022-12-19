@@ -48,7 +48,7 @@ impl MirChecker<'_, '_> {
 
     fn node(
         &mut self,
-        TirNode { kind, ty, span }: TirNode,
+        TirNode { kind, ty, span, .. }: TirNode,
         dest: OptVRef<ValueMir>,
         r#move: bool,
     ) -> NodeRes {

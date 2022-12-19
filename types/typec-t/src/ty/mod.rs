@@ -365,6 +365,13 @@ impl Ty {
         }
     }
 
+    pub fn ptr_mutability(self, typec: &Typec) -> Mutability {
+        match self {
+            Self::Pointer(p) => typec[p].mutability,
+            _ => Mutability::Immutable,
+        }
+    }
+
     pub fn is_signed(self) -> bool {
         match self {
             Self::Builtin(b) => b.is_signed(),

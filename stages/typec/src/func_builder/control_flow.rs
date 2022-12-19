@@ -158,11 +158,15 @@ impl TyChecker<'_> {
             })?;
         };
 
-        let base = self.typec[ptr].base;
+        let Pointer {
+            base, mutability, ..
+        } = self.typec[ptr];
 
-        Some(TirNode::new(
+        Some(TirNode::with_flags(
             base,
             TirKind::Deref(builder.arena.alloc(expr)),
+            TirFlags::IMMUTABLE
+                & (mutability == Mutability::Immutable || expr.flags.contains(TirFlags::IMMUTABLE)),
             expr.span,
         ))
     }
@@ -177,6 +181,15 @@ impl TyChecker<'_> {
         let expr = self.unit_expr(expr, Inference::None, builder)?;
         let mutability = self.mutability(mutability)?;
         let ptr = self.typec.pointer_to(mutability, expr.ty, self.interner);
+
+        if mutability != Mutability::Mutable && expr.flags.contains(TirFlags::IMMUTABLE) {
+            self.workspace.push(NotMutable {
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: expr.span,
+                },
+            })?;
+        }
 
         Some(TirNode::new(
             Ty::Pointer(ptr),
