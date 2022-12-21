@@ -344,8 +344,8 @@ fn main() {
         simple "partial-moves" {
             struct A;
             struct B {
-                a0: A;
-                a1: A;
+                mut a0: A;
+                mut a1: A;
             };
             impl B {
                 fn new() -> Self => ::{ a0: ::{}; a1: ::{} };
@@ -367,7 +367,7 @@ fn main() {
             };
 
             fn partial_move_and_assign() {
-                let b = B::new();
+                let mut b = B::new();
                 drop(b.a0);
                 b.a0 = A::{};
                 drop(b);
@@ -380,7 +380,7 @@ fn main() {
             };
 
             fn conditional_assign() {
-                let b = B::new();
+                let mut b = B::new();
                 drop(b.a0);
                 if 0 == 0 => b.a0 = A::{};
                 else => return;
@@ -410,7 +410,7 @@ fn main() {
             fn "default" putchar(c: char) -> u32 extern;
 
             struct A {
-                ch: char;
+                mut ch: char;
             };
 
             impl A {
@@ -434,17 +434,17 @@ fn main() {
             };
 
             fn drop_variable() {
-                let a = A::new('a');
+                let mut a = A::new('a');
                 a.set_char('c');
             };
 
             fn drop_refed_variable() {
-                let a = ^A::new('a');
+                let a = ^mut A::new('a');
                 a.set_char('d');
             };
 
             fn move_in_drop() {
-                let a = A::new('e');
+                let mut a = A::new('e');
                 a = A::new('f');
             };
 
@@ -504,7 +504,7 @@ fn main() {
             };
 
             fn loop_drop_and_move_in() {
-                let a = A::{};
+                let mut a = A::{};
                 loop {
                     if true => drop(a);
                     a = A::{};

@@ -210,7 +210,7 @@ impl TyChecker<'_> {
             if let Some(owner) = owner {
                 let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
                 let owner = self.typec.balance_pointers(owner, ty, self.interner);
-                _ = dbg!(self.typec.compatible(param_slots, ty, owner));
+                _ = self.typec.compatible(param_slots, ty, owner);
             }
         }
 
