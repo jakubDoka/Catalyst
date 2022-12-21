@@ -110,30 +110,22 @@ mod parser;
 pub use parser::{
     expr::{
         control_flow::{
-            BreakAst, ContinueAst, ElifAst, IfAst, IfBlockAst, LoopAst, MatchArmAst, MatchBodyAst,
-            MatchExprAst, ReturnExprAst,
+            BreakAst, ContinueAst, ElifAst, IfAst, IfBlockAst, LoopAst, MatchArmAst, MatchExprAst,
+            ReturnExprAst,
         },
-        pat::{
-            EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatBodyAst, StructCtorPatBodyMeta,
-            StructCtorPatFieldAst,
-        },
-        BinaryExprAst, BlockAst, BlockMeta, CallArgsAst, CallArgsMeta, CallExprAst, DotExprAst,
-        EnumCtorAst, ExprAst, LetAst, StructCtorAst, StructCtorBodyAst, UnitExprAst,
+        pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
+        BinaryExprAst, CallExprAst, DotExprAst, EnumCtorAst, ExprAst, LetAst, StructCtorAst,
+        UnitExprAst,
     },
-    func::{FuncArgAst, FuncArgMeta, FuncArgsAst, FuncBodyAst, FuncDefAst, FuncSigAst},
-    imports::{ImportAst, ImportsAst, ImportsMeta, UseAst, UseAstSkip},
+    func::{FuncArgAst, FuncBodyAst, FuncDefAst, FuncSigAst},
+    imports::{ImportAst, UseAst, UseAstSkip},
     items::{
-        EnumAst, EnumBodyAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst,
-        ImplBodyAst, ImplItemAst, ImplTarget, InlineModeAst, ItemAst, ItemBodyMeta, ItemsAst,
-        ItemsMeta, SpecAst, SpecBodyAst, TopLevelAttrKindAst, TopLevelAttributeAst,
+        EnumAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst, ImplItemAst,
+        ImplTarget, InlineModeAst, ItemAst, SpecAst, TopLevelAttrKindAst, TopLevelAttributeAst,
     },
-    manifest::{
-        DepsMeta, ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestListAst,
-        ManifestListMeta, ManifestObjectAst, ManifestObjectMeta, ManifestValueAst,
-    },
-    r#struct::{StructAst, StructBodyAst, StructBodyMeta, StructCtorFieldAst, StructFieldAst},
+    manifest::{ManifestAst, ManifestDepAst, ManifestFieldAst, ManifestValueAst},
+    r#struct::{StructAst, StructCtorFieldAst, StructFieldAst},
     spec::SpecExprAst,
-    ty::{MutabilityAst, TyAst, TyGenericsAst, TyGenericsMeta, TyPointerAst, TyTupleAst},
-    BoundsMeta, GenericParamAst, GenericsAst, GenericsMeta, ParamSpecsAst, PathAst, PathItemAst,
-    TupleCtorAst, TupleCtorMeta,
+    ty::{MutabilityAst, TyAst, TyPointerAst},
+    GenericParamAst, PathAst, PathItemAst,
 };

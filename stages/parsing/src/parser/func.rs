@@ -1,9 +1,6 @@
 use diags::{ctl_errors, SourceLoc};
 
-use super::*;
-
-list_meta!(FuncArgMeta ? LeftParen Comma RightParen);
-pub type FuncArgsAst<'a> = ListAst<'a, FuncArgAst<'a>, FuncArgMeta>;
+use super::{expr::BLOCK_SYNTAX, *};
 
 #[derive(Clone, Copy, Debug)]
 pub struct FuncDefAst<'a> {
@@ -38,9 +35,9 @@ impl<'a> Ast<'a> for FuncDefAst<'a> {
 pub struct FuncSigAst<'a> {
     pub fn_span: Span,
     pub cc: Option<NameAst>,
-    pub generics: GenericsAst<'a>,
+    pub generics: ListAst<'a, GenericParamAst<'a>>,
     pub name: NameAst,
-    pub args: FuncArgsAst<'a>,
+    pub args: ListAst<'a, FuncArgAst<'a>>,
     pub ret: Option<TyAst<'a>>,
 }
 
@@ -53,9 +50,9 @@ impl<'a> Ast<'a> for FuncSigAst<'a> {
             cc: ctx
                 .try_advance(TokenKind::String)
                 .map(|tok| NameAst::new(ctx, tok.span.shrink(1))),
-            generics: ctx.parse()?,
+            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
             name: ctx.parse()?,
-            args: ctx.parse()?,
+            args: ctx.parse_args(list_syntax!(? LeftParen Comma RightParen).into())?,
             ret: ctx
                 .try_advance(TokenKind::RightArrow)
                 .and_then(|_| ctx.parse()),
@@ -109,7 +106,7 @@ ctl_errors! {
 #[derive(Clone, Copy, Debug)]
 pub enum FuncBodyAst<'a> {
     Arrow(Span, ExprAst<'a>),
-    Block(BlockAst<'a>),
+    Block(ListAst<'a, ExprAst<'a>>),
     Extern(Span),
 }
 
@@ -123,7 +120,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
                 ctx.skip(TokenKind::NewLine);
                 ctx.parse().map(|e| Self::Arrow(arrow, e))
             },
-            LeftCurly => ctx.parse().map(Self::Block),
+            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
             Extern => Some(Self::Extern(ctx.advance().span)),
             @"function body",
         }}

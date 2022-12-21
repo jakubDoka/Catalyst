@@ -1,16 +1,13 @@
 use diags::*;
 
-use super::*;
-
-list_meta!(StructBodyMeta ? LeftCurly NewLine RightCurly);
-pub type StructBodyAst<'a> = ListAst<'a, StructFieldAst<'a>, StructBodyMeta>;
+use super::{items::ITEM_BODY_SYNTAX, *};
 
 #[derive(Clone, Copy, Debug)]
 pub struct StructAst<'a> {
     pub vis: Vis,
-    pub generics: GenericsAst<'a>,
+    pub generics: ListAst<'a, GenericParamAst<'a>>,
     pub name: NameAst,
-    pub body: StructBodyAst<'a>,
+    pub body: ListAst<'a, StructFieldAst<'a>>,
     pub span: Span,
 }
 
@@ -19,9 +16,9 @@ impl<'a> Ast<'a> for StructAst<'a> {
 
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
         ctx.advance();
-        let generics = GenericsAst::parse(ctx)?;
+        let generics = ctx.parse_args(GENERICS_SYNTAX.into())?;
         let name = NameAst::parse(ctx)?;
-        let body = StructBodyAst::parse(ctx)?;
+        let body = ctx.parse_args(ITEM_BODY_SYNTAX.into())?;
 
         Some(StructAst {
             vis,

@@ -415,7 +415,7 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn args(&mut self, types: FragSlice<Ty>, args: FuncArgsAst, builder: &mut TirBuilder) {
+    pub fn args(&mut self, types: FragSlice<Ty>, args: ListAst<, FuncArgAst<>, FuncArgMeta>, builder: &mut TirBuilder) {
         for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
             let var = builder.create_var(false, ty, arg.name.span);
             self.scope.push(arg.name.ident, var, arg.name.span);

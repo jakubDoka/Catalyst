@@ -6,11 +6,10 @@ use packaging_t::Source;
 
 use super::*;
 
-list_meta!(BlockMeta LeftCurly NewLine RightCurly);
-pub type BlockAst<'a> = ListAst<'a, ExprAst<'a>, BlockMeta>;
-list_meta!(CallArgsMeta LeftParen Comma RightParen);
-pub type CallArgsAst<'a> = ListAst<'a, ExprAst<'a>, CallArgsMeta>;
-pub type StructCtorBodyAst<'a> = ListAst<'a, StructCtorFieldAst<'a>, BlockMeta>;
+list_syntax! {
+    const BLOCK_SYNTAX = (LeftCurly NewLine RightCurly);
+    const CALL_ARGS_SYNTAX = (LeftParen Comma RightParen);
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ExprAst<'a> {
@@ -88,7 +87,7 @@ pub enum UnitExprAst<'a> {
     Let(LetAst<'a>),
     Deref(Span, &'a UnitExprAst<'a>),
     Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
-    Block(BlockAst<'a>),
+    Block(ListAst<'a, ExprAst<'a>>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -124,7 +123,7 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
                     loc: SourceLoc { origin: ctx.source, span: ctx.state.current.span}
                 })?,
             }},
-            LeftCurly => ctx.parse().map(Self::Block),
+            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
             @"expression",
         });
 
@@ -267,7 +266,7 @@ ctl_errors! {
 pub struct StructCtorAst<'a> {
     pub path: Option<PathAst<'a>>,
     pub slash: Span,
-    pub body: StructCtorBodyAst<'a>,
+    pub body: ListAst<'a, StructCtorFieldAst<'a>>,
 }
 
 impl<'a> Ast<'a> for StructCtorAst<'a> {
@@ -286,7 +285,7 @@ impl<'a> Ast<'a> for StructCtorAst<'a> {
         Some(Self {
             path,
             slash,
-            body: ctx.parse()?,
+            body: ctx.parse_args(BLOCK_SYNTAX.into())?,
         })
     }
 
@@ -334,7 +333,7 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct CallExprAst<'a> {
     pub callable: UnitExprAst<'a>,
-    pub args: CallArgsAst<'a>,
+    pub args: ListAst<'a, ExprAst<'a>>,
 }
 
 impl<'a> Ast<'a> for CallExprAst<'a> {
@@ -343,7 +342,7 @@ impl<'a> Ast<'a> for CallExprAst<'a> {
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (callable,): Self::Args) -> Option<Self> {
         Some(Self {
             callable,
-            args: ctx.parse_args(())?,
+            args: ctx.parse_args(CALL_ARGS_SYNTAX.into())?,
         })
     }
 

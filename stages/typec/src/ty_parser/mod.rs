@@ -57,7 +57,7 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn tuple(&mut self, tuple_ast: TyTupleAst) -> Option<Ty> {
+    pub fn tuple(&mut self, tuple_ast: ListAst<, TyAst<>>) -> Option<Ty> {
         let types = tuple_ast
             .iter()
             .map(|&ty_ast| self.ty(ty_ast))

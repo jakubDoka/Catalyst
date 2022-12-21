@@ -1,9 +1,8 @@
+use std::default::default;
+
 use diags::*;
 
-use super::*;
-
-list_meta!(ImportsMeta LeftCurly NewLine RightCurly);
-pub type ImportsAst<'a> = ListAst<'a, ImportAst, ImportsMeta>;
+use super::{expr::BLOCK_SYNTAX, *};
 
 #[derive(Clone, Copy, Debug)]
 pub struct UseAstSkip;
@@ -27,10 +26,10 @@ impl<'a> Ast<'a> for UseAstSkip {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UseAst<'a> {
     pub use_span: Span,
-    pub items: ImportsAst<'a>,
+    pub items: ListAst<'a, ImportAst>,
 }
 
 impl<'a> Ast<'a> for UseAst<'a> {
@@ -40,15 +39,12 @@ impl<'a> Ast<'a> for UseAst<'a> {
         ctx.skip(TokenKind::NewLine);
 
         if !ctx.at(TokenKind::Use) {
-            return Some(UseAst {
-                use_span: Span::default(),
-                items: ImportsAst::default(),
-            });
+            return Some(default());
         }
 
         Some(UseAst {
             use_span: ctx.advance().span,
-            items: ctx.parse()?,
+            items: ctx.parse_args(BLOCK_SYNTAX.into())?,
         })
     }
 

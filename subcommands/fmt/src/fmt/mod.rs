@@ -263,7 +263,7 @@ impl Fmt {
                 &mut self.interner,
                 source,
             )
-            .parse::<ItemsAst>();
+            .parse::<ListAst<, ItemAst<>, ItemsMeta>>();
 
             let Some(items) = items else {
                 break (None, mem::take(Rc::get_mut(&mut self.source).unwrap()));

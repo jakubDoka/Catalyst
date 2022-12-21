@@ -1,16 +1,10 @@
-use super::*;
-
-list_meta!(TyGenericsMeta ? LeftBracket Comma RightBracket);
-pub type TyGenericsAst<'a> = ListAst<'a, TyAst<'a>, TyGenericsMeta>;
-
-list_meta!(TyTupleMeta LeftParen Comma RightParen);
-pub type TyTupleAst<'a> = ListAst<'a, TyAst<'a>, TyTupleMeta>;
+use super::{expr::CALL_ARGS_SYNTAX, *};
 
 #[derive(Clone, Copy, Debug)]
 pub enum TyAst<'a> {
     Path(PathAst<'a>),
     Pointer(&'a TyPointerAst<'a>),
-    Tuple(TyTupleAst<'a>),
+    Tuple(ListAst<'a, TyAst<'a>>),
     Wildcard(Span),
 }
 
@@ -26,7 +20,7 @@ impl<'a> Ast<'a> for TyAst<'a> {
 
                 ctx.parse().map(TyAst::Path)
             },
-            LeftParen => ctx.parse().map(TyAst::Tuple),
+            LeftParen => ctx.parse_args(CALL_ARGS_SYNTAX.into()).map(TyAst::Tuple),
             Operator(_ = 0) => branch!(str ctx => {
                 "^" => ctx.parse()
                     .map(|p| ctx.arena.alloc(p))

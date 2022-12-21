@@ -2,8 +2,6 @@ use std::ops::Not;
 
 use super::*;
 
-pub type MatchBodyAst<'a> = ListAst<'a, MatchArmAst<'a>, BlockMeta>;
-
 #[derive(Debug, Clone, Copy)]
 pub struct LoopAst<'a> {
     pub r#loop: Span,
@@ -149,7 +147,7 @@ impl<'a> Ast<'a> for ElifAst<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum IfBlockAst<'a> {
-    Block(BlockAst<'a>),
+    Block(ListAst<'a, ExprAst<'a>>),
     Arrow(Span, ExprAst<'a>),
 }
 
@@ -158,7 +156,7 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
 
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch!(ctx => {
-            LeftCurly => ctx.parse().map(Self::Block),
+            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
             ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
                 ctx.skip(TokenKind::NewLine);
                 ctx.parse()?
@@ -180,7 +178,7 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
 pub struct MatchExprAst<'a> {
     pub r#match: Span,
     pub expr: ExprAst<'a>,
-    pub body: MatchBodyAst<'a>,
+    pub body: ListAst<'a, MatchArmAst<'a>>,
 }
 
 impl<'a> Ast<'a> for MatchExprAst<'a> {
@@ -190,7 +188,7 @@ impl<'a> Ast<'a> for MatchExprAst<'a> {
         Some(Self {
             r#match: ctx.advance().span,
             expr: ctx.parse()?,
-            body: ctx.parse()?,
+            body: ctx.parse_args(BLOCK_SYNTAX.into())?,
         })
     }
 

@@ -1,9 +1,4 @@
-use std::{
-    any,
-    default::default,
-    fmt::Debug,
-    ops::{Deref, Range},
-};
+use std::{any, default::default, fmt::Debug, ops::Deref};
 
 use diags::*;
 use lexing_t::*;
@@ -131,174 +126,96 @@ pub trait Ast<'a>: Copy {
     }
 }
 
-pub struct ListAst<'a, T, META> {
+#[derive(Clone, Copy, Debug)]
+pub struct ListAst<'a, T> {
     pub start: Span,
-    pub error: Option<Span>,
-    pub elements: &'a [ListElement<T>],
+    pub elements: &'a [T],
     pub end: Span,
-    _ph: std::marker::PhantomData<META>,
 }
 
-impl<'a, T: Debug, META> Debug for ListAst<'a, T, META> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ListAst")
-            .field("start", &self.start)
-            .field("elements", &self.elements)
-            .field("end", &self.end)
-            .finish()
-    }
-}
-
-impl<'a, T: Debug, META: ListAstMeta> ListAst<'a, T, META> {
-    pub fn iter(&self) -> impl Iterator<Item = &T> + Clone {
-        self.elements.iter().map(|e| &e.value)
-    }
-
-    pub fn first_gap(&self) -> Range<usize>
-    where
-        T: Ast<'a>,
-    {
-        self.start.end()
-            ..self
-                .elements
-                .first()
-                .map(|f| f.value.span().start())
-                .unwrap_or_else(|| self.end.start())
-    }
-}
-
-impl<'a, T, META: ListAstMeta> Clone for ListAst<'a, T, META> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'a, T, META: ListAstMeta> Copy for ListAst<'a, T, META> {}
-
-impl<'a, T, META: ListAstMeta> Default for ListAst<'a, T, META> {
+impl<'a, T> Default for ListAst<'a, T> {
     fn default() -> Self {
         Self {
-            start: default(),
-            elements: default(),
-            error: default(),
-            end: default(),
-            _ph: default(),
+            start: Span::default(),
+            elements: &[],
+            end: Span::default(),
         }
     }
 }
 
-impl<'a, T: Ast<'a>, META: ListAstMeta> Ast<'a> for ListAst<'a, T, META>
+impl<'a, T> ListAst<'a, T> {
+    pub fn empty(pos: Span) -> Self {
+        Self {
+            start: pos,
+            elements: &[],
+            end: pos,
+        }
+    }
+}
+
+impl<'a, T: Ast<'a>> Ast<'a> for ListAst<'a, T>
 where
     T::Args: Default + Clone,
 {
-    type Args = T::Args;
+    type Args = (ListAstSyntax<'a>, T::Args);
 
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, args: T::Args) -> Option<Self> {
-        let on_delim = ctx.at(META::START);
-        let pos = ctx.state.current.span.sliced(..0);
-        if META::OPTIONAL && !on_delim && !META::START.is_empty() {
-            return Some(Self {
-                start: pos,
-                elements: &[],
-                error: None,
-                end: pos,
-                _ph: std::marker::PhantomData,
-            });
+    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (syntax, args): Self::Args) -> Option<Self> {
+        let on_delim = ctx.at(syntax.start);
+        let pos = ctx.state.current.span.as_start();
+
+        if syntax.optional && !on_delim && !syntax.without_prefix() {
+            return Some(Self::empty(pos));
         }
 
-        let start = if META::START.is_empty() {
+        let start = if syntax.without_prefix() {
             pos
         } else {
             ctx.state.current.span
         };
 
-        let mut error = None;
-
         if on_delim {
             ctx.advance();
         }
 
-        let mut elements: BumpVec<ListElement<T>> = bumpvec![];
+        let mut elements = bumpvec![];
         let end = loop {
             ctx.skip(TokenKind::NewLine);
-            if ctx.at(META::END) {
+            if ctx.at(syntax.end) {
                 break ctx.advance().span;
             }
 
-            let start = ctx.state.current.span.start();
             let Some(element) = T::parse_args(ctx, args.clone()) else {
-                if let Some(span) = META::recover(ctx, start, elements.last_mut().map_or(&mut error, |e| &mut e.error))? {
+                if let Some(span) = syntax.recover(ctx)? {
                     break span;
-                } else {
-                    continue;
                 }
+                continue;
             };
-            let element_span = element.span();
 
-            if let Some(last) = elements.last_mut() && !META::SEP.is_empty() {
-                if let Some(after_delim) = last.after_delim.as_mut() {
-                    after_delim.end = element_span.start;
-                } else {
-                    last.after_value.end = element_span.start;
-                }
-            }
+            elements.push(element);
 
-            let mut after_value = Span::new(element_span.end()..element_span.end());
-            let mut after_delim = None;
+            let has_sep = ctx.at(syntax.sep);
 
-            let has_sep = ctx.at(META::SEP);
-            if has_sep {
-                after_value = after_value.joined(ctx.state.current.span.sliced(..0));
-                after_delim =
-                    Span::new(ctx.state.current.span.end()..ctx.state.current.span.end()).into();
-                ctx.advance();
-            }
-
-            elements.push(ListElement {
-                value: element,
-                error: None,
-                after_value,
-                after_delim,
-            });
-
-            if !META::SEP.is_empty() && !has_sep && !ctx.at(META::END) {
-                if META::END.is_empty() {
-                    break Span::new(element_span.end()..element_span.end());
+            if !syntax.without_infix() && !has_sep && !ctx.at(syntax.end) {
+                if syntax.without_suffix() {
+                    break element.span().as_end();
                 }
 
                 ctx.workspace.push(MissingListSep {
-                    sep: META::SEP.to_str(ctx),
+                    sep: syntax.sep.to_str(ctx),
                     item: any::type_name::<T>(),
                     loc: ctx.loc(),
                 });
-                if let Some(span) = META::recover(
-                    ctx,
-                    start,
-                    elements.last_mut().map_or(&mut error, |e| &mut e.error),
-                )? {
+                if let Some(span) = syntax.recover(ctx)? {
                     break span;
-                } else {
-                    continue;
                 }
+                continue;
             }
         };
 
-        if let Some(elem) = elements.last_mut() && !META::END.is_empty() {
-            if let Some(after_delim) = elem.after_delim.as_mut() {
-                after_delim.end = end.start;
-            } else {
-                elem.after_value.end = end.start;
-            }
-        }
-
-        let elements = ctx.arena.alloc_slice(&elements);
-
         Some(Self {
             start,
-            error,
-            elements,
+            elements: ctx.arena.alloc_slice(&elements),
             end,
-            _ph: std::marker::PhantomData,
         })
     }
 
@@ -317,83 +234,92 @@ ctl_errors! {
     }
 }
 
-impl<'a, T, META: ListAstMeta> Deref for ListAst<'a, T, META> {
-    type Target = [ListElement<T>];
+impl<'a, T> Deref for ListAst<'a, T> {
+    type Target = [T];
 
     fn deref(&self) -> &Self::Target {
         self.elements
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ListElement<T> {
-    pub value: T,
-    pub after_value: Span,
-    pub after_delim: Option<Span>,
-    pub error: Option<Span>,
+pub struct ListAstSyntax<'a> {
+    pub start: &'a [TokenPat<'static>],
+    pub sep: &'a [TokenPat<'static>],
+    pub end: &'a [TokenPat<'static>],
+    pub optional: bool,
 }
 
-pub trait ListAstMeta {
-    const START: &'static [TokenPat<'static>];
-    const SEP: &'static [TokenPat<'static>];
-    const END: &'static [TokenPat<'static>];
-    const OPTIONAL: bool;
+impl<'a> ListAstSyntax<'a> {
+    pub fn recover(&self, ctx: &mut ParsingCtx) -> Option<Option<Span>> {
+        let ending = ctx.recover([self.sep, self.end])?;
+        Some(ctx.matches(self.end, ending).then_some(ending.span))
+    }
 
-    fn recover(
-        ctx: &mut ParsingCtx,
-        start: usize,
-        error: &mut Option<Span>,
-    ) -> Option<Option<Span>> {
-        let ending = ctx.recover([Self::SEP, Self::END])?;
-        *error = Some(Span::new(start..ending.span.start()));
-        Some(ctx.matches(Self::END, ending).then_some(ending.span))
+    fn without_prefix(&self) -> bool {
+        self.start.is_empty()
+    }
+
+    fn without_suffix(&self) -> bool {
+        self.end.is_empty()
+    }
+
+    fn without_infix(&self) -> bool {
+        self.sep.is_empty()
+    }
+}
+
+impl<'a> From<ListAstSyntax<'a>> for (ListAstSyntax<'a>, ()) {
+    fn from(value: ListAstSyntax<'a>) -> Self {
+        (value, ())
     }
 }
 
 #[macro_export]
-macro_rules! list_meta {
-    ($name:ident ? $start:tt $sep:tt $end:tt) => {
-        $crate::list_meta!($name true $start $sep $end);
+macro_rules! list_syntax {
+    (@arg [$($elem:tt)+]) => {
+        &[$($crate::list_syntax!(@element $elem)),+]
     };
 
-    ($name:ident $start:tt $sep:tt $end:tt) => {
-        $crate::list_meta!($name false $start $sep $end);
-    };
-
-    ($name:ident $optional:literal $start:tt $sep:tt $end:tt) => {
-        pub struct $name;
-        impl $crate::ListAstMeta for $name {
-            const START: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $start);
-            const SEP: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $sep);
-            const END: &'static [$crate::TokenPat<'static>] = $crate::list_meta!(__arg__ $end);
-            const OPTIONAL: bool = $optional;
-        }
-        const _: () = {
-            assert!(!$name::SEP.is_empty() || !$name::END.is_empty());
-            assert!(!$optional || !$name::START.is_empty());
-        };
-    };
-
-    (__arg__ [$($elem:tt)+]) => {
-        &[$($crate::list_meta!(__element__ $elem)),+]
-    };
-
-    (__arg__ none) => {
+    (@arg none) => {
         &[]
     };
 
-    (__arg__ $elem:tt) => {
-        &[$crate::list_meta!(__element__ $elem)]
+    (@arg $elem:tt) => {
+        &[$crate::list_syntax!(@element $elem)]
     };
 
-    (__element__ $elem:ident) => {
+    (@element $elem:ident) => {
         $crate::TokenPat::Kind(lexing::TokenKind::$elem)
     };
 
-    (__element__ $elem:literal) => {
+    (@element $elem:literal) => {
         $crate::TokenPat::Str($elem)
     };
 
+    (
+        $(const $name:ident = ($($tt:tt)*);)*
+    ) => {
+        $(
+            pub const $name: $crate::ListAstSyntax = $crate::list_syntax!($($tt)*);
+        )*
+    };
+
+    (? $start:tt $sep:tt $end:tt) => {
+        $crate::list_syntax!(true $start $sep $end);
+    };
+
+    ($start:tt $sep:tt $end:tt) => {
+        $crate::list_syntax!(false $start $sep $end);
+    };
+
+    ($optional:literal $start:tt $sep:tt $end:tt) => {
+        $crate::ListAstSyntax {
+            start: $crate::list_syntax!(@arg $start),
+            sep: $crate::list_syntax!(@arg $sep),
+            end: $crate::list_syntax!(@arg $end),
+            optional: $optional,
+        }
+    };
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

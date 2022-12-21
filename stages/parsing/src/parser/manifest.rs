@@ -1,21 +1,12 @@
 use diags::{ctl_errors, SourceLoc};
 
-use super::*;
-
-list_meta!(DepsMeta LeftCurly NewLine RightCurly);
-pub type ManifestDepsAst<'a> = ListAst<'a, ManifestDepAst, DepsMeta>;
-
-list_meta!(ManifestObjectMeta LeftCurly NewLine RightCurly);
-pub type ManifestObjectAst<'a> = ListAst<'a, ManifestFieldAst<'a>, ManifestObjectMeta>;
-
-list_meta!(ManifestListMeta LeftBracket Comma RightBracket);
-pub type ManifestListAst<'a> = ListAst<'a, ManifestValueAst<'a>, ManifestListMeta>;
+use super::{expr::BLOCK_SYNTAX, *};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ManifestAst<'a> {
     pub fields: &'a [ManifestFieldAst<'a>],
     pub deps_span: Option<Span>,
-    pub deps: ManifestDepsAst<'a>,
+    pub deps: ListAst<'a, ManifestDepAst>,
 }
 
 impl ManifestAst<'_> {
@@ -43,11 +34,11 @@ impl<'a> Ast<'a> for ManifestAst<'a> {
 
             if let Some(token) = ctx.try_advance("deps") && deps.is_none() {
                 deps_span = Some(token.span);
-                deps = Some(ManifestDepsAst::parse(ctx)?);
+                deps = Some(ctx.parse_args(BLOCK_SYNTAX.into())?);
                 continue;
             }
 
-            fields.push(ManifestFieldAst::parse(ctx)?);
+            fields.push(ctx.parse()?);
         }
 
         Some(Self {
@@ -102,8 +93,8 @@ ctl_errors! {
 #[derive(Clone, Copy, Debug)]
 pub enum ManifestValueAst<'a> {
     String(Span),
-    Object(ManifestObjectAst<'a>),
-    Array(ManifestListAst<'a>),
+    Object(ListAst<'a, ManifestFieldAst<'a>>),
+    Array(ListAst<'a, ManifestValueAst<'a>>),
 }
 
 impl<'a> Ast<'a> for ManifestValueAst<'a> {
@@ -112,8 +103,8 @@ impl<'a> Ast<'a> for ManifestValueAst<'a> {
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         branch! {ctx => {
             String => Some(ManifestValueAst::String(ctx.advance().span)),
-            LeftBracket => ctx.parse().map(ManifestValueAst::Array),
-            LeftCurly => ctx.parse().map(ManifestValueAst::Object),
+            LeftBracket => ctx.parse_args(GENERICS_SYNTAX.into()).map(ManifestValueAst::Array),
+            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(ManifestValueAst::Object),
             @"manifest value",
         }}
     }

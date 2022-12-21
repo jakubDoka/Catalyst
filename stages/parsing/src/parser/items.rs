@@ -3,13 +3,11 @@ use packaging_t::Source;
 
 use super::*;
 
-list_meta!(ItemsMeta none NewLine [Break Eof]);
-pub type ItemsAst<'a> = ListAst<'a, ItemAst<'a>, ItemsMeta>;
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
-list_meta!(ItemBodyMeta ?LeftCurly NewLine RightCurly);
-pub type SpecBodyAst<'a> = ListAst<'a, FuncSigAst<'a>, ItemBodyMeta>;
-pub type ImplBodyAst<'a> = ListAst<'a, ImplItemAst<'a>, ItemBodyMeta>;
-pub type EnumBodyAst<'a> = ListAst<'a, EnumVariantAst<'a>, ItemBodyMeta>;
+list_syntax! {
+    const ITEM_BODY_SYNTAX = (? LeftCurly NewLine RightCurly);
+    const ITEMS_SYNTAX = (none NewLine [Break Eof]);
+}
 
 #[derive(Clone, Copy)]
 pub struct GroupedItemsAst<'a> {
@@ -26,7 +24,7 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
     type Args = ();
 
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let items = ctx.parse::<ItemsAst>()?;
+        let items = ctx.parse_args::<ListAst<ItemAst>>(ITEMS_SYNTAX.into())?;
 
         let last = items.end.is_empty();
         let span = items.span();
@@ -144,9 +142,9 @@ pub struct EnumAst<'a> {
     pub start: Span,
     pub vis: Vis,
     pub r#enum: Span,
-    pub generics: GenericsAst<'a>,
+    pub generics: ListAst<'a, GenericParamAst<'a>>,
     pub name: NameAst,
-    pub body: EnumBodyAst<'a>,
+    pub body: ListAst<'a, EnumVariantAst<'a>>,
 }
 
 impl<'a> Ast<'a> for EnumAst<'a> {
@@ -157,9 +155,9 @@ impl<'a> Ast<'a> for EnumAst<'a> {
             start,
             vis,
             r#enum: ctx.advance().span,
-            generics: ctx.parse()?,
+            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
             name: ctx.parse()?,
-            body: ctx.parse()?,
+            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
         })
     }
 
@@ -198,9 +196,9 @@ pub struct ImplAst<'a> {
     pub start: Span,
     pub vis: Vis,
     pub r#impl: Span,
-    pub generics: GenericsAst<'a>,
+    pub generics: ListAst<'a, GenericParamAst<'a>>,
     pub target: ImplTarget<'a>,
-    pub body: ImplBodyAst<'a>,
+    pub body: ListAst<'a, ImplItemAst<'a>>,
 }
 
 impl<'a> Ast<'a> for ImplAst<'a> {
@@ -211,9 +209,9 @@ impl<'a> Ast<'a> for ImplAst<'a> {
             start,
             vis,
             r#impl: ctx.advance().span,
-            generics: ctx.parse()?,
+            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
             target: ctx.parse()?,
-            body: ctx.parse()?,
+            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
         })
     }
 
@@ -299,10 +297,10 @@ pub struct SpecAst<'a> {
     pub start: Span,
     pub vis: Vis,
     pub spec: Span,
-    pub generics: GenericsAst<'a>,
+    pub generics: ListAst<'a, GenericParamAst<'a>>,
     pub name: NameAst,
-    pub inherits: ParamSpecsAst<'a>,
-    pub body: SpecBodyAst<'a>,
+    pub inherits: ListAst<'a, SpecExprAst<'a>>,
+    pub body: ListAst<'a, FuncSigAst<'a>>,
 }
 
 impl<'a> Ast<'a> for SpecAst<'a> {
@@ -313,10 +311,10 @@ impl<'a> Ast<'a> for SpecAst<'a> {
             start,
             vis,
             spec: ctx.advance().span,
-            generics: ctx.parse()?,
+            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
             name: ctx.parse()?,
-            inherits: ctx.parse()?,
-            body: ctx.parse()?,
+            inherits: ctx.parse_args(BOUNDS_SYNTAX.into())?,
+            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
         })
     }
 

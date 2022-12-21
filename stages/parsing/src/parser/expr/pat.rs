@@ -1,8 +1,5 @@
 use super::*;
 
-list_meta!(StructCtorPatBodyMeta LeftCurly [Comma NewLine] RightCurly);
-pub type StructCtorPatBodyAst<'a> = ListAst<'a, StructCtorPatFieldAst<'a>, StructCtorPatBodyMeta>;
-
 #[derive(Debug, Clone, Copy)]
 pub enum PatAst<'a> {
     Binding(Option<Span>, NameAst),
@@ -90,16 +87,17 @@ impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct StructCtorPatAst<'a> {
     pub slash: Span,
-    pub fields: StructCtorPatBodyAst<'a>,
+    pub fields: ListAst<'a, StructCtorPatFieldAst<'a>>,
 }
 
 impl<'a> Ast<'a> for StructCtorPatAst<'a> {
     type Args = Option<Span>;
 
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, mutable: Self::Args) -> Option<Self> {
+        let syntax = list_syntax!(LeftCurly [Comma NewLine] RightCurly);
         Some(Self {
             slash: ctx.advance().span,
-            fields: ctx.parse_args(mutable)?,
+            fields: ctx.parse_args((syntax, mutable))?,
         })
     }
 

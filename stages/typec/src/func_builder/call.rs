@@ -190,7 +190,7 @@ impl TyChecker<'_> {
         param_slots: &mut [Option<Ty>],
         mut caller: Option<Result<Ty, TirNode<'a>>>,
         owner: Option<Ty>,
-        args: CallArgsAst,
+        args: ListAst<ExprAst>,
         signature: Signature,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,

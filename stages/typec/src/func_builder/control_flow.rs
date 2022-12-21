@@ -3,7 +3,7 @@ use super::*;
 impl TyChecker<'_> {
     pub fn block<'a>(
         &mut self,
-        block: BlockAst,
+        block: ListAst<, ExprAst<>, BlockMeta>,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {

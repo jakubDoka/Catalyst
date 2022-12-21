@@ -60,7 +60,7 @@ impl TyChecker<'_> {
     fn build_spec_methods(
         &mut self,
         parent: FragRef<SpecBase>,
-        body: SpecBodyAst,
+        body: ListAst<, FuncSigAst<>, ItemBodyMeta>,
         spec_set: &mut SpecSet,
         offset: usize,
     ) -> FragSlice<SpecFunc> {
@@ -103,7 +103,7 @@ impl TyChecker<'_> {
 
     pub fn enum_variants(
         &mut self,
-        body: EnumBodyAst,
+        body: ListAst<, EnumVariantAst<>, ItemBodyMeta>,
         spec_set: &mut SpecSet,
     ) -> FragSlice<Variant> {
         let variants = body

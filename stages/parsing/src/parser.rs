@@ -15,19 +15,15 @@ use parsing_t::*;
 
 use storage::*;
 
-list_meta!(GenericsMeta ? LeftBracket Comma RightBracket);
-pub type GenericsAst<'a> = ListAst<'a, GenericParamAst<'a>, GenericsMeta>;
-
-list_meta!(BoundsMeta ? Colon "+" none);
-pub type ParamSpecsAst<'a> = ListAst<'a, SpecExprAst<'a>, BoundsMeta>;
-
-list_meta!(TupleCtorMeta ? LeftParen Comma RightParen);
-pub type TupleCtorAst<'a> = ListAst<'a, ExprAst<'a>, TupleCtorMeta>;
+list_syntax! {
+    const GENERICS_SYNTAX = (? LeftBracket Comma RightBracket);
+    const BOUNDS_SYNTAX = (? Colon "+" none);
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct GenericParamAst<'a> {
     pub name: NameAst,
-    pub bounds: ParamSpecsAst<'a>,
+    pub bounds: ListAst<'a, SpecExprAst<'a>>,
 }
 
 impl<'a> Ast<'a> for GenericParamAst<'a> {
@@ -36,7 +32,7 @@ impl<'a> Ast<'a> for GenericParamAst<'a> {
     fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
         Some(Self {
             name: ctx.parse()?,
-            bounds: ctx.parse()?,
+            bounds: ctx.parse_args(BOUNDS_SYNTAX.into())?,
         })
     }
 
@@ -70,7 +66,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
             let span = ctx.advance().span;
             PathItemAst::Ident(NameAst::new(ctx, span))
         } else {
-            PathItemAst::Params(ctx.parse()?)
+            PathItemAst::Params(ctx.parse_args(GENERICS_SYNTAX.into())?)
         };
         let mut segments = bumpvec![];
         while ctx.at(TokenKind::BackSlash) {
@@ -79,7 +75,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
                 segments.push(PathItemAst::Ident(ctx.name_unchecked()));
             } else if ctx.at_next(TokenKind::LeftBracket) {
                 ctx.advance();
-                segments.push(PathItemAst::Params(ctx.parse()?));
+                segments.push(PathItemAst::Params(ctx.parse_args(GENERICS_SYNTAX.into())?));
             } else {
                 break;
             }
@@ -102,7 +98,7 @@ impl<'a> Ast<'a> for PathAst<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum PathItemAst<'a> {
     Ident(NameAst),
-    Params(TyGenericsAst<'a>),
+    Params(ListAst<'a, TyAst<'a>>),
 }
 
 impl PathItemAst<'_> {
