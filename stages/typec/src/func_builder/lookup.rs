@@ -22,13 +22,13 @@ impl TyChecker<'_> {
         &mut self,
         path: PathAst<'a>,
         inference: Inference,
-    ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
+    ) -> Option<(FragRef<Enum>, NameAst, Option<ListAst<'a, TyAst<'a>>>)> {
         pub fn resolve<'a>(
             s: &mut TyChecker,
             enum_ty: FragRef<Enum>,
             segments: &[PathItemAst<'a>],
             backup_span: Span,
-        ) -> Option<(FragRef<Enum>, NameAst, Option<TyGenericsAst<'a>>)> {
+        ) -> Option<(FragRef<Enum>, NameAst, Option<ListAst<'a, TyAst<'a>>>)> {
             Some(match *segments {
                 [PathItemAst::Ident(name)] => (enum_ty, name, None),
                 [PathItemAst::Params(params), PathItemAst::Ident(name)] => {
@@ -145,7 +145,11 @@ impl TyChecker<'_> {
             ..
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
+    ) -> Option<(
+        FuncLookupResult<'a>,
+        Option<Ty>,
+        Option<ListAst<'b, TyAst<'b>>>,
+    )> {
         self.assert_no_slash(slash)?;
 
         let PathItemAst::Ident(start) = start else {
@@ -268,7 +272,11 @@ impl TyChecker<'_> {
             ..
         }: PathAst<'b>,
         builder: &mut TirBuilder<'a, '_>,
-    ) -> Option<(FuncLookupResult<'a>, Option<Ty>, Option<TyGenericsAst<'b>>)> {
+    ) -> Option<(
+        FuncLookupResult<'a>,
+        Option<Ty>,
+        Option<ListAst<'b, TyAst<'b>>>,
+    )> {
         self.assert_no_slash(slash)?;
 
         let lty = ty.caller(self.typec);
@@ -580,7 +588,7 @@ impl TyChecker<'_> {
         &mut self,
         segments: &[PathItemAst<'a>],
         backup_span: Span,
-    ) -> Option<TyGenericsAst<'a>> {
+    ) -> Option<ListAst<'a, TyAst<'a>>> {
         match *segments {
             [] => None,
             [PathItemAst::Params(params)] => Some(params),

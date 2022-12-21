@@ -108,7 +108,6 @@ pub use items::Testable;
 
 pub mod items {
     use diags::*;
-    use fmt::Fmt;
     use lexing_t::LineMapping;
     use packaging::Scheduler;
     use packaging_t::*;
@@ -202,85 +201,86 @@ pub mod items {
         pub fn create(self) -> TestResources {
             let mut resources = TestResources::default();
             let mut packages = Resources::default();
-            let mut fmt = Fmt::default();
-            let path = PathBuf::from(&self.name);
-            self.create_recur(&path, &mut fmt, &mut packages, &mut resources);
+            todo!();
+            // let mut fmt = Fmt::default();
+            // let path = PathBuf::from(&self.name);
+            // self.create_recur(&path, &mut fmt, &mut packages, &mut resources);
 
-            let mut str = String::new();
-            fmt.workspace
-                .display(&packages, &mut SnippetDisplayImpl::default(), &mut str);
-            let path = format!("test_out/{}-parse-out.txt", path.display());
+            // let mut str = String::new();
+            // fmt.workspace
+            //     .display(&packages, &mut SnippetDisplayImpl::default(), &mut str);
+            // let path = format!("test_out/{}-parse-out.txt", path.display());
 
-            if str.trim() != "" {
-                std::fs::write(path, str).unwrap();
-            } else if Path::new(&path).exists() {
-                std::fs::remove_file(path).unwrap();
-            }
+            // if str.trim() != "" {
+            //     std::fs::write(path, str).unwrap();
+            // } else if Path::new(&path).exists() {
+            //     std::fs::remove_file(path).unwrap();
+            // }
 
-            resources
+            // resources
         }
 
-        fn create_recur(
-            mut self,
-            path: &Path,
-            fmt: &mut Fmt,
-            packages: &mut Resources,
-            resources: &mut TestResources,
-        ) {
-            let self_path = path;
-            if !path.exists() {
-                resources.create_dir_all(self_path).unwrap();
-            }
-            for (name, (replace, content)) in self.files.drain(..) {
-                let formatter = if name.ends_with(".ctlm") {
-                    Fmt::manifest
-                } else if name.ends_with(".ctl") {
-                    Fmt::source
-                } else {
-                    for<'a> |_: &'a mut Fmt,
-                             s: String,
-                             _: VRef<Source>|
-                             -> (Option<&'a str>, String) { (None, s) }
-                };
+        // fn create_recur(
+        //     mut self,
+        //     path: &Path,
+        //     fmt: &mut Fmt,
+        //     packages: &mut Resources,
+        //     resources: &mut TestResources,
+        // ) {
+        //     let self_path = path;
+        //     if !path.exists() {
+        //         resources.create_dir_all(self_path).unwrap();
+        //     }
+        //     for (name, (replace, content)) in self.files.drain(..) {
+        //         let formatter = if name.ends_with(".ctlm") {
+        //             Fmt::manifest
+        //         } else if name.ends_with(".ctl") {
+        //             Fmt::source
+        //         } else {
+        //             for<'a> |_: &'a mut Fmt,
+        //                      s: String,
+        //                      _: VRef<Source>|
+        //                      -> (Option<&'a str>, String) { (None, s) }
+        //         };
 
-                let path = self_path.join(name);
+        //         let path = self_path.join(name);
 
-                let c = if replace {
-                    content
-                        .replace('\n', " ")
-                        .replace(" :: ", "\\")
-                        .replace(":: ", "\\")
-                } else {
-                    content
-                };
+        //         let c = if replace {
+        //             content
+        //                 .replace('\n', " ")
+        //                 .replace(" :: ", "\\")
+        //                 .replace(":: ", "\\")
+        //         } else {
+        //             content
+        //         };
 
-                let source = packages.sources.push(Source {
-                    path: path.clone(),
-                    last_modified: SystemTime::UNIX_EPOCH,
-                    line_mapping: LineMapping::new(&c),
-                    content: c.to_string(),
-                    changed: true,
-                    dead: false,
-                });
+        //         let source = packages.sources.push(Source {
+        //             path: path.clone(),
+        //             last_modified: SystemTime::UNIX_EPOCH,
+        //             line_mapping: LineMapping::new(&c),
+        //             content: c.to_string(),
+        //             changed: true,
+        //             dead: false,
+        //         });
 
-                let (res, c) = formatter(fmt, c, source);
+        //         let (res, c) = formatter(fmt, c, source);
 
-                let res = res.unwrap_or(&c);
+        //         let res = res.unwrap_or(&c);
 
-                resources.add_file(&path, res.to_string());
-            }
+        //         resources.add_file(&path, res.to_string());
+        //     }
 
-            for mut folder in self.folders.drain(..) {
-                if folder.remote {
-                    let name = std::mem::take(&mut folder.name);
-                    let res = folder.create();
-                    resources.add_remote(name, res);
-                } else {
-                    let path = path.join(&folder.name);
-                    folder.create_recur(&path, fmt, packages, resources);
-                }
-            }
-        }
+        //     for mut folder in self.folders.drain(..) {
+        //         if folder.remote {
+        //             let name = std::mem::take(&mut folder.name);
+        //             let res = folder.create();
+        //             resources.add_remote(name, res);
+        //         } else {
+        //             let path = path.join(&folder.name);
+        //             folder.create_recur(&path, fmt, packages, resources);
+        //         }
+        //     }
+        // }
     }
 
     #[derive(Default)]

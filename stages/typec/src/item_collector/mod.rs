@@ -433,7 +433,7 @@ impl TyChecker<'_> {
         name: NameAst,
         attributes: &[TopLevelAttributeAst],
         vis: Vis,
-        check_macro: Option<GenericsAst>,
+        check_macro: Option<ListAst<GenericParamAst>>,
     ) -> Option<(Loc, HumidMeta<T>)>
     where
         FragRef<T>: Into<Ty>,

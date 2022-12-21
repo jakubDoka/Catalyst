@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use diags::*;
 use lexing_t::Span;
 use packaging_t::Source;
@@ -13,7 +11,12 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
-    pub fn generics(&mut self, generic_ast: GenericsAst, set: &mut SpecSet, offset: usize) {
+    pub fn generics(
+        &mut self,
+        generic_ast: ListAst<GenericParamAst>,
+        set: &mut SpecSet,
+        offset: usize,
+    ) {
         for (i, &GenericParamAst { bounds, .. }) in generic_ast.iter().enumerate() {
             set.extend(
                 (i + offset) as u32,
@@ -22,7 +25,7 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn insert_generics(&mut self, generics_ast: GenericsAst, offset: usize) {
+    pub fn insert_generics(&mut self, generics_ast: ListAst<GenericParamAst>, offset: usize) {
         for (i, &GenericParamAst { name, .. }) in generics_ast.iter().enumerate() {
             self.insert_param(offset + i, name)
         }
@@ -57,15 +60,14 @@ impl TyChecker<'_> {
         }
     }
 
-    pub fn tuple(&mut self, tuple_ast: ListAst<, TyAst<>>) -> Option<Ty> {
+    pub fn tuple(&mut self, tuple_ast: ListAst<TyAst>) -> Option<Ty> {
         let types = tuple_ast
             .iter()
             .map(|&ty_ast| self.ty(ty_ast))
             .nsc_collect::<Option<BumpVec<_>>>()?;
 
-        match (types.as_slice(), tuple_ast.deref()) {
+        match (types.as_slice(), tuple_ast.elements) {
             ([], _) => Some(Ty::UNIT),
-            (&[ty], [ty_ast]) if ty_ast.after_delim.is_none() => Some(ty),
             _ => todo!(),
         }
     }
@@ -138,7 +140,7 @@ impl TyChecker<'_> {
         path @ PathAst {
             start, segments, ..
         }: PathAst<'a>,
-    ) -> Option<(TyPathResult, Option<TyGenericsAst<'a>>)> {
+    ) -> Option<(TyPathResult, Option<ListAst<'a, TyAst<'a>>>)> {
         let PathItemAst::Ident(start) = start else {
             todo!();
         };

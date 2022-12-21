@@ -1,4 +1,5 @@
 use parsing::*;
+use parsing_t::*;
 use storage::*;
 use typec_t::*;
 
@@ -51,7 +52,7 @@ impl TyChecker<'_> {
 
     fn build_inherits(
         &mut self,
-        inherits: ParamSpecsAst,
+        inherits: ListAst<SpecExprAst>,
         spec_set: &mut SpecSet,
     ) -> FragSlice<Spec> {
         self.spec_sum(inherits.iter(), spec_set).unwrap_or_default()
@@ -60,7 +61,7 @@ impl TyChecker<'_> {
     fn build_spec_methods(
         &mut self,
         parent: FragRef<SpecBase>,
-        body: ListAst<, FuncSigAst<>, ItemBodyMeta>,
+        body: ListAst<FuncSigAst>,
         spec_set: &mut SpecSet,
         offset: usize,
     ) -> FragSlice<SpecFunc> {
@@ -103,7 +104,7 @@ impl TyChecker<'_> {
 
     pub fn enum_variants(
         &mut self,
-        body: ListAst<, EnumVariantAst<>, ItemBodyMeta>,
+        body: ListAst<EnumVariantAst>,
         spec_set: &mut SpecSet,
     ) -> FragSlice<Variant> {
         let variants = body
@@ -143,7 +144,11 @@ impl TyChecker<'_> {
         self.scope.end_frame(frame);
     }
 
-    fn struct_fields(&mut self, body: StructBodyAst, spec_set: &mut SpecSet) -> FragSlice<Field> {
+    fn struct_fields(
+        &mut self,
+        body: ListAst<StructFieldAst>,
+        spec_set: &mut SpecSet,
+    ) -> FragSlice<Field> {
         let fields = body
             .iter()
             .map(

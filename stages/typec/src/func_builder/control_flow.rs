@@ -3,14 +3,14 @@ use super::*;
 impl TyChecker<'_> {
     pub fn block<'a>(
         &mut self,
-        block: ListAst<, ExprAst<>, BlockMeta>,
+        block: ListAst<ExprAst>,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         let frame = VarHeaderTir::start_frame(builder.ctx);
         let scope_frame = self.scope.start_frame();
 
-        let Some((last, other)) = block.elements.split_last() else {
+        let Some((&last, other)) = block.elements.split_last() else {
             return Some(TirNode::new(Ty::UNIT, TirKind::Block(&[]), block.span()))
         };
 
@@ -18,9 +18,9 @@ impl TyChecker<'_> {
         store.extend(
             other
                 .iter()
-                .filter_map(|expr| self.expr(expr.value, Inference::None, builder)),
+                .filter_map(|&expr| self.expr(expr, Inference::None, builder)),
         );
-        let last = self.expr(last.value, inference, builder);
+        let last = self.expr(last, inference, builder);
         frame.end(builder.ctx, ());
         let last = last?;
         store.push(last);

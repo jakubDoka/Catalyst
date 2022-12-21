@@ -43,7 +43,7 @@ impl TyChecker<'_> {
     pub fn direct_call<'a>(
         &mut self,
         func: FragRef<Func>,
-        params: Option<TyGenericsAst>,
+        params: Option<ListAst<TyAst>>,
         caller: Option<Result<Ty, TirNode<'a>>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
@@ -100,7 +100,7 @@ impl TyChecker<'_> {
     pub fn direct_spec_call<'a>(
         &mut self,
         func: FragRef<SpecFunc>,
-        params: Option<TyGenericsAst>,
+        params: Option<ListAst<TyAst>>,
         caller: Result<Ty, TirNode<'a>>,
         call @ CallExprAst { args, .. }: CallExprAst,
         inference: Inference,
