@@ -1078,8 +1078,8 @@ impl Typec {
             match (reference, template) {
                 (Ty::Pointer(reference_p, reference_m), Ty::Pointer(template_p, template_m)) => {
                     match (reference_m.to_mutability(), template_m.to_mutability()) {
-                        (Mutability::Param(i), val) => params[i as usize] = Some(val.as_ty()),
-                        (a, b) if a == b => (),
+                        (val, Mutability::Param(i)) => params[i as usize] = Some(val.as_ty()),
+                        _ if reference_m.compatible(template_m) => (),
                         _ => return Err((reference, template)),
                     }
                     stack.push((self[reference_p].base, self[template_p].base));

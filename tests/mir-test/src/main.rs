@@ -184,79 +184,79 @@ fn main() {
             };
         }
 
-        simple "macro-impl" {
-            use {
-                "water/option";
-                "water/macros/tokens";
-                "water/marker";
-                "water/ptr";
-            };
+        // simple "macro-impl" {
+        //     use {
+        //         "water/option";
+        //         "water/macros/tokens";
+        //         "water/marker";
+        //         "water/ptr";
+        //     };
 
-            // TODO: Solution for macro name collisions
-            // use {
-            //     w "water"
-            // };
-            //
-            // #[macro w_swap]
-            // type WSwap = w::Swap[uint];
-            // break;
+        //     // TODO: Solution for macro name collisions
+        //     // use {
+        //     //     w "water"
+        //     // };
+        //     //
+        //     // #[macro w_swap]
+        //     // type WSwap = w::Swap[uint];
+        //     // break;
 
-            struct LastToken {
-                last: MacroToken;
-            };
+        //     struct LastToken {
+        //         last: MacroToken;
+        //     };
 
-            impl Copy for LastToken;
+        //     impl Copy for LastToken;
 
-            struct TwoTokens {
-                second: MacroToken;
-                first: MacroToken;
-            };
+        //     struct TwoTokens {
+        //         second: MacroToken;
+        //         first: MacroToken;
+        //     };
 
-            impl Copy for TwoTokens;
+        //     impl Copy for TwoTokens;
 
-            enum SwapState {
-                Two: TwoTokens;
-                Last: LastToken;
-                Empty;
-            };
+        //     enum SwapState {
+        //         Two: TwoTokens;
+        //         Last: LastToken;
+        //         Empty;
+        //     };
 
-            impl Copy for SwapState;
+        //     impl Copy for SwapState;
 
-            #[macro swap];
-            struct Swap {
-                state: SwapState;
-                lexer: MacroLexer;
-            };
+        //     #[macro swap];
+        //     struct Swap {
+        //         state: SwapState;
+        //         lexer: MacroLexer;
+        //     };
 
-            impl TokenMacro for Swap {
-                fn "default" new(s: ^Self, lexer: MacroLexer) {
-                    ptr::write(s, ::{
-                        state: ::Two~::{
-                            first: lexer.next();
-                            second: lexer.next();
-                        };
-                        lexer;
-                    });
-                };
+        //     impl TokenMacro for Swap {
+        //         fn "default" new(s: ^Self, lexer: MacroLexer) {
+        //             ptr::write(s, ::{
+        //                 state: ::Two~::{
+        //                     first: lexer.next();
+        //                     second: lexer.next();
+        //                 };
+        //                 lexer;
+        //             });
+        //         };
 
-                fn "default" next(s: ^Self) -> Option::[MacroToken] =>
-                    ::Some~match s.state {
-                        ::Two~::{ first, second } {
-                            s.state = ::Last~::{ last: first };
-                            second
-                        };
-                        ::Last~::{ last } {
-                            s.state = ::Empty;
-                            last
-                        };
-                        ::Empty => return ::None;
-                    };
+        //         fn "default" next(s: ^Self) -> Option::[MacroToken] =>
+        //             ::Some~match s.state {
+        //                 ::Two~::{ first, second } {
+        //                     s.state = ::Last~::{ last: first };
+        //                     second
+        //                 };
+        //                 ::Last~::{ last } {
+        //                     s.state = ::Empty;
+        //                     last
+        //                 };
+        //                 ::Empty => return ::None;
+        //             };
 
-                fn "default" drop(s: ^Self) -> MacroLexer {
-                    ptr::read(^s.lexer)
-                };
-            };
-        }
+        //         fn "default" drop(s: ^Self) -> MacroLexer {
+        //             ptr::read(^s.lexer)
+        //         };
+        //     };
+        // }
 
         simple "simple-moves" {
             struct A;

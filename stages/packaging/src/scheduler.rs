@@ -52,13 +52,12 @@ pub trait Scheduler {
                     let source = res.resources.modules[module].source;
                     let content = &res.resources.sources[source].content;
                     // hu boy
-                    let mut p = ParsingCtx::new_with_macros(
+                    let mut p = ParsingCtx::new(
                         content,
                         &mut parse_state,
                         &ast_data,
                         res.workspace,
                         res.interner,
-                        res.token_macro_ctx.as_ref(),
                         source,
                     );
                     let r = p.parse::<GroupedItemsAst>();

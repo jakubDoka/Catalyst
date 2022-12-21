@@ -16,7 +16,7 @@ pub use {
         CompiledFuncInner, ComputedValue, Gen, GenBlock, GenBuilder, GenFuncConstant, GenItemName,
         GenLayouts, GenReloc, GenResources, GenValue, Isa, IsaCreationError, Layout, Offset,
     },
-    jit_context::{JitContext, JitRelocError, TokenMacroOwnedSpec},
+    jit_context::{JitContext, JitRelocError},
     state_gen::Generator,
 };
 

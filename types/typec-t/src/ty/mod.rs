@@ -73,7 +73,7 @@ impl Struct {
 gen_water_drops! {
     Struct
     structs
-    MACRO_LEXER => "MacroLexer",
+    LEXER => "Lexer",
 }
 
 #[derive(Clone, Copy, Default)]
@@ -97,7 +97,7 @@ gen_water_drops! {
     Enum
     enums
     OPTION => "Option",
-    MACRO_TOKEN_KIND => "MacroTokenKind",
+    TOKEN_KIND => "MacroTokenKind",
 }
 
 #[derive(Clone, Copy)]
@@ -155,6 +155,10 @@ impl RawMutability {
         })
     }
 
+    pub fn compatible(self, other: Self) -> bool {
+        self == other || other == Self::IMMUTABLE
+    }
+
     pub fn from_ty(ty: Ty) -> Self {
         match ty {
             Ty::Builtin(Builtin::Mutable) => Self::MUTABLE,
@@ -198,8 +202,8 @@ pub struct SpecBase {
 }
 
 impl SpecBase {
-    pub fn is_macro(s: FragRef<Self>) -> bool {
-        s <= Self::TOKEN_MACRO
+    pub fn is_macro(_s: FragRef<Self>) -> bool {
+        false
     }
 }
 
@@ -208,7 +212,6 @@ gen_water_drops! {
     base_specs
     DROP => "Drop",
     COPY => "Copy",
-    TOKEN_MACRO => "TokenMacro",
 }
 
 #[derive(Clone, Copy)]
@@ -373,7 +376,14 @@ impl Ty {
     }
 
     pub fn compatible(a: Self, b: Self) -> bool {
-        b == Self::TERMINAL || a == Self::TERMINAL || a == b
+        b == Self::TERMINAL
+            || a == Self::TERMINAL
+            || a == b
+            || matches!(
+                (a, b),
+                (Ty::Pointer(t, m), Ty::Pointer(t2, m2))
+                if t == t2 && m.compatible(m2)
+            )
     }
 
     pub fn as_generic(self) -> Option<GenericTy> {

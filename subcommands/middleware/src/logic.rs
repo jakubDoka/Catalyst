@@ -1103,7 +1103,7 @@ impl Worker {
         self.state
             .parsing_state
             .start(&shared.resources.sources[source].content);
-        self.parse::<UseAstSkip>(source, arena, task, None, shared);
+        self.parse::<UseAstSkip>(source, arena, task, shared);
 
         let mut macros = typec::build_scope(
             module,
@@ -1114,15 +1114,15 @@ impl Worker {
         );
 
         loop {
-            let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
-            self.load_macros(
-                &mut macro_ctx,
-                macros.iter().copied(),
-                task,
-                jit_ctx,
-                shared.jit_isa,
-            );
-            let Some(grouped_items) = self.parse::<GroupedItemsAst>(source, arena, task, Some(&macro_ctx.tokens), shared) else {
+            // let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
+            // self.load_macros(
+            //     &mut macro_ctx,
+            //     macros.iter().copied(),
+            //     task,
+            //     jit_ctx,
+            //     shared.jit_isa,
+            // );
+            let Some(grouped_items) = self.parse::<GroupedItemsAst>(source, arena, task, shared) else {
                 continue;
             };
 
@@ -1130,7 +1130,7 @@ impl Worker {
             let last = grouped_items.last;
             arena.clear();
 
-            self.state.macro_ctx = macro_ctx.clear();
+            // self.state.macro_ctx = macro_ctx.clear();
             let mut local_macros = mem::take(&mut self.state.tir_builder_ctx.macros);
             self.compile_macros(&local_macros, task, jit_ctx, shared);
             macros.extend(local_macros.drain(..));
@@ -1309,73 +1309,73 @@ impl Worker {
         macros.iter().flat_map(extractor).collect()
     }
 
-    fn load_macros<'macros>(
-        &mut self,
-        ctx: &mut MacroCtx<'macros>,
-        macros: impl IntoIterator<Item = MacroCompileRequest>,
-        task: &mut Task,
-        jit_ctx: &'macros JitContext,
-        isa: &Isa,
-    ) {
-        if task.workspace.has_errors() {
-            return;
-        }
+    // fn load_macros<'macros>(
+    //     &mut self,
+    //     ctx: &mut MacroCtx<'macros>,
+    //     macros: impl IntoIterator<Item = MacroCompileRequest>,
+    //     task: &mut Task,
+    //     jit_ctx: &'macros JitContext,
+    //     isa: &Isa,
+    // ) {
+    //     if task.workspace.has_errors() {
+    //         return;
+    //     }
 
-        for MacroCompileRequest {
-            name,
-            r#impl,
-            ty,
-            params,
-            ..
-        } in macros
-        {
-            let impl_ent = task.typec.impls[r#impl];
-            let spec = impl_ent.key.spec.base(&task.typec);
+    //     for MacroCompileRequest {
+    //         name,
+    //         r#impl,
+    //         ty,
+    //         params,
+    //         ..
+    //     } in macros
+    //     {
+    //         let impl_ent = task.typec.impls[r#impl];
+    //         let spec = impl_ent.key.spec.base(&task.typec);
 
-            match spec {
-                s if s == SpecBase::TOKEN_MACRO => {
-                    if let Some(spec) = self.state.token_macros.get(&r#impl) {
-                        let tm = jit_ctx.token_macro(spec).unwrap();
-                        ctx.tokens.declare_macro(spec.name, tm);
-                        continue;
-                    }
-                }
-                _ => unreachable!(),
-            }
+    //         match spec {
+    //             s if s == SpecBase::TOKEN_MACRO => {
+    //                 if let Some(spec) = self.state.token_macros.get(&r#impl) {
+    //                     let tm = jit_ctx.token_macro(spec).unwrap();
+    //                     ctx.tokens.declare_macro(spec.name, tm);
+    //                     continue;
+    //                 }
+    //             }
+    //             _ => unreachable!(),
+    //         }
 
-            let layout =
-                self.state
-                    .jit_layouts
-                    .ty_layout(ty, &[], &mut task.typec, &mut task.interner);
-            let params = task.typec[params].to_bumpvec();
-            let funcs = task.typec.func_slices[impl_ent.methods]
-                .iter()
-                .map(|&func| {
-                    Generator::func_instance_name(
-                        true,
-                        &isa.triple,
-                        func,
-                        params.iter().copied(),
-                        &task.typec,
-                        &mut task.interner,
-                    )
-                })
-                .filter_map(|key| task.gen.get(key));
+    //         let layout =
+    //             self.state
+    //                 .jit_layouts
+    //                 .ty_layout(ty, &[], &mut task.typec, &mut task.interner);
+    //         let params = task.typec[params].to_bumpvec();
+    //         let funcs = task.typec.func_slices[impl_ent.methods]
+    //             .iter()
+    //             .map(|&func| {
+    //                 Generator::func_instance_name(
+    //                     true,
+    //                     &isa.triple,
+    //                     func,
+    //                     params.iter().copied(),
+    //                     &task.typec,
+    //                     &mut task.interner,
+    //                 )
+    //             })
+    //             .filter_map(|key| task.gen.get(key));
 
-            match spec {
-                s if s == SpecBase::TOKEN_MACRO => {
-                    let r#macro = TokenMacroOwnedSpec::new(layout.rust_layout(), name, funcs)
-                        .expect("all functions should be present");
-                    let tm = jit_ctx
-                        .token_macro(&r#macro)
-                        .expect("all functions should be present");
-                    ctx.tokens.declare_macro(r#macro.name, tm);
-                    self.state.token_macros.insert(r#impl, r#macro);
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
+    //         match spec {
+    //             s if s == SpecBase::TOKEN_MACRO => {
+    //                 let r#macro = TokenMacroOwnedSpec::new(layout.rust_layout(), name, funcs)
+    //                     .expect("all functions should be present");
+    //                 let tm = jit_ctx
+    //                     .token_macro(&r#macro)
+    //                     .expect("all functions should be present");
+    //                 ctx.tokens.declare_macro(r#macro.name, tm);
+    //                 self.state.token_macros.insert(r#impl, r#macro);
+    //             }
+    //             _ => unreachable!(),
+    //         }
+    //     }
+    // }
 
     fn type_check_batch(
         &mut self,
@@ -1441,19 +1441,19 @@ impl Worker {
         source: VRef<Source>,
         arena: &'a Arena,
         task: &mut Task,
-        macros: Option<&TokenMacroCtx>,
+        // macros: Option<&TokenMacroCtx>,
         shared: &Shared,
     ) -> Option<T>
     where
         T::Args: Default,
     {
-        ParsingCtx::new_with_macros(
+        ParsingCtx::new(
             shared.resources.sources[source].content.as_str(),
             &mut self.state.parsing_state,
             arena,
             &mut task.workspace,
             &mut task.interner,
-            macros,
+            // macros,
             source,
         )
         .parse()
@@ -1849,8 +1849,8 @@ pub struct WorkerState {
     pub ast_transfer: AstTransfer<'static>,
     pub mir_ctx: MirCtx,
     pub mir_move_ctx: MirMoveCtx,
-    pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
-    pub macro_ctx: MacroCtx<'static>,
+    // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
+    // pub macro_ctx: MacroCtx<'static>,
     pub tir_builder_ctx: TirBuilderCtx,
     pub temp_dependant_types: FuncTypes,
     pub gen_resources: GenResources,
@@ -1858,18 +1858,18 @@ pub struct WorkerState {
     pub gen_layouts: GenLayouts,
 }
 
-#[derive(Default)]
-pub struct MacroCtx<'macros> {
-    pub tokens: TokenMacroCtx<'macros>,
-}
+// #[derive(Default)]
+// pub struct MacroCtx<'macros> {
+//     pub tokens: TokenMacroCtx<'macros>,
+// }
 
-impl<'macros> MacroCtx<'macros> {
-    pub fn clear<'detached>(self) -> MacroCtx<'detached> {
-        MacroCtx {
-            tokens: self.tokens.clear(),
-        }
-    }
-}
+// impl<'macros> MacroCtx<'macros> {
+//     pub fn clear<'detached>(self) -> MacroCtx<'detached> {
+//         MacroCtx {
+//             tokens: self.tokens.clear(),
+//         }
+//     }
+// }
 
 #[derive(Default)]
 pub struct Incremental {

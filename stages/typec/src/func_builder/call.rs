@@ -199,7 +199,7 @@ impl TyChecker<'_> {
 
         if let Some(inference) = inference.ty() {
             // we don't want to report error twice so this one is ignored
-            let _ = self.typec.compatible(param_slots, inference, signature.ret);
+            _ = self.typec.compatible(param_slots, inference, signature.ret);
         }
 
         if let Some(ref mut caller) = caller {
@@ -210,7 +210,7 @@ impl TyChecker<'_> {
             if let Some(owner) = owner {
                 let ty = caller.map_or_else(|expr| expr.ty, |ty| ty);
                 let owner = self.typec.balance_pointers(owner, ty, self.interner);
-                _ = self.typec.compatible(param_slots, ty, owner);
+                _ = dbg!(self.typec.compatible(param_slots, ty, owner));
             }
         }
 

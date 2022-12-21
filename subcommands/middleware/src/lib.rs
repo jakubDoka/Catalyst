@@ -12,9 +12,8 @@ pub use {
     lexing::*,
     lexing_t::*,
     logic::{
-        DiagnosticView, GenTask, Incremental, MacroCtx, Middleware, MiddlewareArgs,
-        MiddlewareOutput, PackageTask, Shared, Task, TaskGraph, Worker, WorkerConnections,
-        WorkerState,
+        DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs, MiddlewareOutput,
+        PackageTask, Shared, Task, TaskGraph, Worker, WorkerConnections, WorkerState,
     },
     mir::*,
     mir_t::*,

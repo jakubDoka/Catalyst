@@ -2,15 +2,12 @@ file "stages/packaging/src/state_gen.rs" {
     use "packaging_t"
     use "diags"
     use "storage"
-    use "lexing"
 
     struct PackageLoader {
         mut Resources
         mut Workspace
         mut Interner
         mut PackageGraph
-        unique lt: `()` = "&()"
-        owned token_macro_ctx: `Option<TokenMacroCtx<'a1>>` = "None"
     }
 }
 

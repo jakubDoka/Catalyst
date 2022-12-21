@@ -400,77 +400,77 @@ fn main() {
             fn [F, T] my_cast(value: F) -> T => cast(value);
         }
 
-        simple "swap-macro" {
-            use {
-                "water/option";
-                "water/ptr";
-                "water/macros/tokens";
-            };
-            // use {
-            //     w "water"
-            // };
+        // simple "swap-macro" {
+        //     use {
+        //         "water/option";
+        //         "water/ptr";
+        //         "water/macros/tokens";
+        //     };
+        //     // use {
+        //     //     w "water"
+        //     // };
 
-            // TODO: Solution for macro name collisions
-            // type WSwap = w::Swap[uint];
-            // break;
+        //     // TODO: Solution for macro name collisions
+        //     // type WSwap = w::Swap[uint];
+        //     // break;
 
-            struct LastToken {
-                last: MacroToken;
-            };
+        //     struct LastToken {
+        //         last: MacroToken;
+        //     };
 
-            struct TwoTokens {
-                second: MacroToken;
-                first: MacroToken;
-            };
+        //     struct TwoTokens {
+        //         second: MacroToken;
+        //         first: MacroToken;
+        //     };
 
-            enum SwapState {
-                Two: TwoTokens;
-                Last: LastToken;
-                Empty;
-            };
+        //     enum SwapState {
+        //         Two: TwoTokens;
+        //         Last: LastToken;
+        //         Empty;
+        //     };
 
-            #[macro swap];
-            struct Swap {
-                mut state: SwapState;
-                lexer: MacroLexer;
-            };
+        //     #[macro swap];
+        //     struct Swap {
+        //         mut state: SwapState;
+        //         lexer: MacroLexer;
+        //     };
 
-            impl TokenMacro for Swap {
-                fn "default" new(s: ^Self, mut lexer: MacroLexer) {
-                    ptr::write(s, ::{
-                        state: ::Two~::{
-                            first: lexer.next();
-                            second: lexer.next();
-                        };
-                        lexer;
-                    });
-                };
+        //     impl TokenMacro for Swap {
+        //         fn "default" new(s: ^Self, mut lexer: MacroLexer) {
+        //             ptr::write(s, ::{
+        //                 state: ::Two~::{
+        //                     first: lexer.next();
+        //                     second: lexer.next();
+        //                 };
+        //                 lexer;
+        //             });
+        //         };
 
-                fn "default" next(s: ^Self) -> Option::[MacroToken] =>
-                    ::Some~match s.state {
-                        ::Two~::{ first, second } {
-                            s.state = ::Last~::{ last: first };
-                            second
-                        };
-                        ::Last~::{ last } {
-                            s.state = ::Empty;
-                            last
-                        };
-                        ::Empty => return ::None;
-                    };
+        //         fn "default" next(s: ^Self) -> Option::[MacroToken] =>
+        //             ::Some~match s.state {
+        //                 ::Two~::{ first, second } {
+        //                     s.state = ::Last~::{ last: first };
+        //                     second
+        //                 };
+        //                 ::Last~::{ last } {
+        //                     s.state = ::Empty;
+        //                     last
+        //                 };
+        //                 ::Empty => return ::None;
+        //             };
 
-                fn "default" drop(s: ^Self) -> MacroLexer {
-                    ptr::read(^s.lexer)
-                };
-            };
+        //         fn "default" drop(s: ^Self) -> MacroLexer {
+        //             ptr::read(^s.lexer)
+        //         };
+        //     };
 
-            break;
+        //     break;
 
-            #[entry];
-            swap! swap! fn -> main uint => 0;
-            // fn swap! -> main uint => 0;
-            //fn main -> uint => 0;
-        }
+        //     #[entry];
+        //     swap! swap! fn -> main uint => 0;
+        //     // fn swap! -> main uint => 0;
+        //     //fn main -> uint => 0;
+        // }
 
         simple "drop-gen" {
             use {

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 
 use crate::*;
 use diags::*;
@@ -9,12 +9,12 @@ use storage::*;
 
 pub struct ParsingCtx<'ctx, 'ast: 'ctx, 'macros: 'ctx> {
     pub source_code: &'ctx str,
-    pub lexer: CtlLexer<'macros, 'ast, 'ctx>,
+    pub lexer: Lexer<'ctx>,
     pub state: &'ctx mut ParsingState,
     pub arena: &'ast AstData,
     pub workspace: &'ctx mut Workspace,
     pub interner: &'ctx mut Interner,
-    pub token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
+    pd: PhantomData<&'macros ()>, // we will have macro references eventually
     pub source: VRef<Source>,
 }
 
@@ -29,36 +29,36 @@ impl<'ctx, 'ast, 'macros> ParsingCtx<'ctx, 'ast, 'macros> {
     ) -> Self {
         Self {
             source_code,
-            lexer: CtlLexer::Base(Lexer::new(source_code, state.progress)),
+            lexer: Lexer::new(source_code, state.progress),
             state,
             arena: ast_data,
             workspace,
             interner,
-            token_macro_ctx: None,
+            pd: PhantomData,
             source,
         }
     }
 
-    pub fn new_with_macros(
-        source_code: &'ctx str,
-        state: &'ctx mut ParsingState,
-        ast_data: &'ast AstData,
-        workspace: &'ctx mut Workspace,
-        interner: &'ctx mut Interner,
-        token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
-        source: VRef<Source>,
-    ) -> Self {
-        Self {
-            source_code,
-            lexer: CtlLexer::Base(Lexer::new(source_code, state.progress)),
-            state,
-            arena: ast_data,
-            workspace,
-            interner,
-            token_macro_ctx,
-            source,
-        }
-    }
+    // pub fn new_with_macros(
+    //     source_code: &'ctx str,
+    //     state: &'ctx mut ParsingState,
+    //     ast_data: &'ast AstData,
+    //     workspace: &'ctx mut Workspace,
+    //     interner: &'ctx mut Interner,
+    //     token_macro_ctx: Option<&'ctx TokenMacroCtx<'macros>>,
+    //     source: VRef<Source>,
+    // ) -> Self {
+    //     Self {
+    //         source_code,
+    //         lexer: CtlLexer::Base(Lexer::new(source_code, state.progress)),
+    //         state,
+    //         arena: ast_data,
+    //         workspace,
+    //         interner,
+    //         token_macro_ctx,
+    //         source,
+    //     }
+    // }
 }
 
 impl Drop for ParsingCtx<'_, '_, '_> {
@@ -132,33 +132,7 @@ impl<'ast> ParsingCtx<'_, 'ast, '_> {
         let current = self.state.current;
         self.state.current = self.state.next;
         self.state.next = self.lexer.next_tok();
-        self.check_for_macro();
         current
-    }
-
-    fn check_for_macro(&mut self) {
-        if self.state.next.kind != TokenKind::Macro {
-            return;
-        }
-
-        let Some(ref mut token_macro_ctx) = self.token_macro_ctx else {
-            return;
-        };
-
-        let macro_name =
-            &self.source_code[self.state.next.span.range()][..self.state.next.span.len() - 1];
-        let macro_name_ident = self.interner.intern(macro_name);
-
-        let Some(spec) = token_macro_ctx.get_macro(macro_name_ident) else {
-            return;
-        };
-
-        let data = self.arena.alloc_byte_layout(spec.layout);
-        storage::map_in_place(&mut self.lexer, |l| {
-            CtlLexer::Macro(TokenMacro::new(data, spec, l))
-        });
-
-        self.state.next = self.lexer.next_tok();
     }
 
     pub fn expect_advance<T: TokenPattern, E: CtlError>(

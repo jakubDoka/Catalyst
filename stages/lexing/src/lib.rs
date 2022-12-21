@@ -10,7 +10,7 @@ mod lexer;
 mod token;
 
 pub use {
-    ctl::{ctl_lexer_next, CtlLexer, TokenMacro, TokenMacroCtx, TokenMacroData, TokenMacroSpec},
+    ctl::ctl_lexer_next,
     lexer::Lexer,
     token::{Token, TokenKind, EQUAL_SIGN_PRECEDENCE},
 };

@@ -1,6 +1,5 @@
 use std::{alloc, ops::Not};
 use std::{
-    alloc::Layout,
     ffi::CStr,
     ptr::{slice_from_raw_parts_mut, NonNull},
 };
@@ -360,53 +359,53 @@ impl Default for JitResources {
     }
 }
 
-macro_rules! gen_macro_structs {
-    (
-        $(
-            $backing:ident $name:ident $func:ident {
-                $($fn_name:ident)+
-            }
-        )*
-    ) => {
-        $(
-            #[derive(Clone, Copy)]
-            pub struct $name {
-                pub layout: Layout,
-                pub name: Ident,
-                $(pub $fn_name: FragRef<CompiledFunc>),+
-            }
+// macro_rules! gen_macro_structs {
+//     (
+//         $(
+//             $backing:ident $name:ident $func:ident {
+//                 $($fn_name:ident)+
+//             }
+//         )*
+//     ) => {
+//         $(
+//             #[derive(Clone, Copy)]
+//             pub struct $name {
+//                 pub layout: Layout,
+//                 pub name: Ident,
+//                 $(pub $fn_name: FragRef<CompiledFunc>),+
+//             }
 
-            impl $name {
-                pub fn new(layout: Layout, name: Ident, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
-                    Some(Self {
-                        layout,
-                        name,
-                        $($fn_name: fns.next()?),+
-                    })
-                }
-            }
-        )*
+//             impl $name {
+//                 pub fn new(layout: Layout, name: Ident, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
+//                     Some(Self {
+//                         layout,
+//                         name,
+//                         $($fn_name: fns.next()?),+
+//                     })
+//                 }
+//             }
+//         )*
 
-        impl JitContext {
-            $(
-                pub fn $func(&self, spec: &$name) -> Option<$backing> {
-                    unsafe {
-                        Some($backing {
-                            layout: spec.layout,
-                            $($fn_name: self.get_function(spec.$fn_name)?),+
-                        })
-                    }
-                }
-            )+
-        }
-    };
-}
+//         impl JitContext {
+//             $(
+//                 pub fn $func(&self, spec: &$name) -> Option<$backing> {
+//                     unsafe {
+//                         Some($backing {
+//                             layout: spec.layout,
+//                             $($fn_name: self.get_function(spec.$fn_name)?),+
+//                         })
+//                     }
+//                 }
+//             )+
+//         }
+//     };
+// }
 
-gen_macro_structs! {
-    TokenMacroSpec TokenMacroOwnedSpec token_macro {
-        new next drop
-    }
-}
+// gen_macro_structs! {
+//     TokenMacroSpec TokenMacroOwnedSpec token_macro {
+//         new next drop
+//     }
+// }
 
 #[derive(Debug)]
 pub enum JitRelocError {

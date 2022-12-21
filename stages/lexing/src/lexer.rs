@@ -33,7 +33,15 @@ impl<'a> Lexer<'a> {
 
     #[inline]
     pub fn next_tok(&mut self) -> Token {
-        let kind = self.inner.next().unwrap_or(TokenKind::Eof);
+        // eof happens twice at the end of the file
+        // so cold branch is optimal
+        #[cold]
+        #[inline(never)]
+        fn default_tok() -> TokenKind {
+            TokenKind::Eof
+        }
+
+        let kind = self.inner.next().unwrap_or_else(default_tok);
         let span = Span::new(self.inner.span());
         Token { kind, span }
     }
