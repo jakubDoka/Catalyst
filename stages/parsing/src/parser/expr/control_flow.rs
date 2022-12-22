@@ -2,13 +2,6 @@ use std::ops::Not;
 
 use super::*;
 
-#[derive(Debug, Clone, Copy)]
-pub struct LoopAst<'a> {
-    pub r#loop: Span,
-    pub label: Option<NameAst>,
-    pub body: ExprAst<'a>,
-}
-
 impl<'a> Ast<'a> for LoopAst<'a> {
     type Args = ();
 
@@ -25,13 +18,6 @@ impl<'a> Ast<'a> for LoopAst<'a> {
     fn span(&self) -> Span {
         self.r#loop.joined(self.body.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BreakAst<'a> {
-    pub r#break: Span,
-    pub label: Option<NameAst>,
-    pub value: Option<ExprAst<'a>>,
 }
 
 impl<'a> Ast<'a> for BreakAst<'a> {
@@ -59,12 +45,6 @@ impl<'a> Ast<'a> for BreakAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ContinueAst {
-    pub r#continue: Span,
-    pub label: Option<NameAst>,
-}
-
 impl Ast<'_> for ContinueAst {
     type Args = ();
 
@@ -80,15 +60,6 @@ impl Ast<'_> for ContinueAst {
     fn span(&self) -> Span {
         self.label.map(|l| l.span()).unwrap_or(self.r#continue)
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct IfAst<'a> {
-    pub r#if: Span,
-    pub cond: ExprAst<'a>,
-    pub body: IfBlockAst<'a>,
-    pub elifs: &'a [ElifAst<'a>],
-    pub r#else: Option<(Span, IfBlockAst<'a>)>,
 }
 
 impl<'a> Ast<'a> for IfAst<'a> {
@@ -122,13 +93,6 @@ impl<'a> Ast<'a> for IfAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ElifAst<'a> {
-    pub elif: Span,
-    pub cond: ExprAst<'a>,
-    pub body: IfBlockAst<'a>,
-}
-
 impl<'a> Ast<'a> for ElifAst<'a> {
     type Args = (Span,);
 
@@ -143,12 +107,6 @@ impl<'a> Ast<'a> for ElifAst<'a> {
     fn span(&self) -> Span {
         self.elif.joined(self.body.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum IfBlockAst<'a> {
-    Block(ListAst<'a, ExprAst<'a>>),
-    Arrow(Span, ExprAst<'a>),
 }
 
 impl<'a> Ast<'a> for IfBlockAst<'a> {
@@ -174,13 +132,6 @@ impl<'a> Ast<'a> for IfBlockAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct MatchExprAst<'a> {
-    pub r#match: Span,
-    pub expr: ExprAst<'a>,
-    pub body: ListAst<'a, MatchArmAst<'a>>,
-}
-
 impl<'a> Ast<'a> for MatchExprAst<'a> {
     type Args = ();
 
@@ -197,12 +148,6 @@ impl<'a> Ast<'a> for MatchExprAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct MatchArmAst<'a> {
-    pub pattern: PatAst<'a>,
-    pub body: IfBlockAst<'a>,
-}
-
 impl<'a> Ast<'a> for MatchArmAst<'a> {
     type Args = ();
 
@@ -216,12 +161,6 @@ impl<'a> Ast<'a> for MatchArmAst<'a> {
     fn span(&self) -> Span {
         self.pattern.span().joined(self.body.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ReturnExprAst<'a> {
-    pub return_span: Span,
-    pub expr: Option<ExprAst<'a>>,
 }
 
 impl<'a> Ast<'a> for ReturnExprAst<'a> {

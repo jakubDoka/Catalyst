@@ -1,29 +1,20 @@
-use super::{expr::CALL_ARGS_SYNTAX, *};
+use super::*;
 
-#[derive(Clone, Copy, Debug)]
-pub enum TyAst<'a> {
-    Path(PathAst<'a>),
-    Pointer(&'a TyPointerAst<'a>),
-    Tuple(ListAst<'a, TyAst<'a>>),
-    Wildcard(Span),
-}
-
-impl<'a> Ast<'a> for TyAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        branch! {ctx => {
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn ty(&mut self) -> Option<TyAst<'arena, M>> {
+        branch! {self => {
             Ident => {
-                if ctx.current_token_str() == "_" {
-                    return Some(Self::Wildcard(ctx.advance().span));
+                if self.at("_") {
+                    return Some(TyAst::Wildcard(self.advance().source_meta()));
                 }
 
-                ctx.parse().map(TyAst::Path)
+                self.path(None).map(TyAst::Path)
             },
-            LeftParen => ctx.parse_args(CALL_ARGS_SYNTAX.into()).map(TyAst::Tuple),
-            Operator(_ = 0) => branch!(str ctx => {
-                "^" => ctx.parse()
-                    .map(|p| ctx.arena.alloc(p))
+            LeftParen => self.list("tuple", Self::ty, Tk::LeftParen, Tk::Comma, Tk::RightParen)
+                .map(TyAst::Tuple),
+            Operator(_ = 0) => branch!(str self => {
+                "^" => self.pointer()
+                    .map(|p| self.arena.alloc(p))
                     .map(TyAst::Pointer),
                 @"prefixed type",
             }),
@@ -31,62 +22,43 @@ impl<'a> Ast<'a> for TyAst<'a> {
         }}
     }
 
-    fn span(&self) -> Span {
-        match *self {
-            TyAst::Path(ident) => ident.span(),
-            TyAst::Pointer(pointer) => pointer.span(),
-            TyAst::Tuple(tuple) => tuple.span(),
-            TyAst::Wildcard(span) => span,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct TyPointerAst<'a> {
-    pub carrot: Span,
-    pub mutability: MutabilityAst<'a>,
-    pub ty: TyAst<'a>,
-}
-
-impl<'a> Ast<'a> for TyPointerAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn pointer(&mut self) -> Option<TyPointerAst<'arena, M>> {
         Some(TyPointerAst {
-            carrot: ctx.advance().span,
-            mutability: ctx.parse()?,
-            ty: ctx.parse()?,
+            carrot: self.advance().source_meta(),
+            mutability: self.mutability()?,
+            ty: self.ty()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.carrot.joined(self.ty.span())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum MutabilityAst<'a> {
-    Mut(Span),
-    None,
-    Generic(Span, PathAst<'a>),
-}
-
-impl<'a> Ast<'a> for MutabilityAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(branch! {ctx => {
-            Mut => Self::Mut(ctx.advance().span),
-            Use => Self::Generic(ctx.advance().span, ctx.parse()?),
-            @ => Self::None,
+    fn mutability(&mut self) -> Option<MutabilityAst<'arena, M>> {
+        Some(branch! {self => {
+            Mut => MutabilityAst::Mut(self.advance().source_meta()),
+            Use => MutabilityAst::Generic(self.advance().source_meta(), self.path(None)?),
+            @"mutability",
         }})
     }
 
-    fn span(&self) -> Span {
-        match self {
-            MutabilityAst::Mut(span) => *span,
-            MutabilityAst::None => Span::default(),
-            MutabilityAst::Generic(span, _) => *span,
-        }
+    pub fn path(&mut self, leading_slash: Option<SourceMeta<M>>) -> Option<PathAst<'arena, M>> {
+        Some(PathAst {
+            leading_slash,
+            start: self.path_segment()?,
+            segments: {
+                let mut segments = bumpvec![];
+                while self.at(Tk::BackSlash) {
+                    self.advance();
+                    segments.push(self.path_segment()?);
+                }
+                self.arena.alloc_iter(segments)
+            },
+        })
+    }
+
+    fn path_segment(&mut self) -> Option<PathSegment<'arena, M>> {
+        branch! {self => {
+            Ident => Some(PathSegment::Name(self.name_unchecked())),
+            LeftBracket => self.array("path segment generics", Self::ty)
+                .map(PathSegment::Params),
+            @"path segment",
+        }}
     }
 }

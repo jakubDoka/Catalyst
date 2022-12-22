@@ -1,6 +1,7 @@
 #![feature(default_free_fn)]
 #![feature(type_alias_impl_trait)]
 #![feature(let_chains)]
+#![feature(never_type)]
 
 #[macro_export]
 macro_rules! token {
@@ -52,7 +53,7 @@ macro_rules! branch {
             @$($fallback:tt)*
         }
     ) => {
-        match $self.current_token_str() {
+        match $self.span_str($self.current.span) {
             $($str => $res,)*
             _ => {
                 $crate::branch!(@str_fallback ($self, $($str)*) $($fallback)*)
@@ -70,10 +71,9 @@ macro_rules! branch {
         @str_fallback ($self:expr, $($str:literal)*) $ast_name:literal,
     ) => {
         {
-            const EXPECTED: &[&str] = &[$($str,)*];
             $self.workspace.push($crate::parser::ExpectedStartOfAst {
                 ast_name: $ast_name,
-                expected: EXPECTED,
+                expected: [$($str,)*].join(", "),
                 found: $self.state.current.kind,
                 loc: $self.loc(),
             })?
@@ -90,14 +90,13 @@ macro_rules! branch {
         @fallback ($self:expr, $($cond:ident$(($($default:expr),*))?)*) $ast_name:literal,
     ) => {
         {
-            const EXPECTED: &[&str] = &[
-                $(
-                    TokenKind::$cond$(($($default),*))?.as_str(),
-                )*
-            ];
             $self.workspace.push($crate::parser::ExpectedStartOfAst {
                 ast_name: $ast_name,
-                expected: EXPECTED,
+                expected: [
+                    $(
+                        TokenKind::$cond$(($($default),*))?.as_str(),
+                    )*
+                ].join(", "),
                 found: $self.state.current.kind,
                 loc: $self.loc(),
             })?
@@ -107,25 +106,7 @@ macro_rules! branch {
 
 mod parser;
 
-pub use parser::{
-    expr::{
-        control_flow::{
-            BreakAst, ContinueAst, ElifAst, IfAst, IfBlockAst, LoopAst, MatchArmAst, MatchExprAst,
-            ReturnExprAst,
-        },
-        pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
-        BinaryExprAst, CallExprAst, DotExprAst, EnumCtorAst, ExprAst, LetAst, StructCtorAst,
-        UnitExprAst,
-    },
-    func::{FuncArgAst, FuncBodyAst, FuncDefAst, FuncSigAst},
-    imports::{ImportAst, UseAst, UseAstSkip},
-    items::{
-        EnumAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst, ImplItemAst,
-        ImplTarget, InlineModeAst, ItemAst, SpecAst, TopLevelAttrKindAst, TopLevelAttributeAst,
-    },
-    manifest::{ManifestAst, ManifestDepAst, ManifestFieldAst, ManifestValueAst},
-    r#struct::{StructAst, StructCtorFieldAst, StructFieldAst},
-    spec::SpecExprAst,
-    ty::{MutabilityAst, TyAst, TyPointerAst},
-    GenericParamAst, PathAst, PathItemAst,
+pub use {
+    parser::{Parser, ParserCtx},
+    parsing_t::*,
 };

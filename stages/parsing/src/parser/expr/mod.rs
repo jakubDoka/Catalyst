@@ -6,17 +6,6 @@ use packaging_t::Source;
 
 use super::*;
 
-list_syntax! {
-    const BLOCK_SYNTAX = (LeftCurly NewLine RightCurly);
-    const CALL_ARGS_SYNTAX = (LeftParen Comma RightParen);
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ExprAst<'a> {
-    Unit(&'a UnitExprAst<'a>),
-    Binary(&'a BinaryExprAst<'a>),
-}
-
 impl<'a> Ast<'a> for ExprAst<'a> {
     type Args = ();
 
@@ -31,13 +20,6 @@ impl<'a> Ast<'a> for ExprAst<'a> {
             ExprAst::Binary(binary) => binary.span(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BinaryExprAst<'a> {
-    pub lhs: ExprAst<'a>,
-    pub op: NameAst,
-    pub rhs: ExprAst<'a>,
 }
 
 impl<'a> BinaryExprAst<'a> {
@@ -66,28 +48,6 @@ impl<'a> BinaryExprAst<'a> {
     pub fn span(&self) -> Span {
         self.lhs.span().joined(self.rhs.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum UnitExprAst<'a> {
-    StructCtor(StructCtorAst<'a>),
-    EnumCtor(EnumCtorAst<'a>),
-    DotExpr(&'a DotExprAst<'a>),
-    Call(&'a CallExprAst<'a>),
-    Path(PathAst<'a>),
-    Return(ReturnExprAst<'a>),
-    Int(Span),
-    Char(Span),
-    Bool(Span),
-    Match(MatchExprAst<'a>),
-    If(IfAst<'a>),
-    Loop(LoopAst<'a>),
-    Break(BreakAst<'a>),
-    Continue(ContinueAst),
-    Let(LetAst<'a>),
-    Deref(Span, &'a UnitExprAst<'a>),
-    Ref(Span, MutabilityAst<'a>, &'a UnitExprAst<'a>),
-    Block(ListAst<'a, ExprAst<'a>>),
 }
 
 impl<'a> Ast<'a> for UnitExprAst<'a> {
@@ -175,15 +135,6 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct LetAst<'a> {
-    pub r#let: Span,
-    pub pat: PatAst<'a>,
-    pub ty: Option<(Span, TyAst<'a>)>,
-    pub equal: Span,
-    pub value: ExprAst<'a>,
-}
-
 impl<'a> Ast<'a> for LetAst<'a> {
     type Args = ();
 
@@ -220,12 +171,6 @@ ctl_errors! {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct EnumCtorAst<'a> {
-    pub path: PathAst<'a>,
-    pub value: Option<(Span, ExprAst<'a>)>,
-}
-
 impl<'a> Ast<'a> for EnumCtorAst<'a> {
     type Args = (UnitExprAst<'a>,);
 
@@ -260,13 +205,6 @@ ctl_errors! {
         span: Span,
         source: VRef<Source>,
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StructCtorAst<'a> {
-    pub path: Option<PathAst<'a>>,
-    pub slash: Span,
-    pub body: ListAst<'a, StructCtorFieldAst<'a>>,
 }
 
 impl<'a> Ast<'a> for StructCtorAst<'a> {
@@ -307,13 +245,6 @@ ctl_errors! {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct DotExprAst<'a> {
-    pub lhs: UnitExprAst<'a>,
-    pub dot: Span,
-    pub rhs: PathAst<'a>,
-}
-
 impl<'a> Ast<'a> for DotExprAst<'a> {
     type Args = (UnitExprAst<'a>,);
 
@@ -328,12 +259,6 @@ impl<'a> Ast<'a> for DotExprAst<'a> {
     fn span(&self) -> Span {
         self.lhs.span().joined(self.rhs.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CallExprAst<'a> {
-    pub callable: UnitExprAst<'a>,
-    pub args: ListAst<'a, ExprAst<'a>>,
 }
 
 impl<'a> Ast<'a> for CallExprAst<'a> {

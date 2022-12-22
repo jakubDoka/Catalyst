@@ -4,8 +4,7 @@ use std::{
 };
 
 use crate::*;
-use lexing_t::Span;
-use parsing_t::Vis;
+use lexing_t::*;
 
 use storage::*;
 

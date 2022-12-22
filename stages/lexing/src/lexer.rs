@@ -1,10 +1,10 @@
-use crate::*;
+use crate::{token::TokenMeta, *};
 use lexing_t::*;
 
 /// Tight wrapper around logos lexer that provides specific tokens
 /// instead.
 pub struct Lexer<'a> {
-    inner: logos::Lexer<'a, TokenKind>,
+    pub(crate) inner: logos::Lexer<'a, TokenKind>,
 }
 
 impl<'a> Lexer<'a> {
@@ -16,7 +16,7 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    pub fn inner_span_str(&self, span: Span) -> &str {
+    pub fn span_str(&self, span: Span) -> &str {
         &self.inner.source()[span.range()]
     }
 
@@ -32,7 +32,12 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    pub fn next_tok(&mut self) -> Token {
+    pub fn source(&self) -> &'a str {
+        self.inner.source()
+    }
+
+    #[inline]
+    pub fn next_tok<M: TokenMeta>(&mut self) -> Token<M> {
         // eof happens twice at the end of the file
         // so cold branch is optimal
         #[cold]
@@ -43,15 +48,10 @@ impl<'a> Lexer<'a> {
 
         let kind = self.inner.next().unwrap_or_else(default_tok);
         let span = Span::new(self.inner.span());
-        Token { kind, span }
-    }
-}
-
-impl Iterator for Lexer<'_> {
-    type Item = Token;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.next_tok())
+        Token {
+            kind,
+            span,
+            meta: M::new(self),
+        }
     }
 }

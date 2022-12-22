@@ -12,5 +12,6 @@ mod token;
 pub use {
     ctl::ctl_lexer_next,
     lexer::Lexer,
-    token::{Token, TokenKind, EQUAL_SIGN_PRECEDENCE},
+    lexing_t::*,
+    token::{NoTokenMeta, SourceMeta, Token, TokenKind, TokenMeta, EQUAL_SIGN_PRECEDENCE},
 };

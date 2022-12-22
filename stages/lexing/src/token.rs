@@ -2,15 +2,57 @@ use lexing_t::*;
 use logos::Logos;
 use std::fmt;
 
+use crate::Lexer;
+
 pub const EQUAL_SIGN_PRECEDENCE: u8 = 14;
 
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
-pub struct Token {
+pub struct Token<M> {
     pub kind: TokenKind,
     /// Span points to &str inside source file. Origin of span is
     /// implied by surrounding code.
     pub span: Span,
+    pub meta: M,
+}
+
+impl<M> Token<M> {
+    pub fn source_meta(self) -> SourceMeta<M> {
+        SourceMeta {
+            span: self.span,
+            meta: self.meta,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+pub struct SourceMeta<M> {
+    pub span: Span,
+    pub meta: M,
+}
+
+pub trait TokenMeta: Clone + Copy + 'static {
+    fn new(lexer: &Lexer) -> Self;
+}
+
+#[derive(Clone, Copy)]
+pub struct NoTokenMeta;
+
+impl TokenMeta for NoTokenMeta {
+    fn new(_: &Lexer) -> Self {
+        Self
+    }
+}
+
+impl TokenMeta for u32 {
+    fn new(lexer: &Lexer) -> Self {
+        lexer
+            .inner
+            .clone()
+            .spanned()
+            .next()
+            .map_or(lexer.progress(), |(.., span)| span.start) as Self
+    }
 }
 
 /// Generates the [`TokenKind`] struct and some useful methods.
@@ -191,8 +233,8 @@ gen_kind!(
     }
 
     paren_pairs {
-        LeftCurly = "{",
-        RightCurly = "}",
+        LeftBrace = "{",
+        RightBrace = "}",
         LeftParen = "(",
         RightParen = ")",
         LeftBracket = "[",
@@ -204,7 +246,7 @@ gen_kind!(
         Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
         Macro = r"[a-zA-Z_][a-zA-Z0-9_]*!",
         Int = "[0-9]+((u)(32)|uint)?",
-        String = r#""(\\"|[^"])*""#,
+        Str = r#""(\\"|[^"])*""#,
         Bool = "(true|false)",
         Char = r"'(.|\\(n|r|t|\\|'))'",
     }

@@ -245,7 +245,7 @@ impl PackageLoader<'_> {
             self.interner,
             source,
         )
-        .parse::<UseAst>()?;
+        .parse::<ImportsAst>()?;
 
         let deps = self.resolve_module_deps(imports, package, source, ctx);
 
@@ -262,7 +262,7 @@ impl PackageLoader<'_> {
 
     fn resolve_module_deps(
         &mut self,
-        imports: UseAst,
+        imports: ImportsAst,
         package_id: VRef<Package>,
         origin: VRef<Source>,
         ctx: &mut ResourceLoaderCtx,

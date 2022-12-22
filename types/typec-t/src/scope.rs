@@ -3,8 +3,6 @@ use std::collections::hash_map;
 use diags::SourceLoc;
 use lexing_t::*;
 use packaging_t::{Module, Resources, Source};
-use parsing_t::*;
-
 use storage::*;
 
 use crate::*;

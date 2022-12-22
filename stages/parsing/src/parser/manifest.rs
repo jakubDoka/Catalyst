@@ -1,162 +1,68 @@
 use diags::{ctl_errors, SourceLoc};
 
-use super::{expr::BLOCK_SYNTAX, *};
+use super::*;
 
-#[derive(Clone, Copy, Debug)]
-pub struct ManifestAst<'a> {
-    pub fields: &'a [ManifestFieldAst<'a>],
-    pub deps_span: Option<Span>,
-    pub deps: ListAst<'a, ManifestDepAst>,
-}
-
-impl ManifestAst<'_> {
-    pub fn find_field(&self, name: Ident) -> Option<ManifestFieldAst> {
-        self.fields
-            .iter()
-            .find(|field| field.name.ident == name)
-            .copied()
-    }
-}
-
-impl<'a> Ast<'a> for ManifestAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn manifest(&mut self) -> Option<ManifestAst<'arena, M>> {
         let mut fields = bumpvec![];
         let mut deps = None;
-        let mut deps_span = None;
         loop {
-            ctx.skip(TokenKind::NewLine);
+            self.skip(TokenKind::NewLine);
 
-            if ctx.at(TokenKind::Eof) {
+            if self.at(TokenKind::Eof) {
                 break;
             }
 
-            if let Some(token) = ctx.try_advance("deps") && deps.is_none() {
-                deps_span = Some(token.span);
-                deps = Some(ctx.parse_args(BLOCK_SYNTAX.into())?);
+            if let Some(deps_span) = self.try_advance("deps") && deps.is_none() {
+                deps = Some(DepsAst {
+                    deps: deps_span,
+                    list: self.object("dependency list", Self::manifest_dep)?,
+                });
                 continue;
             }
 
-            fields.push(ctx.parse()?);
+            fields.push(self.manifest_field()?);
         }
 
-        Some(Self {
-            fields: ctx.arena.alloc_slice(&fields),
-            deps_span,
-            deps: deps.unwrap_or_default(),
+        Some(ManifestAst {
+            fields: self.arena.alloc_slice(&fields),
+            deps,
         })
     }
 
-    fn span(&self) -> Span {
-        Span::default()
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ManifestFieldAst<'a> {
-    pub name: NameAst,
-    pub value: ManifestValueAst<'a>,
-}
-
-impl<'a> Ast<'a> for ManifestFieldAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn manifest_field(&mut self) -> Option<ManifestFieldAst<'arena, M>> {
         Some(ManifestFieldAst {
-            name: ctx.parse()?,
-            value: {
-                ctx.expect_advance(TokenKind::Colon, |ctx| MissingManifestFieldColon {
-                    got: ctx.state.current.kind,
-                    loc: ctx.loc(),
-                })?;
-                ManifestValueAst::parse(ctx)?
-            },
+            name: self.name("manifest field")?,
+            colon: self.expect(Tk::Colon, |s| MissingColon {
+                loc: s.loc(),
+                something: "manifest field",
+                found: s.state.current.kind,
+            })?,
+            value: self.manifest_value()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.name.span().joined(self.value.span())
-    }
-}
-
-ctl_errors! {
-    #[err => "expected ':' but got {got} when parsing manifest field"]
-    #[info => "colon is required for readability"]
-    error MissingManifestFieldColon: fatal {
-        #[err loc]
-        got: TokenKind,
-        loc: SourceLoc,
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ManifestValueAst<'a> {
-    String(Span),
-    Object(ListAst<'a, ManifestFieldAst<'a>>),
-    Array(ListAst<'a, ManifestValueAst<'a>>),
-}
-
-impl<'a> Ast<'a> for ManifestValueAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        branch! {ctx => {
-            String => Some(ManifestValueAst::String(ctx.advance().span)),
-            LeftBracket => ctx.parse_args(GENERICS_SYNTAX.into()).map(ManifestValueAst::Array),
-            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(ManifestValueAst::Object),
+    fn manifest_value(&mut self) -> Option<ManifestValueAst<'arena, M>> {
+        branch! {self => {
+            Str => Some(ManifestValueAst::String(self.advance().source_meta())),
+            LeftBracket => self.array("manifest list", Self::manifest_value)
+                .map(ManifestValueAst::Array),
+            LeftBrace => self.list("manifest object", Self::manifest_field, Tk::LeftBrace, Tk::NewLine, Tk::RightBrace)
+                .map(ManifestValueAst::Object),
             @"manifest value",
         }}
     }
 
-    fn span(&self) -> Span {
-        match self {
-            ManifestValueAst::String(s) => *s,
-            ManifestValueAst::Object(o) => o.span(),
-            ManifestValueAst::Array(a) => a.span(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ManifestDepAst {
-    pub git: bool,
-    pub name: NameAst,
-    pub path: Span,
-    pub version: Option<Span>,
-    pub span: Span,
-}
-
-impl<'a> Ast<'a> for ManifestDepAst {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let start = ctx.state.current.span;
-        let git = ctx.try_advance("git").is_some();
-        let name = ctx.parse_args((true, "dependency name"));
-        let path = ctx
-            .expect_advance(TokenKind::String, |ctx| ExpectedDepStringPath {
-                got: ctx.state.current.kind,
-                loc: ctx.loc(),
-            })?
-            .span;
-        let version = ctx.try_advance(TokenKind::String).map(|t| t.span);
-        let span = start.joined(version.unwrap_or(path));
-        let path = path.shrink(1);
-        let version = version.map(|v| v.shrink(1));
-        let name = name.unwrap_or_else(|| NameAst::from_path(ctx, path));
-
-        Some(Self {
-            git,
-            name,
-            path,
-            version,
-            span,
+    fn manifest_dep(&mut self) -> Option<ManifestDepAst<M>> {
+        Some(ManifestDepAst {
+            git: self.try_advance("git"),
+            name: self.at(Tk::Ident).then(|| self.name_unchecked()),
+            path: self.expect(TokenKind::Str, |s| ExpectedDepStringPath {
+                got: s.state.current.kind,
+                loc: s.loc(),
+            })?,
+            version: self.try_advance(TokenKind::Str),
         })
-    }
-
-    fn span(&self) -> Span {
-        self.span
     }
 }
 

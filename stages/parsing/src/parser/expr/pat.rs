@@ -1,14 +1,5 @@
 use super::*;
 
-#[derive(Debug, Clone, Copy)]
-pub enum PatAst<'a> {
-    Binding(Option<Span>, NameAst),
-    Wildcard(Span),
-    StructCtor(StructCtorPatAst<'a>),
-    EnumCtor(&'a EnumCtorPatAst<'a>),
-    Int(Span),
-}
-
 impl<'a> Ast<'a> for PatAst<'a> {
     type Args = Option<Span>;
 
@@ -54,13 +45,6 @@ impl<'a> Ast<'a> for PatAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct EnumCtorPatAst<'a> {
-    pub slash: Span,
-    pub name: NameAst,
-    pub value: Option<(Span, PatAst<'a>)>,
-}
-
 impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
     type Args = Option<Span>;
 
@@ -84,12 +68,6 @@ impl<'a> Ast<'a> for EnumCtorPatAst<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct StructCtorPatAst<'a> {
-    pub slash: Span,
-    pub fields: ListAst<'a, StructCtorPatFieldAst<'a>>,
-}
-
 impl<'a> Ast<'a> for StructCtorPatAst<'a> {
     type Args = Option<Span>;
 
@@ -104,20 +82,6 @@ impl<'a> Ast<'a> for StructCtorPatAst<'a> {
     fn span(&self) -> Span {
         self.slash.joined(self.fields.span())
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StructCtorPatFieldAst<'a> {
-    Simple {
-        mutable: Option<Span>,
-        name: NameAst,
-    },
-    Named {
-        name: NameAst,
-        colon: Span,
-        pat: PatAst<'a>,
-    },
-    DoubleDot(Span),
 }
 
 impl<'a> Ast<'a> for StructCtorPatFieldAst<'a> {
