@@ -120,7 +120,7 @@ impl<'a> Ast<'a> for FuncBodyAst<'a> {
                 ctx.skip(TokenKind::NewLine);
                 ctx.parse().map(|e| Self::Arrow(arrow, e))
             },
-            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
+            LeftBrace => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
             Extern => Some(Self::Extern(ctx.advance().span)),
             @"function body",
         }}

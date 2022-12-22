@@ -5,7 +5,7 @@ use super::*;
 
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
 list_syntax! {
-    const ITEM_BODY_SYNTAX = (? LeftCurly NewLine RightCurly);
+    const ITEM_BODY_SYNTAX = (? LeftBrace NewLine RightCurly);
     const ITEMS_SYNTAX = (none NewLine [Break Eof]);
 }
 

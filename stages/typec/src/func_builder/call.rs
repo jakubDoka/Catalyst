@@ -3,7 +3,7 @@ use super::*;
 impl TyChecker<'_> {
     pub fn call<'a>(
         &mut self,
-        call @ CallExprAst { callable, .. }: CallExprAst,
+        call @ CallAst { callable, .. }: CallAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
@@ -45,7 +45,7 @@ impl TyChecker<'_> {
         func: FragRef<Func>,
         params: Option<ListAst<TyAst>>,
         caller: Option<Result<Ty, TirNode<'a>>>,
-        call @ CallExprAst { args, .. }: CallExprAst,
+        call @ CallAst { args, .. }: CallAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
@@ -102,7 +102,7 @@ impl TyChecker<'_> {
         func: FragRef<SpecFunc>,
         params: Option<ListAst<TyAst>>,
         caller: Result<Ty, TirNode<'a>>,
-        call @ CallExprAst { args, .. }: CallExprAst,
+        call @ CallAst { args, .. }: CallAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {

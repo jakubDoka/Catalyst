@@ -188,7 +188,7 @@ impl TyChecker<'_> {
     pub fn if_branch<'a>(
         &mut self,
         cond: ExprAst,
-        body: IfBlockAst,
+        body: BranchAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<IfBranchTir<'a>> {
@@ -199,14 +199,14 @@ impl TyChecker<'_> {
 
     pub fn if_block<'a>(
         &mut self,
-        body: IfBlockAst,
+        body: BranchAst,
         mut inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
         inference = inference.weaken();
         match body {
-            IfBlockAst::Block(body) => self.block(body, inference, builder),
-            IfBlockAst::Arrow(.., body) => {
+            BranchAst::Block(body) => self.block(body, inference, builder),
+            BranchAst::Arrow(.., body) => {
                 let frame = self.scope.start_frame();
                 let expr = self.expr(body, inference, builder);
                 self.scope.end_frame(frame);

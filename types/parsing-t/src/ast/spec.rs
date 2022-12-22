@@ -1,4 +1,4 @@
-use lexing::SourceMeta;
+use lexing::SourceInfo;
 
 use crate::*;
 
@@ -15,7 +15,7 @@ pub struct ParamAst<'a, M> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpecsAst<'a, M> {
-    pub colon: SourceMeta<M>,
+    pub colon: SourceInfo<M>,
     pub first: SpecExprAst<'a, M>,
-    pub rest: &'a [(SourceMeta<M>, SpecExprAst<'a, M>)],
+    pub rest: &'a [(SourceInfo<M>, SpecExprAst<'a, M>)],
 }

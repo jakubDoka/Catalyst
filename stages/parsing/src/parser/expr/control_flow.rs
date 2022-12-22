@@ -2,183 +2,95 @@ use std::ops::Not;
 
 use super::*;
 
-impl<'a> Ast<'a> for LoopAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#loop: ctx.advance().span,
-            label: ctx
-                .try_advance(TokenKind::Label)
-                .map(|tok| NameAst::new(ctx, tok.span)),
-            body: ctx.parse()?,
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn r#loop(&mut self) -> Option<LoopAst<'arena, M>> {
+        Some(LoopAst {
+            r#loop: self.advance(),
+            label: self.at(Tk::Label).then(|| self.name_unchecked()),
+            body: self.expr()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.r#loop.joined(self.body.span())
-    }
-}
-
-impl<'a> Ast<'a> for BreakAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#break: ctx.advance().span,
-            label: ctx
-                .try_advance(TokenKind::Label)
-                .map(|tok| NameAst::new(ctx, tok.span)),
-            value: ctx
-                .at([TokenKind::NewLine, TokenKind::Else])
+    pub fn r#break(&mut self) -> Option<BreakAst<'arena, M>> {
+        Some(BreakAst {
+            r#break: self.advance(),
+            label: self.at(Tk::Label).then(|| self.name_unchecked()),
+            value: self
+                .at([Tk::NewLine, Tk::Else, Tk::Comma])
                 .not()
-                .then(|| ctx.parse())
+                .then(|| self.expr())
                 .transpose()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.value
-            .map(|v| v.span())
-            .or_else(|| self.label.map(|l| l.span()))
-            .map_or(self.r#break, |s| self.r#break.joined(s))
-    }
-}
-
-impl Ast<'_> for ContinueAst {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, '_, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#continue: ctx.advance().span,
-            label: ctx
-                .try_advance(TokenKind::Label)
-                .map(|tok| NameAst::new(ctx, tok.span)),
+    pub fn r#continue(&mut self) -> Option<ContinueAst<M>> {
+        Some(ContinueAst {
+            r#continue: self.advance(),
+            label: self.at(Tk::Label).then(|| self.name_unchecked()),
         })
     }
 
-    fn span(&self) -> Span {
-        self.label.map(|l| l.span()).unwrap_or(self.r#continue)
-    }
-}
-
-impl<'a> Ast<'a> for IfAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#if: ctx.advance().span,
-            cond: ctx.parse()?,
-            body: ctx.parse()?,
+    pub fn r#if(&mut self) -> Option<IfAst<'arena, M>> {
+        Some(IfAst {
+            r#if: self.advance(),
+            cond: self.expr()?,
+            body: self.branch()?,
             elifs: {
                 let mut else_ifs = bumpvec![];
-                while let Some(elif) = ctx.try_advance_ignore_lines(TokenKind::Elif) {
-                    else_ifs.push(ctx.parse_args((elif.span,))?);
+                while self.try_advance_ignore_lines(Tk::Elif).is_some() {
+                    else_ifs.push(self.elif()?);
                 }
-                ctx.arena.alloc_iter(else_ifs)
+                self.arena.alloc_iter(else_ifs)
             },
-            r#else: ctx
-                .try_advance_ignore_lines(TokenKind::Else)
-                .map(|r#else| ctx.parse().map(|body| (r#else.span, body)))
+            r#else: self
+                .try_advance_ignore_lines(Tk::Else)
+                .map(|r#else| self.branch().map(|body| (r#else, body)))
                 .transpose()?,
         })
     }
 
-    fn span(&self) -> Span {
-        let mut span = self.cond.span().joined(self.body.span());
-        if let Some((_, body)) = self.r#else {
-            span = span.joined(body.span());
-        }
-        span
-    }
-}
-
-impl<'a> Ast<'a> for ElifAst<'a> {
-    type Args = (Span,);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (elif,): Self::Args) -> Option<Self> {
-        Some(Self {
-            elif,
-            cond: ctx.parse()?,
-            body: ctx.parse()?,
+    fn elif(&mut self) -> Option<ElifAst<'arena, M>> {
+        Some(ElifAst {
+            elif: self.advance(),
+            cond: self.expr()?,
+            body: self.branch()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.elif.joined(self.body.span())
-    }
-}
-
-impl<'a> Ast<'a> for IfBlockAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        branch!(ctx => {
-            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
-            ThickRightArrow => Some(Self::Arrow(ctx.advance().span, {
-                ctx.skip(TokenKind::NewLine);
-                ctx.parse()?
+    fn branch(&mut self) -> Option<BranchAst<'arena, M>> {
+        branch!(self => {
+            LeftBrace => self.object("branch block", Self::expr).map(BranchAst::Block),
+            ThickRightArrow => Some(BranchAst::Arrow(self.advance(), {
+                self.skip(Tk::NewLine);
+                self.expr()?
             })),
-            @"if block",
+            @"code branch",
         })
     }
 
-    fn span(&self) -> Span {
-        use IfBlockAst::*;
-        match *self {
-            Block(block) => block.span(),
-            Arrow(.., expr) => expr.span(),
-        }
-    }
-}
-
-impl<'a> Ast<'a> for MatchExprAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#match: ctx.advance().span,
-            expr: ctx.parse()?,
-            body: ctx.parse_args(BLOCK_SYNTAX.into())?,
+    pub fn r#match(&mut self) -> Option<MatchExprAst<'arena, M>> {
+        Some(MatchExprAst {
+            r#match: self.advance(),
+            expr: self.expr()?,
+            body: self.object("match statement body", Self::match_arm)?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.r#match.joined(self.body.span())
-    }
-}
-
-impl<'a> Ast<'a> for MatchArmAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            pattern: ctx.parse()?,
-            body: ctx.parse()?,
+    fn match_arm(&mut self) -> Option<MatchArmAst<'arena, M>> {
+        Some(MatchArmAst {
+            pattern: self.pat(None)?,
+            body: self.branch()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.pattern.span().joined(self.body.span())
-    }
-}
-
-impl<'a> Ast<'a> for ReturnExprAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            return_span: ctx.advance().span,
-            expr: ctx
-                .at([TokenKind::NewLine, TokenKind::Else])
+    pub fn r#return(&mut self) -> Option<ReturnExprAst<'arena, M>> {
+        Some(ReturnExprAst {
+            r#return: self.advance(),
+            expr: self
+                .at([Tk::NewLine, Tk::Else, Tk::Comma])
                 .not()
-                .then(|| ctx.parse())
+                .then(|| self.expr())
                 .transpose()?,
         })
-    }
-
-    fn span(&self) -> Span {
-        self.expr
-            .map_or(self.return_span, |e| self.return_span.joined(e.span()))
     }
 }

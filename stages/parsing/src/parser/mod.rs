@@ -208,7 +208,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
         Some(VisAst {
             vis,
-            source_meta: self.advance().source_meta(),
+            source_meta: self.advance(),
         })
     }
 
@@ -216,10 +216,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     // checking //
     //////////////
 
-    fn skip(&mut self, pat: impl TokenPattern) -> Option<SourceMeta<M>> {
+    fn skip(&mut self, pat: impl TokenPattern) -> Option<SourceInfo<M>> {
         let mut source_meta = None;
         while self.at(&pat) {
-            let current = self.advance().source_meta();
+            let current = self.advance();
             match source_meta {
                 None => source_meta = Some(current),
                 Some(ref mut source_meta) => source_meta.meta = current.meta,
@@ -230,6 +230,19 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn span_str(&self, span: Span) -> &str {
         self.lexer.span_str(span)
+    }
+
+    fn try_advance_ignore_lines(&mut self, pat: impl TokenPattern) -> Option<SourceInfo<M>> {
+        if !self.reduce_repetition(Tk::NewLine) {
+            return self.try_advance(pat);
+        }
+
+        if self.next_at(pat) {
+            self.advance();
+            Some(self.advance())
+        } else {
+            None
+        }
     }
 
     fn reduce_repetition(&mut self, pat: impl TokenPattern) -> bool {
@@ -262,26 +275,26 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         &mut self,
         pattern: impl TokenPattern,
         error: impl FnOnce(&mut Self) -> E,
-    ) -> Option<SourceMeta<M>> {
+    ) -> Option<SourceInfo<M>> {
         if !self.at(pattern) {
             let err = error(self);
             self.error(err)?;
         }
 
-        Some(self.advance().source_meta())
+        Some(self.advance())
     }
 
-    fn try_advance(&mut self, pattern: impl TokenPattern) -> Option<SourceMeta<M>> {
+    fn try_advance(&mut self, pattern: impl TokenPattern) -> Option<SourceInfo<M>> {
         if self.at(pattern) {
-            Some(self.advance().source_meta())
+            Some(self.advance())
         } else {
             None
         }
     }
 
-    fn advance(&mut self) -> Token<M> {
+    fn advance(&mut self) -> SourceInfo<M> {
         let current = mem::replace(&mut self.state.next, self.lexer.next_tok());
-        mem::replace(&mut self.current, current)
+        mem::replace(&mut self.current, current).source_meta()
     }
 
     ////////////
@@ -292,14 +305,14 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         &mut self,
         sep: impl TokenPattern,
         end: impl TokenPattern,
-    ) -> Option<Option<SourceMeta<M>>> {
+    ) -> Option<Option<SourceInfo<M>>> {
         loop {
             if self.at(TokenKind::Eof) {
                 return None;
             }
 
             if self.at(&end) {
-                return Some(Some(self.advance().source_meta()));
+                return Some(Some(self.advance()));
             }
 
             if self.at(&sep) {

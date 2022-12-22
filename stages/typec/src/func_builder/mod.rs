@@ -136,9 +136,10 @@ impl TyChecker<'_> {
         use UnitExprAst::*;
         match unit_ast {
             Path(path) => self.value_path(path, inference, builder),
-            Return(ReturnExprAst { return_span, expr }) => {
-                self.r#return(expr, return_span, builder)
-            }
+            Return(ReturnExprAst {
+                r#return: return_span,
+                expr,
+            }) => self.r#return(expr, return_span, builder),
             Int(span) => self.int(span, inference),
             Char(span) => self.char(span),
             Bool(span) => self.bool(span),

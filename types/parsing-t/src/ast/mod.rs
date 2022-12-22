@@ -13,32 +13,68 @@ use storage::*;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ListAst<'a, T, M> {
-    pub start: SourceMeta<M>,
+    pub start: SourceInfo<M>,
     pub elements: &'a [ListElemAst<T, M>],
-    pub end: SourceMeta<M>,
+    pub end: SourceInfo<M>,
+}
+
+impl<'a, T, M> ListAst<'a, T, M> {
+    pub fn span(&self) -> Span {
+        self.start.span.joined(self.end.span)
+    }
+}
+
+impl<T, M> Deref for ListAst<'_, T, M> {
+    type Target = [ListElemAst<T, M>];
+
+    fn deref(&self) -> &Self::Target {
+        self.elements
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct ListElemAst<T, M> {
     pub value: T,
-    pub delim: Option<SourceMeta<M>>,
+    pub delim: Option<SourceInfo<M>>,
+}
+
+impl<T, M> Deref for ListElemAst<T, M> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct WrappedAst<T, M> {
-    pub start: SourceMeta<M>,
+    pub start: SourceInfo<M>,
     pub value: T,
-    pub end: SourceMeta<M>,
+    pub end: SourceInfo<M>,
+}
+
+impl<T, M> WrappedAst<T, M> {
+    pub fn span(&self) -> Span {
+        self.start.span.joined(self.end.span)
+    }
+}
+
+impl<T, M> Deref for WrappedAst<T, M> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct NameAst<M> {
-    pub source_meta: SourceMeta<M>,
+    pub source_meta: SourceInfo<M>,
     pub ident: Ident,
 }
 
 impl<M> Deref for NameAst<M> {
-    type Target = SourceMeta<M>;
+    type Target = SourceInfo<M>;
 
     fn deref(&self) -> &Self::Target {
         &self.source_meta
@@ -47,7 +83,7 @@ impl<M> Deref for NameAst<M> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct VisAst<M> {
-    pub source_meta: SourceMeta<M>,
+    pub source_meta: SourceInfo<M>,
     pub vis: Vis,
 }
 

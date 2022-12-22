@@ -5,7 +5,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         branch! {self => {
             Ident => {
                 if self.at("_") {
-                    return Some(TyAst::Wildcard(self.advance().source_meta()));
+                    return Some(TyAst::Wildcard(self.advance()));
                 }
 
                 self.path(None).map(TyAst::Path)
@@ -24,21 +24,21 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn pointer(&mut self) -> Option<TyPointerAst<'arena, M>> {
         Some(TyPointerAst {
-            carrot: self.advance().source_meta(),
+            carrot: self.advance(),
             mutability: self.mutability()?,
             ty: self.ty()?,
         })
     }
 
-    fn mutability(&mut self) -> Option<MutabilityAst<'arena, M>> {
-        Some(branch! {self => {
-            Mut => MutabilityAst::Mut(self.advance().source_meta()),
-            Use => MutabilityAst::Generic(self.advance().source_meta(), self.path(None)?),
-            @"mutability",
-        }})
+    pub fn mutability(&mut self) -> Option<Option<MutabilityAst<'arena, M>>> {
+        Some(Some(branch! {self => {
+            Mut => MutabilityAst::Mut(self.advance()),
+            Use => MutabilityAst::Generic(self.advance(), self.path(None)?),
+            @ => return Some(None),
+        }}))
     }
 
-    pub fn path(&mut self, leading_slash: Option<SourceMeta<M>>) -> Option<PathAst<'arena, M>> {
+    pub fn path(&mut self, leading_slash: Option<SourceInfo<M>>) -> Option<PathAst<'arena, M>> {
         Some(PathAst {
             leading_slash,
             start: self.path_segment()?,

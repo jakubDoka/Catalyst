@@ -17,8 +17,8 @@ pub struct Token<M> {
 }
 
 impl<M> Token<M> {
-    pub fn source_meta(self) -> SourceMeta<M> {
-        SourceMeta {
+    pub fn source_meta(self) -> SourceInfo<M> {
+        SourceInfo {
             span: self.span,
             meta: self.meta,
         }
@@ -26,7 +26,7 @@ impl<M> Token<M> {
 }
 
 #[derive(Clone, Copy, Default, Debug)]
-pub struct SourceMeta<M> {
+pub struct SourceInfo<M> {
     pub span: Span,
     pub meta: M,
 }

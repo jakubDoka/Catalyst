@@ -6,105 +6,92 @@ use packaging_t::Source;
 
 use super::*;
 
-impl<'a> Ast<'a> for ExprAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let unit = ctx.parse_alloc().map(ExprAst::Unit)?;
-        BinaryExprAst::try_parse_binary(ctx, unit, u8::MAX)
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn expr(&mut self) -> Option<ExprAst<'arena, M>> {
+        let unit = self
+            .unit_expr()
+            .map(|e| self.arena.alloc(e))
+            .map(ExprAst::Unit)?;
+        self.binary_expr(unit, u8::MAX)
     }
 
-    fn span(&self) -> Span {
-        match *self {
-            ExprAst::Unit(unit) => unit.span(),
-            ExprAst::Binary(binary) => binary.span(),
-        }
-    }
-}
-
-impl<'a> BinaryExprAst<'a> {
-    fn try_parse_binary(
-        ctx: &mut ParsingCtx<'_, 'a, '_>,
-        mut lhs: ExprAst<'a>,
+    fn binary_expr(
+        &mut self,
+        mut lhs: ExprAst<'arena, M>,
         prev_precedence: u8,
-    ) -> Option<ExprAst<'a>> {
+    ) -> Option<ExprAst<'arena, M>> {
         Some(loop {
-            let TokenKind::Operator(precedence) = ctx.state.current.kind else {
+            let Tk::Operator(precedence) = self.state.current.kind else {
                 break lhs;
             };
 
             if prev_precedence > precedence {
-                let op = ctx.name_unchecked();
-                ctx.skip(TokenKind::NewLine);
-                let rhs = ctx.parse_alloc().map(ExprAst::Unit)?;
-                let rhs = Self::try_parse_binary(ctx, rhs, precedence)?;
-                lhs = ExprAst::Binary(ctx.arena.alloc(Self { lhs, op, rhs }));
+                let op = self.name_unchecked();
+                self.skip(Tk::NewLine);
+                let rhs = self
+                    .unit_expr()
+                    .map(|e| self.arena.alloc(e))
+                    .map(ExprAst::Unit)?;
+                let rhs = self.binary_expr(rhs, precedence)?;
+                lhs = ExprAst::Binary(self.arena.alloc(BinaryExprAst { lhs, op, rhs }));
             } else {
                 break lhs;
             }
         })
     }
 
-    pub fn span(&self) -> Span {
-        self.lhs.span().joined(self.rhs.span())
-    }
-}
-
-impl<'a> Ast<'a> for UnitExprAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let mut unit = branch!(ctx => {
-            Ident => ctx.parse().map(Self::Path),
+    pub fn unit_expr(&mut self) -> Option<UnitExprAst<'arena, M>> {
+        let mut unit = branch!(self => {
+            Ident => self.path(None).map(UnitExprAst::Path),
             BackSlash => {
-                if ctx.at_next(TokenKind::LeftCurly) {
-                    let slash = ctx.advance().span;
-                    ctx.parse_args((None, slash))
-                        .map(Self::StructCtor)
+                let slash = self.advance();
+                if self.next_at(Tk::LeftBrace) {
+                    self.struct_ctor(None, slash)
+                        .map(UnitExprAst::StructCtor)
                 } else {
-                    ctx.parse().map(Self::Path)
+                    self.path(Some(slash)).map(UnitExprAst::Path)
                 }
             },
-            Return => ctx.parse().map(Self::Return),
-            Int => Some(Self::Int(ctx.advance().span)),
-            Char => Some(Self::Char(ctx.advance().span)),
-            Bool => Some(Self::Bool(ctx.advance().span)),
-            Match => ctx.parse().map(Self::Match),
-            If => ctx.parse().map(Self::If),
-            Loop => ctx.parse().map(Self::Loop),
-            Break => ctx.parse().map(Self::Break),
-            Continue => ctx.parse().map(Self::Continue),
-            Let => ctx.parse().map(Self::Let),
-            Operator(_ = 0) => branch! {str ctx => {
-                "*" => Some(Self::Deref(ctx.advance().span, ctx.parse_alloc()?)),
-                "^" => Some(Self::Ref(ctx.advance().span, ctx.parse()?, ctx.parse_alloc()?)),
-                @ => ctx.workspace.push(TodoSnippet {
+            Return => self.r#return().map(UnitExprAst::Return),
+            Int => Some(UnitExprAst::Int(self.advance())),
+            Char => Some(UnitExprAst::Char(self.advance())),
+            Bool => Some(UnitExprAst::Bool(self.advance())),
+            Match => self.r#match().map(UnitExprAst::Match),
+            If => self.r#if().map(UnitExprAst::If),
+            Loop => self.r#loop().map(UnitExprAst::Loop),
+            Break => self.r#break().map(UnitExprAst::Break),
+            Continue => self.r#continue().map(UnitExprAst::Continue),
+            Let => self.r#let().map(UnitExprAst::Let),
+            Operator(_ = 0) => branch! {str self => {
+                "*" => Some(UnitExprAst::Deref(self.advance(), self.unit_expr().map(|e| self.arena.alloc(e))?)),
+                "^" => Some(UnitExprAst::Ref(self.advance(), self.mutability()?, self.unit_expr().map(|e| self.arena.alloc(e))?)),
+                @ => self.workspace.push(TodoSnippet {
                     message: "unary operators are not yet implemented",
-                    loc: SourceLoc { origin: ctx.source, span: ctx.state.current.span}
+                    loc: SourceLoc { origin: self.source, span: self.state.current.span}
                 })?,
             }},
-            LeftCurly => ctx.parse_args(BLOCK_SYNTAX.into()).map(Self::Block),
+            LeftBrace => self.object("code block", Self::expr).map(UnitExprAst::Block),
             @"expression",
         });
 
         loop {
-            if ctx.reduce_repetition(TokenKind::NewLine) && ctx.at_next(TokenKind::Dot) {
-                ctx.advance();
+            if self.reduce_repetition(Tk::NewLine) && self.next_at(Tk::Dot) {
+                self.advance();
             }
-            unit = branch!(ctx => {
-                LeftParen => ctx.parse_args((unit?, ))
-                    .map(|call| ctx.arena.alloc(call))
-                    .map(Self::Call),
-                Dot => ctx.parse_args((unit?, ))
-                    .map(|path| ctx.arena.alloc(path))
-                    .map(Self::DotExpr),
-                Tilde => ctx.parse_args((unit?, ))
-                    .map(Self::EnumCtor),
+            unit = branch!(self => {
+                LeftParen => self.call(unit?)
+                    .map(|call| self.arena.alloc(call))
+                    .map(UnitExprAst::Call),
+                Dot => self.dot_expr(unit?)
+                    .map(|path| self.arena.alloc(path))
+                    .map(UnitExprAst::DotExpr),
+                Tilde => self.enum_ctor(unit?)
+                    .map(UnitExprAst::EnumCtor),
                 BackSlash => {
-                    let slash = ctx.advance().span;
-                    branch!(ctx => {
-                        LeftCurly => ctx.parse_args((Some(unit?), slash))
-                            .map(Self::StructCtor),
+                    let slash = self.advance();
+                    branch!(self => {
+                        LeftBrace => self.struct_ctor(Some(unit?), slash)
+                            .map(UnitExprAst::StructCtor),
                         @"backslash expression",
                     })
                 },
@@ -113,86 +100,84 @@ impl<'a> Ast<'a> for UnitExprAst<'a> {
         }
     }
 
-    fn span(&self) -> Span {
-        use UnitExprAst::*;
-        match *self {
-            StructCtor(block) => block.span(),
-            DotExpr(dot) => dot.span(),
-            Call(call) => call.span(),
-            Path(path) => path.span(),
-            Return(ret) => ret.span(),
-            Int(span) | Char(span) | Bool(span) => span,
-            Match(r#match) => r#match.span(),
-            EnumCtor(ctor) => ctor.span(),
-            If(r#if) => r#if.span(),
-            Loop(r#loop) => r#loop.span(),
-            Break(r#break) => r#break.span(),
-            Continue(r#continue) => r#continue.span(),
-            Let(r#let) => r#let.span(),
-            Deref(span, expr) | Ref(span, .., expr) => span.joined(expr.span()),
-            Block(block) => block.span(),
-        }
-    }
-}
-
-impl<'a> Ast<'a> for LetAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            r#let: ctx.advance().span,
-            pat: ctx.parse()?,
-            ty: ctx
-                .try_advance(TokenKind::Colon)
-                .map(|colon| ctx.parse().map(|ty| (colon.span, ty)))
+    fn r#let(&mut self) -> Option<LetAst<'arena, M>> {
+        Some(LetAst {
+            r#let: self.advance(),
+            pat: self.pat(None)?,
+            ty: self
+                .try_advance(Tk::Colon)
+                .map(|colon| self.ty().map(|ty| (colon, ty)))
                 .transpose()?,
-            equal: ctx
-                .expect_advance("=", |ctx| ExpectedLetEqual {
-                    got: ctx.state.current.kind,
-                    loc: ctx.loc(),
-                })?
-                .span,
-            value: ctx.parse()?,
+            equal: self.expect("=", |s| ExpectedLetEqual {
+                got: s.state.current.kind,
+                loc: s.loc(),
+            })?,
+            value: self.expr()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.r#let.joined(self.value.span())
-    }
-}
-
-ctl_errors! {
-    #[err => "expected '=' since let statement must be always initialized"]
-    #[info => "this may change in the future"]
-    error ExpectedLetEqual: fatal {
-        #[err loc]
-        got: TokenKind,
-        loc: SourceLoc,
-    }
-}
-
-impl<'a> Ast<'a> for EnumCtorAst<'a> {
-    type Args = (UnitExprAst<'a>,);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (path,): Self::Args) -> Option<Self> {
-        Some(Self {
+    fn enum_ctor(&mut self, path: UnitExprAst<'arena, M>) -> Option<EnumCtorAst<'arena, M>> {
+        Some(EnumCtorAst {
             path: match path {
                 UnitExprAst::Path(path) => path,
-                path => ctx.workspace.push(ExpectedEnumCtorName {
+                path => self.workspace.push(ExpectedEnumCtorName {
                     span: path.span(),
-                    source: ctx.source,
+                    source: self.source,
                 })?,
             },
-            value: ctx
-                .try_advance(TokenKind::Tilde)
-                .map(|tilde| ctx.parse().map(|value| (tilde.span, value)))
+            value: self
+                .try_advance(Tk::Tilde)
+                .map(|tilde| self.expr().map(|value| (tilde, value)))
                 .transpose()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.value.map_or(self.path.span(), |(.., value)| {
-            self.path.span().joined(value.span())
+    fn struct_ctor(
+        &mut self,
+        ty: Option<UnitExprAst<'arena, M>>,
+        slash: SourceInfo<M>,
+    ) -> Option<StructCtorAst<'arena, M>> {
+        let path = ty
+            .map(|ty| match ty {
+                UnitExprAst::Path(path) => Some(path),
+                ty => self.workspace.push(ExpectedStructName {
+                    span: ty.span(),
+                    source: self.source,
+                })?,
+            })
+            .transpose()?;
+
+        Some(StructCtorAst {
+            path,
+            slash,
+            body: self.object("struct constructor body", Self::struct_ctor_field)?,
+        })
+    }
+
+    fn struct_ctor_field(&mut self) -> Option<StructCtorFieldAst<'arena, M>> {
+        Some(StructCtorFieldAst {
+            name: self.name("struct constructor field")?,
+            colon: self.expect(":", |s| MissingColon {
+                something: "struct constructor field",
+                found: s.state.current.kind,
+                loc: s.loc(),
+            })?,
+            value: self.expr()?,
+        })
+    }
+
+    fn dot_expr(&mut self, lhs: UnitExprAst<'arena, M>) -> Option<DotExprAst<'arena, M>> {
+        Some(DotExprAst {
+            lhs,
+            dot: self.advance(),
+            rhs: self.path(None)?,
+        })
+    }
+
+    fn call(&mut self, callable: UnitExprAst<'arena, M>) -> Option<CallAst<'arena, M>> {
+        Some(CallAst {
+            callable,
+            args: self.tuple("function arguments", Self::expr)?,
         })
     }
 }
@@ -205,73 +190,20 @@ ctl_errors! {
         span: Span,
         source: VRef<Source>,
     }
-}
 
-impl<'a> Ast<'a> for StructCtorAst<'a> {
-    type Args = (Option<UnitExprAst<'a>>, Span);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (ty, slash): Self::Args) -> Option<Self> {
-        let path = match ty {
-            Some(UnitExprAst::Path(path)) => Some(path),
-            None => None,
-            Some(ty) => ctx.workspace.push(ExpectedStructName {
-                span: ty.span(),
-                source: ctx.source,
-            })?,
-        };
-
-        Some(Self {
-            path,
-            slash,
-            body: ctx.parse_args(BLOCK_SYNTAX.into())?,
-        })
+    #[err => "expected '=' since let statement must be always initialized"]
+    #[info => "this may change in the future"]
+    error ExpectedLetEqual: fatal {
+        #[err loc]
+        got: Tk,
+        loc: SourceLoc,
     }
 
-    fn span(&self) -> Span {
-        self.path
-            .map(|ty| ty.span())
-            .unwrap_or(self.slash)
-            .joined(self.body.span())
-    }
-}
-
-ctl_errors! {
     #[err => "expected struct name"]
     #[info => "struct constructor can either start with '\\' or type path"]
     error ExpectedStructName: fatal {
         #[err source, span, "here"]
         span: Span,
         source: VRef<Source>,
-    }
-}
-
-impl<'a> Ast<'a> for DotExprAst<'a> {
-    type Args = (UnitExprAst<'a>,);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (lhs,): Self::Args) -> Option<Self> {
-        Some(Self {
-            lhs,
-            dot: ctx.advance().span,
-            rhs: ctx.parse()?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.lhs.span().joined(self.rhs.span())
-    }
-}
-
-impl<'a> Ast<'a> for CallExprAst<'a> {
-    type Args = (UnitExprAst<'a>,);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (callable,): Self::Args) -> Option<Self> {
-        Some(Self {
-            callable,
-            args: ctx.parse_args(CALL_ARGS_SYNTAX.into())?,
-        })
-    }
-
-    fn span(&self) -> Span {
-        self.callable.span().joined(self.args.span())
     }
 }
