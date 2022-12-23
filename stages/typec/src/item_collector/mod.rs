@@ -15,7 +15,7 @@ impl TyChecker<'_> {
     pub fn collect<T: CollectGroup>(
         &mut self,
         items: GroupedItemSlice<T>,
-        collector: fn(&mut Self, T, &[TopLevelAttributeAst]) -> Option<FragRef<T::Output>>,
+        collector: fn(&mut Self, T, &[TopLevelAttrAst]) -> Option<FragRef<T::Output>>,
         out: &mut TypecOutput<T, T::Output>,
     ) -> &mut Self {
         for &(item_ast, attributes) in items.iter() {
@@ -50,7 +50,7 @@ impl TyChecker<'_> {
             body,
             ..
         }: ImplAst<'a>,
-        _: &[TopLevelAttributeAst],
+        _: &[TopLevelAttrAst],
         transfer: &mut AstTransfer<'a>,
     ) -> Option<()> {
         let frame = self.scope.start_frame();
@@ -61,8 +61,8 @@ impl TyChecker<'_> {
         self.generics(generics, &mut spec_set, 0);
 
         let (parsed_ty, parsed_spec) = match target {
-            ImplTarget::Direct(ty) => (self.ty(ty)?, None),
-            ImplTarget::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
+            ImplTargetAst::Direct(ty) => (self.ty(ty)?, None),
+            ImplTargetAst::Spec(spec, .., ty) => (self.ty(ty)?, Some(self.spec(spec)?)),
         };
 
         self.typec.register_ty_generics(parsed_ty, &mut spec_set);
@@ -226,7 +226,7 @@ impl TyChecker<'_> {
     pub fn collect_spec(
         &mut self,
         SpecAst { vis, name, .. }: SpecAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
     ) -> Option<FragRef<SpecBase>> {
         let (loc, meta) = {
             let meta = self.next_humid_item_id::<SpecBase>(name, attributes);
@@ -244,7 +244,7 @@ impl TyChecker<'_> {
     pub fn collect_func(
         &mut self,
         func: FuncDefAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
     ) -> Option<FragRef<Func>> {
         self.collect_func_low(func, attributes, &mut default(), default())
     }
@@ -257,7 +257,7 @@ impl TyChecker<'_> {
             body,
             ..
         }: FuncDefAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
         spec_set: &mut SpecSet,
         ScopeData {
             offset,
@@ -398,7 +398,7 @@ impl TyChecker<'_> {
             generics,
             ..
         }: StructAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
     ) -> Option<FragRef<Struct>> {
         let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let s = Struct {
@@ -417,7 +417,7 @@ impl TyChecker<'_> {
             generics,
             ..
         }: EnumAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
     ) -> Option<FragRef<Enum>> {
         let (loc, meta) = self.humid_item_loc(name, attributes, vis, Some(generics))?;
         let e = Enum {
@@ -431,7 +431,7 @@ impl TyChecker<'_> {
     fn humid_item_loc<T: Humid>(
         &mut self,
         name: NameAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
         vis: Vis,
         check_macro: Option<ListAst<GenericParamAst>>,
     ) -> Option<(Loc, HumidMeta<T>)>
@@ -454,7 +454,7 @@ impl TyChecker<'_> {
     fn next_humid_item_id<I: Humid>(
         &mut self,
         name: NameAst,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
     ) -> HumidMeta<I> {
         if let Some(attr) = attributes
             .iter()
@@ -507,7 +507,7 @@ impl TyChecker<'_> {
 
     fn handle_macro_attr(
         &mut self,
-        attributes: &[TopLevelAttributeAst],
+        attributes: &[TopLevelAttrAst],
         ty: Ty,
         generics: Option<Span>,
     ) {

@@ -18,7 +18,12 @@ pub use {
             EnumCtorAst, ExprAst, IfAst, LetAst, LoopAst, MatchArmAst, MatchExprAst, ReturnExprAst,
             StructCtorAst, StructCtorFieldAst, UnitExprAst,
         },
-        items::{ImportAst, ImportsAst, StructAst, StructFieldAst},
+        func::{FuncArgAst, FuncBodyAst, FuncDefAst, FuncSigAst},
+        items::{
+            EnumAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst, ImplItemAst,
+            ImplTargetAst, ImportAst, ImportsAst, InlineModeAst, ItemAst, SpecAst, StructAst,
+            StructFieldAst, TopLevelAttrAst, TopLevelAttrKindAst,
+        },
         manifest::{DepsAst, ManifestAst, ManifestDepAst, ManifestFieldAst, ManifestValueAst},
         pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
         spec::{ParamAst, ParamSpecsAst, SpecExprAst},

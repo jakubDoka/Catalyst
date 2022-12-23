@@ -1,7 +1,7 @@
 pub mod expr;
-// pub mod func;
+pub mod func;
 pub mod imports;
-// pub mod items;
+pub mod items;
 pub mod manifest;
 pub mod spec;
 pub mod r#struct;
@@ -54,6 +54,14 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             Tk::Comma,
             Tk::RightBracket,
         )
+    }
+
+    fn opt_tuple<T>(
+        &mut self,
+        for_the: &'static str,
+        parser: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<Option<ListAst<'arena, T, M>>> {
+        self.opt_list(for_the, parser, Tk::LeftParen, Tk::Comma, Tk::RightParen)
     }
 
     fn opt_list<T>(

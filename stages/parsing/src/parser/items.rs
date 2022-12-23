@@ -3,31 +3,9 @@ use packaging_t::Source;
 
 use super::*;
 
-pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttributeAst])];
-list_syntax! {
-    const ITEM_BODY_SYNTAX = (? LeftBrace NewLine RightCurly);
-    const ITEMS_SYNTAX = (none NewLine [Break Eof]);
-}
-
-#[derive(Clone, Copy)]
-pub struct GroupedItemsAst<'a> {
-    pub structs: GroupedItemSlice<'a, StructAst<'a>>,
-    pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,
-    pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
-    pub impls: GroupedItemSlice<'a, ImplAst<'a>>,
-    pub enums: GroupedItemSlice<'a, EnumAst<'a>>,
-    pub last: bool,
-    pub span: Span,
-}
-
-impl<'a> Ast<'a> for GroupedItemsAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let items = ctx.parse_args::<ListAst<ItemAst>>(ITEMS_SYNTAX.into())?;
-
-        let last = items.end.is_empty();
-        let span = items.span();
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena, M>> {
+        let (items, last, ..) = self.items()?;
 
         macro_rules! gen_groups {
             (
@@ -43,31 +21,30 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
                 for &item in items.iter() {
                     match item {
                         $(
-                            ItemAst::$enum_name(&s) => $name.push((s, ctx.arena.alloc_iter(attrs.drain(..)))),
+                            ItemAst::$enum_name(&s) => $name.push((s, self.arena.alloc_iter(attrs.drain(..)))),
                         )*
                         ItemAst::Attribute(&a) => attrs.push(a),
                     }
                 }
 
                 if let Some(span) = attrs.into_iter().map(|a| a.span()).reduce(Span::joined) {
-                    ctx.workspace.push(TrailingAttribute {
+                    self.workspace.push(TrailingAttribute {
                         loc: SourceLoc {
                             span,
-                            origin: ctx.source,
+                            origin: self.source,
                         },
                     })?;
                 }
 
                 $(
-                    let $name = ctx.arena.alloc_slice($name.as_slice());
+                    let $name = self.arena.alloc_slice($name.as_slice());
                 )*
 
-                Some(Self {
+                Some(GroupedItemsAst {
                     $(
                         $name,
                     )*
                     last,
-                    span,
                 })
             };
         }
@@ -81,343 +58,169 @@ impl<'a> Ast<'a> for GroupedItemsAst<'a> {
         }
     }
 
-    fn span(&self) -> Span {
-        self.span
+    fn items(&mut self) -> Option<(BumpVec<ItemAst<'arena, M>>, bool)> {
+        let mut items = bumpvec![];
+        let last = loop {
+            self.skip(Tk::NewLine);
+
+            if self.at(Tk::Eof) {
+                break true;
+            }
+
+            if self.at(Tk::Break) {
+                break false;
+            }
+
+            let Some(item) = self.item() else {
+                self.recover_list(Tk::NewLine, Tk::Eof)?;
+                continue;
+            };
+
+            items.push(item);
+        };
+
+        Some((items, last))
     }
-}
 
-#[derive(Clone, Copy, Debug)]
-pub enum ItemAst<'a> {
-    Struct(&'a StructAst<'a>),
-    Func(&'a FuncDefAst<'a>),
-    Spec(&'a SpecAst<'a>),
-    Impl(&'a ImplAst<'a>),
-    Enum(&'a EnumAst<'a>),
-    Attribute(&'a TopLevelAttributeAst),
-}
+    fn item(&mut self) -> Option<ItemAst<'arena, M>> {
+        let vis = self.vis();
 
-impl<'a> Ast<'a> for ItemAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let start = ctx.state.current.span;
-        let vis = ctx.visibility();
-        branch! { ctx => {
-            Struct => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+        branch! { self => {
+            Struct => self.r#struct(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Struct),
-            Func => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+            Func => self.func_def(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Func),
-            Spec => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+            Spec => self.spec(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Spec),
-            Enum => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+            Enum => self.r#enum(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Enum),
-            Impl => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+            Impl => self.r#impl(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Impl),
-            Hash => ctx.parse()
-                .map(|s| ctx.arena.alloc(s))
+            Hash => self.top_level_attr()
+                .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Attribute),
             @"module item",
         }}
     }
 
-    fn span(&self) -> Span {
-        match self {
-            ItemAst::Struct(s) => s.span(),
-            ItemAst::Func(f) => f.span(),
-            ItemAst::Spec(s) => s.span(),
-            ItemAst::Impl(i) => i.span(),
-            ItemAst::Attribute(a) => a.span(),
-            ItemAst::Enum(e) => e.span(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct EnumAst<'a> {
-    pub start: Span,
-    pub vis: Vis,
-    pub r#enum: Span,
-    pub generics: ListAst<'a, GenericParamAst<'a>>,
-    pub name: NameAst,
-    pub body: ListAst<'a, EnumVariantAst<'a>>,
-}
-
-impl<'a> Ast<'a> for EnumAst<'a> {
-    type Args = (Vis, Span);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
-        Some(Self {
-            start,
+    fn r#enum(&mut self, vis: Option<VisAst<M>>) -> Option<EnumAst<'arena, M>> {
+        Some(EnumAst {
             vis,
-            r#enum: ctx.advance().span,
-            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
-            name: ctx.parse()?,
-            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
+            r#enum: self.advance(),
+            generics: self.generics()?,
+            name: self.name("enum")?,
+            body: self.opt_object("enum body", Self::enum_variant)?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.start.joined(self.body.span())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct EnumVariantAst<'a> {
-    pub name: NameAst,
-    pub ty: Option<(Span, TyAst<'a>)>,
-}
-
-impl<'a> Ast<'a> for EnumVariantAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            name: ctx.parse()?,
-            ty: ctx
-                .try_advance(TokenKind::Colon)
-                .map(|colon| ctx.parse().map(|ty| (colon.span, ty)))
+    fn enum_variant(&mut self) -> Option<EnumVariantAst<'arena, M>> {
+        Some(EnumVariantAst {
+            name: self.name("enum variant")?,
+            ty: self
+                .try_advance(Tk::Colon)
+                .map(|colon| self.ty().map(|ty| (colon, ty)))
                 .transpose()?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.ty
-            .map_or(self.name.span, |(_, ty)| self.name.span.joined(ty.span()))
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ImplAst<'a> {
-    pub start: Span,
-    pub vis: Vis,
-    pub r#impl: Span,
-    pub generics: ListAst<'a, GenericParamAst<'a>>,
-    pub target: ImplTarget<'a>,
-    pub body: ListAst<'a, ImplItemAst<'a>>,
-}
-
-impl<'a> Ast<'a> for ImplAst<'a> {
-    type Args = (Vis, Span);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
-        Some(Self {
-            start,
+    fn r#impl(&mut self, vis: Option<VisAst<M>>) -> Option<ImplAst<'arena, M>> {
+        Some(ImplAst {
             vis,
-            r#impl: ctx.advance().span,
-            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
-            target: ctx.parse()?,
-            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
+            r#impl: self.advance(),
+            generics: self.generics()?,
+            target: self.impl_target()?,
+            body: self.opt_object("impl body", Self::impl_item)?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.start.joined(self.body.span())
-    }
-}
+    fn impl_target(&mut self) -> Option<ImplTargetAst<'arena, M>> {
+        self.skip(Tk::NewLine);
+        let ty = self.ty()?;
 
-#[derive(Clone, Copy, Debug)]
-pub enum ImplTarget<'a> {
-    Direct(TyAst<'a>),
-    Spec(SpecExprAst<'a>, Span, TyAst<'a>),
-}
-
-impl<'a> Ast<'a> for ImplTarget<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        ctx.skip(TokenKind::NewLine);
-        let ty = ctx.parse()?;
-        if let Some(tok) = ctx.try_advance(TokenKind::For) {
-            Some(Self::Spec(
+        if let Some(for_) = self.try_advance(Tk::For) {
+            Some(ImplTargetAst::Spec(
                 match ty {
                     TyAst::Path(path) => SpecExprAst { path },
-                    _ => ctx.workspace.push(InvalidSpecImplSyntax {
+                    _ => self.workspace.push(InvalidSpecImplSyntax {
                         span: ty.span(),
-                        source: ctx.source,
+                        source: self.source,
                     })?,
                 },
-                tok.span,
-                ctx.parse()?,
+                for_,
+                self.ty()?,
             ))
         } else {
-            Some(Self::Direct(ty))
+            Some(ImplTargetAst::Direct(ty))
         }
     }
 
-    fn span(&self) -> Span {
-        match self {
-            ImplTarget::Direct(ty) => ty.span(),
-            ImplTarget::Spec(ty, .., spec) => ty.span().joined(spec.span()),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ImplItemAst<'a> {
-    Func(&'a FuncDefAst<'a>),
-}
-
-impl<'a> Ast<'a> for ImplItemAst<'a> {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        let start = ctx.state.current.span;
-        let vis = ctx.visibility();
-        branch! { ctx => {
-            Func => ctx.parse_args((vis, start))
-                .map(|s| ctx.arena.alloc(s))
+    fn impl_item(&mut self) -> Option<ImplItemAst<'arena, M>> {
+        let vis = self.vis();
+        branch! { self => {
+            Func => self.func_def(vis)
+                .map(|s| self.arena.alloc(s))
                 .map(ImplItemAst::Func),
             @"impl item",
         }}
     }
 
-    fn span(&self) -> Span {
-        match self {
-            ImplItemAst::Func(f) => f.span(),
-        }
-    }
-}
-
-ctl_errors! {
-    #[err => "invalid impl item expected one of: {expected}"]
-    error InvalidImplItem: fatal {
-        #[err loc]
-        expected ref: String,
-        loc: SourceLoc,
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct SpecAst<'a> {
-    pub start: Span,
-    pub vis: Vis,
-    pub spec: Span,
-    pub generics: ListAst<'a, GenericParamAst<'a>>,
-    pub name: NameAst,
-    pub inherits: ListAst<'a, SpecExprAst<'a>>,
-    pub body: ListAst<'a, FuncSigAst<'a>>,
-}
-
-impl<'a> Ast<'a> for SpecAst<'a> {
-    type Args = (Vis, Span);
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (vis, start): Self::Args) -> Option<Self> {
-        Some(Self {
-            start,
+    fn spec(&mut self, vis: Option<VisAst<M>>) -> Option<SpecAst<'arena, M>> {
+        Some(SpecAst {
             vis,
-            spec: ctx.advance().span,
-            generics: ctx.parse_args(GENERICS_SYNTAX.into())?,
-            name: ctx.parse()?,
-            inherits: ctx.parse_args(BOUNDS_SYNTAX.into())?,
-            body: ctx.parse_args(ITEM_BODY_SYNTAX.into())?,
+            spec: self.advance(),
+            generics: self.generics()?,
+            name: self.name("spec")?,
+            inherits: self.param_specs()?,
+            body: self.opt_object("spec body", Self::func_sig)?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.start.joined(self.body.span())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct TopLevelAttributeAst {
-    pub hash: Span,
-    pub value: WrappedAst<TopLevelAttrKindAst>,
-}
-
-impl<'a> Ast<'a> for TopLevelAttributeAst {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        Some(Self {
-            hash: ctx.advance().span,
-            value: ctx.parse_args((
-                TokenPat::Kind(TokenKind::LeftBracket),
-                TokenPat::Kind(TokenKind::RightBracket),
-            ))?,
+    fn top_level_attr(&mut self) -> Option<TopLevelAttrAst<M>> {
+        Some(TopLevelAttrAst {
+            hash: self.advance(),
+            value: self.wrapped(
+                Self::top_level_attr_kind,
+                "top level attribute",
+                Tk::LeftBracket,
+                Tk::RightBracket,
+            )?,
         })
     }
 
-    fn span(&self) -> Span {
-        self.hash.joined(self.value.span())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-// #[repr(C, u8)]
-pub enum TopLevelAttrKindAst {
-    Entry(Span),
-    WaterDrop(Span),
-    CompileTime(Span),
-    NoMoves(Span),
-    Macro(Span, NameAst),
-    Inline(Option<WrappedAst<InlineModeAst>>),
-}
-
-impl<'a> Ast<'a> for TopLevelAttrKindAst {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
+    fn top_level_attr_kind(&mut self) -> Option<TopLevelAttrKindAst<M>> {
         use TopLevelAttrKindAst::*;
-        branch! {str ctx => {
-            "entry" => Some(Entry(ctx.advance().span)),
+        branch! {str self => {
+            "entry" => Some(Entry(self.advance())),
             "water_drop" => Some(WaterDrop(
-                ctx.advance().span,
+                self.advance(),
             )),
             "compile_time" => Some(CompileTime(
-                ctx.advance().span,
+                self.advance(),
             )),
-            "no_moves" => Some(NoMoves(ctx.advance().span)),
-            "macro" => Some(Macro(ctx.advance().span, ctx.parse()?)),
+            "no_moves" => Some(NoMoves(self.advance())),
+            "macro" => Some(Macro(self.advance(), self.name("macro")?)),
             "inline" => {
-                if !ctx.at(TokenKind::LeftParen) {
-                    Some(Inline(None))
-                } else {
-                    ctx.parse_args((TokenPat::Kind(TokenKind::LeftParen), TokenPat::Kind(TokenKind::RightParen)))
-                        .map(Some)
-                        .map(Inline)
-                }
+                self.at(Tk::LeftParen).then(||
+                    self.wrapped(Self::inline_mode, "inline mode", Tk::LeftParen, Tk::RightParen)
+                )
+                .transpose()
+                .map(Inline)
             },
             @"top level attribute",
         }}
     }
 
-    fn span(&self) -> Span {
-        use TopLevelAttrKindAst::*;
-        match *self {
-            WaterDrop(span) | CompileTime(span) | Entry(span) | NoMoves(span) => span,
-            Macro(span, name) => span.joined(name.span()),
-            Inline(mode) => mode.map_or(Span::default(), |m| m.span()),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum InlineModeAst {
-    Always(Span),
-    Never(Span),
-}
-
-impl<'a> Ast<'a> for InlineModeAst {
-    type Args = ();
-
-    fn parse_args(ctx: &mut ParsingCtx<'_, 'a, '_>, (): Self::Args) -> Option<Self> {
-        branch! {str ctx => {
-            "always" => Some(InlineModeAst::Always(ctx.advance().span)),
-            "never" => Some(InlineModeAst::Never(ctx.advance().span)),
+    fn inline_mode(&mut self) -> Option<InlineModeAst<M>> {
+        Some(branch! {str self => {
+            "always" => InlineModeAst::Always(self.advance()),
+            "never" => InlineModeAst::Never(self.advance()),
             @"inline mode",
-        }}
-    }
-
-    fn span(&self) -> Span {
-        match *self {
-            InlineModeAst::Always(span) => span,
-            InlineModeAst::Never(span) => span,
-        }
+        }})
     }
 }
 
@@ -444,7 +247,7 @@ ctl_errors! {
         loc: SourceLoc,
     }
 
-    #[err => "trailing attribute"]
+    #[err => "trailing attribute(s)"]
     #[info => "attribute must be placed before the item"]
     error TrailingAttribute: fatal {
         #[err loc]
