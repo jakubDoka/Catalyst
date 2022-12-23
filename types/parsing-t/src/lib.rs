@@ -24,7 +24,9 @@ pub use {
             ImplTargetAst, ImportAst, ImportsAst, InlineModeAst, ItemAst, SpecAst, StructAst,
             StructFieldAst, TopLevelAttrAst, TopLevelAttrKindAst,
         },
-        manifest::{DepsAst, ManifestAst, ManifestDepAst, ManifestFieldAst, ManifestValueAst},
+        manifest::{
+            ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestValueAst,
+        },
         pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
         spec::{ParamAst, ParamSpecsAst, SpecExprAst},
         ty::{MutabilityAst, PathAst, PathSegment, TyAst, TyPointerAst},

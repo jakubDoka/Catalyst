@@ -104,6 +104,7 @@ pub struct Module {
 }
 
 pub struct Dep<T: ?Sized> {
+    pub vis: Option<Vis>,
     pub name_span: Span,
     pub name: Ident,
     pub ptr: VRef<T>,

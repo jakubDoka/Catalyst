@@ -1447,7 +1447,7 @@ impl Worker {
     where
         T::Args: Default,
     {
-        ParsingCtx::new(
+        Parser::new(
             shared.resources.sources[source].content.as_str(),
             &mut self.state.parsing_state,
             arena,

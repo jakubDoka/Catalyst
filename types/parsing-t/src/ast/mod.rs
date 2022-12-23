@@ -23,6 +23,10 @@ impl<'a, T, M> ListAst<'a, T, M> {
     pub fn span(&self) -> Span {
         self.start.span.joined(self.end.span)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.elements.iter().map(|e| &e.value)
+    }
 }
 
 impl<T, M> Deref for ListAst<'_, T, M> {
@@ -69,8 +73,8 @@ impl<T, M> Deref for WrappedAst<T, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct NameAst<M> {
-    pub source_meta: SourceInfo<M>,
+pub struct NameAst<M = NoTokenMeta> {
+    pub source_info: SourceInfo<M>,
     pub ident: Ident,
 }
 
@@ -78,7 +82,7 @@ impl<M> Deref for NameAst<M> {
     type Target = SourceInfo<M>;
 
     fn deref(&self) -> &Self::Target {
-        &self.source_meta
+        &self.source_info
     }
 }
 

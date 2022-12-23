@@ -29,7 +29,31 @@ pub struct Parser<'ctx, 'arena, M> {
     lexer: Lexer<'ctx>,
 }
 
+impl<'ctx, 'arena, M> Drop for Parser<'ctx, 'arena, M> {
+    fn drop(&mut self) {
+        self.state.progress = self.lexer.progress();
+    }
+}
+
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
+    pub fn new(
+        interner: &'ctx mut Interner,
+        workspace: &'ctx mut Workspace,
+        state: &'ctx mut ParserCtx<M>,
+        arena: &'arena Arena,
+        source: VRef<Source>,
+        content: &'ctx str,
+    ) -> Self {
+        Self {
+            interner,
+            workspace,
+            lexer: Lexer::new(content, state.progress),
+            state,
+            arena,
+            source,
+        }
+    }
+
     fn generics(&mut self) -> Option<Option<ListAst<'arena, ParamAst<'arena, M>, M>>> {
         self.opt_array("generic parameters", Self::param)
     }
@@ -204,7 +228,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn name_unchecked(&mut self) -> NameAst<M> {
         let ident = self.interner.intern(self.lexer.span_str(self.current.span));
         let source_meta = self.current.source_meta();
-        NameAst { ident, source_meta }
+        NameAst {
+            ident,
+            source_info: source_meta,
+        }
     }
 
     fn vis(&mut self) -> Option<VisAst<M>> {
@@ -401,6 +428,18 @@ impl<M> DerefMut for Parser<'_, '_, M> {
 pub struct ParserCtx<M> {
     current: Token<M>,
     next: Token<M>,
+    progress: usize,
+}
+
+impl<M: TokenMeta> ParserCtx<M> {
+    pub fn new(source: &str) -> Self {
+        let mut lexer = Lexer::new(source, 0);
+        Self {
+            current: lexer.next_tok(),
+            next: lexer.next_tok(),
+            progress: lexer.progress(),
+        }
+    }
 }
 
 ctl_errors! {

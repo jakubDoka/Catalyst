@@ -1,13 +1,13 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug)]
-pub struct ManifestAst<'a, M> {
+pub struct ManifestAst<'a, M = NoTokenMeta> {
     pub fields: &'a [ManifestFieldAst<'a, M>],
-    pub deps: Option<DepsAst<'a, M>>,
+    pub deps: Option<ManifestDepsAst<'a, M>>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct DepsAst<'a, M> {
+pub struct ManifestDepsAst<'a, M = NoTokenMeta> {
     pub deps: SourceInfo<M>,
     pub list: ListAst<'a, ManifestDepAst<M>, M>,
 }
@@ -32,6 +32,16 @@ pub enum ManifestValueAst<'a, M> {
     String(SourceInfo<M>),
     Object(ListAst<'a, ManifestFieldAst<'a, M>, M>),
     Array(ListAst<'a, ManifestValueAst<'a, M>, M>),
+}
+
+impl<'a, M> ManifestValueAst<'a, M> {
+    pub fn span(&self) -> Span {
+        match self {
+            ManifestValueAst::String(s) => s.span,
+            ManifestValueAst::Object(o) => o.span(),
+            ManifestValueAst::Array(a) => a.span(),
+        }
+    }
 }
 
 impl<M: Copy> ManifestAst<'_, M> {

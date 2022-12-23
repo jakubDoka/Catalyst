@@ -26,7 +26,7 @@ impl<M> Token<M> {
 }
 
 #[derive(Clone, Copy, Default, Debug)]
-pub struct SourceInfo<M> {
+pub struct SourceInfo<M = NoTokenMeta> {
     pub span: Span,
     pub meta: M,
 }
@@ -35,7 +35,7 @@ pub trait TokenMeta: Clone + Copy + 'static {
     fn new(lexer: &Lexer) -> Self;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct NoTokenMeta;
 
 impl TokenMeta for NoTokenMeta {

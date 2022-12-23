@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug)]
-pub struct ImportsAst<'a, M> {
+pub struct ImportsAst<'a, M = NoTokenMeta> {
     pub r#use: SourceInfo<M>,
     pub items: ListAst<'a, ImportAst<M>, M>,
 }
@@ -11,6 +11,14 @@ pub struct ImportAst<M> {
     pub vis: Option<VisAst<M>>,
     pub name: Option<NameAst<M>>,
     pub path: SourceInfo<M>,
+}
+
+impl<M> ImportAst<M> {
+    pub fn span(&self) -> Span {
+        None.or_else(|| self.vis.as_ref().map(|vis| vis.source_meta.span))
+            .or_else(|| self.name.as_ref().map(|name| name.source_info.span))
+            .map_or(self.path.span, |span| span.joined(self.path.span))
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -43,7 +51,7 @@ pub struct EnumAst<'a, M> {
 pub type GroupedItemSlice<'a, T, M> = &'a [(T, &'a [TopLevelAttrAst<M>])];
 
 #[derive(Clone, Copy)]
-pub struct GroupedItemsAst<'a, M> {
+pub struct GroupedItemsAst<'a, M = NoTokenMeta> {
     pub structs: GroupedItemSlice<'a, StructAst<'a, M>, M>,
     pub funcs: GroupedItemSlice<'a, FuncDefAst<'a, M>, M>,
     pub specs: GroupedItemSlice<'a, SpecAst<'a, M>, M>,

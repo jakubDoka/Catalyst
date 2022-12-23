@@ -2,7 +2,6 @@ use std::{mem, path::Path};
 
 use packaging_t::Module;
 use parsing::*;
-use parsing_t::*;
 use storage::*;
 
 use crate::{packages::ResourceLoaderCtx, *};
@@ -24,26 +23,24 @@ pub trait Scheduler {
         };
         self.init(path);
 
-        let mut parse_state = ParsingState::new();
-        let mut ast_data = AstData::new();
+        let mut ast_data = Arena::new();
         for module in order {
             self.before_parsing(module);
 
-            {
-                let res = self.loader();
-                let source = res.resources.modules[module].source;
-                let content = &res.resources.sources[source].content;
-                parse_state.start(content);
-                ParsingCtx::new(
-                    content,
-                    &mut parse_state,
-                    &ast_data,
-                    res.workspace,
-                    res.interner,
-                    source,
-                )
-                .parse::<UseAstSkip>();
-            }
+            let res = self.loader();
+            let source = res.resources.modules[module].source;
+            let content = &res.resources.sources[source].content;
+            let mut parser_ctx = ParserCtx::new(content);
+
+            Parser::new(
+                res.interner,
+                res.workspace,
+                &mut parser_ctx,
+                &ast_data,
+                source,
+                content,
+            )
+            .skip_imports();
 
             loop {
                 let items = {
@@ -51,18 +48,15 @@ pub trait Scheduler {
                     ast_data.clear();
                     let source = res.resources.modules[module].source;
                     let content = &res.resources.sources[source].content;
-                    // hu boy
-                    let mut p = ParsingCtx::new(
-                        content,
-                        &mut parse_state,
-                        &ast_data,
-                        res.workspace,
+                    Parser::new(
                         res.interner,
+                        res.workspace,
+                        &mut parser_ctx,
+                        &ast_data,
                         source,
-                    );
-                    let r = p.parse::<GroupedItemsAst>();
-                    drop(p);
-                    r
+                        content,
+                    )
+                    .grouped_items()
                 };
 
                 let Some(items) = items else {

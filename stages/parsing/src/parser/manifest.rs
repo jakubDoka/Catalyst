@@ -14,7 +14,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             }
 
             if let Some(deps_span) = self.try_advance("deps") && deps.is_none() {
-                deps = Some(DepsAst {
+                deps = Some(ManifestDepsAst {
                     deps: deps_span,
                     list: self.object("dependency list", Self::manifest_dep)?,
                 });

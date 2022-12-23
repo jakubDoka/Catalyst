@@ -5,10 +5,9 @@ use std::{
 
 use crate::*;
 use diags::*;
-use lexing_t::*;
+use lexing::*;
 use packaging_t::*;
 use parsing::*;
-use parsing_t::*;
 use storage::*;
 
 const DEP_ROOT_VAR: &str = "CATALYST_DEP_ROOT";
@@ -20,14 +19,13 @@ pub struct ResourceLoaderCtx {
     modules: Map<PathBuf, DummyModule>,
     package_frontier: Vec<(PathBuf, Option<SourceLoc>)>,
     module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
-    parsing_state: ParsingState,
-    ast_data: Option<AstData>,
+    ast_arena: Option<Arena>,
     dep_root: PathBuf,
 }
 
 impl ResourceLoaderCtx {
-    fn get_ast_data(&mut self) -> AstData {
-        self.ast_data.take().unwrap_or_default()
+    fn get_ast_data(&mut self) -> Arena {
+        self.ast_arena.take().unwrap_or_default()
     }
 
     fn clear(&mut self) {
@@ -36,7 +34,7 @@ impl ResourceLoaderCtx {
         self.modules.clear();
         self.package_frontier.clear();
         self.module_frontier.clear();
-        if let Some(ref mut ast_data) = self.ast_data {
+        if let Some(ref mut ast_data) = self.ast_arena {
             ast_data.clear();
         }
     }
@@ -53,7 +51,7 @@ struct DummyPackage {
 #[derive(Debug)]
 struct DummyModule {
     package: VRef<Package>,
-    deps: Vec<(NameAst, PathBuf)>,
+    deps: Vec<(Option<Vis>, NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
 }
@@ -183,7 +181,7 @@ impl PackageLoader<'_> {
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
             self.load_module(path, package, source, span, &mut ast_data, ctx);
         }
-        ctx.ast_data = Some(ast_data);
+        ctx.ast_arena = Some(ast_data);
 
         for module in ctx.modules.values_mut() {
             let final_module = Module {
@@ -201,14 +199,18 @@ impl PackageLoader<'_> {
             .values_mut()
             .zip(ctx.modules.values());
         for (module, dummy_module) in iter {
-            let deps_iter = dummy_module.deps.iter().filter_map(|(name, path)| {
-                let index = ctx.modules.get(path)?.ordering;
-                Some(Dep {
-                    name_span: name.span,
-                    name: name.ident,
-                    ptr: unsafe { VRef::<Module>::new(index) },
-                })
-            });
+            let deps_iter = dummy_module
+                .deps
+                .iter()
+                .filter_map(|&(vis, name, ref path)| {
+                    let index = ctx.modules.get(path)?.ordering;
+                    Some(Dep {
+                        vis,
+                        name_span: name.span,
+                        name: name.ident,
+                        ptr: unsafe { VRef::<Module>::new(index) },
+                    })
+                });
             let deps = self.resources.module_deps.extend(deps_iter);
             module.deps = deps;
         }
@@ -223,7 +225,7 @@ impl PackageLoader<'_> {
         package: VRef<Package>,
         origin: VRef<Source>,
         span: Span,
-        ast_data: &mut AstData,
+        ast_data: &mut Arena,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let source = self.load_source(
@@ -234,20 +236,22 @@ impl PackageLoader<'_> {
         )?;
 
         let content = &self.resources.sources[source].content;
-        ctx.parsing_state.start(content);
+        let mut parser_ctx = ParserCtx::<NoTokenMeta>::new(content);
         ast_data.clear();
 
-        let imports = ParsingCtx::new(
-            content,
-            &mut ctx.parsing_state,
-            ast_data,
-            self.workspace,
+        let imports = Parser::new(
             self.interner,
+            self.workspace,
+            &mut parser_ctx,
+            ast_data,
             source,
+            content,
         )
-        .parse::<ImportsAst>()?;
+        .imports()?;
 
-        let deps = self.resolve_module_deps(imports, package, source, ctx);
+        let deps = imports
+            .map(|imports| self.resolve_module_deps(imports, package, source, ctx))
+            .unwrap_or_default();
 
         let dummy_module = DummyModule {
             package,
@@ -266,23 +270,25 @@ impl PackageLoader<'_> {
         package_id: VRef<Package>,
         origin: VRef<Source>,
         ctx: &mut ResourceLoaderCtx,
-    ) -> Vec<(NameAst, PathBuf)> {
-        let mut deps = Vec::with_capacity(imports.items.len());
-        for &ImportAst {
-            name, path, span, ..
-        } in imports.items.iter()
-        {
-            let path_content = self.resources.sources[origin].span_str(path);
-            let (package, path_str) = path_content.split_once('/').unwrap_or((path_content, ""));
+    ) -> Vec<(Option<Vis>, NameAst, PathBuf)> {
+        imports
+            .items
+            .iter()
+            .filter_map(|&ImportAst { vis, name, path }| {
+                let path = path.span.shrink(1);
+                let name = self.extract_path_name("module", path, name, origin)?;
+                let path_content = self.resources.sources[origin].span_str(path);
+                let (package, path_str) =
+                    path_content.split_once('/').unwrap_or((path_content, ""));
 
-            let package_ident = self.interner.intern(package);
-            let import_package = self.resources.package_deps
-                [self.resources.packages[package_id].deps]
-                .iter()
-                .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
-                .or_else(|| (package == ".").then_some(package_id));
+                let package_ident = self.interner.intern(package);
+                let import_package = self.resources.package_deps
+                    [self.resources.packages[package_id].deps]
+                    .iter()
+                    .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
+                    .or_else(|| (package == ".").then_some(package_id));
 
-            let Some(import_package) = import_package else {
+                let Some(import_package) = import_package else {
                 self.workspace.push(UnknownPackage {
                     packages: self.resources.package_deps
                         [self.resources.packages[package_id].deps]
@@ -291,34 +297,33 @@ impl PackageLoader<'_> {
                         .intersperse(", ")
                         .collect::<String>(),
                     loc: SourceLoc { origin, span: path.sliced(..package.len()) },
-                });
-                continue;
+                })?;
             };
 
-            let built_path = self.resources.packages[import_package]
-                .root_module
-                .with_extension("")
-                .join(path_str)
-                .with_extension("ctl");
+                let built_path = self.resources.packages[import_package]
+                    .root_module
+                    .with_extension("")
+                    .join(path_str)
+                    .with_extension("ctl");
 
-            let Some(dep_path) = self
-                .resources.db
-                .canonicalize(&built_path)
-                .map_err(|trace| self.workspace.push(InvalidDefinedPath {
-                    path: built_path,
-                    trace,
-                    loc: SourceLoc { origin, span }.into(),
-                    something: "module",
-                }))
-                .ok() else { continue };
+                let dep_path = match self.resources.db.canonicalize(&built_path) {
+                    Ok(p) => p,
+                    Err(trace) => self.workspace.push(InvalidDefinedPath {
+                        path: built_path,
+                        trace,
+                        loc: SourceLoc { origin, span: path }.into(),
+                        something: "module",
+                    })?,
+                };
 
-            if !ctx.modules.contains_key(&dep_path) {
-                ctx.module_frontier
-                    .push((dep_path.clone(), import_package, origin, span));
-            }
-            deps.push((name, dep_path));
-        }
-        deps
+                if !ctx.modules.contains_key(&dep_path) {
+                    ctx.module_frontier
+                        .push((dep_path.clone(), import_package, origin, path));
+                }
+
+                Some((vis.map(|vis| vis.vis), name, dep_path))
+            })
+            .collect()
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {
@@ -367,7 +372,7 @@ impl PackageLoader<'_> {
         while let Some((path, loc)) = ctx.package_frontier.pop() {
             self.load_package(path, loc, &mut ast_data, ctx);
         }
-        ctx.ast_data = Some(ast_data);
+        ctx.ast_arena = Some(ast_data);
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {
@@ -388,6 +393,7 @@ impl PackageLoader<'_> {
             let deps_iter = dummy_package.deps.iter().filter_map(|(name, path)| {
                 let index = ctx.packages.get(path)?.ordering;
                 Some(Dep {
+                    vis: None,
                     name_span: name.span,
                     name: name.ident,
                     ptr: unsafe { VRef::<Package>::new(index) },
@@ -406,7 +412,7 @@ impl PackageLoader<'_> {
         &mut self,
         path: PathBuf,
         loc: Option<SourceLoc>,
-        ast_data: &mut AstData,
+        ast_data: &mut Arena,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
@@ -414,22 +420,25 @@ impl PackageLoader<'_> {
         let source_id = self.load_source(package_path, loc, ctx, "package")?;
 
         let source = &self.resources.sources[source_id];
-        ctx.parsing_state.start(&source.content);
+        let mut parser_ctx = ParserCtx::new(&source.content);
         ast_data.clear();
 
-        let manifest = ParsingCtx::new(
-            &source.content,
-            &mut ctx.parsing_state,
-            ast_data,
-            self.workspace,
+        let manifest = Parser::new(
             self.interner,
+            self.workspace,
+            &mut parser_ctx,
+            ast_data,
             source_id,
+            &source.content,
         )
-        .parse::<ManifestAst>()?;
+        .manifest()?;
 
         let (root_module, root_module_span) =
             self.resolve_root_module_path(&path, source_id, manifest)?;
-        let deps = self.resolve_manifest_deps(&path, source_id, manifest, ctx);
+        let deps = manifest
+            .deps
+            .map(|deps| self.resolve_manifest_deps(&path, source_id, deps, ctx))
+            .unwrap_or_default();
 
         let package = DummyPackage {
             root_module,
@@ -448,42 +457,77 @@ impl PackageLoader<'_> {
         &mut self,
         root_path: &Path,
         origin: VRef<Source>,
-        manifest: ManifestAst,
+        deps: ManifestDepsAst,
         ctx: &mut ResourceLoaderCtx,
     ) -> Vec<(NameAst, PathBuf)> {
-        let mut deps = Vec::with_capacity(manifest.deps.len());
-        for &ManifestDepAst {
-            git,
-            name,
-            path,
-            version,
-            span,
-        } in manifest.deps.iter()
-        {
-            let path = if git {
-                self.download_package(origin, span, version, path, ctx)
-            } else {
-                let path_content = self.resources.sources[origin].span_str(path);
-                let package_path = root_path.join(path_content);
-                self.resolve_source_path(
-                    &package_path,
-                    Some(SourceLoc { origin, span: path }),
-                    "package",
-                )
-            };
+        deps.list
+            .iter()
+            .filter_map(|dep| {
+                let &ManifestDepAst {
+                    git,
+                    name,
+                    path: ast_path,
+                    version,
+                } = dep;
 
-            let Some(path) = path else {
-                continue;
-            };
+                let name = self.extract_path_name("package", ast_path.span, name, origin)?;
 
-            let manifest = path.join("package").with_extension("ctlm");
-            if !ctx.packages.contains_key(&manifest) {
-                ctx.package_frontier
-                    .push((path, Some(SourceLoc { origin, span })));
-            }
-            deps.push((name, manifest));
+                let path = if git.is_some() {
+                    self.download_package(origin, version, ast_path.span, ctx)
+                } else {
+                    let path_content = self.resources.sources[origin].span_str(ast_path.span);
+                    let package_path = root_path.join(path_content);
+                    self.resolve_source_path(
+                        &package_path,
+                        Some(SourceLoc {
+                            origin,
+                            span: ast_path.span,
+                        }),
+                        "package",
+                    )
+                }?;
+
+                let manifest = path.join("package").with_extension("ctlm");
+                if !ctx.packages.contains_key(&manifest) {
+                    ctx.package_frontier.push((
+                        path,
+                        Some(SourceLoc {
+                            origin,
+                            span: ast_path.span,
+                        }),
+                    ));
+                }
+                Some((name, manifest))
+            })
+            .collect()
+    }
+
+    fn extract_path_name(
+        &mut self,
+        for_the: &'static str,
+        path: Span,
+        name: Option<NameAst>,
+        origin: VRef<Source>,
+    ) -> Option<NameAst> {
+        if name.is_some() {
+            return name;
         }
-        deps
+        let path = path.shrink(1);
+        let path_str = self.resources.sources[origin].span_str(path);
+        let Some(index) = path_str.rfind('/') else {
+            self.workspace.push(MissingName {
+                something: for_the,
+                loc: SourceLoc { origin, span: path },
+            })?;
+        };
+
+        Some(NameAst {
+            ident: self.interner.intern(&path_str[index + 1..]),
+            source_info: SourceInfo {
+                span: path.sliced(index + 1..),
+                meta: NoTokenMeta,
+            },
+        })
     }
 
     fn resolve_root_module_path(
@@ -507,11 +551,14 @@ impl PackageLoader<'_> {
 
         let content = &self.resources.sources[origin].content;
 
-        let name = value_span.map_or("root", |str| &content[str.shrink(1).range()]);
-        let loc = value_span.map(|span| SourceLoc { origin, span });
+        let name = value_span.map_or("root", |str| &content[str.span.shrink(1).range()]);
+        let loc = value_span.map(|span| SourceLoc {
+            origin,
+            span: span.span,
+        });
         let full_path = root_path.join(name).with_extension("ctl");
         self.resolve_source_path(&full_path, loc, "root module")
-            .map(|path| (path, value_span.unwrap_or_default()))
+            .map(|path| (path, value_span.map_or(default(), |value| value.span)))
     }
 
     fn load_source(
@@ -595,15 +642,14 @@ impl PackageLoader<'_> {
     fn download_package(
         &mut self,
         origin: VRef<Source>,
-        span: Span,
-        version: Option<Span>,
+        version: Option<SourceInfo>,
         url_span: Span,
         ctx: &ResourceLoaderCtx,
     ) -> Option<PathBuf> {
         let url = self.resources.sources[origin].span_str(url_span);
         let full_url = &format!("https://{url}");
         let version = version
-            .map(|v| self.resolve_version(origin, v, full_url))
+            .map(|v| self.resolve_version(origin, v.span, full_url))
             .transpose()?
             .unwrap_or_else(|| "main".to_string());
 
@@ -617,7 +663,10 @@ impl PackageLoader<'_> {
             .create_dir_all(&download_root)
             .map_err(|err| {
                 self.workspace.push(InvalidDefinedPath {
-                    loc: Some(SourceLoc { origin, span }),
+                    loc: Some(SourceLoc {
+                        origin,
+                        span: url_span,
+                    }),
                     path: download_root.clone(),
                     trace: err,
                     something: "package",
@@ -651,7 +700,7 @@ impl PackageLoader<'_> {
             .map(|s| s.as_ref())
             .chain(iter::once(download_root.as_ref()));
 
-        self.execute_git(args, origin, span)?;
+        self.execute_git(args, origin, url_span)?;
 
         Some(install_path)
     }
@@ -736,6 +785,13 @@ impl PackageLoader<'_> {
 }
 
 ctl_errors! {
+    #[err => "missing {something} name"]
+    error MissingName: fatal {
+        #[err loc]
+        something: &'static str,
+        loc: SourceLoc,
+    }
+
     #[err => "git exited with non-zero status code"]
     #[info => "args: `{command}`"]
     #[info => "stderr: {output}"]
