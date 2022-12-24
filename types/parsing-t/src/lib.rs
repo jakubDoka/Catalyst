@@ -29,7 +29,7 @@ pub use {
         },
         pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
         spec::{ParamAst, ParamSpecsAst, SpecExprAst},
-        ty::{MutabilityAst, PathAst, PathSegment, TyAst, TyPointerAst},
+        ty::{MutabilityAst, PathAst, PathSegmentAst, TyAst, TyPointerAst},
         ListAst, ListElemAst, NameAst, VisAst, WrappedAst,
     },
     token_pattern::TokenPattern,

@@ -13,7 +13,7 @@ use lexing::*;
 use storage::*;
 
 #[derive(Clone, Copy, Debug)]
-pub struct ListAst<'a, T, M> {
+pub struct ListAst<'a, T, M = NoTokenMeta> {
     pub start: SourceInfo<M>,
     pub elements: &'a [ListElemAst<T, M>],
     pub end: SourceInfo<M>,
@@ -87,7 +87,7 @@ impl<M> Deref for NameAst<M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct VisAst<M> {
+pub struct VisAst<M = NoTokenMeta> {
     pub source_meta: SourceInfo<M>,
     pub vis: Vis,
 }

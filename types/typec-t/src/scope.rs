@@ -105,7 +105,7 @@ impl Scope {
     pub fn compute_accessibility(
         current_module: VRef<Module>,
         foreign_module: VRef<Module>,
-        vis: Vis,
+        vis: Option<Vis>,
         resources: &Resources,
     ) -> (Option<ScopePosition>, bool) {
         if current_module == foreign_module {
@@ -113,10 +113,10 @@ impl Scope {
         }
 
         if resources.modules[current_module].package == resources.modules[foreign_module].package {
-            return (Some(ScopePosition::Module), vis != Vis::Priv);
+            return (Some(ScopePosition::Module), vis != Some(Vis::Priv));
         }
 
-        (Some(ScopePosition::Package), vis == Vis::Pub)
+        (Some(ScopePosition::Package), vis == Some(Vis::Pub))
     }
 
     pub fn clear(&mut self) {
@@ -212,11 +212,11 @@ pub struct ModuleItem {
     pub id: Ident,
     pub ptr: ModuleItemPtr,
     pub span: Span,
-    pub vis: Vis,
+    pub vis: Option<Vis>,
 }
 
 impl ModuleItem {
-    pub fn new(id: Ident, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Vis) -> Self {
+    pub fn new(id: Ident, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Option<Vis>) -> Self {
         Self {
             id,
             ptr: ptr.into(),

@@ -255,6 +255,12 @@ impl<'a> TirNode<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TirFunc<'a> {
+    pub args: &'a [PatTir<'a>],
+    pub body: TirNode<'a>,
+}
+
 bitflags! {
     TirFlags: u8 {
         IMMUTABLE

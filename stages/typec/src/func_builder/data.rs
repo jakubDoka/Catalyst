@@ -73,18 +73,18 @@ impl TyChecker<'_> {
 
         let params = params.map_or(default(), |(.., p)| p);
 
-        for field_ast @ &StructCtorFieldAst { name, expr } in body.iter() {
+        for field_ast @ &StructCtorFieldAst { name, value, .. } in body.iter() {
             let Some((index, .., ty)) = self.find_field(struct_ty, params.as_slice(), name) else {
                 continue;
             };
 
             let inference = self.typec.try_instantiate(ty, &param_slots, self.interner);
-            let expr = if let Some(expr) = expr {
+            let expr = if let Some((.., expr)) = value {
                 self.expr(expr, inference.into(), builder)
             } else {
                 self.value_path(
                     PathAst {
-                        start: PathItemAst::Ident(name),
+                        start: PathSegmentAst::Name(name),
                         segments: &[],
                         slash: None,
                     },
@@ -103,7 +103,7 @@ impl TyChecker<'_> {
                     prev: prev.span,
                     loc: SourceLoc {
                         origin: self.source,
-                        span: name.span(),
+                        span: name.span,
                     },
                 });
             }
@@ -286,7 +286,7 @@ impl TyChecker<'_> {
 
     pub fn r#ref<'a>(
         &mut self,
-        mutability: MutabilityAst,
+        mutability: Option<MutabilityAst>,
         expr: UnitExprAst,
         _inference: Inference,
         builder: &mut TirBuilder<'a, '_>,

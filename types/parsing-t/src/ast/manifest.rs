@@ -21,14 +21,14 @@ pub struct ManifestDepAst<M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ManifestFieldAst<'a, M> {
+pub struct ManifestFieldAst<'a, M = NoTokenMeta> {
     pub name: NameAst<M>,
     pub colon: SourceInfo<M>,
     pub value: ManifestValueAst<'a, M>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ManifestValueAst<'a, M> {
+pub enum ManifestValueAst<'a, M = NoTokenMeta> {
     String(SourceInfo<M>),
     Object(ListAst<'a, ManifestFieldAst<'a, M>, M>),
     Array(ListAst<'a, ManifestValueAst<'a, M>, M>),

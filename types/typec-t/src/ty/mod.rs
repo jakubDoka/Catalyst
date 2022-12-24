@@ -663,7 +663,7 @@ impl SpecFunc {
 
 #[derive(Clone, Copy)]
 pub struct Field {
-    pub vis: Vis,
+    pub vis: Option<Vis>,
     pub ty: Ty,
     pub flags: FieldFlags,
     pub span: Span,

@@ -12,11 +12,11 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn display_funcs(
         &self,
-        funcs: &[(FragRef<Func>, TirNode)],
+        funcs: &[(FragRef<Func>, TirFunc)],
         buffer: &mut String,
     ) -> fmt::Result {
         for &(func, tir) in funcs.iter() {
-            self.display_func(func, tir, buffer)?;
+            self.display_func(func, tir.body, buffer)?;
             buffer.push_str("\n\n");
         }
 

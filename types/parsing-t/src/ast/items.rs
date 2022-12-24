@@ -22,7 +22,7 @@ impl<M> ImportAst<M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct StructAst<'a, M> {
+pub struct StructAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub r#struct: SourceInfo<M>,
     pub generics: Option<ListAst<'a, ParamAst<'a, M>, M>>,
@@ -31,7 +31,7 @@ pub struct StructAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct StructFieldAst<'a, M> {
+pub struct StructFieldAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub used: Option<SourceInfo<M>>,
     pub mutable: Option<SourceInfo<M>>,
@@ -41,27 +41,27 @@ pub struct StructFieldAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct EnumAst<'a, M> {
+pub struct EnumAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub r#enum: SourceInfo<M>,
     pub generics: Option<ListAst<'a, ParamAst<'a, M>, M>>,
     pub name: NameAst<M>,
     pub body: Option<ListAst<'a, EnumVariantAst<'a, M>, M>>,
 }
-pub type GroupedItemSlice<'a, T, M> = &'a [(T, &'a [TopLevelAttrAst<M>])];
+pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttrAst])];
 
 #[derive(Clone, Copy)]
-pub struct GroupedItemsAst<'a, M = NoTokenMeta> {
-    pub structs: GroupedItemSlice<'a, StructAst<'a, M>, M>,
-    pub funcs: GroupedItemSlice<'a, FuncDefAst<'a, M>, M>,
-    pub specs: GroupedItemSlice<'a, SpecAst<'a, M>, M>,
-    pub impls: GroupedItemSlice<'a, ImplAst<'a, M>, M>,
-    pub enums: GroupedItemSlice<'a, EnumAst<'a, M>, M>,
+pub struct GroupedItemsAst<'a> {
+    pub structs: GroupedItemSlice<'a, StructAst<'a>>,
+    pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,
+    pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
+    pub impls: GroupedItemSlice<'a, ImplAst<'a>>,
+    pub enums: GroupedItemSlice<'a, EnumAst<'a>>,
     pub last: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ItemAst<'a, M> {
+pub enum ItemAst<'a, M = NoTokenMeta> {
     Struct(&'a StructAst<'a, M>),
     Func(&'a FuncDefAst<'a, M>),
     Spec(&'a SpecAst<'a, M>),
@@ -71,13 +71,13 @@ pub enum ItemAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct EnumVariantAst<'a, M> {
+pub struct EnumVariantAst<'a, M = NoTokenMeta> {
     pub name: NameAst<M>,
     pub ty: Option<(SourceInfo<M>, TyAst<'a, M>)>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct SpecAst<'a, M> {
+pub struct SpecAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub spec: SourceInfo<M>,
     pub generics: Option<ListAst<'a, ParamAst<'a, M>, M>>,
@@ -87,7 +87,7 @@ pub struct SpecAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ImplAst<'a, M> {
+pub struct ImplAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub r#impl: SourceInfo<M>,
     pub generics: Option<ListAst<'a, ParamAst<'a, M>, M>>,
@@ -96,13 +96,22 @@ pub struct ImplAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum ImplTargetAst<'a, M> {
+pub enum ImplTargetAst<'a, M = NoTokenMeta> {
     Direct(TyAst<'a, M>),
     Spec(SpecExprAst<'a, M>, SourceInfo<M>, TyAst<'a, M>),
 }
 
+impl<'a, M> ImplTargetAst<'a, M> {
+    pub fn span(&self) -> Span {
+        match self {
+            ImplTargetAst::Direct(ty) => ty.span(),
+            ImplTargetAst::Spec(spec, _, ty) => spec.span().joined(ty.span()),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
-pub enum ImplItemAst<'a, M> {
+pub enum ImplItemAst<'a, M = NoTokenMeta> {
     Func(&'a FuncDefAst<'a, M>),
 }
 
@@ -123,7 +132,7 @@ pub enum TopLevelAttrKindAst<M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct TopLevelAttrAst<M> {
+pub struct TopLevelAttrAst<M = NoTokenMeta> {
     pub hash: SourceInfo<M>,
     pub value: WrappedAst<TopLevelAttrKindAst<M>, M>,
 }

@@ -6,11 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parsing = { path = "../parsing" }
-
 storage = { path = "../../utils/storage" }
-
-
 diags = { path = "../../types/diags" }
 typec-t = { path = "../../types/typec-t" }
 parsing-t = { path = "../../types/parsing-t" }

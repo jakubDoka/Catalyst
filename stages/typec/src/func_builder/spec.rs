@@ -5,7 +5,7 @@ impl TyChecker<'_> {
         &mut self,
         arena: &'a Arena,
         transfer: &AstTransfer,
-        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
+        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirFunc<'a>)>,
         extern_funcs: &mut Vec<FragRef<Func>>,
         ctx: &mut TirBuilderCtx,
     ) -> &mut Self {
@@ -22,11 +22,10 @@ impl TyChecker<'_> {
 
             let frame = self.scope.start_frame();
 
-            let offset = impl_ast.generics.len();
             let Func {
                 generics, owner, ..
             } = self.typec.funcs[first];
-            self.insert_generics(impl_ast.generics, 0);
+            let offset = self.insert_generics(impl_ast.generics, 0);
             self.insert_spec_functions(generics, 0);
 
             if let Some(impl_ref) = impl_ref {

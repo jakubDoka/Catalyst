@@ -3,31 +3,31 @@ use lexing::*;
 use crate::{ListAst, NameAst};
 
 #[derive(Clone, Copy, Debug)]
-pub enum PathSegment<'a, M> {
+pub enum PathSegmentAst<'a, M = NoTokenMeta> {
     Name(NameAst<M>),
     Params(ListAst<'a, TyAst<'a, M>, M>),
 }
 
-impl<'a, M> PathSegment<'a, M> {
+impl<'a, M> PathSegmentAst<'a, M> {
     pub fn span(&self) -> Span {
         match self {
-            PathSegment::Name(name) => name.span,
-            PathSegment::Params(params) => params.span(),
+            PathSegmentAst::Name(name) => name.span,
+            PathSegmentAst::Params(params) => params.span(),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PathAst<'a, M> {
-    pub leading_slash: Option<SourceInfo<M>>,
-    pub start: PathSegment<'a, M>,
-    pub segments: &'a [PathSegment<'a, M>],
+pub struct PathAst<'a, M = NoTokenMeta> {
+    pub slash: Option<SourceInfo<M>>,
+    pub start: PathSegmentAst<'a, M>,
+    pub segments: &'a [PathSegmentAst<'a, M>],
 }
 
 impl<'a, M> PathAst<'a, M> {
     pub fn span(&self) -> Span {
         let start = self
-            .leading_slash
+            .slash
             .as_ref()
             .map_or(self.start.span(), |e| e.span.joined(self.start.span()));
         self.segments
@@ -37,7 +37,7 @@ impl<'a, M> PathAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum TyAst<'a, M> {
+pub enum TyAst<'a, M = NoTokenMeta> {
     Path(PathAst<'a, M>),
     Pointer(&'a TyPointerAst<'a, M>),
     Tuple(ListAst<'a, TyAst<'a, M>, M>),
@@ -56,7 +56,7 @@ impl<'a, M> TyAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct TyPointerAst<'a, M> {
+pub struct TyPointerAst<'a, M = NoTokenMeta> {
     pub carrot: SourceInfo<M>,
     pub mutability: Option<MutabilityAst<'a, M>>,
     pub ty: TyAst<'a, M>,
@@ -69,7 +69,7 @@ impl<'a, M> TyPointerAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum MutabilityAst<'a, M> {
+pub enum MutabilityAst<'a, M = NoTokenMeta> {
     Mut(SourceInfo<M>),
     Generic(SourceInfo<M>, PathAst<'a, M>),
 }

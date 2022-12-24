@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExprAst<'a, M> {
+pub enum ExprAst<'a, M = NoTokenMeta> {
     Unit(&'a UnitExprAst<'a, M>),
     Binary(&'a BinaryExprAst<'a, M>),
 }
@@ -16,7 +16,7 @@ impl<'a, M> ExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BinaryExprAst<'a, M> {
+pub struct BinaryExprAst<'a, M = NoTokenMeta> {
     pub lhs: ExprAst<'a, M>,
     pub op: NameAst<M>,
     pub rhs: ExprAst<'a, M>,
@@ -29,7 +29,7 @@ impl<'a, M> BinaryExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum UnitExprAst<'a, M> {
+pub enum UnitExprAst<'a, M = NoTokenMeta> {
     StructCtor(StructCtorAst<'a, M>),
     EnumCtor(EnumCtorAst<'a, M>),
     DotExpr(&'a DotExprAst<'a, M>),
@@ -80,7 +80,7 @@ impl<'a, M> UnitExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ReturnExprAst<'a, M> {
+pub struct ReturnExprAst<'a, M = NoTokenMeta> {
     pub r#return: SourceInfo<M>,
     pub expr: Option<ExprAst<'a, M>>,
 }
@@ -94,7 +94,7 @@ impl<'a, M> ReturnExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MatchArmAst<'a, M> {
+pub struct MatchArmAst<'a, M = NoTokenMeta> {
     pub pattern: PatAst<'a, M>,
     pub body: BranchAst<'a, M>,
 }
@@ -106,7 +106,7 @@ impl<'a, M> MatchArmAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MatchExprAst<'a, M> {
+pub struct MatchExprAst<'a, M = NoTokenMeta> {
     pub r#match: SourceInfo<M>,
     pub expr: ExprAst<'a, M>,
     pub body: ListAst<'a, MatchArmAst<'a, M>, M>,
@@ -119,7 +119,7 @@ impl<'a, M> MatchExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum BranchAst<'a, M> {
+pub enum BranchAst<'a, M = NoTokenMeta> {
     Block(ListAst<'a, ExprAst<'a, M>, M>),
     Arrow(SourceInfo<M>, ExprAst<'a, M>),
 }
@@ -134,7 +134,7 @@ impl<'a, M> BranchAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ElifAst<'a, M> {
+pub struct ElifAst<'a, M = NoTokenMeta> {
     pub elif: SourceInfo<M>,
     pub cond: ExprAst<'a, M>,
     pub body: BranchAst<'a, M>,
@@ -147,7 +147,7 @@ impl<'a, M> ElifAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct IfAst<'a, M> {
+pub struct IfAst<'a, M = NoTokenMeta> {
     pub r#if: SourceInfo<M>,
     pub cond: ExprAst<'a, M>,
     pub body: BranchAst<'a, M>,
@@ -170,7 +170,7 @@ impl<'a, M> IfAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ContinueAst<M> {
+pub struct ContinueAst<M = NoTokenMeta> {
     pub r#continue: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
 }
@@ -184,7 +184,7 @@ impl<M> ContinueAst<M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct LoopAst<'a, M> {
+pub struct LoopAst<'a, M = NoTokenMeta> {
     pub r#loop: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
     pub body: ExprAst<'a, M>,
@@ -197,7 +197,7 @@ impl<'a, M> LoopAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BreakAst<'a, M> {
+pub struct BreakAst<'a, M = NoTokenMeta> {
     pub r#break: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
     pub value: Option<ExprAst<'a, M>>,
@@ -216,7 +216,7 @@ impl<'a, M> BreakAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CallAst<'a, M> {
+pub struct CallAst<'a, M = NoTokenMeta> {
     pub callable: UnitExprAst<'a, M>,
     pub args: ListAst<'a, ExprAst<'a, M>, M>,
 }
@@ -228,7 +228,7 @@ impl<'a, M> CallAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct DotExprAst<'a, M> {
+pub struct DotExprAst<'a, M = NoTokenMeta> {
     pub lhs: UnitExprAst<'a, M>,
     pub dot: SourceInfo<M>,
     pub rhs: PathAst<'a, M>,
@@ -241,7 +241,7 @@ impl<'a, M> DotExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StructCtorAst<'a, M> {
+pub struct StructCtorAst<'a, M = NoTokenMeta> {
     pub path: Option<PathAst<'a, M>>,
     pub slash: SourceInfo<M>,
     pub body: ListAst<'a, StructCtorFieldAst<'a, M>, M>,
@@ -257,20 +257,21 @@ impl<'a, M> StructCtorAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StructCtorFieldAst<'a, M> {
+pub struct StructCtorFieldAst<'a, M = NoTokenMeta> {
     pub name: NameAst<M>,
-    pub colon: SourceInfo<M>,
-    pub value: ExprAst<'a, M>,
+    pub value: Option<(SourceInfo<M>, ExprAst<'a, M>)>,
 }
 
 impl<'a, M> StructCtorFieldAst<'a, M> {
     pub fn span(&self) -> Span {
-        self.name.span.joined(self.value.span())
+        self.value
+            .as_ref()
+            .map_or(self.name.span, |(.., e)| self.name.span.joined(e.span()))
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct EnumCtorAst<'a, M> {
+pub struct EnumCtorAst<'a, M = NoTokenMeta> {
     pub path: PathAst<'a, M>,
     pub value: Option<(SourceInfo<M>, ExprAst<'a, M>)>,
 }
@@ -284,7 +285,7 @@ impl<'a, M> EnumCtorAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct LetAst<'a, M> {
+pub struct LetAst<'a, M = NoTokenMeta> {
     pub r#let: SourceInfo<M>,
     pub pat: PatAst<'a, M>,
     pub ty: Option<(SourceInfo<M>, TyAst<'a, M>)>,

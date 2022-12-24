@@ -20,7 +20,7 @@ use storage::*;
 
 use lexing::TokenKind as Tk;
 
-pub struct Parser<'ctx, 'arena, M> {
+pub struct Parser<'ctx, 'arena, M = NoTokenMeta> {
     interner: &'ctx mut Interner,
     workspace: &'ctx mut Workspace,
     state: &'ctx mut ParserCtx<M>,
@@ -227,11 +227,8 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn name_unchecked(&mut self) -> NameAst<M> {
         let ident = self.interner.intern(self.lexer.span_str(self.current.span));
-        let source_meta = self.current.source_meta();
-        NameAst {
-            ident,
-            source_info: source_meta,
-        }
+        let source_info = self.current.source_meta();
+        NameAst { ident, source_info }
     }
 
     fn vis(&mut self) -> Option<VisAst<M>> {
@@ -425,7 +422,7 @@ impl<M> DerefMut for Parser<'_, '_, M> {
     }
 }
 
-pub struct ParserCtx<M> {
+pub struct ParserCtx<M = NoTokenMeta> {
     current: Token<M>,
     next: Token<M>,
     progress: usize,

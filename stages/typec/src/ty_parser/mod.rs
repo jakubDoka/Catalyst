@@ -1,7 +1,8 @@
+use std::iter;
+
 use diags::*;
 use lexing_t::Span;
 use packaging_t::Source;
-use parsing::*;
 use parsing_t::*;
 
 use storage::*;
@@ -13,22 +14,36 @@ use crate::*;
 impl TyChecker<'_> {
     pub fn generics(
         &mut self,
-        generic_ast: ListAst<GenericParamAst>,
+        generic_ast: Option<ListAst<ParamAst>>,
         set: &mut SpecSet,
         offset: usize,
     ) {
-        for (i, &GenericParamAst { bounds, .. }) in generic_ast.iter().enumerate() {
+        let Some(generic_ast) = generic_ast else {return};
+
+        for (i, &ParamAst { specs, .. }) in generic_ast.iter().enumerate() {
+            let Some(ParamSpecsAst { first, rest, .. }) = specs else {continue};
             set.extend(
                 (i + offset) as u32,
-                bounds.iter().filter_map(|&b| self.spec(b)),
+                rest.iter()
+                    .map(|(.., s)| s)
+                    .chain(iter::once(&first))
+                    .filter_map(|&b| self.spec(b)),
             )
         }
     }
 
-    pub fn insert_generics(&mut self, generics_ast: ListAst<GenericParamAst>, offset: usize) {
-        for (i, &GenericParamAst { name, .. }) in generics_ast.iter().enumerate() {
+    pub fn insert_generics(
+        &mut self,
+        generics_ast: Option<ListAst<ParamAst>>,
+        offset: usize,
+    ) -> usize {
+        let Some(generics_ast) = generics_ast else {return 0};
+
+        for (i, &ParamAst { name, .. }) in generics_ast.iter().enumerate() {
             self.insert_param(offset + i, name)
         }
+
+        generics_ast.len()
     }
 
     fn insert_param(&mut self, index: usize, name: NameAst) {
@@ -116,22 +131,22 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn mutability(&mut self, mutability_ast: MutabilityAst) -> Option<Mutability> {
+    pub fn mutability(&mut self, mutability_ast: Option<MutabilityAst>) -> Option<Mutability> {
         Some(match mutability_ast {
-            MutabilityAst::Mut(..) => Mutability::Mutable,
-            MutabilityAst::None => Mutability::Immutable,
-            MutabilityAst::Generic(
+            Some(MutabilityAst::Mut(..)) => Mutability::Mutable,
+            None => Mutability::Immutable,
+            Some(MutabilityAst::Generic(
                 ..,
                 PathAst {
                     slash: None,
-                    start: PathItemAst::Ident(start),
+                    start: PathSegmentAst::Name(start),
                     segments: &[],
                 },
-            ) => match lookup!(Ty self, start.ident, start.span) {
+            )) => match lookup!(Ty self, start.ident, start.span) {
                 Ty::Param(i) => Mutability::Param(i),
                 _ => todo!(),
             },
-            MutabilityAst::Generic(..) => todo!(),
+            Some(MutabilityAst::Generic(..)) => todo!(),
         })
     }
 
@@ -141,13 +156,13 @@ impl TyChecker<'_> {
             start, segments, ..
         }: PathAst<'a>,
     ) -> Option<(TyPathResult, Option<ListAst<'a, TyAst<'a>>>)> {
-        let PathItemAst::Ident(start) = start else {
+        let PathSegmentAst::Name(start) = start else {
             todo!();
         };
 
         let (item, segments) = match self.lookup(start.ident, start.span, "type or module")? {
             ScopeItem::Module(module) => {
-                let &[PathItemAst::Ident(ty), ref segments @ ..] = segments else {
+                let &[PathSegmentAst::Name(ty), ref segments @ ..] = segments else {
                     self.workspace.push(MissingIdentAfterMod {
                         span: segments.first().map(|s| s.span()).unwrap_or(path.span()),
                         source: self.source,
@@ -167,7 +182,7 @@ impl TyChecker<'_> {
             },
             match segments {
                 [] => None,
-                &[PathItemAst::Params(generics)] => Some(generics),
+                &[PathSegmentAst::Params(generics)] => Some(generics),
                 _ => todo!(),
             },
         ))

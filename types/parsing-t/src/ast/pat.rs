@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy)]
-pub enum StructCtorPatFieldAst<'a, M> {
+pub enum StructCtorPatFieldAst<'a, M = NoTokenMeta> {
     Simple {
         mutable: Option<SourceInfo<M>>,
         name: NameAst<M>,
@@ -27,7 +27,7 @@ impl<'a, M> StructCtorPatFieldAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StructCtorPatAst<'a, M> {
+pub struct StructCtorPatAst<'a, M = NoTokenMeta> {
     pub slash: SourceInfo<M>,
     pub fields: ListAst<'a, StructCtorPatFieldAst<'a, M>, M>,
 }
@@ -39,7 +39,7 @@ impl<'a, M> StructCtorPatAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct EnumCtorPatAst<'a, M> {
+pub struct EnumCtorPatAst<'a, M = NoTokenMeta> {
     pub slash: SourceInfo<M>,
     pub name: NameAst<M>,
     pub value: Option<(SourceInfo<M>, PatAst<'a, M>)>,
@@ -54,7 +54,7 @@ impl<'a, M> EnumCtorPatAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum PatAst<'a, M> {
+pub enum PatAst<'a, M = NoTokenMeta> {
     Binding(Option<SourceInfo<M>>, NameAst<M>),
     Wildcard(SourceInfo<M>),
     StructCtor(StructCtorPatAst<'a, M>),

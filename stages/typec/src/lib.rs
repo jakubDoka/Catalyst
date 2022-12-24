@@ -47,7 +47,7 @@ mod util {
     use diags::*;
     use lexing_t::*;
     use packaging_t::*;
-    use parsing::*;
+    use parsing_t::*;
     use storage::*;
     use typec_t::*;
 
@@ -112,7 +112,7 @@ mod util {
             ctx: &mut TyCheckerCtx,
             tir_builder_ctx: &mut TirBuilderCtx,
             transfer: ActiveAstTransfer<'a, '_>,
-            type_checked_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
+            type_checked_funcs: &mut BumpVec<(FragRef<Func>, TirFunc<'a>)>,
         ) -> &mut Self {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)

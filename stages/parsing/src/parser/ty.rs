@@ -40,7 +40,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     pub fn path(&mut self, leading_slash: Option<SourceInfo<M>>) -> Option<PathAst<'arena, M>> {
         Some(PathAst {
-            leading_slash,
+            slash: leading_slash,
             start: self.path_segment()?,
             segments: {
                 let mut segments = bumpvec![];
@@ -53,11 +53,11 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         })
     }
 
-    fn path_segment(&mut self) -> Option<PathSegment<'arena, M>> {
+    fn path_segment(&mut self) -> Option<PathSegmentAst<'arena, M>> {
         branch! {self => {
-            Ident => Some(PathSegment::Name(self.name_unchecked())),
+            Ident => Some(PathSegmentAst::Name(self.name_unchecked())),
             LeftBracket => self.array("path segment generics", Self::ty)
-                .map(PathSegment::Params),
+                .map(PathSegmentAst::Params),
             @"path segment",
         }}
     }

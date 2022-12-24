@@ -157,12 +157,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn struct_ctor_field(&mut self) -> Option<StructCtorFieldAst<'arena, M>> {
         Some(StructCtorFieldAst {
             name: self.name("struct constructor field")?,
-            colon: self.expect(":", |s| MissingColon {
-                something: "struct constructor field",
-                found: s.state.current.kind,
-                loc: s.loc(),
-            })?,
-            value: self.expr()?,
+            value: self
+                .try_advance(Tk::Colon)
+                .map(|colon| self.expr().map(|value| (colon, value)))
+                .transpose()?,
         })
     }
 

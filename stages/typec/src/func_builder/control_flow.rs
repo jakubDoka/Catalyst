@@ -18,9 +18,9 @@ impl TyChecker<'_> {
         store.extend(
             other
                 .iter()
-                .filter_map(|&expr| self.expr(expr, Inference::None, builder)),
+                .filter_map(|&expr| self.expr(expr.value, Inference::None, builder)),
         );
-        let last = self.expr(last, inference, builder);
+        let last = self.expr(last.value, inference, builder);
         frame.end(builder.ctx, ());
         let last = last?;
         store.push(last);

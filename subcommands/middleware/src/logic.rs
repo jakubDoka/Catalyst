@@ -1100,10 +1100,15 @@ impl Worker {
     ) {
         let source = shared.resources.modules[module].source;
 
-        self.state
-            .parsing_state
-            .start(&shared.resources.sources[source].content);
-        self.parse::<UseAstSkip>(source, arena, task, shared);
+        let mut parser_ctx = ParserCtx::new(&shared.resources.sources[source].content);
+        self.parser(
+            source,
+            arena,
+            task,
+            &mut parser_ctx,
+            shared,
+            Parser::skip_imports,
+        );
 
         let mut macros = typec::build_scope(
             module,
@@ -1122,7 +1127,7 @@ impl Worker {
             //     jit_ctx,
             //     shared.jit_isa,
             // );
-            let Some(grouped_items) = self.parse::<GroupedItemsAst>(source, arena, task, shared) else {
+            let Some(grouped_items) = self.parser(source, arena, task, &mut parser_ctx, shared, Parser::grouped_items) else {
                 continue;
             };
 
@@ -1436,27 +1441,25 @@ impl Worker {
         )
     }
 
-    fn parse<'a, T: Ast<'a>>(
+    fn parser<'a, 'c, T>(
         &mut self,
         source: VRef<Source>,
         arena: &'a Arena,
-        task: &mut Task,
+        task: &'c mut Task,
+        parser_ctx: &'c mut ParserCtx,
         // macros: Option<&TokenMacroCtx>,
-        shared: &Shared,
-    ) -> Option<T>
-    where
-        T::Args: Default,
-    {
-        Parser::new(
-            shared.resources.sources[source].content.as_str(),
-            &mut self.state.parsing_state,
-            arena,
-            &mut task.workspace,
+        shared: &'c Shared,
+        method: impl FnOnce(&mut Parser<'c, 'a>) -> Option<T>,
+    ) -> Option<T> {
+        method(&mut Parser::new(
             &mut task.interner,
+            &mut task.workspace,
+            parser_ctx,
+            arena,
             // macros,
             source,
-        )
-        .parse()
+            shared.resources.sources[source].content.as_str(),
+        ))
     }
 
     pub fn swap_mir_types(
@@ -1843,7 +1846,6 @@ impl Clone for Task {
 
 #[derive(Default)]
 pub struct WorkerState {
-    pub parsing_state: ParsingState,
     pub scope: Scope,
     pub ty_checker_ctx: TyCheckerCtx,
     pub ast_transfer: AstTransfer<'static>,

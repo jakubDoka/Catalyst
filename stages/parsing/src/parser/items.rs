@@ -3,8 +3,8 @@ use packaging_t::Source;
 
 use super::*;
 
-impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
-    pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena, M>> {
+impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
+    pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena>> {
         let (items, last, ..) = self.items()?;
 
         macro_rules! gen_groups {
@@ -57,7 +57,9 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             enums: Enum,
         }
     }
+}
 
+impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn items(&mut self) -> Option<(BumpVec<ItemAst<'arena, M>>, bool)> {
         let mut items = bumpvec![];
         let last = loop {

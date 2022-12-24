@@ -3,7 +3,6 @@ use std::{cmp::Ordering, default::default, iter, vec};
 use diags::*;
 use lexing_t::*;
 use packaging_t::*;
-use parsing::*;
 use parsing_t::*;
 
 use storage::*;
@@ -25,7 +24,7 @@ impl TyChecker<'_> {
         &mut self,
         arena: &'a Arena,
         input: &[(FuncDefAst, FragRef<Func>)],
-        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirNode<'a>)>,
+        compiled_funcs: &mut BumpVec<(FragRef<Func>, TirFunc<'a>)>,
         extern_funcs: &mut Vec<FragRef<Func>>,
         ctx: &mut TirBuilderCtx,
         offset: usize,
@@ -63,7 +62,7 @@ impl TyChecker<'_> {
         arena: &'a Arena,
         ctx: &mut TirBuilderCtx,
         offset: usize,
-    ) -> Option<Option<TirNode<'a>>> {
+    ) -> Option<Option<TirFunc<'a>>> {
         let frame = self.scope.start_frame();
         let Func {
             signature,
@@ -74,11 +73,12 @@ impl TyChecker<'_> {
         ctx.vars.clear();
         ctx.generics.clear();
         ctx.generics.extend(self.typec.pack_func_param_specs(func));
-        let mut builder = TirBuilder::new(arena, signature.ret, ret.map(|ret| ret.span()), ctx);
+        let mut builder =
+            TirBuilder::new(arena, signature.ret, ret.map(|(.., ret)| ret.span()), ctx);
 
         self.insert_generics(generics, offset);
         self.insert_spec_functions(self_generics, offset);
-        self.args(signature.args, args, &mut builder);
+        let args = self.args(signature.args, args, &mut builder);
 
         let tir_body = match body {
             FuncBodyAst::Arrow(.., expr) => {
@@ -95,18 +95,20 @@ impl TyChecker<'_> {
 
         self.scope.end_frame(frame);
 
-        Some(if tir_body.ty == Ty::TERMINAL {
-            Some(tir_body)
+        let body = if tir_body.ty == Ty::TERMINAL {
+            tir_body
         } else if tir_body.ty == signature.ret {
-            self.return_low(Some(tir_body), body.span(), &mut builder)
+            self.return_low(Some(tir_body), body.span(), &mut builder)?
         } else {
             let ret = self.return_low(None, body.span(), &mut builder)?;
-            Some(TirNode::new(
+            TirNode::new(
                 Ty::TERMINAL,
                 TirKind::Block(builder.arena.alloc([tir_body, ret])),
                 tir_body.span,
-            ))
-        })
+            )
+        };
+
+        Some(Some(TirFunc { args, body }))
     }
 
     pub fn expr<'a>(
@@ -139,10 +141,10 @@ impl TyChecker<'_> {
             Return(ReturnExprAst {
                 r#return: return_span,
                 expr,
-            }) => self.r#return(expr, return_span, builder),
-            Int(span) => self.int(span, inference),
-            Char(span) => self.char(span),
-            Bool(span) => self.bool(span),
+            }) => self.r#return(expr, return_span.span, builder),
+            Int(source_info) => self.int(source_info.span, inference),
+            Char(source_info) => self.char(source_info.span),
+            Bool(source_info) => self.bool(source_info.span),
             Call(&call) => self.call(call, inference, builder),
             StructCtor(ctor) => self.struct_ctor(ctor, inference, builder),
             EnumCtor(ctor) => self.enum_ctor(ctor, inference, builder),
@@ -228,14 +230,14 @@ impl TyChecker<'_> {
                             let field = self.pattern(pat, field_ty, builder)?;
                             tir_fields[field_id] = Some(field);
                         }
-                        StructCtorPatFieldAst::DoubleDot(span) => {
-                            if let Some(prev) = double_dot.replace(span) {
+                        StructCtorPatFieldAst::DoubleDot(source_info) => {
+                            if let Some(prev) = double_dot.replace(source_info) {
                                 self.workspace.push(DuplicateDoubleDot {
                                     loc: SourceLoc {
                                         origin: self.source,
-                                        span,
+                                        span: source_info.span,
                                     },
-                                    prev,
+                                    prev: prev.span,
                                 })?;
                             }
                         }
@@ -246,7 +248,7 @@ impl TyChecker<'_> {
                     tir_fields.iter_mut().filter(|f| f.is_none()).for_each(|f| {
                         *f = Some(PatTir {
                             kind: PatKindTir::Unit(UnitPatKindTir::Wildcard),
-                            span: double_dot,
+                            span: double_dot.span,
                             ty: Ty::UNIT,
                             has_binding: false,
                             is_refutable: false,
@@ -287,9 +289,9 @@ impl TyChecker<'_> {
                     ty,
                 })
             }
-            PatAst::Int(span) => Some(PatTir {
-                kind: PatKindTir::Unit(UnitPatKindTir::Int(Ok(span))),
-                span,
+            PatAst::Int(source_info) => Some(PatTir {
+                kind: PatKindTir::Unit(UnitPatKindTir::Int(Ok(source_info.span))),
+                span: source_info.span,
                 ty,
                 has_binding: false,
                 is_refutable: true,
@@ -340,11 +342,11 @@ impl TyChecker<'_> {
                     is_refutable: self.typec[enum_ty].variants.len() > 1,
                 })
             }
-            PatAst::Wildcard(span) => Some(PatTir {
+            PatAst::Wildcard(source_info) => Some(PatTir {
                 kind: PatKindTir::Unit(UnitPatKindTir::Wildcard),
                 has_binding: false,
                 is_refutable: false,
-                span,
+                span: source_info.span,
                 ty,
             }),
         }
@@ -416,16 +418,21 @@ impl TyChecker<'_> {
         ))
     }
 
-    pub fn args(
+    pub fn args<'a>(
         &mut self,
         types: FragSlice<Ty>,
-        args: ListAst<FuncArgAst>,
-        builder: &mut TirBuilder,
-    ) {
-        for (&ty, &arg) in self.typec.args[types].iter().zip(args.iter()) {
-            let var = builder.create_var(false, ty, arg.pat.span);
-            self.scope.push(arg.pat.ident, var, arg.pat.span);
-        }
+        args: Option<ListAst<FuncArgAst>>,
+        builder: &mut TirBuilder<'a, '_>,
+    ) -> &'a [PatTir<'a>] {
+        let Some(args) = args else {return &[]};
+
+        let args = self.typec.args[types]
+            .to_bumpvec()
+            .into_iter()
+            .zip(args.iter())
+            .filter_map(|(ty, &arg)| self.pattern(arg.pat, ty, builder))
+            .nsc_collect::<BumpVec<_>>();
+        builder.arena.alloc_iter(args)
     }
 
     pub fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {

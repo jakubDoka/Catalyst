@@ -12,9 +12,9 @@ use crate::{moves::BranchBlock, *};
 pub type NodeRes = OptVRef<ValueMir>;
 
 impl MirChecker<'_, '_> {
-    pub fn funcs(&mut self, input: &mut BumpVec<(FragRef<Func>, TirNode)>) -> &mut Self {
-        for (func, body) in input.drain(..) {
-            let body = self.func(func, body);
+    pub fn funcs(&mut self, input: &mut BumpVec<(FragRef<Func>, TirFunc)>) -> &mut Self {
+        for (func, tir_func) in input.drain(..) {
+            let body = self.func(func, tir_func.body);
             self.mir.bodies.insert(
                 func,
                 FuncMir {
