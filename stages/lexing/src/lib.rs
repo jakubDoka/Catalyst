@@ -13,5 +13,8 @@ pub use {
     ctl::ctl_lexer_next,
     lexer::Lexer,
     lexing_t::*,
-    token::{NoTokenMeta, SourceInfo, Token, TokenKind, TokenMeta, EQUAL_SIGN_PRECEDENCE},
+    logos::Logos,
+    token::{
+        NoTokenMeta, SkippedToken, SourceInfo, Token, TokenKind, TokenMeta, EQUAL_SIGN_PRECEDENCE,
+    },
 };

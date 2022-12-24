@@ -12,6 +12,10 @@ use crate::*;
 use lexing::*;
 use storage::*;
 
+pub trait Spanned {
+    fn span(&self) -> Span;
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ListAst<'a, T, M = NoTokenMeta> {
     pub start: SourceInfo<M>,
@@ -20,12 +24,14 @@ pub struct ListAst<'a, T, M = NoTokenMeta> {
 }
 
 impl<'a, T, M> ListAst<'a, T, M> {
-    pub fn span(&self) -> Span {
-        self.start.span.joined(self.end.span)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.elements.iter().map(|e| &e.value)
+    }
+}
+
+impl<'a, T, M> Spanned for ListAst<'a, T, M> {
+    fn span(&self) -> Span {
+        self.start.span.joined(self.end.span)
     }
 }
 
@@ -58,8 +64,8 @@ pub struct WrappedAst<T, M> {
     pub end: SourceInfo<M>,
 }
 
-impl<T, M> WrappedAst<T, M> {
-    pub fn span(&self) -> Span {
+impl<T, M> Spanned for WrappedAst<T, M> {
+    fn span(&self) -> Span {
         self.start.span.joined(self.end.span)
     }
 }
@@ -78,6 +84,12 @@ pub struct NameAst<M = NoTokenMeta> {
     pub ident: Ident,
 }
 
+impl<M> Spanned for NameAst<M> {
+    fn span(&self) -> Span {
+        self.source_info.span
+    }
+}
+
 impl<M> Deref for NameAst<M> {
     type Target = SourceInfo<M>;
 
@@ -90,4 +102,10 @@ impl<M> Deref for NameAst<M> {
 pub struct VisAst<M = NoTokenMeta> {
     pub source_meta: SourceInfo<M>,
     pub vis: Vis,
+}
+
+impl<M> Spanned for VisAst<M> {
+    fn span(&self) -> Span {
+        self.source_meta.span
+    }
 }

@@ -14,8 +14,8 @@ pub enum StructCtorPatFieldAst<'a, M = NoTokenMeta> {
     DoubleDot(SourceInfo<M>),
 }
 
-impl<'a, M> StructCtorPatFieldAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for StructCtorPatFieldAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             StructCtorPatFieldAst::Simple { mutable, name } => mutable
                 .as_ref()
@@ -32,8 +32,8 @@ pub struct StructCtorPatAst<'a, M = NoTokenMeta> {
     pub fields: ListAst<'a, StructCtorPatFieldAst<'a, M>, M>,
 }
 
-impl<'a, M> StructCtorPatAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for StructCtorPatAst<'a, M> {
+    fn span(&self) -> Span {
         self.slash.span.joined(self.fields.span())
     }
 }
@@ -45,8 +45,8 @@ pub struct EnumCtorPatAst<'a, M = NoTokenMeta> {
     pub value: Option<(SourceInfo<M>, PatAst<'a, M>)>,
 }
 
-impl<'a, M> EnumCtorPatAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for EnumCtorPatAst<'a, M> {
+    fn span(&self) -> Span {
         self.value
             .as_ref()
             .map_or(self.slash.span, |(_, e)| self.slash.span.joined(e.span()))
@@ -62,8 +62,8 @@ pub enum PatAst<'a, M = NoTokenMeta> {
     Int(SourceInfo<M>),
 }
 
-impl<'a, M> PatAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for PatAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             PatAst::Binding(_, name) => name.span,
             PatAst::Wildcard(e) => e.span,

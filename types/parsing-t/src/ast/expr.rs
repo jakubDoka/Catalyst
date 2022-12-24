@@ -6,8 +6,8 @@ pub enum ExprAst<'a, M = NoTokenMeta> {
     Binary(&'a BinaryExprAst<'a, M>),
 }
 
-impl<'a, M> ExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for ExprAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             ExprAst::Unit(e) => e.span(),
             ExprAst::Binary(e) => e.span(),
@@ -22,8 +22,8 @@ pub struct BinaryExprAst<'a, M = NoTokenMeta> {
     pub rhs: ExprAst<'a, M>,
 }
 
-impl<'a, M> BinaryExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for BinaryExprAst<'a, M> {
+    fn span(&self) -> Span {
         self.lhs.span().joined(self.rhs.span())
     }
 }
@@ -54,8 +54,8 @@ pub enum UnitExprAst<'a, M = NoTokenMeta> {
     Block(ListAst<'a, ExprAst<'a, M>, M>),
 }
 
-impl<'a, M> UnitExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for UnitExprAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             UnitExprAst::StructCtor(e) => e.span(),
             UnitExprAst::EnumCtor(e) => e.span(),
@@ -85,8 +85,8 @@ pub struct ReturnExprAst<'a, M = NoTokenMeta> {
     pub expr: Option<ExprAst<'a, M>>,
 }
 
-impl<'a, M> ReturnExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for ReturnExprAst<'a, M> {
+    fn span(&self) -> Span {
         self.expr
             .as_ref()
             .map_or(self.r#return.span, |e| self.r#return.span.joined(e.span()))
@@ -99,8 +99,8 @@ pub struct MatchArmAst<'a, M = NoTokenMeta> {
     pub body: BranchAst<'a, M>,
 }
 
-impl<'a, M> MatchArmAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for MatchArmAst<'a, M> {
+    fn span(&self) -> Span {
         self.pattern.span().joined(self.body.span())
     }
 }
@@ -112,8 +112,8 @@ pub struct MatchExprAst<'a, M = NoTokenMeta> {
     pub body: ListAst<'a, MatchArmAst<'a, M>, M>,
 }
 
-impl<'a, M> MatchExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for MatchExprAst<'a, M> {
+    fn span(&self) -> Span {
         self.r#match.span.joined(self.body.span())
     }
 }
@@ -124,8 +124,8 @@ pub enum BranchAst<'a, M = NoTokenMeta> {
     Arrow(SourceInfo<M>, ExprAst<'a, M>),
 }
 
-impl<'a, M> BranchAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for BranchAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             BranchAst::Block(e) => e.span(),
             BranchAst::Arrow(e, expr) => e.span.joined(expr.span()),
@@ -140,8 +140,8 @@ pub struct ElifAst<'a, M = NoTokenMeta> {
     pub body: BranchAst<'a, M>,
 }
 
-impl<'a, M> ElifAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for ElifAst<'a, M> {
+    fn span(&self) -> Span {
         self.elif.span.joined(self.body.span())
     }
 }
@@ -155,8 +155,8 @@ pub struct IfAst<'a, M = NoTokenMeta> {
     pub r#else: Option<(SourceInfo<M>, BranchAst<'a, M>)>,
 }
 
-impl<'a, M> IfAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for IfAst<'a, M> {
+    fn span(&self) -> Span {
         let mut span = self.r#if.span;
         if let Some((r#else, body)) = &self.r#else {
             span = span.joined(r#else.span.joined(body.span()));
@@ -175,8 +175,8 @@ pub struct ContinueAst<M = NoTokenMeta> {
     pub label: Option<NameAst<M>>,
 }
 
-impl<M> ContinueAst<M> {
-    pub fn span(&self) -> Span {
+impl<M> Spanned for ContinueAst<M> {
+    fn span(&self) -> Span {
         self.label.as_ref().map_or(self.r#continue.span, |e| {
             self.r#continue.span.joined(e.span)
         })
@@ -190,8 +190,8 @@ pub struct LoopAst<'a, M = NoTokenMeta> {
     pub body: ExprAst<'a, M>,
 }
 
-impl<'a, M> LoopAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for LoopAst<'a, M> {
+    fn span(&self) -> Span {
         self.r#loop.span.joined(self.body.span())
     }
 }
@@ -203,8 +203,8 @@ pub struct BreakAst<'a, M = NoTokenMeta> {
     pub value: Option<ExprAst<'a, M>>,
 }
 
-impl<'a, M> BreakAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for BreakAst<'a, M> {
+    fn span(&self) -> Span {
         if let Some(value) = &self.value {
             self.r#break.span.joined(value.span())
         } else {
@@ -221,8 +221,8 @@ pub struct CallAst<'a, M = NoTokenMeta> {
     pub args: ListAst<'a, ExprAst<'a, M>, M>,
 }
 
-impl<'a, M> CallAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for CallAst<'a, M> {
+    fn span(&self) -> Span {
         self.callable.span().joined(self.args.span())
     }
 }
@@ -234,8 +234,8 @@ pub struct DotExprAst<'a, M = NoTokenMeta> {
     pub rhs: PathAst<'a, M>,
 }
 
-impl<'a, M> DotExprAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for DotExprAst<'a, M> {
+    fn span(&self) -> Span {
         self.lhs.span().joined(self.rhs.span())
     }
 }
@@ -247,8 +247,8 @@ pub struct StructCtorAst<'a, M = NoTokenMeta> {
     pub body: ListAst<'a, StructCtorFieldAst<'a, M>, M>,
 }
 
-impl<'a, M> StructCtorAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for StructCtorAst<'a, M> {
+    fn span(&self) -> Span {
         self.path
             .as_ref()
             .map_or(self.slash.span, |e| e.span().joined(self.slash.span))
@@ -262,8 +262,8 @@ pub struct StructCtorFieldAst<'a, M = NoTokenMeta> {
     pub value: Option<(SourceInfo<M>, ExprAst<'a, M>)>,
 }
 
-impl<'a, M> StructCtorFieldAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for StructCtorFieldAst<'a, M> {
+    fn span(&self) -> Span {
         self.value
             .as_ref()
             .map_or(self.name.span, |(.., e)| self.name.span.joined(e.span()))
@@ -276,8 +276,8 @@ pub struct EnumCtorAst<'a, M = NoTokenMeta> {
     pub value: Option<(SourceInfo<M>, ExprAst<'a, M>)>,
 }
 
-impl<'a, M> EnumCtorAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for EnumCtorAst<'a, M> {
+    fn span(&self) -> Span {
         self.value
             .as_ref()
             .map_or(self.path.span(), |(_, e)| self.path.span().joined(e.span()))
@@ -293,8 +293,8 @@ pub struct LetAst<'a, M = NoTokenMeta> {
     pub value: ExprAst<'a, M>,
 }
 
-impl<'a, M> LetAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for LetAst<'a, M> {
+    fn span(&self) -> Span {
         self.r#let.span.joined(self.value.span())
     }
 }

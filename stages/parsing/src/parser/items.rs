@@ -5,7 +5,7 @@ use super::*;
 
 impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
     pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena>> {
-        let (items, last, ..) = self.items()?;
+        let (items, .., last) = self.items()?;
 
         macro_rules! gen_groups {
             (
@@ -18,7 +18,7 @@ impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
                     let mut $name = bumpvec![];
                 )*
 
-                for &item in items.iter() {
+                for &(.., item) in items.iter() {
                     match item {
                         $(
                             ItemAst::$enum_name(&s) => $name.push((s, self.arena.alloc_iter(attrs.drain(..)))),
@@ -44,7 +44,7 @@ impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
                     $(
                         $name,
                     )*
-                    last,
+                    last: last.is_none(),
                 })
             };
         }
@@ -59,18 +59,24 @@ impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
     }
 }
 
+pub type ItemsAstResult<'arena, M> = (
+    BumpVec<(Option<SourceInfo<M>>, ItemAst<'arena, M>)>,
+    Option<SourceInfo<M>>,
+    Option<SourceInfo<M>>,
+);
+
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
-    fn items(&mut self) -> Option<(BumpVec<ItemAst<'arena, M>>, bool)> {
+    pub fn items(&mut self) -> Option<ItemsAstResult<'arena, M>> {
         let mut items = bumpvec![];
-        let last = loop {
-            self.skip(Tk::NewLine);
+        let (last, between) = loop {
+            let between = self.skip(Tk::NewLine);
 
             if self.at(Tk::Eof) {
-                break true;
+                break (None, between);
             }
 
-            if self.at(Tk::Break) {
-                break false;
+            if let Some(r#break) = self.try_advance(Tk::Break) {
+                break (Some(r#break), between);
             }
 
             let Some(item) = self.item() else {
@@ -78,10 +84,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 continue;
             };
 
-            items.push(item);
+            items.push((between, item));
         };
 
-        Some((items, last))
+        Some((items, between, last))
     }
 
     fn item(&mut self) -> Option<ItemAst<'arena, M>> {
@@ -113,7 +119,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn r#enum(&mut self, vis: Option<VisAst<M>>) -> Option<EnumAst<'arena, M>> {
         Some(EnumAst {
             vis,
-            r#enum: self.advance(),
+            keyword: self.advance(),
             generics: self.generics()?,
             name: self.name("enum")?,
             body: self.opt_object("enum body", Self::enum_variant)?,
@@ -133,7 +139,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn r#impl(&mut self, vis: Option<VisAst<M>>) -> Option<ImplAst<'arena, M>> {
         Some(ImplAst {
             vis,
-            r#impl: self.advance(),
+            keyword: self.advance(),
             generics: self.generics()?,
             target: self.impl_target()?,
             body: self.opt_object("impl body", Self::impl_item)?,
@@ -174,7 +180,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn spec(&mut self, vis: Option<VisAst<M>>) -> Option<SpecAst<'arena, M>> {
         Some(SpecAst {
             vis,
-            spec: self.advance(),
+            keyword: self.advance(),
             generics: self.generics()?,
             name: self.name("spec")?,
             inherits: self.param_specs()?,

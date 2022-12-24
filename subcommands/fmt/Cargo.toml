@@ -6,12 +6,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-diags = { version = "0.1.0", path = "../../types/diags" }
-lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
-lexing = { version = "0.1.0", path = "../../stages/lexing" }
-logos = "0.12.1"
-parsing = { version = "0.1.0", path = "../../stages/parsing" }
-parsing-t = { version = "0.1.0", path = "../../types/parsing-t" }
-
-storage = { version = "0.1.0", path = "../../utils/storage" }
-packaging-t = { version = "0.1.0", path = "../../types/packaging-t" }
+middleware = { path = "../middleware" }

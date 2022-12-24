@@ -31,6 +31,22 @@ pub struct SourceInfo<M = NoTokenMeta> {
     pub meta: M,
 }
 
+impl SourceInfo<u32> {
+    pub fn full(self) -> Span {
+        Span {
+            start: self.span.start,
+            end: self.meta,
+        }
+    }
+
+    pub fn after(self) -> Span {
+        Span {
+            start: self.span.end,
+            end: self.meta,
+        }
+    }
+}
+
 pub trait TokenMeta: Clone + Copy + 'static {
     fn new(lexer: &Lexer) -> Self;
 }
@@ -117,6 +133,34 @@ macro_rules! gen_kind {
                     TokenKind::Error => "<error>",
                     TokenKind::Eof => "<eof>",
                     TokenKind::None => "<none>",
+                    TokenKind::Space => "<space>",
+                }
+            }
+
+            pub const fn pattern(self) -> &'static str {
+                match self {
+                    $(
+                        TokenKind::$keyword => $keyword_repr,
+                    )*
+
+                    $(
+                        TokenKind::$punctuation => $punctuation_repr,
+                    )*
+
+                    $(
+                        TokenKind::$pair0 => $pair_repr0,
+                        TokenKind::$pair1 => $pair_repr1,
+                    )*
+
+                    $(
+                        TokenKind::$literal => $literal_regex,
+                    )*
+
+                    $(
+                        TokenKind::$skipped => $skipped_regex,
+                    )*
+
+                    _ => "eh",
                 }
             }
 
@@ -183,10 +227,28 @@ macro_rules! gen_kind {
             #[regex(r"(\n|;)")]
             NewLine,
 
+            #[regex(r"[ \r\t]+", logos::skip)]
+            Space,
+
             #[error]
             Error,
             Eof,
             None,
+        }
+
+        #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
+        pub enum SkippedToken {
+            $(
+                #[regex($skipped_regex)]
+                $skipped,
+            )*
+
+            #[token("\n")]
+            NewLine,
+            #[regex(r"[\r\t ]+", logos::skip)]
+            Space,
+            #[error]
+            Error,
         }
     };
 }
@@ -252,8 +314,8 @@ gen_kind!(
     }
 
     skipped {
-        Comment = r"(/\*([^*]/|\*[^/]|[^*/])*\*/|//[^\n]*)",
-        Space = r"[ \r\t]+",
+        Comment = r"//[^\n]*",
+        MultiComment = r"/\*([^*]/|\*[^/]|[^*/])*\*/|",
     }
 
     operators {

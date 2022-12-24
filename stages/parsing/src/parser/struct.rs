@@ -4,7 +4,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn r#struct(&mut self, vis: Option<VisAst<M>>) -> Option<StructAst<'arena, M>> {
         Some(StructAst {
             vis,
-            r#struct: self.advance(),
+            keyword: self.advance(),
             generics: self.generics()?,
             name: self.name("struct")?,
             body: self.opt_object("struct body", Self::struct_field)?,

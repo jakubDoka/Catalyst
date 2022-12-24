@@ -11,7 +11,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     pub fn func_sig(&mut self) -> Option<FuncSigAst<'arena, M>> {
         Some(FuncSigAst {
-            r#fn: self.advance(),
+            keyword: self.advance(),
             cc: self.try_advance(Tk::Str),
             generics: self.generics()?,
             name: self.name("function")?,

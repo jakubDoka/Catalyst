@@ -1,6 +1,6 @@
 use lexing::*;
 
-use crate::{ListAst, NameAst};
+use crate::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum PathSegmentAst<'a, M = NoTokenMeta> {
@@ -8,10 +8,10 @@ pub enum PathSegmentAst<'a, M = NoTokenMeta> {
     Params(ListAst<'a, TyAst<'a, M>, M>),
 }
 
-impl<'a, M> PathSegmentAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for PathSegmentAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
-            PathSegmentAst::Name(name) => name.span,
+            PathSegmentAst::Name(name) => name.span(),
             PathSegmentAst::Params(params) => params.span(),
         }
     }
@@ -24,12 +24,9 @@ pub struct PathAst<'a, M = NoTokenMeta> {
     pub segments: &'a [PathSegmentAst<'a, M>],
 }
 
-impl<'a, M> PathAst<'a, M> {
-    pub fn span(&self) -> Span {
-        let start = self
-            .slash
-            .as_ref()
-            .map_or(self.start.span(), |e| e.span.joined(self.start.span()));
+impl<'a, M> Spanned for PathAst<'a, M> {
+    fn span(&self) -> Span {
+        let start = self.slash.as_ref().map_or(self.start.span(), |e| e.span);
         self.segments
             .last()
             .map_or(start, |e| start.joined(e.span()))
@@ -44,8 +41,8 @@ pub enum TyAst<'a, M = NoTokenMeta> {
     Wildcard(SourceInfo<M>),
 }
 
-impl<'a, M> TyAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for TyAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             TyAst::Path(path) => path.span(),
             TyAst::Pointer(pointer) => pointer.span(),
@@ -62,8 +59,8 @@ pub struct TyPointerAst<'a, M = NoTokenMeta> {
     pub ty: TyAst<'a, M>,
 }
 
-impl<'a, M> TyPointerAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for TyPointerAst<'a, M> {
+    fn span(&self) -> Span {
         self.carrot.span.joined(self.ty.span())
     }
 }
@@ -74,8 +71,8 @@ pub enum MutabilityAst<'a, M = NoTokenMeta> {
     Generic(SourceInfo<M>, PathAst<'a, M>),
 }
 
-impl<'a, M> MutabilityAst<'a, M> {
-    pub fn span(&self) -> Span {
+impl<'a, M> Spanned for MutabilityAst<'a, M> {
+    fn span(&self) -> Span {
         match self {
             MutabilityAst::Mut(m) => m.span,
             MutabilityAst::Generic(g, path) => g.span.joined(path.span()),
