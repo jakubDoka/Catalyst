@@ -17,7 +17,7 @@ macro_rules! gen_test {
                 $crate::items::test_case($name, value, |name| {
                     let mut resources = gen_test!(__inner__ name $($type)? $structure);
                     resources.add_water();
-                    <$test_struct>::new(resources).exec($name)
+                    <$test_struct>::default().exec($name, &mut resources)
                 });
             )*
         });
@@ -124,30 +124,18 @@ pub mod items {
     };
 
     impl<T: Scheduler + Default> Testable for T {
-        fn exec(mut self, name: &str) -> (Workspace, Resources) {
-            self.execute(Path::new(name));
+        fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
+            self.execute(Path::new(name), resources);
 
             (
-                mem::take(self.loader().workspace),
-                mem::take(self.loader().resources),
+                mem::take(self.loader(resources).workspace),
+                mem::take(self.loader(resources).resources),
             )
-        }
-
-        fn set_packages(&mut self, packages: Resources) {
-            *self.loader().resources = packages;
         }
     }
 
     pub trait Testable: Default {
-        fn exec(self, name: &str) -> (Workspace, Resources);
-        fn set_packages(&mut self, packages: Resources);
-
-        fn new(resources: TestResources) -> Self {
-            let mut this = Self::default();
-            let packages = Resources::with_resources(resources);
-            this.set_packages(packages);
-            this
-        }
+        fn exec(self, name: &str, resources: &mut TestResources) -> (Workspace, Resources);
     }
 
     pub fn test_case<'a: 'b, 'b, 'c>(
@@ -441,6 +429,11 @@ pub mod items {
                 .get(self.canonicalize(path)?.as_path())
                 .cloned()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "file not found"))
+        }
+
+        fn write_to_string(&mut self, path: &Path, data: &str) -> io::Result<()> {
+            self.files.insert(self.canonicalize(path)?, data.to_owned());
+            Ok(())
         }
 
         fn exists(&self, path: &Path) -> bool {

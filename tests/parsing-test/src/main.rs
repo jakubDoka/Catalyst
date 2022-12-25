@@ -18,10 +18,6 @@ struct TestState {
 }
 
 impl Scheduler for TestState {
-    fn loader(&mut self) -> PackageLoader {
-        package_loader!(self)
-    }
-
     fn before_parsing(&mut self, module: VRef<Module>) {
         let module_ent = &self.resources.modules[module];
         let content = &self.resources.sources[module_ent.source].content;
@@ -36,6 +32,10 @@ impl Scheduler for TestState {
             title: default(),
             footer: default(),
         });
+    }
+
+    fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
+        package_loader!(self, *resources)
     }
 }
 

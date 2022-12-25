@@ -47,26 +47,26 @@ pub struct LspArgs {
     terminator: Option<Receiver<()>>,
 }
 
-pub struct LspRuntime {
-    middleware: Middleware,
+pub struct LspRuntime<'m> {
+    middleware: &'m mut Middleware,
     args: LspArgs,
     middleware_args: MiddlewareArgs,
 }
 
-impl LspRuntime {
-    pub fn immediate() -> io::Result<()> {
+impl<'m> LspRuntime<'m> {
+    pub fn immediate(middleware: &'m mut Middleware) -> io::Result<()> {
         let (connection, io_threads) = Connection::stdio();
 
-        Self::new(LspArgs::default())?.run(connection);
+        Self::new(LspArgs::default(), middleware)?.run(connection);
 
         io_threads.join()?;
 
         Ok(())
     }
 
-    pub fn new(args: LspArgs) -> io::Result<Self> {
+    pub fn new(args: LspArgs, middleware: &'m mut Middleware) -> io::Result<Self> {
         Ok(Self {
-            middleware: default(),
+            middleware,
             args,
             middleware_args: MiddlewareArgs {
                 path: default(),
@@ -129,12 +129,13 @@ impl LspRuntime {
     }
 
     fn recompile(&mut self, connection: &Connection) -> Option<MiddlewareOutput> {
-        let output = self.middleware.update(&self.middleware_args);
-        if output.is_none() && let Some(ref mut view) = self.middleware.diagnostic_view() {
-            Self::clear_diagnostics(connection, view);
-            Self::publish_diagnostics(connection, view);
-        }
-        output
+        self.middleware
+            .update(&self.middleware_args, &mut OsResources)
+            .map_err(|ref mut view| {
+                Self::clear_diagnostics(connection, view);
+                Self::publish_diagnostics(connection, view);
+            })
+            .ok()
     }
 
     fn clear_diagnostics(connection: &Connection, view: &DiagnosticView) {

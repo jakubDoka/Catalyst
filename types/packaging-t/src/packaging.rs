@@ -1,9 +1,7 @@
 use lexing_t::*;
 
-use std::{default::default, path::*, time::SystemTime};
+use std::{path::*, time::SystemTime};
 use storage::*;
-
-use crate::*;
 
 pub type PackageGraph = graphs::CycleDetector;
 
@@ -15,7 +13,6 @@ pub struct Resources {
     pub package_deps: PushMap<Dep<Package>>,
     pub module_deps: PushMap<Dep<Module>>,
     pub module_order: Vec<VRef<Module>>,
-    pub db: Box<dyn ResourceDb>,
 }
 
 impl Resources {
@@ -29,13 +26,6 @@ impl Resources {
 
     pub fn source_path(&self, source: VRef<Source>) -> &Path {
         self.sources[source].path.as_path()
-    }
-
-    pub fn with_resources(resources: impl ResourceDb) -> Self {
-        Self {
-            db: Box::new(resources),
-            ..default()
-        }
     }
 
     pub fn clear(&mut self) {

@@ -6,7 +6,7 @@ use diags::*;
 use packaging::*;
 use packaging_t::*;
 use storage::*;
-use testing::*;
+use testing::{items::TestResources, *};
 
 #[derive(Default)]
 struct TestState {
@@ -17,14 +17,10 @@ struct TestState {
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, Resources) {
+    fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
         let mut ctx = default();
-        package_loader!(self).reload(Path::new(name), &mut ctx);
+        package_loader!(self, *resources).reload(Path::new(name), &mut ctx);
         (self.workspace, self.resources)
-    }
-
-    fn set_packages(&mut self, packages: Resources) {
-        self.resources = packages;
     }
 }
 

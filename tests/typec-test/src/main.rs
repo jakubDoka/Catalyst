@@ -24,10 +24,6 @@ struct TestState {
 }
 
 impl Scheduler for TestState {
-    fn loader(&mut self) -> PackageLoader {
-        package_loader!(self)
-    }
-
     fn init(&mut self, _: &Path) {
         self.typec.init(&mut self.interner);
     }
@@ -63,6 +59,10 @@ impl Scheduler for TestState {
         self.workspace.push(TirRepr {
             repr: mem::take(&mut self.functions),
         });
+    }
+
+    fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
+        package_loader!(self, *resources)
     }
 }
 

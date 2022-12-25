@@ -306,7 +306,7 @@ impl PackageLoader<'_> {
                     .join(path_str)
                     .with_extension("ctl");
 
-                let dep_path = match self.resources.db.canonicalize(&built_path) {
+                let dep_path = match self.db.canonicalize(&built_path) {
                     Ok(p) => p,
                     Err(trace) => self.workspace.push(InvalidDefinedPath {
                         path: built_path,
@@ -327,13 +327,12 @@ impl PackageLoader<'_> {
     }
 
     fn resolve_dep_root_path(&mut self, root_path: &Path) -> Option<PathBuf> {
-        let path = match self.resources.db.var(DEP_ROOT_VAR) {
+        let path = match self.db.var(DEP_ROOT_VAR) {
             Ok(path) if Path::new(&path).is_absolute() => path.into(),
             Ok(path) => root_path.join(path),
             Err(VarError::NotPresent) => {
                 let default_path = root_path.join("deps");
-                self.resources
-                    .db
+                self.db
                     .create_dir_all(&default_path)
                     .map_err(|trace| {
                         self.workspace.push(PathRelatedError {
@@ -349,7 +348,6 @@ impl PackageLoader<'_> {
         };
 
         let root = self
-            .resources
             .db
             .canonicalize(&path)
             .map_err(|err| PathRelatedError {
@@ -568,7 +566,7 @@ impl PackageLoader<'_> {
         ctx: &mut ResourceLoaderCtx,
         owner: &'static str,
     ) -> Option<VRef<Source>> {
-        let last_modified = self.resources.db.get_modification_time(&path);
+        let last_modified = self.db.get_modification_time(&path);
         if let Some(&source) = ctx.sources.get(&path)
             && let Ok(last_modified) = last_modified
             && self.resources.sources[source].last_modified == last_modified
@@ -581,7 +579,6 @@ impl PackageLoader<'_> {
         }
 
         let content = self
-            .resources
             .db
             .read_to_string(&path)
             .map_err(|trace| {
@@ -624,8 +621,7 @@ impl PackageLoader<'_> {
         loc: Option<SourceLoc>,
         owner: &'static str,
     ) -> Option<PathBuf> {
-        self.resources
-            .db
+        self.db
             .canonicalize(root)
             .map_err(|err| {
                 self.workspace.push(InvalidDefinedPath {
@@ -658,8 +654,7 @@ impl PackageLoader<'_> {
 
         let exists = download_root.exists();
 
-        self.resources
-            .db
+        self.db
             .create_dir_all(&download_root)
             .map_err(|err| {
                 self.workspace.push(InvalidDefinedPath {
@@ -675,7 +670,6 @@ impl PackageLoader<'_> {
             .ok()?;
 
         let install_path = self
-            .resources
             .db
             .canonicalize(&download_root)
             .expect("we just created it, there is no reason for this to fail");
@@ -760,7 +754,7 @@ impl PackageLoader<'_> {
 
         let mut command = Command::new("git");
         command.args(args);
-        let output = self.resources.db.command(&mut command);
+        let output = self.db.command(&mut command);
         let output = output
             .map_err(|err| {
                 self.workspace.push(GitExecError {

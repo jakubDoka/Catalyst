@@ -8,6 +8,7 @@ file "stages/packaging/src/state_gen.rs" {
         mut Workspace
         mut Interner
         mut PackageGraph
+        passed mut db: `dyn ResourceDb`
     }
 }
 

@@ -4,16 +4,16 @@ use crate::*;
 use cli::*;
 use middleware::annotate_snippets::display_list::FormatOptions;
 
-pub struct CcRuntime {
-    middleware: Middleware,
+pub struct CcRuntime<'m> {
+    middleware: &'m mut Middleware,
     cli_input: CliInput,
     args: Option<MiddlewareArgs>,
 }
 
-impl CcRuntime {
-    pub fn new(cli_input: CliInput) -> Self {
+impl<'m> CcRuntime<'m> {
+    pub fn new(cli_input: CliInput, middleware: &'m mut Middleware) -> Self {
         Self {
-            middleware: Middleware::new(),
+            middleware,
             cli_input,
             args: None,
         }
@@ -79,37 +79,36 @@ impl CcRuntime {
             }
         };
 
-        let Some(output) = self.middleware.update(args) else {
-            let Some(view) = self.middleware.diagnostic_view() else {
-                eprintln!("Compilation failed no diagnostic view.");
-                return None;
-            };
+        let output = match self.middleware.update(args, &mut OsResources) {
+            Ok(output) => output,
+            Err(view) => {
+                if view.resources.no_changes() {
+                    println!("No changes detected.");
+                    return None;
+                }
 
-            if view.resources.no_changes() {
-                println!("No changes detected.");
-                return None;
-            }
+                if !view.workspace.has_errors() {
+                    println!("No errors found.");
+                    return None;
+                }
 
-            if !view.workspace.has_errors() {
-                println!("No errors found.");
-                return None;
-            }
-
-            let mut display = SnippetDisplayImpl {
-                opts: FormatOptions {
-                    color: true,
+                let mut display = SnippetDisplayImpl {
+                    opts: FormatOptions {
+                        color: true,
+                        ..default()
+                    },
                     ..default()
-                },
-                ..default()
-            };
+                };
 
-            let mut diagnostics = String::new();
-            view.workspace.display(view.resources, &mut display, &mut diagnostics);
+                let mut diagnostics = String::new();
+                view.workspace
+                    .display(view.resources, &mut display, &mut diagnostics);
 
-            println!("{diagnostics}");
-            println!("Compilation failed.");
+                println!("{diagnostics}");
+                println!("Compilation failed.");
 
-            return None;
+                return None;
+            }
         };
 
         let dest = self.cli_input.value("output").unwrap_or("a");

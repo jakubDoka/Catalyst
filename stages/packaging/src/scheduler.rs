@@ -1,23 +1,23 @@
 use std::{mem, path::Path};
 
-use packaging_t::Module;
+use packaging_t::{Module, ResourceDb};
 use parsing::*;
 use storage::*;
 
 use crate::{packages::ResourceLoaderCtx, *};
 
 pub trait Scheduler {
-    fn loader(&mut self) -> PackageLoader;
+    fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a>;
 
     fn init(&mut self, _: &Path) {}
     fn before_parsing(&mut self, _module: VRef<Module>) {}
     fn parse_segment(&mut self, _module: VRef<Module>, _items: GroupedItemsAst) {}
     fn finally(&mut self) {}
 
-    fn execute(&mut self, path: &Path) {
+    fn execute(&mut self, path: &Path, resources: &mut dyn ResourceDb) {
         let mut ctx = ResourceLoaderCtx::default();
         let order = {
-            let mut res = self.loader();
+            let mut res = self.loader(resources);
             res.reload(path, &mut ctx);
             mem::take(&mut res.resources.module_order)
         };
@@ -27,7 +27,7 @@ pub trait Scheduler {
         for module in order {
             self.before_parsing(module);
 
-            let res = self.loader();
+            let res = self.loader(resources);
             let source = res.resources.modules[module].source;
             let content = &res.resources.sources[source].content;
             let mut parser_ctx = ParserCtx::new(content);
@@ -44,7 +44,7 @@ pub trait Scheduler {
 
             loop {
                 let items = {
-                    let res = self.loader();
+                    let res = self.loader(resources);
                     ast_data.clear();
                     let source = res.resources.modules[module].source;
                     let content = &res.resources.sources[source].content;

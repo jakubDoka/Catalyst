@@ -8,6 +8,7 @@ use std::{
 
 pub trait ResourceDb: Send + Sync + 'static {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+    fn write_to_string(&mut self, path: &Path, data: &str) -> io::Result<()>;
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn command(&mut self, command: &mut Command) -> io::Result<Output>;
@@ -50,6 +51,10 @@ impl ResourceDb for OsResources {
 
     fn get_modification_time(&self, path: &Path) -> io::Result<SystemTime> {
         fs::metadata(path).and_then(|metadata| metadata.modified())
+    }
+
+    fn write_to_string(&mut self, path: &Path, data: &str) -> io::Result<()> {
+        fs::write(path, data)
     }
 }
 

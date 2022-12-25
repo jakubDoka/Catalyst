@@ -9,7 +9,7 @@ use std::{fs, path::Path, process::Command, vec};
 use target_lexicon::Triple;
 
 use middleware::*;
-use testing::*;
+use testing::{items::TestResources, *};
 
 #[derive(Default)]
 struct TestState {
@@ -99,7 +99,7 @@ ctl_errors! {
 }
 
 impl Testable for TestState {
-    fn exec(mut self, name: &str) -> (Workspace, Resources) {
+    fn exec(mut self, name: &str, resources: &mut TestResources) -> (Workspace, Resources) {
         let jit_isa = Isa::host(true).unwrap();
         let isa = Isa::host(false).unwrap();
         let args = MiddlewareArgs {
@@ -111,15 +111,11 @@ impl Testable for TestState {
             dump_ir: true,
             check: false,
         };
-        if let Some(binary) = self.middleware.update(&args) {
+        if let Ok(binary) = self.middleware.update(&args, resources) {
             self.finally(binary);
         }
         let res = self.middleware.take_incremental().unwrap().resources;
         (self.middleware.workspace, res)
-    }
-
-    fn set_packages(&mut self, resources: Resources) {
-        self.middleware.set_resources(resources);
     }
 }
 

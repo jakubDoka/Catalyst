@@ -54,26 +54,11 @@ impl Middleware {
         self.incremental.take()
     }
 
-    pub fn set_resources(&mut self, resources: Resources) {
-        let mut incr = Incremental {
-            resources,
-            ..default()
-        };
-        incr.main_task.typec.init(&mut incr.main_task.interner);
-        self.incremental = Some(incr);
-    }
-
-    pub fn diagnostic_view(&mut self) -> Option<DiagnosticView> {
-        self.incremental.as_mut().map(|inc| DiagnosticView {
-            workspace: &mut self.workspace,
-            resources: &inc.resources,
-        })
-    }
-
     fn reload_resources(
         &mut self,
         resources: &mut Resources,
         main_task: &mut Task,
+        db: &mut dyn ResourceDb,
         path: &Path,
     ) -> Option<Vec<VRef<Source>>> {
         PackageLoader::new(
@@ -81,11 +66,16 @@ impl Middleware {
             &mut main_task.workspace,
             &mut main_task.interner,
             &mut self.package_graph,
+            db,
         )
         .reload(path, &mut self.resource_loading_ctx)
     }
 
-    pub fn update(&mut self, args: &MiddlewareArgs) -> Option<MiddlewareOutput> {
+    pub fn update(
+        &mut self,
+        args: &MiddlewareArgs,
+        db: &mut dyn ResourceDb,
+    ) -> Result<MiddlewareOutput, DiagnosticView> {
         self.workspace.clear();
 
         let Incremental {
@@ -101,7 +91,8 @@ impl Middleware {
 
         main_task.ir_dump = args.dump_ir.then(String::new);
 
-        if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, &args.path) {
+        if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, db, &args.path)
+        {
             self.relocator.clear();
             self.gen_relocator.clear();
             self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
@@ -111,13 +102,16 @@ impl Middleware {
 
         if main_task.workspace.has_errors() || resources.no_changes() {
             self.workspace.transfer(&mut main_task.workspace);
-            self.incremental = Some(Incremental {
+            let incr = self.incremental.insert(Incremental {
                 resources,
                 main_task,
                 worker_pool,
                 module_items,
             });
-            return None;
+            return Err(DiagnosticView {
+                workspace: &mut self.workspace,
+                resources: &incr.resources,
+            });
         }
 
         let (package_sender, package_receiver) = mpsc::channel();
@@ -230,14 +224,17 @@ impl Middleware {
             .expect("zero worker situation is impossible");
 
         if self.workspace.has_errors() || args.check {
-            self.incremental = Some(Incremental {
+            let incr = self.incremental.insert(Incremental {
                 resources,
                 main_task,
                 worker_pool,
                 module_items,
             });
 
-            return None;
+            return Err(DiagnosticView {
+                workspace: &mut self.workspace,
+                resources: &incr.resources,
+            });
         }
 
         let entry_point = self.generate_entry_point(&mut main_task, &args.isa, entry_points);
@@ -275,7 +272,7 @@ impl Middleware {
             module_items,
         });
 
-        Some(MiddlewareOutput {
+        Ok(MiddlewareOutput {
             binary: object.emit().unwrap(),
             ir,
         })
