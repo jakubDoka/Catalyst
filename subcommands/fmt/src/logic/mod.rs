@@ -17,5 +17,15 @@ impl<'m> FmtRuntime<'m> {
         }
     }
 
-    pub fn run(&mut self) {}
+    pub fn run(&mut self, args: &MiddlewareArgs, resources: &mut dyn ResourceDb) {
+        let (out, view) = self.middleware.update(args, resources);
+        if let Err(err) = view.dump_diagnostics(true, out) {
+            eprintln!("{err}");
+            return;
+        }
+
+        for package in view.resources.packages.values() {
+            let source = &view.resources.sources[package.source];
+        }
+    }
 }

@@ -2,13 +2,13 @@ use super::*;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ImportsAst<'a, M = NoTokenMeta> {
-    pub r#use: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub items: ListAst<'a, ImportAst<M>, M>,
 }
 
 impl<'a, M> Spanned for ImportsAst<'a, M> {
     fn span(&self) -> Span {
-        self.r#use.span.joined(self.items.span())
+        self.keyword.span.joined(self.items.span())
     }
 }
 

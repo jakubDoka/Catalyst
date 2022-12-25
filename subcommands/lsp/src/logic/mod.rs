@@ -128,14 +128,15 @@ impl<'m> LspRuntime<'m> {
         }
     }
 
-    fn recompile(&mut self, connection: &Connection) -> Option<MiddlewareOutput> {
-        self.middleware
-            .update(&self.middleware_args, &mut OsResources)
-            .map_err(|ref mut view| {
-                Self::clear_diagnostics(connection, view);
-                Self::publish_diagnostics(connection, view);
-            })
-            .ok()
+    fn recompile(&mut self, connection: &Connection) -> MiddlewareOutput {
+        let (output, ref mut view) = self
+            .middleware
+            .update(&self.middleware_args, &mut OsResources);
+        if let MiddlewareOutput::Failed = output {
+            Self::clear_diagnostics(connection, view);
+            Self::publish_diagnostics(connection, view);
+        }
+        output
     }
 
     fn clear_diagnostics(connection: &Connection, view: &DiagnosticView) {

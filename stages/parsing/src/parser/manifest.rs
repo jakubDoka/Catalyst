@@ -4,29 +4,29 @@ use super::*;
 
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn manifest(&mut self) -> Option<ManifestAst<'arena, M>> {
-        let mut fields = bumpvec![];
-        let mut deps = None;
-        loop {
-            self.skip(TokenKind::NewLine);
-
-            if self.at(TokenKind::Eof) {
-                break;
-            }
-
-            if let Some(deps_span) = self.try_advance("deps") && deps.is_none() {
-                deps = Some(ManifestDepsAst {
-                    deps: deps_span,
-                    list: self.object("dependency list", Self::manifest_dep)?,
-                });
-                continue;
-            }
-
-            fields.push(self.manifest_field()?);
+        let header = self.skip(TokenKind::NewLine);
+        let mut items = bumpvec![];
+        while !self.at(TokenKind::Eof) {
+            items.push((self.manifest_item()?, self.skip(TokenKind::NewLine)));
         }
 
         Some(ManifestAst {
-            fields: self.arena.alloc_slice(&fields),
-            deps,
+            header,
+            items: self.arena.alloc_iter(items),
+        })
+    }
+
+    fn manifest_item(&mut self) -> Option<ManifestItemAst<'arena, M>> {
+        branch! {str self => {
+            "deps" => self.manifest_deps().map(ManifestItemAst::Deps),
+            @ => self.manifest_field().map(ManifestItemAst::Field),
+        }}
+    }
+
+    fn manifest_deps(&mut self) -> Option<ManifestDepsAst<'arena, M>> {
+        Some(ManifestDepsAst {
+            deps: self.advance(),
+            list: self.object("dependency list", Self::manifest_dep)?,
         })
     }
 

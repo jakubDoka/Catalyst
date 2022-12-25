@@ -434,9 +434,9 @@ impl PackageLoader<'_> {
         let (root_module, root_module_span) =
             self.resolve_root_module_path(&path, source_id, manifest)?;
         let deps = manifest
-            .deps
-            .map(|deps| self.resolve_manifest_deps(&path, source_id, deps, ctx))
-            .unwrap_or_default();
+            .find_deps()
+            .flat_map(|deps| deps.list.iter().copied());
+        let deps = self.resolve_manifest_deps(&path, source_id, deps, ctx);
 
         let package = DummyPackage {
             root_module,
@@ -455,49 +455,47 @@ impl PackageLoader<'_> {
         &mut self,
         root_path: &Path,
         origin: VRef<Source>,
-        deps: ManifestDepsAst,
+        deps: impl Iterator<Item = ManifestDepAst>,
         ctx: &mut ResourceLoaderCtx,
     ) -> Vec<(NameAst, PathBuf)> {
-        deps.list
-            .iter()
-            .filter_map(|dep| {
-                let &ManifestDepAst {
-                    git,
-                    name,
-                    path: ast_path,
-                    version,
-                } = dep;
+        deps.filter_map(|dep| {
+            let ManifestDepAst {
+                git,
+                name,
+                path: ast_path,
+                version,
+            } = dep;
 
-                let name = self.extract_path_name("package", ast_path.span, name, origin)?;
+            let name = self.extract_path_name("package", ast_path.span, name, origin)?;
 
-                let path = if git.is_some() {
-                    self.download_package(origin, version, ast_path.span, ctx)
-                } else {
-                    let path_content = self.resources.sources[origin].span_str(ast_path.span);
-                    let package_path = root_path.join(path_content);
-                    self.resolve_source_path(
-                        &package_path,
-                        Some(SourceLoc {
-                            origin,
-                            span: ast_path.span,
-                        }),
-                        "package",
-                    )
-                }?;
+            let path = if git.is_some() {
+                self.download_package(origin, version, ast_path.span, ctx)
+            } else {
+                let path_content = self.resources.sources[origin].span_str(ast_path.span);
+                let package_path = root_path.join(path_content);
+                self.resolve_source_path(
+                    &package_path,
+                    Some(SourceLoc {
+                        origin,
+                        span: ast_path.span,
+                    }),
+                    "package",
+                )
+            }?;
 
-                let manifest = path.join("package").with_extension("ctlm");
-                if !ctx.packages.contains_key(&manifest) {
-                    ctx.package_frontier.push((
-                        path,
-                        Some(SourceLoc {
-                            origin,
-                            span: ast_path.span,
-                        }),
-                    ));
-                }
-                Some((name, manifest))
-            })
-            .collect()
+            let manifest = path.join("package").with_extension("ctlm");
+            if !ctx.packages.contains_key(&manifest) {
+                ctx.package_frontier.push((
+                    path,
+                    Some(SourceLoc {
+                        origin,
+                        span: ast_path.span,
+                    }),
+                ));
+            }
+            Some((name, manifest))
+        })
+        .collect()
     }
 
     fn extract_path_name(

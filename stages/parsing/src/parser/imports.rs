@@ -18,12 +18,12 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     }
 
     pub fn imports(&mut self) -> Option<Option<ImportsAst<'arena, M>>> {
-        let Some(r#use) = self.try_advance(Tk::Use) else {
+        let Some(keyword) = self.try_advance(Tk::Use) else {
             return Some(None);
         };
 
         Some(Some(ImportsAst {
-            r#use,
+            keyword,
             items: self.object("import list", Self::import)?,
         }))
     }

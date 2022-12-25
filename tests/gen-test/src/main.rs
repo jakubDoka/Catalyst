@@ -17,10 +17,10 @@ struct TestState {
 }
 
 impl TestState {
-    fn finally(&mut self, out: MiddlewareOutput) {
+    fn finally(&mut self, binary: Vec<u8>, ir: Option<String>) {
         let s = &mut self.middleware;
 
-        if let Some(ir) = out.ir {
+        if let Some(ir) = ir {
             s.workspace.push(IrReport { ir });
         }
 
@@ -32,7 +32,7 @@ impl TestState {
         let exe_path = format!("o-{thread_id}.exe");
         let obj_path = format!("o-{thread_id}.obj");
 
-        fs::write(&obj_path, out.binary).unwrap();
+        fs::write(&obj_path, binary).unwrap();
 
         let host = Triple::host().to_string();
 
@@ -111,8 +111,9 @@ impl Testable for TestState {
             dump_ir: true,
             check: false,
         };
-        if let Ok(binary) = self.middleware.update(&args, resources) {
-            self.finally(binary);
+        let (output, ..) = self.middleware.update(&args, resources);
+        if let MiddlewareOutput::Compiled { binary, ir } = output {
+            self.finally(binary, ir);
         }
         let res = self.middleware.take_incremental().unwrap().resources;
         (self.middleware.workspace, res)

@@ -66,7 +66,7 @@ impl TokenMeta for u32 {
             .inner
             .clone()
             .spanned()
-            .next()
+            .find(|(k, ..)| *k != TokenKind::NewLine)
             .map_or(lexer.progress(), |(.., span)| span.start) as Self
     }
 }

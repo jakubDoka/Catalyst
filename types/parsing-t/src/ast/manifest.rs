@@ -2,19 +2,21 @@ use super::*;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ManifestAst<'a, M = NoTokenMeta> {
-    pub fields: &'a [ManifestFieldAst<'a, M>],
-    pub deps: Option<ManifestDepsAst<'a, M>>,
+    pub header: Option<SourceInfo<M>>,
+    pub items: &'a [(ManifestItemAst<'a, M>, Option<SourceInfo<M>>)],
 }
 
-impl<'a, M> Spanned for ManifestAst<'a, M> {
+#[derive(Clone, Copy, Debug)]
+pub enum ManifestItemAst<'a, M = NoTokenMeta> {
+    Field(ManifestFieldAst<'a, M>),
+    Deps(ManifestDepsAst<'a, M>),
+}
+
+impl<'a, M> Spanned for ManifestItemAst<'a, M> {
     fn span(&self) -> Span {
-        let fields = self.fields.iter().map(|e| e.span()).reduce(Span::joined);
-        let deps = self.deps.as_ref().map(|e| e.span());
-        match (fields, deps) {
-            (Some(f), Some(d)) => f.joined(d),
-            (Some(f), None) => f,
-            (None, Some(d)) => d,
-            (None, None) => Span::default(),
+        match self {
+            ManifestItemAst::Field(field) => field.span(),
+            ManifestItemAst::Deps(deps) => deps.span(),
         }
     }
 }
@@ -32,7 +34,7 @@ impl<'a, M> Spanned for ManifestDepsAst<'a, M> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ManifestDepAst<M> {
+pub struct ManifestDepAst<M = NoTokenMeta> {
     pub git: Option<SourceInfo<M>>,
     pub name: Option<NameAst<M>>,
     pub path: SourceInfo<M>,
@@ -83,9 +85,16 @@ impl<'a, M> Spanned for ManifestValueAst<'a, M> {
 
 impl<M: Copy> ManifestAst<'_, M> {
     pub fn find_field(&self, name: Ident) -> Option<ManifestFieldAst<M>> {
-        self.fields
-            .iter()
-            .find(|field| field.name.ident == name)
-            .copied()
+        self.items.iter().find_map(|&(field, ..)| match field {
+            ManifestItemAst::Field(field) if field.name.ident == name => Some(field),
+            _ => None,
+        })
+    }
+
+    pub fn find_deps(&self) -> impl Iterator<Item = ManifestDepsAst<M>> {
+        self.items.iter().filter_map(|&(field, ..)| match field {
+            ManifestItemAst::Deps(deps) => Some(deps),
+            _ => None,
+        })
     }
 }

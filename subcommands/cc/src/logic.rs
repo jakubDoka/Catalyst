@@ -1,8 +1,7 @@
-use std::{default::default, fs, path::Path, process::Command};
+use std::{fs, path::Path, process::Command};
 
 use crate::*;
 use cli::*;
-use middleware::annotate_snippets::display_list::FormatOptions;
 
 pub struct CcRuntime<'m> {
     middleware: &'m mut Middleware,
@@ -44,69 +43,20 @@ impl<'m> CcRuntime<'m> {
     }
 
     pub fn compile(&mut self) -> Option<()> {
-        fn host_isa() -> Option<Isa> {
-            Isa::host(false)
-                .inspect_err(|e| eprintln!("Problem with host architecture: {e}"))
-                .ok()
-        }
-
         let args = match self.args {
             Some(ref mut args) => args,
-            None => {
-                let isa = match self.cli_input.value("target") {
-                    Some(_triple) => todo!(),
-                    None => host_isa()?,
-                };
-
-                self.args.insert(MiddlewareArgs {
-                    path: self
-                        .cli_input
-                        .args()
-                        .get(1)
-                        .cloned()
-                        .unwrap_or(".".into())
-                        .into(),
-                    jit_isa: host_isa()?,
-                    isa,
-                    incremental_path: self.cli_input.value("incremental-path").map(|s| s.into()),
-                    max_cores: self
-                        .cli_input
-                        .value("max-cores")
-                        .and_then(|s| s.parse().ok()),
-                    dump_ir: self.cli_input.enabled("dump-ir"),
-                    check: self.cli_input.enabled("check"),
-                })
-            }
+            None => self.args.insert(
+                MiddlewareArgs::from_cli_input(&self.cli_input)
+                    .map_err(|e| eprintln!("Problem with architecture: {e}"))
+                    .ok()?,
+            ),
         };
 
-        let output = match self.middleware.update(args, &mut OsResources) {
+        let (output, view) = self.middleware.update(args, &mut OsResources);
+        let (binary, _ir) = match view.dump_diagnostics(true, output) {
             Ok(output) => output,
-            Err(view) => {
-                if view.resources.no_changes() {
-                    println!("No changes detected.");
-                    return None;
-                }
-
-                if !view.workspace.has_errors() {
-                    println!("No errors found.");
-                    return None;
-                }
-
-                let mut display = SnippetDisplayImpl {
-                    opts: FormatOptions {
-                        color: true,
-                        ..default()
-                    },
-                    ..default()
-                };
-
-                let mut diagnostics = String::new();
-                view.workspace
-                    .display(view.resources, &mut display, &mut diagnostics);
-
-                println!("{diagnostics}");
-                println!("Compilation failed.");
-
+            Err(err) => {
+                eprintln!("{err}");
                 return None;
             }
         };
@@ -116,7 +66,7 @@ impl<'m> CcRuntime<'m> {
         let exe_path = format!("{dest}.exe");
         let obj_path = format!("{dest}.obj");
 
-        fs::write(&obj_path, output.binary).unwrap();
+        fs::write(&obj_path, binary).unwrap();
 
         if self.cli_input.enabled("obj") {
             return None;

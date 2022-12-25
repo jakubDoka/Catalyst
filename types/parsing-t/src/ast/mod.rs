@@ -42,7 +42,7 @@ pub struct ListAst<'a, T, M = NoTokenMeta> {
 }
 
 impl<'a, T, M> ListAst<'a, T, M> {
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = &'a T> {
         self.elements.iter().map(|e| &e.value)
     }
 }

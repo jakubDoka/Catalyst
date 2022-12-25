@@ -13,6 +13,92 @@ pub struct Fmt<'ctx> {
 }
 
 impl<'ctx> Fmt<'ctx> {
+    pub fn manifest(&mut self, manifest: ManifestAst<u32>) {
+        if let Some(header) = manifest.header {
+            self.white_space(header.full());
+        }
+
+        for (item, whitespace) in manifest.items {
+            self.manifest_item(item);
+            if let Some(whitespace) = whitespace {
+                self.white_space(whitespace.full());
+            }
+        }
+    }
+
+    fn manifest_item(&mut self, item: &ManifestItemAst<u32>) {
+        match *item {
+            ManifestItemAst::Deps(deps) => self.manifest_deps(deps),
+            ManifestItemAst::Field(ref field) => self.manifest_field(field),
+        }
+    }
+
+    fn manifest_deps(&mut self, deps: ManifestDepsAst<u32>) {
+        self.source_info(deps.deps);
+        self.buffer.push(' ');
+        self.block(Self::manifest_dep, deps.list);
+    }
+
+    fn manifest_field(&mut self, field: &ManifestFieldAst<u32>) {
+        self.source_info(field.name.source_info);
+        self.source_info(field.colon);
+        self.buffer.push(' ');
+        self.manifest_value(&field.value);
+    }
+
+    fn manifest_value(&mut self, value: &ManifestValueAst<u32>) {
+        match *value {
+            ManifestValueAst::String(string) => self.source_info(string),
+            ManifestValueAst::Array(array) => self.list(Self::manifest_value, array),
+            ManifestValueAst::Object(object) => self.block(Self::manifest_field, object),
+        }
+    }
+
+    fn manifest_dep(&mut self, dep: &ManifestDepAst<u32>) {
+        if let Some(git) = dep.git {
+            self.source_info(git);
+            self.buffer.push(' ');
+        }
+
+        if let Some(name) = dep.name {
+            self.source_info(name.source_info);
+            self.buffer.push(' ');
+        }
+
+        self.source_info(dep.path);
+
+        if let Some(version) = dep.version {
+            self.buffer.push(' ');
+            self.source_info(version);
+        }
+    }
+
+    pub fn imports(&mut self, header: Option<SourceInfo<u32>>, imports: Option<ImportsAst<u32>>) {
+        if let Some(header) = header {
+            self.white_space(header.full());
+        }
+
+        let Some(imports) = imports else {
+            return;
+        };
+
+        self.source_info(imports.keyword);
+        self.buffer.push(' ');
+        self.block(Self::import, imports.items);
+    }
+
+    pub fn import(&mut self, import: &ImportAst<u32>) {
+        if let Some(vis) = &import.vis {
+            self.source_info(vis.source_meta);
+            self.buffer.push(' ');
+        }
+        if let Some(name) = &import.name {
+            self.source_info(name.source_info);
+            self.buffer.push(' ');
+        }
+        self.source_info(import.path);
+    }
+
     pub fn source(&mut self, (items, after, last): ItemsAstResult<u32>) {
         for (between, item) in items {
             if let Some(between) = between {

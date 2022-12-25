@@ -18,6 +18,7 @@ lexing = { version = "0.1.0", path = "../../stages/lexing" }
 graphs = { version = "0.1.0", path = "../../utils/graphs" }
 lexing-t = { version = "0.1.0", path = "../../types/lexing-t" }
 snippet-display = { version = "0.1.0", path = "../../utils/snippet-display" }
+cli = { version = "0.1.0", path = "../../utils/cli" }
 
 storage = { version = "0.1.0", path = "../../utils/storage" }
 typec = { version = "0.1.0", path = "../../stages/typec" }

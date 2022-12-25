@@ -26,7 +26,8 @@ pub use {
             StructFieldAst, TopLevelAttrAst, TopLevelAttrKindAst,
         },
         manifest::{
-            ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestValueAst,
+            ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestItemAst,
+            ManifestValueAst,
         },
         pat::{EnumCtorPatAst, PatAst, StructCtorPatAst, StructCtorPatFieldAst},
         spec::{ParamAst, ParamSpecsAst, SpecExprAst},
