@@ -12,6 +12,7 @@ pub struct Task {
     pub modules_to_compile: Vec<VRef<Module>>,
     pub entry_points: Vec<FragRef<Func>>,
     pub workspace: Workspace,
+    pub temp_dependant_types: FuncTypes,
 
     // state
     pub interner: Interner,
@@ -55,11 +56,13 @@ impl Task {
                 .collect::<BumpVec<_>>();
 
             let body = task.mir.bodies.get(&func).unwrap().clone();
-            let mut types = body.types.clone();
+            task.temp_dependant_types.clear();
+            task.temp_dependant_types
+                .extend(body.types.values().copied());
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
                 &body.inner,
-                &mut types,
+                &mut task.temp_dependant_types,
                 &bumped_params,
                 &mut task.typec,
                 &mut task.interner,
@@ -69,69 +72,16 @@ impl Task {
             for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();
-                type_frontier.push(types[body.values[drop.value].ty].ty);
-                while let Some(ty) = type_frontier.pop() {
-                    if !task.typec.may_need_drop(ty, &mut task.interner) {
-                        continue;
-                    }
 
-                    if let Some(Some((r#impl, params))) =
-                        ty.is_drop(&generics, &mut task.typec, &mut task.interner)
-                    {
-                        let func = task.typec[task.typec[r#impl].methods][0];
-                        let params = task.typec[params].to_bumpvec();
-                        frontier.push(task.load_call(
-                            CallableMir::Func(func),
-                            params,
-                            task_id,
-                            isa,
-                        ));
-                    }
+                type_frontier.push(task.temp_dependant_types[body.values[drop.value].ty].ty);
+                task.instantiate_destructors(
+                    &mut type_frontier,
+                    isa,
+                    task_id,
+                    &generics,
+                    &mut frontier,
+                );
 
-                    match ty {
-                        Ty::Struct(s) => {
-                            task.typec[task.typec[s].fields]
-                                .iter()
-                                // we do rev to preserve recursive order of fields
-                                .rev()
-                                .map(|f| f.ty)
-                                .collect_into(&mut *type_frontier);
-                        }
-                        Ty::Enum(e) => {
-                            task.typec[task.typec[e].variants]
-                                .iter()
-                                .rev()
-                                .map(|v| v.ty)
-                                .collect_into(&mut *type_frontier);
-                        }
-                        Ty::Instance(i) => {
-                            let Instance { base, args } = task.typec[i];
-                            match base {
-                                GenericTy::Struct(s) => {
-                                    task.typec[task.typec[s].fields]
-                                        .to_bumpvec()
-                                        .into_iter()
-                                        .rev()
-                                        .map(|f| {
-                                            task.typec.instantiate(f.ty, args, &mut task.interner)
-                                        })
-                                        .collect_into(&mut *type_frontier);
-                                }
-                                GenericTy::Enum(e) => {
-                                    task.typec[task.typec[e].variants]
-                                        .to_bumpvec()
-                                        .into_iter()
-                                        .rev()
-                                        .map(|v| {
-                                            task.typec.instantiate(v.ty, args, &mut task.interner)
-                                        })
-                                        .collect_into(&mut *type_frontier);
-                                }
-                            }
-                        }
-                        Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
-                    }
-                }
                 drops.push(
                     task.compile_requests
                         .children
@@ -149,7 +99,7 @@ impl Task {
                     let task = &mut tasks[task_id];
                     let params = body.ty_params[call.params]
                         .iter()
-                        .map(|&p| types[p].ty)
+                        .map(|&p| task.temp_dependant_types[p].ty)
                         .collect::<BumpVec<_>>();
                     task.load_call(call.callable, params, task_id, isa)
                 })
@@ -170,6 +120,69 @@ impl Task {
         }
 
         imported
+    }
+
+    fn instantiate_destructors(
+        &mut self,
+        type_frontier: &mut BumpVec<Ty>,
+        isa: &Isa,
+        task_id: usize,
+        generics: &[FragSlice<Spec>],
+        frontier: &mut BumpVec<(CompileRequestChild, Option<usize>)>,
+    ) {
+        while let Some(ty) = type_frontier.pop() {
+            if !self.typec.may_need_drop(ty, &mut self.interner) {
+                continue;
+            }
+
+            if let Some(Some((r#impl, params))) =
+                ty.is_drop(generics, &mut self.typec, &mut self.interner)
+            {
+                let func = self.typec[self.typec[r#impl].methods][0];
+                let params = self.typec[params].to_bumpvec();
+                frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa));
+            }
+
+            match ty {
+                Ty::Struct(s) => {
+                    self.typec[self.typec[s].fields]
+                        .iter()
+                        // we do rev to preserve recursive order of fields
+                        .rev()
+                        .map(|f| f.ty)
+                        .collect_into(&mut **type_frontier);
+                }
+                Ty::Enum(e) => {
+                    self.typec[self.typec[e].variants]
+                        .iter()
+                        .rev()
+                        .map(|v| v.ty)
+                        .collect_into(&mut **type_frontier);
+                }
+                Ty::Instance(i) => {
+                    let Instance { base, args } = self.typec[i];
+                    match base {
+                        GenericTy::Struct(s) => {
+                            self.typec[self.typec[s].fields]
+                                .to_bumpvec()
+                                .into_iter()
+                                .rev()
+                                .map(|f| self.typec.instantiate(f.ty, args, &mut self.interner))
+                                .collect_into(&mut **type_frontier);
+                        }
+                        GenericTy::Enum(e) => {
+                            self.typec[self.typec[e].variants]
+                                .to_bumpvec()
+                                .into_iter()
+                                .rev()
+                                .map(|v| self.typec.instantiate(v.ty, args, &mut self.interner))
+                                .collect_into(&mut **type_frontier);
+                        }
+                    }
+                }
+                Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
+            }
+        }
     }
 
     fn load_call(

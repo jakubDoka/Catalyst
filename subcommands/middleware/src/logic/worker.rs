@@ -267,6 +267,8 @@ impl Worker {
             }
             self.context.compile(&*isa.inner).unwrap();
             task.gen.save_compiled_code(id, &self.context).unwrap();
+            let signatures = self.context.func.dfg.signatures.values_mut();
+            self.state.gen_resources.recycle_signatures(signatures);
             self.context.clear();
         }
         compiled

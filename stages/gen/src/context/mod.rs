@@ -1,5 +1,5 @@
 use std::{
-    alloc, iter,
+    alloc, iter, mem,
     num::NonZeroU8,
     ops::{Deref, DerefMut, Index, Range},
     sync::Arc,
@@ -215,6 +215,7 @@ pub struct GenResources {
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub drops: Vec<Range<usize>>,
+    pub signature_pool: Vec<ir::Signature>,
 }
 
 impl GenResources {
@@ -226,6 +227,19 @@ impl GenResources {
         self.blocks.clear();
         self.values.clear();
         self.func_imports.clear();
+    }
+
+    pub fn reuse_signature(&mut self) -> ir::Signature {
+        self.signature_pool
+            .pop()
+            .unwrap_or_else(|| ir::Signature::new(CallConv::Fast))
+    }
+
+    pub fn recycle_signatures<'a>(&mut self, sigs: impl Iterator<Item = &'a mut ir::Signature>) {
+        self.signature_pool.extend(sigs.map(|sig| {
+            sig.clear(CallConv::Fast);
+            mem::replace(sig, ir::Signature::new(CallConv::Fast))
+        }));
     }
 }
 

@@ -81,7 +81,7 @@ impl Generator<'_> {
         params: &[Ty],
         system_cc: CallConv,
     ) -> (ir::Signature, bool) {
-        let mut sig = ir::Signature::new(CallConv::Fast);
+        let mut sig = self.gen_resources.reuse_signature();
         let struct_ret = self.populate_signature(signature, params, &mut sig, system_cc);
         (sig, struct_ret)
     }
