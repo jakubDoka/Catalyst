@@ -33,7 +33,7 @@ impl<'ctx> Fmt<'ctx> {
     fn item(&mut self, item: ItemAst<u32>) {
         match item {
             ItemAst::Struct(r#struct) => self.r#struct(r#struct),
-            ItemAst::Func(_) => todo!(),
+            ItemAst::Func(func) => self.func(func),
             ItemAst::Spec(spec) => self.spec(spec),
             ItemAst::Impl(_) => todo!(),
             ItemAst::Enum(r#enum) => self.r#enum(r#enum),
@@ -46,6 +46,252 @@ impl<'ctx> Fmt<'ctx> {
 
         self.newline();
         self.newline();
+    }
+
+    fn func(&mut self, func: &FuncDefAst<u32>) {
+        self.vis(func.vis);
+        self.func_sig(&func.signature);
+        self.func_body(&func.body);
+    }
+
+    fn func_body(&mut self, block: &FuncBodyAst<u32>) {
+        match *block {
+            FuncBodyAst::Arrow(arrow, expr) => {
+                self.source_info(arrow);
+                let len = expr.length(self);
+                if !self.fits(len) {
+                    self.dive();
+                    self.newline();
+                    self.indent();
+                    self.expr(&expr);
+                    self.emerge();
+                }
+            }
+            FuncBodyAst::Block(block) => {
+                self.body(Self::expr, Some(block));
+            }
+            FuncBodyAst::Extern(source_info) => {
+                self.source_info(source_info);
+            }
+        }
+    }
+
+    fn expr(&mut self, expr: &ExprAst<u32>) {
+        let mut state = ExprFmtState::default();
+        self.expr_low(expr, &mut state);
+        state.emerge(self);
+    }
+
+    fn expr_low(&mut self, expr: &ExprAst<u32>, state: &mut ExprFmtState) {
+        match *expr {
+            ExprAst::Unit(unit) => self.unit_expr(unit, state),
+            ExprAst::Binary(binary) => self.binary_expr(binary, state),
+        }
+    }
+
+    fn unit_expr(&mut self, unit: &UnitExprAst<u32>, state: &mut ExprFmtState) {
+        match *unit {
+            UnitExprAst::StructCtor(ref s) => self.struct_ctor(s),
+            UnitExprAst::EnumCtor(e) => self.enum_ctor(e),
+            UnitExprAst::DotExpr(d) => self.dot_expr(d, state),
+            UnitExprAst::Call(c) => self.call(c, state),
+            UnitExprAst::Path(p) => self.path(p),
+            UnitExprAst::Return(r) => self.r#return(r),
+            UnitExprAst::Int(source_info) => self.source_info(source_info),
+            UnitExprAst::Char(source_info) => self.source_info(source_info),
+            UnitExprAst::Bool(source_info) => self.source_info(source_info),
+            UnitExprAst::Match(m) => self.r#match(m),
+            UnitExprAst::If(i) => self.r#if(i),
+            UnitExprAst::Loop(l) => self.r#loop(l),
+            UnitExprAst::Break(b) => self.r#break(b),
+            UnitExprAst::Continue(c) => self.r#continue(c),
+            UnitExprAst::Let(l) => self.r#let(l),
+            UnitExprAst::Deref(star, expr) => {
+                self.source_info(star);
+                self.unit_expr(expr, state);
+            }
+            UnitExprAst::Ref(carrot, mutability, expr) => {
+                self.source_info(carrot);
+                self.mutability(mutability);
+                self.unit_expr(expr, state);
+            }
+            UnitExprAst::Block(_) => todo!(),
+        }
+    }
+
+    fn r#let(&mut self, r#let: LetAst<u32>) {
+        self.source_info(r#let.keyword);
+        self.buffer.push(' ');
+        self.pat(&r#let.pat);
+
+        if let Some((colon, ty)) = r#let.ty {
+            self.source_info(colon);
+            self.buffer.push(' ');
+            self.ty(&ty);
+        }
+
+        self.buffer.push(' ');
+        self.source_info(r#let.equal);
+        self.buffer.push(' ');
+        self.expr(&r#let.value);
+    }
+
+    fn r#continue(&mut self, r#continue: ContinueAst<u32>) {
+        self.source_info(r#continue.keyword);
+        if let Some(label) = r#continue.label {
+            self.buffer.push(' ');
+            self.source_info(label.source_info);
+        }
+    }
+
+    fn r#break(&mut self, r#break: BreakAst<u32>) {
+        self.source_info(r#break.keyword);
+        if let Some(label) = r#break.label {
+            self.buffer.push(' ');
+            self.source_info(label.source_info);
+        }
+        if let Some(value) = r#break.value {
+            self.buffer.push(' ');
+            self.expr(&value);
+        }
+    }
+
+    fn r#loop(&mut self, r#loop: LoopAst<u32>) {
+        self.source_info(r#loop.keyword);
+        self.buffer.push(' ');
+        self.expr(&r#loop.body);
+    }
+
+    fn r#if(&mut self, r#if: IfAst<u32>) {
+        let fold = !r#if.elifs.is_empty();
+
+        self.source_info(r#if.keyword);
+        self.buffer.push(' ');
+        self.expr(&r#if.cond);
+        self.buffer.push(' ');
+        self.branch(r#if.body);
+
+        let mut add_newline = matches!(r#if.body, BranchAst::Arrow(..));
+        for elif in r#if.elifs {
+            if add_newline {
+                self.newline();
+            } else {
+                self.buffer.push(' ');
+            }
+            add_newline = self.elif(elif);
+        }
+
+        if add_newline || fold {
+            self.newline();
+        } else {
+            self.buffer.push(' ');
+        }
+
+        if let Some((keyword, branch)) = r#if.r#else {
+            self.source_info(keyword);
+            self.buffer.push(' ');
+            self.branch(branch);
+        }
+    }
+
+    fn elif(&mut self, elif: &ElifAst<u32>) -> bool {
+        self.source_info(elif.keyword);
+        self.buffer.push(' ');
+        self.expr(&elif.cond);
+        self.buffer.push(' ');
+        self.branch(elif.body);
+
+        matches!(elif.body, BranchAst::Arrow(..))
+    }
+
+    fn r#match(&mut self, r#match: MatchExprAst<u32>) {
+        self.source_info(r#match.keyword);
+        self.buffer.push(' ');
+        self.expr(&r#match.expr);
+        self.buffer.push(' ');
+        self.block(Self::match_arm, r#match.body);
+    }
+
+    fn match_arm(&mut self, arm: &MatchArmAst<u32>) {
+        self.pat(&arm.pattern);
+        self.buffer.push(' ');
+        self.branch(arm.body);
+    }
+
+    fn branch(&mut self, branch: BranchAst<u32>) {
+        match branch {
+            BranchAst::Block(b) => self.block(Self::expr, b),
+            BranchAst::Arrow(arrow, expr) => {
+                self.source_info(arrow);
+                let len = expr.length(self) + " ".len();
+                let mut indented = false;
+                self.cond_dive(len, &mut indented);
+                self.expr(&expr);
+                self.cond_emerge(&mut indented);
+            }
+        }
+    }
+
+    fn r#return(&mut self, r#return: ReturnAst<u32>) {
+        self.source_info(r#return.keyword);
+        if let Some(expr) = r#return.expr {
+            self.buffer.push(' ');
+            self.expr(&expr);
+        }
+    }
+
+    fn call(&mut self, call: &CallAst<u32>, state: &mut ExprFmtState) {
+        self.unit_expr(&call.callable, state);
+        self.list(Self::expr, call.args);
+    }
+
+    fn dot_expr(&mut self, dot: &DotExprAst<u32>, state: &mut ExprFmtState) {
+        self.unit_expr(&dot.lhs, state);
+        let len = dot.rhs.length(self) + dot.infix.length(self);
+        if !self.fits(len) {
+            state.indent_dot(self);
+        }
+        self.path(dot.rhs);
+    }
+
+    fn enum_ctor(&mut self, enum_ctor: EnumCtorAst<u32>) {
+        self.path(enum_ctor.path);
+        if let Some((tilde, ref value)) = enum_ctor.value {
+            self.source_info(tilde);
+            self.expr(value);
+        }
+    }
+
+    fn struct_ctor(&mut self, r#struct: &StructCtorAst<u32>) {
+        if let Some(path) = r#struct.path {
+            self.path(path);
+        }
+        self.source_info(r#struct.slash);
+        self.list(Self::struct_ctor_field, r#struct.body);
+    }
+
+    fn struct_ctor_field(&mut self, field: &StructCtorFieldAst<u32>) {
+        self.source_info(field.name.source_info);
+        if let Some((colon, ref expr)) = field.value {
+            self.source_info(colon);
+            self.buffer.push(' ');
+            self.expr(expr);
+        }
+    }
+
+    fn binary_expr(&mut self, binary: &BinaryExprAst<u32>, state: &mut ExprFmtState) {
+        let op_len = " ".len() + binary.op.length(self) + " ".len();
+        self.expr_low(&binary.lhs, state);
+        self.source_info(binary.op.source_info);
+        let rhs_len = binary.rhs.length(self);
+        self.buffer.push(' ');
+        self.source_info(binary.op.source_info);
+        if self.fits(rhs_len + op_len) {
+            self.buffer.push(' ');
+        } else {
+            state.indent_op(self);
+        }
+        self.expr_low(&binary.rhs, state);
     }
 
     fn spec(&mut self, spec: &SpecAst<u32>) {
@@ -79,7 +325,50 @@ impl<'ctx> Fmt<'ctx> {
         self.ty(&arg.ty);
     }
 
-    fn pat(&mut self, pat: &PatAst<u32>) {}
+    fn pat(&mut self, pat: &PatAst<u32>) {
+        match *pat {
+            PatAst::Binding(m, b) => {
+                self.opt_source_info(m);
+                self.source_info(b.source_info);
+            }
+            PatAst::Wildcard(source_info) => self.source_info(source_info),
+            PatAst::StructCtor(s) => self.struct_ctor_pat(s),
+            PatAst::EnumCtor(e) => self.enum_ctor_pat(e),
+            PatAst::Int(source_info) => self.source_info(source_info),
+        }
+    }
+
+    fn enum_ctor_pat(&mut self, e: &EnumCtorPatAst<u32>) {
+        self.source_info(e.slash);
+        self.source_info(e.name.source_info);
+        let Some((carrot, value)) = e.value else {return};
+        self.source_info(carrot);
+        self.pat(&value);
+    }
+
+    fn struct_ctor_pat(&mut self, s: StructCtorPatAst<u32>) {
+        self.source_info(s.slash);
+        self.list(Self::struct_ctor_pat_field, s.fields);
+    }
+
+    fn struct_ctor_pat_field(&mut self, field: &StructCtorPatFieldAst<u32>) {
+        match *field {
+            StructCtorPatFieldAst::Simple { mutable, name } => {
+                if let Some(mutable) = mutable {
+                    self.source_info(mutable);
+                    self.buffer.push(' ');
+                }
+                self.source_info(name.source_info);
+            }
+            StructCtorPatFieldAst::Named { name, colon, pat } => {
+                self.source_info(name.source_info);
+                self.source_info(colon);
+                self.buffer.push(' ');
+                self.pat(&pat);
+            }
+            StructCtorPatFieldAst::DoubleDot(source_info) => self.source_info(source_info),
+        }
+    }
 
     fn r#enum(&mut self, r#enum: &EnumAst<u32>) {
         self.vis(r#enum.vis);
@@ -157,17 +446,12 @@ impl<'ctx> Fmt<'ctx> {
         }
     }
 
-    fn body<T>(&mut self, mut fmt: impl FnMut(&mut Self, &T), list: Option<ListAst<T, u32>>) {
-        let Some(list) = list else {
-            return;
-        };
-
-        self.buffer.push(' ');
+    fn block<T>(&mut self, mut fmt: impl FnMut(&mut Self, &T), list: ListAst<T, u32>) {
         self.source_info(list.start);
         self.newline();
         self.dive();
         for &ListElemAst { ref value, delim } in list.elements {
-            self.ident();
+            self.indent();
             fmt(self, value);
             if let Some(delim) = delim {
                 self.white_space(delim.after());
@@ -175,8 +459,17 @@ impl<'ctx> Fmt<'ctx> {
             self.newline();
         }
         self.emerge();
-        self.ident();
+        self.indent();
         self.source_info(list.end);
+    }
+
+    fn body<T>(&mut self, fmt: impl FnMut(&mut Self, &T), body: Option<ListAst<T, u32>>) {
+        let Some(list) = body else {
+            return;
+        };
+
+        self.buffer.push(' ');
+        self.block(fmt, list);
     }
 
     fn generics(&mut self, generics: Option<ListAst<ParamAst<u32>, u32>>) {
@@ -207,7 +500,7 @@ impl<'ctx> Fmt<'ctx> {
             self.buffer.push(' ');
             self.path(spec.path);
         }
-        self.cond_emerge(indented);
+        self.cond_emerge(&mut indented);
     }
 
     fn opt_list<T: Length>(
@@ -232,10 +525,8 @@ impl<'ctx> Fmt<'ctx> {
 
         let mut indented = false;
         for (i, &ListElemAst { ref value, delim }) in rest.iter().enumerate() {
-            self.cond_dive(
-                value.length(self) + delim.length(self) + " ".len(),
-                &mut indented,
-            );
+            let len = value.length(self) + delim.length(self) + " ".len();
+            self.cond_dive(len, &mut indented);
 
             fmt(self, value);
             if i == rest.len() - 1 {
@@ -246,7 +537,7 @@ impl<'ctx> Fmt<'ctx> {
                 self.opt_source_info(delim);
             }
         }
-        self.cond_emerge(indented);
+        self.cond_emerge(&mut indented);
 
         self.source_info(list.end);
     }
@@ -255,17 +546,21 @@ impl<'ctx> Fmt<'ctx> {
         if self.fits(len) {
             self.buffer.push(' ');
         } else {
-            if mem::replace(cond, true) {
-                self.dive();
-            }
-
-            self.newline();
-            self.ident();
+            self.cond_dive_low(cond);
         }
     }
 
-    fn cond_emerge(&mut self, cond: bool) {
-        if cond {
+    fn cond_dive_low(&mut self, cond: &mut bool) {
+        if mem::replace(cond, true) {
+            self.dive();
+        }
+
+        self.newline();
+        self.indent();
+    }
+
+    fn cond_emerge(&mut self, cond: &mut bool) {
+        if mem::take(cond) {
             self.emerge();
         }
     }
@@ -313,7 +608,7 @@ impl<'ctx> Fmt<'ctx> {
             match tok {
                 SkippedToken::Comment | SkippedToken::MultiComment => {
                     if self.at_newline() {
-                        self.ident();
+                        self.indent();
                     } else {
                         self.buffer.push(' ');
                     }
@@ -342,7 +637,7 @@ impl<'ctx> Fmt<'ctx> {
         self.buffer.push_str(&self.source[span.range()]);
     }
 
-    fn ident(&mut self) {
+    fn indent(&mut self) {
         self.buffer.extend(iter::repeat(' ').take(self.indent * 4));
     }
 
@@ -382,20 +677,11 @@ impl DerefMut for Fmt<'_> {
 pub struct FmtCtx {
     last_newline: usize,
     indent: usize,
-    folding: bool,
 
-    compressed_lengths: Map<Span, usize>,
+    pub(crate) compressed_lengths: Map<Span, usize>,
 }
 
 impl FmtCtx {
-    fn fold(&mut self) -> Folding {
-        Folding(mem::replace(&mut self.folding, true))
-    }
-
-    fn unfold(&mut self, folding: Folding) {
-        self.folding = folding.0;
-    }
-
     fn dive(&mut self) {
         self.indent += 1;
     }
@@ -404,9 +690,6 @@ impl FmtCtx {
         self.indent -= 1;
     }
 }
-
-#[must_use]
-struct Folding(bool);
 
 pub struct FmtCfg {
     pub max_line_width: usize,
@@ -422,4 +705,26 @@ impl FmtCfg {
         max_newlines: 2,
         max_list_item_length: 20,
     };
+}
+
+#[derive(Default)]
+struct ExprFmtState {
+    op_dive: bool,
+    dot_dive: bool,
+}
+
+impl ExprFmtState {
+    fn indent_op(&mut self, fmt: &mut Fmt) {
+        fmt.cond_emerge(&mut self.dot_dive);
+        fmt.cond_dive_low(&mut self.op_dive);
+    }
+
+    fn indent_dot(&mut self, fmt: &mut Fmt) {
+        fmt.cond_dive_low(&mut self.dot_dive);
+    }
+
+    fn emerge(&mut self, fmt: &mut Fmt) {
+        fmt.cond_emerge(&mut self.op_dive);
+        fmt.cond_emerge(&mut self.dot_dive);
+    }
 }

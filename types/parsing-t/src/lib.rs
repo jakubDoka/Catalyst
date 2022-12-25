@@ -7,6 +7,7 @@
 #![feature(never_type)]
 #![feature(default_free_fn)]
 #![feature(return_position_impl_trait_in_trait)]
+#![feature(negative_impls)]
 
 mod ast;
 mod token_pattern;
@@ -15,7 +16,7 @@ pub use {
     ast::{
         expr::{
             BinaryExprAst, BranchAst, BreakAst, CallAst, ContinueAst, DotExprAst, ElifAst,
-            EnumCtorAst, ExprAst, IfAst, LetAst, LoopAst, MatchArmAst, MatchExprAst, ReturnExprAst,
+            EnumCtorAst, ExprAst, IfAst, LetAst, LoopAst, MatchArmAst, MatchExprAst, ReturnAst,
             StructCtorAst, StructCtorFieldAst, UnitExprAst,
         },
         func::{FuncArgAst, FuncBodyAst, FuncDefAst, FuncSigAst},

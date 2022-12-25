@@ -16,6 +16,24 @@ pub trait Spanned {
     fn span(&self) -> Span;
 }
 
+impl Spanned for Span {
+    fn span(&self) -> Span {
+        *self
+    }
+}
+
+impl<M> Spanned for SourceInfo<M> {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl<T> Spanned for Option<T> {
+    fn span(&self) -> Span {
+        unimplemented!()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ListAst<'a, T, M = NoTokenMeta> {
     pub start: SourceInfo<M>,

@@ -102,7 +102,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn r#let(&mut self) -> Option<LetAst<'arena, M>> {
         Some(LetAst {
-            r#let: self.advance(),
+            keyword: self.advance(),
             pat: self.pat(None)?,
             ty: self
                 .try_advance(Tk::Colon)
@@ -150,7 +150,13 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         Some(StructCtorAst {
             path,
             slash,
-            body: self.object("struct constructor body", Self::struct_ctor_field)?,
+            body: self.list(
+                "struct constructor body",
+                Self::struct_ctor_field,
+                Tk::LeftBrace,
+                Tk::Comma,
+                Tk::RightBrace,
+            )?,
         })
     }
 
@@ -167,7 +173,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn dot_expr(&mut self, lhs: UnitExprAst<'arena, M>) -> Option<DotExprAst<'arena, M>> {
         Some(DotExprAst {
             lhs,
-            dot: self.advance(),
+            infix: self.advance(),
             rhs: self.path(None)?,
         })
     }

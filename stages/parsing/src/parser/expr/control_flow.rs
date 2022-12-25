@@ -5,7 +5,7 @@ use super::*;
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn r#loop(&mut self) -> Option<LoopAst<'arena, M>> {
         Some(LoopAst {
-            r#loop: self.advance(),
+            keyword: self.advance(),
             label: self.at(Tk::Label).then(|| self.name_unchecked()),
             body: self.expr()?,
         })
@@ -13,7 +13,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     pub fn r#break(&mut self) -> Option<BreakAst<'arena, M>> {
         Some(BreakAst {
-            r#break: self.advance(),
+            keyword: self.advance(),
             label: self.at(Tk::Label).then(|| self.name_unchecked()),
             value: self
                 .at([Tk::NewLine, Tk::Else, Tk::Comma])
@@ -25,14 +25,14 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     pub fn r#continue(&mut self) -> Option<ContinueAst<M>> {
         Some(ContinueAst {
-            r#continue: self.advance(),
+            keyword: self.advance(),
             label: self.at(Tk::Label).then(|| self.name_unchecked()),
         })
     }
 
     pub fn r#if(&mut self) -> Option<IfAst<'arena, M>> {
         Some(IfAst {
-            r#if: self.advance(),
+            keyword: self.advance(),
             cond: self.expr()?,
             body: self.branch()?,
             elifs: {
@@ -51,7 +51,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn elif(&mut self) -> Option<ElifAst<'arena, M>> {
         Some(ElifAst {
-            elif: self.advance(),
+            keyword: self.advance(),
             cond: self.expr()?,
             body: self.branch()?,
         })
@@ -70,7 +70,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     pub fn r#match(&mut self) -> Option<MatchExprAst<'arena, M>> {
         Some(MatchExprAst {
-            r#match: self.advance(),
+            keyword: self.advance(),
             expr: self.expr()?,
             body: self.object("match statement body", Self::match_arm)?,
         })
@@ -83,9 +83,9 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         })
     }
 
-    pub fn r#return(&mut self) -> Option<ReturnExprAst<'arena, M>> {
-        Some(ReturnExprAst {
-            r#return: self.advance(),
+    pub fn r#return(&mut self) -> Option<ReturnAst<'arena, M>> {
+        Some(ReturnAst {
+            keyword: self.advance(),
             expr: self
                 .at([Tk::NewLine, Tk::Else, Tk::Comma])
                 .not()

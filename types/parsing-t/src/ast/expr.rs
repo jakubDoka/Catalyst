@@ -35,7 +35,7 @@ pub enum UnitExprAst<'a, M = NoTokenMeta> {
     DotExpr(&'a DotExprAst<'a, M>),
     Call(&'a CallAst<'a, M>),
     Path(PathAst<'a, M>),
-    Return(ReturnExprAst<'a, M>),
+    Return(ReturnAst<'a, M>),
     Int(SourceInfo<M>),
     Char(SourceInfo<M>),
     Bool(SourceInfo<M>),
@@ -80,16 +80,16 @@ impl<'a, M> Spanned for UnitExprAst<'a, M> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ReturnExprAst<'a, M = NoTokenMeta> {
-    pub r#return: SourceInfo<M>,
+pub struct ReturnAst<'a, M = NoTokenMeta> {
+    pub keyword: SourceInfo<M>,
     pub expr: Option<ExprAst<'a, M>>,
 }
 
-impl<'a, M> Spanned for ReturnExprAst<'a, M> {
+impl<'a, M> Spanned for ReturnAst<'a, M> {
     fn span(&self) -> Span {
         self.expr
             .as_ref()
-            .map_or(self.r#return.span, |e| self.r#return.span.joined(e.span()))
+            .map_or(self.keyword.span, |e| self.keyword.span.joined(e.span()))
     }
 }
 
@@ -107,14 +107,14 @@ impl<'a, M> Spanned for MatchArmAst<'a, M> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MatchExprAst<'a, M = NoTokenMeta> {
-    pub r#match: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub expr: ExprAst<'a, M>,
     pub body: ListAst<'a, MatchArmAst<'a, M>, M>,
 }
 
 impl<'a, M> Spanned for MatchExprAst<'a, M> {
     fn span(&self) -> Span {
-        self.r#match.span.joined(self.body.span())
+        self.keyword.span.joined(self.body.span())
     }
 }
 
@@ -135,20 +135,20 @@ impl<'a, M> Spanned for BranchAst<'a, M> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ElifAst<'a, M = NoTokenMeta> {
-    pub elif: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub cond: ExprAst<'a, M>,
     pub body: BranchAst<'a, M>,
 }
 
 impl<'a, M> Spanned for ElifAst<'a, M> {
     fn span(&self) -> Span {
-        self.elif.span.joined(self.body.span())
+        self.keyword.span.joined(self.body.span())
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct IfAst<'a, M = NoTokenMeta> {
-    pub r#if: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub cond: ExprAst<'a, M>,
     pub body: BranchAst<'a, M>,
     pub elifs: &'a [ElifAst<'a, M>],
@@ -157,7 +157,7 @@ pub struct IfAst<'a, M = NoTokenMeta> {
 
 impl<'a, M> Spanned for IfAst<'a, M> {
     fn span(&self) -> Span {
-        let mut span = self.r#if.span;
+        let mut span = self.keyword.span;
         if let Some((r#else, body)) = &self.r#else {
             span = span.joined(r#else.span.joined(body.span()));
         } else if let Some(elif) = self.elifs.last() {
@@ -171,34 +171,34 @@ impl<'a, M> Spanned for IfAst<'a, M> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ContinueAst<M = NoTokenMeta> {
-    pub r#continue: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
 }
 
 impl<M> Spanned for ContinueAst<M> {
     fn span(&self) -> Span {
-        self.label.as_ref().map_or(self.r#continue.span, |e| {
-            self.r#continue.span.joined(e.span)
-        })
+        self.label
+            .as_ref()
+            .map_or(self.keyword.span, |e| self.keyword.span.joined(e.span))
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct LoopAst<'a, M = NoTokenMeta> {
-    pub r#loop: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
     pub body: ExprAst<'a, M>,
 }
 
 impl<'a, M> Spanned for LoopAst<'a, M> {
     fn span(&self) -> Span {
-        self.r#loop.span.joined(self.body.span())
+        self.keyword.span.joined(self.body.span())
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct BreakAst<'a, M = NoTokenMeta> {
-    pub r#break: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub label: Option<NameAst<M>>,
     pub value: Option<ExprAst<'a, M>>,
 }
@@ -206,11 +206,11 @@ pub struct BreakAst<'a, M = NoTokenMeta> {
 impl<'a, M> Spanned for BreakAst<'a, M> {
     fn span(&self) -> Span {
         if let Some(value) = &self.value {
-            self.r#break.span.joined(value.span())
+            self.keyword.span.joined(value.span())
         } else {
             self.label
                 .as_ref()
-                .map_or(self.r#break.span, |e| self.r#break.span.joined(e.span))
+                .map_or(self.keyword.span, |e| self.keyword.span.joined(e.span))
         }
     }
 }
@@ -230,7 +230,7 @@ impl<'a, M> Spanned for CallAst<'a, M> {
 #[derive(Debug, Clone, Copy)]
 pub struct DotExprAst<'a, M = NoTokenMeta> {
     pub lhs: UnitExprAst<'a, M>,
-    pub dot: SourceInfo<M>,
+    pub infix: SourceInfo<M>,
     pub rhs: PathAst<'a, M>,
 }
 
@@ -286,7 +286,7 @@ impl<'a, M> Spanned for EnumCtorAst<'a, M> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct LetAst<'a, M = NoTokenMeta> {
-    pub r#let: SourceInfo<M>,
+    pub keyword: SourceInfo<M>,
     pub pat: PatAst<'a, M>,
     pub ty: Option<(SourceInfo<M>, TyAst<'a, M>)>,
     pub equal: SourceInfo<M>,
@@ -295,6 +295,6 @@ pub struct LetAst<'a, M = NoTokenMeta> {
 
 impl<'a, M> Spanned for LetAst<'a, M> {
     fn span(&self) -> Span {
-        self.r#let.span.joined(self.value.span())
+        self.keyword.span.joined(self.value.span())
     }
 }
