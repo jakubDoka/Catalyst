@@ -1,3 +1,5 @@
+use std::sync::mpsc::SendError;
+
 use super::*;
 
 pub struct WorkerConnections {
@@ -49,12 +51,13 @@ impl Worker {
         }
     }
 
-    pub fn run<'a: 'b, 'b>(
+    pub fn run<'a: 'scope, 'scope, S: SourceAstHandler>(
         mut self,
-        thread_scope: &'a thread::Scope<'b, '_>,
-        shared: Shared<'b>,
+        thread_scope: &'a thread::Scope<'scope, '_>,
+        shared: Shared<'scope>,
         connections: WorkerConnections,
-    ) -> ScopedJoinHandle<'b, (Worker, Option<Task>)> {
+        source_ast_handler: &'scope mut S,
+    ) -> ScopedJoinHandle<'scope, (Worker, Option<Task>)> {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
@@ -71,13 +74,15 @@ impl Worker {
                         &mut package_task.task,
                         &mut jit_ctx,
                         &shared,
+                        source_ast_handler,
                     );
                 }
                 package_task.task.modules_to_compile = modules;
                 package_task.task.freeze();
-                connections.package_products
-                    .send((package_task, package))
-                    .expect("tasks are always reused");
+                let err = connections.package_products.send((package_task, package));
+                if let Err(SendError((package_task, ..))) = err {
+                    return (self, Some(package_task.task));
+                };
             }
 
             let Some(mut compile_task) = connections.gen_tasks.recv().ok() else {
@@ -91,25 +96,102 @@ impl Worker {
         })
     }
 
-    fn compile_module(
+    // fn compile_module(
+    //     &mut self,
+    //     module: VRef<Module>,
+    //     arena: &mut Arena,
+    //     task: &mut Task,
+    //     jit_ctx: &mut JitContext,
+    //     shared: &Shared,
+    // ) {
+    //     todo!()
+
+    //     // let source = shared.resources.modules[module].source;
+
+    //     // let mut parser_ctx = ParserCtx::new(&shared.resources.sources[source].content);
+    //     // self.parser(
+    //     //     source,
+    //     //     arena,
+    //     //     task,
+    //     //     &mut parser_ctx,
+    //     //     shared,
+    //     //     Parser::skip_imports,
+    //     // );
+
+    //     // let mut macros = typec::build_scope(
+    //     //     module,
+    //     //     &mut self.state.scope,
+    //     //     shared.resources,
+    //     //     &task.typec,
+    //     //     &mut task.interner,
+    //     // );
+
+    //     // loop {
+    //     //     // let mut macro_ctx = mem::take(&mut self.state.macro_ctx);
+    //     //     // self.load_macros(
+    //     //     //     &mut macro_ctx,
+    //     //     //     macros.iter().copied(),
+    //     //     //     task,
+    //     //     //     jit_ctx,
+    //     //     //     shared.jit_isa,
+    //     //     // );
+    //     //     let Some(grouped_items) = self.parser(source, arena, task, &mut parser_ctx, shared, Parser::grouped_items) else {
+    //     //         continue;
+    //     //     };
+
+    //     //     self.type_check_batch(module, grouped_items, arena, task, shared);
+    //     //     let last = grouped_items.last;
+    //     //     arena.clear();
+
+    //     //     // self.state.macro_ctx = macro_ctx.clear();
+    //     //     let mut local_macros = mem::take(&mut self.state.tir_builder_ctx.macros);
+    //     //     self.compile_macros(&local_macros, task, jit_ctx, shared);
+    //     //     macros.extend(local_macros.drain(..));
+    //     //     self.state.tir_builder_ctx.macros = local_macros;
+
+    //     //     if last {
+    //     //         break;
+    //     //     }
+    //     // }
+    // }
+
+    fn compile_module<S: SourceAstHandler>(
         &mut self,
         module: VRef<Module>,
         arena: &mut Arena,
         task: &mut Task,
         jit_ctx: &mut JitContext,
         shared: &Shared,
+        handler: &mut S,
     ) {
+        macro ctx() {
+            BaseSourceCtx {
+                worker: self,
+                module,
+                arena,
+                task,
+                shared,
+            }
+        }
+
         let source = shared.resources.modules[module].source;
 
-        let mut parser_ctx = ParserCtx::new(&shared.resources.sources[source].content);
-        self.parser(
-            source,
-            arena,
-            task,
-            &mut parser_ctx,
-            shared,
-            Parser::skip_imports,
-        );
+        let content = &shared.resources.sources[source].content;
+        let mut parser_ctx = ParserCtx::new(content);
+
+        macro parser() {
+            Parser::new(
+                &mut task.interner,
+                &mut task.workspace,
+                &mut parser_ctx,
+                arena,
+                source,
+                content,
+            )
+        }
+
+        let Some(result) = handler.parse_imports(parser!()) else {return};
+        handler.imports(result, ctx!());
 
         let mut macros = typec::build_scope(
             module,
@@ -128,12 +210,11 @@ impl Worker {
             //     jit_ctx,
             //     shared.jit_isa,
             // );
-            let Some(grouped_items) = self.parser(source, arena, task, &mut parser_ctx, shared, Parser::grouped_items) else {
+            let Some(chunk) = handler.parse_chunk(parser!()) else {
                 continue;
             };
+            let last = handler.chunk(chunk, ctx!(), MacroSourceCtx);
 
-            self.type_check_batch(module, grouped_items, arena, task, shared);
-            let last = grouped_items.last;
             arena.clear();
 
             // self.state.macro_ctx = macro_ctx.clear();
@@ -445,27 +526,6 @@ impl Worker {
         )
     }
 
-    fn parser<'a, 'c, T>(
-        &mut self,
-        source: VRef<Source>,
-        arena: &'a Arena,
-        task: &'c mut Task,
-        parser_ctx: &'c mut ParserCtx,
-        // macros: Option<&TokenMacroCtx>,
-        shared: &'c Shared,
-        method: impl FnOnce(&mut Parser<'c, 'a>) -> Option<T>,
-    ) -> Option<T> {
-        method(&mut Parser::new(
-            &mut task.interner,
-            &mut task.workspace,
-            parser_ctx,
-            arena,
-            // macros,
-            source,
-            shared.resources.sources[source].content.as_str(),
-        ))
-    }
-
     fn check_casts(
         typec: &mut Typec,
         interner: &mut Interner,
@@ -546,3 +606,69 @@ pub struct WorkerState {
 //         }
 //     }
 // }
+
+pub trait SourceAstHandler: Sync + Send {
+    type Meta: TokenMeta;
+    type Imports<'a>;
+    type Chunk<'a>;
+
+    fn parse_imports<'a>(
+        &mut self,
+        parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<Self::Imports<'a>>;
+
+    fn imports(&mut self, header: Self::Imports<'_>, ctx: BaseSourceCtx);
+
+    fn parse_chunk<'a>(&mut self, parser: Parser<'_, 'a, Self::Meta>) -> Option<Self::Chunk<'a>>;
+
+    fn chunk(&mut self, items: Self::Chunk<'_>, ctx: BaseSourceCtx, macros: MacroSourceCtx)
+        -> bool;
+}
+
+pub struct BaseSourceCtx<'a> {
+    worker: &'a mut Worker,
+    module: VRef<Module>,
+    arena: &'a Arena,
+    task: &'a mut Task,
+    shared: &'a Shared<'a>,
+}
+
+pub struct MacroSourceCtx;
+
+#[derive(Clone)]
+pub struct DefaultSourceAstHandler;
+
+impl SourceAstHandler for DefaultSourceAstHandler {
+    type Meta = NoTokenMeta;
+
+    type Imports<'a> = ();
+
+    type Chunk<'a> = GroupedItemsAst<'a>;
+
+    fn imports(&mut self, _header: Self::Imports<'_>, _ctx: BaseSourceCtx) {}
+
+    fn chunk(
+        &mut self,
+        items: Self::Chunk<'_>,
+        ctx: BaseSourceCtx,
+        _macros: MacroSourceCtx,
+    ) -> bool {
+        ctx.worker
+            .type_check_batch(ctx.module, items, ctx.arena, ctx.task, ctx.shared);
+        items.last
+    }
+
+    fn parse_imports<'a>(
+        &mut self,
+        mut parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<Self::Imports<'a>> {
+        parser.skip_imports()
+    }
+
+    fn parse_chunk<'a>(
+        &mut self,
+        mut parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<Self::Chunk<'a>> {
+        parser.grouped_items()
+    }
+}

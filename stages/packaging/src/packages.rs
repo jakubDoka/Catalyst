@@ -239,7 +239,7 @@ impl PackageLoader<'_> {
         let mut parser_ctx = ParserCtx::<NoTokenMeta>::new(content);
         ast_data.clear();
 
-        let imports = Parser::new(
+        let (imports, ..) = Parser::new(
             self.interner,
             self.workspace,
             &mut parser_ctx,

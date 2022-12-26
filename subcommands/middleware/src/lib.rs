@@ -3,6 +3,7 @@
 #![feature(slice_group_by)]
 #![feature(default_free_fn)]
 #![feature(iter_collect_into)]
+#![feature(decl_macro)]
 
 mod logic;
 
@@ -13,7 +14,7 @@ pub use {
     lexing_t::*,
     logic::{
         task::{Task, TaskGraph},
-        worker::{Worker, WorkerConnections, WorkerState},
+        worker::{SourceAstHandler, Worker, WorkerConnections, WorkerState},
         DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs, MiddlewareOutput,
         PackageTask, Shared,
     },

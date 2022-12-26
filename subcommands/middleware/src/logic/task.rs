@@ -33,7 +33,7 @@ impl Task {
         tasks: &mut [Task],
         isa: &Isa,
     ) -> BumpVec<FragRef<CompiledFunc>> {
-        let mut cycle = (0..tasks.len()).cycle();
+        let mut cycle = (0..tasks.len()).cycle().fuse();
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {

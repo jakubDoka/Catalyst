@@ -2,6 +2,8 @@ use diags::*;
 
 use super::*;
 
+type ImportsAstResult<'arena, M> = Option<(Option<ImportsAst<'arena, M>>, Option<SourceInfo<M>>)>;
+
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn skip_imports(&mut self) -> Option<()> {
         self.skip(Tk::NewLine);
@@ -17,15 +19,19 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         Some(())
     }
 
-    pub fn imports(&mut self) -> Option<Option<ImportsAst<'arena, M>>> {
+    pub fn imports(&mut self) -> ImportsAstResult<'arena, M> {
+        let header = self.skip(Tk::NewLine);
         let Some(keyword) = self.try_advance(Tk::Use) else {
-            return Some(None);
+            return Some((None, header));
         };
 
-        Some(Some(ImportsAst {
-            keyword,
-            items: self.object("import list", Self::import)?,
-        }))
+        Some((
+            Some(ImportsAst {
+                keyword,
+                items: self.object("import list", Self::import)?,
+            }),
+            header,
+        ))
     }
 
     fn import(&mut self) -> Option<ImportAst<M>> {
