@@ -89,6 +89,10 @@ impl FragAddr {
         let (other_index, other_thread) = other.parts();
         thread == other_thread && index == other_index + 1
     }
+
+    pub const fn thread(&self) -> u8 {
+        self.parts().1
+    }
 }
 
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Default)]

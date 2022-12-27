@@ -26,7 +26,7 @@ macro_rules! gen_span_constants {
     };
 
     (@recur ($acc:expr) $name:ident => $repr:literal, $($rest:tt)*) => {
-        pub const $name: Ident = unsafe { FragSlice::new(FragSliceAddr::new(0, $acc as u16, $repr.len() as u16)) };
+        pub const $name: Ident = FragSlice::new(FragSliceAddr::new(0, 0, $repr.len() as u16));
         gen_span_constants!(@recur ($acc + $repr.len()) $($rest)*);
     };
 
@@ -51,10 +51,9 @@ gen_span_constants! {
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
-#[derive(Clone)]
 pub struct Interner {
     map: CMap<InternerEntry, Ident>,
-    frag_map: FragMap<u8, MAX_FRAGMENT_SIZE>,
+    frag_map: FragMap<u8>,
     temp: String,
 }
 
@@ -62,18 +61,18 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    pub fn new() -> Self {
+    pub fn new(frag_map: FragMap<u8>) -> Self {
         let mut s = Interner {
             map: CMap::default(),
-            frag_map: FragMap::default(),
+            frag_map,
             temp: String::new(),
         };
         s.init();
         s
     }
 
-    pub fn freeze(&mut self) {
-        self.frag_map.freeze();
+    pub fn update(&mut self, base: &mut FragBase<u8>) {
+        self.frag_map.update(base);
     }
 
     pub fn intern_scoped(&mut self, scope: impl Display, name: Ident) -> Ident {
@@ -103,12 +102,6 @@ impl Interner {
 
     fn to_raw(&self) -> RawInterner {
         todo!()
-    }
-}
-
-impl Default for Interner {
-    fn default() -> Self {
-        Interner::new()
     }
 }
 
@@ -185,7 +178,8 @@ mod test {
 
     #[test]
     fn test_interner() {
-        let mut interner = Interner::new();
+        let (_base, mut frag_maps) = FragBase::new(1);
+        let mut interner = Interner::new(frag_maps.pop().unwrap());
         assert_eq!(interner.intern("a"), interner.intern("a"));
         let b = interner.intern("b");
         assert_eq!(
@@ -198,7 +192,8 @@ mod test {
 
     #[test]
     fn test_interner_serde() {
-        let mut interner = Interner::new();
+        let (_base, mut frag_maps) = FragBase::new(1);
+        let mut interner = Interner::new(frag_maps.pop().unwrap());
         let a = interner.intern("a");
         let b = interner.intern("b");
         let c = interner.intern("c");

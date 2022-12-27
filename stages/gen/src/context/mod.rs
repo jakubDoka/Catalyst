@@ -22,7 +22,7 @@ use typec_t::*;
 #[derive(Default, Clone)]
 pub struct Gen {
     lookup: CMap<Ident, (FragRef<CompiledFunc>, bool)>,
-    funcs: FragMap<CompiledFunc, MAX_FRAGMENT_SIZE>,
+    funcs: FragMap<CompiledFunc>,
 }
 
 impl Gen {

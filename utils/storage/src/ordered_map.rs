@@ -6,13 +6,13 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
 use crate::*;
 
 /// Has access complexity of an ordinary map, but it allows addressing
 /// values by [`VPtr`]
-#[derive(Serialize, Deserialize)]
+//#[derive(Serialize, Deserialize)]
 pub struct OrderedMap<K: Eq + Hash, V> {
     index: Map<K, VRef<V>>,
     data: PoolMap<V, (K, V)>,

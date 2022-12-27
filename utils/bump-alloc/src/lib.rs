@@ -13,7 +13,8 @@
     default_free_fn,
     iter_collect_into,
     pointer_is_aligned,
-    slice_index_methods
+    slice_index_methods,
+    slice_group_by
 )]
 
 pub extern crate dashmap;
@@ -31,9 +32,13 @@ pub use {
     arena::Arena,
     frag_map::{
         addr::{FragAddr, FragSliceAddr, NonMaxU32, NonMaxU64},
+        relocator::{
+            DynFragMap, FragMaps, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator,
+            Relocated,
+        },
         FragBase, FragMap,
     },
-    map::{CMap, Map, Set},
+    map::{CMap, CSet, Map, Set},
     primitives::{
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
@@ -47,11 +52,12 @@ mod map {
         sync::Arc,
     };
 
-    use dashmap::DashMap;
+    use dashmap::{DashMap, DashSet};
 
     pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
     pub type CMap<K, V> = Arc<DashMap<K, V, FvnBuildHasher>>;
     pub type Set<T> = HashSet<T, FvnBuildHasher>;
+    pub type CSet<K> = Arc<DashSet<K, FvnBuildHasher>>;
 
     const FVN_PRIME: u64 = 0x00000100000001B3;
     const FVN_OFFSET: u64 = 0xcbf29ce484222325;

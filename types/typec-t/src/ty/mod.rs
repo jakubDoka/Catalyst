@@ -12,19 +12,19 @@ pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
 pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), SmallVec<[FragRef<Impl>; 4]>>;
 pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 
-pub type ParamSlices = FragMap<FragSlice<Spec>, MAX_FRAGMENT_SIZE>;
-pub type SpecSums = FragMap<Spec, MAX_FRAGMENT_SIZE>;
-pub type ArgSlices = FragMap<Ty, MAX_FRAGMENT_SIZE>;
-pub type Fields = FragMap<Field, MAX_FRAGMENT_SIZE>;
-pub type SpecFuncs = FragMap<SpecFunc, MAX_FRAGMENT_SIZE>;
-pub type Variants = FragMap<Variant, MAX_FRAGMENT_SIZE>;
+pub type ParamSlices = FragMap<FragSlice<Spec>>;
+pub type SpecSums = FragMap<Spec>;
+pub type ArgSlices = FragMap<Ty>;
+pub type Fields = FragMap<Field>;
+pub type SpecFuncs = FragMap<SpecFunc>;
+pub type Variants = FragMap<Variant>;
 
-pub type Impls = FragMap<Impl, MAX_FRAGMENT_SIZE>;
-pub type Instances = FragMap<Instance, MAX_FRAGMENT_SIZE>;
-pub type Enums = FragMap<Enum, MAX_FRAGMENT_SIZE>;
-pub type Pointers = FragMap<Pointer, MAX_FRAGMENT_SIZE>;
-pub type BaseSpecs = FragMap<SpecBase, MAX_FRAGMENT_SIZE>;
-pub type SpecInstances = FragMap<SpecInstance, MAX_FRAGMENT_SIZE>;
+pub type Impls = FragMap<Impl>;
+pub type Instances = FragMap<Instance>;
+pub type Enums = FragMap<Enum>;
+pub type Pointers = FragMap<Pointer>;
+pub type BaseSpecs = FragMap<SpecBase>;
+pub type SpecInstances = FragMap<SpecInstance>;
 
 #[derive(Clone, Copy)]
 pub struct Impl {
@@ -688,7 +688,7 @@ pub trait Humid: Sized {
     fn is_water_drop(key: FragRef<Self>) -> bool;
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;
     fn name(&self) -> Ident;
-    fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE>;
+    fn storage(typec: &mut Typec) -> &mut FragMap<Self>;
 }
 
 #[derive(Default)]

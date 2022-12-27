@@ -6,7 +6,7 @@ use std::{
 };
 
 use bump_alloc::{bumpvec, BumpAllocRef};
-use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
+// use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
 
 use crate::VRef;
 
@@ -100,67 +100,67 @@ impl<T, V: Clone> Clone for ShadowMap<T, V> {
     }
 }
 
-struct ShadowMapVisitor<K, V> {
-    marker: PhantomData<fn() -> ShadowMap<K, V>>,
-}
+// struct ShadowMapVisitor<K, V> {
+//     marker: PhantomData<fn() -> ShadowMap<K, V>>,
+// }
 
-impl<K, V> ShadowMapVisitor<K, V> {
-    fn new() -> Self {
-        ShadowMapVisitor {
-            marker: PhantomData,
-        }
-    }
-}
+// impl<K, V> ShadowMapVisitor<K, V> {
+//     fn new() -> Self {
+//         ShadowMapVisitor {
+//             marker: PhantomData,
+//         }
+//     }
+// }
 
-impl<'de, K, V: Default + Clone> Visitor<'de> for ShadowMapVisitor<K, V>
-where
-    V: Deserialize<'de>,
-{
-    type Value = ShadowMap<K, V>;
+// impl<'de, K, V: Default + Clone> Visitor<'de> for ShadowMapVisitor<K, V>
+// where
+//     V: Deserialize<'de>,
+// {
+//     type Value = ShadowMap<K, V>;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("ShadowMap")
-    }
+//     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         formatter.write_str("ShadowMap")
+//     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::SeqAccess<'de>,
-    {
-        let mut map = ShadowMap::new();
-        while let Some(value) = seq.next_element::<(VRef<K>, V)>()? {
-            map[value.0] = value.1;
-        }
-        Ok(map)
-    }
-}
+//     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+//     where
+//         A: serde::de::SeqAccess<'de>,
+//     {
+//         let mut map = ShadowMap::new();
+//         while let Some(value) = seq.next_element::<(VRef<K>, V)>()? {
+//             map[value.0] = value.1;
+//         }
+//         Ok(map)
+//     }
+// }
 
-impl<'de, K, V: Default + Clone> Deserialize<'de> for ShadowMap<K, V>
-where
-    V: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(ShadowMapVisitor::new())
-    }
-}
+// impl<'de, K, V: Default + Clone> Deserialize<'de> for ShadowMap<K, V>
+// where
+//     V: Deserialize<'de>,
+// {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         deserializer.deserialize_seq(ShadowMapVisitor::new())
+//     }
+// }
 
-impl<K, V: Default + Clone + PartialEq + Eq> Serialize for ShadowMap<K, V>
-where
-    V: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut seq = serializer.serialize_seq(None)?;
-        // we do this in reverse to guarantee that deserialization will allocate just once
-        for (i, v) in self.data.iter().enumerate().rev() {
-            if *v != self.default {
-                seq.serialize_element(&(unsafe { VRef::<K>::new(i) }, v))?;
-            }
-        }
-        seq.end()
-    }
-}
+// impl<K, V: Default + Clone + PartialEq + Eq> Serialize for ShadowMap<K, V>
+// where
+//     V: Serialize,
+// {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer,
+//     {
+//         let mut seq = serializer.serialize_seq(None)?;
+//         // we do this in reverse to guarantee that deserialization will allocate just once
+//         for (i, v) in self.data.iter().enumerate().rev() {
+//             if *v != self.default {
+//                 seq.serialize_element(&(unsafe { VRef::<K>::new(i) }, v))?;
+//             }
+//         }
+//         seq.end()
+//     }
+// }

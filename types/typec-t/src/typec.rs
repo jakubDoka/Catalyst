@@ -10,12 +10,12 @@ use packaging_t::{Module, Resources};
 use storage::{dashmap::mapref::entry::Entry, *};
 
 macro_rules! gen_typec {
-    ($self:ident $($name:ident: $ty:ty, $size:expr, $({ $($tt:tt)* })?)*) => {
+    ($self:ident $($name:ident: $ty:ty, $({ $($tt:tt)* })?)*) => {
         #[derive(Default, Clone)]
         pub struct Typec {
             pub lookup: TypecLookup,
             $(
-                pub $name: FragMap<$ty, $size>,
+                pub $name: FragMap<$ty>,
             )*
             pub impl_lookup: ImplLookup,
             pub implemented: Implemented,
@@ -212,21 +212,21 @@ impl TypecRelocator {
 
 gen_typec! {
     self
-    structs: Struct, MAX_FRAGMENT_SIZE,
-    pointers: Pointer, MAX_FRAGMENT_SIZE,
-    instances: Instance, MAX_FRAGMENT_SIZE,
-    base_specs: SpecBase, MAX_FRAGMENT_SIZE,
-    spec_instances: SpecInstance, MAX_FRAGMENT_SIZE,
-    funcs: Func, MAX_FRAGMENT_SIZE,
-    fields: Field, MAX_FRAGMENT_SIZE,
-    impls: Impl, MAX_FRAGMENT_SIZE,
-    spec_sums: Spec, MAX_FRAGMENT_SIZE,
-    params: FragSlice<Spec>, MAX_FRAGMENT_SIZE,
-    args: Ty, MAX_FRAGMENT_SIZE,
-    func_slices: FragRef<Func>, MAX_FRAGMENT_SIZE,
-    spec_funcs: SpecFunc, MAX_FRAGMENT_SIZE,
-    variants: Variant, MAX_FRAGMENT_SIZE,
-    enums: Enum, MAX_FRAGMENT_SIZE,
+    structs: Struct,
+    pointers: Pointer,
+    instances: Instance,
+    base_specs: SpecBase,
+    spec_instances: SpecInstance,
+    funcs: Func,
+    fields: Field,
+    impls: Impl,
+    spec_sums: Spec,
+    params: FragSlice<Spec>,
+    args: Ty,
+    func_slices: FragRef<Func>,
+    spec_funcs: SpecFunc,
+    variants: Variant,
+    enums: Enum,
 }
 
 macro_rules! gen_index {
@@ -1202,7 +1202,7 @@ impl Typec {
     }
 
     pub fn get_mut<T: Humid>(
-        storage: &mut FragMap<T, MAX_FRAGMENT_SIZE>,
+        storage: &mut FragMap<T>,
         key: FragRef<T>,
     ) -> &mut T {
         debug_assert!(

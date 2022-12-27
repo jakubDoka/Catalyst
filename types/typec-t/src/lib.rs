@@ -51,7 +51,7 @@ macro_rules! gen_water_drops {
             fn name(&self) -> Ident {
                 self.name
             }
-            fn storage(typec: &mut Typec) -> &mut FragMap<Self, MAX_FRAGMENT_SIZE> {
+            fn storage(typec: &mut Typec) -> &mut FragMap<Self> {
                 &mut typec.$field
             }
             fn is_water_drop(s: FragRef<Self>) -> bool {

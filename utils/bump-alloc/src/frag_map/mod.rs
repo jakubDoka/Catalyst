@@ -18,6 +18,7 @@ use std::{
 use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
 
 pub mod addr;
+pub mod relocator;
 
 pub struct FragMap<T, A: Allocator = Global> {
     others: Box<[FragVecView<T, A>]>,
@@ -243,6 +244,13 @@ impl<T, A: Allocator> FragVecView<T, A> {
             frozen: 0,
         }
     }
+
+    fn unique_data(&mut self) -> &mut [T] {
+        unsafe {
+            assert!(FragVecInner::is_unique(self.inner));
+            FragVecInner::data_mut(self.inner, 0..self.frozen)
+        }
+    }
 }
 
 impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVecView<T, A> {
@@ -283,6 +291,10 @@ struct FragVecInner<T, A: Allocator = Global> {
 }
 
 impl<T, A: Allocator> FragVecInner<T, A> {
+    unsafe fn is_unique(s: NonNull<Self>) -> bool {
+        (*ptr::addr_of!((*s.as_ptr()).ref_count)).load(atomic::Ordering::Relaxed) == 1
+    }
+
     unsafe fn inc(s: NonNull<Self>) {
         (*ptr::addr_of!((*s.as_ptr()).ref_count)).fetch_add(1, atomic::Ordering::Relaxed);
     }

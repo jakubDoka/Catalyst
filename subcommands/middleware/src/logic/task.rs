@@ -23,7 +23,7 @@ pub struct Task {
 
 impl Task {
     pub(crate) fn freeze(&mut self) {
-        self.interner.freeze();
+        self.interner.update();
         self.typec.freeze();
         self.gen.freeze();
     }

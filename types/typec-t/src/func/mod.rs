@@ -2,8 +2,8 @@ use crate::*;
 
 use storage::*;
 
-pub type Funcs = FragMap<Func, MAX_FRAGMENT_SIZE>;
-pub type FuncSlices = FragMap<FragRef<Func>, MAX_FRAGMENT_SIZE>;
+pub type Funcs = FragMap<Func>;
+pub type FuncSlices = FragMap<FragRef<Func>>;
 
 #[derive(Clone, Copy, Default)]
 pub struct Func {
