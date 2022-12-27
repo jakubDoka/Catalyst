@@ -4,7 +4,7 @@ macro_rules! gen_non_max {
     ($($name:ident($ty:ty, $max:literal);)*) => {
         $(
             #[repr(transparent)]
-            #[rustc_layout_scalar_valid_range_end(65_534)]
+            #[rustc_layout_scalar_valid_range_end($max)]
             #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
             pub struct $name($ty);
 
@@ -15,7 +15,7 @@ macro_rules! gen_non_max {
             }
 
             impl $name {
-                pub const MAX: Self = unsafe { Self(65_534) };
+                pub const MAX: Self = unsafe { Self($max) };
                 pub const MIN: Self = unsafe { Self(0) };
 
                 pub const fn get(self) -> $ty {

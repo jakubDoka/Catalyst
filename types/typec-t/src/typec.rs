@@ -9,208 +9,104 @@ use packaging_t::{Module, Resources};
 
 use storage::{dashmap::mapref::entry::Entry, *};
 
-macro_rules! gen_typec {
+pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
+pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), SmallVec<[FragRef<Impl>; 4]>>;
+pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
+pub type Macros = CMap<Ty, MacroImpl>;
+pub type MayNeedDrop = CMap<Ty, bool>;
+
+pub struct Mapping {
+    pub lookup: TypecLookup,
+    pub impl_lookup: ImplLookup,
+    pub implemented: Implemented,
+    pub macros: Macros,
+    pub may_need_drop: MayNeedDrop,
+}
+
+pub struct Typec {
+    pub mapping: Arc<Mapping>,
+    pub module_items: ShadowMap<Module, ModuleItems>,
+    pub builtin_funcs: Vec<FragRef<Func>>,
+    pub cache: TypecCache,
+}
+
+macro_rules! gen_cache {
     ($self:ident $($name:ident: $ty:ty, $({ $($tt:tt)* })?)*) => {
-        #[derive(Default, Clone)]
-        pub struct Typec {
-            pub lookup: TypecLookup,
+        pub struct TypecCache {
             $(
                 pub $name: FragMap<$ty>,
             )*
-            pub impl_lookup: ImplLookup,
-            pub implemented: Implemented,
-            pub module_items: ShadowMap<Module, ModuleItems>,
-            pub macros: CMap<Ty, MacroImpl>,
-            pub builtin_funcs: Vec<FragRef<Func>>,
-            pub may_need_drop: CMap<Ty, bool>,
         }
 
-        impl Typec {
-            pub fn freeze(&mut self) {
-                $(
-                    self.$name.freeze();
-                )*
+        impl TypecCache {
+
+        }
+
+        $(
+            impl Index<FragRef<$ty>> for Typec {
+                type Output = $ty;
+
+                fn index(&self, index: FragRef<$ty>) -> &Self::Output {
+                    &self.cache.$name[index]
+                }
             }
-        }
 
-        #[derive(Default)]
-        pub struct TypecRelocator {
+            // impl IndexMut<FragRef<$ty>> for Typec {
+            //     fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
+            //         &mut self.$name[index]
+            //     }
+            // }
+
+            impl Index<FragSlice<$ty>> for Typec {
+                type Output = [$ty];
+
+                fn index(&self, index: FragSlice<$ty>) -> &Self::Output {
+                    &self.cache.$name[index]
+                }
+            }
+
+            // impl IndexMut<FragSlice<$ty>> for Typec {
+            //     fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
+            //         &mut self.$name[index]
+            //     }
+            // }
+        )*
+
+
+        pub struct TypecCacheBase {
             $(
-                pub $name: FragRelocator<$ty>,
+                pub $name: FragBase<$ty>,
             )*
         }
 
-        impl TypecRelocator {
-            pub fn relocate(&mut $self, typec: &mut Typec) {
+        impl TypecCacheBase {
+            pub fn new(thread_count: u8) -> (Self, Vec<TypecCache>) {
                 $(
-                    $self.$name.relocate(&mut typec.$name);
-                    $({ $($tt)* })?
+                    let mut $name = FragBase::new(thread_count);
                 )*
-                $self.clean_maps(typec);
-            }
 
-            pub fn clear(&mut $self) {
-                $(
-                    $self.$name.clear();
-                )*
+                let iter = (0..thread_count).map(|_| TypecCache {
+                    $(
+                        $name: $name.1.pop().unwrap(),
+                    )*
+                });
+
+                (
+                    Self {
+                        $(
+                            $name: $name.0,
+                        )*
+                    },
+                    iter.collect(),
+                )
             }
         }
+
+
     };
 }
 
-impl TypecRelocator {
-    fn clean_maps(&self, typec: &mut Typec) {
-        fn take_arc<T: Default>(arc: &mut Arc<T>) -> T {
-            mem::take(Arc::get_mut(arc).expect("there should be no other refs to typec"))
-        }
-
-        typec.lookup.retain(|_, value| {
-            let new_value = match *value {
-                ComputedTypecItem::Pointer(p) => {
-                    self.pointers.project(p).map(ComputedTypecItem::Pointer)
-                }
-                ComputedTypecItem::Instance(i) => {
-                    self.instances.project(i).map(ComputedTypecItem::Instance)
-                }
-                ComputedTypecItem::SpecInstance(i) => self
-                    .spec_instances
-                    .project(i)
-                    .map(ComputedTypecItem::SpecInstance),
-                ComputedTypecItem::SpecSum(s) => {
-                    Some(ComputedTypecItem::SpecSum(self.spec_sums.project_slice(s)))
-                }
-            };
-
-            if let Some(new_v) = new_value {
-                *value = new_v;
-            }
-
-            new_value.is_some()
-        });
-
-        typec.may_need_drop.clear();
-
-        let old_map = take_arc(&mut typec.implemented);
-        for (key, (r#impl, params)) in old_map.into_iter() {
-            let Some(key) = self.project_impl_key(key) else {
-                continue;
-            };
-            let Some(r#impl) = self.impls.project(r#impl) else {
-                continue;
-            };
-            let params = self.args.project_slice(params);
-            typec.implemented.insert(key, (r#impl, params));
-        }
-
-        let old_map = take_arc(&mut typec.impl_lookup);
-        for ((spec, ty), mut value) in old_map.into_iter() {
-            let Some(spec) = self.base_specs.project(spec) else {
-                continue;
-            };
-            let Some(ty) = self.project_ty(ty) else {
-                continue;
-            };
-            value.retain(|v| {
-                if let Some(r#impl) = self.impls.project(*v) {
-                    *v = r#impl;
-                    true
-                } else {
-                    false
-                }
-            });
-            if value.is_empty() {
-                continue;
-            }
-            typec.impl_lookup.insert((spec, ty), value);
-        }
-
-        typec.module_items.clear();
-
-        let old_map = take_arc(&mut typec.macros);
-        for (key, r#macro) in old_map.into_iter() {
-            let Some(key) = self.project_ty(key) else {
-                continue;
-            };
-            let Some(r#macro) = self.project_macro_impl(r#macro) else {
-                continue;
-            };
-            typec.macros.insert(key, r#macro);
-        }
-
-        for func in typec.builtin_funcs.iter_mut() {
-            *func = self
-                .funcs
-                .project(*func)
-                .expect("builtin funcs should be valid");
-        }
-
-        let old_map = take_arc(&mut typec.may_need_drop);
-        for (key, value) in old_map.into_iter() {
-            let Some(key) = self.project_ty(key) else {
-                continue;
-            };
-            typec.may_need_drop.insert(key, value);
-        }
-    }
-
-    fn project_macro_impl(
-        &self,
-        MacroImpl {
-            name,
-            r#impl,
-            params,
-        }: MacroImpl,
-    ) -> Option<MacroImpl> {
-        let params = self.args.project_slice(params);
-        let r#impl = r#impl
-            .map(|r#impl| self.impls.project(r#impl))
-            .transpose()?;
-        Some(MacroImpl {
-            name,
-            r#impl,
-            params,
-        })
-    }
-
-    pub fn project_impl_key(&self, ImplKey { ty, spec }: ImplKey) -> Option<ImplKey> {
-        let ty = self.project_ty(ty)?;
-        let spec = self.project_spec(spec)?;
-        Some(ImplKey { ty, spec })
-    }
-
-    pub fn project_ty(&self, ty: Ty) -> Option<Ty> {
-        match ty {
-            Ty::Struct(s) => self.structs.project(s).map(Ty::Struct),
-            Ty::Enum(e) => self.enums.project(e).map(Ty::Enum),
-            Ty::Instance(i) => self.instances.project(i).map(Ty::Instance),
-            Ty::Pointer(p, m) => self.pointers.project(p).map(|p| Ty::Pointer(p, m)),
-            Ty::Param(index) => Some(Ty::Param(index)),
-            Ty::Builtin(b) => Some(Ty::Builtin(b)),
-        }
-    }
-
-    pub fn project_generic_ty(&self, generic_ty: GenericTy) -> Option<GenericTy> {
-        match generic_ty {
-            GenericTy::Struct(s) => self.structs.project(s).map(GenericTy::Struct),
-            GenericTy::Enum(e) => self.enums.project(e).map(GenericTy::Enum),
-        }
-    }
-
-    pub fn project_spec(&self, spec: Spec) -> Option<Spec> {
-        match spec {
-            Spec::Base(b) => self.base_specs.project(b).map(Spec::Base),
-            Spec::Instance(i) => self.spec_instances.project(i).map(Spec::Instance),
-        }
-    }
-
-    pub fn project_signature(&self, Signature { ret, args, cc }: Signature) -> Option<Signature> {
-        let ret = self.project_ty(ret)?;
-        let args = self.args.project_slice(args);
-        Some(Signature { ret, cc, args })
-    }
-}
-
-gen_typec! {
+gen_cache! {
     self
     structs: Struct,
     pointers: Pointer,
@@ -227,60 +123,6 @@ gen_typec! {
     spec_funcs: SpecFunc,
     variants: Variant,
     enums: Enum,
-}
-
-macro_rules! gen_index {
-    (
-        $($ty:ty => $storage:ident)*
-    ) => {
-        $(
-            impl Index<FragRef<$ty>> for Typec {
-                type Output = $ty;
-
-                fn index(&self, index: FragRef<$ty>) -> &Self::Output {
-                    &self.$storage[index]
-                }
-            }
-
-            // impl IndexMut<FragRef<$ty>> for Typec {
-            //     fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
-            //         &mut self.$storage[index]
-            //     }
-            // }
-
-            impl Index<FragSlice<$ty>> for Typec {
-                type Output = [$ty];
-
-                fn index(&self, index: FragSlice<$ty>) -> &Self::Output {
-                    &self.$storage[index]
-                }
-            }
-
-            // impl IndexMut<FragSlice<$ty>> for Typec {
-            //     fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
-            //         &mut self.$storage[index]
-            //     }
-            // }
-        )*
-    };
-}
-
-gen_index! {
-    Struct => structs
-    Pointer => pointers
-    SpecBase => base_specs
-    SpecInstance => spec_instances
-    Func => funcs
-    Instance => instances
-    Enum => enums
-    Impl => impls
-    FragSlice<Spec> => params
-    Spec => spec_sums
-    Field => fields
-    Ty => args
-    FragRef<Func> => func_slices
-    SpecFunc => spec_funcs
-    Variant => variants
 }
 
 impl Typec {
@@ -1201,10 +1043,7 @@ impl Typec {
         })
     }
 
-    pub fn get_mut<T: Humid>(
-        storage: &mut FragMap<T>,
-        key: FragRef<T>,
-    ) -> &mut T {
+    pub fn get_mut<T: Humid>(storage: &mut FragMap<T>, key: FragRef<T>) -> &mut T {
         debug_assert!(
             storage.can_mut_access(key) || T::is_water_drop(key),
             "key: {:?}, valid: {}, is_water_drop: {}",

@@ -110,7 +110,7 @@ macro_rules! gen_frag_ref_constants {
     };
 
     ($ty:ty => ($prev:expr) $current:ident $($next:ident $($others:ident)*)?) => {
-        pub const $current: FragRef<$ty> = unsafe { FragRef::new(FragAddr::new(0, $prev as u16)) };
+        pub const $current: FragRef<$ty> = unsafe { FragRef::new(FragAddr::new($prev as u64, 0)) };
         $(
             $crate::gen_frag_ref_constants!($ty => ($prev + 1) $next $($others)*);
         )?

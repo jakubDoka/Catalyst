@@ -5,6 +5,20 @@ use std::{
     mem, ptr, thread,
 };
 
+#[macro_export]
+macro_rules! derive_relocated {
+    ($ty:ty { $($field:ident)* }) => {
+        impl $crate::Relocated for $ty {
+            fn mark(&self, marker: &mut $crate::FragRelocMarker) {
+                $(self.$field.mark(marker);)*
+            }
+            fn remap(&mut self, ctx: &$crate::FragRelocMapping) {
+                $(self.$field.remap(ctx);)*
+            }
+        }
+    };
+}
+
 use crate::*;
 
 use super::FragVecInner;
@@ -20,7 +34,7 @@ pub struct FragRelocMapping {
 }
 
 impl FragRelocMapping {
-    pub fn project_base<T: Relocated, A: Allocator>(&self, base: &mut FragBase<T, A>) {
+    fn project_base<T: Relocated, A: Allocator>(&self, base: &mut FragBase<T, A>) {
         base.threads
             .iter_mut()
             .flat_map(|f| f.unique_data())
@@ -118,8 +132,8 @@ impl FragRelocator {
 
         self.fold_mapping();
 
-        let folded_mapping = &self.mapping[0];
         thread::scope(|scope| {
+            let folded_mapping = &self.mapping[0];
             for chunk in frag_vec.chunks_mut(chunk_size) {
                 scope.spawn(move || {
                     for (.., frag, _) in chunk {
@@ -180,7 +194,7 @@ impl FragMarks {
         base: &mut FragBase<T, A>,
         mapping: &mut FragRelocMapping,
     ) {
-        for (marks, thread) in self.marks.iter_mut().zip(base.threads.iter_mut()) {
+        for (marks, thread) in self.marks.iter().zip(base.threads.iter_mut()) {
             let id = thread.thread as u8;
             let map = |index: usize| DynFragId {
                 repr: FragAddr::new(index as u64, id),
@@ -207,8 +221,9 @@ impl FragMarks {
                     cursor += len;
                 }
             }
-            marks.clear();
         }
+
+        self.clear();
     }
 
     fn clear(&mut self) {

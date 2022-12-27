@@ -9,14 +9,13 @@ edition = "2021"
 members = [
     # "stages/*",
     # "tests/*",
-    # "types/*",
-    # "utils/*",
+    "types/*",
+    "utils/*",
     # "subcommands/*",
-    # "scripts/*",
-    "utils/bump-alloc",
+    "scripts/*",
 ]
 
 [dependencies]
-# lsp = { version = "0.1.0", path = "subcommands/lsp" }
-# cc = { version = "0.1.0", path = "subcommands/cc" }
-# cli = { version = "0.1.0", path = "utils/cli" }
+lsp = { version = "0.1.0", path = "subcommands/lsp" }
+cc = { version = "0.1.0", path = "subcommands/cc" }
+cli = { version = "0.1.0", path = "utils/cli" }

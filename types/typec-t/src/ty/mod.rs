@@ -8,10 +8,6 @@ use lexing_t::*;
 
 use storage::*;
 
-pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
-pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), SmallVec<[FragRef<Impl>; 4]>>;
-pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
-
 pub type ParamSlices = FragMap<FragSlice<Spec>>;
 pub type SpecSums = FragMap<Spec>;
 pub type ArgSlices = FragMap<Ty>;

@@ -46,11 +46,12 @@ impl<T, A: Allocator> FragMap<T, A> {
         id
     }
 
-    pub fn extend<I: ExactSizeIterator<Item = T>>(&mut self, iter: I) -> FragSlice<T>
+    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> FragSlice<T>
     where
+        I::IntoIter: ExactSizeIterator,
         A: Clone,
     {
-        let (addr, reallocated) = self.thread_local.extend(iter);
+        let (addr, reallocated) = self.thread_local.extend(iter.into_iter());
         self.handle_reallocation(reallocated);
         addr
     }

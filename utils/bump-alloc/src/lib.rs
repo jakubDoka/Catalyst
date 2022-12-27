@@ -55,7 +55,7 @@ mod map {
     use dashmap::{DashMap, DashSet};
 
     pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
-    pub type CMap<K, V> = Arc<DashMap<K, V, FvnBuildHasher>>;
+    pub type CMap<K, V> = DashMap<K, V, FvnBuildHasher>;
     pub type Set<T> = HashSet<T, FvnBuildHasher>;
     pub type CSet<K> = Arc<DashSet<K, FvnBuildHasher>>;
 
