@@ -5,8 +5,6 @@ use std::{
     ops::Range,
 };
 
-use serde::{Deserialize, Serialize};
-
 macro_rules! gen_derives {
     ($ident:ident) => {
         impl<T: ?Sized> Clone for $ident<T> {
@@ -31,7 +29,7 @@ macro_rules! gen_derives {
 
         impl<T: ?Sized> const PartialEq for $ident<T> {
             fn eq(&self, other: &Self) -> bool {
-                self.0 == other.0
+                self.0.repr() == other.0.repr()
             }
         }
 
@@ -66,16 +64,16 @@ gen_derives!(FragRef);
 impl<T: ?Sized> FragRef<T> {
     /// # Safety
     /// See [`FragSliceAddr::new`].
-    pub const unsafe fn new(addr: FragAddr) -> Self {
+    pub const fn new(addr: FragAddr) -> Self {
         Self(addr, PhantomData)
     }
 
-    pub const fn to_u32(self) -> u32 {
-        self.0.to_u32()
+    pub const fn repr(self) -> u64 {
+        self.0.repr()
     }
 
     pub fn as_slice(&self) -> FragSlice<T> {
-        unsafe { FragSlice::new(FragSliceAddr::from_addr(self.0)) }
+        FragSlice::new(self.0.as_slice())
     }
 
     pub fn right_after(&self, key: FragRef<T>) -> bool {
@@ -93,16 +91,16 @@ pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
 impl<T: ?Sized> FragSlice<T> {
     /// # Safety
     /// See [`FragSliceAddr::new`].
-    pub const unsafe fn new(addr: FragSliceAddr) -> Self {
+    pub const fn new(addr: FragSliceAddr) -> Self {
         Self(addr, PhantomData)
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub const fn len(&self) -> usize {
+        self.0.parts().2 as usize
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn keys(
@@ -189,7 +187,7 @@ where
     }
 }
 
-use crate::{FragAddr, FragSliceAddr};
+use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
 
 pub type VRefSlice<T> = VSlice<VRef<T>>;
 
@@ -197,9 +195,8 @@ pub trait VRefDefault {
     fn default_state() -> VRef<Self>;
 }
 
-#[rustc_layout_scalar_valid_range_end(4294967294)]
 #[repr(transparent)]
-pub struct VRef<T: ?Sized>(u32, PhantomData<*const T>);
+pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 
 pub type OptVRef<T> = Option<VRef<T>>;
 
@@ -211,17 +208,17 @@ impl<T: ?Sized> VRef<T> {
     /// The index must be valid for using collection.
     #[inline(always)]
     pub const unsafe fn new(id: usize) -> Self {
-        Self(id as u32, PhantomData)
+        Self(NonMaxU32::new_unchecked(id as u32), PhantomData)
     }
 
     #[inline(always)]
     pub const fn index(self) -> usize {
-        self.0 as usize
+        self.0.get() as usize
     }
 
     #[inline(always)]
     pub const fn as_u32(self) -> u32 {
-        self.0
+        self.0.get()
     }
 
     /// Casts VRef to VRef of another type.
@@ -241,15 +238,15 @@ impl<T: VRefDefault + ?Sized> Default for VRef<T> {
     }
 }
 
-impl<T: ?Sized> Serialize for VRef<T> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.serialize(serializer)
-    }
+#[const_trait]
+trait ReprComply {
+    fn repr(self) -> u32;
 }
 
-impl<'de, T: ?Sized> Deserialize<'de> for VRef<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        u32::deserialize(deserializer).map(|x| unsafe { Self::new(x as usize) })
+impl const ReprComply for u32 {
+    #[inline(always)]
+    fn repr(self) -> u32 {
+        self
     }
 }
 
@@ -307,15 +304,3 @@ impl<T> Default for VSlice<T> {
 }
 
 gen_derives!(VSlice);
-
-impl<T> Serialize for VSlice<T> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (self.0, self.1).serialize(serializer)
-    }
-}
-
-impl<'de, T> Deserialize<'de> for VSlice<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <(u32, u32)>::deserialize(deserializer).map(|(start, end)| Self(start, end, PhantomData))
-    }
-}

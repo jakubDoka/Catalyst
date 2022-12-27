@@ -1,16 +1,20 @@
-#![feature(allocator_api)]
-#![feature(new_uninit)]
-#![feature(negative_impls)]
-#![feature(inline_const)]
-#![feature(let_chains)]
-#![feature(slice_from_ptr_range)]
-#![feature(rustc_attrs)]
-#![feature(const_trait_impl)]
-#![feature(const_discriminant)]
-#![feature(atomic_mut_ptr)]
-#![feature(never_type)]
-#![feature(default_free_fn)]
-#![feature(iter_collect_into)]
+#![feature(
+    allocator_api,
+    new_uninit,
+    negative_impls,
+    inline_const,
+    let_chains,
+    slice_from_ptr_range,
+    rustc_attrs,
+    const_trait_impl,
+    const_discriminant,
+    atomic_mut_ptr,
+    never_type,
+    default_free_fn,
+    iter_collect_into,
+    pointer_is_aligned,
+    slice_index_methods
+)]
 
 pub extern crate dashmap;
 
@@ -26,7 +30,8 @@ pub use {
     allocator::{Allocator, AllocatorLow, ProtectedAllocator},
     arena::Arena,
     frag_map::{
-        FragAddr, FragBase, FragMap, FragRelocator, FragSliceAddr, NonMaxU16, MAX_FRAGMENT_SIZE,
+        addr::{FragAddr, FragSliceAddr, NonMaxU32, NonMaxU64},
+        FragBase, FragMap,
     },
     map::{CMap, Map, Set},
     primitives::{

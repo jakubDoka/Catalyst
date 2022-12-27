@@ -111,7 +111,7 @@ impl Gen {
             .collect::<Result<Vec<_>, _>>()?;
 
         unsafe {
-            debug_assert!(self.funcs.is_valid(id));
+            debug_assert!(self.funcs.can_mut_access(id));
             (*self.funcs.ptr_to(id)).inner = Some(Arc::new(CompiledFuncInner {
                 signature: ctx.func.signature.clone(),
                 bytecode: cc.buffer.data().to_vec(),

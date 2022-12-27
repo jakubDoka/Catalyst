@@ -1206,10 +1206,10 @@ impl Typec {
         key: FragRef<T>,
     ) -> &mut T {
         debug_assert!(
-            storage.is_valid(key) || T::is_water_drop(key),
+            storage.can_mut_access(key) || T::is_water_drop(key),
             "key: {:?}, valid: {}, is_water_drop: {}",
             key,
-            storage.is_valid(key),
+            storage.can_mut_access(key),
             T::is_water_drop(key)
         );
         unsafe { &mut *storage.ptr_to(key) }
