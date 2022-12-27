@@ -184,6 +184,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn burst_alloc_comparison() {
         bench(&[
             ("normal-vec", |timer| {

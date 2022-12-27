@@ -95,8 +95,8 @@ impl FragAddr {
 pub struct FragSliceAddr(u64);
 
 impl FragSliceAddr {
-    const INDEX_OFFSET: u64 = 16;
-    const LEN_OFFSET: u64 = 7;
+    const INDEX_OFFSET: u64 = 24;
+    const LEN_OFFSET: u64 = 8;
     const THREAD_MASK: u64 = (1 << Self::LEN_OFFSET) - 1;
     const LEN_MASK: u64 = (1 << (Self::INDEX_OFFSET - Self::LEN_OFFSET)) - 1;
 

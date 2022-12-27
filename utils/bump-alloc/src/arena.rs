@@ -100,6 +100,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_safety() {
         let arena = Arena::new();
 
@@ -114,6 +115,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_expand() {
         let arena = Arena::new();
 
@@ -123,6 +125,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn clear() {
         let mut arena = Arena::new();
 

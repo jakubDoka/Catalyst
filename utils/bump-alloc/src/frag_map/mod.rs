@@ -108,21 +108,21 @@ pub struct FragBase<T, A: Allocator = Global> {
 }
 
 impl<T> FragBase<T> {
-    pub fn new(thread_count: usize) -> (Self, Vec<FragMap<T>>) {
+    pub fn new(thread_count: u8) -> (Self, Vec<FragMap<T>>) {
         Self::new_in(thread_count, Global)
     }
 }
 
 impl<T, A: Allocator> FragBase<T, A> {
-    pub fn new_in(thread_count: usize, allocator: A) -> (Self, Vec<FragMap<T, A>>)
+    pub fn new_in(thread_count: u8, allocator: A) -> (Self, Vec<FragMap<T, A>>)
     where
         A: Clone,
     {
-        let threads = (0..thread_count)
+        let threads = (0..thread_count as usize)
             .map(|thread| FragVecView::new_in(thread, allocator.clone()))
             .collect::<Box<[_]>>();
 
-        let maps = (0..thread_count)
+        let maps = (0..thread_count as usize)
             .map(|thread| FragMap::new_in(threads.clone(), thread))
             .collect();
 
@@ -180,19 +180,22 @@ impl<T, A: Allocator> FragVec<T, A> {
     where
         A: Clone,
     {
-        let values_len = values.len();
+        let Ok(values_len) = values.len().try_into() else {
+            terminate!("FragVec::extend: iterator too long");
+        };
+
         let (.., possibly_new) = unsafe { FragVecInner::extend(self.view.inner, self.len, values) };
 
         let slice = FragSlice::new(FragSliceAddr::new(
             self.len as u64,
             self.view.thread as u8,
-            values_len as u16,
+            values_len,
         ));
 
         if let Some(inner) = possibly_new {
             self.view = FragVecView { inner, ..self.view };
         }
-        self.len += values_len;
+        self.len += values_len as usize;
 
         (slice, possibly_new.is_some())
     }
@@ -271,6 +274,7 @@ impl<T, A: Allocator> Drop for FragVecView<T, A> {
     }
 }
 
+#[repr(C)]
 struct FragVecInner<T, A: Allocator = Global> {
     ref_count: AtomicUsize,
     cap: usize,
@@ -301,9 +305,14 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     }
 
     unsafe fn get_item(s: NonNull<Self>, index: usize) -> NonNull<T> {
-        debug_assert!(index < ptr::addr_of!((*s.as_ptr()).cap).read());
-        let data = ptr::addr_of_mut!((*s.as_ptr()).data);
-        NonNull::new_unchecked(data.add(index).cast())
+        debug_assert!(
+            index < ptr::addr_of!((*s.as_ptr()).cap).read(),
+            "index out of bounds ({} >= {})",
+            index,
+            ptr::addr_of!((*s.as_ptr()).cap).read()
+        );
+        let data = ptr::addr_of_mut!((*s.as_ptr()).data).cast::<T>();
+        NonNull::new_unchecked(data.add(index))
     }
 
     unsafe fn drop(s: NonNull<Self>) {
@@ -323,7 +332,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         let pushed_len = i.len();
         let mut cap = ptr::addr_of!((*s.as_ptr()).cap).read();
 
-        let overflows = len + pushed_len > cap;
+        let overflows = len + pushed_len >= cap;
         if overflows {
             cap = (len + pushed_len).next_power_of_two();
             let allocator = (*ptr::addr_of!((*s.as_ptr()).allocator)).clone();
@@ -369,5 +378,52 @@ impl<T, A: Allocator> FragVecInner<T, A> {
             .extend(Layout::array::<T>(cap).unwrap_or_else(|err| terminate!("{}", err)))
             .unwrap_or_else(|err| terminate!("{}", err))
             .0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::mpsc, thread};
+
+    use super::*;
+
+    #[test]
+    fn test() {
+        let (mut base, maps) = FragBase::<usize>::new(4);
+        let (sender, receiver) = mpsc::channel();
+
+        let threads = maps
+            .into_iter()
+            .enumerate()
+            .map(|(i, map)| {
+                let (thread_sender, thread_receiver) = mpsc::channel();
+                thread_sender
+                    .send((map, Option::<FragSlice<usize>>::None))
+                    .unwrap();
+                let sender = sender.clone();
+                (
+                    thread::spawn(move || {
+                        for _ in 0..10 {
+                            let (mut map, slice) = thread_receiver.recv().unwrap();
+                            let slice = if let Some(slice) = slice {
+                                let vec = map[slice].to_owned();
+                                map.extend(vec.into_iter())
+                            } else {
+                                map.extend(0..10)
+                            };
+                            sender.send((map, i, slice)).unwrap();
+                        }
+                    }),
+                    thread_sender,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let mut slices = vec![];
+        for (mut map, i, slice) in receiver.iter().take(threads.len() * 10) {
+            map.update(&mut base);
+            slices.push(slice);
+            let _ = threads[i].1.send((map, slices.pop()));
+        }
     }
 }
