@@ -8,6 +8,7 @@
 mod logic;
 
 pub use {
+    cli,
     diags::*,
     gen::*,
     lexing::*,

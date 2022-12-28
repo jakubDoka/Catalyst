@@ -1,6 +1,6 @@
 use std::{collections::HashMap, default::default, option::Option};
 
-use middleware::{ImportsAst, SourceInfo};
+use middleware::{cli::CliInput, ImportsAst, SourceInfo};
 
 use crate::*;
 
@@ -10,6 +10,15 @@ pub struct FmtRuntime<'m> {
 }
 
 impl<'m> FmtRuntime<'m> {
+    pub fn test_format(name: &str, resources: &mut dyn ResourceDb) {
+        let mut middleware = Middleware::default();
+        let mut runtime = FmtRuntime::new(&mut middleware);
+        let cli_input = CliInput::from_string(&format!("{name} _ . --max-cores 1"))
+            .expect("then this needs some tunning");
+        let args = MiddlewareArgs::from_cli_input(&cli_input).expect("same here");
+        runtime.run(FmtCfg::default(), &args, resources);
+    }
+
     pub fn new(middleware: &'m mut Middleware) -> Self {
         Self {
             middleware,
@@ -31,10 +40,13 @@ impl<'m> FmtRuntime<'m> {
             .iter_mut()
             .for_each(|worker| worker.cfg = cfg.clone());
 
-        let view = self
+        let Some(view) = self
             .middleware
             .traverse_source_ast(args, &mut self.workers)
-            .expect("thread count should be nonzero and build should be clean");
+            else {
+                eprintln!("failed to format the source code");
+                return;
+            };
 
         self.workers
             .iter_mut()
