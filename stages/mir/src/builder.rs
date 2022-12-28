@@ -30,7 +30,7 @@ impl MirChecker<'_, '_> {
     fn func(&mut self, func: FragRef<Func>, body: TirNode) -> FuncMirInner {
         let Func {
             signature, flags, ..
-        } = self.typec.funcs[func];
+        } = self.typec[func];
 
         self.mir_ctx
             .generics

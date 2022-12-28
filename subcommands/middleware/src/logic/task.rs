@@ -229,7 +229,7 @@ impl Task {
         // TODO: I dislike how much can panic here, maybe improve this in the future
         let SpecFunc {
             parent, generics, ..
-        } = self.typec.spec_funcs[func];
+        } = self.typec[func];
         let SpecBase { methods, .. } = self.typec[parent];
         let index = methods.keys().position(|key| key == func).unwrap();
         let generic_count = params.len() - generics.len() - 1;

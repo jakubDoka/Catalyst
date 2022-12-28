@@ -68,15 +68,22 @@ impl<'a, M> Spanned for ManifestFieldAst<'a, M> {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ManifestValueAst<'a, M = NoTokenMeta> {
+    Bool(SourceInfo<M>),
     String(SourceInfo<M>),
     Object(ListAst<'a, ManifestFieldAst<'a, M>, M>),
     Array(ListAst<'a, ManifestValueAst<'a, M>, M>),
 }
 
+impl<'a, M> ManifestValueAst<'a, M> {
+    pub fn is_true(&self) -> bool {
+        matches!(self, ManifestValueAst::Bool(info) if info.span.len() == "true".len())
+    }
+}
+
 impl<'a, M> Spanned for ManifestValueAst<'a, M> {
     fn span(&self) -> Span {
         match self {
-            ManifestValueAst::String(s) => s.span,
+            ManifestValueAst::String(s) | ManifestValueAst::Bool(s, ..) => s.span,
             ManifestValueAst::Object(o) => o.span(),
             ManifestValueAst::Array(a) => a.span(),
         }

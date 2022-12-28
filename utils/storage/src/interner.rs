@@ -47,6 +47,7 @@ gen_span_constants! {
     CLEAR => "clear",
     DROP => "drop",
     SIZEOF => "sizeof",
+    MOIST => "moist",
 }
 
 /// Struct ensures that all distinct strings are stored just once (not substrings),

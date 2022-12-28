@@ -372,6 +372,7 @@ impl TyChecker<'_> {
 
         let (method_index, method) = self
             .typec
+            .cache
             .spec_funcs
             .indexed(self.typec[spec_base].methods)
             .enumerate()

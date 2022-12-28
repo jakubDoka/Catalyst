@@ -44,6 +44,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn manifest_value(&mut self) -> Option<ManifestValueAst<'arena, M>> {
         branch! {self => {
+            Bool => Some(ManifestValueAst::Bool(self.advance())),
             Str => Some(ManifestValueAst::String(self.advance())),
             LeftBracket => self.array("manifest list", Self::manifest_value)
                 .map(ManifestValueAst::Array),

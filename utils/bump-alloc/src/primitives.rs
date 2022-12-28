@@ -207,8 +207,8 @@ impl<T: ?Sized> VRef<T> {
     /// # Safety
     /// The index must be valid for using collection.
     #[inline(always)]
-    pub const unsafe fn new(id: usize) -> Self {
-        Self(NonMaxU32::new_unchecked(id as u32), PhantomData)
+    pub const fn new(id: usize) -> Self {
+        Self(unsafe { NonMaxU32::new_unchecked(id as u32) }, PhantomData)
     }
 
     #[inline(always)]
@@ -277,7 +277,7 @@ impl<T> VSlice<T> {
     }
 
     pub fn keys(self) -> impl Iterator<Item = VRef<T>> {
-        self.range().map(|i| unsafe { VRef::new(i) })
+        self.range().map(|i| VRef::new(i))
     }
 
     pub fn index(self, index: usize) -> VRef<T> {

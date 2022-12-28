@@ -68,7 +68,7 @@ impl TyChecker<'_> {
             signature,
             generics: self_generics,
             ..
-        } = self.typec.funcs[func];
+        } = self.typec[func];
 
         ctx.vars.clear();
         ctx.generics.clear();
@@ -402,7 +402,7 @@ impl TyChecker<'_> {
 
         let func = self.find_binary_func(op, lhs.ty, rhs.ty)?;
 
-        let ty = self.typec.funcs[func].signature.ret;
+        let ty = self.typec[func].signature.ret;
         let call = CallTir {
             func: CallableTir::Func(func),
             params: default(),
@@ -423,7 +423,7 @@ impl TyChecker<'_> {
     ) -> &'a [PatTir<'a>] {
         let Some(args) = args else {return &[]};
 
-        let args = self.typec.args[types]
+        let args = self.typec[types]
             .to_bumpvec()
             .into_iter()
             .zip(args.iter())

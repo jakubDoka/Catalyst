@@ -90,7 +90,7 @@ impl TyChecker<'_> {
 
             methods.push(func);
         }
-        self.typec.spec_funcs.extend(methods)
+        self.typec.cache.spec_funcs.extend(methods)
     }
 
     pub fn build_enum(&mut self, r#enum: FragRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
@@ -129,7 +129,7 @@ impl TyChecker<'_> {
                 })
             })
             .collect::<BumpVec<_>>();
-        self.typec.variants.extend(variants)
+        self.typec.cache.variants.extend(variants)
     }
 
     pub fn build_struct(
@@ -188,6 +188,6 @@ impl TyChecker<'_> {
             )
             .nsc_collect::<Option<BumpVec<_>>>()
             .unwrap_or_default();
-        self.typec.fields.extend(fields)
+        self.typec.cache.fields.extend(fields)
     }
 }

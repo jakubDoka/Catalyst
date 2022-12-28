@@ -246,7 +246,7 @@ mod util {
                 }?;
             }
 
-            let item = self.typec.module_items[self.module].items.push(item);
+            let item = self.typec[self.module].items.push(item);
             Some(Loc {
                 module: self.module,
                 item,

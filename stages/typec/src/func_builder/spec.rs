@@ -24,7 +24,7 @@ impl TyChecker<'_> {
 
             let Func {
                 generics, owner, ..
-            } = self.typec.funcs[first];
+            } = self.typec[first];
             let offset = self.insert_generics(impl_ast.generics, 0);
             self.insert_spec_functions(generics, 0);
 
@@ -49,7 +49,7 @@ impl TyChecker<'_> {
             generics,
             loc,
             ..
-        } = self.typec.impls[impl_ref];
+        } = self.typec[impl_ref];
 
         let spec_base = spec.base(self.typec);
         if SpecBase::is_macro(spec_base) && let Some(mut macro_impl) = self.typec.macros.get_mut(&ty) {
@@ -103,7 +103,7 @@ impl TyChecker<'_> {
         func_id: FragRef<Func>,
         collect: bool,
     ) -> Result<(), SignatureCheckError> {
-        let func = self.typec.funcs[func_id];
+        let func = self.typec[func_id];
 
         let spec_func_params = self
             .typec

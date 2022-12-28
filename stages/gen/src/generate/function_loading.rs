@@ -54,7 +54,7 @@ impl Generator<'_> {
             signature,
             visibility,
             ..
-        } = self.typec.funcs[func_id];
+        } = self.typecfunc_id];
 
         let params = params.collect::<BumpVec<_>>();
 
@@ -105,7 +105,7 @@ impl Generator<'_> {
             ));
         }
 
-        let args = self.typec.args[signature.args]
+        let args = self.typec[signature.args]
             .to_bumpvec()
             .into_iter()
             .filter_map(|ty| {

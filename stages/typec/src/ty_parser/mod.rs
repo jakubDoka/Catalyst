@@ -210,7 +210,7 @@ impl TyChecker<'_> {
         let spec_base = generic.base(self.typec);
         let functions = self.typec[spec_base].methods;
 
-        for (key, &func) in functions.keys().zip(&self.typec.spec_funcs[functions]) {
+        for (key, &func) in functions.keys().zip(&self.typec[functions]) {
             let id = self
                 .interner
                 .intern_scoped(Ty::Param(index as u8), func.name);
@@ -236,12 +236,7 @@ impl TyChecker<'_> {
                 let suggestions = self.resources.module_deps
                     [self.resources.modules[self.module].deps]
                     .iter()
-                    .filter(|dep| {
-                        self.typec.module_items[dep.ptr]
-                            .items
-                            .values()
-                            .any(|i| i.id == sym)
-                    })
+                    .filter(|dep| self.typec[dep.ptr].items.values().any(|i| i.id == sym))
                     .map(|dep| &self.interner[dep.name])
                     .intersperse(", ")
                     .collect::<String>();

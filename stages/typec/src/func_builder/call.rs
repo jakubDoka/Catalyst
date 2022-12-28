@@ -54,7 +54,7 @@ impl TyChecker<'_> {
             upper_generics,
             owner,
             ..
-        } = self.typec.funcs[func];
+        } = self.typec[func];
 
         let param_specs = self
             .typec
@@ -110,7 +110,7 @@ impl TyChecker<'_> {
             generics,
             signature,
             ..
-        } = self.typec.spec_funcs[func];
+        } = self.typec[func];
 
         let param_specs = self
             .typec
@@ -195,7 +195,7 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
-        let arg_types = self.typec.args[signature.args].to_bumpvec();
+        let arg_types = self.typec[signature.args].to_bumpvec();
 
         if let Some(inference) = inference.ty() {
             // we don't want to report error twice so this one is ignored

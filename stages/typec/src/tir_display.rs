@@ -26,7 +26,7 @@ impl TyChecker<'_> {
     fn display_func(&self, func: FragRef<Func>, tir: TirNode, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
 
-        let Func { signature, .. } = self.typec.funcs[func];
+        let Func { signature, .. } = self.typec[func];
         self.display_tir(tir, buffer, 0, &mut signature.args.len())
     }
 
@@ -74,7 +74,7 @@ impl TyChecker<'_> {
                         write!(buffer, "{}", &self.interner[self.typec[func].name])?
                     }
                     CallableTir::SpecFunc(func) => {
-                        let SpecFunc { parent, name, .. } = self.typec.spec_funcs[func];
+                        let SpecFunc { parent, name, .. } = self.typec[func];
                         write!(
                             buffer,
                             "{}\\{}",

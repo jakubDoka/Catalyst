@@ -44,6 +44,20 @@ impl Deref for Typec {
     }
 }
 
+impl Index<VRef<Module>> for Typec {
+    type Output = ModuleItems;
+
+    fn index(&self, index: VRef<Module>) -> &Self::Output {
+        &self.module_items[index]
+    }
+}
+
+impl IndexMut<VRef<Module>> for Typec {
+    fn index_mut(&mut self, index: VRef<Module>) -> &mut Self::Output {
+        &mut self.module_items[index]
+    }
+}
+
 macro_rules! gen_cache {
     ($self:ident $($name:ident: $ty:ty, $({ $($tt:tt)* })?)*) => {
         pub struct TypecCache {

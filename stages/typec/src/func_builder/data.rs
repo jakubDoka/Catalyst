@@ -117,7 +117,7 @@ impl TyChecker<'_> {
             "(<struct_path>\\[<param_ty>, ...]\\{...})",
         )?;
 
-        let missing_fields = self.typec.fields[struct_meta.fields]
+        let missing_fields = self.typec[struct_meta.fields]
             .iter()
             .zip(fields.iter())
             .filter_map(|(field, value)| value.is_none().then_some(field.name))

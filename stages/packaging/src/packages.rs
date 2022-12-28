@@ -46,6 +46,7 @@ struct DummyPackage {
     deps: Vec<(NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
+    moist: bool,
 }
 
 #[derive(Debug)]
@@ -68,7 +69,7 @@ impl PackageLoader<'_> {
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;
         let root_path = self.resolve_source_path(root_path, None, "package")?;
-        let root_package = self.load_packages(root_path, ctx)?;
+        let (root_package, moist_package) = self.load_packages(root_path, ctx)?;
 
         let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
@@ -364,13 +365,15 @@ impl PackageLoader<'_> {
         &mut self,
         root_path: PathBuf,
         ctx: &mut ResourceLoaderCtx,
-    ) -> Option<VRef<Package>> {
+    ) -> Option<(VRef<Package>, VRef<Package>)> {
         ctx.package_frontier.push((root_path.clone(), None));
         let mut ast_data = ctx.get_ast_data();
         while let Some((path, loc)) = ctx.package_frontier.pop() {
             self.load_package(path, loc, &mut ast_data, ctx);
         }
         ctx.ast_arena = Some(ast_data);
+
+        let mut moist = None;
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {
@@ -379,8 +382,19 @@ impl PackageLoader<'_> {
                 deps: default(),
                 source: package.source,
             };
-            package.ordering = self.resources.packages.push(final_package).index();
+            let id = self.resources.packages.push(final_package);
+            package.ordering = id.index();
+            if package.moist && let Some(already) = moist.replace(id) {
+                self.workspace.push(TooMoist {
+                    first: self.resources.sources[self.resources.packages[already].source].path.to_owned(),
+                    second: self.resources.sources[self.resources.packages[id].source].path.to_owned(),
+                })?;
+            }
         }
+
+        let Some(water) = moist else {
+            self.workspace.push(NoMoisture {})?;
+        };
 
         let iter = self
             .resources
@@ -403,7 +417,7 @@ impl PackageLoader<'_> {
 
         let package = root_path.join("package").with_extension("ctlm");
         let root_package = ctx.packages.get(&package)?;
-        Some(unsafe { VRef::new(root_package.ordering) })
+        Some((unsafe { VRef::new(root_package.ordering) }, water))
     }
 
     fn load_package(
@@ -433,6 +447,9 @@ impl PackageLoader<'_> {
 
         let (root_module, root_module_span) =
             self.resolve_root_module_path(&path, source_id, manifest)?;
+        let moist = manifest
+            .find_field(Interner::MOIST)
+            .map_or(false, |f| f.value.is_true());
         let deps = manifest
             .find_deps()
             .flat_map(|deps| deps.list.iter().copied());
@@ -444,6 +461,7 @@ impl PackageLoader<'_> {
             source: source_id,
             ordering: 0,
             root_module_span,
+            moist,
         };
         ctx.packages
             .insert(self.resources.sources[source_id].path.clone(), package);
@@ -857,5 +875,20 @@ ctl_errors! {
     error InvalidManifestRootField: fatal {
         #[err loc]
         loc: SourceLoc,
+    }
+
+    #[err => "this code feels like desert"]
+    #[info => "project needs to have exactly one 'moist' dependency"]
+    #[help => r#"add 'git "github.com/jakubDoka/water" "*"' to the 'deps {{}}' sections in 'project.ctlm'"#]
+    #[help => "alternatively you can add 'moist: true' into 'project.ctlm'"]
+    error NoMoisture: fatal {}
+
+    #[err => "your code is too wet"]
+    #[info => "project can have only one 'moist' dependency"]
+    #[info => "first 'moist' dependency is at {first:?}"]
+    #[info => "second 'moist' dependency is at {second:?}"]
+    error TooMoist: fatal {
+        first ref: PathBuf,
+        second ref: PathBuf,
     }
 }

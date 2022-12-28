@@ -116,7 +116,7 @@ impl TyChecker<'_> {
                 ) {
                     self.workspace.push(CollidingImpl {
                         colliding: SourceLoc { span: target.span(), origin: self.source },
-                        existing: self.typec.impls[already].loc.source_loc(self.typec, self.resources),
+                        existing: self.typec[already].loc.source_loc(self.typec, self.resources),
                         ty: self.typec.display_ty(parsed_ty, self.interner),
                         spec: self.typec.display_spec(parsed_spec, self.interner),
                     });
@@ -189,7 +189,7 @@ impl TyChecker<'_> {
                     })?;
                 };
 
-                self.typec.func_slices.extend(methods)
+                self.typec.cache.func_slices.extend(methods)
             };
 
 
@@ -198,11 +198,11 @@ impl TyChecker<'_> {
                 let item = ModuleItem::new(Ident::empty(), next, target.span(), None);
                 Loc {
                     module: self.module,
-                    item: self.typec.module_items[self.module].items.push(item),
+                    item: self.typec[self.module].items.push(item),
                 }
             };
 
-            let impl_ent = self.typec.impls.push(Impl {
+            let impl_ent = self.typec.cache.impls.push(Impl {
                 generics: parsed_generics,
                 key,
                 methods,
@@ -326,7 +326,7 @@ impl TyChecker<'_> {
             name: name.ident,
             loc,
         };
-        Some(self.typec.funcs.push(func))
+        Some(self.typec.cache.funcs.push(func))
     }
 
     pub fn collect_signature(
@@ -363,7 +363,7 @@ impl TyChecker<'_> {
                 let str = span_str!(self, span);
                 self.interner.intern(str)
             }),
-            args: self.typec.args.extend(args),
+            args: self.typec.cache.args.extend(args),
             ret,
         };
         self.generics(generics, spec_set, offset);
@@ -394,7 +394,7 @@ impl TyChecker<'_> {
             generics.push(default());
         }
         spec_set.truncate(prev_len);
-        self.typec.params.extend(generics)
+        self.typec.cache.params.extend(generics)
     }
 
     pub fn collect_struct(
