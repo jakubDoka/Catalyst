@@ -112,6 +112,8 @@ impl PackageLoader<'_> {
             ctx,
         )?;
 
+        let moist_root_module = ctx.modules[&self.resources.packages[moist_package].root_module];
+
         self.package_graph.clear();
         for module in self.resources.modules.values() {
             let edges = self.resources.module_deps[module.deps]

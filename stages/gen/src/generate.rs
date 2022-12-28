@@ -442,7 +442,7 @@ impl Generator<'_> {
         let CallMir { args, .. } = builder.body.calls[call];
         let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
-        if self.typecfunc].flags.contains(FuncFlags::BUILTIN) {
+        if self.typec[func].flags.contains(FuncFlags::BUILTIN) {
             if func == Func::CAST {
                 self.cast(args, ret, builder)
             } else if func == Func::SIZEOF {
@@ -518,7 +518,7 @@ impl Generator<'_> {
     ) {
         let Func {
             signature, name, ..
-        } = self.typecfunc_id];
+        } = self.typec[func_id];
         let op_str = self.interner[name]
             .split_whitespace()
             .nth(1)

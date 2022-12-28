@@ -54,7 +54,7 @@ impl Generator<'_> {
             signature,
             visibility,
             ..
-        } = self.typecfunc_id];
+        } = self.typec[func_id];
 
         let params = params.collect::<BumpVec<_>>();
 
