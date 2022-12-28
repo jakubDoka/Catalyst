@@ -16,6 +16,6 @@ members = [
 ]
 
 [dependencies]
-lsp = { version = "0.1.0", path = "subcommands/lsp" }
-cc = { version = "0.1.0", path = "subcommands/cc" }
-cli = { version = "0.1.0", path = "utils/cli" }
+# lsp = { version = "0.1.0", path = "subcommands/lsp" }
+# cc = { version = "0.1.0", path = "subcommands/cc" }
+# cli = { version = "0.1.0", path = "utils/cli" }

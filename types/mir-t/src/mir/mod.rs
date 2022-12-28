@@ -1,5 +1,4 @@
 use std::{
-    mem,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -14,20 +13,9 @@ pub struct Mir {
     pub bodies: CMap<FragRef<Func>, FuncMir>,
 }
 
-impl Mir {
-    pub fn relocate(&mut self, relocator: &TypecRelocator) {
-        let map = Arc::get_mut(&mut self.bodies)
-            .expect("there should be only one instance of mir when calling this");
-        *map = mem::take(map)
-            .into_iter()
-            .filter_map(|(id, mut func)| {
-                let id = relocator.funcs.project(id)?;
-                func.relocate(relocator);
-                Some((id, func))
-            })
-            .collect();
-    }
+derive_relocated!(struct Mir { bodies });
 
+impl Mir {
     pub fn clear(&mut self) {
         self.bodies.clear();
     }
@@ -43,13 +31,8 @@ impl Clear for Mir {
 pub struct FuncMir {
     pub inner: Arc<FuncMirInner>,
 }
-impl FuncMir {
-    fn relocate(&mut self, relocator: &TypecRelocator) {
-        let inner = Arc::get_mut(&mut self.inner)
-            .expect("there should be only one instance of func mir when calling this");
-        inner.relocate(relocator);
-    }
-}
+
+derive_relocated!(struct FuncMir { inner });
 
 impl Deref for FuncMir {
     type Target = FuncMirInner;
@@ -73,6 +56,8 @@ pub struct FuncMirInner {
     pub drops: PushMap<DropMir>,
     value_flags: BitSet,
 }
+
+derive_relocated!(struct FuncMirInner { calls types });
 
 impl FuncMirInner {
     const FLAG_WIDTH: usize = 2;
@@ -115,24 +100,6 @@ impl FuncMirInner {
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
         self.types[self.values[value].ty].ty
-    }
-
-    fn relocate(&mut self, relocator: &TypecRelocator) -> Option<()> {
-        for ty in self.types.values_mut() {
-            ty.ty = relocator.project_ty(ty.ty)?;
-        }
-
-        for call in self.calls.values_mut() {
-            let callable = match call.callable {
-                CallableMir::Func(f) => CallableMir::Func(relocator.funcs.project(f)?),
-                CallableMir::SpecFunc(f) => CallableMir::SpecFunc(relocator.spec_funcs.project(f)?),
-                CallableMir::Pointer(p) => CallableMir::Pointer(p),
-            };
-
-            call.callable = callable;
-        }
-
-        Some(())
     }
 }
 
@@ -210,11 +177,21 @@ pub struct CallMir {
     pub args: VRefSlice<ValueMir>,
 }
 
+derive_relocated!(struct CallMir { callable });
+
 #[derive(Clone, Copy, Debug)]
 pub enum CallableMir {
     Func(FragRef<Func>),
     SpecFunc(FragRef<SpecFunc>),
     Pointer(VRef<ValueMir>),
+}
+
+derive_relocated! {
+    enum CallableMir {
+        Func(f) => f,
+        SpecFunc(f) => f,
+        Pointer(..) =>,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -239,6 +216,8 @@ impl ValueMir {
 pub struct FuncTypes(PushMap<MirTy>);
 
 impl FuncTypes {
+    const BASE_LEN: usize = 2;
+
     pub fn new() -> Self {
         let mut pm = PushMap::new();
         pm.push(MirTy { ty: Ty::UNIT });
@@ -248,6 +227,20 @@ impl FuncTypes {
 
     pub fn clear(&mut self) {
         self.0.truncate(ValueMir::ALL.len());
+    }
+}
+
+impl Relocated for FuncTypes {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        for ty in self.0.values().skip(Self::BASE_LEN) {
+            ty.ty.mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        for ty in self.0.values_mut().skip(Self::BASE_LEN) {
+            ty.ty.remap(ctx);
+        }
     }
 }
 

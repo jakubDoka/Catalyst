@@ -4,7 +4,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bump_alloc::VSlice;
+use bump_alloc::*;
 use serde::{Deserialize, Serialize};
 
 use crate::VRef;
@@ -12,6 +12,16 @@ use crate::VRef;
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct PushMap<T> {
     data: Vec<T>,
+}
+
+impl<T: Relocated> Relocated for PushMap<T> {
+    fn mark(&self, marker: &mut bump_alloc::FragRelocMarker) {
+        self.data.mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &bump_alloc::FragRelocMapping) {
+        self.data.remap(ctx);
+    }
 }
 
 impl<T> PushMap<T> {

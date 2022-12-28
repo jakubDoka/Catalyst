@@ -3,7 +3,9 @@ use std::{
     any::{Any, TypeId},
     default::default,
     hash::{BuildHasher, Hash},
-    mem, ptr, thread,
+    mem, ptr,
+    sync::Arc,
+    thread,
 };
 
 use dashmap::DashMap;
@@ -482,4 +484,15 @@ macro_rules! impl_blanc_relocated {
 
 impl_blanc_relocated! {
     bool
+}
+
+impl<T: Relocated> Relocated for Arc<T> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        (**self).mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        let s = Arc::get_mut(self).expect("arc was expected to be unique for remapping");
+        s.remap(ctx);
+    }
 }
