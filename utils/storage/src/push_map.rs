@@ -53,7 +53,7 @@ impl<T> PushMap<T> {
     pub fn push(&mut self, value: T) -> VRef<T> {
         let id = self.data.len();
         self.data.push(value);
-        unsafe { VRef::new(id) }
+        VRef::new(id)
     }
 
     pub fn pop(&mut self) -> Option<T> {
@@ -81,14 +81,11 @@ impl<T> PushMap<T> {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = VRef<T>> {
-        (0..self.data.len()).map(|i| unsafe { VRef::new(i) })
+        (0..self.data.len()).map(|i| VRef::new(i))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &T)> + DoubleEndedIterator {
-        self.data
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
+        self.data.iter().enumerate().map(|(i, v)| (VRef::new(i), v))
     }
 
     pub fn extend(&mut self, other: impl IntoIterator<Item = T>) -> VSlice<T> {

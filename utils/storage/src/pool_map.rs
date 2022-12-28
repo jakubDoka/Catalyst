@@ -100,7 +100,7 @@ impl<K, V> PoolMap<K, V> {
             key
         } else {
             self.data.push(MaybeUninit::new(value));
-            unsafe { VRef::new(self.data.len() - 1) }
+            VRef::new(self.data.len() - 1)
         }
     }
 
@@ -134,7 +134,7 @@ impl<K, V> PoolMap<K, V> {
         self.free
             .last()
             .copied()
-            .unwrap_or_else(|| unsafe { VRef::new(self.data.len()) })
+            .unwrap_or_else(|| VRef::new(self.data.len()))
     }
 
     pub fn size_hint(&self) -> usize {
@@ -248,7 +248,7 @@ where
         for _ in 0..value_len {
             let (key, value) = access.next_entry::<usize, V>()?.unwrap();
             while map.data.len() < key {
-                map.free.push(unsafe { VRef::new(map.data.len()) });
+                map.free.push(VRef::new(map.data.len()));
                 map.free_lookup.insert(map.data.len());
                 map.data.push(MaybeUninit::uninit());
             }

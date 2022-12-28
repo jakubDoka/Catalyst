@@ -723,7 +723,7 @@ bitflags! {
     }
 }
 
-pub trait Humid: Sized {
+pub trait Humid: Sized + Clone {
     const NAMES: &'static [&'static str];
     fn is_water_drop(key: FragRef<Self>) -> bool;
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;

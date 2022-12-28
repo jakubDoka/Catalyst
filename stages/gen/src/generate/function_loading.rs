@@ -1,5 +1,5 @@
 use cranelift_codegen::{
-    ir::{AbiParam, ArgumentPurpose, ExtFuncData, ExternalName, UserExternalName},
+    ir::{AbiParam, ArgumentPurpose, ExtFuncData, ExternalName},
     isa::CallConv,
 };
 
@@ -44,10 +44,7 @@ impl Generator<'_> {
 
         let name = builder
             .func
-            .declare_imported_user_function(UserExternalName::new(
-                Gen::FUNC_NAMESPACE,
-                func.to_u32(),
-            ));
+            .declare_imported_user_function(GenItemName::encode_func(func));
 
         let func_id = self.gen[func].func;
         let Func {

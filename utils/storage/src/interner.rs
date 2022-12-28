@@ -1,7 +1,9 @@
 use std::{
+    default::default,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
     ops::{Index, Range},
+    sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -50,10 +52,40 @@ gen_span_constants! {
     MOIST => "moist",
 }
 
+pub struct InternerBase {
+    map: Arc<CMap<InternerEntry, Ident>>,
+    frag_base: FragBase<u8>,
+}
+
+impl InternerBase {
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            map: default(),
+            frag_base: FragBase::new(thread_count),
+        }
+    }
+
+    pub fn split(&self) -> impl Iterator<Item = Interner> + '_ {
+        let mut init = true;
+        self.frag_base.split().map(move |frag_map| {
+            let mut i = Interner {
+                map: self.map.clone(),
+                frag_map,
+                temp: String::new(),
+            };
+            if init {
+                i.init();
+                init = false;
+            }
+            i
+        })
+    }
+}
+
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
-    map: CMap<InternerEntry, Ident>,
+    map: Arc<CMap<InternerEntry, Ident>>,
     frag_map: FragMap<u8>,
     temp: String,
 }
@@ -62,16 +94,6 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    pub fn new(frag_map: FragMap<u8>) -> Self {
-        let mut s = Interner {
-            map: CMap::default(),
-            frag_map,
-            temp: String::new(),
-        };
-        s.init();
-        s
-    }
-
     pub fn update(&mut self, base: &mut FragBase<u8>) {
         self.frag_map.update(base);
     }
@@ -149,6 +171,9 @@ struct InternerEntry {
     str: *const str,
 }
 
+unsafe impl Send for InternerEntry {}
+unsafe impl Sync for InternerEntry {}
+
 impl Hash for InternerEntry {
     fn hash<H: Hasher>(&self, state: &mut H) {
         unsafe {
@@ -179,8 +204,8 @@ mod test {
 
     #[test]
     fn test_interner() {
-        let base = FragBase::new(1);
-        let mut interner = Interner::new(base.split().next().unwrap());
+        let base = InternerBase::new(1);
+        let mut interner = base.split().next().unwrap();
         assert_eq!(interner.intern("a"), interner.intern("a"));
         let b = interner.intern("b");
         assert_eq!(
@@ -193,8 +218,8 @@ mod test {
 
     #[test]
     fn test_interner_serde() {
-        let base = FragBase::new(1);
-        let mut interner = Interner::new(base.split().next().unwrap());
+        let base = InternerBase::new(1);
+        let mut interner = base.split().next().unwrap();
         let a = interner.intern("a");
         let b = interner.intern("b");
         let c = interner.intern("c");

@@ -1,33 +1,79 @@
+use std::ops::{Deref, DerefMut};
+
 use super::*;
 
+pub struct TaskBase {
+    pub interner: InternerBase,
+    pub typec: TypecBase,
+    pub gen: GenBase,
+    pub mir: Mir,
+}
+
+impl TaskBase {
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            interner: InternerBase::new(thread_count),
+            typec: TypecBase::new(thread_count),
+            gen: GenBase::new(thread_count),
+            mir: default(),
+        }
+    }
+
+    pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
+        let mut interner_split = self.interner.split();
+        let mut typec_split = self.typec.split();
+        let mut gen_split = self.gen.split();
+        let mut ids = (0..).into_iter();
+        iter::from_fn(move || {
+            Some(Task {
+                id: ids.next()?,
+                ir_dump: ir_dump.then(String::new),
+                resources: TaskResources::default(),
+                interner: interner_split.next()?,
+                typec: typec_split.next()?,
+                mir: self.mir.clone(),
+                gen: gen_split.next()?,
+            })
+        })
+    }
+}
+
+derive_relocated!(struct TaskBase { typec gen mir });
+
 #[derive(Default)]
-pub struct Task {
-    // config
-    pub id: usize,
-
-    pub ir_dump: Option<String>,
-
-    // temp
+pub struct TaskResources {
     pub compile_requests: CompileRequests,
     pub modules_to_compile: Vec<VRef<Module>>,
     pub entry_points: Vec<FragRef<Func>>,
     pub workspace: Workspace,
-    pub temp_dependant_types: FuncTypes,
+    pub dependant_types: FuncTypes,
+}
 
-    // state
+pub struct Task {
+    pub id: usize,
+    pub ir_dump: Option<String>,
+    pub resources: TaskResources,
     pub interner: Interner,
     pub typec: Typec,
     pub mir: Mir,
     pub gen: Gen,
 }
 
-impl Task {
-    pub(crate) fn freeze(&mut self) {
-        self.interner.update();
-        self.typec.freeze();
-        self.gen.freeze();
-    }
+impl Deref for Task {
+    type Target = TaskResources;
 
+    fn deref(&self) -> &Self::Target {
+        &self.resources
+    }
+}
+
+impl DerefMut for Task {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.resources
+    }
+}
+
+impl Task {
     pub(crate) fn traverse_compile_requests(
         mut frontier: BumpVec<(CompileRequestChild, Option<usize>)>,
         tasks: &mut [Task],
@@ -56,13 +102,12 @@ impl Task {
                 .collect::<BumpVec<_>>();
 
             let body = task.mir.bodies.get(&func).unwrap().clone();
-            task.temp_dependant_types.clear();
-            task.temp_dependant_types
-                .extend(body.types.values().copied());
+            task.dependant_types.clear();
+            task.dependant_types.extend(body.types.values().copied());
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
                 &body.inner,
-                &mut task.temp_dependant_types,
+                &mut task.dependant_types,
                 &bumped_params,
                 &mut task.typec,
                 &mut task.interner,
@@ -73,7 +118,7 @@ impl Task {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();
 
-                type_frontier.push(task.temp_dependant_types[body.values[drop.value].ty].ty);
+                type_frontier.push(task.dependant_types[body.values[drop.value].ty].ty);
                 task.instantiate_destructors(
                     &mut type_frontier,
                     isa,
@@ -99,7 +144,7 @@ impl Task {
                     let task = &mut tasks[task_id];
                     let params = body.ty_params[call.params]
                         .iter()
-                        .map(|&p| task.temp_dependant_types[p].ty)
+                        .map(|&p| task.dependant_types[p].ty)
                         .collect::<BumpVec<_>>();
                     task.load_call(call.callable, params, task_id, isa)
                 })
@@ -248,21 +293,6 @@ impl Task {
         let func_id = self.typec[self.typec[r#impl].methods][index];
         let params = self.typec[params].to_bumpvec();
         (func_id, params)
-    }
-}
-
-impl Clone for Task {
-    fn clone(&self) -> Self {
-        Self {
-            ir_dump: self.ir_dump.clone(),
-
-            interner: self.interner.clone(),
-            typec: self.typec.clone(),
-            mir: self.mir.clone(),
-            gen: self.gen.clone(),
-
-            ..default()
-        }
     }
 }
 

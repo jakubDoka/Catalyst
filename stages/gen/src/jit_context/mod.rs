@@ -85,7 +85,7 @@ impl JitContext {
                 } = &gen[func];
                 let Func {
                     visibility, name, ..
-                } = typec.funcs[parent_func];
+                } = typec[parent_func];
 
                 if visibility == FuncVisibility::Imported {
                     let code = self

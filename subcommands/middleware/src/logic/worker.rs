@@ -78,7 +78,6 @@ impl Worker {
                     );
                 }
                 package_task.task.modules_to_compile = modules;
-                package_task.task.freeze();
                 let err = connections.package_products.send((package_task, package));
                 if let Err(SendError((package_task, ..))) = err {
                     return (self, Some(package_task.task));
@@ -91,7 +90,6 @@ impl Worker {
 
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
-            compile_task.freeze();
             (self, Some(compile_task))
         })
     }
@@ -280,7 +278,7 @@ impl Worker {
                 continue;
             }
 
-            let Func { signature, .. } = task.typec.funcs[func];
+            let Func { signature, .. } = task.typec[func];
 
             let body = task
                 .mir
@@ -342,7 +340,7 @@ impl Worker {
             )
             .generate(signature, &params, root, &mut builder);
             if let Some(ref mut dump) = task.ir_dump {
-                let name = &task.interner[task.typec.funcs[func].name];
+                let name = &task.interner[task.typec[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
                 // print!("{} {}", name, self.context.func.display());
             }
@@ -362,7 +360,7 @@ impl Worker {
         shared: &Shared,
     ) -> BumpVec<FragRef<CompiledFunc>> {
         let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
-            let Impl { methods, .. } = task.typec.impls[r#impl];
+            let Impl { methods, .. } = task.typec[r#impl];
 
             let params = task.typec[params].to_bumpvec();
             // todo try to avoid moving and allocate ty VSlice right away
@@ -388,7 +386,7 @@ impl Worker {
                     Some(0),
                 )
             };
-            let frontier = task.typec.func_slices[methods]
+            let frontier = task.typec[methods]
                 .iter()
                 .map(collector)
                 .collect::<BumpVec<_>>();
@@ -512,7 +510,7 @@ impl Worker {
             .mir_ctx
             .just_compiled
             .drain(..)
-            .filter(|&func| task.typec.funcs[func].flags.contains(FuncFlags::ENTRY))
+            .filter(|&func| task.typec[func].flags.contains(FuncFlags::ENTRY))
             .collect_into(&mut task.entry_points);
 
         let source = shared.resources.modules[module].source;

@@ -42,17 +42,14 @@ impl<T, V: Default, A: Allocator> ShadowMap<T, V, A> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (VRef<T>, &V)> {
-        self.data
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
+        self.data.iter().enumerate().map(|(i, v)| (VRef::new(i), v))
     }
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (VRef<T>, &mut V)> {
         self.data
             .iter_mut()
             .enumerate()
-            .map(|(i, v)| (unsafe { VRef::new(i) }, v))
+            .map(|(i, v)| (VRef::new(i), v))
     }
 
     pub fn values(&self) -> impl Iterator<Item = &V> {

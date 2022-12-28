@@ -187,13 +187,27 @@ impl FragMarks {
         mapping: &mut FragRelocMapping,
     ) {
         for (marks, thread) in self.marks.iter().zip(base.threads.iter_mut()) {
-            let id = thread.thread as u8;
+            let id = thread.thread;
             let map = |index: usize| DynFragId {
                 repr: FragAddr::new(index as u64, id),
                 type_id: TypeId::of::<T>(),
             };
 
             let base = thread.unique_data().as_mut_ptr();
+
+            // drop all unmarked items
+            for (start, end) in marks[1..].chunks_exact(2).map(|s| (s[0], s[1])) {
+                // drop all items between start and end
+                let (start_index, ..) = start.parts();
+                let (end_index, ..) = end.parts();
+                for index in start_index + 1..end_index {
+                    unsafe {
+                        base.add(index as usize).drop_in_place();
+                    }
+                }
+            }
+
+            // get rid of gaps
             let mut cursor = 0;
             for (start, end) in marks.chunks_exact(2).map(|s| (s[0], s[1])) {
                 let (start_index, ..) = start.parts();

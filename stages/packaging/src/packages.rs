@@ -85,7 +85,7 @@ impl PackageLoader<'_> {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
-                        .map(|id| unsafe { VRef::<Package>::new(id) })
+                        .map(|id| VRef::<Package>::new(id))
                         .map(|package| self.resources.packages[package].source)
                         .map(|source| self.resources.sources[source].path.to_string_lossy())
                         .intersperse(Cow::Borrowed("\n"))
@@ -112,7 +112,8 @@ impl PackageLoader<'_> {
             ctx,
         )?;
 
-        let moist_root_module = ctx.modules[&self.resources.packages[moist_package].root_module];
+        let moist_root_module =
+            ctx.modules[&self.resources.packages[moist_package].root_module].ordering;
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -123,12 +124,12 @@ impl PackageLoader<'_> {
         }
 
         self.package_graph
-            .ordering(iter::once(root_module.index()), &mut buffer)
+            .ordering([root_module.index(), moist_root_module], &mut buffer)
             .map_err(|cycle| {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
-                        .map(|id| unsafe { VRef::<Module>::new(id) })
+                        .map(|id| VRef::<Module>::new(id))
                         .map(|package| self.resources.modules[package].source)
                         .map(|source| self.resources.sources[source].path.to_string_lossy())
                         .intersperse(Cow::Borrowed("\n"))
@@ -140,7 +141,7 @@ impl PackageLoader<'_> {
 
         self.resources
             .module_order
-            .extend(buffer.drain(..).map(|i| unsafe { VRef::new(i) }));
+            .extend(buffer.drain(..).map(|i| VRef::new(i)));
         self.resources.mark_changed();
 
         self.resources
@@ -211,7 +212,7 @@ impl PackageLoader<'_> {
                         vis,
                         name_span: name.span,
                         name: name.ident,
-                        ptr: unsafe { VRef::<Module>::new(index) },
+                        ptr: { VRef::<Module>::new(index) },
                     })
                 });
             let deps = self.resources.module_deps.extend(deps_iter);
@@ -219,7 +220,7 @@ impl PackageLoader<'_> {
         }
 
         let root_module = &ctx.modules.get(&root_path)?;
-        Some(unsafe { VRef::new(root_module.ordering) })
+        Some(VRef::new(root_module.ordering))
     }
 
     fn load_module(
@@ -394,7 +395,7 @@ impl PackageLoader<'_> {
             }
         }
 
-        let Some(water) = moist else {
+        let Some(moist) = moist else {
             self.workspace.push(NoMoisture {})?;
         };
 
@@ -404,22 +405,30 @@ impl PackageLoader<'_> {
             .values_mut()
             .zip(ctx.packages.values());
         for (package, dummy_package) in iter {
-            let deps_iter = dummy_package.deps.iter().filter_map(|(name, path)| {
-                let index = ctx.packages.get(path)?.ordering;
-                Some(Dep {
+            package.deps = if dummy_package.deps.is_empty() {
+                self.resources.package_deps.extend(iter::once(Dep {
                     vis: None,
-                    name_span: name.span,
-                    name: name.ident,
-                    ptr: unsafe { VRef::<Package>::new(index) },
-                })
-            });
-            let deps = self.resources.package_deps.extend(deps_iter);
-            package.deps = deps;
+                    name_span: default(),
+                    name: Interner::EMPTY,
+                    ptr: moist,
+                }))
+            } else {
+                let deps_iter = dummy_package.deps.iter().filter_map(|(name, path)| {
+                    let index = ctx.packages.get(path)?.ordering;
+                    Some(Dep {
+                        vis: None,
+                        name_span: name.span,
+                        name: name.ident,
+                        ptr: VRef::<Package>::new(index),
+                    })
+                });
+                self.resources.package_deps.extend(deps_iter)
+            };
         }
 
         let package = root_path.join("package").with_extension("ctlm");
         let root_package = ctx.packages.get(&package)?;
-        Some((unsafe { VRef::new(root_package.ordering) }, water))
+        Some((VRef::new(root_package.ordering), moist))
     }
 
     fn load_package(

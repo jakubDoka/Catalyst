@@ -182,7 +182,7 @@ pub use {
     bump_alloc::*,
     clear::{map_in_place, Clear},
     frames::Frames,
-    interner::{Ident, Interner},
+    interner::{Ident, Interner, InternerBase},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,

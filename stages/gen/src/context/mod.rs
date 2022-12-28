@@ -1,5 +1,7 @@
 use std::{
-    alloc, iter, mem,
+    alloc,
+    default::default,
+    iter, mem,
     num::NonZeroU8,
     ops::{Deref, DerefMut, Index, Range},
     sync::Arc,
@@ -19,39 +21,41 @@ use storage::*;
 use target_lexicon::Triple;
 use typec_t::*;
 
-#[derive(Default, Clone)]
+pub struct GenBase {
+    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
+    funcs: FragBase<CompiledFunc>,
+}
+
+derive_relocated!(struct GenBase { lookup });
+
+impl GenBase {
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            lookup: default(),
+            funcs: FragBase::new(thread_count),
+        }
+    }
+
+    pub fn split(&self) -> impl Iterator<Item = Gen> + '_ {
+        self.funcs.split().map(|funcs| Gen {
+            lookup: self.lookup.clone(),
+            funcs,
+        })
+    }
+}
+
 pub struct Gen {
-    lookup: CMap<Ident, (FragRef<CompiledFunc>, bool)>,
+    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
     funcs: FragMap<CompiledFunc>,
 }
 
 impl Gen {
-    pub const FUNC_NAMESPACE: u32 = 0;
-
-    pub fn retain_incremental(&mut self, func_reloc: &FragRelocator<Func>) {
-        self.lookup.retain(|_, v| {
-            v.1 = true;
-            func_reloc.project(self[v.0].func).is_some()
-        });
+    pub fn prepare(&mut self) {
+        self.lookup.iter_mut().for_each(|mut item| item.1 = true);
     }
 
-    pub fn reallocate(&mut self, relocator: &mut FragRelocator<CompiledFunc>) {
-        for entry in self.lookup.iter() {
-            if !entry.1 {
-                relocator.mark(entry.0);
-            }
-        }
-
-        relocator.relocate(&mut self.funcs);
-
-        self.lookup.retain(|_, v| {
-            if let Some(cf) = relocator.project(v.0) {
-                v.0 = cf;
-                true
-            } else {
-                false
-            }
-        });
+    pub fn reallocate(&mut self) {
+        self.lookup.retain(|_, (.., unused)| !*unused);
     }
 
     pub fn get(&self, id: Ident) -> Option<FragRef<CompiledFunc>> {
@@ -89,16 +93,9 @@ impl Gen {
                     offset: rel.offset,
                     kind: rel.kind,
                     name: match rel.name {
-                        ExternalName::User(user) => match &ctx.func.params.user_named_funcs()[user]
-                        {
-                            &UserExternalName {
-                                namespace: Self::FUNC_NAMESPACE,
-                                index,
-                            } => GenItemName::Func(unsafe {
-                                FragRef::new(FragAddr::from_u32(index))
-                            }),
-                            name => unreachable!("Unexpected name: {:?}", name),
-                        },
+                        ExternalName::User(user) => GenItemName::decode_name(
+                            ctx.func.params.user_named_funcs()[user].clone(),
+                        ),
                         ExternalName::LibCall(lc) => GenItemName::LibCall(lc),
                         ExternalName::TestCase(_) | ExternalName::KnownSymbol(_) => todo!(),
                     },
@@ -110,21 +107,14 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        unsafe {
-            debug_assert!(self.funcs.can_mut_access(id));
-            (*self.funcs.ptr_to(id)).inner = Some(Arc::new(CompiledFuncInner {
-                signature: ctx.func.signature.clone(),
-                bytecode: cc.buffer.data().to_vec(),
-                alignment: cc.alignment as u64,
-                relocs,
-            }));
-        }
+        self.funcs[id].inner = Some(Arc::new(CompiledFuncInner {
+            signature: ctx.func.signature.clone(),
+            bytecode: cc.buffer.data().to_vec(),
+            alignment: cc.alignment as u64,
+            relocs,
+        }));
 
         Ok(())
-    }
-
-    pub fn freeze(&mut self) {
-        self.funcs.freeze();
     }
 }
 
@@ -312,10 +302,10 @@ impl GenLayouts {
 
         let res = match ty {
             Ty::Struct(s) => {
-                let Struct { fields, .. } = typec.structs[s];
+                let Struct { fields, .. } = typec[s];
                 let mut offsets = bumpvec![cap fields.len()];
 
-                let layouts = typec.fields[fields]
+                let layouts = typec[fields]
                     .to_bumpvec()
                     .into_iter()
                     .map(|field| self.ty_layout(field.ty, params, typec, interner));
@@ -374,7 +364,7 @@ impl GenLayouts {
             Ty::Instance(inst) => {
                 let Instance { base, args } = typec[inst];
                 // remap the instance parameters so we can compute the layout correctly
-                let params = typec.args[args]
+                let params = typec[args]
                     .to_bumpvec()
                     .into_iter()
                     .map(|ty| typec.instantiate(ty, params, interner))
@@ -477,6 +467,28 @@ pub struct GenReloc {
 pub enum GenItemName {
     Func(FragRef<CompiledFunc>),
     LibCall(ir::LibCall),
+}
+impl GenItemName {
+    pub const FUNC_FLAG: u16 = 1;
+
+    pub fn decode_name(UserExternalName { namespace, index }: UserExternalName) -> GenItemName {
+        let packed = ((namespace as u64) << 32) | index as u64;
+        let (index, thread, flag) = FragSliceAddr::decode(packed);
+
+        match flag {
+            Self::FUNC_FLAG => GenItemName::Func(FragRef::new(FragAddr::new(index, thread))),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn encode_func(func: FragRef<CompiledFunc>) -> UserExternalName {
+        let (index, thread) = func.parts();
+        let packed = FragSliceAddr::encode(index, thread, Self::FUNC_FLAG);
+        UserExternalName {
+            namespace: (packed >> 32) as u32,
+            index: packed as u32,
+        }
+    }
 }
 
 //////////////////////////////////

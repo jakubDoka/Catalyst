@@ -72,12 +72,16 @@ impl<T: ?Sized> FragRef<T> {
         self.0.repr()
     }
 
-    pub fn as_slice(&self) -> FragSlice<T> {
+    pub const fn as_slice(self) -> FragSlice<T> {
         FragSlice::new(self.0.as_slice())
     }
 
-    pub fn right_after(&self, key: FragRef<T>) -> bool {
+    pub const fn right_after(self, key: FragRef<T>) -> bool {
         self.0.right_after(key.0)
+    }
+
+    pub const fn parts(self) -> (u64, u8) {
+        self.0.parts()
     }
 }
 

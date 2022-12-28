@@ -25,7 +25,7 @@ pub struct FragMap<T, A: Allocator = Global> {
     thread_local: FragVec<T, A>,
 }
 
-impl<T, A: Allocator> FragMap<T, A> {
+impl<T: Clone, A: Allocator> FragMap<T, A> {
     fn new_in(others: Box<[FragVecView<T, A>]>, thread: usize) -> Self
     where
         A: Clone,
@@ -58,7 +58,7 @@ impl<T, A: Allocator> FragMap<T, A> {
 
     pub fn update(&mut self, base: &mut FragBase<T, A>) {
         self.thread_local.freeze();
-        base.threads[self.thread_local.view.thread] = self.thread_local.view.clone();
+        base.threads[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
         self.others.clone_from_slice(&base.threads);
     }
 
@@ -67,7 +67,7 @@ impl<T, A: Allocator> FragMap<T, A> {
             return;
         }
 
-        self.others[self.thread_local.view.thread] = self.thread_local.view.clone();
+        self.others[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
     }
 
     pub fn indexed(
@@ -75,6 +75,10 @@ impl<T, A: Allocator> FragMap<T, A> {
         slice: FragSlice<T>,
     ) -> impl Iterator<Item = (FragRef<T>, &T)> + ExactSizeIterator + DoubleEndedIterator {
         slice.keys().zip(self[slice].iter())
+    }
+
+    pub fn next(&self) -> FragRef<T> {
+        self.thread_local.next()
     }
 }
 
@@ -90,8 +94,9 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
 impl<T, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         let (index, thread, ..) = index.0.parts();
-        assert!(self.thread_local.view.thread == thread as usize);
-        &mut self.thread_local[index as usize]
+        let index = index as usize - self.thread_local.view.frozen;
+        assert!(self.thread_local.view.thread == thread);
+        &mut self.thread_local[index]
     }
 }
 
@@ -107,8 +112,9 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
 impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         let (index, thread, len) = index.0.parts();
-        assert!(self.thread_local.view.thread == thread as usize);
-        &mut self.thread_local[index as usize..index as usize + len as usize]
+        let index = index as usize - self.thread_local.view.frozen;
+        assert!(self.thread_local.view.thread == thread);
+        &mut self.thread_local[index..index + len as usize]
     }
 }
 
@@ -116,18 +122,18 @@ pub struct FragBase<T, A: Allocator = Global> {
     threads: Box<[FragVecView<T, A>]>,
 }
 
-impl<T> FragBase<T> {
+impl<T: Clone> FragBase<T> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
 }
 
-impl<T, A: Allocator> FragBase<T, A> {
+impl<T: Clone, A: Allocator> FragBase<T, A> {
     pub fn new_in(thread_count: u8, allocator: A) -> Self
     where
         A: Clone,
     {
-        let threads = (0..thread_count as usize)
+        let threads = (0..=thread_count)
             .map(|thread| FragVecView::new_in(thread, allocator.clone()))
             .collect::<Box<[_]>>();
 
@@ -175,16 +181,16 @@ macro_rules! terminate {
 
 struct FragVec<T, A: Allocator = Global> {
     view: FragVecView<T, A>,
-    len: usize,
 }
 
 impl<T, A: Allocator> FragVec<T, A> {
     fn new(view: FragVecView<T, A>) -> Self {
-        Self { view, len: 0 }
+        Self { view }
     }
 
     fn push(&mut self, value: T) -> (FragRef<T>, bool)
     where
+        T: Clone,
         A: Clone,
     {
         let (slice, reallocated) = self.extend(iter::once(value));
@@ -194,30 +200,36 @@ impl<T, A: Allocator> FragVec<T, A> {
 
     fn extend<I: ExactSizeIterator<Item = T>>(&mut self, values: I) -> (FragSlice<T>, bool)
     where
+        T: Clone,
         A: Clone,
     {
         let Ok(values_len) = values.len().try_into() else {
             terminate!("FragVec::extend: iterator too long");
         };
 
-        let (.., possibly_new) = unsafe { FragVecInner::extend(self.view.inner, self.len, values) };
+        let (.., possibly_new) =
+            unsafe { FragVecInner::extend(self.view.inner, self.view.len, values) };
 
         let slice = FragSlice::new(FragSliceAddr::new(
-            self.len as u64,
-            self.view.thread as u8,
+            self.view.len as u64,
+            self.view.thread,
             values_len,
         ));
 
         if let Some(inner) = possibly_new {
             self.view = FragVecView { inner, ..self.view };
         }
-        self.len += values_len as usize;
+        self.view.len += values_len as usize;
 
         (slice, possibly_new.is_some())
     }
 
     fn freeze(&mut self) {
-        self.view.frozen = self.len;
+        self.view.frozen = self.view.len;
+    }
+
+    fn next(&self) -> FragRef<T> {
+        FragRef::new(FragAddr::new(self.view.len as u64, self.view.thread))
     }
 }
 
@@ -234,7 +246,7 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
         unsafe {
             index.index_mut(FragVecInner::data_mut(
                 self.view.inner,
-                self.view.frozen..self.len,
+                self.view.frozen..self.view.len,
             ))
         }
     }
@@ -242,8 +254,9 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
 
 struct FragVecView<T, A: Allocator = Global> {
     inner: NonNull<FragVecInner<T, A>>,
-    thread: usize,
+    thread: u8,
     frozen: usize,
+    len: usize,
 }
 
 unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Send for FragVecView<T, A> {}
@@ -252,11 +265,12 @@ unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Sync for FragVecView<T, 
 impl<T, A: Allocator> FragVecView<T, A> {
     const GOOD_CAP: usize = ((1 << 10) / mem::size_of::<T>()).next_power_of_two();
 
-    fn new_in(thread: usize, allocator: A) -> Self {
+    fn new_in(thread: u8, allocator: A) -> Self {
         Self {
             inner: FragVecInner::new(Self::GOOD_CAP, allocator),
             thread,
             frozen: 0,
+            len: 0,
         }
     }
 
@@ -285,6 +299,7 @@ impl<T, A: Allocator> Clone for FragVecView<T, A> {
             inner: self.inner,
             frozen: self.frozen,
             thread: self.thread,
+            len: self.len,
         }
     }
 }
@@ -292,7 +307,7 @@ impl<T, A: Allocator> Clone for FragVecView<T, A> {
 impl<T, A: Allocator> Drop for FragVecView<T, A> {
     fn drop(&mut self) {
         unsafe {
-            FragVecInner::dec(self.inner);
+            FragVecInner::dec(self.inner, self.len);
         }
     }
 }
@@ -314,9 +329,9 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         (*ptr::addr_of!((*s.as_ptr()).ref_count)).fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    unsafe fn dec(s: NonNull<Self>) {
+    unsafe fn dec(s: NonNull<Self>, len: usize) {
         if (*ptr::addr_of!((*s.as_ptr()).ref_count)).fetch_sub(1, atomic::Ordering::Relaxed) == 1 {
-            Self::drop(s);
+            Self::drop(s, len);
         }
     }
 
@@ -342,9 +357,13 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         NonNull::new_unchecked(data.add(index))
     }
 
-    unsafe fn drop(s: NonNull<Self>) {
+    unsafe fn drop(s: NonNull<Self>, len: usize) {
+        let cap = ptr::addr_of!((*s.as_ptr()).cap).read();
+        Self::data_mut(s, 0..len)
+            .iter_mut()
+            .for_each(|x| ptr::drop_in_place(x));
         let allocator = ptr::addr_of!((*s.as_ptr()).allocator).read();
-        let layout = Self::layout(ptr::addr_of!((*s.as_ptr()).cap).read());
+        let layout = Self::layout(cap);
         allocator.deallocate(s.cast(), layout);
     }
 
@@ -354,6 +373,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         i: I,
     ) -> (NonNull<T>, Option<NonNull<Self>>)
     where
+        T: Clone,
         A: Clone,
     {
         let pushed_len = i.len();
@@ -365,12 +385,16 @@ impl<T, A: Allocator> FragVecInner<T, A> {
             let allocator = (*ptr::addr_of!((*s.as_ptr()).allocator)).clone();
             let new_s = Self::new(cap, allocator);
 
-            const { assert!(!mem::needs_drop::<T>()) }
             ptr::copy_nonoverlapping(
                 Self::get_item(s, 0).as_ptr(),
                 Self::get_item(new_s, 0).as_ptr(),
                 len,
             );
+
+            Self::data_mut(s, 0..len)
+                .iter_mut()
+                .for_each(|v| ptr::write(v, v.clone()));
+
             s = new_s;
         }
 
@@ -416,7 +440,30 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut base = FragBase::<usize>::new(4);
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        struct Dropped(usize);
+
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                COUNTER.fetch_sub(1, atomic::Ordering::Relaxed);
+            }
+        }
+
+        impl Dropped {
+            fn new(i: usize) -> Self {
+                COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
+                Self(i)
+            }
+        }
+
+        impl Clone for Dropped {
+            fn clone(&self) -> Self {
+                Self::new(self.0)
+            }
+        }
+
+        let mut base = FragBase::<Dropped>::new(4);
         let maps = base.split();
         let (sender, receiver) = mpsc::channel();
 
@@ -426,7 +473,7 @@ mod tests {
             .map(|(i, map)| {
                 let (thread_sender, thread_receiver) = mpsc::channel();
                 thread_sender
-                    .send((map, Option::<FragSlice<usize>>::None))
+                    .send((map, Option::<FragSlice<Dropped>>::None))
                     .unwrap();
                 let sender = sender.clone();
                 (
@@ -437,7 +484,7 @@ mod tests {
                                 let vec = map[slice].to_owned();
                                 map.extend(vec.into_iter())
                             } else {
-                                map.extend(0..10)
+                                map.extend((0..10).map(Dropped::new))
                             };
                             sender.send((map, i, slice)).unwrap();
                         }
@@ -453,5 +500,9 @@ mod tests {
             slices.push(slice);
             let _ = threads[i].1.send((map, slices.pop()));
         }
+
+        drop(base);
+
+        assert_eq!(COUNTER.load(atomic::Ordering::Relaxed), 0);
     }
 }

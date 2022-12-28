@@ -119,7 +119,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn create_var(&mut self, mutable: bool, ty: Ty, span: Span) -> VRef<VarHeaderTir> {
         let index = self.ctx.vars.len();
         self.ctx.vars.push(VarHeaderTir { ty, span, mutable });
-        unsafe { VRef::new(index) }
+        VRef::new(index)
     }
 
     pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarHeaderTir {

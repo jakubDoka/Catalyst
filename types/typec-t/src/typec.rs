@@ -19,6 +19,7 @@ pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 pub type Macros = CMap<Ty, MacroImpl>;
 pub type MayNeedDrop = CMap<Ty, bool>;
 
+#[derive(Default)]
 pub struct Mapping {
     pub lookup: TypecLookup,
     pub impl_lookup: ImplLookup,
@@ -29,11 +30,36 @@ pub struct Mapping {
 
 derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
 
+pub struct TypecBase {
+    pub cache: TypecCacheBase,
+    pub mapping: Arc<Mapping>,
+}
+
+impl TypecBase {
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            cache: TypecCacheBase::new(thread_count),
+            mapping: default(),
+        }
+    }
+
+    pub fn split(&self) -> impl Iterator<Item = Typec> + '_ {
+        self.cache.split().map(|cache| Typec {
+            cache,
+            mapping: self.mapping.clone(),
+            module_items: default(),
+            builtin_funcs: default(),
+        })
+    }
+}
+
+derive_relocated!(struct TypecBase { mapping });
+
 pub struct Typec {
     pub mapping: Arc<Mapping>,
+    pub cache: TypecCache,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub builtin_funcs: Vec<FragRef<Func>>,
-    pub cache: TypecCache,
 }
 
 impl Deref for Typec {
@@ -67,7 +93,7 @@ macro_rules! gen_cache {
         }
 
         impl TypecCache {
-            pub fn update(&mut self, base: &mut TypecBase) {
+            pub fn update(&mut self, base: &mut TypecCacheBase) {
                 $(
                     self.$name.update(&mut base.$name);
                 )*
@@ -105,13 +131,13 @@ macro_rules! gen_cache {
         )*
 
 
-        pub struct TypecBase {
+        pub struct TypecCacheBase {
             $(
                 pub $name: FragBase<$ty>,
             )*
         }
 
-        impl TypecBase {
+        impl TypecCacheBase {
             pub fn new(thread_count: u8) -> Self {
                 Self {
                     $(

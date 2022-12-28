@@ -232,7 +232,7 @@ where
         // While there are entries remaining in the input, add them
         // into our map.
         while let Some((key, value)) = access.next_entry()? {
-            map.insert(unsafe { VRef::new(key) }, value);
+            map.insert(VRef::new(key), value);
         }
 
         Ok(map)
@@ -258,20 +258,16 @@ mod test {
     #[test]
     fn test_sparse_map_serde() {
         let mut map = SparseMap::<usize>::new();
-        unsafe {
-            map.insert(VRef::new(0), 10);
-            map.insert(VRef::new(20), 20);
-            map.insert(VRef::new(30), 30);
-        }
+        map.insert(VRef::new(0), 10);
+        map.insert(VRef::new(20), 20);
+        map.insert(VRef::new(30), 30);
 
         let bytes = rmp_serde::to_vec(&map).unwrap();
 
         let map2: SparseMap<usize> = rmp_serde::from_slice(&bytes[..]).unwrap();
 
-        unsafe {
-            assert_eq!(map2.get(VRef::new(0)), Some(&10));
-            assert_eq!(map2.get(VRef::new(20)), Some(&20));
-            assert_eq!(map2.get(VRef::new(30)), Some(&30));
-        }
+        assert_eq!(map2.get(VRef::new(0)), Some(&10));
+        assert_eq!(map2.get(VRef::new(20)), Some(&20));
+        assert_eq!(map2.get(VRef::new(30)), Some(&30));
     }
 }

@@ -1,4 +1,3 @@
-pub mod marking;
 pub mod task;
 pub mod worker;
 
@@ -25,7 +24,7 @@ use snippet_display::annotate_snippets::display_list::FormatOptions;
 
 use crate::*;
 
-use self::worker::DefaultSourceAstHandler;
+use self::{task::TaskBase, worker::DefaultSourceAstHandler};
 
 pub type WorkerLaunchResult<'scope> = (
     Vec<PackageTask>,
@@ -41,8 +40,7 @@ pub struct Middleware {
     pub(crate) task_graph: TaskGraph,
     pub(crate) entry_points: Vec<FragRef<Func>>,
     pub(crate) incremental: Option<Incremental>,
-    pub(crate) relocator: TypecRelocator,
-    pub(crate) gen_relocator: FragRelocator<CompiledFunc>,
+    pub(crate) relocator: FragRelocator,
 }
 
 impl Middleware {
@@ -82,8 +80,7 @@ impl Middleware {
 
         let Some(Incremental {
             resources,
-            mut task_pool,
-            main_task,
+            task_base,
             mut worker_pool,
             module_items,
         }) = self.incremental.take() else {
@@ -93,7 +90,7 @@ impl Middleware {
         let (package_sender, package_receiver) = mpsc::channel();
         drop(package_receiver);
 
-        let mut tasks = Self::populate_tasks(main_task, &mut task_pool, handlers.len());
+        let mut tasks = task_base.split(false).collect::<Vec<_>>();
 
         let shared = Shared {
             resources: &resources,
@@ -126,12 +123,9 @@ impl Middleware {
             Self::join_workers(threads, &mut worker_pool)
         });
 
-        let (.., main_task, _) = self.tidy_tasks(tasks, &mut task_pool);
-
         self.incremental = Some(Incremental {
             resources,
-            main_task,
-            task_pool,
+            task_base,
             worker_pool,
             module_items,
         });
@@ -154,16 +148,18 @@ impl Middleware {
     ) -> (MiddlewareOutput, DiagnosticView) {
         self.workspace.clear();
 
+        let thread_count = args.thread_count();
+
         let Incremental {
             mut resources,
-            mut main_task,
-            mut task_pool,
+            task_base,
             mut worker_pool,
             mut module_items,
-        } = self.incremental.take().unwrap_or_else(|| {
-            let mut incr = Incremental::default();
-            incr.main_task.typec.init(&mut incr.main_task.interner);
-            incr
+        } = self.incremental.take().unwrap_or_else(|| Incremental {
+            resources: default(),
+            task_base: TaskBase::new(thread_count.max(255) as u8),
+            worker_pool: default(),
+            module_items: default(),
         });
 
         main_task.ir_dump = args.dump_ir.then(String::new);
@@ -174,7 +170,7 @@ impl Middleware {
             self.gen_relocator.clear();
             self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
             main_task.mir.relocate(&self.relocator);
-            main_task.gen.retain_incremental(&self.relocator.funcs);
+            main_task.gen.prepare(&self.relocator.funcs);
         };
 
         if main_task.workspace.has_errors() || resources.no_changes() {
@@ -187,7 +183,7 @@ impl Middleware {
             self.workspace.transfer(&mut main_task.workspace);
             let incr = self.incremental.insert(Incremental {
                 resources,
-                main_task,
+                task_base: main_task,
                 task_pool,
                 worker_pool,
                 module_items,
@@ -203,9 +199,6 @@ impl Middleware {
         }
 
         let (package_sender, package_receiver) = mpsc::channel();
-        let workers_count = thread::available_parallelism()
-            .map_or(1, |n| n.get())
-            .min(args.max_cores.unwrap_or(usize::MAX));
 
         if workers_count == 1 {
             // todo!();
@@ -277,7 +270,7 @@ impl Middleware {
             let incr = self.incremental.insert(Incremental {
                 resources,
                 task_pool,
-                main_task,
+                task_base: main_task,
                 worker_pool,
                 module_items,
             });
@@ -322,7 +315,7 @@ impl Middleware {
         let incr = self.incremental.insert(Incremental {
             resources,
             task_pool,
-            main_task,
+            task_base: main_task,
             worker_pool,
             module_items,
         });
@@ -337,27 +330,6 @@ impl Middleware {
                 resources: &incr.resources,
             },
         )
-    }
-
-    fn populate_tasks(main: Task, pool: &mut Vec<Task>, num_workers: usize) -> Vec<Task> {
-        let mut tasks = Self::populate_tasks_low(main, pool, num_workers);
-        tasks
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, task)| task.id = i);
-        tasks
-    }
-
-    fn populate_tasks_low(main: Task, pool: &mut Vec<Task>, num_workers: usize) -> Vec<Task> {
-        // we want to be very careful not to clone any tasks unnecessarily
-
-        let Some(to_create) = num_workers.checked_sub(pool.len() + 1) else {
-            return iter::once(main)
-                .chain(pool.drain(pool.len() + 1 - num_workers..))
-                .collect();
-        };
-
-        pool.drain(..).chain(vec![main; to_create + 1]).collect()
     }
 
     fn join_workers(
@@ -651,6 +623,12 @@ pub struct MiddlewareArgs {
 }
 
 impl MiddlewareArgs {
+    pub fn thread_count(&self) -> usize {
+        thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(self.max_cores.unwrap_or(usize::MAX))
+    }
+
     pub fn from_cli_input(cli_input: &CliInput) -> Result<Self, IsaCreationError> {
         let isa = match cli_input.value("target") {
             Some(_triple) => todo!(),
@@ -740,11 +718,9 @@ impl PackageTask {
 #[derive(Default)]
 pub struct GenTask {}
 
-#[derive(Default)]
 pub struct Incremental {
     pub resources: Resources,
-    pub main_task: Task,
-    pub task_pool: Vec<Task>,
+    pub task_base: TaskBase,
     pub worker_pool: Vec<Worker>,
     pub module_items: Map<VRef<Source>, ModuleItems>,
 }

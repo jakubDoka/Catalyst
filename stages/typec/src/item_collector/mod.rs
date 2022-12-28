@@ -97,7 +97,7 @@ impl TyChecker<'_> {
         let parsed_generics = self.take_generics(0, generics_len, &mut spec_set);
 
         for &(method, ..) in explicit_methods.iter() {
-            Typec::get_mut(&mut self.typec.funcs, method).upper_generics = parsed_generics;
+            self.typec[method].upper_generics = parsed_generics;
         }
 
         let parsed_ty_base = parsed_ty.base(self.typec);
@@ -194,7 +194,7 @@ impl TyChecker<'_> {
 
 
             let loc = {
-                let next = unsafe { self.typec.impls.next() };
+                let next = self.typec.cache.impls.next();
                 let item = ModuleItem::new(Ident::empty(), next, target.span(), None);
                 Loc {
                     module: self.module,
@@ -304,8 +304,7 @@ impl TyChecker<'_> {
         let loc = if not_in_scope {
             None
         } else {
-            // SAFETY: We push right after this, if item inset fails, id is forgotten.
-            let id = unsafe { self.typec.funcs.next() };
+            let id = self.typec.cache.funcs.next();
             let vis = vis.map(|v| v.vis).or(upper_vis);
             let local_id = owner.map_or(name.ident, |owner| {
                 self.interner
@@ -473,7 +472,7 @@ impl TyChecker<'_> {
                 });
 
                 return HumidMeta {
-                    id: unsafe { I::storage(self.typec).next() },
+                    id: I::storage(self.typec).next(),
                     humid: false,
                 };
             };
@@ -493,7 +492,7 @@ impl TyChecker<'_> {
             HumidMeta { id, humid: true }
         } else {
             HumidMeta {
-                id: unsafe { I::storage(self.typec).next() },
+                id: I::storage(self.typec).next(),
                 humid: false,
             }
         }
@@ -501,7 +500,7 @@ impl TyChecker<'_> {
 
     fn insert_humid_item<I: Humid>(&mut self, item: I, meta: HumidMeta<I>) -> FragRef<I> {
         if meta.humid {
-            *Typec::get_mut(I::storage(self.typec), meta.id) = item;
+            I::storage(self.typec)[meta.id] = item;
             meta.id
         } else {
             I::storage(self.typec).push(item)
