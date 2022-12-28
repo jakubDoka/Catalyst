@@ -35,7 +35,7 @@ macro_rules! gen_water_drops {
 
             pub fn init_water_drops(typec: &mut Typec) {
                 $(
-                    assert_eq!(Self::$name, typec.$field.push(Default::default()));
+                    assert_eq!(Self::$name, typec.cache.$field.push(Default::default()));
                 )*
             }
 
@@ -52,7 +52,7 @@ macro_rules! gen_water_drops {
                 self.name
             }
             fn storage(typec: &mut Typec) -> &mut FragMap<Self> {
-                &mut typec.$field
+                &mut typec.cache.$field
             }
             fn is_water_drop(s: FragRef<Self>) -> bool {
                 s <= *Self::ALL.last().unwrap()
@@ -80,15 +80,13 @@ pub use {
         TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
-        ArgSlices, BaseSpecs, Builtin, ComputedTypecItem, Enum, Enums, Field, FieldFlags, Fields,
-        GenericTy, Generics, Humid, Impl, ImplKey, ImplLookup, Implemented, Impls, Instance,
-        Instances, Mutability, ParamSlices, Pointer, Pointers, RawMutability, Spec, SpecBase,
-        SpecFunc, SpecFuncs, SpecInstance, SpecInstances, SpecSet, SpecSums, Struct, Ty, TyFlags,
-        TypecLookup, Variant, Variants,
+        Builtin, ComputedTypecItem, Enum, Field, FieldFlags, GenericTy, Generics, Humid, Impl,
+        ImplKey, Instance, Mutability, Pointer, RawMutability, Spec, SpecBase, SpecFunc,
+        SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
     },
     typec::{
-        lookup_water_drop, sorted_water_drops, Loc, MacroImpl, ModuleItems, ParamPresence,
-        SpecCmpError, Typec, TypecCtxSlice,
+        lookup_water_drop, sorted_water_drops, ImplLookup, Implemented, Loc, MacroImpl,
+        ModuleItems, ParamPresence, SpecCmpError, Typec, TypecCtxSlice, TypecLookup,
     },
 };
 

@@ -17,6 +17,8 @@ pub struct Func {
     pub loc: Option<Loc>,
 }
 
+derive_relocated!(struct Func { generics owner upper_generics signature });
+
 impl Func {
     pub fn is_generic(&self) -> bool {
         !self.generics.is_empty() || !self.upper_generics.is_empty()
@@ -58,3 +60,5 @@ pub struct Signature {
     pub args: FragSlice<Ty>,
     pub ret: Ty,
 }
+
+derive_relocated!(struct Signature { args ret });

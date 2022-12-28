@@ -8,20 +8,6 @@ use lexing_t::*;
 
 use storage::*;
 
-pub type ParamSlices = FragMap<FragSlice<Spec>>;
-pub type SpecSums = FragMap<Spec>;
-pub type ArgSlices = FragMap<Ty>;
-pub type Fields = FragMap<Field>;
-pub type SpecFuncs = FragMap<SpecFunc>;
-pub type Variants = FragMap<Variant>;
-
-pub type Impls = FragMap<Impl>;
-pub type Instances = FragMap<Instance>;
-pub type Enums = FragMap<Enum>;
-pub type Pointers = FragMap<Pointer>;
-pub type BaseSpecs = FragMap<SpecBase>;
-pub type SpecInstances = FragMap<SpecInstance>;
-
 #[derive(Clone, Copy)]
 pub struct Impl {
     pub generics: Generics,
@@ -29,6 +15,8 @@ pub struct Impl {
     pub methods: FragRefSlice<Func>,
     pub loc: Loc,
 }
+
+derive_relocated!(struct Impl { generics key methods });
 
 impl Impl {
     gen_v_ref_constants!(ANY);
@@ -42,11 +30,15 @@ pub struct ImplKey {
     pub spec: Spec,
 }
 
+derive_relocated!(struct ImplKey { ty spec });
+
 #[derive(Clone, Copy)]
 pub struct Instance {
     pub base: GenericTy,
     pub args: FragSlice<Ty>,
 }
+
+derive_relocated!(struct Instance { base args });
 
 #[derive(Clone, Copy, Default)]
 pub struct Struct {
@@ -55,6 +47,8 @@ pub struct Struct {
     pub fields: FragSlice<Field>,
     pub loc: Option<Loc>,
 }
+
+derive_relocated!(struct Struct { generics fields });
 
 impl Struct {
     pub fn find_field(s: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Field)> {
@@ -79,6 +73,8 @@ pub struct Enum {
     pub loc: Option<Loc>,
 }
 
+derive_relocated!(struct Enum { generics variants });
+
 impl Enum {
     pub fn find_variant(e: FragRef<Self>, name: Ident, typec: &Typec) -> Option<(usize, Ty)> {
         typec[typec[e].variants]
@@ -102,11 +98,15 @@ pub struct Variant {
     pub span: Option<Span>,
 }
 
+derive_relocated!(struct Variant { ty });
+
 #[derive(Clone, Copy)]
 pub struct Pointer {
     pub base: Ty,
     pub depth: u16,
 }
+
+derive_relocated!(struct Pointer { base });
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mutability {
@@ -196,6 +196,8 @@ pub struct SpecBase {
     pub loc: Option<Loc>,
 }
 
+derive_relocated!(struct SpecBase { generics inherits methods });
+
 impl SpecBase {
     pub fn is_macro(_s: FragRef<Self>) -> bool {
         false
@@ -215,17 +217,28 @@ pub struct SpecInstance {
     pub args: FragSlice<Ty>,
 }
 
+derive_relocated! {
+    struct SpecInstance { base args }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub enum Spec {
     Base(FragRef<SpecBase>),
     Instance(FragRef<SpecInstance>),
 }
 
+derive_relocated! {
+    enum Spec {
+        Base(b) => b,
+        Instance(i) => i,
+    }
+}
+
 impl Spec {
     pub fn base(self, typec: &Typec) -> FragRef<SpecBase> {
         match self {
             Spec::Base(base) => base,
-            Spec::Instance(instance) => typec.spec_instances[instance].base,
+            Spec::Instance(instance) => typec[instance].base,
         }
     }
 }
@@ -248,6 +261,13 @@ pub enum GenericTy {
     Enum(FragRef<Enum>),
 }
 
+derive_relocated! {
+    enum GenericTy {
+        Struct(s) => s,
+        Enum(e) => e,
+    }
+}
+
 impl GenericTy {
     pub fn as_ty(self) -> Ty {
         match self {
@@ -258,8 +278,8 @@ impl GenericTy {
 
     pub fn is_generic(self, typec: &Typec) -> bool {
         !match self {
-            GenericTy::Struct(s) => typec.structs[s].generics.is_empty(),
-            GenericTy::Enum(e) => typec.enums[e].generics.is_empty(),
+            GenericTy::Struct(s) => typec[s].generics.is_empty(),
+            GenericTy::Enum(e) => typec[e].generics.is_empty(),
         }
     }
 }
@@ -284,6 +304,15 @@ pub enum ComputedTypecItem {
     SpecSum(FragSlice<Spec>),
 }
 
+derive_relocated! {
+    enum ComputedTypecItem {
+        Pointer(p) => p,
+        Instance(i) => i,
+        SpecInstance(i) => i,
+        SpecSum(s) => s,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Ty {
     Struct(FragRef<Struct>),
@@ -294,13 +323,24 @@ pub enum Ty {
     Builtin(Builtin),
 }
 
+derive_relocated! {
+    enum Ty {
+        Struct(s) => s,
+        Enum(e) => e,
+        Instance(i) => i,
+        Pointer(p, ..) => p,
+        Param(..) =>,
+        Builtin(..) =>,
+    }
+}
+
 impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Struct(s) => write!(f, "struct{:X}", s.to_u32()),
-            Ty::Enum(e) => write!(f, "enum{:x}", e.to_u32()),
-            Ty::Instance(i) => write!(f, "inst{:x}", i.to_u32()),
-            Ty::Pointer(p, m) => write!(f, "{} ptr{:x}", m.to_mutability(), p.to_u32()),
+            Ty::Struct(s) => write!(f, "struct{:X}", s.repr()),
+            Ty::Enum(e) => write!(f, "enum{:x}", e.repr()),
+            Ty::Instance(i) => write!(f, "inst{:x}", i.repr()),
+            Ty::Pointer(p, m) => write!(f, "{} ptr{:x}", m.to_mutability(), p.repr()),
             Ty::Param(i) => write!(f, "param{i}"),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }
@@ -651,6 +691,8 @@ pub struct SpecFunc {
     pub parent: FragRef<SpecBase>,
 }
 
+derive_relocated!(struct SpecFunc { generics signature parent });
+
 impl SpecFunc {
     pub fn is_generic(&self) -> bool {
         !self.generics.is_empty()
@@ -665,6 +707,8 @@ pub struct Field {
     pub span: Span,
     pub name: Ident,
 }
+
+derive_relocated!(struct Field { ty });
 
 bitflags! {
     FieldFlags: u8 {

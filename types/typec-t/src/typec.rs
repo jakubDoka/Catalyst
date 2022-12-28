@@ -1,7 +1,11 @@
 use core::fmt;
-use std::mem;
-use std::{default::default, iter, ops::Index};
+use std::{
+    default::default,
+    iter,
+    ops::{Index, IndexMut},
+};
 use std::{fmt::Write, sync::Arc};
+use std::{mem, ops::Deref};
 
 use crate::*;
 use diags::SourceLoc;
@@ -23,11 +27,21 @@ pub struct Mapping {
     pub may_need_drop: MayNeedDrop,
 }
 
+derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
+
 pub struct Typec {
     pub mapping: Arc<Mapping>,
     pub module_items: ShadowMap<Module, ModuleItems>,
     pub builtin_funcs: Vec<FragRef<Func>>,
     pub cache: TypecCache,
+}
+
+impl Deref for Typec {
+    type Target = Mapping;
+
+    fn deref(&self) -> &Self::Target {
+        &self.mapping
+    }
 }
 
 macro_rules! gen_cache {
@@ -39,7 +53,11 @@ macro_rules! gen_cache {
         }
 
         impl TypecCache {
-
+            pub fn update(&mut self, base: &mut TypecBase) {
+                $(
+                    self.$name.update(&mut base.$name);
+                )*
+            }
         }
 
         $(
@@ -51,11 +69,11 @@ macro_rules! gen_cache {
                 }
             }
 
-            // impl IndexMut<FragRef<$ty>> for Typec {
-            //     fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
-            //         &mut self.$name[index]
-            //     }
-            // }
+            impl IndexMut<FragRef<$ty>> for Typec {
+                fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
+                    &mut self.cache.$name[index]
+                }
+            }
 
             impl Index<FragSlice<$ty>> for Typec {
                 type Output = [$ty];
@@ -65,44 +83,48 @@ macro_rules! gen_cache {
                 }
             }
 
-            // impl IndexMut<FragSlice<$ty>> for Typec {
-            //     fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
-            //         &mut self.$name[index]
-            //     }
-            // }
+            impl IndexMut<FragSlice<$ty>> for Typec {
+                fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
+                    &mut self.cache.$name[index]
+                }
+            }
         )*
 
 
-        pub struct TypecCacheBase {
+        pub struct TypecBase {
             $(
                 pub $name: FragBase<$ty>,
             )*
         }
 
-        impl TypecCacheBase {
-            pub fn new(thread_count: u8) -> (Self, Vec<TypecCache>) {
-                $(
-                    let mut $name = FragBase::new(thread_count);
-                )*
-
-                let iter = (0..thread_count).map(|_| TypecCache {
+        impl TypecBase {
+            pub fn new(thread_count: u8) -> Self {
+                Self {
                     $(
-                        $name: $name.1.pop().unwrap(),
+                        $name: FragBase::new(thread_count),
                     )*
-                });
+                }
+            }
 
-                (
-                    Self {
+            pub fn split(&self) -> impl Iterator<Item = TypecCache> + '_ {
+                $(
+                    let mut $name = self.$name.split();
+                )*
+                iter::from_fn(move || {
+                    Some(TypecCache {
                         $(
-                            $name: $name.0,
+                            $name: $name.next()?,
                         )*
-                    },
-                    iter.collect(),
-                )
+                    })
+                })
+            }
+
+            pub fn register<'a>(&'a mut self, frags: &mut FragMaps<'a>) {
+                $(
+                    frags.add(&mut self.$name);
+                )*
             }
         }
-
-
     };
 }
 
@@ -246,7 +268,7 @@ impl Typec {
             generics,
             upper_generics,
             ..
-        } = self.funcs[func];
+        } = self[func];
         write!(
             buffer,
             "fn {}[{}] {}({}) -> {} ",
@@ -275,7 +297,7 @@ impl Typec {
     pub fn func_name(&self, func: FragRef<Func>, to: &mut String, interner: &Interner) {
         let Func {
             name, loc, owner, ..
-        } = self.funcs[func];
+        } = self[func];
         if let Some(loc) = loc {
             write!(to, "{}\\", loc.module.index()).unwrap();
         }
@@ -340,6 +362,7 @@ impl Typec {
     ) -> Option<(usize, FragRef<Field>, Ty)> {
         let Struct { fields, .. } = self[struct_id];
         let (i, id, ty) = self
+            .cache
             .fields
             .indexed(fields)
             .enumerate()
@@ -397,9 +420,10 @@ impl Typec {
         }
 
         let res = self
+            .mapping
             .lookup
             .entry(id)
-            .or_insert_with(|| ComputedTypecItem::SpecSum(self.spec_sums.extend(specs)))
+            .or_insert_with(|| ComputedTypecItem::SpecSum(self.cache.spec_sums.extend(specs)))
             .to_owned();
 
         match res {
@@ -483,28 +507,28 @@ impl Typec {
     fn init_builtin_funcs(&mut self, interner: &mut Interner) {
         self.builtin_funcs
             .extend(Func::WATER_DROPS.map(|(.., func)| func));
-        *Self::get_mut(&mut self.funcs, Func::CAST) = Func {
-            generics: self.params.extend([default(), default()]), // F, T
-            signature: Signature {
-                cc: default(),
-                args: self.args.extend([Ty::Param(0)]),
-                ret: Ty::Param(1),
-            },
-            name: Interner::CAST,
-            flags: FuncFlags::BUILTIN,
-            ..default()
-        };
-        *Self::get_mut(&mut self.funcs, Func::SIZEOF) = Func {
-            generics: self.params.extend([default()]), // T
-            signature: Signature {
-                cc: default(),
-                args: default(),
-                ret: Ty::UINT,
-            },
-            name: Interner::SIZEOF,
-            flags: FuncFlags::BUILTIN,
-            ..default()
-        };
+        // *Self::get_mut(&mut self.cache.funcs, Func::CAST) = Func {
+        //     generics: self.cache.params.extend([default(), default()]), // F, T
+        //     signature: Signature {
+        //         cc: default(),
+        //         args: self.cache.args.extend([Ty::Param(0)]),
+        //         ret: Ty::Param(1),
+        //     },
+        //     name: Interner::CAST,
+        //     flags: FuncFlags::BUILTIN,
+        //     ..default()
+        // };
+        // *Self::get_mut(&mut self.cache.funcs, Func::SIZEOF) = Func {
+        //     generics: self.cache.params.extend([default()]), // T
+        //     signature: Signature {
+        //         cc: default(),
+        //         args: default(),
+        //         ret: Ty::UINT,
+        //     },
+        //     name: Interner::SIZEOF,
+        //     flags: FuncFlags::BUILTIN,
+        //     ..default()
+        // };
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);
@@ -512,7 +536,7 @@ impl Typec {
 
             let signature = Signature {
                 cc: default(),
-                args: self.args.extend([a, b]),
+                args: self.cache.args.extend([a, b]),
                 ret: r,
             };
 
@@ -524,10 +548,10 @@ impl Typec {
             };
 
             let func = if let Some(water_drop) = Func::lookup_water_drop(&interner[id]) {
-                *Self::get_mut(&mut self.funcs, water_drop) = func;
+                self.cache.funcs[water_drop] = func;
                 water_drop
             } else {
-                self.funcs.push(func)
+                self.cache.funcs.push(func)
             };
 
             self.builtin_funcs.push(func);
@@ -598,14 +622,14 @@ impl Typec {
         let id = interner.intern_with(|s, t| self.pointer_id(base, t, s));
         let depth = base.ptr_depth(self) + 1;
 
-        match self.lookup.entry(id) {
+        match self.mapping.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
                 &ComputedTypecItem::Pointer(pointer, ..) => pointer,
                 _ => unreachable!(),
             },
             Entry::Vacant(entry) => {
                 let pointer = Pointer { base, depth };
-                let ptr = self.pointers.push(pointer);
+                let ptr = self.cache.pointers.push(pointer);
                 entry.insert(ComputedTypecItem::Pointer(ptr));
                 ptr
             }
@@ -643,7 +667,7 @@ impl Typec {
         interner: &mut Interner,
     ) -> FragRef<Instance> {
         let id = interner.intern_with(|s, t| self.instance_id(base, args, t, s));
-        match self.lookup.entry(id) {
+        match self.mapping.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
                 &ComputedTypecItem::Instance(instance) => instance,
                 _ => unreachable!(),
@@ -651,9 +675,9 @@ impl Typec {
             Entry::Vacant(entry) => {
                 let instance = Instance {
                     base,
-                    args: self.args.extend(args.iter().cloned()),
+                    args: self.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.instances.push(instance);
+                let instance = self.cache.instances.push(instance);
                 entry.insert(ComputedTypecItem::Instance(instance));
                 instance
             }
@@ -667,7 +691,7 @@ impl Typec {
         interner: &mut Interner,
     ) -> FragRef<SpecInstance> {
         let id = interner.intern_with(|s, t| self.spec_instance_id(base, args, t, s));
-        match self.lookup.entry(id) {
+        match self.mapping.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
                 &ComputedTypecItem::SpecInstance(instance) => instance,
                 _ => unreachable!(),
@@ -675,9 +699,9 @@ impl Typec {
             Entry::Vacant(entry) => {
                 let instance = SpecInstance {
                     base,
-                    args: self.args.extend(args.iter().cloned()),
+                    args: self.cache.args.extend(args.iter().cloned()),
                 };
-                let instance = self.spec_instances.push(instance);
+                let instance = self.cache.spec_instances.push(instance);
                 entry.insert(ComputedTypecItem::SpecInstance(instance));
                 instance
             }
@@ -786,7 +810,7 @@ impl Typec {
             .flatten();
 
         for r#impl in base_impls {
-            let impl_ent = self.impls[r#impl];
+            let impl_ent = self.cache.impls[r#impl];
 
             let mut generic_slots = bumpvec![None; impl_ent.generics.len()];
             let spec_compatible = self.compatible(&mut generic_slots, ty, impl_ent.key.ty);
@@ -820,7 +844,7 @@ impl Typec {
                 continue;
             }
 
-            let params = self.args.extend(params);
+            let params = self.cache.args.extend(params);
             if !self.contains_params(ty) {
                 self.implemented.insert(key, (r#impl, params));
             }
@@ -1042,17 +1066,6 @@ impl Typec {
             }
         })
     }
-
-    pub fn get_mut<T: Humid>(storage: &mut FragMap<T>, key: FragRef<T>) -> &mut T {
-        debug_assert!(
-            storage.can_mut_access(key) || T::is_water_drop(key),
-            "key: {:?}, valid: {}, is_water_drop: {}",
-            key,
-            storage.can_mut_access(key),
-            T::is_water_drop(key)
-        );
-        unsafe { &mut *storage.ptr_to(key) }
-    }
 }
 
 #[derive(Debug)]
@@ -1142,6 +1155,10 @@ pub struct MacroImpl {
     pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
     pub params: FragSlice<Ty>,
+}
+
+derive_relocated! {
+    struct MacroImpl { r#impl params }
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug)]

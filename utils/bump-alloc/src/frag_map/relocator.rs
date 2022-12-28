@@ -2,22 +2,12 @@ use std::{
     alloc::Allocator,
     any::{Any, TypeId},
     default::default,
+    hash::{BuildHasher, Hash},
     mem, ptr, thread,
 };
 
-#[macro_export]
-macro_rules! derive_relocated {
-    ($ty:ty { $($field:ident)* }) => {
-        impl $crate::Relocated for $ty {
-            fn mark(&self, marker: &mut $crate::FragRelocMarker) {
-                $(self.$field.mark(marker);)*
-            }
-            fn remap(&mut self, ctx: &$crate::FragRelocMapping) {
-                $(self.$field.remap(ctx);)*
-            }
-        }
-    };
-}
+use dashmap::DashMap;
+use smallvec::SmallVec;
 
 use crate::*;
 
@@ -45,7 +35,7 @@ impl FragRelocMapping {
         self.marked
             .get(&DynFragId::new(frag))
             .and_then(|id| id.downcast())
-            .unwrap()
+            .unwrap_or(frag) // unchanged frags are not in map
     }
 
     pub fn project_slice<T: 'static>(&self, slice: FragSlice<T>) -> FragSlice<T> {
@@ -337,3 +327,159 @@ impl DynFragId {
 //     });
 //     println!("scope: {:?}", now.elapsed());
 // }
+
+#[macro_export]
+macro_rules! derive_relocated {
+    (struct $ty:ty { $($field:ident)* }) => {
+        impl $crate::Relocated for $ty {
+            fn mark(&self, marker: &mut $crate::FragRelocMarker) {
+                $(self.$field.mark(marker);)*
+            }
+            fn remap(&mut self, ctx: &$crate::FragRelocMapping) {
+                $(self.$field.remap(ctx);)*
+            }
+        }
+    };
+
+    (enum $ty:ty { $($pat:pat => $($field:ident)*,)* }) => {
+        impl $crate::Relocated for $ty {
+            fn mark(&self, marker: &mut $crate::FragRelocMarker) {
+                use $ty::*;
+                match self {
+                    $($pat => {
+                        $($field.mark(marker);)*
+                    },)*
+                }
+            }
+            fn remap(&mut self, ctx: &$crate::FragRelocMapping) {
+                use $ty::*;
+                match self {
+                    $($pat => {
+                        $($field.remap(ctx);)*
+                    },)*
+                }
+            }
+        }
+    };
+}
+
+impl<T: 'static> Relocated for FragRef<T> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        marker.mark(*self);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        *self = ctx.project(*self);
+    }
+}
+
+impl<T: 'static> Relocated for FragSlice<T> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        marker.mark_slice(*self);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        *self = ctx.project_slice(*self);
+    }
+}
+
+impl<A: Relocated, B: Relocated> Relocated for (A, B) {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        self.0.mark(marker);
+        self.1.mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        self.0.remap(ctx);
+        self.1.remap(ctx);
+    }
+}
+
+impl<K, V, H> Relocated for DashMap<K, V, H>
+where
+    K: Relocated + Eq + Hash,
+    V: Relocated,
+    H: Sync + Send + 'static + Clone + BuildHasher,
+{
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        for item in self.iter() {
+            item.key().mark(marker);
+            item.value().mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        let new_map = DashMap::with_capacity_and_hasher(self.len(), self.hasher().clone());
+        for (mut key, mut value) in mem::replace(self, new_map).into_iter() {
+            key.remap(ctx);
+            value.remap(ctx);
+            self.insert(key, value);
+        }
+    }
+}
+
+impl<T: Relocated> Relocated for [T] {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        for item in self {
+            item.mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        for item in self {
+            item.remap(ctx);
+        }
+    }
+}
+
+impl<T: Relocated> Relocated for Option<T> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        if let Some(item) = self {
+            item.mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        if let Some(item) = self {
+            item.remap(ctx);
+        }
+    }
+}
+
+macro_rules! impl_relocated_for_deref {
+    ($(($($generics:tt)*) for ($($type:tt)*);)*) => {
+        $(
+            impl<$($generics)*> Relocated for $($type)*
+            {
+                fn mark(&self, marker: &mut FragRelocMarker) {
+                    (**self).mark(marker);
+                }
+
+                fn remap(&mut self, ctx: &FragRelocMapping) {
+                    (**self).remap(ctx);
+                }
+            }
+        )*
+    };
+}
+
+impl_relocated_for_deref!(
+    (T: Relocated) for (Vec<T>);
+    (T: Relocated) for (SmallVec<[T; 4]>);
+    (T: Relocated) for (Box<T>);
+);
+
+macro_rules! impl_blanc_relocated {
+    ($($ty:ty),*) => {
+        $(
+            impl Relocated for $ty {
+                fn mark(&self, _: &mut FragRelocMarker) {}
+                fn remap(&mut self, _: &FragRelocMapping) {}
+            }
+        )*
+    };
+}
+
+impl_blanc_relocated! {
+    bool
+}

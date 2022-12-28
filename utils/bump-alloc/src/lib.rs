@@ -18,6 +18,7 @@
 )]
 
 pub extern crate dashmap;
+pub extern crate smallvec;
 
 mod alloc_tree;
 mod allocator;

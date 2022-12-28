@@ -178,8 +178,8 @@ mod test {
 
     #[test]
     fn test_interner() {
-        let (_base, mut frag_maps) = FragBase::new(1);
-        let mut interner = Interner::new(frag_maps.pop().unwrap());
+        let base = FragBase::new(1);
+        let mut interner = Interner::new(base.split().next().unwrap());
         assert_eq!(interner.intern("a"), interner.intern("a"));
         let b = interner.intern("b");
         assert_eq!(
@@ -192,8 +192,8 @@ mod test {
 
     #[test]
     fn test_interner_serde() {
-        let (_base, mut frag_maps) = FragBase::new(1);
-        let mut interner = Interner::new(frag_maps.pop().unwrap());
+        let base = FragBase::new(1);
+        let mut interner = Interner::new(base.split().next().unwrap());
         let a = interner.intern("a");
         let b = interner.intern("b");
         let c = interner.intern("c");

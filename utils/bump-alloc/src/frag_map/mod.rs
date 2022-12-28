@@ -69,6 +69,13 @@ impl<T, A: Allocator> FragMap<T, A> {
 
         self.others[self.thread_local.view.thread] = self.thread_local.view.clone();
     }
+
+    pub fn indexed(
+        &self,
+        slice: FragSlice<T>,
+    ) -> impl Iterator<Item = (FragRef<T>, &T)> + ExactSizeIterator + DoubleEndedIterator {
+        slice.keys().zip(self[slice].iter())
+    }
 }
 
 impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
@@ -110,13 +117,13 @@ pub struct FragBase<T, A: Allocator = Global> {
 }
 
 impl<T> FragBase<T> {
-    pub fn new(thread_count: u8) -> (Self, Vec<FragMap<T>>) {
+    pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
 }
 
 impl<T, A: Allocator> FragBase<T, A> {
-    pub fn new_in(thread_count: u8, allocator: A) -> (Self, Vec<FragMap<T, A>>)
+    pub fn new_in(thread_count: u8, allocator: A) -> Self
     where
         A: Clone,
     {
@@ -124,11 +131,18 @@ impl<T, A: Allocator> FragBase<T, A> {
             .map(|thread| FragVecView::new_in(thread, allocator.clone()))
             .collect::<Box<[_]>>();
 
-        let maps = (0..thread_count as usize)
-            .map(|thread| FragMap::new_in(threads.clone(), thread))
-            .collect();
+        Self { threads }
+    }
 
-        (Self { threads }, maps)
+    pub fn split(&self) -> impl Iterator<Item = FragMap<T, A>> + '_
+    where
+        A: Clone,
+    {
+        assert!(self
+            .threads
+            .iter()
+            .all(|t| unsafe { FragVecInner::is_unique(t.inner) }));
+        (0..self.threads.len()).map(|thread| FragMap::new_in(self.threads.clone(), thread))
     }
 }
 
@@ -402,7 +416,8 @@ mod tests {
 
     #[test]
     fn test() {
-        let (mut base, maps) = FragBase::<usize>::new(4);
+        let mut base = FragBase::<usize>::new(4);
+        let maps = base.split();
         let (sender, receiver) = mpsc::channel();
 
         let threads = maps
