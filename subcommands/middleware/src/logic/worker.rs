@@ -624,11 +624,11 @@ pub trait SourceAstHandler: Sync + Send {
 }
 
 pub struct BaseSourceCtx<'a> {
-    worker: &'a mut Worker,
-    module: VRef<Module>,
-    arena: &'a Arena,
-    task: &'a mut Task,
-    shared: &'a Shared<'a>,
+    pub worker: &'a mut Worker,
+    pub module: VRef<Module>,
+    pub arena: &'a Arena,
+    pub task: &'a mut Task,
+    pub shared: &'a Shared<'a>,
 }
 
 pub struct MacroSourceCtx;

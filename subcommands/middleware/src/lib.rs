@@ -14,7 +14,9 @@ pub use {
     lexing_t::*,
     logic::{
         task::{Task, TaskGraph},
-        worker::{SourceAstHandler, Worker, WorkerConnections, WorkerState},
+        worker::{
+            BaseSourceCtx, MacroSourceCtx, SourceAstHandler, Worker, WorkerConnections, WorkerState,
+        },
         DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs, MiddlewareOutput,
         PackageTask, Shared,
     },

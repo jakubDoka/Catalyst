@@ -5,7 +5,7 @@ use super::*;
 
 impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
     pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena>> {
-        let (items, .., last) = self.items()?;
+        let ItemsAstResult { items, last, .. } = self.items()?;
 
         macro_rules! gen_groups {
             (
@@ -59,11 +59,11 @@ impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
     }
 }
 
-pub type ItemsAstResult<'arena, M> = (
-    BumpVec<(Option<SourceInfo<M>>, ItemAst<'arena, M>)>,
-    Option<SourceInfo<M>>,
-    Option<SourceInfo<M>>,
-);
+pub struct ItemsAstResult<'arena, M> {
+    pub items: BumpVec<(Option<SourceInfo<M>>, ItemAst<'arena, M>)>,
+    pub between: Option<SourceInfo<M>>,
+    pub last: Option<SourceInfo<M>>,
+}
 
 impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn items(&mut self) -> Option<ItemsAstResult<'arena, M>> {
@@ -87,7 +87,11 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             items.push((between, item));
         };
 
-        Some((items, between, last))
+        Some(ItemsAstResult {
+            items,
+            between,
+            last,
+        })
     }
 
     fn item(&mut self) -> Option<ItemAst<'arena, M>> {

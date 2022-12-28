@@ -101,7 +101,14 @@ impl<'ctx> Fmt<'ctx> {
         self.source_info(import.path);
     }
 
-    pub fn source(&mut self, (items, after, last): ItemsAstResult<u32>) {
+    pub fn source(
+        &mut self,
+        ItemsAstResult {
+            items,
+            between,
+            last,
+        }: ItemsAstResult<u32>,
+    ) {
         for (between, item) in items {
             if let Some(between) = between {
                 self.white_space(between.full());
@@ -109,7 +116,7 @@ impl<'ctx> Fmt<'ctx> {
             self.item(item);
         }
 
-        if let Some(after) = after {
+        if let Some(after) = between {
             self.white_space(after.full());
         }
 
@@ -690,7 +697,7 @@ impl<'ctx> Fmt<'ctx> {
         self.white_space(info.after());
     }
 
-    fn white_space(&mut self, span: Span) {
+    pub fn white_space(&mut self, span: Span) {
         let mut new_lines = self.buffer.chars().rev().take_while(|c| *c == '\n').count();
         for (tok, span) in SkippedToken::lexer(&self.source[span.range()]).spanned() {
             match tok {
@@ -779,6 +786,7 @@ impl FmtCtx {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FmtCfg {
     pub max_line_width: usize,
     pub max_newlines: usize,
@@ -793,6 +801,12 @@ impl FmtCfg {
         max_newlines: 2,
         max_list_item_length: 20,
     };
+}
+
+impl Default for FmtCfg {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
 }
 
 #[derive(Default)]

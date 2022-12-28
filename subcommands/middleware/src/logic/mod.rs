@@ -79,9 +79,9 @@ impl Middleware {
         &mut self,
         args: &MiddlewareArgs,
         handlers: &mut [S],
-    ) {
+    ) -> Option<DiagnosticView> {
         if handlers.is_empty() {
-            return;
+            return None;
         }
 
         let Some(Incremental {
@@ -90,7 +90,7 @@ impl Middleware {
             mut worker_pool,
             module_items,
         }) = self.incremental.take() else {
-            return;
+            return None;
         };
 
         let (package_sender, package_receiver) = mpsc::channel();
@@ -105,7 +105,7 @@ impl Middleware {
         };
 
         let Some(dummy_package) = resources.packages.keys().next() else {
-            return;
+            return None;
         };
 
         Self::distribute_modules(&mut tasks, &resources);
@@ -129,12 +129,17 @@ impl Middleware {
             Self::join_workers(threads, &mut worker_pool);
         });
 
-        self.incremental = Some(Incremental {
+        let incr = self.incremental.insert(Incremental {
             resources,
             task_base,
             worker_pool,
             module_items,
         });
+
+        Some(DiagnosticView {
+            workspace: &mut self.workspace,
+            resources: &incr.resources,
+        })
     }
 
     fn distribute_modules(tasks: &mut [Task], resources: &Resources) {
@@ -564,7 +569,6 @@ impl Middleware {
             let (mut package_task, mut package) = receiver
                 .recv()
                 .expect("All worker threads terminated prematurely");
-
             loop {
                 self.entry_points
                     .append(&mut package_task.task.entry_points);
@@ -572,6 +576,7 @@ impl Middleware {
                 package_task.task.commit(task_base);
                 self.task_graph.finish(package);
                 tasks.push_back(package_task);
+
                 if let Ok(next_task) = receiver.try_recv() {
                     (package_task, package) = next_task;
                 } else {
@@ -627,9 +632,9 @@ impl Middleware {
 
 #[derive(Clone, Copy)]
 pub struct Shared<'a> {
-    resources: &'a Resources,
-    jit_isa: &'a Isa,
-    isa: &'a Isa,
+    pub resources: &'a Resources,
+    pub jit_isa: &'a Isa,
+    pub isa: &'a Isa,
 }
 
 pub struct MiddlewareArgs {
@@ -677,6 +682,12 @@ pub enum MiddlewareOutput {
     Checked,
     Unchanged,
     Failed,
+}
+
+impl MiddlewareOutput {
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed)
+    }
 }
 
 const CAST_HINT: &str = "if you know what you are doing, perform cast trough pointers";
