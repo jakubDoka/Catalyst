@@ -23,7 +23,7 @@ impl TaskBase {
         let mut interner_split = self.interner.split();
         let mut typec_split = self.typec.split();
         let mut gen_split = self.gen.split();
-        let mut ids = (0..).into_iter();
+        let mut ids = 0..;
         iter::from_fn(move || {
             Some(Task {
                 id: ids.next()?,
@@ -35,6 +35,12 @@ impl TaskBase {
                 gen: gen_split.next()?,
             })
         })
+    }
+
+    pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
+        self.typec.register(frags);
+        self.gen.register(frags);
+        frags.add_root(&mut self.mir);
     }
 }
 
@@ -107,7 +113,7 @@ impl Task {
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
                 &body.inner,
-                &mut task.dependant_types,
+                &mut task.resources.dependant_types,
                 &bumped_params,
                 &mut task.typec,
                 &mut task.interner,
@@ -293,6 +299,18 @@ impl Task {
         let func_id = self.typec[self.typec[r#impl].methods][index];
         let params = self.typec[params].to_bumpvec();
         (func_id, params)
+    }
+
+    pub fn pull(&mut self, task_base: &TaskBase) {
+        self.interner.pull(&task_base.interner);
+        self.typec.pull(&task_base.typec);
+        self.gen.pull(&task_base.gen);
+    }
+
+    pub fn commit(&mut self, main_task: &mut TaskBase) {
+        self.interner.commit(&mut main_task.interner);
+        self.typec.commit(&mut main_task.typec);
+        self.gen.commit(&mut main_task.gen);
     }
 }
 

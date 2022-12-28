@@ -34,8 +34,8 @@ pub use {
     frag_map::{
         addr::{FragAddr, FragSliceAddr, NonMaxU32, NonMaxU64},
         relocator::{
-            DynFragMap, FragMaps, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator,
-            Relocated,
+            DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator, Relocated,
+            RelocatedObjects,
         },
         FragBase, FragMap,
     },

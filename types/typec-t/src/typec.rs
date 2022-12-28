@@ -51,9 +51,22 @@ impl TypecBase {
             builtin_funcs: default(),
         })
     }
+
+    pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
+        objects.add_root(&mut self.mapping);
+        self.cache.register(objects);
+    }
 }
 
 derive_relocated!(struct TypecBase { mapping });
+
+impl Default for Typec {
+    fn default() -> Self {
+        let base = TypecBase::new(1);
+        let typec = { base.split().next().unwrap() };
+        typec
+    }
+}
 
 pub struct Typec {
     pub mapping: Arc<Mapping>,
@@ -93,9 +106,15 @@ macro_rules! gen_cache {
         }
 
         impl TypecCache {
-            pub fn update(&mut self, base: &mut TypecCacheBase) {
+            pub fn commit(&mut self, base: &mut TypecCacheBase) {
                 $(
-                    self.$name.update(&mut base.$name);
+                    self.$name.commit(&mut base.$name);
+                )*
+            }
+
+            pub fn pull(&mut self, base: &TypecCacheBase) {
+                $(
+                    self.$name.pull(&base.$name);
                 )*
             }
         }
@@ -159,7 +178,7 @@ macro_rules! gen_cache {
                 })
             }
 
-            pub fn register<'a>(&'a mut self, frags: &mut FragMaps<'a>) {
+            pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
                 $(
                     frags.add(&mut self.$name);
                 )*
@@ -188,6 +207,14 @@ gen_cache! {
 }
 
 impl Typec {
+    pub fn pull(&mut self, base: &TypecBase) {
+        self.cache.pull(&base.cache);
+    }
+
+    pub fn commit(&mut self, base: &mut TypecBase) {
+        self.cache.commit(&mut base.cache);
+    }
+
     pub fn register_ty_generics(&self, ty: Ty, spec_set: &mut SpecSet) {
         self.register_ty_generics_low(ty, default(), spec_set);
     }

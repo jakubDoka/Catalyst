@@ -52,6 +52,14 @@ gen_span_constants! {
     MOIST => "moist",
 }
 
+impl Default for Interner {
+    fn default() -> Self {
+        let base = InternerBase::new(1);
+        let int = { base.split().next().unwrap() };
+        int
+    }
+}
+
 pub struct InternerBase {
     map: Arc<CMap<InternerEntry, Ident>>,
     frag_base: FragBase<u8>,
@@ -94,8 +102,12 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    pub fn update(&mut self, base: &mut FragBase<u8>) {
-        self.frag_map.update(base);
+    pub fn commit(&mut self, base: &mut InternerBase) {
+        self.frag_map.commit(&mut base.frag_base);
+    }
+
+    pub fn pull(&mut self, base: &InternerBase) {
+        self.frag_map.pull(&base.frag_base);
     }
 
     pub fn intern_scoped(&mut self, scope: impl Display, name: Ident) -> Ident {

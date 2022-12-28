@@ -56,9 +56,12 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
         addr
     }
 
-    pub fn update(&mut self, base: &mut FragBase<T, A>) {
+    pub fn commit(&mut self, base: &mut FragBase<T, A>) {
         self.thread_local.freeze();
         base.threads[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
+    }
+
+    pub fn pull(&mut self, base: &FragBase<T, A>) {
         self.others.clone_from_slice(&base.threads);
     }
 
@@ -496,7 +499,8 @@ mod tests {
 
         let mut slices = vec![];
         for (mut map, i, slice) in receiver.iter().take(threads.len() * 10) {
-            map.update(&mut base);
+            map.commit(&mut base);
+            map.pull(&base);
             slices.push(slice);
             let _ = threads[i].1.send((map, slices.pop()));
         }

@@ -48,7 +48,9 @@ impl<'ctx> Fmt<'ctx> {
 
     fn manifest_value(&mut self, value: &ManifestValueAst<u32>) {
         match *value {
-            ManifestValueAst::String(string) => self.source_info(string),
+            ManifestValueAst::Bool(literal) | ManifestValueAst::String(literal) => {
+                self.source_info(literal)
+            }
             ManifestValueAst::Array(array) => self.list(Self::manifest_value, array),
             ManifestValueAst::Object(object) => self.block(Self::manifest_field, object),
         }

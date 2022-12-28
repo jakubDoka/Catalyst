@@ -80,15 +80,22 @@ pub struct FragRelocator {
 }
 
 impl FragRelocator {
-    fn collect_markers(&mut self) {
+    fn collect_markers(&mut self, thread_count: usize) {
         for marker in self.markers.iter_mut() {
             for (&id, marks) in marker.marked.iter_mut() {
-                self.marked.entry(id).or_default().append(marks);
+                self.marked
+                    .entry(id)
+                    .or_default()
+                    .append(marks, thread_count);
             }
         }
     }
 
-    pub fn relocate<T: Relocated>(&mut self, threads: &mut Vec<Vec<T>>, frags: &mut FragMaps) {
+    pub fn relocate<T: Relocated>(
+        &mut self,
+        threads: &mut Vec<Vec<T>>,
+        frags: &mut RelocatedObjects,
+    ) {
         self.markers.resize_with(threads.len(), default);
         self.mapping.resize_with(threads.len(), default);
 
@@ -101,18 +108,21 @@ impl FragRelocator {
             }
         });
 
-        self.collect_markers();
+        self.collect_markers(threads.len());
 
         let mut frag_vec = frags
             .maps
             .drain()
             .filter_map(|(id, frag)| Some((id, frag, self.marked.remove(&id)?)))
             .collect::<Vec<_>>();
-        let chunk_size =
-            frag_vec.len() / threads.len() + (frag_vec.len() % threads.len() != 0) as usize;
+        let chunk_calc = |len| len / threads.len() + (len % threads.len() != 0) as usize;
+        let frag_chunk_size = chunk_calc(frag_vec.len());
 
         thread::scope(|scope| {
-            for (chunk, mapping) in frag_vec.chunks_mut(chunk_size).zip(self.mapping.iter_mut()) {
+            for (chunk, mapping) in frag_vec
+                .chunks_mut(frag_chunk_size)
+                .zip(self.mapping.iter_mut())
+            {
                 scope.spawn(move || {
                     for (.., frag, marks) in chunk {
                         marks.optimize();
@@ -124,12 +134,22 @@ impl FragRelocator {
 
         self.fold_mapping();
 
+        let root_chunk_size = chunk_calc(frags.roots.len());
+
         thread::scope(|scope| {
             let folded_mapping = &self.mapping[0];
-            for chunk in frag_vec.chunks_mut(chunk_size) {
+            let mut root_chunks = frags.roots.chunks_mut(root_chunk_size);
+            for chunk in frag_vec.chunks_mut(frag_chunk_size) {
+                let root_chunk = root_chunks.next();
                 scope.spawn(move || {
                     for (.., frag, _) in chunk {
                         frag.remap(folded_mapping);
+                    }
+
+                    if let Some(chunk) = root_chunk {
+                        for root in chunk {
+                            root.remap(folded_mapping);
+                        }
                     }
                 });
             }
@@ -158,10 +178,10 @@ pub struct FragMarks {
 }
 
 impl FragMarks {
-    fn append(&mut self, data: &mut Set<FragAddr>) {
+    fn append(&mut self, data: &mut Set<FragAddr>, thread_count: usize) {
+        self.marks.resize(thread_count, Vec::new());
         for addr in data.drain() {
             let thread = addr.thread() as usize;
-            self.marks.resize(thread + 1, Vec::new());
             self.marks[thread].push(addr);
         }
     }
@@ -239,17 +259,23 @@ impl FragMarks {
 }
 
 #[derive(Default)]
-pub struct FragMaps<'a> {
+pub struct RelocatedObjects<'a> {
     maps: Map<TypeId, &'a mut dyn DynFragMap>,
+    roots: Vec<&'a mut dyn Relocated>,
 }
 
-impl<'a> FragMaps<'a> {
+impl<'a> RelocatedObjects<'a> {
     pub fn add(&mut self, frag_map: &'a mut (impl DynFragMap + Any)) {
         self.maps.insert((*frag_map).type_id(), frag_map);
     }
 
-    pub fn clear<'b>(mut self) -> FragMaps<'b> {
+    pub fn add_root(&mut self, root: &'a mut dyn Relocated) {
+        self.roots.push(root);
+    }
+
+    pub fn clear<'b>(mut self) -> RelocatedObjects<'b> {
         self.maps.clear();
+        self.roots.clear();
         unsafe { mem::transmute(self) }
     }
 }
@@ -264,7 +290,7 @@ impl FragRelocMarker {
     pub fn mark_all<T: Relocated>(
         &mut self,
         roots: impl IntoIterator<Item = T>,
-        relocs: &FragMaps,
+        relocs: &RelocatedObjects,
     ) {
         for root in roots {
             root.mark(self);

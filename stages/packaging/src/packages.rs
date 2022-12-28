@@ -85,7 +85,7 @@ impl PackageLoader<'_> {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
-                        .map(|id| VRef::<Package>::new(id))
+                        .map(VRef::<Package>::new)
                         .map(|package| self.resources.packages[package].source)
                         .map(|source| self.resources.sources[source].path.to_string_lossy())
                         .intersperse(Cow::Borrowed("\n"))
@@ -129,7 +129,7 @@ impl PackageLoader<'_> {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
-                        .map(|id| VRef::<Module>::new(id))
+                        .map(VRef::<Module>::new)
                         .map(|package| self.resources.modules[package].source)
                         .map(|source| self.resources.sources[source].path.to_string_lossy())
                         .intersperse(Cow::Borrowed("\n"))
@@ -141,7 +141,7 @@ impl PackageLoader<'_> {
 
         self.resources
             .module_order
-            .extend(buffer.drain(..).map(|i| VRef::new(i)));
+            .extend(buffer.drain(..).map(VRef::new));
         self.resources.mark_changed();
 
         self.resources

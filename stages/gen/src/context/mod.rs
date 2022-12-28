@@ -42,6 +42,11 @@ impl GenBase {
             funcs,
         })
     }
+
+    pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
+        objects.add(&mut self.funcs);
+        objects.add_root(&mut self.lookup);
+    }
 }
 
 pub struct Gen {
@@ -50,6 +55,14 @@ pub struct Gen {
 }
 
 impl Gen {
+    pub fn commit(&mut self, base: &mut GenBase) {
+        self.funcs.commit(&mut base.funcs);
+    }
+
+    pub fn pull(&mut self, base: &GenBase) {
+        self.funcs.pull(&base.funcs);
+    }
+
     pub fn prepare(&mut self) {
         self.lookup.iter_mut().for_each(|mut item| item.1 = true);
     }
@@ -132,6 +145,8 @@ pub struct CompiledFunc {
     pub name: Ident,
     pub inner: Option<Arc<CompiledFuncInner>>,
 }
+
+derive_relocated!(struct CompiledFunc { func });
 
 pub struct CompiledFuncInner {
     pub signature: ir::Signature,

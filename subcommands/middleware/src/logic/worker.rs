@@ -180,7 +180,7 @@ impl Worker {
         macro parser() {
             Parser::new(
                 &mut task.interner,
-                &mut task.workspace,
+                &mut task.resources.workspace,
                 &mut parser_ctx,
                 arena,
                 source,
@@ -270,7 +270,7 @@ impl Worker {
             params,
             children,
             drops,
-        } in &task.compile_requests.queue
+        } in &task.resources.compile_requests.queue
         {
             compiled.push(id);
 
@@ -335,7 +335,7 @@ impl Worker {
                 &mut self.state.gen_resources,
                 &mut task.interner,
                 &mut task.typec,
-                &task.compile_requests,
+                &task.resources.compile_requests,
                 shared.resources,
             )
             .generate(signature, &params, root, &mut builder);
@@ -479,7 +479,7 @@ impl Worker {
             &mut task.interner,
             &mut self.state.scope,
             &mut task.typec,
-            &mut task.workspace,
+            &mut task.resources.workspace,
             shared.resources,
         )
         .execute(
@@ -496,7 +496,7 @@ impl Worker {
             &mut task.mir,
             &mut task.interner,
             &mut task.typec,
-            &mut task.workspace,
+            &mut task.resources.workspace,
             &mut self.state.mir_ctx,
             &mut self.state.mir_move_ctx,
             arena,
@@ -511,7 +511,7 @@ impl Worker {
             .just_compiled
             .drain(..)
             .filter(|&func| task.typec[func].flags.contains(FuncFlags::ENTRY))
-            .collect_into(&mut task.entry_points);
+            .collect_into(&mut task.resources.entry_points);
 
         let source = shared.resources.modules[module].source;
         Self::check_casts(
@@ -519,7 +519,7 @@ impl Worker {
             &mut task.interner,
             &mut self.state.gen_layouts,
             source,
-            &mut task.workspace,
+            &mut task.resources.workspace,
             &mut self.state.tir_builder_ctx.cast_checks,
         )
     }

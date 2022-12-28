@@ -55,14 +55,20 @@ impl Middleware {
     fn reload_resources(
         &mut self,
         resources: &mut Resources,
-        main_task: &mut Task,
+        base: &mut TaskBase,
         db: &mut dyn ResourceDb,
         path: &Path,
     ) -> Option<Vec<VRef<Source>>> {
+        // Since split is iterator we create just one instance for this single threaded use_case
+        let mut interner = base
+            .interner
+            .split()
+            .next()
+            .expect("we already clamped threads between 1 and 255");
         PackageLoader::new(
             resources,
-            &mut main_task.workspace,
-            &mut main_task.interner,
+            &mut self.workspace,
+            &mut interner,
             &mut self.package_graph,
             db,
         )
@@ -104,7 +110,7 @@ impl Middleware {
 
         Self::distribute_modules(&mut tasks, &resources);
 
-        let tasks = thread::scope(|scope| {
+        thread::scope(|scope| {
             let (package_tasks, gen_senders, threads) = Self::launch_workers(
                 scope,
                 package_sender,
@@ -120,7 +126,7 @@ impl Middleware {
                     .expect("channel should not be dead right now");
             }
 
-            Self::join_workers(threads, &mut worker_pool)
+            Self::join_workers(threads, &mut worker_pool);
         });
 
         self.incremental = Some(Incremental {
@@ -152,7 +158,7 @@ impl Middleware {
 
         let Incremental {
             mut resources,
-            task_base,
+            mut task_base,
             mut worker_pool,
             mut module_items,
         } = self.incremental.take().unwrap_or_else(|| Incremental {
@@ -162,29 +168,22 @@ impl Middleware {
             module_items: default(),
         });
 
-        main_task.ir_dump = args.dump_ir.then(String::new);
-
-        if let Some(removed) = self.reload_resources(&mut resources, &mut main_task, db, &args.path)
+        if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
+            && !removed.is_empty()
         {
-            self.relocator.clear();
-            self.gen_relocator.clear();
-            self.sweep_resources(&resources, &mut main_task, &mut module_items, removed);
-            main_task.mir.relocate(&self.relocator);
-            main_task.gen.prepare(&self.relocator.funcs);
+            self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count);
         };
 
-        if main_task.workspace.has_errors() || resources.no_changes() {
+        if self.workspace.has_errors() || resources.no_changes() {
             let output = if resources.no_changes() {
                 MiddlewareOutput::Unchanged
             } else {
                 MiddlewareOutput::Failed
             };
 
-            self.workspace.transfer(&mut main_task.workspace);
             let incr = self.incremental.insert(Incremental {
                 resources,
-                task_base: main_task,
-                task_pool,
+                task_base,
                 worker_pool,
                 module_items,
             });
@@ -200,25 +199,20 @@ impl Middleware {
 
         let (package_sender, package_receiver) = mpsc::channel();
 
-        if workers_count == 1 {
-            // todo!();
-        }
+        // if thread_count == 1 {
+        //     // todo!();
+        // }
 
         self.task_graph.prepare(&resources);
 
-        let mut tasks = vec![main_task; workers_count];
-        tasks
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, task)| task.id = i);
-
+        let tasks = task_base.split(args.dump_ir).collect::<Vec<_>>();
         let shared = Shared {
             resources: &resources,
             jit_isa: &args.jit_isa,
             isa: &args.isa,
         };
 
-        let mut handlers = vec![DefaultSourceAstHandler; workers_count];
+        let mut handlers = vec![DefaultSourceAstHandler; thread_count];
 
         let (tasks, entry_points, imported) = thread::scope(|scope| {
             let (package_tasks, mut gen_senders, threads) = Self::launch_workers(
@@ -231,10 +225,11 @@ impl Middleware {
             );
 
             let mut tasks = self.expand(
+                &mut task_base,
                 package_receiver,
                 package_tasks,
                 &resources,
-                workers_count,
+                thread_count,
                 &mut module_items,
             );
 
@@ -264,13 +259,12 @@ impl Middleware {
             )
         });
 
-        let (ir, mut main_task, compiled) = self.tidy_tasks(tasks, &mut task_pool);
+        let (ir, mut main_task, compiled) = self.tidy_tasks(tasks);
 
         if self.workspace.has_errors() || args.check {
             let incr = self.incremental.insert(Incremental {
                 resources,
-                task_pool,
-                task_base: main_task,
+                task_base,
                 worker_pool,
                 module_items,
             });
@@ -311,11 +305,9 @@ impl Middleware {
             })
             .unwrap();
 
-        main_task.gen.reallocate(&mut self.gen_relocator);
         let incr = self.incremental.insert(Incremental {
             resources,
-            task_pool,
-            task_base: main_task,
+            task_base,
             worker_pool,
             module_items,
         });
@@ -349,7 +341,6 @@ impl Middleware {
     fn tidy_tasks(
         &mut self,
         mut tasks: Vec<Task>,
-        task_pool: &mut Vec<Task>,
     ) -> (Option<String>, Task, Vec<FragRef<CompiledFunc>>) {
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
@@ -370,8 +361,6 @@ impl Middleware {
             .collect();
 
         let main_task = tasks.pop().expect("has to be at least one task");
-
-        task_pool.extend(tasks);
 
         (ir, main_task, compiled)
     }
@@ -433,7 +422,7 @@ impl Middleware {
         for index in entry_points {
             let signature = ir::Signature::new(CallConv::Fast);
             let sig_ref = builder.import_signature(signature);
-            let external_name = ir::UserExternalName::new(0, index.to_u32());
+            let external_name = GenItemName::encode_func(index);
             let name = builder.func.declare_imported_user_function(external_name);
             let func_ref = builder.import_function(ir::ExtFuncData {
                 name: ir::ExternalName::user(name),
@@ -444,7 +433,7 @@ impl Middleware {
         }
         builder.ins().return_(&[]);
 
-        let func_id = main_task.typec.funcs.push(Func {
+        let func_id = main_task.typec.cache.funcs.push(Func {
             visibility: FuncVisibility::Exported,
             name: main_task.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
@@ -508,8 +497,9 @@ impl Middleware {
 
     pub fn expand(
         &mut self,
+        task_base: &mut TaskBase,
         receiver: Receiver<(PackageTask, VRef<Package>)>,
-        mut tasks: Vec<PackageTask>,
+        tasks: Vec<PackageTask>,
         resources: &Resources,
         worker_count: usize,
         cached_items: &mut Map<VRef<Source>, ModuleItems>,
@@ -534,10 +524,12 @@ impl Middleware {
             }
         }
 
+        let mut tasks = VecDeque::from(tasks);
+
         while self.task_graph.has_tasks() {
-            while let Some(mut package_task) = tasks.pop() {
+            while let Some(mut package_task) = tasks.pop_front() {
                 let Some(package) = self.task_graph.next_task() else {
-                    tasks.push(package_task);
+                    tasks.push_front(package_task);
                     break;
                 };
 
@@ -553,11 +545,12 @@ impl Middleware {
 
                 if package_task.task.modules_to_compile.is_empty() {
                     self.task_graph.finish(package);
-                    tasks.push(package_task);
+                    tasks.push_front(package_task);
                     continue;
                 }
 
                 sync_module_items(&mut package_task.task.typec.module_items, &module_items);
+                package_task.task.pull(task_base);
                 package_task
                     .send(package)
                     .expect("worker thread terminated prematurely");
@@ -576,8 +569,9 @@ impl Middleware {
                 self.entry_points
                     .append(&mut package_task.task.entry_points);
                 sync_module_items(&mut module_items, &package_task.task.typec.module_items);
+                package_task.task.commit(task_base);
                 self.task_graph.finish(package);
-                tasks.push(package_task);
+                tasks.push_back(package_task);
                 if let Ok(next_task) = receiver.try_recv() {
                     (package_task, package) = next_task;
                 } else {
@@ -602,6 +596,32 @@ impl Middleware {
         }
 
         res
+    }
+
+    fn sweep_resources(
+        &mut self,
+        task_base: &mut TaskBase,
+        module_items: &mut Map<VRef<Source>, ModuleItems>,
+        removed: Vec<VRef<Source>>,
+        thread_count: usize,
+    ) {
+        for source in removed {
+            module_items.remove(&source);
+        }
+
+        let mut threads = vec![vec![]; thread_count];
+
+        for (&item, thread) in module_items
+            .values()
+            .flat_map(|val| val.items.values())
+            .zip((0..thread_count).cycle())
+        {
+            threads[thread].push(item);
+        }
+
+        let mut frags = RelocatedObjects::default();
+        task_base.register(&mut frags);
+        self.relocator.relocate(&mut threads, &mut frags);
     }
 }
 

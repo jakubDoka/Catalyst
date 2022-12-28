@@ -215,6 +215,8 @@ pub struct ModuleItem {
     pub vis: Option<Vis>,
 }
 
+derive_relocated!(struct ModuleItem { ptr });
+
 impl ModuleItem {
     pub fn new(id: Ident, ptr: impl Into<ModuleItemPtr>, span: Span, vis: Option<Vis>) -> Self {
         Self {
@@ -233,6 +235,13 @@ pub enum ModuleItemPtr {
     SpecBase(FragRef<SpecBase>),
     Impl(FragRef<Impl>),
 }
+
+derive_relocated!(enum ModuleItemPtr {
+    Func(f) => f,
+    Ty(t) => t,
+    SpecBase(b) => b,
+    Impl(i) => i,
+});
 
 impl From<FragRef<Func>> for ModuleItemPtr {
     fn from(func: FragRef<Func>) -> Self {
