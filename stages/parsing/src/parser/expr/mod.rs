@@ -44,11 +44,12 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         let mut unit = branch!(self => {
             Ident => self.path(None).map(UnitExprAst::Path),
             BackSlash => {
-                let slash = self.advance();
                 if self.next_at(Tk::LeftBrace) {
+                    let slash = self.advance();
                     self.struct_ctor(None, slash)
                         .map(UnitExprAst::StructCtor)
                 } else {
+                    let slash = self.advance();
                     self.path(Some(slash)).map(UnitExprAst::Path)
                 }
             },
@@ -70,7 +71,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                     loc: SourceLoc { origin: self.source, span: self.state.current.span}
                 })?,
             }},
-            LeftBrace => self.object("code block", Self::expr).map(UnitExprAst::Block),
+            LeftBrace => self.block("code block", Self::expr).map(UnitExprAst::Block),
             @"expression",
         });
 
@@ -101,7 +102,6 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     }
 
     fn r#let(&mut self) -> Option<LetAst<'arena, M>> {
-        dbg!();
         Some(LetAst {
             keyword: self.advance(),
             pat: self.pat(None)?,
@@ -151,13 +151,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         Some(StructCtorAst {
             path,
             slash,
-            body: self.list(
-                "struct constructor body",
-                Self::struct_ctor_field,
-                Tk::LeftBrace,
-                Tk::Comma,
-                Tk::RightBrace,
-            )?,
+            body: self.object("struct constructor body", Self::struct_ctor_field)?,
         })
     }
 

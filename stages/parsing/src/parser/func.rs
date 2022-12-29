@@ -42,7 +42,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 self.skip(TokenKind::NewLine);
                 self.expr().map(|e| FuncBodyAst::Arrow(arrow, e))
             },
-            LeftBrace => self.object("function body", Self::expr).map(FuncBodyAst::Block),
+            LeftBrace => self.block("function body", Self::expr).map(FuncBodyAst::Block),
             Extern => Some(FuncBodyAst::Extern(self.advance())),
             @"function body",
         }}

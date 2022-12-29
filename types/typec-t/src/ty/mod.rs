@@ -88,7 +88,7 @@ gen_water_drops! {
     Enum
     enums
     OPTION => "Option",
-    TOKEN_KIND => "MacroTokenKind",
+    TOKEN_KIND => "TokenKind",
 }
 
 #[derive(Clone, Copy)]

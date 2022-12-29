@@ -86,7 +86,7 @@ impl Middleware {
 
         let Some(Incremental {
             resources,
-            task_base,
+            mut task_base,
             mut worker_pool,
             module_items,
         }) = self.incremental.take() else {
@@ -538,6 +538,8 @@ impl Middleware {
         let mut tasks = VecDeque::from(tasks);
 
         while self.task_graph.has_tasks() {
+            // we start with front and push back to equally distribute entities
+            // we also want first task to initialize the water drops
             while let Some(mut package_task) = tasks.pop_front() {
                 let Some(package) = self.task_graph.next_task() else {
                     tasks.push_front(package_task);

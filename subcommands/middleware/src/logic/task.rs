@@ -7,6 +7,7 @@ pub struct TaskBase {
     pub typec: TypecBase,
     pub gen: GenBase,
     pub mir: Mir,
+    initialized: bool,
 }
 
 impl TaskBase {
@@ -16,24 +17,34 @@ impl TaskBase {
             typec: TypecBase::new(thread_count),
             gen: GenBase::new(thread_count),
             mir: default(),
+            initialized: false,
         }
     }
 
-    pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
+    pub fn split(&mut self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
+        let mut init = !mem::replace(&mut self.initialized, true);
         let mut interner_split = self.interner.split();
         let mut typec_split = self.typec.split();
         let mut gen_split = self.gen.split();
         let mut ids = 0..;
+        let s = &*self;
         iter::from_fn(move || {
-            Some(Task {
+            let mut task = Task {
                 id: ids.next()?,
                 ir_dump: ir_dump.then(String::new),
                 resources: TaskResources::default(),
                 interner: interner_split.next()?,
                 typec: typec_split.next()?,
-                mir: self.mir.clone(),
+                mir: s.mir.clone(),
                 gen: gen_split.next()?,
-            })
+            };
+
+            if init {
+                task.typec.init(&mut task.interner);
+                init = false;
+            }
+
+            Some(task)
         })
     }
 

@@ -103,7 +103,7 @@ fn main() {
                 b: uint
             };
 
-            fn main -> uint => match B::{ a: 0; b: 3 } {
+            fn main -> uint => match B::{ a: 0, b: 3 } {
                 ::{ a: 6, b: 7 } => 0;
                 ::{ a: 0, b: 3 } => 1;
                 ::{ a: 0, b } => b;
@@ -137,7 +137,7 @@ fn main() {
 
             #[entry];
             fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
+                let ::{ mut a, b } = A::{ a: 0, b: 3 };
                 a = a + b;
                 a - 3
             };

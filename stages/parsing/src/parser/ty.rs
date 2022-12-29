@@ -44,7 +44,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             start: self.path_segment()?,
             segments: {
                 let mut segments = bumpvec![];
-                while self.at(Tk::BackSlash) {
+                while self.at(Tk::BackSlash) && self.next_at([Tk::Ident, Tk::LeftBracket]) {
                     self.advance();
                     segments.push(self.path_segment()?);
                 }

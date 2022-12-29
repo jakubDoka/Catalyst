@@ -221,13 +221,10 @@ impl CycleDetector {
         roots: impl IntoIterator<Item = usize>,
         buffer: &mut BumpVec<usize>,
     ) -> Result<(), Vec<usize>> {
-        dbg!(&self.edges, &self.indices);
-
         self.meta.clear();
         self.meta.resize(self.len(), NodeMeta::default());
 
         for root in roots {
-            dbg!(root);
             self.sub_ordering(root, buffer)?;
         }
 

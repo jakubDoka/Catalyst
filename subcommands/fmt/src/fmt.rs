@@ -240,7 +240,6 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn r#let(&mut self, r#let: LetAst<u32>) {
-        dbg!();
         self.source_info(r#let.keyword);
         self.buffer.push(' ');
         self.pat(&r#let.pat);

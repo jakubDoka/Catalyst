@@ -59,7 +59,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn branch(&mut self) -> Option<BranchAst<'arena, M>> {
         branch!(self => {
-            LeftBrace => self.object("branch block", Self::expr).map(BranchAst::Block),
+            LeftBrace => self.block("branch block", Self::expr).map(BranchAst::Block),
             ThickRightArrow => Some(BranchAst::Arrow(self.advance(), {
                 self.skip(Tk::NewLine);
                 self.expr()?
@@ -72,7 +72,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         Some(MatchExprAst {
             keyword: self.advance(),
             expr: self.expr()?,
-            body: self.object("match statement body", Self::match_arm)?,
+            body: self.block("match statement body", Self::match_arm)?,
         })
     }
 

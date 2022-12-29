@@ -28,7 +28,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         Some((
             Some(ImportsAst {
                 keyword,
-                items: self.object("import list", Self::import)?,
+                items: self.block("import list", Self::import)?,
             }),
             header,
         ))

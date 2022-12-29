@@ -103,12 +103,20 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         self.list(for_the, parser, start, sep, end).map(Some)
     }
 
-    fn object<T>(
+    fn block<T>(
         &mut self,
         for_the: &'static str,
         parser: impl FnMut(&mut Self) -> Option<T>,
     ) -> Option<ListAst<'arena, T, M>> {
         self.list(for_the, parser, Tk::LeftBrace, Tk::NewLine, Tk::RightBrace)
+    }
+
+    fn object<T>(
+        &mut self,
+        for_the: &'static str,
+        parser: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<ListAst<'arena, T, M>> {
+        self.list(for_the, parser, Tk::LeftBrace, Tk::Comma, Tk::RightBrace)
     }
 
     fn array<T>(

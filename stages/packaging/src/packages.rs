@@ -113,7 +113,6 @@ impl<'a> PackageLoader<'a> {
                 &mut buffer,
             )
             .map_err(|cycle| {
-                dbg!();
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
@@ -190,14 +189,16 @@ impl<'a> PackageLoader<'a> {
             module.ordering = self.resources.modules.push(final_module).index();
         }
 
-        let iter = self.resources.modules.values_mut().zip(ctx.modules.iter());
-        for (module, (path, dummy_module)) in iter {
-            dbg!(path);
+        let iter = self
+            .resources
+            .modules
+            .values_mut()
+            .zip(ctx.modules.values());
+        for (module, dummy_module) in iter {
             let deps_iter = dummy_module
                 .deps
                 .iter()
                 .filter_map(|&(vis, name, ref path)| {
-                    dbg!(path);
                     let index = ctx.modules.get(path)?.ordering;
                     Some(Dep {
                         vis,
@@ -256,7 +257,7 @@ impl<'a> PackageLoader<'a> {
 
         let dummy_module = DummyModule {
             package,
-            deps: dbg!(deps),
+            deps,
             source,
             ordering: 0,
         };

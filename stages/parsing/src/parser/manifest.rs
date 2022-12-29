@@ -26,7 +26,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     fn manifest_deps(&mut self) -> Option<ManifestDepsAst<'arena, M>> {
         Some(ManifestDepsAst {
             deps: self.advance(),
-            list: self.object("dependency list", Self::manifest_dep)?,
+            list: self.block("dependency list", Self::manifest_dep)?,
         })
     }
 
@@ -48,7 +48,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             Str => Some(ManifestValueAst::String(self.advance())),
             LeftBracket => self.array("manifest list", Self::manifest_value)
                 .map(ManifestValueAst::Array),
-            LeftBrace => self.list("manifest object", Self::manifest_field, Tk::LeftBrace, Tk::NewLine, Tk::RightBrace)
+            LeftBrace => self.object("manifest object", Self::manifest_field)
                 .map(ManifestValueAst::Object),
             @"manifest value",
         }}
