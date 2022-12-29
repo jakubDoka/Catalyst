@@ -28,7 +28,7 @@ macro_rules! gen_span_constants {
     };
 
     (@recur ($acc:expr) $name:ident => $repr:literal, $($rest:tt)*) => {
-        pub const $name: Ident = FragSlice::new(FragSliceAddr::new(0, 0, $repr.len() as u16));
+        pub const $name: Ident = FragSlice::new(FragSliceAddr::new($acc as u64, 0, $repr.len() as u16));
         gen_span_constants!(@recur ($acc + $repr.len()) $($rest)*);
     };
 

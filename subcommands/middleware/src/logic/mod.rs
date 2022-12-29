@@ -105,6 +105,12 @@ impl Middleware {
         };
 
         let Some(dummy_package) = resources.packages.keys().next() else {
+            self.incremental = Some(Incremental {
+                resources,
+                task_base,
+                worker_pool,
+                module_items,
+            });
             return None;
         };
 
@@ -180,10 +186,10 @@ impl Middleware {
         };
 
         if self.workspace.has_errors() || resources.no_changes() {
-            let output = if resources.no_changes() {
-                MiddlewareOutput::Unchanged
-            } else {
+            let output = if self.workspace.has_errors() {
                 MiddlewareOutput::Failed
+            } else {
+                MiddlewareOutput::Unchanged
             };
 
             let incr = self.incremental.insert(Incremental {

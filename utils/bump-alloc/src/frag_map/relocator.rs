@@ -113,7 +113,7 @@ impl FragRelocator {
         let mut frag_vec = frags
             .maps
             .drain()
-            .filter_map(|(id, frag)| Some((id, frag, self.marked.remove(&id)?)))
+            .map(|(id, frag)| (id, frag, self.marked.remove(&id).unwrap_or_default()))
             .collect::<Vec<_>>();
         let chunk_calc = |len| len / threads.len() + (len % threads.len() != 0) as usize;
         let frag_chunk_size = chunk_calc(frag_vec.len());

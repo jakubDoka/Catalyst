@@ -141,18 +141,22 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         sep: impl TokenPattern,
         end: impl TokenPattern,
     ) -> Option<ListAst<'arena, T, M>> {
-        let start = self.expect(&start, |s| ExpectedStartOfAst {
+        let mut start = self.expect(&start, |s| ExpectedStartOfAst {
             ast_name: for_the,
             found: s.current.kind,
             expected: start.to_str(s.lexer.source()),
             loc: s.loc(),
         })?;
 
+        self.append_newlines(&mut start.meta);
+
         let mut elements = bumpvec![];
         let end = loop {
             if self.at(&end) {
-                break self.current.source_meta();
+                break self.advance();
             }
+
+            //dbg!(self.current.kind);
 
             let Some(value) = parser(self) else {
                 if let Some(end) = self.recover_list(&sep, &end)? {
@@ -163,7 +167,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
             if self.at(&end) {
                 elements.push(ListElemAst { value, delim: None });
-                break self.current.source_meta();
+                break self.advance();
             }
 
             let Some(mut delim) = self.expect(&sep, |s| ExpectedListSep {
@@ -227,7 +231,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn name_unchecked(&mut self) -> NameAst<M> {
         let ident = self.interner.intern(self.lexer.span_str(self.current.span));
-        let source_info = self.current.source_meta();
+        let source_info = self.advance();
         NameAst { ident, source_info }
     }
 
@@ -291,6 +295,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn append_newlines(&mut self, to: &mut M) {
         if self.reduce_repetition(Tk::NewLine) {
+            self.advance();
             *to = self.current.meta;
         }
     }

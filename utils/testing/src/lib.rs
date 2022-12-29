@@ -17,6 +17,7 @@ macro_rules! gen_test {
                 $crate::items::test_case($name, value, |name| {
                     let mut resources = gen_test!(__inner__ name $($type)? $structure);
                     resources.add_water();
+                    $crate::fmt::FmtRuntime::test_format(&name, &mut resources);
                     <$test_struct>::default().exec($name, &mut resources)
                 });
             )*
@@ -104,11 +105,10 @@ mod tests {
     }
 }
 
-pub use items::Testable;
+pub use {fmt, items::Testable};
 
 pub mod items {
     use diags::*;
-    use fmt::FmtRuntime;
     use packaging::Scheduler;
     use packaging_t::*;
     use snippet_display::SnippetDisplayImpl;
@@ -190,7 +190,6 @@ pub mod items {
             let name = self.name.clone();
             let path = PathBuf::from(&name);
             self.create_recur(&path, &mut resources);
-            FmtRuntime::test_format(&name, &mut resources);
             resources
         }
 
@@ -227,7 +226,7 @@ pub mod items {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct TestResources {
         pub env: HashMap<String, String>,
         pub files: HashMap<PathBuf, String>,
@@ -254,7 +253,7 @@ pub mod items {
         pub fn water_repo() -> Self {
             Self {
                 files: [
-                    ("root.ctt", include_str!("../../../water/root.ctl")),
+                    ("root.ctl", include_str!("../../../water/root.ctl")),
                     ("package.ctlm", include_str!("../../../water/package.ctlm")),
                     (
                         "root/option.ctl",
@@ -321,7 +320,7 @@ pub mod items {
                         return Ok(Output {
                             status: new_exist_status(128),
                             stdout: Vec::new(),
-                            stderr: format!("fatal: repository '{repository}' not found").into_bytes(),
+                            stderr: format!("fatal: repository '{repository:?}' not found").into_bytes(),
                         });
                     };
 

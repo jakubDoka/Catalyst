@@ -90,7 +90,11 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
         let (index, thread, ..) = index.0.parts();
-        &self.others[thread as usize][index as usize]
+        if thread == self.thread_local.view.thread {
+            &self.thread_local[index as usize]
+        } else {
+            &self.others[thread as usize][index as usize]
+        }
     }
 }
 
@@ -108,7 +112,12 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
         let (index, thread, len) = index.0.parts();
-        &self.others[thread as usize][index as usize..index as usize + len as usize]
+        let range = index as usize..index as usize + len as usize;
+        if thread == self.thread_local.view.thread {
+            &self.thread_local[range]
+        } else {
+            &self.others[thread as usize][range]
+        }
     }
 }
 
@@ -240,7 +249,7 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> Index<I> for FragVec<T, A> {
     type Output = I::Output;
 
     fn index(&self, index: I) -> &Self::Output {
-        &self.view[index]
+        unsafe { index.index(FragVecInner::data(self.view.inner, self.view.len)) }
     }
 }
 

@@ -96,24 +96,8 @@ impl PackageLoader<'_> {
             .ok();
         buffer.clear();
 
-        let &Package {
-            ref root_module,
-            source,
-            root_module_span,
-            ..
-        } = &self.resources.packages[root_package];
-        let root_module_path = root_module.clone();
-
-        let root_module = self.load_modules(
-            root_module_path,
-            root_package,
-            source,
-            root_module_span,
-            ctx,
-        )?;
-
-        let moist_root_module =
-            ctx.modules[&self.resources.packages[moist_package].root_module].ordering;
+        let root_module = self.load_package_modules(root_package, ctx)?;
+        let moist_root_module = self.load_package_modules(moist_package, ctx)?;
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -124,7 +108,10 @@ impl PackageLoader<'_> {
         }
 
         self.package_graph
-            .ordering([root_module.index(), moist_root_module], &mut buffer)
+            .ordering(
+                [root_module.index(), moist_root_module.index()],
+                &mut buffer,
+            )
             .map_err(|cycle| {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
@@ -168,6 +155,22 @@ impl PackageLoader<'_> {
             .filter_map(|(k, s)| s.changed.then_some(k));
 
         Some(to_remove.into_iter().chain(changed).collect::<Vec<_>>()).filter(|v| !v.is_empty())
+    }
+
+    fn load_package_modules(
+        &mut self,
+        package: VRef<Package>,
+        ctx: &mut ResourceLoaderCtx,
+    ) -> Option<VRef<Module>> {
+        let &Package {
+            ref root_module,
+            source,
+            root_module_span,
+            ..
+        } = &self.resources.packages[package];
+        let root_module_path = root_module.clone();
+
+        self.load_modules(root_module_path, package, source, root_module_span, ctx)
     }
 
     fn load_modules(
@@ -215,8 +218,7 @@ impl PackageLoader<'_> {
                         ptr: { VRef::<Module>::new(index) },
                     })
                 });
-            let deps = self.resources.module_deps.extend(deps_iter);
-            module.deps = deps;
+            module.deps = self.resources.module_deps.extend(deps_iter);
         }
 
         let root_module = &ctx.modules.get(&root_path)?;
@@ -405,7 +407,7 @@ impl PackageLoader<'_> {
             .values_mut()
             .zip(ctx.packages.values());
         for (package, dummy_package) in iter {
-            package.deps = if dummy_package.deps.is_empty() {
+            package.deps = if dummy_package.deps.is_empty() && !dummy_package.moist {
                 self.resources.package_deps.extend(iter::once(Dep {
                     vis: None,
                     name_span: default(),
@@ -495,18 +497,20 @@ impl PackageLoader<'_> {
                 version,
             } = dep;
 
-            let name = self.extract_path_name("package", ast_path.span, name, origin)?;
+            let ast_path = ast_path.span.shrink(1);
+
+            let name = self.extract_path_name("package", ast_path, name, origin)?;
 
             let path = if git.is_some() {
-                self.download_package(origin, version, ast_path.span, ctx)
+                self.download_package(origin, version, ast_path, ctx)
             } else {
-                let path_content = self.resources.sources[origin].span_str(ast_path.span);
+                let path_content = self.resources.sources[origin].span_str(ast_path);
                 let package_path = root_path.join(path_content);
                 self.resolve_source_path(
                     &package_path,
                     Some(SourceLoc {
                         origin,
-                        span: ast_path.span,
+                        span: ast_path,
                     }),
                     "package",
                 )
@@ -518,7 +522,7 @@ impl PackageLoader<'_> {
                     path,
                     Some(SourceLoc {
                         origin,
-                        span: ast_path.span,
+                        span: ast_path,
                     }),
                 ));
             }
@@ -734,7 +738,7 @@ impl PackageLoader<'_> {
     ) -> Option<String> {
         const TAG_PREFIX: &str = "refs/tags/";
 
-        let version_str = &self.resources.sources[origin].content[version.range()];
+        let version_str = &self.resources.sources[origin].content[version.shrink(1).range()];
         let tag_pattern = format!("{TAG_PREFIX}{version_str}");
         let args = ["ls-remote", url, &tag_pattern]
             .into_iter()
