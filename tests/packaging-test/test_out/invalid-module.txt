@@ -1,8 +1,8 @@
 error: invalid module path
- --> invalid-module\root\a.ctl:2:5
+ --> invalid-module\root\a.ctl:2:6
   |
 2 |     "./a/b"
-  |     ^^^^^^^ derived from this
+  |      ^^^^^ derived from this
   |
   = info: path searched: `invalid-module\root\a\b.ctl`
   = info: exact io error: file not found

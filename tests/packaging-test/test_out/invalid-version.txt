@@ -1,8 +1,8 @@
 error: invalid version of dependency
- --> invalid-version\package.ctlm:3:39
+ --> invalid-version\package.ctlm:1:84
   |
-3 |     git "github.com/jakubDoka/water" "non existent version"
-  |                                       ^^^^^^^^^^^^^^^^^^^^ here
+1 | deps {     git "github.com/jakubDoka/water" ; git "github.com/jakubDoka/water"     "non existent version" ; }
+  |                                                                                    ^^^^^^^^^^^^^^^^^^^^^^ here
   |
   = info: the version did not match any tag in 'https://github.com/jakubDoka/water' repository
 
