@@ -27,11 +27,12 @@ struct TestState {
     mir_move_ctx: MirMoveCtx,
     functions: String,
     mir: Mir,
+    builtin_funcs: Vec<FragRef<Func>>,
 }
 
 impl Scheduler for TestState {
     fn init(&mut self, _: &Path) {
-        self.typec.init(&mut self.interner);
+        self.typec.init(&mut self.interner, &mut self.builtin_funcs);
     }
 
     fn before_parsing(&mut self, module: storage::VRef<Module>) {
@@ -41,6 +42,7 @@ impl Scheduler for TestState {
             &self.resources,
             &self.typec,
             &mut self.interner,
+            &self.builtin_funcs,
         );
     }
 

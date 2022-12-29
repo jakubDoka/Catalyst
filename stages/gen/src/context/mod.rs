@@ -63,6 +63,10 @@ impl Gen {
         self.funcs.pull(&base.funcs);
     }
 
+    pub fn commit_unique(self, base: &mut GenBase) {
+        self.funcs.commit_unique(&mut base.funcs);
+    }
+
     pub fn prepare(&mut self) {
         self.lookup.iter_mut().for_each(|mut item| item.1 = true);
     }

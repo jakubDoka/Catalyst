@@ -48,7 +48,6 @@ impl TypecBase {
             cache,
             mapping: self.mapping.clone(),
             module_items: default(),
-            builtin_funcs: default(),
         })
     }
 
@@ -72,7 +71,6 @@ pub struct Typec {
     pub mapping: Arc<Mapping>,
     pub cache: TypecCache,
     pub module_items: ShadowMap<Module, ModuleItems>,
-    pub builtin_funcs: Vec<FragRef<Func>>,
 }
 
 impl Deref for Typec {
@@ -115,6 +113,12 @@ macro_rules! gen_cache {
             pub fn pull(&mut self, base: &TypecCacheBase) {
                 $(
                     self.$name.pull(&base.$name);
+                )*
+            }
+
+            pub fn commit_unique(self, base: &mut TypecCacheBase) {
+                $(
+                    self.$name.commit_unique(&mut base.$name);
                 )*
             }
         }
@@ -213,6 +217,10 @@ impl Typec {
 
     pub fn commit(&mut self, base: &mut TypecBase) {
         self.cache.commit(&mut base.cache);
+    }
+
+    pub fn commit_unique(self, base: &mut TypecBase) {
+        self.cache.commit_unique(&mut base.cache);
     }
 
     pub fn register_ty_generics(&self, ty: Ty, spec_set: &mut SpecSet) {
@@ -563,39 +571,42 @@ impl Typec {
         }
     }
 
-    pub fn init(&mut self, interner: &mut Interner) {
+    pub fn init(&mut self, interner: &mut Interner, builtin_functions: &mut Vec<FragRef<Func>>) {
         SpecBase::init_water_drops(self);
         Enum::init_water_drops(self);
         Struct::init_water_drops(self);
         Func::init_water_drops(self);
-        self.init_builtin_funcs(interner);
+        self.init_builtin_funcs(interner, builtin_functions);
     }
 
-    fn init_builtin_funcs(&mut self, interner: &mut Interner) {
-        self.builtin_funcs
-            .extend(Func::WATER_DROPS.map(|(.., func)| func));
-        // *Self::get_mut(&mut self.cache.funcs, Func::CAST) = Func {
-        //     generics: self.cache.params.extend([default(), default()]), // F, T
-        //     signature: Signature {
-        //         cc: default(),
-        //         args: self.cache.args.extend([Ty::Param(0)]),
-        //         ret: Ty::Param(1),
-        //     },
-        //     name: Interner::CAST,
-        //     flags: FuncFlags::BUILTIN,
-        //     ..default()
-        // };
-        // *Self::get_mut(&mut self.cache.funcs, Func::SIZEOF) = Func {
-        //     generics: self.cache.params.extend([default()]), // T
-        //     signature: Signature {
-        //         cc: default(),
-        //         args: default(),
-        //         ret: Ty::UINT,
-        //     },
-        //     name: Interner::SIZEOF,
-        //     flags: FuncFlags::BUILTIN,
-        //     ..default()
-        // };
+    fn init_builtin_funcs(
+        &mut self,
+        interner: &mut Interner,
+        builtin_functions: &mut Vec<FragRef<Func>>,
+    ) {
+        builtin_functions.extend(Func::WATER_DROPS.map(|(.., func)| func));
+        self.cache.funcs[Func::CAST] = Func {
+            generics: self.cache.params.extend([default(), default()]), // F, T
+            signature: Signature {
+                cc: default(),
+                args: self.cache.args.extend([Ty::Param(0)]),
+                ret: Ty::Param(1),
+            },
+            name: Interner::CAST,
+            flags: FuncFlags::BUILTIN,
+            ..default()
+        };
+        self.cache.funcs[Func::SIZEOF] = Func {
+            generics: self.cache.params.extend([default()]), // T
+            signature: Signature {
+                cc: default(),
+                args: default(),
+                ret: Ty::UINT,
+            },
+            name: Interner::SIZEOF,
+            flags: FuncFlags::BUILTIN,
+            ..default()
+        };
 
         let mut create_bin_op = |op, a, b, r| {
             let op = interner.intern(op);
@@ -621,7 +632,7 @@ impl Typec {
                 self.cache.funcs.push(func)
             };
 
-            self.builtin_funcs.push(func);
+            builtin_functions.push(func);
         };
 
         fn op_to_ty(

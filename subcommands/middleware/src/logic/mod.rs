@@ -65,14 +65,16 @@ impl Middleware {
             .split()
             .next()
             .expect("we already clamped threads between 1 and 255");
-        PackageLoader::new(
+        let changed = PackageLoader::new(
             resources,
             &mut self.workspace,
             &mut interner,
             &mut self.package_graph,
             db,
         )
-        .reload(path, &mut self.resource_loading_ctx)
+        .reload(path, &mut self.resource_loading_ctx);
+        interner.commit(&mut base.interner);
+        changed
     }
 
     pub fn traverse_source_ast<S: SourceAstHandler>(
@@ -86,9 +88,10 @@ impl Middleware {
 
         let Some(Incremental {
             resources,
-            mut task_base,
+            task_base,
             mut worker_pool,
             module_items,
+            builtin_functions,
         }) = self.incremental.take() else {
             return None;
         };
@@ -102,6 +105,7 @@ impl Middleware {
             resources: &resources,
             jit_isa: &args.jit_isa,
             isa: &args.isa,
+            builtin_functions: &builtin_functions,
         };
 
         let Some(dummy_package) = resources.packages.keys().next() else {
@@ -110,6 +114,7 @@ impl Middleware {
                 task_base,
                 worker_pool,
                 module_items,
+                builtin_functions,
             });
             return None;
         };
@@ -140,6 +145,7 @@ impl Middleware {
             task_base,
             worker_pool,
             module_items,
+            builtin_functions,
         });
 
         Some(DiagnosticView {
@@ -172,11 +178,16 @@ impl Middleware {
             mut task_base,
             mut worker_pool,
             mut module_items,
-        } = self.incremental.take().unwrap_or_else(|| Incremental {
-            resources: default(),
-            task_base: TaskBase::new(thread_count.max(255) as u8),
-            worker_pool: default(),
-            module_items: default(),
+            builtin_functions,
+        } = self.incremental.take().unwrap_or_else(|| {
+            let mut builtin_functions = vec![];
+            Incremental {
+                resources: default(),
+                task_base: TaskBase::new(thread_count.max(255) as u8, &mut builtin_functions),
+                worker_pool: default(),
+                module_items: default(),
+                builtin_functions,
+            }
         });
 
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
@@ -197,6 +208,7 @@ impl Middleware {
                 task_base,
                 worker_pool,
                 module_items,
+                builtin_functions,
             });
 
             return (
@@ -221,6 +233,7 @@ impl Middleware {
             resources: &resources,
             jit_isa: &args.jit_isa,
             isa: &args.isa,
+            builtin_functions: &builtin_functions,
         };
 
         let mut handlers = vec![DefaultSourceAstHandler; thread_count];
@@ -278,6 +291,7 @@ impl Middleware {
                 task_base,
                 worker_pool,
                 module_items,
+                builtin_functions,
             });
 
             let output = if args.check {
@@ -321,6 +335,7 @@ impl Middleware {
             task_base,
             worker_pool,
             module_items,
+            builtin_functions,
         });
 
         (
@@ -643,6 +658,7 @@ pub struct Shared<'a> {
     pub resources: &'a Resources,
     pub jit_isa: &'a Isa,
     pub isa: &'a Isa,
+    pub builtin_functions: &'a [FragRef<Func>],
 }
 
 pub struct MiddlewareArgs {
@@ -762,6 +778,7 @@ pub struct Incremental {
     pub task_base: TaskBase,
     pub worker_pool: Vec<Worker>,
     pub module_items: Map<VRef<Source>, ModuleItems>,
+    pub builtin_functions: Vec<FragRef<Func>>,
 }
 
 pub struct DiagnosticView<'a> {

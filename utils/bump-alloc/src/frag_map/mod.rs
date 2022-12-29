@@ -61,6 +61,11 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
         base.threads[self.thread_local.view.thread as usize] = self.thread_local.view.clone();
     }
 
+    pub fn commit_unique(self, base: &mut FragBase<T, A>) {
+        let thread = self.thread_local.view.thread as usize;
+        base.threads[thread] = self.thread_local.view;
+    }
+
     pub fn pull(&mut self, base: &FragBase<T, A>) {
         self.others.clone_from_slice(&base.threads);
     }
@@ -83,6 +88,23 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
     pub fn next(&self) -> FragRef<T> {
         self.thread_local.next()
     }
+
+    /// # Safety
+    /// The caller must ensure reference is in range of valid memory.
+    pub unsafe fn get_unchecked(&self, index: FragRef<T>) -> &T {
+        let (index, thread) = index.0.parts();
+        let thread = &self.others[thread as usize];
+        &*FragVecInner::get_item(thread.inner, index as usize).as_ptr()
+    }
+
+    /// # Safety
+    /// The caller must ensure slice is in range of valid memory.
+    pub unsafe fn gen_unchecked_slice(&self, slice: FragSlice<T>) -> &[T] {
+        let (index, thread, len) = slice.0.parts();
+        let thread = &self.others[thread as usize];
+        let ptr = FragVecInner::get_item(thread.inner, index as usize).as_ptr();
+        slice::from_raw_parts(ptr, len as usize)
+    }
 }
 
 impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
@@ -101,8 +123,8 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
 impl<T, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         let (index, thread, ..) = index.0.parts();
-        let index = index as usize - self.thread_local.view.frozen;
         assert!(self.thread_local.view.thread == thread);
+        let index = index as usize - self.thread_local.view.frozen;
         &mut self.thread_local[index]
     }
 }
@@ -145,7 +167,7 @@ impl<T: Clone, A: Allocator> FragBase<T, A> {
     where
         A: Clone,
     {
-        let threads = (0..=thread_count)
+        let threads = (0..thread_count)
             .map(|thread| FragVecView::new_in(thread, allocator.clone()))
             .collect::<Box<[_]>>();
 

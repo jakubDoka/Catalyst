@@ -113,12 +113,16 @@ impl<T: ?Sized> FragSlice<T> {
         self.0.keys().map(|addr| FragRef(addr, PhantomData))
     }
 
-    pub fn index(&self, index: usize) -> FragRef<T> {
+    pub fn index(self, index: usize) -> FragRef<T> {
         self.keys().nth(index).expect("index out of bounds")
     }
 
     pub fn empty() -> Self {
         Self(FragSliceAddr::default(), PhantomData)
+    }
+
+    pub const fn parts(self) -> (u64, u8, u16) {
+        self.0.parts()
     }
 }
 

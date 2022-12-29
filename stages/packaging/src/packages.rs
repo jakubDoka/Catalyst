@@ -129,6 +129,12 @@ impl<'a> PackageLoader<'a> {
         self.resources
             .module_order
             .extend(buffer.drain(..).map(VRef::new));
+        for &id in self.resources.module_order.iter() {
+            // debug the module paths
+            let source = self.resources.modules[id].source;
+            let source = &self.resources.sources[source];
+            dbg!(&source.path);
+        }
         self.resources.mark_changed();
 
         self.resources
@@ -210,12 +216,11 @@ impl<'a> PackageLoader<'a> {
             module.deps = self.resources.module_deps.extend(deps_iter);
         }
 
-        let resources = &*self.resources;
         Some(
             packages
                 .iter()
-                .map(move |&package| &resources.packages[package].root_module)
-                .filter_map(|path| ctx.modules.get(path).map(|m| m.ordering))
+                .map(|&package| &self.resources.packages[package].root_module)
+                .map(|path| ctx.modules.get(path).map(|m| m.ordering).unwrap())
                 .map(VRef::new)
                 .collect::<Vec<_>>(),
         )
@@ -541,7 +546,7 @@ impl<'a> PackageLoader<'a> {
         if name.is_some() {
             return name;
         }
-        let path = path.shrink(1);
+
         let path_str = self.resources.sources[origin].span_str(path);
         let Some(index) = path_str.rfind('/') else {
             self.workspace.push(MissingName {

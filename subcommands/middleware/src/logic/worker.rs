@@ -178,6 +178,7 @@ impl Worker {
 
         let source = shared.resources.modules[module].source;
 
+        dbg!(shared.resources.source_path(source));
         let content = &shared.resources.sources[source].content;
         let mut parser_ctx = ParserCtx::new(content);
 
@@ -201,6 +202,7 @@ impl Worker {
             shared.resources,
             &task.typec,
             &mut task.interner,
+            shared.builtin_functions,
         );
 
         loop {

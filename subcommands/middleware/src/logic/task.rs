@@ -7,44 +7,43 @@ pub struct TaskBase {
     pub typec: TypecBase,
     pub gen: GenBase,
     pub mir: Mir,
-    initialized: bool,
 }
 
 impl TaskBase {
-    pub fn new(thread_count: u8) -> Self {
-        Self {
+    pub fn new(thread_count: u8, builtin_functions: &mut Vec<FragRef<Func>>) -> Self {
+        let mut s = Self {
             interner: InternerBase::new(thread_count),
             typec: TypecBase::new(thread_count),
             gen: GenBase::new(thread_count),
             mir: default(),
-            initialized: false,
+        };
+
+        if let Some(mut t) = {
+            let t = s.split(false).next();
+            t
+        } {
+            t.typec.init(&mut t.interner, builtin_functions);
+            t.commit_unique(&mut s);
         }
+
+        s
     }
 
-    pub fn split(&mut self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
-        let mut init = !mem::replace(&mut self.initialized, true);
+    pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
         let mut interner_split = self.interner.split();
         let mut typec_split = self.typec.split();
         let mut gen_split = self.gen.split();
         let mut ids = 0..;
-        let s = &*self;
         iter::from_fn(move || {
-            let mut task = Task {
+            Some(Task {
                 id: ids.next()?,
                 ir_dump: ir_dump.then(String::new),
                 resources: TaskResources::default(),
                 interner: interner_split.next()?,
                 typec: typec_split.next()?,
-                mir: s.mir.clone(),
+                mir: self.mir.clone(),
                 gen: gen_split.next()?,
-            };
-
-            if init {
-                task.typec.init(&mut task.interner);
-                init = false;
-            }
-
-            Some(task)
+            })
         })
     }
 
@@ -322,6 +321,12 @@ impl Task {
         self.interner.commit(&mut main_task.interner);
         self.typec.commit(&mut main_task.typec);
         self.gen.commit(&mut main_task.gen);
+    }
+
+    pub fn commit_unique(self, main_task: &mut TaskBase) {
+        self.interner.commit_unique(&mut main_task.interner);
+        self.typec.commit_unique(&mut main_task.typec);
+        self.gen.commit_unique(&mut main_task.gen);
     }
 }
 
