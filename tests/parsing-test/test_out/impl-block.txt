@@ -1,14 +1,14 @@
 error
  --> impl-block\root.ctl:1:1
   |
-1 | / 
-2 | | struct Struct {
-3 | |     field: u32
-4 | | }
+1 | / struct Struct {
+2 | |     field: u32
+3 | | }
+4 | | 
 5 | | impl Struct {
-6 | |     fn constructor -> Self => Self\{ field: 0 }
-7 | |     fn method(s: ^Self) -> uint => self.field
+6 | |     fn constructor() -> Self => Self\{field: 0}
+7 | |     fn method(s: ^Self) -> uint => selffield
 8 | | }
-  | |_- info: test
+9 | | 
   |
 

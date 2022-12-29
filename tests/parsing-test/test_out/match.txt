@@ -1,17 +1,18 @@
 error
   --> match\root.ctl:1:1
    |
- 1 | / 
- 2 | | struct B {
- 3 | |     a: uint
- 4 | |     b: uint
- 5 | | }
- 6 | | fn main -> uint => match B\{ a: 0; b: 3 } {
- 7 | |     \{ a: 6, b: 7 } => 0
- 8 | |     \{ a: 0, b: 3 } => 1
- 9 | |     \{ a: 0, b } => b
-10 | |     \{ a, b } => a + b
-11 | | }
-   | |_- info: test
+ 1 | / struct B {
+ 2 | |     a: uint
+ 3 | |     b: uint
+ 4 | | }
+ 5 | | 
+ 6 | | fn main -> uint =>
+ 7 | |     match B\{a: 0, b: 3} {
+ 8 | |         \{a: 6, b: 7} => 0
+ 9 | |         \{a: 0, b: 3} => 1
+10 | |         \{a: 0, b} => b
+11 | |         \{a, b} => a + b
+12 | |     }
+13 | | 
    |
 

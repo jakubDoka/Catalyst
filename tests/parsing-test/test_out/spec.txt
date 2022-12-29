@@ -1,12 +1,11 @@
 error
  --> spec\root.ctl:1:1
   |
-1 | / 
-2 | | pub spec [T] Some {
-3 | |     fn new -> Self
-4 | |     fn get(s: ^Self) -> T
-5 | |     fn [D] set(s: ^mut Self, v: D, t: T)
-6 | | }
-  | |_- info: test
+1 | / pub spec [T] Some {
+2 | |     fn new() -> Self
+3 | |     fn get(s: ^Self) -> T
+4 | |     fn [D] set(s: ^mut Self, v: D, t: T)
+5 | | }
+6 | | 
   |
 
