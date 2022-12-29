@@ -130,7 +130,7 @@ impl<'ctx> Fmt<'ctx> {
             ItemAst::Struct(r#struct) => self.r#struct(r#struct),
             ItemAst::Func(func) => self.func(func),
             ItemAst::Spec(spec) => self.spec(spec),
-            ItemAst::Impl(_) => todo!(),
+            ItemAst::Impl(r#impl) => self.r#impl(r#impl),
             ItemAst::Enum(r#enum) => self.r#enum(r#enum),
             ItemAst::Attribute(attr) => {
                 self.top_level_attr(attr);
@@ -141,6 +141,31 @@ impl<'ctx> Fmt<'ctx> {
 
         self.newline();
         self.newline();
+    }
+
+    fn r#impl(&mut self, r#impl: &ImplAst<u32>) {
+        self.source_info(r#impl.keyword);
+        self.impl_target(&r#impl.target);
+        self.body(Self::impl_item, r#impl.body);
+    }
+
+    fn impl_target(&mut self, target: &ImplTargetAst<u32>) {
+        match target {
+            ImplTargetAst::Direct(ty) => self.ty(ty),
+            ImplTargetAst::Spec(spec, keyword, ty) => {
+                self.path(spec.path);
+                self.buffer.push(' ');
+                self.source_info(*keyword);
+                self.buffer.push(' ');
+                self.ty(ty);
+            }
+        }
+    }
+
+    fn impl_item(&mut self, item: &ImplItemAst<u32>) {
+        match item {
+            ImplItemAst::Func(func) => self.func(func),
+        }
     }
 
     fn func(&mut self, func: &FuncDefAst<u32>) {
@@ -215,6 +240,7 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn r#let(&mut self, r#let: LetAst<u32>) {
+        dbg!();
         self.source_info(r#let.keyword);
         self.buffer.push(' ');
         self.pat(&r#let.pat);
@@ -377,7 +403,6 @@ impl<'ctx> Fmt<'ctx> {
     fn binary_expr(&mut self, binary: &BinaryExprAst<u32>, state: &mut ExprFmtState) {
         let op_len = " ".len() + binary.op.length(self) + " ".len();
         self.expr_low(&binary.lhs, state);
-        self.source_info(binary.op.source_info);
         let rhs_len = binary.rhs.length(self);
         self.buffer.push(' ');
         self.source_info(binary.op.source_info);
@@ -491,10 +516,21 @@ impl<'ctx> Fmt<'ctx> {
 
     fn struct_field(&mut self, field: &StructFieldAst<u32>) {
         self.vis(field.vis);
+        if field.vis.is_some() {
+            self.buffer.push(' ');
+        }
         self.opt_source_info(field.used);
+        if field.used.is_some() {
+            self.buffer.push(' ');
+        }
         self.opt_source_info(field.mutable);
-        self.name(field.name);
+        if field.mutable.is_some() {
+            self.buffer.push(' ');
+        }
+
+        self.source_info(field.name.source_info);
         self.source_info(field.colon);
+        self.buffer.push(' ');
         self.ty(&field.ty);
     }
 
@@ -646,7 +682,7 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn cond_dive_low(&mut self, cond: &mut bool) {
-        if mem::replace(cond, true) {
+        if !mem::replace(cond, true) {
             self.dive();
         }
 
@@ -662,6 +698,38 @@ impl<'ctx> Fmt<'ctx> {
 
     fn top_level_attr(&mut self, attr: &TopLevelAttrAst<u32>) {
         self.source_info(attr.hash);
+        self.wrapped(Self::top_level_attr_kind, attr.value);
+    }
+
+    fn top_level_attr_kind(&mut self, value: &TopLevelAttrKindAst<u32>) {
+        match *value {
+            TopLevelAttrKindAst::Entry(info)
+            | TopLevelAttrKindAst::WaterDrop(info)
+            | TopLevelAttrKindAst::NoMoves(info)
+            | TopLevelAttrKindAst::CompileTime(info) => self.source_info(info),
+            TopLevelAttrKindAst::Macro(keyword, name) => {
+                self.source_info(keyword);
+                self.name(name);
+            }
+            TopLevelAttrKindAst::Inline(keyword, mode) => {
+                self.source_info(keyword);
+                if let Some(mode) = mode {
+                    self.wrapped(Self::inline_mode, mode);
+                }
+            }
+        }
+    }
+
+    fn inline_mode(&mut self, mode: &InlineModeAst<u32>) {
+        match *mode {
+            InlineModeAst::Always(info) | InlineModeAst::Never(info) => self.source_info(info),
+        }
+    }
+
+    fn wrapped<T>(&mut self, fmt: impl FnOnce(&mut Self, &T), wrapped: WrappedAst<T, u32>) {
+        self.source_info(wrapped.start);
+        fmt(self, &wrapped.value);
+        self.source_info(wrapped.end);
     }
 
     fn name(&mut self, name: NameAst<u32>) {

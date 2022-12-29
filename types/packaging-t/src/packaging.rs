@@ -20,6 +20,10 @@ impl Resources {
         Self::default()
     }
 
+    pub fn is_external(&self, module: VRef<Module>) -> bool {
+        self.packages[self.modules[module].package].is_external
+    }
+
     pub fn no_changes(&self) -> bool {
         self.sources.values().all(|s| !s.changed)
     }
@@ -83,6 +87,7 @@ pub struct Package {
     pub root_module_span: Span,
     pub deps: VSlice<Dep<Package>>,
     pub source: VRef<Source>,
+    pub is_external: bool,
 }
 
 #[derive(Clone, Copy, Debug)]

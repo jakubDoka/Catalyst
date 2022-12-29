@@ -89,6 +89,10 @@ impl SourceAstHandler for FmtWorker {
 
     type Chunk<'a> = ItemsAstResult<'a, u32>;
 
+    fn should_skip(&mut self, ctx: BaseSourceCtx) -> bool {
+        ctx.shared.resources.is_external(ctx.module)
+    }
+
     fn imports(&mut self, (imports, header): Self::Imports<'_>, ctx: BaseSourceCtx) {
         build_fmt!(self, ctx).imports(header, imports);
     }

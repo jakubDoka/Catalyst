@@ -172,6 +172,10 @@ impl Worker {
             }
         }
 
+        if handler.should_skip(ctx!()) {
+            return;
+        }
+
         let source = shared.resources.modules[module].source;
 
         let content = &shared.resources.sources[source].content;
@@ -610,6 +614,8 @@ pub trait SourceAstHandler: Sync + Send {
     type Imports<'a>;
     type Chunk<'a>;
 
+    fn should_skip(&mut self, ctx: BaseSourceCtx) -> bool;
+
     fn parse_imports<'a>(
         &mut self,
         parser: Parser<'_, 'a, Self::Meta>,
@@ -642,6 +648,10 @@ impl SourceAstHandler for DefaultSourceAstHandler {
     type Imports<'a> = ();
 
     type Chunk<'a> = GroupedItemsAst<'a>;
+
+    fn should_skip(&mut self, _ctx: BaseSourceCtx) -> bool {
+        false
+    }
 
     fn imports(&mut self, _header: Self::Imports<'_>, _ctx: BaseSourceCtx) {}
 

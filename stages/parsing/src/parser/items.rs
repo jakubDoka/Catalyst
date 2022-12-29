@@ -217,11 +217,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             "no_moves" => Some(NoMoves(self.advance())),
             "macro" => Some(Macro(self.advance(), self.name("macro")?)),
             "inline" => {
-                self.at(Tk::LeftParen).then(||
+                Some(Inline(self.advance(), self.at(Tk::LeftParen).then(||
                     self.wrapped(Self::inline_mode, "inline mode", Tk::LeftParen, Tk::RightParen)
                 )
-                .transpose()
-                .map(Inline)
+                .transpose()?))
             },
             @"top level attribute",
         }}

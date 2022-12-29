@@ -19,6 +19,10 @@ struct TestState {
 
 impl Scheduler for TestState {
     fn before_parsing(&mut self, module: VRef<Module>) {
+        if self.resources.is_external(module) {
+            return;
+        }
+
         let module_ent = &self.resources.modules[module];
         let content = &self.resources.sources[module_ent.source].content;
 

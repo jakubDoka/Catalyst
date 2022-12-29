@@ -238,7 +238,7 @@ pub enum TopLevelAttrKindAst<M> {
     CompileTime(SourceInfo<M>),
     NoMoves(SourceInfo<M>),
     Macro(SourceInfo<M>, NameAst<M>),
-    Inline(Option<WrappedAst<InlineModeAst<M>, M>>),
+    Inline(SourceInfo<M>, Option<WrappedAst<InlineModeAst<M>, M>>),
 }
 
 impl<M> Spanned for TopLevelAttrKindAst<M> {
@@ -248,11 +248,10 @@ impl<M> Spanned for TopLevelAttrKindAst<M> {
             TopLevelAttrKindAst::WaterDrop(info) => info.span,
             TopLevelAttrKindAst::CompileTime(info) => info.span,
             TopLevelAttrKindAst::NoMoves(info) => info.span,
-            TopLevelAttrKindAst::Macro(info, _) => info.span,
-            TopLevelAttrKindAst::Inline(mode) => mode
+            TopLevelAttrKindAst::Macro(info, name) => info.span.joined(name.span),
+            TopLevelAttrKindAst::Inline(keyword, mode) => mode
                 .as_ref()
-                .map(|mode| mode.span())
-                .unwrap_or(Span::default()),
+                .map_or(keyword.span, |mode| keyword.span.joined(mode.span())),
         }
     }
 }

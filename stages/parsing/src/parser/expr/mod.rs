@@ -101,6 +101,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     }
 
     fn r#let(&mut self) -> Option<LetAst<'arena, M>> {
+        dbg!();
         Some(LetAst {
             keyword: self.advance(),
             pat: self.pat(None)?,

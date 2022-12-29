@@ -17,7 +17,7 @@ pub struct ResourceLoaderCtx {
     sources: Map<PathBuf, VRef<Source>>,
     packages: Map<PathBuf, DummyPackage>,
     modules: Map<PathBuf, DummyModule>,
-    package_frontier: Vec<(PathBuf, Option<SourceLoc>)>,
+    package_frontier: Vec<(PathBuf, Option<SourceLoc>, bool)>,
     module_frontier: Vec<(PathBuf, VRef<Package>, VRef<Source>, Span)>,
     ast_arena: Option<Arena>,
     dep_root: PathBuf,
@@ -47,6 +47,7 @@ struct DummyPackage {
     source: VRef<Source>,
     ordering: usize,
     moist: bool,
+    is_external: bool,
 }
 
 #[derive(Debug)]
@@ -57,7 +58,7 @@ struct DummyModule {
     ordering: usize,
 }
 
-impl PackageLoader<'_> {
+impl<'a> PackageLoader<'a> {
     /// Loads the project into graph of manifests and source files.
     pub fn reload(
         &mut self,
@@ -96,8 +97,7 @@ impl PackageLoader<'_> {
             .ok();
         buffer.clear();
 
-        let root_module = self.load_package_modules(root_package, ctx)?;
-        let moist_root_module = self.load_package_modules(moist_package, ctx)?;
+        let root_modules = self.load_modules(&[root_package, moist_package], ctx)?;
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -109,10 +109,11 @@ impl PackageLoader<'_> {
 
         self.package_graph
             .ordering(
-                [root_module.index(), moist_root_module.index()],
+                root_modules.into_iter().map(|module| module.index()),
                 &mut buffer,
             )
             .map_err(|cycle| {
+                dbg!();
                 self.workspace.push(CycleDetected {
                     cycle: cycle
                         .into_iter()
@@ -157,32 +158,21 @@ impl PackageLoader<'_> {
         Some(to_remove.into_iter().chain(changed).collect::<Vec<_>>()).filter(|v| !v.is_empty())
     }
 
-    fn load_package_modules(
-        &mut self,
-        package: VRef<Package>,
-        ctx: &mut ResourceLoaderCtx,
-    ) -> Option<VRef<Module>> {
-        let &Package {
-            ref root_module,
-            source,
-            root_module_span,
-            ..
-        } = &self.resources.packages[package];
-        let root_module_path = root_module.clone();
-
-        self.load_modules(root_module_path, package, source, root_module_span, ctx)
-    }
-
     fn load_modules(
         &mut self,
-        root_path: PathBuf,
-        root_package: VRef<Package>,
-        source: VRef<Source>,
-        span: Span,
+        packages: &[VRef<Package>],
         ctx: &mut ResourceLoaderCtx,
-    ) -> Option<VRef<Module>> {
-        ctx.module_frontier
-            .push((root_path.clone(), root_package, source, span));
+    ) -> Option<Vec<VRef<Module>>> {
+        for &package in packages {
+            let &Package {
+                ref root_module,
+                source,
+                root_module_span,
+                ..
+            } = &self.resources.packages[package];
+            ctx.module_frontier
+                .push((root_module.clone(), package, source, root_module_span));
+        }
 
         let mut ast_data = ctx.get_ast_data();
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
@@ -200,16 +190,14 @@ impl PackageLoader<'_> {
             module.ordering = self.resources.modules.push(final_module).index();
         }
 
-        let iter = self
-            .resources
-            .modules
-            .values_mut()
-            .zip(ctx.modules.values());
-        for (module, dummy_module) in iter {
+        let iter = self.resources.modules.values_mut().zip(ctx.modules.iter());
+        for (module, (path, dummy_module)) in iter {
+            dbg!(path);
             let deps_iter = dummy_module
                 .deps
                 .iter()
                 .filter_map(|&(vis, name, ref path)| {
+                    dbg!(path);
                     let index = ctx.modules.get(path)?.ordering;
                     Some(Dep {
                         vis,
@@ -221,8 +209,15 @@ impl PackageLoader<'_> {
             module.deps = self.resources.module_deps.extend(deps_iter);
         }
 
-        let root_module = &ctx.modules.get(&root_path)?;
-        Some(VRef::new(root_module.ordering))
+        let resources = &*self.resources;
+        Some(
+            packages
+                .iter()
+                .map(move |&package| &resources.packages[package].root_module)
+                .filter_map(|path| ctx.modules.get(path).map(|m| m.ordering))
+                .map(VRef::new)
+                .collect::<Vec<_>>(),
+        )
     }
 
     fn load_module(
@@ -261,7 +256,7 @@ impl PackageLoader<'_> {
 
         let dummy_module = DummyModule {
             package,
-            deps,
+            deps: dbg!(deps),
             source,
             ordering: 0,
         };
@@ -371,10 +366,10 @@ impl PackageLoader<'_> {
         root_path: PathBuf,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<(VRef<Package>, VRef<Package>)> {
-        ctx.package_frontier.push((root_path.clone(), None));
+        ctx.package_frontier.push((root_path.clone(), None, false));
         let mut ast_data = ctx.get_ast_data();
-        while let Some((path, loc)) = ctx.package_frontier.pop() {
-            self.load_package(path, loc, &mut ast_data, ctx);
+        while let Some((path, loc, is_external)) = ctx.package_frontier.pop() {
+            self.load_package(path, loc, &mut ast_data, is_external, ctx);
         }
         ctx.ast_arena = Some(ast_data);
 
@@ -386,6 +381,7 @@ impl PackageLoader<'_> {
                 root_module_span: package.root_module_span,
                 deps: default(),
                 source: package.source,
+                is_external: package.is_external,
             };
             let id = self.resources.packages.push(final_package);
             package.ordering = id.index();
@@ -438,6 +434,7 @@ impl PackageLoader<'_> {
         path: PathBuf,
         loc: Option<SourceLoc>,
         ast_data: &mut Arena,
+        is_external: bool,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<()> {
         let package_path = path.join("package").with_extension("ctlm");
@@ -475,6 +472,7 @@ impl PackageLoader<'_> {
             ordering: 0,
             root_module_span,
             moist,
+            is_external,
         };
         ctx.packages
             .insert(self.resources.sources[source_id].path.clone(), package);
@@ -524,6 +522,7 @@ impl PackageLoader<'_> {
                         origin,
                         span: ast_path,
                     }),
+                    git.is_some(),
                 ));
             }
             Some((name, manifest))
