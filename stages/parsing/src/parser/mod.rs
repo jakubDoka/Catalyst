@@ -262,8 +262,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn skip(&mut self, pat: impl TokenPattern) -> Option<SourceInfo<M>> {
         let mut source_meta = None;
-        while self.at(&pat) {
-            let current = self.advance();
+        while let Some(current) = self.try_advance(&pat) {
             match source_meta {
                 None => source_meta = Some(current),
                 Some(ref mut source_meta) => source_meta.meta = current.meta,
@@ -303,8 +302,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
 
     fn append_newlines(&mut self, to: &mut M) {
         if self.reduce_repetition(Tk::NewLine) {
-            self.advance();
-            *to = self.current.meta;
+            *to = self.advance().meta;
         }
     }
 

@@ -77,7 +77,7 @@ impl Middleware {
         changed
     }
 
-    pub fn traverse_source_ast<S: SourceAstHandler>(
+    pub fn traverse_source_ast<S: AstHandler>(
         &mut self,
         args: &MiddlewareArgs,
         handlers: &mut [S],
@@ -99,7 +99,10 @@ impl Middleware {
         let (package_sender, package_receiver) = mpsc::channel();
         drop(package_receiver);
 
-        let mut tasks = task_base.split(false).collect::<Vec<_>>();
+        let mut tasks = task_base
+            .split(false)
+            .take(handlers.len())
+            .collect::<Vec<_>>();
 
         let shared = Shared {
             resources: &resources,
@@ -107,6 +110,26 @@ impl Middleware {
             isa: &args.isa,
             builtin_functions: &builtin_functions,
         };
+
+        let mut arena = Arena::new();
+        for (package, i) in resources.packages.values().zip((0..handlers.len()).cycle()) {
+            let task = &mut tasks[i];
+            let handler = &mut handlers[i];
+            let source = &resources.sources[package.source].content;
+            let mut parser_ctx = ParserCtx::new(source);
+            arena.clear();
+            let Some(manifest) = handler.parse_manifest(Parser::new(
+                &mut task.interner,
+                &mut self.workspace,
+                &mut parser_ctx,
+                &arena,
+                package.source,
+                source,
+            )) else {
+                continue;
+            };
+            handler.manifest(manifest, package.source, &resources);
+        }
 
         let Some(dummy_package) = resources.packages.keys().next() else {
             self.incremental = Some(Incremental {
@@ -391,7 +414,7 @@ impl Middleware {
         (ir, main_task, compiled)
     }
 
-    fn launch_workers<'a: 'scope, 'scope, S: SourceAstHandler>(
+    fn launch_workers<'a: 'scope, 'scope, S: AstHandler>(
         scope: &'a thread::Scope<'scope, '_>,
         package_sender: Sender<(PackageTask, VRef<Package>)>,
         tasks: Vec<Task>,

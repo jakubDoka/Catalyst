@@ -66,7 +66,7 @@ impl TokenMeta for u32 {
             .inner
             .clone()
             .spanned()
-            .find(|(k, ..)| *k != TokenKind::NewLine)
+            .next()
             .map_or(lexer.progress(), |(.., span)| span.start) as Self
     }
 }
@@ -94,8 +94,8 @@ macro_rules! gen_kind {
             $($literal:ident = $literal_regex:literal,)*
         }
 
-        skipped {
-            $($skipped:ident = $skipped_regex:literal,)*
+        comments {
+            $($comments:ident = $comments_regex:literal,)*
         }
 
         operators {
@@ -125,7 +125,7 @@ macro_rules! gen_kind {
                     )*
 
                     $(
-                        TokenKind::$skipped => stringify!($skipped),
+                        TokenKind::$comments => stringify!($comments),
                     )*
 
                     TokenKind::Operator(..) => "Operator",
@@ -157,7 +157,7 @@ macro_rules! gen_kind {
                     )*
 
                     $(
-                        TokenKind::$skipped => $skipped_regex,
+                        TokenKind::$comments => $comments_regex,
                     )*
 
                     _ => "eh",
@@ -213,8 +213,8 @@ macro_rules! gen_kind {
             )*
 
             $(
-                #[regex($skipped_regex, logos::skip)]
-                $skipped,
+                #[regex($comments_regex, logos::skip)]
+                $comments,
             )*
 
             $(
@@ -239,8 +239,8 @@ macro_rules! gen_kind {
         #[derive(Clone, Copy, Logos, Debug, PartialEq, Eq)]
         pub enum SkippedToken {
             $(
-                #[regex($skipped_regex)]
-                $skipped,
+                #[regex($comments_regex)]
+                $comments,
             )*
 
             #[token("\n")]
@@ -313,9 +313,9 @@ gen_kind!(
         Char = r"'(.|\\(n|r|t|\\|'))'",
     }
 
-    skipped {
+    comments {
         Comment = r"//[^\n]*",
-        MultiComment = r"/\*([^*]/|\*[^/]|[^*/])*\*/|",
+        MultiComment = r"/\*([^*]/|\*[^/]|[^*/])*\*/",
     }
 
     operators {

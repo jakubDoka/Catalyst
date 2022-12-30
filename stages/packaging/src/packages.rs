@@ -129,12 +129,6 @@ impl<'a> PackageLoader<'a> {
         self.resources
             .module_order
             .extend(buffer.drain(..).map(VRef::new));
-        for &id in self.resources.module_order.iter() {
-            // debug the module paths
-            let source = self.resources.modules[id].source;
-            let source = &self.resources.sources[source];
-            dbg!(&source.path);
-        }
         self.resources.mark_changed();
 
         self.resources
@@ -538,7 +532,7 @@ impl<'a> PackageLoader<'a> {
 
     fn extract_path_name(
         &mut self,
-        for_the: &'static str,
+        _for_the: &'static str,
         path: Span,
         name: Option<NameAst>,
         origin: VRef<Source>,
@@ -548,17 +542,12 @@ impl<'a> PackageLoader<'a> {
         }
 
         let path_str = self.resources.sources[origin].span_str(path);
-        let Some(index) = path_str.rfind('/') else {
-            self.workspace.push(MissingName {
-                something: for_the,
-                loc: SourceLoc { origin, span: path },
-            })?;
-        };
+        let index = path_str.rfind('/').map(|i| i + 1).unwrap_or(path_str.len());
 
         Some(NameAst {
-            ident: self.interner.intern(&path_str[index + 1..]),
+            ident: self.interner.intern(&path_str[index..]),
             source_info: SourceInfo {
-                span: path.sliced(index + 1..),
+                span: path.sliced(index..),
                 meta: NoTokenMeta,
             },
         })

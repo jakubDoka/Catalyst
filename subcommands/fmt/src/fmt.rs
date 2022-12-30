@@ -121,7 +121,7 @@ impl<'ctx> Fmt<'ctx> {
         }
 
         if let Some(last) = last {
-            self.span(last.span);
+            self.source_info(last);
         }
     }
 
@@ -134,17 +134,18 @@ impl<'ctx> Fmt<'ctx> {
             ItemAst::Enum(r#enum) => self.r#enum(r#enum),
             ItemAst::Attribute(attr) => {
                 self.top_level_attr(attr);
-                self.newline();
+                self.newline_if_none();
                 return;
             }
         }
 
-        self.newline();
-        self.newline();
+        self.newline_if_none();
+        self.newline_if_none();
     }
 
     fn r#impl(&mut self, r#impl: &ImplAst<u32>) {
         self.source_info(r#impl.keyword);
+        self.buffer.push(' ');
         self.impl_target(&r#impl.target);
         self.body(Self::impl_item, r#impl.body);
     }
@@ -177,14 +178,18 @@ impl<'ctx> Fmt<'ctx> {
     fn func_body(&mut self, block: &FuncBodyAst<u32>) {
         match *block {
             FuncBodyAst::Arrow(arrow, expr) => {
+                self.buffer.push(' ');
                 self.source_info(arrow);
                 let len = expr.length(self);
                 if !self.fits(len) {
                     self.dive();
-                    self.newline();
+                    self.newline_if_none();
                     self.indent();
                     self.expr(&expr);
                     self.emerge();
+                } else {
+                    self.buffer.push(' ');
+                    self.expr(&expr);
                 }
             }
             FuncBodyAst::Block(block) => {
@@ -294,7 +299,7 @@ impl<'ctx> Fmt<'ctx> {
         let mut add_newline = matches!(r#if.body, BranchAst::Arrow(..));
         for elif in r#if.elifs {
             if add_newline {
-                self.newline();
+                self.newline_if_none();
             } else {
                 self.buffer.push(' ');
             }
@@ -302,7 +307,7 @@ impl<'ctx> Fmt<'ctx> {
         }
 
         if add_newline || fold {
-            self.newline();
+            self.newline_if_none();
         } else {
             self.buffer.push(' ');
         }
@@ -431,6 +436,7 @@ impl<'ctx> Fmt<'ctx> {
         self.name(sig.name);
         self.opt_list(Self::func_sig_arg, sig.args);
         if let Some((arrow, ty)) = sig.ret {
+            self.buffer.push(' ');
             self.source_info(arrow);
             self.buffer.push(' ');
             self.ty(&ty);
@@ -515,18 +521,8 @@ impl<'ctx> Fmt<'ctx> {
 
     fn struct_field(&mut self, field: &StructFieldAst<u32>) {
         self.vis(field.vis);
-        if field.vis.is_some() {
-            self.buffer.push(' ');
-        }
-        self.opt_source_info(field.used);
-        if field.used.is_some() {
-            self.buffer.push(' ');
-        }
-        self.opt_source_info(field.mutable);
-        if field.mutable.is_some() {
-            self.buffer.push(' ');
-        }
-
+        self.opt_keyword(field.used);
+        self.opt_keyword(field.mutable);
         self.source_info(field.name.source_info);
         self.source_info(field.colon);
         self.buffer.push(' ');
@@ -577,16 +573,16 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn block<T>(&mut self, mut fmt: impl FnMut(&mut Self, &T), list: ListAst<T, u32>) {
-        self.source_info(list.start);
-        self.newline();
         self.dive();
+        self.source_info(list.start);
+        self.newline_if_none();
         for &ListElemAst { ref value, delim } in list.elements {
             self.indent();
             fmt(self, value);
+            self.newline_if_none();
             if let Some(delim) = delim {
                 self.white_space(delim.after());
             }
-            self.newline();
         }
         self.emerge();
         self.indent();
@@ -604,8 +600,8 @@ impl<'ctx> Fmt<'ctx> {
 
     fn generics(&mut self, generics: Option<ListAst<ParamAst<u32>, u32>>) {
         if let Some(generics) = generics {
-            self.buffer.push(' ');
             self.list(Self::param, generics);
+            self.buffer.push(' ');
         }
     }
 
@@ -685,7 +681,7 @@ impl<'ctx> Fmt<'ctx> {
             self.dive();
         }
 
-        self.newline();
+        self.newline_if_none();
         self.indent();
     }
 
@@ -708,6 +704,7 @@ impl<'ctx> Fmt<'ctx> {
             | TopLevelAttrKindAst::CompileTime(info) => self.source_info(info),
             TopLevelAttrKindAst::Macro(keyword, name) => {
                 self.source_info(keyword);
+                self.buffer.push(' ');
                 self.name(name);
             }
             TopLevelAttrKindAst::Inline(keyword, mode) => {
@@ -732,16 +729,13 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn name(&mut self, name: NameAst<u32>) {
-        if !self.at_newline() {
-            self.buffer.push(' ');
-        }
-
         self.source_info(name.source_info);
     }
 
     fn vis(&mut self, vis: Option<VisAst<u32>>) {
         if let Some(vis) = vis {
             self.source_info(vis.source_meta);
+            self.buffer.push(' ');
         }
     }
 
@@ -751,12 +745,15 @@ impl<'ctx> Fmt<'ctx> {
         }
     }
 
-    fn keyword(&mut self, keyword: SourceInfo<u32>) {
-        if !self.at_newline() {
-            self.buffer.push(' ');
+    fn opt_keyword(&mut self, keyword: Option<SourceInfo<u32>>) {
+        if let Some(keyword) = keyword {
+            self.keyword(keyword);
         }
+    }
 
+    fn keyword(&mut self, keyword: SourceInfo<u32>) {
         self.source_info(keyword);
+        self.buffer.push(' ');
     }
 
     fn source_info(&mut self, info: SourceInfo<u32>) {
@@ -766,15 +763,19 @@ impl<'ctx> Fmt<'ctx> {
 
     pub fn white_space(&mut self, span: Span) {
         let mut new_lines = self.buffer.chars().rev().take_while(|c| *c == '\n').count();
-        for (tok, span) in SkippedToken::lexer(&self.source[span.range()]).spanned() {
+        let original = self.buffer.len();
+        let original_newline = self.last_newline;
+        let mut has_comment = false;
+        for (tok, range) in SkippedToken::lexer(&self.source[span.range()]).spanned() {
             match tok {
                 SkippedToken::Comment | SkippedToken::MultiComment => {
+                    has_comment = true;
                     if self.at_newline() {
                         self.indent();
                     } else {
                         self.buffer.push(' ');
                     }
-                    self.span(Span::new(span));
+                    self.span(Span::new(range).shifted(span.start as usize));
                 }
                 SkippedToken::NewLine => {
                     if new_lines < self.cfg.max_newlines {
@@ -788,6 +789,11 @@ impl<'ctx> Fmt<'ctx> {
 
             new_lines = 0;
         }
+
+        if !has_comment {
+            self.buffer.truncate(original);
+            self.last_newline = original_newline;
+        }
     }
 
     fn fits(&self, len: usize) -> bool {
@@ -795,12 +801,19 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn span(&mut self, span: Span) {
-        self.handle_span_newlines(span);
         self.buffer.push_str(&self.source[span.range()]);
+        self.handle_span_newlines(span);
     }
 
     fn indent(&mut self) {
         self.buffer.extend(iter::repeat(' ').take(self.indent * 4));
+    }
+
+    fn newline_if_none(&mut self) {
+        if self.at_newline() {
+            return;
+        }
+        self.newline();
     }
 
     fn newline(&mut self) {
@@ -813,11 +826,11 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn handle_span_newlines(&mut self, span: Span) {
-        let Some(index) = self.source[span.range()].rfind('\n') else {
+        let Some(index) = self.buffer[self.buffer.len() - span.len()..].rfind('\n') else {
             return;
         };
 
-        self.last_newline = span.start as usize + index + 1;
+        self.last_newline = self.buffer.len() - span.len() + index;
     }
 }
 

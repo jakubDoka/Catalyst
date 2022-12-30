@@ -49,48 +49,78 @@ fn main() {
                 file "package.ctlm" {
                     root: "bar.ctl";
                     deps {
-                        git "github.com/jakubDoka/water" "v0.*.*"
+                        git "github.com/jakubDoka/water" "v0.*.*";
                     }
                 }
             }
             remote_dir "github.com/jakubDoka/water#v0.1.0" {
                 file "water.ctl" {}
                 file "package.ctlm" {
+                    moist: true;
                     root: "water.ctl";
                 }
             }
         }
         "self-import" {
             file "root.ctl" { use { "." } }
-            file "package.ctlm" {}
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    moist: true;
+                    root: "water.ctl";
+                }
+            }
         }
         "cycle" {
             file "root.ctl" { use { "./a" } }
-            file "package.ctlm" {}
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
             dir "root" {
                 file "a.ctl" { use { "./a/b" } }
                 dir "a" {
                     file "b.ctl" { use { "." } }
                 }
             }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    moist: true;
+                    root: "water.ctl";
+                }
+            }
         }
         "invalid-module" {
             file "root.ctl" { use { "./a" } }
-            file "package.ctlm" {}
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
             dir "root" {
                 file "a.ctl" { use { "./a/b" } }
+            }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    moist: true;
+                    root: "water.ctl";
+                }
             }
         }
         "invalid-version" {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    git "github.com/jakubDoka/water" "non existent version"
+                    git "github.com/jakubDoka/water";
+                    git "github.com/jakubDoka/water" "non existent version";
                 }
             }
             remote_dir "github.com/jakubDoka/water#main" {
                 file "water.ctl" {}
                 file "package.ctlm" {
+                    moist: true;
                     root: "water.ctl";
                 }
             }
@@ -99,7 +129,15 @@ fn main() {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    git "github.com/jakubDoka/water-kun"
+                    git "github.com/jakubDoka/water-kun";
+                    git "github.com/jakubDoka/water";
+                }
+            }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    moist: true;
+                    root: "water.ctl";
                 }
             }
         }
@@ -107,15 +145,23 @@ fn main() {
             file "root.ctl" {}
             file "package.ctlm" {
                 deps {
-                    "a"
+                    "a";
+                    git "github.com/jakubDoka/water";
                 }
             }
             dir "a" {
                 file "root.ctl" {}
                 file "package.ctlm" {
                     deps {
-                        ".."
+                        "..";
                     }
+                }
+            }
+            remote_dir "github.com/jakubDoka/water#main" {
+                file "water.ctl" {}
+                file "package.ctlm" {
+                    moist: true;
+                    root: "water.ctl";
                 }
             }
         }

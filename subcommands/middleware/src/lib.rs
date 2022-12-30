@@ -16,7 +16,7 @@ pub use {
     logic::{
         task::{Task, TaskGraph},
         worker::{
-            BaseSourceCtx, MacroSourceCtx, SourceAstHandler, Worker, WorkerConnections, WorkerState,
+            AstHandler, BaseSourceCtx, MacroSourceCtx, Worker, WorkerConnections, WorkerState,
         },
         DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs, MiddlewareOutput,
         PackageTask, Shared,

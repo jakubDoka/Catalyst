@@ -82,7 +82,7 @@ macro build_fmt($self:expr, $ctx:expr) {{
     }
 }}
 
-impl SourceAstHandler for FmtWorker {
+impl AstHandler for FmtWorker {
     type Meta = u32;
 
     type Imports<'a> = (Option<ImportsAst<'a, u32>>, Option<SourceInfo<u32>>);
@@ -119,5 +119,29 @@ impl SourceAstHandler for FmtWorker {
         mut parser: Parser<'_, 'a, Self::Meta>,
     ) -> Option<Self::Chunk<'a>> {
         parser.items()
+    }
+
+    fn parse_manifest<'a>(
+        &mut self,
+        mut parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<ManifestAst<'a, Self::Meta>> {
+        parser.manifest()
+    }
+
+    fn manifest(
+        &mut self,
+        manifest: ManifestAst<Self::Meta>,
+        source: VRef<Source>,
+        resources: &Resources,
+    ) {
+        let buffer = self.files.entry(source).or_default();
+        let source = &resources.sources[source].content;
+        Fmt {
+            fmt_ctx: &mut self.ctx,
+            buffer,
+            cfg: &self.cfg,
+            source,
+        }
+        .manifest(manifest);
     }
 }

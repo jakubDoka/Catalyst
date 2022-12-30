@@ -8,7 +8,9 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
     pub fn skip_imports(&mut self) -> Option<()> {
         self.skip(Tk::NewLine);
 
-        self.try_advance(Tk::Use)?;
+        if self.try_advance(Tk::Use).is_none() {
+            return Some(());
+        };
 
         while !self.at([Tk::RightBrace, Tk::Eof]) {
             self.advance();

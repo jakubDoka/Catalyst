@@ -51,7 +51,7 @@ impl Worker {
         }
     }
 
-    pub fn run<'a: 'scope, 'scope, S: SourceAstHandler>(
+    pub fn run<'a: 'scope, 'scope, S: AstHandler>(
         mut self,
         thread_scope: &'a thread::Scope<'scope, '_>,
         shared: Shared<'scope>,
@@ -153,7 +153,7 @@ impl Worker {
     //     // }
     // }
 
-    fn compile_module<S: SourceAstHandler>(
+    fn compile_module<S: AstHandler>(
         &mut self,
         module: VRef<Module>,
         arena: &mut Arena,
@@ -178,8 +178,8 @@ impl Worker {
 
         let source = shared.resources.modules[module].source;
 
-        dbg!(shared.resources.source_path(source));
         let content = &shared.resources.sources[source].content;
+
         let mut parser_ctx = ParserCtx::new(content);
 
         macro parser() {
@@ -611,10 +611,25 @@ pub struct WorkerState {
 //     }
 // }
 
-pub trait SourceAstHandler: Sync + Send {
+pub trait AstHandler: Sync + Send {
     type Meta: TokenMeta;
     type Imports<'a>;
     type Chunk<'a>;
+
+    fn parse_manifest<'a>(
+        &mut self,
+        _parser: Parser<'_, 'a, Self::Meta>,
+    ) -> Option<ManifestAst<'a, Self::Meta>> {
+        None
+    }
+
+    fn manifest(
+        &mut self,
+        _manifest: ManifestAst<Self::Meta>,
+        _source: VRef<Source>,
+        _resources: &Resources,
+    ) {
+    }
 
     fn should_skip(&mut self, ctx: BaseSourceCtx) -> bool;
 
@@ -644,7 +659,7 @@ pub struct MacroSourceCtx;
 #[derive(Clone)]
 pub struct DefaultSourceAstHandler;
 
-impl SourceAstHandler for DefaultSourceAstHandler {
+impl AstHandler for DefaultSourceAstHandler {
     type Meta = NoTokenMeta;
 
     type Imports<'a> = ();

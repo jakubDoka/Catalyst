@@ -211,7 +211,6 @@ mod util {
         let mut token_macros = bumpvec![];
         let mod_ent = &resources.modules[module];
         for dep in &resources.module_deps[mod_ent.deps] {
-            dbg!(&interner[dep.name]);
             scope.push(dep.name, dep.ptr, dep.name_span);
 
             let items = &typec.module_items[dep.ptr];

@@ -37,8 +37,8 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             body: self.branch()?,
             elifs: {
                 let mut else_ifs = bumpvec![];
-                while self.try_advance_ignore_lines(Tk::Elif).is_some() {
-                    else_ifs.push(self.elif()?);
+                while let Some(keyword) = self.try_advance_ignore_lines(Tk::Elif) {
+                    else_ifs.push(self.elif(keyword)?);
                 }
                 self.arena.alloc_iter(else_ifs)
             },
@@ -49,9 +49,9 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         })
     }
 
-    fn elif(&mut self) -> Option<ElifAst<'arena, M>> {
+    fn elif(&mut self, keyword: SourceInfo<M>) -> Option<ElifAst<'arena, M>> {
         Some(ElifAst {
-            keyword: self.advance(),
+            keyword,
             cond: self.expr()?,
             body: self.branch()?,
         })

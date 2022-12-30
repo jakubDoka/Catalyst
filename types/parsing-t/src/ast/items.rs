@@ -96,7 +96,7 @@ impl<'a, M> Spanned for EnumAst<'a, M> {
 
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttrAst])];
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct GroupedItemsAst<'a> {
     pub structs: GroupedItemSlice<'a, StructAst<'a>>,
     pub funcs: GroupedItemSlice<'a, FuncDefAst<'a>>,

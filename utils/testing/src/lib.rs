@@ -387,7 +387,9 @@ pub mod items {
         }
 
         fn write_to_string(&mut self, path: &Path, data: &str) -> io::Result<()> {
-            self.files.insert(self.canonicalize(path)?, data.to_owned());
+            self.files
+                .insert(self.canonicalize(path)?, data.to_owned())
+                .unwrap();
             Ok(())
         }
 
