@@ -1,8 +1,8 @@
 error: git exited with non-zero status code
- --> invalid-link\package.ctlm:1:13
+ --> invalid-link\package.ctlm:2:10
   |
-1 | deps { git "github.com/jakubDoka/water-kun" ; git "github.com/jakubDoka/water" ; }
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ here
+2 |     git "github.com/jakubDoka/water-kun"
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ here
   |
   = info: args: `clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link\deps\github.com/jakubDoka/water-kun\main`
   = info: stderr: fatal: repository '"github.com/jakubDoka/water-kun#main"' not found
