@@ -1,9 +1,9 @@
 error: invalid module path
- --> invalid-module\root\a.ctl:2:6
+ --> invalid-module/root/a.ctl:2:6
   |
 2 |     "./a/b"
   |      ^^^^^ derived from this
   |
-  = info: path searched: `invalid-module\root\a\b.ctl`
+  = info: path searched: `invalid-module/root/a/b.ctl`
   = info: exact io error: file not found
 

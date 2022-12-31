@@ -1,5 +1,5 @@
 error: module cycle detected
  = info: cycle:
-         self-import\root.ctl
-         self-import\root.ctl
+         self-import/root.ctl
+         self-import/root.ctl
 
