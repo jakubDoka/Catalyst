@@ -13,7 +13,7 @@ use smallvec::SmallVec;
 
 use crate::*;
 
-use super::FragVecInner;
+use super::{FragVecArc, FragVecInner};
 
 pub trait Relocated: 'static + Send + Sync {
     fn mark(&self, marker: &mut FragRelocMarker);
@@ -68,7 +68,15 @@ impl<T: Relocated, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
     }
 
     fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping) {
-        marks.filter_base(self, mapping);
+        marks.filter_base(
+            self.threads.iter_mut().map(|t| {
+                (&t.inner, |len| {
+                    t.len = len;
+                    t.frozen = len;
+                })
+            }),
+            mapping,
+        );
     }
 }
 
@@ -201,19 +209,19 @@ impl FragMarks {
         }
     }
 
-    fn filter_base<T: Relocated, A: Allocator>(
+    fn filter_base<'a, T: Relocated, A: Allocator + 'a, S: FnOnce(usize)>(
         &mut self,
-        base: &mut FragBase<T, A>,
+        base_threads: impl Iterator<Item = (&'a FragVecArc<T, A>, S)>,
         mapping: &mut FragRelocMapping,
     ) {
-        for (marks, thread) in self.marks.iter().zip(base.threads.iter_mut()) {
-            let id = thread.thread;
+        for (id, (marks, (thread, len_setter))) in self.marks.iter().zip(base_threads).enumerate() {
             let map = |index: usize| DynFragId {
-                repr: FragAddr::new(index as u64, id),
+                repr: FragAddr::new(index as u64, id as u8),
                 type_id: TypeId::of::<T>(),
             };
 
-            let base = thread.unique_data().as_mut_ptr();
+            assert!(unsafe { FragVecInner::is_unique(thread.0) });
+            let base = unsafe { FragVecInner::full_data_mut(thread.0) }.as_mut_ptr();
 
             // drop all unmarked items
             for (start, end) in marks[1..].chunks_exact(2).map(|s| (s[0], s[1])) {
@@ -234,8 +242,7 @@ impl FragMarks {
                 let (end_index, ..) = end.parts();
                 let len = (end_index - start_index) as usize + 1;
                 unsafe {
-                    let source =
-                        FragVecInner::get_item(thread.inner, start_index as usize).as_ptr();
+                    let source = FragVecInner::get_item(thread.0, start_index as usize).as_ptr();
                     let offset = base.add(cursor);
                     if offset != source {
                         ptr::copy(source, offset, len);
@@ -246,6 +253,11 @@ impl FragMarks {
                     }
                     cursor += len;
                 }
+            }
+
+            len_setter(cursor);
+            unsafe {
+                ptr::addr_of_mut!((*thread.0.as_ptr()).len).write(cursor);
             }
         }
 

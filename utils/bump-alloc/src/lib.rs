@@ -37,6 +37,7 @@ pub use {
             DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator, Relocated,
             RelocatedObjects,
         },
+        sync::{SyncFragBase, SyncFragMap},
         FragBase, FragMap,
     },
     map::{CMap, CSet, Map, Set},
