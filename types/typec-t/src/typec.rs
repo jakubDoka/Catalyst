@@ -96,10 +96,18 @@ impl IndexMut<VRef<Module>> for Typec {
 }
 
 macro_rules! gen_cache {
-    ($self:ident $($name:ident: $ty:ty, $({ $($tt:tt)* })?)*) => {
+    (
+        $self:ident
+        $($name:ident: $ty:ty,)*
+        [sync]
+        $($sync_name:ident: $sync_ty:ty,)*
+    ) => {
         pub struct TypecCache {
             $(
                 pub $name: FragMap<$ty>,
+            )*
+            $(
+                pub $sync_name: FragMap<$sync_ty>,
             )*
         }
 
@@ -153,10 +161,32 @@ macro_rules! gen_cache {
             }
         )*
 
+        $(
+            impl Index<FragRef<$sync_ty>> for Typec {
+                type Output = $sync_ty;
+
+                fn index(&self, index: FragRef<$sync_ty>) -> &Self::Output {
+                    &self.cache.$sync_name[index]
+                }
+            }
+
+            impl Index<FragSlice<$sync_ty>> for Typec {
+                type Output = [$sync_ty];
+
+                fn index(&self, index: FragSlice<$sync_ty>) -> &Self::Output {
+                    &self.cache.$sync_name[index]
+                }
+            }
+        )*
+
+
 
         pub struct TypecCacheBase {
             $(
                 pub $name: FragBase<$ty>,
+            )*
+            $(
+                pub $sync_name: FragBase<$sync_ty>,
             )*
         }
 
@@ -166,6 +196,9 @@ macro_rules! gen_cache {
                     $(
                         $name: FragBase::new(thread_count),
                     )*
+                    $(
+                        $sync_name: FragBase::new(thread_count),
+                    )*
                 }
             }
 
@@ -173,10 +206,16 @@ macro_rules! gen_cache {
                 $(
                     let mut $name = self.$name.split();
                 )*
+                $(
+                    let mut $sync_name = self.$sync_name.split();
+                )*
                 iter::from_fn(move || {
                     Some(TypecCache {
                         $(
                             $name: $name.next()?,
+                        )*
+                        $(
+                            $sync_name: $sync_name.next()?,
                         )*
                     })
                 })
@@ -186,6 +225,9 @@ macro_rules! gen_cache {
                 $(
                     frags.add(&mut self.$name);
                 )*
+                $(
+                    frags.add(&mut self.$sync_name);
+                )*
             }
         }
     };
@@ -194,20 +236,21 @@ macro_rules! gen_cache {
 gen_cache! {
     self
     structs: Struct,
-    pointers: Pointer,
-    instances: Instance,
     base_specs: SpecBase,
-    spec_instances: SpecInstance,
     funcs: Func,
     fields: Field,
     impls: Impl,
-    spec_sums: Spec,
     params: FragSlice<Spec>,
-    args: Ty,
     func_slices: FragRef<Func>,
     spec_funcs: SpecFunc,
     variants: Variant,
     enums: Enum,
+    [sync]
+    pointers: Pointer,
+    spec_sums: Spec,
+    spec_instances: SpecInstance,
+    instances: Instance,
+    args: Ty,
 }
 
 impl Typec {

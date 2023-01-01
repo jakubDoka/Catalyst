@@ -312,19 +312,16 @@ impl Task {
     }
 
     pub fn pull(&mut self, task_base: &TaskBase) {
-        self.interner.pull(&task_base.interner);
         self.typec.pull(&task_base.typec);
         self.gen.pull(&task_base.gen);
     }
 
     pub fn commit(&mut self, main_task: &mut TaskBase) {
-        self.interner.commit(&mut main_task.interner);
         self.typec.commit(&mut main_task.typec);
         self.gen.commit(&mut main_task.gen);
     }
 
     pub fn commit_unique(self, main_task: &mut TaskBase) {
-        self.interner.commit_unique(&mut main_task.interner);
         self.typec.commit_unique(&mut main_task.typec);
         self.gen.commit_unique(&mut main_task.gen);
     }

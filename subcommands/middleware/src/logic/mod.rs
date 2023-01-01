@@ -73,7 +73,6 @@ impl Middleware {
             db,
         )
         .reload(path, &mut self.resource_loading_ctx);
-        interner.commit(&mut base.interner);
         changed
     }
 

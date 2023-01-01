@@ -165,9 +165,10 @@ impl<T: Clone> FragBase<T> {
     }
 }
 
-impl<T: Clone, A: Allocator> FragBase<T, A> {
+impl<T, A: Allocator> FragBase<T, A> {
     pub fn new_in(thread_count: u8, allocator: A) -> Self
     where
+        T: Clone,
         A: Clone,
     {
         let threads = (0..thread_count)
@@ -179,13 +180,17 @@ impl<T: Clone, A: Allocator> FragBase<T, A> {
 
     pub fn split(&self) -> impl Iterator<Item = FragMap<T, A>> + '_
     where
+        T: Clone,
         A: Clone,
     {
-        assert!(self
-            .threads
-            .iter()
-            .all(|t| unsafe { FragVecInner::is_unique(t.inner.0) }));
+        assert!(self.is_unique());
         (0..self.threads.len()).map(|thread| FragMap::new_in(self.threads.clone(), thread))
+    }
+
+    pub fn is_unique(&self) -> bool {
+        self.threads
+            .iter()
+            .all(|t| unsafe { FragVecInner::is_unique(t.inner.0) })
     }
 }
 
@@ -337,7 +342,7 @@ impl<T, A: Allocator> Clone for FragVecView<T, A> {
 }
 
 #[repr(C)]
-struct FragVecInner<T, A: Allocator = Global> {
+pub(crate) struct FragVecInner<T, A: Allocator = Global> {
     ref_count: AtomicUsize,
     cap: usize,
     len: usize,
@@ -468,12 +473,16 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         let len = ptr::addr_of!((*inner.as_ptr()).len).read();
         Self::data_mut(inner, 0..len)
     }
+
+    unsafe fn full_data<'a>(load: NonNull<FragVecInner<T, A>>) -> &'a [T] {
+        Self::data(load, ptr::addr_of!((*load.as_ptr()).len).read())
+    }
 }
 
 #[repr(transparent)]
-struct FragVecArc<T, A: Allocator>(NonNull<FragVecInner<T, A>>);
+pub(crate) struct FragVecArc<T, A: Allocator>(NonNull<FragVecInner<T, A>>);
 
-unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragVecArc<T, A> {}
+// unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragVecArc<T, A> {}
 unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Send for FragVecArc<T, A> {}
 
 impl<T, A: Allocator> Clone for FragVecArc<T, A> {

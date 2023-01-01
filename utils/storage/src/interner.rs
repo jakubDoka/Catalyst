@@ -64,14 +64,14 @@ impl Default for Interner {
 
 pub struct InternerBase {
     map: Arc<CMap<InternerEntry, Ident>>,
-    frag_base: FragBase<u8>,
+    frag_base: SyncFragBase<u8>,
 }
 
 impl InternerBase {
     pub fn new(thread_count: u8) -> Self {
-        let mut s = Self {
+        let s = Self {
             map: default(),
-            frag_base: FragBase::new(thread_count),
+            frag_base: SyncFragBase::new(thread_count),
         };
 
         if let Some(mut i) = {
@@ -79,15 +79,15 @@ impl InternerBase {
             i
         } {
             i.init();
-            i.commit(&mut s);
         }
 
         s
     }
 
     pub fn split(&self) -> impl Iterator<Item = Interner> + '_ {
+        let map = self.map.clone();
         self.frag_base.split().map(move |frag_map| Interner {
-            map: self.map.clone(),
+            map: map.clone(),
             frag_map,
             temp: String::new(),
         })
@@ -98,7 +98,7 @@ impl InternerBase {
 /// and are assigned unique id.
 pub struct Interner {
     map: Arc<CMap<InternerEntry, Ident>>,
-    frag_map: FragMap<u8>,
+    frag_map: SyncFragMap<u8>,
     temp: String,
 }
 
@@ -106,18 +106,6 @@ unsafe impl Sync for Interner {}
 unsafe impl Send for Interner {}
 
 impl Interner {
-    pub fn commit(&mut self, base: &mut InternerBase) {
-        self.frag_map.commit(&mut base.frag_base);
-    }
-
-    pub fn pull(&mut self, base: &InternerBase) {
-        self.frag_map.pull(&base.frag_base);
-    }
-
-    pub fn commit_unique(self, base: &mut InternerBase) {
-        self.frag_map.commit_unique(&mut base.frag_base);
-    }
-
     pub fn intern_scoped(&mut self, scope: impl Display, name: Ident) -> Ident {
         self.intern_with(|s, t| write!(t, "{}\\{}", scope, &s[name]))
     }
@@ -153,7 +141,7 @@ impl Index<Ident> for Interner {
 
     fn index(&self, ident: Ident) -> &str {
         unsafe {
-            let slice = self.frag_map.gen_unchecked_slice(ident);
+            let slice = &self.frag_map[ident];
             std::str::from_utf8_unchecked(slice)
         }
     }

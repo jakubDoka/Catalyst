@@ -1,15 +1,20 @@
 use arc_swap::ArcSwapAny;
-use std::sync::{atomic::Ordering, Arc};
+use std::{
+    cell::UnsafeCell,
+    sync::{atomic::Ordering, Arc},
+};
+
+use crate::{DynFragMap, Relocated};
 
 use super::*;
 
 pub struct SyncFragMap<T, A: Allocator = Global> {
     base: SyncFragBase<T, A>,
-    locals: Box<[LocalFragView<T, A>]>,
+    locals: Box<[UnsafeCell<LocalFragView<T, A>>]>,
     thread: u8,
 }
 
-impl<T: Clone, A: Allocator + Clone> SyncFragMap<T, A> {
+impl<T, A: Allocator> SyncFragMap<T, A> {
     fn new(thread: u8, base: &SyncFragBase<T, A>) -> Self {
         Self {
             base: base.clone(),
@@ -17,6 +22,7 @@ impl<T: Clone, A: Allocator + Clone> SyncFragMap<T, A> {
                 .views
                 .iter()
                 .map(SyncFragView::clone_to_local)
+                .map(UnsafeCell::new)
                 .collect(),
             thread,
         }
@@ -24,6 +30,8 @@ impl<T: Clone, A: Allocator + Clone> SyncFragMap<T, A> {
 
     pub fn extend<I: IntoIterator<Item = T>>(&mut self, values: I) -> FragSlice<T>
     where
+        T: Clone,
+        A: Clone,
         I::IntoIter: ExactSizeIterator,
     {
         let thread = self.get_thread();
@@ -34,7 +42,11 @@ impl<T: Clone, A: Allocator + Clone> SyncFragMap<T, A> {
         slice
     }
 
-    pub fn push(&mut self, value: T) -> FragRef<T> {
+    pub fn push(&mut self, value: T) -> FragRef<T>
+    where
+        T: Clone,
+        A: Clone,
+    {
         let (index, thread, ..) = self.extend(iter::once(value)).parts();
         FragRef::new(FragAddr::new(index, thread))
     }
@@ -46,33 +58,61 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
         unsafe { self.base.views.get_unchecked(self.thread as usize) }
     }
 
-    pub fn index(&mut self, addr: FragRef<T>) -> &T {
+    unsafe fn index(&self, addr: FragRef<T>) -> &T {
         let (index, thread) = addr.parts();
-        if self.locals[thread as usize].get(index as usize).is_none() {
+        // we do not implemend sync and threads are unique
+        if (*self.locals[thread as usize].get())
+            .get(index as usize)
+            .is_none()
+        {
             self.fallback(thread);
         }
 
-        self.locals[thread as usize]
+        (*self.locals[thread as usize].get())
             .get(index as usize)
             .expect("index out of bounds")
     }
 
     #[cold]
     #[inline(never)]
-    fn fallback(&mut self, thread: u8) {
-        self.locals[thread as usize] = self.base.views[thread as usize].clone_to_local();
+    fn fallback(&self, thread: u8) {
+        // SAFETY: the structure is not sync
+        unsafe {
+            *self.locals[thread as usize].get() = self.base.views[thread as usize].clone_to_local();
+        }
     }
 
-    pub fn slice(&mut self, slice: FragSlice<T>) -> &[T] {
+    unsafe fn slice(&self, slice: FragSlice<T>) -> &[T] {
         let (index, thread, len) = slice.parts();
         let range = index as usize..index as usize + len as usize;
-        if self.locals[thread as usize].slice(range.clone()).is_none() {
+        if (*self.locals[thread as usize].get())
+            .slice(range.clone())
+            .is_none()
+        {
             self.fallback(thread);
         }
 
-        self.locals[thread as usize]
+        (*self.locals[thread as usize].get())
             .slice(range)
             .expect("range out of bounds")
+    }
+}
+
+impl<T, A: Allocator> Index<FragRef<T>> for SyncFragMap<T, A> {
+    type Output = T;
+
+    fn index(&self, index: FragRef<T>) -> &Self::Output {
+        // SAFETY: the struct is not sync
+        unsafe { self.index(index) }
+    }
+}
+
+impl<T, A: Allocator> Index<FragSlice<T>> for SyncFragMap<T, A> {
+    type Output = [T];
+
+    fn index(&self, index: FragSlice<T>) -> &Self::Output {
+        // SAFETY: the struct is not sync
+        unsafe { self.slice(index) }
     }
 }
 
@@ -80,7 +120,9 @@ pub struct SyncFragBase<T, A: Allocator = Global> {
     views: Arc<[SyncFragView<T, A>]>,
 }
 
-impl<T: Clone> SyncFragBase<T> {
+unsafe impl<T: Send + Sync, A: Allocator + Send + Sync> Sync for SyncFragBase<T, A> {}
+
+impl<T> SyncFragBase<T> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
@@ -94,8 +136,11 @@ impl<T, A: Allocator> Clone for SyncFragBase<T, A> {
     }
 }
 
-impl<T: Clone, A: Allocator + Clone> SyncFragBase<T, A> {
-    pub fn new_in(thread_count: u8, allocator: A) -> Self {
+impl<T, A: Allocator> SyncFragBase<T, A> {
+    pub fn new_in(thread_count: u8, allocator: A) -> Self
+    where
+        A: Clone,
+    {
         Self {
             views: (0..thread_count)
                 .map(|thread| SyncFragView::new_in(thread, allocator.clone()))
@@ -103,9 +148,44 @@ impl<T: Clone, A: Allocator + Clone> SyncFragBase<T, A> {
         }
     }
 
-    pub fn split(&mut self) -> impl Iterator<Item = SyncFragMap<T, A>> + '_ {
-        assert!(Arc::get_mut(&mut self.views).is_some());
+    pub fn split(&self) -> impl Iterator<Item = SyncFragMap<T, A>> + '_ {
+        assert!(self.is_unique());
         (0..self.views.len()).map(|t| SyncFragMap::new(t as u8, self))
+    }
+
+    pub fn is_unique(&self) -> bool {
+        Arc::strong_count(&self.views) == 1
+    }
+}
+
+impl<T: Send + Sync + Relocated, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
+    fn mark(&self, addr: FragAddr, marker: &mut crate::FragRelocMarker) {
+        let (index, thread) = addr.parts();
+        unsafe {
+            FragVecInner::full_data(self.views[thread as usize].inner.load().0)[index as usize]
+                .mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &crate::FragRelocMapping) {
+        self.views
+            .iter()
+            .map(|v| unsafe { FragVecInner::full_data_mut(v.inner.load().0) })
+            .flatten()
+            .for_each(|i| i.remap(ctx))
+    }
+
+    fn filter(&mut self, marks: &mut crate::FragMarks, mapping: &mut crate::FragRelocMapping) {
+        marks.filter_base(
+            self.views
+                .iter()
+                .map(|v| (v.inner.load(), |len| v.len.store(len, Ordering::Relaxed))),
+            mapping,
+        )
+    }
+
+    fn is_unique(&self) -> bool {
+        self.is_unique()
     }
 }
 
@@ -114,6 +194,8 @@ struct SyncFragView<T, A: Allocator = Global> {
     thread: u8,
     len: AtomicUsize,
 }
+
+unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for SyncFragView<T, A> {}
 
 impl<T, A: Allocator> SyncFragView<T, A> {
     fn new_in(thread: u8, allocator: A) -> Self {
@@ -174,7 +256,6 @@ impl<T, A: Allocator> LocalFragView<T, A> {
 #[cfg(test)]
 mod test {
     use std::{
-        iter,
         sync::atomic::{AtomicBool, AtomicUsize},
         thread,
         time::Duration,
@@ -213,19 +294,20 @@ mod test {
         const THREAD_COUNT: usize = 4;
         let dash = &DashMap::<usize, FragRef<Tested>>::default();
         let run = &AtomicBool::new(true);
-        let mut shared = SyncFragBase::new(THREAD_COUNT as u8);
+        let shared = SyncFragBase::new(THREAD_COUNT as u8);
         let counter = &AtomicUsize::new(0);
 
         thread::scope(|s| {
-            for mut thread in shared.split() {
+            for thread in shared.split() {
                 s.spawn(move || {
+                    let mut thread = thread;
                     while run.load(std::sync::atomic::Ordering::Relaxed) {
                         let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         if let Some(value) = {
                             let i = dash.iter().next().map(|a| a.value().to_owned());
                             i
                         } {
-                            thread.index(value);
+                            let _ = &thread[value];
                             dash.insert(id, value);
                         } else {
                             let t = thread.push(Tested::new(1));

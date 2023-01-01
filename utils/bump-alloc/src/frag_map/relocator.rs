@@ -3,7 +3,9 @@ use std::{
     any::{Any, TypeId},
     default::default,
     hash::{BuildHasher, Hash},
-    mem, ptr,
+    mem,
+    ops::Deref,
+    ptr,
     sync::Arc,
     thread,
 };
@@ -26,13 +28,6 @@ pub struct FragRelocMapping {
 }
 
 impl FragRelocMapping {
-    fn project_base<T: Relocated, A: Allocator>(&self, base: &mut FragBase<T, A>) {
-        base.threads
-            .iter_mut()
-            .flat_map(|f| f.unique_data())
-            .for_each(|item| item.remap(self));
-    }
-
     pub fn project<T: 'static>(&self, frag: FragRef<T>) -> FragRef<T> {
         self.marked
             .get(&DynFragId::new(frag))
@@ -52,6 +47,7 @@ impl FragRelocMapping {
 }
 
 pub trait DynFragMap: Send + Sync {
+    fn is_unique(&self) -> bool;
     fn mark(&self, addr: FragAddr, marker: &mut FragRelocMarker);
     fn remap(&mut self, ctx: &FragRelocMapping);
     fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping);
@@ -64,7 +60,11 @@ impl<T: Relocated, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
     }
 
     fn remap(&mut self, ctx: &FragRelocMapping) {
-        ctx.project_base(self);
+        self.threads
+            .iter_mut()
+            .map(|t| t.unique_data())
+            .flatten()
+            .for_each(|i| i.remap(ctx))
     }
 
     fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping) {
@@ -77,6 +77,10 @@ impl<T: Relocated, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
             }),
             mapping,
         );
+    }
+
+    fn is_unique(&self) -> bool {
+        self.is_unique()
     }
 }
 
@@ -106,6 +110,8 @@ impl FragRelocator {
     ) {
         self.markers.resize_with(threads.len(), default);
         self.mapping.resize_with(threads.len(), default);
+
+        assert!(frags.maps.iter().all(|(.., m)| m.is_unique()));
 
         thread::scope(|scope| {
             let frag_maps = &*frags;
@@ -209,9 +215,15 @@ impl FragMarks {
         }
     }
 
-    fn filter_base<'a, T: Relocated, A: Allocator + 'a, S: FnOnce(usize)>(
+    pub(crate) fn filter_base<
+        'a,
+        T: Relocated,
+        A: Allocator + 'a,
+        S: FnOnce(usize),
+        V: Deref<Target = FragVecArc<T, A>>,
+    >(
         &mut self,
-        base_threads: impl Iterator<Item = (&'a FragVecArc<T, A>, S)>,
+        base_threads: impl Iterator<Item = (V, S)>,
         mapping: &mut FragRelocMapping,
     ) {
         for (id, (marks, (thread, len_setter))) in self.marks.iter().zip(base_threads).enumerate() {
