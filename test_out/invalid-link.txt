@@ -1,0 +1,14 @@
+error: git exited with non-zero status code
+ --> invalid-link/package.ctlm:2:10
+  |
+2 |     git "github.com/jakubDoka/water-kun"
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ here
+  |
+  = info: args: `clone --depth 1 --filter blob:none --branch main https://github.com/jakubDoka/water-kun invalid-link/deps/github.com/jakubDoka/water-kun/main`
+  = info: stderr: fatal: repository '"github.com/jakubDoka/water-kun#main"' not found
+
+error: this code feels like desert
+ = info: project needs to have exactly one 'moist' dependency
+ = help: add 'git "github.com/jakubDoka/water" "*"' to the 'deps {}' sections in 'project.ctlm'
+ = help: alternatively you can add 'moist: true' into 'project.ctlm'
+

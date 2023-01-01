@@ -15,10 +15,13 @@ use std::{
     sync::atomic::{self, AtomicUsize},
 };
 
+use arc_swap::RefCnt;
+
 use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
 
 pub mod addr;
 pub mod relocator;
+pub mod sync;
 
 pub struct FragMap<T, A: Allocator = Global> {
     others: Box<[FragVecView<T, A>]>,
@@ -204,6 +207,7 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragBase<T, A> {
     }
 }
 
+#[macro_export]
 macro_rules! terminate {
     ($($tt:tt)*) => {
         {
@@ -241,8 +245,7 @@ impl<T, A: Allocator> FragVec<T, A> {
             terminate!("FragVec::extend: iterator too long");
         };
 
-        let (.., possibly_new) =
-            unsafe { FragVecInner::extend(self.view.inner, self.view.len, values) };
+        let (.., possibly_new) = unsafe { FragVecInner::extend(self.view.inner, values) };
 
         let slice = FragSlice::new(FragSliceAddr::new(
             self.view.len as u64,
@@ -297,11 +300,9 @@ unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Send for FragVecView<T, 
 unsafe impl<T: Send + Sync, A: Send + Sync + Allocator> Sync for FragVecView<T, A> {}
 
 impl<T, A: Allocator> FragVecView<T, A> {
-    const GOOD_CAP: usize = ((1 << 10) / mem::size_of::<T>()).next_power_of_two();
-
     fn new_in(thread: u8, allocator: A) -> Self {
         Self {
-            inner: FragVecInner::new(Self::GOOD_CAP, allocator),
+            inner: FragVecInner::new(allocator),
             thread,
             frozen: 0,
             len: 0,
@@ -341,7 +342,7 @@ impl<T, A: Allocator> Clone for FragVecView<T, A> {
 impl<T, A: Allocator> Drop for FragVecView<T, A> {
     fn drop(&mut self) {
         unsafe {
-            FragVecInner::dec(self.inner, self.len);
+            FragVecInner::dec(self.inner);
         }
     }
 }
@@ -350,6 +351,7 @@ impl<T, A: Allocator> Drop for FragVecView<T, A> {
 struct FragVecInner<T, A: Allocator = Global> {
     ref_count: AtomicUsize,
     cap: usize,
+    len: usize,
     allocator: A,
     data: [T; 0],
 }
@@ -363,9 +365,9 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         (*ptr::addr_of!((*s.as_ptr()).ref_count)).fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    unsafe fn dec(s: NonNull<Self>, len: usize) {
+    unsafe fn dec(s: NonNull<Self>) {
         if (*ptr::addr_of!((*s.as_ptr()).ref_count)).fetch_sub(1, atomic::Ordering::Relaxed) == 1 {
-            Self::drop(s, len);
+            Self::drop(s);
         }
     }
 
@@ -391,8 +393,9 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         NonNull::new_unchecked(data.add(index))
     }
 
-    unsafe fn drop(s: NonNull<Self>, len: usize) {
+    unsafe fn drop(s: NonNull<Self>) {
         let cap = ptr::addr_of!((*s.as_ptr()).cap).read();
+        let len = ptr::addr_of!((*s.as_ptr()).len).read();
         Self::data_mut(s, 0..len)
             .iter_mut()
             .for_each(|x| ptr::drop_in_place(x));
@@ -403,7 +406,6 @@ impl<T, A: Allocator> FragVecInner<T, A> {
 
     unsafe fn extend<I: ExactSizeIterator<Item = T>>(
         mut s: NonNull<Self>,
-        len: usize,
         i: I,
     ) -> (NonNull<T>, Option<NonNull<Self>>)
     where
@@ -412,12 +414,13 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     {
         let pushed_len = i.len();
         let mut cap = ptr::addr_of!((*s.as_ptr()).cap).read();
+        let len = ptr::addr_of!((*s.as_ptr()).len).read();
 
         let overflows = len + pushed_len >= cap;
         if overflows {
             cap = (len + pushed_len).next_power_of_two();
             let allocator = (*ptr::addr_of!((*s.as_ptr()).allocator)).clone();
-            let new_s = Self::new(cap, allocator);
+            let new_s = Self::with_capacity(cap, allocator);
 
             ptr::copy_nonoverlapping(
                 Self::get_item(s, 0).as_ptr(),
@@ -435,11 +438,12 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         let start = Self::get_item(s, len);
         i.enumerate()
             .for_each(|(i, v)| ptr::write(start.as_ptr().add(i), v));
+        ptr::addr_of!((*s.as_ptr()).len).write(len + pushed_len);
 
         (start, overflows.then_some(s))
     }
 
-    fn new(cap: usize, allocator: A) -> NonNull<Self> {
+    fn with_capacity(cap: usize, allocator: A) -> NonNull<Self> {
         let layout = Self::layout(cap);
         let s = allocator
             .allocate(layout)
@@ -450,6 +454,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
             s.as_ptr().write(Self {
                 ref_count: AtomicUsize::new(1),
                 cap,
+                len: 0,
                 allocator,
                 data: [],
             });
@@ -458,11 +463,55 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         s
     }
 
+    fn new(allocator: A) -> NonNull<Self> {
+        let cap = ((1 << 10) / mem::size_of::<T>()).next_power_of_two();
+        Self::with_capacity(cap, allocator)
+    }
+
     fn layout(cap: usize) -> Layout {
         Layout::new::<Self>()
             .extend(Layout::array::<T>(cap).unwrap_or_else(|err| terminate!("{}", err)))
             .unwrap_or_else(|err| terminate!("{}", err))
             .0
+    }
+}
+
+#[repr(transparent)]
+struct FragVecArc<T, A: Allocator>(NonNull<FragVecInner<T, A>>);
+
+impl<T, A: Allocator> Clone for FragVecArc<T, A> {
+    fn clone(&self) -> Self {
+        unsafe {
+            FragVecInner::inc(self.0);
+        }
+
+        Self(self.0)
+    }
+}
+
+impl<T, A: Allocator> Drop for FragVecArc<T, A> {
+    fn drop(&mut self) {
+        unsafe {
+            FragVecInner::dec(self.0);
+        }
+    }
+}
+
+unsafe impl<T, A: Allocator> RefCnt for FragVecArc<T, A> {
+    type Base = FragVecInner<T, A>;
+
+    fn into_ptr(me: Self) -> *mut Self::Base {
+        let ptr = me.0.as_ptr();
+        mem::forget(me);
+        ptr
+    }
+
+    fn as_ptr(me: &Self) -> *mut Self::Base {
+        me.0.as_ptr()
+    }
+
+    unsafe fn from_ptr(ptr: *const Self::Base) -> Self {
+        Self(NonNull::new_unchecked(ptr))
     }
 }
 

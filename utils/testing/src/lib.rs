@@ -239,7 +239,7 @@ pub mod items {
         return std::os::windows::process::ExitStatusExt::from_raw(code);
 
         #[cfg(unix)]
-        return std::os::unix::process::ExitStatusExt::from_raw(code);
+        return std::os::unix::process::ExitStatusExt::from_raw(code as i32);
     }
 
     impl TestResources {

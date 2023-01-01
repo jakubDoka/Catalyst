@@ -33,11 +33,15 @@ fn main() {
         for (path, name) in dirs_ctor() {
             h.spawn(move || {
                 println!("Running test: {name}");
-                Command::new(format!("target/debug/{name}.exe"))
-                    .current_dir(path)
-                    .args(std::env::args().nth(2))
-                    .status()
-                    .unwrap();
+                Command::new(
+                    Path::new(&format!("target/debug/{name}"))
+                        .canonicalize()
+                        .unwrap(),
+                )
+                .current_dir(path)
+                .args(std::env::args().nth(2))
+                .status()
+                .unwrap();
                 println!("Compiled and Run {name}");
             });
         }

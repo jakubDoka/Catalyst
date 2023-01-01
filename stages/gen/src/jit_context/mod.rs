@@ -436,7 +436,7 @@ impl RuntimeFunctionLookup {
     }
 
     #[cfg(not(windows))]
-    fn lookup(name: &str) -> Option<*const u8> {
+    fn lookup(&mut self, name: &str) -> Option<*const u8> {
         let c_str = self.load_cstr(name).as_ptr();
         let sym = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c_str) };
         if sym.is_null() {

@@ -1,0 +1,5 @@
+error: this code feels like desert
+ = info: project needs to have exactly one 'moist' dependency
+ = help: add 'git "github.com/jakubDoka/water" "*"' to the 'deps {}' sections in 'project.ctlm'
+ = help: alternatively you can add 'moist: true' into 'project.ctlm'
+

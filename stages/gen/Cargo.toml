@@ -22,3 +22,4 @@ windows-sys = { version = "0.42.0", features = ["Win32", "Win32_Foundation", "Wi
 cranelift-codegen = { version = "0.90.0", features = ["enable-serde"] }
 cranelift-frontend = "0.90.0"
 serde = { version = "1", features = ["derive", "rc"] }
+libc = "0.2.139"
