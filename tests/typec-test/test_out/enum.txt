@@ -1,5 +1,5 @@
 info: tir repr of functions:
-fn [] main() -> uint return match 0\Option[uint]\{0, 0} {
+fn [] main() -> uint return match 3\Option[uint]\{0, 0} {
     \0~4 => {
         5
     }
@@ -12,6 +12,59 @@ fn [] main() -> uint return match 0\Option[uint]\{0, 0} {
     \1~ => {
         3
     }
+}
+
+fn [] write(var0: ^mut param0, var1: param0) -> () return {
+    *var0 = var1
+}
+
+fn [] read(var0: ^param0) -> param0 return *var0
+
+fn [] new() -> 0\Vec[param0] return {
+    0\Vec[param0]\{cast[uint, ^mut param0](0), 0, 0}
+}
+
+fn [] with_capacity(var0: uint) -> 0\Vec[param0] return {
+    0\Vec[param0]\{cast[^mut (), ^mut param0](malloc(uint * uint(var0, sizeof[param0]()))), 0, var0}
+}
+
+fn [] push(var0: ^mut 0\Vec[param0], var1: param0) -> () return {
+    if uint == uint(*var0.1, *var0.2) {
+        grow[param0](var0)
+    }
+    write[param0](get_mut_ptr[param0](var0, *var0.1), var1)
+    *var0.1 = uint + uint(*var0.1, 1)
+}
+
+fn [] grow(var0: ^mut 0\Vec[param0]) -> () return {
+    let var1 = if uint == uint(*var0.2, 0) {
+        1
+    } else {
+        uint * uint(*var0.2, 2)
+    }
+    let var2 = malloc(uint * uint(var1, sizeof[param0]()))
+    memcpy(var2, cast[^mut param0, ^()](*var0.0), uint * uint(*var0.1, sizeof[param0]()))
+    free(cast[^mut param0, ^()](*var0.0))
+    *var0.0 = cast[^mut (), ^mut param0](var2)
+}
+
+fn [] get_ptr(var0: ^0\Vec[param0], var1: uint) -> ^param0 return {
+    cast[uint, ^param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
+}
+
+fn [] get_mut_ptr(var0: ^mut 0\Vec[param0], var1: uint) -> ^mut param0 return {
+    cast[uint, ^mut param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
+}
+
+fn [] drop(var0: ^mut 0\Vec[param0]) -> () return {
+    let mut var1 = 0
+    loop id0 if uint == uint(var1, *var0.1) {
+        break id0 
+    } else {
+        read[param0](get_ptr[param0](var0, var1))
+        var1 = uint + uint(var1, 1)
+    }
+    free(cast[^mut param0, ^()](*var0.0))
 }
 
 

@@ -1,11 +1,18 @@
-error: scope item not found
- --> vec\root.ctl:9:10
+error: invalid scope item type
+ --> vec/root.ctl:6:5
   |
-9 |     *vec.get(0)
-  |          ^^^ this does not exist or is not imported
+6 |     vec.push(0)
+  |     ^^^ here
   |
-  = help: expected method
-  = info: debug: queried 'struct1\get'
+  = info: expected variable or enum, got module
+
+error: invalid scope item type
+ --> vec/root.ctl:7:6
+  |
+7 |     *vec.get(0)
+  |      ^^^ here
+  |
+  = info: expected variable or enum, got module
 
 info: tir repr of functions:
 fn [] write(var0: ^mut param0, var1: param0) -> () return {
@@ -14,15 +21,15 @@ fn [] write(var0: ^mut param0, var1: param0) -> () return {
 
 fn [] read(var0: ^param0) -> param0 return *var0
 
-fn [] new() -> 2\Vec[param0] return {
-    2\Vec[param0]\{cast[uint, ^mut param0](0), 0, 0}
+fn [] new() -> 6\Vec[param0] return {
+    6\Vec[param0]\{cast[uint, ^mut param0](0), 0, 0}
 }
 
-fn [] with_capacity(var0: uint) -> 2\Vec[param0] return {
-    2\Vec[param0]\{cast[^mut (), ^mut param0](malloc(uint * uint(var0, sizeof[param0]()))), 0, var0}
+fn [] with_capacity(var0: uint) -> 6\Vec[param0] return {
+    6\Vec[param0]\{cast[^mut (), ^mut param0](malloc(uint * uint(var0, sizeof[param0]()))), 0, var0}
 }
 
-fn [] push(var0: ^mut 2\Vec[param0], var1: param0) -> () return {
+fn [] push(var0: ^mut 6\Vec[param0], var1: param0) -> () return {
     if uint == uint(*var0.1, *var0.2) {
         grow[param0](var0)
     }
@@ -30,7 +37,7 @@ fn [] push(var0: ^mut 2\Vec[param0], var1: param0) -> () return {
     *var0.1 = uint + uint(*var0.1, 1)
 }
 
-fn [] grow(var0: ^mut 2\Vec[param0]) -> () return {
+fn [] grow(var0: ^mut 6\Vec[param0]) -> () return {
     let var1 = if uint == uint(*var0.2, 0) {
         1
     } else {
@@ -42,15 +49,15 @@ fn [] grow(var0: ^mut 2\Vec[param0]) -> () return {
     *var0.0 = cast[^mut (), ^mut param0](var2)
 }
 
-fn [] get_ptr(var0: ^2\Vec[param0], var1: uint) -> ^param0 return {
+fn [] get_ptr(var0: ^6\Vec[param0], var1: uint) -> ^param0 return {
     cast[uint, ^param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
 }
 
-fn [] get_mut_ptr(var0: ^mut 2\Vec[param0], var1: uint) -> ^mut param0 return {
+fn [] get_mut_ptr(var0: ^mut 6\Vec[param0], var1: uint) -> ^mut param0 return {
     cast[uint, ^mut param0](uint + uint(cast[^mut param0, uint](*var0.0), uint * uint(var1, sizeof[param0]())))
 }
 
-fn [] drop(var0: ^mut 2\Vec[param0]) -> () return {
+fn [] drop(var0: ^mut 6\Vec[param0]) -> () return {
     let mut var1 = 0
     loop id0 if uint == uint(var1, *var0.1) {
         break id0 
