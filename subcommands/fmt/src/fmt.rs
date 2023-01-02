@@ -14,6 +14,7 @@ pub struct Fmt<'ctx> {
 
 impl<'ctx> Fmt<'ctx> {
     pub fn manifest(&mut self, manifest: ManifestAst<u32>) {
+        self.fmt_ctx.clear();
         if let Some(header) = manifest.header {
             self.white_space(header.full());
         }
@@ -76,6 +77,7 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     pub fn imports(&mut self, header: Option<SourceInfo<u32>>, imports: Option<ImportsAst<u32>>) {
+        self.fmt_ctx.clear();
         if let Some(header) = header {
             self.white_space(header.full());
         }
@@ -144,8 +146,8 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn r#impl(&mut self, r#impl: &ImplAst<u32>) {
-        self.source_info(r#impl.keyword);
-        self.buffer.push(' ');
+        self.keyword(r#impl.keyword);
+        self.generics(r#impl.generics);
         self.impl_target(&r#impl.target);
         self.body(Self::impl_item, r#impl.body);
     }
@@ -240,7 +242,7 @@ impl<'ctx> Fmt<'ctx> {
                 self.mutability(mutability);
                 self.unit_expr(expr, state);
             }
-            UnitExprAst::Block(_) => todo!(),
+            UnitExprAst::Block(block) => self.block(Self::expr, block),
         }
     }
 
@@ -376,6 +378,7 @@ impl<'ctx> Fmt<'ctx> {
         if !self.fits(len) {
             state.indent_dot(self);
         }
+        self.buffer.push('.');
         self.path(dot.rhs);
     }
 
@@ -863,6 +866,12 @@ impl FmtCtx {
 
     fn emerge(&mut self) {
         self.indent -= 1;
+    }
+
+    fn clear(&mut self) {
+        self.last_newline = 0;
+        self.indent = 0;
+        self.compressed_lengths.clear();
     }
 }
 

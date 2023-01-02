@@ -107,7 +107,7 @@ macro_rules! gen_cache {
                 pub $name: FragMap<$ty>,
             )*
             $(
-                pub $sync_name: FragMap<$sync_ty>,
+                pub $sync_name: SyncFragMap<$sync_ty>,
             )*
         }
 
@@ -186,7 +186,7 @@ macro_rules! gen_cache {
                 pub $name: FragBase<$ty>,
             )*
             $(
-                pub $sync_name: FragBase<$sync_ty>,
+                pub $sync_name: SyncFragBase<$sync_ty>,
             )*
         }
 
@@ -197,7 +197,7 @@ macro_rules! gen_cache {
                         $name: FragBase::new(thread_count),
                     )*
                     $(
-                        $sync_name: FragBase::new(thread_count),
+                        $sync_name: SyncFragBase::new(thread_count),
                     )*
                 }
             }
@@ -742,7 +742,6 @@ impl Typec {
     pub fn pointer_to(&mut self, base: Ty, interner: &mut Interner) -> FragRef<Pointer> {
         let id = interner.intern_with(|s, t| self.pointer_id(base, t, s));
         let depth = base.ptr_depth(self) + 1;
-
         match self.mapping.lookup.entry(id) {
             Entry::Occupied(occ) => match occ.get() {
                 &ComputedTypecItem::Pointer(pointer, ..) => pointer,

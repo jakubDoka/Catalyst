@@ -32,7 +32,6 @@ impl TyChecker<'_> {
                 self.build_spec_impl(impl_ref, ctx);
             }
             if let Some(owner) = owner {
-                dbg!(&self.interner[Interner::SELF]);
                 self.scope
                     .push(Interner::SELF, owner, impl_ast.target.span());
             }

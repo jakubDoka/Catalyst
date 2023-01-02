@@ -89,7 +89,7 @@ impl AstHandler for FmtWorker {
 
     type Chunk<'a> = ItemsAstResult<'a, u32>;
 
-    fn should_skip(&mut self, ctx: BaseSourceCtx) -> bool {
+    fn should_skip_module(&mut self, ctx: BaseSourceCtx) -> bool {
         ctx.shared.resources.is_external(ctx.module)
     }
 
@@ -143,5 +143,9 @@ impl AstHandler for FmtWorker {
             source,
         }
         .manifest(manifest);
+    }
+
+    fn should_skip_manifest(&mut self, package: VRef<Package>, resources: &Resources) -> bool {
+        resources.packages[package].is_external
     }
 }

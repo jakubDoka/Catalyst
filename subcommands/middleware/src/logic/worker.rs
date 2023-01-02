@@ -172,7 +172,7 @@ impl Worker {
             }
         }
 
-        if handler.should_skip(ctx!()) {
+        if handler.should_skip_module(ctx!()) {
             return;
         }
 
@@ -334,7 +334,6 @@ impl Worker {
                     .drops
                     .push(prev..self.state.gen_resources.calls.len());
             }
-            // dbg!(&task.interner[task.typec.funcs[func].name]);
             Generator::new(
                 gen_layouts,
                 &mut task.gen,
@@ -631,7 +630,10 @@ pub trait AstHandler: Sync + Send {
     ) {
     }
 
-    fn should_skip(&mut self, ctx: BaseSourceCtx) -> bool;
+    fn should_skip_module(&mut self, ctx: BaseSourceCtx) -> bool;
+    fn should_skip_manifest(&mut self, _package: VRef<Package>, _resources: &Resources) -> bool {
+        true
+    }
 
     fn parse_imports<'a>(
         &mut self,
@@ -666,7 +668,7 @@ impl AstHandler for DefaultSourceAstHandler {
 
     type Chunk<'a> = GroupedItemsAst<'a>;
 
-    fn should_skip(&mut self, _ctx: BaseSourceCtx) -> bool {
+    fn should_skip_module(&mut self, _ctx: BaseSourceCtx) -> bool {
         false
     }
 

@@ -205,7 +205,6 @@ mod util {
 
         for &func in builtin_funcs {
             let id = typec[func].name;
-            dbg!(&interner[id]);
             scope.insert_builtin(id, func);
         }
 

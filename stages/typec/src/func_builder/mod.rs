@@ -422,7 +422,6 @@ impl TyChecker<'_> {
         builder: &mut TirBuilder<'a, '_>,
     ) -> &'a [PatTir<'a>] {
         let Some(args) = args else {return &[]};
-
         let args = self.typec[types]
             .to_bumpvec()
             .into_iter()

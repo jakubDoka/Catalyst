@@ -123,7 +123,9 @@ fn main() {
         }
 
         "cross-module-item-access" {
-            file "package.ctlm" {}
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
             dir "root" {
                 file "a.ctl" {
                     impl uint {
@@ -159,8 +161,10 @@ fn main() {
             }
         }
 
-        "access violation" {
-            file "package.ctlm" {}
+        "access-violation" {
+            file "package.ctlm" {
+                deps { git "github.com/jakubDoka/water" }
+            }
             dir "root" {
                 file "a.ctl" {
                     priv fn pass(v: uint) -> uint => v;
@@ -255,11 +259,11 @@ fn main() {
                 b: uint
             };
 
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a; b: 0 } => a;
-                ::{ a; b } => a + b;
+            fn main() -> uint => match Matched::{ a: 0, b: 1 } {
+                ::{ a: 0, b: 1 } => 0;
+                ::{ a: 1, b: 0 } => 1;
+                ::{ a, b: 0 } => a;
+                ::{ a, b } => a + b;
             };
         }
 
@@ -293,7 +297,7 @@ fn main() {
 
             #[entry];
             fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
+                let ::{ mut a, b } = A::{ a: 0, b: 3 };
                 a = a + b;
                 a - 3
             };

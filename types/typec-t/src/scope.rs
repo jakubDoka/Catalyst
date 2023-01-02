@@ -134,13 +134,13 @@ pub enum ScopeError {
     Inaccessible(ScopePosition, SourceLoc),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ScopePosition {
     Module,
     Package,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ScopeRecord {
     Imported {
         module: VRef<Module>,

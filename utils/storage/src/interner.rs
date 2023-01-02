@@ -183,10 +183,10 @@ impl RawInterner {
 mod test {
     use super::*;
 
-    use std::fmt::Write;
+    use std::{fmt::Write, thread};
 
     #[test]
-    fn test_interner() {
+    fn test() {
         let base = InternerBase::new(1);
         let mut interner = base.split().next().unwrap();
         assert_eq!(interner.intern("a"), interner.intern("a"));
@@ -197,6 +197,23 @@ mod test {
         );
         let cb = interner.intern_with(|s, t| write!(t, "c{}", &s[b]).unwrap());
         assert_eq!(&interner[cb], "cb");
+    }
+
+    #[test]
+    fn stress_test() {
+        let base = InternerBase::new(4);
+
+        thread::scope(|s| {
+            for mut thread in base.split() {
+                s.spawn(move || {
+                    for i in 0..100_000 {
+                        let id = i % 10_000;
+                        let slice = thread.intern_with(|_s, t| write!(t, "{}", id));
+                        assert_eq!(thread[slice].parse(), Ok(id));
+                    }
+                });
+            }
+        })
     }
 
     // #[test]

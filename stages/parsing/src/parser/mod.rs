@@ -164,8 +164,6 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 break self.advance();
             }
 
-            //dbg!(self.current.kind);
-
             let Some(value) = parser(self) else {
                 if let Some(end) = self.recover_list(&sep, &end)? {
                     break end;

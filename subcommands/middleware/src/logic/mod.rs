@@ -111,9 +111,12 @@ impl Middleware {
         };
 
         let mut arena = Arena::new();
-        for (package, i) in resources.packages.values().zip((0..handlers.len()).cycle()) {
+        for ((key, package), i) in resources.packages.iter().zip((0..handlers.len()).cycle()) {
             let task = &mut tasks[i];
             let handler = &mut handlers[i];
+            if handler.should_skip_manifest(key, &resources) {
+                continue;
+            }
             let source = &resources.sources[package.source].content;
             let mut parser_ctx = ParserCtx::new(source);
             arena.clear();
@@ -215,7 +218,7 @@ impl Middleware {
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
         {
-            self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count);
+            // self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count);
         };
 
         if self.workspace.has_errors() || resources.no_changes() {

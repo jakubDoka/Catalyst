@@ -169,8 +169,10 @@ impl<T, A: Allocator> SyncFragBase<T, A> {
 impl<T: Send + Sync + Relocated, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
     fn mark(&self, addr: FragAddr, marker: &mut crate::FragRelocMarker) {
         let (index, thread) = addr.parts();
+        let thread = &self.views[thread as usize];
         unsafe {
-            FragVecInner::full_data(self.views[thread as usize].inner.load().0)[index as usize]
+            FragVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
+                [index as usize]
                 .mark(marker);
         }
     }
@@ -239,14 +241,16 @@ impl<T, A: Allocator> SyncFragView<T, A> {
             self.inner.store(FragVecArc(new));
         }
         let slice = FragSlice::new(FragSliceAddr::new(len as u64, self.thread, values_len));
-        let prev = self.load_len();
-        self.len
-            .store(prev + values_len as usize, Ordering::Relaxed);
+        self.len.store(len + values_len as usize, Ordering::Relaxed);
         (slice, possibly_new.is_some())
     }
 
     unsafe fn unextend(&self, index: u64, len: u16) {
         FragVecInner::unextend(self.inner.load().0, index, len);
+        self.len.store(
+            self.len.load(Ordering::Relaxed) - len as usize,
+            Ordering::Relaxed,
+        )
     }
 }
 
@@ -289,8 +293,8 @@ impl<T, A: Allocator> FragSliceKey<T, A> {
     unsafe fn inner_slice(&self) -> &[T] {
         let map = &*self.view;
         let (index, .., len) = self.slice.parts();
-        let range = index as usize..index as usize + len as usize;
-        &FragVecInner::full_data(map.inner.load().0).get_unchecked(range)
+        let ptr = FragVecInner::get_item(map.inner.load().0, index as usize);
+        slice::from_raw_parts(ptr.as_ptr(), len as usize)
     }
 }
 
