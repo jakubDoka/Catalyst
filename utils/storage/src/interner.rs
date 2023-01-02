@@ -1,11 +1,11 @@
 use std::{
     default::default,
     fmt::{Display, Write},
-    hash::{Hash, Hasher},
     ops::{Index, Range},
     sync::Arc,
 };
 
+use bump_alloc::dashmap::mapref::entry::Entry;
 use serde::{Deserialize, Serialize};
 
 use crate::*;
@@ -63,7 +63,7 @@ impl Default for Interner {
 }
 
 pub struct InternerBase {
-    map: Arc<CMap<InternerEntry, Ident>>,
+    map: Arc<CMap<FragSliceKey<u8>, Ident>>,
     frag_base: SyncFragBase<u8>,
 }
 
@@ -97,7 +97,7 @@ impl InternerBase {
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
-    map: Arc<CMap<InternerEntry, Ident>>,
+    map: Arc<CMap<FragSliceKey<u8>, Ident>>,
     frag_map: SyncFragMap<u8>,
     temp: String,
 }
@@ -120,14 +120,16 @@ impl Interner {
     }
 
     pub fn intern(&mut self, s: &str) -> Ident {
-        match self.map.get(&InternerEntry::new(s)) {
-            Some(v) => v.to_owned(),
-            None => {
-                let v = self.frag_map.extend(s.as_bytes().iter().copied());
-                let key = InternerEntry::new(&self[v]);
-                self.map.insert(key, v);
-                v
+        let slice = self.frag_map.extend(s.as_bytes().iter().copied());
+        let key = unsafe { FragSliceKey::new(&self.frag_map, slice) };
+        match self.map.entry(key) {
+            Entry::Occupied(entry) => {
+                unsafe {
+                    self.frag_map.unextend(slice);
+                }
+                *entry.get()
             }
+            Entry::Vacant(entry) => *entry.insert(slice),
         }
     }
 
@@ -174,36 +176,6 @@ struct RawInterner {
 impl RawInterner {
     fn into_interner(self) -> Interner {
         todo!()
-    }
-}
-
-#[derive(Clone, Copy)]
-struct InternerEntry {
-    str: *const str,
-}
-
-unsafe impl Send for InternerEntry {}
-unsafe impl Sync for InternerEntry {}
-
-impl Hash for InternerEntry {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        unsafe {
-            (*self.str).hash(state);
-        }
-    }
-}
-
-impl PartialEq<Self> for InternerEntry {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe { (*self.str) == (*other.str) }
-    }
-}
-
-impl Eq for InternerEntry {}
-
-impl InternerEntry {
-    pub fn new(str: &str) -> InternerEntry {
-        InternerEntry { str }
     }
 }
 

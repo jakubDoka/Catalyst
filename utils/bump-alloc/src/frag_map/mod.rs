@@ -477,6 +477,15 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     unsafe fn full_data<'a>(load: NonNull<FragVecInner<T, A>>) -> &'a [T] {
         Self::data(load, ptr::addr_of!((*load.as_ptr()).len).read())
     }
+
+    pub(crate) unsafe fn unextend(load: NonNull<FragVecInner<T, A>>, index: u64, len: u16) {
+        debug_assert!(ptr::addr_of!((*load.as_ptr()).len).read() - len as usize == index as usize);
+        let base = Self::get_item(load, index as usize);
+        for i in 0..len as usize {
+            base.as_ptr().add(i).drop_in_place();
+        }
+        *ptr::addr_of_mut!((*load.as_ptr()).len) -= len as usize;
+    }
 }
 
 #[repr(transparent)]

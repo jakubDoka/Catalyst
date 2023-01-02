@@ -1,6 +1,7 @@
 use arc_swap::ArcSwapAny;
 use std::{
     cell::UnsafeCell,
+    hash::Hash,
     sync::{atomic::Ordering, Arc},
 };
 
@@ -40,6 +41,13 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
             self.fallback(self.thread);
         }
         slice
+    }
+
+    /// # Safety
+    /// Caller must ensure the slice is last one pushed
+    pub unsafe fn unextend(&mut self, slice: FragSlice<T>) {
+        let (index, thread, len) = slice.parts();
+        self.base.views[thread as usize].unextend(index, len);
     }
 
     pub fn push(&mut self, value: T) -> FragRef<T>
@@ -236,6 +244,10 @@ impl<T, A: Allocator> SyncFragView<T, A> {
             .store(prev + values_len as usize, Ordering::Relaxed);
         (slice, possibly_new.is_some())
     }
+
+    unsafe fn unextend(&self, index: u64, len: u16) {
+        FragVecInner::unextend(self.inner.load().0, index, len);
+    }
 }
 
 struct LocalFragView<T, A: Allocator = Global> {
@@ -252,6 +264,51 @@ impl<T, A: Allocator> LocalFragView<T, A> {
         unsafe { FragVecInner::data(self.inner.0, self.len).get(range) }
     }
 }
+
+pub struct FragSliceKey<T, A: Allocator = Global> {
+    view: *const SyncFragView<T, A>,
+    slice: FragSlice<T>,
+}
+
+unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Send for FragSliceKey<T, A> {}
+unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragSliceKey<T, A> {}
+
+impl<T, A: Allocator> FragSliceKey<T, A> {
+    /// # Safety
+    /// Caller must ensure that `Self` does not outlive `map` and `slice` is valid
+    pub unsafe fn new(map: &SyncFragMap<T, A>, slice: FragSlice<T>) -> Self {
+        let (_, thread, ..) = slice.parts();
+        let map = &map.base.views[thread as usize];
+
+        Self {
+            view: map as _,
+            slice,
+        }
+    }
+
+    unsafe fn inner_slice(&self) -> &[T] {
+        let map = &*self.view;
+        let (index, .., len) = self.slice.parts();
+        let range = index as usize..index as usize + len as usize;
+        &FragVecInner::full_data(map.inner.load().0).get_unchecked(range)
+    }
+}
+
+impl<T: Hash, A: Allocator> Hash for FragSliceKey<T, A> {
+    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+        unsafe {
+            self.inner_slice().hash(state);
+        }
+    }
+}
+
+impl<T: Eq, A: Allocator> PartialEq for FragSliceKey<T, A> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { self.inner_slice() == other.inner_slice() }
+    }
+}
+
+impl<T: Eq, A: Allocator> Eq for FragSliceKey<T, A> {}
 
 #[cfg(test)]
 mod test {
