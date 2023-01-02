@@ -1,12 +1,12 @@
 error: match is not exhaustive
- --> enum\root.ctl:6:52
+ --> enum/root.ctl:6:37
   |
-6 |   fn main -> uint => match Option\Some~Option\Some~0 {
-  |  ____________________________________________________^
-7 | |     \Some~\None => 5
-8 | |     \Some~\Some~1 => 2
-9 | | }
-  | |_^ here
+6 |       match Option\Some~Option\Some~0 {
+  |  _____________________________________^
+7 | |         \Some~\None => 5
+8 | |         \Some~\Some~1 => 2
+9 | |     }
+  | |_____^ here
   |
   = info: missing patterns: \Some~\Some~0..1, \Some~\Some~2..max, \None
   = help: adding '_ {}' will make the match exhaustive

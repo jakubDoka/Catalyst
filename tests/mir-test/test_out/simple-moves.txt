@@ -1,37 +1,37 @@
 error: move out of already moved value
- --> simple-moves\root.ctl:7:10
+ --> simple-moves/root.ctl:6:10
   |
-7 |     drop(a)
+6 |     drop(a)
   |          - info: previous move of value
-8 |     drop(a)
+7 |     drop(a)
   |          ^ here
   |
   = note: you can disable move semantics with '#[no_moves]' function attribute
 
 error: move out of already moved value
-  --> simple-moves\root.ctl:13:14
+  --> simple-moves/root.ctl:12:14
    |
-13 |         drop(a)
+12 |         drop(a)
    |              - info: previous move of value
-14 |     } 
-15 |     drop(a)
+13 |     } 
+14 |     drop(a)
    |          ^ here
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
 error: move out of already moved value
-  --> simple-moves\root.ctl:39:10
+  --> simple-moves/root.ctl:39:10
    |
 39 |     drop(a)
    |          - info: previous move of value
-40 |     if 0 == 0 => a = A\{ }
+40 |     if 0 == 0 => a = A\{}
 41 |     drop(a)
    |          ^ here
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
 error: move out of already moved value
-  --> simple-moves\root.ctl:71:9
+  --> simple-moves/root.ctl:71:9
    |
 71 |         e {
    |         - info: previous move of value
@@ -56,9 +56,9 @@ fn [] double_move() -> ()  { ret var0
         var2 ={}
         var3 = var2
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -76,7 +76,7 @@ fn [] conditional_double_move() -> ()  { ret var0
 
     block1() {
         access var3
-        var1 = drop[0\A](val3)
+        var1 = drop[6\A](val3)
         goto block3 with var1
     }
 
@@ -86,7 +86,7 @@ fn [] conditional_double_move() -> ()  { ret var0
 
     block3(var1: !) {
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -104,13 +104,13 @@ fn [] conditional_move() -> ()  { ret var0
 
     block1() {
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
     block2() {
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -121,11 +121,11 @@ fn [] reassign() -> ()  { ret var0
         var2 ={}
         var3 = var2
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         access var3
         var3 ={}
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -136,7 +136,7 @@ fn [] conditional_reassign() -> ()  { ret var0
         var2 ={}
         var3 = var2
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         var5 = 0
         var6 = 0
         var4 = uint == uint(val5, val6)
@@ -157,7 +157,7 @@ fn [] conditional_reassign() -> ()  { ret var0
 
     block3(var0: ()) {
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -168,7 +168,7 @@ fn [] conditional_incomplete_reassign() -> ()  { ret var0
         var2 ={}
         var3 = var2
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         var5 = 0
         var6 = 0
         var4 = uint == uint(val5, val6)
@@ -187,7 +187,7 @@ fn [] conditional_incomplete_reassign() -> ()  { ret var0
 
     block3(var1: !) {
         access var3
-        var0 = drop[0\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -211,7 +211,7 @@ fn [] enum_move() -> ()  { ret var0
         var10 = var5.1
         var11 = var10
         access var11
-        var0 = drop[0\A](val11)
+        var0 = drop[6\A](val11)
         goto block3 with var0
     }
 
@@ -221,7 +221,7 @@ fn [] enum_move() -> ()  { ret var0
 
     block3(var0: ()) {
         access var5
-        var0 = drop[0\E](val5)
+        var0 = drop[6\E](val5)
         return var0
     }
 
@@ -251,7 +251,7 @@ fn [] enum_just_match() -> ()  { ret var0
 
     block3(var0: ()) {
         access var5
-        var0 = drop[0\E](val5)
+        var0 = drop[6\E](val5)
         return var0
     }
 
@@ -282,7 +282,7 @@ fn [] enum_whole_move() -> ()  { ret var0
 
     block3(var0: ()) {
         access var5
-        var0 = drop[0\E](val5)
+        var0 = drop[6\E](val5)
         return var0
     }
 

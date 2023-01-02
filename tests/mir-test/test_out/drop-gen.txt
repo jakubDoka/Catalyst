@@ -86,7 +86,7 @@ fn [] drop_cond() -> ()  { ret var0
 
     block1() {
         access var4
-        var1 = drop[0\A](val4)
+        var1 = drop[4\A](val4)
         goto block3 with var1
     }
 
@@ -114,7 +114,7 @@ fn [] main() -> uint  { ret var2
 
 }
 
-fn [] new(var0: char) -> 0\A  { ret var3
+fn [] new(var0: char) -> 4\A  { ret var3
     block0(var2: char) {
         var3 ={var4}
         var4 = access var2
@@ -123,8 +123,8 @@ fn [] new(var0: char) -> 0\A  { ret var3
 
 }
 
-fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { ret var0
-    block0(var2: ^mut 0\A, var3: char) {
+fn [] set_char(var0: ^mut 4\A, var1: char) -> ()  { ret var0
+    block0(var2: ^mut 4\A, var3: char) {
         access var2
         var5 = *var2
         var4 = var5.0
@@ -134,8 +134,8 @@ fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { ret var0
 
 }
 
-fn [] drop(var0: ^mut 0\A) -> ()  { ret var0
-    block0(var2: ^mut 0\A) {
+fn [] drop(var0: ^mut 4\A) -> ()  { ret var0
+    block0(var2: ^mut 4\A) {
         access var2
         var5 = *var2
         var4 = var5.0

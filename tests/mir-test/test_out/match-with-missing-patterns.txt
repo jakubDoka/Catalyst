@@ -1,13 +1,13 @@
 error: match is not exhaustive
-  --> match-with-missing-patterns\root.ctl:6:49
+  --> match-with-missing-patterns/root.ctl:6:32
    |
- 6 |   fn main -> uint => match Matched\{ a: 0; b: 1 } {
-   |  _________________________________________________^
- 7 | |     \{ a: 1; b: 0 } => 1
- 8 | |     \{ a: 0; b: 1 } => 0
- 9 | |     \{ a; b: 0 } => a
-10 | | }
-   | |_^ here
+ 6 |       match Matched\{a: 0, b: 1} {
+   |  ________________________________^
+ 7 | |         \{a: 1, b: 0} => 1
+ 8 | |         \{a: 0, b: 1} => 0
+ 9 | |         \{a, b: 0} => a
+10 | |     }
+   | |_____^ here
    |
    = info: missing patterns: \{ a: 0..1, b: 2..max }, \{ a: 1..2, b: 1..max }, \{ a: 2..max, b: 1..max }
    = help: adding '_ {}' will make the match exhaustive
