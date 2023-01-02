@@ -694,6 +694,7 @@ pub struct MiddlewareArgs {
     pub max_cores: Option<usize>,
     pub dump_ir: bool,
     pub check: bool,
+    pub quiet: bool,
 }
 
 impl MiddlewareArgs {
@@ -722,6 +723,7 @@ impl MiddlewareArgs {
             max_cores: cli_input.value("max-cores").and_then(|s| s.parse().ok()),
             dump_ir: cli_input.enabled("dump-ir"),
             check: cli_input.enabled("check"),
+            quiet: cli_input.enabled("quiet"),
         })
     }
 }

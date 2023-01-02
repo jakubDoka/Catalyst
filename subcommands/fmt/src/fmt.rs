@@ -198,6 +198,7 @@ impl<'ctx> Fmt<'ctx> {
                 self.body(Self::expr, Some(block));
             }
             FuncBodyAst::Extern(source_info) => {
+                self.buffer.push(' ');
                 self.source_info(source_info);
             }
         }
@@ -456,7 +457,7 @@ impl<'ctx> Fmt<'ctx> {
     fn pat(&mut self, pat: &PatAst<u32>) {
         match *pat {
             PatAst::Binding(m, b) => {
-                self.opt_source_info(m);
+                self.opt_keyword(m);
                 self.source_info(b.source_info);
             }
             PatAst::Wildcard(source_info) => self.source_info(source_info),
@@ -482,10 +483,7 @@ impl<'ctx> Fmt<'ctx> {
     fn struct_ctor_pat_field(&mut self, field: &StructCtorPatFieldAst<u32>) {
         match *field {
             StructCtorPatFieldAst::Simple { mutable, name } => {
-                if let Some(mutable) = mutable {
-                    self.source_info(mutable);
-                    self.buffer.push(' ');
-                }
+                self.opt_keyword(mutable);
                 self.source_info(name.source_info);
             }
             StructCtorPatFieldAst::Named { name, colon, pat } => {

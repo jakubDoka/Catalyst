@@ -44,17 +44,21 @@ impl Scheduler for TestState {
         let mut type_checked_funcs = bumpvec![];
         let arena = Arena::new();
         let mut ctx = TirBuilderCtx::default();
-        ty_checker!(self, module)
-            .execute(
-                &arena,
-                items,
-                &mut self.typec_ctx,
-                &mut ctx,
-                self.ast_transfer.activate(),
-                &mut type_checked_funcs,
-            )
-            .display_funcs(&type_checked_funcs, &mut self.functions)
-            .unwrap();
+
+        let mut checker = ty_checker!(self, module);
+        checker.execute(
+            &arena,
+            items,
+            &mut self.typec_ctx,
+            &mut ctx,
+            self.ast_transfer.activate(),
+            &mut type_checked_funcs,
+        );
+        if !self.resources.is_external(module) {
+            checker
+                .display_funcs(&type_checked_funcs, &mut self.functions)
+                .unwrap();
+        }
     }
 
     fn finally(&mut self) {

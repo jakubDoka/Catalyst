@@ -13,7 +13,7 @@ impl<'m> FmtRuntime<'m> {
     pub fn test_format(name: &str, resources: &mut dyn ResourceDb) {
         let mut middleware = Middleware::default();
         let mut runtime = FmtRuntime::new(&mut middleware);
-        let cli_input = CliInput::from_string(&format!(". _ {name} --max-cores 1"))
+        let cli_input = CliInput::from_string(&format!(". _ {name} --max-cores 1 -quiet -check"))
             .expect("then this needs some tunning");
         let args = MiddlewareArgs::from_cli_input(&cli_input).expect("same here");
         runtime.run(FmtCfg::default(), &args, resources);
@@ -29,7 +29,7 @@ impl<'m> FmtRuntime<'m> {
     pub fn run(&mut self, cfg: FmtCfg, args: &MiddlewareArgs, resources: &mut dyn ResourceDb) {
         let (out, view) = self.middleware.update(args, resources);
 
-        if let Err(err) = view.dump_diagnostics(true, out) {
+        if !args.quiet && let Err(err) = view.dump_diagnostics(true, out) {
             eprintln!("{err}");
         }
 
@@ -43,7 +43,9 @@ impl<'m> FmtRuntime<'m> {
             .middleware
             .traverse_source_ast(args, &mut self.workers)
             else {
-                eprintln!("failed to format the source code");
+                if !args.quiet {
+                    eprintln!("failed to format the source code");
+                }
                 return;
             };
 

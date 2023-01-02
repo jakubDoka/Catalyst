@@ -58,10 +58,11 @@ impl Scheduler for TestState {
             &mut type_checked_funcs,
         );
 
-        mir_checker!(self, module)
-            .funcs(&mut type_checked_funcs)
-            .display_funcs(&mut self.functions)
-            .unwrap();
+        let mut checker = mir_checker!(self, module);
+        checker.funcs(&mut type_checked_funcs);
+        if !self.resources.is_external(module) {
+            checker.display_funcs(&mut self.functions).unwrap();
+        }
 
         self.mir_ctx.just_compiled.clear();
     }
@@ -118,11 +119,11 @@ fn main() {
                 b: uint
             };
 
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a; b: 0 } => a;
-                ::{ a; b } => a + b;
+            fn main() -> uint => match Matched::{ a: 0, b: 1 } {
+                ::{ a: 1, b: 0 } => 1;
+                ::{ a: 0, b: 1 } => 0;
+                ::{ a, b: 0 } => a;
+                ::{ a, b } => a + b;
             };
         }
 
@@ -132,10 +133,10 @@ fn main() {
                 b: uint
             };
 
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a; b: 0 } => a;
+            fn main() -> uint => match Matched::{ a: 0, b: 1 } {
+                ::{ a: 1, b: 0 } => 1;
+                ::{ a: 0, b: 1 } => 0;
+                ::{ a, b: 0 } => a;
             };
         }
 
@@ -147,8 +148,8 @@ fn main() {
 
             #[entry];
             fn main() -> uint => match 0 {
-                0 => Returned::{ a: 0; b: 1 };
-                a => Returned::{ a: a; b: 0 };
+                0 => Returned::{ a: 0, b: 1 };
+                a => Returned::{ a: a, b: 0 };
             }.a;
         }
 
@@ -180,7 +181,7 @@ fn main() {
 
             #[entry];
             fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
+                let ::{ mut a, b } = A::{ a: 0, b: 3 };
                 a = a + b;
                 a - 3
             };
@@ -350,7 +351,7 @@ fn main() {
                 mut a1: A;
             };
             impl B {
-                fn new() -> Self => ::{ a0: ::{}; a1: ::{} };
+                fn new() -> Self => ::{ a0: ::{}, a1: ::{} };
             };
 
             fn [T] drop(t: T) {};
@@ -529,7 +530,7 @@ fn main() {
             #[entry];
             fn main -> u32 {
                 RegStruct::{ field: 3 }.field +
-                RegStruct2::{ field: 1; field2: 3 }.field2 -
+                RegStruct2::{ field: 1, field2: 3 }.field2 -
                 6u32
             }
         }
@@ -548,7 +549,7 @@ fn main() {
 
                 let mut vv = Vec::[Vec::[uint]]::new();
                 vv.push(v);
-                vv.get_mut(0).push(3);
+                vv.get_mut_ptr(0).push(3);
 
                 0
             }

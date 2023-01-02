@@ -78,6 +78,7 @@ impl<'m> LspRuntime<'m> {
                 max_cores: None,
                 dump_ir: false,
                 check: true,
+                quiet: true,
             },
         })
     }

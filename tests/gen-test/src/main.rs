@@ -110,6 +110,7 @@ impl Testable for TestState {
             max_cores: Some(1),
             dump_ir: true,
             check: false,
+            quiet: false,
         };
         let (output, ..) = self.middleware.update(&args, resources);
         if let MiddlewareOutput::Compiled { binary, ir } = output {

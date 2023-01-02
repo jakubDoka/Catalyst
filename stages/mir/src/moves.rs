@@ -956,8 +956,7 @@ impl CtlError for MoveOfPartiallyMoved {
             ref moves,
             loc,
         } = self;
-        snippet.title =
-            ctl_error_annotation!(err => "{something} partially moved value is prohibited");
+        snippet.title = ctl_error_annotation!(err => "{something} partially moved value");
         snippet
             .footer
             .extend([ctl_error_annotation!(note => NO_MOVE_NOTE)]);
@@ -970,6 +969,6 @@ impl CtlError for MoveOfPartiallyMoved {
             .collect_into(&mut snippet.source_annotations);
         snippet
             .source_annotations
-            .extend(ctl_error_source_annotation!(info loc));
+            .extend(ctl_error_source_annotation!(err loc));
     }
 }
