@@ -166,7 +166,7 @@ impl<T, A: Allocator> SyncFragBase<T, A> {
     }
 }
 
-impl<T: Send + Sync + Relocated, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
+impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
     fn mark(&self, addr: FragAddr, marker: &mut crate::FragRelocMarker) {
         let (index, thread) = addr.parts();
         let thread = &self.views[thread as usize];

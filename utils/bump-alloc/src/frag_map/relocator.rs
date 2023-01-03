@@ -17,9 +17,19 @@ use crate::*;
 
 use super::{FragVecArc, FragVecInner};
 
-pub trait Relocated: 'static + Send + Sync {
+pub trait Relocated: Send + Sync {
     fn mark(&self, marker: &mut FragRelocMarker);
     fn remap(&mut self, ctx: &FragRelocMapping);
+}
+
+impl<'a, T: Relocated> Relocated for &'a mut T {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        (**self).mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        (**self).remap(ctx);
+    }
 }
 
 #[derive(Default)]
@@ -53,7 +63,7 @@ pub trait DynFragMap: Send + Sync {
     fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping);
 }
 
-impl<T: Relocated, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
+impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
     fn mark(&self, addr: FragAddr, marker: &mut FragRelocMarker) {
         let addr = FragRef::<T>::new(addr);
         self[addr].mark(marker);
@@ -217,7 +227,7 @@ impl FragMarks {
 
     pub(crate) fn filter_base<
         'a,
-        T: Relocated,
+        T: Relocated + 'static,
         A: Allocator + 'a,
         S: FnOnce(usize),
         V: Deref<Target = FragVecArc<T, A>>,

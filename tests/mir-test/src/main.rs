@@ -106,6 +106,15 @@ fn main() {
             };
         }
 
+        simple "additional-param-garbage" {
+            fn [T] pass(value: T) -> T => value;
+
+            struct B;
+
+            #[entry];
+            fn main -> uint => pass::[uint, B](0uint, 'h');
+        }
+
         // simple "compile-time" {
         //     fn sub(a: uint, b: uint) -> uint => a - b;
 

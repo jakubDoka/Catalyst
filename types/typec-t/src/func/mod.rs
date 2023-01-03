@@ -36,6 +36,7 @@ gen_water_drops! {
     UINT_EQ => "uint == uint",
     CAST => "cast",
     SIZEOF => "sizeof",
+    EXIT => "exit",
 }
 
 bitflags! {

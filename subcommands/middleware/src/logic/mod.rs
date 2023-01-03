@@ -16,7 +16,6 @@ use std::{
 use cli::CliInput;
 use cranelift_codegen::{
     ir::{self, InstBuilder},
-    isa::CallConv,
     Context,
 };
 use cranelift_frontend::FunctionBuilderContext;
@@ -203,7 +202,7 @@ impl Middleware {
             mut task_base,
             mut worker_pool,
             mut module_items,
-            builtin_functions,
+            mut builtin_functions,
         } = self.incremental.take().unwrap_or_else(|| {
             let mut builtin_functions = vec![];
             Incremental {
@@ -218,7 +217,7 @@ impl Middleware {
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
         {
-            // self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count);
+            self.sweep_resources(&mut task_base, &mut module_items, removed, thread_count, &mut builtin_functions);
         };
 
         if self.workspace.has_errors() || resources.no_changes() {
@@ -334,7 +333,10 @@ impl Middleware {
             );
         }
 
-        let entry_point = self.generate_entry_point(&mut main_task, &args.isa, entry_points);
+        let (entry_point, exit_func) = worker_pool
+            .first_mut()
+            .expect("since there is nonzero cores, there has to be worker")
+            .generaite_entry_point(&mut main_task, &args.isa, &shared, &entry_points);
 
         let mut object = ObjectContext::new(&args.isa).unwrap();
         object
@@ -342,17 +344,18 @@ impl Middleware {
                 compiled
                     .into_iter()
                     .chain(imported)
-                    .chain(iter::once(entry_point)),
+                    .chain(iter::once(entry_point))
+                    .chain(exit_func),
                 &main_task.gen,
                 &main_task.typec,
                 &main_task.interner,
             )
-            .map_err(|err| {
-                if let ObjectRelocationError::MissingSymbol(id) = err {
-                    let func = main_task.gen[id].func;
-                    dbg!(&main_task.interner[main_task.typec[func].name]);
-                }
-            })
+            // .map_err(|err| {
+            // if let ObjectRelocationError::MissingSymbol(id) = err {
+            //     let func = main_task.gen[id].func;
+            //     db g!(&main_task.interner[main_task.typec[func].name]);
+            // }
+            // })
             .unwrap();
 
         let incr = self.incremental.insert(Incremental {
@@ -452,55 +455,6 @@ impl Middleware {
         }
 
         (package_tasks, gen_senders, threads)
-    }
-
-    fn generate_entry_point(
-        &mut self,
-        main_task: &mut Task,
-        isa: &Isa,
-        entry_points: Vec<FragRef<CompiledFunc>>,
-    ) -> FragRef<CompiledFunc> {
-        let mut context = Context::new();
-        let mut func_ctx = FunctionBuilderContext::new();
-
-        let (body, dependant) = (default(), default());
-        let mut builder = GenBuilder::new(isa, &body, &mut context.func, &dependant, &mut func_ctx);
-
-        let entry_point = builder.create_block();
-        builder.append_block_params_for_function_params(entry_point);
-        builder.switch_to_block(entry_point);
-
-        for index in entry_points {
-            let signature = ir::Signature::new(CallConv::Fast);
-            let sig_ref = builder.import_signature(signature);
-            let external_name = GenItemName::encode_func(index);
-            let name = builder.func.declare_imported_user_function(external_name);
-            let func_ref = builder.import_function(ir::ExtFuncData {
-                name: ir::ExternalName::user(name),
-                signature: sig_ref,
-                colocated: true,
-            });
-            builder.ins().call(func_ref, &[]);
-        }
-        builder.ins().return_(&[]);
-
-        let func_id = main_task.typec.cache.funcs.push(Func {
-            visibility: FuncVisibility::Exported,
-            name: main_task.interner.intern(gen::ENTRY_POINT_NAME),
-            ..default()
-        });
-        let name = main_task.interner.intern(gen::ENTRY_POINT_NAME);
-        let entry_point = main_task
-            .gen
-            .get_or_insert(name, || CompiledFunc::new(func_id, name));
-
-        context.compile(&*isa.inner).unwrap();
-        main_task
-            .gen
-            .save_compiled_code(entry_point, &context)
-            .unwrap();
-
-        entry_point
     }
 
     pub fn distribute_compile_requests(
@@ -657,24 +611,52 @@ impl Middleware {
         module_items: &mut Map<VRef<Source>, ModuleItems>,
         removed: Vec<VRef<Source>>,
         thread_count: usize,
+        builtin_functions: &mut [FragRef<Func>],
     ) {
         for source in removed {
             module_items.remove(&source);
         }
 
-        let mut threads = vec![vec![]; thread_count];
+        let mut threads = iter::repeat_with(Vec::new)
+            .take(thread_count)
+            .collect::<Vec<_>>();
 
-        for (&item, thread) in module_items
-            .values()
-            .flat_map(|val| val.items.values())
+        for (item, thread) in module_items
+            .values_mut()
+            .flat_map(|val| val.items.values_mut())
             .zip((0..thread_count).cycle())
         {
-            threads[thread].push(item);
+            threads[thread].push(Root::ModuleItem(item));
+        }
+
+        for (func, thread) in builtin_functions.iter_mut().zip((0..thread_count).cycle()) {
+            threads[thread].push(Root::BuiltinFunc(func));
         }
 
         let mut frags = RelocatedObjects::default();
         task_base.register(&mut frags);
         self.relocator.relocate(&mut threads, &mut frags);
+    }
+}
+
+enum Root<'a> {
+    ModuleItem(&'a mut ModuleItem),
+    BuiltinFunc(&'a mut FragRef<Func>),
+}
+
+impl<'a> Relocated for Root<'a> {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        match self {
+            Root::ModuleItem(m) => m.mark(marker),
+            Root::BuiltinFunc(b) => b.mark(marker),
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) {
+        match self {
+            Root::ModuleItem(m) => m.remap(ctx),
+            Root::BuiltinFunc(b) => b.remap(ctx),
+        }
     }
 }
 

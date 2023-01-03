@@ -304,14 +304,21 @@ impl TyChecker<'_> {
         let loc = if not_in_scope {
             None
         } else {
-            let id = self.typec.cache.funcs.next();
-            let vis = vis.map(|v| v.vis).or(upper_vis);
+            let meta = self.next_humid_item_id::<Func>(name, attributes);
             let local_id = owner.map_or(name.ident, |owner| {
                 self.interner
                     .intern_scoped(owner.caller(self.typec), name.ident)
             });
-            let item = ModuleItem::new(local_id, id, name.span, vis);
-            Some(self.insert_scope_item(item)?)
+            let item = ModuleItem::new(
+                local_id,
+                meta.id,
+                name.span,
+                vis.map(|vis| vis.vis).or(upper_vis),
+            );
+            Some(self.insert_scope_item(item).map(|id| (id, meta))?)
+            // let vis = vis.map(|v| v.vis).or(upper_vis);
+            // let item = ModuleItem::new(local_id, id, name.span, vis);
+            // Some(self.insert_scope_item(item)?)
         };
 
         let func = Func {
@@ -323,9 +330,13 @@ impl TyChecker<'_> {
                 | (FuncFlags::NO_MOVES & no_moves.is_some()),
             visibility,
             name: name.ident,
-            loc,
+            loc: loc.as_ref().map(|&(loc, ..)| loc),
         };
-        Some(self.typec.cache.funcs.push(func))
+        Some(if let Some((.., meta)) = loc {
+            self.insert_humid_item(func, meta)
+        } else {
+            self.typec.cache.funcs.push(func)
+        })
     }
 
     pub fn collect_signature(

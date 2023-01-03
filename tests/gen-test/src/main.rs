@@ -5,7 +5,12 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 
-use std::{fs, path::Path, process::Command, vec};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, ExitStatus},
+    vec,
+};
 use target_lexicon::Triple;
 
 use middleware::*;
@@ -52,7 +57,11 @@ impl TestState {
         } else if compiler.is_like_clang() {
             todo!()
         } else if compiler.is_like_gnu() {
-            todo!()
+            vec![
+                format!("-o{}", &exe_path),
+                "-nostartfiles".into(),
+                format!("-e{}", gen::ENTRY_POINT_NAME),
+            ]
         } else {
             unimplemented!("unknown compiler");
         };
@@ -75,7 +84,7 @@ impl TestState {
         fs::remove_file(exe_path).unwrap();
 
         s.workspace.push(ExecReport {
-            status: output.status.code().unwrap(),
+            status: output.status,
             stdout: String::from_utf8_lossy(&output.stdout).into(),
             stderr: String::from_utf8_lossy(&output.stderr).into(),
         });
@@ -87,7 +96,7 @@ ctl_errors! {
     #[info => "stdout: {stdout}"]
     #[info => "stderr: {stderr}"]
     error ExecReport {
-        status: i32,
+        status: ExitStatus,
         stdout ref: String,
         stderr ref: String,
     }
@@ -124,7 +133,7 @@ impl Testable for TestState {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "functions" {
             #[entry];
             fn main -> uint => pass(0);
@@ -188,8 +197,8 @@ fn main() {
             #[entry];
             fn main -> uint {
                 Generic::{
-                    a: OnStack::{ a: 1; b: 2 };
-                    b: InRegister::{ a: 3; b: 1 }
+                    a: OnStack::{ a: 1, b: 2 },
+                    b: InRegister::{ a: 3, b: 1 },
                 };
                 0
             };
@@ -252,7 +261,7 @@ fn main() {
             };
 
             #[entry];
-            fn main -> uint => Foo::{ a: 1; b: 0 }.b;
+            fn main -> uint => Foo::{ a: 1, b: 0 }.b;
         }
 
         simple "register struct init and use" {
@@ -268,7 +277,7 @@ fn main() {
             #[entry];
             fn main -> u32 {
                 RegStruct::{ field: 3 }.field +
-                RegStruct2::{ field: 1; field2: 3 }.field2 -
+                RegStruct2::{ field: 1, field2: 3 }.field2 -
                 6u32
             }
         }
@@ -280,11 +289,11 @@ fn main() {
             };
 
             #[entry];
-            fn main() -> uint => match Matched::{ a: 0; b: 1 } {
-                ::{ a: 1; b: 0 } => 1;
-                ::{ a: 0; b: 1 } => 0;
-                ::{ a; b: 0 } => a;
-                ::{ a; b } => a + b;
+            fn main() -> uint => match Matched::{ a: 0, b: 1 } {
+                ::{ a: 1, b: 0 } => 1;
+                ::{ a: 0, b: 1 } => 0;
+                ::{ a, b: 0 } => a;
+                ::{ a, b } => a + b;
             };
         }
 
@@ -296,8 +305,8 @@ fn main() {
 
             #[entry];
             fn main() -> uint => match 0 {
-                0 => Returned::{ a: 0; b: 1 };
-                a => Returned::{ a; b: 0 };
+                0 => Returned::{ a: 0, b: 1 };
+                a => Returned::{ a, b: 0 };
             }.a;
         }
 
@@ -380,7 +389,7 @@ fn main() {
 
             #[entry];
             fn main() -> uint {
-                let ::{ mut a, b } = A::{ a: 0; b: 3 };
+                let ::{ mut a, b } = A::{ a: 0, b: 3 };
                 a = a + b;
                 a - 3
             };
@@ -589,7 +598,7 @@ fn main() {
             #[entry];
             fn main() -> uint {
                 E::A~::{ ch: 'a' };
-                E::B~::{ a: ::{ ch: 'b' }; b: ::{ ch: 'c' } };
+                E::B~::{ a: ::{ ch: 'b' }, b: ::{ ch: 'c' } };
                 E::C;
                 0;
             };

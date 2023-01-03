@@ -438,6 +438,12 @@ impl GenLayouts {
             false,
         )
     }
+
+    pub fn clear(&mut self, ptr_ty: Type) {
+        self.mapping.clear();
+        self.offsets.clear();
+        self.ptr_ty = ptr_ty;
+    }
 }
 
 pub type Offset = u32;

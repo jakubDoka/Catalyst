@@ -108,7 +108,7 @@ pub struct DropMir {
     pub value: VRef<ValueMir>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MirTy {
     pub ty: Ty,
 }
@@ -226,7 +226,11 @@ impl FuncTypes {
     }
 
     pub fn clear(&mut self) {
-        self.0.truncate(ValueMir::ALL.len());
+        self.0.truncate(Self::BASE_LEN);
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &MirTy> {
+        self.0.values().skip(Self::BASE_LEN)
     }
 }
 

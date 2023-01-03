@@ -51,6 +51,110 @@ impl Worker {
         }
     }
 
+    pub fn generaite_entry_point(
+        &mut self,
+        task: &mut Task,
+        isa: &Isa,
+        shared: &Shared,
+        entry_points: &[FragRef<CompiledFunc>],
+    ) -> (FragRef<CompiledFunc>, Option<FragRef<CompiledFunc>>) {
+        self.context.func.signature = ir::Signature::new(isa.default_call_conv());
+        if cfg!(not(unix)) {
+            self.context
+                .func
+                .signature
+                .returns
+                .push(ir::AbiParam::new(ir::types::I32));
+        }
+
+        let mut generator = Generator::new(
+            &mut self.state.gen_layouts,
+            &mut task.gen,
+            &mut self.state.gen_resources,
+            &mut task.interner,
+            &mut task.typec,
+            &task.resources.compile_requests,
+            shared.resources,
+        );
+
+        let inner = FuncMirInner::default();
+        let types = FuncTypes::default();
+        let mut builder = GenBuilder::new(
+            isa,
+            &inner,
+            &mut self.context.func,
+            &types,
+            &mut self.function_builder_ctx,
+        );
+
+        let entry = builder.create_block();
+        builder.switch_to_block(entry);
+
+        let mut exit_code = None;
+        for &func in entry_points {
+            let (func_ref, ..) = generator.import_compiled_func(func, iter::empty(), &mut builder);
+            let inst = builder.ins().call(func_ref, &[]);
+            exit_code = builder.inst_results(inst).first().copied();
+        }
+
+        let exit_code = if let Some(exit_code) = exit_code {
+            match builder
+                .func
+                .dfg
+                .value_type(exit_code)
+                .bytes()
+                .cmp(&ir::types::I32.bytes())
+            {
+                std::cmp::Ordering::Less => builder.ins().uextend(ir::types::I32, exit_code),
+                std::cmp::Ordering::Equal => exit_code,
+                std::cmp::Ordering::Greater => builder.ins().ireduce(ir::types::I32, exit_code),
+            }
+        } else {
+            builder.ins().iconst(ir::types::I32, 0)
+        };
+        let exit_func = if cfg!(unix) {
+            let func_name = Generator::func_instance_name(
+                false,
+                &isa.triple,
+                Func::EXIT,
+                iter::empty(),
+                &generator.typec,
+                &mut generator.interner,
+            );
+
+            let compiled_func = generator
+                .gen
+                .get_or_insert(func_name, || CompiledFunc::new(Func::EXIT, func_name));
+            let (func_ref, ..) =
+                generator.import_compiled_func(compiled_func, iter::empty(), &mut builder);
+            builder.ins().call(func_ref, &[exit_code]);
+            builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
+            Some(compiled_func)
+        } else {
+            builder.ins().return_(&[exit_code]);
+            None
+        };
+
+        builder.seal_block(entry);
+
+        let entry_name = generator.interner.intern(gen::ENTRY_POINT_NAME);
+        let entry_func = generator.typec.cache.funcs.push(Func {
+            visibility: FuncVisibility::Exported,
+            name: entry_name,
+            ..default()
+        });
+        let compiled_entry = generator
+            .gen
+            .get_or_insert(entry_name, || CompiledFunc::new(entry_func, entry_name));
+        self.context.compile(&**isa).unwrap();
+        generator
+            .gen
+            .save_compiled_code(compiled_entry, &self.context)
+            .unwrap();
+
+        (compiled_entry, exit_func)
+    }
+
     pub fn run<'a: 'scope, 'scope, S: AstHandler>(
         mut self,
         thread_scope: &'a thread::Scope<'scope, '_>,
@@ -61,8 +165,8 @@ impl Worker {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
-            self.state.jit_layouts.ptr_ty = shared.jit_isa.pointer_ty;
-            self.state.gen_layouts.ptr_ty = shared.isa.pointer_ty;
+            self.state.jit_layouts.clear(shared.jit_isa.pointer_ty);
+            self.state.gen_layouts.clear(shared.isa.pointer_ty);
             loop {
                 let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
 
@@ -90,6 +194,7 @@ impl Worker {
 
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
+            self.state.gen_layouts = gen_layouts;
             (self, Some(compile_task))
         })
     }
@@ -296,7 +401,7 @@ impl Worker {
             self.state.temp_dependant_types.clear();
             self.state
                 .temp_dependant_types
-                .extend(body.types.values().copied().skip(MirTy::ALL.len()));
+                .extend(body.types.values().copied());
 
             swap_mir_types(
                 &body,
