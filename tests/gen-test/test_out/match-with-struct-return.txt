@@ -28,7 +28,7 @@ block3:
 }
 
 
-info: status: 0
+info: status: exit status: 0
  = info: stdout: 
  = info: stderr: 
 

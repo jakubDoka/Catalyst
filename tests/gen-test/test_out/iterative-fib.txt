@@ -1,7 +1,7 @@
 info: generated ir:
 main function u0:0() -> i64 fast {
     sig0 = (i64) -> i64 fast
-    fn0 = colocated u0:1 sig0
+    fn0 = colocated u0:16777472 sig0
 
 block0:
     v0 = iconst.i64 10
@@ -48,7 +48,7 @@ block5(v20: i64):
 }
 
 
-info: status: 0
+info: status: exit status: 0
  = info: stdout: 
  = info: stderr: 
 

@@ -12,14 +12,14 @@ main function u0:0() -> i64 fast {
     sig5 = (i64, i64) -> i64 fast
     sig6 = (i64, i64) -> i64 fast
     sig7 = (i64) fast
-    fn0 = colocated u0:2 sig0
-    fn1 = colocated u0:3 sig1
-    fn2 = colocated u0:4 sig2
-    fn3 = colocated u0:5 sig3
-    fn4 = colocated u0:6 sig4
-    fn5 = colocated u0:7 sig5
-    fn6 = colocated u0:8 sig6
-    fn7 = colocated u0:1 sig7
+    fn0 = colocated u0:33554688 sig0
+    fn1 = colocated u0:50331904 sig1
+    fn2 = colocated u0:67109120 sig2
+    fn3 = colocated u0:83886336 sig3
+    fn4 = colocated u0:100663552 sig4
+    fn5 = colocated u0:117440768 sig5
+    fn6 = colocated u0:134217984 sig6
+    fn7 = colocated u0:16777472 sig7
 
 block0:
     v0 = stack_addr.i64 ss0
@@ -97,9 +97,9 @@ push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
     sig2 = (i64, i64) fast
-    fn0 = colocated u0:19 sig0
-    fn1 = colocated u0:6 sig1
-    fn2 = colocated u0:20 sig2
+    fn0 = colocated u0:318767360 sig0
+    fn1 = colocated u0:100663552 sig1
+    fn2 = colocated u0:335544576 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -136,12 +136,12 @@ block0(v0: i64, v1: i64):
     return
 }
 grow function u0:0(i64) fast {
-    sig0 = (i64) -> i64 windows_fastcall
-    sig1 = (i64, i64, i64) windows_fastcall
-    sig2 = (i64) windows_fastcall
-    fn0 = u0:21 sig0
-    fn1 = u0:23 sig1
-    fn2 = u0:24 sig2
+    sig0 = (i64) -> i64 fast
+    sig1 = (i64, i64, i64) fast
+    sig2 = (i64) fast
+    fn0 = u0:352321792 sig0
+    fn1 = u0:385876224 sig1
+    fn2 = u0:402653440 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -188,9 +188,9 @@ push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
     sig2 = (i64, i64) fast
-    fn0 = colocated u0:26 sig0
-    fn1 = colocated u0:27 sig1
-    fn2 = colocated u0:28 sig2
+    fn0 = colocated u0:436207872 sig0
+    fn1 = colocated u0:452985088 sig1
+    fn2 = colocated u0:469762304 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -230,12 +230,12 @@ block0(v0: i64, v1: i64):
     return v5
 }
 grow function u0:0(i64) fast {
-    sig0 = (i64) -> i64 windows_fastcall
-    sig1 = (i64, i64, i64) windows_fastcall
-    sig2 = (i64) windows_fastcall
-    fn0 = u0:21 sig0
-    fn1 = u0:23 sig1
-    fn2 = u0:24 sig2
+    sig0 = (i64) -> i64 fast
+    sig1 = (i64, i64, i64) fast
+    sig2 = (i64) fast
+    fn0 = u0:352321792 sig0
+    fn1 = u0:385876224 sig1
+    fn2 = u0:402653440 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -283,11 +283,11 @@ drop function u0:0(i64) fast {
     sig0 = (i64, i64) -> i64 fast
     sig1 = (i64 sret, i64) fast
     sig2 = (i64) fast
-    sig3 = (i64) windows_fastcall
-    fn0 = colocated u0:7 sig0
-    fn1 = colocated u0:33 sig1
-    fn2 = colocated u0:32 sig2
-    fn3 = u0:24 sig3
+    sig3 = (i64) fast
+    fn0 = colocated u0:117440768 sig0
+    fn1 = colocated u0:553648384 sig1
+    fn2 = colocated u0:536871168 sig2
+    fn3 = u0:402653440 sig3
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -336,10 +336,10 @@ drop function u0:0(i64) fast {
     ss0 = explicit_slot 8
     sig0 = (i64, i64) -> i64 fast
     sig1 = (i64) -> i64 fast
-    sig2 = (i64) windows_fastcall
-    fn0 = colocated u0:8 sig0
-    fn1 = colocated u0:34 sig1
-    fn2 = u0:24 sig2
+    sig2 = (i64) fast
+    fn0 = colocated u0:134217984 sig0
+    fn1 = colocated u0:570425600 sig1
+    fn2 = u0:402653440 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -380,7 +380,7 @@ block0(v0: i64):
 }
 
 
-info: status: 0
+info: status: exit status: 33
  = info: stdout: 
  = info: stderr: 
 

@@ -1,16 +1,16 @@
 error: cast between types of different size
- --> cast-mismatch\root.ctl:3:19
+ --> cast-mismatch/root.ctl:2:21
   |
-3 | fn main -> u32 => cast(0)
-  |                   ^^^^^^^ here
+2 | fn main() -> u32 => cast(0)
+  |                     ^^^^^^^ here
   |
   = info: cast from 'uint'(8) to 'u32'(4)
   = note: if you know what you are doing, perform cast trough pointers
 
 error: cast between generic types is not allowed
- --> cast-mismatch\root.ctl:4:37
+ --> cast-mismatch/root.ctl:3:37
   |
-4 | fn [F, T] my_cast(value: F) -> T => cast(value)
+3 | fn [F, T] my_cast(value: F) -> T => cast(value)
   |                                     ^^^^^^^^^^^ here
   |
   = info: cast from 'param0' to 'param1', which contain generic parameters that depend on function instance
