@@ -145,7 +145,8 @@ impl<'a> PackageLoader<'a> {
             .collect::<Vec<_>>();
 
         for &key in &to_remove {
-            self.resources.sources.remove(key);
+            let package = self.resources.sources.remove(key);
+            ctx.sources.remove(&package.path);
         }
 
         let changed = self

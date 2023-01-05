@@ -1,9 +1,11 @@
 pub mod task;
 pub mod worker;
 
+use core::fmt;
 use std::{
     collections::VecDeque,
     default::default,
+    error::Error,
     fmt::Write,
     iter, mem,
     num::NonZeroU8,
@@ -307,7 +309,7 @@ impl Middleware {
             )
         });
 
-        let (ir, mut main_task, compiled) = self.tidy_tasks(tasks);
+        let (ir, mut main_task, compiled) = self.tidy_tasks(&mut task_base, tasks);
 
         if self.workspace.has_errors() || args.check {
             let incr = self.incremental.insert(Incremental {
@@ -318,10 +320,10 @@ impl Middleware {
                 builtin_functions,
             });
 
-            let output = if args.check {
-                MiddlewareOutput::Checked
-            } else {
+            let output = if self.workspace.has_errors() {
                 MiddlewareOutput::Failed
+            } else {
+                MiddlewareOutput::Checked
             };
 
             return (
@@ -394,14 +396,16 @@ impl Middleware {
 
     fn tidy_tasks(
         &mut self,
+        base: &mut TaskBase,
         mut tasks: Vec<Task>,
     ) -> (Option<String>, Task, Vec<FragRef<CompiledFunc>>) {
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
 
-        tasks
-            .iter_mut()
-            .for_each(|task| self.workspace.transfer(&mut task.workspace));
+        for task in tasks.iter_mut() {
+            self.workspace.transfer(&mut task.workspace);
+            task.commit(base);
+        }
 
         let ir = tasks
             .iter_mut()
@@ -414,7 +418,8 @@ impl Middleware {
             .map(|req| req.id)
             .collect();
 
-        let main_task = tasks.pop().expect("has to be at least one task");
+        let mut main_task = tasks.pop().expect("has to be at least one task");
+        main_task.pull(base);
 
         (ir, main_task, compiled)
     }
@@ -590,13 +595,22 @@ impl Middleware {
         let leftover_tasks = receiver
             .into_iter()
             .take(worker_count - tasks.len())
-            .map(|(task, ..)| task.task)
-            .inspect(|task| sync_module_items(&mut module_items, &task.typec.module_items));
-        let res = tasks
+            .map(|(task, ..)| task);
+        let mut res = tasks
             .into_iter()
-            .map(|task| task.task)
             .chain(leftover_tasks)
-            .collect();
+            .map(|task: PackageTask| {
+                sync_module_items(&mut module_items, &task.task.typec.module_items);
+                task.task
+            })
+            .collect::<Vec<_>>();
+
+        for task in res.iter_mut() {
+            task.commit(task_base);
+        }
+        for task in res.iter_mut() {
+            task.pull(task_base);
+        }
 
         for (key, items) in module_items.iter_mut() {
             cached_items.insert(resources.modules[key].source, mem::take(items));
@@ -611,7 +625,7 @@ impl Middleware {
         module_items: &mut Map<VRef<Source>, ModuleItems>,
         removed: Vec<VRef<Source>>,
         thread_count: usize,
-        builtin_functions: &mut [FragRef<Func>],
+        mut builtin_functions: &mut [FragRef<Func>],
     ) {
         for source in removed {
             module_items.remove(&source);
@@ -626,37 +640,17 @@ impl Middleware {
             .flat_map(|val| val.items.values_mut())
             .zip((0..thread_count).cycle())
         {
-            threads[thread].push(Root::ModuleItem(item));
-        }
-
-        for (func, thread) in builtin_functions.iter_mut().zip((0..thread_count).cycle()) {
-            threads[thread].push(Root::BuiltinFunc(func));
+            threads[thread].push(item);
         }
 
         let mut frags = RelocatedObjects::default();
+        frags.add_root(&mut builtin_functions);
+        frags.add_static_root(&Func::ALL);
+        frags.add_static_root(&Enum::ALL);
+        frags.add_static_root(&Struct::ALL);
+        frags.add_static_root(&SpecBase::ALL);
         task_base.register(&mut frags);
         self.relocator.relocate(&mut threads, &mut frags);
-    }
-}
-
-enum Root<'a> {
-    ModuleItem(&'a mut ModuleItem),
-    BuiltinFunc(&'a mut FragRef<Func>),
-}
-
-impl<'a> Relocated for Root<'a> {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        match self {
-            Root::ModuleItem(m) => m.mark(marker),
-            Root::BuiltinFunc(b) => b.mark(marker),
-        }
-    }
-
-    fn remap(&mut self, ctx: &FragRelocMapping) {
-        match self {
-            Root::ModuleItem(m) => m.remap(ctx),
-            Root::BuiltinFunc(b) => b.remap(ctx),
-        }
     }
 }
 
@@ -666,6 +660,86 @@ pub struct Shared<'a> {
     pub jit_isa: &'a Isa,
     pub isa: &'a Isa,
     pub builtin_functions: &'a [FragRef<Func>],
+}
+
+pub struct CommandInfo<'a> {
+    pub general: &'a str,
+    pub flags: &'a [(&'a str, &'a str)],
+    pub values: &'a [(&'a str, &'a str, &'a str)],
+    pub inherit: Option<&'a CommandInfo<'a>>,
+}
+
+impl<'a> fmt::Display for CommandInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.general)?;
+        f.write_char('\n')?;
+        f.write_str("FLAGS:\n")?;
+        let flag_max_len = self
+            .flags
+            .iter()
+            .map(|(name, ..)| name.len())
+            .max()
+            .unwrap_or(0);
+        for (name, desc) in self.flags {
+            let spacing = " ".repeat(flag_max_len - name.len());
+            writeln!(f, "\t-{name}{spacing} - {desc}")?;
+        }
+
+        f.write_str("VALUES:\n")?;
+        let value_max_len = self
+            .flags
+            .iter()
+            .map(|(name, ..)| name.len())
+            .max()
+            .unwrap_or(0);
+        let type_max_len = self
+            .flags
+            .iter()
+            .map(|(name, ..)| name.len())
+            .max()
+            .unwrap_or(0);
+        for (name, value, desc) in self.values {
+            let value_spacing = " ".repeat(value_max_len - name.len());
+            let type_spacing = " ".repeat(type_max_len - name.len());
+            writeln!(
+                f,
+                "\t--{name}{value_spacing} {value}{type_spacing} - {desc}"
+            )?;
+        }
+
+        if let Some(inherit) = self.inherit {
+            write!(f, "\n{}", inherit)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! command_info {
+    (
+        $name:ident [$($general:tt)*] $(: $inherit:expr;)?
+        flags { $($flags:tt)* }
+        values { $($values:tt)* }
+    ) => {
+        pub const $name: $crate::CommandInfo<'static> = $crate::CommandInfo {
+            general: concat!($($general)*),
+            flags: $crate::command_info!(@flags $($flags)*),
+            values: $crate::command_info!(@values $($values)*),
+            inherit: $crate::command_info!(@inherit $($inherit)?),
+        };
+    };
+
+    (@inherit $inherit:expr) => { Some(&$inherit) };
+    (@inherit) => { None };
+
+    (@flags $($name:literal => $desc:literal)*) => {
+        &[$(($name, $desc)),*]
+    };
+
+    (@values $($name:literal($type:literal) => $desc:literal)*) => {
+        &[$(($name, $type, $desc)),*]
+    };
 }
 
 pub struct MiddlewareArgs {
@@ -680,13 +754,32 @@ pub struct MiddlewareArgs {
 }
 
 impl MiddlewareArgs {
+    command_info! {
+        HELP
+        ["ctl <subcommand> [path='.'] [-flag...] [--key <value>...]"]
+        flags {
+            "help" => "this message"
+            "target" => "target triple of final binary"
+            "check" => "skip codegen"
+            "quiet" => "don't print anything"
+        }
+        values {
+            "max-cores"("N") => "maximum cores used during compilation"
+            "incremental-path"("string") => "where the incremental data should be stored"
+        }
+    }
+
     pub fn thread_count(&self) -> usize {
         thread::available_parallelism()
             .map_or(1, |n| n.get())
             .min(self.max_cores.unwrap_or(usize::MAX))
     }
 
-    pub fn from_cli_input(cli_input: &CliInput) -> Result<Self, IsaCreationError> {
+    pub fn from_cli_input(cli_input: &CliInput, help: CommandInfo) -> Result<Self, Box<dyn Error>> {
+        if cli_input.enabled("help") {
+            Err(help.to_string())?;
+        }
+
         let isa = match cli_input.value("target") {
             Some(_triple) => todo!(),
             None => Isa::host(false)?,
@@ -708,8 +801,29 @@ impl MiddlewareArgs {
             quiet: cli_input.enabled("quiet"),
         })
     }
+
+    pub fn display(&self) -> MiddlewareArgsDisplay {
+        MiddlewareArgsDisplay { quiet: self.quiet }
+    }
 }
 
+pub struct MiddlewareArgsDisplay {
+    quiet: bool,
+}
+
+impl fmt::Write for MiddlewareArgsDisplay {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        if self.quiet {
+            return Ok(());
+        }
+
+        eprintln!("{}", s);
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub enum MiddlewareOutput {
     Compiled { binary: Vec<u8>, ir: Option<String> },
     Checked,

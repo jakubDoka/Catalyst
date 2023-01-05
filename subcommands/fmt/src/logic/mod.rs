@@ -1,57 +1,88 @@
-use std::{collections::HashMap, default::default, option::Option};
+use std::{collections::HashMap, default::default, error::Error, fmt::Write, option::Option};
 
 use middleware::{cli::CliInput, ImportsAst, SourceInfo};
 
 use crate::*;
 
-pub struct FmtRuntime<'m> {
-    middleware: &'m mut Middleware,
+#[derive(Default)]
+pub struct FmtRuntimeCtx {
     workers: Vec<FmtWorker>,
 }
 
-impl<'m> FmtRuntime<'m> {
-    pub fn test_format(name: &str, resources: &mut dyn ResourceDb) {
-        let mut middleware = Middleware::default();
-        let mut runtime = FmtRuntime::new(&mut middleware);
-        let cli_input = CliInput::from_string(&format!(". _ {name} --max-cores 1 -quiet -check"))
-            .expect("then this needs some tunning");
-        let args = MiddlewareArgs::from_cli_input(&cli_input).expect("same here");
-        runtime.run(FmtCfg::default(), &args, resources);
-    }
+pub struct FmtRuntime<'m> {
+    middleware: &'m mut Middleware,
+    ctx: &'m mut FmtRuntimeCtx,
+}
 
-    pub fn new(middleware: &'m mut Middleware) -> Self {
-        Self {
-            middleware,
-            workers: default(),
+impl<'m> FmtRuntime<'m> {
+    command_info! {
+        HELP
+        [
+            "ctl fmt [...]\n",
+            "Command forces Catalyst to format your code. TODO: configuration",
+        ]: MiddlewareArgs::HELP;
+        flags {
+        }
+        values {
         }
     }
 
-    pub fn run(&mut self, cfg: FmtCfg, args: &MiddlewareArgs, resources: &mut dyn ResourceDb) {
+    pub fn test_format(name: &str, resources: &mut dyn ResourceDb) {
+        let mut middleware = Middleware::default();
+        let mut ctx = FmtRuntimeCtx::default();
+        let mut runtime = FmtRuntime::new(&mut middleware, &mut ctx);
+        let cli_input = CliInput::from_string(&format!(". _ {name} --max-cores 1 -quiet -check"))
+            .expect("then this needs some tunning");
+        let args = MiddlewareArgs::from_cli_input(&cli_input, Self::HELP).expect("same here");
+        runtime
+            .run_low(FmtCfg::default(), &args, resources)
+            .unwrap();
+    }
+
+    pub fn new(middleware: &'m mut Middleware, ctx: &'m mut FmtRuntimeCtx) -> Self {
+        Self { middleware, ctx }
+    }
+
+    pub fn run(mut self, input: CliInput) -> Result<(), Box<dyn Error>> {
+        let args = MiddlewareArgs::from_cli_input(&input, Self::HELP)?;
+        let cfg = FmtCfg::default();
+        let mut resources = OsResources;
+
+        self.run_low(cfg, &args, &mut resources)
+    }
+
+    fn run_low(
+        &mut self,
+        cfg: FmtCfg,
+        args: &MiddlewareArgs,
+        resources: &mut dyn ResourceDb,
+    ) -> Result<(), Box<dyn Error>> {
         let (out, view) = self.middleware.update(args, resources);
 
-        if !args.quiet && let Err(err) = view.dump_diagnostics(true, out) {
-            eprintln!("{err}");
+        if let Err(err) = view.dump_diagnostics(true, out) {
+            writeln!(args.display(), "{err}")?;
         }
 
         let thread_count = args.thread_count();
-        self.workers.resize_with(thread_count, default);
-        self.workers
+        self.ctx.workers.resize_with(thread_count, default);
+        self.ctx
+            .workers
             .iter_mut()
             .for_each(|worker| worker.cfg = cfg.clone());
 
         let Some(view) = self
             .middleware
-            .traverse_source_ast(args, &mut self.workers)
+            .traverse_source_ast(args, &mut self.ctx.workers)
             else {
                 if !args.quiet {
                     eprintln!("failed to format the source code");
                 }
-                return;
+                return Ok(());
             };
 
-        self.workers
-            .iter_mut()
-            .for_each(|worker| worker.apply(resources, view.resources))
+        self.ctx.workers.iter_mut().fold(Ok(()), |acc, worker| {
+            acc.and(worker.apply(resources, view.resources))
+        })
     }
 }
 
@@ -63,13 +94,17 @@ struct FmtWorker {
 }
 
 impl FmtWorker {
-    fn apply(&mut self, db: &mut dyn ResourceDb, resources: &Resources) {
+    fn apply(
+        &mut self,
+        db: &mut dyn ResourceDb,
+        resources: &Resources,
+    ) -> Result<(), Box<dyn Error>> {
         for (source_id, text) in self.files.drain() {
             let path = resources.source_path(source_id);
-            if let Err(err) = db.write_to_string(path, &text) {
-                eprintln!("failed to write to {}: {}", path.display(), err);
-            };
+            db.write_to_string(path, &text)?;
         }
+
+        Ok(())
     }
 }
 

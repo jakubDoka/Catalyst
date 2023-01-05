@@ -169,7 +169,7 @@ impl Worker {
             self.state.gen_layouts.clear(shared.isa.pointer_ty);
             loop {
                 let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
-
+                
                 let modules = mem::take(&mut package_task.task.modules_to_compile);
                 for &module in modules.iter() {
                     self.compile_module(
@@ -194,6 +194,7 @@ impl Worker {
 
             let mut gen_layouts = mem::take(&mut self.state.gen_layouts);
             self.compile_current_requests(&mut compile_task, &shared, shared.isa, &mut gen_layouts);
+
             self.state.gen_layouts = gen_layouts;
             (self, Some(compile_task))
         })
@@ -385,7 +386,7 @@ impl Worker {
         {
             compiled.push(id);
 
-            if task.gen[id].inner.is_some() {
+            if task.gen[id].inner.load().is_some() {
                 continue;
             }
 

@@ -97,7 +97,7 @@ impl JitContext {
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
                 }
 
-                let Some(inner) = inner else {
+                let Some(ref inner) = *inner.load() else {
                     return Err(JitRelocError::MissingBytecode(func));
                 };
 
@@ -128,7 +128,7 @@ impl JitContext {
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },
-                func_ent.inner.as_ref().map_or(&[], |i| &i.relocs),
+                func_ent.inner.load().as_ref().map_or(&[], |i| &i.relocs),
                 |name| match name {
                     GenItemName::Func(func) => self
                         .functions

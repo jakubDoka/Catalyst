@@ -149,8 +149,8 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
 impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         let (index, thread, len) = index.0.parts();
-        let index = index as usize - self.thread_local.view.frozen;
         assert!(self.thread_local.view.thread == thread);
+        let index = index as usize - self.thread_local.view.frozen;
         &mut self.thread_local[index..index + len as usize]
     }
 }
@@ -191,6 +191,12 @@ impl<T, A: Allocator> FragBase<T, A> {
         self.threads
             .iter()
             .all(|t| unsafe { FragVecInner::is_unique(t.inner.0) })
+    }
+
+    unsafe fn index_unique(&self, index: FragRef<T>) -> &T {
+        let (index, thread) = index.parts();
+        let thread = &self.threads[thread as usize];
+        &FragVecInner::full_data(thread.inner.0)[index as usize]
     }
 }
 
@@ -388,7 +394,8 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     }
 
     unsafe fn drop(s: NonNull<Self>) {
-        let cap = ptr::addr_of!((*s.as_ptr()).cap).read();
+        // eprintln!("dropping");
+        let cap = ptr::addr_of_mut!((*s.as_ptr()).cap).read();
         let len = ptr::addr_of!((*s.as_ptr()).len).read();
         Self::data_mut(s, 0..len)
             .iter_mut()
@@ -396,6 +403,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         let allocator = ptr::addr_of!((*s.as_ptr()).allocator).read();
         let layout = Self::layout(cap);
         allocator.deallocate(s.cast(), layout);
+        // eprintln!("dropped");
     }
 
     unsafe fn extend<I: ExactSizeIterator<Item = T>>(
@@ -484,6 +492,11 @@ impl<T, A: Allocator> FragVecInner<T, A> {
             base.as_ptr().add(i).drop_in_place();
         }
         *ptr::addr_of_mut!((*load.as_ptr()).len) -= len as usize;
+    }
+
+    unsafe fn full_data<'a>(inner: NonNull<FragVecInner<T, A>>) -> &'a [T] {
+        let len = ptr::addr_of!((*inner.as_ptr()).len).read();
+        Self::data(inner, len)
     }
 }
 

@@ -5,12 +5,15 @@ use std::{
     default::default,
     io, mem,
     ops::Not,
+    path::Path,
     sync::mpsc::{Receiver, TryRecvError},
 };
 
+use crossbeam::select;
 use lsp_types::{notification::*, *};
 
 use lsp_server::*;
+use notify::Watcher;
 
 macro_rules! dispatch_message {
     (
@@ -101,16 +104,58 @@ impl<'m> LspRuntime<'m> {
                 None
             })?;
 
+        let (input, out) = crossbeam::channel::bounded(0);
+        let mut watcher =
+            notify::recommended_watcher(move |ev: Result<notify::Event, notify::Error>| {
+                let Ok(ev) = ev else {return};
+
+                if !matches!(
+                    ev.kind,
+                    notify::EventKind::Modify(..)
+                        | notify::EventKind::Remove(..)
+                        | notify::EventKind::Create(..)
+                ) {
+                    return;
+                }
+
+                if ev
+                    .paths
+                    .iter()
+                    .filter_map(|p| p.extension())
+                    .all(|e| e != "ctl" && e != "ctlm")
+                {
+                    return;
+                }
+
+                let _ = input.send(ev);
+            })
+            .map_err(|err| eprintln!("failed to initialize watcher: {err}"))
+            .ok()?;
+
+        watcher
+            .watch(Path::new("."), notify::RecursiveMode::Recursive)
+            .map_err(|err| eprintln!("failed to start watching workspace: {err}"))
+            .ok()?;
+
         eprintln!("listening for messages");
-        for msg in &connection.receiver {
-            self.should_terminate()?;
+        loop {
+            select! {
+                recv(out) -> msg => {
+                    let Ok(..) = msg else {break};
+                    self.recompile(&connection);
+                }
+                recv(connection.receiver) -> msg => {
+                    let Ok(msg) = msg else {break};
+                    self.should_terminate()?;
 
-            eprintln!("received message: {msg:?}");
+                    eprintln!("received message: {msg:?}");
 
-            match msg {
-                Message::Request(req) => self.handle_request(req, &connection)?,
-                Message::Response(resp) => self.handle_response(resp, &connection),
-                Message::Notification(not) => self.handle_notification(not, &connection),
+                    match msg {
+                        Message::Request(req) => self.handle_request(req, &connection)?,
+                        Message::Response(resp) => self.handle_response(resp, &connection),
+                        Message::Notification(not) => self.handle_notification(not, &connection),
+                    }
+                }
             }
         }
 
@@ -130,13 +175,30 @@ impl<'m> LspRuntime<'m> {
     }
 
     fn recompile(&mut self, connection: &Connection) -> MiddlewareOutput {
+        connection.notify::<Progress>(ProgressParams {
+            token: NumberOrString::String("catalyst/recompile".into()),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
+                title: "recompile".into(),
+                cancellable: Some(false),
+                message: None,
+                percentage: None,
+            })),
+        });
         let (output, ref mut view) = self
             .middleware
             .update(&self.middleware_args, &mut OsResources);
+        Self::clear_diagnostics(connection, view);
         if let MiddlewareOutput::Failed = output {
-            Self::clear_diagnostics(connection, view);
             Self::publish_diagnostics(connection, view);
         }
+
+        connection.notify::<Progress>(ProgressParams {
+            token: NumberOrString::String("catalyst/recompile".into()),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                message: None,
+            })),
+        });
+
         output
     }
 
@@ -200,23 +262,18 @@ impl<'m> LspRuntime<'m> {
                     },
                     message: annotation.label,
                 })
-                .chain(
-                    snippet
-                        .source_annotations
-                        .drain(..)
-                        .filter_map(|annotation| {
-                            let diags = Self::get_diag(view.resources, &mut diags, &annotation)?;
-                            Some(DiagnosticRelatedInformation {
-                                location: Location {
-                                    uri: diags.uri.clone(),
-                                    range: view
-                                        .resources
-                                        .project_span(annotation.origin, annotation.span),
-                                },
-                                message: annotation.label,
-                            })
-                        }),
-                )
+                .chain(snippet.source_annotations.iter().filter_map(|annotation| {
+                    let diags = Self::get_diag(view.resources, &mut diags, &annotation)?;
+                    Some(DiagnosticRelatedInformation {
+                        location: Location {
+                            uri: diags.uri.clone(),
+                            range: view
+                                .resources
+                                .project_span(annotation.origin, annotation.span),
+                        },
+                        message: annotation.label.to_owned(),
+                    })
+                }))
                 .collect();
 
             let report = Diagnostic {
@@ -228,11 +285,35 @@ impl<'m> LspRuntime<'m> {
                 ..default()
             };
 
+            let additional_reports = snippet
+                .source_annotations
+                .drain(..)
+                .filter_map(|annotation| {
+                    Some(Diagnostic {
+                        range: view
+                            .resources
+                            .project_span(annotation.origin, annotation.span),
+                        severity: severity(annotation.annotation_type).into(),
+                        source: Some(LANG_NAME.into()),
+                        message: annotation.label,
+                        related_information: Some(vec![DiagnosticRelatedInformation {
+                            location: Location {
+                                uri: uri.clone(),
+                                range,
+                            },
+                            message: "origina diagnostic".into(),
+                        }]),
+                        ..default()
+                    })
+                })
+                .collect::<Vec<_>>();
+
             let Some(diags) = Self::get_diag(view.resources, &mut diags, &main_source_diag) else {
                 continue;
             };
 
             diags.diagnostics.push(report);
+            diags.diagnostics.extend(additional_reports);
         }
 
         for (.., file) in diags {

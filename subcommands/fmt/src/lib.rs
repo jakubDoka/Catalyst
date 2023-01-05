@@ -11,6 +11,6 @@ mod logic;
 pub use {
     fmt::{Fmt, FmtCfg, FmtCtx},
     length::Length,
-    logic::FmtRuntime,
+    logic::{FmtRuntime, FmtRuntimeCtx},
     middleware::*,
 };

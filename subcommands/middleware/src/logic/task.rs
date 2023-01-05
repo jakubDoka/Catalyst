@@ -50,7 +50,7 @@ impl TaskBase {
     pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
         self.typec.register(frags);
         self.gen.register(frags);
-        frags.add_root(&mut self.mir);
+        frags.add_cleared(&mut self.mir);
     }
 }
 
@@ -62,7 +62,6 @@ pub struct TaskResources {
     pub modules_to_compile: Vec<VRef<Module>>,
     pub entry_points: Vec<FragRef<Func>>,
     pub workspace: Workspace,
-    pub dependant_types: FuncTypes,
 }
 
 pub struct Task {
@@ -98,6 +97,7 @@ impl Task {
         let mut cycle = (0..tasks.len()).cycle().fuse();
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
+        let mut dependant_types = FuncTypes::default();
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
             let Some(task_id) = task_id else { continue; };
             let task = &mut tasks[task_id];
@@ -118,12 +118,12 @@ impl Task {
                 .collect::<BumpVec<_>>();
 
             let body = task.mir.bodies.get(&func).unwrap().clone();
-            task.dependant_types.clear();
-            task.dependant_types.extend(body.types.values().copied());
+            dependant_types.clear();
+            dependant_types.extend(body.types.values().copied());
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
                 &body.inner,
-                &mut task.resources.dependant_types,
+                &mut dependant_types,
                 &bumped_params,
                 &mut task.typec,
                 &mut task.interner,
@@ -133,8 +133,8 @@ impl Task {
             for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();
-
-                type_frontier.push(task.dependant_types[body.values[drop.value].ty].ty);
+                let ty = body.values[drop.value].ty;
+                type_frontier.push(dependant_types[ty].ty);
                 task.instantiate_destructors(
                     &mut type_frontier,
                     isa,
@@ -160,7 +160,7 @@ impl Task {
                     let task = &mut tasks[task_id];
                     let params = body.ty_params[call.params]
                         .iter()
-                        .map(|&p| task.dependant_types[p].ty)
+                        .map(|&p| dependant_types[p].ty)
                         .collect::<BumpVec<_>>();
                     task.load_call(call.callable, params, task_id, isa)
                 })
@@ -313,17 +313,14 @@ impl Task {
 
     pub fn pull(&mut self, task_base: &TaskBase) {
         self.typec.pull(&task_base.typec);
-        self.gen.pull(&task_base.gen);
     }
 
     pub fn commit(&mut self, main_task: &mut TaskBase) {
         self.typec.commit(&mut main_task.typec);
-        self.gen.commit(&mut main_task.gen);
     }
 
     pub fn commit_unique(self, main_task: &mut TaskBase) {
         self.typec.commit_unique(&mut main_task.typec);
-        self.gen.commit_unique(&mut main_task.gen);
     }
 }
 

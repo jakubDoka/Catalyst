@@ -17,9 +17,6 @@
     slice_group_by
 )]
 
-pub extern crate dashmap;
-pub extern crate smallvec;
-
 mod alloc_tree;
 mod allocator;
 mod arena;
@@ -30,7 +27,9 @@ mod primitives;
 pub use {
     crate::bump_vec::{BumpAlloc, BumpAllocRef, BumpVec, ToBumpVec, BUMP_ALLOC},
     allocator::{Allocator, AllocatorLow, ProtectedAllocator},
+    arc_swap,
     arena::Arena,
+    dashmap,
     frag_map::{
         addr::{FragAddr, FragSliceAddr, NonMaxU32, NonMaxU64},
         relocator::{
@@ -45,6 +44,7 @@ pub use {
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
     },
+    smallvec,
 };
 
 mod map {

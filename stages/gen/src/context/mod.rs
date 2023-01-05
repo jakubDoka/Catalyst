@@ -17,13 +17,13 @@ use cranelift_codegen::{
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
 
-use storage::*;
+use storage::{arc_swap::ArcSwapOption, *};
 use target_lexicon::Triple;
 use typec_t::*;
 
 pub struct GenBase {
     lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
-    funcs: FragBase<CompiledFunc>,
+    funcs: SyncFragBase<CompiledFunc>,
 }
 
 derive_relocated!(struct GenBase { lookup });
@@ -32,7 +32,7 @@ impl GenBase {
     pub fn new(thread_count: u8) -> Self {
         Self {
             lookup: default(),
-            funcs: FragBase::new(thread_count),
+            funcs: SyncFragBase::new(thread_count),
         }
     }
 
@@ -44,37 +44,26 @@ impl GenBase {
     }
 
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
+        self.reallocate();
         objects.add(&mut self.funcs);
         objects.add_root(&mut self.lookup);
-    }
-}
-
-pub struct Gen {
-    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
-    funcs: FragMap<CompiledFunc>,
-}
-
-impl Gen {
-    pub fn commit(&mut self, base: &mut GenBase) {
-        self.funcs.commit(&mut base.funcs);
-    }
-
-    pub fn pull(&mut self, base: &GenBase) {
-        self.funcs.pull(&base.funcs);
-    }
-
-    pub fn commit_unique(self, base: &mut GenBase) {
-        self.funcs.commit_unique(&mut base.funcs);
     }
 
     pub fn prepare(&mut self) {
         self.lookup.iter_mut().for_each(|mut item| item.1 = true);
     }
 
-    pub fn reallocate(&mut self) {
+    fn reallocate(&mut self) {
         self.lookup.retain(|_, (.., unused)| !*unused);
     }
+}
 
+pub struct Gen {
+    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
+    funcs: SyncFragMap<CompiledFunc>,
+}
+
+impl Gen {
     pub fn get(&self, id: Ident) -> Option<FragRef<CompiledFunc>> {
         self.lookup.get(&id).map(|value| value.0)
     }
@@ -84,14 +73,15 @@ impl Gen {
         id: Ident,
         or: impl FnOnce() -> CompiledFunc,
     ) -> FragRef<CompiledFunc> {
-        let (res, ref mut unused) = *self.lookup.entry(id).or_insert_with(|| {
-            let value = or();
-            let value_id = self.funcs.push(value);
-            (value_id, false)
-        });
-
-        *unused = false;
-        res
+        self.lookup
+            .entry(id)
+            .and_modify(|(.., unused)| *unused = false)
+            .or_insert_with(|| {
+                let value = or();
+                let value_id = self.funcs.push(value);
+                (value_id, false)
+            })
+            .0
     }
 
     pub fn save_compiled_code(
@@ -124,12 +114,12 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.funcs[id].inner = Some(Arc::new(CompiledFuncInner {
+        self.funcs[id].inner.store(Some(Arc::new(CompiledFuncInner {
             signature: ctx.func.signature.clone(),
             bytecode: cc.buffer.data().to_vec(),
             alignment: cc.alignment as u64,
             relocs,
-        }));
+        })));
 
         Ok(())
     }
@@ -143,11 +133,20 @@ impl Index<FragRef<CompiledFunc>> for Gen {
     }
 }
 
-#[derive(Clone)]
 pub struct CompiledFunc {
     pub func: FragRef<Func>,
     pub name: Ident,
-    pub inner: Option<Arc<CompiledFuncInner>>,
+    pub inner: ArcSwapOption<CompiledFuncInner>,
+}
+
+impl Clone for CompiledFunc {
+    fn clone(&self) -> Self {
+        Self {
+            func: self.func,
+            name: self.name,
+            inner: self.inner.load_full().into(),
+        }
+    }
 }
 
 derive_relocated!(struct CompiledFunc { func });
@@ -164,7 +163,7 @@ impl CompiledFunc {
         Self {
             func,
             name,
-            inner: None,
+            inner: default(),
         }
     }
 }

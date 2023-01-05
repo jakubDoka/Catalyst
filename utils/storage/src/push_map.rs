@@ -19,8 +19,8 @@ impl<T: Relocated> Relocated for PushMap<T> {
         self.data.mark(marker);
     }
 
-    fn remap(&mut self, ctx: &bump_alloc::FragRelocMapping) {
-        self.data.remap(ctx);
+    fn remap(&mut self, ctx: &bump_alloc::FragRelocMapping) -> Option<()> {
+        self.data.remap(ctx)
     }
 }
 

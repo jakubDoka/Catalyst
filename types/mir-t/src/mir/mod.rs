@@ -10,22 +10,10 @@ use typec_t::*;
 
 #[derive(Default, Clone)]
 pub struct Mir {
-    pub bodies: CMap<FragRef<Func>, FuncMir>,
+    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
 }
 
 derive_relocated!(struct Mir { bodies });
-
-impl Mir {
-    pub fn clear(&mut self) {
-        self.bodies.clear();
-    }
-}
-
-impl Clear for Mir {
-    fn clear(&mut self) {
-        self.bodies.clear();
-    }
-}
 
 #[derive(Clone, Default)]
 pub struct FuncMir {
@@ -241,10 +229,14 @@ impl Relocated for FuncTypes {
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) {
+    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
         for ty in self.0.values_mut().skip(Self::BASE_LEN) {
-            ty.ty.remap(ctx);
+            ty.ty
+                .remap(ctx)
+                .expect("if we get to this point then type should be reclocable");
         }
+
+        Some(())
     }
 }
 

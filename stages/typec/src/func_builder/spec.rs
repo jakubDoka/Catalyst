@@ -217,9 +217,10 @@ impl TyChecker<'_> {
                     .into_iter()
                     .map(|(i, expected, actual)| {
                         format!(
-                            "{}{} {}",
+                            "{}{} {} {}",
                             ["ret", "arg"][i.is_some() as usize],
                             i.map(|i| format!(" {i}")).unwrap_or_default(),
+                            self.typec.type_diff(actual, expected, self.interner),
                             self.typec.type_diff(expected, actual, self.interner),
                         )
                     })

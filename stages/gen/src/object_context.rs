@@ -105,7 +105,7 @@ impl ObjectContext {
 
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
-            let Some(ent) = &gen[func].inner else {
+            let Some(ref ent) = *gen[func].inner.load() else {
                 return Err(ObjectRelocationError::MissingFunctionBody(func));
             };
 
@@ -119,7 +119,7 @@ impl ObjectContext {
 
         // add relocations
         for (func, _, offset, ..) in funcs {
-            let Some(ent) = &gen[func].inner else {
+            let Some(ref ent) = *gen[func].inner.load() else {
                 unreachable!();
             };
             for &record in &ent.relocs {

@@ -195,7 +195,7 @@ impl TyChecker<'_> {
 
             let loc = {
                 let next = self.typec.cache.impls.next();
-                let item = ModuleItem::new(Ident::empty(), next, target.span(), None);
+                let item = ModuleItem::new(Ident::default(), next, target.span(), None);
                 Loc {
                     module: self.module,
                     item: self.typec[self.module].items.push(item),

@@ -10,7 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::*;
 
-pub type Ident = FragSlice<u8>;
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash)]
+pub struct Ident(FragSlice<u8>);
+
+derive_relocated!(
+    struct Ident {}
+);
 
 macro_rules! gen_span_constants {
     (
@@ -22,7 +27,7 @@ macro_rules! gen_span_constants {
             fn init(&mut self) {
                 $(
                     let ident = self.intern($repr);
-                    assert_eq!(ident, Self::$name, "constant {} is not interned", stringify!($name));
+                    assert_eq!(ident.0, Self::$name.0, "constant {} is not interned", stringify!($name));
                     assert_eq!(&self[ident], $repr, "constant {} repr is not equal to repr", stringify!($name));
                 )*
             }
@@ -30,7 +35,7 @@ macro_rules! gen_span_constants {
     };
 
     (@recur ($acc:expr) $name:ident => $repr:literal, $($rest:tt)*) => {
-        pub const $name: Ident = FragSlice::new(FragSliceAddr::new($acc as u64, 0, $repr.len() as u16));
+        pub const $name: Ident = Ident(FragSlice::new(FragSliceAddr::new($acc as u64, 0, $repr.len() as u16)));
         gen_span_constants!(@recur ($acc + $repr.len()) $($rest)*);
     };
 
@@ -63,7 +68,7 @@ impl Default for Interner {
 }
 
 pub struct InternerBase {
-    map: Arc<CMap<FragSliceKey<u8>, Ident>>,
+    map: Arc<CMap<FragSliceKey<u8>, FragSlice<u8>>>,
     frag_base: SyncFragBase<u8>,
 }
 
@@ -97,7 +102,7 @@ impl InternerBase {
 /// Struct ensures that all distinct strings are stored just once (not substrings),
 /// and are assigned unique id.
 pub struct Interner {
-    map: Arc<CMap<FragSliceKey<u8>, Ident>>,
+    map: Arc<CMap<FragSliceKey<u8>, FragSlice<u8>>>,
     frag_map: SyncFragMap<u8>,
     temp: String,
 }
@@ -122,7 +127,7 @@ impl Interner {
     pub fn intern(&mut self, s: &str) -> Ident {
         let slice = self.frag_map.extend(s.as_bytes().iter().copied());
         let key = unsafe { FragSliceKey::new(&self.frag_map, slice) };
-        match self.map.entry(key) {
+        Ident(match self.map.entry(key) {
             Entry::Occupied(entry) => {
                 unsafe {
                     self.frag_map.unextend(slice);
@@ -130,7 +135,7 @@ impl Interner {
                 *entry.get()
             }
             Entry::Vacant(entry) => *entry.insert(slice),
-        }
+        })
     }
 
     fn to_raw(&self) -> RawInterner {
@@ -143,7 +148,7 @@ impl Index<Ident> for Interner {
 
     fn index(&self, ident: Ident) -> &str {
         unsafe {
-            let slice = &self.frag_map[ident];
+            let slice = &self.frag_map[ident.0];
             std::str::from_utf8_unchecked(slice)
         }
     }

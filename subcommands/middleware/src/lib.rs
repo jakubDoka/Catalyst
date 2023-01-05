@@ -18,8 +18,8 @@ pub use {
         worker::{
             AstHandler, BaseSourceCtx, MacroSourceCtx, Worker, WorkerConnections, WorkerState,
         },
-        DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs, MiddlewareOutput,
-        PackageTask, Shared,
+        CommandInfo, DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs,
+        MiddlewareOutput, PackageTask, Shared,
     },
     mir::*,
     mir_t::*,

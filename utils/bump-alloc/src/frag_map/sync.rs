@@ -1,5 +1,6 @@
 use arc_swap::ArcSwapAny;
 use std::{
+    any::TypeId,
     cell::UnsafeCell,
     hash::Hash,
     sync::{atomic::Ordering, Arc},
@@ -182,7 +183,9 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFrag
             .iter()
             .map(|v| unsafe { FragVecInner::full_data_mut(v.inner.load().0) })
             .flatten()
-            .for_each(|i| i.remap(ctx))
+            .for_each(|i| {
+                i.remap(ctx);
+            })
     }
 
     fn filter(&mut self, marks: &mut crate::FragMarks, mapping: &mut crate::FragRelocMapping) {
@@ -196,6 +199,10 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFrag
 
     fn is_unique(&self) -> bool {
         self.is_unique()
+    }
+
+    fn item_id(&self) -> TypeId {
+        TypeId::of::<T>()
     }
 }
 

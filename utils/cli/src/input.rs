@@ -14,6 +14,7 @@ use std::{
 /// flag = -ident
 /// valued_flag = --ident <value>
 /// ```
+#[derive(PartialEq, Eq)]
 pub struct CliInput {
     path: String,
     args: Vec<String>,
@@ -101,6 +102,10 @@ impl CliInput {
     /// Returns working directory.
     pub fn wd(&self) -> &str {
         &self.path
+    }
+
+    pub fn has_arg(&self, index: usize, pattern: &str) -> bool {
+        self.args.get(index).map_or(false, |arg| arg == pattern)
     }
 
     fn parse_string(input: &mut Vec<String>, mut start: String) -> Result<String, CliError> {

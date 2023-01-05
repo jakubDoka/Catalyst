@@ -52,7 +52,7 @@ impl TypecBase {
     }
 
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
-        objects.add_root(&mut self.mapping);
+        objects.add_cleared(&mut self.mapping);
         self.cache.register(objects);
     }
 }

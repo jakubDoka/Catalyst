@@ -1,124 +1,138 @@
-use std::{fs, path::Path, process::Command};
+use std::{error::Error, fmt::Write, fs, path::Path, process::Command};
 
 use crate::*;
 use cli::*;
 
+#[derive(Default)]
+pub struct CcCtx {
+    input: Option<CliInput>,
+    cached_exe: Option<Vec<u8>>,
+}
+
 pub struct CcRuntime<'m> {
     middleware: &'m mut Middleware,
-    cli_input: CliInput,
-    args: Option<MiddlewareArgs>,
+    ctx: &'m mut CcCtx,
 }
 
 impl<'m> CcRuntime<'m> {
-    pub fn new(cli_input: CliInput, middleware: &'m mut Middleware) -> Self {
-        Self {
-            middleware,
-            cli_input,
-            args: None,
+    command_info! {
+        HELP
+        [
+            "ctl c [...]\n",
+            "Allows invoking Catalyst compiler to produce platform specific executable files.\n",
+        ]: MiddlewareArgs::HELP;
+        flags {
+            "obj" => "output just object file"
+            "run" => "run right after compilation"
+        }
+        values {
+            "output"("string = 'a'") => "output file name"
         }
     }
 
-    pub fn run(mut self) {
-        if self.cli_input.enabled("one-shot") {
-            self.compile();
-            return;
-        }
-
-        let dialogue = CliDialogue {
-            prompt: "cc >>".to_string(),
-            help: "todo".to_string(),
-            exit_word: "exit".to_string(),
-        };
-
-        for input in dialogue {
-            match input.args() {
-                [] => self.compile(),
-                [arg] if arg.starts_with('c') => self.compile(),
-                _ => {
-                    eprintln!("invalid input");
-                    None
-                }
-            };
-        }
+    pub fn new(middleware: &'m mut Middleware, ctx: &'m mut CcCtx) -> Self {
+        Self { middleware, ctx }
     }
 
-    pub fn compile(&mut self) -> Option<()> {
-        let args = match self.args {
-            Some(ref mut args) => args,
-            None => self.args.insert(
-                MiddlewareArgs::from_cli_input(&self.cli_input)
-                    .map_err(|e| eprintln!("Problem with architecture: {e}"))
-                    .ok()?,
-            ),
-        };
+    pub fn run(mut self, input: CliInput) -> Result<(), Box<dyn Error>> {
+        let res = self.compile(&input)?;
+        self.ctx.input = Some(input);
+        Ok(res)
+    }
 
-        let (output, view) = self.middleware.update(args, &mut OsResources);
-        let (binary, _ir) = match view.dump_diagnostics(true, output) {
-            Ok(output) => output,
-            Err(err) => {
-                eprintln!("{err}");
-                return None;
+    fn compile(&mut self, input: &CliInput) -> Result<(), Box<dyn Error>> {
+        fn exe_path(input: &CliInput) -> String {
+            let dest = input.value("output").unwrap_or("a");
+            if cfg!(unix) {
+                dest.into()
+            } else {
+                format!("{dest}.exe")
             }
-        };
-
-        let dest = self.cli_input.value("output").unwrap_or("a");
-
-        let exe_path = format!("{dest}.exe");
-        let obj_path = format!("{dest}.obj");
-
-        fs::write(&obj_path, binary).unwrap();
-
-        if self.cli_input.enabled("obj") {
-            return None;
         }
 
-        let host = args.isa.triple().to_string();
+        let mid_args = MiddlewareArgs::from_cli_input(&input, Self::HELP)?;
 
-        let compiler = cc::Build::new()
-            .opt_level(0)
-            .target(&host)
-            .host(&host)
-            .cargo_metadata(false)
-            .get_compiler();
+        let (output, view) = self.middleware.update(&mid_args, &mut OsResources);
+        let unchanged = matches!(output, MiddlewareOutput::Unchanged);
+        let failure = matches!(output, MiddlewareOutput::Failed);
+        let exe_path = exe_path(&input);
+        let err = match view.dump_diagnostics(true, output) {
+            Ok((binary, _ir)) => {
+                let obj_path = format!("ctl_o.obj");
 
-        let args = if compiler.is_like_msvc() {
-            vec![
-                "ucrt.lib".into(),
-                "vcruntime.lib".into(),
-                format!("-link /ENTRY:{ENTRY_POINT_NAME} /SUBSYSTEM:CONSOLE"),
-            ]
-        } else if compiler.is_like_clang() {
-            todo!()
-        } else if compiler.is_like_gnu() {
-            todo!()
-        } else {
-            unimplemented!("unknown compiler");
+                fs::write(&obj_path, binary)?;
+
+                if input.enabled("obj") {
+                    return Ok(());
+                }
+
+                let host = mid_args.isa.triple().to_string();
+
+                let compiler = cc::Build::new()
+                    .opt_level(0)
+                    .target(&host)
+                    .host(&host)
+                    .cargo_metadata(false)
+                    .get_compiler();
+
+                let args = if compiler.is_like_msvc() {
+                    vec![
+                        "ucrt.lib".into(),
+                        "vcruntime.lib".into(),
+                        format!("-link /ENTRY:{ENTRY_POINT_NAME} /SUBSYSTEM:CONSOLE"),
+                    ]
+                } else if compiler.is_like_clang() {
+                    todo!()
+                } else if compiler.is_like_gnu() {
+                    vec![
+                        format!("-o{}", exe_path),
+                        "-nostartfiles".into(),
+                        format!("-e{}", middleware::ENTRY_POINT_NAME),
+                    ]
+                } else {
+                    unimplemented!("unknown compiler");
+                };
+
+                compiler
+                    .to_command()
+                    .arg(&obj_path)
+                    .args(args)
+                    .status()
+                    .unwrap();
+
+                fs::remove_file(obj_path).unwrap();
+
+                Ok(())
+            }
+            Err(err) if failure => return Err(err.into()),
+            Err(err) => Err(err),
         };
 
-        compiler
-            .to_command()
-            .arg(&obj_path)
-            .args(args)
-            .status()
-            .unwrap();
+        if let Some(ref current_input) = self.ctx.input
+            && let Some(ref cached_exe) = self.ctx.cached_exe
+            && unchanged
+            && (input == current_input || input.args().first().map_or(false, |s| s.starts_with('r')))
+        {
+            fs::write(&exe_path, cached_exe)?;
+        } else if let Ok(bytes) = fs::read(&exe_path) {
+            self.ctx.cached_exe = Some(bytes);
+        }
 
-        let path = Path::new(&exe_path).canonicalize().unwrap();
+        let path = Path::new(&exe_path).canonicalize()?;
 
-        fs::remove_file(obj_path).unwrap();
-
-        if self.cli_input.enabled("run") {
-            println!("Running: {}", path.display());
+        if input.enabled("run") {
+            writeln!(mid_args.display(), "Running: {}", path.display())?;
             let output = Command::new(path)
                 .current_dir(std::env::current_dir().unwrap())
                 .status();
             match output {
-                Ok(status) => println!("Exited with status: {status}"),
-                Err(err) => println!("Failed to run the executable: {err}"),
-            }
+                Ok(status) => writeln!(mid_args.display(), "Exited with status: {status}"),
+                Err(err) => writeln!(mid_args.display(), "Failed to run the executable: {err}"),
+            }?;
         } else {
-            println!("Compiled to: {}", path.display());
+            writeln!(mid_args.display(), "Compiled to: {}", path.display())?;
         }
 
-        None
+        Ok(err?)
     }
 }
