@@ -73,6 +73,11 @@ impl FragRelocMapping {
 
         FragSlice::new(FragSliceAddr::new(index, thread, slice.len() as u16))
     }
+
+    fn clear(&mut self) {
+        self.marked.clear();
+        self.edges.clear();
+    }
 }
 
 pub trait DynFragMap: Send + Sync {
@@ -131,6 +136,12 @@ pub struct FragRelocator {
 }
 
 impl FragRelocator {
+    fn clear(&mut self) {
+        self.marked.values_mut().for_each(FragMarks::clear);
+        self.markers.iter_mut().for_each(FragRelocMarker::clear);
+        self.mapping.iter_mut().for_each(FragRelocMapping::clear);
+    }
+
     fn collect_markers(&mut self, thread_count: usize) {
         for marker in self.markers.iter_mut() {
             for (&id, marks) in marker.marked.iter_mut() {
@@ -166,6 +177,8 @@ impl FragRelocator {
                 .chain(iter::repeat_with(|| &mut [][..]))
                 .take(thread_count)
         }
+
+        self.clear();
 
         let threads_len = threads.len();
         self.markers.resize_with(threads_len, default);
@@ -274,12 +287,10 @@ impl FragMarks {
     }
 
     fn optimize(&mut self) {
-        self.marks
-            .iter_mut()
-            .for_each(|thread| thread.sort_unstable());
-
         for thread in self.marks.iter_mut() {
             self.temp.clear();
+            thread.sort_unstable();
+            thread.dedup();
             thread
                 .group_by(|&a, &b| b.right_after(a))
                 .flat_map(|g| [g[0], g[g.len() - 1]])
@@ -320,6 +331,7 @@ impl FragMarks {
                 marks.last().map_or(FragAddr::new(0, 0), |&r| r),
                 FragAddr::new(current_len as u64, 0),
             ));
+
             for (start, end) in marks[1..]
                 .chunks_exact(2)
                 .map(|s| (s[0], s[1]))
@@ -446,6 +458,11 @@ impl FragRelocMarker {
             .filter(|&f| entry.insert(f))
             .map(|f| (TypeId::of::<T>(), f))
             .collect_into(&mut self.frontier);
+    }
+
+    fn clear(&mut self) {
+        self.marked.values_mut().for_each(Set::clear);
+        self.frontier.clear();
     }
 }
 

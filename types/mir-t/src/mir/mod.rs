@@ -233,7 +233,8 @@ impl Relocated for FuncTypes {
         for ty in self.0.values_mut().skip(Self::BASE_LEN) {
             ty.ty
                 .remap(ctx)
-                .expect("if we get to this point then type should be reclocable");
+                // .expect("if we get to this point then type should be reclocable")
+            ;
         }
 
         Some(())

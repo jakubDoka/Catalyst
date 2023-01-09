@@ -53,7 +53,6 @@ impl TyChecker<'_> {
             signature,
             upper_generics,
             owner,
-            name,
             ..
         } = self.typec[func];
         let param_specs = self

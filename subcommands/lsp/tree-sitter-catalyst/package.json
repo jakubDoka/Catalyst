@@ -1,0 +1,26 @@
+{
+  "name": "tree-sitter-catalyst",
+  "version": "1.0.0",
+  "description": "",
+  "main": "bindings/node",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mloks",
+  "license": "ISC",
+  "dependencies": {
+    "nan": "^2.17.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.20.7"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.ctl",
+      "injection-regex": "ctl",
+      "file-types": [
+        "ctl"
+      ]
+    }
+  ]
+}

@@ -16,13 +16,13 @@ impl<'ctx> Fmt<'ctx> {
     pub fn manifest(&mut self, manifest: ManifestAst<u32>) {
         self.fmt_ctx.clear();
         if let Some(header) = manifest.header {
-            self.white_space(header.full());
+            self.white_space(header.full(), 0);
         }
 
         for (item, whitespace) in manifest.items {
             self.manifest_item(item);
             if let Some(whitespace) = whitespace {
-                self.white_space(whitespace.full());
+                self.white_space(whitespace.full(), 1);
             }
         }
     }
@@ -79,7 +79,7 @@ impl<'ctx> Fmt<'ctx> {
     pub fn imports(&mut self, header: Option<SourceInfo<u32>>, imports: Option<ImportsAst<u32>>) {
         self.fmt_ctx.clear();
         if let Some(header) = header {
-            self.white_space(header.full());
+            self.white_space(header.full(), 0);
         }
 
         let Some(imports) = imports else {
@@ -113,13 +113,13 @@ impl<'ctx> Fmt<'ctx> {
     ) {
         for (between, item) in items {
             if let Some(between) = between {
-                self.white_space(between.full());
+                self.white_space(between.full(), 2);
             }
             self.item(item);
         }
 
         if let Some(after) = between {
-            self.white_space(after.full());
+            self.white_space(after.full(), 2);
         }
 
         if let Some(last) = last {
@@ -303,6 +303,7 @@ impl<'ctx> Fmt<'ctx> {
         for elif in r#if.elifs {
             if add_newline {
                 self.newline_if_none();
+                self.indent();
             } else {
                 self.buffer.push(' ');
             }
@@ -311,6 +312,7 @@ impl<'ctx> Fmt<'ctx> {
 
         if add_newline || fold {
             self.newline_if_none();
+            self.indent();
         } else {
             self.buffer.push(' ');
         }
@@ -582,7 +584,7 @@ impl<'ctx> Fmt<'ctx> {
             fmt(self, value);
             self.newline_if_none();
             if let Some(delim) = delim {
-                self.white_space(delim.after());
+                self.white_space(delim.after(), 0);
             }
         }
         self.emerge();
@@ -658,7 +660,7 @@ impl<'ctx> Fmt<'ctx> {
             fmt(self, value);
             if i == rest.len() - 1 {
                 if let Some(delim) = delim {
-                    self.white_space(delim.after());
+                    self.white_space(delim.after(), 0);
                 }
             } else {
                 self.opt_source_info(delim);
@@ -759,18 +761,22 @@ impl<'ctx> Fmt<'ctx> {
 
     fn source_info(&mut self, info: SourceInfo<u32>) {
         self.span(info.span);
-        self.white_space(info.after());
+        self.white_space(info.after(), 0);
     }
 
-    pub fn white_space(&mut self, span: Span) {
-        let mut new_lines = self.buffer.chars().rev().take_while(|c| *c == '\n').count();
+    pub fn white_space(&mut self, span: Span, spacing: usize) {
+        fn count_tariling_newlines(str: &str) -> usize {
+            str.chars().rev().take_while(|c| *c == '\n').count()
+        }
+
+        let mut new_lines = count_tariling_newlines(&self.buffer);
         let original = self.buffer.len();
         let original_newline = self.last_newline;
-        let mut has_comment = false;
+        let mut is_usefull = false;
         for (tok, range) in SkippedToken::lexer(&self.source[span.range()]).spanned() {
             match tok {
                 SkippedToken::Comment | SkippedToken::MultiComment => {
-                    has_comment = true;
+                    is_usefull = true;
                     if self.at_newline() {
                         self.indent();
                     } else {
@@ -782,18 +788,25 @@ impl<'ctx> Fmt<'ctx> {
                     if new_lines < self.cfg.max_newlines {
                         self.newline();
                         new_lines += 1;
+                        is_usefull |= new_lines == self.cfg.max_newlines;
                     }
                     continue;
                 }
-                SkippedToken::Space | SkippedToken::Error => (),
+                SkippedToken::Space | SkippedToken::Error => continue,
             }
 
             new_lines = 0;
         }
 
-        if !has_comment {
+        if !is_usefull {
             self.buffer.truncate(original);
             self.last_newline = original_newline;
+        }
+
+        let new_lines = count_tariling_newlines(&self.buffer);
+        if let Some(to_add) = spacing.checked_sub(new_lines) {
+            self.buffer.extend(iter::repeat('\n').take(to_add));
+            self.last_newline = self.buffer.len();
         }
     }
 

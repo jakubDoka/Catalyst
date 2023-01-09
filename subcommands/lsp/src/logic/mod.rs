@@ -6,11 +6,16 @@ use std::{
     io, mem,
     ops::Not,
     path::Path,
-    sync::mpsc::{Receiver, TryRecvError},
+    sync::{
+        atomic::AtomicUsize,
+        mpsc::{Receiver, TryRecvError},
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 use crossbeam::select;
-use lsp_types::{notification::*, *};
+use lsp_types::{notification::*, request::WorkDoneProgressCreate, *};
 
 use lsp_server::*;
 use notify::Watcher;
@@ -54,6 +59,7 @@ pub struct LspRuntime<'m> {
     middleware: &'m mut Middleware,
     args: LspArgs,
     middleware_args: MiddlewareArgs,
+    progress_start: Instant,
 }
 
 impl<'m> LspRuntime<'m> {
@@ -83,6 +89,7 @@ impl<'m> LspRuntime<'m> {
                 check: true,
                 quiet: true,
             },
+            progress_start: Instant::now(),
         })
     }
 
@@ -175,15 +182,7 @@ impl<'m> LspRuntime<'m> {
     }
 
     fn recompile(&mut self, connection: &Connection) -> MiddlewareOutput {
-        connection.notify::<Progress>(ProgressParams {
-            token: NumberOrString::String("catalyst/recompile".into()),
-            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
-                title: "recompile".into(),
-                cancellable: Some(false),
-                message: None,
-                percentage: None,
-            })),
-        });
+        self.start_progress(connection);
         let (output, ref mut view) = self
             .middleware
             .update(&self.middleware_args, &mut OsResources);
@@ -192,14 +191,29 @@ impl<'m> LspRuntime<'m> {
             Self::publish_diagnostics(connection, view);
         }
 
+        self.end_progress(connection);
+        output
+    }
+
+    const COMPILATION_TOKEN: i32 = 0;
+    fn start_progress(&mut self, connection: &Connection) {
+        self.progress_start = Instant::now();
+        connection.request::<WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+            token: NumberOrString::Number(Self::COMPILATION_TOKEN),
+        });
+    }
+
+    fn end_progress(&self, connection: &Connection) {
+        const EDITOR_BREATHER: Duration = Duration::from_millis(50);
+        if let Some(sleep_time) = EDITOR_BREATHER.checked_sub(self.progress_start.elapsed()) {
+            thread::sleep(sleep_time);
+        }
         connection.notify::<Progress>(ProgressParams {
-            token: NumberOrString::String("catalyst/recompile".into()),
+            token: NumberOrString::Number(Self::COMPILATION_TOKEN),
             value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
                 message: None,
             })),
         });
-
-        output
     }
 
     fn clear_diagnostics(connection: &Connection, view: &DiagnosticView) {
@@ -248,7 +262,7 @@ impl<'m> LspRuntime<'m> {
             let range = view
                 .resources
                 .project_span(main_source_diag.origin, main_source_diag.span);
-            let Some(t_diags) = Self::get_diag(view.resources, &mut diags, &main_source_diag) else {
+            let Some(t_diags) = Self::get_diag(view.resources, &mut diags, main_source_diag.origin) else {
                 continue;
             };
             let uri = t_diags.uri.clone();
@@ -263,7 +277,7 @@ impl<'m> LspRuntime<'m> {
                     message: annotation.label,
                 })
                 .chain(snippet.source_annotations.iter().filter_map(|annotation| {
-                    let diags = Self::get_diag(view.resources, &mut diags, &annotation)?;
+                    let diags = Self::get_diag(view.resources, &mut diags, annotation.origin)?;
                     Some(DiagnosticRelatedInformation {
                         location: Location {
                             uri: diags.uri.clone(),
@@ -285,35 +299,36 @@ impl<'m> LspRuntime<'m> {
                 ..default()
             };
 
-            let additional_reports = snippet
-                .source_annotations
-                .drain(..)
-                .filter_map(|annotation| {
-                    Some(Diagnostic {
-                        range: view
-                            .resources
-                            .project_span(annotation.origin, annotation.span),
-                        severity: severity(annotation.annotation_type).into(),
-                        source: Some(LANG_NAME.into()),
-                        message: annotation.label,
-                        related_information: Some(vec![DiagnosticRelatedInformation {
-                            location: Location {
-                                uri: uri.clone(),
-                                range,
-                            },
-                            message: "origina diagnostic".into(),
-                        }]),
-                        ..default()
-                    })
-                })
-                .collect::<Vec<_>>();
+            for annotation in snippet.source_annotations.drain(..) {
+                let report = Diagnostic {
+                    range: view
+                        .resources
+                        .project_span(annotation.origin, annotation.span),
+                    severity: severity(annotation.annotation_type).into(),
+                    source: Some(LANG_NAME.into()),
+                    message: annotation.label,
+                    related_information: Some(vec![DiagnosticRelatedInformation {
+                        location: Location {
+                            uri: uri.clone(),
+                            range,
+                        },
+                        message: "origina diagnostic".into(),
+                    }]),
+                    ..default()
+                };
 
-            let Some(diags) = Self::get_diag(view.resources, &mut diags, &main_source_diag) else {
+                let Some(diags) = Self::get_diag(view.resources, &mut diags, annotation.origin) else {
+                    continue;
+                };
+
+                diags.diagnostics.push(report);
+            }
+
+            let Some(diags) = Self::get_diag(view.resources, &mut diags, main_source_diag.origin) else {
                 continue;
             };
 
             diags.diagnostics.push(report);
-            diags.diagnostics.extend(additional_reports);
         }
 
         for (.., file) in diags {
@@ -324,12 +339,12 @@ impl<'m> LspRuntime<'m> {
     fn get_diag<'a>(
         resources: &Resources,
         map: &'a mut Map<VRef<Source>, PublishDiagnosticsParams>,
-        annotation: &CtlSourceAnnotation,
+        origin: VRef<Source>,
     ) -> Option<&'a mut PublishDiagnosticsParams> {
-        match map.entry(annotation.origin) {
+        match map.entry(origin) {
             Entry::Occupied(entry) => Some(entry.into_mut()),
             Entry::Vacant(entry) => {
-                let path = resources.source_path(annotation.origin);
+                let path = resources.source_path(origin);
                 let Ok(uri) = Url::from_file_path(path) else {
                     eprintln!("failed to convert path to uri: {path:?}");
                     return None;
@@ -415,17 +430,31 @@ where
     req.extract(R::METHOD)
 }
 
-trait LspNotifier {
+static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+trait LspConnectionExt {
     fn notify<T: lsp_types::notification::Notification>(&self, params: T::Params) -> Option<()>;
+    fn request<T: lsp_types::request::Request>(&self, params: T::Params) -> Option<usize>;
 }
 
-impl LspNotifier for Connection {
+impl LspConnectionExt for Connection {
     fn notify<T: lsp_types::notification::Notification>(&self, params: T::Params) -> Option<()> {
         let not = lsp_server::Notification::new(T::METHOD.to_string(), params);
         self.sender
             .send(Message::Notification(not))
             .inspect_err(|e| eprintln!("failed to send notification: {e:?}"))
             .ok()
+    }
+
+    fn request<T: lsp_types::request::Request>(&self, params: T::Params) -> Option<usize> {
+        let id = REQUEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let req =
+            lsp_server::Request::new(RequestId::from(id as i32), T::METHOD.to_string(), params);
+        self.sender
+            .send(Message::Request(req))
+            .inspect_err(|e| eprintln!("failed to send request: {e:?}"))
+            .ok()
+            .map(|_| id)
     }
 }
 

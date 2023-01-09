@@ -113,8 +113,8 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
         Self {
             free: Cell::default(),
             chunks: Cell::default(),
-            current: Cell::new(usize::MAX as _),
-            start: Cell::new(usize::MAX as _),
+            current: Cell::new(NonNull::dangling().as_ptr()),
+            start: Cell::new(NonNull::dangling().as_ptr()),
             chunk_size,
         }
     }
@@ -125,7 +125,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
         let padding = Self::compute_padding(current, layout);
         let size = layout.size() + padding;
 
-        if current as usize - (start as usize) < size {
+        if (current as usize) < start as usize + size {
             self.alloc_new(layout)
         } else {
             // SAFETY: We just checked that the current chunk has enough space
@@ -135,7 +135,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
             let new = unsafe { current.sub(size) };
             self.current.set(new);
             // SAFETY: Allocation with address range range 0..n should never happen
-            unsafe { NonNull::new_unchecked(slice::from_raw_parts_mut(new, size)) }
+            unsafe { NonNull::new_unchecked(ptr::slice_from_raw_parts_mut(new, size)) }
         }
     }
 
@@ -158,7 +158,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
     }
 
     fn compute_padding(current: *const u8, layout: Layout) -> usize {
-        (current as usize - layout.size()) & (layout.align() - 1)
+        ((current as usize).saturating_sub(layout.size())) & (layout.align() - 1)
     }
 
     #[cold]
@@ -196,7 +196,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
         self.free.set(garbage);
 
         // SAFETY: Allocation with address range range 0..n should never happen
-        unsafe { NonNull::new_unchecked(slice::from_raw_parts_mut(new, size)) }
+        unsafe { NonNull::new_unchecked(ptr::slice_from_raw_parts_mut(new, size)) }
     }
 
     /// Clears the allocator for reuse.
@@ -208,8 +208,8 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
 
         free.append(&mut chunks);
 
-        self.current.set(usize::MAX as _);
-        self.start.set(usize::MAX as _);
+        self.current.set(NonNull::dangling().as_ptr());
+        self.start.set(NonNull::dangling().as_ptr());
 
         self.chunks.set(chunks);
         self.free.set(free);
@@ -261,34 +261,84 @@ impl AllocatorLow<true> {
     }
 }
 
-struct Chunk {
-    data: region::Allocation,
+use chunk::Chunk;
+
+#[cfg(not(miri))]
+mod chunk {
+    use std::ops::Range;
+
+    pub struct Chunk {
+        data: region::Allocation,
+    }
+
+    impl Chunk {
+        pub fn new(cap: usize) -> Self {
+            Chunk {
+                data: region::alloc(cap, region::Protection::READ_WRITE)
+                    .expect("Failed to allocate memory"),
+            }
+        }
+
+        pub fn len(&self) -> usize {
+            self.data.len()
+        }
+
+        pub fn range(&mut self) -> Range<*mut u8> {
+            self.data.as_mut_ptr_range()
+        }
+
+        pub fn set_memory_protection(&mut self, protection: region::Protection) {
+            let range = self.range();
+            let size = range.end as usize - range.start as usize;
+            unsafe {
+                region::protect(range.start, size, protection)
+                    .expect("Failed to set memory protection");
+            }
+        }
+    }
 }
 
-impl Chunk {
-    fn new(cap: usize) -> Self {
-        // SAFETY: even if `cap` is 0, we still get a
-        // dangling pointer which is not zero.
-        Chunk {
-            data: region::alloc(cap, region::Protection::READ_WRITE)
-                .expect("Failed to allocate memory"),
+#[cfg(miri)]
+mod chunk {
+    use std::{
+        alloc::{Allocator, Global, Layout},
+        ops::Range,
+        ptr::{self, NonNull},
+    };
+
+    pub struct Chunk {
+        data: NonNull<[u8]>,
+    }
+
+    impl Chunk {
+        const ALIGN: usize = 1 << 10;
+        pub fn new(cap: usize) -> Self {
+            Chunk {
+                data: Global
+                    .allocate(Layout::from_size_align(cap, Self::ALIGN).unwrap())
+                    .unwrap(),
+            }
+        }
+
+        pub fn len(&self) -> usize {
+            self.data.len()
+        }
+
+        pub fn range(&mut self) -> Range<*mut u8> {
+            let (start, len) = self.data.to_raw_parts();
+            unsafe { start.as_ptr() as _..start.as_ptr().cast::<u8>().add(len) }
+        }
+
+        pub fn set_memory_protection(&mut self, protection: region::Protection) {
+            unimplemented!();
         }
     }
 
-    fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    fn range(&mut self) -> Range<*mut u8> {
-        self.data.as_mut_ptr_range()
-    }
-
-    fn set_memory_protection(&mut self, protection: region::Protection) {
-        let range = self.range();
-        let size = range.end as usize - range.start as usize;
-        unsafe {
-            region::protect(range.start, size, protection)
-                .expect("Failed to set memory protection");
+    impl Drop for Chunk {
+        fn drop(&mut self) {
+            let (start, cap) = self.data.to_raw_parts();
+            let layout = Layout::from_size_align(cap, Self::ALIGN).unwrap();
+            unsafe { Global.deallocate(start.cast(), layout) }
         }
     }
 }

@@ -14,7 +14,8 @@
     iter_collect_into,
     pointer_is_aligned,
     slice_index_methods,
-    slice_group_by
+    slice_group_by,
+    ptr_metadata
 )]
 
 mod alloc_tree;
