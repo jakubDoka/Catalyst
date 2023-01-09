@@ -9,7 +9,7 @@ mod length;
 mod logic;
 
 pub use {
-    fmt::{Fmt, FmtCfg, FmtCtx},
+    fmt::{Fmt, FmtCfg, FmtCtx, SpaceReplacer},
     length::Length,
     logic::{FmtRuntime, FmtRuntimeCtx},
     middleware::*,

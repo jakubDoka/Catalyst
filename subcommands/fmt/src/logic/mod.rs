@@ -91,6 +91,7 @@ struct FmtWorker {
     files: HashMap<VRef<Source>, String>,
     cfg: FmtCfg,
     ctx: FmtCtx,
+    replacer: SpaceReplacer,
 }
 
 impl FmtWorker {
@@ -99,7 +100,8 @@ impl FmtWorker {
         db: &mut dyn ResourceDb,
         resources: &Resources,
     ) -> Result<(), Box<dyn Error>> {
-        for (source_id, text) in self.files.drain() {
+        for (source_id, mut text) in self.files.drain() {
+            self.replacer.replace(&mut text, self.cfg.tab_width);
             let path = resources.source_path(source_id);
             db.write_to_string(path, &text)?;
         }

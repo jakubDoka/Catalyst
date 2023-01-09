@@ -113,7 +113,8 @@ impl<'ctx> Fmt<'ctx> {
     ) {
         for (between, item) in items {
             if let Some(between) = between {
-                self.white_space(between.full(), 2);
+                let spacing = 1 + !matches!(item, ItemAst::Attribute(..)) as usize;
+                self.white_space(between.full(), spacing);
             }
             self.item(item);
         }
@@ -788,7 +789,7 @@ impl<'ctx> Fmt<'ctx> {
                     if new_lines < self.cfg.max_newlines {
                         self.newline();
                         new_lines += 1;
-                        is_usefull |= new_lines == self.cfg.max_newlines;
+                        is_usefull |= new_lines > 1;
                     }
                     continue;
                 }
@@ -803,9 +804,10 @@ impl<'ctx> Fmt<'ctx> {
             self.last_newline = original_newline;
         }
 
+        // we do + 1 to avoid 0 case
         let new_lines = count_tariling_newlines(&self.buffer);
-        if let Some(to_add) = spacing.checked_sub(new_lines) {
-            self.buffer.extend(iter::repeat('\n').take(to_add));
+        if let Some(to_add) = spacing.checked_sub(new_lines + 1) {
+            self.buffer.extend(iter::repeat('\n').take(to_add + 1));
             self.last_newline = self.buffer.len();
         }
     }
@@ -893,6 +895,7 @@ pub struct FmtCfg {
     /// if the average length of list item is greater, we distribute
     /// item per line, otherwise we try to fit as many items as possible
     pub max_list_item_length: usize,
+    pub tab_width: usize,
 }
 
 impl FmtCfg {
@@ -900,6 +903,7 @@ impl FmtCfg {
         max_line_width: 80,
         max_newlines: 2,
         max_list_item_length: 20,
+        tab_width: 4,
     };
 }
 
@@ -928,5 +932,53 @@ impl ExprFmtState {
     fn emerge(&mut self, fmt: &mut Fmt) {
         fmt.cond_emerge(&mut self.op_dive);
         fmt.cond_emerge(&mut self.dot_dive);
+    }
+}
+
+#[derive(Default)]
+pub struct SpaceReplacer {
+    swap: String,
+}
+
+impl SpaceReplacer {
+    pub fn replace(&mut self, string: &mut String, tab_width: usize) {
+        self.swap.clear();
+        for line in string.lines() {
+            let Some(space_count) = line.find(|c| c != ' ') else {
+                self.swap.push('\n');
+                continue;
+            };
+            let tab_count = space_count / tab_width;
+            self.swap.extend(iter::repeat('\t').take(tab_count));
+            self.swap.push_str(&line[space_count..]);
+            self.swap.push('\n');
+        }
+        string.clear();
+        string.push_str(self.swap.trim_end());
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::SpaceReplacer;
+
+    #[test]
+    fn test_replace_withspace_with_tabs() {
+        let mut replacer = SpaceReplacer::default();
+        let mut state = String::new();
+        let mut check = |input: &str, output: &str| {
+            state.clear();
+            state.push_str(input);
+
+            replacer.replace(&mut state, 2);
+
+            assert_eq!(state.as_str(), output, "input: {input:?}");
+        };
+
+        check("", "");
+        check("\n", "");
+        check("\n  ", "");
+        check("  bang", "\tbang");
+        check("\n  hello\n  there\n  ", "\n\thello\n\tthere");
     }
 }
