@@ -169,7 +169,7 @@ impl Worker {
             self.state.gen_layouts.clear(shared.isa.pointer_ty);
             loop {
                 let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
-                
+
                 let modules = mem::take(&mut package_task.task.modules_to_compile);
                 for &module in modules.iter() {
                     self.compile_module(
