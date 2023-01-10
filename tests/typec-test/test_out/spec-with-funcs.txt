@@ -1,114 +1,125 @@
 error: colliding implementations for type 'uint'
-  --> spec-with-funcs/root.ctl:8:6
+  --> spec-with-funcs/root.ctl:10:6
    |
- 8 | impl Glue for uint {
+10 | impl Glue for uint {
    |      ------------- info: implementation that already satisfies
- 9 |     fn new -> Self => 0
-10 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
-11 | }
-12 | impl Glue for uint
+11 |     fn new -> Self => 0
+12 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
+13 | }
+14 | 
+15 | impl Glue for uint
    |      ^^^^^^^^^^^^^ it is colliding with this implementation
    |
    = info: 'uint' already implements 'Glue'
 
 error: implementation is missing functions
-  --> spec-with-funcs/root.ctl:12:6
+  --> spec-with-funcs/root.ctl:15:6
    |
-12 | impl Glue for uint
+15 | impl Glue for uint
    |      ^^^^^^^^^^^^^ here
    |
    = help: missing: new, use_on
 
 error: implementation is missing functions
-  --> spec-with-funcs/root.ctl:13:6
+  --> spec-with-funcs/root.ctl:17:6
    |
-13 | impl Glue for u32
+17 | impl Glue for u32
    |      ^^^^^^^^^^^^ here
    |
    = help: missing: new, use_on
 
 error: dataflow of impl method does not match spec
-  --> spec-with-funcs/root.ctl:4:6
+  --> spec-with-funcs/root.ctl:5:6
    |
- 4 | spec Glue {
+ 5 | spec Glue {
    |      ---- info: spec is defined here
- 5 |     fn new -> Self
+ 6 |     fn new -> Self
    |        --- info: this function has different dataflow
- 6 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T]
- 7 | }
- 8 | impl Glue for uint {
- 9 |     fn new -> Self => 0
-10 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
-11 | }
-12 | impl Glue for uint
-13 | impl Glue for u32
-14 | struct A
-15 | impl Glue for A {
-16 |     fn new -> uint => 0
+ 7 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T]
+ 8 | }
+ 9 | 
+10 | impl Glue for uint {
+11 |     fn new -> Self => 0
+12 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
+13 | }
+14 | 
+15 | impl Glue for uint
+16 | 
+17 | impl Glue for u32
+18 | 
+19 | struct A
+20 | 
+21 | impl Glue for A {
+22 |     fn new -> uint => 0
    |        ^^^ here
    |
    = info: found mismatches:
-           ret 1\A
+           ret uint 0\A
 
 error: amount of arguments of impl method does not match spec
-  --> spec-with-funcs/root.ctl:4:6
+  --> spec-with-funcs/root.ctl:5:6
    |
- 4 | spec Glue {
+ 5 | spec Glue {
    |      ---- info: spec is defined here
- 5 |     fn new -> Self
- 6 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T]
+ 6 |     fn new -> Self
+ 7 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T]
    |            ------ info: this function takes 2 arguments
- 7 | }
- 8 | impl Glue for uint {
- 9 |     fn new -> Self => 0
-10 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
-11 | }
-12 | impl Glue for uint
-13 | impl Glue for u32
-14 | struct A
-15 | impl Glue for A {
-16 |     fn new -> uint => 0
-17 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
+ 8 | }
+ 9 | 
+10 | impl Glue for uint {
+11 |     fn new -> Self => 0
+12 |     fn [T] use_on(s: ^Self, value: T) -> Glued\[T] => \{inner: value}
+13 | }
+14 | 
+15 | impl Glue for uint
+16 | 
+17 | impl Glue for u32
+18 | 
+19 | struct A
+20 | 
+21 | impl Glue for A {
+22 |     fn new -> uint => 0
+23 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
    |            ^^^^^^ impl method takes 1 arguments
    |
    = info: expected 2 but got 1
 
 error: implementation is missing functions
-  --> spec-with-funcs/root.ctl:15:6
+  --> spec-with-funcs/root.ctl:21:6
    |
-15 | impl Glue for A {
+21 | impl Glue for A {
    |      ^^^^^^^^^^ here
    |
    = help: missing: new, use_on
 
 error: not all call parameters can be inferred
-  --> spec-with-funcs/root.ctl:33:39
+  --> spec-with-funcs/root.ctl:45:39
    |
-33 | fn main() -> uint => uint\new() + take(0)
+45 | fn main() -> uint => uint\new() + take(0)
    |                                       ^^^ here
    |
    = info: missing parameters: #1
    = help: provide the parameters (works on methods too) (<func_path>\[<ty_param>, ...](<expr_arg>, ...))
 
 error: scope item not found
-  --> spec-with-funcs/root.ctl:17:54
+  --> spec-with-funcs/root.ctl:23:54
    |
-17 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
+23 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
    |                                                      ^^^^^ this does not exist or is not imported
    |
    = help: expected variable or enum
    = info: debug: queried 'value'
 
 error: missing fields in struct constructor
-  --> spec-with-funcs/root.ctl:17:45
+  --> spec-with-funcs/root.ctl:23:45
    |
-17 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
+23 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
    |                                             ^^^^^^^^^^^^^^^ here
    |
    = error: missing: inner
 
 info: tir repr of functions:
-fn [: Glue, ] glue_up(var0: param1) -> 1\Glued[param1] return {
+fn [: Glue, ] glue_up(var0: param1) -> 0\Glued[param1] return {
     Glue\use_on[param0, param1](^Glue\new[param0](), var0)
 }
 
@@ -116,7 +127,7 @@ fn [, : GenericSpec[param0]] take(var0: param0) -> param1 return GenericSpec\tak
 
 fn [] new() -> uint return 0
 
-fn [] use_on(var0: ^uint, var1: param0) -> 1\Glued[param0] return 1\Glued[param0]\{var1}
+fn [] use_on(var0: ^uint, var1: param0) -> 0\Glued[param0] return 0\Glued[param0]\{var1}
 
 fn [] new() -> uint return 0
 

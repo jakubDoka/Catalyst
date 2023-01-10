@@ -1,8 +1,8 @@
 error: inaccessible scope item
- --> access-violation/root.ctl:3:23
+ --> access-violation/root.ctl:5:22
   |
-3 | }fn main() -> uint => pass(0)
-  |                       ^^^^ here
+5 | fn main() -> uint => pass(0)
+  |                      ^^^^ here
   |
  ::: access-violation/root/a.ctl:1:9
   |
@@ -12,14 +12,14 @@ error: inaccessible scope item
   = info: item is defined in a different module and is private
 
 error: inaccessible scope item
- --> access-violation/root.ctl:4:36
+ --> access-violation/root.ctl:7:36
   |
-4 | fn other_main() -> uint => A\new().a
+7 | fn other_main() -> uint => A\new().a
   |                                    ^ here
   |
- ::: access-violation/root/a.ctl:3:10
+ ::: access-violation/root/a.ctl:4:10
   |
-3 |     priv a: uint
+4 |     priv a: uint
   |          - info: item defined here
   |
   = info: item is defined in a different module and is private

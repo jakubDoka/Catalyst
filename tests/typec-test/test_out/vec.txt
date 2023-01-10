@@ -1,19 +1,9 @@
-error: invalid scope item type
- --> vec/root.ctl:6:5
-  |
-6 |     vec.push(0)
-  |     ^^^ here
-  |
-  = info: expected variable or enum, got module
-
-error: invalid scope item type
- --> vec/root.ctl:7:6
-  |
-7 |     *vec.get(0)
-  |      ^^^ here
-  |
-  = info: expected variable or enum, got module
-
 info: tir repr of functions:
+fn [] main() -> uint return {
+    let mut var0 = new[uint]()
+    push[uint](^var0, 0)
+    *get_ptr[uint](^var0, 0)
+}
+
 
 

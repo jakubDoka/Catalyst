@@ -1,39 +1,39 @@
 error: value is possibly moved more then once
- --> loop-drops/root.ctl:6:5
-  |
-6 |       loop {
-  |  _____-
-7 | |         drop(a)
-  |                ^ here
-8 | |     }
-  | |_____- info: the loop
-  |
-  = note: you can disable move semantics with '#[no_moves]' function attribute
-  = note: nonlocal value remains moved even after loop jumps back
-  = help: 'break' after the move or move the value beck before next iteration
+  --> loop-drops/root.ctl:8:5
+   |
+ 8 |       loop {
+   |  _____-
+ 9 | |         drop(a)
+   |                ^ here
+10 | |     }
+   | |_____- info: the loop
+   |
+   = note: you can disable move semantics with '#[no_moves]' function attribute
+   = note: nonlocal value remains moved even after loop jumps back
+   = help: 'break' after the move or move the value beck before next iteration
 
 error: move out of already moved value
-  --> loop-drops/root.ctl:20:25
+  --> loop-drops/root.ctl:24:25
    |
-20 |         if true => drop(a)
+24 |         if true => drop(a)
    |                         - info: previous move of value
-21 | else => continue
-22 |         break
-23 |     }
-24 |     drop(a)
+25 |         else => continue
+26 |         break
+27 |     }
+28 |     drop(a)
    |          ^ here
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
 error: value is possibly moved more then once
-  --> loop-drops/root.ctl:28:5
+  --> loop-drops/root.ctl:33:5
    |
-28 |       loop {
+33 |       loop {
    |  _____-
-29 | |         if true => drop(a)
+34 | |         if true => drop(a)
    |                           ^ here
-30 | | else => break
-31 | |     }
+35 | |         else => break
+36 | |     }
    | |_____- info: the loop
    |
    = note: you can disable move semantics with '#[no_moves]' function attribute
@@ -58,7 +58,7 @@ fn [] loop_drop() -> ()  { ret var0
 
     block1() {
         access var3
-        var0 = drop[4\A](val3)
+        var0 = drop[6\A](val3)
         goto block1 with var0
     }
 
@@ -73,7 +73,7 @@ fn [] loop_break_drop() -> ()  { ret var0
 
     block1() {
         access var3
-        var0 = drop[4\A](val3)
+        var0 = drop[6\A](val3)
         goto block2 with var0
     }
 
@@ -97,7 +97,7 @@ fn [] linear_loop_branch_drop() -> ()  { ret var0
 
     block2() {
         access var3
-        var1 = drop[4\A](val3)
+        var1 = drop[6\A](val3)
         goto block4 with var1
     }
 
@@ -111,7 +111,7 @@ fn [] linear_loop_branch_drop() -> ()  { ret var0
 
     block5(var1: !) {
         access var3
-        var0 = drop[4\A](val3)
+        var0 = drop[6\A](val3)
         return var0
     }
 
@@ -131,7 +131,7 @@ fn [] loop_branch_drop() -> ()  { ret var0
 
     block2() {
         access var3
-        var1 = drop[4\A](val3)
+        var1 = drop[6\A](val3)
         goto block4 with var1
     }
 
@@ -163,7 +163,7 @@ fn [] loop_drop_and_move_in() -> ()  { ret var0
 
     block2() {
         access var3
-        var1 = drop[4\A](val3)
+        var1 = drop[6\A](val3)
         goto block4 with var1
     }
 

@@ -15,16 +15,16 @@ fn [] main() -> uint  { ret var2
         var9 = &var4
         var10 = 2
         var0 = push[uint](val9, val10)
-        var11 = new[0\Vec[uint]]()
+        var11 = new[3\Vec[uint]]()
         var12 = var11
         access var12
         var13 = &var12
         access var4
-        var0 = push[0\Vec[uint]](val13, val4)
+        var0 = push[3\Vec[uint]](val13, val4)
         access var12
         var15 = &var12
         var16 = 0
-        var14 = get_mut_ptr[0\Vec[uint]](val15, val16)
+        var14 = get_mut_ptr[3\Vec[uint]](val15, val16)
         var17 = 3
         var0 = push[uint](val14, val17)
         var2 = 0

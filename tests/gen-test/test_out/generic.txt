@@ -1,7 +1,7 @@
 error: type mismatch
- --> generic/root.ctl:3:24
+ --> generic/root.ctl:4:24
   |
-3 | fn main -> u32 => pass(0uint)
+4 | fn main -> u32 => pass(0uint)
   |                        ^^^^^ here
   |
   = info: expected 'u32' but got 'uint'

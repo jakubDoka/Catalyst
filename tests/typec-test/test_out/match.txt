@@ -1,5 +1,5 @@
 info: tir repr of functions:
-fn [] main() -> uint return match 1\Matched\{0, 1} {
+fn [] main() -> uint return match 4\Matched\{0, 1} {
     \{0, 1} => {
         0
     }

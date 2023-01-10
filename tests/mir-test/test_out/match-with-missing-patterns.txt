@@ -1,12 +1,12 @@
 error: match is not exhaustive
-  --> match-with-missing-patterns/root.ctl:6:32
+  --> match-with-missing-patterns/root.ctl:7:32
    |
- 6 |       match Matched\{a: 0, b: 1} {
+ 7 |       match Matched\{a: 0, b: 1} {
    |  ________________________________^
- 7 | |         \{a: 1, b: 0} => 1
- 8 | |         \{a: 0, b: 1} => 0
- 9 | |         \{a, b: 0} => a
-10 | |     }
+ 8 | |         \{a: 1, b: 0} => 1
+ 9 | |         \{a: 0, b: 1} => 0
+10 | |         \{a, b: 0} => a
+11 | |     }
    | |_____^ here
    |
    = info: missing patterns: \{ a: 0..1, b: 2..max }, \{ a: 1..2, b: 1..max }, \{ a: 2..max, b: 1..max }
