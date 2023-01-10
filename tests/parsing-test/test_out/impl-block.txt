@@ -1,5 +1,5 @@
 error
- --> impl-block\root.ctl:1:1
+ --> impl-block/root.ctl:1:1
   |
 1 | / struct Struct {
 2 | |     field: u32
@@ -7,8 +7,8 @@ error
 4 | | 
 5 | | impl Struct {
 6 | |     fn constructor() -> Self => Self\{field: 0}
-7 | |     fn method(s: ^Self) -> uint => selffield
+7 | |     fn method(s: ^Self) -> uint => self.field
 8 | | }
-9 | | 
+  | |_- info: test
   |
 

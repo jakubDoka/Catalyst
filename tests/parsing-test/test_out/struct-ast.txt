@@ -1,5 +1,5 @@
 error
-  --> struct-ast\root.ctl:1:1
+  --> struct-ast/root.ctl:1:1
    |
  1 | / 
  2 | | // comment
@@ -12,5 +12,6 @@ error
  9 | |     priv pointer: ^mut ^int
 10 | |     // comment
 11 | | } // comment
+   | |____________- info: test
    |
 

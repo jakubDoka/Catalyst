@@ -1,5 +1,5 @@
 error
-  --> match\root.ctl:1:1
+  --> match/root.ctl:1:1
    |
  1 | / struct B {
  2 | |     a: uint
@@ -13,6 +13,6 @@ error
 10 | |         \{a: 0, b} => b
 11 | |         \{a, b} => a + b
 12 | |     }
-13 | | 
+   | |_____- info: test
    |
 

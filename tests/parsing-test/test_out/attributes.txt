@@ -1,12 +1,13 @@
 error
- --> attributes\root.ctl:1:1
+ --> attributes/root.ctl:1:1
   |
 1 | / #[macro swap]
-2 | | enum Swap {
-3 | |     Two: TwoTokens
-4 | |     Last: LastToken
-5 | |     Empty
-6 | | }
-7 | | 
+2 | | 
+3 | | enum Swap {
+4 | |     Two: TwoTokens
+5 | |     Last: LastToken
+6 | |     Empty
+7 | | }
+  | |_- info: test
   |
 
