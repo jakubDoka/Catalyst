@@ -22,7 +22,7 @@ fn [] main() -> uint  { ret var2
         goto block3 with var3
     }
 
-    block3(var3: 7\Returned) {
+    block3(var3: 0\Returned) {
         var2 = var3.0
         return var2
     }
