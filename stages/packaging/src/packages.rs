@@ -1,6 +1,13 @@
 use std::{
-    borrow::Cow, collections::hash_map::Entry, default::default, env::VarError, ffi::OsStr, io,
-    iter, mem, path::*, process::Command, time::SystemTime,
+    borrow::Cow,
+    collections::hash_map::Entry,
+    default::{self, default},
+    env::VarError,
+    ffi::OsStr,
+    io, iter, mem,
+    path::*,
+    process::Command,
+    time::SystemTime,
 };
 
 use crate::*;
@@ -37,6 +44,10 @@ impl ResourceLoaderCtx {
         if let Some(ref mut ast_data) = self.ast_arena {
             ast_data.clear();
         }
+        self.sources.insert(
+            Resources::BUILTIN_SOURCE_PATH.into(),
+            Resources::BUILTIN_SOURCE,
+        );
     }
 }
 
@@ -46,7 +57,6 @@ struct DummyPackage {
     deps: Vec<(NameAst, PathBuf)>,
     source: VRef<Source>,
     ordering: usize,
-    moist: bool,
     is_external: bool,
 }
 
@@ -70,7 +80,7 @@ impl<'a> PackageLoader<'a> {
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;
         let root_path = self.resolve_source_path(root_path, None, "package")?;
-        let (root_package, moist_package) = self.load_packages(root_path, ctx)?;
+        let root_package = self.load_packages(root_path, ctx)?;
 
         let mut buffer = bumpvec![cap self.resources.packages.len()];
         self.package_graph.clear();
@@ -97,7 +107,7 @@ impl<'a> PackageLoader<'a> {
             .ok();
         buffer.clear();
 
-        let root_modules = self.load_modules(&[root_package, moist_package], ctx)?;
+        let root_module = self.load_modules(root_package, ctx)?;
 
         self.package_graph.clear();
         for module in self.resources.modules.values() {
@@ -108,10 +118,7 @@ impl<'a> PackageLoader<'a> {
         }
 
         self.package_graph
-            .ordering(
-                root_modules.into_iter().map(|module| module.index()),
-                &mut buffer,
-            )
+            .ordering(root_module.into_iter().map(|i| i.index()), &mut buffer)
             .map_err(|cycle| {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
@@ -160,19 +167,24 @@ impl<'a> PackageLoader<'a> {
 
     fn load_modules(
         &mut self,
-        packages: &[VRef<Package>],
+        package: VRef<Package>,
         ctx: &mut ResourceLoaderCtx,
-    ) -> Option<Vec<VRef<Module>>> {
-        for &package in packages {
-            let &Package {
-                ref root_module,
-                source,
-                root_module_span,
-                ..
-            } = &self.resources.packages[package];
-            ctx.module_frontier
-                .push((root_module.clone(), package, source, root_module_span));
-        }
+    ) -> Option<[VRef<Module>; 2]> {
+        let &Package {
+            ref root_module,
+            source,
+            root_module_span,
+            ..
+        } = &self.resources.packages[package];
+        ctx.module_frontier.extend([
+            (root_module.clone(), package, source, root_module_span),
+            (
+                Resources::BUILTIN_SOURCE_PATH.into(),
+                Resources::BUILTIN_PACKAGE,
+                Resources::BUILTIN_SOURCE,
+                default(),
+            ),
+        ]);
 
         let mut ast_data = ctx.get_ast_data();
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
@@ -187,15 +199,16 @@ impl<'a> PackageLoader<'a> {
                 deps: default(),
                 source: module.source,
             };
+
             module.ordering = self.resources.modules.push(final_module).index();
         }
 
-        let iter = self
+        for (module, dummy_module) in self
             .resources
             .modules
             .values_mut()
-            .zip(ctx.modules.values());
-        for (module, dummy_module) in iter {
+            .zip(ctx.modules.values())
+        {
             let deps_iter = dummy_module
                 .deps
                 .iter()
@@ -205,20 +218,22 @@ impl<'a> PackageLoader<'a> {
                         vis,
                         name_span: name.span,
                         name: name.ident,
-                        ptr: { VRef::<Module>::new(index) },
+                        ptr: VRef::<Module>::new(index),
                     })
                 });
             module.deps = self.resources.module_deps.extend(deps_iter);
         }
 
-        Some(
-            packages
-                .iter()
-                .map(|&package| &self.resources.packages[package].root_module)
-                .map(|path| ctx.modules.get(path).map(|m| m.ordering).unwrap())
+        let getter = |package: VRef<Package>| {
+            let path = &self.resources.packages[package].root_module;
+            ctx.modules
+                .get(path)
+                .map(|m| m.ordering)
                 .map(VRef::new)
-                .collect::<Vec<_>>(),
-        )
+                .expect("it was in the frontier so it must exist")
+        };
+
+        Some([getter(package), getter(Resources::BUILTIN_PACKAGE)])
     }
 
     fn load_module(
@@ -279,6 +294,7 @@ impl<'a> PackageLoader<'a> {
             .filter_map(|&ImportAst { vis, name, path }| {
                 let path = path.span.shrink(1);
                 let name = self.extract_path_name("module", path, name, origin)?;
+                dbg!(&self.interner[name.ident]);
                 let path_content = self.resources.sources[origin].span_str(path);
                 let (package, path_str) =
                     path_content.split_once('/').unwrap_or((path_content, ""));
@@ -288,25 +304,43 @@ impl<'a> PackageLoader<'a> {
                     [self.resources.packages[package_id].deps]
                     .iter()
                     .find_map(|dep| (dep.name == package_ident).then_some(dep.ptr))
-                    .or_else(|| (package == ".").then_some(package_id));
+                    .or_else(|| {
+                        Some(match package {
+                            "." => package_id,
+                            "builtin" => Resources::BUILTIN_PACKAGE,
+                            _ => return None,
+                        })
+                    });
 
                 let Some(import_package) = import_package else {
-                self.workspace.push(UnknownPackage {
-                    packages: self.resources.package_deps
-                        [self.resources.packages[package_id].deps]
-                        .iter()
-                        .map(|dep| &self.interner[dep.name])
-                        .intersperse(", ")
-                        .collect::<String>(),
-                    loc: SourceLoc { origin, span: path.sliced(..package.len()) },
-                })?;
-            };
+                    self.workspace.push(UnknownPackage {
+                        packages: self.resources.package_deps
+                            [self.resources.packages[package_id].deps]
+                            .iter()
+                            .map(|dep| &self.interner[dep.name])
+                            .intersperse(", ")
+                            .collect::<String>(),
+                        loc: SourceLoc { origin, span: path.sliced(..package.len()) },
+                    })?;
+                };
 
                 let built_path = self.resources.packages[import_package]
                     .root_module
                     .with_extension("")
                     .join(path_str)
                     .with_extension("ctl");
+
+                if import_package == Resources::BUILTIN_PACKAGE {
+                    ctx.modules
+                        .entry(built_path.clone())
+                        .or_insert_with(|| DummyModule {
+                            package: import_package,
+                            deps: default(),
+                            source: Resources::BUILTIN_SOURCE,
+                            ordering: 0,
+                        });
+                    return Some((vis.map(|vis| vis.vis), name, built_path));
+                }
 
                 let dep_path = match self.db.canonicalize(&built_path) {
                     Ok(p) => p,
@@ -366,15 +400,13 @@ impl<'a> PackageLoader<'a> {
         &mut self,
         root_path: PathBuf,
         ctx: &mut ResourceLoaderCtx,
-    ) -> Option<(VRef<Package>, VRef<Package>)> {
+    ) -> Option<VRef<Package>> {
         ctx.package_frontier.push((root_path.clone(), None, false));
         let mut ast_data = ctx.get_ast_data();
         while let Some((path, loc, is_external)) = ctx.package_frontier.pop() {
             self.load_package(path, loc, &mut ast_data, is_external, ctx);
         }
         ctx.ast_arena = Some(ast_data);
-
-        let mut moist = None;
 
         for package in ctx.packages.values_mut() {
             let final_package = Package {
@@ -386,33 +418,19 @@ impl<'a> PackageLoader<'a> {
             };
             let id = self.resources.packages.push(final_package);
             package.ordering = id.index();
-            if package.moist && let Some(already) = moist.replace(id) {
-                self.workspace.push(TooMoist {
-                    first: self.resources.sources[self.resources.packages[already].source].path.to_owned(),
-                    second: self.resources.sources[self.resources.packages[id].source].path.to_owned(),
-                })?;
-            }
         }
-
-        let Some(moist) = moist else {
-            self.workspace.push(NoMoisture {})?;
-        };
 
         let iter = self
             .resources
             .packages
             .values_mut()
+            .skip(1) // builtin package
             .zip(ctx.packages.values());
         for (package, dummy_package) in iter {
-            package.deps = if dummy_package.deps.is_empty() && !dummy_package.moist {
-                self.resources.package_deps.extend(iter::once(Dep {
-                    vis: None,
-                    name_span: default(),
-                    name: Interner::EMPTY,
-                    ptr: moist,
-                }))
-            } else {
-                let deps_iter = dummy_package.deps.iter().filter_map(|(name, path)| {
+            let deps_iter = dummy_package
+                .deps
+                .iter()
+                .filter_map(|(name, path)| {
                     let index = ctx.packages.get(path)?.ordering;
                     Some(Dep {
                         vis: None,
@@ -420,14 +438,19 @@ impl<'a> PackageLoader<'a> {
                         name: name.ident,
                         ptr: VRef::<Package>::new(index),
                     })
-                });
-                self.resources.package_deps.extend(deps_iter)
-            };
+                })
+                .chain(iter::once(Dep {
+                    vis: None,
+                    name_span: default(),
+                    name: Interner::BUILTIN,
+                    ptr: Resources::BUILTIN_PACKAGE,
+                }));
+            package.deps = self.resources.package_deps.extend(deps_iter);
         }
 
         let package = root_path.join("package").with_extension("ctlm");
         let root_package = ctx.packages.get(&package)?;
-        Some((VRef::new(root_package.ordering), moist))
+        Some(VRef::new(root_package.ordering))
     }
 
     fn load_package(
@@ -458,9 +481,6 @@ impl<'a> PackageLoader<'a> {
 
         let (root_module, root_module_span) =
             self.resolve_root_module_path(&path, source_id, manifest)?;
-        let moist = manifest
-            .find_field(Interner::MOIST)
-            .map_or(false, |f| f.value.is_true());
         let deps = manifest
             .find_deps()
             .flat_map(|deps| deps.list.iter().copied());
@@ -472,7 +492,6 @@ impl<'a> PackageLoader<'a> {
             source: source_id,
             ordering: 0,
             root_module_span,
-            moist,
             is_external,
         };
         ctx.packages
@@ -543,7 +562,7 @@ impl<'a> PackageLoader<'a> {
         }
 
         let path_str = self.resources.sources[origin].span_str(path);
-        let index = path_str.rfind('/').map(|i| i + 1).unwrap_or(path_str.len());
+        let index = path_str.rfind('/').map(|i| i + 1).unwrap_or(0);
 
         Some(NameAst {
             ident: self.interner.intern(&path_str[index..]),

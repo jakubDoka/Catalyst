@@ -11,9 +11,9 @@ use crate::{DynFragMap, Relocated};
 use super::*;
 
 pub struct SyncFragMap<T, A: Allocator = Global> {
-    base: SyncFragBase<T, A>,
-    locals: Box<[UnsafeCell<LocalFragView<T, A>>]>,
-    thread: u8,
+    pub(crate) base: SyncFragBase<T, A>,
+    pub(crate) locals: Box<[UnsafeCell<LocalFragView<T, A>>]>,
+    pub(crate) thread: u8,
 }
 
 impl<T, A: Allocator> SyncFragMap<T, A> {
@@ -126,7 +126,7 @@ impl<T, A: Allocator> Index<FragSlice<T>> for SyncFragMap<T, A> {
 }
 
 pub struct SyncFragBase<T, A: Allocator = Global> {
-    views: Arc<[SyncFragView<T, A>]>,
+    pub(crate) views: Arc<[SyncFragView<T, A>]>,
 }
 
 unsafe impl<T: Send + Sync, A: Allocator + Send + Sync> Sync for SyncFragBase<T, A> {}
@@ -206,10 +206,10 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFrag
     }
 }
 
-struct SyncFragView<T, A: Allocator = Global> {
-    inner: ArcSwapAny<FragVecArc<T, A>>,
-    thread: u8,
-    len: AtomicUsize,
+pub(crate) struct SyncFragView<T, A: Allocator = Global> {
+    pub(crate) inner: ArcSwapAny<FragVecArc<T, A>>,
+    pub(crate) thread: u8,
+    pub(crate) len: AtomicUsize,
 }
 
 unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for SyncFragView<T, A> {}
@@ -261,9 +261,9 @@ impl<T, A: Allocator> SyncFragView<T, A> {
     }
 }
 
-struct LocalFragView<T, A: Allocator = Global> {
-    inner: FragVecArc<T, A>,
-    len: usize,
+pub(crate) struct LocalFragView<T, A: Allocator = Global> {
+    pub(crate) inner: FragVecArc<T, A>,
+    pub(crate) len: usize,
 }
 
 impl<T, A: Allocator> LocalFragView<T, A> {

@@ -147,6 +147,7 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn r#impl(&mut self, r#impl: &ImplAst<u32>) {
+        self.vis(r#impl.vis);
         self.keyword(r#impl.keyword);
         self.generics(r#impl.generics);
         self.impl_target(&r#impl.target);

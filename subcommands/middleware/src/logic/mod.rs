@@ -205,16 +205,10 @@ impl Middleware {
             mut worker_pool,
             mut module_items,
             mut builtin_functions,
-        } = self.incremental.take().unwrap_or_else(|| {
-            let mut builtin_functions = vec![];
-            Incremental {
-                resources: default(),
-                task_base: TaskBase::new(thread_count.max(255) as u8, &mut builtin_functions),
-                worker_pool: default(),
-                module_items: default(),
-                builtin_functions,
-            }
-        });
+        } = self
+            .incremental
+            .take()
+            .unwrap_or_else(|| Incremental::new(thread_count.max(255) as u8));
 
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
@@ -902,6 +896,19 @@ pub struct Incremental {
     pub worker_pool: Vec<Worker>,
     pub module_items: Map<VRef<Source>, ModuleItems>,
     pub builtin_functions: Vec<FragRef<Func>>,
+}
+
+impl Incremental {
+    pub fn new(thread_count: u8) -> Self {
+        let mut builtin_functions = vec![];
+        Incremental {
+            resources: default(),
+            task_base: TaskBase::new(thread_count, &mut builtin_functions),
+            worker_pool: default(),
+            module_items: default(),
+            builtin_functions,
+        }
+    }
 }
 
 pub struct DiagnosticView<'a> {

@@ -1,11 +1,12 @@
 use lexing_t::*;
 
-use std::{path::*, time::SystemTime};
+use std::{default::default, path::*, time::SystemTime};
 use storage::*;
 
 pub type PackageGraph = graphs::CycleDetector;
 
-#[derive(Default)]
+const BUILTIN_PACKAGE_SOURCE: &str = include_str!("water_drops.ctl");
+
 pub struct Resources {
     pub sources: PoolMap<Source>,
     pub packages: PushMap<Package>,
@@ -15,9 +16,40 @@ pub struct Resources {
     pub module_order: Vec<VRef<Module>>,
 }
 
+impl Default for Resources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Resources {
+    pub const BUILTIN_PACKAGE: VRef<Package> = VRef::new(0);
+    pub const BUILTIN_SOURCE: VRef<Source> = VRef::new(0);
+    pub const BUILTIN_SOURCE_PATH: &str = "compiler/builtin.ctl";
+
     pub fn new() -> Self {
-        Self::default()
+        let mut s = Self {
+            sources: default(),
+            packages: default(),
+            modules: default(),
+            package_deps: default(),
+            module_deps: default(),
+            module_order: default(),
+        };
+
+        let builtin_source = s.sources.push(Source {
+            path: Self::BUILTIN_SOURCE_PATH.into(),
+            last_modified: SystemTime::UNIX_EPOCH,
+            content: BUILTIN_PACKAGE_SOURCE.into(),
+            line_mapping: LineMapping::new(BUILTIN_PACKAGE_SOURCE),
+            changed: true,
+            dead: false,
+        });
+        assert_eq!(Self::BUILTIN_SOURCE, builtin_source);
+
+        s.clear();
+
+        s
     }
 
     pub fn is_external(&self, module: VRef<Module>) -> bool {
@@ -33,12 +65,24 @@ impl Resources {
     }
 
     pub fn clear(&mut self) {
-        self.sources.values_mut().for_each(|s| s.dead = true); // to avoid io
+        self.sources
+            .values_mut()
+            .skip(1) // skip builtin source
+            .for_each(|s| s.dead = true); // to avoid io
         self.packages.clear();
         self.modules.clear();
         self.package_deps.clear();
         self.module_deps.clear();
         self.module_order.clear();
+
+        let builtin_package = self.packages.push(Package {
+            root_module: Self::BUILTIN_SOURCE_PATH.into(),
+            root_module_span: default(),
+            deps: default(),
+            source: Self::BUILTIN_SOURCE,
+            is_external: true,
+        });
+        assert_eq!(Self::BUILTIN_PACKAGE, builtin_package);
     }
 
     pub fn mark_changed(&mut self) {

@@ -481,7 +481,7 @@ fn main() {
 
         simple "drop-gen" {
             use {
-                "water/marker";
+                "builtin";
             };
 
             fn [T] drop(value: T) {};
@@ -566,7 +566,7 @@ fn main() {
 
         simple "enum-drop" {
             use {
-                "water/marker";
+                "builtin";
             };
 
             fn [T] drop(value: T) {};
@@ -577,7 +577,7 @@ fn main() {
                 ch: char;
             };
 
-            impl Drop for A {
+            impl builtin::Drop for A {
                 fn drop(v: ^mut Self) {
                     putchar(v.ch);
                     putchar(' ');

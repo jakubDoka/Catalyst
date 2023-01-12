@@ -82,7 +82,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "struct-decl" {
             struct A;
             struct C {
@@ -381,7 +381,7 @@ fn main() {
             fn main -> uint {
                 let mut vec = vec::Vec::[uint]::new();
                 vec.push(0);
-                *vec.get(0);
+                *vec.get_ptr(0);
             }
         }
 

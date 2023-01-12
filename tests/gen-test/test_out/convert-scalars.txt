@@ -1,0 +1,16 @@
+info: generated ir:
+main function u0:0() -> i32 fast {
+block0:
+    v0 = iconst.i64 0
+    v1 = ireduce.i32 v0  ; v0 = 0
+    v2 = iconst.i8 0
+    v3 = uextend.i32 v2  ; v2 = 0
+    v4 = iadd v1, v3
+    return v4
+}
+
+
+info: status: exit status: 0
+ = info: stdout: 
+ = info: stderr: 
+

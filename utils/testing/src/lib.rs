@@ -255,16 +255,9 @@ pub mod items {
                 files: [
                     ("root.ctl", include_str!("../../../water/root.ctl")),
                     ("package.ctlm", include_str!("../../../water/package.ctlm")),
-                    (
-                        "root/option.ctl",
-                        include_str!("../../../water/root/option.ctl"),
-                    ),
                     ("root/vec.ctl", include_str!("../../../water/root/vec.ctl")),
                     ("root/ptr.ctl", include_str!("../../../water/root/ptr.ctl")),
-                    (
-                        "root/marker.ctl",
-                        include_str!("../../../water/root/marker.ctl"),
-                    ),
+                    ("root/c.ctl", include_str!("../../../water/root/c.ctl")),
                     (
                         "root/macros/tokens.ctl",
                         include_str!("../../../water/root/macros/tokens.ctl"),

@@ -88,7 +88,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "functions" {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
@@ -414,7 +414,7 @@ fn main() {
 
         simple "drop-gen" {
             use {
-                "water/marker";
+                "builtin";
             };
 
             fn [T] drop(value: T) {};

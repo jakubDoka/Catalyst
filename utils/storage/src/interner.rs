@@ -57,6 +57,7 @@ gen_span_constants! {
     DROP => "drop",
     SIZEOF => "sizeof",
     MOIST => "moist",
+    BUILTIN => "builtin",
 }
 
 impl Default for Interner {

@@ -164,18 +164,28 @@ impl FragRelocator {
 
         fn chunks<I>(slice: &[I], thread_count: usize) -> impl Iterator<Item = &[I]> {
             let size = calc_split(slice.len(), thread_count);
-            slice
-                .chunks(size)
-                .chain(iter::repeat(&[][..]))
-                .take(thread_count)
+            (size != 0)
+                .then(|| {
+                    slice
+                        .chunks(size)
+                        .chain(iter::repeat(&[][..]))
+                        .take(thread_count)
+                })
+                .into_iter()
+                .flatten()
         }
 
         fn chunks_mut<I>(slice: &mut [I], thread_count: usize) -> impl Iterator<Item = &mut [I]> {
             let size = calc_split(slice.len(), thread_count);
-            slice
-                .chunks_mut(size)
-                .chain(iter::repeat_with(|| &mut [][..]))
-                .take(thread_count)
+            (size != 0)
+                .then(|| {
+                    slice
+                        .chunks_mut(size)
+                        .chain(iter::repeat_with(|| &mut [][..]))
+                        .take(thread_count)
+                })
+                .into_iter()
+                .flatten()
         }
 
         self.clear();
@@ -677,7 +687,7 @@ macro_rules! impl_blanc_relocated {
 }
 
 impl_blanc_relocated! {
-    bool
+    bool, i32
 }
 
 impl<T: Relocated> Relocated for Arc<T> {
@@ -688,5 +698,60 @@ impl<T: Relocated> Relocated for Arc<T> {
     fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
         let s = Arc::get_mut(self).expect("arc was expected to be unique for remapping");
         s.remap(ctx)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::thread;
+
+    use crate::{FragAddr, FragRef, FragRelocator, RelocatedObjects, SyncFragBase};
+
+    #[test]
+    fn reloc_stress_test() {
+        const THREAD_COUNT: u8 = 4;
+        let mut storage = SyncFragBase::new(THREAD_COUNT);
+        let mut relocator = FragRelocator::default();
+
+        for mut thread in storage.split() {
+            for i in 0..1000 {
+                thread.push(vec![i]);
+            }
+        }
+
+        for j in 0..100 {
+            thread::scope(|s| {
+                for mut thread in storage.split() {
+                    s.spawn(move || {
+                        for i in 0..1000 {
+                            let tid = i % THREAD_COUNT as usize;
+                            let thread_len = thread.base.views[tid as usize]
+                                .len
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            let index = (i as usize * j) % thread_len;
+                            let frag_ref = FragRef::new(FragAddr::new(index as u64, tid as u8));
+                            let value = thread[frag_ref].clone();
+                            thread.push(value);
+                        }
+                    });
+                }
+            });
+
+            let mut maps = RelocatedObjects::default();
+            let mut roots = storage
+                .views
+                .iter()
+                .enumerate()
+                .map(|(tid, thread)| {
+                    (0..thread.len.load(std::sync::atomic::Ordering::Relaxed))
+                        .step_by(THREAD_COUNT as usize * 10)
+                        .map(|i| FragRef::<Vec<i32>>::new(FragAddr::new(i as u64, tid as u8)))
+                        .collect()
+                })
+                .collect();
+
+            maps.add(&mut storage);
+            relocator.relocate(&mut roots, &mut maps);
+        }
     }
 }

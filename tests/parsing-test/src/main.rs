@@ -46,7 +46,7 @@ impl Scheduler for TestState {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "struct-ast" r"
             // comment
             pub /* comment */ struct /* comment */ RichStruct /* comment */ { // comment

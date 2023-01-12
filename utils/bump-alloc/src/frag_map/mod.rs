@@ -127,7 +127,9 @@ impl<T, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
         let (index, thread, ..) = index.0.parts();
         assert!(self.thread_local.view.thread == thread);
-        let index = index as usize - self.thread_local.view.frozen;
+        let index = (index as usize)
+            .checked_sub(self.thread_local.view.frozen)
+            .expect("accessing frozen elements mutably");
         &mut self.thread_local[index]
     }
 }
@@ -150,7 +152,9 @@ impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
         let (index, thread, len) = index.0.parts();
         assert!(self.thread_local.view.thread == thread);
-        let index = index as usize - self.thread_local.view.frozen;
+        let index = (index as usize)
+            .checked_sub(self.thread_local.view.frozen)
+            .expect("accessing frozen elements mutably");
         &mut self.thread_local[index..index + len as usize]
     }
 }

@@ -96,7 +96,7 @@ impl<K, V> PoolMap<K, V> {
     pub fn push(&mut self, value: V) -> VRef<K> {
         if let Some(key) = self.free.pop() {
             assert!(self.free_lookup.remove(key.index()));
-            self[key] = value;
+            self.data[key.index()].write(value);
             key
         } else {
             self.data.push(MaybeUninit::new(value));
@@ -104,8 +104,8 @@ impl<K, V> PoolMap<K, V> {
         }
     }
 
-    /// Pushes new value to map and returns it's key. Value of key is deterministic
-    /// but arbitrary. Previously removed slots can be reused.
+    ///
+    /// TODO: add document this
     ///
     /// # Example
     ///
@@ -283,7 +283,7 @@ impl<K, V> Index<VRef<K>> for PoolMap<K, V> {
     fn index(&self, key: VRef<K>) -> &V {
         assert!(!self.free_lookup.contains(key.index()));
         // SAFETY: Just asserted.
-        unsafe { &*self.data[key.index()].as_ptr() }
+        unsafe { self.data[key.index()].assume_init_ref() }
     }
 }
 
@@ -291,7 +291,7 @@ impl<K, V> IndexMut<VRef<K>> for PoolMap<K, V> {
     fn index_mut(&mut self, key: VRef<K>) -> &mut V {
         assert!(!self.free_lookup.contains(key.index()));
         // SAFETY: Just asserted.
-        unsafe { &mut *self.data[key.index()].as_mut_ptr() }
+        unsafe { self.data[key.index()].assume_init_mut() }
     }
 }
 

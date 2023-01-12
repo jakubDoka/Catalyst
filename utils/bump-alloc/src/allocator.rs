@@ -4,7 +4,6 @@ use std::{
     mem,
     ops::Range,
     ptr::{self, NonNull},
-    slice,
 };
 
 pub type Allocator = AllocatorLow<false>;
