@@ -248,15 +248,12 @@ impl FragRelocator {
                     for (.., frag, _) in maps {
                         frag.remap(folded_mapping);
                     }
-
                     for root in thread {
                         root.remap(folded_mapping);
                     }
-
                     for root in roots {
                         root.remap(folded_mapping);
                     }
-
                     for clear in cleared {
                         clear.remap(folded_mapping);
                     }

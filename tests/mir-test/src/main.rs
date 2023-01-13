@@ -58,12 +58,14 @@ impl Scheduler for TestState {
             &mut type_checked_funcs,
         );
 
+        let mir_module = self.mir.modules.next();
         let mut checker = mir_checker!(self, module);
-        checker.funcs(&mut type_checked_funcs);
+        checker.funcs(mir_module, &mut type_checked_funcs);
         if !self.resources.is_external(module) {
             checker.display_funcs(&mut self.functions).unwrap();
         }
 
+        self.mir_ctx.module.clear();
         self.mir_ctx.just_compiled.clear();
     }
 
@@ -88,7 +90,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "functions" {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };

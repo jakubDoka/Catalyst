@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, default::default, slice};
+use std::{cmp::Ordering, default::default};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
@@ -18,6 +18,8 @@ impl Generator<'_> {
     pub fn generate(
         &mut self,
         signature: Signature,
+        ret: VRef<ValueMir>,
+        args: VRefSlice<ValueMir>,
         params: &[Ty],
         root: VRef<BlockMir>,
         builder: &mut GenBuilder,
@@ -32,7 +34,6 @@ impl Generator<'_> {
 
         let entry_block = builder.create_block();
         if has_s_ret {
-            let ret = builder.body.ret;
             let addr = builder.append_block_param(entry_block, ptr_ty);
             self.gen_resources.values[ret] = GenValue {
                 computed: Some(ComputedValue::Value(addr)),
@@ -40,6 +41,17 @@ impl Generator<'_> {
                 must_load: true,
             };
         }
+        for &arg in &builder.body.value_args[args] {
+            let layout = self.ty_layout(builder.value_ty(arg));
+            if layout.size == 0 {
+                continue;
+            }
+            if self.gen_resources.values[arg].computed.is_none() {
+                let source = builder.append_block_param(entry_block, layout.repr);
+                self.prepare_block_arg(arg, source, layout, builder);
+            }
+        }
+
         self.gen_resources
             .block_stack
             .push((root, true, entry_block));
@@ -58,24 +70,12 @@ impl Generator<'_> {
         builder: &mut GenBuilder,
     ) -> ir::Block {
         let BlockMir {
-            args,
             insts,
             control_flow,
             ..
         } = builder.body.blocks[block];
 
         builder.switch_to_block(ir_block);
-
-        for &arg in &builder.body.value_args[args] {
-            let layout = self.ty_layout(builder.value_ty(arg));
-            if layout.size == 0 {
-                continue;
-            }
-            if self.gen_resources.values[arg].computed.is_none() {
-                let source = builder.append_block_param(ir_block, layout.repr);
-                self.prepare_block_arg(arg, source, layout, builder);
-            }
-        }
 
         for &inst in &builder.body.insts[insts] {
             self.inst(inst, builder, &mut ir_block);
@@ -154,7 +154,8 @@ impl Generator<'_> {
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
-        let mut funcs = self.gen_resources.drops[drop.index()].clone();
+        let mut funcs =
+            self.gen_resources.drops[drop.index() - self.gen_resources.drops_offset].clone();
         let GenValue {
             computed, offset, ..
         } = self.gen_resources.values[value];
@@ -306,19 +307,8 @@ impl Generator<'_> {
                 self.instantiate_block(a, builder, |b, _, builder| builder.ins().brnz(cond, b, &[]));
                 self.instantiate_block(b, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
-            ControlFlowMir::Goto(b, val) => {
-                let val = (!self.gen_resources.values[val].must_load
-                    || !self.ty_layout(builder.value_ty(val)).on_stack)
-                    .then_some(val)
-                    .and_then(|val| {
-                        let value = self.load_value(val, builder);
-                        self.gen_resources.values[val] = default();
-                        value
-                    });
-                self.instantiate_block(b, builder, |b, _, builder|     builder
-                    .ins()
-                    .jump(b, val.as_ref().map(slice::from_ref).unwrap_or_default())
-                );
+            ControlFlowMir::Goto(gb) => {
+                self.instantiate_block(gb, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
         }
     }
@@ -440,7 +430,8 @@ impl Generator<'_> {
 
     fn call(&mut self, call: VRef<CallMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let CallMir { args, .. } = builder.body.calls[call];
-        let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
+        let CompileRequestChild { id, func, params } =
+            self.gen_resources.calls[call.index() - self.gen_resources.call_offset];
 
         if self.typec[func].flags.contains(FuncFlags::BUILTIN) {
             if func == Func::CAST {
@@ -519,6 +510,7 @@ impl Generator<'_> {
         let Func {
             signature, name, ..
         } = self.typec[func_id];
+        let ret_ty = self.ty_repr(signature.ret);
         let op_str = self.interner[name]
             .split_whitespace()
             .nth(1)
@@ -547,6 +539,20 @@ impl Generator<'_> {
                 (helper!(scalars), "==") => builder.ins().icmp(IntCC::Equal, a, b),
                 (helper!(binary), "&") => builder.ins().band(a, b),
                 val => unimplemented!("{:?}", val),
+            },
+            [v] => match (builder.func.dfg.value_type(v), ret_ty) {
+                (from @ helper!(ints), to @ helper!(ints)) => match from.bytes().cmp(&to.bytes()) {
+                    Ordering::Greater => builder.ins().ireduce(to, v),
+                    Ordering::Equal => v,
+                    Ordering::Less => {
+                        let arg_is_signed = self.typec[signature.args][0].is_signed();
+                        match arg_is_signed && signature.ret.is_signed() {
+                            true => builder.ins().sextend(to, v),
+                            false => builder.ins().uextend(to, v),
+                        }
+                    }
+                },
+                others => unimplemented!("{others:?}"),
             },
             ref slice => unimplemented!("{slice:?}"),
         };
@@ -837,7 +843,7 @@ impl Generator<'_> {
             ComputedValue::StackSlot(ss)
         } else {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
-            if builder.body.is_mutable(target) || force_mutable {
+            if builder.body.is_mutable(target) || force_mutable || builder.body.is_var(target) {
                 let var = Variable::from_u32(target.as_u32());
                 builder.declare_var(var, layout.repr);
                 builder.def_var(var, init);

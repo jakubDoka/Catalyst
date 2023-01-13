@@ -21,9 +21,9 @@ pub use {
         },
         func::{FuncArgAst, FuncBodyAst, FuncDefAst, FuncSigAst},
         items::{
-            EnumAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst, ImplItemAst,
-            ImplTargetAst, ImportAst, ImportsAst, InlineModeAst, ItemAst, SpecAst, StructAst,
-            StructFieldAst, TopLevelAttrAst, TopLevelAttrKindAst,
+            ConstAst, EnumAst, EnumVariantAst, GroupedItemSlice, GroupedItemsAst, ImplAst,
+            ImplItemAst, ImplTargetAst, ImportAst, ImportsAst, InlineModeAst, ItemAst, SpecAst,
+            StructAst, StructFieldAst, TopLevelAttrAst, TopLevelAttrKindAst,
         },
         manifest::{
             ManifestAst, ManifestDepAst, ManifestDepsAst, ManifestFieldAst, ManifestItemAst,

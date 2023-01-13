@@ -245,6 +245,7 @@ gen_cache! {
     spec_funcs: SpecFunc,
     variants: Variant,
     enums: Enum,
+    consts: Const,
     [sync]
     pointers: Pointer,
     spec_sums: Spec,
@@ -697,6 +698,33 @@ impl Typec {
             create_bin_op(op, ty, ty, Ty::BOOL)
         });
         op_to_ty("| & ^", Ty::BINARY, |op, ty| create_bin_op(op, ty, ty, ty));
+
+        let create_conv = |(from, to): (Ty, Ty)| {
+            let name = interner.intern_with(|_, t| write!(t, "{to}"));
+            let id = interner.intern_scoped(from, name);
+
+            let signature = Signature {
+                cc: default(),
+                args: self.cache.args.extend(iter::once(from.into())),
+                ret: to.into(),
+            };
+
+            let func = Func {
+                signature,
+                flags: FuncFlags::BUILTIN,
+                name: id,
+                ..default()
+            };
+
+            let func = self.cache.funcs.push(func);
+
+            builtin_functions.push(func);
+        };
+
+        Ty::SCALARS
+            .into_iter()
+            .flat_map(|from| Ty::SCALARS.map(|to| (from, to)))
+            .for_each(create_conv)
     }
 
     pub fn pack_func_param_specs(

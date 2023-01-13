@@ -27,11 +27,7 @@ macro_rules! gen_non_max {
                 }
 
                 pub const fn new(val: $ty) -> Option<Self> {
-                    if val == <$ty>::MAX {
-                        None
-                    } else {
-                        Some(unsafe { Self(val) })
-                    }
+                    unsafe { mem::transmute(val) }
                 }
 
                 /// # Safety

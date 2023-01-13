@@ -222,7 +222,9 @@ pub struct GenResources {
     pub func_imports: Map<FragRef<CompiledFunc>, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
+    pub call_offset: usize,
     pub drops: Vec<Range<usize>>,
+    pub drops_offset: usize,
     pub signature_pool: Vec<ir::Signature>,
 }
 
@@ -584,7 +586,7 @@ impl std::fmt::Display for IsaCreationError {
 
 pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
-    pub body: &'a FuncMirInner,
+    pub body: &'a ModuleMirInner,
     pub struct_ret: Option<ir::Value>,
     pub dependant_types: &'a FuncTypes,
     inner: FunctionBuilder<'b>,
@@ -593,7 +595,7 @@ pub struct GenBuilder<'a, 'b> {
 impl<'a, 'b> GenBuilder<'a, 'b> {
     pub fn new(
         isa: &'a Isa,
-        body: &'a FuncMirInner,
+        body: &'a ModuleMirInner,
         func: &'b mut ir::Function,
         dependant_types: &'a FuncTypes,
         ctx: &'b mut FunctionBuilderContext,

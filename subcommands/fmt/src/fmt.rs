@@ -140,10 +140,29 @@ impl<'ctx> Fmt<'ctx> {
                 self.newline_if_none();
                 return;
             }
+            ItemAst::Const(consts) => self.r#const(consts),
         }
 
         self.newline_if_none();
         self.newline_if_none();
+    }
+
+    fn r#const(&mut self, r#const: &ConstAst<u32>) {
+        self.vis(r#const.vis);
+        self.keyword(r#const.keyword);
+        self.name(r#const.name);
+
+        if let Some((colon, ty)) = r#const.ty {
+            self.source_info(colon);
+            self.buffer.push(' ');
+            self.ty(&ty);
+        }
+
+        self.buffer.push(' ');
+        self.source_info(r#const.eqal);
+        self.buffer.push(' ');
+
+        self.expr(&r#const.value);
     }
 
     fn r#impl(&mut self, r#impl: &ImplAst<u32>) {

@@ -407,6 +407,26 @@ fn main() {
             fn [F, T] my_cast(value: F) -> T => cast(value);
         }
 
+        simple "convert-scalars" {
+            #[entry];
+            fn main -> u32 => 0uint.u32() + false.u32();
+        }
+
+        simple "constants" {
+            const NUM = 10 + 10;
+            const SUM = NUM + NUM;
+            #[entry];
+            fn main -> uint => SUM - 40;
+        }
+
+        // TDOD: array impl
+        // simple "array" {
+        //     #[entry];
+        //     fn main {
+        //         [true, false, true]
+        //     }
+        // }
+
         // simple "swap-macro" {
         //     use {
         //         "water/option";

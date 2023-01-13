@@ -91,7 +91,7 @@ impl<T> PushMap<T> {
     pub fn extend(&mut self, other: impl IntoIterator<Item = T>) -> VSlice<T> {
         let prev = self.data.len();
         self.data.extend(other);
-        unsafe { VSlice::new(prev..self.data.len()) }
+        VSlice::new(prev..self.data.len())
     }
 
     pub fn extend_from_within(&mut self, other: VSlice<T>) -> VSlice<T>
@@ -100,7 +100,7 @@ impl<T> PushMap<T> {
     {
         let prev = self.data.len();
         self.data.extend_from_within(other.range());
-        unsafe { VSlice::new(prev..self.data.len()) }
+        VSlice::new(prev..self.data.len())
     }
 
     pub fn bump_slice(&mut self, items: &[T]) -> VSlice<T>

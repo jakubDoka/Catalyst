@@ -1,0 +1,9 @@
+error: scope item not found
+ --> constants/root.ctl:3:12
+  |
+3 | fn main -> usize => SUM - 40
+  |            ^^^^^ this does not exist or is not imported
+  |
+  = help: expected type or module
+  = info: debug: queried 'usize'
+

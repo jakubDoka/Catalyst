@@ -950,7 +950,8 @@ impl<'a> DiagnosticView<'a> {
 }
 
 fn swap_mir_types(
-    func: &FuncMirInner,
+    generics: VRefSlice<MirTy>,
+    module: &ModuleMirInner,
     dependant_types: &mut FuncTypes,
     params: &[Ty],
     typec: &mut Typec,
@@ -960,7 +961,7 @@ fn swap_mir_types(
         return;
     }
 
-    for &mir_ty in &func.ty_params[func.generics] {
+    for &mir_ty in &module.ty_params[generics] {
         let ty = dependant_types[mir_ty].ty;
         let new_ty = typec.instantiate(ty, params, interner);
         dependant_types[mir_ty].ty = new_ty;

@@ -80,8 +80,8 @@ pub use {
         TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
-        Builtin, ComputedTypecItem, Enum, Field, FieldFlags, GenericTy, Generics, Humid, Impl,
-        ImplKey, Instance, Mutability, Pointer, RawMutability, Spec, SpecBase, SpecFunc,
+        Builtin, ComputedTypecItem, Const, Enum, Field, FieldFlags, GenericTy, Generics, Humid,
+        Impl, ImplKey, Instance, Mutability, Pointer, RawMutability, Spec, SpecBase, SpecFunc,
         SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
     },
     typec::{

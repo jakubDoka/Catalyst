@@ -195,7 +195,7 @@ impl MirChecker<'_, '_> {
             self.store_in_var(value);
         }
 
-        self.mir_ctx.func.set_referenced(key.root);
+        self.mir_ctx.module.set_referenced(key.root);
     }
 
     fn integrity_check(
@@ -296,8 +296,8 @@ impl MirChecker<'_, '_> {
         }
 
         let dropper = |s: &mut Self| {
-            s.mir_ctx.func.set_referenced(value);
-            let drop = s.mir_ctx.func.drops.push(DropMir { value });
+            s.mir_ctx.module.set_referenced(value);
+            let drop = s.mir_ctx.module.drops.push(DropMir { value });
             s.inst(InstMir::Drop(drop), span);
         };
 
@@ -473,17 +473,17 @@ impl MirChecker<'_, '_> {
             }
 
             if self.current_block == Some(drop_block) && self.mir_ctx.insts.is_empty() {
-                self.mir_ctx.func.blocks.pop();
+                self.mir_ctx.module.blocks.pop();
             } else {
                 self.mir_ctx.close_block(
                     self.current_block.unwrap(),
-                    self.mir_ctx.func.blocks[branch_block].control_flow,
+                    self.mir_ctx.module.blocks[branch_block].control_flow,
                 );
                 self.mir_ctx.dd.block_closers[drop_block] = span;
 
-                let new_branch_control_flow = ControlFlowMir::Goto(drop_block, ValueMir::UNIT);
+                let new_branch_control_flow = ControlFlowMir::Goto(drop_block);
                 self.increment_block_refcount(new_branch_control_flow);
-                self.mir_ctx.func.blocks[branch_block].control_flow = new_branch_control_flow;
+                self.mir_ctx.module.blocks[branch_block].control_flow = new_branch_control_flow;
             }
 
             self.revert_branch(branch);

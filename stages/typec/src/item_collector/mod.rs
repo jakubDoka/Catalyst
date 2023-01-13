@@ -426,6 +426,34 @@ impl TyChecker<'_> {
         Some(self.insert_humid_item(s, meta))
     }
 
+    pub fn collect_const(
+        &mut self,
+        ConstAst { vis, name, .. }: ConstAst,
+        _: &[TopLevelAttrAst],
+    ) -> Option<FragRef<Const>> {
+        let loc = {
+            let id = self.typec.cache.consts.next();
+            let item = ModuleItem::new(name.ident, id, name.span, vis.map(|vis| vis.vis));
+            self.insert_scope_item(item)?
+        };
+
+        let init_fn = Func {
+            name: name.ident,
+            loc: Some(loc),
+            ..default()
+        };
+
+        let init = self.typec.cache.funcs.push(init_fn);
+
+        let r#const = Const {
+            name: name.ident,
+            init,
+            loc,
+        };
+
+        Some(self.typec.cache.consts.push(r#const))
+    }
+
     pub fn collect_enum(
         &mut self,
         EnumAst {
@@ -647,4 +675,8 @@ impl CollectGroup for SpecAst<'_> {
 
 impl CollectGroup for EnumAst<'_> {
     type Output = Enum;
+}
+
+impl CollectGroup for ConstAst<'_> {
+    type Output = Const;
 }

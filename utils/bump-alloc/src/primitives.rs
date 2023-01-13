@@ -264,7 +264,7 @@ impl<T> VSlice<T> {
     /// Creates new VSlice from index.
     /// # Safety
     /// The index must be valid for using collection.
-    pub unsafe fn new(range: Range<usize>) -> Self {
+    pub fn new(range: Range<usize>) -> Self {
         Self(range.start as u32, range.end as u32, PhantomData)
     }
 

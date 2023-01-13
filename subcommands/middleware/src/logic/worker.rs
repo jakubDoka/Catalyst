@@ -1,4 +1,4 @@
-use std::sync::mpsc::SendError;
+use std::sync::{mpsc::SendError, Arc};
 
 use super::*;
 
@@ -77,7 +77,7 @@ impl Worker {
             shared.resources,
         );
 
-        let inner = FuncMirInner::default();
+        let inner = ModuleMir::default();
         let types = FuncTypes::default();
         let mut builder = GenBuilder::new(
             isa,
@@ -268,6 +268,8 @@ impl Worker {
         shared: &Shared,
         handler: &mut S,
     ) {
+        let mir_module = task.mir.modules.next();
+
         macro ctx() {
             BaseSourceCtx {
                 worker: self,
@@ -275,6 +277,7 @@ impl Worker {
                 arena,
                 task,
                 shared,
+                mir_module,
             }
         }
 
@@ -337,6 +340,15 @@ impl Worker {
                 break;
             }
         }
+
+        let module = task
+            .mir
+            .modules
+            .push(Arc::new(self.state.mir_ctx.module.clone()));
+        assert_eq!(module, mir_module);
+        self.state.mir_ctx.module.clear();
+
+        dbg!(shared.resources.source_path(source), module);
     }
 
     fn compile_macros(
@@ -390,7 +402,9 @@ impl Worker {
                 continue;
             }
 
-            let Func { signature, .. } = task.typec[func];
+            let Func {
+                signature, name, ..
+            } = task.typec[func];
 
             let body = task
                 .mir
@@ -398,14 +412,18 @@ impl Worker {
                 .get(&func)
                 .expect("every source code function has body")
                 .to_owned();
+            self.state.gen_resources.call_offset = body.calls.start() as usize;
+            self.state.gen_resources.drops_offset = body.drops.start() as usize;
+            let module = task.mir.modules[body.module].clone();
             let params = task.compile_requests.ty_slices[params].to_bumpvec();
             self.state.temp_dependant_types.clear();
+            dbg!(&task.interner[name], body.module);
             self.state
                 .temp_dependant_types
-                .extend(body.types.values().copied());
-
+                .extend(module.load_types(body.types).iter().copied());
             swap_mir_types(
-                &body,
+                body.generics,
+                &*module,
                 &mut self.state.temp_dependant_types,
                 &params,
                 &mut task.typec,
@@ -413,16 +431,12 @@ impl Worker {
             );
             let mut builder = GenBuilder::new(
                 isa,
-                &body,
+                &*module,
                 &mut self.context.func,
                 &self.state.temp_dependant_types,
                 &mut self.function_builder_ctx,
             );
-            let root = body
-                .blocks
-                .keys()
-                .next()
-                .expect("no block function is invalid");
+            let root = body.entry;
             self.state.gen_resources.calls.clear();
             self.state
                 .gen_resources
@@ -449,12 +463,13 @@ impl Worker {
                 &task.resources.compile_requests,
                 shared.resources,
             )
-            .generate(signature, &params, root, &mut builder);
+            .generate(signature, body.ret, body.args, &params, root, &mut builder);
+
+            let name = &task.interner[task.typec[func].name];
             if let Some(ref mut dump) = task.ir_dump {
-                let name = &task.interner[task.typec[func].name];
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
-                // print!("{} {}", name, self.context.func.display());
             }
+            print!("{} {}", name, self.context.func.display());
             self.context.compile(&*isa.inner).unwrap();
             task.gen.save_compiled_code(id, &self.context).unwrap();
             let signatures = self.context.func.dfg.signatures.values_mut();
@@ -579,6 +594,7 @@ impl Worker {
     fn type_check_batch(
         &mut self,
         module: VRef<Module>,
+        mir_module: FragRef<ModuleMir>,
         grouped_items: GroupedItemsAst,
         arena: &Arena,
         task: &mut Task,
@@ -600,7 +616,8 @@ impl Worker {
             &mut self.state.tir_builder_ctx,
             self.state.ast_transfer.activate(),
             &mut type_checked_funcs,
-        );
+        )
+        .dbg_funcs(&type_checked_funcs);
 
         MirChecker::new(
             module,
@@ -613,9 +630,8 @@ impl Worker {
             arena,
             shared.resources,
         )
-        .funcs(&mut type_checked_funcs)
-        // .dbg_funcs()
-        ;
+        .funcs(mir_module, &mut type_checked_funcs)
+        .dbg_funcs();
 
         self.state
             .mir_ctx
@@ -757,6 +773,7 @@ pub trait AstHandler: Sync + Send {
 pub struct BaseSourceCtx<'a> {
     pub worker: &'a mut Worker,
     pub module: VRef<Module>,
+    pub mir_module: FragRef<ModuleMir>,
     pub arena: &'a Arena,
     pub task: &'a mut Task,
     pub shared: &'a Shared<'a>,
@@ -786,8 +803,14 @@ impl AstHandler for DefaultSourceAstHandler {
         ctx: BaseSourceCtx,
         _macros: MacroSourceCtx,
     ) -> bool {
-        ctx.worker
-            .type_check_batch(ctx.module, items, ctx.arena, ctx.task, ctx.shared);
+        ctx.worker.type_check_batch(
+            ctx.module,
+            ctx.mir_module,
+            items,
+            ctx.arena,
+            ctx.task,
+            ctx.shared,
+        );
         items.last
     }
 

@@ -1,13 +1,6 @@
 use std::{
-    borrow::Cow,
-    collections::hash_map::Entry,
-    default::{self, default},
-    env::VarError,
-    ffi::OsStr,
-    io, iter, mem,
-    path::*,
-    process::Command,
-    time::SystemTime,
+    borrow::Cow, collections::hash_map::Entry, default::default, env::VarError, ffi::OsStr, io,
+    iter, mem, path::*, process::Command, time::SystemTime,
 };
 
 use crate::*;
@@ -118,7 +111,7 @@ impl<'a> PackageLoader<'a> {
         }
 
         self.package_graph
-            .ordering(root_module.into_iter().map(|i| i.index()), &mut buffer)
+            .ordering(root_module.map(|i| i.index()), &mut buffer)
             .map_err(|cycle| {
                 self.workspace.push(CycleDetected {
                     cycle: cycle
@@ -170,21 +163,23 @@ impl<'a> PackageLoader<'a> {
         package: VRef<Package>,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<[VRef<Module>; 2]> {
+        ctx.modules
+            .entry(Resources::BUILTIN_SOURCE_PATH.into())
+            .or_insert_with(|| DummyModule {
+                package: Resources::BUILTIN_PACKAGE,
+                deps: default(),
+                source: Resources::BUILTIN_SOURCE,
+                ordering: 0,
+            });
+
         let &Package {
             ref root_module,
             source,
             root_module_span,
             ..
         } = &self.resources.packages[package];
-        ctx.module_frontier.extend([
-            (root_module.clone(), package, source, root_module_span),
-            (
-                Resources::BUILTIN_SOURCE_PATH.into(),
-                Resources::BUILTIN_PACKAGE,
-                Resources::BUILTIN_SOURCE,
-                default(),
-            ),
-        ]);
+        ctx.module_frontier
+            .push((root_module.clone(), package, source, root_module_span));
 
         let mut ast_data = ctx.get_ast_data();
         while let Some((path, package, source, span)) = ctx.module_frontier.pop() {
@@ -294,7 +289,6 @@ impl<'a> PackageLoader<'a> {
             .filter_map(|&ImportAst { vis, name, path }| {
                 let path = path.span.shrink(1);
                 let name = self.extract_path_name("module", path, name, origin)?;
-                dbg!(&self.interner[name.ident]);
                 let path_content = self.resources.sources[origin].span_str(path);
                 let (package, path_str) =
                     path_content.split_once('/').unwrap_or((path_content, ""));
@@ -331,14 +325,6 @@ impl<'a> PackageLoader<'a> {
                     .with_extension("ctl");
 
                 if import_package == Resources::BUILTIN_PACKAGE {
-                    ctx.modules
-                        .entry(built_path.clone())
-                        .or_insert_with(|| DummyModule {
-                            package: import_package,
-                            deps: default(),
-                            source: Resources::BUILTIN_SOURCE,
-                            ordering: 0,
-                        });
                     return Some((vis.map(|vis| vis.vis), name, built_path));
                 }
 

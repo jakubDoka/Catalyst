@@ -14,11 +14,12 @@ pub struct VarMir {
 pub struct MirCtx {
     pub depth: u32,
     pub no_moves: bool,
-    pub func: FuncMirInner,
+    pub ret: VRef<ValueMir>,
+    pub args: VRefSlice<ValueMir>,
+    pub module: ModuleMirInner,
     pub dd: DebugData,
     pub vars: Vec<VarMir>,
     pub generics: Vec<FragSlice<Spec>>,
-    pub args: Vec<VRef<ValueMir>>,
     pub insts: Vec<(InstMir, Span)>,
     pub used_types: Map<Ty, VRef<MirTy>>,
     pub just_compiled: Vec<FragRef<Func>>,
@@ -26,24 +27,19 @@ pub struct MirCtx {
     pub value_depths: ShadowMap<ValueMir, u32>,
     pub to_drop: Vec<VRef<ValueMir>>,
     pub loops: Vec<LoopMir>,
+    pub types: FuncTypes,
 }
 
 impl MirCtx {
     pub fn value(&mut self, ty: Ty, typec: &Typec) -> VRef<ValueMir> {
-        if ty == Ty::UNIT {
-            return ValueMir::UNIT;
-        } else if ty == Ty::TERMINAL {
-            return ValueMir::TERMINAL;
-        }
-
         let ty = self.project_ty(ty, typec);
-        let val = self.func.values.push(ValueMir { ty });
+        let val = self.module.values.push(ValueMir { ty });
         self.value_depths[val] = self.depth;
         val
     }
 
     pub fn create_block(&mut self) -> VRef<BlockMir> {
-        self.func.blocks.push(BlockMir::default())
+        self.module.blocks.push(BlockMir::default())
     }
 
     pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarMir {
@@ -51,11 +47,11 @@ impl MirCtx {
     }
 
     pub fn project_ty_slice(&mut self, ty_slice: &[Ty], typec: &Typec) -> VRefSlice<MirTy> {
-        self.func.ty_params.extend(ty_slice.iter().map(|&ty| {
+        self.module.ty_params.extend(ty_slice.iter().map(|&ty| {
             Self::project_ty_low(
                 ty,
                 &mut self.used_types,
-                &mut self.func.types,
+                &mut self.types,
                 &mut self.generic_types,
                 typec,
             )
@@ -66,7 +62,7 @@ impl MirCtx {
         Self::project_ty_low(
             ty,
             &mut self.used_types,
-            &mut self.func.types,
+            &mut self.types,
             &mut self.generic_types,
             typec,
         )
@@ -95,40 +91,56 @@ impl MirCtx {
 
     pub fn close_block(&mut self, id: VRef<BlockMir>, control_flow: ControlFlowMir) {
         let block = BlockMir {
-            args: self.func.value_args.extend(self.args.drain(..)),
             insts: self
-                .func
+                .module
                 .insts
                 .extend(self.insts.iter().map(|&(inst, ..)| inst)),
             control_flow,
 
-            ..self.func.blocks[id] // inherit ref_count
+            ..self.module.blocks[id] // inherit ref_count
         };
 
-        self.func
+        self.module
             .insts
             .indexed(block.insts)
             .zip(self.insts.drain(..).map(|(.., span)| span))
             .for_each(|((key, ..), span)| self.dd.instr_spans[key] = span);
 
-        self.func.blocks[id] = block;
+        self.module.blocks[id] = block;
     }
 
-    pub fn clear(&mut self) -> FuncMirInner {
+    pub fn clear(
+        &mut self,
+        entry: VRef<BlockMir>,
+        module: FragRef<ModuleMir>,
+        prev_drops: usize,
+        prev_calls: usize,
+    ) -> FuncMir {
         self.vars.clear();
         self.to_drop.clear();
         self.dd.clear();
         self.used_types.clear();
         self.generics.clear();
 
-        let mut cln = self.func.clone();
-        cln.generics = cln.ty_params.extend(self.generic_types.drain(..));
-        self.func.clear();
-        cln
+        self.used_types
+            .extend([(Ty::UNIT, MirTy::UNIT), (Ty::TERMINAL, MirTy::TERMINAL)]);
+
+        let types = self.module.save_types(&self.types);
+        self.types.clear();
+        FuncMir {
+            ret: self.ret,
+            args: self.args,
+            generics: self.module.ty_params.extend(self.generic_types.drain(..)),
+            types,
+            entry,
+            module,
+            calls: VSlice::new(prev_calls..self.module.calls.len()),
+            drops: VSlice::new(prev_drops..self.module.drops.len()),
+        }
     }
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.func.value_ty(value)
+        self.types[self.module.values[value].ty].ty
     }
 }
 

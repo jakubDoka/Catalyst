@@ -17,7 +17,7 @@ impl MirChecker<'_, '_> {
                 .bodies
                 .get(&func)
                 .expect("Expected body to be present");
-            self.display_func(func, &mir, buffer)?;
+            self.display_func(&mir, func, buffer)?;
             buffer.push_str("\n\n");
         }
 
@@ -30,12 +30,44 @@ impl MirChecker<'_, '_> {
         println!("{buffer}");
     }
 
-    fn display_func(&self, func: FragRef<Func>, mir: &FuncMir, buffer: &mut String) -> fmt::Result {
+    fn display_func(&self, mir: &FuncMir, func: FragRef<Func>, buffer: &mut String) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
-        writeln!(buffer, " {{ ret var{}", mir.ret.index())?;
+        writeln!(
+            buffer,
+            " {{ ({}) ret var{}",
+            self.mir_ctx.module.value_args[mir.args]
+                .iter()
+                .map(|&arg| format!(
+                    "var{}: {}",
+                    arg.index(),
+                    self.typec
+                        .display_ty(mir.value_ty(arg, &self.mir_ctx.module), self.interner)
+                ))
+                .collect::<Vec<_>>()
+                .join(", "),
+            mir.ret.index()
+        )?;
 
-        for (i, block) in mir.blocks.values().enumerate() {
-            self.display_block(i, mir, block, buffer)?;
+        let mut seen = BitSet::new();
+        let mut blocks = vec![mir.entry];
+        let mut cursor = 0;
+        while let Some(&block) = blocks.get(cursor) {
+            cursor += 1;
+            if !seen.insert(block.index()) {
+                continue;
+            }
+            match self.mir_ctx.module.blocks[block].control_flow {
+                ControlFlowMir::Split(.., a, b) => blocks.extend([a, b]),
+                ControlFlowMir::Goto(a, ..) => blocks.push(a),
+                ControlFlowMir::Return(..) | ControlFlowMir::Terminal => (),
+            }
+        }
+
+        for (i, block) in blocks
+            .into_iter()
+            .map(|b| (b, &self.mir_ctx.module.blocks[b]))
+        {
+            self.display_block(i.index(), mir, block, buffer)?;
             write!(buffer, "\n\n")?;
         }
 
@@ -54,42 +86,25 @@ impl MirChecker<'_, '_> {
         let ident = iter::repeat(' ').take(4);
 
         buffer.extend(ident.clone());
-        writeln!(
-            buffer,
-            "block{}({}) {{",
-            i,
-            func.value_args[block.args]
-                .iter()
-                .map(|&arg| format!(
-                    "var{}: {}",
-                    arg.index(),
-                    self.typec.display_ty(func.value_ty(arg), self.interner)
-                ))
-                .collect::<Vec<_>>()
-                .join(", "),
-        )?;
+        writeln!(buffer, "block{} {{", i)?;
 
-        for &inst in &func.insts[block.insts] {
+        for &inst in &self.mir_ctx.module.insts[block.insts] {
             buffer.extend(ident.clone());
             buffer.extend(ident.clone());
-            self.display_inst(inst, func, buffer)?;
+            self.display_inst(func, inst, buffer)?;
             buffer.push('\n');
         }
 
+        buffer.extend(ident.clone());
+        buffer.extend(ident.clone());
         match block.control_flow {
             ControlFlowMir::Return(ret) => {
-                buffer.extend(ident.clone());
-                buffer.extend(ident.clone());
                 write!(buffer, "return var{}", ret.index())?;
             }
             ControlFlowMir::Terminal => {
-                buffer.extend(ident.clone());
-                buffer.extend(ident.clone());
                 write!(buffer, "exit")?;
             }
             ControlFlowMir::Split(cond, then, otherwise) => {
-                buffer.extend(ident.clone());
-                buffer.extend(ident.clone());
                 write!(
                     buffer,
                     "split var{} block{} block{}",
@@ -98,11 +113,8 @@ impl MirChecker<'_, '_> {
                     otherwise.index()
                 )?;
             }
-            ControlFlowMir::Goto(target, with) => {
-                buffer.extend(ident.clone());
-                buffer.extend(ident.clone());
+            ControlFlowMir::Goto(target) => {
                 write!(buffer, "goto block{}", target.index())?;
-                write!(buffer, " with var{}", with.index())?;
             }
         }
 
@@ -113,7 +125,7 @@ impl MirChecker<'_, '_> {
         Ok(())
     }
 
-    fn display_inst(&self, inst: InstMir, func: &FuncMir, buffer: &mut String) -> fmt::Result {
+    fn display_inst(&self, func: &FuncMir, inst: InstMir, buffer: &mut String) -> fmt::Result {
         match inst {
             InstMir::Int(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
@@ -131,7 +143,7 @@ impl MirChecker<'_, '_> {
                     callable,
                     params,
                     args,
-                } = func.calls[call];
+                } = self.mir_ctx.module.calls[call];
 
                 match callable {
                     CallableMir::Func(func) => {
@@ -147,10 +159,9 @@ impl MirChecker<'_, '_> {
 
                 if !params.is_empty() {
                     buffer.push('[');
-
-                    let iter = func.ty_params[params]
+                    let iter = self.mir_ctx.module.ty_params[params]
                         .iter()
-                        .map(|&ty| func.types[ty].ty)
+                        .map(|&ty| func.ty(ty, &self.mir_ctx.module))
                         .map(|ty| self.typec.display_ty(ty, self.interner))
                         .intersperse(", ".into())
                         .collect::<String>();
@@ -161,7 +172,7 @@ impl MirChecker<'_, '_> {
 
                 buffer.push('(');
 
-                if let Some((first, others)) = func.value_args[args].split_first() {
+                if let Some((first, others)) = self.mir_ctx.module.value_args[args].split_first() {
                     write!(buffer, "val{}", first.index())?;
 
                     for &other in others {
@@ -175,7 +186,8 @@ impl MirChecker<'_, '_> {
                 write!(buffer, "var{} =", value.index())?;
 
                 buffer.push('{');
-                if let Some((first, others)) = func.value_args[fields].split_first() {
+                if let Some((first, others)) = self.mir_ctx.module.value_args[fields].split_first()
+                {
                     write!(buffer, "var{}", first.index())?;
 
                     for &other in others {
@@ -206,7 +218,7 @@ impl MirChecker<'_, '_> {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
             InstMir::Drop(drop) => {
-                let DropMir { value } = func.drops[drop];
+                let DropMir { value } = self.mir_ctx.module.drops[drop];
                 write!(buffer, "drop var{}", value.index())?;
             }
         }

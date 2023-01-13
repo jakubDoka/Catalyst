@@ -6,7 +6,7 @@ pub struct TaskBase {
     pub interner: InternerBase,
     pub typec: TypecBase,
     pub gen: GenBase,
-    pub mir: Mir,
+    pub mir: MirBase,
 }
 
 impl TaskBase {
@@ -15,7 +15,7 @@ impl TaskBase {
             interner: InternerBase::new(thread_count),
             typec: TypecBase::new(thread_count),
             gen: GenBase::new(thread_count),
-            mir: default(),
+            mir: MirBase::new(thread_count),
         };
 
         if let Some(mut t) = {
@@ -32,6 +32,7 @@ impl TaskBase {
     pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
         let mut interner_split = self.interner.split();
         let mut typec_split = self.typec.split();
+        let mut mir_split = self.mir.split();
         let mut gen_split = self.gen.split();
         let mut ids = 0..;
         iter::from_fn(move || {
@@ -41,7 +42,7 @@ impl TaskBase {
                 resources: TaskResources::default(),
                 interner: interner_split.next()?,
                 typec: typec_split.next()?,
-                mir: self.mir.clone(),
+                mir: mir_split.next()?,
                 gen: gen_split.next()?,
             })
         })
@@ -49,12 +50,10 @@ impl TaskBase {
 
     pub fn register<'a>(&'a mut self, frags: &mut RelocatedObjects<'a>) {
         self.typec.register(frags);
+        self.mir.register(frags);
         self.gen.register(frags);
-        frags.add_cleared(&mut self.mir);
     }
 }
-
-derive_relocated!(struct TaskBase { typec gen mir });
 
 #[derive(Default)]
 pub struct TaskResources {
@@ -117,12 +116,14 @@ impl Task {
                 .pack_func_param_specs(func)
                 .collect::<BumpVec<_>>();
 
-            let body = task.mir.bodies.get(&func).unwrap().clone();
+            let body = task.mir.bodies.get(&func).unwrap().to_owned();
+            let module = task.mir.modules[body.module].clone();
             dependant_types.clear();
-            dependant_types.extend(body.types.values().copied());
+            dependant_types.extend(module.load_types(body.types).iter().copied());
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
-                &body.inner,
+                body.generics,
+                &*module,
                 &mut dependant_types,
                 &bumped_params,
                 &mut task.typec,
@@ -130,10 +131,10 @@ impl Task {
             );
 
             let mut drops = bumpvec![cap body.drops.len()];
-            for (drop, task_id) in body.drops.values().zip(cycle.by_ref()) {
+            for (drop, task_id) in module.drops[body.drops].iter().zip(cycle.by_ref()) {
                 let task = &mut tasks[task_id];
                 let prev = frontier.len();
-                let ty = body.values[drop.value].ty;
+                let ty = module.values[drop.value].ty;
                 type_frontier.push(dependant_types[ty].ty);
                 task.instantiate_destructors(
                     &mut type_frontier,
@@ -153,12 +154,13 @@ impl Task {
             let drops = task.compile_requests.drop_children.extend(drops);
 
             let prev = frontier.len();
-            body.calls
-                .values()
+
+            module.calls[body.calls]
+                .iter()
                 .zip(cycle.by_ref())
                 .map(|(&call, task_id)| {
                     let task = &mut tasks[task_id];
-                    let params = body.ty_params[call.params]
+                    let params = module.ty_params[call.params]
                         .iter()
                         .map(|&p| dependant_types[p].ty)
                         .collect::<BumpVec<_>>();

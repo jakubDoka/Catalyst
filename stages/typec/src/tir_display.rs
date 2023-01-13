@@ -10,6 +10,12 @@ use typec_t::*;
 use crate::*;
 
 impl TyChecker<'_> {
+    pub fn dbg_funcs(&self, funcs: &[(FragRef<Func>, TirFunc)]) {
+        let mut buffer = String::new();
+        self.display_funcs(funcs, &mut buffer).unwrap();
+        print!("{buffer}");
+    }
+
     pub fn display_funcs(
         &self,
         funcs: &[(FragRef<Func>, TirFunc)],

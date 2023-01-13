@@ -109,9 +109,10 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 .try_advance(Tk::Colon)
                 .map(|colon| self.ty().map(|ty| (colon, ty)))
                 .transpose()?,
-            equal: self.expect("=", |s| ExpectedLetEqual {
+            equal: self.expect("=", |s| ExpectedAssignEqual {
                 got: s.state.current.kind,
                 loc: s.loc(),
+                something: "let",
             })?,
             value: self.expr()?,
         })
@@ -190,12 +191,13 @@ ctl_errors! {
         source: VRef<Source>,
     }
 
-    #[err => "expected '=' since let statement must be always initialized"]
+    #[err => "expected '=' since {something} statement must be always initialized"]
     #[info => "this may change in the future"]
-    error ExpectedLetEqual: fatal {
+    error ExpectedAssignEqual: fatal {
         #[err loc]
         got: Tk,
         loc: SourceLoc,
+        something: &'static str,
     }
 
     #[err => "expected struct name"]

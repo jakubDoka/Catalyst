@@ -59,6 +59,13 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
         let (index, thread, ..) = self.extend(iter::once(value)).parts();
         FragRef::new(FragAddr::new(index, thread))
     }
+
+    pub fn next(&self) -> FragRef<T> {
+        let index = self.base.views[self.thread as usize]
+            .len
+            .load(Ordering::Relaxed);
+        FragRef::new(FragAddr::new(index as u64, self.thread))
+    }
 }
 
 impl<T, A: Allocator> SyncFragMap<T, A> {

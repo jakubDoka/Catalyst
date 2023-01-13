@@ -234,6 +234,7 @@ pub enum ModuleItemPtr {
     Ty(Ty),
     SpecBase(FragRef<SpecBase>),
     Impl(FragRef<Impl>),
+    Const(FragRef<Const>),
 }
 
 derive_relocated!(enum ModuleItemPtr {
@@ -241,6 +242,7 @@ derive_relocated!(enum ModuleItemPtr {
     Ty(t) => t,
     SpecBase(b) => b,
     Impl(i) => i,
+    Const(c) => c,
 });
 
 impl From<FragRef<Func>> for ModuleItemPtr {
@@ -267,6 +269,12 @@ impl From<FragRef<Impl>> for ModuleItemPtr {
     }
 }
 
+impl From<FragRef<Const>> for ModuleItemPtr {
+    fn from(r#const: FragRef<Const>) -> Self {
+        Self::Const(r#const)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeItem {
     Func(FragRef<Func>),
@@ -276,6 +284,7 @@ pub enum ScopeItem {
     VarHeaderTir(VRef<VarHeaderTir>),
     Module(VRef<Module>),
     LoopHeaderTir(VRef<LoopHeaderTir>),
+    Const(FragRef<Const>),
 }
 
 macro_rules! gen_scope_item {
@@ -300,11 +309,12 @@ impl ScopeItem {
             ScopeItem::VarHeaderTir(..) => "variable",
             ScopeItem::Module(..) => "module",
             ScopeItem::LoopHeaderTir(..) => "loop label",
+            ScopeItem::Const(..) => "constant",
         }
     }
 }
 
-gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase, VRef LoopHeaderTir);
+gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase, VRef LoopHeaderTir, FragRef Const);
 
 impl From<Ty> for ScopeItem {
     fn from(item: Ty) -> Self {
@@ -318,6 +328,7 @@ impl From<ModuleItemPtr> for Option<ScopeItem> {
             ModuleItemPtr::Func(func) => func.into(),
             ModuleItemPtr::Ty(ty) => ty.into(),
             ModuleItemPtr::SpecBase(base) => base.into(),
+            ModuleItemPtr::Const(c) => c.into(),
             ModuleItemPtr::Impl(..) => return None,
         })
     }

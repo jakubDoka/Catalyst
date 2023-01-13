@@ -9,6 +9,15 @@ use lexing_t::*;
 use storage::*;
 
 #[derive(Clone, Copy)]
+pub struct Const {
+    pub name: Ident,
+    pub init: FragRef<Func>,
+    pub loc: Loc,
+}
+
+derive_relocated!(struct Const { init });
+
+#[derive(Clone, Copy)]
 pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,

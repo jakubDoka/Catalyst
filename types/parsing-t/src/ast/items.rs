@@ -94,6 +94,27 @@ impl<'a, M> Spanned for EnumAst<'a, M> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ConstAst<'a, M = NoTokenMeta> {
+    pub vis: Option<VisAst<M>>,
+    pub keyword: SourceInfo<M>,
+    pub name: NameAst<M>,
+    pub ty: Option<(SourceInfo<M>, TyAst<'a, M>)>,
+    pub eqal: SourceInfo<M>,
+    pub value: ExprAst<'a, M>,
+}
+
+impl<'a, M> ConstAst<'a, M> {
+    pub fn span(&self) -> Span {
+        let start = self
+            .vis
+            .as_ref()
+            .map_or(self.keyword.span, |v| v.source_meta.span);
+        let end = self.value.span();
+        start.joined(end)
+    }
+}
+
 pub type GroupedItemSlice<'a, T> = &'a [(T, &'a [TopLevelAttrAst])];
 
 #[derive(Clone, Copy, Debug)]
@@ -103,6 +124,7 @@ pub struct GroupedItemsAst<'a> {
     pub specs: GroupedItemSlice<'a, SpecAst<'a>>,
     pub impls: GroupedItemSlice<'a, ImplAst<'a>>,
     pub enums: GroupedItemSlice<'a, EnumAst<'a>>,
+    pub consts: GroupedItemSlice<'a, ConstAst<'a>>,
     pub last: bool,
 }
 
@@ -114,6 +136,7 @@ pub enum ItemAst<'a, M = NoTokenMeta> {
     Impl(&'a ImplAst<'a, M>),
     Enum(&'a EnumAst<'a, M>),
     Attribute(&'a TopLevelAttrAst<M>),
+    Const(&'a ConstAst<'a, M>),
 }
 
 impl<'a, M> ItemAst<'a, M> {
@@ -125,6 +148,7 @@ impl<'a, M> ItemAst<'a, M> {
             ItemAst::Impl(item) => item.span(),
             ItemAst::Enum(item) => item.span(),
             ItemAst::Attribute(item) => item.span(),
+            ItemAst::Const(item) => item.span(),
         }
     }
 }

@@ -1,60 +1,126 @@
 use std::{
+    default::default,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
 
 use lexing_t::*;
-
 use storage::*;
 use typec_t::*;
 
-#[derive(Default, Clone)]
-pub struct Mir {
+pub struct MirBase {
     pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
+    pub modules: SyncFragBase<ModuleMir>,
 }
 
-derive_relocated!(struct Mir { bodies });
+impl MirBase {
+    pub fn new(thread_count: u8) -> Self {
+        Self {
+            bodies: default(),
+            modules: SyncFragBase::new(thread_count),
+        }
+    }
 
-#[derive(Clone, Default)]
-pub struct FuncMir {
-    pub inner: Arc<FuncMirInner>,
-}
+    pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
+        objects.add_cleared(&mut self.bodies);
+        objects.add(&mut self.modules);
+    }
 
-derive_relocated!(struct FuncMir { inner });
-
-impl Deref for FuncMir {
-    type Target = FuncMirInner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+    pub fn split(&self) -> impl Iterator<Item = Mir> + '_ {
+        self.modules.split().map(|modules| Mir {
+            bodies: self.bodies.clone(),
+            modules,
+        })
     }
 }
 
-#[derive(Clone, Default)]
-pub struct FuncMirInner {
+pub struct Mir {
+    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
+    pub modules: SyncFragMap<ModuleMir>,
+}
+
+impl Default for Mir {
+    fn default() -> Self {
+        MirBase::new(1)
+            .split()
+            .next()
+            .expect("since we pass 1 this always resultis into some")
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct FuncMir {
+    pub args: VRefSlice<ValueMir>,
     pub ret: VRef<ValueMir>,
     pub generics: VRefSlice<MirTy>,
+    pub types: VSlice<MirTy>,
+    pub entry: VRef<BlockMir>,
+    pub module: FragRef<ModuleMir>,
+    pub calls: VSlice<CallMir>,
+    pub drops: VSlice<DropMir>,
+}
+
+impl FuncMir {
+    pub fn ty(&self, ty: VRef<MirTy>, module: &ModuleMirInner) -> Ty {
+        let Some(index) = ty.index().checked_sub(FuncTypes::BASE_LEN) else {
+            return [Ty::UNIT, Ty::TERMINAL][ty.index()];
+        };
+
+        module.types[self.types][index].ty
+    }
+
+    pub fn value_ty(&self, value: VRef<ValueMir>, module: &ModuleMirInner) -> Ty {
+        self.ty(module.values[value].ty, module)
+    }
+}
+
+derive_relocated!(struct FuncMir { module });
+
+pub type ModuleMir = Arc<ModuleMirInner>;
+
+#[derive(Clone, Default)]
+pub struct ModuleMirInner {
     pub blocks: PushMap<BlockMir>,
     pub insts: PushMap<InstMir>,
     pub values: FuncValues,
     pub value_args: PushMap<VRef<ValueMir>>,
     pub ty_params: PushMap<VRef<MirTy>>,
     pub calls: PushMap<CallMir>,
-    pub types: FuncTypes,
+    types: PushMap<MirTy>,
     pub drops: PushMap<DropMir>,
     value_flags: BitSet,
 }
 
-derive_relocated!(struct FuncMirInner { calls types });
+derive_relocated!(struct ModuleMirInner { calls types });
 
-impl FuncMirInner {
-    const FLAG_WIDTH: usize = 2;
-    const IS_REFERENCED: usize = 0;
-    const IS_MUTABLE: usize = 1;
+macro_rules! gen_flags {
+    (
+        $($id:ident)*
+    ) => {
+        gen_flags!((0, [$(stringify!($id)),*].len()) $($id)*);
+    };
 
+    (
+        ($counter:expr, $len:expr) $get:ident $set:ident $($tt:tt)*
+    ) => {
+        pub fn $get(&self, value: VRef<ValueMir>) -> bool {
+            self.value_flags
+                .contains(value.index() * $len + $counter)
+        }
+
+        pub fn $set(&mut self, value: VRef<ValueMir>) {
+            self.value_flags
+                .insert(value.index() * $len + $counter);
+        }
+
+        gen_flags!(($counter + 1, $len) $($tt)*);
+    };
+
+    (($counter:expr, $len:expr)) => {};
+}
+
+impl ModuleMirInner {
     pub fn clear(&mut self) {
-        self.ret = VRef::default();
-        self.generics = VRefSlice::default();
         self.blocks.clear();
         self.insts.clear();
         self.values.clear();
@@ -66,28 +132,18 @@ impl FuncMirInner {
         self.value_flags.clear();
     }
 
-    pub fn is_referenced(&self, value: VRef<ValueMir>) -> bool {
-        self.value_flags
-            .contains(value.index() * Self::FLAG_WIDTH + Self::IS_REFERENCED)
+    gen_flags! {
+        is_referenced set_referenced
+        is_mutable set_mutable
+        is_var set_var
     }
 
-    pub fn set_referenced(&mut self, value: VRef<ValueMir>) {
-        self.value_flags
-            .insert(value.index() * Self::FLAG_WIDTH + Self::IS_REFERENCED);
+    pub fn save_types(&mut self, types: &FuncTypes) -> VSlice<MirTy> {
+        self.types.extend(types.values().copied())
     }
 
-    pub fn is_mutable(&self, value: VRef<ValueMir>) -> bool {
-        self.value_flags
-            .contains(value.index() * Self::FLAG_WIDTH + Self::IS_MUTABLE)
-    }
-
-    pub fn set_mutable(&mut self, value: VRef<ValueMir>) {
-        self.value_flags
-            .insert(value.index() * Self::FLAG_WIDTH + Self::IS_MUTABLE);
-    }
-
-    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.types[self.values[value].ty].ty
+    pub fn load_types(&self, types: VSlice<MirTy>) -> &[MirTy] {
+        &self.types[types]
     }
 }
 
@@ -101,6 +157,8 @@ pub struct MirTy {
     pub ty: Ty,
 }
 
+derive_relocated!(struct MirTy { ty });
+
 impl MirTy {
     gen_v_ref_constants!(
         UNIT
@@ -110,7 +168,6 @@ impl MirTy {
 
 #[derive(Clone, Copy, Default)]
 pub struct BlockMir {
-    pub args: VRefSlice<ValueMir>,
     pub insts: VSlice<InstMir>,
     pub control_flow: ControlFlowMir,
     pub ref_count: u16,
@@ -120,7 +177,7 @@ pub struct BlockMir {
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
     Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
-    Goto(VRef<BlockMir>, VRef<ValueMir>),
+    Goto(VRef<BlockMir>),
     Return(VRef<ValueMir>),
     Terminal,
 }

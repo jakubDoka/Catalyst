@@ -1,7 +1,7 @@
 use diags::*;
 use packaging_t::Source;
 
-use super::*;
+use super::{expr::ExpectedAssignEqual, *};
 
 impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
     pub fn grouped_items(&mut self) -> Option<GroupedItemsAst<'arena>> {
@@ -55,6 +55,7 @@ impl<'ctx, 'arena> Parser<'ctx, 'arena, NoTokenMeta> {
             specs: Spec,
             impls: Impl,
             enums: Enum,
+            consts: Const,
         }
     }
 }
@@ -116,8 +117,29 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             Hash => self.top_level_attr()
                 .map(|s| self.arena.alloc(s))
                 .map(ItemAst::Attribute),
+            Const => self.r#const(vis)
+                .map(|s| self.arena.alloc(s))
+                .map(ItemAst::Const),
             @"module item",
         }}
+    }
+
+    fn r#const(&mut self, vis: Option<VisAst<M>>) -> Option<ConstAst<'arena, M>> {
+        Some(ConstAst {
+            vis,
+            keyword: self.advance(),
+            name: self.name("constant name")?,
+            ty: self
+                .try_advance(TokenKind::Colon)
+                .map(|colon| self.ty().map(|ty| (colon, ty)))
+                .transpose()?,
+            eqal: self.expect("=", |p| ExpectedAssignEqual {
+                got: p.current.kind,
+                loc: p.loc(),
+                something: "const",
+            })?,
+            value: self.expr()?,
+        })
     }
 
     fn r#enum(&mut self, vis: Option<VisAst<M>>) -> Option<EnumAst<'arena, M>> {
