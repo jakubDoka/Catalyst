@@ -57,8 +57,10 @@ impl MirChecker<'_, '_> {
                 continue;
             }
             match self.mir_ctx.module.blocks[block].control_flow {
-                ControlFlowMir::Split(.., a, b) => blocks.extend([a, b]),
-                ControlFlowMir::Goto(a, ..) => blocks.push(a),
+                ControlFlowMir::Split {
+                    then, otherwise, ..
+                } => blocks.extend([then, otherwise]),
+                ControlFlowMir::Goto { dest, .. } => blocks.push(dest),
                 ControlFlowMir::Return(..) | ControlFlowMir::Terminal => (),
             }
         }
@@ -104,7 +106,11 @@ impl MirChecker<'_, '_> {
             ControlFlowMir::Terminal => {
                 write!(buffer, "exit")?;
             }
-            ControlFlowMir::Split(cond, then, otherwise) => {
+            ControlFlowMir::Split {
+                cond,
+                then,
+                otherwise,
+            } => {
                 write!(
                     buffer,
                     "split var{} block{} block{}",
@@ -113,8 +119,11 @@ impl MirChecker<'_, '_> {
                     otherwise.index()
                 )?;
             }
-            ControlFlowMir::Goto(target) => {
-                write!(buffer, "goto block{}", target.index())?;
+            ControlFlowMir::Goto { dest, ret } => {
+                write!(buffer, "goto block{}", dest.index())?;
+                if let Some(ret) = ret {
+                    write!(buffer, " with var{}", ret.index())?;
+                }
             }
         }
 
@@ -259,10 +268,10 @@ impl MirChecker<'_, '_> {
                 let params = &self.typec[args];
                 self.display_pat_low(base.as_ty(), params, res, frontier)
             }
-            Ty::Pointer(ptr, m) => {
-                let Pointer { base, .. } = self.typec[ptr];
+            Ty::Pointer(ptr) => {
+                let base = self.typec[ptr.ty()];
                 res.push('^');
-                write!(res, "{}", m.to_mutability()).unwrap();
+                write!(res, "{}", ptr.mutability.to_mutability()).unwrap();
                 self.display_pat_low(base, params, res, frontier)
             }
             Ty::Param(index) => {

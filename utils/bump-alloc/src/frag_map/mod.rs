@@ -95,7 +95,7 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
     /// # Safety
     /// The caller must ensure reference is in range of valid memory.
     pub unsafe fn get_unchecked(&self, index: FragRef<T>) -> &T {
-        let (index, thread) = index.0.parts();
+        let FragAddr { index, thread, .. } = index.0;
         let thread = &self.others[thread as usize];
         &*FragVecInner::get_item(thread.inner.0, index as usize).as_ptr()
     }
@@ -103,7 +103,7 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
     /// # Safety
     /// The caller must ensure slice is in range of valid memory.
     pub unsafe fn gen_unchecked_slice(&self, slice: FragSlice<T>) -> &[T] {
-        let (index, thread, len) = slice.0.parts();
+        let FragSliceAddr { index, thread, len } = slice.0;
         let thread = &self.others[thread as usize];
         let ptr = FragVecInner::get_item(thread.inner.0, index as usize).as_ptr();
         slice::from_raw_parts(ptr, len as usize)
@@ -114,7 +114,7 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
     type Output = T;
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
-        let (index, thread, ..) = index.0.parts();
+        let FragAddr { index, thread, .. } = index.0;
         if thread == self.thread_local.view.thread {
             &self.thread_local[index as usize]
         } else {
@@ -125,7 +125,7 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragMap<T, A> {
 
 impl<T, A: Allocator> IndexMut<FragRef<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragRef<T>) -> &mut Self::Output {
-        let (index, thread, ..) = index.0.parts();
+        let FragAddr { index, thread, .. } = index.0;
         assert!(self.thread_local.view.thread == thread);
         let index = (index as usize)
             .checked_sub(self.thread_local.view.frozen)
@@ -138,7 +138,7 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
     type Output = [T];
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
-        let (index, thread, len) = index.0.parts();
+        let FragSliceAddr { index, thread, len } = index.0;
         let range = index as usize..index as usize + len as usize;
         if thread == self.thread_local.view.thread {
             &self.thread_local[range]
@@ -150,7 +150,7 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragMap<T, A> {
 
 impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     fn index_mut(&mut self, index: FragSlice<T>) -> &mut Self::Output {
-        let (index, thread, len) = index.0.parts();
+        let FragSliceAddr { index, thread, len } = index.0;
         assert!(self.thread_local.view.thread == thread);
         let index = (index as usize)
             .checked_sub(self.thread_local.view.frozen)
@@ -198,7 +198,7 @@ impl<T, A: Allocator> FragBase<T, A> {
     }
 
     unsafe fn index_unique(&self, index: FragRef<T>) -> &T {
-        let (index, thread) = index.parts();
+        let FragAddr { index, thread, .. } = index.0;
         let thread = &self.threads[thread as usize];
         &FragVecInner::full_data(thread.inner.0)[index as usize]
     }
@@ -208,7 +208,7 @@ impl<T, A: Allocator> Index<FragRef<T>> for FragBase<T, A> {
     type Output = T;
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
-        let (index, thread, ..) = index.0.parts();
+        let FragAddr { index, thread, .. } = index.0;
         &self.threads[thread as usize][index as usize]
     }
 }
@@ -217,7 +217,7 @@ impl<T, A: Allocator> Index<FragSlice<T>> for FragBase<T, A> {
     type Output = [T];
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
-        let (index, thread, len) = index.0.parts();
+        let FragSliceAddr { index, thread, len } = index.0;
         &self.threads[thread as usize][index as usize..index as usize + len as usize]
     }
 }
@@ -247,7 +247,7 @@ impl<T, A: Allocator> FragVec<T, A> {
         A: Clone,
     {
         let (slice, reallocated) = self.extend(iter::once(value));
-        let (index, thread, ..) = slice.0.parts();
+        let FragSliceAddr { index, thread, .. } = slice.0;
         (FragRef::new(FragAddr::new(index, thread)), reallocated)
     }
 
@@ -263,7 +263,7 @@ impl<T, A: Allocator> FragVec<T, A> {
         let (.., possibly_new) = unsafe { FragVecInner::extend(self.view.inner.0, values) };
 
         let slice = FragSlice::new(FragSliceAddr::new(
-            self.view.len as u64,
+            self.view.len as u32,
             self.view.thread,
             values_len,
         ));
@@ -281,7 +281,7 @@ impl<T, A: Allocator> FragVec<T, A> {
     }
 
     fn next(&self) -> FragRef<T> {
-        FragRef::new(FragAddr::new(self.view.len as u64, self.view.thread))
+        FragRef::new(FragAddr::new(self.view.len as u32, self.view.thread))
     }
 }
 
@@ -486,7 +486,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         Self::data_mut(inner, 0..len)
     }
 
-    pub(crate) unsafe fn unextend(load: NonNull<FragVecInner<T, A>>, index: u64, len: u16) {
+    pub(crate) unsafe fn unextend(load: NonNull<FragVecInner<T, A>>, index: u32, len: u16) {
         debug_assert_eq!(
             ptr::addr_of!((*load.as_ptr()).len).read() - len as usize,
             index as usize

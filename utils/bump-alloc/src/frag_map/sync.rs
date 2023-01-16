@@ -47,7 +47,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
     /// # Safety
     /// Caller must ensure the slice is last one pushed
     pub unsafe fn unextend(&mut self, slice: FragSlice<T>) {
-        let (index, thread, len) = slice.parts();
+        let FragSliceAddr { index, thread, len } = slice.0;
         self.base.views[thread as usize].unextend(index, len);
     }
 
@@ -56,7 +56,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
         T: Clone,
         A: Clone,
     {
-        let (index, thread, ..) = self.extend(iter::once(value)).parts();
+        let FragSliceAddr { index, thread, .. } = self.extend(iter::once(value)).addr();
         FragRef::new(FragAddr::new(index, thread))
     }
 
@@ -64,7 +64,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
         let index = self.base.views[self.thread as usize]
             .len
             .load(Ordering::Relaxed);
-        FragRef::new(FragAddr::new(index as u64, self.thread))
+        FragRef::new(FragAddr::new(index as u32, self.thread))
     }
 }
 
@@ -75,7 +75,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
     }
 
     unsafe fn index(&self, addr: FragRef<T>) -> &T {
-        let (index, thread) = addr.parts();
+        let FragAddr { index, thread, .. } = addr.0;
         // we do not implemend sync and threads are unique
         if (*self.locals[thread as usize].get())
             .get(index as usize)
@@ -99,7 +99,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
     }
 
     unsafe fn slice(&self, slice: FragSlice<T>) -> &[T] {
-        let (index, thread, len) = slice.parts();
+        let FragSliceAddr { index, thread, len } = slice.addr();
         let range = index as usize..index as usize + len as usize;
         if (*self.locals[thread as usize].get())
             .slice(range.clone())
@@ -175,8 +175,7 @@ impl<T, A: Allocator> SyncFragBase<T, A> {
 }
 
 impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
-    fn mark(&self, addr: FragAddr, marker: &mut crate::FragRelocMarker) {
-        let (index, thread) = addr.parts();
+    fn mark(&self, FragAddr { index, thread, .. }: FragAddr, marker: &mut crate::FragRelocMarker) {
         let thread = &self.views[thread as usize];
         unsafe {
             FragVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
@@ -254,12 +253,12 @@ impl<T, A: Allocator> SyncFragView<T, A> {
         if let Some(new) = possibly_new {
             self.inner.store(FragVecArc(new));
         }
-        let slice = FragSlice::new(FragSliceAddr::new(len as u64, self.thread, values_len));
+        let slice = FragSlice::new(FragSliceAddr::new(len as u32, self.thread, values_len));
         self.len.store(len + values_len as usize, Ordering::Relaxed);
         (slice, possibly_new.is_some())
     }
 
-    unsafe fn unextend(&self, index: u64, len: u16) {
+    unsafe fn unextend(&self, index: u32, len: u16) {
         FragVecInner::unextend(self.inner.load().0, index, len);
         self.len.store(
             self.len.load(Ordering::Relaxed) - len as usize,
@@ -295,8 +294,7 @@ impl<T, A: Allocator> FragSliceKey<T, A> {
     /// # Safety
     /// Caller must ensure that `Self` does not outlive `map` and `slice` is valid
     pub unsafe fn new(map: &SyncFragMap<T, A>, slice: FragSlice<T>) -> Self {
-        let (_, thread, ..) = slice.parts();
-        let map = &map.base.views[thread as usize];
+        let map = &map.base.views[slice.0.thread as usize];
 
         Self {
             view: map as _,
@@ -306,7 +304,7 @@ impl<T, A: Allocator> FragSliceKey<T, A> {
 
     unsafe fn inner_slice(&self) -> &[T] {
         let map = &*self.view;
-        let (index, .., len) = self.slice.parts();
+        let FragSliceAddr { index, len, .. } = self.slice.addr();
         let ptr = FragVecInner::get_item(map.inner.load().0, index as usize);
         slice::from_raw_parts(ptr.as_ptr(), len as usize)
     }

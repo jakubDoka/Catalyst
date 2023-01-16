@@ -90,14 +90,26 @@ impl MirChecker<'_, '_> {
         let start = self.mir_ctx.create_block();
         self.start_loop(start, dest);
 
-        self.close_block(span, ControlFlowMir::Goto(start));
+        self.close_block(
+            span,
+            ControlFlowMir::Goto {
+                dest: start,
+                ret: None,
+            },
+        );
         self.select_block(start);
 
         let terminated = self.node(r#loop.body, None, r#move).is_none();
 
         if !terminated {
             self.mark_cycle(start);
-            self.close_block(span, ControlFlowMir::Goto(start));
+            self.close_block(
+                span,
+                ControlFlowMir::Goto {
+                    dest: start,
+                    ret: None,
+                },
+            );
         }
 
         if let Some(end) = self.end_loop(span, terminated) {
@@ -112,7 +124,13 @@ impl MirChecker<'_, '_> {
         let LoopMir { start, depth, .. } = self.mir_ctx.loops[loop_id.index()];
         self.check_loop_moves(span, depth);
         self.mark_cycle(start);
-        self.close_block(span, ControlFlowMir::Goto(start));
+        self.close_block(
+            span,
+            ControlFlowMir::Goto {
+                dest: start,
+                ret: None,
+            },
+        );
         None
     }
 
@@ -130,9 +148,7 @@ impl MirChecker<'_, '_> {
 
         let &mut end =
             end.get_or_insert_with(|| self.mir_ctx.module.blocks.push(BlockMir::default()));
-        if let Some(value) = value {
-            self.node(value, Some(dest), true);
-        }
+        let ret = value.map(|v| self.node(v, Some(dest), true)).transpose()?;
 
         let to_drop = mem::take(&mut self.mir_ctx.to_drop);
         for &value in to_drop.iter().skip(drop_frame) {
@@ -140,7 +156,7 @@ impl MirChecker<'_, '_> {
         }
         self.mir_ctx.to_drop = to_drop;
 
-        self.close_block(span, ControlFlowMir::Goto(end));
+        self.close_block(span, ControlFlowMir::Goto { dest: end, ret });
         None
     }
 
@@ -168,21 +184,32 @@ impl MirChecker<'_, '_> {
 
         let mut reached = bumpvec![cap 1 + elifs.len() + 1];
         let mut dest_block = None;
-        for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
-            let cond_val = self.node(cond, None, true)?;
+        for &IfBranchTir {
+            cond: cond_tir,
+            body,
+        } in iter::once(&top).chain(elifs)
+        {
+            let cond = self.node(cond_tir, None, true)?;
             let then = self.mir_ctx.create_block();
-            let next = self.mir_ctx.create_block();
-            self.close_block(cond.span, ControlFlowMir::Split(cond_val, then, next));
+            let otherwise = self.mir_ctx.create_block();
+            self.close_block(
+                cond_tir.span,
+                ControlFlowMir::Split {
+                    cond,
+                    then,
+                    otherwise,
+                },
+            );
             self.select_block(then);
             reached.push(self.branch(body, &mut dest_block, dest, None, r#move));
-            self.select_block(next);
+            self.select_block(otherwise);
         }
 
         if let Some(r#else) = r#else {
             reached.push(self.branch(r#else, &mut dest_block, dest, None, r#move));
         } else {
             let &mut dest = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
-            self.close_block(span, ControlFlowMir::Goto(dest));
+            self.close_block(span, ControlFlowMir::Goto { dest, ret: None });
             self.discard_branch();
             reached.push(Err(true));
         }
@@ -251,12 +278,19 @@ impl MirChecker<'_, '_> {
             let cond = self
                 .pattern_to_cond(arm.pat, mir_value)
                 .expect("only last pattern can be non refutable");
-            let block = self.mir_ctx.create_block();
-            let next_block = self.mir_ctx.create_block();
-            self.close_block(arm.pat.span, ControlFlowMir::Split(cond, block, next_block));
-            self.select_block(block);
+            let then = self.mir_ctx.create_block();
+            let otherwise = self.mir_ctx.create_block();
+            self.close_block(
+                arm.pat.span,
+                ControlFlowMir::Split {
+                    cond,
+                    then,
+                    otherwise,
+                },
+            );
+            self.select_block(then);
             reached.push(self.match_arm(arm, &mut dest_block, mir_value, dest, r#move));
-            self.select_block(next_block);
+            self.select_block(otherwise);
         }
         reached.push(self.match_arm(last, &mut dest_block, mir_value, dest, r#move));
 
@@ -290,12 +324,12 @@ impl MirChecker<'_, '_> {
         wrapper: Option<MirVarFrame>,
         r#move: bool,
     ) -> BranchBlock {
-        if let Some(..) = self.node(body, Some(dest), r#move) {
+        if let ret @ Some(..) = self.node(body, Some(dest), r#move) {
             if let Some(wrapper) = wrapper {
                 self.end_scope_frame(wrapper, body.span);
             }
-            let &mut dest_block = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
-            let block = self.close_block(body.span, ControlFlowMir::Goto(dest_block));
+            let &mut dest = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
+            let block = self.close_block(body.span, ControlFlowMir::Goto { dest, ret });
             self.save_branch();
             block.ok_or(false)
         } else {
@@ -793,12 +827,14 @@ impl MirChecker<'_, '_> {
     pub fn increment_block_refcount(&mut self, control_flow: ControlFlowMir) {
         match control_flow {
             ControlFlowMir::Terminal | ControlFlowMir::Return(..) => {}
-            ControlFlowMir::Split(.., a, b) => {
-                self.mir_ctx.module.blocks[a].ref_count += 1;
-                self.mir_ctx.module.blocks[b].ref_count += 1;
+            ControlFlowMir::Split {
+                then, otherwise, ..
+            } => {
+                self.mir_ctx.module.blocks[then].ref_count += 1;
+                self.mir_ctx.module.blocks[otherwise].ref_count += 1;
             }
-            ControlFlowMir::Goto(a, ..) => {
-                self.mir_ctx.module.blocks[a].ref_count += 1;
+            ControlFlowMir::Goto { dest, .. } => {
+                self.mir_ctx.module.blocks[dest].ref_count += 1;
             }
         }
     }

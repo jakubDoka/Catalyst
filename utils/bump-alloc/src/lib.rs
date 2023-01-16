@@ -32,7 +32,7 @@ pub use {
     arena::Arena,
     dashmap,
     frag_map::{
-        addr::{FragAddr, FragSliceAddr, NonMaxU32, NonMaxU64},
+        addr::{FragAddr, FragSliceAddr, NonMaxU16, NonMaxU32, NonMaxU64},
         relocator::{
             DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator, Relocated,
             RelocatedObjects,

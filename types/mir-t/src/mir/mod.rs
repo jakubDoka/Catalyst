@@ -1,3 +1,21 @@
+/*
+    We want destintion to be more precise and known in advance.
+    Q: Does the dest need to be separate type?
+    Q: Can we make a do with forward destinations?
+    Q: How dow we represent destinations? (memory efficiently)
+
+    Lets say we go with forward decl.
+    If if control flow returns value, we track both dest and block param.
+    Current model does not need to be changed, we simply cedide which path
+    to use when generating.
+
+    No.
+
+    What about special dest type?
+
+
+*/
+
 use std::{
     default::default,
     ops::{Deref, DerefMut},
@@ -86,8 +104,8 @@ pub struct ModuleMirInner {
     pub value_args: PushMap<VRef<ValueMir>>,
     pub ty_params: PushMap<VRef<MirTy>>,
     pub calls: PushMap<CallMir>,
-    types: PushMap<MirTy>,
     pub drops: PushMap<DropMir>,
+    types: PushMap<MirTy>,
     value_flags: BitSet,
 }
 
@@ -176,8 +194,15 @@ pub struct BlockMir {
 
 #[derive(Clone, Copy)]
 pub enum ControlFlowMir {
-    Split(VRef<ValueMir>, VRef<BlockMir>, VRef<BlockMir>),
-    Goto(VRef<BlockMir>),
+    Split {
+        cond: VRef<ValueMir>,
+        then: VRef<BlockMir>,
+        otherwise: VRef<BlockMir>,
+    },
+    Goto {
+        dest: VRef<BlockMir>,
+        ret: OptVRef<ValueMir>,
+    },
     Return(VRef<ValueMir>),
     Terminal,
 }
@@ -256,6 +281,9 @@ impl ValueMir {
         TERMINAL
     );
 }
+
+#[derive(Clone, Copy)]
+pub struct DestMir;
 
 #[derive(Clone)]
 pub struct FuncTypes(PushMap<MirTy>);

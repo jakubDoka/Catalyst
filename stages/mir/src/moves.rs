@@ -481,7 +481,10 @@ impl MirChecker<'_, '_> {
                 );
                 self.mir_ctx.dd.block_closers[drop_block] = span;
 
-                let new_branch_control_flow = ControlFlowMir::Goto(drop_block);
+                let new_branch_control_flow = ControlFlowMir::Goto {
+                    dest: drop_block,
+                    ret: None,
+                };
                 self.increment_block_refcount(new_branch_control_flow);
                 self.mir_ctx.module.blocks[branch_block].control_flow = new_branch_control_flow;
             }

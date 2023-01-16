@@ -119,15 +119,13 @@ impl TyChecker<'_> {
         }
     }
 
-    fn pointer(
-        &mut self,
-        TyPointerAst { mutability, ty, .. }: TyPointerAst,
-    ) -> Option<(FragRef<Pointer>, RawMutability)> {
+    fn pointer(&mut self, TyPointerAst { mutability, ty, .. }: TyPointerAst) -> Option<Pointer> {
         let base = self.ty(ty)?;
         let mutability = self.mutability(mutability)?;
-        Some((
-            self.typec.pointer_to(base, self.interner),
+        Some(self.typec.pointer_to(
             RawMutability::new(mutability).expect("todo"),
+            base,
+            self.interner,
         ))
     }
 

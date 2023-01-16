@@ -302,13 +302,13 @@ impl Generator<'_> {
             ControlFlowMir::Terminal => {
                 builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
             }
-            ControlFlowMir::Split(cond, a, b) => {
+            ControlFlowMir::Split { cond, then, otherwise }  => {
                 let cond = self.load_value(cond, builder).unwrap();
-                self.instantiate_block(a, builder, |b, _, builder| builder.ins().brnz(cond, b, &[]));
-                self.instantiate_block(b, builder, |b, _, builder| builder.ins().jump(b, &[]));
+                self.instantiate_block(then, builder, |b, _, builder| builder.ins().brnz(cond, b, &[]));
+                self.instantiate_block(otherwise, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
-            ControlFlowMir::Goto(gb) => {
-                self.instantiate_block(gb, builder, |b, _, builder| builder.ins().jump(b, &[]));
+            ControlFlowMir::Goto { dest, ret } => {
+                self.instantiate_block(dest, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
         }
     }

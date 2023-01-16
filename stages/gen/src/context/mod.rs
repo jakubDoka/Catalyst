@@ -498,21 +498,19 @@ impl GenItemName {
     pub const FUNC_FLAG: u16 = 1;
 
     pub fn decode_name(UserExternalName { namespace, index }: UserExternalName) -> GenItemName {
-        let packed = ((namespace as u64) << 32) | index as u64;
-        let (index, thread, flag) = FragSliceAddr::decode(packed);
+        let addr = FragAddr::new(index, namespace as u8);
 
-        match flag {
-            Self::FUNC_FLAG => GenItemName::Func(FragRef::new(FragAddr::new(index, thread))),
+        match (namespace >> 8) as u16 {
+            Self::FUNC_FLAG => GenItemName::Func(FragRef::new(addr)),
             _ => unreachable!(),
         }
     }
 
     pub fn encode_func(func: FragRef<CompiledFunc>) -> UserExternalName {
-        let (index, thread) = func.parts();
-        let packed = FragSliceAddr::encode(index, thread, Self::FUNC_FLAG);
+        let FragAddr { index, thread, .. } = func.addr();
         UserExternalName {
-            namespace: (packed >> 32) as u32,
-            index: packed as u32,
+            namespace: thread as u32 | (Self::FUNC_FLAG as u32) << 8,
+            index,
         }
     }
 }

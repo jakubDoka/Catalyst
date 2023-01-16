@@ -1,6 +1,7 @@
 use std::{
     default::default,
     fmt::{self, Display},
+    mem::size_of,
 };
 
 use crate::*;
@@ -109,13 +110,48 @@ pub struct Variant {
 
 derive_relocated!(struct Variant { ty });
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Pointer {
-    pub base: Ty,
-    pub depth: u16,
+    index: u32,
+    thread: u8,
+    pub mutability: RawMutability,
+    pub depth: u8,
 }
 
-derive_relocated!(struct Pointer { base });
+impl Pointer {
+    pub fn new(ty: FragRef<Ty>, mutability: RawMutability, depth: u8) -> Self {
+        let FragAddr { index, thread, .. } = ty.addr();
+        Self {
+            index,
+            thread,
+            mutability,
+            depth,
+        }
+    }
+
+    pub fn ty(self) -> FragRef<Ty> {
+        FragRef::new(FragAddr::new(self.index, self.thread))
+    }
+
+    pub fn compatible(self, other: Self) -> bool {
+        self.index == other.index
+            && self.thread == other.thread
+            && self.mutability.compatible(other.mutability)
+    }
+}
+
+impl Relocated for Pointer {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        marker.mark(self.ty());
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+        let FragAddr { index, thread, .. } = ctx.project(self.ty())?.addr();
+        self.index = index;
+        self.thread = thread;
+        Some(())
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mutability {
@@ -307,7 +343,7 @@ impl From<FragRef<Enum>> for GenericTy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComputedTypecItem {
-    Pointer(FragRef<Pointer>),
+    Pointer(FragRef<Ty>),
     Instance(FragRef<Instance>),
     SpecInstance(FragRef<SpecInstance>),
     SpecSum(FragSlice<Spec>),
@@ -322,12 +358,14 @@ derive_relocated! {
     }
 }
 
+const _: () = assert!(size_of::<FragRef<Pointer>>() == size_of::<Option<FragRef<Pointer>>>());
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Ty {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
     Instance(FragRef<Instance>),
-    Pointer(FragRef<Pointer>, RawMutability),
+    Pointer(Pointer),
     Param(u8),
     Builtin(Builtin),
 }
@@ -346,10 +384,12 @@ derive_relocated! {
 impl Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Ty::Struct(s) => write!(f, "struct{:X}", s.repr()),
-            Ty::Enum(e) => write!(f, "enum{:x}", e.repr()),
-            Ty::Instance(i) => write!(f, "inst{:x}", i.repr()),
-            Ty::Pointer(p, m) => write!(f, "{} ptr{:x}", m.to_mutability(), p.repr()),
+            Ty::Struct(s) => write!(f, "struct{:x}", s.bits()),
+            Ty::Enum(e) => write!(f, "enum{:x}", e.bits()),
+            Ty::Instance(i) => write!(f, "inst{:x}", i.bits()),
+            Ty::Pointer(p) => {
+                write!(f, "{} ptr{:x}", p.mutability.to_mutability(), p.ty().bits())
+            }
             Ty::Param(i) => write!(f, "param{i}"),
             Ty::Builtin(b) => write!(f, "{}", b.name()),
         }
@@ -425,8 +465,8 @@ impl Ty {
             || a == b
             || matches!(
                 (a, b),
-                (Ty::Pointer(t, m), Ty::Pointer(t2, m2))
-                if t == t2 && m.compatible(m2)
+                (Ty::Pointer(t), Ty::Pointer(t2))
+                if t.compatible(t2)
             )
     }
 
@@ -459,28 +499,28 @@ impl Ty {
 
     pub fn ptr_base(self, typec: &Typec) -> Self {
         match self {
-            Self::Pointer(p, ..) => typec[p].base.ptr_base(typec),
+            Self::Pointer(p) => typec[p.ty()].ptr_base(typec),
             _ => self,
         }
     }
 
     pub fn mutability(self) -> RawMutability {
         match self {
-            Self::Pointer(.., m) => m,
+            Self::Pointer(p) => p.mutability,
             _ => RawMutability::IMMUTABLE,
         }
     }
 
-    pub fn ptr_depth(self, typec: &Typec) -> u16 {
+    pub fn ptr_depth(self) -> u8 {
         match self {
-            Self::Pointer(p, ..) => typec[p].depth,
+            Self::Pointer(p) => p.depth,
             _ => 0,
         }
     }
 
-    pub fn ptr(self, typec: &Typec) -> (Self, u16, Mutability) {
+    pub fn ptr(self, typec: &Typec) -> (Self, u8, Mutability) {
         match self {
-            Self::Pointer(p, m) => (typec[p].base, typec[p].depth, m.to_mutability()),
+            Self::Pointer(p) => (typec[p.ty()], p.depth, p.mutability.to_mutability()),
             _ => (self, 0, Mutability::Immutable),
         }
     }
@@ -577,9 +617,9 @@ impl From<FragRef<Instance>> for Ty {
     }
 }
 
-impl From<(FragRef<Pointer>, RawMutability)> for Ty {
-    fn from((p, m): (FragRef<Pointer>, RawMutability)) -> Self {
-        Ty::Pointer(p, m)
+impl From<Pointer> for Ty {
+    fn from(p: Pointer) -> Self {
+        Ty::Pointer(p)
     }
 }
 

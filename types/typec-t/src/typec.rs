@@ -292,7 +292,7 @@ impl Typec {
             }
             Ty::Pointer(p, ..) => {
                 // TODO: handle mutability
-                self.register_ty_generics_low(self[p].base, generic, spec_set)
+                self.register_ty_generics_low(self[p.ty()], generic, spec_set)
             }
             Ty::Struct(..) | Ty::Enum(..) | Ty::Builtin(..) => (),
         }
@@ -461,10 +461,10 @@ impl Typec {
                 let Instance { base, args } = self[instance];
                 self.instance_id(base, &self[args], to, interner);
             }
-            Ty::Pointer(ptr, m) => {
-                let Pointer { base, .. } = self[ptr];
+            Ty::Pointer(ptr) => {
+                let base = self[ptr.ty()];
                 to.push('^');
-                write!(to, "{}", m.to_mutability()).unwrap();
+                write!(to, "{}", ptr.mutability.to_mutability()).unwrap();
                 self.display_ty_to(base, to, interner);
             }
             Ty::Param(i) => write!(to, "param{i}").unwrap(),
@@ -564,10 +564,10 @@ impl Typec {
         }
 
         match (pattern, value) {
-            (Ty::Pointer(pattern, pattern_m), Ty::Pointer(value, ..)) => {
+            (Ty::Pointer(pattern), Ty::Pointer(value)) => {
                 to.push('^');
-                write!(to, "{}", pattern_m.to_mutability()).unwrap();
-                self.type_diff_recurse(self[pattern].base, self[value].base, to, interner);
+                write!(to, "{}", pattern.mutability.to_mutability()).unwrap();
+                self.type_diff_recurse(self[pattern.ty()], self[value.ty()], to, interner);
             }
             (Ty::Instance(pattern), Ty::Instance(value)) => {
                 self.type_diff_recurse(
@@ -606,9 +606,9 @@ impl Typec {
                 .iter()
                 .map(|&ty| self.contains_params_low(ty))
                 .fold(Absent, ParamPresence::combine),
-            Ty::Pointer(pointer, m) => self
-                .contains_params_low(self[pointer].base)
-                .combine(m.to_mutability().into())
+            Ty::Pointer(pointer) => self
+                .contains_params_low(self[pointer.ty()])
+                .combine(pointer.mutability.to_mutability().into())
                 .put_behind_pointer(),
             Ty::Param(..) => Present,
             Ty::Struct(..) | Ty::Builtin(..) | Ty::Enum(..) => Absent,
@@ -767,21 +767,24 @@ impl Typec {
         self.display_ty_to(rhs, to, interner);
     }
 
-    pub fn pointer_to(&mut self, base: Ty, interner: &mut Interner) -> FragRef<Pointer> {
+    pub fn pointer_to(
+        &mut self,
+        mutability: RawMutability,
+        base: Ty,
+        interner: &mut Interner,
+    ) -> Pointer {
         let id = interner.intern_with(|s, t| self.pointer_id(base, t, s));
-        let depth = base.ptr_depth(self) + 1;
-        match self.mapping.lookup.entry(id) {
-            Entry::Occupied(occ) => match occ.get() {
-                &ComputedTypecItem::Pointer(pointer, ..) => pointer,
-                _ => unreachable!(),
-            },
-            Entry::Vacant(entry) => {
-                let pointer = Pointer { base, depth };
-                let ptr = self.cache.pointers.push(pointer);
-                entry.insert(ComputedTypecItem::Pointer(ptr));
-                ptr
-            }
-        }
+        let depth = base.ptr_depth() + 1;
+        let ty = self
+            .mapping
+            .lookup
+            .entry(id)
+            .or_insert_with(|| ComputedTypecItem::Pointer(self.cache.args.push(base)))
+            .to_owned();
+
+        let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
+
+        Pointer::new(ty, mutability, depth)
     }
 
     pub fn pointer_id(&self, base: Ty, to: &mut String, interner: &Interner) {
@@ -905,7 +908,7 @@ impl Typec {
 
     pub fn deref(&self, ty: Ty) -> Ty {
         match ty {
-            Ty::Pointer(ptr, ..) => self[ptr].base,
+            Ty::Pointer(ptr, ..) => self[ptr.ty()],
             _ => ty,
         }
     }
@@ -1038,7 +1041,7 @@ impl Typec {
     }
 
     pub fn balance_pointers(&mut self, mut ty: Ty, reference: Ty, interner: &mut Interner) -> Ty {
-        let (ty_depth, reference_depth) = (ty.ptr_depth(self), reference.ptr_depth(self));
+        let (ty_depth, reference_depth) = (ty.ptr_depth(), reference.ptr_depth());
         match ty_depth.cmp(&reference_depth) {
             std::cmp::Ordering::Less => {
                 let muts = (0..(reference_depth - ty_depth))
@@ -1050,7 +1053,7 @@ impl Typec {
                     .collect::<BumpVec<_>>();
 
                 for mutability in muts.into_iter().rev() {
-                    ty = Ty::Pointer(self.pointer_to(ty, interner), mutability);
+                    ty = Ty::Pointer(self.pointer_to(mutability, ty, interner));
                 }
 
                 ty
@@ -1090,13 +1093,13 @@ impl Typec {
             }
 
             match (reference, template) {
-                (Ty::Pointer(reference_p, reference_m), Ty::Pointer(template_p, template_m)) => {
-                    match (reference_m.to_mutability(), template_m.to_mutability()) {
+                (Ty::Pointer(reference), Ty::Pointer(template)) => {
+                    match (reference.mutability.to_mutability(), template.mutability.to_mutability()) {
                         (val, Mutability::Param(i)) => params[i as usize] = Some(val.as_ty()),
-                        _ if reference_m.compatible(template_m) => (),
-                        _ => return Err((reference, template)),
+                        _ if reference.mutability.compatible(template.mutability) => (),
+                        _ => return Err((reference.into(), template.into())),
                     }
-                    stack.push((self[reference_p].base, self[template_p].base));
+                    stack.push((self[reference.ty()], self[template.ty()]));
                 }
                 (Ty::Instance(reference), Ty::Instance(template)) => {
                     check(self[reference].base.as_ty(), self[template].base.as_ty())?;
@@ -1135,11 +1138,11 @@ impl Typec {
                     .collect::<BumpVec<_>>();
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
-            Ty::Pointer(pointer, m) => {
-                let Pointer { base, .. } = self[pointer];
+            Ty::Pointer(pointer) => {
+                let base = self[pointer.ty()];
                 let base = self.instantiate(base, params, interner);
-                let mutability = m.instantiate(params.get(self));
-                Ty::Pointer(self.pointer_to(base, interner), mutability)
+                let mutability = pointer.mutability.instantiate(params.get(self));
+                Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
             Ty::Param(index) => params.get(self)[index as usize],
         }
@@ -1163,11 +1166,11 @@ impl Typec {
                     .collect::<Option<BumpVec<_>>>()?;
                 Ty::Instance(self.instance(base, args.as_slice(), interner))
             }
-            Ty::Pointer(pointer, m) => {
-                let Pointer { base, .. } = self[pointer];
+            Ty::Pointer(pointer) => {
+                let base = self[pointer.ty()];
                 let base = self.try_instantiate(base, params, interner)?;
-                let mutability = m.try_instantiate(params)?;
-                Ty::Pointer(self.pointer_to(base, interner), mutability)
+                let mutability = pointer.mutability.try_instantiate(params)?;
+                Ty::Pointer(self.pointer_to(mutability, base, interner))
             }
             Ty::Param(index) => return params[index as usize],
         })

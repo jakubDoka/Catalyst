@@ -54,7 +54,7 @@ impl FragRelocMapping {
             .get(&DynFragId::new(frag))
             .and_then(|id| id.downcast())
             .or_else(|| {
-                let (index, thread) = frag.parts();
+                let FragAddr { index, thread, .. } = frag.addr();
                 let &guard = self.edges.get(&(TypeId::of::<T>(), thread))?;
                 (index as usize <= guard).then_some(frag)
             })
@@ -69,7 +69,7 @@ impl FragRelocMapping {
             return FragSlice::empty();
         };
 
-        let (index, thread) = projected.parts();
+        let FragAddr { index, thread, .. } = projected.addr();
 
         FragSlice::new(FragSliceAddr::new(index, thread, slice.len() as u16))
     }
@@ -288,7 +288,7 @@ impl FragMarks {
     fn append(&mut self, data: &mut Set<FragAddr>, thread_count: usize) {
         self.marks.resize(thread_count, Vec::new());
         for addr in data.drain() {
-            let thread = addr.thread() as usize;
+            let thread = addr.thread as usize;
             self.marks[thread].push(addr);
         }
     }
@@ -319,7 +319,7 @@ impl FragMarks {
     ) {
         for (id, (marks, (thread, len_setter))) in self.marks.iter().zip(base_threads).enumerate() {
             let map = |index: usize| DynFragId {
-                repr: FragAddr::new(index as u64, id as u8),
+                repr: FragAddr::new(index as u32, id as u8),
                 type_id: TypeId::of::<T>(),
             };
 
@@ -336,7 +336,7 @@ impl FragMarks {
             // drop all unmarked items
             let reminder = iter::once((
                 marks.last().map_or(FragAddr::new(0, 0), |&r| r),
-                FragAddr::new(current_len as u64, 0),
+                FragAddr::new(current_len as u32, 0),
             ));
 
             for (start, end) in marks[1..]
@@ -345,9 +345,7 @@ impl FragMarks {
                 .chain(reminder)
             {
                 // drop all items between start and end
-                let (start_index, ..) = start.parts();
-                let (end_index, ..) = end.parts();
-                for index in start_index + 1..end_index {
+                for index in start.index + 1..end.index {
                     unsafe {
                         base.add(index as usize).drop_in_place();
                     }
@@ -357,22 +355,20 @@ impl FragMarks {
             // get rid of gaps
             let mut cursor = 0;
             for (start, end) in marks.chunks_exact(2).map(|s| (s[0], s[1])) {
-                let (start_index, ..) = start.parts();
-                let (end_index, ..) = end.parts();
-                let len = (end_index - start_index) as usize + 1;
+                let len = (end.index - start.index) as usize + 1;
                 unsafe {
-                    let source = base.add(start_index as usize);
+                    let source = base.add(start.index as usize);
                     let offset = base.add(cursor);
                     if offset != source {
                         ptr::copy(source, offset, len);
-                        let iter = (start_index as usize..=end_index as usize)
+                        let iter = (start.index as usize..=end.index as usize)
                             .map(map)
                             .zip((cursor..cursor + len).map(map));
                         mapping.marked.extend(iter)
                     } else {
                         mapping
                             .edges
-                            .insert((TypeId::of::<T>(), id as u8), end_index as usize);
+                            .insert((TypeId::of::<T>(), id as u8), end.index as usize);
                     }
                     cursor += len;
                 }
@@ -726,7 +722,7 @@ mod test {
                                 .len
                                 .load(std::sync::atomic::Ordering::Relaxed);
                             let index = (i as usize * j) % thread_len;
-                            let frag_ref = FragRef::new(FragAddr::new(index as u64, tid as u8));
+                            let frag_ref = FragRef::new(FragAddr::new(index as u32, tid as u8));
                             let value = thread[frag_ref].clone();
                             thread.push(value);
                         }
@@ -742,7 +738,7 @@ mod test {
                 .map(|(tid, thread)| {
                     (0..thread.len.load(std::sync::atomic::Ordering::Relaxed))
                         .step_by(THREAD_COUNT as usize * 10)
-                        .map(|i| FragRef::<Vec<i32>>::new(FragAddr::new(i as u64, tid as u8)))
+                        .map(|i| FragRef::<Vec<i32>>::new(FragAddr::new(i as u32, tid as u8)))
                         .collect()
                 })
                 .collect();

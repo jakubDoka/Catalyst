@@ -27,9 +27,9 @@ macro_rules! gen_derives {
             }
         }
 
-        impl<T: ?Sized> const PartialEq for $ident<T> {
+        impl<T: ?Sized> PartialEq for $ident<T> {
             fn eq(&self, other: &Self) -> bool {
-                self.0.repr() == other.0.repr()
+                self.0.addr() == other.0.addr()
             }
         }
 
@@ -58,18 +58,13 @@ macro_rules! gen_derives {
     };
 }
 
+#[repr(transparent)]
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragRef);
 
 impl<T: ?Sized> FragRef<T> {
-    /// # Safety
-    /// See [`FragSliceAddr::new`].
     pub const fn new(addr: FragAddr) -> Self {
         Self(addr, PhantomData)
-    }
-
-    pub const fn repr(self) -> u64 {
-        self.0.repr()
     }
 
     pub const fn as_slice(self) -> FragSlice<T> {
@@ -80,8 +75,12 @@ impl<T: ?Sized> FragRef<T> {
         self.0.right_after(key.0)
     }
 
-    pub const fn parts(self) -> (u64, u8) {
-        self.0.parts()
+    pub const fn addr(self) -> FragAddr {
+        self.0
+    }
+
+    pub const fn bits(self) -> u64 {
+        (self.0.index as u64) << 8 | self.0.thread as u64
     }
 }
 
@@ -100,7 +99,7 @@ impl<T: ?Sized> FragSlice<T> {
     }
 
     pub const fn len(&self) -> usize {
-        self.0.parts().2 as usize
+        self.0.len as usize
     }
 
     pub const fn is_empty(&self) -> bool {
@@ -121,8 +120,8 @@ impl<T: ?Sized> FragSlice<T> {
         Self(FragSliceAddr::default(), PhantomData)
     }
 
-    pub const fn parts(self) -> (u64, u8, u16) {
-        self.0.parts()
+    pub const fn addr(self) -> FragSliceAddr {
+        self.0
     }
 }
 
@@ -248,12 +247,12 @@ impl<T: VRefDefault + ?Sized> Default for VRef<T> {
 
 #[const_trait]
 trait ReprComply {
-    fn repr(self) -> u32;
+    fn addr(self) -> u32;
 }
 
 impl const ReprComply for u32 {
     #[inline(always)]
-    fn repr(self) -> u32 {
+    fn addr(self) -> u32 {
         self
     }
 }
