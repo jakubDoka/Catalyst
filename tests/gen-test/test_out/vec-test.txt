@@ -12,14 +12,14 @@ main function u0:0() -> i64 fast {
     sig5 = (i64, i64) -> i64 fast
     sig6 = (i64, i64) -> i64 fast
     sig7 = (i64) fast
-    fn0 = colocated u0:33554688 sig0
-    fn1 = colocated u0:50331904 sig1
-    fn2 = colocated u0:67109120 sig2
-    fn3 = colocated u0:83886336 sig3
-    fn4 = colocated u0:100663552 sig4
-    fn5 = colocated u0:117440768 sig5
-    fn6 = colocated u0:134217984 sig6
-    fn7 = colocated u0:16777472 sig7
+    fn0 = colocated u256:2 sig0
+    fn1 = colocated u256:3 sig1
+    fn2 = colocated u256:4 sig2
+    fn3 = colocated u256:5 sig3
+    fn4 = colocated u256:6 sig4
+    fn5 = colocated u256:7 sig5
+    fn6 = colocated u256:8 sig6
+    fn7 = colocated u256:1 sig7
 
 block0:
     v0 = stack_addr.i64 ss0
@@ -97,9 +97,9 @@ push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
     sig2 = (i64, i64) fast
-    fn0 = colocated u0:318767360 sig0
-    fn1 = colocated u0:100663552 sig1
-    fn2 = colocated u0:335544576 sig2
+    fn0 = colocated u256:19 sig0
+    fn1 = colocated u256:6 sig1
+    fn2 = colocated u256:20 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -109,7 +109,7 @@ block0(v0: i64, v1: i64):
     jump block2
 
 block2:
-    return
+    jump block3
 
 block1:
     call fn0(v0)
@@ -137,7 +137,7 @@ block0(v0: i64, v1: i64):
 }
 grow function u0:0(i64) fast {
     sig0 = (i64, i64) -> i64 fast
-    fn0 = u0:369099008 sig0
+    fn0 = u256:22 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -150,21 +150,20 @@ block2:
     v4 = iconst.i64 2
     v5 = load.i64 v0+16
     v6 = imul v5, v4  ; v4 = 2
-    store v6, v0+16
-    v7 = load.i64 v0+16
-    jump block3(v7)
+    jump block3(v6)
 
 block1:
-    v8 = iconst.i64 1
-    jump block3(v8)  ; v8 = 1
+    v7 = iconst.i64 8
+    jump block3(v7)  ; v7 = 8
 
-block3(v9: i64):
-    v10 = load.i64 v0
-    v11 = iconst.i64 24
-    v12 = load.i64 v0+16
-    v13 = imul v12, v11  ; v11 = 24
-    v14 = call fn0(v10, v13)
-    store v14, v0
+block3(v8: i64):
+    store v8, v0+16
+    v9 = load.i64 v0
+    v10 = iconst.i64 24
+    v11 = load.i64 v0+16
+    v12 = imul v11, v10  ; v10 = 24
+    v13 = call fn0(v9, v12)
+    store v13, v0
     return
 }
 new function u0:0(i64 sret) fast {
@@ -181,9 +180,9 @@ push function u0:0(i64, i64) fast {
     sig0 = (i64) fast
     sig1 = (i64, i64) -> i64 fast
     sig2 = (i64, i64) fast
-    fn0 = colocated u0:402653440 sig0
-    fn1 = colocated u0:419430656 sig1
-    fn2 = colocated u0:436207872 sig2
+    fn0 = colocated u256:24 sig0
+    fn1 = colocated u256:25 sig1
+    fn2 = colocated u256:26 sig2
 
 block0(v0: i64, v1: i64):
     v2 = load.i64 v0+8
@@ -193,7 +192,7 @@ block0(v0: i64, v1: i64):
     jump block2
 
 block2:
-    return
+    jump block3
 
 block1:
     call fn0(v0)
@@ -224,7 +223,7 @@ block0(v0: i64, v1: i64):
 }
 grow function u0:0(i64) fast {
     sig0 = (i64, i64) -> i64 fast
-    fn0 = u0:369099008 sig0
+    fn0 = u256:22 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -237,21 +236,20 @@ block2:
     v4 = iconst.i64 2
     v5 = load.i64 v0+16
     v6 = imul v5, v4  ; v4 = 2
-    store v6, v0+16
-    v7 = load.i64 v0+16
-    jump block3(v7)
+    jump block3(v6)
 
 block1:
-    v8 = iconst.i64 1
-    jump block3(v8)  ; v8 = 1
+    v7 = iconst.i64 8
+    jump block3(v7)  ; v7 = 8
 
-block3(v9: i64):
-    v10 = load.i64 v0
-    v11 = iconst.i64 8
-    v12 = load.i64 v0+16
-    v13 = imul v12, v11  ; v11 = 8
-    v14 = call fn0(v10, v13)
-    store v14, v0
+block3(v8: i64):
+    store v8, v0+16
+    v9 = load.i64 v0
+    v10 = iconst.i64 8
+    v11 = load.i64 v0+16
+    v12 = imul v11, v10  ; v10 = 8
+    v13 = call fn0(v9, v12)
+    store v13, v0
     return
 }
 new function u0:0(i64 sret) fast {
@@ -270,10 +268,10 @@ drop function u0:0(i64) fast {
     sig1 = (i64 sret, i64) fast
     sig2 = (i64) fast
     sig3 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:520093952 sig1
-    fn2 = colocated u0:503316736 sig2
-    fn3 = u0:536871168 sig3
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:31 sig1
+    fn2 = colocated u256:30 sig2
+    fn3 = u256:32 sig3
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -323,9 +321,9 @@ drop function u0:0(i64) fast {
     sig0 = (i64, i64) -> i64 fast
     sig1 = (i64) -> i64 fast
     sig2 = (i64) fast
-    fn0 = colocated u0:134217984 sig0
-    fn1 = colocated u0:553648384 sig1
-    fn2 = u0:536871168 sig2
+    fn0 = colocated u256:8 sig0
+    fn1 = colocated u256:33 sig1
+    fn2 = u256:32 sig2
 
 block0(v0: i64):
     v1 = iconst.i64 0
@@ -366,7 +364,7 @@ block0(v0: i64):
 }
 
 
-info: status: exit status: 33
+info: status: exit status: 0
  = info: stdout: 
  = info: stderr: 
 

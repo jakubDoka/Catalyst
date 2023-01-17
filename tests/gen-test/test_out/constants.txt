@@ -1,9 +1,8 @@
-error: scope item not found
- --> constants/root.ctl:3:12
+error: invalid scope item type
+ --> constants/root.ctl:6:20
   |
-3 | fn main -> usize => SUM - 40
-  |            ^^^^^ this does not exist or is not imported
+6 | fn main -> uint => SUM - 40
+  |                    ^^^ here
   |
-  = help: expected type or module
-  = info: debug: queried 'usize'
+  = info: expected variable or enum, got constant
 

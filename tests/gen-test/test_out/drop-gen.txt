@@ -6,12 +6,12 @@ main function u0:0() -> i64 fast {
     sig3 = () fast
     sig4 = () fast
     sig5 = () fast
-    fn0 = colocated u0:16777472 sig0
-    fn1 = colocated u0:33554688 sig1
-    fn2 = colocated u0:50331904 sig2
-    fn3 = colocated u0:67109120 sig3
-    fn4 = colocated u0:83886336 sig4
-    fn5 = colocated u0:100663552 sig5
+    fn0 = colocated u256:1 sig0
+    fn1 = colocated u256:2 sig1
+    fn2 = colocated u256:3 sig2
+    fn3 = colocated u256:4 sig3
+    fn4 = colocated u256:5 sig4
+    fn5 = colocated u256:6 sig5
 
 block0:
     call fn0()
@@ -26,21 +26,22 @@ block0:
 drop_cond function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i32) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:134217984 sig1
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:8 sig1
 
 block0:
     v0 = iconst.i32 103
     v1 = call fn0(v0)  ; v0 = 103
+    v3 -> v1
     v2 = iconst.i8 1
     brnz v2, block1  ; v2 = 1
     jump block2
 
 block2:
-    return
+    jump block3
 
 block1:
-    call fn1(v1)
+    call fn1(v3)
     jump block3
 
 block3:
@@ -49,7 +50,7 @@ block3:
 drop function u0:0(i32) fast {
     ss0 = explicit_slot 4
     sig0 = (i64) fast
-    fn0 = colocated u0:150995200 sig0
+    fn0 = colocated u256:9 sig0
 
 block0(v0: i32):
     stack_store v0, ss0
@@ -59,7 +60,7 @@ block0(v0: i32):
 }
 drop function u0:0(i64) fast {
     sig0 = (i32) -> i32 fast
-    fn0 = u0:167772416 sig0
+    fn0 = u256:10 sig0
 
 block0(v0: i64):
     v1 = load.i32 v0
@@ -77,8 +78,8 @@ move_in_drop function u0:0() fast {
     ss0 = explicit_slot 4
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:150995200 sig1
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:9 sig1
 
 block0:
     v0 = iconst.i32 101
@@ -98,9 +99,9 @@ drop_refed_variable function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:184549632 sig1
-    fn2 = colocated u0:150995200 sig2
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:11 sig1
+    fn2 = colocated u256:9 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -123,9 +124,9 @@ drop_variable function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:184549632 sig1
-    fn2 = colocated u0:150995200 sig2
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:11 sig1
+    fn2 = colocated u256:9 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -143,9 +144,9 @@ drop_referenced function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:184549632 sig1
-    fn2 = colocated u0:150995200 sig2
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:11 sig1
+    fn2 = colocated u256:9 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -162,8 +163,8 @@ drop_unused function u0:0() fast {
     ss0 = explicit_slot 4
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:117440768 sig0
-    fn1 = colocated u0:150995200 sig1
+    fn0 = colocated u256:7 sig0
+    fn1 = colocated u256:9 sig1
 
 block0:
     v0 = iconst.i32 97
