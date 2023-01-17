@@ -52,10 +52,11 @@ impl MirChecker<'_, '_> {
         let mut blocks = vec![mir.entry];
         let mut cursor = 0;
         while let Some(&block) = blocks.get(cursor) {
-            cursor += 1;
             if !seen.insert(block.index()) {
+                blocks.swap_remove(cursor);
                 continue;
             }
+            cursor += 1;
             match self.mir_ctx.module.blocks[block].control_flow {
                 ControlFlowMir::Split {
                     then, otherwise, ..

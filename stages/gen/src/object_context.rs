@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Not};
+use std::{
+    fmt::{Display, Write},
+    ops::Not,
+};
 
 use ::object::{RelocationEncoding, RelocationKind, SymbolScope};
 use cranelift_codegen::binemit::Reloc;
@@ -20,6 +23,7 @@ pub struct ObjectContext {
     functions: Map<FragRef<CompiledFunc>, ObjectFunction>,
     text_section: SectionId,
     object: Object<'static>,
+    name_temp: String,
 }
 
 impl ObjectContext {
@@ -55,6 +59,7 @@ impl ObjectContext {
             functions: Map::default(),
             text_section: object.section_id(StandardSection::Text),
             object,
+            name_temp: String::with_capacity(32),
         })
     }
 
@@ -71,15 +76,18 @@ impl ObjectContext {
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
                 let ent = &gen[func];
-                let id = ent.name;
 
                 let meta = &typec[ent.func];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
 
-                let name = if scope == SymbolScope::Unknown {
-                    &interner[meta.name]
-                } else {
-                    &interner[id]
+                let name = match scope {
+                    SymbolScope::Unknown => &interner[meta.name],
+                    SymbolScope::Linkage | SymbolScope::Dynamic => &interner[ent.name],
+                    SymbolScope::Compilation => {
+                        self.name_temp.clear();
+                        write!(self.name_temp, "f{:x}", func.bits()).unwrap();
+                        &self.name_temp
+                    }
                 };
 
                 let symbol = self.object.add_symbol(Symbol {
