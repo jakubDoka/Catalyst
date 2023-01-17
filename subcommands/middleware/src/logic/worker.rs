@@ -347,8 +347,6 @@ impl Worker {
             .push(Arc::new(self.state.mir_ctx.module.clone()));
         assert_eq!(module, mir_module);
         self.state.mir_ctx.module.clear();
-
-        dbg!(shared.resources.source_path(source), module);
     }
 
     fn compile_macros(
@@ -402,9 +400,7 @@ impl Worker {
                 continue;
             }
 
-            let Func {
-                signature, name, ..
-            } = task.typec[func];
+            let Func { signature, .. } = task.typec[func];
 
             let body = task
                 .mir
@@ -417,7 +413,6 @@ impl Worker {
             let module = task.mir.modules[body.module].clone();
             let params = task.compile_requests.ty_slices[params].to_bumpvec();
             self.state.temp_dependant_types.clear();
-            dbg!(&task.interner[name], body.module);
             self.state
                 .temp_dependant_types
                 .extend(module.load_types(body.types).iter().copied());
@@ -469,8 +464,16 @@ impl Worker {
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
             }
-            print!("{} {}", name, self.context.func.display());
-            self.context.compile(&*isa.inner).unwrap();
+
+            if let err @ Err(..) = self
+                .context
+                .compile(&*isa.inner)
+                .map_err(|err| format!("{err:?}"))
+                // borrow checker
+                .map(|_| ())
+            {
+                panic!("{:?}, {} {}", err, name, self.context.func.display());
+            }
             task.gen.save_compiled_code(id, &self.context).unwrap();
             let signatures = self.context.func.dfg.signatures.values_mut();
             self.state.gen_resources.recycle_signatures(signatures);
@@ -509,7 +512,7 @@ impl Worker {
                         params: pushed_params,
                     },
                     // we only have one thread
-                    Some(0),
+                    Ok(0),
                 )
             };
             let frontier = task.typec[methods]
@@ -617,7 +620,8 @@ impl Worker {
             self.state.ast_transfer.activate(),
             &mut type_checked_funcs,
         )
-        .dbg_funcs(&type_checked_funcs);
+        //.dbg_funcs(&type_checked_funcs)
+        ;
 
         MirChecker::new(
             module,
@@ -631,7 +635,8 @@ impl Worker {
             shared.resources,
         )
         .funcs(mir_module, &mut type_checked_funcs)
-        .dbg_funcs();
+        //.dbg_funcs()
+        ;
 
         self.state
             .mir_ctx

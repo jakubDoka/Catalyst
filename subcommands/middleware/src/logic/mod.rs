@@ -484,7 +484,7 @@ impl Middleware {
                     func,
                     params: default(),
                 },
-                Some(task_id),
+                Ok(task_id),
             )
         };
         let frontier = self

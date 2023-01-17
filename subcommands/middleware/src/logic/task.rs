@@ -89,7 +89,7 @@ impl DerefMut for Task {
 
 impl Task {
     pub(crate) fn traverse_compile_requests(
-        mut frontier: BumpVec<(CompileRequestChild, Option<usize>)>,
+        mut frontier: BumpVec<(CompileRequestChild, Result<usize, usize>)>,
         tasks: &mut [Task],
         isa: &Isa,
     ) -> BumpVec<FragRef<CompiledFunc>> {
@@ -98,7 +98,7 @@ impl Task {
         let mut type_frontier = bumpvec![];
         let mut dependant_types = FuncTypes::default();
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
-            let Some(task_id) = task_id else { continue; };
+            let Ok(task_id) = task_id else { continue; };
             let task = &mut tasks[task_id];
             let Func {
                 flags, visibility, ..
@@ -131,8 +131,8 @@ impl Task {
             );
 
             let mut drops = bumpvec![cap body.drops.len()];
-            for (drop, task_id) in module.drops[body.drops].iter().zip(cycle.by_ref()) {
-                let task = &mut tasks[task_id];
+            for (drop, other_id) in module.drops[body.drops].iter().zip(cycle.by_ref()) {
+                let (task, other) = get_two_refs(tasks, other_id, task_id);
                 let prev = frontier.len();
                 let ty = module.values[drop.value].ty;
                 type_frontier.push(dependant_types[ty].ty);
@@ -144,6 +144,7 @@ impl Task {
                     &mut frontier,
                 );
 
+                let task = other.unwrap_or(task);
                 drops.push(
                     task.compile_requests
                         .children
@@ -167,12 +168,23 @@ impl Task {
                     task.load_call(call.callable, params, task_id, isa)
                 })
                 .collect_into(&mut *frontier);
+            let children = frontier[prev..]
+                .iter()
+                .map(|&(mut child, other_id)| {
+                    let (this, other) =
+                        get_two_refs(tasks, task_id, other_id.unwrap_or_else(|e| e));
+                    if let Some(other) = other {
+                        child.params = this.compile_requests.ty_slices.extend(
+                            other.compile_requests.ty_slices[child.params]
+                                .iter()
+                                .copied(),
+                        );
+                    }
+                    child
+                })
+                .collect::<BumpVec<_>>();
             let task = &mut tasks[task_id];
-            let children = task
-                .compile_requests
-                .children
-                .extend(frontier[prev..].iter().map(|&(child, _)| child));
-
+            let children = task.compile_requests.children.extend(children);
             task.compile_requests.queue.push(CompileRequest {
                 func,
                 id,
@@ -191,7 +203,7 @@ impl Task {
         isa: &Isa,
         task_id: usize,
         generics: &[FragSlice<Spec>],
-        frontier: &mut BumpVec<(CompileRequestChild, Option<usize>)>,
+        frontier: &mut BumpVec<(CompileRequestChild, Result<usize, usize>)>,
     ) {
         while let Some(ty) = type_frontier.pop() {
             if !self.typec.may_need_drop(ty, &mut self.interner) {
@@ -254,7 +266,7 @@ impl Task {
         params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
-    ) -> (CompileRequestChild, Option<usize>) {
+    ) -> (CompileRequestChild, Result<usize, usize>) {
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),
             CallableMir::SpecFunc(func) => self.load_spec_func(func, &params),
@@ -269,7 +281,12 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let task_id = self.gen.get(key).is_none().then_some(task_id);
+        let task_id = self
+            .gen
+            .get(key)
+            .is_none()
+            .then_some(task_id)
+            .ok_or(task_id);
         let id = self
             .gen
             .get_or_insert(key, || CompiledFunc::new(func_id, key));
@@ -397,4 +414,13 @@ impl TaskGraph {
     pub(crate) fn has_tasks(&self) -> bool {
         self.meta.len() != self.done
     }
+}
+
+fn get_two_refs<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, Option<&mut T>) {
+    if a == b {
+        return (&mut slice[a], None);
+    }
+
+    // SAFETY: Since a != b borrowing these elements is valid.
+    unsafe { (mem::transmute(&mut slice[a]), Some(&mut slice[b])) }
 }

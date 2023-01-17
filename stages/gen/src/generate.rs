@@ -1,3 +1,4 @@
+use core::slice;
 use std::{cmp::Ordering, default::default};
 
 use cranelift_codegen::ir::{
@@ -33,6 +34,7 @@ impl Generator<'_> {
             self.populate_signature(signature, params, &mut builder.func.signature, system_cc);
 
         let entry_block = builder.create_block();
+        builder.switch_to_block(entry_block);
         if has_s_ret {
             let addr = builder.append_block_param(entry_block, ptr_ty);
             self.gen_resources.values[ret] = GenValue {
@@ -52,11 +54,9 @@ impl Generator<'_> {
             }
         }
 
-        self.gen_resources
-            .block_stack
-            .push((root, true, entry_block));
+        self.block(root, entry_block, true, builder, true);
         while let Some((block, seal, ir_block)) = self.gen_resources.block_stack.pop() {
-            self.block(block, ir_block, seal, builder);
+            self.block(block, ir_block, seal, builder, false);
         }
 
         builder.finalize();
@@ -68,14 +68,32 @@ impl Generator<'_> {
         mut ir_block: ir::Block,
         seal: bool,
         builder: &mut GenBuilder,
+        initial: bool,
     ) -> ir::Block {
         let BlockMir {
             insts,
             control_flow,
+            passed,
             ..
         } = builder.body.blocks[block];
 
-        builder.switch_to_block(ir_block);
+        if !initial {
+            builder.switch_to_block(ir_block);
+        }
+
+        if let Some(passed) = passed
+            && !self.gen_resources.values[passed].must_load
+            && let layout = self.ty_layout(builder.value_ty(passed))
+            && layout.size != 0
+        {
+            self.save_value(
+                passed,
+                builder.append_block_param(ir_block, layout.repr),
+                0,
+                false,
+                builder,
+            );
+        }
 
         for &inst in &builder.body.insts[insts] {
             self.inst(inst, builder, &mut ir_block);
@@ -308,7 +326,11 @@ impl Generator<'_> {
                 self.instantiate_block(otherwise, builder, |b, _, builder| builder.ins().jump(b, &[]));
             }
             ControlFlowMir::Goto { dest, ret } => {
-                self.instantiate_block(dest, builder, |b, _, builder| builder.ins().jump(b, &[]));
+                let ret = ret
+                    .filter(|&ret| !self.gen_resources.values[ret].must_load)
+                    .and_then(|ret| self.load_value(ret, builder));
+                let args = ret.as_ref().map(slice::from_ref).unwrap_or_default();
+                self.instantiate_block(dest, builder, |b, _, builder| builder.ins().jump(b, args));
             }
         }
     }

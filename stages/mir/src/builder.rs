@@ -149,6 +149,7 @@ impl MirChecker<'_, '_> {
         let &mut end =
             end.get_or_insert_with(|| self.mir_ctx.module.blocks.push(BlockMir::default()));
         let ret = value.map(|v| self.node(v, Some(dest), true)).transpose()?;
+        self.mir_ctx.module.blocks[end].passed = ret; // all breaks are either some or none
 
         let to_drop = mem::take(&mut self.mir_ctx.to_drop);
         for &value in to_drop.iter().skip(drop_frame) {
@@ -330,6 +331,7 @@ impl MirChecker<'_, '_> {
             }
             let &mut dest = dest_block.get_or_insert_with(|| self.mir_ctx.create_block());
             let block = self.close_block(body.span, ControlFlowMir::Goto { dest, ret });
+            self.mir_ctx.module.blocks[dest].passed = ret; // since all rets are either present or absent
             self.save_branch();
             block.ok_or(false)
         } else {

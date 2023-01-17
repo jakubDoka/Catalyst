@@ -186,6 +186,7 @@ impl MirTy {
 
 #[derive(Clone, Copy, Default)]
 pub struct BlockMir {
+    pub passed: OptVRef<ValueMir>,
     pub insts: VSlice<InstMir>,
     pub control_flow: ControlFlowMir,
     pub ref_count: u16,
