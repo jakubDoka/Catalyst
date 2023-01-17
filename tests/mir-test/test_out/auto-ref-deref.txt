@@ -1,6 +1,6 @@
 info: mir repr of functions:
-fn [] main() -> uint  { ret var2
-    block0() {
+fn [] main() -> uint  { () ret var2
+    block0 {
         var3 = 0
         var4 = var3
         access var4
@@ -15,18 +15,18 @@ fn [] main() -> uint  { ret var2
 
 }
 
-fn [] reference(var0: ^^uint) -> ^^uint  { ret var3
-    block0(var2: ^^uint) {
-        var3 = access var2
-        return var3
+fn [] reference(var0: ^^uint) -> ^^uint  { (var10: ^^uint) ret var11
+    block1 {
+        var11 = access var10
+        return var11
     }
 
 }
 
-fn [] dereference(var0: uint) -> uint  { ret var3
-    block0(var2: uint) {
-        var3 = access var2
-        return var3
+fn [] dereference(var0: uint) -> uint  { (var12: uint) ret var13
+    block2 {
+        var13 = access var12
+        return var13
     }
 
 }

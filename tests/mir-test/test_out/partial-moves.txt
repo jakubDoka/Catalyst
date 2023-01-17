@@ -51,165 +51,165 @@ error: reference to already moved value
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { ret var0
-    block0(var2: param0) {
+fn [] drop(var0: param0) -> ()  { (var2: param0) ret var3
+    block0 {
         drop var2
         return var0
     }
 
 }
 
-fn [] double_move() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var4 = var3.0
-        var0 = drop[0\A](val4)
-        access var3
-        var5 = var3.1
-        var0 = drop[0\A](val5)
-        access var3
-        var6 = var3.0
-        var0 = drop[0\A](val6)
-        return var0
-    }
-
-}
-
-fn [] move_of_partially_moved() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var4 = var3.0
-        var0 = drop[0\A](val4)
-        access var3
-        var0 = drop[0\B](val3)
-        return var0
-    }
-
-}
-
-fn [] partial_move_and_assign() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var4 = var3.0
-        var0 = drop[0\A](val4)
-        access var3
-        var5 = var3.0
-        var5 ={}
-        access var3
-        var0 = drop[0\B](val3)
-        return var0
-    }
-
-}
-
-fn [] conditional_partial_move() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        var5 = 0
-        var6 = 0
-        var4 = uint == uint(val5, val6)
-        split var4 block1 block2
-    }
-
-    block1() {
-        access var3
-        var7 = var3.0
-        var1 = drop[0\A](val7)
-        goto block4 with var0
-    }
-
-    block2() {
-        return var0
-    }
-
-    block3(var1: !) {
-        access var3
-        var0 = drop[0\B](val3)
-        return var0
-    }
-
-    block4() {
-        var8 = var3.0
-        goto block3 with var1
-    }
-
-}
-
-fn [] conditional_assign() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var4 = var3.0
-        var0 = drop[0\A](val4)
-        var6 = 0
-        var7 = 0
-        var5 = uint == uint(val6, val7)
-        split var5 block1 block2
-    }
-
-    block1() {
-        access var3
-        var8 = var3.0
-        var8 ={}
-        goto block3 with var0
-    }
-
-    block2() {
-        return var0
-    }
-
-    block3(var1: !) {
-        access var3
-        var0 = drop[0\B](val3)
-        return var0
-    }
-
-}
-
-fn [] reference_partial_move() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var4 = var3.0
-        var0 = drop[0\A](val4)
-        access var3
-        var5 = &var3
+fn [] double_move() -> ()  { () ret var4
+    block1 {
+        var5 = new()
         var6 = var5
+        access var6
+        var8 = var6.0
+        var7 = drop[0\A](val8)
+        access var6
+        var10 = var6.1
+        var9 = drop[0\A](val10)
+        access var6
+        var11 = var6.0
+        var4 = drop[0\A](val11)
+        return var4
+    }
+
+}
+
+fn [] move_of_partially_moved() -> ()  { () ret var12
+    block2 {
+        var13 = new()
+        var14 = var13
+        access var14
+        var16 = var14.0
+        var15 = drop[0\A](val16)
+        access var14
+        var12 = drop[0\B](val14)
+        return var12
+    }
+
+}
+
+fn [] partial_move_and_assign() -> ()  { () ret var17
+    block3 {
+        var18 = new()
+        var19 = var18
+        access var19
+        var21 = var19.0
+        var20 = drop[0\A](val21)
+        access var19
+        var22 = var19.0
+        var22 ={}
+        access var19
+        var17 = drop[0\B](val19)
+        return var17
+    }
+
+}
+
+fn [] conditional_partial_move() -> ()  { () ret var23
+    block4 {
+        var24 = new()
+        var25 = var24
+        var28 = 0
+        var29 = 0
+        var27 = uint == uint(val28, val29)
+        split var27 block5 block6
+    }
+
+    block5 {
+        access var25
+        var30 = var25.0
+        var26 = drop[0\A](val30)
+        goto block8
+    }
+
+    block6 {
+        goto block7
+    }
+
+    block8 {
+        var31 = var25.0
+        goto block7 with var26
+    }
+
+    block7 {
+        access var25
+        var23 = drop[0\B](val25)
+        return var23
+    }
+
+}
+
+fn [] conditional_assign() -> ()  { () ret var32
+    block9 {
+        var33 = new()
+        var34 = var33
+        access var34
+        var36 = var34.0
+        var35 = drop[0\A](val36)
+        var39 = 0
+        var40 = 0
+        var38 = uint == uint(val39, val40)
+        split var38 block10 block11
+    }
+
+    block10 {
+        access var34
+        var41 = var34.0
+        var41 ={}
+        goto block12 with var0
+    }
+
+    block11 {
+        return var0
+    }
+
+    block12 {
+        access var34
+        var32 = drop[0\B](val34)
+        return var32
+    }
+
+}
+
+fn [] reference_partial_move() -> ()  { () ret var42
+    block13 {
+        var43 = new()
+        var44 = var43
+        access var44
+        var46 = var44.0
+        var45 = drop[0\A](val46)
+        access var44
+        var47 = &var44
+        var48 = var47
         return var0
     }
 
 }
 
-fn [] partial_reference_move() -> ()  { ret var0
-    block0() {
-        var2 = new()
-        var3 = var2
-        access var3
-        var0 = drop[0\B](val3)
-        access var3
-        var5 = var3.0
-        var4 = &var5
-        var6 = var4
+fn [] partial_reference_move() -> ()  { () ret var49
+    block14 {
+        var50 = new()
+        var51 = var50
+        access var51
+        var52 = drop[0\B](val51)
+        access var51
+        var54 = var51.0
+        var53 = &var54
+        var55 = var53
         return var0
     }
 
 }
 
-fn [] new() -> 0\B  { ret var2
-    block0() {
-        var2 ={var3, var4}
-        var3 ={}
-        var4 ={}
-        return var2
+fn [] new() -> 0\B  { () ret var56
+    block15 {
+        var56 ={var57, var58}
+        var57 ={}
+        var58 ={}
+        return var56
     }
 
 }

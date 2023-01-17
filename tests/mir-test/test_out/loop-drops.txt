@@ -41,140 +41,140 @@ error: value is possibly moved more then once
    = help: 'break' after the move or move the value beck before next iteration
 
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { ret var0
-    block0(var2: param0) {
+fn [] drop(var0: param0) -> ()  { (var2: param0) ret var3
+    block0 {
         drop var2
         return var0
     }
 
 }
 
-fn [] loop_drop() -> ()  { ret var0
-    block0() {
-        var2 ={}
-        var3 = var2
-        goto block1 with var0
+fn [] loop_drop() -> ()  { () ret var4
+    block1 {
+        var5 ={}
+        var6 = var5
+        goto block2
     }
 
-    block1() {
-        access var3
-        var0 = drop[0\A](val3)
-        goto block1 with var0
+    block2 {
+        access var6
+        var8 = drop[0\A](val6)
+        goto block2
     }
 
 }
 
-fn [] loop_break_drop() -> ()  { ret var0
-    block0() {
-        var2 ={}
-        var3 = var2
-        goto block1 with var0
+fn [] loop_break_drop() -> ()  { () ret var9
+    block3 {
+        var10 ={}
+        var11 = var10
+        goto block4
     }
 
-    block1() {
-        access var3
-        var0 = drop[0\A](val3)
-        goto block2 with var0
+    block4 {
+        access var11
+        var13 = drop[0\A](val11)
+        goto block5
     }
 
-    block2() {
+    block5 {
         return var0
     }
 
 }
 
-fn [] linear_loop_branch_drop() -> ()  { ret var0
-    block0(var1: !) {
-        var2 ={}
-        var3 = var2
-        goto block1 with var0
+fn [] linear_loop_branch_drop() -> ()  { () ret var14
+    block6 {
+        var15 ={}
+        var16 = var15
+        goto block7
     }
 
-    block1() {
-        var4 = true
-        split var4 block2 block3
+    block7 {
+        var19 = true
+        split var19 block8 block9
     }
 
-    block2() {
-        access var3
-        var1 = drop[0\A](val3)
-        goto block4 with var1
+    block8 {
+        access var16
+        var18 = drop[0\A](val16)
+        goto block10 with var18
     }
 
-    block3() {
-        goto block1 with var0
+    block9 {
+        goto block7
     }
 
-    block4(var1: !) {
-        goto block5 with var0
+    block10 {
+        goto block11
     }
 
-    block5(var1: !) {
-        access var3
-        var0 = drop[0\A](val3)
+    block11 {
+        access var16
+        var14 = drop[0\A](val16)
+        return var14
+    }
+
+}
+
+fn [] loop_branch_drop() -> ()  { () ret var20
+    block12 {
+        var21 ={}
+        var22 = var21
+        goto block13
+    }
+
+    block13 {
+        var25 = true
+        split var25 block14 block15
+    }
+
+    block14 {
+        access var22
+        var24 = drop[0\A](val22)
+        goto block16 with var24
+    }
+
+    block15 {
+        goto block17
+    }
+
+    block16 {
+        goto block13
+    }
+
+    block17 {
         return var0
     }
 
 }
 
-fn [] loop_branch_drop() -> ()  { ret var0
-    block0() {
-        var2 ={}
-        var3 = var2
-        goto block1 with var0
+fn [] loop_drop_and_move_in() -> ()  { () ret var26
+    block18 {
+        var27 ={}
+        var28 = var27
+        goto block19
     }
 
-    block1() {
-        var4 = true
-        split var4 block2 block3
+    block19 {
+        var31 = true
+        split var31 block20 block21
     }
 
-    block2() {
-        access var3
-        var1 = drop[0\A](val3)
-        goto block4 with var1
+    block20 {
+        access var28
+        var30 = drop[0\A](val28)
+        goto block22 with var30
     }
 
-    block3() {
-        goto block5 with var0
+    block21 {
+        goto block22
     }
 
-    block4(var1: !) {
-        goto block1 with var0
-    }
-
-    block5() {
-        return var0
-    }
-
-}
-
-fn [] loop_drop_and_move_in() -> ()  { ret var0
-    block0(var1: !) {
-        var2 ={}
-        var3 = var2
-        goto block1 with var0
-    }
-
-    block1() {
-        var4 = true
-        split var4 block2 block3
-    }
-
-    block2() {
-        access var3
-        var1 = drop[0\A](val3)
-        goto block4 with var1
-    }
-
-    block3() {
-        return var0
-    }
-
-    block4(var1: !) {
-        access var3
-        var3 ={}
-        goto block1 with var0
+    block22 {
+        access var28
+        var28 ={}
+        goto block19
     }
 
 }
