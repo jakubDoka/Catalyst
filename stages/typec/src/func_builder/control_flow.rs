@@ -126,7 +126,7 @@ impl TyChecker<'_> {
                 .push(label.ident, ScopeItem::LoopHeaderTir(loop_id), label.span);
         }
 
-        let body = self.expr(loop_expr.body, Inference::None, builder)?;
+        let body = self.expr(loop_expr.body, Inference::None, builder);
         self.scope.end_frame(frame);
         var_frame.end(builder.ctx, ());
 
@@ -139,7 +139,10 @@ impl TyChecker<'_> {
 
         Some(TirNode::new(
             ty,
-            TirKind::Loop(builder.arena.alloc(LoopTir { id: loop_id, body })),
+            TirKind::Loop(builder.arena.alloc(LoopTir {
+                id: loop_id,
+                body: body?,
+            })),
             loop_expr.span(),
         ))
     }

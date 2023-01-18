@@ -59,7 +59,11 @@ macro_rules! gen_derives {
 }
 
 #[repr(transparent)]
-pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
+#[derive(Serialize, Deserialize)]
+pub struct FragRef<T: ?Sized>(
+    #[serde(bound(serialize = "T:", deserialize = "T:"))] pub(crate) FragAddr,
+    pub(crate) PhantomData<*const T>,
+);
 gen_derives!(FragRef);
 
 impl<T: ?Sized> FragRef<T> {
@@ -86,7 +90,11 @@ impl<T: ?Sized> FragRef<T> {
 
 pub type OptFragRef<T> = Option<FragRef<T>>;
 
-pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
+#[derive(Serialize, Deserialize)]
+pub struct FragSlice<T: ?Sized>(
+    #[serde(bound(serialize = "T:", deserialize = "T:"))] pub(crate) FragSliceAddr,
+    pub(crate) PhantomData<*const T>,
+);
 gen_derives!(FragSlice);
 
 pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
@@ -194,6 +202,8 @@ where
     }
 }
 
+use serde::{Deserialize, Serialize};
+
 use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
 
 pub type VRefSlice<T> = VSlice<VRef<T>>;
@@ -203,7 +213,11 @@ pub trait VRefDefault {
 }
 
 #[repr(transparent)]
-pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
+#[derive(Serialize, Deserialize)]
+pub struct VRef<T: ?Sized>(
+    #[serde(bound(serialize = "T:", deserialize = "T:"))] NonMaxU32,
+    PhantomData<*const T>,
+);
 
 pub type OptVRef<T> = Option<VRef<T>>;
 
@@ -257,7 +271,12 @@ impl const ReprComply for u32 {
     }
 }
 
-pub struct VSlice<T: ?Sized>(u32, u32, PhantomData<*const T>);
+#[derive(Serialize, Deserialize)]
+pub struct VSlice<T: ?Sized>(
+    #[serde(bound(serialize = "T:", deserialize = "T:"))] u32,
+    u32,
+    PhantomData<*const T>,
+);
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.

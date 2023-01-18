@@ -129,7 +129,7 @@ macro_rules! bitflags {
     ) => {
         $(
             $crate::bitflags::bitflags! {
-                #[derive(Default, $($($attr),*)?)]
+                #[derive(Default, Serialize, Deserialize, $($($attr),*)?)]
                 pub struct $name: $repr {
 
                 }

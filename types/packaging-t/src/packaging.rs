@@ -1,4 +1,5 @@
 use lexing_t::*;
+use serde::{Deserialize, Serialize};
 
 use std::{default::default, path::*, time::SystemTime};
 use storage::*;
@@ -7,12 +8,18 @@ pub type PackageGraph = graphs::CycleDetector;
 
 const BUILTIN_PACKAGE_SOURCE: &str = include_str!("water_drops.ctl");
 
+#[derive(Serialize, Deserialize)]
 pub struct Resources {
     pub sources: PoolMap<Source>,
+    #[serde(skip)]
     pub packages: PushMap<Package>,
+    #[serde(skip)]
     pub modules: PushMap<Module>,
+    #[serde(skip)]
     pub package_deps: PushMap<Dep<Package>>,
+    #[serde(skip)]
     pub module_deps: PushMap<Dep<Module>>,
+    #[serde(skip)]
     pub module_order: Vec<VRef<Module>>,
 }
 
@@ -106,7 +113,7 @@ impl Resources {
     }
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Source {
     pub path: PathBuf,
     pub last_modified: SystemTime,
@@ -125,7 +132,8 @@ impl Source {
         span.reveal_lines(&self.content)
     }
 }
-#[derive(Clone)]
+
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Package {
     pub root_module: PathBuf,
     pub root_module_span: Span,
@@ -134,7 +142,7 @@ pub struct Package {
     pub is_external: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
 pub struct Module {
     pub package: VRef<Package>,
     pub ordering: usize,
@@ -142,6 +150,7 @@ pub struct Module {
     pub source: VRef<Source>,
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct Dep<T: ?Sized> {
     pub vis: Option<Vis>,
     pub name_span: Span,

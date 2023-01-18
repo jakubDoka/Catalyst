@@ -307,7 +307,7 @@ gen_kind!(
         Label = "'[a-zA-Z0-9_]+",
         Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
         Macro = r"[a-zA-Z_][a-zA-Z0-9_]*!",
-        Int = "[0-9]+((u)(32)|uint)?",
+        Int = "[0-9]+((u)(64|32|16|8)|uint)?",
         Str = r#""(\\"|[^"])*""#,
         Bool = "(true|false)",
         Char = r"'(.|\\(n|r|t|\\|'))'",

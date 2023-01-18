@@ -3,6 +3,7 @@ use std::collections::hash_map;
 use diags::SourceLoc;
 use lexing_t::*;
 use packaging_t::{Module, Resources, Source};
+use serde::{Deserialize, Serialize};
 use storage::*;
 
 use crate::*;
@@ -207,7 +208,7 @@ impl ScopeRecord {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct ModuleItem {
     pub id: Ident,
     pub ptr: ModuleItemPtr,
@@ -228,7 +229,7 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
 pub enum ModuleItemPtr {
     Func(FragRef<Func>),
     Ty(Ty),

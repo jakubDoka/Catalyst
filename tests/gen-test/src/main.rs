@@ -126,7 +126,7 @@ impl Testable for TestState {
             self.finally(binary, ir);
         }
         let res = self.middleware.take_incremental().unwrap().resources;
-        (self.middleware.workspace, res)
+        (std::mem::take(&mut self.middleware.workspace), res)
     }
 }
 

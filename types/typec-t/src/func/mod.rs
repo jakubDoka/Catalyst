@@ -2,10 +2,12 @@ use crate::*;
 
 use storage::*;
 
+use serde::{Deserialize, Serialize};
+
 pub type Funcs = FragMap<Func>;
 pub type FuncSlices = FragMap<FragRef<Func>>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Func {
     pub generics: Generics,
     pub owner: Option<Ty>,
@@ -47,7 +49,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum FuncVisibility {
     #[default]
     Local,
@@ -55,7 +57,7 @@ pub enum FuncVisibility {
     Imported,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct Signature {
     pub cc: Option<Ident>,
     pub args: FragSlice<Ty>,

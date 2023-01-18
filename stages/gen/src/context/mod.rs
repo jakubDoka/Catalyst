@@ -17,10 +17,12 @@ use cranelift_codegen::{
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
 
+use serde::{Deserialize, Serialize};
 use storage::{arc_swap::ArcSwapOption, *};
 use target_lexicon::Triple;
 use typec_t::*;
 
+#[derive(Serialize, Deserialize)]
 pub struct GenBase {
     lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
     funcs: SyncFragBase<CompiledFunc>,
@@ -133,6 +135,7 @@ impl Index<FragRef<CompiledFunc>> for Gen {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CompiledFunc {
     pub func: FragRef<Func>,
     pub name: Ident,
@@ -151,6 +154,7 @@ impl Clone for CompiledFunc {
 
 derive_relocated!(struct CompiledFunc { func });
 
+#[derive(Serialize, Deserialize)]
 pub struct CompiledFuncInner {
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
@@ -476,7 +480,7 @@ impl Layout {
 // relocs
 //////////////////////////////////
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct GenReloc {
     /// The offset at which the relocation applies, *relative to the
     /// containing section*.
@@ -489,7 +493,7 @@ pub struct GenReloc {
     pub addend: isize,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum GenItemName {
     Func(FragRef<CompiledFunc>),
     LibCall(ir::LibCall),

@@ -34,8 +34,8 @@ pub use {
     frag_map::{
         addr::{FragAddr, FragSliceAddr, NonMaxU16, NonMaxU32, NonMaxU64},
         relocator::{
-            DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker, FragRelocator, Relocated,
-            RelocatedObjects,
+            DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker,
+            FragRelocator, Relocated, RelocatedObjects,
         },
         sync::{FragSliceKey, SyncFragBase, SyncFragMap},
         FragBase, FragMap,
@@ -45,7 +45,7 @@ pub use {
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
     },
-    smallvec,
+    serde, smallvec,
 };
 
 mod map {

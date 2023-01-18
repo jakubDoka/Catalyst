@@ -1,16 +1,18 @@
 use std::{
     default::default,
     fmt::{Display, Write},
-    ops::{Index, Range},
+    ops::Index,
     sync::Arc,
 };
 
 use bump_alloc::dashmap::mapref::entry::Entry;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeTupleStruct, Deserialize, Serialize};
 
 use crate::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash)]
+#[derive(
+    Clone, Serialize, Deserialize, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash,
+)]
 pub struct Ident(FragSlice<u8>);
 
 derive_relocated!(
@@ -138,9 +140,40 @@ impl Interner {
             Entry::Vacant(entry) => *entry.insert(slice),
         })
     }
+}
 
-    fn to_raw(&self) -> RawInterner {
-        todo!()
+impl Serialize for InternerBase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let map = self
+            .map
+            .iter()
+            .map(|entry| entry.value().to_owned())
+            .collect::<Vec<_>>();
+
+        let mut tuple = serializer.serialize_tuple_struct("InternerBase", 2)?;
+        tuple.serialize_field(&map)?;
+        tuple.serialize_field(&self.frag_base)?;
+        tuple.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for InternerBase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (map, base) = <(Vec<FragSlice<u8>>, SyncFragBase<u8>)>::deserialize(deserializer)?;
+        Ok(Self {
+            map: map
+                .into_iter()
+                .map(|slice| (unsafe { FragSliceKey::from_base(&base, slice) }, slice))
+                .collect::<CMap<_, _>>()
+                .into(),
+            frag_base: base,
+        })
     }
 }
 
@@ -152,36 +185,6 @@ impl Index<Ident> for Interner {
             let slice = &self.frag_map[ident.0];
             std::str::from_utf8_unchecked(slice)
         }
-    }
-}
-
-impl Serialize for Interner {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_raw().serialize(serializer)
-    }
-}
-
-impl<'a> Deserialize<'a> for Interner {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        RawInterner::deserialize(deserializer).map(RawInterner::into_interner)
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-struct RawInterner {
-    slices: Vec<Range<usize>>,
-    data: Vec<u8>,
-}
-
-impl RawInterner {
-    fn into_interner(self) -> Interner {
-        todo!()
     }
 }
 

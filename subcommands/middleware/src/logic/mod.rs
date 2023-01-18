@@ -5,10 +5,12 @@ use core::fmt;
 use std::{
     collections::VecDeque,
     default::default,
+    env,
     error::Error,
     fmt::Write,
-    iter, mem,
+    fs, iter, mem,
     num::NonZeroU8,
+    os::unix::prelude::MetadataExt,
     path::*,
     slice,
     sync::mpsc::{self, Receiver, Sender, SyncSender},
@@ -21,6 +23,7 @@ use cranelift_codegen::{
     Context,
 };
 use cranelift_frontend::FunctionBuilderContext;
+use serde::{Deserialize, Serialize};
 use snippet_display::annotate_snippets::display_list::FormatOptions;
 
 use crate::*;
@@ -42,11 +45,43 @@ pub struct Middleware {
     pub(crate) entry_points: Vec<FragRef<Func>>,
     pub(crate) incremental: Option<Incremental>,
     pub(crate) relocator: FragRelocator,
+    save_path: Option<PathBuf>,
 }
 
 impl Middleware {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+        let Some(path) = save_path.or(self.save_path.take()) else {
+            return Ok(());
+        };
+
+        let bytes = serde_cbor::to_vec(
+            self.incremental
+                .as_ref()
+                .ok_or_else(|| "incremental data is not present")?,
+        )?;
+
+        let Some(prefix) = path.parent() else {
+            return Err("empty path".into())
+        };
+        std::fs::create_dir_all(prefix)?;
+        fs::write(path, bytes)?;
+
+        Ok(())
+    }
+
+    pub fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let incr = serde_cbor::from_slice::<Incremental>(incremental)?;
+        if incr.exe_mod_time.is_none() || get_exe_mod_time() != incr.exe_mod_time {
+            return Err("data is outdated".into());
+        }
+
+        self.incremental = Some(incr);
+
+        Ok(())
     }
 
     pub fn take_incremental(&mut self) -> Option<Incremental> {
@@ -92,6 +127,7 @@ impl Middleware {
             mut worker_pool,
             module_items,
             builtin_functions,
+            exe_mod_time,
         }) = self.incremental.take() else {
             return None;
         };
@@ -141,6 +177,7 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
+                exe_mod_time,
             });
             return None;
         };
@@ -172,6 +209,7 @@ impl Middleware {
             worker_pool,
             module_items,
             builtin_functions,
+            exe_mod_time,
         });
 
         Some(DiagnosticView {
@@ -190,6 +228,22 @@ impl Middleware {
         }
     }
 
+    fn load_on_update(&mut self, path: &Option<PathBuf>) {
+        if self.incremental.is_some() {
+            return;
+        }
+
+        let Some(ref path) = path else {return};
+
+        self.save_path = Some(path.clone());
+
+        let Ok(bytes) = fs::read(path) else {return};
+
+        let Err(err) = self.load(&bytes) else {return};
+
+        self.workspace.push(IncrementalDataIssue { err });
+    }
+
     pub fn update(
         &mut self,
         args: &MiddlewareArgs,
@@ -197,7 +251,11 @@ impl Middleware {
     ) -> (MiddlewareOutput, DiagnosticView) {
         self.workspace.clear();
 
+        self.load_on_update(&args.incremental_path);
+
         let thread_count = args.thread_count();
+
+        let reloaded = self.incremental.is_some();
 
         let Incremental {
             mut resources,
@@ -205,10 +263,18 @@ impl Middleware {
             mut worker_pool,
             mut module_items,
             mut builtin_functions,
+            exe_mod_time,
         } = self
             .incremental
             .take()
             .unwrap_or_else(|| Incremental::new(thread_count.max(255) as u8));
+
+        if reloaded {
+            resources
+                .sources
+                .values_mut()
+                .for_each(|s| s.changed = false);
+        }
 
         if let Some(removed) = self.reload_resources(&mut resources, &mut task_base, db, &args.path)
             && !removed.is_empty()
@@ -229,6 +295,7 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
+                exe_mod_time,
             });
 
             return (
@@ -291,6 +358,8 @@ impl Middleware {
                 return (tasks, vec![], vec![]);
             }
 
+            task_base.gen.prepare();
+
             let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
             for (task, recv) in tasks.into_iter().zip(gen_senders.iter_mut()) {
                 recv.send(task).expect("worker terminated prematurely");
@@ -312,6 +381,7 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
+                exe_mod_time,
             });
 
             let output = if self.workspace.has_errors() {
@@ -328,6 +398,13 @@ impl Middleware {
                 },
             );
         }
+
+        let shared = Shared {
+            resources: &resources,
+            jit_isa: &args.jit_isa,
+            isa: &args.isa,
+            builtin_functions: &builtin_functions,
+        };
 
         let (entry_point, exit_func) = worker_pool
             .first_mut()
@@ -347,10 +424,10 @@ impl Middleware {
                 &main_task.interner,
             )
             // .map_err(|err| {
-            // if let ObjectRelocationError::MissingSymbol(id) = err {
-            //     let func = main_task.gen[id].func;
-            //     db g!(&main_task.interner[main_task.typec[func].name]);
-            // }
+            //     if let ObjectRelocationError::MissingSymbol(id) = err {
+            //         let func = main_task.gen[id].func;
+            //         dbg !(&main_task.interner[main_task.typec[func].name]);
+            //     }
             // })
             .unwrap();
 
@@ -360,6 +437,7 @@ impl Middleware {
             worker_pool,
             module_items,
             builtin_functions,
+            exe_mod_time,
         });
 
         (
@@ -465,7 +543,7 @@ impl Middleware {
         Vec<FragRef<CompiledFunc>>, // in lib or dll
     ) {
         let task_distribution = (0..tasks.len()).cycle();
-        let distributor = |(&func, task_id): (_, usize)| {
+        let distributor = |(func, task_id): (_, usize)| {
             let main_task = &mut tasks[0];
             let key = Generator::func_instance_name(
                 isa.jit,
@@ -489,7 +567,7 @@ impl Middleware {
         };
         let frontier = self
             .entry_points
-            .iter()
+            .drain(..)
             .zip(task_distribution)
             .map(distributor)
             .collect::<BumpVec<_>>();
@@ -648,6 +726,14 @@ impl Middleware {
     }
 }
 
+impl Drop for Middleware {
+    fn drop(&mut self) {
+        if let Err(e) = self.save(None) {
+            eprintln!("Save error: {e}")
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Shared<'a> {
     pub resources: &'a Resources,
@@ -788,7 +874,11 @@ impl MiddlewareArgs {
                 .into(),
             jit_isa: Isa::host(true)?,
             isa,
-            incremental_path: cli_input.value("incremental-path").map(|s| s.into()),
+            incremental_path: cli_input
+                .value("incremental-path")
+                .or_else(|| Some("incemental/default.ctl"))
+                .filter(|_| !cli_input.enabled("no-incremental"))
+                .map(|s| s.into()),
             max_cores: cli_input.value("max-cores").and_then(|s| s.parse().ok()),
             dump_ir: cli_input.enabled("dump-ir"),
             check: cli_input.enabled("check"),
@@ -867,6 +957,12 @@ ctl_errors! {
         to_align: NonZeroU8,
         loc: SourceLoc,
     }
+
+    #[info => "failed to load incremental data"]
+    #[info => "trace: {err}"]
+    error IncrementalDataIssue {
+        err ref: Box<dyn Error + Send + Sync>
+    }
 }
 
 pub struct PackageTask {
@@ -890,18 +986,28 @@ impl PackageTask {
 #[derive(Default)]
 pub struct GenTask {}
 
+#[derive(Serialize, Deserialize)]
 pub struct Incremental {
+    pub exe_mod_time: Option<i64>,
     pub resources: Resources,
     pub task_base: TaskBase,
+    #[serde(skip)]
     pub worker_pool: Vec<Worker>,
     pub module_items: Map<VRef<Source>, ModuleItems>,
     pub builtin_functions: Vec<FragRef<Func>>,
+}
+
+fn get_exe_mod_time() -> Option<i64> {
+    let path = env::current_exe().ok()?;
+    let metadata = fs::metadata(path).ok()?;
+    Some(metadata.mtime())
 }
 
 impl Incremental {
     pub fn new(thread_count: u8) -> Self {
         let mut builtin_functions = vec![];
         Incremental {
+            exe_mod_time: get_exe_mod_time(),
             resources: default(),
             task_base: TaskBase::new(thread_count, &mut builtin_functions),
             worker_pool: default(),

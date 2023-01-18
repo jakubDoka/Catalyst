@@ -5,9 +5,12 @@
     of other threads. The storage items must not implement drop.
 */
 
+use core::fmt;
 use std::{
     alloc::{Allocator, Global, Layout},
-    iter, mem,
+    iter,
+    marker::PhantomData,
+    mem,
     ops::{Index, IndexMut, Range},
     process::abort,
     ptr::{self, NonNull},
@@ -16,6 +19,11 @@ use std::{
 };
 
 use arc_swap::RefCnt;
+use serde::{
+    de::{SeqAccess, Visitor},
+    ser::SerializeSeq,
+    Deserialize, Serialize,
+};
 
 use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
 
@@ -97,7 +105,7 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
     pub unsafe fn get_unchecked(&self, index: FragRef<T>) -> &T {
         let FragAddr { index, thread, .. } = index.0;
         let thread = &self.others[thread as usize];
-        &*FragVecInner::get_item(thread.inner.0, index as usize).as_ptr()
+        &*FragVecInner::get_item(thread.inner.0, index as usize)
     }
 
     /// # Safety
@@ -105,7 +113,7 @@ impl<T: Clone, A: Allocator> FragMap<T, A> {
     pub unsafe fn gen_unchecked_slice(&self, slice: FragSlice<T>) -> &[T] {
         let FragSliceAddr { index, thread, len } = slice.0;
         let thread = &self.others[thread as usize];
-        let ptr = FragVecInner::get_item(thread.inner.0, index as usize).as_ptr();
+        let ptr = FragVecInner::get_item(thread.inner.0, index as usize);
         slice::from_raw_parts(ptr, len as usize)
     }
 }
@@ -159,7 +167,12 @@ impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct FragBase<T, A: Allocator = Global> {
+    #[serde(bound(
+        serialize = "T: Serialize, A:",
+        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
+    ))]
     threads: Box<[FragVecView<T, A>]>,
 }
 
@@ -304,7 +317,12 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 struct FragVecView<T, A: Allocator = Global> {
+    #[serde(bound(
+        serialize = "T: Serialize",
+        deserialize = "T: Deserialize<'de>, A: Default"
+    ))]
     inner: FragVecArc<T, A>,
     thread: u8,
     frozen: usize,
@@ -376,25 +394,16 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     }
 
     unsafe fn data<'a>(s: NonNull<Self>, len: usize) -> &'a [T] {
-        slice::from_raw_parts(Self::get_item(s, 0).as_ptr(), len)
+        slice::from_raw_parts(Self::get_item(s, 0), len)
     }
 
     unsafe fn data_mut<'a>(s: NonNull<Self>, range: Range<usize>) -> &'a mut [T] {
-        slice::from_raw_parts_mut(
-            Self::get_item(s, 0).as_ptr().add(range.start),
-            range.end - range.start,
-        )
+        slice::from_raw_parts_mut(Self::get_item(s, range.start), range.end - range.start)
     }
 
-    unsafe fn get_item(s: NonNull<Self>, index: usize) -> NonNull<T> {
-        debug_assert!(
-            index < ptr::addr_of!((*s.as_ptr()).cap).read(),
-            "index out of bounds ({} >= {})",
-            index,
-            ptr::addr_of!((*s.as_ptr()).cap).read()
-        );
+    unsafe fn get_item(s: NonNull<Self>, index: usize) -> *mut T {
         let data = ptr::addr_of_mut!((*s.as_ptr()).data).cast::<T>();
-        NonNull::new_unchecked(data.add(index))
+        data.add(index)
     }
 
     unsafe fn drop(s: NonNull<Self>) {
@@ -413,7 +422,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     unsafe fn extend<I: ExactSizeIterator<Item = T>>(
         mut s: NonNull<Self>,
         i: I,
-    ) -> (NonNull<T>, Option<NonNull<Self>>)
+    ) -> (*mut T, Option<NonNull<Self>>)
     where
         T: Clone,
         A: Clone,
@@ -428,11 +437,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
             let allocator = (*ptr::addr_of!((*s.as_ptr()).allocator)).clone();
             let new_s = Self::with_capacity(cap, allocator);
 
-            ptr::copy_nonoverlapping(
-                Self::get_item(s, 0).as_ptr(),
-                Self::get_item(new_s, 0).as_ptr(),
-                len,
-            );
+            ptr::copy_nonoverlapping(Self::get_item(s, 0), Self::get_item(new_s, 0), len);
 
             Self::data_mut(s, 0..len)
                 .iter_mut()
@@ -442,8 +447,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         }
 
         let start = Self::get_item(s, len);
-        i.enumerate()
-            .for_each(|(i, v)| ptr::write(start.as_ptr().add(i), v));
+        i.enumerate().for_each(|(i, v)| ptr::write(start.add(i), v));
         ptr::addr_of_mut!((*s.as_ptr()).len).write(len + pushed_len);
 
         (start, overflows.then_some(s))
@@ -493,7 +497,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         );
         let base = Self::get_item(load, index as usize);
         for i in 0..len as usize {
-            base.as_ptr().add(i).drop_in_place();
+            base.add(i).drop_in_place();
         }
         *ptr::addr_of_mut!((*load.as_ptr()).len) -= len as usize;
     }
@@ -506,6 +510,66 @@ impl<T, A: Allocator> FragVecInner<T, A> {
 
 #[repr(transparent)]
 pub(crate) struct FragVecArc<T, A: Allocator>(NonNull<FragVecInner<T, A>>);
+
+impl<T: Serialize, A: Allocator> Serialize for FragVecArc<T, A> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let data = unsafe { FragVecInner::full_data(self.0) };
+        let mut seq = serializer.serialize_seq(Some(data.len()))?;
+        for elem in data {
+            seq.serialize_element(elem)?;
+        }
+
+        seq.end()
+    }
+}
+
+struct FragVecArcDeserializer<T, A: Allocator>(PhantomData<(T, A)>);
+
+impl<'de, T: Deserialize<'de>, A: Allocator + Default> Visitor<'de>
+    for FragVecArcDeserializer<T, A>
+{
+    type Value = FragVecArc<T, A>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("FragVecArc key value sequence.")
+    }
+
+    fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
+    where
+        S: SeqAccess<'de>,
+    {
+        let len = seq
+            .size_hint()
+            .ok_or_else(|| serde::de::Error::custom("size hint is required"))?;
+        let mut vec = FragVecArc(FragVecInner::<T, A>::with_capacity(len, A::default()));
+
+        let base = unsafe { FragVecInner::full_data_mut(vec.0) }.as_mut_ptr();
+        for index in 0..len {
+            let item = seq
+                .next_element()?
+                .ok_or_else(|| serde::de::Error::custom("capacity must be exhausted"))?;
+            unsafe {
+                base.add(index).write(item);
+                // we gradually increment the counter to keep dropping sound in case of error
+                vec.0.as_mut().len += 1;
+            }
+        }
+
+        Ok(vec)
+    }
+}
+
+impl<'de, T: Deserialize<'de>, A: Allocator + Default> Deserialize<'de> for FragVecArc<T, A> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(FragVecArcDeserializer(PhantomData))
+    }
+}
 
 // unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragVecArc<T, A> {}
 unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Send for FragVecArc<T, A> {}

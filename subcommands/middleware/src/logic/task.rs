@@ -1,7 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
+use serde::{Deserialize, Serialize};
+
 use super::*;
 
+#[derive(Serialize, Deserialize)]
 pub struct TaskBase {
     pub interner: InternerBase,
     pub typec: TypecBase,
@@ -97,11 +100,15 @@ impl Task {
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
         let mut dependant_types = FuncTypes::default();
+        let mut seen = Set::default();
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
             let Ok(task_id) = task_id else { continue; };
             let task = &mut tasks[task_id];
             let Func {
-                flags, visibility, ..
+                flags,
+                name,
+                visibility,
+                ..
             } = task.typec[func];
             if flags.contains(FuncFlags::BUILTIN) {
                 continue;
@@ -142,6 +149,7 @@ impl Task {
                     task_id,
                     &generics,
                     &mut frontier,
+                    &mut seen,
                 );
 
                 let task = other.unwrap_or(task);
@@ -165,7 +173,7 @@ impl Task {
                         .iter()
                         .map(|&p| dependant_types[p].ty)
                         .collect::<BumpVec<_>>();
-                    task.load_call(call.callable, params, task_id, isa)
+                    task.load_call(call.callable, params, task_id, isa, &mut seen)
                 })
                 .collect_into(&mut *frontier);
             let children = frontier[prev..]
@@ -204,6 +212,7 @@ impl Task {
         task_id: usize,
         generics: &[FragSlice<Spec>],
         frontier: &mut BumpVec<(CompileRequestChild, Result<usize, usize>)>,
+        seen: &mut Set<FragRef<CompiledFunc>>,
     ) {
         while let Some(ty) = type_frontier.pop() {
             if !self.typec.may_need_drop(ty, &mut self.interner) {
@@ -215,7 +224,7 @@ impl Task {
             {
                 let func = self.typec[self.typec[r#impl].methods][0];
                 let params = self.typec[params].to_bumpvec();
-                frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa));
+                frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa, seen));
             }
 
             match ty {
@@ -266,6 +275,7 @@ impl Task {
         params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
+        seen: &mut Set<FragRef<CompiledFunc>>,
     ) -> (CompileRequestChild, Result<usize, usize>) {
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),
@@ -281,15 +291,11 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let task_id = self
-            .gen
-            .get(key)
-            .is_none()
-            .then_some(task_id)
-            .ok_or(task_id);
         let id = self
             .gen
             .get_or_insert(key, || CompiledFunc::new(func_id, key));
+
+        let task_id = seen.insert(id).then_some(task_id).ok_or(task_id);
 
         (
             CompileRequestChild {

@@ -28,8 +28,13 @@ impl ResourceLoaderCtx {
         self.ast_arena.take().unwrap_or_default()
     }
 
-    fn clear(&mut self) {
-        // self.sources.clear(); // to avoid io
+    fn clear(&mut self, resources: &Resources) {
+        self.sources.clear();
+        resources
+            .sources
+            .iter()
+            .map(|(key, source)| (source.path.to_owned(), key))
+            .collect_into(&mut self.sources);
         self.packages.clear();
         self.modules.clear();
         self.package_frontier.clear();
@@ -68,7 +73,7 @@ impl<'a> PackageLoader<'a> {
         root_path: &Path,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<Vec<VRef<Source>>> {
-        ctx.clear();
+        ctx.clear(&self.resources);
         self.resources.clear();
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;

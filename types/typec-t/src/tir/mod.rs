@@ -4,6 +4,7 @@ use lexing_t::*;
 use storage::*;
 
 use crate::*;
+use serde::{Deserialize, Serialize};
 
 #[must_use]
 pub struct CtxFrame<T: CtxFrameItem> {

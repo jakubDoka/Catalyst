@@ -83,7 +83,7 @@ impl<'m> LspRuntime<'m> {
                     .map_err(|err| io::Error::new(io::ErrorKind::Unsupported, err))?,
                 isa: Isa::host(false)
                     .map_err(|err| io::Error::new(io::ErrorKind::Unsupported, err))?,
-                incremental_path: None,
+                incremental_path: Some("incremental/lsp.cbor".into()),
                 max_cores: None,
                 dump_ir: false,
                 check: true,

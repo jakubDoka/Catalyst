@@ -206,9 +206,9 @@ impl FragRelocator {
                 .zip(chunks(&frags.static_roots, threads_len));
             for (((marker, thread), roots), statics) in iter {
                 scope.spawn(move || {
+                    marker.mark_all(statics.iter(), frag_maps);
                     marker.mark_all(thread, frag_maps);
                     marker.mark_all(roots, frag_maps);
-                    marker.mark_all(statics.iter(), frag_maps);
                 });
             }
         });
@@ -444,6 +444,13 @@ impl FragRelocMarker {
         }
     }
 
+    pub fn is_marked<T: 'static>(&self, frag: FragRef<T>) -> bool {
+        self.marked
+            .get(&TypeId::of::<T>())
+            .filter(|s| s.contains(&frag.0))
+            .is_some()
+    }
+
     pub fn mark<T: 'static>(&mut self, frag: FragRef<T>) -> bool {
         self.marked
             .entry(TypeId::of::<T>())
@@ -585,6 +592,36 @@ impl<A: Relocated, B: Relocated> Relocated for (A, B) {
     fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
         self.0.remap(ctx)?;
         self.1.remap(ctx)
+    }
+}
+
+#[repr(transparent)]
+pub struct DashMapFilterUnmarkedKeys<K, V, H>(DashMap<FragRef<K>, V, H>);
+
+impl<K, V, H> DashMapFilterUnmarkedKeys<K, V, H> {
+    pub fn new(map: &mut Arc<DashMap<FragRef<K>, V, H>>) -> &mut Self {
+        unsafe { mem::transmute(Arc::get_mut(map).expect("expected unique arc")) }
+    }
+}
+
+impl<K, V, H> Relocated for DashMapFilterUnmarkedKeys<K, V, H>
+where
+    K: 'static,
+    V: Relocated,
+    H: Sync + Send + 'static + Clone + BuildHasher,
+{
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        for entry in self.0.iter() {
+            if !marker.is_marked(*entry.key()) {
+                continue;
+            }
+
+            entry.value().mark(marker);
+        }
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+        self.0.remap(ctx)
     }
 }
 

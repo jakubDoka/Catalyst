@@ -42,15 +42,19 @@ impl Catalyst {
             Some("cc") => CcRuntime::new(&mut self.middleware, &mut self.cc).run(input),
             Some("lsp") => LspRuntime::immediate(&mut self.middleware).map_err(Into::into),
             Some("fmt") => FmtRuntime::new(&mut self.middleware, &mut self.fmt).run(input),
-            inp => {
+            Some(inp) => {
                 eprintln!("{inp:?} is not a valid command");
                 eprintln!("valid commands: lsp, cc, fmt");
+                return;
+            }
+            None => {
+                eprintln!("expected subcommand");
                 return;
             }
         };
 
         if let Err(e) = err {
-            eprintln!("{e}");
+            eprintln!("dispatch error: {e}");
         }
     }
 }

@@ -1,5 +1,7 @@
 use std::mem;
 
+use serde::{Deserialize, Serialize};
+
 macro_rules! gen_non_max {
     ($($name:ident($ty:ty, $max:literal);)*) => {
         $(
@@ -42,6 +44,25 @@ macro_rules! gen_non_max {
                 }
             }
 
+            impl Serialize for $name {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    self.0.serialize(serializer)
+                }
+            }
+
+            impl<'de> Deserialize<'de> for $name {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    Self::new(<$ty>::deserialize(deserializer)?)
+                        .ok_or_else(|| serde::de::Error::custom("invalid value"))
+                }
+            }
+
             const _: () = assert!($name::new(<$ty>::MAX).is_none());
             const _: () = assert!(mem::size_of::<Option<$name>>() == mem::size_of::<$name>());
         )*
@@ -54,7 +75,7 @@ gen_non_max!(
     NonMaxU16(u16, /* 1 << 16 - 2 */ 65_534);
 );
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
 pub struct FragAddr {
     pub index: u32,
     pub thread: u8,
@@ -87,7 +108,9 @@ impl FragAddr {
     }
 }
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Default)]
+#[derive(
+    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Default, Deserialize, Serialize,
+)]
 pub struct FragSliceAddr {
     pub index: u32,
     pub thread: u8,

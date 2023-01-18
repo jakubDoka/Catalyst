@@ -7,9 +7,10 @@ use std::{
 use crate::*;
 use lexing_t::*;
 
+use serde::{Deserialize, Serialize};
 use storage::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Const {
     pub name: Ident,
     pub init: FragRef<Func>,
@@ -18,7 +19,7 @@ pub struct Const {
 
 derive_relocated!(struct Const { init });
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
@@ -34,7 +35,7 @@ impl Impl {
 
 pub type Generics = FragSlice<FragSlice<Spec>>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
@@ -42,7 +43,7 @@ pub struct ImplKey {
 
 derive_relocated!(struct ImplKey { ty spec });
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Instance {
     pub base: GenericTy,
     pub args: FragSlice<Ty>,
@@ -50,7 +51,7 @@ pub struct Instance {
 
 derive_relocated!(struct Instance { base args });
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Struct {
     pub name: Ident,
     pub generics: Generics,
@@ -75,7 +76,7 @@ gen_water_drops! {
     LEXER => "Lexer",
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Enum {
     pub name: Ident,
     pub generics: Generics,
@@ -101,7 +102,7 @@ gen_water_drops! {
     TOKEN_KIND => "TokenKind",
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Variant {
     pub name: Ident,
     pub ty: Ty,
@@ -110,7 +111,7 @@ pub struct Variant {
 
 derive_relocated!(struct Variant { ty });
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Serialize, Deserialize, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Pointer {
     index: u32,
     thread: u8,
@@ -180,7 +181,7 @@ impl fmt::Display for Mutability {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Deserialize, Serialize, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct RawMutability(u8);
 
 impl RawMutability {
@@ -232,7 +233,7 @@ impl RawMutability {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct SpecBase {
     pub name: Ident,
     pub generics: Generics,
@@ -256,7 +257,7 @@ gen_water_drops! {
     COPY => "Copy",
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct SpecInstance {
     pub base: FragRef<SpecBase>,
     pub args: FragSlice<Ty>,
@@ -266,7 +267,7 @@ derive_relocated! {
     struct SpecInstance { base args }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum Spec {
     Base(FragRef<SpecBase>),
     Instance(FragRef<SpecInstance>),
@@ -300,7 +301,7 @@ impl From<FragRef<SpecInstance>> for Spec {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum GenericTy {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
@@ -341,7 +342,7 @@ impl From<FragRef<Enum>> for GenericTy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ComputedTypecItem {
     Pointer(FragRef<Ty>),
     Instance(FragRef<Instance>),
@@ -360,7 +361,7 @@ derive_relocated! {
 
 const _: () = assert!(size_of::<FragRef<Pointer>>() == size_of::<Option<FragRef<Pointer>>>());
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Ty {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
@@ -662,7 +663,7 @@ macro_rules! gen_builtin {
             )*
         }
 
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]
         pub enum Builtin {
             $($builtin),*
         }
@@ -731,7 +732,7 @@ impl Default for Ty {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
@@ -748,7 +749,7 @@ impl SpecFunc {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Field {
     pub vis: Option<Vis>,
     pub ty: Ty,

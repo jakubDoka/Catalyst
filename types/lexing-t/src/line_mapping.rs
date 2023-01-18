@@ -1,15 +1,17 @@
 use std::{iter::once, ops::Range};
 
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct LineMapping {
-    indices: Vec<usize>,
+    indices: Vec<u32>,
 }
 
 impl LineMapping {
     pub fn new(source: &str) -> Self {
         LineMapping {
             indices: once(0)
-                .chain(source.match_indices('\n').map(|(i, _)| i))
+                .chain(source.match_indices('\n').map(|(i, _)| i as u32))
                 .collect(),
         }
     }
@@ -36,10 +38,16 @@ impl LineMapping {
     /// assert_eq!(mapper.line_info_at(i("epsilon")), (5, 0));
     /// ```
     pub fn line_info_at(&self, index: usize) -> (usize, usize) {
-        let pos = self.indices.binary_search(&index).unwrap_or_else(|i| i);
+        let pos = self
+            .indices
+            .binary_search(&(index as u32))
+            .unwrap_or_else(|i| i);
         let pos = pos.checked_sub(1).unwrap_or(pos);
 
-        (pos + 1, (index - self.indices[pos]).saturating_sub(1))
+        (
+            pos + 1,
+            (index - self.indices[pos] as usize).saturating_sub(1),
+        )
     }
 
     pub fn clear(&mut self) {
@@ -57,7 +65,7 @@ impl LineMapping {
         (start_line - 1..end_line - 1)
             .map(|i| self.indices[i + 1] - self.indices[i])
             .max()
-            .unwrap_or(end_col)
+            .unwrap_or(end_col as u32) as usize
     }
 }
 

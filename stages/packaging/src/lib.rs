@@ -5,6 +5,7 @@
 #![feature(never_type)]
 #![feature(let_chains)]
 #![feature(iter_intersperse)]
+#![feature(iter_collect_into)]
 
 mod packages;
 mod scheduler;

@@ -1,4 +1,5 @@
 use arc_swap::ArcSwapAny;
+use serde::{Deserialize, Serialize};
 use std::{
     any::TypeId,
     cell::UnsafeCell,
@@ -10,13 +11,13 @@ use crate::{DynFragMap, Relocated};
 
 use super::*;
 
-pub struct SyncFragMap<T, A: Allocator = Global> {
+pub struct SyncFragMap<T, A: Allocator + Default = Global> {
     pub(crate) base: SyncFragBase<T, A>,
     pub(crate) locals: Box<[UnsafeCell<LocalFragView<T, A>>]>,
     pub(crate) thread: u8,
 }
 
-impl<T, A: Allocator> SyncFragMap<T, A> {
+impl<T, A: Allocator + Default> SyncFragMap<T, A> {
     fn new(thread: u8, base: &SyncFragBase<T, A>) -> Self {
         Self {
             base: base.clone(),
@@ -68,7 +69,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
     }
 }
 
-impl<T, A: Allocator> SyncFragMap<T, A> {
+impl<T, A: Allocator + Default + Default> SyncFragMap<T, A> {
     fn get_thread(&self) -> &SyncFragView<T, A> {
         // thread is alwais in range
         unsafe { self.base.views.get_unchecked(self.thread as usize) }
@@ -114,7 +115,7 @@ impl<T, A: Allocator> SyncFragMap<T, A> {
     }
 }
 
-impl<T, A: Allocator> Index<FragRef<T>> for SyncFragMap<T, A> {
+impl<T, A: Allocator + Default> Index<FragRef<T>> for SyncFragMap<T, A> {
     type Output = T;
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
@@ -123,7 +124,7 @@ impl<T, A: Allocator> Index<FragRef<T>> for SyncFragMap<T, A> {
     }
 }
 
-impl<T, A: Allocator> Index<FragSlice<T>> for SyncFragMap<T, A> {
+impl<T, A: Allocator + Default> Index<FragSlice<T>> for SyncFragMap<T, A> {
     type Output = [T];
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
@@ -132,19 +133,24 @@ impl<T, A: Allocator> Index<FragSlice<T>> for SyncFragMap<T, A> {
     }
 }
 
-pub struct SyncFragBase<T, A: Allocator = Global> {
+#[derive(Deserialize, Serialize)]
+pub struct SyncFragBase<T, A: Allocator + Default = Global> {
+    #[serde(bound(
+        serialize = "T: Serialize, A: Allocator + Default",
+        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
+    ))]
     pub(crate) views: Arc<[SyncFragView<T, A>]>,
 }
 
-unsafe impl<T: Send + Sync, A: Allocator + Send + Sync> Sync for SyncFragBase<T, A> {}
+unsafe impl<T: Send + Sync, A: Allocator + Default + Send + Sync> Sync for SyncFragBase<T, A> {}
 
-impl<T> SyncFragBase<T> {
+impl<T> SyncFragBase<T, Global> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
 }
 
-impl<T, A: Allocator> Clone for SyncFragBase<T, A> {
+impl<T, A: Allocator + Default> Clone for SyncFragBase<T, A> {
     fn clone(&self) -> Self {
         Self {
             views: self.views.clone(),
@@ -152,7 +158,7 @@ impl<T, A: Allocator> Clone for SyncFragBase<T, A> {
     }
 }
 
-impl<T, A: Allocator> SyncFragBase<T, A> {
+impl<T, A: Allocator + Default> SyncFragBase<T, A> {
     pub fn new_in(thread_count: u8, allocator: A) -> Self
     where
         A: Clone,
@@ -174,7 +180,9 @@ impl<T, A: Allocator> SyncFragBase<T, A> {
     }
 }
 
-impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFragBase<T, A> {
+impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
+    for SyncFragBase<T, A>
+{
     fn mark(&self, FragAddr { index, thread, .. }: FragAddr, marker: &mut crate::FragRelocMarker) {
         let thread = &self.views[thread as usize];
         unsafe {
@@ -212,15 +220,20 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for SyncFrag
     }
 }
 
-pub(crate) struct SyncFragView<T, A: Allocator = Global> {
+#[derive(Serialize, Deserialize)]
+pub(crate) struct SyncFragView<T, A: Allocator + Default> {
+    #[serde(bound(
+        serialize = "T: Serialize, A: Allocator + Default",
+        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
+    ))]
     pub(crate) inner: ArcSwapAny<FragVecArc<T, A>>,
     pub(crate) thread: u8,
     pub(crate) len: AtomicUsize,
 }
 
-unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for SyncFragView<T, A> {}
+unsafe impl<T: Sync + Send, A: Allocator + Default + Sync + Send> Sync for SyncFragView<T, A> {}
 
-impl<T, A: Allocator> SyncFragView<T, A> {
+impl<T, A: Allocator + Default> SyncFragView<T, A> {
     fn new_in(thread: u8, allocator: A) -> Self {
         Self {
             inner: ArcSwapAny::new(FragVecArc(FragVecInner::new(allocator))),
@@ -267,12 +280,12 @@ impl<T, A: Allocator> SyncFragView<T, A> {
     }
 }
 
-pub(crate) struct LocalFragView<T, A: Allocator = Global> {
+pub(crate) struct LocalFragView<T, A: Allocator + Default = Global> {
     pub(crate) inner: FragVecArc<T, A>,
     pub(crate) len: usize,
 }
 
-impl<T, A: Allocator> LocalFragView<T, A> {
+impl<T, A: Allocator + Default> LocalFragView<T, A> {
     pub fn get(&self, index: usize) -> Option<&T> {
         unsafe { FragVecInner::data(self.inner.0, self.len).get(index) }
     }
@@ -282,15 +295,15 @@ impl<T, A: Allocator> LocalFragView<T, A> {
     }
 }
 
-pub struct FragSliceKey<T, A: Allocator = Global> {
+pub struct FragSliceKey<T, A: Allocator + Default = Global> {
     view: *const SyncFragView<T, A>,
     slice: FragSlice<T>,
 }
 
-unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Send for FragSliceKey<T, A> {}
-unsafe impl<T: Sync + Send, A: Allocator + Sync + Send> Sync for FragSliceKey<T, A> {}
+unsafe impl<T: Sync + Send, A: Allocator + Default + Sync + Send> Send for FragSliceKey<T, A> {}
+unsafe impl<T: Sync + Send, A: Allocator + Default + Sync + Send> Sync for FragSliceKey<T, A> {}
 
-impl<T, A: Allocator> FragSliceKey<T, A> {
+impl<T, A: Allocator + Default> FragSliceKey<T, A> {
     /// # Safety
     /// Caller must ensure that `Self` does not outlive `map` and `slice` is valid
     pub unsafe fn new(map: &SyncFragMap<T, A>, slice: FragSlice<T>) -> Self {
@@ -302,15 +315,26 @@ impl<T, A: Allocator> FragSliceKey<T, A> {
         }
     }
 
+    /// # Safety
+    /// Caller must ensure that `Self` does not outlive `map` and `slice` is valid
+    pub unsafe fn from_base(map: &SyncFragBase<T, A>, slice: FragSlice<T>) -> Self {
+        let map = &map.views[slice.0.thread as usize];
+
+        Self {
+            view: map as _,
+            slice,
+        }
+    }
+
     unsafe fn inner_slice(&self) -> &[T] {
         let map = &*self.view;
         let FragSliceAddr { index, len, .. } = self.slice.addr();
         let ptr = FragVecInner::get_item(map.inner.load().0, index as usize);
-        slice::from_raw_parts(ptr.as_ptr(), len as usize)
+        slice::from_raw_parts(ptr, len as usize)
     }
 }
 
-impl<T: Hash, A: Allocator> Hash for FragSliceKey<T, A> {
+impl<T: Hash, A: Allocator + Default> Hash for FragSliceKey<T, A> {
     fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
         unsafe {
             self.inner_slice().hash(state);
@@ -318,13 +342,13 @@ impl<T: Hash, A: Allocator> Hash for FragSliceKey<T, A> {
     }
 }
 
-impl<T: Eq, A: Allocator> PartialEq for FragSliceKey<T, A> {
+impl<T: Eq, A: Allocator + Default> PartialEq for FragSliceKey<T, A> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { self.inner_slice() == other.inner_slice() }
     }
 }
 
-impl<T: Eq, A: Allocator> Eq for FragSliceKey<T, A> {}
+impl<T: Eq, A: Allocator + Default> Eq for FragSliceKey<T, A> {}
 
 #[cfg(test)]
 mod test {

@@ -7,7 +7,10 @@ edition = "2021"
 
 [dependencies]
 region = "3.0.0"
-serde = { version = "1", features = ["derive"] }
-dashmap = "5.4.0"
+serde = { version = "1", features = ["derive", "rc"] }
+dashmap = { version = "5.4.0", feature = ["serde"] }
 smallvec = { version = "1.10.0", features = ["union"] }
-arc-swap = "1.5.1"
+arc-swap = { version = "1.5.1", features = ["serde"] }
+
+[features]
+default = ["dashmap/serde", "smallvec/serde", "arc-swap/serde"]

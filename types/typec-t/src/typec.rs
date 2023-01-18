@@ -11,6 +11,7 @@ use crate::*;
 use diags::SourceLoc;
 use packaging_t::{Module, Resources};
 
+use serde::{Deserialize, Serialize};
 use storage::{dashmap::mapref::entry::Entry, *};
 
 pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
@@ -19,7 +20,7 @@ pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 pub type Macros = CMap<Ty, MacroImpl>;
 pub type MayNeedDrop = CMap<Ty, bool>;
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Mapping {
     pub lookup: TypecLookup,
     pub impl_lookup: ImplLookup,
@@ -30,6 +31,7 @@ pub struct Mapping {
 
 derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
 
+#[derive(Serialize, Deserialize)]
 pub struct TypecBase {
     pub cache: TypecCacheBase,
     pub mapping: Arc<Mapping>,
@@ -179,8 +181,7 @@ macro_rules! gen_cache {
             }
         )*
 
-
-
+        #[derive(Serialize, Deserialize)]
         pub struct TypecCacheBase {
             $(
                 pub $name: FragBase<$ty>,
@@ -1225,7 +1226,7 @@ pub enum SpecCmpError {
     Args(Ty, Ty),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
@@ -1301,7 +1302,7 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
         .ok()
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct MacroImpl {
     pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
@@ -1312,7 +1313,7 @@ derive_relocated! {
     struct MacroImpl { r#impl params }
 }
 
-#[derive(Default, Clone, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }

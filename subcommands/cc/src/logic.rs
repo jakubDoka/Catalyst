@@ -108,6 +108,10 @@ impl<'m> CcRuntime<'m> {
             Err(err) => Err(err),
         };
 
+        if mid_args.check {
+            return Ok(err?);
+        }
+
         if let Some(ref current_input) = self.ctx.input
             && let Some(ref cached_exe) = self.ctx.cached_exe
             && unchanged
