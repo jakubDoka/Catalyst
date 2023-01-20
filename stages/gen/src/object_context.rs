@@ -77,7 +77,7 @@ impl ObjectContext {
             .map(|func| {
                 let ent = &gen[func];
 
-                let meta = &typec[ent.func];
+                let meta = &typec[ent.func()];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
 
                 let name = match scope {

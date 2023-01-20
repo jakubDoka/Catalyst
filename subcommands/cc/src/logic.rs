@@ -27,6 +27,7 @@ impl<'m> CcRuntime<'m> {
         }
         values {
             "output"("string = 'a'") => "output file name"
+            "link-with"("string = ''") => "list of object files to link with executable"
         }
     }
 
@@ -84,18 +85,17 @@ impl<'m> CcRuntime<'m> {
                 } else if compiler.is_like_clang() {
                     todo!()
                 } else if compiler.is_like_gnu() {
-                    vec![
-                        format!("-o{}", exe_path),
-                        "-nostartfiles".into(),
-                        format!("-e{}", middleware::ENTRY_POINT_NAME),
-                    ]
+                    vec![format!("-o{}", exe_path)]
                 } else {
                     unimplemented!("unknown compiler");
                 };
 
+                let link_with = input.value("link-with").unwrap_or("").split_whitespace();
+
                 compiler
                     .to_command()
                     .arg(&obj_path)
+                    .args(link_with)
                     .args(args)
                     .status()
                     .unwrap();

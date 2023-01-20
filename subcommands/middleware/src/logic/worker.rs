@@ -57,15 +57,13 @@ impl Worker {
         isa: &Isa,
         shared: &Shared,
         entry_points: &[FragRef<CompiledFunc>],
-    ) -> (FragRef<CompiledFunc>, Option<FragRef<CompiledFunc>>) {
+    ) -> FragRef<CompiledFunc> {
         self.context.func.signature = ir::Signature::new(isa.default_call_conv());
-        if cfg!(not(unix)) {
-            self.context
-                .func
-                .signature
-                .returns
-                .push(ir::AbiParam::new(ir::types::I32));
-        }
+        self.context
+            .func
+            .signature
+            .returns
+            .push(ir::AbiParam::new(ir::types::I32));
 
         let mut generator = Generator::new(
             &mut self.state.gen_layouts,
@@ -112,28 +110,8 @@ impl Worker {
         } else {
             builder.ins().iconst(ir::types::I32, 0)
         };
-        let exit_func = if cfg!(unix) {
-            let func_name = Generator::func_instance_name(
-                false,
-                &isa.triple,
-                Func::EXIT,
-                iter::empty(),
-                &generator.typec,
-                &mut generator.interner,
-            );
 
-            let compiled_func = generator
-                .gen
-                .get_or_insert(func_name, || CompiledFunc::new(Func::EXIT, func_name));
-            let (func_ref, ..) =
-                generator.import_compiled_func(compiled_func, iter::empty(), &mut builder);
-            builder.ins().call(func_ref, &[exit_code]);
-            builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
-            Some(compiled_func)
-        } else {
-            builder.ins().return_(&[exit_code]);
-            None
-        };
+        builder.ins().return_(&[exit_code]);
 
         builder.seal_block(entry);
 
@@ -143,16 +121,14 @@ impl Worker {
             name: entry_name,
             ..default()
         });
-        let compiled_entry = generator
-            .gen
-            .get_or_insert(entry_name, || CompiledFunc::new(entry_func, entry_name));
+        let compiled_entry = generator.gen.get_or_insert(entry_name, entry_func);
         self.context.compile(&**isa).unwrap();
         generator
             .gen
             .save_compiled_code(compiled_entry, &self.context)
             .unwrap();
 
-        (compiled_entry, exit_func)
+        compiled_entry
     }
 
     pub fn run<'a: 'scope, 'scope, S: AstHandler>(
@@ -397,6 +373,7 @@ impl Worker {
             compiled.push(id);
 
             if task.gen[id].inner.load().is_some() {
+                task.gen[id].set_func(func);
                 continue;
             }
 
@@ -504,7 +481,7 @@ impl Worker {
                     &task.typec,
                     &mut task.interner,
                 );
-                let id = task.gen.get_or_insert(key, || CompiledFunc::new(func, key));
+                let id = task.gen.get_or_insert(key, func);
                 (
                     CompileRequestChild {
                         func,

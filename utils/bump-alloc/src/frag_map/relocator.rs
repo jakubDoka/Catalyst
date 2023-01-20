@@ -323,10 +323,6 @@ impl FragMarks {
                 type_id: TypeId::of::<T>(),
             };
 
-            if marks.is_empty() {
-                continue;
-            }
-
             assert!(unsafe { FragVecInner::is_unique(thread.0) });
             let (base, current_len) = unsafe {
                 let slice = FragVecInner::full_data_mut(thread.0);
@@ -339,8 +335,11 @@ impl FragMarks {
                 FragAddr::new(current_len as u32, 0),
             ));
 
-            for (start, end) in marks[1..]
-                .chunks_exact(2)
+            for (start, end) in marks
+                .get(1..)
+                .map(|s| s.chunks_exact(2))
+                .into_iter()
+                .flatten()
                 .map(|s| (s[0], s[1]))
                 .chain(reminder)
             {
@@ -452,6 +451,10 @@ impl FragRelocMarker {
     }
 
     pub fn mark<T: 'static>(&mut self, frag: FragRef<T>) -> bool {
+        if std::any::type_name::<T>().contains("Struct") && frag.0.index == 0 && frag.0.thread == 2
+        {
+            panic!();
+        }
         self.marked
             .entry(TypeId::of::<T>())
             .or_default()

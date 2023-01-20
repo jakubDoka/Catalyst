@@ -2,5 +2,5 @@
 	path = water
 	url = https://github.com/jakubDoka/water
 [submodule "subcommands/lsp/tree-sitter"]
-	path = subcommands/lsp/tree-sitter
+	path = subcommands/lsp/tree-sitter-catalyst
 	url = https://github.com/jakubDoka/tree-sitter-catalyst.git

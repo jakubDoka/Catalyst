@@ -356,6 +356,17 @@ impl Generator<'_> {
     }
 
     fn r#ref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
+        if !self.is_representable(target, builder) {
+            self.save_value(
+                ret,
+                builder.ins().iconst(self.gen_layouts.ptr_ty, 1),
+                0,
+                false,
+                builder,
+            );
+            return;
+        }
+
         let GenValue {
             computed,
             offset,
@@ -647,6 +658,9 @@ impl Generator<'_> {
         source: VRef<ValueMir>,
         builder: &mut GenBuilder,
     ) {
+        if !self.is_representable(source, builder) {
+            return;
+        }
         let GenValue {
             computed,
             offset,

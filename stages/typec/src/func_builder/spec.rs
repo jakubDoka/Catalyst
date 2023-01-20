@@ -298,6 +298,17 @@ ctl_errors! {
         spec_source_loc: Option<SourceLoc>,
     }
 
+    #[err => "amount of arguments passed to the function is incorrect"]
+    #[info => "expected {expected}, but got {actual}"]
+    error ArgCountMismatch: fatal {
+        #[info func_loc, "because of this definition"]
+        #[err loc]
+        expected: usize,
+        actual: usize,
+        loc: SourceLoc,
+        func_loc: Option<SourceLoc>,
+    }
+
     #[err => "missing spec inherits"]
     #[info => "'{ty}: {missing}' is not implemented"]
     error MissingSpecInherits: fatal {

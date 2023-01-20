@@ -191,7 +191,7 @@ impl MirChecker<'_, '_> {
             };
         };
 
-        if !in_var {
+        if !in_var && self.mir_ctx.value_depths[value] < self.mir_ctx.depth {
             self.store_in_var(value);
         }
 

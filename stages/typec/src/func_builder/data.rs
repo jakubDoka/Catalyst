@@ -69,7 +69,7 @@ impl TyChecker<'_> {
                 .for_each(|(slot, param)| *slot = Some(param))
         }
 
-        let mut fields = bumpvec![None; body.len()];
+        let mut fields = bumpvec![None; struct_meta.fields.len()];
 
         let params = params.map_or(default(), |(.., p)| p);
 

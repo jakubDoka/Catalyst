@@ -406,7 +406,7 @@ impl Middleware {
             builtin_functions: &builtin_functions,
         };
 
-        let (entry_point, exit_func) = worker_pool
+        let entry_point = worker_pool
             .first_mut()
             .expect("since there is nonzero cores, there has to be worker")
             .generaite_entry_point(&mut main_task, &args.isa, &shared, &entry_points);
@@ -417,8 +417,7 @@ impl Middleware {
                 compiled
                     .into_iter()
                     .chain(imported)
-                    .chain(iter::once(entry_point))
-                    .chain(exit_func),
+                    .chain(iter::once(entry_point)),
                 &main_task.gen,
                 &main_task.typec,
                 &main_task.interner,
@@ -553,9 +552,7 @@ impl Middleware {
                 &main_task.typec,
                 &mut main_task.interner,
             );
-            let id = tasks[task_id]
-                .gen
-                .get_or_insert(key, || CompiledFunc::new(func, key));
+            let id = tasks[task_id].gen.get_or_insert(key, func);
             (
                 CompileRequestChild {
                     id,

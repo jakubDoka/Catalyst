@@ -46,7 +46,7 @@ impl Generator<'_> {
             .func
             .declare_imported_user_function(GenItemName::encode_func(func));
 
-        let func_id = self.gen[func].func;
+        let func_id = self.gen[func].func();
         let Func {
             signature,
             visibility,

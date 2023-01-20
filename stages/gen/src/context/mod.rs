@@ -4,7 +4,7 @@ use std::{
     iter, mem,
     num::NonZeroU8,
     ops::{Deref, DerefMut, Index, Range},
-    sync::Arc,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 use cranelift_codegen::{
@@ -70,16 +70,15 @@ impl Gen {
         self.lookup.get(&id).map(|value| value.0)
     }
 
-    pub fn get_or_insert(
-        &mut self,
-        id: Ident,
-        or: impl FnOnce() -> CompiledFunc,
-    ) -> FragRef<CompiledFunc> {
+    pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> FragRef<CompiledFunc> {
         self.lookup
             .entry(id)
-            .and_modify(|(.., unused)| *unused = false)
+            .and_modify(|(compiled, unused)| {
+                self.funcs[*compiled].set_func(func);
+                *unused = false;
+            })
             .or_insert_with(|| {
-                let value = or();
+                let value = CompiledFunc::new(func, id);
                 let value_id = self.funcs.push(value);
                 (value_id, false)
             })
@@ -137,22 +136,51 @@ impl Index<FragRef<CompiledFunc>> for Gen {
 
 #[derive(Serialize, Deserialize)]
 pub struct CompiledFunc {
-    pub func: FragRef<Func>,
+    func: AtomicU64,
     pub name: Ident,
     pub inner: ArcSwapOption<CompiledFuncInner>,
+}
+
+impl CompiledFunc {
+    pub fn new(func: FragRef<Func>, name: Ident) -> Self {
+        Self {
+            func: unsafe { mem::transmute(func) },
+            name,
+            inner: default(),
+        }
+    }
+
+    pub fn func(&self) -> FragRef<Func> {
+        let bits = self.func.load(std::sync::atomic::Ordering::Relaxed);
+        unsafe { mem::transmute(bits) }
+    }
+
+    pub fn set_func(&self, value: FragRef<Func>) {
+        let bits = unsafe { mem::transmute(value) };
+        self.func.store(bits, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl Clone for CompiledFunc {
     fn clone(&self) -> Self {
         Self {
-            func: self.func,
+            func: self.func.load(std::sync::atomic::Ordering::Relaxed).into(),
             name: self.name,
             inner: self.inner.load_full().into(),
         }
     }
 }
 
-derive_relocated!(struct CompiledFunc { func });
+impl Relocated for CompiledFunc {
+    fn mark(&self, _marker: &mut FragRelocMarker) {}
+
+    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+        let mut func = self.func();
+        func.remap(ctx)?;
+        self.set_func(func);
+        Some(())
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct CompiledFuncInner {
@@ -160,16 +188,6 @@ pub struct CompiledFuncInner {
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
-}
-
-impl CompiledFunc {
-    pub fn new(func: FragRef<Func>, name: Ident) -> Self {
-        Self {
-            func,
-            name,
-            inner: default(),
-        }
-    }
 }
 
 #[derive(Debug)]

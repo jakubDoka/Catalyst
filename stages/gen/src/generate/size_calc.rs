@@ -15,6 +15,6 @@ impl Generator<'_> {
     }
 
     pub fn is_representable(&mut self, value: VRef<ValueMir>, builder: &mut GenBuilder) -> bool {
-        self.ty_layout(builder.value_ty(value)).size == 0
+        self.ty_layout(builder.value_ty(value)).size != 0
     }
 }

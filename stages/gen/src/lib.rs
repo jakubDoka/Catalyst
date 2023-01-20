@@ -21,4 +21,4 @@ pub use {
     state_gen::Generator,
 };
 
-pub const ENTRY_POINT_NAME: &str = "__catalyst_main__";
+pub const ENTRY_POINT_NAME: &str = "main";

@@ -78,14 +78,10 @@ impl JitContext {
             .into_iter()
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let &CompiledFunc {
-                    func: parent_func,
-                    ref inner,
-                    ..
-                } = &gen[func];
+                let compiled_func = &gen[func];
                 let Func {
                     visibility, name, ..
-                } = typec[parent_func];
+                } = typec[compiled_func.func()];
 
                 if visibility == FuncVisibility::Imported {
                     let code = self
@@ -97,7 +93,7 @@ impl JitContext {
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
                 }
 
-                let Some(ref inner) = *inner.load() else {
+                let Some(ref inner) = *compiled_func.inner.load() else {
                     return Err(JitRelocError::MissingBytecode(func));
                 };
 

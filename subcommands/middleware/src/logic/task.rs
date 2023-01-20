@@ -105,10 +105,7 @@ impl Task {
             let Ok(task_id) = task_id else { continue; };
             let task = &mut tasks[task_id];
             let Func {
-                flags,
-                name,
-                visibility,
-                ..
+                flags, visibility, ..
             } = task.typec[func];
             if flags.contains(FuncFlags::BUILTIN) {
                 continue;
@@ -291,9 +288,7 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let id = self
-            .gen
-            .get_or_insert(key, || CompiledFunc::new(func_id, key));
+        let id = self.gen.get_or_insert(key, func_id);
 
         let task_id = seen.insert(id).then_some(task_id).ok_or(task_id);
 

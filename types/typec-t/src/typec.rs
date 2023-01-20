@@ -59,8 +59,6 @@ impl TypecBase {
     }
 }
 
-derive_relocated!(struct TypecBase { mapping });
-
 impl Default for Typec {
     fn default() -> Self {
         let base = TypecBase::new(1);
@@ -634,8 +632,8 @@ impl Typec {
             generics: self.cache.params.extend([default(), default()]), // F, T
             signature: Signature {
                 cc: default(),
-                args: self.cache.args.extend([Ty::Param(0)]),
-                ret: Ty::Param(1),
+                args: self.cache.args.extend([Ty::Param(1)]),
+                ret: Ty::Param(0),
             },
             name: Interner::CAST,
             flags: FuncFlags::BUILTIN,
@@ -784,6 +782,8 @@ impl Typec {
             .to_owned();
 
         let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
+
+        debug_assert_eq!(self[ty], base);
 
         Pointer::new(ty, mutability, depth)
     }
@@ -1094,13 +1094,13 @@ impl Typec {
             }
 
             match (reference, template) {
-                (Ty::Pointer(reference), Ty::Pointer(template)) => {
-                    match (reference.mutability.to_mutability(), template.mutability.to_mutability()) {
+                (Ty::Pointer(reference_p), Ty::Pointer(template_p)) => {
+                    match (reference_p.mutability.to_mutability(), template_p.mutability.to_mutability()) {
                         (val, Mutability::Param(i)) => params[i as usize] = Some(val.as_ty()),
-                        _ if reference.mutability.compatible(template.mutability) => (),
-                        _ => return Err((reference.into(), template.into())),
+                        _ if reference_p.mutability.compatible(template_p.mutability) => (),
+                        _ => return Err((reference, template)),
                     }
-                    stack.push((self[reference.ty()], self[template.ty()]));
+                    stack.push((self[reference_p.ty()], self[template_p.ty()]));
                 }
                 (Ty::Instance(reference), Ty::Instance(template)) => {
                     check(self[reference].base.as_ty(), self[template].base.as_ty())?;
@@ -1112,7 +1112,7 @@ impl Typec {
                     );
                 }
                 (_, Ty::Param(index)) if let Some(inferred) = params[index as usize] => {
-                    check(inferred, reference)?;
+                    check(reference, inferred)?;
                 }
                 (_, Ty::Param(index)) => params[index as usize] = Some(reference),
                 _ => return Err((reference, template)),

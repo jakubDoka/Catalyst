@@ -1,4 +1,4 @@
-use super::*;
+use super::{spec::ArgCountMismatch, *};
 
 impl TyChecker<'_> {
     pub fn call<'a>(
@@ -53,6 +53,7 @@ impl TyChecker<'_> {
             signature,
             upper_generics,
             owner,
+            loc,
             ..
         } = self.typec[func];
         let param_specs = self
@@ -77,9 +78,10 @@ impl TyChecker<'_> {
             signature,
             inference,
             builder,
+            &|s| loc.map(|loc| loc.source_loc(s.typec, s.resources)),
         )?;
 
-        if func == Func::CAST && let &[from, to] = params {
+        if func == Func::CAST && let &[to, from] = params {
             builder.ctx.cast_checks.push(CastCheck { loc: call.span(), from, to });
         }
 
@@ -133,6 +135,11 @@ impl TyChecker<'_> {
             signature,
             inference,
             builder,
+            &|s| {
+                s.typec[func_ent.parent]
+                    .loc
+                    .map(|loc| loc.source_loc(s.typec, s.resources))
+            },
         )?;
 
         let call_tir = CallTir {
@@ -193,6 +200,7 @@ impl TyChecker<'_> {
         signature: Signature,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
+        func: &dyn Fn(&mut Self) -> Option<SourceLoc>,
     ) -> Option<(&'a [TirNode<'a>], &'a [Ty], Ty)> {
         let arg_types = self.typec[signature.args].to_bumpvec();
 
@@ -211,6 +219,21 @@ impl TyChecker<'_> {
                 let owner = self.typec.balance_pointers(owner, ty, self.interner);
                 _ = self.typec.compatible(param_slots, ty, owner);
             }
+        }
+
+        let expected_arg_count = arg_types.len();
+        let actual_arg_count = caller.and_then(|c| c.err()).is_some() as usize + args.len();
+        if expected_arg_count != actual_arg_count {
+            let func_loc = func(self);
+            self.workspace.push(ArgCountMismatch {
+                expected: expected_arg_count,
+                actual: actual_arg_count,
+                loc: SourceLoc {
+                    origin: self.source,
+                    span: args.span(),
+                },
+                func_loc,
+            })?;
         }
 
         let parsed_args = args
