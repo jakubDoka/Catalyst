@@ -4,8 +4,9 @@ use lexing_t::*;
 use storage::*;
 
 use crate::*;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
+use bytecheck::CheckBytes;
 #[must_use]
 pub struct CtxFrame<T: CtxFrameItem> {
     ph: PhantomData<T>,

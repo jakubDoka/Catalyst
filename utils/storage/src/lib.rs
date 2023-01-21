@@ -129,7 +129,8 @@ macro_rules! bitflags {
     ) => {
         $(
             $crate::bitflags::bitflags! {
-                #[derive(Default, Serialize, Deserialize, $($($attr),*)?)]
+                #[derive(Default, Serialize, Deserialize, Archive, $($($attr),*)?)]
+                #[archive_attr(derive(CheckBytes))]
                 pub struct $name: $repr {
 
                 }
@@ -173,16 +174,13 @@ mod push_map;
 mod rw_swap;
 /// Storage that can map additional info for existing map.
 mod shadow_map;
-/// Similar to shadow map, but lot more memory efficient when storing big structures
-/// that are sparsely populated.
-mod sparse_map;
 
 pub use {
     bit_set::BitSet,
     bump_alloc::*,
     clear::{map_in_place, Clear},
     frames::Frames,
-    interner::{Ident, Interner, InternerBase},
+    interner::{Ident, Interner, InternerArchiver, InternerBase},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,
@@ -190,5 +188,4 @@ pub use {
     rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,
     smallvec::*,
-    sparse_map::SparseMap,
 };

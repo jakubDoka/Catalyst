@@ -5,12 +5,10 @@
     of other threads. The storage items must not implement drop.
 */
 
-use core::fmt;
 use std::{
     alloc::{Allocator, Global, Layout},
-    iter,
-    marker::PhantomData,
-    mem,
+    hash::{BuildHasher, Hash},
+    iter, mem,
     ops::{Index, IndexMut, Range},
     process::abort,
     ptr::{self, NonNull},
@@ -18,14 +16,18 @@ use std::{
     sync::atomic::{self, AtomicUsize},
 };
 
-use arc_swap::RefCnt;
-use serde::{
-    de::{SeqAccess, Visitor},
-    ser::SerializeSeq,
-    Deserialize, Serialize,
+use arc_swap::{strategy::Strategy, ArcSwapAny, RefCnt};
+use dashmap::DashMap;
+use rkyv::{
+    ser::{ScratchSpace, Serializer},
+    vec::{ArchivedVec, VecResolver},
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
 };
+use smallvec::SmallVec;
 
 use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
+use bytecheck::CheckBytes;
 
 pub mod addr;
 pub mod relocator;
@@ -167,12 +169,9 @@ impl<T, A: Allocator> IndexMut<FragSlice<T>> for FragMap<T, A> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct FragBase<T, A: Allocator = Global> {
-    #[serde(bound(
-        serialize = "T: Serialize, A:",
-        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
-    ))]
     threads: Box<[FragVecView<T, A>]>,
 }
 
@@ -245,7 +244,7 @@ macro_rules! terminate {
     };
 }
 
-struct FragVec<T, A: Allocator = Global> {
+pub struct FragVec<T, A: Allocator = Global> {
     view: FragVecView<T, A>,
 }
 
@@ -317,12 +316,9 @@ impl<T, A: Allocator, I: SliceIndex<[T]>> IndexMut<I> for FragVec<T, A> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct FragVecView<T, A: Allocator = Global> {
-    #[serde(bound(
-        serialize = "T: Serialize",
-        deserialize = "T: Deserialize<'de>, A: Default"
-    ))]
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct FragVecView<T, A: Allocator = Global> {
     inner: FragVecArc<T, A>,
     thread: u8,
     frozen: usize,
@@ -370,7 +366,7 @@ impl<T, A: Allocator> Clone for FragVecView<T, A> {
 }
 
 #[repr(C)]
-pub(crate) struct FragVecInner<T, A: Allocator = Global> {
+pub struct FragVecInner<T, A: Allocator = Global> {
     ref_count: AtomicUsize,
     cap: usize,
     len: usize,
@@ -431,7 +427,7 @@ impl<T, A: Allocator> FragVecInner<T, A> {
         let mut cap = ptr::addr_of!((*s.as_ptr()).cap).read();
         let len = ptr::addr_of!((*s.as_ptr()).len).read();
 
-        let overflows = len + pushed_len >= cap;
+        let overflows = len + pushed_len > cap;
         if overflows {
             cap = (len + pushed_len).next_power_of_two();
             let allocator = (*ptr::addr_of!((*s.as_ptr()).allocator)).clone();
@@ -508,66 +504,239 @@ impl<T, A: Allocator> FragVecInner<T, A> {
     }
 }
 
+#[derive(CheckBytes)]
 #[repr(transparent)]
-pub(crate) struct FragVecArc<T, A: Allocator>(NonNull<FragVecInner<T, A>>);
+pub struct ArchivedFragVecArc<T> {
+    data: ArchivedVec<T>,
+}
 
-impl<T: Serialize, A: Allocator> Serialize for FragVecArc<T, A> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let data = unsafe { FragVecInner::full_data(self.0) };
-        let mut seq = serializer.serialize_seq(Some(data.len()))?;
-        for elem in data {
-            seq.serialize_element(elem)?;
-        }
+pub struct FragVecResolver {
+    inner: VecResolver,
+}
 
-        seq.end()
+#[repr(transparent)]
+pub struct FragVecArc<T, A: Allocator = Global>(NonNull<FragVecInner<T, A>>);
+
+impl<T, A> Archive for FragVecArc<T, A>
+where
+    T: Archive + Clone,
+    A: Allocator + Default,
+{
+    type Archived = ArchivedFragVecArc<T::Archived>;
+
+    type Resolver = FragVecResolver;
+
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        ArchivedVec::resolve_from_slice(
+            FragVecInner::full_data(self.0),
+            pos,
+            resolver.inner,
+            out as *mut _,
+        );
     }
 }
 
-struct FragVecArcDeserializer<T, A: Allocator>(PhantomData<(T, A)>);
-
-impl<'de, T: Deserialize<'de>, A: Allocator + Default> Visitor<'de>
-    for FragVecArcDeserializer<T, A>
+impl<T, A, S> Serialize<S> for FragVecArc<T, A>
+where
+    T: Archive + Clone + Serialize<S>,
+    A: Allocator + Default,
+    S: ScratchSpace + ?Sized + Serializer,
 {
-    type Value = FragVecArc<T, A>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("FragVecArc key value sequence.")
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, <S as Fallible>::Error> {
+        ArchivedVec::<T::Archived>::serialize_from_slice(
+            unsafe { FragVecInner::full_data(self.0) },
+            serializer,
+        )
+        .map(|inner| FragVecResolver { inner })
     }
+}
 
-    fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-    where
-        S: SeqAccess<'de>,
-    {
-        let len = seq
-            .size_hint()
-            .ok_or_else(|| serde::de::Error::custom("size hint is required"))?;
-        let mut vec = FragVecArc(FragVecInner::<T, A>::with_capacity(len, A::default()));
-
-        let base = unsafe { FragVecInner::full_data_mut(vec.0) }.as_mut_ptr();
-        for index in 0..len {
-            let item = seq
-                .next_element()?
-                .ok_or_else(|| serde::de::Error::custom("capacity must be exhausted"))?;
+impl<T, A, D> Deserialize<FragVecArc<T, A>, D> for ArchivedFragVecArc<T::Archived>
+where
+    T::Archived: Deserialize<T, D>,
+    D: Fallible + ?Sized,
+    T: Clone + Archive + Sized,
+    A: Allocator + Default + Clone,
+{
+    fn deserialize(
+        &self,
+        deserializer: &mut D,
+    ) -> Result<FragVecArc<T, A>, <D as Fallible>::Error> {
+        let new = FragVecArc(FragVecInner::<T, A>::with_capacity(
+            self.data.len(),
+            A::default(),
+        ));
+        let base = unsafe { FragVecInner::get_item(new.0, 0) };
+        for (i, item) in self.data.iter().enumerate() {
+            let des = item.deserialize(deserializer)?;
             unsafe {
-                base.add(index).write(item);
-                // we gradually increment the counter to keep dropping sound in case of error
-                vec.0.as_mut().len += 1;
+                base.add(i).write(des);
+                *ptr::addr_of_mut!((*new.0.as_ptr()).len) += 1;
             }
         }
 
-        Ok(vec)
+        Ok(new)
     }
 }
 
-impl<'de, T: Deserialize<'de>, A: Allocator + Default> Deserialize<'de> for FragVecArc<T, A> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(FragVecArcDeserializer(PhantomData))
+pub struct ArcSwapArchiver;
+
+impl<T, S> ArchiveWith<ArcSwapAny<T, S>> for ArcSwapArchiver
+where
+    T: RefCnt + Archive,
+    S: Strategy<T>,
+{
+    type Archived = Archived<T>;
+
+    type Resolver = Resolver<T>;
+
+    unsafe fn resolve_with(
+        field: &ArcSwapAny<T, S>,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        let arc = field.load_full();
+        arc.resolve(pos, resolver, out)
+    }
+}
+
+impl<T, ST, S> SerializeWith<ArcSwapAny<T, ST>, S> for ArcSwapArchiver
+where
+    T: RefCnt + Serialize<S>,
+    ST: Strategy<T>,
+    S: ScratchSpace + Serializer + ?Sized,
+{
+    fn serialize_with(
+        field: &ArcSwapAny<T, ST>,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as Fallible>::Error> {
+        field.load_full().serialize(serializer)
+    }
+}
+
+impl<T, S, D> DeserializeWith<Archived<T>, ArcSwapAny<T, S>, D> for ArcSwapArchiver
+where
+    T::Archived: Deserialize<T, D>,
+    T: RefCnt + Archive,
+    S: Strategy<T> + Default,
+    D: Fallible + ?Sized,
+{
+    fn deserialize_with(
+        field: &Archived<T>,
+        deserializer: &mut D,
+    ) -> Result<ArcSwapAny<T, S>, <D as Fallible>::Error> {
+        field.deserialize(deserializer).map(|s| ArcSwapAny::new(s))
+    }
+}
+
+pub struct DashMapArchiver;
+
+impl<K, V, H> ArchiveWith<DashMap<K, V, H>> for DashMapArchiver
+where
+    K::Archived: Eq + Hash,
+    K: Archive + Eq + Hash + Clone,
+    V: Archive + Clone,
+    H: BuildHasher + Clone,
+{
+    type Archived = Archived<Vec<(K, V)>>;
+
+    type Resolver = Resolver<Vec<(K, V)>>;
+
+    unsafe fn resolve_with(
+        field: &DashMap<K, V, H>,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        let map = field
+            .iter()
+            .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
+            .collect::<Vec<_>>();
+        map.resolve(pos, resolver, out);
+    }
+}
+
+impl<K, V, S, H> SerializeWith<DashMap<K, V, H>, S> for DashMapArchiver
+where
+    K::Archived: Eq + Hash,
+    K: Archive + Eq + Hash + Clone + Serialize<S>,
+    V: Archive + Clone + Serialize<S>,
+    S: ScratchSpace + Serializer + ?Sized,
+    H: BuildHasher + Clone,
+{
+    fn serialize_with(
+        field: &DashMap<K, V, H>,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as Fallible>::Error> {
+        let map = field
+            .iter()
+            .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
+            .collect::<Vec<_>>();
+        map.serialize(serializer)
+    }
+}
+
+impl<K, V, D, H> DeserializeWith<Archived<Vec<(K, V)>>, DashMap<K, V, H>, D> for DashMapArchiver
+where
+    K::Archived: Eq + Hash,
+    K: Archive + Eq + Hash + Clone,
+    V: Archive + Clone,
+    <Vec<(K, V)> as Archive>::Archived: Deserialize<Vec<(K, V)>, D>,
+    D: Fallible + ?Sized,
+    H: BuildHasher + Default + Clone,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<(K, V)>>,
+        deserializer: &mut D,
+    ) -> Result<DashMap<K, V, H>, <D as Fallible>::Error> {
+        field
+            .deserialize(deserializer)
+            .map(|map| map.into_iter().collect())
+    }
+}
+
+pub struct SmallVecArchiver;
+
+impl<T: Archive + Clone> ArchiveWith<SmallVec<[T; 4]>> for SmallVecArchiver {
+    type Archived = Archived<Vec<T>>;
+
+    type Resolver = Resolver<Vec<T>>;
+
+    unsafe fn resolve_with(
+        field: &SmallVec<[T; 4]>,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        field.to_vec().resolve(pos, resolver, out)
+    }
+}
+
+impl<T, S> SerializeWith<SmallVec<[T; 4]>, S> for SmallVecArchiver
+where
+    T: Archive + Clone + Serialize<S>,
+    S: ScratchSpace + Serializer + ?Sized,
+{
+    fn serialize_with(
+        field: &SmallVec<[T; 4]>,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as Fallible>::Error> {
+        field.to_vec().serialize(serializer)
+    }
+}
+
+impl<T, D> DeserializeWith<Archived<Vec<T>>, SmallVec<[T; 4]>, D> for SmallVecArchiver
+where
+    <Vec<T> as Archive>::Archived: Deserialize<Vec<T>, D>,
+    T: Archive,
+    D: Fallible + ?Sized,
+{
+    fn deserialize_with(
+        field: &Archived<Vec<T>>,
+        deserializer: &mut D,
+    ) -> Result<SmallVec<[T; 4]>, <D as Fallible>::Error> {
+        field.deserialize(deserializer).map(|v| v.into())
     }
 }
 

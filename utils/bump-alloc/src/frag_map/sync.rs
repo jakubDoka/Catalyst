@@ -1,5 +1,4 @@
 use arc_swap::ArcSwapAny;
-use serde::{Deserialize, Serialize};
 use std::{
     any::TypeId,
     cell::UnsafeCell,
@@ -10,6 +9,7 @@ use std::{
 use crate::{DynFragMap, Relocated};
 
 use super::*;
+use bytecheck::CheckBytes;
 
 pub struct SyncFragMap<T, A: Allocator + Default = Global> {
     pub(crate) base: SyncFragBase<T, A>,
@@ -133,12 +133,9 @@ impl<T, A: Allocator + Default> Index<FragSlice<T>> for SyncFragMap<T, A> {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct SyncFragBase<T, A: Allocator + Default = Global> {
-    #[serde(bound(
-        serialize = "T: Serialize, A: Allocator + Default",
-        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
-    ))]
     pub(crate) views: Arc<[SyncFragView<T, A>]>,
 }
 
@@ -220,12 +217,10 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub(crate) struct SyncFragView<T, A: Allocator + Default> {
-    #[serde(bound(
-        serialize = "T: Serialize, A: Allocator + Default",
-        deserialize = "T: Deserialize<'de>, A: Allocator + Default"
-    ))]
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct SyncFragView<T, A: Allocator + Default = Global> {
+    #[with(ArcSwapArchiver)]
     pub(crate) inner: ArcSwapAny<FragVecArc<T, A>>,
     pub(crate) thread: u8,
     pub(crate) len: AtomicUsize,

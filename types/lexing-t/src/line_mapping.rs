@@ -1,8 +1,10 @@
 use std::{iter::once, ops::Range};
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+use bytecheck::CheckBytes;
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive_attr(derive(CheckBytes))]
 pub struct LineMapping {
     indices: Vec<u32>,
 }

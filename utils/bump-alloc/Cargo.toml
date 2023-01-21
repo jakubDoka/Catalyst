@@ -7,10 +7,11 @@ edition = "2021"
 
 [dependencies]
 region = "3.0.0"
-serde = { version = "1", features = ["derive", "rc"] }
 dashmap = "5.4.0"
-smallvec = { version = "1.10.0", features = ["union"] }
-arc-swap = { version = "1.5.1", features = ["serde"] }
+smallvec = { version = "1.10.0" }
+arc-swap = { version = "1.5.1" }
+bytecheck = "0.6.9"
+rkyv = { version = "0.7.39", features = ["validation", "copy"] }
 
 [features]
-default = ["dashmap/serde", "smallvec/serde", "arc-swap/serde"]
+default = ["rkyv/validation", "rkyv/copy", "smallvec/union"]

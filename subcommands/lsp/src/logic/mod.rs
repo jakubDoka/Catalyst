@@ -83,7 +83,7 @@ impl<'m> LspRuntime<'m> {
                     .map_err(|err| io::Error::new(io::ErrorKind::Unsupported, err))?,
                 isa: Isa::host(false)
                     .map_err(|err| io::Error::new(io::ErrorKind::Unsupported, err))?,
-                incremental_path: Some("incremental/lsp.cbor".into()),
+                incremental_path: Some("incremental/lsp.rkyv".into()),
                 max_cores: None,
                 dump_ir: false,
                 check: true,
@@ -415,7 +415,7 @@ impl<'m> LspRuntime<'m> {
 // ) -> Result<(RequestId, R::Params), ExtractError<lsp_server::Request>>
 // where
 //     R: lsp_types::request::Request,
-//     R::Params: serde::de::DeserializeOwned,
+//     R::Params: rkyv::de::DeserializeOwned,
 // {
 //     req.extract(R::METHOD)
 // }

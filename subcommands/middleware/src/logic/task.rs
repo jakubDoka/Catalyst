@@ -1,11 +1,14 @@
 use std::ops::{Deref, DerefMut};
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use super::*;
+use bytecheck::CheckBytes;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct TaskBase {
+    #[with(InternerArchiver)]
     pub interner: InternerBase,
     pub typec: TypecBase,
     pub gen: GenBase,

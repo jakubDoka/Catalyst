@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 
 storage = { path = "../../utils/storage" }
-serde = { version = "1", features = ["derive"] }
+bytecheck = "0.6.9"
+rkyv = { version = "0.7.39", features = ["validation", "copy"] }

@@ -211,6 +211,7 @@ impl TyChecker<'_> {
             self.typec.impl_lookup
                 .entry(group_key)
                 .or_default()
+                .inner
                 .push(impl_ent);
             Some(impl_ent)
         })

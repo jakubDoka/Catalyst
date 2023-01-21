@@ -6,7 +6,7 @@ use std::{
 };
 
 use bump_alloc::{bumpvec, BumpAllocRef};
-// use serde::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
+// use rkyv::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
 
 use crate::VRef;
 
@@ -121,7 +121,7 @@ impl<T, V: Clone> Clone for ShadowMap<T, V> {
 
 //     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
 //     where
-//         A: serde::de::SeqAccess<'de>,
+//         A: rkyv::de::SeqAccess<'de>,
 //     {
 //         let mut map = ShadowMap::new();
 //         while let Some(value) = seq.next_element::<(VRef<K>, V)>()? {
@@ -149,7 +149,7 @@ impl<T, V: Clone> Clone for ShadowMap<T, V> {
 // {
 //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 //     where
-//         S: serde::Serializer,
+//         S: rkyv::Serializer,
 //     {
 //         let mut seq = serializer.serialize_seq(None)?;
 //         // we do this in reverse to guarantee that deserialization will allocate just once

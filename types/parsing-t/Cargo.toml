@@ -14,4 +14,3 @@ lexing = { path = "../../stages/lexing"}
 lexing-t = { path = "../lexing-t" }
 packaging-t = { path = "../packaging-t" }
 diags = { path = "../diags" }
-serde = { version = "1", features = ["derive"] }

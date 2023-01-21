@@ -8,30 +8,47 @@ use std::{fmt::Write, sync::Arc};
 use std::{mem, ops::Deref};
 
 use crate::*;
+use bytecheck::CheckBytes;
 use diags::SourceLoc;
 use packaging_t::{Module, Resources};
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use storage::{dashmap::mapref::entry::Entry, *};
 
 pub type TypecLookup = CMap<Ident, ComputedTypecItem>;
-pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), SmallVec<[FragRef<Impl>; 4]>>;
+pub type ImplLookup = CMap<(FragRef<SpecBase>, Ty), ImplList>;
 pub type Implemented = CMap<ImplKey, (FragRef<Impl>, FragSlice<Ty>)>;
 pub type Macros = CMap<Ty, MacroImpl>;
 pub type MayNeedDrop = CMap<Ty, bool>;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Archive, Serialize, Deserialize, Default)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ImplList {
+    #[with(SmallVecArchiver)]
+    pub inner: SmallVec<[FragRef<Impl>; 4]>,
+}
+
+derive_relocated!(struct ImplList { inner });
+
+#[derive(Default, Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Mapping {
+    #[with(DashMapArchiver)]
     pub lookup: TypecLookup,
+    #[with(DashMapArchiver)]
     pub impl_lookup: ImplLookup,
+    #[with(DashMapArchiver)]
     pub implemented: Implemented,
+    #[with(DashMapArchiver)]
     pub macros: Macros,
+    #[with(DashMapArchiver)]
     pub may_need_drop: MayNeedDrop,
 }
 
 derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct TypecBase {
     pub cache: TypecCacheBase,
     pub mapping: Arc<Mapping>,
@@ -179,7 +196,8 @@ macro_rules! gen_cache {
             }
         )*
 
-        #[derive(Serialize, Deserialize)]
+        #[derive(Serialize, Deserialize, Archive)]
+        #[archive_attr(derive(CheckBytes))]
         pub struct TypecCacheBase {
             $(
                 pub $name: FragBase<$ty>,
@@ -957,7 +975,7 @@ impl Typec {
         let base_impls = self
             .impl_lookup
             .get(&(spec_base, ty_base))
-            .map(|i| i.to_owned())
+            .map(|i| i.inner.to_owned())
             .into_iter()
             .flatten();
 
@@ -1226,7 +1244,8 @@ pub enum SpecCmpError {
     Args(Ty, Ty),
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
@@ -1302,7 +1321,8 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
         .ok()
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct MacroImpl {
     pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
@@ -1313,7 +1333,8 @@ derive_relocated! {
     struct MacroImpl { r#impl params }
 }
 
-#[derive(Default, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }

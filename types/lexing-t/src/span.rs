@@ -1,12 +1,25 @@
 use std::ops::{Bound, Range, RangeBounds};
 
-use serde::{Deserialize, Serialize};
+use bytecheck::CheckBytes;
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// Identical to [`std::ops::Range`]<[`u32`]> but a lot more ergonomic
 /// since it is defined here.
 #[derive(
-    Default, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
+    Default,
+    Archive,
+    Deserialize,
+    Serialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
 )]
+#[archive_attr(derive(CheckBytes))]
 #[repr(C)]
 pub struct Span {
     pub start: u32,

@@ -4,6 +4,7 @@
 #![feature(default_free_fn)]
 #![feature(iter_collect_into)]
 #![feature(decl_macro)]
+#![feature(trivial_bounds)]
 
 mod logic;
 

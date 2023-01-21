@@ -8,7 +8,9 @@ use std::{
     env,
     error::Error,
     fmt::Write,
-    fs, iter, mem,
+    fs,
+    io::BufWriter,
+    iter, mem,
     num::NonZeroU8,
     os::unix::prelude::MetadataExt,
     path::*,
@@ -17,13 +19,25 @@ use std::{
     thread::{self, ScopedJoinHandle},
 };
 
+use bytecheck::CheckBytes;
+
 use cli::CliInput;
 use cranelift_codegen::{
     ir::{self, InstBuilder},
     Context,
 };
 use cranelift_frontend::FunctionBuilderContext;
-use serde::{Deserialize, Serialize};
+use rkyv::{
+    check_archived_root,
+    de::{deserializers::SharedDeserializeMap, SharedDeserializeRegistry},
+    ser::{
+        serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap, WriteSerializer},
+        ScratchSpace, Serializer, SharedSerializeRegistry,
+    },
+    validation::validators::DefaultValidator,
+    with::{AsStringError, Skip, UnixTimestampError},
+    Archive, Deserialize, Fallible, Serialize,
+};
 use snippet_display::annotate_snippets::display_list::FormatOptions;
 
 use crate::*;
@@ -58,23 +72,45 @@ impl Middleware {
             return Ok(());
         };
 
-        let bytes = serde_cbor::to_vec(
+        let Some(prefix) = path.parent() else {
+            return Err("empty path".into())
+        };
+        std::fs::create_dir_all(prefix)?;
+
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&path)?;
+        let writer = BufWriter::new(file);
+
+        let mut serializer = MiddlewareSerializer(CompositeSerializer::new(
+            WriteSerializer::new(writer),
+            AllocScratch::new(),
+            SharedSerializeMap::default(),
+        ));
+        serializer.serialize_value(
             self.incremental
                 .as_ref()
                 .ok_or_else(|| "incremental data is not present")?,
         )?;
 
-        let Some(prefix) = path.parent() else {
-            return Err("empty path".into())
-        };
-        std::fs::create_dir_all(prefix)?;
-        fs::write(path, bytes)?;
-
         Ok(())
     }
 
+    pub fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T, Box<dyn Error + Send + Sync>>
+    where
+        T: Archive,
+        T::Archived: 'a
+            + CheckBytes<DefaultValidator<'a>>
+            + Deserialize<T, MiddlewareDeserializer<SharedDeserializeMap>>,
+    {
+        Ok(check_archived_root::<'a, T>(bytes)
+            .map_err(|e| format!("{e}"))?
+            .deserialize(&mut MiddlewareDeserializer(SharedDeserializeMap::default()))?)
+    }
+
     pub fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let incr = serde_cbor::from_slice::<Incremental>(incremental)?;
+        let incr = Self::from_bytes::<Incremental>(incremental)?;
         if incr.exe_mod_time.is_none() || get_exe_mod_time() != incr.exe_mod_time {
             return Err("data is outdated".into());
         }
@@ -873,7 +909,7 @@ impl MiddlewareArgs {
             isa,
             incremental_path: cli_input
                 .value("incremental-path")
-                .or_else(|| Some("incemental/default.ctl"))
+                .or_else(|| Some("incremental/default.rkyv"))
                 .filter(|_| !cli_input.enabled("no-incremental"))
                 .map(|s| s.into()),
             max_cores: cli_input.value("max-cores").and_then(|s| s.parse().ok()),
@@ -983,12 +1019,13 @@ impl PackageTask {
 #[derive(Default)]
 pub struct GenTask {}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Incremental {
     pub exe_mod_time: Option<i64>,
     pub resources: Resources,
     pub task_base: TaskBase,
-    #[serde(skip)]
+    #[with(Skip)]
     pub worker_pool: Vec<Worker>,
     pub module_items: Map<VRef<Source>, ModuleItems>,
     pub builtin_functions: Vec<FragRef<Func>>,
@@ -1068,5 +1105,156 @@ fn swap_mir_types(
         let ty = dependant_types[mir_ty].ty;
         let new_ty = typec.instantiate(ty, params, interner);
         dependant_types[mir_ty].ty = new_ty;
+    }
+}
+
+pub struct MiddlewareSerializer<T: ?Sized>(T);
+
+impl<I: Serializer + ?Sized> Serializer for MiddlewareSerializer<I> {
+    fn pos(&self) -> usize {
+        self.0.pos()
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.0
+            .write(bytes)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    fn pad(&mut self, padding: usize) -> Result<(), Self::Error> {
+        self.0
+            .pad(padding)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    fn align(&mut self, align: usize) -> Result<usize, Self::Error> {
+        self.0
+            .align(align)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    fn align_for<T>(&mut self) -> Result<usize, Self::Error> {
+        self.0
+            .align_for::<T>()
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    unsafe fn resolve_aligned<T: Archive + ?Sized>(
+        &mut self,
+        value: &T,
+        resolver: T::Resolver,
+    ) -> Result<usize, Self::Error> {
+        self.0
+            .resolve_aligned(value, resolver)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    unsafe fn resolve_unsized_aligned<T: rkyv::ArchiveUnsized + ?Sized>(
+        &mut self,
+        value: &T,
+        to: usize,
+        metadata_resolver: T::MetadataResolver,
+    ) -> Result<usize, Self::Error> {
+        self.0
+            .resolve_unsized_aligned(value, to, metadata_resolver)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+}
+
+impl<T: ScratchSpace> ScratchSpace for MiddlewareSerializer<T> {
+    unsafe fn push_scratch(
+        &mut self,
+        layout: std::alloc::Layout,
+    ) -> Result<std::ptr::NonNull<[u8]>, Self::Error> {
+        self.0
+            .push_scratch(layout)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+
+    unsafe fn pop_scratch(
+        &mut self,
+        ptr: std::ptr::NonNull<u8>,
+        layout: std::alloc::Layout,
+    ) -> Result<(), Self::Error> {
+        self.0
+            .pop_scratch(ptr, layout)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+}
+
+impl<T: SharedSerializeRegistry> SharedSerializeRegistry for MiddlewareSerializer<T> {
+    fn get_shared_ptr(&self, value: *const u8) -> Option<usize> {
+        self.0.get_shared_ptr(value)
+    }
+
+    fn add_shared_ptr(&mut self, value: *const u8, pos: usize) -> Result<(), Self::Error> {
+        self.0
+            .add_shared_ptr(value, pos)
+            .map_err(MiddlewareSerializerError::Inner)
+    }
+}
+
+impl<T: Fallible + ?Sized> Fallible for MiddlewareSerializer<T> {
+    type Error = MiddlewareSerializerError<T::Error>;
+}
+
+#[derive(Debug)]
+pub enum MiddlewareSerializerError<R> {
+    Inner(R),
+    UnixTimestamp(UnixTimestampError),
+    AsString(AsStringError),
+    NonMax(NonMaxError),
+}
+
+impl<R> From<UnixTimestampError> for MiddlewareSerializerError<R> {
+    fn from(value: UnixTimestampError) -> Self {
+        Self::UnixTimestamp(value)
+    }
+}
+
+impl<R> From<AsStringError> for MiddlewareSerializerError<R> {
+    fn from(value: AsStringError) -> Self {
+        Self::AsString(value)
+    }
+}
+
+impl<R> From<NonMaxError> for MiddlewareSerializerError<R> {
+    fn from(value: NonMaxError) -> Self {
+        Self::NonMax(value)
+    }
+}
+
+impl<R: fmt::Display> fmt::Display for MiddlewareSerializerError<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MiddlewareSerializerError::Inner(inner) => write!(f, "{}", inner),
+            MiddlewareSerializerError::UnixTimestamp(u) => write!(f, "{}", u),
+            MiddlewareSerializerError::AsString(s) => write!(f, "{}", s),
+            MiddlewareSerializerError::NonMax(..) => write!(f, "Non max integer is at MAX"),
+        }
+    }
+}
+
+impl<R: fmt::Display + fmt::Debug> Error for MiddlewareSerializerError<R> {}
+
+pub struct MiddlewareDeserializer<T>(T);
+
+impl<I: Fallible> Fallible for MiddlewareDeserializer<I> {
+    type Error = MiddlewareSerializerError<I::Error>;
+}
+
+impl<I: SharedDeserializeRegistry> SharedDeserializeRegistry for MiddlewareDeserializer<I> {
+    fn get_shared_ptr(&mut self, ptr: *const u8) -> Option<&dyn rkyv::de::SharedPointer> {
+        self.0.get_shared_ptr(ptr)
+    }
+
+    fn add_shared_ptr(
+        &mut self,
+        ptr: *const u8,
+        shared: Box<dyn rkyv::de::SharedPointer>,
+    ) -> Result<(), Self::Error> {
+        self.0
+            .add_shared_ptr(ptr, shared)
+            .map_err(MiddlewareSerializerError::Inner)
     }
 }

@@ -1,9 +1,10 @@
 use std::collections::hash_map;
 
+use bytecheck::CheckBytes;
 use diags::SourceLoc;
 use lexing_t::*;
 use packaging_t::{Module, Resources, Source};
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
 use crate::*;
@@ -208,7 +209,8 @@ impl ScopeRecord {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct ModuleItem {
     pub id: Ident,
     pub ptr: ModuleItemPtr,
@@ -229,7 +231,8 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub enum ModuleItemPtr {
     Func(FragRef<Func>),
     Ty(Ty),

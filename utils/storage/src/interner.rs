@@ -6,13 +6,30 @@ use std::{
 };
 
 use bump_alloc::dashmap::mapref::entry::Entry;
-use serde::{ser::SerializeTupleStruct, Deserialize, Serialize};
+use rkyv::{
+    ser::{ScratchSpace, Serializer, SharedSerializeRegistry},
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
+};
 
 use crate::*;
 
 #[derive(
-    Clone, Serialize, Deserialize, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash,
+    Clone,
+    Archive,
+    Serialize,
+    Deserialize,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Default,
+    Hash,
 )]
+#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(CheckBytes))]
 pub struct Ident(FragSlice<u8>);
 
 derive_relocated!(
@@ -142,41 +159,6 @@ impl Interner {
     }
 }
 
-impl Serialize for InternerBase {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let map = self
-            .map
-            .iter()
-            .map(|entry| entry.value().to_owned())
-            .collect::<Vec<_>>();
-
-        let mut tuple = serializer.serialize_tuple_struct("InternerBase", 2)?;
-        tuple.serialize_field(&map)?;
-        tuple.serialize_field(&self.frag_base)?;
-        tuple.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for InternerBase {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let (map, base) = <(Vec<FragSlice<u8>>, SyncFragBase<u8>)>::deserialize(deserializer)?;
-        Ok(Self {
-            map: map
-                .into_iter()
-                .map(|slice| (unsafe { FragSliceKey::from_base(&base, slice) }, slice))
-                .collect::<CMap<_, _>>()
-                .into(),
-            frag_base: base,
-        })
-    }
-}
-
 impl Index<Ident> for Interner {
     type Output = str;
 
@@ -185,6 +167,80 @@ impl Index<Ident> for Interner {
             let slice = &self.frag_map[ident.0];
             std::str::from_utf8_unchecked(slice)
         }
+    }
+}
+
+use bytecheck::CheckBytes;
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ArchivedInterner {
+    slices: Vec<FragSlice<u8>>,
+    data: SyncFragBase<u8>,
+}
+
+impl ArchivedInterner {
+    pub fn from_interner(interner: &InternerBase) -> Self {
+        Self {
+            slices: interner
+                .map
+                .iter()
+                .map(|entry| entry.value().to_owned())
+                .collect(),
+            data: interner.frag_base.clone(),
+        }
+    }
+
+    pub fn to_interner(self) -> InternerBase {
+        InternerBase {
+            map: Arc::new(
+                self.slices
+                    .into_iter()
+                    .map(|s| (unsafe { FragSliceKey::from_base(&self.data, s) }, s))
+                    .collect(),
+            ),
+            frag_base: self.data,
+        }
+    }
+}
+
+pub struct InternerArchiver;
+
+impl ArchiveWith<InternerBase> for InternerArchiver {
+    type Archived = Archived<ArchivedInterner>;
+
+    type Resolver = Resolver<ArchivedInterner>;
+
+    unsafe fn resolve_with(
+        field: &InternerBase,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        ArchivedInterner::from_interner(field).resolve(pos, resolver, out)
+    }
+}
+
+impl<S: SharedSerializeRegistry + Serializer + ?Sized + ScratchSpace> SerializeWith<InternerBase, S>
+    for InternerArchiver
+{
+    fn serialize_with(
+        field: &InternerBase,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+        ArchivedInterner::from_interner(field).serialize(serializer)
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<ArchivedInterner>, InternerBase, D>
+    for InternerArchiver
+where
+    <ArchivedInterner as Archive>::Archived: Deserialize<ArchivedInterner, D>,
+{
+    fn deserialize_with(
+        field: &Archived<ArchivedInterner>,
+        deserializer: &mut D,
+    ) -> Result<InternerBase, <D as Fallible>::Error> {
+        field.deserialize(deserializer).map(|a| a.to_interner())
     }
 }
 
@@ -235,11 +291,11 @@ mod test {
 
     //     let mut buf = Vec::new();
     //     interner
-    //         .serialize(&mut rmp_serde::encode::Serializer::new(&mut buf))
+    //         .serialize(&mut rmp_rkyv::encode::Serializer::new(&mut buf))
     //         .unwrap();
 
     //     let interner2 =
-    //         Interner::deserialize(&mut rmp_serde::decode::Deserializer::new(buf.as_slice()))
+    //         Interner::deserialize(&mut rmp_rkyv::decode::Deserializer::new(buf.as_slice()))
     //             .unwrap();
 
     //     assert_eq!(&interner2[a], "a");

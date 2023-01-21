@@ -1,13 +1,16 @@
 use std::mem;
 
-use serde::{Deserialize, Serialize};
+use bytecheck::CheckBytes;
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 
 macro_rules! gen_non_max {
     ($($name:ident($ty:ty, $max:literal);)*) => {
         $(
             #[repr(transparent)]
             #[rustc_layout_scalar_valid_range_end($max)]
-            #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+            #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Archive, Serialize)]
+            #[archive_attr(derive(Hash, PartialEq, Eq))]
+            #[archive_attr(derive(CheckBytes))]
             pub struct $name($ty);
 
             impl Default for $name {
@@ -44,28 +47,23 @@ macro_rules! gen_non_max {
                 }
             }
 
-            impl Serialize for $name {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: serde::Serializer,
-                {
-                    self.0.serialize(serializer)
-                }
-            }
-
-            impl<'de> Deserialize<'de> for $name {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: serde::Deserializer<'de>,
-                {
-                    Self::new(<$ty>::deserialize(deserializer)?)
-                        .ok_or_else(|| serde::de::Error::custom("invalid value"))
-                }
-            }
-
             const _: () = assert!($name::new(<$ty>::MAX).is_none());
             const _: () = assert!(mem::size_of::<Option<$name>>() == mem::size_of::<$name>());
+
+
+            impl<D: Fallible> Deserialize<$name, D> for Archived<$name>
+            where
+                D::Error: From<NonMaxError>,
+            {
+                fn deserialize(&self, _deserializer: &mut D) -> Result<$name, <D as Fallible>::Error> {
+                    $name::new(self.0)
+                        .ok_or(NonMaxError)
+                        .map_err(Into::into)
+                }
+            }
         )*
+
+
     };
 }
 
@@ -75,7 +73,14 @@ gen_non_max!(
     NonMaxU16(u16, /* 1 << 16 - 2 */ 65_534);
 );
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Deserialize, Serialize)]
+#[derive(Debug)]
+pub struct NonMaxError;
+
+#[derive(
+    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Archive, Serialize, Deserialize,
+)]
+#[archive_attr(derive(CheckBytes))]
+#[archive_attr(derive(Hash, Eq, PartialEq))]
 pub struct FragAddr {
     pub index: u32,
     pub thread: u8,
@@ -109,8 +114,21 @@ impl FragAddr {
 }
 
 #[derive(
-    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug, Default, Deserialize, Serialize,
+    Copy,
+    Clone,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    Default,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
+#[archive_attr(derive(CheckBytes))]
+#[archive_attr(derive(Hash, Eq, PartialEq))]
 pub struct FragSliceAddr {
     pub index: u32,
     pub thread: u8,

@@ -1,6 +1,7 @@
 #![feature(iter_intersperse)]
 #![feature(default_free_fn)]
 #![feature(drain_filter)]
+#![feature(trivial_bounds)]
 
 #[macro_export]
 macro_rules! span_str {

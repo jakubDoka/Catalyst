@@ -1,25 +1,31 @@
 use lexing_t::*;
-use serde::{Deserialize, Serialize};
+use rkyv::{
+    with::{AsString, Skip, UnixTimestamp},
+    Archive, Deserialize, Serialize,
+};
 
 use std::{default::default, path::*, time::SystemTime};
 use storage::*;
+
+use bytecheck::CheckBytes;
 
 pub type PackageGraph = graphs::CycleDetector;
 
 const BUILTIN_PACKAGE_SOURCE: &str = include_str!("water_drops.ctl");
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Archive)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Resources {
     pub sources: PoolMap<Source>,
-    #[serde(skip)]
+    #[with(Skip)]
     pub packages: PushMap<Package>,
-    #[serde(skip)]
+    #[with(Skip)]
     pub modules: PushMap<Module>,
-    #[serde(skip)]
+    #[with(Skip)]
     pub package_deps: PushMap<Dep<Package>>,
-    #[serde(skip)]
+    #[with(Skip)]
     pub module_deps: PushMap<Dep<Module>>,
-    #[serde(skip)]
+    #[with(Skip)]
     pub module_order: Vec<VRef<Module>>,
 }
 
@@ -113,9 +119,12 @@ impl Resources {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Archive, Serialize, Deserialize, Debug)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Source {
+    #[with(AsString)]
     pub path: PathBuf,
+    #[with(UnixTimestamp)]
     pub last_modified: SystemTime,
     pub content: String,
     pub line_mapping: LineMapping,
@@ -133,7 +142,7 @@ impl Source {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Clone)]
 pub struct Package {
     pub root_module: PathBuf,
     pub root_module_span: Span,
@@ -142,7 +151,7 @@ pub struct Package {
     pub is_external: bool,
 }
 
-#[derive(Deserialize, Serialize, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Module {
     pub package: VRef<Package>,
     pub ordering: usize,
@@ -150,7 +159,6 @@ pub struct Module {
     pub source: VRef<Source>,
 }
 
-#[derive(Deserialize, Serialize)]
 pub struct Dep<T: ?Sized> {
     pub vis: Option<Vis>,
     pub name_span: Span,

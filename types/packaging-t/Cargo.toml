@@ -10,4 +10,5 @@ storage = { path = "../../utils/storage" }
 graphs = { path = "../../utils/graphs" }
 
 lexing-t = { path = "../lexing-t" }
-serde = { version = "1", features = ["derive"] }
+bytecheck = "0.6.9"
+rkyv = { version = "0.7.39", features = ["validation", "copy"] }

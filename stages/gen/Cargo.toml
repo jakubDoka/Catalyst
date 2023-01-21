@@ -14,6 +14,8 @@ diags = { version = "0.1.0", path = "../../types/diags" }
 typec-t = { version = "0.1.0", path = "../../types/typec-t" }
 lexing = { version = "0.1.0", path = "../../stages/lexing" }
 
+bytecheck = "0.6.9"
+rkyv = { version = "0.7.39", features = ["validation", "copy"] }
 region = "3.0.0"
 target-lexicon = "0.12.4"
 object = { version = "0.29.0", default-features = false, features = ["write"] }
@@ -21,5 +23,4 @@ cc = "1.0.73"
 windows-sys = { version = "0.42.0", features = ["Win32", "Win32_Foundation", "Win32_System_LibraryLoader"] }
 cranelift-codegen = { version = "0.90.0", features = ["enable-serde"] }
 cranelift-frontend = "0.90.0"
-serde = { version = "1", features = ["derive", "rc"] }
 libc = "0.2.139"

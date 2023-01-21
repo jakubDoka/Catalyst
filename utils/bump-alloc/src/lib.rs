@@ -32,20 +32,20 @@ pub use {
     arena::Arena,
     dashmap,
     frag_map::{
-        addr::{FragAddr, FragSliceAddr, NonMaxU16, NonMaxU32, NonMaxU64},
+        addr::{FragAddr, FragSliceAddr, NonMaxError, NonMaxU16, NonMaxU32, NonMaxU64},
         relocator::{
             DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker,
             FragRelocator, Relocated, RelocatedObjects,
         },
-        sync::{FragSliceKey, SyncFragBase, SyncFragMap},
-        FragBase, FragMap,
+        sync::{FragSliceKey, SyncFragBase, SyncFragMap, SyncFragView},
+        ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, SmallVecArchiver,
     },
     map::{CMap, CSet, Map, Set},
     primitives::{
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
     },
-    serde, smallvec,
+    smallvec,
 };
 
 mod map {
@@ -56,6 +56,7 @@ mod map {
     };
 
     use dashmap::{DashMap, DashSet};
+    use rkyv::{Archive, Deserialize, Serialize};
 
     pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
     pub type CMap<K, V> = DashMap<K, V, FvnBuildHasher>;
@@ -65,7 +66,7 @@ mod map {
     const FVN_PRIME: u64 = 0x00000100000001B3;
     const FVN_OFFSET: u64 = 0xcbf29ce484222325;
 
-    #[derive(Default, Clone, Copy)]
+    #[derive(Default, Clone, Copy, Archive, Serialize, Deserialize)]
     pub struct FvnBuildHasher;
 
     impl BuildHasher for FvnBuildHasher {

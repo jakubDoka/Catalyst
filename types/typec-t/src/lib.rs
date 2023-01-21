@@ -13,6 +13,7 @@
 #![feature(is_sorted)]
 #![feature(try_blocks)]
 #![feature(never_type)]
+#![feature(trivial_bounds)]
 
 use storage::gen_v_ref_constants;
 
@@ -85,8 +86,8 @@ pub use {
         SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
     },
     typec::{
-        lookup_water_drop, sorted_water_drops, ImplLookup, Implemented, Loc, MacroImpl, Macros,
-        Mapping, MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase,
+        lookup_water_drop, sorted_water_drops, ImplList, ImplLookup, Implemented, Loc, MacroImpl,
+        Macros, Mapping, MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase,
         TypecCache, TypecCacheBase, TypecCtxSlice, TypecLookup,
     },
 };

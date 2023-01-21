@@ -9,7 +9,7 @@ use std::{
 
 use cranelift_codegen::{
     binemit::{CodeOffset, Reloc},
-    ir::{self, types, ExternalName, Type, UserExternalName},
+    ir::{self, types, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
     isa::{self, CallConv, LookupError, TargetIsa},
     settings, CodegenError, Context,
 };
@@ -17,18 +17,33 @@ use cranelift_codegen::{
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
 
-use serde::{Deserialize, Serialize};
+use bytecheck::CheckBytes;
+use rkyv::{
+    ser::{ScratchSpace, Serializer},
+    with::{ArchiveWith, DeserializeWith, SerializeWith},
+    Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
+};
 use storage::{arc_swap::ArcSwapOption, *};
 use target_lexicon::Triple;
 use typec_t::*;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Archive, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct GenBase {
-    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
+    lookup: Arc<GenLookup>,
     funcs: SyncFragBase<CompiledFunc>,
 }
 
 derive_relocated!(struct GenBase { lookup });
+
+#[derive(Serialize, Archive, Deserialize, Default)]
+#[archive_attr(derive(CheckBytes))]
+pub struct GenLookup {
+    #[with(DashMapArchiver)]
+    inner: CMap<Ident, (FragRef<CompiledFunc>, bool)>,
+}
+
+derive_relocated!(struct GenLookup { inner });
 
 impl GenBase {
     pub fn new(thread_count: u8) -> Self {
@@ -52,26 +67,30 @@ impl GenBase {
     }
 
     pub fn prepare(&mut self) {
-        self.lookup.iter_mut().for_each(|mut item| item.1 = true);
+        self.lookup
+            .inner
+            .iter_mut()
+            .for_each(|mut item| item.1 = true);
     }
 
     fn reallocate(&mut self) {
-        self.lookup.retain(|_, (.., unused)| !*unused);
+        self.lookup.inner.retain(|_, (.., unused)| !*unused);
     }
 }
 
 pub struct Gen {
-    lookup: Arc<CMap<Ident, (FragRef<CompiledFunc>, bool)>>,
+    lookup: Arc<GenLookup>,
     funcs: SyncFragMap<CompiledFunc>,
 }
 
 impl Gen {
     pub fn get(&self, id: Ident) -> Option<FragRef<CompiledFunc>> {
-        self.lookup.get(&id).map(|value| value.0)
+        self.lookup.inner.get(&id).map(|value| value.0)
     }
 
     pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> FragRef<CompiledFunc> {
         self.lookup
+            .inner
             .entry(id)
             .and_modify(|(compiled, unused)| {
                 self.funcs[*compiled].set_func(func);
@@ -134,10 +153,12 @@ impl Index<FragRef<CompiledFunc>> for Gen {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Archive, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct CompiledFunc {
     func: AtomicU64,
     pub name: Ident,
+    #[with(ArcSwapArchiver)]
     pub inner: ArcSwapOption<CompiledFuncInner>,
 }
 
@@ -182,12 +203,144 @@ impl Relocated for CompiledFunc {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Archive, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct CompiledFuncInner {
+    #[with(SignatureArchiver)]
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
+}
+
+pub struct SignatureArchiver;
+
+impl ArchiveWith<ir::Signature> for SignatureArchiver {
+    type Archived = Archived<ArchivedSignature>;
+
+    type Resolver = Resolver<ArchivedSignature>;
+
+    unsafe fn resolve_with(
+        field: &ir::Signature,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        ArchivedSignature::from_signature(field).resolve(pos, resolver, out)
+    }
+}
+
+impl<S: ScratchSpace + Serializer + ?Sized> SerializeWith<ir::Signature, S> for SignatureArchiver {
+    fn serialize_with(
+        field: &ir::Signature,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as Fallible>::Error> {
+        ArchivedSignature::from_signature(field).serialize(serializer)
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<ArchivedSignature>, ir::Signature, D>
+    for SignatureArchiver
+where
+    <ArchivedSignature as Archive>::Archived: Deserialize<ArchivedSignature, D>,
+{
+    fn deserialize_with(
+        field: &Archived<ArchivedSignature>,
+        deserializer: &mut D,
+    ) -> Result<ir::Signature, <D as Fallible>::Error> {
+        field
+            .deserialize(deserializer)
+            .map(|a| a.into_ir_signature())
+    }
+}
+
+#[derive(Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ArchivedSignature {
+    #[with(CallConvArchiver)]
+    cc: CallConv,
+    args: Vec<(u16, bool)>,
+    ret: Option<u16>,
+}
+
+impl ArchivedSignature {
+    pub fn from_signature(sig: &ir::Signature) -> Self {
+        Self {
+            cc: sig.call_conv,
+            args: sig
+                .params
+                .iter()
+                .map(|p| {
+                    (
+                        unsafe { mem::transmute(p.value_type) },
+                        p.purpose == ArgumentPurpose::StructReturn,
+                    )
+                })
+                .collect(),
+            ret: sig
+                .returns
+                .first()
+                .map(|r| unsafe { mem::transmute(r.value_type) }),
+        }
+    }
+
+    pub fn into_ir_signature(self) -> ir::Signature {
+        ir::Signature {
+            params: self
+                .args
+                .into_iter()
+                .map(|(ty, is_struct_ret)| match is_struct_ret {
+                    true => ir::AbiParam::special(
+                        unsafe { mem::transmute(ty) },
+                        ArgumentPurpose::StructReturn,
+                    ),
+                    false => ir::AbiParam::new(unsafe { mem::transmute(ty) }),
+                })
+                .collect(),
+            returns: self
+                .ret
+                .map(|r| ir::AbiParam::new(unsafe { mem::transmute(r) }))
+                .into_iter()
+                .collect(),
+            call_conv: self.cc,
+        }
+    }
+}
+
+pub struct CallConvArchiver;
+
+impl ArchiveWith<CallConv> for CallConvArchiver {
+    type Archived = Archived<u8>;
+
+    type Resolver = Resolver<u8>;
+
+    unsafe fn resolve_with(
+        field: &CallConv,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
+    }
+}
+
+impl<S: Serializer + ?Sized> SerializeWith<CallConv, S> for CallConvArchiver {
+    fn serialize_with(
+        field: &CallConv,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+        // SAFETY: ther is none
+        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, CallConv, D> for CallConvArchiver {
+    fn deserialize_with(
+        field: &Archived<u8>,
+        _deserializer: &mut D,
+    ) -> Result<CallConv, <D as rkyv::Fallible>::Error> {
+        Ok(unsafe { mem::transmute_copy::<_, CallConv>(field) })
+    }
 }
 
 #[derive(Debug)]
@@ -498,12 +651,14 @@ impl Layout {
 // relocs
 //////////////////////////////////
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Archive, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
 pub struct GenReloc {
     /// The offset at which the relocation applies, *relative to the
     /// containing section*.
     pub offset: CodeOffset,
     /// The kind of relocation.
+    #[with(RelocArchiver)]
     pub kind: Reloc,
     /// The external symbol / name to which this relocation refers.
     pub name: GenItemName,
@@ -511,11 +666,85 @@ pub struct GenReloc {
     pub addend: isize,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct RelocArchiver;
+
+impl ArchiveWith<Reloc> for RelocArchiver {
+    type Archived = Archived<u8>;
+
+    type Resolver = Resolver<u8>;
+
+    unsafe fn resolve_with(
+        field: &Reloc,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
+    }
+}
+
+impl<S: Serializer + ?Sized> SerializeWith<Reloc, S> for RelocArchiver {
+    fn serialize_with(
+        field: &Reloc,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+        // SAFETY: ther is none
+        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, Reloc, D> for RelocArchiver {
+    fn deserialize_with(
+        field: &Archived<u8>,
+        _deserializer: &mut D,
+    ) -> Result<Reloc, <D as rkyv::Fallible>::Error> {
+        Ok(unsafe { mem::transmute_copy::<_, Reloc>(field) })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
 pub enum GenItemName {
     Func(FragRef<CompiledFunc>),
-    LibCall(ir::LibCall),
+    LibCall(#[with(LibCallArchiver)] ir::LibCall),
 }
+
+pub struct LibCallArchiver;
+
+impl ArchiveWith<LibCall> for LibCallArchiver {
+    type Archived = Archived<u8>;
+
+    type Resolver = Resolver<u8>;
+
+    unsafe fn resolve_with(
+        field: &LibCall,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
+    }
+}
+
+impl<S: Serializer + ?Sized> SerializeWith<LibCall, S> for LibCallArchiver {
+    fn serialize_with(
+        field: &LibCall,
+        serializer: &mut S,
+    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
+        // SAFETY: ther is none
+        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
+    }
+}
+
+impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, LibCall, D> for LibCallArchiver {
+    fn deserialize_with(
+        field: &Archived<u8>,
+        _deserializer: &mut D,
+    ) -> Result<LibCall, <D as rkyv::Fallible>::Error> {
+        Ok(unsafe { mem::transmute_copy::<_, LibCall>(field) })
+    }
+}
+
 impl GenItemName {
     pub const FUNC_FLAG: u16 = 1;
 

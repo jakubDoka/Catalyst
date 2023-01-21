@@ -1,9 +1,13 @@
 use std::{
     fmt::Debug,
+    hash::Hash,
     marker::PhantomData,
     mem::{discriminant, transmute},
     ops::Range,
 };
+
+use bytecheck::CheckBytes;
+use rkyv::with::Skip;
 
 macro_rules! gen_derives {
     ($ident:ident) => {
@@ -59,12 +63,24 @@ macro_rules! gen_derives {
 }
 
 #[repr(transparent)]
-#[derive(Serialize, Deserialize)]
-pub struct FragRef<T: ?Sized>(
-    #[serde(bound(serialize = "T:", deserialize = "T:"))] pub(crate) FragAddr,
-    pub(crate) PhantomData<*const T>,
-);
+#[derive(Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragRef);
+
+impl<T: ?Sized> Hash for ArchivedFragRef<T> {
+    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: ?Sized> PartialEq for ArchivedFragRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: ?Sized> Eq for ArchivedFragRef<T> {}
 
 impl<T: ?Sized> FragRef<T> {
     pub const fn new(addr: FragAddr) -> Self {
@@ -90,12 +106,24 @@ impl<T: ?Sized> FragRef<T> {
 
 pub type OptFragRef<T> = Option<FragRef<T>>;
 
-#[derive(Serialize, Deserialize)]
-pub struct FragSlice<T: ?Sized>(
-    #[serde(bound(serialize = "T:", deserialize = "T:"))] pub(crate) FragSliceAddr,
-    pub(crate) PhantomData<*const T>,
-);
+#[derive(Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragSlice);
+
+impl<T: ?Sized> Hash for ArchivedFragSlice<T> {
+    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: ?Sized> PartialEq for ArchivedFragSlice<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: ?Sized> Eq for ArchivedFragSlice<T> {}
 
 pub type FragRefSlice<T> = FragSlice<FragRef<T>>;
 
@@ -202,7 +230,7 @@ where
     }
 }
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{frag_map::addr::NonMaxU32, FragAddr, FragSliceAddr};
 
@@ -213,11 +241,23 @@ pub trait VRefDefault {
 }
 
 #[repr(transparent)]
-#[derive(Serialize, Deserialize)]
-pub struct VRef<T: ?Sized>(
-    #[serde(bound(serialize = "T:", deserialize = "T:"))] NonMaxU32,
-    PhantomData<*const T>,
-);
+#[derive(Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
+
+impl<T: ?Sized> Hash for ArchivedVRef<T> {
+    fn hash<H: ~const std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: ?Sized> PartialEq for ArchivedVRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: ?Sized> Eq for ArchivedVRef<T> {}
 
 pub type OptVRef<T> = Option<VRef<T>>;
 
@@ -271,12 +311,9 @@ impl const ReprComply for u32 {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct VSlice<T: ?Sized>(
-    #[serde(bound(serialize = "T:", deserialize = "T:"))] u32,
-    u32,
-    PhantomData<*const T>,
-);
+#[derive(Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct VSlice<T: ?Sized>(u32, u32, #[with(Skip)] PhantomData<*const T>);
 
 impl<T> VSlice<T> {
     /// Creates new VSlice from index.
