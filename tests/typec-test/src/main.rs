@@ -419,5 +419,20 @@ fn main() {
                 sum::[uint]() - uint::A::a() - uint::B::a()
             };
         }
+
+        simple "loop-outsider" {
+            use { "builtin" };
+            struct W;
+            impl Drop for W {fn drop(_: ^mut Self) {}};
+            impl W {fn do_something(_: ^mut Self) {}};
+
+            #[entry];
+            fn main {
+                let mut window = W::{};
+                loop if true => break else {;
+                    window.do_something()
+                }
+            }
+        }
     }
 }

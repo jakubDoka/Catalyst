@@ -9,6 +9,7 @@ macro_rules! gen_test {
         $parallel:literal,
         $($($type:ident)? $name:literal $structure:tt)*
     ) => {
+        $crate::fmt::QuickTimer::set_enabled(false);
         std::thread::scope(|h| {
             fn testable<T: $crate::items::Testable>() {}
             testable::<$test_struct>();

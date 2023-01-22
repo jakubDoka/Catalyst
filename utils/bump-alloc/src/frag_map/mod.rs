@@ -7,6 +7,7 @@
 
 use std::{
     alloc::{Allocator, Global, Layout},
+    borrow::Borrow,
     hash::{BuildHasher, Hash},
     iter, mem,
     ops::{Index, IndexMut, Range},
@@ -17,8 +18,9 @@ use std::{
 };
 
 use arc_swap::{strategy::Strategy, ArcSwapAny, RefCnt};
-use dashmap::DashMap;
+use dashmap::{mapref::multiple::RefMulti, DashMap};
 use rkyv::{
+    out_field,
     ser::{ScratchSpace, Serializer},
     vec::{ArchivedVec, VecResolver},
     with::{ArchiveWith, DeserializeWith, SerializeWith},
@@ -639,9 +641,9 @@ where
     V: Archive + Clone,
     H: BuildHasher + Clone,
 {
-    type Archived = Archived<Vec<(K, V)>>;
+    type Archived = (ArchivedVec<K::Archived>, ArchivedVec<V::Archived>);
 
-    type Resolver = Resolver<Vec<(K, V)>>;
+    type Resolver = (VecResolver, VecResolver);
 
     unsafe fn resolve_with(
         field: &DashMap<K, V, H>,
@@ -649,11 +651,10 @@ where
         resolver: Self::Resolver,
         out: *mut Self::Archived,
     ) {
-        let map = field
-            .iter()
-            .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
-            .collect::<Vec<_>>();
-        map.resolve(pos, resolver, out);
+        let (off_a, a) = out_field!(out.0);
+        ArchivedVec::resolve_from_len(field.len(), pos + off_a, resolver.0, a);
+        let (off_a, a) = out_field!(out.1);
+        ArchivedVec::resolve_from_len(field.len(), pos + off_a, resolver.1, a);
     }
 }
 
@@ -669,30 +670,71 @@ where
         field: &DashMap<K, V, H>,
         serializer: &mut S,
     ) -> Result<Self::Resolver, <S as Fallible>::Error> {
-        let map = field
-            .iter()
-            .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
-            .collect::<Vec<_>>();
-        map.serialize(serializer)
+        struct CustomSizeHint<I>(I, usize);
+
+        impl<I: Iterator> Iterator for CustomSizeHint<I> {
+            type Item = I::Item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next()
+            }
+        }
+
+        impl<I: Iterator> ExactSizeIterator for CustomSizeHint<I> {
+            fn len(&self) -> usize {
+                self.1
+            }
+        }
+
+        struct KeyBorrow<'a, K, V, S>(RefMulti<'a, K, V, S>);
+
+        impl<'a, K: Hash + Eq, V, S: BuildHasher> Borrow<K> for KeyBorrow<'a, K, V, S> {
+            fn borrow(&self) -> &K {
+                self.0.key()
+            }
+        }
+        struct ValueBorrow<'a, K, V, S>(RefMulti<'a, K, V, S>);
+
+        impl<'a, K: Hash + Eq, V, S: BuildHasher> Borrow<V> for ValueBorrow<'a, K, V, S> {
+            fn borrow(&self) -> &V {
+                self.0.value()
+            }
+        }
+
+        Ok((
+            ArchivedVec::serialize_from_iter::<K, _, _, _>(
+                CustomSizeHint(field.iter().map(|entry| KeyBorrow(entry)), field.len()),
+                serializer,
+            )?,
+            ArchivedVec::serialize_from_iter::<V, _, _, _>(
+                CustomSizeHint(field.iter().map(|entry| ValueBorrow(entry)), field.len()),
+                serializer,
+            )?,
+        ))
     }
 }
 
-impl<K, V, D, H> DeserializeWith<Archived<Vec<(K, V)>>, DashMap<K, V, H>, D> for DashMapArchiver
+impl<K, V, D, H>
+    DeserializeWith<(ArchivedVec<K::Archived>, ArchivedVec<V::Archived>), DashMap<K, V, H>, D>
+    for DashMapArchiver
 where
-    K::Archived: Eq + Hash,
+    K::Archived: Eq + Hash + Deserialize<K, D>,
     K: Archive + Eq + Hash + Clone,
+    V::Archived: Deserialize<V, D>,
     V: Archive + Clone,
-    <Vec<(K, V)> as Archive>::Archived: Deserialize<Vec<(K, V)>, D>,
     D: Fallible + ?Sized,
     H: BuildHasher + Default + Clone,
 {
     fn deserialize_with(
-        field: &Archived<Vec<(K, V)>>,
+        field: &(ArchivedVec<K::Archived>, ArchivedVec<V::Archived>),
         deserializer: &mut D,
     ) -> Result<DashMap<K, V, H>, <D as Fallible>::Error> {
-        field
-            .deserialize(deserializer)
-            .map(|map| map.into_iter().collect())
+        let map = DashMap::<K, V, H>::with_capacity_and_hasher(field.0.len(), H::default());
+        for (k, v) in field.0.iter().zip(field.1.iter()) {
+            map.insert(k.deserialize(deserializer)?, v.deserialize(deserializer)?);
+        }
+
+        Ok(map)
     }
 }
 

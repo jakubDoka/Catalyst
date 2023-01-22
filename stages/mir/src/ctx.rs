@@ -15,7 +15,6 @@ pub struct MirCtx {
     pub depth: u32,
     pub no_moves: bool,
     pub ret: VRef<ValueMir>,
-    pub args: VRefSlice<ValueMir>,
     pub module: ModuleMirInner,
     pub dd: DebugData,
     pub vars: Vec<VarMir>,
@@ -113,11 +112,12 @@ impl MirCtx {
         &mut self,
         entry: VRef<BlockMir>,
         module: FragRef<ModuleMir>,
+        args: VRefSlice<ValueMir>,
         prev_drops: usize,
         prev_calls: usize,
     ) -> FuncMir {
-        self.vars.clear();
-        self.to_drop.clear();
+        assert!(self.vars.is_empty());
+        assert!(self.to_drop.is_empty());
         self.dd.clear();
         self.used_types.clear();
         self.generics.clear();
@@ -129,7 +129,7 @@ impl MirCtx {
         self.types.clear();
         FuncMir {
             ret: self.ret,
-            args: self.args,
+            args,
             generics: self.module.ty_params.extend(self.generic_types.drain(..)),
             types,
             entry,

@@ -152,6 +152,32 @@ macro_rules! bitflags {
     }
 }
 
+#[macro_export]
+macro_rules! compose_error {
+    (
+        $name:ident {$(
+            #[$($fmt:tt)*]
+            $variant:ident$(($inner_name:ident: $inner:ty))?,
+        )*}
+    ) => {
+        #[derive(Debug)]
+        pub enum $name {$(
+            $variant$(($inner))?,
+        )*}
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match *self {$(
+                    Self::$variant$((ref $inner_name))? => write!(f, $($fmt)*)?,
+                )*}
+                Ok(())
+            }
+        }
+
+        impl std::error::Error for $name {}
+    };
+}
+
 pub extern crate bitflags;
 
 /// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.

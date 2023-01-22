@@ -59,7 +59,7 @@ impl<'m> FmtRuntime<'m> {
     ) -> Result<(), Box<dyn Error>> {
         let (out, view) = self.middleware.update(args, resources);
 
-        if let Err(err) = view.dump_diagnostics(true, out) {
+        if let Err(err) = view.dump_diagnostics(true, &out) {
             writeln!(args.display(), "{err}")?;
         }
 

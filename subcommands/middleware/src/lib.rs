@@ -20,7 +20,7 @@ pub use {
             AstHandler, BaseSourceCtx, MacroSourceCtx, Worker, WorkerConnections, WorkerState,
         },
         CommandInfo, DiagnosticView, GenTask, Incremental, Middleware, MiddlewareArgs,
-        MiddlewareOutput, PackageTask, Shared,
+        MiddlewareArgsError, MiddlewareOutput, PackageTask, QuickTimer, Shared,
     },
     mir::*,
     mir_t::*,

@@ -70,25 +70,36 @@ impl TyChecker<'_> {
 
         let value = r#break
             .value
-            .map(|expr| self.expr(expr, builder.ctx.loops[loop_id].inference, builder))
+            .map(|expr| {
+                Some((
+                    self.expr(expr, builder.ctx.loops[loop_id].inference, builder)?,
+                    expr.span(),
+                ))
+            })
             .transpose()?;
 
-        if let Some(value) = value {
-            self.type_check(
-                builder.ctx.loops[loop_id].return_type,
-                value.ty,
-                r#break.value.unwrap().span(),
-            )?;
+        if let Some((value, span)) = value {
+            self.type_check(builder.ctx.loops[loop_id].return_type, value.ty, span)?;
             // if return_type is terminal or equal to value.ty, type-check passes
             // and overriding it will account for changing the terminal state of
             // the loop
             builder.ctx.loops[loop_id].return_type = value.ty;
             builder.ctx.loops[loop_id].inference = Inference::Strong(value.ty);
+        } else {
+            self.type_check(
+                builder.ctx.loops[loop_id].return_type,
+                Ty::UNIT,
+                r#break.span(),
+            )?;
+            builder.ctx.loops[loop_id].return_type = Ty::UNIT;
         }
 
         Some(TirNode::new(
             Ty::TERMINAL,
-            TirKind::Break(builder.arena.alloc(BreakTir { loop_id, value })),
+            TirKind::Break(builder.arena.alloc(BreakTir {
+                loop_id,
+                value: value.map(|(value, ..)| value),
+            })),
             r#break.span(),
         ))
     }

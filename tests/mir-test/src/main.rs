@@ -90,7 +90,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        false,
+        true,
         simple "functions" {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
@@ -563,6 +563,21 @@ fn main() {
                 vv.get_mut_ptr(0).push(3);
 
                 0
+            }
+        }
+
+        simple "loop-outsider" {
+            use { "builtin" };
+            struct W;
+            impl Drop for W {fn drop(_: ^mut Self) {}};
+            impl W {fn do_something(_: ^mut Self) {}};
+
+            #[entry];
+            fn main {
+                let mut window = W::{};
+                loop if true => break else {;
+                    window.do_something()
+                }
             }
         }
     }

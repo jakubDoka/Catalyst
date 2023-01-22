@@ -112,7 +112,6 @@ impl CliInput {
         loop {
             if start.ends_with('"') && !start.ends_with("\\\"") {
                 start.drain(..1);
-                start.pop().unwrap();
                 return Ok(start);
             }
             let Some(next) = input.pop() else {

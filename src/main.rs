@@ -39,7 +39,9 @@ impl Catalyst {
 
     fn dispatch(&mut self, input: CliInput) {
         let err = match input.args().first().map(|a| &a[..]) {
-            Some("cc") => CcRuntime::new(&mut self.middleware, &mut self.cc).run(input),
+            Some("cc") => CcRuntime::new(&mut self.middleware, &mut self.cc)
+                .run(input)
+                .map_err(Into::into),
             Some("lsp") => LspRuntime::immediate(&mut self.middleware).map_err(Into::into),
             Some("fmt") => FmtRuntime::new(&mut self.middleware, &mut self.fmt).run(input),
             Some(inp) => {
@@ -54,7 +56,7 @@ impl Catalyst {
         };
 
         if let Err(e) = err {
-            eprintln!("dispatch error: {e}");
+            eprintln!("{e}");
         }
     }
 }

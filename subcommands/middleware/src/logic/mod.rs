@@ -15,8 +15,13 @@ use std::{
     os::unix::prelude::MetadataExt,
     path::*,
     slice,
-    sync::mpsc::{self, Receiver, Sender, SyncSender},
+    str::FromStr,
+    sync::{
+        atomic::AtomicBool,
+        mpsc::{self, Receiver, Sender, SyncSender},
+    },
     thread::{self, ScopedJoinHandle},
+    time::Instant,
 };
 
 use bytecheck::CheckBytes;
@@ -24,6 +29,7 @@ use bytecheck::CheckBytes;
 use cli::CliInput;
 use cranelift_codegen::{
     ir::{self, InstBuilder},
+    settings::{self, Configurable, SetError},
     Context,
 };
 use cranelift_frontend::FunctionBuilderContext;
@@ -39,6 +45,7 @@ use rkyv::{
     Archive, Deserialize, Fallible, Serialize,
 };
 use snippet_display::annotate_snippets::display_list::FormatOptions;
+use target_lexicon::Triple;
 
 use crate::*;
 
@@ -63,11 +70,8 @@ pub struct Middleware {
 }
 
 impl Middleware {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn save(&mut self, save_path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+        let _t = QuickTimer::new("incremental data save");
         let Some(path) = save_path.or(self.save_path.take()) else {
             return Ok(());
         };
@@ -110,6 +114,7 @@ impl Middleware {
     }
 
     pub fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let _t = QuickTimer::new("incremental data load");
         let incr = Self::from_bytes::<Incremental>(incremental)?;
         if incr.exe_mod_time.is_none() || get_exe_mod_time() != incr.exe_mod_time {
             return Err("data is outdated".into());
@@ -131,6 +136,7 @@ impl Middleware {
         db: &mut dyn ResourceDb,
         path: &Path,
     ) -> Option<Vec<VRef<Source>>> {
+        let _t = QuickTimer::new("(re)loading source files");
         // Since split is iterator we create just one instance for this single threaded use_case
         let mut interner = base
             .interner
@@ -394,6 +400,8 @@ impl Middleware {
                 return (tasks, vec![], vec![]);
             }
 
+            let _t = QuickTimer::new("codegen");
+
             task_base.gen.prepare();
 
             let (entry_points, imported) = self.distribute_compile_requests(&mut tasks, &args.isa);
@@ -619,6 +627,7 @@ impl Middleware {
         worker_count: usize,
         cached_items: &mut Map<VRef<Source>, ModuleItems>,
     ) -> Vec<Task> {
+        let _t = QuickTimer::new("parsing, type checking, macro expansion");
         let mut module_items = ShadowMap::new();
 
         for (key, module) in resources.modules.iter() {
@@ -732,6 +741,8 @@ impl Middleware {
         thread_count: usize,
         mut builtin_functions: &mut [FragRef<Func>],
     ) {
+        let _t = QuickTimer::new("resource clear");
+
         for source in removed {
             module_items.remove(&source);
         }
@@ -775,6 +786,7 @@ pub struct Shared<'a> {
     pub builtin_functions: &'a [FragRef<Func>],
 }
 
+#[derive(Debug)]
 pub struct CommandInfo<'a> {
     pub general: &'a str,
     pub flags: &'a [(&'a str, &'a str)],
@@ -875,10 +887,12 @@ impl MiddlewareArgs {
             "target" => "target triple of final binary"
             "check" => "skip codegen"
             "quiet" => "don't print anything"
+            "dump-ir" => "print cranelift ir for all compilef functions"
         }
         values {
             "max-cores"("N") => "maximum cores used during compilation"
             "incremental-path"("string") => "where the incremental data should be stored"
+            "cranelift-flags"("string") => "flags passed to cranelift, (key=value ...)"
         }
     }
 
@@ -888,15 +902,45 @@ impl MiddlewareArgs {
             .min(self.max_cores.unwrap_or(usize::MAX))
     }
 
-    pub fn from_cli_input(cli_input: &CliInput, help: CommandInfo) -> Result<Self, Box<dyn Error>> {
+    pub fn incremental_root(&self) -> &Path {
+        self.incremental_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .unwrap_or(Path::new("incremental"))
+    }
+
+    pub fn from_cli_input(
+        cli_input: &CliInput,
+        help: CommandInfo<'static>,
+    ) -> Result<Self, MiddlewareArgsError> {
         if cli_input.enabled("help") {
-            Err(help.to_string())?;
+            return Err(MiddlewareArgsError::Help(help));
         }
 
-        let isa = match cli_input.value("target") {
-            Some(_triple) => todo!(),
-            None => Isa::host(false)?,
+        let triple = cli_input
+            .value("target")
+            .map(Triple::from_str)
+            .transpose()
+            .map_err(MiddlewareArgsError::InvalidTargetTriple)?
+            .unwrap_or_else(Triple::host);
+
+        let flags = if let Some(flags) = cli_input.value("cranelift-flags") {
+            let mut settings = settings::builder();
+            let iter = flags
+                .split_whitespace()
+                .filter_map(|s| str::split_once(s, "="));
+            for (key, value) in iter {
+                settings
+                    .set(key, value)
+                    .map_err(|e| (key.to_owned(), value.to_owned(), e))
+                    .map_err(MiddlewareArgsError::CraneliftFlag)?;
+            }
+            settings::Flags::new(settings)
+        } else {
+            settings::Flags::new(settings::builder())
         };
+
+        let isa = Isa::new(triple, flags, false).map_err(MiddlewareArgsError::TargetIsa)?;
 
         Ok(MiddlewareArgs {
             path: cli_input
@@ -905,7 +949,7 @@ impl MiddlewareArgs {
                 .cloned()
                 .unwrap_or(".".into())
                 .into(),
-            jit_isa: Isa::host(true)?,
+            jit_isa: Isa::host(true).map_err(MiddlewareArgsError::HostIsa)?,
             isa,
             incremental_path: cli_input
                 .value("incremental-path")
@@ -921,6 +965,21 @@ impl MiddlewareArgs {
 
     pub fn display(&self) -> MiddlewareArgsDisplay {
         MiddlewareArgsDisplay { quiet: self.quiet }
+    }
+}
+
+compose_error! {
+    MiddlewareArgsError {
+        #["{inner}"]
+        Help(inner: CommandInfo<'static>),
+        #["invalid target triple: {inner}"]
+        InvalidTargetTriple(inner: <Triple as FromStr>::Err),
+        #["failed to initialize target isa: {inner}"]
+        TargetIsa(inner: IsaCreationError),
+        #["failed to initialize host isa: {inner}"]
+        HostIsa(inner: IsaCreationError),
+        #["issue with cranelift flag ({}={}): {}", inner.0, inner.1, inner.2]
+        CraneliftFlag(inner: (String, String, SetError)),
     }
 }
 
@@ -951,6 +1010,13 @@ pub enum MiddlewareOutput {
 impl MiddlewareOutput {
     pub fn is_failed(&self) -> bool {
         matches!(self, Self::Failed)
+    }
+
+    pub fn take_binary(&mut self) -> Option<Vec<u8>> {
+        match self {
+            Self::Compiled { binary, .. } => Some(mem::take(binary)),
+            _ => None,
+        }
     }
 }
 
@@ -1064,13 +1130,13 @@ impl<'a> DiagnosticView<'a> {
             .filter_map(|s| s.changed.then_some(s.path.as_path()))
     }
 
-    pub fn dump_diagnostics(
+    pub fn dump_diagnostics<'b>(
         &self,
         color: bool,
-        output: MiddlewareOutput,
-    ) -> Result<(Vec<u8>, Option<String>), String> {
+        output: &'b MiddlewareOutput,
+    ) -> Result<(&'b [u8], Option<&'b str>), String> {
         Err(match output {
-            MiddlewareOutput::Compiled { binary, ir } => return Ok((binary, ir)),
+            MiddlewareOutput::Compiled { binary, ir } => return Ok((binary, ir.as_deref())),
             MiddlewareOutput::Checked => "No errors found.".into(),
             MiddlewareOutput::Unchanged => "No changes detected.".into(),
             MiddlewareOutput::Failed => {
@@ -1256,5 +1322,31 @@ impl<I: SharedDeserializeRegistry> SharedDeserializeRegistry for MiddlewareDeser
         self.0
             .add_shared_ptr(ptr, shared)
             .map_err(MiddlewareSerializerError::Inner)
+    }
+}
+
+pub struct QuickTimer(&'static str, Instant);
+
+static TIMERS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+impl QuickTimer {
+    pub fn set_enabled(value: bool) {
+        TIMERS_ENABLED.store(value, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn new(message: &'static str) -> Self {
+        // for later
+        Self(message, Instant::now())
+    }
+
+    pub fn drop(self) {}
+}
+
+impl Drop for QuickTimer {
+    fn drop(&mut self) {
+        if !TIMERS_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        eprintln!("timer[ {} ]: {:?}", self.0, self.1.elapsed());
     }
 }

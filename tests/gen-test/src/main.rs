@@ -57,11 +57,7 @@ impl TestState {
         } else if compiler.is_like_clang() {
             todo!()
         } else if compiler.is_like_gnu() {
-            vec![
-                format!("-o{}", &exe_path),
-                "-nostartfiles".into(),
-                format!("-e{}", gen::ENTRY_POINT_NAME),
-            ]
+            vec![format!("-o{}", &exe_path)]
         } else {
             unimplemented!("unknown compiler");
         };

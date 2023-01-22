@@ -28,23 +28,32 @@ impl MirChecker<'_, '_> {
 
     fn func(&mut self, module: FragRef<ModuleMir>, func: FragRef<Func>, body: TirNode) -> FuncMir {
         let Func {
-            signature, flags, ..
+            signature,
+            flags,
+            name,
+            ..
         } = self.typec[func];
+        dbg!(&self.interner[name]);
 
         let prev_calls = self.mir_ctx.module.calls.len();
         let prev_drops = self.mir_ctx.module.drops.len();
+
         self.mir_ctx
             .generics
             .extend(self.typec.pack_func_param_specs(func));
         self.mir_ctx.no_moves = flags.contains(FuncFlags::NO_MOVES);
-        let block = self.push_args(signature.args);
+
         let ret = self.value(signature.ret);
         self.mir_ctx.ret = ret;
 
+        let frame = self.start_scope_frame();
+        let (block, args) = self.push_args(signature.args);
         self.node(body, None, false);
+        self.discard_scope_frame(frame);
 
         self.mir_move_ctx.clear();
-        self.mir_ctx.clear(block, module, prev_drops, prev_calls)
+        self.mir_ctx
+            .clear(block, module, args, prev_drops, prev_calls)
     }
 
     fn node(
@@ -624,6 +633,8 @@ impl MirChecker<'_, '_> {
             self.node(last, dest, r#move)?
         };
 
+        dbg!(frame.base);
+
         match res {
             Some(..) => self.end_scope_frame(frame, span),
             None => self.discard_scope_frame(frame),
@@ -644,7 +655,6 @@ impl MirChecker<'_, '_> {
         if r#move {
             self.move_out(var.value, span);
         }
-
         Some(dest.unwrap_or(var.value))
     }
 
@@ -726,7 +736,7 @@ impl MirChecker<'_, '_> {
         None
     }
 
-    fn push_args(&mut self, args: FragSlice<Ty>) -> VRef<BlockMir> {
+    fn push_args(&mut self, args: FragSlice<Ty>) -> (VRef<BlockMir>, VRefSlice<ValueMir>) {
         let block = self.mir_ctx.create_block();
         self.select_block(block);
 
@@ -740,9 +750,7 @@ impl MirChecker<'_, '_> {
             })
             .collect::<BumpVec<_>>();
 
-        self.mir_ctx.args = self.mir_ctx.module.value_args.extend(args);
-
-        block
+        (block, self.mir_ctx.module.value_args.extend(args))
     }
 
     fn parse_char(repr: &mut impl Iterator<Item = char>) -> Option<char> {
@@ -771,7 +779,7 @@ impl MirChecker<'_, '_> {
     pub fn end_scope_frame(&mut self, frame: MirVarFrame, span: Span) {
         self.mir_ctx.vars.truncate(frame.base);
         let mut to_drop = mem::take(&mut self.mir_ctx.to_drop);
-        for value in to_drop.drain(frame.base..) {
+        for value in to_drop.drain(frame.to_drop..) {
             self.drop(value, span);
         }
         self.mir_ctx.to_drop = to_drop;
@@ -779,6 +787,7 @@ impl MirChecker<'_, '_> {
 
     pub fn discard_scope_frame(&mut self, frame: MirVarFrame) {
         self.mir_ctx.vars.truncate(frame.base);
+        self.mir_ctx.to_drop.truncate(frame.to_drop);
     }
 
     // pub fn pointer_to(

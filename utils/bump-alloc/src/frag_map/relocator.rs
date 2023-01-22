@@ -451,10 +451,6 @@ impl FragRelocMarker {
     }
 
     pub fn mark<T: 'static>(&mut self, frag: FragRef<T>) -> bool {
-        if std::any::type_name::<T>().contains("Struct") && frag.0.index == 0 && frag.0.thread == 2
-        {
-            panic!();
-        }
         self.marked
             .entry(TypeId::of::<T>())
             .or_default()
