@@ -1,0 +1,51 @@
+info: mir repr of functions:
+fn [] main() -> ()  { () ret var2
+    block0 {
+        var3 ={}
+        var4 = var3
+        goto block1
+    }
+
+    block1 {
+        var7 = true
+        split var7 block2 block3
+    }
+
+    block2 {
+        goto block4
+    }
+
+    block3 {
+        access var4
+        var8 = &var4
+        var6 = do_something(val8)
+        goto block5 with var6
+    }
+
+    block4 {
+        return var0
+    }
+
+    block5 {
+        goto block1
+    }
+
+}
+
+fn [] drop(var0: ^mut 0\W) -> ()  { (var10: ^mut 0\W) ret var9
+    block6 {
+        drop var4
+        return var0
+    }
+
+}
+
+fn [] do_something(var0: ^mut 0\W) -> ()  { (var12: ^mut 0\W) ret var11
+    block7 {
+        return var0
+    }
+
+}
+
+
+

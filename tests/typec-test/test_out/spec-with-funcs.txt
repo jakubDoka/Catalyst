@@ -54,7 +54,7 @@ error: dataflow of impl method does not match spec
    |        ^^^ here
    |
    = info: found mismatches:
-           ret uint 0\A
+           ret 0\A uint
 
 error: amount of arguments of impl method does not match spec
   --> spec-with-funcs/root.ctl:5:6

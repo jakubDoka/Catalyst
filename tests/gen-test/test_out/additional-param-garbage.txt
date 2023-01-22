@@ -1,20 +1,14 @@
-info: generated ir:
-main function u0:0() -> i64 fast {
-    sig0 = (i64) -> i64 fast
-    fn0 = colocated u256:1 sig0
-
-block0:
-    v0 = iconst.i64 0
-    v1 = call fn0(v0)  ; v0 = 0
-    return v1
-}
-pass function u0:0(i64) -> i64 fast {
-block0(v0: i64):
-    return v0
-}
-
-
-info: status: exit status: 0
- = info: stdout: 
- = info: stderr: 
+error: amount of arguments passed to the function is incorrect
+ --> additional-param-garbage/root.ctl:1:8
+  |
+1 | fn [T] pass(value: T) -> T => value
+  |        ---- info: because of this definition
+2 | 
+3 | struct B
+4 | #[entry]
+5 | 
+6 | fn main -> uint => pass\[uint, B](0uint, 'h')
+  |                                  ^^^^^^^^^^^^ here
+  |
+  = info: expected 1, but got 2
 
