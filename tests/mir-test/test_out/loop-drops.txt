@@ -41,9 +41,9 @@ error: value is possibly moved more then once
    = help: 'break' after the move or move the value beck before next iteration
 
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { (var2: param0) ret var3
+fn [] drop(var0: param0) -> ()  { (var3: param0) ret var2
     block0 {
-        drop var2
+        drop var3
         return var0
     }
 
@@ -73,32 +73,32 @@ fn [] loop_break_drop() -> ()  { () ret var9
 
     block4 {
         access var11
-        var13 = drop[0\A](val11)
+        var12 = drop[0\A](val11)
         goto block5
     }
 
     block5 {
-        return var0
+        return var9
     }
 
 }
 
-fn [] linear_loop_branch_drop() -> ()  { () ret var14
+fn [] linear_loop_branch_drop() -> ()  { () ret var13
     block6 {
-        var15 ={}
-        var16 = var15
+        var14 ={}
+        var15 = var14
         goto block7
     }
 
     block7 {
-        var19 = true
-        split var19 block8 block9
+        var18 = true
+        split var18 block8 block9
     }
 
     block8 {
-        access var16
-        var18 = drop[0\A](val16)
-        goto block10 with var18
+        access var15
+        var17 = drop[0\A](val15)
+        goto block10 with var17
     }
 
     block9 {
@@ -110,29 +110,29 @@ fn [] linear_loop_branch_drop() -> ()  { () ret var14
     }
 
     block11 {
-        access var16
-        var14 = drop[0\A](val16)
-        return var14
+        access var15
+        var13 = drop[0\A](val15)
+        return var13
     }
 
 }
 
-fn [] loop_branch_drop() -> ()  { () ret var20
+fn [] loop_branch_drop() -> ()  { () ret var19
     block12 {
-        var21 ={}
-        var22 = var21
+        var20 ={}
+        var21 = var20
         goto block13
     }
 
     block13 {
-        var25 = true
-        split var25 block14 block15
+        var23 = true
+        split var23 block14 block15
     }
 
     block14 {
-        access var22
-        var24 = drop[0\A](val22)
-        goto block16 with var24
+        access var21
+        var22 = drop[0\A](val21)
+        goto block16 with var22
     }
 
     block15 {
@@ -144,27 +144,27 @@ fn [] loop_branch_drop() -> ()  { () ret var20
     }
 
     block17 {
-        return var0
+        return var19
     }
 
 }
 
-fn [] loop_drop_and_move_in() -> ()  { () ret var26
+fn [] loop_drop_and_move_in() -> ()  { () ret var24
     block18 {
-        var27 ={}
-        var28 = var27
+        var25 ={}
+        var26 = var25
         goto block19
     }
 
     block19 {
-        var31 = true
-        split var31 block20 block21
+        var29 = true
+        split var29 block20 block21
     }
 
     block20 {
-        access var28
-        var30 = drop[0\A](val28)
-        goto block22 with var30
+        access var26
+        var28 = drop[0\A](val26)
+        goto block22 with var28
     }
 
     block21 {
@@ -172,8 +172,8 @@ fn [] loop_drop_and_move_in() -> ()  { () ret var26
     }
 
     block22 {
-        access var28
-        var28 ={}
+        access var26
+        var26 ={}
         goto block19
     }
 

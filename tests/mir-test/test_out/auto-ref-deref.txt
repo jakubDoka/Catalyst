@@ -15,18 +15,18 @@ fn [] main() -> uint  { () ret var2
 
 }
 
-fn [] reference(var0: ^^uint) -> ^^uint  { (var10: ^^uint) ret var11
+fn [] reference(var0: ^^uint) -> ^^uint  { (var11: ^^uint) ret var10
     block1 {
-        var11 = access var10
-        return var11
+        var10 = access var11
+        return var10
     }
 
 }
 
-fn [] dereference(var0: uint) -> uint  { (var12: uint) ret var13
+fn [] dereference(var0: uint) -> uint  { (var13: uint) ret var12
     block2 {
-        var13 = access var12
-        return var13
+        var12 = access var13
+        return var12
     }
 
 }

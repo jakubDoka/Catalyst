@@ -1,7 +1,7 @@
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { (var2: param0) ret var3
+fn [] drop(var0: param0) -> ()  { (var3: param0) ret var2
     block0 {
-        drop var2
+        drop var3
         return var0
     }
 
@@ -114,30 +114,30 @@ fn [] main() -> uint  { () ret var35
 
 }
 
-fn [] new(var0: char) -> 0\A  { (var42: char) ret var43
+fn [] new(var0: char) -> 0\A  { (var43: char) ret var42
     block11 {
-        var43 ={var44}
-        var44 = access var42
-        return var43
+        var42 ={var44}
+        var44 = access var43
+        return var42
     }
 
 }
 
-fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { (var45: ^mut 0\A, var46: char) ret var47
+fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { (var46: ^mut 0\A, var47: char) ret var45
     block12 {
-        access var45
-        var49 = *var45
+        access var46
+        var49 = *var46
         var48 = var49.0
-        var48 = access var46
+        var48 = access var47
         return var0
     }
 
 }
 
-fn [] drop(var0: ^mut 0\A) -> ()  { (var50: ^mut 0\A) ret var51
+fn [] drop(var0: ^mut 0\A) -> ()  { (var51: ^mut 0\A) ret var50
     block13 {
-        access var50
-        var54 = *var50
+        access var51
+        var54 = *var51
         var53 = var54.0
         var52 = putchar(val53)
         var56 = 32

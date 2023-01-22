@@ -44,9 +44,9 @@ error: move out of already moved value
    = note: you can disable move semantics with '#[no_moves]' function attribute
 
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { (var2: param0) ret var3
+fn [] drop(var0: param0) -> ()  { (var3: param0) ret var2
     block0 {
-        drop var2
+        drop var3
         return var0
     }
 
