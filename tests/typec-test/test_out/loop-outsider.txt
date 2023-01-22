@@ -1,0 +1,18 @@
+info: tir repr of functions:
+fn [] main() -> () return {
+    let mut var0 = 0\W\{}
+    loop id0 if 'true' {
+        break id0 
+    } else {
+        do_something(^var0)
+    }
+}
+
+fn [] drop(var0: ^mut 0\W) -> () return {
+}
+
+fn [] do_something(var0: ^mut 0\W) -> () return {
+}
+
+
+
