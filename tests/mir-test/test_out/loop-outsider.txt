@@ -7,8 +7,8 @@ fn [] main() -> ()  { () ret var2
     }
 
     block1 {
-        var7 = true
-        split var7 block2 block3
+        var6 = true
+        split var6 block2 block3
     }
 
     block2 {
@@ -17,13 +17,14 @@ fn [] main() -> ()  { () ret var2
 
     block3 {
         access var4
-        var8 = &var4
-        var6 = do_something(val8)
-        goto block5 with var6
+        var7 = &var4
+        var5 = do_something(val7)
+        goto block5 with var5
     }
 
     block4 {
-        return var0
+        drop var4
+        return var2
     }
 
     block5 {
@@ -32,15 +33,14 @@ fn [] main() -> ()  { () ret var2
 
 }
 
-fn [] drop(var0: ^mut 0\W) -> ()  { (var10: ^mut 0\W) ret var9
+fn [] drop(var0: ^mut 0\W) -> ()  { (var9: ^mut 0\W) ret var8
     block6 {
-        drop var4
         return var0
     }
 
 }
 
-fn [] do_something(var0: ^mut 0\W) -> ()  { (var12: ^mut 0\W) ret var11
+fn [] do_something(var0: ^mut 0\W) -> ()  { (var11: ^mut 0\W) ret var10
     block7 {
         return var0
     }
