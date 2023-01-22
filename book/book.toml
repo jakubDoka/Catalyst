@@ -1,0 +1,6 @@
+[book]
+authors = ["mlokis"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Catalyst The Programming Language"

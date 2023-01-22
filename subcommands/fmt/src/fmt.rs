@@ -150,13 +150,12 @@ impl<'ctx> Fmt<'ctx> {
     fn r#const(&mut self, r#const: &ConstAst<u32>) {
         self.vis(r#const.vis);
         self.keyword(r#const.keyword);
+
         self.name(r#const.name);
 
-        if let Some((colon, ty)) = r#const.ty {
-            self.source_info(colon);
-            self.buffer.push(' ');
-            self.ty(&ty);
-        }
+        self.source_info(r#const.colon);
+        self.buffer.push(' ');
+        self.ty(&r#const.ty);
 
         self.buffer.push(' ');
         self.source_info(r#const.eqal);

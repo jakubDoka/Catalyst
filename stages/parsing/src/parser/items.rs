@@ -129,10 +129,12 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             vis,
             keyword: self.advance(),
             name: self.name("constant name")?,
-            ty: self
-                .try_advance(TokenKind::Colon)
-                .map(|colon| self.ty().map(|ty| (colon, ty)))
-                .transpose()?,
+            colon: self.expect(TokenKind::Colon, |p| MissingColon {
+                something: "constant",
+                found: p.current.kind,
+                loc: p.loc(),
+            })?,
+            ty: self.ty()?,
             eqal: self.expect("=", |p| ExpectedAssignEqual {
                 got: p.current.kind,
                 loc: p.loc(),

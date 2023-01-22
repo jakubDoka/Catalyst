@@ -9,6 +9,7 @@
 #![feature(result_option_inspect)]
 #![feature(if_let_guard)]
 #![feature(slice_group_by)]
+#![feature(iter_collect_into)]
 
 /*
     At collection stage, we maintain a spec set (Vec<(u32, Spec)>) collected from
@@ -114,17 +115,26 @@ mod util {
             tir_builder_ctx: &mut TirBuilderCtx,
             transfer: ActiveAstTransfer<'a, '_>,
             type_checked_funcs: &mut BumpVec<(FragRef<Func>, TirFunc<'a>)>,
+            type_checked_consts: &mut BumpVec<(FragRef<Const>, TirNode<'a>)>,
         ) -> &mut Self {
             ctx.clear();
             self.collect(items.specs, Self::collect_spec, &mut transfer.0.specs)
                 .collect(items.structs, Self::collect_struct, &mut transfer.0.structs)
                 .collect(items.enums, Self::collect_enum, &mut transfer.0.enums)
                 .build(Self::build_spec, &transfer.0.specs)
-                .collect(items.consts, Self::collect_const, &mut transfer.0.consts)
-                .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
-                .collect_impls(items.impls, transfer.0)
                 .build(Self::build_struct, &transfer.0.structs)
                 .build(Self::build_enum, &transfer.0.enums)
+                .collect(items.consts, Self::collect_const, &mut transfer.0.consts)
+                // we build before collecting functions to ensure no cycles
+                // this is bit restrictive but loosening restrictions is easier
+                .build_consts(
+                    arena,
+                    tir_builder_ctx,
+                    &transfer.0.consts,
+                    type_checked_consts,
+                )
+                .collect(items.funcs, Self::collect_func, &mut transfer.0.funcs)
+                .collect_impls(items.impls, transfer.0)
                 .detect_infinite_types(ctx, transfer.0)
                 .build_funcs(
                     arena,

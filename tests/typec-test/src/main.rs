@@ -42,6 +42,7 @@ impl Scheduler for TestState {
 
     fn parse_segment(&mut self, module: VRef<Module>, items: GroupedItemsAst) {
         let mut type_checked_funcs = bumpvec![];
+        let mut type_checked_consts = bumpvec![];
         let arena = Arena::new();
         let mut ctx = TirBuilderCtx::default();
 
@@ -53,6 +54,7 @@ impl Scheduler for TestState {
             &mut ctx,
             self.ast_transfer.activate(),
             &mut type_checked_funcs,
+            &mut type_checked_consts,
         );
         if !self.resources.is_external(module) {
             checker

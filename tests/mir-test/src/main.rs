@@ -48,6 +48,7 @@ impl Scheduler for TestState {
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
         let mut type_checked_funcs = bumpvec![];
+        let mut type_checked_consts = bumpvec![];
         let mut ctx = TirBuilderCtx::default();
         ty_checker!(self, module).execute(
             &self.arena,
@@ -56,6 +57,7 @@ impl Scheduler for TestState {
             &mut ctx,
             self.ast_transfer.activate(),
             &mut type_checked_funcs,
+            &mut type_checked_consts,
         );
 
         let mir_module = self.mir.modules.next();

@@ -581,6 +581,7 @@ impl Worker {
         shared: &Shared,
     ) {
         let mut type_checked_funcs = bumpvec![];
+        let mut type_checked_consts = bumpvec![];
         TyChecker::new(
             module,
             &mut task.interner,
@@ -596,6 +597,7 @@ impl Worker {
             &mut self.state.tir_builder_ctx,
             self.state.ast_transfer.activate(),
             &mut type_checked_funcs,
+            &mut type_checked_consts,
         )
         //.dbg_funcs(&type_checked_funcs)
         ;

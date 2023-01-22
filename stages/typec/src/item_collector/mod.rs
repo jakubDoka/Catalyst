@@ -429,7 +429,7 @@ impl TyChecker<'_> {
 
     pub fn collect_const(
         &mut self,
-        ConstAst { vis, name, .. }: ConstAst,
+        ConstAst { vis, name, ty, .. }: ConstAst,
         _: &[TopLevelAttrAst],
     ) -> Option<FragRef<Const>> {
         let loc = {
@@ -438,17 +438,10 @@ impl TyChecker<'_> {
             self.insert_scope_item(item)?
         };
 
-        let init_fn = Func {
-            name: name.ident,
-            loc: Some(loc),
-            ..default()
-        };
-
-        let init = self.typec.cache.funcs.push(init_fn);
-
         let r#const = Const {
             name: name.ident,
-            init,
+            // since we inserted const into scope we have to recover here
+            ty: self.ty(ty).unwrap_or(Ty::UNIT),
             loc,
         };
 

@@ -15,11 +15,11 @@ use storage::*;
 #[archive_attr(derive(CheckBytes))]
 pub struct Const {
     pub name: Ident,
-    pub init: FragRef<Func>,
+    pub ty: Ty,
     pub loc: Loc,
 }
 
-derive_relocated!(struct Const { init });
+derive_relocated!(struct Const { ty });
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
 #[archive_attr(derive(CheckBytes))]

@@ -99,7 +99,8 @@ pub struct ConstAst<'a, M = NoTokenMeta> {
     pub vis: Option<VisAst<M>>,
     pub keyword: SourceInfo<M>,
     pub name: NameAst<M>,
-    pub ty: Option<(SourceInfo<M>, TyAst<'a, M>)>,
+    pub colon: SourceInfo<M>,
+    pub ty: TyAst<'a, M>,
     pub eqal: SourceInfo<M>,
     pub value: ExprAst<'a, M>,
 }

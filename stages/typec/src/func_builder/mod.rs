@@ -12,6 +12,7 @@ use typec_t::*;
 use crate::{ty_parser::TyPathResult, *};
 
 mod call;
+mod consts;
 mod control_flow;
 mod data;
 mod lookup;
@@ -29,18 +30,19 @@ impl TyChecker<'_> {
         ctx: &mut TirBuilderCtx,
         offset: usize,
     ) -> &mut Self {
-        let iter = input.iter().filter_map(|&(ast, func)| {
-            let res = self.build_func(ast, func, arena, ctx, offset)?;
+        input
+            .iter()
+            .filter_map(|&(ast, func)| {
+                let res = self.build_func(ast, func, arena, ctx, offset)?;
 
-            let Some(body) = res else {
-                extern_funcs.push(func);
-                return None;
-            };
+                let Some(body) = res else {
+                    extern_funcs.push(func);
+                    return None;
+                };
 
-            Some((func, body))
-        });
-
-        compiled_funcs.extend(iter);
+                Some((func, body))
+            })
+            .collect_into(&mut **compiled_funcs);
 
         self
     }
@@ -70,8 +72,6 @@ impl TyChecker<'_> {
             ..
         } = self.typec[func];
 
-        ctx.vars.clear();
-        ctx.generics.clear();
         ctx.generics.extend(self.typec.pack_func_param_specs(func));
         let mut builder =
             TirBuilder::new(arena, signature.ret, ret.map(|(.., ret)| ret.span()), ctx);
@@ -94,6 +94,9 @@ impl TyChecker<'_> {
         }?;
 
         self.scope.end_frame(frame);
+
+        builder.ctx.vars.clear();
+        builder.ctx.generics.clear();
 
         let body = if tir_body.ty == Ty::TERMINAL {
             tir_body
