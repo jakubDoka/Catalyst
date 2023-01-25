@@ -2,9 +2,8 @@ use std::{iter::once, ops::Range};
 
 use rkyv::{Archive, Deserialize, Serialize};
 
-use bytecheck::CheckBytes;
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct LineMapping {
     indices: Vec<u32>,
 }

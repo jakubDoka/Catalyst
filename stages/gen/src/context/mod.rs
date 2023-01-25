@@ -3,8 +3,8 @@ use std::{
     default::default,
     iter, mem,
     num::NonZeroU8,
-    ops::{Deref, DerefMut, Index, Range},
-    sync::{atomic::AtomicU64, Arc},
+    ops::{Deref, DerefMut, Range},
+    sync::Arc,
 };
 
 use cranelift_codegen::{
@@ -17,52 +17,45 @@ use cranelift_codegen::{
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use mir_t::*;
 
-use bytecheck::CheckBytes;
 use rkyv::{
     ser::{ScratchSpace, Serializer},
     with::{ArchiveWith, DeserializeWith, SerializeWith},
     Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
 };
-use storage::{arc_swap::ArcSwapOption, *};
+use storage::{dashmap::mapref::one::Ref, *};
 use target_lexicon::Triple;
 use typec_t::*;
 
 #[derive(Serialize, Archive, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct GenBase {
     lookup: Arc<GenLookup>,
-    funcs: SyncFragBase<CompiledFunc>,
 }
 
 derive_relocated!(struct GenBase { lookup });
 
 #[derive(Serialize, Archive, Deserialize, Default)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct GenLookup {
     #[with(DashMapArchiver)]
-    inner: CMap<Ident, (FragRef<CompiledFunc>, bool)>,
+    inner: CMap<Ident, CompiledFunc>,
 }
 
 derive_relocated!(struct GenLookup { inner });
 
 impl GenBase {
-    pub fn new(thread_count: u8) -> Self {
-        Self {
-            lookup: default(),
-            funcs: SyncFragBase::new(thread_count),
-        }
+    pub fn new(_thread_count: u8) -> Self {
+        Self { lookup: default() }
     }
 
     pub fn split(&self) -> impl Iterator<Item = Gen> + '_ {
-        self.funcs.split().map(|funcs| Gen {
+        iter::repeat_with(|| Gen {
             lookup: self.lookup.clone(),
-            funcs,
         })
     }
 
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
         self.reallocate();
-        objects.add(&mut self.funcs);
         objects.add_root(&mut self.lookup);
     }
 
@@ -70,43 +63,44 @@ impl GenBase {
         self.lookup
             .inner
             .iter_mut()
-            .for_each(|mut item| item.1 = true);
+            .for_each(|mut item| item.unused = true);
     }
 
     fn reallocate(&mut self) {
-        self.lookup.inner.retain(|_, (.., unused)| !*unused);
+        self.lookup.inner.retain(|_, v| !v.unused);
     }
 }
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Archive, Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
+pub struct CompiledFuncRef(Ident);
 
 pub struct Gen {
     lookup: Arc<GenLookup>,
-    funcs: SyncFragMap<CompiledFunc>,
 }
 
 impl Gen {
-    pub fn get(&self, id: Ident) -> Option<FragRef<CompiledFunc>> {
-        self.lookup.inner.get(&id).map(|value| value.0)
+    pub fn get(&self, id: Ident) -> Option<CompiledFuncRef> {
+        self.lookup.inner.get(&id).map(|_value| CompiledFuncRef(id))
     }
 
-    pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> FragRef<CompiledFunc> {
+    pub fn get_direct(&self, id: CompiledFuncRef) -> Ref<Ident, CompiledFunc, FvnBuildHasher> {
+        self.lookup.inner.get(&id.0).unwrap()
+    }
+
+    pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> CompiledFuncRef {
         self.lookup
             .inner
             .entry(id)
-            .and_modify(|(compiled, unused)| {
-                self.funcs[*compiled].set_func(func);
-                *unused = false;
-            })
-            .or_insert_with(|| {
-                let value = CompiledFunc::new(func, id);
-                let value_id = self.funcs.push(value);
-                (value_id, false)
-            })
-            .0
+            .and_modify(|func| func.unused = false)
+            .or_insert_with(|| CompiledFunc::new(func, id));
+
+        CompiledFuncRef(id)
     }
 
     pub fn save_compiled_code(
         &mut self,
-        id: FragRef<CompiledFunc>,
+        id: CompiledFuncRef,
         ctx: &Context,
     ) -> Result<(), CodeSaveError> {
         let cc = ctx.compiled_code().ok_or(CodeSaveError::MissingCode)?;
@@ -134,84 +128,54 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.funcs[id].inner.store(Some(Arc::new(CompiledFuncInner {
-            signature: ctx.func.signature.clone(),
-            bytecode: cc.buffer.data().to_vec(),
-            alignment: cc.alignment as u64,
-            relocs,
-        })));
+        let mut func = self.lookup.inner.get_mut(&id.0).unwrap();
+        func.signature = ctx.func.signature.clone();
+        func.bytecode = cc.buffer.data().to_vec();
+        func.alignment = cc.alignment as u64;
+        func.relocs = relocs;
 
         Ok(())
     }
 }
 
-impl Index<FragRef<CompiledFunc>> for Gen {
-    type Output = CompiledFunc;
-
-    fn index(&self, index: FragRef<CompiledFunc>) -> &Self::Output {
-        &self.funcs[index]
-    }
-}
-
 #[derive(Serialize, Archive, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct CompiledFunc {
-    func: AtomicU64,
-    pub name: Ident,
-    #[with(ArcSwapArchiver)]
-    pub inner: ArcSwapOption<CompiledFuncInner>,
-}
-
-impl CompiledFunc {
-    pub fn new(func: FragRef<Func>, name: Ident) -> Self {
-        Self {
-            func: unsafe { mem::transmute(func) },
-            name,
-            inner: default(),
-        }
-    }
-
-    pub fn func(&self) -> FragRef<Func> {
-        let bits = self.func.load(std::sync::atomic::Ordering::Relaxed);
-        unsafe { mem::transmute(bits) }
-    }
-
-    pub fn set_func(&self, value: FragRef<Func>) {
-        let bits = unsafe { mem::transmute(value) };
-        self.func.store(bits, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-impl Clone for CompiledFunc {
-    fn clone(&self) -> Self {
-        Self {
-            func: self.func.load(std::sync::atomic::Ordering::Relaxed).into(),
-            name: self.name,
-            inner: self.inner.load_full().into(),
-        }
-    }
-}
-
-impl Relocated for CompiledFunc {
-    fn mark(&self, _marker: &mut FragRelocMarker) {}
-
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
-        let mut func = self.func();
-        func.remap(ctx)?;
-        self.set_func(func);
-        Some(())
-    }
-}
-
-#[derive(Serialize, Archive, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
-pub struct CompiledFuncInner {
+    func: FragRef<Func>,
+    unused: bool,
     #[with(SignatureArchiver)]
     pub signature: ir::Signature,
     pub bytecode: Vec<u8>,
     pub alignment: u64,
     pub relocs: Vec<GenReloc>,
 }
+
+impl CompiledFunc {
+    pub fn new(func: FragRef<Func>, _name: Ident) -> Self {
+        Self {
+            func,
+            unused: false,
+            signature: ir::Signature::new(CallConv::Fast),
+            bytecode: default(),
+            alignment: default(),
+            relocs: default(),
+        }
+    }
+
+    pub fn func(&self) -> FragRef<Func> {
+        self.func
+    }
+
+    pub fn set_func(&mut self, value: FragRef<Func>) {
+        self.func = value;
+    }
+}
+
+derive_relocated!(struct CompiledFunc { func });
+
+#[derive(Serialize, Archive, Deserialize)]
+
+pub struct CompiledFuncInner {}
 
 pub struct SignatureArchiver;
 
@@ -255,7 +219,7 @@ where
 }
 
 #[derive(Archive, Deserialize, Serialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ArchivedSignature {
     #[with(CallConvArchiver)]
     cc: CallConv,
@@ -372,7 +336,7 @@ impl CompileRequests {
 
 #[derive(Clone, Copy)]
 pub struct CompileRequest {
-    pub id: FragRef<CompiledFunc>,
+    pub id: CompiledFuncRef,
     pub func: FragRef<Func>,
     pub params: VSlice<Ty>,
     pub children: VSlice<CompileRequestChild>,
@@ -381,7 +345,7 @@ pub struct CompileRequest {
 
 #[derive(Clone, Copy)]
 pub struct CompileRequestChild {
-    pub id: FragRef<CompiledFunc>,
+    pub id: CompiledFuncRef,
     pub func: FragRef<Func>,
     pub params: VSlice<Ty>,
 }
@@ -394,7 +358,7 @@ pub struct CompileRequestChild {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
-    pub func_imports: Map<FragRef<CompiledFunc>, (ir::FuncRef, bool)>,
+    pub func_imports: Map<CompiledFuncRef, (ir::FuncRef, bool)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub call_offset: usize,
@@ -652,7 +616,7 @@ impl Layout {
 //////////////////////////////////
 
 #[derive(Clone, Copy, Serialize, Archive, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct GenReloc {
     /// The offset at which the relocation applies, *relative to the
     /// containing section*.
@@ -703,9 +667,9 @@ impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, Reloc, D> for RelocArch
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum GenItemName {
-    Func(FragRef<CompiledFunc>),
+    Func(CompiledFuncRef),
     LibCall(#[with(LibCallArchiver)] ir::LibCall),
 }
 
@@ -746,21 +710,27 @@ impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, LibCall, D> for LibCall
 }
 
 impl GenItemName {
-    pub const FUNC_FLAG: u16 = 1;
+    pub const FUNC_FLAG: u8 = 1;
 
     pub fn decode_name(UserExternalName { namespace, index }: UserExternalName) -> GenItemName {
-        let addr = FragAddr::new(index, namespace as u8);
+        let (flag, len, thread) = (
+            (namespace >> 24) as u8,
+            (namespace >> 8) as u16,
+            namespace as u8,
+        );
 
-        match (namespace >> 8) as u16 {
-            Self::FUNC_FLAG => GenItemName::Func(FragRef::new(addr)),
+        match flag {
+            Self::FUNC_FLAG => {
+                GenItemName::Func(unsafe { mem::transmute(FragSliceAddr::new(index, thread, len)) })
+            }
             _ => unreachable!(),
         }
     }
 
-    pub fn encode_func(func: FragRef<CompiledFunc>) -> UserExternalName {
-        let FragAddr { index, thread, .. } = func.addr();
+    pub fn encode_func(func: CompiledFuncRef) -> UserExternalName {
+        let FragSliceAddr { index, thread, len } = unsafe { mem::transmute(func) };
         UserExternalName {
-            namespace: thread as u32 | (Self::FUNC_FLAG as u32) << 8,
+            namespace: thread as u32 | (len as u32) << 8 | (Self::FUNC_FLAG as u32) << 24,
             index,
         }
     }

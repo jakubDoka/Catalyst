@@ -9,5 +9,5 @@ edition = "2021"
 lexing-t = { version = "0.1.0", path = "../lexing-t" }
 storage = { version = "0.1.0", path = "../../utils/storage" }
 typec-t = { version = "0.1.0", path = "../typec-t" }
-bytecheck = "0.6.9"
-rkyv = { version = "0.7.39", features = ["validation", "copy"] }
+
+rkyv = { version = "0.7.39", features = ["copy"] }

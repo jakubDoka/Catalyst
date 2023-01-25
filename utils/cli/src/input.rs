@@ -61,9 +61,8 @@ impl CliInput {
                         return Err(CliError::MissingFlagValue(arg));
                     };
                     let mut chars = field.chars();
-                    match (chars.next(), chars.next()) {
-                        (Some('-'), ..) => return Err(CliError::InvalidValue(arg)),
-                        (Some('"'), ..) => {
+                    match chars.next() {
+                        Some('"') => {
                             flags.insert(arg, Some(Self::parse_string(&mut input, field)?))
                         }
                         _ => flags.insert(arg, Some(field)),

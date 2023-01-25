@@ -155,6 +155,7 @@ impl Generator<'_> {
                     self.assign_value(ret, target, builder);
                 }
             }
+            InstMir::ConstAccess(r#const, ret) => todo!(),
             InstMir::Call(call, ret) => self.call(call, ret, builder),
             InstMir::Ctor(fields, ret, needs_instance) => {
                 self.constructor(fields, ret, needs_instance, builder)

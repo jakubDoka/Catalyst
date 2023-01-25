@@ -7,8 +7,7 @@ impl TyChecker<'_> {
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
-        let frame = VarHeaderTir::start_frame(builder.ctx);
-        let scope_frame = self.scope.start_frame();
+        let frame = builder.start_frame(self.scope);
 
         let Some((&last, other)) = block.elements.split_last() else {
             return Some(TirNode::new(Ty::UNIT, TirKind::Block(&[]), block.span()))
@@ -21,11 +20,9 @@ impl TyChecker<'_> {
                 .filter_map(|&expr| self.expr(expr.value, Inference::None, builder)),
         );
         let last = self.expr(last.value, inference, builder);
-        frame.end(builder.ctx, ());
+        builder.end_frame(self.scope, frame);
         let last = last?;
         store.push(last);
-
-        self.scope.end_frame(scope_frame);
 
         let nodes = builder.arena.alloc_slice(&store);
         Some(TirNode::new(last.ty, TirKind::Block(nodes), block.span()))
@@ -130,16 +127,14 @@ impl TyChecker<'_> {
             label: loop_expr.label.map(|label| label.ident),
         });
 
-        let var_frame = VarHeaderTir::start_frame(builder.ctx);
-        let frame = self.scope.start_frame();
+        let frame = builder.start_frame(self.scope);
         if let Some(label) = loop_expr.label {
             self.scope
                 .push(label.ident, ScopeItem::LoopHeaderTir(loop_id), label.span);
         }
 
         let body = self.expr(loop_expr.body, Inference::None, builder);
-        self.scope.end_frame(frame);
-        var_frame.end(builder.ctx, ());
+        builder.end_frame(self.scope, frame);
 
         let ty = builder
             .ctx
@@ -342,12 +337,10 @@ impl TyChecker<'_> {
         let arms = body
             .iter()
             .map(|&MatchArmAst { pattern, body, .. }| {
-                let frame = self.scope.start_frame();
-                let var_frame = VarHeaderTir::start_frame(builder.ctx);
+                let frame = builder.start_frame(self.scope);
                 let pat = self.pattern(pattern, value.ty, builder);
                 let body = self.if_block(body, inference, builder);
-                self.scope.end_frame(frame);
-                var_frame.end(builder.ctx, ());
+                builder.end_frame(self.scope, frame);
                 Some(MatchArmTir {
                     pat: pat?,
                     body: body?,

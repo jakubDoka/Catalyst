@@ -7,12 +7,11 @@ use std::{
 use crate::*;
 use lexing_t::*;
 
-use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
 #[derive(Clone, Copy, Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Const {
     pub name: Ident,
     pub ty: Ty,
@@ -22,7 +21,7 @@ pub struct Const {
 derive_relocated!(struct Const { ty });
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Impl {
     pub generics: Generics,
     pub key: ImplKey,
@@ -41,8 +40,7 @@ pub type Generics = FragSlice<FragSlice<Spec>>;
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive,
 )]
-#[archive_attr(derive(CheckBytes))]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct ImplKey {
     pub ty: Ty,
     pub spec: Spec,
@@ -51,7 +49,7 @@ pub struct ImplKey {
 derive_relocated!(struct ImplKey { ty spec });
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Instance {
     pub base: GenericTy,
     pub args: FragSlice<Ty>,
@@ -60,7 +58,7 @@ pub struct Instance {
 derive_relocated!(struct Instance { base args });
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Struct {
     pub name: Ident,
     pub generics: Generics,
@@ -86,7 +84,7 @@ gen_water_drops! {
 }
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Enum {
     pub name: Ident,
     pub generics: Generics,
@@ -113,7 +111,7 @@ gen_water_drops! {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Variant {
     pub name: Ident,
     pub ty: Ty,
@@ -125,8 +123,7 @@ derive_relocated!(struct Variant { ty });
 #[derive(
     Clone, Serialize, Deserialize, Archive, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug,
 )]
-#[archive_attr(derive(CheckBytes))]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct Pointer {
     index: u32,
     thread: u8,
@@ -199,8 +196,7 @@ impl fmt::Display for Mutability {
 #[derive(
     Clone, Deserialize, Archive, Serialize, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash,
 )]
-#[archive_attr(derive(CheckBytes))]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct RawMutability(u8);
 
 impl RawMutability {
@@ -253,7 +249,7 @@ impl RawMutability {
 }
 
 #[derive(Clone, Copy, Default, Deserialize, Archive, Serialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct SpecBase {
     pub name: Ident,
     pub generics: Generics,
@@ -278,7 +274,7 @@ gen_water_drops! {
 }
 
 #[derive(Clone, Copy, Deserialize, Archive, Serialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct SpecInstance {
     pub base: FragRef<SpecBase>,
     pub args: FragSlice<Ty>,
@@ -291,8 +287,7 @@ derive_relocated! {
 #[derive(
     Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Archive, Serialize,
 )]
-#[archive_attr(derive(CheckBytes))]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub enum Spec {
     Base(FragRef<SpecBase>),
     Instance(FragRef<SpecInstance>),
@@ -327,7 +322,7 @@ impl From<FragRef<SpecInstance>> for Spec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Archive, Serialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum GenericTy {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
@@ -369,7 +364,7 @@ impl From<FragRef<Enum>> for GenericTy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum ComputedTypecItem {
     Pointer(FragRef<Ty>),
     Instance(FragRef<Instance>),
@@ -391,8 +386,7 @@ const _: () = assert!(size_of::<FragRef<Pointer>>() == size_of::<Option<FragRef<
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
 )]
-#[archive_attr(derive(CheckBytes))]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub enum Ty {
     Struct(FragRef<Struct>),
     Enum(FragRef<Enum>),
@@ -695,8 +689,7 @@ macro_rules! gen_builtin {
         }
 
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize, Archive)]
-        #[archive_attr(derive(CheckBytes))]
-        #[archive_attr(derive(Hash, Eq, PartialEq))]
+        #[archive_attr(derive(PartialEq, Eq, Hash))]
         pub enum Builtin {
             $($builtin),*
         }
@@ -766,7 +759,7 @@ impl Default for Ty {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct SpecFunc {
     pub generics: Generics,
     pub signature: Signature,
@@ -784,7 +777,7 @@ impl SpecFunc {
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Field {
     pub vis: Option<Vis>,
     pub ty: Ty,
@@ -808,7 +801,7 @@ bitflags! {
     }
 }
 
-pub trait Humid: Sized + Clone {
+pub trait Humid: Sized + Clone + NoInteriorMutability {
     const NAMES: &'static [&'static str];
     fn is_water_drop(key: FragRef<Self>) -> bool;
     fn lookup_water_drop(key: &str) -> Option<FragRef<Self>>;

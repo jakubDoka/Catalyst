@@ -3,10 +3,9 @@ use std::ops::{Deref, DerefMut};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use super::*;
-use bytecheck::CheckBytes;
 
 #[derive(Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct TaskBase {
     #[with(InternerArchiver)]
     pub interner: InternerBase,
@@ -98,7 +97,7 @@ impl Task {
         mut frontier: BumpVec<(CompileRequestChild, Result<usize, usize>)>,
         tasks: &mut [Task],
         isa: &Isa,
-    ) -> BumpVec<FragRef<CompiledFunc>> {
+    ) -> BumpVec<CompiledFuncRef> {
         let mut cycle = (0..tasks.len()).cycle().fuse();
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
@@ -124,13 +123,13 @@ impl Task {
                 .collect::<BumpVec<_>>();
 
             let body = task.mir.bodies.get(&func).unwrap().to_owned();
-            let module = task.mir.modules[body.module].clone();
+            let module = task.mir.modules.reference(body.module);
             dependant_types.clear();
             dependant_types.extend(module.load_types(body.types).iter().copied());
             let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
             swap_mir_types(
                 body.generics,
-                &*module,
+                &module,
                 &mut dependant_types,
                 &bumped_params,
                 &mut task.typec,
@@ -212,7 +211,7 @@ impl Task {
         task_id: usize,
         generics: &[FragSlice<Spec>],
         frontier: &mut BumpVec<(CompileRequestChild, Result<usize, usize>)>,
-        seen: &mut Set<FragRef<CompiledFunc>>,
+        seen: &mut Set<CompiledFuncRef>,
     ) {
         while let Some(ty) = type_frontier.pop() {
             if !self.typec.may_need_drop(ty, &mut self.interner) {
@@ -275,7 +274,7 @@ impl Task {
         params: BumpVec<Ty>,
         task_id: usize,
         isa: &Isa,
-        seen: &mut Set<FragRef<CompiledFunc>>,
+        seen: &mut Set<CompiledFuncRef>,
     ) -> (CompileRequestChild, Result<usize, usize>) {
         let (func_id, params) = match callable {
             CallableMir::Func(func_id) => (func_id, params),

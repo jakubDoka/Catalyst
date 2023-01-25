@@ -11,5 +11,5 @@ graphs = { version = "0.1.0", path = "../../utils/graphs" }
 lexing-t = { path = "../lexing-t" }
 packaging-t = { path = "../packaging-t" }
 diags = { version = "0.1.0", path = "../diags" }
-bytecheck = "0.6.9"
-rkyv = { version = "0.7.39", features = ["validation", "copy"] }
+
+rkyv = { version = "0.7.39", features = ["copy"] }

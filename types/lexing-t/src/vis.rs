@@ -1,10 +1,9 @@
 use std::fmt;
 
-use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum Vis {
     Pub,
     Priv,

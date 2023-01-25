@@ -6,7 +6,6 @@ use storage::*;
 use crate::*;
 use rkyv::{Archive, Deserialize, Serialize};
 
-use bytecheck::CheckBytes;
 #[must_use]
 pub struct CtxFrame<T: CtxFrameItem> {
     ph: PhantomData<T>,
@@ -51,18 +50,6 @@ pub trait CtxFrameItem: Sized + 'static {
     fn start_frame(ctx: &Self::Ctx) -> CtxFrame<Self> {
         CtxFrame::start(ctx)
     }
-}
-
-#[macro_export]
-macro_rules! ctx_frame_seq_getters {
-    (|$ctx:ident| $res:expr) => {
-        fn seq_mut($ctx: &mut Self::Ctx) -> &mut Vec<Self> {
-            &mut $res
-        }
-        fn seq($ctx: &Self::Ctx) -> &[Self] {
-            &$res
-        }
-    };
 }
 
 pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
@@ -127,6 +114,24 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn get_var(&self, var: VRef<VarHeaderTir>) -> VarHeaderTir {
         self.ctx.vars[var.index()]
     }
+
+    pub fn start_frame(&self, scope: &Scope) -> TirFrame {
+        TirFrame {
+            scope_frame: scope.start_frame(),
+            base: self.ctx.vars.len(),
+        }
+    }
+
+    pub fn end_frame(&mut self, scope: &mut Scope, frame: TirFrame) {
+        self.ctx.vars.truncate(frame.base);
+        scope.end_frame(frame.scope_frame);
+    }
+}
+
+#[must_use]
+pub struct TirFrame {
+    scope_frame: ScopeFrame,
+    base: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -134,12 +139,6 @@ pub struct VarHeaderTir {
     pub ty: Ty,
     pub span: Span,
     pub mutable: bool,
-}
-
-impl CtxFrameItem for VarHeaderTir {
-    type Ctx = TirBuilderCtx;
-
-    ctx_frame_seq_getters! { |ctx| ctx.vars }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -238,6 +237,7 @@ pub struct TirNode<'a> {
 }
 
 impl<'a> TirNode<'a> {
+    #[inline]
     pub fn new(ty: Ty, kind: TirKind<'a>, span: Span) -> Self {
         Self {
             kind,
@@ -247,6 +247,7 @@ impl<'a> TirNode<'a> {
         }
     }
 
+    #[inline]
     pub fn with_flags(ty: Ty, kind: TirKind<'a>, flags: TirFlags, span: Span) -> Self {
         Self {
             kind,
@@ -289,6 +290,7 @@ pub enum TirKind<'a> {
     Block(&'a [TirNode<'a>]),
     Return(Option<&'a TirNode<'a>>),
     Call(&'a CallTir<'a>),
+    ConstAccess(FragRef<Const>),
     Access(VRef<VarHeaderTir>),
     Ctor(&'a [TirNode<'a>]),
     Deref(&'a TirNode<'a>),

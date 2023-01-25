@@ -1,4 +1,3 @@
-use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 
 const WIDTH: usize = std::mem::size_of::<usize>() * 8;
@@ -9,7 +8,7 @@ const WIDTH_POW: usize = WIDTH.ilog2() as usize;
 /// as cpu would have to perform bit-shift to retrieve boolean value anyway.
 
 #[derive(Archive, Serialize, Deserialize, Default, Clone)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct BitSet {
     data: Vec<usize>,
     len: usize,

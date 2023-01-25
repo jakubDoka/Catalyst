@@ -1,0 +1,19 @@
+info: mir repr of functions:
+fn [] main() -> uint  { () ret var2
+    block0 {
+        var2 = 0
+        return var2
+    }
+
+}
+
+fn [] pass(var0: uint) -> uint  { (var4: uint) ret var3
+    block1 {
+        var3 = access var4
+        return var3
+    }
+
+}
+
+
+

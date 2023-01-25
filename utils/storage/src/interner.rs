@@ -28,8 +28,7 @@ use crate::*;
     Default,
     Hash,
 )]
-#[archive_attr(derive(Hash, Eq, PartialEq))]
-#[archive_attr(derive(CheckBytes))]
+#[archive_attr(derive(PartialEq, Eq, Hash))]
 pub struct Ident(FragSlice<u8>);
 
 derive_relocated!(
@@ -170,9 +169,8 @@ impl Index<Ident> for Interner {
     }
 }
 
-use bytecheck::CheckBytes;
 #[derive(Archive, Deserialize, Serialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ArchivedInterner {
     slices: Vec<FragSlice<u8>>,
     data: SyncFragBase<u8>,

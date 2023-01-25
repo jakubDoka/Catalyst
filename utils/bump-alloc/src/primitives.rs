@@ -6,7 +6,6 @@ use std::{
     ops::Range,
 };
 
-use bytecheck::CheckBytes;
 use rkyv::with::Skip;
 
 macro_rules! gen_derives {
@@ -64,7 +63,6 @@ macro_rules! gen_derives {
 
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragRef);
 
@@ -107,7 +105,7 @@ impl<T: ?Sized> FragRef<T> {
 pub type OptFragRef<T> = Option<FragRef<T>>;
 
 #[derive(Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct FragSlice<T: ?Sized>(pub(crate) FragSliceAddr, pub(crate) PhantomData<*const T>);
 gen_derives!(FragSlice);
 
@@ -242,7 +240,7 @@ pub trait VRefDefault {
 
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct VRef<T: ?Sized>(NonMaxU32, PhantomData<*const T>);
 
 impl<T: ?Sized> Hash for ArchivedVRef<T> {
@@ -312,7 +310,7 @@ impl const ReprComply for u32 {
 }
 
 #[derive(Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct VSlice<T: ?Sized>(u32, u32, #[with(Skip)] PhantomData<*const T>);
 
 impl<T> VSlice<T> {

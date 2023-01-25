@@ -193,6 +193,10 @@ impl TyChecker<'_> {
                 write!(buffer, " = ")?;
                 self.display_tir(rhs, buffer, indent, var_count)?;
             }
+            TirKind::ConstAccess(r#const) => {
+                let name = &self.interner[self.typec[r#const].name];
+                buffer.push_str(name);
+            }
         }
 
         Ok(())

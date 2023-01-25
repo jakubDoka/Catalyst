@@ -65,7 +65,6 @@ impl TyChecker<'_> {
         ctx: &mut TirBuilderCtx,
         offset: usize,
     ) -> Option<Option<TirFunc<'a>>> {
-        let frame = self.scope.start_frame();
         let Func {
             signature,
             generics: self_generics,
@@ -75,6 +74,7 @@ impl TyChecker<'_> {
         ctx.generics.extend(self.typec.pack_func_param_specs(func));
         let mut builder =
             TirBuilder::new(arena, signature.ret, ret.map(|(.., ret)| ret.span()), ctx);
+        let frame = builder.start_frame(self.scope);
 
         self.insert_generics(generics, offset);
         self.insert_spec_functions(self_generics, offset);
@@ -88,19 +88,18 @@ impl TyChecker<'_> {
                 self.block(body, Inference::Weak(signature.ret), &mut builder)
             }
             FuncBodyAst::Extern(..) => {
-                self.scope.end_frame(frame);
+                builder.end_frame(self.scope, frame);
                 return Some(None);
             }
         }?;
 
-        self.scope.end_frame(frame);
+        builder.end_frame(self.scope, frame);
 
-        builder.ctx.vars.clear();
         builder.ctx.generics.clear();
 
         let body = if tir_body.ty == Ty::TERMINAL {
             tir_body
-        } else if tir_body.ty == signature.ret {
+        } else if tir_body.ty == signature.ret && signature.ret != Ty::UNIT {
             self.return_low(Some(tir_body), body.span(), &mut builder)?
         } else {
             let ret = self.return_low(None, body.span(), &mut builder)?;

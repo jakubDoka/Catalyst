@@ -2,6 +2,7 @@
 #![feature(default_free_fn)]
 #![feature(let_chains)]
 #![feature(iter_collect_into)]
+#![feature(trivial_bounds)]
 
 mod context;
 mod generate;
@@ -13,9 +14,9 @@ pub use {
     crate::object_context::{ObjectContext, ObjectCreationError, ObjectRelocationError},
     context::{
         CodeSaveError, CompileRequest, CompileRequestChild, CompileRequests, CompiledFunc,
-        CompiledFuncInner, ComputedValue, Gen, GenBase, GenBlock, GenBuilder, GenFuncConstant,
-        GenItemName, GenLayouts, GenReloc, GenResources, GenValue, Isa, IsaCreationError, Layout,
-        Offset,
+        CompiledFuncInner, CompiledFuncRef, ComputedValue, Gen, GenBase, GenBlock, GenBuilder,
+        GenFuncConstant, GenItemName, GenLayouts, GenReloc, GenResources, GenValue, Isa,
+        IsaCreationError, Layout, Offset,
     },
     jit_context::{JitContext, JitRelocError},
     state_gen::Generator,

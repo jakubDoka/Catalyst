@@ -1,6 +1,5 @@
 use std::collections::hash_map;
 
-use bytecheck::CheckBytes;
 use diags::SourceLoc;
 use lexing_t::*;
 use packaging_t::{Module, Resources, Source};
@@ -36,7 +35,7 @@ impl Scope {
         self.pushed.push((id, self.data.insert(id, record)));
     }
 
-    pub fn start_frame(&mut self) -> ScopeFrame {
+    pub fn start_frame(&self) -> ScopeFrame {
         ScopeFrame(self.pushed.len())
     }
 
@@ -210,7 +209,7 @@ impl ScopeRecord {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ModuleItem {
     pub id: Ident,
     pub ptr: ModuleItemPtr,
@@ -232,7 +231,7 @@ impl ModuleItem {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum ModuleItemPtr {
     Func(FragRef<Func>),
     Ty(Ty),

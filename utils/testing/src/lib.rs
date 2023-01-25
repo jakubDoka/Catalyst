@@ -151,7 +151,6 @@ pub mod items {
         println!("Running sub test: {name}");
         let runner = move || {
             let (ws, packages) = test_code(name);
-
             let mut out = String::new();
             ws.display(&packages, &mut SnippetDisplayImpl::default(), &mut out);
 

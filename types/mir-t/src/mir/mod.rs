@@ -23,14 +23,13 @@ use std::{
     sync::Arc,
 };
 
-use bytecheck::CheckBytes;
 use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 use typec_t::*;
 
 #[derive(Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct MirBase {
     pub bodies: Arc<Bodies>,
     pub modules: SyncFragBase<ModuleMir>,
@@ -38,7 +37,7 @@ pub struct MirBase {
 
 #[repr(transparent)]
 #[derive(Serialize, Deserialize, Archive, Default)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Bodies {
     #[with(DashMapArchiver)]
     bodies: CMap<FragRef<Func>, FuncMir>,
@@ -96,7 +95,7 @@ impl Default for Mir {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct FuncMir {
     pub args: VRefSlice<ValueMir>,
     pub ret: VRef<ValueMir>,
@@ -124,10 +123,9 @@ impl FuncMir {
 
 derive_relocated!(struct FuncMir { module });
 
-pub type ModuleMir = Arc<ModuleMirInner>;
+pub type ModuleMir = ModuleMirInner;
 
-#[derive(Deserialize, Archive, Serialize, Clone, Default)]
-#[archive_attr(derive(CheckBytes))]
+#[derive(Deserialize, Archive, Serialize, Default, Clone)]
 pub struct ModuleMirInner {
     pub blocks: PushMap<BlockMir>,
     pub insts: PushMap<InstMir>,
@@ -197,13 +195,13 @@ impl ModuleMirInner {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct DropMir {
     pub value: VRef<ValueMir>,
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct MirTy {
     pub ty: Ty,
 }
@@ -218,7 +216,7 @@ impl MirTy {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Default)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct BlockMir {
     pub passed: OptVRef<ValueMir>,
     pub insts: VSlice<InstMir>,
@@ -228,7 +226,7 @@ pub struct BlockMir {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum ControlFlowMir {
     Split {
         cond: VRef<ValueMir>,
@@ -257,17 +255,18 @@ pub struct DebugData {
 
 impl DebugData {
     pub fn clear(&mut self) {
-        self.instr_spans.clear();
-        self.block_closers.clear();
+        //self.instr_spans.clear();
+        //self.block_closers.clear();
     }
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
     Access(VRef<ValueMir>, OptVRef<ValueMir>),
+    ConstAccess(FragRef<Const>, VRef<ValueMir>),
     Call(VRef<CallMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
@@ -278,7 +277,7 @@ pub enum InstMir {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct CallMir {
     pub callable: CallableMir,
     pub params: VRefSlice<MirTy>,
@@ -288,7 +287,7 @@ pub struct CallMir {
 derive_relocated!(struct CallMir { callable });
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
-#[archive_attr(derive(CheckBytes))]
+
 pub enum CallableMir {
     Func(FragRef<Func>),
     SpecFunc(FragRef<SpecFunc>),
@@ -304,7 +303,7 @@ derive_relocated! {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ValueMir {
     pub ty: VRef<MirTy>,
 }
@@ -323,11 +322,11 @@ impl ValueMir {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct DestMir;
 
 #[derive(Serialize, Deserialize, Archive, Clone)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct FuncTypes(PushMap<MirTy>);
 
 impl FuncTypes {
@@ -389,7 +388,7 @@ impl DerefMut for FuncTypes {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct FuncValues(PushMap<ValueMir>);
 
 impl FuncValues {

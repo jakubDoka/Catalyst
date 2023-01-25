@@ -1,4 +1,4 @@
-use std::sync::{mpsc::SendError, Arc};
+use std::sync::mpsc::SendError;
 
 use super::*;
 
@@ -56,8 +56,8 @@ impl Worker {
         task: &mut Task,
         isa: &Isa,
         shared: &Shared,
-        entry_points: &[FragRef<CompiledFunc>],
-    ) -> FragRef<CompiledFunc> {
+        entry_points: &[CompiledFuncRef],
+    ) -> CompiledFuncRef {
         self.context.func.signature = ir::Signature::new(isa.default_call_conv());
         self.context
             .func
@@ -317,10 +317,7 @@ impl Worker {
             }
         }
 
-        let module = task
-            .mir
-            .modules
-            .push(Arc::new(self.state.mir_ctx.module.clone()));
+        let module = task.mir.modules.push(self.state.mir_ctx.module.clone());
         assert_eq!(module, mir_module);
         self.state.mir_ctx.module.clear();
     }
@@ -360,7 +357,7 @@ impl Worker {
         shared: &Shared,
         isa: &Isa,
         gen_layouts: &mut GenLayouts,
-    ) -> BumpVec<FragRef<CompiledFunc>> {
+    ) -> BumpVec<CompiledFuncRef> {
         let mut compiled = bumpvec![];
         for &CompileRequest {
             func,
@@ -372,11 +369,6 @@ impl Worker {
         {
             compiled.push(id);
 
-            if task.gen[id].inner.load().is_some() {
-                task.gen[id].set_func(func);
-                continue;
-            }
-
             let Func { signature, .. } = task.typec[func];
 
             let body = task
@@ -387,7 +379,7 @@ impl Worker {
                 .to_owned();
             self.state.gen_resources.call_offset = body.calls.start() as usize;
             self.state.gen_resources.drops_offset = body.drops.start() as usize;
-            let module = task.mir.modules[body.module].clone();
+            let module = task.mir.modules.reference(body.module);
             let params = task.compile_requests.ty_slices[params].to_bumpvec();
             self.state.temp_dependant_types.clear();
             self.state
@@ -395,7 +387,7 @@ impl Worker {
                 .extend(module.load_types(body.types).iter().copied());
             swap_mir_types(
                 body.generics,
-                &*module,
+                &module,
                 &mut self.state.temp_dependant_types,
                 &params,
                 &mut task.typec,
@@ -403,7 +395,7 @@ impl Worker {
             );
             let mut builder = GenBuilder::new(
                 isa,
-                &*module,
+                &module,
                 &mut self.context.func,
                 &self.state.temp_dependant_types,
                 &mut self.function_builder_ctx,
@@ -464,7 +456,7 @@ impl Worker {
         macros: &[MacroCompileRequest],
         task: &mut Task,
         shared: &Shared,
-    ) -> BumpVec<FragRef<CompiledFunc>> {
+    ) -> BumpVec<CompiledFuncRef> {
         let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
             let Impl { methods, .. } = task.typec[r#impl];
 

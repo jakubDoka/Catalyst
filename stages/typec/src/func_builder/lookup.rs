@@ -441,7 +441,11 @@ impl TyChecker<'_> {
 
     pub fn value_path<'a>(
         &mut self,
-        path @ PathAst { slash, start, .. }: PathAst,
+        path @ PathAst {
+            slash,
+            start,
+            segments,
+        }: PathAst,
         inference: Inference,
         builder: &mut TirBuilder<'a, '_>,
     ) -> ExprRes<'a> {
@@ -482,10 +486,27 @@ impl TyChecker<'_> {
             })?;
         };
 
-        let res = match self.lookup(start.ident, start.span, "variable or enum")? {
+        let choices = "variable, enum, constant or module";
+        let sub_choices = "variable, enum or constant";
+        let (item, _segments) = match self.lookup(start.ident, start.span, choices)? {
+            ScopeItem::Module(module) => {
+                let &[PathSegmentAst::Name(name), ref others @ ..] = segments else {
+                    self.workspace.push(InvalidPathSegment {
+                        message: "expected identirier (variable, enum or constant)",
+                        loc: SourceLoc { origin: self.source, span: start.span.as_end() },
+                    })?;
+                };
+
+                let scoped = self.interner.intern_scoped(module.index(), name.ident);
+                (self.lookup(scoped, name.span, sub_choices)?, others)
+            }
+            item => (item, segments),
+        };
+
+        Some(match item {
             ScopeItem::Ty(ty) => match ty {
                 Ty::Enum(..) => {
-                    return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder)
+                    return self.enum_ctor(EnumCtorAst { path, value: None }, inference, builder);
                 }
                 Ty::Struct(..)
                 | Ty::Instance(..)
@@ -500,16 +521,20 @@ impl TyChecker<'_> {
                     },
                 })?,
             },
+            ScopeItem::Const(r#const) => TirNode::with_flags(
+                self.typec[r#const].ty,
+                TirKind::ConstAccess(r#const),
+                TirFlags::IMMUTABLE,
+                path.span(),
+            ),
             ScopeItem::VarHeaderTir(var) => TirNode::with_flags(
                 builder.get_var(var).ty,
                 TirKind::Access(var),
                 TirFlags::IMMUTABLE & !builder.get_var(var).mutable,
                 path.span(),
             ),
-            item => self.invalid_symbol_type(item, start.span, "variable or enum")?,
-        };
-
-        Some(res)
+            item => self.invalid_symbol_type(item, start.span, sub_choices)?,
+        })
     }
 
     pub fn find_binary_func(&mut self, op: NameAst, lhs_ty: Ty, rhs_ty: Ty) -> OptFragRef<Func> {

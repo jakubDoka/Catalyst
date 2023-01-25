@@ -4,17 +4,17 @@ use rkyv::{
     Archive, Deserialize, Serialize,
 };
 
-use std::{default::default, path::*, time::SystemTime};
+use std::{default::default, io, path::*, time::SystemTime};
 use storage::*;
 
-use bytecheck::CheckBytes;
+use crate::ResourceDb;
 
 pub type PackageGraph = graphs::CycleDetector;
 
 const BUILTIN_PACKAGE_SOURCE: &str = include_str!("water_drops.ctl");
 
 #[derive(Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Resources {
     pub sources: PoolMap<Source>,
     #[with(Skip)]
@@ -57,6 +57,8 @@ impl Resources {
             line_mapping: LineMapping::new(BUILTIN_PACKAGE_SOURCE),
             changed: true,
             dead: false,
+            loaded: true,
+            builtin: true,
         });
         assert_eq!(Self::BUILTIN_SOURCE, builtin_source);
 
@@ -120,16 +122,21 @@ impl Resources {
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Source {
     #[with(AsString)]
     pub path: PathBuf,
     #[with(UnixTimestamp)]
     pub last_modified: SystemTime,
+    #[with(Skip)]
     pub content: String,
+    #[with(Skip)]
     pub line_mapping: LineMapping,
     pub changed: bool,
     pub dead: bool,
+    #[with(Skip)]
+    pub loaded: bool,
+    pub builtin: bool,
 }
 
 impl Source {
@@ -139,6 +146,22 @@ impl Source {
 
     pub fn reveal_span_lines(&self, span: Span) -> Span {
         span.reveal_lines(&self.content)
+    }
+
+    pub fn ensure_loaded(&mut self, resources: &mut dyn ResourceDb) -> io::Result<()> {
+        if self.loaded {
+            return Ok(());
+        }
+
+        self.content = if self.builtin {
+            BUILTIN_PACKAGE_SOURCE.to_string()
+        } else {
+            resources.read_to_string(&self.path)?
+        };
+        self.line_mapping = LineMapping::new(&self.content);
+        self.loaded = true;
+
+        Ok(())
     }
 }
 

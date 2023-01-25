@@ -1,0 +1,25 @@
+error: amount of arguments passed to the function is incorrect
+ --> additional-param-garbage/root.ctl:1:8
+  |
+1 | fn [T] pass(value: T) -> T => value
+  |        ---- info: because of this definition
+2 | 
+3 | struct B
+4 | #[entry]
+5 | 
+6 | fn main -> uint => pass\[uint, B](0uint, 'h')
+  |                                  ^^^^^^^^^^^^ here
+  |
+  = info: expected 1, but got 2
+
+info: mir repr of functions:
+fn [] pass(var0: param0) -> param0  { (var3: param0) ret var2
+    block0 {
+        var2 = access var3
+        return var2
+    }
+
+}
+
+
+

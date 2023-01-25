@@ -227,6 +227,14 @@ impl MirChecker<'_, '_> {
             InstMir::Var(value, ret) => {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
+            InstMir::ConstAccess(r#const, ret) => {
+                write!(
+                    buffer,
+                    "var{} = const_access {}",
+                    ret.index(),
+                    &self.interner[self.typec[r#const].name]
+                )?;
+            }
             InstMir::Drop(drop) => {
                 let DropMir { value } = self.mir_ctx.module.drops[drop];
                 write!(buffer, "drop var{}", value.index())?;

@@ -28,13 +28,8 @@ impl MirChecker<'_, '_> {
 
     fn func(&mut self, module: FragRef<ModuleMir>, func: FragRef<Func>, body: TirNode) -> FuncMir {
         let Func {
-            signature,
-            flags,
-            name,
-            ..
+            signature, flags, ..
         } = self.typec[func];
-        dbg!(&self.interner[name]);
-
         let prev_calls = self.mir_ctx.module.calls.len();
         let prev_drops = self.mir_ctx.module.drops.len();
 
@@ -86,6 +81,9 @@ impl MirChecker<'_, '_> {
             TirKind::Break(&r#break) => self.r#break(r#break, span),
             TirKind::Let(&r#let) => self.r#let(r#let),
             TirKind::Assign(&assign) => self.assign(assign, span),
+            TirKind::ConstAccess(r#const) => {
+                pass!(dest => self.r#const_access(dest, r#const, span))
+            }
         }
     }
 
@@ -633,14 +631,22 @@ impl MirChecker<'_, '_> {
             self.node(last, dest, r#move)?
         };
 
-        dbg!(frame.base);
-
         match res {
             Some(..) => self.end_scope_frame(frame, span),
             None => self.discard_scope_frame(frame),
         }
 
         res
+    }
+
+    fn const_access(
+        &mut self,
+        dest: VRef<ValueMir>,
+        r#const: FragRef<Const>,
+        span: Span,
+    ) -> NodeRes {
+        self.inst(InstMir::ConstAccess(r#const, dest), span);
+        Some(dest)
     }
 
     fn access(

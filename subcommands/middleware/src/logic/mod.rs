@@ -7,9 +7,9 @@ use std::{
     default::default,
     env,
     error::Error,
-    fmt::Write,
+    fmt::Write as FmWrite,
     fs,
-    io::BufWriter,
+    io::{BufWriter, Seek, SeekFrom, Write},
     iter, mem,
     num::NonZeroU8,
     os::unix::prelude::MetadataExt,
@@ -24,8 +24,6 @@ use std::{
     time::Instant,
 };
 
-use bytecheck::CheckBytes;
-
 use cli::CliInput;
 use cranelift_codegen::{
     ir::{self, InstBuilder},
@@ -34,13 +32,11 @@ use cranelift_codegen::{
 };
 use cranelift_frontend::FunctionBuilderContext;
 use rkyv::{
-    check_archived_root,
     de::{deserializers::SharedDeserializeMap, SharedDeserializeRegistry},
     ser::{
         serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap, WriteSerializer},
         ScratchSpace, Serializer, SharedSerializeRegistry,
     },
-    validation::validators::DefaultValidator,
     with::{AsStringError, Skip, UnixTimestampError},
     Archive, Deserialize, Fallible, Serialize,
 };
@@ -81,11 +77,12 @@ impl Middleware {
         };
         std::fs::create_dir_all(prefix)?;
 
-        let file = fs::OpenOptions::new()
+        let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
             .open(&path)?;
-        let writer = BufWriter::new(file);
+        let mut writer = BufWriter::new(&mut file);
+        writer.write_all(&[0; mem::size_of::<i64>()])?;
 
         let mut serializer = MiddlewareSerializer(CompositeSerializer::new(
             WriteSerializer::new(writer),
@@ -98,27 +95,43 @@ impl Middleware {
                 .ok_or_else(|| "incremental data is not present")?,
         )?;
 
+        let Some(exe_mod_time) = get_exe_mod_time() else {
+            return Ok(());
+        };
+
+        drop(serializer);
+
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&exe_mod_time.to_ne_bytes())?;
+
         Ok(())
     }
 
-    pub fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T, Box<dyn Error + Send + Sync>>
+    unsafe fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T, Box<dyn Error + Send + Sync>>
     where
         T: Archive,
-        T::Archived: 'a
-            + CheckBytes<DefaultValidator<'a>>
-            + Deserialize<T, MiddlewareDeserializer<SharedDeserializeMap>>,
+        T::Archived: 'a + Deserialize<T, MiddlewareDeserializer<SharedDeserializeMap>>,
     {
-        Ok(check_archived_root::<'a, T>(bytes)
-            .map_err(|e| format!("{e}"))?
+        Ok(rkyv::util::archived_root::<T>(bytes)
             .deserialize(&mut MiddlewareDeserializer(SharedDeserializeMap::default()))?)
     }
 
     pub fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
         let _t = QuickTimer::new("incremental data load");
-        let incr = Self::from_bytes::<Incremental>(incremental)?;
-        if incr.exe_mod_time.is_none() || get_exe_mod_time() != incr.exe_mod_time {
+
+        let check_size = mem::size_of::<i64>();
+        let Some(check_array) = incremental.get(..check_size).and_then(|slice| slice.try_into().ok()) else {
+            return Err("check sequence is corrupted".into());
+        };
+
+        let check = i64::from_ne_bytes(check_array);
+        if get_exe_mod_time() != Some(check) {
             return Err("data is outdated".into());
         }
+
+        // SAFETY: After former checks, there is nothing more we can do or are willing to do
+        // user is just unlucky at this point
+        let incr = unsafe { Self::from_bytes::<Incremental>(&incremental[check_size..])? };
 
         self.incremental = Some(incr);
 
@@ -169,7 +182,6 @@ impl Middleware {
             mut worker_pool,
             module_items,
             builtin_functions,
-            exe_mod_time,
         }) = self.incremental.take() else {
             return None;
         };
@@ -219,7 +231,6 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
-                exe_mod_time,
             });
             return None;
         };
@@ -251,7 +262,6 @@ impl Middleware {
             worker_pool,
             module_items,
             builtin_functions,
-            exe_mod_time,
         });
 
         Some(DiagnosticView {
@@ -283,6 +293,7 @@ impl Middleware {
 
         let Err(err) = self.load(&bytes) else {return};
 
+        let _ = fs::remove_file(path);
         self.workspace.push(IncrementalDataIssue { err });
     }
 
@@ -305,7 +316,6 @@ impl Middleware {
             mut worker_pool,
             mut module_items,
             mut builtin_functions,
-            exe_mod_time,
         } = self
             .incremental
             .take()
@@ -337,7 +347,6 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
-                exe_mod_time,
             });
 
             return (
@@ -425,7 +434,6 @@ impl Middleware {
                 worker_pool,
                 module_items,
                 builtin_functions,
-                exe_mod_time,
             });
 
             let output = if self.workspace.has_errors() {
@@ -480,7 +488,6 @@ impl Middleware {
             worker_pool,
             module_items,
             builtin_functions,
-            exe_mod_time,
         });
 
         (
@@ -513,7 +520,7 @@ impl Middleware {
         &mut self,
         base: &mut TaskBase,
         mut tasks: Vec<Task>,
-    ) -> (Option<String>, Task, Vec<FragRef<CompiledFunc>>) {
+    ) -> (Option<String>, Task, Vec<CompiledFuncRef>) {
         // we want consistent output during tests
         tasks.sort_unstable_by_key(|t| t.id);
 
@@ -582,8 +589,8 @@ impl Middleware {
         tasks: &mut [Task],
         isa: &Isa,
     ) -> (
-        Vec<FragRef<CompiledFunc>>, // in executable
-        Vec<FragRef<CompiledFunc>>, // in lib or dll
+        Vec<CompiledFuncRef>, // in executable
+        Vec<CompiledFuncRef>, // in lib or dll
     ) {
         let task_distribution = (0..tasks.len()).cycle();
         let distributor = |(func, task_id): (_, usize)| {
@@ -1086,9 +1093,8 @@ impl PackageTask {
 pub struct GenTask {}
 
 #[derive(Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Incremental {
-    pub exe_mod_time: Option<i64>,
     pub resources: Resources,
     pub task_base: TaskBase,
     #[with(Skip)]
@@ -1107,7 +1113,6 @@ impl Incremental {
     pub fn new(thread_count: u8) -> Self {
         let mut builtin_functions = vec![];
         Incremental {
-            exe_mod_time: get_exe_mod_time(),
             resources: default(),
             task_base: TaskBase::new(thread_count, &mut builtin_functions),
             worker_pool: default(),

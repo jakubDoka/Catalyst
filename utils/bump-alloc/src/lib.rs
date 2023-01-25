@@ -15,7 +15,8 @@
     pointer_is_aligned,
     slice_index_methods,
     slice_group_by,
-    ptr_metadata
+    ptr_metadata,
+    auto_traits
 )]
 
 mod alloc_tree;
@@ -38,9 +39,10 @@ pub use {
             FragRelocator, Relocated, RelocatedObjects,
         },
         sync::{FragSliceKey, SyncFragBase, SyncFragMap, SyncFragView},
-        ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, SmallVecArchiver,
+        ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, NoInteriorMutability,
+        SmallVecArchiver,
     },
-    map::{CMap, CSet, Map, Set},
+    map::{CMap, CSet, FvnBuildHasher, Map, Set},
     primitives::{
         CtlOption, FragRef, FragRefSlice, FragSlice, NoShortCircuitCollect, OptFragRef, OptVRef,
         TransposeOption, VRef, VRefDefault, VRefSlice, VSlice,
@@ -72,6 +74,7 @@ mod map {
     impl BuildHasher for FvnBuildHasher {
         type Hasher = FvnHasher;
 
+        #[inline]
         fn build_hasher(&self) -> Self::Hasher {
             FvnHasher(FVN_OFFSET)
         }
@@ -80,10 +83,12 @@ mod map {
     pub struct FvnHasher(u64);
 
     impl Hasher for FvnHasher {
+        #[inline]
         fn finish(&self) -> u64 {
             self.0
         }
 
+        #[inline]
         fn write(&mut self, bytes: &[u8]) {
             for &byte in bytes {
                 self.0 = self.0.wrapping_mul(FVN_PRIME);

@@ -5,13 +5,13 @@ use std::{
 };
 
 use bump_alloc::*;
-use bytecheck::CheckBytes;
+
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::VRef;
 
 #[derive(Archive, Serialize, Deserialize, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct PushMap<T> {
     data: Vec<T>,
 }

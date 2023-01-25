@@ -8,7 +8,7 @@ use std::{fmt::Write, sync::Arc};
 use std::{mem, ops::Deref};
 
 use crate::*;
-use bytecheck::CheckBytes;
+
 use diags::SourceLoc;
 use packaging_t::{Module, Resources};
 
@@ -22,7 +22,7 @@ pub type Macros = CMap<Ty, MacroImpl>;
 pub type MayNeedDrop = CMap<Ty, bool>;
 
 #[derive(Clone, Archive, Serialize, Deserialize, Default)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ImplList {
     #[with(SmallVecArchiver)]
     pub inner: SmallVec<[FragRef<Impl>; 4]>,
@@ -31,7 +31,7 @@ pub struct ImplList {
 derive_relocated!(struct ImplList { inner });
 
 #[derive(Default, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Mapping {
     #[with(DashMapArchiver)]
     pub lookup: TypecLookup,
@@ -48,7 +48,7 @@ pub struct Mapping {
 derive_relocated!(struct Mapping { lookup impl_lookup implemented macros may_need_drop });
 
 #[derive(Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct TypecBase {
     pub cache: TypecCacheBase,
     pub mapping: Arc<Mapping>,
@@ -152,12 +152,14 @@ macro_rules! gen_cache {
             impl Index<FragRef<$ty>> for Typec {
                 type Output = $ty;
 
+                #[inline]
                 fn index(&self, index: FragRef<$ty>) -> &Self::Output {
                     &self.cache.$name[index]
                 }
             }
 
             impl IndexMut<FragRef<$ty>> for Typec {
+                #[inline]
                 fn index_mut(&mut self, index: FragRef<$ty>) -> &mut Self::Output {
                     &mut self.cache.$name[index]
                 }
@@ -166,12 +168,14 @@ macro_rules! gen_cache {
             impl Index<FragSlice<$ty>> for Typec {
                 type Output = [$ty];
 
+                #[inline]
                 fn index(&self, index: FragSlice<$ty>) -> &Self::Output {
                     &self.cache.$name[index]
                 }
             }
 
             impl IndexMut<FragSlice<$ty>> for Typec {
+                #[inline]
                 fn index_mut(&mut self, index: FragSlice<$ty>) -> &mut Self::Output {
                     &mut self.cache.$name[index]
                 }
@@ -182,6 +186,7 @@ macro_rules! gen_cache {
             impl Index<FragRef<$sync_ty>> for Typec {
                 type Output = $sync_ty;
 
+                #[inline]
                 fn index(&self, index: FragRef<$sync_ty>) -> &Self::Output {
                     &self.cache.$sync_name[index]
                 }
@@ -190,6 +195,7 @@ macro_rules! gen_cache {
             impl Index<FragSlice<$sync_ty>> for Typec {
                 type Output = [$sync_ty];
 
+                #[inline]
                 fn index(&self, index: FragSlice<$sync_ty>) -> &Self::Output {
                     &self.cache.$sync_name[index]
                 }
@@ -197,7 +203,7 @@ macro_rules! gen_cache {
         )*
 
         #[derive(Serialize, Deserialize, Archive)]
-        #[archive_attr(derive(CheckBytes))]
+
         pub struct TypecCacheBase {
             $(
                 pub $name: FragBase<$ty>,
@@ -1245,7 +1251,7 @@ pub enum SpecCmpError {
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct Loc {
     pub module: VRef<Module>,
     pub item: VRef<ModuleItem>,
@@ -1322,7 +1328,7 @@ pub fn lookup_water_drop<T>(drops: &[(&str, FragRef<T>)], name: &str) -> Option<
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct MacroImpl {
     pub name: Ident,
     pub r#impl: OptFragRef<Impl>,
@@ -1334,7 +1340,7 @@ derive_relocated! {
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct ModuleItems {
     pub items: PushMap<ModuleItem>,
 }

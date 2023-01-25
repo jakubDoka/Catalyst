@@ -26,5 +26,5 @@ typec-t = { version = "0.1.0", path = "../../types/typec-t" }
 cranelift-codegen = "0.90.0"
 cranelift-frontend = "0.90.0"
 target-lexicon = "0.12.4"
-bytecheck = "0.6.9"
-rkyv = { version = "0.7.39", features = ["validation", "copy", "alloc"] }
+
+rkyv = { version = "0.7.39", features = ["copy", "alloc"] }

@@ -15,7 +15,7 @@ pub const EXPOSED_FUNCS: &[(&str, *const u8)] = &[("ctl_lexer_next", ctl_lexer_n
 
 pub struct JitContext {
     exposed_funcs: Map<&'static str, *const u8>,
-    functions: Map<FragRef<CompiledFunc>, JitFunction>,
+    functions: Map<CompiledFuncRef, JitFunction>,
     resources: JitResources,
     runtime_lookup: RuntimeFunctionLookup,
 }
@@ -37,7 +37,7 @@ impl JitContext {
     /// Caller has to guarantee that the function pointer has correct signature.
     pub unsafe fn get_function<'a, T: FunctionPointer<'a>>(
         &'a self,
-        func: FragRef<CompiledFunc>,
+        func: CompiledFuncRef,
     ) -> Option<T> {
         self.functions
             .get(&func)
@@ -50,7 +50,7 @@ impl JitContext {
     /// The caller must ensure signature of `func` matches the function pointer
     /// signature passed as `ptr`, `func` also has to have default call convention
     /// `ptr` should be `export "C"`.
-    pub unsafe fn load_runtime_function(&mut self, func: FragRef<CompiledFunc>, ptr: *const u8) {
+    pub unsafe fn load_runtime_function(&mut self, func: CompiledFuncRef, ptr: *const u8) {
         if self.functions.get(&func).is_some() {
             return;
         }
@@ -68,7 +68,7 @@ impl JitContext {
     /// it is ignored.
     pub fn load_functions(
         &mut self,
-        funcs: impl IntoIterator<Item = FragRef<CompiledFunc>>,
+        funcs: impl IntoIterator<Item = CompiledFuncRef>,
         gen: &Gen,
         typec: &Typec,
         interner: &Interner,
@@ -78,7 +78,7 @@ impl JitContext {
             .into_iter()
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let compiled_func = &gen[func];
+                let compiled_func = gen.get_direct(func);
                 let Func {
                     visibility, name, ..
                 } = typec[compiled_func.func()];
@@ -93,12 +93,8 @@ impl JitContext {
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));
                 }
 
-                let Some(ref inner) = *compiled_func.inner.load() else {
-                    return Err(JitRelocError::MissingBytecode(func));
-                };
-
-                let layout = alloc::Layout::for_value(inner.bytecode.as_slice())
-                    .align_to(inner.alignment as usize)
+                let layout = alloc::Layout::for_value(compiled_func.bytecode.as_slice())
+                    .align_to(compiled_func.alignment as usize)
                     .unwrap();
                 let mut code = if temp {
                     self.resources.temp_executable.alloc(layout)
@@ -108,7 +104,8 @@ impl JitContext {
 
                 // SAFETY: `code` has the same layout and only we own it.
                 unsafe {
-                    code.as_mut().copy_from_slice(inner.bytecode.as_slice());
+                    code.as_mut()
+                        .copy_from_slice(compiled_func.bytecode.as_slice());
                 }
 
                 Ok((func, code))
@@ -120,11 +117,11 @@ impl JitContext {
         }
 
         for (func, code) in filtered_funcs {
-            let func_ent = &gen[func];
+            let func_ent = gen.get_direct(func);
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },
-                func_ent.inner.load().as_ref().map_or(&[], |i| &i.relocs),
+                &func_ent.relocs,
                 |name| match name {
                     GenItemName::Func(func) => self
                         .functions
@@ -368,11 +365,11 @@ impl Default for JitResources {
 //             pub struct $name {
 //                 pub layout: Layout,
 //                 pub name: Ident,
-//                 $(pub $fn_name: FragRef<CompiledFunc>),+
+//                 $(pub $fn_name: CompiledFuncRef),+
 //             }
 
 //             impl $name {
-//                 pub fn new(layout: Layout, name: Ident, mut fns: impl Iterator<Item = FragRef<CompiledFunc>>) -> Option<Self> {
+//                 pub fn new(layout: Layout, name: Ident, mut fns: impl Iterator<Item = CompiledFuncRef>) -> Option<Self> {
 //                     Some(Self {
 //                         layout,
 //                         name,
@@ -409,7 +406,7 @@ pub enum JitRelocError {
     OffsetOverflow,
     OffsetOutOfBounds,
     UnsupportedReloc(Reloc),
-    MissingBytecode(FragRef<CompiledFunc>),
+    MissingBytecode(CompiledFuncRef),
 }
 
 pub struct RuntimeFunctionLookup {

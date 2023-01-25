@@ -31,8 +31,10 @@ impl<'m> FmtRuntime<'m> {
         let mut middleware = Middleware::default();
         let mut ctx = FmtRuntimeCtx::default();
         let mut runtime = FmtRuntime::new(&mut middleware, &mut ctx);
-        let cli_input = CliInput::from_string(&format!(". _ {name} --max-cores 1 -quiet -check"))
-            .expect("then this needs some tunning");
+        let cli_input = CliInput::from_string(&format!(
+            ". _ {name} --max-cores 1 -quiet -check -no-incremental"
+        ))
+        .expect("then this needs some tunning");
         let args = MiddlewareArgs::from_cli_input(&cli_input, Self::HELP).expect("same here");
         runtime
             .run_low(FmtCfg::default(), &args, resources)

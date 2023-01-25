@@ -7,11 +7,10 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::VRef;
 
-use bytecheck::CheckBytes;
 /// Supports reusable storage via stack base allocator. It performs extra
 /// checks for debug builds but is unsafe on release.
 #[derive(Deserialize, Serialize, Archive)]
-#[archive_attr(derive(CheckBytes))]
+
 pub struct PoolMap<K, T = K> {
     free: Vec<VRef<K>>,
     data: Vec<Option<T>>,
@@ -129,6 +128,15 @@ impl<K, V> PoolMap<K, V> {
     pub fn clear(&mut self) {
         self.free.clear();
         self.data.clear();
+    }
+
+    pub fn retain(&mut self, mut predicate: impl FnMut(&mut V) -> bool) {
+        for (i, v) in self.data.iter_mut().enumerate() {
+            if let Some(val) = v && !predicate(val) {
+                v.take();
+                self.free.push(VRef::new(i));
+            }
+        }
     }
 }
 

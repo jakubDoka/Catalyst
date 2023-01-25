@@ -155,6 +155,7 @@ impl TyChecker<'_> {
         ))
     }
 
+    #[inline]
     pub fn unpack_param_slots<'a>(
         &mut self,
         params: impl Iterator<Item = Option<Ty>> + Clone + ExactSizeIterator,
@@ -163,6 +164,10 @@ impl TyChecker<'_> {
         something: &'static str,
         syntax: &'static str,
     ) -> Option<&'a [Ty]> {
+        if let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() {
+            return Some(builder.arena.alloc_iter(params));
+        }
+
         let missing = params
             .clone()
             .enumerate()
@@ -170,12 +175,6 @@ impl TyChecker<'_> {
             .map(|i| format!("#{i}"))
             .intersperse_with(|| ", ".into())
             .collect::<String>();
-
-        if missing.is_empty() {
-            return Some(builder.arena.alloc_iter(
-                params.map(|p| p.expect("since missing is empty, there are no None values")),
-            ));
-        }
 
         self.workspace.push(UnknownTypeParameters {
             loc: SourceLoc {

@@ -1,0 +1,35 @@
+info: mir repr of functions:
+fn [] main() -> uint  { () ret var2
+    block0 {
+        var3 = 0
+        var4 = var3
+        access var4
+        var9 = &var4
+        var8 = &var9
+        var7 = reference(val8)
+        var6 = *var7
+        var5 = *var6
+        var2 = dereference(val5)
+        return var2
+    }
+
+}
+
+fn [] reference(var0: ^^uint) -> ^^uint  { (var11: ^^uint) ret var10
+    block1 {
+        var10 = access var11
+        return var10
+    }
+
+}
+
+fn [] dereference(var0: uint) -> uint  { (var13: uint) ret var12
+    block2 {
+        var12 = access var13
+        return var12
+    }
+
+}
+
+
+

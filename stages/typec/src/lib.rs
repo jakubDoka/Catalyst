@@ -67,29 +67,41 @@ mod util {
         }
     }
 
-    #[derive(Default)]
-    pub struct AstTransfer<'a> {
-        pub structs: TypecOutput<StructAst<'a>, Struct>,
-        pub funcs: TypecOutput<FuncDefAst<'a>, Func>,
-        pub specs: TypecOutput<SpecAst<'a>, SpecBase>,
-        pub enums: TypecOutput<EnumAst<'a>, Enum>,
-        pub impl_funcs: TypecOutput<FuncDefAst<'a>, Func>,
-        pub consts: TypecOutput<ConstAst<'a>, Const>,
-        pub impl_frames: ImplFrames<'a>,
+    macro_rules! gen_transfere {
+        ($(
+            $field:ident $ast:ident $struct:ident;
+        )*) => {
+            #[derive(Default)]
+            pub struct AstTransfer<'a> {
+                $(
+                    pub $field: TypecOutput<$ast<'a>, $struct>,
+                )*
+                pub impl_frames: ImplFrames<'a>,
+            }
+
+            impl AstTransfer<'_> {
+                pub fn clear(&mut self) {
+                    $(
+                        self.$field.clear();
+                    )*
+                    self.impl_frames.clear();
+                }
+            }
+        };
+    }
+
+    gen_transfere! {
+        structs StructAst Struct;
+        funcs FuncDefAst Func;
+        specs SpecAst SpecBase;
+        enums EnumAst Enum;
+        impl_funcs FuncDefAst Func;
+        consts ConstAst Const;
     }
 
     impl<'a> AstTransfer<'a> {
         pub fn activate(&mut self) -> ActiveAstTransfer {
             ActiveAstTransfer(unsafe { mem::transmute(self) })
-        }
-
-        pub fn clear(&mut self) {
-            self.structs.clear();
-            self.funcs.clear();
-            self.specs.clear();
-            self.enums.clear();
-            self.impl_funcs.clear();
-            self.impl_frames.clear();
         }
 
         pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<FragRef<Impl>>) {

@@ -86,6 +86,11 @@ impl<'m> CcRuntime<'m> {
             return Ok(());
         }
 
+        if let MiddlewareOutput::Failed = output {
+            binary.map_err(CcError::Diagnostics)?;
+            unreachable!();
+        }
+
         let exe_path = Self::link(&mid_args, input, binary.as_ref().ok().copied())?;
 
         let path = Path::new(&exe_path)

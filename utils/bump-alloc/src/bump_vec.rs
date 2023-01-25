@@ -54,11 +54,13 @@ pub struct BumpAlloc {
 }
 
 impl BumpAlloc {
+    #[inline]
     fn create_ref(&self) -> BumpAllocRef {
         self.refs.set(self.refs.get() + 1);
         BumpAllocRef
     }
 
+    #[inline]
     fn drop_ref(&self, _: &mut BumpAllocRef) {
         if self.refs.replace(self.refs.get() - 1) == 1 {
             unsafe {

@@ -10,6 +10,7 @@
 #![feature(fn_traits)]
 #![feature(macro_metavar_expr)]
 #![feature(allocator_api)]
+#![feature(let_chains)]
 
 #[macro_export]
 macro_rules! function_pointer {
@@ -130,7 +131,7 @@ macro_rules! bitflags {
         $(
             $crate::bitflags::bitflags! {
                 #[derive(Default, Serialize, Deserialize, Archive, $($($attr),*)?)]
-                #[archive_attr(derive(CheckBytes))]
+
                 pub struct $name: $repr {
 
                 }

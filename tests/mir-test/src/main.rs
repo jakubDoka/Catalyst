@@ -92,7 +92,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "functions" {
             fn main -> uint => 0;
             fn pass(a: uint) -> uint { return a };
@@ -125,6 +125,13 @@ fn main() {
         //     #[entry];
         //     fn main -> uint => const sub(1, 1);
         // }
+
+        simple "constants" {
+            const NUM: uint = 10 + 10;
+            const SUM: uint = NUM + NUM;
+            #[entry];
+            fn main -> uint => SUM - 40;
+        }
 
         simple "match" {
             struct Matched {

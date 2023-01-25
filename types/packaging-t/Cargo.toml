@@ -10,5 +10,5 @@ storage = { path = "../../utils/storage" }
 graphs = { path = "../../utils/graphs" }
 
 lexing-t = { path = "../lexing-t" }
-bytecheck = "0.6.9"
-rkyv = { version = "0.7.39", features = ["validation", "copy"] }
+
+rkyv = { version = "0.7.39", features = ["copy"] }
