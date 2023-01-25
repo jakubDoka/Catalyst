@@ -59,26 +59,26 @@ fn [] double_move() -> ()  { () ret var4
         access var6
         var7 = drop[0\A](val6)
         access var6
-        var4 = drop[0\A](val6)
-        return var4
+        var8 = drop[0\A](val6)
+        return var0
     }
 
 }
 
-fn [] conditional_double_move() -> ()  { () ret var8
+fn [] conditional_double_move() -> ()  { () ret var9
     block2 {
-        var9 ={}
-        var10 = var9
-        var13 = 0
+        var10 ={}
+        var11 = var10
         var14 = 0
-        var12 = uint == uint(val13, val14)
-        split var12 block3 block4
+        var15 = 0
+        var13 = uint == uint(val14, val15)
+        split var13 block3 block4
     }
 
     block3 {
-        access var10
-        var11 = drop[0\A](val10)
-        goto block5 with var11
+        access var11
+        var12 = drop[0\A](val11)
+        goto block5 with var12
     }
 
     block4 {
@@ -86,26 +86,26 @@ fn [] conditional_double_move() -> ()  { () ret var8
     }
 
     block5 {
-        access var10
-        var8 = drop[0\A](val10)
-        return var8
+        access var11
+        var16 = drop[0\A](val11)
+        return var0
     }
 
 }
 
-fn [] conditional_move() -> ()  { () ret var15
+fn [] conditional_move() -> ()  { () ret var17
     block6 {
-        var16 ={}
-        var17 = var16
-        var20 = 0
-        var21 = 0
-        var19 = uint == uint(val20, val21)
-        split var19 block7 block8
+        var18 ={}
+        var19 = var18
+        var22 = 0
+        var23 = 0
+        var21 = uint == uint(val22, val23)
+        split var21 block7 block8
     }
 
     block7 {
-        access var17
-        var22 = drop[0\A](val17)
+        access var19
+        var24 = drop[0\A](val19)
         return var0
     }
 
@@ -114,75 +114,75 @@ fn [] conditional_move() -> ()  { () ret var15
     }
 
     block9 {
-        access var17
-        var15 = drop[0\A](val17)
-        return var15
+        access var19
+        var25 = drop[0\A](val19)
+        return var0
     }
 
 }
 
-fn [] reassign() -> ()  { () ret var23
+fn [] reassign() -> ()  { () ret var26
     block10 {
-        var24 ={}
-        var25 = var24
-        access var25
-        var26 = drop[0\A](val25)
-        access var25
-        var25 ={}
-        access var25
-        var23 = drop[0\A](val25)
-        return var23
+        var27 ={}
+        var28 = var27
+        access var28
+        var29 = drop[0\A](val28)
+        access var28
+        var28 ={}
+        access var28
+        var30 = drop[0\A](val28)
+        return var0
     }
 
 }
 
-fn [] conditional_reassign() -> ()  { () ret var27
+fn [] conditional_reassign() -> ()  { () ret var31
     block11 {
-        var28 ={}
-        var29 = var28
-        access var29
-        var30 = drop[0\A](val29)
-        var33 = 0
-        var34 = 0
-        var32 = uint == uint(val33, val34)
-        split var32 block12 block13
+        var32 ={}
+        var33 = var32
+        access var33
+        var34 = drop[0\A](val33)
+        var37 = 0
+        var38 = 0
+        var36 = uint == uint(val37, val38)
+        split var36 block12 block13
     }
 
     block12 {
-        access var29
-        var29 ={}
+        access var33
+        var33 ={}
         goto block14 with var0
     }
 
     block13 {
-        access var29
-        var29 ={}
+        access var33
+        var33 ={}
         goto block14 with var0
     }
 
     block14 {
-        access var29
-        var27 = drop[0\A](val29)
-        return var27
+        access var33
+        var39 = drop[0\A](val33)
+        return var0
     }
 
 }
 
-fn [] conditional_incomplete_reassign() -> ()  { () ret var35
+fn [] conditional_incomplete_reassign() -> ()  { () ret var40
     block15 {
-        var36 ={}
-        var37 = var36
-        access var37
-        var38 = drop[0\A](val37)
-        var41 = 0
-        var42 = 0
-        var40 = uint == uint(val41, val42)
-        split var40 block16 block17
+        var41 ={}
+        var42 = var41
+        access var42
+        var43 = drop[0\A](val42)
+        var46 = 0
+        var47 = 0
+        var45 = uint == uint(val46, val47)
+        split var45 block16 block17
     }
 
     block16 {
-        access var37
-        var37 ={}
+        access var42
+        var42 ={}
         goto block18 with var0
     }
 
@@ -191,33 +191,33 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var35
     }
 
     block18 {
-        access var37
-        var35 = drop[0\A](val37)
-        return var35
+        access var42
+        var48 = drop[0\A](val42)
+        return var0
     }
 
 }
 
-fn [] enum_move() -> ()  { () ret var43
+fn [] enum_move() -> ()  { () ret var49
     block19 {
-        var46 ={var44, var45}
-        var44 = 0
-        var45 ={}
-        var47 = var46
-        access var47
-        var49 = var47.0
+        var52 ={var50, var51}
         var50 = 0
-        var51 = u8 == u8(val49, val50)
-        var52 = var47.1
-        split var51 block20 block21
+        var51 ={}
+        var53 = var52
+        access var53
+        var55 = var53.0
+        var56 = 0
+        var57 = u8 == u8(val55, val56)
+        var58 = var53.1
+        split var57 block20 block21
     }
 
     block20 {
-        var53 = var47.1
-        var54 = var53
-        access var54
-        var48 = drop[0\A](val54)
-        goto block22 with var48
+        var59 = var53.1
+        var60 = var59
+        access var60
+        var54 = drop[0\A](val60)
+        goto block22 with var54
     }
 
     block21 {
@@ -225,25 +225,25 @@ fn [] enum_move() -> ()  { () ret var43
     }
 
     block22 {
-        access var47
-        var43 = drop[0\E](val47)
-        return var43
+        access var53
+        var61 = drop[0\E](val53)
+        return var0
     }
 
 }
 
-fn [] enum_just_match() -> ()  { () ret var55
+fn [] enum_just_match() -> ()  { () ret var62
     block23 {
-        var58 ={var56, var57}
-        var56 = 0
-        var57 ={}
-        var59 = var58
-        access var59
-        var61 = var59.0
-        var62 = 0
-        var63 = u8 == u8(val61, val62)
-        var64 = var59.1
-        split var63 block24 block25
+        var65 ={var63, var64}
+        var63 = 0
+        var64 ={}
+        var66 = var65
+        access var66
+        var68 = var66.0
+        var69 = 0
+        var70 = u8 == u8(val68, val69)
+        var71 = var66.1
+        split var70 block24 block25
     }
 
     block24 {
@@ -255,25 +255,25 @@ fn [] enum_just_match() -> ()  { () ret var55
     }
 
     block26 {
-        access var59
-        var55 = drop[0\E](val59)
-        return var55
+        access var66
+        var72 = drop[0\E](val66)
+        return var0
     }
 
 }
 
-fn [] enum_whole_move() -> ()  { () ret var65
+fn [] enum_whole_move() -> ()  { () ret var73
     block27 {
-        var68 ={var66, var67}
-        var66 = 0
-        var67 ={}
-        var69 = var68
-        access var69
-        var71 = var69.0
-        var72 = 0
-        var73 = u8 == u8(val71, val72)
-        var74 = var69.1
-        split var73 block28 block29
+        var76 ={var74, var75}
+        var74 = 0
+        var75 ={}
+        var77 = var76
+        access var77
+        var79 = var77.0
+        var80 = 0
+        var81 = u8 == u8(val79, val80)
+        var82 = var77.1
+        split var81 block28 block29
     }
 
     block28 {
@@ -281,14 +281,14 @@ fn [] enum_whole_move() -> ()  { () ret var65
     }
 
     block29 {
-        var75 = var69
+        var83 = var77
         goto block30 with var0
     }
 
     block30 {
-        access var69
-        var65 = drop[0\E](val69)
-        return var65
+        access var77
+        var84 = drop[0\E](val77)
+        return var0
     }
 
 }

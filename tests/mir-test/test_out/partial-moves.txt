@@ -70,58 +70,58 @@ fn [] double_move() -> ()  { () ret var4
         var10 = var6.1
         var9 = drop[0\A](val10)
         access var6
-        var11 = var6.0
-        var4 = drop[0\A](val11)
-        return var4
+        var12 = var6.0
+        var11 = drop[0\A](val12)
+        return var0
     }
 
 }
 
-fn [] move_of_partially_moved() -> ()  { () ret var12
+fn [] move_of_partially_moved() -> ()  { () ret var13
     block2 {
-        var13 = new()
-        var14 = var13
-        access var14
-        var16 = var14.0
-        var15 = drop[0\A](val16)
-        access var14
-        var12 = drop[0\B](val14)
-        return var12
+        var14 = new()
+        var15 = var14
+        access var15
+        var17 = var15.0
+        var16 = drop[0\A](val17)
+        access var15
+        var18 = drop[0\B](val15)
+        return var0
     }
 
 }
 
-fn [] partial_move_and_assign() -> ()  { () ret var17
+fn [] partial_move_and_assign() -> ()  { () ret var19
     block3 {
-        var18 = new()
-        var19 = var18
-        access var19
-        var21 = var19.0
-        var20 = drop[0\A](val21)
-        access var19
-        var22 = var19.0
-        var22 ={}
-        access var19
-        var17 = drop[0\B](val19)
-        return var17
+        var20 = new()
+        var21 = var20
+        access var21
+        var23 = var21.0
+        var22 = drop[0\A](val23)
+        access var21
+        var24 = var21.0
+        var24 ={}
+        access var21
+        var25 = drop[0\B](val21)
+        return var0
     }
 
 }
 
-fn [] conditional_partial_move() -> ()  { () ret var23
+fn [] conditional_partial_move() -> ()  { () ret var26
     block4 {
-        var24 = new()
-        var25 = var24
-        var28 = 0
-        var29 = 0
-        var27 = uint == uint(val28, val29)
-        split var27 block5 block6
+        var27 = new()
+        var28 = var27
+        var31 = 0
+        var32 = 0
+        var30 = uint == uint(val31, val32)
+        split var30 block5 block6
     }
 
     block5 {
-        access var25
-        var30 = var25.0
-        var26 = drop[0\A](val30)
+        access var28
+        var33 = var28.0
+        var29 = drop[0\A](val33)
         goto block8
     }
 
@@ -130,35 +130,35 @@ fn [] conditional_partial_move() -> ()  { () ret var23
     }
 
     block8 {
-        var31 = var25.0
-        goto block7 with var26
+        var34 = var28.0
+        goto block7 with var29
     }
 
     block7 {
-        access var25
-        var23 = drop[0\B](val25)
-        return var23
+        access var28
+        var35 = drop[0\B](val28)
+        return var0
     }
 
 }
 
-fn [] conditional_assign() -> ()  { () ret var32
+fn [] conditional_assign() -> ()  { () ret var36
     block9 {
-        var33 = new()
-        var34 = var33
-        access var34
-        var36 = var34.0
-        var35 = drop[0\A](val36)
-        var39 = 0
-        var40 = 0
-        var38 = uint == uint(val39, val40)
-        split var38 block10 block11
+        var37 = new()
+        var38 = var37
+        access var38
+        var40 = var38.0
+        var39 = drop[0\A](val40)
+        var43 = 0
+        var44 = 0
+        var42 = uint == uint(val43, val44)
+        split var42 block10 block11
     }
 
     block10 {
-        access var34
-        var41 = var34.0
-        var41 ={}
+        access var38
+        var45 = var38.0
+        var45 ={}
         goto block12 with var0
     }
 
@@ -167,49 +167,49 @@ fn [] conditional_assign() -> ()  { () ret var32
     }
 
     block12 {
-        access var34
-        var32 = drop[0\B](val34)
-        return var32
+        access var38
+        var46 = drop[0\B](val38)
+        return var0
     }
 
 }
 
-fn [] reference_partial_move() -> ()  { () ret var42
+fn [] reference_partial_move() -> ()  { () ret var47
     block13 {
-        var43 = new()
-        var44 = var43
-        access var44
-        var46 = var44.0
-        var45 = drop[0\A](val46)
-        access var44
-        var47 = &var44
-        var48 = var47
+        var48 = new()
+        var49 = var48
+        access var49
+        var51 = var49.0
+        var50 = drop[0\A](val51)
+        access var49
+        var52 = &var49
+        var53 = var52
         return var0
     }
 
 }
 
-fn [] partial_reference_move() -> ()  { () ret var49
+fn [] partial_reference_move() -> ()  { () ret var54
     block14 {
-        var50 = new()
-        var51 = var50
-        access var51
-        var52 = drop[0\B](val51)
-        access var51
-        var54 = var51.0
-        var53 = &var54
-        var55 = var53
+        var55 = new()
+        var56 = var55
+        access var56
+        var57 = drop[0\B](val56)
+        access var56
+        var59 = var56.0
+        var58 = &var59
+        var60 = var58
         return var0
     }
 
 }
 
-fn [] new() -> 0\B  { () ret var56
+fn [] new() -> 0\B  { () ret var61
     block15 {
-        var56 ={var57, var58}
-        var57 ={}
-        var58 ={}
-        return var56
+        var61 ={var62, var63}
+        var62 ={}
+        var63 ={}
+        return var61
     }
 
 }
