@@ -12,6 +12,20 @@ use crate::{moves::BranchBlock, *};
 pub type NodeRes = OptVRef<ValueMir>;
 
 impl MirChecker<'_, '_> {
+    pub fn consts(
+        &mut self,
+        module: FragRef<ModuleMir>,
+        input: &mut BumpVec<(FragRef<Const>, TirNode)>,
+    ) -> &mut Self {
+        for (r#const, tir_const) in input.drain(..) {
+            // let body = self.func(module, r#const, tir_const);
+            // self.mir.bodies.insert(r#const, body);
+            // self.mir_ctx.just_compiled_consts.push(r#const);
+        }
+
+        self
+    }
+
     pub fn funcs(
         &mut self,
         module: FragRef<ModuleMir>,
@@ -20,7 +34,7 @@ impl MirChecker<'_, '_> {
         for (func, tir_func) in input.drain(..) {
             let body = self.func(module, func, tir_func.body);
             self.mir.bodies.insert(func, body);
-            self.mir_ctx.just_compiled.push(func);
+            self.mir_ctx.just_compiled_funcs.push(func);
         }
 
         self

@@ -29,19 +29,10 @@ use typec_t::*;
 #[derive(Serialize, Archive, Deserialize)]
 
 pub struct GenBase {
-    lookup: Arc<GenLookup>,
+    lookup: Arc<CMap<Ident, CompiledFunc>>,
 }
 
 derive_relocated!(struct GenBase { lookup });
-
-#[derive(Serialize, Archive, Deserialize, Default)]
-
-pub struct GenLookup {
-    #[with(DashMapArchiver)]
-    inner: CMap<Ident, CompiledFunc>,
-}
-
-derive_relocated!(struct GenLookup { inner });
 
 impl GenBase {
     pub fn new(_thread_count: u8) -> Self {
@@ -61,13 +52,12 @@ impl GenBase {
 
     pub fn prepare(&mut self) {
         self.lookup
-            .inner
             .iter_mut()
             .for_each(|mut item| item.unused = true);
     }
 
     fn reallocate(&mut self) {
-        self.lookup.inner.retain(|_, v| !v.unused);
+        self.lookup.retain(|_, v| !v.unused);
     }
 }
 
@@ -76,21 +66,20 @@ impl GenBase {
 pub struct CompiledFuncRef(Ident);
 
 pub struct Gen {
-    lookup: Arc<GenLookup>,
+    lookup: Arc<CMap<Ident, CompiledFunc>>,
 }
 
 impl Gen {
     pub fn get(&self, id: Ident) -> Option<CompiledFuncRef> {
-        self.lookup.inner.get(&id).map(|_value| CompiledFuncRef(id))
+        self.lookup.get(&id).map(|_value| CompiledFuncRef(id))
     }
 
     pub fn get_direct(&self, id: CompiledFuncRef) -> Ref<Ident, CompiledFunc, FvnBuildHasher> {
-        self.lookup.inner.get(&id.0).unwrap()
+        self.lookup.get(&id.0).unwrap()
     }
 
     pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> CompiledFuncRef {
         self.lookup
-            .inner
             .entry(id)
             .and_modify(|func| func.unused = false)
             .or_insert_with(|| CompiledFunc::new(func, id));
@@ -128,7 +117,7 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut func = self.lookup.inner.get_mut(&id.0).unwrap();
+        let mut func = self.lookup.get_mut(&id.0).unwrap();
         func.signature = ctx.func.signature.clone();
         func.bytecode = cc.buffer.data().to_vec();
         func.alignment = cc.alignment as u64;

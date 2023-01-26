@@ -606,12 +606,13 @@ impl Worker {
             shared.resources,
         )
         .funcs(mir_module, &mut type_checked_funcs)
+        .consts(mir_module, &mut type_checked_consts)
         //.dbg_funcs()
         ;
 
         self.state
             .mir_ctx
-            .just_compiled
+            .just_compiled_funcs
             .drain(..)
             .filter(|&func| task.typec[func].flags.contains(FuncFlags::ENTRY))
             .collect_into(&mut task.resources.entry_points);

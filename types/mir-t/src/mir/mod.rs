@@ -31,36 +31,16 @@ use typec_t::*;
 #[derive(Serialize, Deserialize, Archive)]
 
 pub struct MirBase {
-    pub bodies: Arc<Bodies>,
+    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
+    pub consts: Arc<CMap<FragRef<Const>, ()>>,
     pub modules: SyncFragBase<ModuleMir>,
-}
-
-#[repr(transparent)]
-#[derive(Serialize, Deserialize, Archive, Default)]
-
-pub struct Bodies {
-    #[with(DashMapArchiver)]
-    bodies: CMap<FragRef<Func>, FuncMir>,
-}
-
-impl Deref for Bodies {
-    type Target = CMap<FragRef<Func>, FuncMir>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.bodies
-    }
-}
-
-impl DerefMut for Bodies {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bodies
-    }
 }
 
 impl MirBase {
     pub fn new(thread_count: u8) -> Self {
         Self {
             bodies: default(),
+            consts: default(),
             modules: SyncFragBase::new(thread_count),
         }
     }
@@ -81,7 +61,7 @@ impl MirBase {
 }
 
 pub struct Mir {
-    pub bodies: Arc<Bodies>,
+    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
     pub modules: SyncFragMap<ModuleMir>,
 }
 

@@ -33,15 +33,10 @@ derive_relocated!(struct ImplList { inner });
 #[derive(Default, Serialize, Deserialize, Archive)]
 
 pub struct Mapping {
-    #[with(DashMapArchiver)]
     pub lookup: TypecLookup,
-    #[with(DashMapArchiver)]
     pub impl_lookup: ImplLookup,
-    #[with(DashMapArchiver)]
     pub implemented: Implemented,
-    #[with(DashMapArchiver)]
     pub macros: Macros,
-    #[with(DashMapArchiver)]
     pub may_need_drop: MayNeedDrop,
 }
 

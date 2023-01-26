@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 
 use crate::*;
 
-use super::{FragVecArc, FragVecInner};
+use super::{ArcVec, ArcVecInner};
 
 pub trait Relocated: Send + Sync {
     fn mark(&self, marker: &mut FragRelocMarker);
@@ -311,7 +311,7 @@ impl FragMarks {
         T: Relocated + 'static,
         A: Allocator + 'a,
         S: FnOnce(usize),
-        V: Deref<Target = FragVecArc<T, A>>,
+        V: Deref<Target = ArcVec<T, A>>,
     >(
         &mut self,
         base_threads: impl Iterator<Item = (V, S)>,
@@ -323,9 +323,9 @@ impl FragMarks {
                 type_id: TypeId::of::<T>(),
             };
 
-            assert!(unsafe { FragVecInner::is_unique(thread.0) });
+            assert!(unsafe { ArcVecInner::is_unique(thread.0) });
             let (base, current_len) = unsafe {
-                let slice = FragVecInner::full_data_mut(thread.0);
+                let slice = ArcVecInner::full_data_mut(thread.0);
                 (slice.as_mut_ptr(), slice.len())
             };
 
@@ -526,6 +526,7 @@ impl DynFragId {
 #[macro_export]
 macro_rules! derive_relocated {
     (struct $ty:ty { $($field:ident)* }) => {
+        #[allow(unused)]
         impl $crate::Relocated for $ty {
             fn mark(&self, marker: &mut $crate::FragRelocMarker) {
                 $(self.$field.mark(marker);)*
@@ -595,19 +596,18 @@ impl<A: Relocated, B: Relocated> Relocated for (A, B) {
 }
 
 #[repr(transparent)]
-pub struct DashMapFilterUnmarkedKeys<K, V, H>(DashMap<FragRef<K>, V, H>);
+pub struct DashMapFilterUnmarkedKeys<K, V>(CMap<FragRef<K>, V>);
 
-impl<K, V, H> DashMapFilterUnmarkedKeys<K, V, H> {
-    pub fn new(map: &mut Arc<DashMap<FragRef<K>, V, H>>) -> &mut Self {
+impl<K, V> DashMapFilterUnmarkedKeys<K, V> {
+    pub fn new(map: &mut Arc<CMap<FragRef<K>, V>>) -> &mut Self {
         unsafe { mem::transmute(Arc::get_mut(map).expect("expected unique arc")) }
     }
 }
 
-impl<K, V, H> Relocated for DashMapFilterUnmarkedKeys<K, V, H>
+impl<K, V> Relocated for DashMapFilterUnmarkedKeys<K, V>
 where
     K: 'static,
     V: Relocated,
-    H: Sync + Send + 'static + Clone + BuildHasher,
 {
     fn mark(&self, marker: &mut FragRelocMarker) {
         for entry in self.0.iter() {
@@ -628,7 +628,7 @@ impl<K, V, H> Relocated for DashMap<K, V, H>
 where
     K: Relocated + Eq + Hash,
     V: Relocated,
-    H: Sync + Send + 'static + Clone + BuildHasher,
+    H: BuildHasher + Sync + Send + Clone,
 {
     fn mark(&self, marker: &mut FragRelocMarker) {
         for item in self.iter() {

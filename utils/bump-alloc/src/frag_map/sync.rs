@@ -90,6 +90,22 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
             .expect("index out of bounds")
     }
 
+    pub unsafe fn index_unchecked(&self, addr: FragRef<T>) -> &T {
+        let FragAddr { index, thread, .. } = addr.0;
+        // we do not implemend sync and threads are unique
+        if (*self.locals.get_unchecked(thread as usize).get())
+            .get(index as usize)
+            .is_none()
+        {
+            self.fallback(thread);
+        }
+
+        &*ArcVecInner::get_item(
+            (*self.locals.get_unchecked(thread as usize).get()).inner.0,
+            index as usize,
+        )
+    }
+
     #[cold]
     #[inline(never)]
     fn fallback(&self, thread: u8) {
@@ -114,6 +130,19 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
             .expect("range out of bounds")
     }
 
+    pub unsafe fn slice_unchecked(&self, slice: FragSlice<T>) -> &[T] {
+        let FragSliceAddr { index, thread, len } = slice.addr();
+        let range = index as usize..index as usize + len as usize;
+        if (*self.locals.get_unchecked(thread as usize).get())
+            .slice(range.clone())
+            .is_none()
+        {
+            self.fallback(thread);
+        }
+        ArcVecInner::full_data((*self.locals.get_unchecked(thread as usize).get()).inner.0)
+            .get_unchecked(range)
+    }
+
     pub fn reference(&self, addr: FragRef<T>) -> SyncFragBorrow<T, A>
     where
         T: NoInteriorMutability,
@@ -124,7 +153,7 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
     }
 }
 
-pub struct SyncFragBorrow<T, A: Allocator + Default>(*const T, FragVecArc<T, A>);
+pub struct SyncFragBorrow<T, A: Allocator + Default>(*const T, ArcVec<T, A>);
 
 impl<T, A: Allocator + Default> Deref for SyncFragBorrow<T, A> {
     type Target = T;
@@ -139,6 +168,7 @@ impl<T: NoInteriorMutability, A: Allocator + Default> Index<FragRef<T>> for Sync
 
     fn index(&self, index: FragRef<T>) -> &Self::Output {
         // SAFETY: the struct is not sync
+        // unsafe { self.index_unchecked(index) }
         unsafe { self.index(index) }
     }
 }
@@ -148,6 +178,7 @@ impl<T: NoInteriorMutability, A: Allocator + Default> Index<FragSlice<T>> for Sy
 
     fn index(&self, index: FragSlice<T>) -> &Self::Output {
         // SAFETY: the struct is not sync
+        // unsafe { self.slice_unchecked(index) }
         unsafe { self.slice(index) }
     }
 }
@@ -202,7 +233,7 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
     fn mark(&self, FragAddr { index, thread, .. }: FragAddr, marker: &mut crate::FragRelocMarker) {
         let thread = &self.views[thread as usize];
         unsafe {
-            FragVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
+            ArcVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
                 [index as usize]
                 .mark(marker);
         }
@@ -211,7 +242,7 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
     fn remap(&mut self, ctx: &crate::FragRelocMapping) {
         self.views
             .iter()
-            .map(|v| unsafe { FragVecInner::full_data_mut(v.inner.load().0) })
+            .map(|v| unsafe { ArcVecInner::full_data_mut(v.inner.load().0) })
             .flatten()
             .for_each(|i| {
                 i.remap(ctx);
@@ -240,7 +271,7 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
 
 pub struct SyncFragView<T, A: Allocator + Default = Global> {
     #[with(ArcSwapArchiver)]
-    pub(crate) inner: ArcSwapAny<FragVecArc<T, A>>,
+    pub(crate) inner: ArcSwapAny<ArcVec<T, A>>,
     pub(crate) thread: u8,
     pub(crate) len: AtomicUsize,
 }
@@ -250,7 +281,7 @@ unsafe impl<T: Sync + Send, A: Allocator + Default + Sync + Send> Sync for SyncF
 impl<T, A: Allocator + Default> SyncFragView<T, A> {
     fn new_in(thread: u8, allocator: A) -> Self {
         Self {
-            inner: ArcSwapAny::new(FragVecArc(FragVecInner::new(allocator))),
+            inner: ArcSwapAny::new(ArcVec(ArcVecInner::new(allocator))),
             thread,
             len: 0.into(),
         }
@@ -271,13 +302,16 @@ impl<T, A: Allocator + Default> SyncFragView<T, A> {
     where
         A: Clone,
     {
+        if values.len() == 0 {
+            return (default(), false);
+        }
         let len = self.load_len();
         let Ok(values_len) = values.len().try_into() else {
             crate::terminate!("SyncFragView:extend: too may values");
         };
-        let (.., possibly_new) = unsafe { FragVecInner::extend(self.inner.load().0, values) };
+        let (.., possibly_new) = unsafe { ArcVecInner::extend(self.inner.load().0, values) };
         if let Some(new) = possibly_new {
-            self.inner.store(FragVecArc(new));
+            self.inner.store(ArcVec(new));
         }
         let slice = FragSlice::new(FragSliceAddr::new(len as u32, self.thread, values_len));
         self.len.store(len + values_len as usize, Ordering::Relaxed);
@@ -285,7 +319,7 @@ impl<T, A: Allocator + Default> SyncFragView<T, A> {
     }
 
     unsafe fn unextend(&self, index: u32, len: u16) {
-        FragVecInner::unextend(self.inner.load().0, index, len);
+        ArcVecInner::unextend(self.inner.load().0, index, len);
         self.len.store(
             self.len.load(Ordering::Relaxed) - len as usize,
             Ordering::Relaxed,
@@ -294,17 +328,17 @@ impl<T, A: Allocator + Default> SyncFragView<T, A> {
 }
 
 pub(crate) struct LocalFragView<T, A: Allocator + Default = Global> {
-    pub(crate) inner: FragVecArc<T, A>,
+    pub(crate) inner: ArcVec<T, A>,
     pub(crate) len: usize,
 }
 
 impl<T, A: Allocator + Default> LocalFragView<T, A> {
     pub fn get(&self, index: usize) -> Option<&T> {
-        unsafe { FragVecInner::data(self.inner.0, self.len).get(index) }
+        unsafe { ArcVecInner::data(self.inner.0, self.len).get(index) }
     }
 
     fn slice(&self, range: Range<usize>) -> Option<&[T]> {
-        unsafe { FragVecInner::data(self.inner.0, self.len).get(range) }
+        unsafe { ArcVecInner::data(self.inner.0, self.len).get(range) }
     }
 }
 
@@ -363,7 +397,7 @@ impl<T, A: Allocator + Default> FragSliceKey<T, A> {
         let cap = ptr::addr_of!((*loaded.0.as_ptr()).cap).read();
         let FragSliceAddr { index, len, .. } = self.slice.addr();
         self.cached_cap.store(cap, Ordering::Relaxed);
-        let ptr = FragVecInner::get_item(loaded.0, index as usize);
+        let ptr = ArcVecInner::get_item(loaded.0, index as usize);
         self.cached.store(ptr, Ordering::Relaxed);
         slice::from_raw_parts(ptr, len as usize)
     }

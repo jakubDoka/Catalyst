@@ -68,7 +68,7 @@ impl Scheduler for TestState {
         }
 
         self.mir_ctx.module.clear();
-        self.mir_ctx.just_compiled.clear();
+        self.mir_ctx.just_compiled_funcs.clear();
     }
 
     fn finally(&mut self) {

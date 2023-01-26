@@ -11,7 +11,7 @@ use crate::*;
 
 impl MirChecker<'_, '_> {
     pub fn display_funcs(&self, buffer: &mut String) -> fmt::Result {
-        for &func in &self.mir_ctx.just_compiled {
+        for &func in &self.mir_ctx.just_compiled_funcs {
             let mir = self
                 .mir
                 .bodies

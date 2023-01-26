@@ -51,6 +51,8 @@ impl Workspace {
         }
     }
 
+    #[cold]
+    #[inline(never)]
     pub fn push(&mut self, error: impl CtlError) -> Option<!> {
         self.error_count += error.is_fatal() as usize;
         self.snippets.push(Box::new(error));

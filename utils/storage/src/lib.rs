@@ -188,7 +188,7 @@ mod clear;
 /// Homogenous stack with frame markers.
 mod frames;
 /// String to uid mapping.
-mod interner;
+// mod interner;
 /// HashMap wrapper to work with [`Ident`].
 mod map;
 /// Map with addressable values. (by [`VPtr`])
@@ -207,7 +207,6 @@ pub use {
     bump_alloc::*,
     clear::{map_in_place, Clear},
     frames::Frames,
-    interner::{Ident, Interner, InternerArchiver, InternerBase},
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,

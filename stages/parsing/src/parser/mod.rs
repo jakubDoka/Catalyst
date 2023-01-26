@@ -317,9 +317,18 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
         pattern: impl TokenPattern,
         error: impl FnOnce(&mut Self) -> E,
     ) -> Option<SourceInfo<M>> {
+        #[cold]
+        #[inline(never)]
+        fn fail<'ctx, 'arena, E: CtlError, M: TokenMeta>(
+            s: &mut Parser<'ctx, 'arena, M>,
+            error: impl FnOnce(&mut Parser<'ctx, 'arena, M>) -> E,
+        ) -> Option<!> {
+            let err = error(s);
+            s.error(err)
+        }
+
         if !self.at(pattern) {
-            let err = error(self);
-            self.error(err)?;
+            fail(self, error)?
         }
 
         Some(self.advance())

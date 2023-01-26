@@ -15,6 +15,7 @@ thread_local! {
 pub struct BumpAllocRef;
 
 impl Drop for BumpAllocRef {
+    #[inline]
     fn drop(&mut self) {
         BUMP_ALLOC.with(|alloc| alloc.drop_ref(self));
     }
@@ -63,9 +64,15 @@ impl BumpAlloc {
     #[inline]
     fn drop_ref(&self, _: &mut BumpAllocRef) {
         if self.refs.replace(self.refs.get() - 1) == 1 {
-            unsafe {
-                self.allocator.clear();
+            #[cold]
+            #[inline(never)]
+            fn clear(s: &BumpAlloc) {
+                unsafe {
+                    s.allocator.clear();
+                }
             }
+
+            clear(self)
         }
     }
 }

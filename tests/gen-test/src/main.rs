@@ -137,6 +137,13 @@ fn main() {
             fn pass_with_implicit_return(a: uint) -> uint { a };
         }
 
+        simple "constants" {
+            const NUM: uint = 10 + 10;
+            const SUM: uint = NUM + NUM;
+            #[entry];
+            fn main -> uint => SUM - 40;
+        }
+
         simple "recursion" {
             #[entry];
             fn main -> uint => 0;
