@@ -92,7 +92,7 @@ impl Middleware {
         serializer.serialize_value(
             self.incremental
                 .as_ref()
-                .ok_or_else(|| "incremental data is not present")?,
+                .ok_or("incremental data is not present")?,
         )?;
 
         let Some(exe_mod_time) = get_exe_mod_time() else {
@@ -840,7 +840,7 @@ impl<'a> fmt::Display for CommandInfo<'a> {
         }
 
         if let Some(inherit) = self.inherit {
-            write!(f, "\n{}", inherit)?;
+            write!(f, "\n{inherit}")?;
         }
 
         Ok(())
@@ -960,7 +960,7 @@ impl MiddlewareArgs {
             isa,
             incremental_path: cli_input
                 .value("incremental-path")
-                .or_else(|| Some("incremental/default.rkyv"))
+                .or(Some("incremental/default.rkyv"))
                 .filter(|_| !cli_input.enabled("no-incremental"))
                 .map(|s| s.into()),
             max_cores: cli_input.value("max-cores").and_then(|s| s.parse().ok()),
@@ -1000,7 +1000,7 @@ impl fmt::Write for MiddlewareArgsDisplay {
             return Ok(());
         }
 
-        eprintln!("{}", s);
+        eprintln!("{s}");
 
         Ok(())
     }
@@ -1298,9 +1298,9 @@ impl<R> From<NonMaxError> for MiddlewareSerializerError<R> {
 impl<R: fmt::Display> fmt::Display for MiddlewareSerializerError<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MiddlewareSerializerError::Inner(inner) => write!(f, "{}", inner),
-            MiddlewareSerializerError::UnixTimestamp(u) => write!(f, "{}", u),
-            MiddlewareSerializerError::AsString(s) => write!(f, "{}", s),
+            MiddlewareSerializerError::Inner(inner) => write!(f, "{inner}"),
+            MiddlewareSerializerError::UnixTimestamp(u) => write!(f, "{u}"),
+            MiddlewareSerializerError::AsString(s) => write!(f, "{s}"),
             MiddlewareSerializerError::NonMax(..) => write!(f, "Non max integer is at MAX"),
         }
     }

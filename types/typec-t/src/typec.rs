@@ -724,8 +724,8 @@ impl Typec {
 
             let signature = Signature {
                 cc: default(),
-                args: self.cache.args.extend(iter::once(from.into())),
-                ret: to.into(),
+                args: self.cache.args.extend(iter::once(from)),
+                ret: to,
             };
 
             let func = Func {

@@ -76,7 +76,7 @@ impl<'a> PackageLoader<'a> {
         root_path: &Path,
         ctx: &mut ResourceLoaderCtx,
     ) -> Option<Vec<VRef<Source>>> {
-        ctx.clear(&mut self.resources, self.db);
+        ctx.clear(self.resources, self.db);
         self.resources.clear();
 
         ctx.dep_root = self.resolve_dep_root_path(root_path)?;

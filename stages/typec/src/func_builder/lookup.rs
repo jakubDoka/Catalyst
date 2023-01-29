@@ -1,8 +1,4 @@
-use lexing::*;
-
-use crate::ty_parser::InaccessibleScopeItem;
-
-use super::*;
+use {super::*, crate::ty_parser::InaccessibleScopeItem, lexing::*};
 
 impl TyChecker<'_> {
     pub fn find_loop(

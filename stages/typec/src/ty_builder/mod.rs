@@ -1,10 +1,4 @@
-use std::default::default;
-
-use parsing_t::*;
-use storage::*;
-use typec_t::*;
-
-use crate::*;
+use {crate::*, parsing_t::*, std::default::default, storage::*, typec_t::*};
 
 impl TyChecker<'_> {
     pub fn build<T: CollectGroup>(

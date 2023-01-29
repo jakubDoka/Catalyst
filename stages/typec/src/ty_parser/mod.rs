@@ -1,15 +1,7 @@
-use std::iter;
-
-use diags::*;
-use lexing_t::Span;
-use packaging_t::Source;
-use parsing_t::*;
-
-use storage::*;
-
-use typec_t::*;
-
-use crate::*;
+use {
+    crate::*, diags::*, lexing_t::*, packaging_t::*, parsing_t::*, std::iter, storage::*,
+    typec_t::*,
+};
 
 impl TyChecker<'_> {
     pub fn generics(

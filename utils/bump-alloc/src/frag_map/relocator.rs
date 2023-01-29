@@ -100,8 +100,7 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase
     fn remap(&mut self, ctx: &FragRelocMapping) {
         self.threads
             .iter_mut()
-            .map(|t| t.unique_data())
-            .flatten()
+            .flat_map(|t| t.unique_data())
             .for_each(|i| {
                 i.remap(ctx);
             })
@@ -754,10 +753,10 @@ mod test {
                     s.spawn(move || {
                         for i in 0..1000 {
                             let tid = i % THREAD_COUNT as usize;
-                            let thread_len = thread.base.views[tid as usize]
+                            let thread_len = thread.base.views[tid]
                                 .len
                                 .load(std::sync::atomic::Ordering::Relaxed);
-                            let index = (i as usize * j) % thread_len;
+                            let index = (i * j) % thread_len;
                             let frag_ref = FragRef::new(FragAddr::new(index as u32, tid as u8));
                             let value = thread[frag_ref].clone();
                             thread.push(value);

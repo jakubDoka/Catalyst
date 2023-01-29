@@ -1,13 +1,13 @@
-use std::{default::default, iter};
-
-use diags::*;
-use lexing_t::*;
-use packaging_t::*;
-use parsing_t::*;
-use storage::*;
-use typec_t::*;
-
-use crate::*;
+use {
+    crate::*,
+    diags::*,
+    lexing_t::*,
+    packaging_t::*,
+    parsing_t::*,
+    std::{default::default, iter},
+    storage::*,
+    typec_t::*,
+};
 
 #[allow(clippy::type_complexity)]
 impl TyChecker<'_> {

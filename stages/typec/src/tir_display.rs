@@ -1,13 +1,13 @@
-use std::{
-    fmt::{self, Write},
-    iter,
+use {
+    crate::*,
+    packaging_t::*,
+    std::{
+        fmt::{self, Write},
+        iter,
+    },
+    storage::*,
+    typec_t::*,
 };
-
-use packaging_t::*;
-use storage::*;
-use typec_t::*;
-
-use crate::*;
 
 impl TyChecker<'_> {
     pub fn dbg_funcs(&self, funcs: &[(FragRef<Func>, TirFunc)]) {

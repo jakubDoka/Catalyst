@@ -89,7 +89,7 @@ impl MirChecker<'_, '_> {
         let ident = iter::repeat(' ').take(4);
 
         buffer.extend(ident.clone());
-        writeln!(buffer, "block{} {{", i)?;
+        writeln!(buffer, "block{i} {{")?;
 
         for &inst in &self.mir_ctx.module.insts[block.insts] {
             buffer.extend(ident.clone());

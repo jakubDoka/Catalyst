@@ -1,15 +1,13 @@
-use std::{cmp::Ordering, default::default, iter, vec};
-
-use diags::*;
-use lexing_t::*;
-use packaging_t::*;
-use parsing_t::*;
-
-use storage::*;
-
-use typec_t::*;
-
-use crate::{ty_parser::TyPathResult, *};
+use {
+    crate::{ty_parser::TyPathResult, *},
+    diags::*,
+    lexing_t::*,
+    packaging_t::*,
+    parsing_t::*,
+    std::{cmp::Ordering, default::default, iter, vec},
+    storage::*,
+    typec_t::*,
+};
 
 mod call;
 mod consts;

@@ -1,56 +1,10 @@
-use std::{default::default, marker::PhantomData, mem};
+use std::default::default;
 
 use lexing_t::*;
 use storage::*;
 
 use crate::*;
 use rkyv::{Archive, Deserialize, Serialize};
-
-#[must_use]
-pub struct CtxFrame<T: CtxFrameItem> {
-    ph: PhantomData<T>,
-    base: usize,
-}
-
-impl<T: CtxFrameItem> CtxFrame<T> {
-    pub fn start(ctx: &T::Ctx) -> Self {
-        Self {
-            ph: PhantomData,
-            base: T::seq(ctx).len(),
-        }
-    }
-
-    pub fn end(self, ctx: &mut T::Ctx, args: T::Args<'_>) {
-        T::process(ctx, args, self.base);
-    }
-
-    pub fn contains(&self, index: usize) -> bool {
-        self.base <= index
-    }
-}
-
-pub trait CtxFrameItem: Sized + 'static {
-    type Ctx;
-    type Args<'a> = ();
-
-    fn seq_mut(ctx: &mut Self::Ctx) -> &mut Vec<Self>;
-    fn seq(ctx: &Self::Ctx) -> &[Self];
-
-    fn process_impl(
-        _ctx: &mut Self::Ctx,
-        _args: Self::Args<'_>,
-        _selfs: impl Iterator<Item = Self>,
-    ) {
-    }
-    fn process(ctx: &mut Self::Ctx, args: Self::Args<'_>, base: usize) {
-        let mut seq = mem::take(Self::seq_mut(ctx));
-        Self::process_impl(ctx, args, seq.drain(base..));
-        *Self::seq_mut(ctx) = seq;
-    }
-    fn start_frame(ctx: &Self::Ctx) -> CtxFrame<Self> {
-        CtxFrame::start(ctx)
-    }
-}
 
 pub type TypecOutput<A, T> = Vec<(A, FragRef<T>)>;
 

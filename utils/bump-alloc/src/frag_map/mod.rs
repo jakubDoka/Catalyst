@@ -37,6 +37,8 @@ pub mod interner;
 pub mod relocator;
 pub mod sync;
 
+/// # Safety
+/// Trait should be only used and never derived.
 pub unsafe auto trait NoInteriorMutability {}
 
 impl<T: ?Sized> !NoInteriorMutability for UnsafeCell<T> {}

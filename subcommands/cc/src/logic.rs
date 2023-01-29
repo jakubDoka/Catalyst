@@ -65,14 +65,14 @@ impl<'m> CcRuntime<'m> {
     }
 
     pub fn run(mut self, input: CliInput) -> Result {
-        let res = self.compile(&input)?;
+        self.compile(&input)?;
         self.ctx.input = Some(input);
-        Ok(res)
+        Ok(())
     }
 
     fn compile(&mut self, input: &CliInput) -> Result {
         let mid_args =
-            MiddlewareArgs::from_cli_input(&input, Self::HELP).map_err(CcError::MiddlewareArgs)?;
+            MiddlewareArgs::from_cli_input(input, Self::HELP).map_err(CcError::MiddlewareArgs)?;
 
         let (output, view) = self.middleware.update(&mid_args, &mut OsResources);
         let binary = view.dump_diagnostics(true, &output).map(|(bin, ir)| {
@@ -174,7 +174,7 @@ impl<'m> CcRuntime<'m> {
         let exe_path = exe_path(input);
 
         let mut extra_args = match family {
-            Gnu => vec![format!("-o{}", exe_path)],
+            Gnu => vec![format!("-o{exe_path}")],
             Clang => todo!(),
             Mswc => vec![
                 "ucrt.lib".into(),

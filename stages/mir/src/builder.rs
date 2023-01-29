@@ -14,10 +14,10 @@ pub type NodeRes = OptVRef<ValueMir>;
 impl MirChecker<'_, '_> {
     pub fn consts(
         &mut self,
-        module: FragRef<ModuleMir>,
+        _module: FragRef<ModuleMir>,
         input: &mut BumpVec<(FragRef<Const>, TirNode)>,
     ) -> &mut Self {
-        for (r#const, tir_const) in input.drain(..) {
+        for (_const, _tir_const) in input.drain(..) {
             // let body = self.func(module, r#const, tir_const);
             // self.mir.bodies.insert(r#const, body);
             // self.mir_ctx.just_compiled_consts.push(r#const);

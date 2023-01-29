@@ -75,10 +75,10 @@ pub use {
         ScopeRecord,
     },
     tir::{
-        AssignTir, BreakTir, CallTir, CallableTir, CastCheck, CtxFrame, CtxFrameItem, FieldTir,
-        IfBranchTir, IfTir, Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest,
-        MatchArmTir, MatchTir, PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirFlags, TirFunc,
-        TirKind, TirNode, TypecOutput, UnitPatKindTir, VarHeaderTir,
+        AssignTir, BreakTir, CallTir, CallableTir, CastCheck, FieldTir, IfBranchTir, IfTir,
+        Inference, LetTir, LoopHeaderTir, LoopTir, MacroCompileRequest, MatchArmTir, MatchTir,
+        PatKindTir, PatTir, TirBuilder, TirBuilderCtx, TirFlags, TirFunc, TirKind, TirNode,
+        TypecOutput, UnitPatKindTir, VarHeaderTir,
     },
     ty::{
         Builtin, ComputedTypecItem, Const, Enum, Field, FieldFlags, GenericTy, Generics, Humid,

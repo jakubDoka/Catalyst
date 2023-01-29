@@ -169,7 +169,6 @@ impl TyChecker<'_> {
         }
 
         let missing = params
-            .clone()
             .enumerate()
             .filter_map(|(i, param)| param.is_none().then_some(i))
             .map(|i| format!("#{i}"))

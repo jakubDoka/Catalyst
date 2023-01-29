@@ -280,7 +280,7 @@ impl<D: Fallible + ?Sized> Deserialize<InternerBase, D> for ArchivedInterner {
             .zip(cluster.split())
             .zip(storage.split())
         {
-            let (str, ..) = unsafe { cluster.alloc(&string) };
+            let (str, ..) = unsafe { cluster.alloc(string) };
             for (start, end) in lens.iter().scan(0, |s, i| {
                 let res = (*s, *s + *i as usize);
                 *s += *i as usize;

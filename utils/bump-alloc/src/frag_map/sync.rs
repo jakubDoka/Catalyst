@@ -90,6 +90,8 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
             .expect("index out of bounds")
     }
 
+    /// # Safety
+    /// Ensure addr is vot out of bounds.
     pub unsafe fn index_unchecked(&self, addr: FragRef<T>) -> &T {
         let FragAddr { index, thread, .. } = addr.0;
         // we do not implemend sync and threads are unique
@@ -130,6 +132,8 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
             .expect("range out of bounds")
     }
 
+    /// # Safety
+    /// Ensure slice is not out of bounds.
     pub unsafe fn slice_unchecked(&self, slice: FragSlice<T>) -> &[T] {
         let FragSliceAddr { index, thread, len } = slice.addr();
         let range = index as usize..index as usize + len as usize;
@@ -242,8 +246,7 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
     fn remap(&mut self, ctx: &crate::FragRelocMapping) {
         self.views
             .iter()
-            .map(|v| unsafe { ArcVecInner::full_data_mut(v.inner.load().0) })
-            .flatten()
+            .flat_map(|v| unsafe { ArcVecInner::full_data_mut(v.inner.load().0) })
             .for_each(|i| {
                 i.remap(ctx);
             })
