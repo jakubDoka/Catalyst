@@ -86,8 +86,8 @@ impl JitContext {
                 if visibility == FuncVisibility::Imported {
                     let code = self
                         .runtime_lookup
-                        .lookup(&interner[name])
-                        .or_else(|| self.exposed_funcs.get(&interner[name]).cloned())
+                        .lookup(name.get(interner))
+                        .or_else(|| self.exposed_funcs.get(name.get(interner)).cloned())
                         .ok_or(JitRelocError::MissingSymbol(GenItemName::Func(func)))?;
                     let slice = slice_from_raw_parts_mut(code as *mut _, 0);
                     return Ok((func, unsafe { NonNull::new_unchecked(slice) }));

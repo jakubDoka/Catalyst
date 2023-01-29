@@ -386,7 +386,7 @@ impl TyChecker<'_> {
                     },
                     suggestions: self.typec[self.typec[spec_base].methods]
                         .iter()
-                        .map(|func| &self.interner[func.name])
+                        .map(|func| func.name.get(self.interner))
                         .intersperse(", ")
                         .collect(),
                     something: "method",
@@ -562,7 +562,7 @@ impl TyChecker<'_> {
                     ty: self.typec.display_ty(Ty::Struct(struct_ty), self.interner),
                     suggestions: self.typec[self.typec[struct_ty].fields]
                         .iter()
-                        .map(|f| &self.interner[f.name])
+                        .map(|f| f.name.get(self.interner))
                         .intersperse(", ")
                         .collect(),
                     something: "field",

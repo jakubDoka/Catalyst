@@ -76,10 +76,10 @@ impl ObjectContext {
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
 
                 let name = match scope {
-                    SymbolScope::Unknown => &interner[meta.name],
-                    SymbolScope::Compilation | SymbolScope::Linkage | SymbolScope::Dynamic => {
-                        &interner[meta.name]
+                    SymbolScope::Unknown | SymbolScope::Linkage | SymbolScope::Dynamic => {
+                        meta.name.get(interner)
                     }
+                    SymbolScope::Compilation => interner.get(func.ident()),
                 };
 
                 let symbol = self.object.add_symbol(Symbol {

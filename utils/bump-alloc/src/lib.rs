@@ -16,7 +16,11 @@
     slice_index_methods,
     slice_group_by,
     ptr_metadata,
-    auto_traits
+    auto_traits,
+    if_let_guard,
+    int_roundings,
+    const_option,
+    const_slice_index
 )]
 
 mod alloc_tree;
@@ -62,7 +66,6 @@ mod map {
 
     use crate::{DashMapArchiver, Relocated};
     use dashmap::{DashMap, DashSet};
-    // use fxhash::FxHasher;
     use rkyv::{Archive, Deserialize, Serialize};
 
     pub type Map<K, V> = HashMap<K, V, FvnBuildHasher>;
@@ -114,24 +117,18 @@ mod map {
         }
     }
 
-    // pub type FvnBuildHasher = BuildHasherDefault<FxHasher>;
-
     const FVN_PRIME: u64 = 0x00000100000001B3;
     const FVN_OFFSET: u64 = 0xcbf29ce484222325;
 
-    #[derive(Default, Clone, Copy, Archive, Serialize, Deserialize)]
-    pub struct FvnBuildHasher;
-
-    impl BuildHasher for FvnBuildHasher {
-        type Hasher = FvnHasher;
-
-        #[inline]
-        fn build_hasher(&self) -> Self::Hasher {
-            FvnHasher(FVN_OFFSET)
-        }
-    }
+    pub type FvnBuildHasher = BuildHasherDefault<FvnHasher>;
 
     pub struct FvnHasher(u64);
+
+    impl Default for FvnHasher {
+        fn default() -> Self {
+            Self(FVN_OFFSET)
+        }
+    }
 
     impl Hasher for FvnHasher {
         #[inline]

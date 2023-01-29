@@ -789,7 +789,7 @@ impl<'ctx> Fmt<'ctx> {
             str.chars().rev().take_while(|c| *c == '\n').count()
         }
 
-        let mut new_lines = count_tariling_newlines(&self.buffer);
+        let mut new_lines = count_tariling_newlines(self.buffer);
         let original = self.buffer.len();
         let original_newline = self.last_newline;
         let mut is_usefull = false;
@@ -824,7 +824,7 @@ impl<'ctx> Fmt<'ctx> {
         }
 
         // we do + 1 to avoid 0 case
-        let new_lines = count_tariling_newlines(&self.buffer);
+        let new_lines = count_tariling_newlines(self.buffer);
         if let Some(to_add) = spacing.checked_sub(new_lines + 1) {
             self.buffer.extend(iter::repeat('\n').take(to_add + 1));
             self.last_newline = self.buffer.len();

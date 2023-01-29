@@ -261,8 +261,14 @@ impl TyChecker<'_> {
             }
             SignatureCheckError::CCMismatch(expected, actual) => {
                 self.workspace.push(ImplCCMismatch {
-                    expected: expected.map_or("", |cc| &self.interner[cc]).to_string(),
-                    actual: actual.map_or("", |cc| &self.interner[cc]).to_string(),
+                    expected: expected
+                        .as_ref()
+                        .map_or("", |cc| cc.get(self.interner))
+                        .to_string(),
+                    actual: actual
+                        .as_ref()
+                        .map_or("", |cc| cc.get(self.interner))
+                        .to_string(),
                     loc,
                     pattern,
                     spec_source_loc,

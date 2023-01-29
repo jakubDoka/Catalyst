@@ -159,3 +159,24 @@ relative to allocation pointer. Then when we move the memory,
 we simply look at destination pointer, add the offset and calculate desired
 padding. We probably also want to remember where first allocated object starts
 to save some extra bytes.
+
+### TODO... 
+
+## Add Read only Concurrent HashMap
+
+There is a common need for Hashmaps in the compiler, but, the hashmap only
+needs to grow. This suggests that we can optimize this since only thing that
+is needed is `get_or_insert` operation. The data insice map is also always
+copy, so we can aquire ownership immediatelly. Let's brain storm some ideas.
+
+Problematic thing is reallocation. Once map overflows, it needs to be
+resized and rehashed. One thing we probably cannot avoid
+is locking all thread when rehashing, but maybe thread running into rehash
+lock can help with rehashing instead of waiting.
+
+One thing that needs to be cleared out, is how do we organize data in the
+hash map. If there is an collision, means that hash is same but key
+mismatches, we hash the hash again and try that until we find free slot.
+
+Great, now we just need to track collision rate and expand the hashmap
+as needed.

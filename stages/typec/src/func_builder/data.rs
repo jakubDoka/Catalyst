@@ -120,8 +120,8 @@ impl TyChecker<'_> {
         let missing_fields = self.typec[struct_meta.fields]
             .iter()
             .zip(fields.iter())
-            .filter_map(|(field, value)| value.is_none().then_some(field.name))
-            .map(|name| &self.interner[name])
+            .filter_map(|(field, value)| value.is_none().then_some(&field.name))
+            .map(|name| name.get(self.interner))
             .intersperse(", ")
             .collect::<String>();
 

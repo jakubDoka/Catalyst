@@ -22,6 +22,7 @@ impl Arena {
         Self { allocator }
     }
 
+    #[inline]
     pub fn alloc<T>(&self, value: T) -> &T {
         const { assert!(!mem::needs_drop::<T>()) };
 
@@ -38,6 +39,7 @@ impl Arena {
         }
     }
 
+    #[inline]
     pub fn alloc_slice<T>(&self, value: &[T]) -> &[T] {
         const { assert!(!mem::needs_drop::<T>()) };
 

@@ -411,7 +411,8 @@ impl Typec {
             "fn {}[{}] {}({}) -> {} ",
             signature
                 .cc
-                .map(|cc| &interner[cc])
+                .as_ref()
+                .map(|cc| cc.get(interner))
                 .map_or(default(), |cc| format!("\"{cc}\" ")),
             self[upper_generics]
                 .iter()
@@ -419,7 +420,7 @@ impl Typec {
                 .map(|&ty| self.display_spec_sum(ty, interner))
                 .intersperse(", ".into())
                 .collect::<String>(),
-            &interner[self[func].name],
+            self[func].name.get(interner),
             self[signature.args]
                 .iter()
                 .map(|&ty| self.display_ty(ty, interner))
@@ -442,7 +443,7 @@ impl Typec {
             self.display_ty_to(owner.base(self), to, interner);
             write!(to, "\\").unwrap();
         }
-        to.push_str(&interner[name]);
+        to.push_str(name.get(interner));
     }
 
     pub fn display_ty(&self, ty: Ty, interner: &Interner) -> String {
@@ -462,7 +463,7 @@ impl Typec {
                         .map_or(usize::MAX, |loc| loc.module.index())
                 )
                 .unwrap();
-                to.push_str(&interner[self[r#struct].name])
+                to.push_str(self[r#struct].name.get(interner))
             }
             Ty::Enum(r#enum) => {
                 write!(
@@ -473,7 +474,7 @@ impl Typec {
                         .map_or(usize::MAX, |loc| loc.module.index())
                 )
                 .unwrap();
-                to.push_str(&interner[self[r#enum].name])
+                to.push_str(self[r#enum].name.get(interner))
             }
             Ty::Instance(instance) => {
                 let Instance { base, args } = self[instance];
@@ -515,7 +516,7 @@ impl Typec {
 
     pub fn display_spec_to(&self, spec: Spec, to: &mut String, interner: &Interner) {
         match spec {
-            Spec::Base(base) => to.push_str(&interner[self[base].name]),
+            Spec::Base(base) => to.push_str(self[base].name.get(interner)),
             Spec::Instance(instance) => {
                 let SpecInstance { base, args } = self[instance];
                 self.spec_instance_id(base, &self[args], to, interner)
@@ -687,7 +688,7 @@ impl Typec {
                 ..default()
             };
 
-            let func = if let Some(water_drop) = Func::lookup_water_drop(&interner[id]) {
+            let func = if let Some(water_drop) = Func::lookup_water_drop(id.get(interner)) {
                 self.cache.funcs[water_drop] = func;
                 water_drop
             } else {
@@ -780,7 +781,7 @@ impl Typec {
     pub fn binary_op_id(&self, op: Ident, lhs: Ty, rhs: Ty, to: &mut String, interner: &Interner) {
         self.display_ty_to(lhs, to, interner);
         to.push(' ');
-        to.push_str(&interner[op]);
+        to.push_str(op.get(interner));
         to.push(' ');
         self.display_ty_to(rhs, to, interner);
     }

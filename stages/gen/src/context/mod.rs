@@ -29,7 +29,7 @@ use typec_t::*;
 #[derive(Serialize, Archive, Deserialize)]
 
 pub struct GenBase {
-    lookup: Arc<CMap<Ident, CompiledFunc>>,
+    lookup: Arc<CMap<FragRef<&'static str>, CompiledFunc>>,
 }
 
 derive_relocated!(struct GenBase { lookup });
@@ -63,26 +63,39 @@ impl GenBase {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Archive, Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
-pub struct CompiledFuncRef(Ident);
+pub struct CompiledFuncRef(FragRef<&'static str>);
+
+impl CompiledFuncRef {
+    pub fn ident(self) -> FragRef<&'static str> {
+        self.0
+    }
+}
 
 pub struct Gen {
-    lookup: Arc<CMap<Ident, CompiledFunc>>,
+    lookup: Arc<CMap<FragRef<&'static str>, CompiledFunc>>,
 }
 
 impl Gen {
-    pub fn get(&self, id: Ident) -> Option<CompiledFuncRef> {
+    pub fn get(&self, id: FragRef<&'static str>) -> Option<CompiledFuncRef> {
         self.lookup.get(&id).map(|_value| CompiledFuncRef(id))
     }
 
-    pub fn get_direct(&self, id: CompiledFuncRef) -> Ref<Ident, CompiledFunc, FvnBuildHasher> {
+    pub fn get_direct(
+        &self,
+        id: CompiledFuncRef,
+    ) -> Ref<FragRef<&'static str>, CompiledFunc, FvnBuildHasher> {
         self.lookup.get(&id.0).unwrap()
     }
 
-    pub fn get_or_insert(&mut self, id: Ident, func: FragRef<Func>) -> CompiledFuncRef {
+    pub fn get_or_insert(
+        &mut self,
+        id: FragRef<&'static str>,
+        func: FragRef<Func>,
+    ) -> CompiledFuncRef {
         self.lookup
             .entry(id)
             .and_modify(|func| func.unused = false)
-            .or_insert_with(|| CompiledFunc::new(func, id));
+            .or_insert_with(|| CompiledFunc::new(func));
 
         CompiledFuncRef(id)
     }
@@ -140,7 +153,7 @@ pub struct CompiledFunc {
 }
 
 impl CompiledFunc {
-    pub fn new(func: FragRef<Func>, _name: Ident) -> Self {
+    pub fn new(func: FragRef<Func>) -> Self {
         Self {
             func,
             unused: false,
@@ -699,27 +712,23 @@ impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, LibCall, D> for LibCall
 }
 
 impl GenItemName {
-    pub const FUNC_FLAG: u8 = 1;
+    pub const FUNC_FLAG: u8 = 0;
 
     pub fn decode_name(UserExternalName { namespace, index }: UserExternalName) -> GenItemName {
-        let (flag, len, thread) = (
-            (namespace >> 24) as u8,
-            (namespace >> 8) as u16,
-            namespace as u8,
-        );
+        let (flag, thread) = ((namespace >> 8) as u8, namespace as u8);
 
         match flag {
             Self::FUNC_FLAG => {
-                GenItemName::Func(unsafe { mem::transmute(FragSliceAddr::new(index, thread, len)) })
+                GenItemName::Func(CompiledFuncRef(FragRef::new(FragAddr::new(index, thread))))
             }
             _ => unreachable!(),
         }
     }
 
     pub fn encode_func(func: CompiledFuncRef) -> UserExternalName {
-        let FragSliceAddr { index, thread, len } = unsafe { mem::transmute(func) };
+        let FragAddr { index, thread, .. } = func.0.addr();
         UserExternalName {
-            namespace: thread as u32 | (len as u32) << 8 | (Self::FUNC_FLAG as u32) << 24,
+            namespace: thread as u32 | (Self::FUNC_FLAG as u32) << 8,
             index,
         }
     }

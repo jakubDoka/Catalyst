@@ -228,14 +228,14 @@ impl TyChecker<'_> {
                 span,
                 source: self.source,
                 expected,
-                queried: self.interner[sym].to_string(),
+                queried: sym.get(self.interner).to_string(),
             }),
             ScopeError::Collision => {
                 let suggestions = self.resources.module_deps
                     [self.resources.modules[self.module].deps]
                     .iter()
                     .filter(|dep| self.typec[dep.ptr].items.values().any(|i| i.id == sym))
-                    .map(|dep| &self.interner[dep.name])
+                    .map(|dep| dep.name.get(self.interner))
                     .intersperse(", ")
                     .collect::<String>();
                 self.workspace.push(ScopeItemCollision {

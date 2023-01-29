@@ -319,7 +319,7 @@ impl<'a> PackageLoader<'a> {
                         packages: self.resources.package_deps
                             [self.resources.packages[package_id].deps]
                             .iter()
-                            .map(|dep| &self.interner[dep.name])
+                            .map(|dep| dep.name.get(self.interner))
                             .intersperse(", ")
                             .collect::<String>(),
                         loc: SourceLoc { origin, span: path.sliced(..package.len()) },

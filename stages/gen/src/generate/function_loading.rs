@@ -13,10 +13,10 @@ impl Generator<'_> {
         mut params: impl Iterator<Item = Ty>,
         typec: &Typec,
         interner: &mut Interner,
-    ) -> Ident {
+    ) -> FragRef<&'static str> {
         use std::fmt::Write;
         let prefix = if jit { "jit-" } else { "native-" };
-        interner.intern_with(|s, t| {
+        interner.intern_with_compressed(|s, t| {
             t.push_str(prefix);
             write!(t, "{triple}").unwrap();
             typec.func_name(func_id, t, s);
@@ -125,10 +125,10 @@ impl Generator<'_> {
             return CallConv::Fast;
         };
 
-        if &self.interner[cc] == "default" {
+        if cc.get(self.interner) == "default" {
             return system_cc;
         }
 
-        self.interner[cc].parse().unwrap_or(CallConv::Fast)
+        cc.get(self.interner).parse().unwrap_or(CallConv::Fast)
     }
 }

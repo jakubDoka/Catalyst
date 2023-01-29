@@ -179,8 +179,8 @@ impl TyChecker<'_> {
                     let missing = self.typec[spec_methods]
                         .iter()
                         .zip(slots.as_slice())
-                        .filter_map(|(f, m)| m.is_none().then_some(f.name))
-                        .map(|name| &self.interner[name])
+                        .filter_map(|(f, m)| m.is_none().then_some(&f.name))
+                        .map(|name| name.get(self.interner))
                         .intersperse(", ")
                         .collect::<String>();
                     self.workspace.push(MissingImplMethods {
@@ -495,7 +495,7 @@ impl TyChecker<'_> {
             .iter()
             .find(|attr| matches!(attr.value.value, TopLevelAttrKindAst::WaterDrop(..)))
         {
-            let name_str = &self.interner[name.ident];
+            let name_str = name.ident.get(self.interner);
             let Some(id) = I::lookup_water_drop(name_str) else {
                 self.workspace.push(InvalidWaterDrop {
                     message: "no water drop with this name exists",

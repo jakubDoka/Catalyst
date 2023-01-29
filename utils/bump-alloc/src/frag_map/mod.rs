@@ -122,7 +122,7 @@ impl<T, A: Allocator> FragMap<T, A> {
     }
 
     /// # Safety
-    /// The caller must ensure slice is in range of valid memory.
+    /// Ensure slice is in range of valid memory.
     pub unsafe fn gen_unchecked_slice(&self, slice: FragSlice<T>) -> &[T] {
         let FragSliceAddr { index, thread, len } = slice.0;
         let thread = &self.others.get_unchecked(thread as usize);
@@ -130,12 +130,16 @@ impl<T, A: Allocator> FragMap<T, A> {
         slice::from_raw_parts(ptr, len as usize)
     }
 
+    /// # Safety
+    /// Ensure slice is not out of bounds and does not capture frozen element.
     pub unsafe fn get_unchacked_mut(&mut self, index: FragRef<T>) -> &mut T {
         let FragAddr { index, .. } = index.0;
         &mut *ArcVecInner::get_item(self.thread_local.view.inner.0, index as usize)
     }
 
-    pub unsafe fn gen_unchecked_slice_mut(&self, slice: FragSlice<T>) -> &mut [T] {
+    /// # Safety
+    /// Ensure slice is not out of bounds and does not capture frozen elements.
+    pub unsafe fn gen_unchecked_slice_mut(&mut self, slice: FragSlice<T>) -> &mut [T] {
         let FragSliceAddr { index, len, .. } = slice.0;
         let ptr = ArcVecInner::get_item(self.thread_local.view.inner.0, index as usize);
         slice::from_raw_parts_mut(ptr, len as usize)

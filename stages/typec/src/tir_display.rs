@@ -77,7 +77,7 @@ impl TyChecker<'_> {
             TirKind::Call(CallTir { func, params, args }) => {
                 match *func {
                     CallableTir::Func(func) => {
-                        write!(buffer, "{}", &self.interner[self.typec[func].name])?
+                        write!(buffer, "{}", self.typec[func].name.get(self.interner))?
                     }
                     CallableTir::SpecFunc(func) => {
                         let SpecFunc { parent, name, .. } = self.typec[func];
@@ -85,7 +85,7 @@ impl TyChecker<'_> {
                             buffer,
                             "{}\\{}",
                             &self.typec.display_spec(Spec::Base(parent), self.interner),
-                            &self.interner[name],
+                            name.get(self.interner),
                         )?
                     }
                     CallableTir::Pointer(val) => {
@@ -194,7 +194,7 @@ impl TyChecker<'_> {
                 self.display_tir(rhs, buffer, indent, var_count)?;
             }
             TirKind::ConstAccess(r#const) => {
-                let name = &self.interner[self.typec[r#const].name];
+                let name = self.typec[r#const].name.get(self.interner);
                 buffer.push_str(name);
             }
         }

@@ -157,12 +157,12 @@ impl MirChecker<'_, '_> {
 
                 match callable {
                     CallableMir::Func(func) => {
-                        buffer.push_str(&self.interner[self.typec[func].name])
+                        buffer.push_str(self.typec[func].name.get(self.interner))
                     }
                     CallableMir::SpecFunc(bound_func) => {
                         let SpecFunc { name, parent, .. } = self.typec[bound_func];
                         let bound_id = self.typec.display_spec(Spec::Base(parent), self.interner);
-                        write!(buffer, "{}\\{}", bound_id, &self.interner[name])?;
+                        write!(buffer, "{}\\{}", bound_id, name.get(self.interner))?;
                     }
                     CallableMir::Pointer(ptr) => write!(buffer, "val{}", ptr.index())?,
                 }
@@ -232,7 +232,7 @@ impl MirChecker<'_, '_> {
                     buffer,
                     "var{} = const_access {}",
                     ret.index(),
-                    &self.interner[self.typec[r#const].name]
+                    self.typec[r#const].name.get(self.interner)
                 )?;
             }
             InstMir::Drop(drop) => {
@@ -262,11 +262,11 @@ impl MirChecker<'_, '_> {
                 let Struct { fields, .. } = self.typec[s];
                 res.push_str("\\{ ");
                 if let Some((&first, rest)) = self.typec[fields].split_first() {
-                    write!(res, "{}: ", &self.interner[first.name]).unwrap();
+                    write!(res, "{}: ", first.name.get(self.interner)).unwrap();
                     self.display_pat_low(first.ty, params, res, frontier);
                     for &field in rest {
                         res.push_str(", ");
-                        write!(res, "{}: ", &self.interner[field.name]).unwrap();
+                        write!(res, "{}: ", field.name.get(self.interner)).unwrap();
                         self.display_pat_low(field.ty, params, res, frontier);
                     }
                 }
@@ -318,7 +318,7 @@ impl MirChecker<'_, '_> {
                 } else {
                     self.typec[variants][0]
                 };
-                write!(res, "\\{}", &self.interner[variant.name]).unwrap();
+                write!(res, "\\{}", variant.name.get(self.interner)).unwrap();
                 if variant.ty != Ty::UNIT {
                     res.push('~');
                     self.display_pat_low(variant.ty, params, res, frontier);

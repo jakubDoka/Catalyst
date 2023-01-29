@@ -115,10 +115,10 @@ impl Worker {
 
         builder.seal_block(entry);
 
-        let entry_name = generator.interner.intern(gen::ENTRY_POINT_NAME);
+        let entry_name = generator.interner.intern_compressed(gen::ENTRY_POINT_NAME);
         let entry_func = generator.typec.cache.funcs.push(Func {
             visibility: FuncVisibility::Exported,
-            name: entry_name,
+            name: Ident::from_ref(entry_name),
             ..default()
         });
         let compiled_entry = generator.gen.get_or_insert(entry_name, entry_func);
@@ -429,7 +429,7 @@ impl Worker {
             )
             .generate(signature, body.ret, body.args, &params, root, &mut builder);
 
-            let name = &task.interner[task.typec[func].name];
+            let name = task.typec[func].name.get(&task.interner);
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
             }

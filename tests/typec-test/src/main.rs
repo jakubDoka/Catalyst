@@ -84,7 +84,7 @@ ctl_errors! {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "struct-decl" {
             struct A;
             struct C {

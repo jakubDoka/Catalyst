@@ -11,7 +11,7 @@ dashmap = "5.4.0"
 smallvec = { version = "1.10.0" }
 arc-swap = { version = "1.5.1" }
 rkyv = { version = "0.7.39", features = ["copy"] }
-fxhash = "0.2.1"
+cfg-if = "1.0.0"
 
 [features]
 default = ["rkyv/validation", "rkyv/copy", "smallvec/union"]

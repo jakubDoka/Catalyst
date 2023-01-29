@@ -34,7 +34,6 @@ impl TaskBase {
     }
 
     pub fn split(&self, ir_dump: bool) -> impl Iterator<Item = Task> + '_ {
-        dbg!();
         let mut interner_split = self.interner.split();
         let mut typec_split = self.typec.split();
         let mut mir_split = self.mir.split();

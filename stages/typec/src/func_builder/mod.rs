@@ -91,11 +91,13 @@ impl TyChecker<'_> {
                 builder.end_frame(self.scope, frame);
                 return Some(None);
             }
-        }?;
+        };
 
         builder.end_frame(self.scope, frame);
 
         builder.ctx.generics.clear();
+
+        let tir_body = tir_body?;
 
         let body = if tir_body.ty == Ty::TERMINAL {
             tir_body
@@ -258,8 +260,8 @@ impl TyChecker<'_> {
                 let missing_fields = tir_fields
                     .iter()
                     .zip(&self.typec[self.typec[struct_ty].fields])
-                    .filter_map(|(opt, f)| opt.is_none().then_some(f.name))
-                    .map(|name| &self.interner[name])
+                    .filter_map(|(opt, f)| opt.is_none().then_some(&f.name))
+                    .map(|name| name.get(self.interner))
                     .intersperse(", ")
                     .collect::<String>();
 
@@ -317,7 +319,7 @@ impl TyChecker<'_> {
                             ty: self.typec.display_ty(Ty::Enum(enum_ty), self.interner),
                             suggestions: self.typec[self.typec[enum_ty].variants]
                                 .iter()
-                                .map(|v| &self.interner[v.name])
+                                .map(|v| v.name.get(self.interner))
                                 .intersperse(", ")
                                 .collect(),
                             something: "variant",

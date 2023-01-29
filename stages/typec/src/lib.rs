@@ -264,7 +264,7 @@ mod util {
                         source: self.source,
                     }),
                     None => self.workspace.push(ShadowedBuiltin {
-                        item: self.interner[item.id].to_string(),
+                        item: item.id.get(self.interner).to_string(),
                         span: item.span,
                         source: self.source,
                     }),

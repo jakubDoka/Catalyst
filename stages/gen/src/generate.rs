@@ -545,10 +545,11 @@ impl Generator<'_> {
             signature, name, ..
         } = self.typec[func_id];
         let ret_ty = self.ty_repr(signature.ret);
-        let op_str = self.interner[name]
+        let op_str = name
+            .get(self.interner)
             .split_whitespace()
             .nth(1)
-            .unwrap_or(&self.interner[name]);
+            .unwrap_or(name.get(self.interner));
         let signed = signature.ret.is_signed();
 
         macro_rules! helper {

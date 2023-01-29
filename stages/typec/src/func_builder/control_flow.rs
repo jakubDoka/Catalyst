@@ -252,8 +252,8 @@ impl TyChecker<'_> {
                     },
                     suggestions: self.typec[self.typec[ty].variants]
                         .iter()
-                        .map(|variant| variant.name)
-                        .map(|name| &self.interner[name])
+                        .map(|variant| &variant.name)
+                        .map(|name| name.get(self.interner))
                         .intersperse(", ")
                         .collect(),
                     something: "variant",
