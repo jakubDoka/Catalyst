@@ -4,7 +4,7 @@ main function u0:0() -> i64 fast {
     ss1 = explicit_slot 12
     ss2 = explicit_slot 12
     sig0 = (i64) fast
-    fn0 = colocated u16787200:1543 sig0
+    fn0 = colocated u0:2 sig0
 
 block0:
     v0 = iconst.i8 0
@@ -96,7 +96,7 @@ block9:
 }
 drop function u0:0(i64) fast {
     sig0 = (i32) -> i32 fast
-    fn0 = u16787456:1582 sig0
+    fn0 = u0:3 sig0
 
 block0(v0: i64):
     v1 = load.i32 v0

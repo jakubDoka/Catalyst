@@ -14,8 +14,8 @@ main function u0:0() -> i64 fast {
     ss11 = explicit_slot 8
     sig0 = (i64) -> i64 fast
     sig1 = (i64) -> i64 fast
-    fn0 = colocated u16789248:1688 sig0
-    fn1 = colocated u16789760:1735 sig1
+    fn0 = colocated u0:7 sig0
+    fn1 = colocated u0:8 sig1
 
 block0:
     v0 = iconst.i64 0
