@@ -107,7 +107,7 @@ error: scope item not found
 23 |     fn [T] use_on(s: ^uint) -> Glued\[T] => \{inner: value}
    |                                                      ^^^^^ this does not exist or is not imported
    |
-   = help: expected variable or enum
+   = help: expected variable, enum, constant or module
    = info: debug: queried 'value'
 
 error: missing fields in struct constructor
@@ -131,7 +131,10 @@ fn [] use_on(var0: ^uint, var1: param0) -> 0\Glued[param0] return 0\Glued[param0
 
 fn [] new() -> uint return 0
 
-fn [] new() -> () return {
+fn [] new() -> () {
+    {
+    }
+    return
 }
 
 fn [] take(var0: uint) -> uint return var0
