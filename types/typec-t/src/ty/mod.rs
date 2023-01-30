@@ -470,16 +470,12 @@ impl Ty {
     pub fn int_eq(self) -> Option<FragRef<Func>> {
         Some(match self {
             Ty::Builtin(b) => match b {
-                Builtin::Unit => todo!(),
-                Builtin::Terminal => todo!(),
-                Builtin::Mutable => todo!(),
-                Builtin::Immutable => todo!(),
                 Builtin::Uint => Func::UINT_EQ,
                 Builtin::U32 => Func::U32_EQ,
                 Builtin::U16 => Func::U16_EQ,
                 Builtin::U8 => Func::U8_EQ,
                 Builtin::Char => Func::U32_EQ,
-                Builtin::Bool => todo!(),
+                _ => return None,
             },
             _ => return None,
         })
@@ -722,33 +718,27 @@ gen_builtin!(
         U8 => U8 => "u8",
         CHAR => Char => "char",
         BOOL => Bool => "bool",
+        F32 => F32 => "f32",
+        F64 => F64 => "f64",
+        // c abi
+        SHORT => Short => "short",
+        CINT => Cint => "cint",
+        LONG => Long => "long",
+        LONGLONG => LongLong => "longlong",
     }
 
     groups {
-        SCALARS => [UINT U32 U16 U8 CHAR BOOL],
+        SCALARS => [UINT U32 U16 U8 CHAR BOOL F32 F64 SHORT CINT LONG LONGLONG],
         BINARY => [UINT U32 U16 U8 BOOL],
         INTEGERS => [UINT U32 U16 U8],
+        FLOATS => [F32 F64],
+        CTYPES => [SHORT CINT LONG LONGLONG],
     }
 );
 
 impl Builtin {
     pub fn is_signed(self) -> bool {
         false
-    }
-
-    pub fn size(self) -> u32 {
-        match self {
-            Builtin::Unit => 0,
-            Builtin::Terminal => 0,
-            Builtin::Mutable => 0,
-            Builtin::Immutable => 0,
-            Builtin::Uint => 8,
-            Builtin::U32 => 4,
-            Builtin::U16 => 2,
-            Builtin::U8 => 1,
-            Builtin::Char => 4,
-            Builtin::Bool => 1,
-        }
     }
 }
 

@@ -142,6 +142,7 @@ impl TyChecker<'_> {
             Path(path) => self.value_path(path, inference, builder),
             Return(ReturnAst { keyword, expr }) => self.r#return(expr, keyword.span, builder),
             Int(source_info) => self.int(source_info.span, inference),
+            Float(source_info) => self.float(source_info.span, inference),
             Char(source_info) => self.char(source_info.span),
             Bool(source_info) => self.bool(source_info.span),
             Call(&call) => self.call(call, inference, builder),

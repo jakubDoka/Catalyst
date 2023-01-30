@@ -140,6 +140,9 @@ impl MirChecker<'_, '_> {
             InstMir::Int(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
             }
+            InstMir::Float(value, ret) => {
+                write!(buffer, "var{} = {}", ret.index(), value)?;
+            }
             InstMir::Access(access, ret) => {
                 if let Some(ret) = ret {
                     write!(buffer, "var{} = ", ret.index())?;
@@ -221,9 +224,6 @@ impl MirChecker<'_, '_> {
                     field,
                 )?;
             }
-            InstMir::Bool(value, ret) => {
-                write!(buffer, "var{} = {}", ret.index(), value)?;
-            }
             InstMir::Var(value, ret) => {
                 write!(buffer, "var{} = var{}", ret.index(), value.index())?;
             }
@@ -257,6 +257,7 @@ impl MirChecker<'_, '_> {
             *frontier = others;
             first
         };
+        use Builtin::*;
         match ty {
             Ty::Struct(s) => {
                 let Struct { fields, .. } = self.typec[s];
@@ -288,19 +289,13 @@ impl MirChecker<'_, '_> {
                 self.display_pat_low(ty, params, res, frontier)
             }
             Ty::Builtin(b) => match b {
-                Builtin::Unit
-                | Builtin::Terminal
-                | Builtin::Uint
-                | Builtin::U32
-                | Builtin::Mutable
-                | Builtin::Immutable
-                | Builtin::U16
-                | Builtin::U8 => {
+                Unit | Terminal | Uint | U32 | Mutable | Immutable | U16 | U8 | Short | Cint
+                | Long | LongLong => {
                     let first = advance();
                     write!(res, "{first}").unwrap();
                 }
-                Builtin::Char => todo!(),
-                Builtin::Bool => {
+                Char => todo!(),
+                Bool => {
                     let first = advance();
                     if first == Range::full() {
                         res.push('_');
@@ -308,6 +303,7 @@ impl MirChecker<'_, '_> {
                         write!(res, "{}", first.start == 1).unwrap();
                     }
                 }
+                F32 | F64 => unreachable!(),
             },
             Ty::Enum(r#enum) => {
                 let Enum { variants, .. } = self.typec[r#enum];

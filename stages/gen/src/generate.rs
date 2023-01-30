@@ -2,7 +2,9 @@ use core::slice;
 use std::{cmp::Ordering, default::default};
 
 use cranelift_codegen::ir::{
-    self, condcodes::IntCC, InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
+    self,
+    condcodes::{FloatCC, IntCC},
+    InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
 };
 use cranelift_frontend::Variable;
 use mir_t::*;
@@ -145,9 +147,12 @@ impl Generator<'_> {
                 let value = builder.ins().iconst(ty, value);
                 self.save_value(ret, value, 0, false, builder);
             }
-            InstMir::Bool(value, ret) => {
+            InstMir::Float(value, ret) => {
                 let ty = self.ty_repr(builder.value_ty(ret));
-                let value = builder.ins().iconst(ty, value as i64);
+                let value = match ty {
+                    ir::types::F64 => builder.ins().f64const(value),
+                    _ => builder.ins().f32const(value as f32),
+                };
                 self.save_value(ret, value, 0, false, builder);
             }
             InstMir::Access(target, ret) => {
@@ -551,48 +556,132 @@ impl Generator<'_> {
             .nth(1)
             .unwrap_or(name.get(self.interner));
         let signed = signature.ret.is_signed();
+        let is_bool = signature.ret == Ty::BOOL;
 
         macro_rules! helper {
+            (floats) => {
+                ir::types::F32 | ir::types::F64
+            };
             (ints) => {
                 ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64
+            };
+            (sints) => {
+                helper!(ints)
+            };
+            (uints) => {
+                helper!(ints)
             };
             (binary) => {
                 helper!(ints)
             };
             (scalars) => {
-                helper!(binary)
+                helper!(binary) | helper!(floats)
             };
+
+            (dispatch ($a:expr, $b:expr) {$(
+                ($group:tt $($ops:tt: $func:tt),* $(,)?),
+            )*}) => {
+                match (builder.func.dfg.value_type($a), op_str, signed) {
+                    $(
+                        $((helper!($group), helper!(@op $ops), helper!(@sign $group)) => helper!(@func $func, $a, $b),)*
+                    )*
+                    val => unimplemented!("{:?}", val),
+                }
+            };
+
+            (@op $str:literal) => {$str};
+            (@op $tt:tt) => {stringify!($tt)};
+
+            (@func $name:ident, $a:expr, $b:expr) => {builder.ins().$name($a, $b)};
+            (@func (icmp $cmp:ident), $a:expr, $b:expr) => {builder.ins().icmp(IntCC::$cmp, $a, $b)};
+            (@func (fcmp $cmp:ident), $a:expr, $b:expr) => {builder.ins().fcmp(FloatCC::$cmp, $a, $b)};
+
+            (@sign uints) => {false};
+            (@sign sints) => {true};
+            (@sign $any:tt) => {_};
         }
 
         let value = match *args.as_slice() {
-            [a, b] => match (builder.func.dfg.value_type(a), op_str) {
-                (helper!(ints), "+") => builder.ins().iadd(a, b),
-                (helper!(ints), "-") => builder.ins().isub(a, b),
-                (helper!(ints), "*") => builder.ins().imul(a, b),
-                (helper!(ints), "/") if signed => builder.ins().sdiv(a, b),
-                (helper!(ints), "/") => builder.ins().udiv(a, b),
-                (helper!(scalars), "==") => builder.ins().icmp(IntCC::Equal, a, b),
-                (helper!(binary), "&") => builder.ins().band(a, b),
-                val => unimplemented!("{:?}", val),
-            },
+            [a, b] => helper!(dispatch (a, b) {
+                (ints
+                    +: iadd, "-": isub, *: imul, <<: ishl,
+                    ==: (icmp Equal),
+                    !=: (icmp NotEqual)),
+                (uints
+                    /: udiv, %: urem, >>: ushr,
+                    >: (icmp UnsignedGreaterThan),
+                    <: (icmp UnsignedLessThan),
+                    >=: (icmp UnsignedGreaterThanOrEqual),
+                    <=: (icmp UnsignedLessThanOrEqual)),
+                (sints
+                    /: sdiv, %: srem, >>: sshr,
+                    >: (icmp SignedGreaterThan),
+                    <: (icmp SignedLessThan),
+                    >=: (icmp SignedGreaterThanOrEqual),
+                    <=: (icmp SignedLessThanOrEqual)),
+                (binary
+                    &: band, |: bor, ^: bxor),
+                (floats
+                    +: fadd, "-": fsub, *: fmul, /: fdiv,
+                    ==: (fcmp Equal),
+                    !=: (fcmp NotEqual),
+                    >: (fcmp GreaterThan),
+                    <: (fcmp LessThan),
+                    >=: (fcmp GreaterThanOrEqual),
+                    <=: (fcmp LessThanOrEqual)),
+            }),
             [v] => match (builder.func.dfg.value_type(v), ret_ty) {
-                (from @ helper!(ints), to @ helper!(ints)) => match from.bytes().cmp(&to.bytes()) {
-                    Ordering::Greater => builder.ins().ireduce(to, v),
-                    Ordering::Equal => v,
-                    Ordering::Less => {
-                        let arg_is_signed = self.typec[signature.args][0].is_signed();
-                        match arg_is_signed && signature.ret.is_signed() {
-                            true => builder.ins().sextend(to, v),
-                            false => builder.ins().uextend(to, v),
-                        }
+                (from @ helper!(ints), to @ helper!(ints)) => {
+                    let v = match is_bool {
+                        true => builder.ins().icmp_imm(IntCC::NotEqual, v, 0),
+                        false => v,
+                    };
+                    self.convert_int(builder, signature, from, to, v)
+                }
+                (from @ helper!(floats), to @ helper!(floats)) => {
+                    match from.bytes().cmp(&to.bytes()) {
+                        Ordering::Less => builder.ins().fpromote(to, v),
+                        Ordering::Equal => v,
+                        Ordering::Greater => builder.ins().fdemote(to, v),
                     }
+                }
+                (helper!(floats), to @ helper!(ints)) => match signed {
+                    true => builder.ins().fcvt_to_sint_sat(to, v),
+                    false => builder.ins().fcvt_to_uint_sat(to, v),
                 },
+                (helper!(ints), to @ helper!(floats)) => {
+                    match self.typec[signature.args][0].is_signed() {
+                        true => builder.ins().fcvt_from_sint(to, v),
+                        false => builder.ins().fcvt_from_uint(to, v),
+                    }
+                }
                 others => unimplemented!("{others:?}"),
             },
             ref slice => unimplemented!("{slice:?}"),
         };
 
         self.save_value(target, value, 0, false, builder);
+    }
+
+    fn convert_int(
+        &self,
+        builder: &mut GenBuilder,
+        signature: Signature,
+        from: Type,
+        to: Type,
+        v: ir::Value,
+    ) -> ir::Value {
+        match from.bytes().cmp(&to.bytes()) {
+            Ordering::Greater => builder.ins().ireduce(to, v),
+            Ordering::Equal => v,
+            Ordering::Less => {
+                let arg_is_signed = self.typec[signature.args][0].is_signed();
+                match arg_is_signed && signature.ret.is_signed() {
+                    true => builder.ins().sextend(to, v),
+                    false => builder.ins().uextend(to, v),
+                }
+            }
+        }
     }
 
     fn instantiate_block<W>(
@@ -837,9 +926,14 @@ impl Generator<'_> {
                 Ordering::Greater => builder.ins().ushr_imm(value, source_offset as i64 * 8),
             };
 
-            match builder.func.dfg.value_type(shifted).bytes() > layout.size {
-                true => builder.ins().ireduce(layout.repr, shifted),
+            let resized = match builder.func.dfg.value_type(shifted).bytes() > layout.size {
+                true => builder.ins().ireduce(layout.repr.as_int(), shifted),
                 false => shifted,
+            };
+
+            match layout.repr.as_int() != layout.repr {
+                true => builder.ins().bitcast(layout.repr, resized),
+                false => resized,
             }
         };
 
@@ -908,10 +1002,16 @@ impl Generator<'_> {
         builder: &mut GenBuilder,
     ) -> ir::Value {
         let source_size = builder.func.dfg.value_type(source).bytes();
+        let source_repr = builder.func.dfg.value_type(source);
         let target_repr = builder.func.dfg.value_type(target);
+        let casted = match source_repr.as_int() != source_repr {
+            true => builder.ins().bitcast(source_repr.as_int(), source),
+            false => source,
+        };
+
         let balanced = match target_repr.bytes() > source_size {
-            true => builder.ins().uextend(target_repr, source),
-            false => return source,
+            true => builder.ins().uextend(target_repr, casted),
+            false => return casted,
         };
 
         let shifted = match target_offset.cmp(&0) {

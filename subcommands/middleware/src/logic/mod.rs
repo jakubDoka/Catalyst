@@ -1,51 +1,51 @@
 pub mod task;
 pub mod worker;
 
-use core::fmt;
-use std::{
-    collections::VecDeque,
-    default::default,
-    env,
-    error::Error,
-    fmt::Write as FmWrite,
-    fs,
-    io::{BufWriter, Seek, SeekFrom, Write},
-    iter, mem,
-    num::NonZeroU8,
-    os::unix::prelude::MetadataExt,
-    path::*,
-    slice,
-    str::FromStr,
-    sync::{
-        atomic::AtomicBool,
-        mpsc::{self, Receiver, Sender, SyncSender},
+use {
+    crate::*,
+    cli::CliInput,
+    core::fmt,
+    cranelift_codegen::{
+        ir::{self, InstBuilder},
+        settings::{self, Configurable, SetError},
+        Context,
     },
-    thread::{self, ScopedJoinHandle},
-    time::Instant,
-};
-
-use cli::CliInput;
-use cranelift_codegen::{
-    ir::{self, InstBuilder},
-    settings::{self, Configurable, SetError},
-    Context,
-};
-use cranelift_frontend::FunctionBuilderContext;
-use rkyv::{
-    de::{deserializers::SharedDeserializeMap, SharedDeserializeRegistry},
-    ser::{
-        serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap, WriteSerializer},
-        ScratchSpace, Serializer, SharedSerializeRegistry,
+    cranelift_frontend::FunctionBuilderContext,
+    rkyv::{
+        de::{deserializers::SharedDeserializeMap, SharedDeserializeRegistry},
+        ser::{
+            serializers::{AllocScratch, CompositeSerializer, SharedSerializeMap, WriteSerializer},
+            ScratchSpace, Serializer, SharedSerializeRegistry,
+        },
+        with::{AsStringError, Skip, UnixTimestampError},
+        Archive, Deserialize, Fallible, Serialize,
     },
-    with::{AsStringError, Skip, UnixTimestampError},
-    Archive, Deserialize, Fallible, Serialize,
+    snippet_display::annotate_snippets::display_list::FormatOptions,
+    std::{
+        collections::VecDeque,
+        default::default,
+        env,
+        error::Error,
+        fmt::Write as FmWrite,
+        fs,
+        io::{BufWriter, Seek, SeekFrom, Write},
+        iter, mem,
+        num::NonZeroU8,
+        os::unix::prelude::MetadataExt,
+        path::*,
+        slice,
+        str::FromStr,
+        sync::{
+            atomic::AtomicBool,
+            mpsc::{self, Receiver, Sender, SyncSender},
+        },
+        thread::{self, ScopedJoinHandle},
+        time::Instant,
+    },
+    target_lexicon::Triple,
+    task::TaskBase,
+    worker::DefaultSourceAstHandler,
 };
-use snippet_display::annotate_snippets::display_list::FormatOptions;
-use target_lexicon::Triple;
-
-use crate::*;
-
-use self::{task::TaskBase, worker::DefaultSourceAstHandler};
 
 pub type WorkerLaunchResult<'scope> = (
     Vec<PackageTask>,

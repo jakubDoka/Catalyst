@@ -308,6 +308,7 @@ gen_kind!(
         Ident = "[a-zA-Z_][a-zA-Z0-9_]*",
         Macro = r"[a-zA-Z_][a-zA-Z0-9_]*!",
         Int = "[0-9]+((u)(64|32|16|8)|uint)?",
+        Float = r"[0-9]+\.[0-9]+(f32|f64)?",
         Str = r#""(\\"|[^"])*""#,
         Bool = "(true|false)",
         Char = r"'(.|\\(n|r|t|\\|'))'",

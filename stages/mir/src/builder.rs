@@ -76,26 +76,28 @@ impl MirChecker<'_, '_> {
             $call
         }}
 
+        use TirKind::*;
         match kind {
-            TirKind::Block(stmts) => self.block(stmts, dest, span, r#move),
-            TirKind::Int(computed) => pass!(dest => self.int(computed, span, dest)),
-            TirKind::Char => pass!(dest => self.char(span, dest)),
-            TirKind::Bool(value) => pass!(dest => self.bool(value, span, dest)),
-            TirKind::Access(access) => self.access(access, span, dest, r#move),
-            TirKind::Call(&call) => pass!(dest => self.call(call, ty, span, dest)),
-            TirKind::Return(ret) => self.r#return(ret, span),
-            TirKind::Ctor(fields) => self.constructor(fields, ty, span, dest, r#move),
-            TirKind::Deref(&node) => pass!(dest => self.deref(node, dest, span)),
-            TirKind::Ref(&node) => pass!(dest => self.r#ref(node, span, dest)),
-            TirKind::Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
-            TirKind::Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
-            TirKind::If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
-            TirKind::Loop(&r#loop) => pass!(dest => self.r#loop(r#loop, dest, span, r#move)),
-            TirKind::Continue(loop_id) => self.r#continue(loop_id, span),
-            TirKind::Break(&r#break) => self.r#break(r#break, span),
-            TirKind::Let(&r#let) => self.r#let(r#let),
-            TirKind::Assign(&assign) => self.assign(assign, span),
-            TirKind::ConstAccess(r#const) => {
+            Block(stmts) => self.block(stmts, dest, span, r#move),
+            Int(computed) => pass!(dest => self.int(computed, span, dest)),
+            Float(computed) => pass!(dest => self.float(computed, span, dest)),
+            Char => pass!(dest => self.char(span, dest)),
+            Bool(value) => pass!(dest => self.bool(value, span, dest)),
+            Access(access) => self.access(access, span, dest, r#move),
+            Call(&call) => pass!(dest => self.call(call, ty, span, dest)),
+            Return(ret) => self.r#return(ret, span),
+            Ctor(fields) => self.constructor(fields, ty, span, dest, r#move),
+            Deref(&node) => pass!(dest => self.deref(node, dest, span)),
+            Ref(&node) => pass!(dest => self.r#ref(node, span, dest)),
+            Field(&field) => pass!(dest => self.field(field, span, dest, r#move)),
+            Match(&r#match) => pass!(dest => self.r#match(r#match, span, dest, r#move)),
+            If(&r#if) => pass!(dest => self.r#if(r#if, dest, span, r#move)),
+            Loop(&r#loop) => pass!(dest => self.r#loop(r#loop, dest, span, r#move)),
+            Continue(loop_id) => self.r#continue(loop_id, span),
+            Break(&r#break) => self.r#break(r#break, span),
+            Let(&r#let) => self.r#let(r#let),
+            Assign(&assign) => self.assign(assign, span),
+            ConstAccess(r#const) => {
                 pass!(dest => self.r#const_access(dest, r#const, span))
             }
         }
@@ -726,6 +728,16 @@ impl MirChecker<'_, '_> {
         Some(dest)
     }
 
+    fn float(&mut self, computed: Option<f64>, span: Span, dest: VRef<ValueMir>) -> NodeRes {
+        let lit = computed.unwrap_or_else(|| {
+            span_str!(self, span)
+                .parse()
+                .expect("Lexer should have validated this.")
+        });
+        self.inst(InstMir::Float(lit, dest), span);
+        Some(dest)
+    }
+
     fn char(&mut self, span: Span, dest: VRef<ValueMir>) -> NodeRes {
         let lit = Self::parse_char(span_str!(self, span.shrink(1)).chars().by_ref())
             .expect("Lexer should have validated this.");
@@ -734,7 +746,7 @@ impl MirChecker<'_, '_> {
     }
 
     fn bool(&mut self, value: bool, span: Span, dest: VRef<ValueMir>) -> NodeRes {
-        self.inst(InstMir::Bool(value, dest), span);
+        self.inst(InstMir::Int(value as i64, dest), span);
         Some(dest)
     }
 

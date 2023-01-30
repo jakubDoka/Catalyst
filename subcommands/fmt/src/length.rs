@@ -215,27 +215,24 @@ impl Length for ExprAst<'_, u32> {
 
 impl Length for UnitExprAst<'_, u32> {
     fn length_low(&self, fmt: &mut Fmt) -> usize {
+        use UnitExprAst::*;
         match *self {
-            UnitExprAst::StructCtor(s) => s.length(fmt),
-            UnitExprAst::EnumCtor(e) => e.length(fmt),
-            UnitExprAst::DotExpr(d) => d.length(fmt),
-            UnitExprAst::Call(c) => c.length(fmt),
-            UnitExprAst::Path(p) => p.length(fmt),
-            UnitExprAst::Return(r) => r.length(fmt),
-            UnitExprAst::Int(i) => i.length(fmt),
-            UnitExprAst::Char(c) => c.length(fmt),
-            UnitExprAst::Bool(b) => b.length(fmt),
-            UnitExprAst::Match(m) => m.length(fmt),
-            UnitExprAst::If(i) => i.length(fmt),
-            UnitExprAst::Loop(l) => l.length(fmt),
-            UnitExprAst::Break(b) => b.length(fmt),
-            UnitExprAst::Continue(c) => c.length(fmt),
-            UnitExprAst::Let(l) => l.length(fmt),
-            UnitExprAst::Deref(d, e) => d.length(fmt) + e.length(fmt),
-            UnitExprAst::Ref(m, d, e) => {
-                m.length(fmt) + d.length(fmt) + d.is_some() as usize + e.length(fmt)
-            }
-            UnitExprAst::Block(b) => b.length(fmt),
+            StructCtor(s) => s.length(fmt),
+            EnumCtor(e) => e.length(fmt),
+            DotExpr(d) => d.length(fmt),
+            Call(c) => c.length(fmt),
+            Path(p) => p.length(fmt),
+            Return(r) => r.length(fmt),
+            Int(i) | Float(i) | Char(i) | Bool(i) => i.length(fmt),
+            Match(m) => m.length(fmt),
+            If(i) => i.length(fmt),
+            Loop(l) => l.length(fmt),
+            Break(b) => b.length(fmt),
+            Continue(c) => c.length(fmt),
+            Let(l) => l.length(fmt),
+            Deref(d, e) => d.length(fmt) + e.length(fmt),
+            Ref(m, d, e) => m.length(fmt) + d.length(fmt) + d.is_some() as usize + e.length(fmt),
+            Block(b) => b.length(fmt),
         }
     }
 }

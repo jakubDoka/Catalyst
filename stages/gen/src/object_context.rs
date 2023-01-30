@@ -1,7 +1,7 @@
 use std::{fmt::Display, ops::Not};
 
 use ::object::{RelocationEncoding, RelocationKind, SymbolScope};
-use cranelift_codegen::binemit::Reloc;
+use cranelift_codegen::{binemit::Reloc, ir::LibCall};
 use object::{
     write::{Object, Relocation, SectionId, StandardSection, Symbol, SymbolId, SymbolSection},
     Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind,
@@ -204,7 +204,29 @@ impl ObjectContext {
                     .ok_or(ObjectRelocationError::MissingSymbol(func))?
                     .symbol
             }
-            GenItemName::LibCall(_) => todo!(),
+            GenItemName::LibCall(libcall) => {
+                let name = match libcall {
+                    LibCall::Probestack => todo!(),
+                    LibCall::CeilF32 => todo!(),
+                    LibCall::CeilF64 => todo!(),
+                    LibCall::FloorF32 => todo!(),
+                    LibCall::FloorF64 => todo!(),
+                    LibCall::TruncF32 => todo!(),
+                    LibCall::TruncF64 => todo!(),
+                    LibCall::NearestF32 => todo!(),
+                    LibCall::NearestF64 => todo!(),
+                    LibCall::FmaF32 => todo!(),
+                    LibCall::FmaF64 => todo!(),
+                    LibCall::Memcpy => "memcpy",
+                    LibCall::Memset => todo!(),
+                    LibCall::Memmove => "memmove",
+                    LibCall::Memcmp => todo!(),
+                    LibCall::ElfTlsGetAddr => todo!(),
+                    LibCall::ElfTlsGetOffset => todo!(),
+                };
+
+                todo!("{libcall:?}")
+            }
         };
 
         Ok(Relocation {

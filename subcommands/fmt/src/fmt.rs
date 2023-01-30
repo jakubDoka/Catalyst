@@ -238,32 +238,33 @@ impl<'ctx> Fmt<'ctx> {
     }
 
     fn unit_expr(&mut self, unit: &UnitExprAst<u32>, state: &mut ExprFmtState) {
+        use UnitExprAst::*;
         match *unit {
-            UnitExprAst::StructCtor(ref s) => self.struct_ctor(s),
-            UnitExprAst::EnumCtor(e) => self.enum_ctor(e),
-            UnitExprAst::DotExpr(d) => self.dot_expr(d, state),
-            UnitExprAst::Call(c) => self.call(c, state),
-            UnitExprAst::Path(p) => self.path(p),
-            UnitExprAst::Return(r) => self.r#return(r),
-            UnitExprAst::Int(source_info) => self.source_info(source_info),
-            UnitExprAst::Char(source_info) => self.source_info(source_info),
-            UnitExprAst::Bool(source_info) => self.source_info(source_info),
-            UnitExprAst::Match(m) => self.r#match(m),
-            UnitExprAst::If(i) => self.r#if(i),
-            UnitExprAst::Loop(l) => self.r#loop(l),
-            UnitExprAst::Break(b) => self.r#break(b),
-            UnitExprAst::Continue(c) => self.r#continue(c),
-            UnitExprAst::Let(l) => self.r#let(l),
-            UnitExprAst::Deref(star, expr) => {
+            StructCtor(ref s) => self.struct_ctor(s),
+            EnumCtor(e) => self.enum_ctor(e),
+            DotExpr(d) => self.dot_expr(d, state),
+            Call(c) => self.call(c, state),
+            Path(p) => self.path(p),
+            Return(r) => self.r#return(r),
+            Int(source_info) | Float(source_info) | Char(source_info) | Bool(source_info) => {
+                self.source_info(source_info)
+            }
+            Match(m) => self.r#match(m),
+            If(i) => self.r#if(i),
+            Loop(l) => self.r#loop(l),
+            Break(b) => self.r#break(b),
+            Continue(c) => self.r#continue(c),
+            Let(l) => self.r#let(l),
+            Deref(star, expr) => {
                 self.source_info(star);
                 self.unit_expr(expr, state);
             }
-            UnitExprAst::Ref(carrot, mutability, expr) => {
+            Ref(carrot, mutability, expr) => {
                 self.source_info(carrot);
                 self.mutability(mutability);
                 self.unit_expr(expr, state);
             }
-            UnitExprAst::Block(block) => self.block(Self::expr, block),
+            Block(block) => self.block(Self::expr, block),
         }
     }
 

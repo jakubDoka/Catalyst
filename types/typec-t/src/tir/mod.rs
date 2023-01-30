@@ -239,6 +239,7 @@ pub struct BreakTir<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum TirKind<'a> {
     Int(Option<i64>),
+    Float(Option<f64>),
     Char,
     Bool(bool),
     Block(&'a [TirNode<'a>]),

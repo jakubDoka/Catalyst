@@ -157,7 +157,7 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
     }
 
     fn compute_padding(current: *const u8, layout: Layout) -> usize {
-        ((current as usize).saturating_sub(layout.size())) & (layout.align() - 1)
+        current.align_offset(layout.align())
     }
 
     #[cold]

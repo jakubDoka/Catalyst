@@ -51,6 +51,13 @@ impl TyChecker<'_> {
                     buffer.push_str(span_str!(self, span));
                 }
             }
+            TirKind::Float(computed) => {
+                if let Some(computed) = computed {
+                    write!(buffer, "{computed}")?;
+                } else {
+                    buffer.push_str(span_str!(self, span));
+                }
+            }
             TirKind::Char | TirKind::Bool(..) => {
                 write!(buffer, "'{}'", span_str!(self, span))?;
             }

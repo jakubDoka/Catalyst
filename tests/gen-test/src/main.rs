@@ -156,6 +156,14 @@ fn main() {
             fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;
         }
 
+        simple "floats" {
+            #[entry];
+            fn main -> uint {
+                let a = 2.0 + 1.0;
+                a.uint()
+            }
+        }
+
         // simple "compile-time" {
         //     fn sub(a: uint, b: uint) -> uint => a - b;
 

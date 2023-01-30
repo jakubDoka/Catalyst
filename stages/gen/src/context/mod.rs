@@ -1,30 +1,29 @@
-use std::{
-    alloc,
-    default::default,
-    iter, mem,
-    num::NonZeroU8,
-    ops::{Deref, DerefMut, Range},
-    sync::Arc,
+use {
+    cranelift_codegen::{
+        binemit::{CodeOffset, Reloc},
+        ir::{self, types, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
+        isa::{self, CallConv, LookupError, TargetIsa},
+        settings, CodegenError, Context,
+    },
+    cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
+    mir_t::*,
+    rkyv::{
+        ser::{ScratchSpace, Serializer},
+        with::{ArchiveWith, DeserializeWith, SerializeWith},
+        Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
+    },
+    std::{
+        alloc,
+        default::default,
+        iter, mem,
+        num::NonZeroU8,
+        ops::{Deref, DerefMut, Range},
+        sync::Arc,
+    },
+    storage::{dashmap::mapref::one::Ref, *},
+    target_lexicon::{CDataModel, Triple},
+    typec_t::*,
 };
-
-use cranelift_codegen::{
-    binemit::{CodeOffset, Reloc},
-    ir::{self, types, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
-    isa::{self, CallConv, LookupError, TargetIsa},
-    settings, CodegenError, Context,
-};
-
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use mir_t::*;
-
-use rkyv::{
-    ser::{ScratchSpace, Serializer},
-    with::{ArchiveWith, DeserializeWith, SerializeWith},
-    Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
-};
-use storage::{dashmap::mapref::one::Ref, *};
-use target_lexicon::Triple;
-use typec_t::*;
 
 #[derive(Serialize, Archive, Deserialize)]
 
@@ -273,42 +272,6 @@ impl ArchivedSignature {
     }
 }
 
-pub struct CallConvArchiver;
-
-impl ArchiveWith<CallConv> for CallConvArchiver {
-    type Archived = Archived<u8>;
-
-    type Resolver = Resolver<u8>;
-
-    unsafe fn resolve_with(
-        field: &CallConv,
-        pos: usize,
-        resolver: Self::Resolver,
-        out: *mut Self::Archived,
-    ) {
-        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
-    }
-}
-
-impl<S: Serializer + ?Sized> SerializeWith<CallConv, S> for CallConvArchiver {
-    fn serialize_with(
-        field: &CallConv,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-        // SAFETY: ther is none
-        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
-    }
-}
-
-impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, CallConv, D> for CallConvArchiver {
-    fn deserialize_with(
-        field: &Archived<u8>,
-        _deserializer: &mut D,
-    ) -> Result<CallConv, <D as rkyv::Fallible>::Error> {
-        Ok(unsafe { mem::transmute_copy::<_, CallConv>(field) })
-    }
-}
-
 #[derive(Debug)]
 pub enum CodeSaveError {
     MissingCode,
@@ -447,6 +410,7 @@ pub struct GenLayouts {
     pub mapping: Map<Ty, Layout>,
     pub offsets: PushMap<Offset>,
     pub ptr_ty: Type,
+    pub data_model: Option<CDataModel>,
 }
 
 impl GenLayouts {
@@ -494,30 +458,40 @@ impl GenLayouts {
                     on_stack,
                 }
             }
-            Ty::Pointer(..) | Ty::Builtin(Builtin::Uint) => Layout {
-                repr: self.ptr_ty,
-                offsets: VSlice::empty(),
-                align: (self.ptr_ty.bytes() as u8).try_into().unwrap(),
-                size: self.ptr_ty.bytes(),
-                on_stack: false,
-            },
-            Ty::Builtin(Builtin::Bool) => Layout {
-                repr: types::I8,
-                offsets: VSlice::empty(),
-                align: 1.try_into().unwrap(),
-                size: 1,
-                on_stack: false,
-            },
-            Ty::Builtin(b) => {
-                let size = b.size();
-                let (repr, on_stack) = self.repr_for_size(size);
-                Layout {
-                    size,
-                    offsets: VSlice::empty(),
-                    align: (size.max(1) as u8).try_into().unwrap(),
-                    repr,
-                    on_stack,
-                }
+            Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
+            Ty::Builtin(bt) => {
+                use Builtin::*;
+
+                let repr = match bt {
+                    Unit | Mutable | Immutable | Terminal => return Layout::EMPTY,
+                    Uint => self.ptr_ty,
+                    Char | U32 => types::I32,
+                    U16 => types::I16,
+                    Bool | U8 => types::I8,
+                    F32 => types::F32,
+                    F64 => types::F64,
+                    Short | Cint | Long | LongLong => {
+                        let data_model = self
+                            .data_model
+                            .expect("missing c data model on current target");
+                        let size = match bt {
+                            Short => data_model.short_size(),
+                            Cint => data_model.int_size(),
+                            Long => data_model.long_size(),
+                            LongLong => data_model.long_long_size(),
+                            _ => unreachable!(),
+                        };
+
+                        match size {
+                            target_lexicon::Size::U8 => types::I8,
+                            target_lexicon::Size::U16 => types::I16,
+                            target_lexicon::Size::U32 => types::I32,
+                            target_lexicon::Size::U64 => types::I64,
+                        }
+                    }
+                };
+
+                Layout::from_type(repr)
             }
             Ty::Param(index) => {
                 return self.ty_layout(params[index as usize], &[], typec, interner)
@@ -533,7 +507,10 @@ impl GenLayouts {
                 self.ty_layout(base.as_ty(), &params, typec, interner)
             }
             Ty::Enum(ty) => {
-                let size = typec.enum_flag_ty(ty).map(|ty| ty.size());
+                let size = typec.enum_flag_ty(ty).map(|ty| {
+                    self.ty_layout(Ty::Builtin(ty), params, typec, interner)
+                        .size
+                });
                 let (base_size, base_align) = typec[typec[ty].variants]
                     .to_bumpvec()
                     .into_iter()
@@ -611,6 +588,16 @@ impl Layout {
     pub fn rust_layout(&self) -> alloc::Layout {
         alloc::Layout::from_size_align(self.size as usize, self.align.get() as usize).unwrap()
     }
+
+    pub fn from_type(repr: Type) -> Self {
+        Self {
+            size: repr.bytes(),
+            offsets: default(),
+            align: (repr.bytes() as u8).try_into().unwrap(),
+            repr,
+            on_stack: false,
+        }
+    }
 }
 
 //////////////////////////////////
@@ -620,52 +607,17 @@ impl Layout {
 #[derive(Clone, Copy, Serialize, Archive, Deserialize)]
 
 pub struct GenReloc {
-    /// The offset at which the relocation applies, *relative to the
-    /// containing section*.
     pub offset: CodeOffset,
-    /// The kind of relocation.
     #[with(RelocArchiver)]
     pub kind: Reloc,
-    /// The external symbol / name to which this relocation refers.
     pub name: GenItemName,
-    /// The addend to add to the symbol value.
     pub addend: isize,
 }
 
-pub struct RelocArchiver;
-
-impl ArchiveWith<Reloc> for RelocArchiver {
-    type Archived = Archived<u8>;
-
-    type Resolver = Resolver<u8>;
-
-    unsafe fn resolve_with(
-        field: &Reloc,
-        pos: usize,
-        resolver: Self::Resolver,
-        out: *mut Self::Archived,
-    ) {
-        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
-    }
-}
-
-impl<S: Serializer + ?Sized> SerializeWith<Reloc, S> for RelocArchiver {
-    fn serialize_with(
-        field: &Reloc,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-        // SAFETY: ther is none
-        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
-    }
-}
-
-impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, Reloc, D> for RelocArchiver {
-    fn deserialize_with(
-        field: &Archived<u8>,
-        _deserializer: &mut D,
-    ) -> Result<Reloc, <D as rkyv::Fallible>::Error> {
-        Ok(unsafe { mem::transmute_copy::<_, Reloc>(field) })
-    }
+transmute_arkive! {
+    CallConvArchiver(CallConv => u8)
+    RelocArchiver(Reloc => u8)
+    LibCallArchiver(LibCall => u8)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize)]
@@ -673,42 +625,6 @@ impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, Reloc, D> for RelocArch
 pub enum GenItemName {
     Func(CompiledFuncRef),
     LibCall(#[with(LibCallArchiver)] ir::LibCall),
-}
-
-pub struct LibCallArchiver;
-
-impl ArchiveWith<LibCall> for LibCallArchiver {
-    type Archived = Archived<u8>;
-
-    type Resolver = Resolver<u8>;
-
-    unsafe fn resolve_with(
-        field: &LibCall,
-        pos: usize,
-        resolver: Self::Resolver,
-        out: *mut Self::Archived,
-    ) {
-        mem::transmute_copy::<_, u8>(field).resolve(pos, resolver, out)
-    }
-}
-
-impl<S: Serializer + ?Sized> SerializeWith<LibCall, S> for LibCallArchiver {
-    fn serialize_with(
-        field: &LibCall,
-        serializer: &mut S,
-    ) -> Result<Self::Resolver, <S as rkyv::Fallible>::Error> {
-        // SAFETY: ther is none
-        unsafe { mem::transmute_copy::<_, u8>(field).serialize(serializer) }
-    }
-}
-
-impl<D: Fallible + ?Sized> DeserializeWith<Archived<u8>, LibCall, D> for LibCallArchiver {
-    fn deserialize_with(
-        field: &Archived<u8>,
-        _deserializer: &mut D,
-    ) -> Result<LibCall, <D as rkyv::Fallible>::Error> {
-        Ok(unsafe { mem::transmute_copy::<_, LibCall>(field) })
-    }
 }
 
 impl GenItemName {

@@ -58,11 +58,13 @@ gen_transfere! {
     consts ConstAst Const;
 }
 
-impl<'a> AstTransfer<'a> {
-    pub fn activate(&mut self) -> &mut ActiveAstTransfer {
-        unsafe { mem::transmute(self) }
+impl AstTransfer<'static> {
+    pub fn activate(&mut self) -> ActiveAstTransfer {
+        ActiveAstTransfer::new(self)
     }
+}
 
+impl<'a> AstTransfer<'a> {
     pub fn close_impl_frame(&mut self, ast: ImplAst<'a>, r#impl: Option<FragRef<Impl>>) {
         self.impl_frames.push((ast, r#impl, self.impl_funcs.len()));
     }
@@ -72,9 +74,15 @@ mod active_ast_transfer {
     use super::*;
 
     #[repr(transparent)]
-    pub struct ActiveAstTransfer<'a>(AstTransfer<'a>);
+    pub struct ActiveAstTransfer<'a, 'b>(&'b mut AstTransfer<'a>);
 
-    impl<'a> Deref for ActiveAstTransfer<'a> {
+    impl<'a, 'b> ActiveAstTransfer<'a, 'b> {
+        pub fn new(transfer: &'b mut AstTransfer<'static>) -> Self {
+            Self(unsafe { mem::transmute(transfer) })
+        }
+    }
+
+    impl<'a> Deref for ActiveAstTransfer<'a, '_> {
         type Target = AstTransfer<'a>;
 
         fn deref(&self) -> &Self::Target {
@@ -82,13 +90,13 @@ mod active_ast_transfer {
         }
     }
 
-    impl<'a> DerefMut for ActiveAstTransfer<'a> {
+    impl<'a> DerefMut for ActiveAstTransfer<'a, '_> {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.0
         }
     }
 
-    impl Drop for ActiveAstTransfer<'_> {
+    impl Drop for ActiveAstTransfer<'_, '_> {
         fn drop(&mut self) {
             self.0.clear();
         }
@@ -104,7 +112,7 @@ impl TyChecker<'_> {
         items: GroupedItemsAst<'a>,
         ctx: &mut TyCheckerCtx,
         tir_builder_ctx: &mut TirBuilderCtx,
-        transfer: &mut ActiveAstTransfer<'a>,
+        mut transfer: ActiveAstTransfer<'a, '_>,
         type_checked_funcs: &mut BumpVec<(FragRef<Func>, TirFunc<'a>)>,
         type_checked_consts: &mut BumpVec<(FragRef<Const>, TirNode<'a>)>,
     ) -> &mut Self {
@@ -125,8 +133,8 @@ impl TyChecker<'_> {
                 type_checked_consts,
             )
             .collect(items.funcs, Self::collect_func, &mut transfer.funcs)
-            .collect_impls(items.impls, transfer)
-            .detect_infinite_types(ctx, transfer)
+            .collect_impls(items.impls, &mut transfer)
+            .detect_infinite_types(ctx, &mut transfer)
             .build_funcs(
                 arena,
                 &transfer.funcs,
@@ -137,7 +145,7 @@ impl TyChecker<'_> {
             )
             .build_impl_funcs(
                 arena,
-                transfer,
+                &mut transfer,
                 type_checked_funcs,
                 &mut ctx.extern_funcs,
                 tir_builder_ctx,

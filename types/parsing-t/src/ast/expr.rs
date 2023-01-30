@@ -37,6 +37,7 @@ pub enum UnitExprAst<'a, M = NoTokenMeta> {
     Path(PathAst<'a, M>),
     Return(ReturnAst<'a, M>),
     Int(SourceInfo<M>),
+    Float(SourceInfo<M>),
     Char(SourceInfo<M>),
     Bool(SourceInfo<M>),
     Match(MatchExprAst<'a, M>),
@@ -56,25 +57,24 @@ pub enum UnitExprAst<'a, M = NoTokenMeta> {
 
 impl<'a, M> Spanned for UnitExprAst<'a, M> {
     fn span(&self) -> Span {
+        use UnitExprAst::*;
         match self {
-            UnitExprAst::StructCtor(e) => e.span(),
-            UnitExprAst::EnumCtor(e) => e.span(),
-            UnitExprAst::DotExpr(e) => e.span(),
-            UnitExprAst::Call(e) => e.span(),
-            UnitExprAst::Path(e) => e.span(),
-            UnitExprAst::Return(e) => e.span(),
-            UnitExprAst::Int(e) => e.span,
-            UnitExprAst::Char(e) => e.span,
-            UnitExprAst::Bool(e) => e.span,
-            UnitExprAst::Match(e) => e.span(),
-            UnitExprAst::If(e) => e.span(),
-            UnitExprAst::Loop(e) => e.span(),
-            UnitExprAst::Break(e) => e.span(),
-            UnitExprAst::Continue(e) => e.span(),
-            UnitExprAst::Let(e) => e.span(),
-            UnitExprAst::Deref(e, expr) => e.span.joined(expr.span()),
-            UnitExprAst::Ref(e, _, expr) => e.span.joined(expr.span()),
-            UnitExprAst::Block(e) => e.span(),
+            StructCtor(e) => e.span(),
+            EnumCtor(e) => e.span(),
+            DotExpr(e) => e.span(),
+            Call(e) => e.span(),
+            Path(e) => e.span(),
+            Return(e) => e.span(),
+            Int(e) | Float(e) | Char(e) | Bool(e) => e.span,
+            Match(e) => e.span(),
+            If(e) => e.span(),
+            Loop(e) => e.span(),
+            Break(e) => e.span(),
+            Continue(e) => e.span(),
+            Let(e) => e.span(),
+            Deref(e, expr) => e.span.joined(expr.span()),
+            Ref(e, _, expr) => e.span.joined(expr.span()),
+            Block(e) => e.span(),
         }
     }
 }

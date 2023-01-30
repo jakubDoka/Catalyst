@@ -46,9 +46,7 @@ impl MirBase {
     }
 
     pub fn register<'a>(&'a mut self, objects: &mut RelocatedObjects<'a>) {
-        objects.add_root(DashMapFilterUnmarkedKeys::new(unsafe {
-            mem::transmute::<_, &mut Arc<CMap<FragRef<Func>, FuncMir>>>(&mut self.bodies)
-        }));
+        objects.add_root(DashMapFilterUnmarkedKeys::new(&mut self.bodies));
         objects.add(&mut self.modules);
     }
 
@@ -245,6 +243,7 @@ impl DebugData {
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
+    Float(f64, VRef<ValueMir>),
     Access(VRef<ValueMir>, OptVRef<ValueMir>),
     ConstAccess(FragRef<Const>, VRef<ValueMir>),
     Call(VRef<CallMir>, VRef<ValueMir>),
@@ -252,7 +251,6 @@ pub enum InstMir {
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
-    Bool(bool, VRef<ValueMir>),
     Drop(VRef<DropMir>),
 }
 

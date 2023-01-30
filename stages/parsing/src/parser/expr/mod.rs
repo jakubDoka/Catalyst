@@ -55,6 +55,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             },
             Return => self.r#return().map(UnitExprAst::Return),
             Int => Some(UnitExprAst::Int(self.advance())),
+            Float => Some(UnitExprAst::Float(self.advance())),
             Char => Some(UnitExprAst::Char(self.advance())),
             Bool => Some(UnitExprAst::Bool(self.advance())),
             Match => self.r#match().map(UnitExprAst::Match),

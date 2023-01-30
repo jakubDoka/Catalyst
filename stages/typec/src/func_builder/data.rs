@@ -219,7 +219,33 @@ impl TyChecker<'_> {
 
     pub fn int<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
         let span_str = span_str!(self, span);
-        let (ty, postfix_len) = Ty::INTEGERS
+        let (ty, postfix_len) =
+            Self::infer_constant_type(span_str, inference, &Ty::INTEGERS, Ty::UINT);
+        Some(TirNode::new(
+            ty,
+            TirKind::Int(None),
+            span.sliced(..span_str.len() - postfix_len),
+        ))
+    }
+
+    pub fn float<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
+        let span_str = span_str!(self, span);
+        let (ty, postfix_len) =
+            Self::infer_constant_type(span_str, inference, &Ty::FLOATS, Ty::F32);
+        Some(TirNode::new(
+            ty,
+            TirKind::Float(None),
+            span.sliced(..span_str.len() - postfix_len),
+        ))
+    }
+
+    fn infer_constant_type(
+        value: &str,
+        inference: Inference,
+        group: &[Ty],
+        default: Ty,
+    ) -> (Ty, usize) {
+        group
             .iter()
             .map(|&ty| {
                 (
@@ -230,19 +256,14 @@ impl TyChecker<'_> {
                     },
                 )
             })
-            .find_map(|(ty, str)| span_str.ends_with(str).then_some((ty, str.len())))
+            .find_map(|(ty, str)| value.ends_with(str).then_some((ty, str.len())))
             .or_else(|| {
                 inference
                     .ty()
-                    .filter(|ty| Ty::INTEGERS.contains(ty))
+                    .filter(|ty| group.contains(ty))
                     .map(|ty| (ty, 0))
             })
-            .unwrap_or((Ty::UINT, 0));
-        Some(TirNode::new(
-            ty,
-            TirKind::Int(None),
-            span.sliced(..span_str.len() - postfix_len),
-        ))
+            .unwrap_or((default, 0))
     }
 
     pub fn char<'a>(&mut self, span: Span) -> ExprRes<'a> {

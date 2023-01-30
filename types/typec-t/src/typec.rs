@@ -710,13 +710,19 @@ impl Typec {
             }
         }
 
-        op_to_ty("+ - / *", Ty::INTEGERS, |op, ty| {
+        op_to_ty("+ - / * %", Ty::INTEGERS, |op, ty| {
+            create_bin_op(op, ty, ty, ty)
+        });
+        op_to_ty("+ - / *", Ty::FLOATS, |op, ty| {
             create_bin_op(op, ty, ty, ty)
         });
         op_to_ty("== != < > <= >=", Ty::SCALARS, |op, ty| {
             create_bin_op(op, ty, ty, Ty::BOOL)
         });
         op_to_ty("| & ^", Ty::BINARY, |op, ty| create_bin_op(op, ty, ty, ty));
+        op_to_ty(">> <<", Ty::INTEGERS, |op, ty| {
+            create_bin_op(op, ty, ty, ty)
+        });
 
         let create_conv = |(from, to): (Ty, Ty)| {
             let name = interner.intern_with(|_, t| write!(t, "{to}"));
@@ -743,6 +749,7 @@ impl Typec {
         Ty::SCALARS
             .into_iter()
             .flat_map(|from| Ty::SCALARS.map(|to| (from, to)))
+            .filter(|(from, to)| from != to && (!Ty::FLOATS.contains(from) || *to != Ty::BOOL))
             .for_each(create_conv)
     }
 
