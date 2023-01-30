@@ -80,7 +80,7 @@ fn [] drop_cond() -> ()  { () ret var32
         var34 = 103
         var33 = new(val34)
         var35 = var33
-        var37 = true
+        var37 = 1
         split var37 block7 block8
     }
 

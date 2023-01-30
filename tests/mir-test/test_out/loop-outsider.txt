@@ -7,7 +7,7 @@ fn [] main() -> ()  { () ret var2
     }
 
     block1 {
-        var7 = true
+        var7 = 1
         split var7 block2 block3
     }
 

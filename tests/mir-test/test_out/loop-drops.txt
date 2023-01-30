@@ -91,7 +91,7 @@ fn [] linear_loop_branch_drop() -> ()  { () ret var14
     }
 
     block7 {
-        var19 = true
+        var19 = 1
         split var19 block8 block9
     }
 
@@ -125,7 +125,7 @@ fn [] loop_branch_drop() -> ()  { () ret var21
     }
 
     block13 {
-        var26 = true
+        var26 = 1
         split var26 block14 block15
     }
 
@@ -157,7 +157,7 @@ fn [] loop_drop_and_move_in() -> ()  { () ret var27
     }
 
     block19 {
-        var32 = true
+        var32 = 1
         split var32 block20 block21
     }
 
