@@ -1,0 +1,15 @@
+info: generated ir:
+main function u0:0() -> i64 fast {
+block0:
+    v0 = f32const 0x1.000000p1
+    v1 = f32const 0x1.000000p0
+    v2 = fadd v0, v1  ; v0 = 0x1.000000p1, v1 = 0x1.000000p0
+    v3 = fcvt_to_uint_sat.i64 v2
+    return v3
+}
+
+
+info: status: exit status: 3
+ = info: stdout: 
+ = info: stderr: 
+
