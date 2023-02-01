@@ -1,17 +1,17 @@
 info: generated ir:
-main function u0:0() -> i64 fast {
-    ss0 = explicit_slot 16
-    ss1 = explicit_slot 16
-    ss2 = explicit_slot 16
-    ss3 = explicit_slot 16
-    ss4 = explicit_slot 16
-    ss5 = explicit_slot 16
-    ss6 = explicit_slot 16
-    ss7 = explicit_slot 16
-    ss8 = explicit_slot 16
-    ss9 = explicit_slot 16
-    ss10 = explicit_slot 16
-    ss11 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\main function u0:0() -> i64 fast {
+    ss0 = explicit_slot 8
+    ss1 = explicit_slot 8
+    ss2 = explicit_slot 8
+    ss3 = explicit_slot 8
+    ss4 = explicit_slot 8
+    ss5 = explicit_slot 8
+    ss6 = explicit_slot 8
+    ss7 = explicit_slot 8
+    ss8 = explicit_slot 8
+    ss9 = explicit_slot 8
+    ss10 = explicit_slot 8
+    ss11 = explicit_slot 8
     sig0 = (i64) -> i64 fast
     sig1 = (i64) -> i64 fast
     fn0 = colocated u0:13 sig0
@@ -59,11 +59,11 @@ block0:
     v26 = call fn1(v25)
     return v26
 }
-dereference function u0:0(i64) -> i64 fast {
+native-x86_64-unknown-linux-gnu0\uint\dereference function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }
-reference function u0:0(i64) -> i64 fast {
+native-x86_64-unknown-linux-gnu0\uint\reference function u0:0(i64) -> i64 fast {
 block0(v0: i64):
     return v0
 }

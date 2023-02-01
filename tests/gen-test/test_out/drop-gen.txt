@@ -1,5 +1,5 @@
 info: generated ir:
-main function u0:0() -> i64 fast {
+native-x86_64-unknown-linux-gnu0\main function u0:0() -> i64 fast {
     sig0 = () fast
     sig1 = () fast
     sig2 = () fast
@@ -23,7 +23,7 @@ block0:
     v0 = iconst.i64 0
     return v0  ; v0 = 0
 }
-drop_cond function u0:0() fast {
+native-x86_64-unknown-linux-gnu0\drop_cond function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i32) fast
     fn0 = colocated u0:16 sig0
@@ -47,8 +47,8 @@ block1:
 block3:
     return
 }
-drop function u0:0(i32) fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\drop[0\A] function u0:0(i32) fast {
+    ss0 = explicit_slot 8
     sig0 = (i64) fast
     fn0 = colocated u0:18 sig0
 
@@ -58,7 +58,7 @@ block0(v0: i32):
     call fn0(v1)
     return
 }
-drop function u0:0(i64) fast {
+native-x86_64-unknown-linux-gnu0\A\drop function u0:0(i64) fast {
     sig0 = (i32) -> i32 fast
     fn0 = u0:19 sig0
 
@@ -69,13 +69,13 @@ block0(v0: i64):
     v4 = call fn0(v3)  ; v3 = 32
     return
 }
-new function u0:0(i32) -> i32 fast {
+native-x86_64-unknown-linux-gnu0\0\A\new function u0:0(i32) -> i32 fast {
 block0(v0: i32):
     v1 = iconst.i32 0
     return v0
 }
-move_in_drop function u0:0() fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\move_in_drop function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
     fn0 = colocated u0:16 sig0
@@ -94,8 +94,8 @@ block0:
     call fn1(v5)
     return
 }
-drop_refed_variable function u0:0() fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\drop_refed_variable function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
@@ -114,13 +114,13 @@ block0:
     call fn2(v4)
     return
 }
-set_char function u0:0(i64, i32) fast {
+native-x86_64-unknown-linux-gnu0\0\A\set_char function u0:0(i64, i32) fast {
 block0(v0: i64, v1: i32):
     store v1, v0
     return
 }
-drop_variable function u0:0() fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\drop_variable function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
@@ -139,8 +139,8 @@ block0:
     call fn2(v4)
     return
 }
-drop_referenced function u0:0() fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\drop_referenced function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
@@ -159,8 +159,8 @@ block0:
     call fn2(v4)
     return
 }
-drop_unused function u0:0() fast {
-    ss0 = explicit_slot 16
+native-x86_64-unknown-linux-gnu0\drop_unused function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
     fn0 = colocated u0:16 sig0
