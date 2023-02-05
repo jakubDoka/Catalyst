@@ -145,7 +145,7 @@ impl Generator<'_> {
                     self.assign_value(ret, target, builder);
                 }
             }
-            InstMir::ConstAccess(_const, _ret) => todo!(),
+            InstMir::ConstAccess(r#const, ret) => self.const_access(r#const, ret, builder),
             InstMir::Call(call, ret) => self.call(call, ret, builder),
             InstMir::Ctor(fields, ret, needs_instance) => {
                 self.constructor(fields, ret, needs_instance, builder)
@@ -160,6 +160,28 @@ impl Generator<'_> {
         };
     }
 
+    fn const_access(
+        &mut self,
+        r#const: FragRef<Const>,
+        ret: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+    ) {
+        let layout = self.ty_layout(builder.value_ty(ret));
+        if layout.is_zero_sized() {
+            return;
+        }
+        let bits = self.gen.get_const(r#const).unwrap();
+        let value = match layout.repr {
+            ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64 => {
+                builder.ins().iconst(layout.repr, bits as i64)
+            }
+            ir::types::F32 => builder.ins().f32const(f32::from_bits(bits as u32)),
+            ir::types::F64 => builder.ins().f64const(f64::from_bits(bits as u64)),
+            _ => unimplemented!(),
+        };
+
+        self.save_value(ret, value, 0, false, builder);
+    }
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);

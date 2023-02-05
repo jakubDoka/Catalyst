@@ -30,8 +30,7 @@ use typec_t::*;
 #[derive(Serialize, Deserialize, Archive)]
 
 pub struct MirBase {
-    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
-    pub consts: Arc<CMap<FragRef<Const>, ()>>,
+    pub bodies: Arc<CMap<BodyOwner, FuncMir>>,
     pub modules: SyncFragBase<ModuleMir>,
 }
 
@@ -39,7 +38,6 @@ impl MirBase {
     pub fn new(thread_count: u8) -> Self {
         Self {
             bodies: default(),
-            consts: default(),
             modules: SyncFragBase::new(thread_count),
         }
     }
@@ -57,8 +55,26 @@ impl MirBase {
     }
 }
 
+#[derive(Serialize, Deserialize, Archive, Hash, Eq, PartialEq, Clone, Copy)]
+#[archive_attr(derive(Hash, Eq, PartialEq))]
+pub enum BodyOwner {
+    Func(FragRef<Func>),
+    Const(FragRef<Const>),
+}
+
+impl IsMarked for BodyOwner {
+    fn is_marked(&self, marker: &FragRelocMarker) -> bool {
+        match *self {
+            BodyOwner::Func(f) => marker.is_marked(f),
+            BodyOwner::Const(c) => marker.is_marked(c),
+        }
+    }
+}
+
+derive_relocated!(enum BodyOwner { Func(f) => f, Const(c) => c, });
+
 pub struct Mir {
-    pub bodies: Arc<CMap<FragRef<Func>, FuncMir>>,
+    pub bodies: Arc<CMap<BodyOwner, FuncMir>>,
     pub modules: SyncFragMap<ModuleMir>,
 }
 
@@ -237,7 +253,6 @@ impl DebugData {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),

@@ -30,10 +30,36 @@ use {
 
 pub mod layout;
 
-#[derive(Serialize, Archive, Deserialize)]
+#[derive(Serialize, Deserialize, Archive, Default)]
+pub struct GenLookup {
+    funcs: CMap<FragRef<&'static str>, CompiledFunc>,
+    consts: CMap<FragRef<Const>, ComputedConst>,
+}
 
+impl Relocated for GenLookup {
+    fn mark(&self, marker: &mut FragRelocMarker) {
+        self.funcs.mark(marker);
+    }
+
+    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+        self.funcs.remap(ctx);
+        self.consts.remap(ctx);
+        Some(())
+    }
+}
+
+#[derive(Serialize, Archive, Deserialize)]
+pub struct ComputedConst {
+    value: Option<IValue>,
+}
+
+derive_relocated!(
+    struct ComputedConst {}
+);
+
+#[derive(Serialize, Archive, Deserialize)]
 pub struct GenBase {
-    lookup: Arc<CMap<FragRef<&'static str>, CompiledFunc>>,
+    lookup: Arc<GenLookup>,
 }
 
 derive_relocated!(struct GenBase { lookup });
@@ -56,12 +82,13 @@ impl GenBase {
 
     pub fn prepare(&mut self) {
         self.lookup
+            .funcs
             .iter_mut()
             .for_each(|mut item| item.unused = true);
     }
 
     fn reallocate(&mut self) {
-        self.lookup.retain(|_, v| !v.unused);
+        self.lookup.funcs.retain(|_, v| !v.unused);
     }
 }
 
@@ -76,27 +103,36 @@ impl CompiledFuncRef {
 }
 
 pub struct Gen {
-    lookup: Arc<CMap<FragRef<&'static str>, CompiledFunc>>,
+    lookup: Arc<GenLookup>,
 }
 
 impl Gen {
-    pub fn get(&self, id: FragRef<&'static str>) -> Option<CompiledFuncRef> {
-        self.lookup.get(&id).map(|_value| CompiledFuncRef(id))
+    pub fn get_func(&self, id: FragRef<&'static str>) -> Option<CompiledFuncRef> {
+        self.lookup.funcs.get(&id).map(|_value| CompiledFuncRef(id))
     }
 
-    pub fn get_direct(
+    pub fn get_func_direct(
         &self,
         id: CompiledFuncRef,
     ) -> Ref<FragRef<&'static str>, CompiledFunc, FvnBuildHasher> {
-        self.lookup.get(&id.0).unwrap()
+        self.lookup.funcs.get(&id.0).unwrap()
     }
 
-    pub fn get_or_insert(
+    pub fn save_const(&mut self, id: FragRef<Const>, value: Option<IValue>) {
+        self.lookup.consts.insert(id, ComputedConst { value });
+    }
+
+    pub fn get_const(&self, id: FragRef<Const>) -> Option<IValue> {
+        self.lookup.consts.get(&id).and_then(|value| value.value)
+    }
+
+    pub fn get_or_insert_func(
         &mut self,
         id: FragRef<&'static str>,
         func: FragRef<Func>,
     ) -> CompiledFuncRef {
         self.lookup
+            .funcs
             .entry(id)
             .and_modify(|func| func.unused = false)
             .or_insert_with(|| CompiledFunc::new(func));
@@ -134,7 +170,7 @@ impl Gen {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut func = self.lookup.get_mut(&id.0).unwrap();
+        let mut func = self.lookup.funcs.get_mut(&id.0).unwrap();
         func.signature = ctx.func.signature.clone();
         func.bytecode = cc.buffer.data().to_vec();
         func.alignment = cc.alignment as u64;

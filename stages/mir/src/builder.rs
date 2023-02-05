@@ -14,16 +14,42 @@ pub type NodeRes = OptVRef<ValueMir>;
 impl MirChecker<'_, '_> {
     pub fn consts(
         &mut self,
-        _module: FragRef<ModuleMir>,
+        module: FragRef<ModuleMir>,
         input: &mut BumpVec<(FragRef<Const>, TirNode)>,
     ) -> &mut Self {
-        for (_const, _tir_const) in input.drain(..) {
-            // let body = self.func(module, r#const, tir_const);
-            // self.mir.bodies.insert(r#const, body);
-            // self.mir_ctx.just_compiled_consts.push(r#const);
+        for (r#const, tir_const) in input.drain(..) {
+            let body = self.r#const(module, r#const, tir_const);
+            self.mir.bodies.insert(BodyOwner::Const(r#const), body);
+            self.mir_ctx.just_compiled_consts.push(r#const);
         }
 
         self
+    }
+
+    fn r#const(
+        &mut self,
+        module: FragRef<ModuleMir>,
+        r#const: FragRef<Const>,
+        body: TirNode,
+    ) -> FuncMir {
+        let Const { ty, .. } = self.typec[r#const];
+        let prev_calls = self.mir_ctx.module.calls.len();
+        let prev_drops = self.mir_ctx.module.drops.len();
+        let prev_values = self.mir_ctx.module.values.len();
+
+        self.mir_ctx.no_moves = false;
+
+        let ret = self.value(ty);
+        self.mir_ctx.ret = ret;
+
+        let frame = self.start_scope_frame();
+        let (block, args) = self.push_args(default());
+        self.node(body, None, false);
+        self.discard_scope_frame(frame);
+
+        self.mir_move_ctx.clear();
+        self.mir_ctx
+            .clear(block, module, args, prev_drops, prev_calls, prev_values)
     }
 
     pub fn funcs(
@@ -33,7 +59,7 @@ impl MirChecker<'_, '_> {
     ) -> &mut Self {
         for (func, tir_func) in input.drain(..) {
             let body = self.func(module, func, tir_func.body);
-            self.mir.bodies.insert(func, body);
+            self.mir.bodies.insert(BodyOwner::Func(func), body);
             self.mir_ctx.just_compiled_funcs.push(func);
         }
 

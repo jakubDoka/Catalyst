@@ -2,9 +2,9 @@ use mir_t::*;
 use storage::{FragRef, Interner, ShadowMap, SmallVec, VRef, VRefSlice};
 use typec_t::*;
 
-use crate::GenLayouts;
+use crate::{Gen, GenLayouts};
 
-type IValue = i64;
+pub type IValue = i64;
 
 pub struct Interpreter<'ctx> {
     pub ctx: &'ctx mut InterpreterCtx,
@@ -12,6 +12,8 @@ pub struct Interpreter<'ctx> {
     pub interner: &'ctx mut Interner,
     pub mir: &'ctx Mir,
     pub layouts: &'ctx mut GenLayouts,
+    pub current: &'ctx mut StackFrame,
+    pub gen: &'ctx Gen,
 }
 
 impl<'ctx> Interpreter<'ctx> {
@@ -33,18 +35,18 @@ impl<'ctx> Interpreter<'ctx> {
         let inst = self.load_inst()?;
 
         let (value, dest) = match inst {
-            InstMir::Var(init, dest) => (self.ctx.current.values[init], dest),
+            InstMir::Var(init, dest) => (self.current.values[init], dest),
             InstMir::Int(i, ret) => (Some(i), ret),
             InstMir::Float(f, ret) => (Some(f.to_bits() as i64), ret),
             InstMir::Access(target, dest) => {
                 if let Some(dest) = dest {
-                    (self.ctx.current.values[target], dest)
+                    (self.current.values[target], dest)
                 } else {
-                    self.ctx.current.instr += 1;
+                    self.current.instr += 1;
                     return Ok(());
                 }
             }
-            InstMir::ConstAccess(_, _) => todo!(),
+            InstMir::ConstAccess(c, ret) => (self.gen.get_const(c), ret),
             InstMir::Call(call, ret) => (self.call(call)?, ret),
             InstMir::Ctor(_, _, _) => todo!(),
             InstMir::Deref(_, _) => todo!(),
@@ -53,19 +55,19 @@ impl<'ctx> Interpreter<'ctx> {
             InstMir::Drop(_) => todo!(),
         };
 
-        self.ctx.current.values[dest] = value;
-        self.ctx.current.instr += 1;
+        self.current.values[dest] = value;
+        self.current.instr += 1;
 
         Ok(())
     }
 
     fn call(&mut self, call: VRef<CallMir>) -> Result<Option<IValue>, StepResult> {
-        let module = &self.mir.modules[self.ctx.current.func.module];
+        let module = &self.mir.modules[self.current.func.module];
         let CallMir {
             callable,
             params,
             args,
-        } = module.calls[self.ctx.current.func.calls][call.index()];
+        } = module.calls[call];
 
         let func = match callable {
             CallableMir::Func(func) => func,
@@ -99,7 +101,7 @@ impl<'ctx> Interpreter<'ctx> {
 
         let args = module.value_args[args]
             .iter()
-            .filter_map(|&arg| self.ctx.current.values[arg])
+            .filter_map(|&arg| self.current.values[arg])
             .collect::<SmallVec<[_; 2]>>();
 
         let signed = signature.ret.is_signed();
@@ -107,10 +109,10 @@ impl<'ctx> Interpreter<'ctx> {
 
         let value = match op_str {
             "sizeof" => {
-                let ty = self.ctx.current.types[module.ty_params[params][0]].ty;
+                let ty = self.current.types[module.ty_params[params][0]].ty;
                 let size =
                     self.layouts
-                        .ty_layout(ty, &self.ctx.current.params, self.typec, self.interner);
+                        .ty_layout(ty, &self.current.params, self.typec, self.interner);
                 size.size as i64
             }
             "cast" => args[0],
@@ -174,10 +176,10 @@ impl<'ctx> Interpreter<'ctx> {
     }
 
     fn load_inst(&mut self) -> Result<InstMir, StepResult> {
-        let module = &self.mir.modules[self.ctx.current.func.module];
-        let block = &module.blocks[self.ctx.current.block];
+        let module = &self.mir.modules[self.current.func.module];
+        let block = &module.blocks[self.current.block];
 
-        let Some(&inst) = module.insts[block.insts].get(self.ctx.current.instr as usize) else {
+        let Some(&inst) = module.insts[block.insts].get(self.current.instr as usize) else {
             return self.control_flow(module, block);
         };
 
@@ -195,65 +197,63 @@ impl<'ctx> Interpreter<'ctx> {
                 then,
                 otherwise,
             } => {
-                let cond = self.ctx.load_register(cond);
+                let cond = self.current.load_register(cond);
                 let new_block = [then, otherwise][cond as usize];
-                self.ctx.current.block = new_block;
-                self.ctx.current.instr = 0;
+                self.current.block = new_block;
+                self.current.instr = 0;
 
                 self.load_inst()
             }
             ControlFlowMir::Goto { dest, ret } => {
-                self.ctx.current.block = dest;
-                self.ctx.current.instr = 0;
+                self.current.block = dest;
+                self.current.instr = 0;
 
                 if let Some(ret) = ret {
                     let block = &module.blocks[dest];
                     let arg = block
                         .passed
                         .expect("block must have passed value if goto passes a value");
-                    self.ctx.current.values[arg] = self.ctx.current.values[ret];
+                    self.current.values[arg] = self.current.values[ret];
                 }
 
                 self.load_inst()
             }
-            ControlFlowMir::Return(value) => {
-                Err(StepResult::Return(self.ctx.current.values[value]))
-            }
+            ControlFlowMir::Return(value) => Err(StepResult::Return(self.current.values[value])),
             ControlFlowMir::Terminal => unreachable!(),
         }
     }
 }
 
+#[derive(Default)]
 pub struct InterpreterCtx {
     stack: Vec<u8>,
     frames: Vec<StackFrame>,
-    fuel: usize,
-    current: StackFrame,
+    pub fuel: usize,
 }
 
-impl InterpreterCtx {
-    fn load_register(&mut self, reg: VRef<ValueMir>) -> i64 {
-        let Some(value) = self.current.values[reg] else {
+pub struct StackFrame {
+    pub params: Vec<Ty>,
+    pub block: VRef<BlockMir>,
+    pub values: ShadowMap<ValueMir, Option<IValue>>,
+    pub types: FuncTypes,
+    pub instr: u32,
+    pub frame_base: u32,
+    pub func: FuncMir,
+}
+
+impl StackFrame {
+    fn load_register(&self, reg: VRef<ValueMir>) -> i64 {
+        let Some(value) = self.values[reg] else {
             unreachable!()
         };
 
         value
     }
 
-    fn value_type(&mut self, value: VRef<ValueMir>, module: &ModuleMir) -> Ty {
+    fn value_type(&self, value: VRef<ValueMir>, module: &ModuleMir) -> Ty {
         let ValueMir { ty, .. } = module.values[value];
-        self.current.types[ty].ty
+        self.types[ty].ty
     }
-}
-
-struct StackFrame {
-    params: Vec<Ty>,
-    block: VRef<BlockMir>,
-    values: ShadowMap<ValueMir, Option<IValue>>,
-    types: FuncTypes,
-    instr: u32,
-    frame_base: u32,
-    func: FuncMir,
 }
 
 pub enum InterpreterError {

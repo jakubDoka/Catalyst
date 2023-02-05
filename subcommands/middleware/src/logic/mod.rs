@@ -603,7 +603,7 @@ impl Middleware {
                 &main_task.typec,
                 &mut main_task.interner,
             );
-            let id = tasks[task_id].gen.get_or_insert(key, func);
+            let id = tasks[task_id].gen.get_or_insert_func(key, func);
             (
                 CompileRequestChild {
                     id,

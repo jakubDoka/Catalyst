@@ -15,7 +15,7 @@ impl MirChecker<'_, '_> {
             let mir = self
                 .mir
                 .bodies
-                .get(&func)
+                .get(&BodyOwner::Func(func))
                 .expect("Expected body to be present");
             self.display_func(&mir, func, buffer)?;
             buffer.push_str("\n\n");

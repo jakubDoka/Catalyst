@@ -44,7 +44,7 @@ pub use {
         interner::{ident::Ident, Interner, InternerBase},
         relocator::{
             DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker,
-            FragRelocator, Relocated, RelocatedObjects,
+            FragRelocator, IsMarked, Relocated, RelocatedObjects,
         },
         sync::{FragSliceKey, SyncFragBase, SyncFragMap, SyncFragView},
         ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, NoInteriorMutability,

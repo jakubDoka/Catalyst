@@ -70,7 +70,7 @@ impl ObjectContext {
             .into_iter()
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let ent = gen.get_direct(func);
+                let ent = gen.get_func_direct(func);
 
                 let meta = &typec[ent.func()];
                 let (scope, weak) = Self::translate_visibility(meta.visibility);
@@ -105,7 +105,7 @@ impl ObjectContext {
 
         // add function bodies and fill offsets
         for &mut (func, symbol, ref mut offset, ..) in funcs.iter_mut() {
-            let ent = gen.get_direct(func);
+            let ent = gen.get_func_direct(func);
 
             *offset = self.object.add_symbol_data(
                 symbol,
@@ -117,7 +117,7 @@ impl ObjectContext {
 
         // add relocations
         for (func, _, offset, ..) in funcs {
-            let ent = gen.get_direct(func);
+            let ent = gen.get_func_direct(func);
             for &record in &ent.relocs {
                 let reloc = self.process_reloc(record, offset, interner)?;
                 self.object

@@ -121,7 +121,7 @@ impl Worker {
             name: generator.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
         });
-        let compiled_entry = generator.gen.get_or_insert(entry_name, entry_func);
+        let compiled_entry = generator.gen.get_or_insert_func(entry_name, entry_func);
         self.context.compile(&**isa).unwrap();
         generator
             .gen
@@ -317,9 +317,63 @@ impl Worker {
             }
         }
 
-        let module = task.mir.modules.push(self.state.mir_ctx.module.clone());
-        assert_eq!(module, mir_module);
-        self.state.mir_ctx.module.clear();
+        if handler.save_module() {
+            let module = task.mir.modules.push(self.state.mir_ctx.module.clone());
+            assert_eq!(module, mir_module);
+            self.state.mir_ctx.module.clear();
+
+            self.fold_constants(task, shared);
+        }
+    }
+
+    fn fold_constants(&mut self, task: &mut Task, _shared: &Shared) {
+        for constant in self.state.mir_ctx.just_compiled_consts.drain(..) {
+            let body = task
+                .mir
+                .bodies
+                .get(&BodyOwner::Const(constant))
+                .unwrap()
+                .to_owned();
+
+            let module = &task.mir.modules[body.module];
+
+            let mut current = StackFrame {
+                params: default(),
+                block: body.entry,
+                values: default(),
+                types: default(),
+                instr: 0,
+                frame_base: 0,
+                func: body,
+            };
+
+            current
+                .types
+                .extend(module.load_types(body.types).iter().copied());
+
+            self.state.interpreter.fuel = 10_000;
+
+            let mut interp = Interpreter {
+                ctx: &mut self.state.interpreter,
+                typec: &mut task.typec,
+                interner: &mut task.interner,
+                mir: &mut task.mir,
+                layouts: &mut self.state.jit_layouts,
+                current: &mut current,
+                gen: &task.gen,
+            };
+
+            let value = match interp.interpret() {
+                Ok(v) => v,
+                Err(InterpreterError::OutOfFuel) => {
+                    todo!();
+                }
+            };
+
+            dbg!(value);
+
+            task.gen.save_const(constant, value)
+        }
     }
 
     fn compile_macros(
@@ -374,7 +428,7 @@ impl Worker {
             let body = task
                 .mir
                 .bodies
-                .get(&func)
+                .get(&BodyOwner::Func(func))
                 .expect("every source code function has body")
                 .to_owned();
             self.state.gen_resources.call_offset = body.calls.start() as usize;
@@ -473,7 +527,7 @@ impl Worker {
                     &task.typec,
                     &mut task.interner,
                 );
-                let id = task.gen.get_or_insert(key, func);
+                let id = task.gen.get_or_insert_func(key, func);
                 (
                     CompileRequestChild {
                         func,
@@ -694,6 +748,7 @@ pub struct WorkerState {
     gen_resources: GenResources,
     jit_layouts: GenLayouts,
     gen_layouts: GenLayouts,
+    interpreter: InterpreterCtx,
 }
 
 // #[derive(Default)]
@@ -745,6 +800,10 @@ pub trait AstHandler: Sync + Send {
 
     fn chunk(&mut self, items: Self::Chunk<'_>, ctx: BaseSourceCtx, macros: MacroSourceCtx)
         -> bool;
+
+    fn save_module(&mut self) -> bool {
+        false
+    }
 }
 
 pub struct BaseSourceCtx<'a> {
@@ -803,5 +862,9 @@ impl AstHandler for DefaultSourceAstHandler {
         mut parser: Parser<'_, 'a, Self::Meta>,
     ) -> Option<Self::Chunk<'a>> {
         parser.grouped_items()
+    }
+
+    fn save_module(&mut self) -> bool {
+        true
     }
 }

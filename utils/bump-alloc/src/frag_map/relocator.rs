@@ -595,22 +595,26 @@ impl<A: Relocated, B: Relocated> Relocated for (A, B) {
 }
 
 #[repr(transparent)]
-pub struct DashMapFilterUnmarkedKeys<K, V>(CMap<FragRef<K>, V>);
+pub struct DashMapFilterUnmarkedKeys<K, V>(CMap<K, V>);
 
 impl<K, V> DashMapFilterUnmarkedKeys<K, V> {
-    pub fn new(map: &mut Arc<CMap<FragRef<K>, V>>) -> &mut Self {
+    pub fn new(map: &mut Arc<CMap<K, V>>) -> &mut Self {
         unsafe { mem::transmute(Arc::get_mut(map).expect("expected unique arc")) }
     }
 }
 
+pub trait IsMarked {
+    fn is_marked(&self, marker: &FragRelocMarker) -> bool;
+}
+
 impl<K, V> Relocated for DashMapFilterUnmarkedKeys<K, V>
 where
-    K: 'static,
+    K: Relocated + Eq + Hash + IsMarked,
     V: Relocated,
 {
     fn mark(&self, marker: &mut FragRelocMarker) {
         for entry in self.0.iter() {
-            if !marker.is_marked(*entry.key()) {
+            if !entry.key().is_marked(marker) {
                 continue;
             }
 

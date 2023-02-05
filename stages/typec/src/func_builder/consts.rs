@@ -33,6 +33,6 @@ impl TyChecker<'_> {
         let node = self.expr(value, Inference::Strong(ty), &mut builder);
         self.scope.end_frame(frame);
 
-        node
+        node.and_then(|n| self.return_low(Some(n), value.span(), &mut builder))
     }
 }

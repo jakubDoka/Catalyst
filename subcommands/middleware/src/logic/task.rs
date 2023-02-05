@@ -121,7 +121,12 @@ impl Task {
                 .pack_func_param_specs(func)
                 .collect::<BumpVec<_>>();
 
-            let body = task.mir.bodies.get(&func).unwrap().to_owned();
+            let body = task
+                .mir
+                .bodies
+                .get(&BodyOwner::Func(func))
+                .unwrap()
+                .to_owned();
             let module = task.mir.modules.reference(body.module);
             dependant_types.clear();
             dependant_types.extend(module.load_types(body.types).iter().copied());
@@ -289,7 +294,7 @@ impl Task {
             &self.typec,
             &mut self.interner,
         );
-        let id = self.gen.get_or_insert(key, func_id);
+        let id = self.gen.get_or_insert_func(key, func_id);
 
         let task_id = seen.insert(id).then_some(task_id).ok_or(task_id);
 

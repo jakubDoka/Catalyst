@@ -78,7 +78,7 @@ impl JitContext {
             .into_iter()
             .filter_map(|func| self.functions.contains_key(&func).not().then_some(func))
             .map(|func| {
-                let compiled_func = gen.get_direct(func);
+                let compiled_func = gen.get_func_direct(func);
                 let Func {
                     visibility, name, ..
                 } = typec[compiled_func.func()];
@@ -117,7 +117,7 @@ impl JitContext {
         }
 
         for (func, code) in filtered_funcs {
-            let func_ent = gen.get_direct(func);
+            let func_ent = gen.get_func_direct(func);
             Self::perform_jit_relocations(
                 // SAFETY: We just allocated the very code.
                 unsafe { code.as_ref() },
