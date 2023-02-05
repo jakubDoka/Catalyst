@@ -63,7 +63,7 @@ impl ObjectContext {
         funcs: impl IntoIterator<Item = CompiledFuncRef>,
         gen: &Gen,
         typec: &Typec,
-        interner: &Interner,
+        interner: &mut Interner,
     ) -> Result<(), ObjectRelocationError> {
         // register functions
         let mut funcs = funcs
@@ -119,7 +119,7 @@ impl ObjectContext {
         for (func, _, offset, ..) in funcs {
             let ent = gen.get_direct(func);
             for &record in &ent.relocs {
-                let reloc = self.process_reloc(record, offset)?;
+                let reloc = self.process_reloc(record, offset, interner)?;
                 self.object
                     .add_relocation(self.text_section, reloc)
                     .map_err(ObjectRelocationError::AddRelocation)?;
@@ -130,9 +130,10 @@ impl ObjectContext {
     }
 
     fn process_reloc(
-        &self,
+        &mut self,
         record: GenReloc,
         symbol_offset: u64,
+        interner: &mut Interner,
     ) -> Result<Relocation, ObjectRelocationError> {
         let assert_format = |expected, variant| {
             if expected != self.object.format() {
@@ -204,29 +205,7 @@ impl ObjectContext {
                     .ok_or(ObjectRelocationError::MissingSymbol(func))?
                     .symbol
             }
-            GenItemName::LibCall(libcall) => {
-                let name = match libcall {
-                    LibCall::Probestack => todo!(),
-                    LibCall::CeilF32 => todo!(),
-                    LibCall::CeilF64 => todo!(),
-                    LibCall::FloorF32 => todo!(),
-                    LibCall::FloorF64 => todo!(),
-                    LibCall::TruncF32 => todo!(),
-                    LibCall::TruncF64 => todo!(),
-                    LibCall::NearestF32 => todo!(),
-                    LibCall::NearestF64 => todo!(),
-                    LibCall::FmaF32 => todo!(),
-                    LibCall::FmaF64 => todo!(),
-                    LibCall::Memcpy => "memcpy",
-                    LibCall::Memset => todo!(),
-                    LibCall::Memmove => "memmove",
-                    LibCall::Memcmp => todo!(),
-                    LibCall::ElfTlsGetAddr => todo!(),
-                    LibCall::ElfTlsGetOffset => todo!(),
-                };
-
-                todo!("{libcall:?}")
-            }
+            GenItemName::LibCall(libcall) => self.find_libcall(libcall, interner),
         };
 
         Ok(Relocation {
@@ -251,6 +230,55 @@ impl ObjectContext {
         };
 
         (scope, false)
+    }
+
+    fn find_libcall(&mut self, libcall: LibCall, interner: &mut Interner) -> SymbolId {
+        let name = libcall_name(libcall);
+        let fallback = || {
+            let (scope, weak) = Self::translate_visibility(FuncVisibility::Imported);
+
+            let symbol = self.object.add_symbol(Symbol {
+                name: name.as_bytes().to_vec(),
+                value: 0,
+                size: 0,
+                kind: SymbolKind::Text,
+                scope,
+                weak,
+                section: SymbolSection::Undefined,
+                flags: SymbolFlags::None,
+            });
+
+            ObjectFunction { symbol }
+        };
+
+        let compressed = interner.intern_compressed(name);
+        let func_name = CompiledFuncRef(compressed);
+        self.functions
+            .entry(func_name)
+            .or_insert_with(fallback)
+            .symbol
+    }
+}
+
+fn libcall_name(libcall: LibCall) -> &'static str {
+    match libcall {
+        LibCall::Probestack => todo!(),
+        LibCall::CeilF32 => todo!(),
+        LibCall::CeilF64 => todo!(),
+        LibCall::FloorF32 => todo!(),
+        LibCall::FloorF64 => todo!(),
+        LibCall::TruncF32 => todo!(),
+        LibCall::TruncF64 => todo!(),
+        LibCall::NearestF32 => todo!(),
+        LibCall::NearestF64 => todo!(),
+        LibCall::FmaF32 => todo!(),
+        LibCall::FmaF64 => todo!(),
+        LibCall::Memcpy => "memcpy",
+        LibCall::Memset => todo!(),
+        LibCall::Memmove => "memmove",
+        LibCall::Memcmp => todo!(),
+        LibCall::ElfTlsGetAddr => todo!(),
+        LibCall::ElfTlsGetOffset => todo!(),
     }
 }
 

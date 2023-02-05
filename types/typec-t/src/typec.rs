@@ -372,10 +372,7 @@ impl Typec {
                 .unwrap_or((false, false)),
             Ty::Instance(i) => {
                 let Instance { base, args } = self[i];
-                let params = args
-                    .keys()
-                    .map(|key| self.instantiate(self[key], params, interner))
-                    .collect::<BumpVec<_>>();
+                let params = self.instantiate_slice(args, params, interner);
                 self.may_need_drop_low(base.as_ty(), &params, interner)
             }
             Ty::Param(..) | Ty::Pointer(..) | Ty::Builtin(..) => unreachable!(),
@@ -386,12 +383,12 @@ impl Typec {
         (is, param)
     }
 
-    pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Option<Builtin> {
-        Some(match self[self[en].variants].len() {
+    pub fn enum_flag_ty(&self, en: FragRef<Enum>) -> Builtin {
+        match self[en].variants.len() {
             256.. => Builtin::U16,
             2.. => Builtin::U8,
-            _ => return None,
-        })
+            _ => Builtin::Unit,
+        }
     }
 
     pub fn display_sig(
@@ -1147,6 +1144,51 @@ impl Typec {
         }
 
         Ok(())
+    }
+
+    pub fn instantiate_slice(
+        &mut self,
+        slice: impl TypecCtxSlice<Ty>,
+        params: impl TypecCtxSlice<Ty>,
+        interner: &mut Interner,
+    ) -> BumpVec<Ty> {
+        let mut types = slice.get(self).to_bumpvec();
+        for ty in types.iter_mut() {
+            *ty = self.instantiate(*ty, params, interner);
+        }
+        types
+    }
+
+    pub fn instantiate_fields(
+        &mut self,
+        struct_id: FragRef<Struct>,
+        params: impl TypecCtxSlice<Ty>,
+        interner: &mut Interner,
+    ) -> BumpVec<Ty> {
+        let mut fields = self[self[struct_id].fields]
+            .iter()
+            .map(|f| f.ty)
+            .collect::<BumpVec<_>>();
+        for field in fields.iter_mut() {
+            *field = self.instantiate(*field, params, interner);
+        }
+        fields
+    }
+
+    pub fn instantiate_variants(
+        &mut self,
+        enum_id: FragRef<Enum>,
+        params: impl TypecCtxSlice<Ty>,
+        interner: &mut Interner,
+    ) -> BumpVec<Ty> {
+        let mut fields = self[self[enum_id].variants]
+            .iter()
+            .map(|f| f.ty)
+            .collect::<BumpVec<_>>();
+        for field in fields.iter_mut() {
+            *field = self.instantiate(*field, params, interner);
+        }
+        fields
     }
 
     pub fn instantiate(

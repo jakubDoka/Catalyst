@@ -444,6 +444,10 @@ impl Ty {
         })
     }
 
+    pub fn is_aggregate(self) -> bool {
+        matches!(self, Self::Struct(..) | Self::Enum(..) | Self::Instance(..))
+    }
+
     pub fn find_component(
         self,
         name: Ident,
@@ -548,10 +552,15 @@ impl Ty {
     }
 
     pub fn is_signed(self) -> bool {
-        match self {
-            Self::Builtin(b) => b.is_signed(),
-            _ => false,
-        }
+        Ty::SIGNED_INTEGERS.contains(&self)
+    }
+
+    pub fn is_unsigned(self) -> bool {
+        Ty::INTEGERS.contains(&self)
+    }
+
+    pub fn is_float(self) -> bool {
+        Ty::FLOATS.contains(&self)
     }
 
     pub fn span(self, typec: &Typec) -> Option<Span> {
@@ -731,6 +740,7 @@ gen_builtin!(
         SCALARS => [UINT U32 U16 U8 CHAR BOOL F32 F64 SHORT CINT LONG LONGLONG],
         BINARY => [UINT U32 U16 U8 BOOL],
         INTEGERS => [UINT U32 U16 U8],
+        SIGNED_INTEGERS => [CINT],
         FLOATS => [F32 F64],
         CTYPES => [SHORT CINT LONG LONGLONG],
     }

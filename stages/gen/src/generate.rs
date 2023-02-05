@@ -4,9 +4,8 @@ use std::{cmp::Ordering, default::default};
 use cranelift_codegen::ir::{
     self,
     condcodes::{FloatCC, IntCC},
-    InstBuilder, MemFlags, StackSlotData, StackSlotKind, Type,
+    InstBuilder, MemFlags, Type,
 };
-use cranelift_frontend::Variable;
 use mir_t::*;
 use storage::*;
 
@@ -14,8 +13,8 @@ use typec_t::*;
 
 use crate::{context::ComputedValue, *};
 
-mod function_loading;
-mod size_calc;
+pub mod function_loading;
+pub mod size_calc;
 
 impl Generator<'_> {
     pub fn generate(
@@ -30,30 +29,46 @@ impl Generator<'_> {
         builder.func.clear();
         self.gen_resources.clear();
 
-        let system_cc = builder.isa.default_call_conv();
-        let ptr_ty = builder.isa.pointer_ty;
-        let has_s_ret =
-            self.populate_signature(signature, params, &mut builder.func.signature, system_cc);
+        let mut pass_signature = PassSignature::default();
+        let has_s_ret = self.populate_signature(
+            signature,
+            params,
+            &mut builder.inner.func.signature,
+            &mut pass_signature,
+            builder.isa,
+        );
+        builder.ret_pass_mode = pass_signature.ret;
 
         let entry_block = builder.create_block();
         builder.switch_to_block(entry_block);
+        builder.append_block_params_for_function_params(entry_block);
+        let mut params = builder.block_params(entry_block).to_bumpvec().into_iter();
+
         if has_s_ret {
-            let addr = builder.append_block_param(entry_block, ptr_ty);
+            let addr = params.next().unwrap();
             self.gen_resources.values[ret] = GenValue {
                 computed: Some(ComputedValue::Value(addr)),
                 offset: 0,
                 must_load: true,
             };
         }
-        for &arg in &builder.body.value_args[args] {
-            let layout = self.ty_layout(builder.value_ty(arg));
-            if layout.size == 0 {
-                continue;
-            }
-            if self.gen_resources.values[arg].computed.is_none() {
-                let source = builder.append_block_param(entry_block, layout.repr);
-                self.prepare_block_arg(arg, source, layout, builder);
-            }
+
+        for (arg, pass) in builder.body.value_args[args]
+            .iter()
+            .copied()
+            .filter(|&arg| !self.ty_layout(builder.value_ty(arg)).is_zero_sized())
+            .collect::<BumpVec<_>>()
+            .into_iter()
+            .zip(pass_signature.args.drain(..))
+        {
+            let (value, must_load) = self
+                .load_abi_value(builder, arg, pass, &mut params)
+                .expect("there should be enough parameters");
+            self.gen_resources.values[arg] = GenValue {
+                computed: Some(value),
+                offset: 0,
+                must_load,
+            };
         }
 
         self.block(root, entry_block, true, builder, true);
@@ -108,36 +123,6 @@ impl Generator<'_> {
         }
 
         ir_block
-    }
-
-    fn prepare_block_arg(
-        &mut self,
-        arg: VRef<ValueMir>,
-        source: ir::Value,
-        layout: Layout,
-        builder: &mut GenBuilder,
-    ) {
-        let (computed, must_load) = if !layout.on_stack && builder.body.is_referenced(arg) {
-            let ss = builder.create_sized_stack_slot(StackSlotData {
-                kind: StackSlotKind::ExplicitSlot,
-                size: layout.size,
-            });
-            builder.ins().stack_store(source, ss, 0);
-            (ComputedValue::StackSlot(ss), true)
-        } else if builder.body.is_mutable(arg) {
-            let var = Variable::from_u32(arg.as_u32());
-            builder.declare_var(var, layout.repr);
-            builder.def_var(var, source);
-            (ComputedValue::Variable(var), layout.on_stack)
-        } else {
-            (ComputedValue::Value(source), layout.on_stack)
-        };
-
-        self.gen_resources.values[arg] = GenValue {
-            computed: Some(computed),
-            offset: 0,
-            must_load,
-        };
     }
 
     fn inst(&mut self, inst: InstMir, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
@@ -232,11 +217,7 @@ impl Generator<'_> {
             let mut enum_expander = |s: &mut Self, params: FragSlice<Ty>, e: FragRef<Enum>| {
                 let layout = s.ty_layout(ty);
                 let variants = s.typec[e].variants;
-                let Some(flag_ty) = s.typec.enum_flag_ty(e) else {
-                    let ty = s.typec.instantiate(s.typec[variants][0].ty, params, s.interner);
-                    frontier.push(DropFrame::Drop((offset, ty)));
-                    return;
-                };
+                let flag_ty = s.typec.enum_flag_ty(e);
                 let flag_repr = s.ty_repr(Ty::Builtin(flag_ty));
                 let &[flag_offset, value_offset] = &s.gen_layouts.offsets[layout.offsets] else {
                     unreachable!();
@@ -250,7 +231,6 @@ impl Generator<'_> {
                         continue;
                     }
 
-                    // prevents creation of extra block;
                     let &mut cur = current.get_or_insert_with(|| builder.create_block());
                     current = None;
 
@@ -290,19 +270,7 @@ impl Generator<'_> {
                                 .iter()
                                 .map(|&of| of + offset)
                                 .rev()
-                                .zip(
-                                    self.typec[s]
-                                        .fields
-                                        .keys()
-                                        .map(|f| {
-                                            self.typec.instantiate(
-                                                self.typec[f].ty,
-                                                args,
-                                                self.interner,
-                                            )
-                                        })
-                                        .rev(),
-                                )
+                                .zip(self.typec.instantiate_fields(s, args, self.interner))
                                 .map(DropFrame::Drop)
                                 .collect_into(&mut *frontier);
                         }
@@ -317,24 +285,36 @@ impl Generator<'_> {
     fn control_flow(&mut self, control_flow: ControlFlowMir, builder: &mut GenBuilder) {
         match control_flow {
             ControlFlowMir::Return(ret) => {
-                if !self.ty_layout(builder.value_ty(ret)).on_stack && let Some(ir_ret) = self.load_value(ret, builder) {
-                    builder.ins().return_(&[ir_ret]);
-                } else {
-                    builder.ins().return_(&[]);
+                let mut ir_ret = self
+                    .load_value(ret, builder, builder.ret_pass_mode)
+                    .into_iter()
+                    .flatten()
+                    .collect::<BumpVec<_>>();
+                if let Some(PassMode::Indirect(..)) = builder.ret_pass_mode {
+                    ir_ret.clear();
                 }
+                builder.ins().return_(&ir_ret);
             }
             ControlFlowMir::Terminal => {
                 builder.ins().trap(ir::TrapCode::UnreachableCodeReached);
             }
-            ControlFlowMir::Split { cond, then, otherwise }  => {
-                let cond = self.load_value(cond, builder).unwrap();
-                self.instantiate_block(then, builder, |b, _, builder| builder.ins().brnz(cond, b, &[]));
-                self.instantiate_block(otherwise, builder, |b, _, builder| builder.ins().jump(b, &[]));
+            ControlFlowMir::Split {
+                cond,
+                then,
+                otherwise,
+            } => {
+                let cond = self.load_value(cond, builder, None)[0].unwrap();
+                self.instantiate_block(then, builder, |b, _, builder| {
+                    builder.ins().brnz(cond, b, &[])
+                });
+                self.instantiate_block(otherwise, builder, |b, _, builder| {
+                    builder.ins().jump(b, &[])
+                });
             }
             ControlFlowMir::Goto { dest, ret } => {
                 let ret = ret
                     .filter(|&ret| !self.gen_resources.values[ret].must_load)
-                    .and_then(|ret| self.load_value(ret, builder));
+                    .and_then(|ret| self.load_value(ret, builder, None)[0]);
                 let args = ret.as_ref().map(slice::from_ref).unwrap_or_default();
                 self.instantiate_block(dest, builder, |b, _, builder| builder.ins().jump(b, args));
             }
@@ -353,7 +333,7 @@ impl Generator<'_> {
             return;
         }
 
-        let Some(value) = self.load_value(target, builder) else { return; };
+        let Some(value) = self.load_value(target, builder, None)[0] else { return; };
         self.gen_resources.values[ret] = GenValue {
             must_load: true,
             computed: Some(ComputedValue::Value(value)),
@@ -480,7 +460,7 @@ impl Generator<'_> {
             } else {
                 let args = builder.body.value_args[args]
                     .iter()
-                    .filter_map(|&arg| self.load_value(arg, builder))
+                    .filter_map(|&arg| self.load_value(arg, builder, None)[0])
                     .collect::<BumpVec<_>>();
                 self.builtin_call(func, args, ret, builder);
             }
@@ -489,18 +469,15 @@ impl Generator<'_> {
         }
 
         let params = self.compile_requests.ty_slices[params].iter().copied();
-        let (func, struct_ret) = self.import_compiled_func(id, params, builder);
+        let (func, struct_ret, pass_sig) = self.import_compiled_func(id, params, builder);
 
         let struct_ptr = struct_ret.then(|| {
             if self.gen_resources.values[ret].computed.is_some() {
-                self.load_value(ret, builder).unwrap()
+                self.load_value(ret, builder, None)[0].unwrap()
             } else {
                 let ptr_ty = builder.ptr_ty();
                 let layout = self.ty_layout(builder.value_ty(ret));
-                let stack_slot = builder.create_sized_stack_slot(StackSlotData {
-                    kind: StackSlotKind::ExplicitSlot,
-                    size: layout.size,
-                });
+                let stack_slot = builder.create_stack_slot(layout);
                 self.gen_resources.values[ret] = GenValue {
                     computed: Some(ComputedValue::StackSlot(stack_slot)),
                     offset: 0,
@@ -515,14 +492,60 @@ impl Generator<'_> {
             .chain(
                 builder.body.value_args[args]
                     .iter()
-                    .filter_map(|&arg| self.load_value(arg, builder)),
+                    .zip(&pass_sig.args)
+                    .flat_map(|(&arg, &pass)| self.load_value(arg, builder, Some(pass)))
+                    .flatten(),
             )
             .collect::<BumpVec<_>>();
 
         let inst = builder.ins().call(func, &args);
-        if let Some(&first) = builder.inst_results(inst).first() && !struct_ret {
-            self.save_value(ret, first, 0, false, builder)
+        if !struct_ret && let Some(pass) = pass_sig.ret {
+            let params = builder.inst_results(inst).to_bumpvec();
+            let (computed, must_load) = self.load_abi_value(builder, ret, pass, params.into_iter())
+                .expect("unsufficient param count");
+            self.save_value(ret, computed, 0, must_load, builder);
         }
+    }
+
+    fn load_abi_value(
+        &mut self,
+        builder: &mut GenBuilder,
+        value: VRef<ValueMir>,
+        mode: PassMode,
+        mut params: impl Iterator<Item = ir::Value>,
+    ) -> Option<(ComputedValue, bool)> {
+        let layout = self.ty_layout(builder.value_ty(value));
+        let (computed, must_load) = match mode {
+            PassMode::Pair(a, ..) => {
+                // for now this is simpler
+                let ss = builder.create_stack_slot(layout);
+                let av = params.next()?;
+                builder.ins().stack_store(av, ss, 0);
+                let bv = params.next()?;
+                builder.ins().stack_store(bv, ss, a.bytes() as i32);
+                (ComputedValue::StackSlot(ss), true)
+            }
+            PassMode::Single(t, ..) => {
+                let arg = params.next()?;
+                let casted = match t != layout.repr {
+                    true => builder.ins().bitcast(layout.repr, arg),
+                    false => arg,
+                };
+                (ComputedValue::Value(casted), false)
+            }
+            PassMode::Indirect(..) => (ComputedValue::Value(params.next()?), true),
+        };
+
+        Some(if builder.body.is_referenced(value) && let ComputedValue::Value(v) = computed {
+            let ss = builder.create_stack_slot(layout);
+            builder.ins().stack_store(v, ss, 0);
+            (ComputedValue::StackSlot(ss), true)
+        } else if builder.body.is_mutable(value) && let ComputedValue::Value(v) = computed {
+            let var = builder.declare_var(v, value);
+            (ComputedValue::Variable(var), must_load)
+        } else {
+            (computed, must_load)
+        })
     }
 
     fn cast(&mut self, args: VRefSlice<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
@@ -720,29 +743,6 @@ impl Generator<'_> {
         access(gen_block.id, self, builder);
     }
 
-    fn load_value(
-        &mut self,
-        target: VRef<ValueMir>,
-        builder: &mut GenBuilder,
-    ) -> Option<ir::Value> {
-        let GenValue {
-            computed,
-            offset,
-            must_load,
-        } = self.gen_resources.values[target];
-        let layout = self.ty_layout(builder.value_ty(target));
-        if layout.size == 0 {
-            return None;
-        }
-        Some(Self::load_value_low(
-            builder,
-            must_load,
-            layout,
-            offset,
-            computed.expect("value should be computed"),
-        ))
-    }
-
     fn assign_value(
         &mut self,
         target: VRef<ValueMir>,
@@ -779,7 +779,7 @@ impl Generator<'_> {
         let ptr_ty = builder.ptr_ty();
         let layout = self.ty_layout(builder.value_ty(target));
 
-        if layout.size == 0 {
+        if layout.is_zero_sized() {
             return;
         }
 
@@ -830,12 +830,13 @@ impl Generator<'_> {
             return;
         }
 
-        let source = Self::load_value_low(
+        let (source, ..) = Self::load_value_low(
             builder,
             must_load_source,
             layout,
             source_offset,
             source_value,
+            PassMode::Single(layout.repr, ir::ArgumentExtension::None),
         );
 
         let Some(target_value) = self.ensure_target(target, Some(source), builder) else {
@@ -872,13 +873,43 @@ impl Generator<'_> {
         }
     }
 
+    fn load_value(
+        &mut self,
+        target: VRef<ValueMir>,
+        builder: &mut GenBuilder,
+        pass_mode: Option<PassMode>,
+    ) -> [Option<ir::Value>; 2] {
+        let GenValue {
+            computed,
+            offset,
+            must_load,
+        } = self.gen_resources.values[target];
+        let layout = self.ty_layout(builder.value_ty(target));
+        if layout.is_zero_sized() {
+            return [None; 2];
+        }
+        let pass_mode =
+            pass_mode.unwrap_or(PassMode::Single(layout.repr, ir::ArgumentExtension::None));
+        let (a, b) = Self::load_value_low(
+            builder,
+            must_load,
+            layout,
+            offset,
+            computed.expect("value should be computed"),
+            pass_mode,
+        );
+
+        [Some(a), b]
+    }
+
     fn load_value_low(
         builder: &mut GenBuilder,
         must_load_source: bool,
         layout: Layout,
         source_offset: i32,
         source_value: ComputedValue,
-    ) -> ir::Value {
+        pass_mode: PassMode,
+    ) -> (ir::Value, Option<ir::Value>) {
         let source = if must_load_source {
             if layout.on_stack {
                 'a: {
@@ -886,7 +917,7 @@ impl Generator<'_> {
                         ComputedValue::Value(val) => val,
                         ComputedValue::Variable(var) => builder.use_var(var),
                         ComputedValue::StackSlot(ss) => {
-                            break 'a builder.ins().stack_addr(layout.repr, ss, source_offset)
+                            break 'a builder.ins().stack_addr(layout.repr, ss, source_offset);
                         }
                     };
 
@@ -931,13 +962,35 @@ impl Generator<'_> {
                 false => shifted,
             };
 
-            match layout.repr.as_int() != layout.repr {
-                true => builder.ins().bitcast(layout.repr, resized),
+            match builder.func.dfg.value_type(resized) != layout.repr {
+                true => {
+                    assert_ne!(
+                        layout.repr.as_int(),
+                        layout.repr,
+                        "{:?} {}",
+                        builder.func.dfg.value_type(resized),
+                        builder.func.display(),
+                    );
+                    builder.ins().bitcast(layout.repr, resized)
+                }
                 false => resized,
             }
         };
 
-        source
+        match pass_mode {
+            PassMode::Pair(a, b) => {
+                let av = builder.ins().load(a, MemFlags::new(), source, 0);
+                let bv = builder
+                    .ins()
+                    .load(b, MemFlags::new(), source, a.bytes() as i32);
+                (av, Some(bv))
+            }
+            PassMode::Single(ty, ..) => match layout.repr != ty {
+                true => (builder.ins().bitcast(ty, source), None),
+                false => (source, None),
+            },
+            PassMode::Indirect(..) => (source, None),
+        }
     }
 
     fn ensure_target(
@@ -965,10 +1018,7 @@ impl Generator<'_> {
         let layout = self.ty_layout(builder.value_ty(target));
         let must_load = layout.on_stack || referenced;
         let computed = if must_load {
-            let ss = builder.create_sized_stack_slot(StackSlotData {
-                kind: StackSlotKind::ExplicitSlot,
-                size: layout.size,
-            });
+            let ss = builder.create_stack_slot(layout);
             if let Some(source) = source_value {
                 builder.ins().stack_store(source, ss, 0);
             }
@@ -976,10 +1026,7 @@ impl Generator<'_> {
         } else {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
             if builder.body.is_mutable(target) || force_mutable || builder.body.is_var(target) {
-                let var = Variable::from_u32(target.as_u32());
-                builder.declare_var(var, layout.repr);
-                builder.def_var(var, init);
-                ComputedValue::Variable(var)
+                ComputedValue::Variable(builder.declare_var(init, target))
             } else {
                 ComputedValue::Value(init)
             }

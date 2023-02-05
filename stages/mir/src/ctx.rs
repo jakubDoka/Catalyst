@@ -15,7 +15,7 @@ pub struct MirCtx {
     pub depth: u32,
     pub no_moves: bool,
     pub ret: VRef<ValueMir>,
-    pub module: ModuleMirInner,
+    pub module: ModuleMir,
     pub dd: DebugData,
     pub vars: Vec<VarMir>,
     pub generics: Vec<FragSlice<Spec>>,
@@ -116,6 +116,7 @@ impl MirCtx {
         args: VRefSlice<ValueMir>,
         prev_drops: usize,
         prev_calls: usize,
+        prev_values: usize,
     ) -> FuncMir {
         assert!(self.vars.is_empty());
         assert!(self.to_drop.is_empty());
@@ -137,6 +138,7 @@ impl MirCtx {
             module,
             calls: VSlice::new(prev_calls..self.module.calls.len()),
             drops: VSlice::new(prev_drops..self.module.drops.len()),
+            values: VSlice::new(prev_values..self.module.values.len()),
         }
     }
 

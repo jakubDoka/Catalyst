@@ -1,4 +1,7 @@
+use cranelift_codegen::ir::{AbiParam, StackSlotData, StackSlotKind};
+
 use {
+    crate::*,
     cranelift_codegen::{
         binemit::{CodeOffset, Reloc},
         ir::{self, types, ArgumentPurpose, ExternalName, LibCall, Type, UserExternalName},
@@ -24,6 +27,8 @@ use {
     target_lexicon::{CDataModel, Triple},
     typec_t::*,
 };
+
+pub mod layout;
 
 #[derive(Serialize, Archive, Deserialize)]
 
@@ -62,7 +67,7 @@ impl GenBase {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Archive, Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
-pub struct CompiledFuncRef(FragRef<&'static str>);
+pub struct CompiledFuncRef(pub(super) FragRef<&'static str>);
 
 impl CompiledFuncRef {
     pub fn ident(self) -> FragRef<&'static str> {
@@ -224,51 +229,48 @@ where
 pub struct ArchivedSignature {
     #[with(CallConvArchiver)]
     cc: CallConv,
-    args: Vec<(u16, bool)>,
-    ret: Option<u16>,
+    args: Vec<CtlAbiParam>,
+    ret: Option<CtlAbiParam>,
 }
 
 impl ArchivedSignature {
     pub fn from_signature(sig: &ir::Signature) -> Self {
         Self {
             cc: sig.call_conv,
-            args: sig
-                .params
-                .iter()
-                .map(|p| {
-                    (
-                        unsafe { mem::transmute(p.value_type) },
-                        p.purpose == ArgumentPurpose::StructReturn,
-                    )
-                })
-                .collect(),
-            ret: sig
-                .returns
-                .first()
-                .map(|r| unsafe { mem::transmute(r.value_type) }),
+            args: sig.params.iter().copied().map(Into::into).collect(),
+            ret: sig.returns.first().copied().map(Into::into),
         }
     }
 
     pub fn into_ir_signature(self) -> ir::Signature {
         ir::Signature {
-            params: self
-                .args
-                .into_iter()
-                .map(|(ty, is_struct_ret)| match is_struct_ret {
-                    true => ir::AbiParam::special(
-                        unsafe { mem::transmute(ty) },
-                        ArgumentPurpose::StructReturn,
-                    ),
-                    false => ir::AbiParam::new(unsafe { mem::transmute(ty) }),
-                })
-                .collect(),
-            returns: self
-                .ret
-                .map(|r| ir::AbiParam::new(unsafe { mem::transmute(r) }))
-                .into_iter()
-                .collect(),
+            params: self.args.into_iter().map(Into::into).collect(),
+            returns: self.ret.map(Into::into).into_iter().collect(),
             call_conv: self.cc,
         }
+    }
+}
+
+#[derive(Archive, Deserialize, Serialize)]
+pub struct CtlAbiParam {
+    #[with(TypeArchiver)]
+    ty: Type,
+    #[with(ArgumentPurposeArchiver)]
+    purpose: ArgumentPurpose,
+}
+
+impl From<AbiParam> for CtlAbiParam {
+    fn from(value: AbiParam) -> Self {
+        Self {
+            ty: value.value_type,
+            purpose: value.purpose,
+        }
+    }
+}
+
+impl From<CtlAbiParam> for AbiParam {
+    fn from(value: CtlAbiParam) -> Self {
+        AbiParam::special(value.ty, value.purpose)
     }
 }
 
@@ -323,13 +325,13 @@ pub struct CompileRequestChild {
 pub struct GenResources {
     pub blocks: ShadowMap<BlockMir, Option<GenBlock>>,
     pub values: ShadowMap<ValueMir, GenValue>,
-    pub func_imports: Map<CompiledFuncRef, (ir::FuncRef, bool)>,
+    pub func_imports: Map<CompiledFuncRef, (ir::FuncRef, bool, PassSignature)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
     pub call_offset: usize,
     pub drops: Vec<Range<usize>>,
     pub drops_offset: usize,
-    pub signature_pool: Vec<ir::Signature>,
+    pub signature_pool: Vec<(ir::Signature, PassSignature)>,
 }
 
 impl GenResources {
@@ -343,17 +345,19 @@ impl GenResources {
         self.func_imports.clear();
     }
 
-    pub fn reuse_signature(&mut self) -> ir::Signature {
+    pub fn reuse_signature(&mut self) -> (ir::Signature, PassSignature) {
         self.signature_pool
             .pop()
-            .unwrap_or_else(|| ir::Signature::new(CallConv::Fast))
+            .unwrap_or_else(|| (ir::Signature::new(CallConv::Fast), default()))
     }
 
     pub fn recycle_signatures<'a>(&mut self, sigs: impl Iterator<Item = &'a mut ir::Signature>) {
-        self.signature_pool.extend(sigs.map(|sig| {
+        sigs.map(|sig| {
             sig.clear(CallConv::Fast);
             mem::replace(sig, ir::Signature::new(CallConv::Fast))
-        }));
+        })
+        .zip(self.func_imports.drain().map(|(.., (.., ps))| ps))
+        .collect_into(&mut self.signature_pool);
     }
 }
 
@@ -405,201 +409,6 @@ pub struct GenBlock {
 // Layout
 //////////////////////////////////
 
-#[derive(Default)]
-pub struct GenLayouts {
-    pub mapping: Map<Ty, Layout>,
-    pub offsets: PushMap<Offset>,
-    pub ptr_ty: Type,
-    pub data_model: Option<CDataModel>,
-}
-
-impl GenLayouts {
-    pub fn ty_layout(
-        &mut self,
-        ty: Ty,
-        params: &[Ty],
-        typec: &mut Typec,
-        interner: &mut Interner,
-    ) -> Layout {
-        if let Some(&layout) = self.mapping.get(&ty) {
-            return layout;
-        }
-
-        let res = match ty {
-            Ty::Struct(s) => {
-                let Struct { fields, .. } = typec[s];
-                let mut offsets = bumpvec![cap fields.len()];
-
-                let layouts = typec[fields]
-                    .to_bumpvec()
-                    .into_iter()
-                    .map(|field| self.ty_layout(field.ty, params, typec, interner));
-
-                let mut align = 1;
-                let mut size = 0;
-                for layout in layouts {
-                    align = align.max(layout.align.get());
-
-                    offsets.push(size);
-
-                    let padding = (layout.align.get() - (size as u8 & (layout.align.get() - 1)))
-                        & (layout.align.get() - 1);
-                    size += padding as u32;
-                    size += layout.size;
-                }
-
-                let (repr, on_stack) = self.repr_for_size(size);
-
-                Layout {
-                    repr,
-                    offsets: self.offsets.extend(offsets),
-                    align: align.try_into().unwrap(),
-                    size,
-                    on_stack,
-                }
-            }
-            Ty::Pointer(..) => Layout::from_type(self.ptr_ty),
-            Ty::Builtin(bt) => {
-                use Builtin::*;
-
-                let repr = match bt {
-                    Unit | Mutable | Immutable | Terminal => return Layout::EMPTY,
-                    Uint => self.ptr_ty,
-                    Char | U32 => types::I32,
-                    U16 => types::I16,
-                    Bool | U8 => types::I8,
-                    F32 => types::F32,
-                    F64 => types::F64,
-                    Short | Cint | Long | LongLong => {
-                        let data_model = self
-                            .data_model
-                            .expect("missing c data model on current target");
-                        let size = match bt {
-                            Short => data_model.short_size(),
-                            Cint => data_model.int_size(),
-                            Long => data_model.long_size(),
-                            LongLong => data_model.long_long_size(),
-                            _ => unreachable!(),
-                        };
-
-                        match size {
-                            target_lexicon::Size::U8 => types::I8,
-                            target_lexicon::Size::U16 => types::I16,
-                            target_lexicon::Size::U32 => types::I32,
-                            target_lexicon::Size::U64 => types::I64,
-                        }
-                    }
-                };
-
-                Layout::from_type(repr)
-            }
-            Ty::Param(index) => {
-                return self.ty_layout(params[index as usize], &[], typec, interner)
-            }
-            Ty::Instance(inst) => {
-                let Instance { base, args } = typec[inst];
-                // remap the instance parameters so we can compute the layout correctly
-                let params = typec[args]
-                    .to_bumpvec()
-                    .into_iter()
-                    .map(|ty| typec.instantiate(ty, params, interner))
-                    .collect::<BumpVec<_>>();
-                self.ty_layout(base.as_ty(), &params, typec, interner)
-            }
-            Ty::Enum(ty) => {
-                let size = typec.enum_flag_ty(ty).map(|ty| {
-                    self.ty_layout(Ty::Builtin(ty), params, typec, interner)
-                        .size
-                });
-                let (base_size, base_align) = typec[typec[ty].variants]
-                    .to_bumpvec()
-                    .into_iter()
-                    .map(|variant| self.ty_layout(variant.ty, params, typec, interner))
-                    .map(|layout| (layout.size, layout.align.get()))
-                    .max()
-                    .unwrap_or((0, 1));
-
-                let align = base_align.max(size.unwrap_or(0) as u8);
-                let size = size.map(|size| size.max(align as u32));
-                let offsets = iter::once(0).chain(size).collect::<BumpVec<_>>();
-                let size = base_size + size.unwrap_or(align as u32);
-
-                let (repr, on_stack) = self.repr_for_size(size);
-                Layout {
-                    size,
-                    offsets: self.offsets.extend(offsets),
-                    align: align.try_into().unwrap(),
-                    repr,
-                    on_stack,
-                }
-            }
-        };
-
-        if ty.as_generic().map_or(true, |g| !g.is_generic(typec)) {
-            self.mapping.insert(ty, res);
-        }
-
-        res
-    }
-
-    fn repr_for_size(&self, size: u32) -> (Type, bool) {
-        if size > self.ptr_ty.bytes() {
-            return (self.ptr_ty, true);
-        }
-
-        (
-            match size {
-                8.. => types::I64,
-                4.. => types::I32,
-                2.. => types::I16,
-                0.. => types::I8,
-            },
-            false,
-        )
-    }
-
-    pub fn clear(&mut self, ptr_ty: Type) {
-        self.mapping.clear();
-        self.offsets.clear();
-        self.ptr_ty = ptr_ty;
-    }
-}
-
-pub type Offset = u32;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Layout {
-    pub size: u32,
-    pub offsets: VSlice<Offset>,
-    pub align: NonZeroU8,
-    pub repr: Type,
-    pub on_stack: bool,
-}
-
-impl Layout {
-    pub const EMPTY: Self = Self {
-        size: 0,
-        align: unsafe { NonZeroU8::new_unchecked(1) },
-        offsets: VSlice::empty(),
-        repr: types::INVALID,
-        on_stack: false,
-    };
-
-    pub fn rust_layout(&self) -> alloc::Layout {
-        alloc::Layout::from_size_align(self.size as usize, self.align.get() as usize).unwrap()
-    }
-
-    pub fn from_type(repr: Type) -> Self {
-        Self {
-            size: repr.bytes(),
-            offsets: default(),
-            align: (repr.bytes() as u8).try_into().unwrap(),
-            repr,
-            on_stack: false,
-        }
-    }
-}
-
 //////////////////////////////////
 // relocs
 //////////////////////////////////
@@ -618,6 +427,8 @@ transmute_arkive! {
     CallConvArchiver(CallConv => u8)
     RelocArchiver(Reloc => u8)
     LibCallArchiver(LibCall => u8)
+    TypeArchiver(Type => u16)
+    ArgumentPurposeArchiver(ArgumentPurpose => u64)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Archive, Deserialize)]
@@ -719,16 +530,17 @@ impl std::fmt::Display for IsaCreationError {
 
 pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
-    pub body: &'a ModuleMirInner,
+    pub body: &'a ModuleMir,
     pub struct_ret: Option<ir::Value>,
+    pub ret_pass_mode: Option<PassMode>,
     pub dependant_types: &'a FuncTypes,
-    inner: FunctionBuilder<'b>,
+    pub inner: FunctionBuilder<'b>,
 }
 
 impl<'a, 'b> GenBuilder<'a, 'b> {
     pub fn new(
         isa: &'a Isa,
-        body: &'a ModuleMirInner,
+        body: &'a ModuleMir,
         func: &'b mut ir::Function,
         dependant_types: &'a FuncTypes,
         ctx: &'b mut FunctionBuilderContext,
@@ -737,6 +549,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
             isa,
             body,
             struct_ret: None,
+            ret_pass_mode: None,
             dependant_types,
             inner: FunctionBuilder::new(func, ctx),
         }
@@ -752,6 +565,21 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
 
     pub fn system_cc(&self) -> CallConv {
         self.isa.default_call_conv()
+    }
+
+    pub fn create_stack_slot(&mut self, layout: Layout) -> ir::StackSlot {
+        self.create_sized_stack_slot(StackSlotData {
+            kind: StackSlotKind::ExplicitSlot,
+            size: Layout::aligned_to(layout.size, 8),
+        })
+    }
+
+    pub fn declare_var(&mut self, init: ir::Value, under: VRef<ValueMir>) -> Variable {
+        let var = Variable::from_u32(under.as_u32());
+        let repr = self.func.dfg.value_type(init);
+        self.inner.declare_var(var, repr);
+        self.def_var(var, init);
+        var
     }
 }
 

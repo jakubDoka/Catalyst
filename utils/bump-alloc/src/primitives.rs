@@ -61,6 +61,14 @@ macro_rules! gen_derives {
     };
 }
 
+pub trait FragRefType {
+    type Meta;
+}
+
+impl<T> FragRefType for T {
+    default type Meta = ();
+}
+
 #[repr(transparent)]
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FragRef<T: ?Sized>(pub(crate) FragAddr, pub(crate) PhantomData<*const T>);

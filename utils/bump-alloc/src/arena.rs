@@ -3,10 +3,12 @@ use core::slice;
 use std::{
     alloc::Layout,
     mem::{self, MaybeUninit},
+    ops::Deref,
     ptr::{copy_nonoverlapping, NonNull},
 };
 
 #[derive(Default)]
+#[repr(transparent)]
 pub struct Arena {
     allocator: Allocator,
 }
@@ -94,6 +96,24 @@ impl Arena {
     pub fn into_allocator(mut self) -> Allocator {
         self.clear();
         self.allocator
+    }
+
+    pub fn frame(&mut self) -> ArenaFrame {
+        ArenaFrame {
+            allocator: self.allocator.frame(),
+        }
+    }
+}
+
+pub struct ArenaFrame<'a> {
+    allocator: AllocatorFrame<'a, false>,
+}
+
+impl<'a> Deref for ArenaFrame<'a> {
+    type Target = Arena;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { mem::transmute(&*self.allocator) }
     }
 }
 

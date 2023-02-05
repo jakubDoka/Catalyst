@@ -260,7 +260,7 @@ impl TyChecker<'_> {
                 })?
             })?;
 
-        let flag_ty = self.typec.enum_flag_ty(ty).unwrap();
+        let flag_ty = self.typec.enum_flag_ty(ty);
 
         let variant_value = TirNode::new(
             Ty::Builtin(flag_ty),

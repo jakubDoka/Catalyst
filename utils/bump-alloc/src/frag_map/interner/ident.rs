@@ -24,7 +24,7 @@ impl Ident {
         ))
     }
 
-    pub fn from_ref(frag: FragRef<&'static str>) -> Ident {
+    pub(super) fn from_ref(frag: FragRef<&'static str>) -> Ident {
         Self(RawIdent::from_ref(frag))
     }
 

@@ -472,7 +472,7 @@ impl Middleware {
                     .chain(iter::once(entry_point)),
                 &main_task.gen,
                 &main_task.typec,
-                &main_task.interner,
+                &mut main_task.interner,
             )
             // .map_err(|err| {
             //     if let ObjectRelocationError::MissingSymbol(id) = err {
@@ -1162,7 +1162,7 @@ impl<'a> DiagnosticView<'a> {
 
 fn swap_mir_types(
     generics: VRefSlice<MirTy>,
-    module: &ModuleMirInner,
+    module: &ModuleMir,
     dependant_types: &mut FuncTypes,
     params: &[Ty],
     typec: &mut Typec,

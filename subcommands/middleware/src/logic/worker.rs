@@ -118,7 +118,7 @@ impl Worker {
         let entry_name = generator.interner.intern_compressed(gen::ENTRY_POINT_NAME);
         let entry_func = generator.typec.cache.funcs.push(Func {
             visibility: FuncVisibility::Exported,
-            name: Ident::from_ref(entry_name),
+            name: generator.interner.intern(gen::ENTRY_POINT_NAME),
             ..default()
         });
         let compiled_entry = generator.gen.get_or_insert(entry_name, entry_func);
@@ -141,8 +141,8 @@ impl Worker {
         thread_scope.spawn(move || {
             let mut arena = Arena::new();
             let mut jit_ctx = JitContext::new(iter::empty());
-            self.state.jit_layouts.clear(shared.jit_isa.pointer_ty);
-            self.state.gen_layouts.clear(shared.isa.pointer_ty);
+            self.state.jit_layouts.clear(shared.jit_isa);
+            self.state.gen_layouts.clear(shared.isa);
             loop {
                 let Ok((mut package_task, package)) = connections.package_tasks.recv() else {break;};
 
@@ -429,7 +429,7 @@ impl Worker {
             )
             .generate(signature, body.ret, body.args, &params, root, &mut builder);
 
-            let name = task.typec[func].name.get(&task.interner);
+            let name = task.interner.get(id.ident());
             if let Some(ref mut dump) = task.ir_dump {
                 write!(dump, "{} {}", name, self.context.func.display()).unwrap();
             }

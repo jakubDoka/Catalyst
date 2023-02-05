@@ -2,7 +2,7 @@ use std::{
     alloc::Layout,
     cell::Cell,
     mem,
-    ops::Range,
+    ops::{Deref, Range},
     ptr::{self, NonNull},
 };
 
@@ -212,6 +212,58 @@ impl<const WRITE_PADDING: bool> AllocatorLow<WRITE_PADDING> {
 
         self.chunks.set(chunks);
         self.free.set(free);
+    }
+
+    pub fn frame(&mut self) -> AllocatorFrame<WRITE_PADDING> {
+        AllocatorFrame::new(self)
+    }
+}
+
+pub struct AllocatorFrame<'a, const WRITE_PADDING: bool> {
+    allocator: &'a mut AllocatorLow<WRITE_PADDING>,
+    previous_start: *mut u8,
+    previous_current: *mut u8,
+    previous_chunk_size: usize,
+}
+
+impl<'a, const WRITE_PADDING: bool> AllocatorFrame<'a, WRITE_PADDING> {
+    pub fn new(allocator: &'a mut AllocatorLow<WRITE_PADDING>) -> Self {
+        let previous_start = allocator.start.get();
+        let previous_current = allocator.current.get();
+        let temp_chunks = allocator.chunks.take();
+        let previous_chunk_size = temp_chunks.len();
+        allocator.chunks.set(temp_chunks);
+
+        Self {
+            allocator,
+            previous_start,
+            previous_current,
+            previous_chunk_size,
+        }
+    }
+}
+
+impl<'a, const WRITE_PADDING: bool> Deref for AllocatorFrame<'a, WRITE_PADDING> {
+    type Target = AllocatorLow<WRITE_PADDING>;
+
+    fn deref(&self) -> &Self::Target {
+        self.allocator
+    }
+}
+
+impl<'a, const WRITE_PADDING: bool> Drop for AllocatorFrame<'a, WRITE_PADDING> {
+    fn drop(&mut self) {
+        let mut chunks = self.allocator.chunks.take();
+        let mut free = self.allocator.free.take();
+
+        chunks
+            .drain(self.previous_chunk_size..)
+            .collect_into(&mut free);
+        self.allocator.current.set(self.previous_current);
+        self.allocator.start.set(self.previous_start);
+
+        self.allocator.chunks.set(chunks);
+        self.allocator.free.set(free);
     }
 }
 

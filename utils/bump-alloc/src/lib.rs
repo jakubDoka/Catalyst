@@ -1,3 +1,4 @@
+#![allow(incomplete_features)]
 #![feature(
     allocator_api,
     new_uninit,
@@ -20,7 +21,8 @@
     if_let_guard,
     int_roundings,
     const_option,
-    const_slice_index
+    const_slice_index,
+    specialization
 )]
 
 mod alloc_tree;
@@ -33,7 +35,7 @@ mod primitives;
 
 pub use {
     crate::bump_vec::{BumpAlloc, BumpAllocRef, BumpVec, ToBumpVec, BUMP_ALLOC},
-    allocator::{Allocator, AllocatorLow, ProtectedAllocator},
+    allocator::{Allocator, AllocatorFrame, AllocatorLow, ProtectedAllocator},
     arc_swap,
     arena::Arena,
     dashmap,

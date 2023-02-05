@@ -307,7 +307,7 @@ impl MirChecker<'_, '_> {
             },
             Ty::Enum(r#enum) => {
                 let Enum { variants, .. } = self.typec[r#enum];
-                let variant = if self.typec.enum_flag_ty(r#enum).is_some() {
+                let variant = if self.typec.enum_flag_ty(r#enum) != Uint {
                     let flag = advance();
                     let index = flag.start as usize;
                     self.typec[variants][index]

@@ -1,9 +1,122 @@
-use cranelift_codegen::{
-    ir::{AbiParam, ArgumentPurpose, ExtFuncData, ExternalName},
-    isa::CallConv,
+use {
+    super::*,
+    cranelift_codegen::{
+        ir::{AbiParam, ArgumentPurpose, ExtFuncData, ExternalName},
+        isa::CallConv,
+    },
 };
 
-use super::*;
+pub mod abi {
+    use cranelift_codegen::{
+        ir::{AbiParam, ArgumentExtension, ArgumentPurpose, Type},
+        isa::CallConv,
+    };
+    use target_lexicon::Architecture;
+    use typec_t::Ty;
+
+    use crate::{Isa, Layout};
+
+    pub mod x86_64;
+
+    #[derive(Clone, Copy, Debug)]
+    pub enum PassMode {
+        Pair(Type, Type),
+        Single(Type, ArgumentExtension),
+        Indirect(Type, u32),
+    }
+
+    impl PassMode {
+        pub(crate) fn as_abi_array(self) -> [Option<AbiParam>; 2] {
+            match self {
+                PassMode::Pair(a, b) => [a, b].map(AbiParam::new).map(Some),
+                PassMode::Single(s, ext) => [
+                    Some(AbiParam {
+                        value_type: s,
+                        purpose: ArgumentPurpose::Normal,
+                        extension: ext,
+                    }),
+                    None,
+                ],
+                PassMode::Indirect(ptr, size) => [
+                    Some(AbiParam::special(
+                        ptr,
+                        ArgumentPurpose::StructArgument(Layout::aligned_to(size, ptr.bytes())),
+                    )),
+                    None,
+                ],
+            }
+        }
+    }
+
+    #[derive(Default, Clone)]
+    pub struct PassSignature {
+        pub args: Vec<PassMode>,
+        pub ret: Option<PassMode>,
+    }
+
+    pub(super) fn compute_abi_info(
+        generator: &mut crate::Generator,
+        cc: CallConv,
+        signature: typec_t::Signature,
+        target: &mut PassSignature,
+        params: &[Ty],
+        isa: &Isa,
+    ) {
+        use Architecture::*;
+        match isa.triple().architecture {
+            Unknown => todo!(),
+            Arm(_) => todo!(),
+            AmdGcn => todo!(),
+            Aarch64(_) => todo!(),
+            Asmjs => todo!(),
+            Avr => todo!(),
+            Bpfeb => todo!(),
+            Bpfel => todo!(),
+            Hexagon => todo!(),
+            X86_32(_) => todo!(),
+            M68k => todo!(),
+            Mips32(_) => todo!(),
+            Mips64(_) => todo!(),
+            Msp430 => todo!(),
+            Nvptx64 => todo!(),
+            Powerpc => todo!(),
+            Powerpc64 => todo!(),
+            Powerpc64le => todo!(),
+            Riscv32(_) => todo!(),
+            Riscv64(_) => todo!(),
+            S390x => todo!(),
+            Sparc => todo!(),
+            Sparc64 => todo!(),
+            Sparcv9 => todo!(),
+            Wasm32 => todo!(),
+            Wasm64 => todo!(),
+            X86_64 => match cc {
+                CallConv::Cold => todo!(),
+                CallConv::SystemV | CallConv::Fast => {
+                    x86_64::compute_abi_info(generator, signature, params, target)
+                }
+                CallConv::WindowsFastcall => todo!(),
+                CallConv::AppleAarch64 => todo!(),
+                CallConv::Probestack => todo!(),
+                CallConv::WasmtimeSystemV => todo!(),
+                CallConv::WasmtimeFastcall => todo!(),
+                CallConv::WasmtimeAppleAarch64 => todo!(),
+            },
+            XTensa => todo!(),
+            _ => todo!(),
+        }
+    }
+
+    fn extension_for(ty: Ty) -> ArgumentExtension {
+        if ty.is_signed() {
+            ArgumentExtension::Sext
+        } else if ty.is_unsigned() {
+            ArgumentExtension::Uext
+        } else {
+            ArgumentExtension::None
+        }
+    }
+}
 
 impl Generator<'_> {
     pub fn func_instance_name(
@@ -37,9 +150,9 @@ impl Generator<'_> {
         func: CompiledFuncRef,
         params: impl Iterator<Item = Ty>,
         builder: &mut GenBuilder,
-    ) -> (ir::FuncRef, bool) {
-        if let Some(&res) = self.gen_resources.func_imports.get(&func) {
-            return res;
+    ) -> (ir::FuncRef, bool, PassSignature) {
+        if let Some(res) = self.gen_resources.func_imports.get(&func) {
+            return res.clone();
         }
 
         let name = builder
@@ -55,7 +168,8 @@ impl Generator<'_> {
 
         let params = params.collect::<BumpVec<_>>();
 
-        let (signature, struct_ret) = self.load_signature(signature, &params, builder.system_cc());
+        let (signature, struct_ret, pass_signature) =
+            self.load_signature(signature, &params, builder.isa);
         let signature = builder.import_signature(signature);
 
         let res = (
@@ -65,9 +179,10 @@ impl Generator<'_> {
                 colocated: visibility != FuncVisibility::Imported,
             }),
             struct_ret,
+            pass_signature,
         );
 
-        self.gen_resources.func_imports.insert(func, res);
+        self.gen_resources.func_imports.insert(func, res.clone());
 
         res
     }
@@ -76,11 +191,11 @@ impl Generator<'_> {
         &mut self,
         signature: Signature,
         params: &[Ty],
-        system_cc: CallConv,
-    ) -> (ir::Signature, bool) {
-        let mut sig = self.gen_resources.reuse_signature();
-        let struct_ret = self.populate_signature(signature, params, &mut sig, system_cc);
-        (sig, struct_ret)
+        isa: &Isa,
+    ) -> (ir::Signature, bool, PassSignature) {
+        let (mut sig, mut pass_sig) = self.gen_resources.reuse_signature();
+        let struct_ret = self.populate_signature(signature, params, &mut sig, &mut pass_sig, isa);
+        (sig, struct_ret, pass_sig)
     }
 
     pub fn populate_signature(
@@ -88,13 +203,14 @@ impl Generator<'_> {
         signature: Signature,
         params: &[Ty],
         target: &mut ir::Signature,
-        system_cc: CallConv,
+        pass_target: &mut PassSignature,
+        isa: &Isa,
     ) -> bool {
-        let cc = self.cc(signature.cc, system_cc);
+        let cc = self.cc(signature.cc, isa.default_call_conv());
+        abi::compute_abi_info(self, cc, signature, pass_target, params, isa);
         target.clear(cc);
 
-        let instance = self.typec.instantiate(signature.ret, params, self.interner);
-        let on_stack = self.ty_layout(instance).on_stack;
+        let on_stack = matches!(pass_target.ret, Some(PassMode::Indirect(..)));
         if on_stack {
             target.params.push(AbiParam::special(
                 self.gen_layouts.ptr_ty,
@@ -102,21 +218,17 @@ impl Generator<'_> {
             ));
         }
 
-        let args = self.typec[signature.args]
-            .to_bumpvec()
-            .into_iter()
-            .filter_map(|ty| {
-                let instance = self.typec.instantiate(ty, params, self.interner);
-                let layout = self.ty_layout(instance);
-                (layout.size != 0).then_some(layout.repr)
-            })
-            .map(AbiParam::new);
-        target.params.extend(args);
+        pass_target
+            .args
+            .iter()
+            .flat_map(|a| a.as_abi_array())
+            .flatten()
+            .collect_into(&mut target.params);
 
-        let instance_layout = self.ty_layout(instance);
-        if instance_layout.size != 0 && !on_stack {
-            target.returns.push(AbiParam::new(instance_layout.repr));
+        if !on_stack && let Some(ret) = pass_target.ret {
+            target.returns.extend(ret.as_abi_array().into_iter().flatten());
         }
+
         on_stack
     }
 

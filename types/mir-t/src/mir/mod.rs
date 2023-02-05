@@ -18,7 +18,6 @@
 
 use std::{
     default::default,
-    mem,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -83,10 +82,11 @@ pub struct FuncMir {
     pub module: FragRef<ModuleMir>,
     pub calls: VSlice<CallMir>,
     pub drops: VSlice<DropMir>,
+    pub values: VSlice<ValueMir>,
 }
 
 impl FuncMir {
-    pub fn ty(&self, ty: VRef<MirTy>, module: &ModuleMirInner) -> Ty {
+    pub fn ty(&self, ty: VRef<MirTy>, module: &ModuleMir) -> Ty {
         let Some(index) = ty.index().checked_sub(FuncTypes::BASE_LEN) else {
             return [Ty::UNIT, Ty::TERMINAL][ty.index()];
         };
@@ -94,17 +94,15 @@ impl FuncMir {
         module.types[self.types][index].ty
     }
 
-    pub fn value_ty(&self, value: VRef<ValueMir>, module: &ModuleMirInner) -> Ty {
+    pub fn value_ty(&self, value: VRef<ValueMir>, module: &ModuleMir) -> Ty {
         self.ty(module.values[value].ty, module)
     }
 }
 
 derive_relocated!(struct FuncMir { module });
 
-pub type ModuleMir = ModuleMirInner;
-
 #[derive(Deserialize, Archive, Serialize, Default, Clone)]
-pub struct ModuleMirInner {
+pub struct ModuleMir {
     pub blocks: PushMap<BlockMir>,
     pub insts: PushMap<InstMir>,
     pub values: FuncValues,
@@ -116,7 +114,7 @@ pub struct ModuleMirInner {
     value_flags: BitSet,
 }
 
-derive_relocated!(struct ModuleMirInner { calls types });
+derive_relocated!(struct ModuleMir { calls types });
 
 macro_rules! gen_flags {
     (
@@ -144,7 +142,7 @@ macro_rules! gen_flags {
     (($counter:expr, $len:expr)) => {};
 }
 
-impl ModuleMirInner {
+impl ModuleMir {
     pub fn clear(&mut self) {
         self.blocks.clear();
         self.insts.clear();

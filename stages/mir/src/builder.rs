@@ -46,6 +46,7 @@ impl MirChecker<'_, '_> {
         } = self.typec[func];
         let prev_calls = self.mir_ctx.module.calls.len();
         let prev_drops = self.mir_ctx.module.drops.len();
+        let prev_values = self.mir_ctx.module.values.len();
 
         self.mir_ctx
             .generics
@@ -62,7 +63,7 @@ impl MirChecker<'_, '_> {
 
         self.mir_move_ctx.clear();
         self.mir_ctx
-            .clear(block, module, args, prev_drops, prev_calls)
+            .clear(block, module, args, prev_drops, prev_calls, prev_values)
     }
 
     fn node(
@@ -484,7 +485,8 @@ impl MirChecker<'_, '_> {
                     ty: enum_ty,
                     value: enum_value,
                 } => {
-                    let enum_flag = self.typec.enum_flag_ty(enum_ty).map(|enum_flag_ty| {
+                    let enum_flag_ty = self.typec.enum_flag_ty(enum_ty);
+                    let enum_flag = (enum_flag_ty != Builtin::Unit).then(|| {
                         let dest = self.value(Ty::Builtin(enum_flag_ty));
                         self.inst(InstMir::Field(value, 0, dest), span);
                         let const_flag = self.value(Ty::Builtin(enum_flag_ty));
