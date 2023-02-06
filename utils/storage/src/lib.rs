@@ -228,25 +228,15 @@ macro_rules! transmute_arkive {
 
 pub extern crate bitflags;
 
-/// Set of virtual pointers. Compared to [`Vec`]<[`bool`]> it uses 8x less memory.
 mod bit_set;
-/// Trait representing reusable object.
 mod clear;
-/// Homogenous stack with frame markers.
 mod frames;
-/// String to uid mapping.
-// mod interner;
-/// HashMap wrapper to work with [`Ident`].
 mod map;
-/// Map with addressable values. (by [`VPtr`])
 mod ordered_map;
-/// Similar to ordered map but some indexes may not have mapping.
 mod partial_ordered_map;
-/// Vector abstraction that allows reusing allocations while preserving other values.
 mod pool_map;
 mod push_map;
 mod rw_swap;
-/// Storage that can map additional info for existing map.
 mod shadow_map;
 
 pub use {
@@ -257,7 +247,7 @@ pub use {
     ordered_map::OrderedMap,
     partial_ordered_map::PartialOrderedMap,
     pool_map::PoolMap,
-    push_map::PushMap,
+    push_map::{PushMap, PushMapCheck, PushMapView},
     rw_swap::{RWSwapReadAccess, RWSwapReader, RWSwapWriter},
     shadow_map::ShadowMap,
     smallvec::*,

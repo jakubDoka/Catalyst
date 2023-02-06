@@ -1,18 +1,16 @@
 use std::{
-    alloc::{Allocator, Global},
     default::default,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
-use bump_alloc::{bumpvec, BumpAllocRef};
-// use rkyv::{de::Visitor, ser::SerializeSeq, Deserialize, Deserializer, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::VRef;
 
-#[derive(Debug)]
-pub struct ShadowMap<T, V, A: Allocator = Global> {
-    data: Vec<V, A>,
+#[derive(Debug, Archive, Serialize, Deserialize)]
+pub struct ShadowMap<T, V> {
+    data: Vec<V>,
     default: V,
     phantom: PhantomData<fn(T) -> T>,
 }
@@ -23,17 +21,7 @@ impl<T, V: Default> ShadowMap<T, V> {
     }
 }
 
-impl<T, V: Default> ShadowMap<T, V, BumpAllocRef> {
-    pub fn bump(cap: usize) -> Self {
-        Self {
-            data: bumpvec![cap cap].into(),
-            default: V::default(),
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<T, V: Default, A: Allocator> ShadowMap<T, V, A> {
+impl<T, V: Default> ShadowMap<T, V> {
     pub fn clear(&mut self)
     where
         V: Clone,
@@ -61,7 +49,7 @@ impl<T, V: Default, A: Allocator> ShadowMap<T, V, A> {
     }
 }
 
-impl<T, V, A: Allocator> Index<VRef<T>> for ShadowMap<T, V, A> {
+impl<T, V> Index<VRef<T>> for ShadowMap<T, V> {
     type Output = V;
 
     fn index(&self, key: VRef<T>) -> &V {
@@ -69,7 +57,7 @@ impl<T, V, A: Allocator> Index<VRef<T>> for ShadowMap<T, V, A> {
     }
 }
 
-impl<T, V: Default + Clone, A: Allocator> IndexMut<VRef<T>> for ShadowMap<T, V, A> {
+impl<T, V: Default + Clone> IndexMut<VRef<T>> for ShadowMap<T, V> {
     fn index_mut(&mut self, key: VRef<T>) -> &mut V {
         let index = key.index();
         self.data.resize(self.data.len().max(index + 1), default());
@@ -96,68 +84,3 @@ impl<T, V: Clone> Clone for ShadowMap<T, V> {
         }
     }
 }
-
-// struct ShadowMapVisitor<K, V> {
-//     marker: PhantomData<fn() -> ShadowMap<K, V>>,
-// }
-
-// impl<K, V> ShadowMapVisitor<K, V> {
-//     fn new() -> Self {
-//         ShadowMapVisitor {
-//             marker: PhantomData,
-//         }
-//     }
-// }
-
-// impl<'de, K, V: Default + Clone> Visitor<'de> for ShadowMapVisitor<K, V>
-// where
-//     V: Deserialize<'de>,
-// {
-//     type Value = ShadowMap<K, V>;
-
-//     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         formatter.write_str("ShadowMap")
-//     }
-
-//     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-//     where
-//         A: rkyv::de::SeqAccess<'de>,
-//     {
-//         let mut map = ShadowMap::new();
-//         while let Some(value) = seq.next_element::<(VRef<K>, V)>()? {
-//             map[value.0] = value.1;
-//         }
-//         Ok(map)
-//     }
-// }
-
-// impl<'de, K, V: Default + Clone> Deserialize<'de> for ShadowMap<K, V>
-// where
-//     V: Deserialize<'de>,
-// {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         deserializer.deserialize_seq(ShadowMapVisitor::new())
-//     }
-// }
-
-// impl<K, V: Default + Clone + PartialEq + Eq> Serialize for ShadowMap<K, V>
-// where
-//     V: Serialize,
-// {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: rkyv::Serializer,
-//     {
-//         let mut seq = serializer.serialize_seq(None)?;
-//         // we do this in reverse to guarantee that deserialization will allocate just once
-//         for (i, v) in self.data.iter().enumerate().rev() {
-//             if *v != self.default {
-//                 seq.serialize_element(&(unsafe { VRef::<K>::new(i) }, v))?;
-//             }
-//         }
-//         seq.end()
-//     }
-// }

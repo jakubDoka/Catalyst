@@ -151,6 +151,7 @@ fn main() {
             fn infinity(a: uint) => infinity(a);
         }
 
+
         simple "operators" {
             #[entry];
             fn main -> uint => 1 + 2 * 2 - 4 / 2 - 3;

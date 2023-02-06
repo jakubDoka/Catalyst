@@ -566,24 +566,25 @@ impl std::fmt::Display for IsaCreationError {
 
 pub struct GenBuilder<'a, 'b> {
     pub isa: &'a Isa,
-    pub body: &'a ModuleMir,
+    pub body: FuncMirView<'a>,
     pub struct_ret: Option<ir::Value>,
     pub ret_pass_mode: Option<PassMode>,
-    pub dependant_types: &'a FuncTypes,
+    pub dependant_types: &'a PushMap<MirTy>,
     pub inner: FunctionBuilder<'b>,
 }
 
 impl<'a, 'b> GenBuilder<'a, 'b> {
     pub fn new(
         isa: &'a Isa,
-        body: &'a ModuleMir,
+        mir_func: FuncMir,
+        module: &'a ModuleMir,
         func: &'b mut ir::Function,
-        dependant_types: &'a FuncTypes,
+        dependant_types: &'a PushMap<MirTy>,
         ctx: &'b mut FunctionBuilderContext,
     ) -> Self {
         Self {
             isa,
-            body,
+            body: mir_func.view(module),
             struct_ret: None,
             ret_pass_mode: None,
             dependant_types,
@@ -592,7 +593,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
     }
 
     pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
-        self.dependant_types[self.body.values[value].ty].ty
+        self.dependant_types[self.body.values[value].ty()].ty
     }
 
     pub fn ptr_ty(&self) -> Type {

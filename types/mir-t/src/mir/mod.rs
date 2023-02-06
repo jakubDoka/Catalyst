@@ -1,26 +1,4 @@
-/*
-    We want destintion to be more precise and known in advance.
-    Q: Does the dest need to be separate type?
-    Q: Can we make a do with forward destinations?
-    Q: How dow we represent destinations? (memory efficiently)
-
-    Lets say we go with forward decl.
-    If if control flow returns value, we track both dest and block param.
-    Current model does not need to be changed, we simply cedide which path
-    to use when generating.
-
-    No.
-
-    What about special dest type?
-
-
-*/
-
-use std::{
-    default::default,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{default::default, mem, ops::Deref, sync::Arc, usize};
 
 use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -90,101 +68,148 @@ impl Default for Mir {
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
 
 pub struct FuncMir {
-    pub args: VRefSlice<ValueMir>,
-    pub ret: VRef<ValueMir>,
-    pub generics: VRefSlice<MirTy>,
-    pub types: VSlice<MirTy>,
-    pub entry: VRef<BlockMir>,
-    pub module: FragRef<ModuleMir>,
-    pub calls: VSlice<CallMir>,
-    pub drops: VSlice<DropMir>,
-    pub values: VSlice<ValueMir>,
+    args: VRefSlice<ValueMir>,
+    ret: VRef<ValueMir>,
+    generics: VRefSlice<MirTy>,
+    entry: VRef<BlockMir>,
+    module: FragRef<ModuleMir>,
+    entities: FuncMirEntities,
 }
 
 impl FuncMir {
-    pub fn ty(&self, ty: VRef<MirTy>, module: &ModuleMir) -> Ty {
-        let Some(index) = ty.index().checked_sub(FuncTypes::BASE_LEN) else {
-            return [Ty::UNIT, Ty::TERMINAL][ty.index()];
-        };
-
-        module.types[self.types][index].ty
+    pub fn new(
+        args: impl IntoIterator<Item = VRef<ValueMir>>,
+        ret: VRef<ValueMir>,
+        generics: impl IntoIterator<Item = VRef<MirTy>>,
+        entry: VRef<BlockMir>,
+        module: FragRef<ModuleMir>,
+        mut entities: ModuleMirCheck,
+    ) -> Self {
+        Self {
+            args: entities.value_args.extend(args),
+            ret,
+            generics: entities.ty_params.extend(generics),
+            entry,
+            module,
+            entities: entities.finish(),
+        }
     }
 
-    pub fn value_ty(&self, value: VRef<ValueMir>, module: &ModuleMir) -> Ty {
-        self.ty(module.values[value].ty, module)
+    pub fn view<'a>(&self, module: &'a ModuleMir) -> FuncMirView<'a> {
+        let entities = self.entities.view(module);
+
+        FuncMirView {
+            args: entities.value_args.get_slice(self.args),
+            ret: self.ret,
+            generics: entities.ty_params.get_slice(self.generics),
+            entities,
+        }
+    }
+
+    pub fn module(&self) -> FragRef<ModuleMir> {
+        self.module
+    }
+}
+
+pub struct FuncMirView<'a> {
+    pub args: &'a [VRef<ValueMir>],
+    pub ret: VRef<ValueMir>,
+    pub generics: &'a [VRef<MirTy>],
+    pub entities: FuncMirEntitiesView<'a>,
+}
+
+impl<'a> Deref for FuncMirView<'a> {
+    type Target = FuncMirEntitiesView<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entities
     }
 }
 
 derive_relocated!(struct FuncMir { module });
 
-#[derive(Deserialize, Archive, Serialize, Default, Clone)]
-pub struct ModuleMir {
-    pub blocks: PushMap<BlockMir>,
-    pub insts: PushMap<InstMir>,
-    pub values: FuncValues,
-    pub value_args: PushMap<VRef<ValueMir>>,
-    pub ty_params: PushMap<VRef<MirTy>>,
-    pub calls: PushMap<CallMir>,
-    pub drops: PushMap<DropMir>,
-    types: PushMap<MirTy>,
-    value_flags: BitSet,
+macro_rules! gen_module {
+    (
+        $(
+            $name:ident: $ty:ty,
+        )*
+    ) => {
+        #[derive(Deserialize, Archive, Serialize, Default, Clone)]
+        pub struct ModuleMir {
+            $(
+                $name: PushMap<$ty>,
+            )*
+        }
+
+        impl ModuleMir {
+            pub fn clear(&mut self) {
+                $(
+                    self.$name.clear();
+                )*
+            }
+
+            pub fn check(&mut self) -> ModuleMirCheck {
+                ModuleMirCheck {
+                    $(
+                        $name: PushMapCheck::new(&mut self.$name),
+                    )*
+                }
+            }
+        }
+
+        pub struct ModuleMirCheck<'a> {
+            $(
+                pub $name: PushMapCheck<'a, $ty>,
+            )*
+        }
+
+        impl ModuleMirCheck<'_> {
+            pub fn finish(self) -> FuncMirEntities {
+                FuncMirEntities {
+                    $(
+                        $name: self.$name.finish(),
+                    )*
+                }
+            }
+        }
+
+        #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
+        pub struct FuncMirEntities {
+            $(
+                $name: VSlice<$ty>,
+            )*
+        }
+
+        impl FuncMirEntities {
+            pub fn view<'a>(&self, module: &'a ModuleMir) -> FuncMirEntitiesView<'a> {
+                FuncMirEntitiesView {
+                    $(
+                        $name: PushMapView::new(&module.$name, self.$name),
+                    )*
+                }
+            }
+        }
+
+        pub struct FuncMirEntitiesView<'a> {
+            $(
+                pub $name: PushMapView<'a, $ty>,
+            )*
+        }
+    };
+}
+
+gen_module! {
+    blocks: BlockMir,
+    insts: InstMir,
+    values: ValueMir,
+    value_args: VRef<ValueMir>,
+    ty_params: VRef<MirTy>,
+    calls: CallMir,
+    drops: DropMir,
+    types: MirTy,
 }
 
 derive_relocated!(struct ModuleMir { calls types });
-
-macro_rules! gen_flags {
-    (
-        $($id:ident)*
-    ) => {
-        gen_flags!((0, [$(stringify!($id)),*].len()) $($id)*);
-    };
-
-    (
-        ($counter:expr, $len:expr) $get:ident $set:ident $($tt:tt)*
-    ) => {
-        pub fn $get(&self, value: VRef<ValueMir>) -> bool {
-            self.value_flags
-                .contains(value.index() * $len + $counter)
-        }
-
-        pub fn $set(&mut self, value: VRef<ValueMir>) {
-            self.value_flags
-                .insert(value.index() * $len + $counter);
-        }
-
-        gen_flags!(($counter + 1, $len) $($tt)*);
-    };
-
-    (($counter:expr, $len:expr)) => {};
-}
-
-impl ModuleMir {
-    pub fn clear(&mut self) {
-        self.blocks.clear();
-        self.insts.clear();
-        self.values.clear();
-        self.value_args.clear();
-        self.ty_params.clear();
-        self.types.clear();
-        self.calls.clear();
-        self.drops.clear();
-        self.value_flags.clear();
-    }
-
-    gen_flags! {
-        is_referenced set_referenced
-        is_mutable set_mutable
-        is_var set_var
-    }
-
-    pub fn save_types(&mut self, types: &FuncTypes) -> VSlice<MirTy> {
-        self.types.extend(types.values().copied())
-    }
-
-    pub fn load_types(&self, types: VSlice<MirTy>) -> &[MirTy] {
-        &self.types[types]
-    }
-}
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
 
@@ -200,15 +225,7 @@ pub struct MirTy {
 
 derive_relocated!(struct MirTy { ty });
 
-impl MirTy {
-    gen_v_ref_constants!(
-        UNIT
-        TERMINAL
-    );
-}
-
-#[derive(Serialize, Deserialize, Archive, Clone, Copy, Default)]
-
+#[derive(Serialize, Deserialize, Archive, Clone, Copy)]
 pub struct BlockMir {
     pub passed: OptVRef<ValueMir>,
     pub insts: VSlice<InstMir>,
@@ -218,7 +235,6 @@ pub struct BlockMir {
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-
 pub enum ControlFlowMir {
     Split {
         cond: VRef<ValueMir>,
@@ -231,12 +247,6 @@ pub enum ControlFlowMir {
     },
     Return(VRef<ValueMir>),
     Terminal,
-}
-
-impl Default for ControlFlowMir {
-    fn default() -> Self {
-        Self::Return(ValueMir::UNIT)
-    }
 }
 
 #[derive(Default)]
@@ -293,126 +303,50 @@ derive_relocated! {
     }
 }
 
-#[derive(Serialize, Deserialize, Archive, Clone, Copy)]
+macro_rules! gen_flags {
+    (
+        $repr:ident $($id:ident)*
+    ) => {
+        const FLAGS_LEN: usize = [$(stringify!($id)),*].len();
+        const DATA_WIDTH: usize = mem::size_of::<$repr>() * 8;
 
-pub struct ValueMir {
-    pub ty: VRef<MirTy>,
+        gen_flags!((0, Self::FLAGS_LEN, Self::DATA_WIDTH) $($id)*);
+    };
+
+    (
+        ($counter:expr, $len:expr, $width:expr) $get:ident $set:ident $($tt:tt)*
+    ) => {
+        pub fn $get(&self) -> bool {
+            self.ty.as_u32() & (1 << ($width - $counter)) != 0
+        }
+
+        pub fn $set(&mut self) {
+            let mut ty = self.ty.as_u32();
+            ty |= 1 << ($width - $counter);
+            self.ty = VRef::new(ty as usize);
+        }
+
+        gen_flags!(($counter + 1, $len, $width) $($tt)*);
+    };
+
+    (($($tt:tt)*)) => {};
 }
 
-impl VRefDefault for ValueMir {
-    fn default_state() -> VRef<Self> {
-        Self::UNIT
-    }
+#[derive(Serialize, Deserialize, Archive, Clone, Copy)]
+#[repr(transparent)]
+pub struct ValueMir {
+    ty: VRef<MirTy>,
 }
 
 impl ValueMir {
-    gen_v_ref_constants!(
-        UNIT
-        TERMINAL
-    );
-}
-
-#[derive(Serialize, Deserialize, Archive, Clone, Copy)]
-
-pub struct DestMir;
-
-#[derive(Serialize, Deserialize, Archive, Clone)]
-
-pub struct FuncTypes(PushMap<MirTy>);
-
-impl FuncTypes {
-    const BASE_LEN: usize = 2;
-
-    pub fn new() -> Self {
-        let mut pm = PushMap::new();
-        pm.push(MirTy { ty: Ty::UNIT });
-        pm.push(MirTy { ty: Ty::TERMINAL });
-        Self(pm)
+    gen_flags! {
+        u32
+        referenced mark_referenced
+        mutable mark_mutable
+        var mark_var
     }
 
-    pub fn clear(&mut self) {
-        self.0.truncate(Self::BASE_LEN);
-    }
-
-    pub fn values(&self) -> impl Iterator<Item = &MirTy> {
-        self.0.values().skip(Self::BASE_LEN)
-    }
-}
-
-impl Relocated for FuncTypes {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        for ty in self.0.values().skip(Self::BASE_LEN) {
-            ty.ty.mark(marker);
-        }
-    }
-
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
-        for ty in self.0.values_mut().skip(Self::BASE_LEN) {
-            ty.ty
-                .remap(ctx)
-                // .expect("if we get to this point then type should be reclocable")
-            ;
-        }
-
-        Some(())
-    }
-}
-
-impl Default for FuncTypes {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Deref for FuncTypes {
-    type Target = PushMap<MirTy>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for FuncTypes {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[derive(Serialize, Deserialize, Archive, Clone)]
-
-pub struct FuncValues(PushMap<ValueMir>);
-
-impl FuncValues {
-    pub fn new() -> Self {
-        let mut pm = PushMap::new();
-        pm.push(ValueMir { ty: MirTy::UNIT });
-        pm.push(ValueMir {
-            ty: MirTy::TERMINAL,
-        });
-        Self(pm)
-    }
-
-    pub fn clear(&mut self) {
-        self.0.truncate(ValueMir::TERMINAL.index() + 1);
-    }
-}
-
-impl Default for FuncValues {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Deref for FuncValues {
-    type Target = PushMap<ValueMir>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for FuncValues {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    pub fn ty(&self) -> VRef<MirTy> {
+        VRef::new(self.ty.as_u32() as usize & ((1 << (Self::DATA_WIDTH - Self::FLAGS_LEN)) - 1))
     }
 }

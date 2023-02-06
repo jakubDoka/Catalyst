@@ -5,5 +5,6 @@ mod mir;
 
 pub use mir::{
     BlockMir, BodyOwner, CallMir, CallableMir, ControlFlowMir, DebugData, DropMir, FuncMir,
-    FuncTypes, FuncValues, InstMir, Mir, MirBase, MirTy, ModuleMir, ValueMir,
+    FuncMirEntities, FuncMirEntitiesView, FuncMirView, InstMir, Mir, MirBase, MirTy, ModuleMir,
+    ModuleMirCheck, ValueMir,
 };

@@ -10,8 +10,116 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::VRef;
 
-#[derive(Archive, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PushMapView<'a, T> {
+    data: &'a [T],
+}
 
+impl<'a, T> PushMapView<'a, T> {
+    pub fn new(base: &'a PushMap<T>, slice: VSlice<T>) -> Self {
+        Self { data: &base[slice] }
+    }
+
+    pub fn get(&self, key: VRef<T>) -> &'a T {
+        &self.data[key.index()]
+    }
+
+    pub fn get_slice(&self, key: VSlice<T>) -> &'a [T] {
+        &self.data[key.range()]
+    }
+}
+
+impl<'a, T> Index<VRef<T>> for PushMapView<'a, T> {
+    type Output = T;
+
+    fn index(&self, key: VRef<T>) -> &T {
+        &self.data[key.index()]
+    }
+}
+
+impl<'a, T> Index<VSlice<T>> for PushMapView<'a, T> {
+    type Output = [T];
+
+    fn index(&self, key: VSlice<T>) -> &[T] {
+        &self.data[key.range()]
+    }
+}
+
+pub struct PushMapCheck<'a, T> {
+    map: &'a mut PushMap<T>,
+    index: usize,
+}
+
+impl<'a, T> PushMapCheck<'a, T> {
+    pub fn new(map: &'a mut PushMap<T>) -> Self {
+        Self {
+            index: map.len(),
+            map,
+        }
+    }
+
+    fn data(&self) -> &[T] {
+        // SAFETY: The index is always valid due to encapsulation
+        unsafe { self.map.data.get_unchecked(self.index..) }
+    }
+
+    fn data_mut(&mut self) -> &mut [T] {
+        // SAFETY: The index is always valid due to encapsulation
+        unsafe { self.map.data.get_unchecked_mut(self.index..) }
+    }
+
+    pub fn push(&mut self, value: T) -> VRef<T> {
+        let id = self.map.data.len() - self.index;
+        self.map.data.push(value);
+        VRef::new(id)
+    }
+
+    pub fn extend(&mut self, values: impl IntoIterator<Item = T>) -> VSlice<T> {
+        let id = self.map.data.len() - self.index;
+        self.map.data.extend(values);
+        VSlice::new(id..self.map.data.len() - self.index)
+    }
+
+    pub fn finish(self) -> VSlice<T> {
+        VSlice::new(self.index..self.map.len())
+    }
+
+    pub fn indexed(&self, slice: VSlice<T>) -> impl ExactSizeIterator<Item = (VRef<T>, &T)> {
+        self[slice]
+            .iter()
+            .enumerate()
+            .map(move |(i, e)| (VRef::new(slice.start() as usize + i), e))
+    }
+}
+
+impl<'a, T> Index<VRef<T>> for PushMapCheck<'a, T> {
+    type Output = T;
+
+    fn index(&self, key: VRef<T>) -> &T {
+        &self.data()[key.index()]
+    }
+}
+
+impl<'a, T> IndexMut<VRef<T>> for PushMapCheck<'a, T> {
+    fn index_mut(&mut self, key: VRef<T>) -> &mut T {
+        &mut self.data_mut()[key.index()]
+    }
+}
+
+impl<'a, T> Index<VSlice<T>> for PushMapCheck<'a, T> {
+    type Output = [T];
+
+    fn index(&self, key: VSlice<T>) -> &[T] {
+        &self.data()[key.range()]
+    }
+}
+
+impl<'a, T> IndexMut<VSlice<T>> for PushMapCheck<'a, T> {
+    fn index_mut(&mut self, key: VSlice<T>) -> &mut [T] {
+        &mut self.data_mut()[key.range()]
+    }
+}
+
+#[derive(Archive, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PushMap<T> {
     data: Vec<T>,
 }
