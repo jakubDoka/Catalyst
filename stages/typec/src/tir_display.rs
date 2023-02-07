@@ -1,6 +1,7 @@
+use lexing::Span;
+
 use {
     crate::*,
-    packaging_t::*,
     std::{
         fmt::{self, Write},
         iter,
@@ -36,6 +37,10 @@ impl TyChecker<'_> {
         self.display_tir(tir, buffer, 0, &mut signature.args.len())
     }
 
+    pub fn span_str(&self, span: Span) -> &str {
+        self.resources.span_str(self.source, span)
+    }
+
     pub fn display_tir(
         &self,
         TirNode { kind, ty, span, .. }: TirNode,
@@ -48,18 +53,18 @@ impl TyChecker<'_> {
                 if let Some(computed) = computed {
                     write!(buffer, "{computed}")?;
                 } else {
-                    buffer.push_str(span_str!(self, span));
+                    buffer.push_str(self.span_str(span));
                 }
             }
             TirKind::Float(computed) => {
                 if let Some(computed) = computed {
                     write!(buffer, "{computed}")?;
                 } else {
-                    buffer.push_str(span_str!(self, span));
+                    buffer.push_str(self.span_str(span));
                 }
             }
             TirKind::Char | TirKind::Bool(..) => {
-                write!(buffer, "'{}'", span_str!(self, span))?;
+                write!(buffer, "'{}'", self.span_str(span))?;
             }
             TirKind::Block(nodes) => {
                 let prev_var_count = *var_count;
@@ -265,7 +270,7 @@ impl TyChecker<'_> {
                 write!(buffer, "var{}", var.index())?;
                 *var_count = var.index() + 1;
             }
-            UnitPatKindTir::Int(Ok(span), ..) => buffer.push_str(span_str!(self, span)),
+            UnitPatKindTir::Int(Ok(span), ..) => buffer.push_str(self.span_str(span)),
             UnitPatKindTir::Int(Err(lit), ..) => write!(buffer, "{lit}")?,
             UnitPatKindTir::Wildcard => buffer.push('_'),
         }

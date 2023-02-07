@@ -2,7 +2,6 @@ use {
     crate::{ty_parser::TyPathResult, *},
     diags::*,
     lexing_t::*,
-    packaging_t::*,
     parsing_t::*,
     std::{cmp::Ordering, default::default, iter, vec},
     storage::*,

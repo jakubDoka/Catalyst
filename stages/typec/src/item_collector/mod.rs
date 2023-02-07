@@ -371,7 +371,7 @@ impl TyChecker<'_> {
         let signature = Signature {
             cc: cc.map(|cc| {
                 let span = cc.span.shifted(1);
-                let str = span_str!(self, span);
+                let str = self.resources.span_str(self.source, span);
                 self.interner.intern(str)
             }),
             args: self.typec.cache.args.extend(args),

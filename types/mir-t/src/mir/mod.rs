@@ -1,4 +1,4 @@
-use std::{default::default, mem, ops::Deref, sync::Arc, usize};
+use std::{default::default, iter, mem, ops::Deref, sync::Arc, usize};
 
 use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -99,9 +99,10 @@ impl FuncMir {
         let entities = self.entities.view(module);
 
         FuncMirView {
-            args: entities.value_args.get_slice(self.args),
+            args: &entities.value_args[self.args],
             ret: self.ret,
-            generics: entities.ty_params.get_slice(self.generics),
+            entry: self.entry,
+            generic_types: &entities.ty_params[self.generics],
             entities,
         }
     }
@@ -109,13 +110,24 @@ impl FuncMir {
     pub fn module(&self) -> FragRef<ModuleMir> {
         self.module
     }
+
+    pub fn entry(&self) -> VRef<BlockMir> {
+        self.entry
+    }
 }
 
 pub struct FuncMirView<'a> {
     pub args: &'a [VRef<ValueMir>],
     pub ret: VRef<ValueMir>,
-    pub generics: &'a [VRef<MirTy>],
+    pub entry: VRef<BlockMir>,
+    pub generic_types: &'a [VRef<MirTy>],
     pub entities: FuncMirEntitiesView<'a>,
+}
+
+impl<'a> FuncMirView<'a> {
+    pub fn value_ty(&self, value: VRef<ValueMir>) -> Ty {
+        self.types[self.values[value].ty()].ty
+    }
 }
 
 impl<'a> Deref for FuncMirView<'a> {
@@ -192,7 +204,7 @@ macro_rules! gen_module {
 
         pub struct FuncMirEntitiesView<'a> {
             $(
-                pub $name: PushMapView<'a, $ty>,
+                pub $name: &'a PushMapView<$ty>,
             )*
         }
     };
@@ -210,6 +222,41 @@ gen_module! {
 }
 
 derive_relocated!(struct ModuleMir { calls types });
+
+impl ModuleMir {
+    pub fn dummy_func(
+        &mut self,
+        args: impl IntoIterator<Item = Ty>,
+        module: FragRef<ModuleMir>,
+        ret: Ty,
+    ) -> FuncMir {
+        let mut entities = self.check();
+        let ret_value = entities.values.push(ValueMir {
+            ty: entities.types.push(MirTy { ty: ret }),
+        });
+        let entry = entities.blocks.push(BlockMir {
+            passed: None,
+            insts: default(),
+            control_flow: ControlFlowMir::Return(ret_value),
+            ref_count: 0,
+            cycles: 0,
+        });
+        FuncMir::new(
+            args.into_iter()
+                .map(|ty| {
+                    entities.values.push(ValueMir {
+                        ty: entities.types.push(MirTy { ty }),
+                    })
+                })
+                .collect::<BumpVec<_>>(),
+            ret_value,
+            iter::empty(),
+            entry,
+            module,
+            entities,
+        )
+    }
+}
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
 
@@ -303,6 +350,24 @@ derive_relocated! {
     }
 }
 
+impl From<FragRef<Func>> for CallableMir {
+    fn from(f: FragRef<Func>) -> Self {
+        CallableMir::Func(f)
+    }
+}
+
+impl From<FragRef<SpecFunc>> for CallableMir {
+    fn from(f: FragRef<SpecFunc>) -> Self {
+        CallableMir::SpecFunc(f)
+    }
+}
+
+impl From<VRef<ValueMir>> for CallableMir {
+    fn from(v: VRef<ValueMir>) -> Self {
+        CallableMir::Pointer(v)
+    }
+}
+
 macro_rules! gen_flags {
     (
         $repr:ident $($id:ident)*
@@ -348,5 +413,9 @@ impl ValueMir {
 
     pub fn ty(&self) -> VRef<MirTy> {
         VRef::new(self.ty.as_u32() as usize & ((1 << (Self::DATA_WIDTH - Self::FLAGS_LEN)) - 1))
+    }
+
+    pub fn new(ty: VRef<MirTy>) -> Self {
+        Self { ty }
     }
 }

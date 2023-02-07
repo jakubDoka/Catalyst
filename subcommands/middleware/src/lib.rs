@@ -5,6 +5,7 @@
 #![feature(iter_collect_into)]
 #![feature(decl_macro)]
 #![feature(trivial_bounds)]
+#![feature(closure_lifetime_binder)]
 
 mod logic;
 

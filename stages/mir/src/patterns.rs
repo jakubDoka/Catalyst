@@ -1,8 +1,15 @@
-use std::{fmt::Display, hint::unreachable_unchecked, iter};
+use std::{
+    fmt::{self, Display},
+    hint::unreachable_unchecked,
+    iter,
+};
 
 use storage::*;
+use typec_t::*;
 
-pub fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
+use crate::ExternalMirCtx;
+
+pub(crate) fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
     let mut missing = vec![];
     let mut current = UpperBound::Inside(0);
     for group in tree.nodes.group_by(|a, b| a.range.start == b.range.start) {
@@ -35,7 +42,11 @@ pub fn find_gaps(tree: PatTree) -> Vec<Vec<Range>> {
     missing
 }
 
-pub fn as_tree<'a>(arena: &'a Arena, input: &[Branch<'a>], reachable: &mut [bool]) -> PatTree<'a> {
+pub(crate) fn as_tree<'a>(
+    arena: &'a Arena,
+    input: &[Branch<'a>],
+    reachable: &mut [bool],
+) -> PatTree<'a> {
     let intersected = intersect_branches(input.iter().copied());
 
     let grouped = || intersected.group_by(|a, b| a.0.start == b.0.start);
@@ -129,58 +140,59 @@ fn sorted_ranges<'a>(input: impl Iterator<Item = Branch<'a>>) -> SortedRanges {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PatTree<'a> {
-    pub has_missing: bool,
-    pub nodes: &'a [PatNode<'a>],
+pub(crate) struct PatTree<'a> {
+    pub(crate) has_missing: bool,
+    pub(crate) nodes: &'a [PatNode<'a>],
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PatNode<'a> {
-    pub range: Range,
-    pub children: PatNodeChildren<'a>,
+pub(crate) struct PatNode<'a> {
+    pub(crate) range: Range,
+    pub(crate) children: PatNodeChildren<'a>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum PatNodeChildren<'a> {
+pub(crate) enum PatNodeChildren<'a> {
     End(usize),
     More(PatTree<'a>),
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Branch<'a> {
-    pub start: Node<'a>,
-    pub nodes: &'a [Node<'a>],
-    pub ord: usize,
+pub(crate) struct Branch<'a> {
+    pub(crate) start: Node<'a>,
+    pub(crate) nodes: &'a [Node<'a>],
+    pub(crate) ord: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Node<'a> {
+pub(crate) enum Node<'a> {
     Scalar(Range),
+    #[allow(unused)]
     Or(&'a [Range]),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Range {
-    pub start: u128,
-    pub end: UpperBound,
+pub(crate) struct Range {
+    pub(crate) start: u128,
+    pub(crate) end: UpperBound,
 }
 
 impl Range {
-    pub fn new(start: u128, end: impl Into<UpperBound>) -> Self {
+    pub(crate) fn new(start: u128, end: impl Into<UpperBound>) -> Self {
         Self {
             start,
             end: end.into(),
         }
     }
 
-    pub const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             start: 0,
             end: UpperBound::Inside(0),
         }
     }
 
-    pub const fn full() -> Self {
+    pub(crate) const fn full() -> Self {
         Self {
             start: 0,
             end: UpperBound::Outside,
@@ -191,7 +203,7 @@ impl Range {
         [UpperBound::Inside(self.start), self.end]
     }
 
-    pub fn at(int: u128) -> Range {
+    pub(crate) fn at(int: u128) -> Range {
         Self {
             start: int,
             end: int
@@ -218,13 +230,13 @@ struct SortedRanges {
 }
 
 impl SortedRanges {
-    pub fn new(mut ranges: BumpVec<UpperBound>) -> Self {
+    pub(crate) fn new(mut ranges: BumpVec<UpperBound>) -> Self {
         ranges.sort_unstable();
         ranges.dedup();
         Self { ranges }
     }
 
-    pub fn overlaps(&self, other: &Range) -> impl Iterator<Item = Range> + '_ {
+    pub(crate) fn overlaps(&self, other: &Range) -> impl Iterator<Item = Range> + '_ {
         let start = self.ranges.binary_search(&UpperBound::Inside(other.start));
 
         let end = self.ranges.binary_search(&other.end);
@@ -254,6 +266,95 @@ impl SortedRanges {
         .into_iter()
         .flatten()
     }
+}
+
+pub(crate) fn display_pat(pat: &[Range], ty: Ty, ext: &ExternalMirCtx) -> String {
+    let mut res = String::new();
+    let mut frontier = pat;
+    display_pat_low(ty, &[], &mut res, &mut frontier, ext).unwrap();
+    res
+}
+
+fn display_pat_low(
+    ty: Ty,
+    params: &[Ty],
+    res: &mut String,
+    frontier: &mut &[Range],
+    ext: &ExternalMirCtx,
+) -> fmt::Result {
+    use fmt::Write;
+
+    let mut advance = || {
+        let (&first, others) = frontier.split_first().unwrap_or((&Range::full(), &[]));
+        *frontier = others;
+        first
+    };
+    use Builtin::*;
+    match ty {
+        Ty::Struct(s) => {
+            let Struct { fields, .. } = ext.typec[s];
+            res.push_str("\\{ ");
+            if let Some((&first, rest)) = ext.typec[fields].split_first() {
+                write!(res, "{}: ", first.name.get(ext.interner))?;
+                display_pat_low(first.ty, params, res, frontier, ext)?;
+                for &field in rest {
+                    res.push_str(", ");
+                    write!(res, "{}: ", field.name.get(ext.interner))?;
+                    display_pat_low(field.ty, params, res, frontier, ext)?;
+                }
+            }
+            res.push_str(" }");
+        }
+        Ty::Instance(inst) => {
+            let Instance { args, base } = ext.typec[inst];
+            let params = &ext.typec[args];
+            display_pat_low(base.as_ty(), params, res, frontier, ext)?;
+        }
+        Ty::Pointer(ptr) => {
+            let base = ext.typec[ptr.ty()];
+            res.push('^');
+            write!(res, "{}", ptr.mutability.to_mutability())?;
+            display_pat_low(base, params, res, frontier, ext)?;
+        }
+        Ty::Param(index) => {
+            let ty = params[index as usize];
+            display_pat_low(ty, params, res, frontier, ext)?;
+        }
+        Ty::Builtin(b) => match b {
+            Unit | Terminal | Uint | U32 | Mutable | Immutable | U16 | U8 | Short | Cint | Long
+            | LongLong => {
+                let first = advance();
+                write!(res, "{first}")?;
+            }
+            Char => todo!(),
+            Bool => {
+                let first = advance();
+                if first == Range::full() {
+                    res.push('_');
+                } else {
+                    write!(res, "{}", first.start == 1)?;
+                }
+            }
+            F32 | F64 => unreachable!(),
+        },
+        Ty::Enum(r#enum) => {
+            let Enum { variants, .. } = ext.typec[r#enum];
+            let variant = if ext.typec.enum_flag_ty(r#enum) != Uint {
+                let flag = advance();
+                let index = flag.start as usize;
+                ext.typec[variants][index]
+            } else {
+                ext.typec[variants][0]
+            };
+            write!(res, "\\{}", variant.name.get(ext.interner))?;
+            if variant.ty != Ty::UNIT {
+                res.push('~');
+                display_pat_low(variant.ty, params, res, frontier, ext)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

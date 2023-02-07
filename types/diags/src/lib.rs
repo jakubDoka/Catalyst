@@ -96,15 +96,15 @@ macro_rules! ctl_errors {
         $(
             #[$($title:tt)*]
             $(#[$($footer:tt)*])*
-            error $name:ident $(: $fatality:ident)? {
+            $vis:vis error $name:ident $(: $fatality:ident)? {
                 $(#[$($source:tt)*])*
                 $($field:ident $($ref:ident)?: $field_type:ty),* $(,)?
             }
         )*
     ) => {
         $(
-            pub struct $name {
-                $(pub $field: $field_type),*
+            $vis struct $name {
+                $($vis $field: $field_type),*
             }
 
             impl $crate::CtlError for $name {
@@ -138,7 +138,7 @@ pub use items::{
 ctl_errors! {
     #[err => "use of planned byt not yet implemented feature"]
     #[info => "{message}"]
-    error TodoSnippet: fatal {
+    pub error TodoSnippet: fatal {
         #[err loc]
         message: &'static str,
         loc: SourceLoc

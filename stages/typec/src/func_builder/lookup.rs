@@ -653,7 +653,7 @@ ctl_errors! {
 
     #[err => "cannot infer type of expression"]
     #[help => "{help}"]
-    error CannotInferExpression: fatal {
+    pub error CannotInferExpression: fatal {
         #[err loc]
         help: &'static str,
         loc: SourceLoc,
@@ -670,7 +670,7 @@ ctl_errors! {
 
     #[err => "type of expression is not a {expected}"]
     #[info => "the type is '{found}' which is not a {expected}"]
-    error UnexpectedType: fatal {
+    pub error UnexpectedType: fatal {
         #[err loc]
         expected: &'static str,
         found ref: String,
@@ -695,7 +695,7 @@ ctl_errors! {
 
     #[err => "wrong number of generic parameters"]
     #[info => "expected {expected} parameters, found {found}"]
-    error WrongGenericParamCount: fatal {
+    pub error WrongGenericParamCount: fatal {
         #[err loc]
         expected: usize,
         found: usize,

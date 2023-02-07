@@ -21,7 +21,7 @@ impl Generator<'_> {
         &mut self,
         signature: Signature,
         ret: VRef<ValueMir>,
-        args: VRefSlice<ValueMir>,
+        args: &[VRef<ValueMir>],
         params: &[Ty],
         root: VRef<BlockMir>,
         builder: &mut GenBuilder,
@@ -53,7 +53,7 @@ impl Generator<'_> {
             };
         }
 
-        for (arg, pass) in builder.body.value_args[args]
+        for (arg, pass) in args
             .iter()
             .copied()
             .filter(|&arg| !self.ty_layout(builder.value_ty(arg)).is_zero_sized())
@@ -185,8 +185,7 @@ impl Generator<'_> {
     fn drop(&mut self, drop: VRef<DropMir>, builder: &mut GenBuilder, dest_block: &mut ir::Block) {
         let value = builder.body.drops[drop].value;
         let ty = builder.value_ty(value);
-        let mut funcs =
-            self.gen_resources.drops[drop.index() - self.gen_resources.drops_offset].clone();
+        let mut funcs = self.gen_resources.drops[drop.index()].clone();
         let GenValue {
             computed, offset, ..
         } = self.gen_resources.values[value];
@@ -471,8 +470,7 @@ impl Generator<'_> {
 
     fn call(&mut self, call: VRef<CallMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
         let CallMir { args, .. } = builder.body.calls[call];
-        let CompileRequestChild { id, func, params } =
-            self.gen_resources.calls[call.index() - self.gen_resources.call_offset];
+        let CompileRequestChild { id, func, params } = self.gen_resources.calls[call.index()];
 
         if self.typec[func].flags.contains(FuncFlags::BUILTIN) {
             if func == Func::CAST {
@@ -558,11 +556,11 @@ impl Generator<'_> {
             PassMode::Indirect(..) => (ComputedValue::Value(params.next()?), true),
         };
 
-        Some(if builder.body.is_referenced(value) && let ComputedValue::Value(v) = computed {
+        Some(if builder.body.values[value].referenced() && let ComputedValue::Value(v) = computed {
             let ss = builder.create_stack_slot(layout);
             builder.ins().stack_store(v, ss, 0);
             (ComputedValue::StackSlot(ss), true)
-        } else if builder.body.is_mutable(value) && let ComputedValue::Value(v) = computed {
+        } else if builder.body.values[value].mutable() && let ComputedValue::Value(v) = computed {
             let var = builder.declare_var(v, value);
             (ComputedValue::Variable(var), must_load)
         } else {
@@ -812,7 +810,7 @@ impl Generator<'_> {
         } = self.gen_resources.values[target];
 
         let must_load_target = match computed.is_none() {
-            true => builder.body.is_referenced(target) || layout.on_stack,
+            true => builder.body.values[target].referenced() || layout.on_stack,
             false => must_load,
         };
 
@@ -1035,7 +1033,7 @@ impl Generator<'_> {
             return value;
         }
 
-        let referenced = builder.body.is_referenced(target);
+        let referenced = builder.body.values[target].referenced();
 
         let layout = self.ty_layout(builder.value_ty(target));
         let must_load = layout.on_stack || referenced;
@@ -1047,7 +1045,10 @@ impl Generator<'_> {
             ComputedValue::StackSlot(ss)
         } else {
             let init = source_value.unwrap_or_else(|| builder.ins().iconst(layout.repr, 0));
-            if builder.body.is_mutable(target) || force_mutable || builder.body.is_var(target) {
+            if builder.body.values[target].mutable()
+                || force_mutable
+                || builder.body.values[target].var()
+            {
                 ComputedValue::Variable(builder.declare_var(init, target))
             } else {
                 ComputedValue::Value(init)

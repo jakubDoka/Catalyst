@@ -79,6 +79,10 @@ impl Resources {
         self.sources[source].path.as_path()
     }
 
+    pub fn span_str(&self, source: VRef<Source>, span: Span) -> &str {
+        self.sources[source].span_str(span)
+    }
+
     pub fn clear(&mut self) {
         self.sources
             .values_mut()

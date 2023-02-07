@@ -218,7 +218,7 @@ impl TyChecker<'_> {
     }
 
     pub fn int<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
-        let span_str = span_str!(self, span);
+        let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::INTEGERS, Ty::UINT);
         Some(TirNode::new(
@@ -229,7 +229,7 @@ impl TyChecker<'_> {
     }
 
     pub fn float<'a>(&mut self, span: Span, inference: Inference) -> ExprRes<'a> {
-        let span_str = span_str!(self, span);
+        let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::FLOATS, Ty::F32);
         Some(TirNode::new(
@@ -273,7 +273,7 @@ impl TyChecker<'_> {
     pub fn bool(&mut self, span: Span) -> ExprRes<'static> {
         Some(TirNode::new(
             Ty::BOOL,
-            TirKind::Bool(span_str!(self, span).starts_with('t')),
+            TirKind::Bool(self.span_str(span).starts_with('t')),
             span,
         ))
     }

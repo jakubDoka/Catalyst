@@ -364,9 +364,7 @@ pub struct GenResources {
     pub func_imports: Map<CompiledFuncRef, (ir::FuncRef, bool, PassSignature)>,
     pub block_stack: Vec<(VRef<BlockMir>, bool, ir::Block)>,
     pub calls: Vec<CompileRequestChild>,
-    pub call_offset: usize,
     pub drops: Vec<Range<usize>>,
-    pub drops_offset: usize,
     pub signature_pool: Vec<(ir::Signature, PassSignature)>,
 }
 
@@ -569,7 +567,7 @@ pub struct GenBuilder<'a, 'b> {
     pub body: FuncMirView<'a>,
     pub struct_ret: Option<ir::Value>,
     pub ret_pass_mode: Option<PassMode>,
-    pub dependant_types: &'a PushMap<MirTy>,
+    pub dependant_types: &'a PushMapView<MirTy>,
     pub inner: FunctionBuilder<'b>,
 }
 
@@ -579,7 +577,7 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
         mir_func: FuncMir,
         module: &'a ModuleMir,
         func: &'b mut ir::Function,
-        dependant_types: &'a PushMap<MirTy>,
+        dependant_types: &'a PushMapView<MirTy>,
         ctx: &'b mut FunctionBuilderContext,
     ) -> Self {
         Self {

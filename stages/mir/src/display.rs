@@ -4,44 +4,62 @@ use std::{
 };
 
 use mir_t::*;
+use packaging_t::Resources;
 use storage::*;
 use typec_t::*;
 
-use crate::*;
+pub fn display_function(
+    funcs: impl IntoIterator<Item = FragRef<Func>>,
+    ctx: MirDisplayCtx,
+) -> String {
+    let mut buffer = String::new();
+    ctx.display_funcs(funcs, &mut buffer).unwrap();
+    buffer
+}
 
-impl MirChecker<'_, '_> {
-    pub fn display_funcs(&self, buffer: &mut String) -> fmt::Result {
-        for &func in &self.mir_ctx.just_compiled_funcs {
+pub struct MirDisplayCtx<'i> {
+    pub typec: &'i Typec,
+    pub module: &'i ModuleMir,
+    pub interner: &'i Interner,
+    pub resources: &'i Resources,
+    pub mir: &'i Mir,
+}
+
+impl MirDisplayCtx<'_> {
+    pub fn display_funcs(
+        &self,
+        funcs: impl IntoIterator<Item = FragRef<Func>>,
+        buffer: &mut String,
+    ) -> fmt::Result {
+        for func in funcs {
             let mir = self
                 .mir
                 .bodies
                 .get(&BodyOwner::Func(func))
                 .expect("Expected body to be present");
-            self.display_func(&mir, func, buffer)?;
+            self.display_func(mir.view(self.module), func, buffer)?;
             buffer.push_str("\n\n");
         }
 
         Ok(())
     }
 
-    pub fn dbg_funcs(&self) {
-        let mut buffer = String::new();
-        self.display_funcs(&mut buffer).unwrap();
-        println!("{buffer}");
-    }
-
-    fn display_func(&self, mir: &FuncMir, func: FragRef<Func>, buffer: &mut String) -> fmt::Result {
+    fn display_func(
+        &self,
+        mir: FuncMirView,
+        func: FragRef<Func>,
+        buffer: &mut String,
+    ) -> fmt::Result {
         self.typec.display_sig(func, self.interner, buffer)?;
         writeln!(
             buffer,
             " {{ ({}) ret var{}",
-            self.mir_ctx.module.value_args[mir.args]
+            mir.args
                 .iter()
                 .map(|&arg| format!(
                     "var{}: {}",
                     arg.index(),
-                    self.typec
-                        .display_ty(mir.value_ty(arg, &self.mir_ctx.module), self.interner)
+                    self.typec.display_ty(mir.value_ty(arg), self.interner)
                 ))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -57,7 +75,7 @@ impl MirChecker<'_, '_> {
                 continue;
             }
             cursor += 1;
-            match self.mir_ctx.module.blocks[block].control_flow {
+            match mir.blocks[block].control_flow {
                 ControlFlowMir::Split {
                     then, otherwise, ..
                 } => blocks.extend([then, otherwise]),
@@ -66,11 +84,8 @@ impl MirChecker<'_, '_> {
             }
         }
 
-        for (i, block) in blocks
-            .into_iter()
-            .map(|b| (b, &self.mir_ctx.module.blocks[b]))
-        {
-            self.display_block(i.index(), mir, block, buffer)?;
+        for (i, block) in blocks.into_iter().map(|b| (b, &mir.blocks[b])) {
+            self.display_block(i.index(), &mir, block, buffer)?;
             write!(buffer, "\n\n")?;
         }
 
@@ -82,7 +97,7 @@ impl MirChecker<'_, '_> {
     fn display_block(
         &self,
         i: usize,
-        func: &FuncMir,
+        mir: &FuncMirView,
         block: &BlockMir,
         buffer: &mut String,
     ) -> fmt::Result {
@@ -91,10 +106,10 @@ impl MirChecker<'_, '_> {
         buffer.extend(ident.clone());
         writeln!(buffer, "block{i} {{")?;
 
-        for &inst in &self.mir_ctx.module.insts[block.insts] {
+        for &inst in &mir.insts[block.insts] {
             buffer.extend(ident.clone());
             buffer.extend(ident.clone());
-            self.display_inst(func, inst, buffer)?;
+            self.display_inst(mir, inst, buffer)?;
             buffer.push('\n');
         }
 
@@ -135,7 +150,7 @@ impl MirChecker<'_, '_> {
         Ok(())
     }
 
-    fn display_inst(&self, func: &FuncMir, inst: InstMir, buffer: &mut String) -> fmt::Result {
+    fn display_inst(&self, mir: &FuncMirView, inst: InstMir, buffer: &mut String) -> fmt::Result {
         match inst {
             InstMir::Int(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
@@ -156,7 +171,7 @@ impl MirChecker<'_, '_> {
                     callable,
                     params,
                     args,
-                } = self.mir_ctx.module.calls[call];
+                } = mir.calls[call];
 
                 match callable {
                     CallableMir::Func(func) => {
@@ -172,9 +187,9 @@ impl MirChecker<'_, '_> {
 
                 if !params.is_empty() {
                     buffer.push('[');
-                    let iter = self.mir_ctx.module.ty_params[params]
+                    let iter = mir.ty_params[params]
                         .iter()
-                        .map(|&ty| func.ty(ty, &self.mir_ctx.module))
+                        .map(|&ty| mir.types[ty].ty)
                         .map(|ty| self.typec.display_ty(ty, self.interner))
                         .intersperse(", ".into())
                         .collect::<String>();
@@ -185,7 +200,7 @@ impl MirChecker<'_, '_> {
 
                 buffer.push('(');
 
-                if let Some((first, others)) = self.mir_ctx.module.value_args[args].split_first() {
+                if let Some((first, others)) = mir.value_args[args].split_first() {
                     write!(buffer, "val{}", first.index())?;
 
                     for &other in others {
@@ -199,8 +214,7 @@ impl MirChecker<'_, '_> {
                 write!(buffer, "var{} =", value.index())?;
 
                 buffer.push('{');
-                if let Some((first, others)) = self.mir_ctx.module.value_args[fields].split_first()
-                {
+                if let Some((first, others)) = mir.value_args[fields].split_first() {
                     write!(buffer, "var{}", first.index())?;
 
                     for &other in others {
@@ -236,90 +250,11 @@ impl MirChecker<'_, '_> {
                 )?;
             }
             InstMir::Drop(drop) => {
-                let DropMir { value } = self.mir_ctx.module.drops[drop];
+                let DropMir { value } = mir.drops[drop];
                 write!(buffer, "drop var{}", value.index())?;
             }
         }
 
         Ok(())
-    }
-
-    pub fn display_pat(&self, pat: &[Range], ty: Ty) -> String {
-        let mut res = String::new();
-        let mut frontier = pat;
-        self.display_pat_low(ty, &[], &mut res, &mut frontier);
-        res
-    }
-
-    fn display_pat_low(&self, ty: Ty, params: &[Ty], res: &mut String, frontier: &mut &[Range]) {
-        let mut advance = || {
-            let (&first, others) = frontier.split_first().unwrap_or((&Range::full(), &[]));
-            *frontier = others;
-            first
-        };
-        use Builtin::*;
-        match ty {
-            Ty::Struct(s) => {
-                let Struct { fields, .. } = self.typec[s];
-                res.push_str("\\{ ");
-                if let Some((&first, rest)) = self.typec[fields].split_first() {
-                    write!(res, "{}: ", first.name.get(self.interner)).unwrap();
-                    self.display_pat_low(first.ty, params, res, frontier);
-                    for &field in rest {
-                        res.push_str(", ");
-                        write!(res, "{}: ", field.name.get(self.interner)).unwrap();
-                        self.display_pat_low(field.ty, params, res, frontier);
-                    }
-                }
-                res.push_str(" }");
-            }
-            Ty::Instance(inst) => {
-                let Instance { args, base } = self.typec[inst];
-                let params = &self.typec[args];
-                self.display_pat_low(base.as_ty(), params, res, frontier)
-            }
-            Ty::Pointer(ptr) => {
-                let base = self.typec[ptr.ty()];
-                res.push('^');
-                write!(res, "{}", ptr.mutability.to_mutability()).unwrap();
-                self.display_pat_low(base, params, res, frontier)
-            }
-            Ty::Param(index) => {
-                let ty = params[index as usize];
-                self.display_pat_low(ty, params, res, frontier)
-            }
-            Ty::Builtin(b) => match b {
-                Unit | Terminal | Uint | U32 | Mutable | Immutable | U16 | U8 | Short | Cint
-                | Long | LongLong => {
-                    let first = advance();
-                    write!(res, "{first}").unwrap();
-                }
-                Char => todo!(),
-                Bool => {
-                    let first = advance();
-                    if first == Range::full() {
-                        res.push('_');
-                    } else {
-                        write!(res, "{}", first.start == 1).unwrap();
-                    }
-                }
-                F32 | F64 => unreachable!(),
-            },
-            Ty::Enum(r#enum) => {
-                let Enum { variants, .. } = self.typec[r#enum];
-                let variant = if self.typec.enum_flag_ty(r#enum) != Uint {
-                    let flag = advance();
-                    let index = flag.start as usize;
-                    self.typec[variants][index]
-                } else {
-                    self.typec[variants][0]
-                };
-                write!(res, "\\{}", variant.name.get(self.interner)).unwrap();
-                if variant.ty != Ty::UNIT {
-                    res.push('~');
-                    self.display_pat_low(variant.ty, params, res, frontier);
-                }
-            }
-        }
     }
 }

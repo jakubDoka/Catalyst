@@ -305,7 +305,7 @@ ctl_errors! {
         ScopePosition::Module => "module and is private",
         ScopePosition::Package => "package and is not public",
     })]
-    error InaccessibleScopeItem: fatal {
+    pub error InaccessibleScopeItem: fatal {
         #[info item_def, "item defined here"]
         #[err source, span, "here"]
         pos: ScopePosition,

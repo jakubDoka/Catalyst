@@ -6,17 +6,17 @@ use crate::{Gen, GenLayouts};
 
 pub type IValue = i64;
 
-pub struct Interpreter<'ctx> {
+pub struct Interpreter<'ctx, 'ext> {
     pub ctx: &'ctx mut InterpreterCtx,
     pub typec: &'ctx mut Typec,
     pub interner: &'ctx mut Interner,
-    pub mir: &'ctx Mir,
+    pub mir: &'ext Mir,
     pub layouts: &'ctx mut GenLayouts,
     pub current: &'ctx mut StackFrame,
-    pub gen: &'ctx Gen,
+    pub gen: &'ext Gen,
 }
 
-impl<'ctx> Interpreter<'ctx> {
+impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     pub fn interpret(&mut self) -> Result<Option<IValue>, InterpreterError> {
         while let Some(next_fuel) = self.ctx.fuel.checked_sub(1) {
             self.ctx.fuel = next_fuel;
@@ -172,13 +172,13 @@ impl<'ctx> Interpreter<'ctx> {
                 other => unimplemented!("{}({:?}, {:?})", other, a, b),
             },
 
-            [a] => todo!(),
+            [_a] => todo!(),
 
             ref other => unimplemented!("{}({:?})", op_str, other),
         }
     }
 
-    fn load_inst(&mut self) -> Result<(InstMir, FuncMirView), StepResult> {
+    fn load_inst(&mut self) -> Result<(InstMir, FuncMirView<'ext>), StepResult> {
         let view = self
             .current
             .func
@@ -236,8 +236,8 @@ impl<'ctx> Interpreter<'ctx> {
 
 #[derive(Default)]
 pub struct InterpreterCtx {
-    stack: Vec<u8>,
-    frames: Vec<StackFrame>,
+    _stack: Vec<u8>,
+    _frames: Vec<StackFrame>,
     pub fuel: usize,
 }
 
@@ -260,9 +260,8 @@ impl StackFrame {
         value
     }
 
-    fn value_type(&self, value: VRef<ValueMir>, module: &FuncMirView) -> Ty {
-        let ValueMir { ty, .. } = module.values[value];
-        self.types[ty].ty
+    fn _value_type(&self, value: VRef<ValueMir>, module: &FuncMirView) -> Ty {
+        self.types[module.values[value].ty()].ty
     }
 }
 

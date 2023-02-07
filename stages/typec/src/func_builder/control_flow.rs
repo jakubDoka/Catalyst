@@ -368,7 +368,7 @@ impl TyChecker<'_> {
 
 ctl_errors! {
     #[err => "dereference of non pointer type '{ty}'"]
-    error NonPointerDereference: fatal {
+    pub error NonPointerDereference: fatal {
         #[err loc]
         ty ref: String,
         loc: SourceLoc,
@@ -377,7 +377,7 @@ ctl_errors! {
     #[err => "missing value in enum constructor"]
     #[note => "expected value of type '{ty}'"]
     #[note => "only variants containing '()' don't need value"]
-    error MissingEnumCtorValue: fatal {
+    pub error MissingEnumCtorValue: fatal {
         #[err loc]
         ty ref: String,
         loc: SourceLoc,

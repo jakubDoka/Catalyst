@@ -22,11 +22,11 @@ struct TestState {
     package_graph: PackageGraph,
     typec_ctx: TyCheckerCtx,
     ast_transfer: AstTransfer<'static>,
-    mir_ctx: MirCtx,
+    mir_ctx: ReusedMirCtx,
     arena: Arena,
-    mir_move_ctx: MirMoveCtx,
     functions: String,
     mir: Mir,
+    module: ModuleMir,
     builtin_funcs: Vec<FragRef<Func>>,
 }
 
@@ -50,25 +50,55 @@ impl Scheduler for TestState {
         let mut type_checked_funcs = bumpvec![];
         let mut type_checked_consts = bumpvec![];
         let mut ctx = TirBuilderCtx::default();
-        ty_checker!(self, module).execute(
-            &self.arena,
-            items,
-            &mut self.typec_ctx,
-            &mut ctx,
-            self.ast_transfer.activate(),
-            &mut type_checked_funcs,
-            &mut type_checked_consts,
-        );
-
-        let mir_module = self.mir.modules.next();
-        let mut checker = mir_checker!(self, module);
-        checker.funcs(mir_module, &mut type_checked_funcs);
-        if !self.resources.is_external(module) {
-            checker.display_funcs(&mut self.functions).unwrap();
+        let arena = mem::take(&mut self.arena);
+        let mut transfer = mem::take(&mut self.ast_transfer);
+        {
+            ty_checker!(self, module).execute(
+                &arena,
+                items,
+                &mut self.typec_ctx,
+                &mut ctx,
+                transfer.activate(),
+                &mut type_checked_funcs,
+                &mut type_checked_consts,
+            );
         }
 
-        self.mir_ctx.module.clear();
-        self.mir_ctx.just_compiled_funcs.clear();
+        let mir_module = self.mir.modules.next();
+        mir::compile_functions(
+            module,
+            mir_module,
+            &type_checked_funcs,
+            &mut MirCompilationCtx {
+                module_ent: &mut self.module,
+                reused: &mut self.mir_ctx,
+                mir: &mut self.mir,
+                typec: &mut self.typec,
+                interner: &mut self.interner,
+                workspace: &mut self.workspace,
+                arena: &self.arena,
+                resources: &self.resources,
+            },
+        );
+
+        if !self.resources.is_external(module) {
+            MirDisplayCtx {
+                module: &self.module,
+                interner: &self.interner,
+                typec: &self.typec,
+                resources: &self.resources,
+                mir: &self.mir,
+            }
+            .display_funcs(
+                type_checked_funcs.iter().map(|&(f, ..)| f),
+                &mut self.functions,
+            )
+            .unwrap();
+        }
+
+        self.arena = arena;
+        self.ast_transfer = transfer;
+        self.module.clear();
     }
 
     fn finally(&mut self) {

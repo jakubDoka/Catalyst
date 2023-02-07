@@ -75,13 +75,14 @@ impl Worker {
             shared.resources,
         );
 
-        let inner = ModuleMir::default();
-        let types = FuncTypes::default();
+        let mut module = ModuleMir::default();
+        let mir_func = module.dummy_func(iter::empty(), task.mir.modules.next(), Ty::U32);
         let mut builder = GenBuilder::new(
             isa,
-            &inner,
+            mir_func,
+            &module,
             &mut self.context.func,
-            &types,
+            mir_func.view(&module).types,
             &mut self.function_builder_ctx,
         );
 
@@ -318,16 +319,16 @@ impl Worker {
         }
 
         if handler.save_module() {
-            let module = task.mir.modules.push(self.state.mir_ctx.module.clone());
+            let module = task.mir.modules.push(self.state.module.clone());
             assert_eq!(module, mir_module);
-            self.state.mir_ctx.module.clear();
+            self.state.module.clear();
 
             self.fold_constants(task, shared);
         }
     }
 
     fn fold_constants(&mut self, task: &mut Task, _shared: &Shared) {
-        for constant in self.state.mir_ctx.just_compiled_consts.drain(..) {
+        for constant in self.state.just_compiled_consts.drain(..) {
             let body = task
                 .mir
                 .bodies
@@ -335,11 +336,11 @@ impl Worker {
                 .unwrap()
                 .to_owned();
 
-            let module = &task.mir.modules[body.module];
+            let module = &task.mir.modules[body.module()];
 
             let mut current = StackFrame {
                 params: default(),
-                block: body.entry,
+                block: body.entry(),
                 values: default(),
                 types: default(),
                 instr: 0,
@@ -349,7 +350,7 @@ impl Worker {
 
             current
                 .types
-                .extend(module.load_types(body.types).iter().copied());
+                .extend(body.view(module).types.values().copied());
 
             self.state.interpreter.fuel = 10_000;
 
@@ -431,30 +432,27 @@ impl Worker {
                 .get(&BodyOwner::Func(func))
                 .expect("every source code function has body")
                 .to_owned();
-            self.state.gen_resources.call_offset = body.calls.start() as usize;
-            self.state.gen_resources.drops_offset = body.drops.start() as usize;
-            let module = task.mir.modules.reference(body.module);
+            let module = task.mir.modules.reference(body.module());
             let params = task.compile_requests.ty_slices[params].to_bumpvec();
-            self.state.temp_dependant_types.clear();
-            self.state
-                .temp_dependant_types
-                .extend(module.load_types(body.types).iter().copied());
+            let view = body.view(&module);
+
             swap_mir_types(
-                body.generics,
-                &module,
+                &view,
                 &mut self.state.temp_dependant_types,
                 &params,
                 &mut task.typec,
                 &mut task.interner,
             );
+
             let mut builder = GenBuilder::new(
                 isa,
+                body,
                 &module,
                 &mut self.context.func,
-                &self.state.temp_dependant_types,
+                self.state.temp_dependant_types.as_view(),
                 &mut self.function_builder_ctx,
             );
-            let root = body.entry;
+            let root = body.entry();
             self.state.gen_resources.calls.clear();
             self.state
                 .gen_resources
@@ -481,7 +479,7 @@ impl Worker {
                 &task.resources.compile_requests,
                 shared.resources,
             )
-            .generate(signature, body.ret, body.args, &params, root, &mut builder);
+            .generate(signature, view.ret, view.args, &params, root, &mut builder);
 
             let name = task.interner.get(id.ident());
             if let Some(ref mut dump) = task.ir_dump {
@@ -620,7 +618,7 @@ impl Worker {
     fn type_check_batch(
         &mut self,
         module: VRef<Module>,
-        mir_module: FragRef<ModuleMir>,
+        module_ref: FragRef<ModuleMir>,
         grouped_items: GroupedItemsAst,
         arena: &Arena,
         task: &mut Task,
@@ -648,27 +646,24 @@ impl Worker {
         //.dbg_funcs(&type_checked_funcs)
         ;
 
-        MirChecker::new(
-            module,
-            &mut task.mir,
-            &mut task.interner,
-            &mut task.typec,
-            &mut task.resources.workspace,
-            &mut self.state.mir_ctx,
-            &mut self.state.mir_move_ctx,
+        let mut ctx = MirCompilationCtx {
+            module_ent: &mut self.state.module,
+            reused: &mut self.state.mir_ctx,
+            mir: &mut task.mir,
+            typec: &mut task.typec,
+            interner: &mut task.interner,
+            workspace: &mut task.resources.workspace,
             arena,
-            shared.resources,
-        )
-        .funcs(mir_module, &mut type_checked_funcs)
-        .consts(mir_module, &mut type_checked_consts)
-        //.dbg_funcs()
-        ;
+            resources: shared.resources,
+        };
 
-        self.state
-            .mir_ctx
-            .just_compiled_funcs
-            .drain(..)
-            .filter(|&func| task.typec[func].flags.contains(FuncFlags::ENTRY))
+        mir::compile_functions(module, module_ref, &type_checked_funcs, &mut ctx);
+        mir::compile_constants(module, module_ref, &type_checked_consts, ctx);
+
+        type_checked_funcs
+            .into_iter()
+            .filter(|&(func, ..)| task.typec[func].flags.contains(FuncFlags::ENTRY))
+            .map(|(func, ..)| func)
             .collect_into(&mut task.resources.entry_points);
 
         let source = shared.resources.modules[module].source;
@@ -739,16 +734,17 @@ pub struct WorkerState {
     scope: Scope,
     ty_checker_ctx: TyCheckerCtx,
     ast_transfer: AstTransfer<'static>,
-    mir_ctx: MirCtx,
-    mir_move_ctx: MirMoveCtx,
+    mir_ctx: ReusedMirCtx,
+    module: ModuleMir,
     // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
     // pub macro_ctx: MacroCtx<'static>,
     tir_builder_ctx: TirBuilderCtx,
-    temp_dependant_types: FuncTypes,
+    temp_dependant_types: PushMap<MirTy>,
     gen_resources: GenResources,
     jit_layouts: GenLayouts,
     gen_layouts: GenLayouts,
     interpreter: InterpreterCtx,
+    just_compiled_consts: Vec<FragRef<Const>>,
 }
 
 // #[derive(Default)]

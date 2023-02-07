@@ -100,11 +100,13 @@ impl Task {
         let mut cycle = (0..tasks.len()).cycle().fuse();
         let mut imported = bumpvec![];
         let mut type_frontier = bumpvec![];
-        let mut dependant_types = FuncTypes::default();
+        let mut dependant_types = PushMap::default();
         let mut seen = Set::default();
         while let Some((CompileRequestChild { id, func, params }, task_id)) = frontier.pop() {
             let Ok(task_id) = task_id else { continue; };
+
             let task = &mut tasks[task_id];
+
             let Func {
                 flags, visibility, ..
             } = task.typec[func];
@@ -127,24 +129,22 @@ impl Task {
                 .get(&BodyOwner::Func(func))
                 .unwrap()
                 .to_owned();
-            let module = task.mir.modules.reference(body.module);
-            dependant_types.clear();
-            dependant_types.extend(module.load_types(body.types).iter().copied());
-            let bumped_params = task.compile_requests.ty_slices[params].to_bumpvec();
+            let module = task.mir.modules.reference(body.module());
+            let view = body.view(&module);
+
             swap_mir_types(
-                body.generics,
-                &module,
+                &view,
                 &mut dependant_types,
-                &bumped_params,
+                &task.resources.compile_requests.ty_slices[params],
                 &mut task.typec,
                 &mut task.interner,
             );
 
-            let mut drops = bumpvec![cap body.drops.len()];
-            for (drop, other_id) in module.drops[body.drops].iter().zip(cycle.by_ref()) {
+            let mut drops = bumpvec![cap view.drops.len()];
+            for (drop, other_id) in view.drops.values().zip(cycle.by_ref()) {
                 let (task, other) = get_two_refs(tasks, other_id, task_id);
                 let prev = frontier.len();
-                let ty = module.values[drop.value].ty;
+                let ty = view.values[drop.value].ty();
                 type_frontier.push(dependant_types[ty].ty);
                 task.instantiate_destructors(
                     &mut type_frontier,
@@ -162,23 +162,24 @@ impl Task {
                         .extend(frontier[prev..].iter().map(|&(child, _)| child)),
                 );
             }
+
             let task = &mut tasks[task_id];
             let drops = task.compile_requests.drop_children.extend(drops);
-
             let prev = frontier.len();
 
-            module.calls[body.calls]
-                .iter()
+            view.calls
+                .values()
                 .zip(cycle.by_ref())
                 .map(|(&call, task_id)| {
                     let task = &mut tasks[task_id];
-                    let params = module.ty_params[call.params]
+                    let params = view.ty_params[call.params]
                         .iter()
                         .map(|&p| dependant_types[p].ty)
                         .collect::<BumpVec<_>>();
                     task.load_call(call.callable, params, task_id, isa, &mut seen)
                 })
                 .collect_into(&mut *frontier);
+
             let children = frontier[prev..]
                 .iter()
                 .map(|&(mut child, other_id)| {
@@ -194,6 +195,7 @@ impl Task {
                     child
                 })
                 .collect::<BumpVec<_>>();
+
             let task = &mut tasks[task_id];
             let children = task.compile_requests.children.extend(children);
             task.compile_requests.queue.push(CompileRequest {

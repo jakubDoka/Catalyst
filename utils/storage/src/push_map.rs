@@ -1,6 +1,7 @@
 use std::{
     default::default,
     fmt::Debug,
+    mem,
     ops::{Index, IndexMut},
 };
 
@@ -10,25 +11,26 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::VRef;
 
-pub struct PushMapView<'a, T> {
-    data: &'a [T],
+#[repr(transparent)]
+pub struct PushMapView<T> {
+    data: [T],
 }
 
-impl<'a, T> PushMapView<'a, T> {
-    pub fn new(base: &'a PushMap<T>, slice: VSlice<T>) -> Self {
-        Self { data: &base[slice] }
+impl<T> PushMapView<T> {
+    pub fn new(base: &PushMap<T>, slice: VSlice<T>) -> &Self {
+        unsafe { mem::transmute(&base[slice]) }
     }
 
-    pub fn get(&self, key: VRef<T>) -> &'a T {
-        &self.data[key.index()]
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
     }
 
-    pub fn get_slice(&self, key: VSlice<T>) -> &'a [T] {
-        &self.data[key.range()]
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
-impl<'a, T> Index<VRef<T>> for PushMapView<'a, T> {
+impl<T> Index<VRef<T>> for PushMapView<T> {
     type Output = T;
 
     fn index(&self, key: VRef<T>) -> &T {
@@ -36,7 +38,7 @@ impl<'a, T> Index<VRef<T>> for PushMapView<'a, T> {
     }
 }
 
-impl<'a, T> Index<VSlice<T>> for PushMapView<'a, T> {
+impl<T> Index<VSlice<T>> for PushMapView<T> {
     type Output = [T];
 
     fn index(&self, key: VSlice<T>) -> &[T] {
@@ -68,15 +70,15 @@ impl<'a, T> PushMapCheck<'a, T> {
     }
 
     pub fn push(&mut self, value: T) -> VRef<T> {
-        let id = self.map.data.len() - self.index;
-        self.map.data.push(value);
+        let id = self.map.len() - self.index;
+        self.map.push(value);
         VRef::new(id)
     }
 
     pub fn extend(&mut self, values: impl IntoIterator<Item = T>) -> VSlice<T> {
-        let id = self.map.data.len() - self.index;
+        let id = self.map.len() - self.index;
         self.map.data.extend(values);
-        VSlice::new(id..self.map.data.len() - self.index)
+        VSlice::new(id..self.map.len() - self.index)
     }
 
     pub fn finish(self) -> VSlice<T> {
@@ -88,6 +90,10 @@ impl<'a, T> PushMapCheck<'a, T> {
             .iter()
             .enumerate()
             .map(move |(i, e)| (VRef::new(slice.start() as usize + i), e))
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        self.map.pop()
     }
 }
 
@@ -137,6 +143,10 @@ impl<T: Relocated> Relocated for PushMap<T> {
 impl<T> PushMap<T> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn as_view(&self) -> &PushMapView<T> {
+        PushMapView::new(self, VSlice::new(0..self.data.len()))
     }
 
     pub fn with_capacity(capacity: usize) -> Self {

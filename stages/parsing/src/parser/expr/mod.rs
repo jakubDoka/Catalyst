@@ -194,7 +194,7 @@ ctl_errors! {
 
     #[err => "expected '=' since {something} statement must be always initialized"]
     #[info => "this may change in the future"]
-    error ExpectedAssignEqual: fatal {
+    pub error ExpectedAssignEqual: fatal {
         #[err loc]
         got: Tk,
         loc: SourceLoc,

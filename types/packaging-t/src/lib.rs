@@ -3,13 +3,6 @@
 #![feature(drain_filter)]
 #![feature(trivial_bounds)]
 
-#[macro_export]
-macro_rules! span_str {
-    ($self:expr, $span:expr) => {
-        $self.resources.sources[$self.source].span_str($span)
-    };
-}
-
 mod packaging;
 mod resources;
 

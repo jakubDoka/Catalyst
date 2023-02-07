@@ -306,7 +306,7 @@ ctl_errors! {
 
     #[err => "amount of arguments passed to the function is incorrect"]
     #[info => "expected {expected}, but got {actual}"]
-    error ArgCountMismatch: fatal {
+    pub error ArgCountMismatch: fatal {
         #[info func_loc, "because of this definition"]
         #[err loc]
         expected: usize,
