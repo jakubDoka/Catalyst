@@ -1,148 +1,149 @@
 info: mir repr of functions:
-fn [] drop(var0: param0) -> ()  { (var3: param0) ret var2
+fn [] drop(var0: param0) -> ()  { (var3: param0) ret var0
     block0 {
         drop var3
-        return var0
+        return var1
     }
 
 }
 
-fn [] drop_unused() -> ()  { () ret var4
-    block1 {
-        var6 = 97
+fn [] drop_unused() -> ()  { () ret var0
+    block0 {
+        var4 = 97
+        var3 = new(val4)
+        drop var3
+        return var1
+    }
+
+}
+
+fn [] drop_referenced() -> ()  { () ret var0
+    block0 {
+        var5 = 97
+        var4 = new(val5)
+        var3 = &var4
+        var6 = 98
+        var1 = set_char(val3, val6)
+        drop var4
+        return var1
+    }
+
+}
+
+fn [] drop_variable() -> ()  { () ret var0
+    block0 {
+        var4 = 97
+        var3 = new(val4)
+        var5 = var3
+        access var5
+        var6 = &var5
+        var7 = 99
+        var1 = set_char(val6, val7)
+        drop var5
+        return var1
+    }
+
+}
+
+fn [] drop_refed_variable() -> ()  { () ret var0
+    block0 {
+        var5 = 97
+        var4 = new(val5)
+        var3 = &var4
+        var6 = var3
+        access var6
+        var7 = 100
+        var1 = set_char(val6, val7)
+        drop var4
+        return var1
+    }
+
+}
+
+fn [] move_in_drop() -> ()  { () ret var0
+    block0 {
+        var4 = 101
+        var3 = new(val4)
+        var5 = var3
+        access var5
+        drop var5
+        var6 = 102
         var5 = new(val6)
         drop var5
-        return var0
+        return var1
     }
 
 }
 
-fn [] drop_referenced() -> ()  { () ret var7
+fn [] drop_cond() -> ()  { () ret var0
+    block0 {
+        var4 = 103
+        var3 = new(val4)
+        var5 = var3
+        var6 = 1
+        split var6 block1 block2
+    }
+
+    block1 {
+        access var5
+        var1 = drop[0\A](val5)
+        goto block3 with var1
+    }
+
     block2 {
-        var11 = 97
-        var10 = new(val11)
-        var9 = &var10
-        var12 = 98
-        var8 = set_char(val9, val12)
-        drop var10
-        return var0
+        goto block3
     }
 
-}
-
-fn [] drop_variable() -> ()  { () ret var13
     block3 {
-        var15 = 97
-        var14 = new(val15)
-        var16 = var14
-        access var16
-        var18 = &var16
-        var19 = 99
-        var17 = set_char(val18, val19)
-        drop var16
+        drop var5
+        return var1
+    }
+
+}
+
+fn [] main() -> uint  { () ret var0
+    block0 {
+        var1 = drop_unused()
+        var1 = drop_referenced()
+        var1 = drop_variable()
+        var1 = drop_refed_variable()
+        var1 = move_in_drop()
+        var1 = drop_cond()
+        var0 = 0
         return var0
     }
 
 }
 
-fn [] drop_refed_variable() -> ()  { () ret var20
-    block4 {
-        var23 = 97
-        var22 = new(val23)
-        var21 = &var22
-        var24 = var21
-        access var24
-        var26 = 100
-        var25 = set_char(val24, val26)
-        drop var22
+fn [] new(var0: char) -> 0\A  { (var3: char) ret var0
+    block0 {
+        var0 ={var4}
+        var4 = access var3
         return var0
     }
 
 }
 
-fn [] move_in_drop() -> ()  { () ret var27
-    block5 {
-        var29 = 101
-        var28 = new(val29)
-        var30 = var28
-        access var30
-        drop var30
-        var31 = 102
-        var30 = new(val31)
-        drop var30
-        return var0
+fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { (var3: ^mut 0\A, var4: char) ret var0
+    block0 {
+        access var3
+        var5 = *var3
+        var6 = var5.0
+        var6 = access var4
+        return var1
     }
 
 }
 
-fn [] drop_cond() -> ()  { () ret var32
-    block6 {
-        var34 = 103
-        var33 = new(val34)
-        var35 = var33
-        var37 = 1
-        split var37 block7 block8
-    }
-
-    block7 {
-        access var35
-        var36 = drop[0\A](val35)
-        goto block9 with var36
-    }
-
-    block8 {
-        goto block9
-    }
-
-    block9 {
-        return var0
-    }
-
-}
-
-fn [] main() -> uint  { () ret var38
-    block10 {
-        var39 = drop_unused()
-        var40 = drop_referenced()
-        var41 = drop_variable()
-        var42 = drop_refed_variable()
-        var43 = move_in_drop()
-        var44 = drop_cond()
-        var38 = 0
-        return var38
-    }
-
-}
-
-fn [] new(var0: char) -> 0\A  { (var46: char) ret var45
-    block11 {
-        var45 ={var47}
-        var47 = access var46
-        return var45
-    }
-
-}
-
-fn [] set_char(var0: ^mut 0\A, var1: char) -> ()  { (var49: ^mut 0\A, var50: char) ret var48
-    block12 {
-        access var49
-        var52 = *var49
-        var51 = var52.0
-        var51 = access var50
-        return var0
-    }
-
-}
-
-fn [] drop(var0: ^mut 0\A) -> ()  { (var54: ^mut 0\A) ret var53
-    block13 {
-        access var54
-        var57 = *var54
-        var56 = var57.0
-        var55 = putchar(val56)
-        var59 = 32
-        var58 = putchar(val59)
-        return var0
+fn [] drop(var0: ^mut 0\A) -> ()  { (var3: ^mut 0\A) ret var0
+    block0 {
+        access var3
+        var5 = *var3
+        var6 = var5.0
+        var4 = putchar(val6)
+        var8 = 32
+        var7 = putchar(val8)
+        return var1
     }
 
 }

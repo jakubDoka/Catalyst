@@ -13,10 +13,10 @@ error: amount of arguments passed to the function is incorrect
   = info: expected 1, but got 2
 
 info: mir repr of functions:
-fn [] pass(var0: param0) -> param0  { (var3: param0) ret var2
+fn [] pass(var0: param0) -> param0  { (var3: param0) ret var0
     block0 {
-        var2 = access var3
-        return var2
+        var0 = access var3
+        return var0
     }
 
 }

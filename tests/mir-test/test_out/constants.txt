@@ -1,10 +1,10 @@
 info: mir repr of functions:
-fn [] main() -> uint  { () ret var2
+fn [] main() -> uint  { () ret var0
     block0 {
         var3 = const_access SUM
         var4 = 40
-        var2 = uint - uint(val3, val4)
-        return var2
+        var0 = uint - uint(val3, val4)
+        return var0
     }
 
 }

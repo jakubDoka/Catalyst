@@ -1,5 +1,5 @@
 info: mir repr of functions:
-fn [] main() -> uint  { () ret var2
+fn [] main() -> uint  { () ret var0
     block0 {
         var4 = 0
         var5 = 0
@@ -8,8 +8,8 @@ fn [] main() -> uint  { () ret var2
     }
 
     block1 {
-        var2 = 0
-        goto block3 with var2
+        var0 = 0
+        goto block3 with var0
     }
 
     block2 {
@@ -20,17 +20,17 @@ fn [] main() -> uint  { () ret var2
     }
 
     block3 {
-        return var2
+        return var0
     }
 
     block4 {
-        var2 = 89
-        goto block3 with var2
+        var0 = 89
+        goto block3 with var0
     }
 
     block5 {
-        var2 = 1
-        goto block3 with var2
+        var0 = 1
+        goto block3 with var0
     }
 
 }
