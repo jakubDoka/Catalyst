@@ -57,8 +57,8 @@ fn [] loop_drop() -> ()  { () ret var0
     }
 
     block1 {
-        var5 = access var4
-        var1 = drop[0\A](val5)
+        access var4
+        var1 = drop[0\A](val4)
         goto block1
     }
 
@@ -72,8 +72,8 @@ fn [] loop_break_drop() -> ()  { () ret var0
     }
 
     block1 {
-        var5 = access var4
-        var1 = drop[0\A](val5)
+        access var4
+        var1 = drop[0\A](val4)
         goto block2
     }
 
@@ -96,8 +96,8 @@ fn [] linear_loop_branch_drop() -> ()  { () ret var0
     }
 
     block2 {
-        var6 = access var4
-        var1 = drop[0\A](val6)
+        access var4
+        var1 = drop[0\A](val4)
         goto block4 with var1
     }
 
@@ -110,8 +110,8 @@ fn [] linear_loop_branch_drop() -> ()  { () ret var0
     }
 
     block5 {
-        var7 = access var4
-        var1 = drop[0\A](val7)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -130,8 +130,8 @@ fn [] loop_branch_drop() -> ()  { () ret var0
     }
 
     block2 {
-        var6 = access var4
-        var1 = drop[0\A](val6)
+        access var4
+        var1 = drop[0\A](val4)
         goto block4 with var1
     }
 
@@ -162,8 +162,8 @@ fn [] loop_drop_and_move_in() -> ()  { () ret var0
     }
 
     block2 {
-        var6 = access var4
-        var1 = drop[0\A](val6)
+        access var4
+        var1 = drop[0\A](val4)
         goto block4 with var1
     }
 

@@ -51,9 +51,9 @@ fn [] main() -> uint  { () ret var0
         var26 = var25
         var27 = var5.1
         var28 = var27
-        var29 = access var26
-        var30 = access var28
-        var0 = uint + uint(val29, val30)
+        access var26
+        access var28
+        var0 = uint + uint(val26, val28)
         goto block3 with var0
     }
 

@@ -44,10 +44,10 @@ fn [] double_move() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        var5 = access var4
-        var1 = drop[0\A](val5)
-        var6 = access var4
-        var1 = drop[0\A](val6)
+        access var4
+        var1 = drop[0\A](val4)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -64,8 +64,8 @@ fn [] conditional_double_move() -> ()  { () ret var0
     }
 
     block1 {
-        var8 = access var4
-        var1 = drop[0\A](val8)
+        access var4
+        var1 = drop[0\A](val4)
         goto block3 with var1
     }
 
@@ -74,8 +74,8 @@ fn [] conditional_double_move() -> ()  { () ret var0
     }
 
     block3 {
-        var9 = access var4
-        var1 = drop[0\A](val9)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -92,8 +92,8 @@ fn [] conditional_move() -> ()  { () ret var0
     }
 
     block1 {
-        var8 = access var4
-        var1 = drop[0\A](val8)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -102,8 +102,8 @@ fn [] conditional_move() -> ()  { () ret var0
     }
 
     block3 {
-        var9 = access var4
-        var1 = drop[0\A](val9)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -113,12 +113,12 @@ fn [] reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        var5 = access var4
-        var1 = drop[0\A](val5)
+        access var4
+        var1 = drop[0\A](val4)
         access var4
         var4 ={}
-        var6 = access var4
-        var1 = drop[0\A](val6)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -128,12 +128,12 @@ fn [] conditional_reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        var5 = access var4
-        var1 = drop[0\A](val5)
+        access var4
+        var1 = drop[0\A](val4)
+        var6 = 0
         var7 = 0
-        var8 = 0
-        var6 = uint == uint(val7, val8)
-        split var6 block1 block2
+        var5 = uint == uint(val6, val7)
+        split var5 block1 block2
     }
 
     block1 {
@@ -149,8 +149,8 @@ fn [] conditional_reassign() -> ()  { () ret var0
     }
 
     block3 {
-        var9 = access var4
-        var1 = drop[0\A](val9)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -160,12 +160,12 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        var5 = access var4
-        var1 = drop[0\A](val5)
+        access var4
+        var1 = drop[0\A](val4)
+        var6 = 0
         var7 = 0
-        var8 = 0
-        var6 = uint == uint(val7, val8)
-        split var6 block1 block2
+        var5 = uint == uint(val6, val7)
+        split var5 block1 block2
     }
 
     block1 {
@@ -179,8 +179,8 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var0
     }
 
     block3 {
-        var9 = access var4
-        var1 = drop[0\A](val9)
+        access var4
+        var1 = drop[0\A](val4)
         return var1
     }
 
@@ -203,8 +203,8 @@ fn [] enum_move() -> ()  { () ret var0
     block1 {
         var11 = var6.1
         var12 = var11
-        var13 = access var12
-        var1 = drop[0\A](val13)
+        access var12
+        var1 = drop[0\A](val12)
         goto block3 with var1
     }
 
@@ -213,8 +213,8 @@ fn [] enum_move() -> ()  { () ret var0
     }
 
     block3 {
-        var14 = access var6
-        var1 = drop[0\E](val14)
+        access var6
+        var1 = drop[0\E](val6)
         return var1
     }
 
@@ -243,8 +243,8 @@ fn [] enum_just_match() -> ()  { () ret var0
     }
 
     block3 {
-        var11 = access var6
-        var1 = drop[0\E](val11)
+        access var6
+        var1 = drop[0\E](val6)
         return var1
     }
 
@@ -274,8 +274,8 @@ fn [] enum_whole_move() -> ()  { () ret var0
     }
 
     block3 {
-        var12 = access var6
-        var1 = drop[0\E](val12)
+        access var6
+        var1 = drop[0\E](val6)
         return var1
     }
 

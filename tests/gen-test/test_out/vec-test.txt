@@ -4,7 +4,6 @@ native-x86_64-unknown-linux-gnu2\main function u0:0() -> i64 uext fast {
     ss1 = explicit_slot 24
     ss2 = explicit_slot 24
     ss3 = explicit_slot 24
-    ss4 = explicit_slot 24
     sig0 = (i64 sret) fast
     sig1 = (i64, i64 uext) fast
     sig2 = (i64 sret) fast
@@ -53,30 +52,22 @@ block0:
     store aligned v16, v13+8
     store aligned v17, v13+16
     v18 = stack_addr.i64 ss3
-    v19 = stack_addr.i64 ss4
-    v20 = stack_addr.i64 ss1
-    v21 = load.i64 aligned v20
-    v22 = load.i64 aligned v20+8
-    v23 = load.i64 aligned v20+16
-    store aligned v21, v19
-    store aligned v22, v19+8
-    store aligned v23, v19+16
-    v24 = stack_addr.i64 ss4
-    call fn3(v18, v24)
-    v25 = stack_addr.i64 ss3
-    v26 = iconst.i64 0
-    v27 = call fn4(v25, v26)  ; v26 = 0
-    v28 = iconst.i64 0
-    call fn1(v27, v28)  ; v28 = 0
+    v19 = stack_addr.i64 ss1
+    call fn3(v18, v19)
+    v20 = stack_addr.i64 ss3
+    v21 = iconst.i64 0
+    v22 = call fn4(v20, v21)  ; v21 = 0
+    v23 = iconst.i64 0
+    call fn1(v22, v23)  ; v23 = 0
+    v24 = stack_addr.i64 ss3
+    v25 = iconst.i64 0
+    v26 = call fn5(v24, v25)  ; v25 = 0
+    v27 = iconst.i64 3
+    v28 = call fn6(v26, v27)  ; v27 = 3
     v29 = stack_addr.i64 ss3
-    v30 = iconst.i64 0
-    v31 = call fn5(v29, v30)  ; v30 = 0
-    v32 = iconst.i64 3
-    v33 = call fn6(v31, v32)  ; v32 = 3
-    v34 = stack_addr.i64 ss3
-    call fn7(v34)
-    v35 = load.i64 v33
-    return v35
+    call fn7(v29)
+    v30 = load.i64 v28
+    return v30
 }
 native-x86_64-unknown-linux-gnu0\0\Vec\get_ptr[uint] function u0:0(i64, i64 uext) -> i64 fast {
 block0(v0: i64, v1: i64):
@@ -103,7 +94,6 @@ block0(v0: i64, v1: i64):
     return v5
 }
 native-x86_64-unknown-linux-gnu0\0\Vec\push[0\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
-    ss0 = explicit_slot 24
     sig0 = (i64) fast
     sig1 = (i64, i64 uext) -> i64 fast
     sig2 = (i64, i64 sarg(24)) fast
@@ -128,19 +118,11 @@ block1:
 block3:
     v5 = load.i64 v0+8
     v6 = call fn1(v0, v5)
-    v7 = stack_addr.i64 ss0
-    v8 = load.i64 aligned v1
-    v9 = load.i64 aligned v1+8
-    v10 = load.i64 aligned v1+16
-    store aligned v8, v7
-    store aligned v9, v7+8
-    store aligned v10, v7+16
-    v11 = stack_addr.i64 ss0
-    call fn2(v6, v11)
-    v12 = iconst.i64 1
-    v13 = load.i64 v0+8
-    v14 = iadd v13, v12  ; v12 = 1
-    store v14, v0+8
+    call fn2(v6, v1)
+    v7 = iconst.i64 1
+    v8 = load.i64 v0+8
+    v9 = iadd v8, v7  ; v7 = 1
+    store v9, v0+8
     return
 }
 native-x86_64-unknown-linux-gnu3\write[0\Vec[uint]] function u0:0(i64, i64 sarg(24)) fast {
