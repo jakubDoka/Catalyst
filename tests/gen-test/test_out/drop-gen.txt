@@ -1,5 +1,5 @@
 info: generated ir:
-native-x86_64-unknown-linux-gnu0\main function u0:0() -> i64 fast {
+native-x86_64-unknown-linux-gnu0\main function u0:0() -> i64 uext fast {
     sig0 = () fast
     sig1 = () fast
     sig2 = () fast
@@ -24,15 +24,19 @@ block0:
     return v0  ; v0 = 0
 }
 native-x86_64-unknown-linux-gnu0\drop_cond function u0:0() fast {
+    ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
-    sig1 = (i32) fast
-    fn0 = colocated u0:16 sig0
-    fn1 = colocated u0:17 sig1
+    sig1 = (i64) fast
+    sig2 = (i32) fast
+    fn0 = colocated u0:17 sig0
+    fn1 = colocated u0:16 sig1
+    fn2 = colocated u0:18 sig2
 
 block0:
     v0 = iconst.i32 103
     v1 = call fn0(v0)  ; v0 = 103
     v3 -> v1
+    v5 -> v1
     v2 = iconst.i8 1
     brnz v2, block1  ; v2 = 1
     jump block2
@@ -40,17 +44,23 @@ block0:
 block2:
     jump block3
 
-block1:
-    call fn1(v3)
-    jump block3
-
 block3:
+    stack_store.i32 v3, ss0
+    v4 = stack_addr.i64 ss0
+    call fn1(v4)
+    jump block4
+
+block1:
+    call fn2(v5)
+    jump block4
+
+block4:
     return
 }
 native-x86_64-unknown-linux-gnu0\drop[0\A] function u0:0(i32) fast {
     ss0 = explicit_slot 8
     sig0 = (i64) fast
-    fn0 = colocated u0:18 sig0
+    fn0 = colocated u0:16 sig0
 
 block0(v0: i32):
     stack_store v0, ss0
@@ -58,8 +68,13 @@ block0(v0: i32):
     call fn0(v1)
     return
 }
+native-x86_64-unknown-linux-gnu0\0\A\new function u0:0(i32) -> i32 fast {
+block0(v0: i32):
+    v1 = iconst.i32 0
+    return v0
+}
 native-x86_64-unknown-linux-gnu0\A\drop function u0:0(i64) fast {
-    sig0 = (i32) -> i32 fast
+    sig0 = (i32) -> i32 uext fast
     fn0 = u0:19 sig0
 
 block0(v0: i64):
@@ -69,17 +84,13 @@ block0(v0: i64):
     v4 = call fn0(v3)  ; v3 = 32
     return
 }
-native-x86_64-unknown-linux-gnu0\0\A\new function u0:0(i32) -> i32 fast {
-block0(v0: i32):
-    v1 = iconst.i32 0
-    return v0
-}
 native-x86_64-unknown-linux-gnu0\move_in_drop function u0:0() fast {
     ss0 = explicit_slot 8
+    ss1 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:16 sig0
-    fn1 = colocated u0:18 sig1
+    fn0 = colocated u0:17 sig0
+    fn1 = colocated u0:16 sig1
 
 block0:
     v0 = iconst.i32 101
@@ -89,8 +100,8 @@ block0:
     call fn1(v2)
     v3 = iconst.i32 102
     v4 = call fn0(v3)  ; v3 = 102
-    stack_store v4, ss0
-    v5 = stack_addr.i64 ss0
+    stack_store v4, ss1
+    v5 = stack_addr.i64 ss1
     call fn1(v5)
     return
 }
@@ -99,9 +110,9 @@ native-x86_64-unknown-linux-gnu0\drop_refed_variable function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:16 sig0
+    fn0 = colocated u0:17 sig0
     fn1 = colocated u0:20 sig1
-    fn2 = colocated u0:18 sig2
+    fn2 = colocated u0:16 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -124,9 +135,9 @@ native-x86_64-unknown-linux-gnu0\drop_variable function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:16 sig0
+    fn0 = colocated u0:17 sig0
     fn1 = colocated u0:20 sig1
-    fn2 = colocated u0:18 sig2
+    fn2 = colocated u0:16 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -144,9 +155,9 @@ native-x86_64-unknown-linux-gnu0\drop_referenced function u0:0() fast {
     sig0 = (i32) -> i32 fast
     sig1 = (i64, i32) fast
     sig2 = (i64) fast
-    fn0 = colocated u0:16 sig0
+    fn0 = colocated u0:17 sig0
     fn1 = colocated u0:20 sig1
-    fn2 = colocated u0:18 sig2
+    fn2 = colocated u0:16 sig2
 
 block0:
     v0 = iconst.i32 97
@@ -163,8 +174,8 @@ native-x86_64-unknown-linux-gnu0\drop_unused function u0:0() fast {
     ss0 = explicit_slot 8
     sig0 = (i32) -> i32 fast
     sig1 = (i64) fast
-    fn0 = colocated u0:16 sig0
-    fn1 = colocated u0:18 sig1
+    fn0 = colocated u0:17 sig0
+    fn1 = colocated u0:16 sig1
 
 block0:
     v0 = iconst.i32 97

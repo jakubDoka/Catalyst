@@ -17,23 +17,23 @@ block0(v0: i64):
     v3 = iconst.i64 1
     jump block1(v1, v2, v3)  ; v1 = 0, v2 = 0, v3 = 1
 
-block1(v6: i64, v14: i64, v15: i64):
-    v12 -> v6
+block1(v4: i64, v14: i64, v15: i64):
+    v11 -> v4
     v8 -> v14
     v9 -> v15
     v17 -> v15
     v19 -> v15
-    v4 = iconst.i64 1
-    v5 = isub.i64 v0, v4  ; v4 = 1
-    v7 = icmp eq v6, v5
+    v5 = iconst.i64 1
+    v6 = isub.i64 v0, v5  ; v5 = 1
+    v7 = icmp eq v4, v6
     brnz v7, block2
     jump block3
 
 block3:
     v10 = iadd.i64 v8, v9
     v18 -> v10
-    v11 = iconst.i64 1
-    v13 = iadd.i64 v12, v11  ; v11 = 1
+    v12 = iconst.i64 1
+    v13 = iadd.i64 v11, v12  ; v12 = 1
     v16 -> v13
     jump block4
 
