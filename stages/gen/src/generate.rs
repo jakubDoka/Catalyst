@@ -53,10 +53,11 @@ impl Generator<'_> {
             };
         }
 
-        for (arg, pass) in args
+        for ((arg, layout), pass) in args
             .iter()
             .copied()
-            .filter(|&arg| !self.ty_layout(builder.value_ty(arg)).is_zero_sized())
+            .map(|arg| (arg, self.ty_layout(builder.value_ty(arg))))
+            .filter(|&(.., layout)| !layout.is_zero_sized())
             .collect::<BumpVec<_>>()
             .into_iter()
             .zip(pass_signature.args.drain(..))
@@ -64,6 +65,17 @@ impl Generator<'_> {
             let (value, must_load) = self
                 .load_abi_value(builder, arg, pass, &mut params)
                 .expect("there should be enough parameters");
+
+            let (value, must_load) = if builder.body.values[arg].referenced() && let ComputedValue::Value(v) = value {
+                let ss = builder.create_stack_slot(layout);
+                builder.ins().stack_store(v, ss, 0);
+                (ComputedValue::StackSlot(ss), true)
+            } else if builder.body.values[arg].mutable() && let ComputedValue::Value(v) = value {
+                let var = builder.declare_var(v, arg);
+                (ComputedValue::Variable(var), must_load)
+            } else {
+                (value, must_load)
+            };
             self.gen_resources.values[arg] = GenValue {
                 computed: Some(value),
                 offset: 0,
@@ -140,10 +152,8 @@ impl Generator<'_> {
                 };
                 self.save_value(ret, value, 0, false, builder);
             }
-            InstMir::Access(target, ret) => {
-                if let Some(ret) = ret {
-                    self.assign_value(ret, target, builder);
-                }
+            InstMir::Assign(target, ret) => {
+                self.assign_value(ret, target, builder);
             }
             InstMir::ConstAccess(r#const, ret) => self.const_access(r#const, ret, builder),
             InstMir::Call(call, ret) => self.call(call, ret, builder),
@@ -187,11 +197,24 @@ impl Generator<'_> {
         let ty = builder.value_ty(value);
         let mut funcs = self.gen_resources.drops[drop.index()].clone();
         let GenValue {
-            computed, offset, ..
+            mut computed,
+            offset,
+            must_load,
+            ..
         } = self.gen_resources.values[value];
+
+        if let Some(ComputedValue::Variable(var)) = computed && !must_load {
+            computed = Some(ComputedValue::Value(builder.use_var(var)));
+        }
+        if let Some(ComputedValue::Value(val)) = computed && !must_load {
+            let ss = builder.create_stack_slot(self.ty_layout(ty));
+            builder.ins().stack_store(val, ss, 0);
+            computed = Some(ComputedValue::StackSlot(ss));
+        }
         let value = self.ref_low(computed, ty, offset, builder);
+
         // [BE INFORMED]: we push everything in reverse order so that we
-        // iterate in deterministic order
+        // iterate in chronological order
         let mut frontier = bumpvec![DropFrame::Drop((0, ty))];
         while let Some(node) = frontier.pop() {
             let (offset, ty) = match node {
@@ -538,7 +561,13 @@ impl Generator<'_> {
         let (computed, must_load) = match mode {
             PassMode::Pair(a, ..) => {
                 // for now this is simpler
-                let ss = builder.create_stack_slot(layout);
+                let ss = if let Some(ComputedValue::StackSlot(ss)) =
+                    self.gen_resources.values[value].computed
+                {
+                    ss
+                } else {
+                    builder.create_stack_slot(layout)
+                };
                 let av = params.next()?;
                 builder.ins().stack_store(av, ss, 0);
                 let bv = params.next()?;
@@ -555,17 +584,7 @@ impl Generator<'_> {
             }
             PassMode::Indirect(..) => (ComputedValue::Value(params.next()?), true),
         };
-
-        Some(if builder.body.values[value].referenced() && let ComputedValue::Value(v) = computed {
-            let ss = builder.create_stack_slot(layout);
-            builder.ins().stack_store(v, ss, 0);
-            (ComputedValue::StackSlot(ss), true)
-        } else if builder.body.values[value].mutable() && let ComputedValue::Value(v) = computed {
-            let var = builder.declare_var(v, value);
-            (ComputedValue::Variable(var), must_load)
-        } else {
-            (computed, must_load)
-        })
+        Some((computed, must_load))
     }
 
     fn cast(&mut self, args: VRefSlice<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {

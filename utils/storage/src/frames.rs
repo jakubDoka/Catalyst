@@ -71,12 +71,12 @@ impl<T> Frames<T> {
     }
 
     pub fn frame_range(&self, n: usize) -> Range<usize> {
-        let inv = self.indices.len() - n - 1;
-        let start = self.indices[inv];
-        let end = *self
-            .indices
-            .get(inv + 1)
-            .unwrap_or(&(self.data.len() as u32));
+        let mut iter = self.indices.iter().copied().rev();
+        let end = n
+            .checked_sub(1)
+            .and_then(|n| iter.nth(n))
+            .unwrap_or(self.data.len() as u32);
+        let start = iter.next().unwrap_or(0);
         start as usize..end as usize
     }
 

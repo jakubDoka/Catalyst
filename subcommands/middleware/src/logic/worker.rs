@@ -371,8 +371,6 @@ impl Worker {
                 }
             };
 
-            dbg!(value);
-
             task.gen.save_const(constant, value)
         }
     }
@@ -425,7 +423,6 @@ impl Worker {
             compiled.push(id);
 
             let Func { signature, .. } = task.typec[func];
-
             let body = task
                 .mir
                 .bodies
@@ -665,6 +662,10 @@ impl Worker {
             .filter(|&(func, ..)| task.typec[func].flags.contains(FuncFlags::ENTRY))
             .map(|(func, ..)| func)
             .collect_into(&mut task.resources.entry_points);
+        type_checked_consts
+            .into_iter()
+            .map(|(r#const, ..)| r#const)
+            .collect_into(&mut self.state.just_compiled_consts);
 
         let source = shared.resources.modules[module].source;
         Self::check_casts(

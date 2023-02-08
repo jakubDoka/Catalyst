@@ -1167,12 +1167,12 @@ fn swap_mir_types(
     typec: &mut Typec,
     interner: &mut Interner,
 ) {
+    dependant_types.clear();
+    dependant_types.extend(view.types.values().cloned());
+
     if params.is_empty() {
         return;
     }
-
-    dependant_types.clear();
-    dependant_types.extend(view.types.values().cloned());
 
     for &mir_ty in view.generic_types {
         let ty = dependant_types[mir_ty].ty;

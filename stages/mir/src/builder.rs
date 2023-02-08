@@ -1,4 +1,4 @@
-use std::{default::default, iter, str::FromStr};
+use std::{default::default, str::FromStr};
 
 use crate::{
     ctx::{DropFrame, FuncMirCtx},
@@ -16,6 +16,31 @@ mod data;
 pub mod moves;
 
 type NodeRes = OptVRef<ValueMir>;
+#[derive(Clone, Copy)]
+enum Dest {
+    MoveTo(VRef<ValueMir>),
+    Move,
+    View,
+}
+impl Dest {
+    pub fn move_to_or(self, other: impl FnOnce() -> VRef<ValueMir>) -> VRef<ValueMir> {
+        match self {
+            Dest::MoveTo(v) => v,
+            _ => other(),
+        }
+    }
+
+    fn is_view(&self) -> bool {
+        matches!(self, Dest::View)
+    }
+
+    fn move_to(self) -> Option<VRef<ValueMir>> {
+        match self {
+            Dest::MoveTo(v) => Some(v),
+            _ => None,
+        }
+    }
+}
 
 pub struct MirCompilationCtx<'i, 'm> {
     pub module_ent: &'m mut ModuleMir,
@@ -129,9 +154,9 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         Self {
             block: None,
             depth: 0,
+            func: FuncMirCtx::new(ret, generics, module_ref, module, reused, ext.typec),
             ext,
             meta,
-            func: FuncMirCtx::new(ret, generics, module_ref, module, reused),
             reused,
         }
     }
@@ -141,7 +166,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         let entry = self.func.create_block();
         self.select_block(entry);
         let args = self.push_args(args);
-        self.node(body, None);
+        self.node(body, Dest::View);
         self.discard_scope_frame(frame);
         Some(self.func.finish(args, entry, self.reused))
     }
@@ -149,17 +174,13 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     fn push_args(&mut self, args: FragSlice<Ty>) -> BumpVec<VRef<ValueMir>> {
         self.ext.typec[args]
             .iter()
-            .map(|&ty| self.func.create_var(ty, self.reused))
+            .map(|&ty| self.func.create_var(ty, self.reused, self.ext.typec))
             .collect::<BumpVec<_>>()
     }
 
-    fn node(
-        &mut self,
-        TirNode { kind, ty, span, .. }: TirNode,
-        dest: OptVRef<ValueMir>,
-    ) -> NodeRes {
+    fn node(&mut self, TirNode { kind, ty, span, .. }: TirNode, dest: Dest) -> NodeRes {
         macro pass($dest:ident => $node:expr) {{
-            let $dest = dest.unwrap_or_else(|| self.create_value(ty));
+            let $dest = dest.move_to_or(|| self.create_value(ty));
             $node
         }}
 
@@ -191,7 +212,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         }
     }
 
-    fn block(&mut self, nodes: &[TirNode], dest: OptVRef<ValueMir>, span: Span) -> NodeRes {
+    fn block(&mut self, nodes: &[TirNode], dest: Dest, span: Span) -> NodeRes {
         let Some((&last, nodes)) = nodes.split_last() else {
             return Some(self.func.unit);
         };
@@ -199,7 +220,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         let frame = self.start_scope_frame();
         let res = (|| {
             for &node in nodes {
-                let value = self.node(node, None)?;
+                let value = self.node(node, Dest::View)?;
                 self.drop(value, node.span);
             }
 
@@ -235,17 +256,17 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     fn create_params(&mut self, params: &[Ty]) -> VSlice<VRef<MirTy>> {
-        self.func.create_params(params, self.reused)
+        self.func.create_params(params, self.reused, self.ext.typec)
     }
 
     fn field(
         &mut self,
         FieldTir { field, header }: FieldTir,
         ty: Ty,
-        dest: OptVRef<ValueMir>,
+        dest: Dest,
         span: Span,
     ) -> NodeRes {
-        let node = self.node(header, None)?;
+        let node = self.node(header, Dest::View)?;
         Some(self.gen_field(node, dest, field, ty, span))
     }
 }

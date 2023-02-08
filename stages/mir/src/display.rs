@@ -158,11 +158,8 @@ impl MirDisplayCtx<'_> {
             InstMir::Float(value, ret) => {
                 write!(buffer, "var{} = {}", ret.index(), value)?;
             }
-            InstMir::Access(access, ret) => {
-                if let Some(ret) = ret {
-                    write!(buffer, "var{} = ", ret.index())?;
-                }
-                write!(buffer, "access var{}", access.index())?;
+            InstMir::Assign(access, ret) => {
+                write!(buffer, "var{} = var{}", ret.index(), access.index())?;
             }
             InstMir::Call(call, ret) => {
                 write!(buffer, "var{} = ", ret.index())?;

@@ -129,7 +129,7 @@ impl Testable for TestState {
 fn main() {
     gen_test! {
         TestState,
-        true,
+        false,
         simple "functions" {
             #[entry];
             fn main -> uint => pass(0);

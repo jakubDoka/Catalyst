@@ -309,12 +309,12 @@ impl DebugData {
     }
 }
 
-#[derive(Serialize, Deserialize, Archive, Clone, Copy)]
+#[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
 pub enum InstMir {
     Var(VRef<ValueMir>, VRef<ValueMir>),
     Int(i64, VRef<ValueMir>),
     Float(f64, VRef<ValueMir>),
-    Access(VRef<ValueMir>, OptVRef<ValueMir>),
+    Assign(VRef<ValueMir>, VRef<ValueMir>),
     ConstAccess(FragRef<Const>, VRef<ValueMir>),
     Call(VRef<CallMir>, VRef<ValueMir>),
     Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
@@ -375,7 +375,7 @@ macro_rules! gen_flags {
         const FLAGS_LEN: usize = [$(stringify!($id)),*].len();
         const DATA_WIDTH: usize = mem::size_of::<$repr>() * 8;
 
-        gen_flags!((0, Self::FLAGS_LEN, Self::DATA_WIDTH) $($id)*);
+        gen_flags!((1, Self::FLAGS_LEN, Self::DATA_WIDTH) $($id)*);
     };
 
     (
@@ -395,6 +395,28 @@ macro_rules! gen_flags {
     };
 
     (($($tt:tt)*)) => {};
+}
+#[test]
+fn test_value_flags() {
+    let mut value = ValueMir::new(VRef::new(0));
+    assert!(!value.referenced());
+    assert!(!value.mutable());
+    assert!(!value.var());
+
+    value.mark_referenced();
+    assert!(value.referenced());
+    assert!(!value.mutable());
+    assert!(!value.var());
+
+    value.mark_mutable();
+    assert!(value.referenced());
+    assert!(value.mutable());
+    assert!(!value.var());
+
+    value.mark_var();
+    assert!(value.referenced());
+    assert!(value.mutable());
+    assert!(value.var());
 }
 
 #[derive(Serialize, Deserialize, Archive, Clone, Copy)]

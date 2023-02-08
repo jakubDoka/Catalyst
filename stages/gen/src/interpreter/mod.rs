@@ -38,14 +38,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             InstMir::Var(init, dest) => (self.current.values[init], dest),
             InstMir::Int(i, ret) => (Some(i), ret),
             InstMir::Float(f, ret) => (Some(f.to_bits() as i64), ret),
-            InstMir::Access(target, dest) => {
-                if let Some(dest) = dest {
-                    (self.current.values[target], dest)
-                } else {
-                    self.current.instr += 1;
-                    return Ok(());
-                }
-            }
+            InstMir::Assign(target, dest) => (self.current.values[target], dest),
             InstMir::ConstAccess(c, ret) => (self.gen.get_const(c), ret),
             InstMir::Call(call, ret) => (self.call(call, &func)?, ret),
             InstMir::Ctor(_, _, _) => todo!(),

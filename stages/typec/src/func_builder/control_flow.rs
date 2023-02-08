@@ -182,6 +182,7 @@ impl TyChecker<'_> {
         let ty = Self::combine_branch_types(
             elifs
                 .iter()
+                .chain(iter::once(&top))
                 .copied()
                 .map(|branch| branch.body.ty)
                 .chain(r#else.map(|r#else| r#else.ty)),

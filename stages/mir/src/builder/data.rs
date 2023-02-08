@@ -1,47 +1,38 @@
 use super::*;
 
 impl<'i, 'm> MirBuilder<'i, 'm> {
-    pub(super) fn access(
-        &mut self,
-        var: VRef<VarHeaderTir>,
-        dest: OptVRef<ValueMir>,
-        span: Span,
-    ) -> NodeRes {
+    pub(super) fn access(&mut self, var: VRef<VarHeaderTir>, dest: Dest, span: Span) -> NodeRes {
         let var = self.reused.var(var);
-        self.inst(InstMir::Access(var, dest), span);
-        if dest.is_some() {
+        if let Some(dest) = dest.move_to() {
+            self.inst(InstMir::Assign(var, dest), span);
+        }
+        if !dest.is_view() {
             self.move_out(var, span);
         }
-        Some(dest.unwrap_or(var))
+        Some(dest.move_to_or(|| var))
     }
 
-    pub(super) fn ctor(
-        &mut self,
-        fields: &[TirNode],
-        ty: Ty,
-        dest: OptVRef<ValueMir>,
-        span: Span,
-    ) -> NodeRes {
+    pub(super) fn ctor(&mut self, fields: &[TirNode], ty: Ty, dest: Dest, span: Span) -> NodeRes {
         let mir_fields = fields
             .iter()
             .map(|&field| self.create_value(field.ty))
             .collect::<BumpVec<_>>();
 
-        let final_dest = dest.unwrap_or_else(|| self.create_value(ty));
+        let final_dest = dest.move_to_or(|| self.create_value(ty));
         let pushed_fields = self
             .func
             .module
             .value_args
             .extend(mir_fields.iter().copied());
         self.inst(
-            InstMir::Ctor(pushed_fields, final_dest, dest.is_some()),
+            InstMir::Ctor(pushed_fields, final_dest, !dest.is_view()),
             span,
         );
 
         // this ensures values are dropped if construction is not completed
         let frame = self.start_scope_frame();
         for (&field, value) in fields.iter().zip(mir_fields) {
-            if let Some(value) = self.node(field, Some(value)) {
+            if let Some(value) = self.node(field, Dest::MoveTo(value)) {
                 self.reused.moves.mark_var(value);
             } else {
                 self.end_scope_frame(frame, span);
@@ -54,14 +45,14 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     pub(super) fn deref(&mut self, node: TirNode, dest: VRef<ValueMir>, span: Span) -> NodeRes {
-        let node = self.node(node, None)?;
+        let node = self.node(node, Dest::View)?;
         self.inst(InstMir::Deref(node, dest), span);
         self.connect_deref_owner(node, dest);
         Some(dest)
     }
 
     pub(super) fn r#ref(&mut self, node: TirNode, dest: VRef<ValueMir>, span: Span) -> NodeRes {
-        let node = self.node(node, None)?;
+        let node = self.node(node, Dest::View)?;
         self.handle_referencing(node, span);
         self.inst(InstMir::Ref(node, dest), span);
         Some(dest)
@@ -107,15 +98,15 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
     }
 
     pub(super) fn r#let(&mut self, LetTir { pat, value }: LetTir) -> NodeRes {
-        let value = self.node(value, None)?;
+        let value = self.node(value, Dest::View)?;
         self.bind_pattern_vars(pat, value);
         Some(self.func.unit)
     }
 
     pub(super) fn assign(&mut self, AssignTir { lhs, rhs }: AssignTir, span: Span) -> NodeRes {
-        let dest = self.node(lhs, None)?;
+        let dest = self.node(lhs, Dest::View)?;
         self.move_in(dest, span);
-        self.node(rhs, Some(dest))?;
+        self.node(rhs, Dest::MoveTo(dest))?;
         Some(self.func.unit)
     }
 }

@@ -4,7 +4,7 @@ use crate::{ctx::LoopMir, patterns::*};
 
 use super::*;
 
-pub(super) type BranchBlock = Result<VRef<BlockMir>, bool>;
+pub(super) type BranchBlock = Option<VRef<BlockMir>>;
 
 impl<'i, 'm> MirBuilder<'i, 'm> {
     pub(super) fn r#loop(&mut self, r#loop: LoopTir, dest: VRef<ValueMir>, span: Span) -> NodeRes {
@@ -20,7 +20,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         );
         self.select_block(start);
 
-        let terminated = self.node(r#loop.body, None).is_none();
+        let terminated = self.node(r#loop.body, Dest::View).is_none();
 
         if !terminated {
             self.func.mark_cycle(start);
@@ -57,7 +57,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
 
     pub(super) fn r#break(&mut self, BreakTir { loop_id, value }: BreakTir, span: Span) -> NodeRes {
         let ret = value
-            .map(|v| self.node(v, Some(self.reused[loop_id].dest)))
+            .map(|v| self.node(v, Dest::MoveTo(self.reused[loop_id].dest)))
             .transpose()?;
         let &mut end = self.reused[loop_id]
             .end
@@ -76,7 +76,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         span: Span,
     ) -> Option<VRef<ValueMir>> {
         let ret_val = value
-            .map(|&val| self.node(val, Some(self.func.ret)))
+            .map(|&val| self.node(val, Dest::MoveTo(self.func.ret)))
             .transpose()?;
 
         self.control_flow_drop(&DropFrame::BASE, span);
@@ -107,7 +107,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
 
         let args = args
             .iter()
-            .map(|&arg| self.node(arg, None))
+            .map(|&arg| self.node(arg, Dest::Move))
             .collect::<Option<BumpVec<_>>>()?;
 
         let call = self.func.call_inst(callable, params, args, dest);
@@ -131,12 +131,18 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
 
         let mut reached = bumpvec![cap 1 + elifs.len() + 1];
         let mut dest_block = None;
-        for &IfBranchTir { cond, body } in iter::once(&top).chain(elifs) {
-            let cond_value = self.node(cond, None)?;
+        let mut branch = top;
+        let mut elif_iter = elifs.iter().copied();
+        let current = loop {
+            let Some(cond_value) = self.node(branch.cond, Dest::View) else {
+                todo!("we need to do a cleanup here");
+            };
+
             let then = self.func.create_block();
             let otherwise = self.func.create_block();
+
             self.close_block(
-                cond.span,
+                branch.cond.span,
                 ControlFlowMir::Split {
                     cond: cond_value,
                     then,
@@ -144,9 +150,14 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
                 },
             );
             self.select_block(then);
-            reached.push(self.branch(body, &mut dest_block, dest, None));
+            reached.push(self.branch(branch.body, &mut dest_block, dest, None));
             self.select_block(otherwise);
-        }
+
+            match elif_iter.next() {
+                Some(elif) => branch = elif,
+                None => break otherwise,
+            }
+        };
 
         if let Some(r#else) = r#else {
             reached.push(self.branch(r#else, &mut dest_block, dest, None));
@@ -154,7 +165,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             let &mut dest = dest_block.get_or_insert_with(|| self.func.create_block());
             self.close_block(span, ControlFlowMir::Goto { dest, ret: None });
             self.discard_branch();
-            reached.push(Err(true));
+            reached.push(Some(current));
         }
 
         self.end_branching(&reached, span);
@@ -172,7 +183,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         dest: VRef<ValueMir>,
         span: Span,
     ) -> NodeRes {
-        let mir_value = self.node(value, None)?;
+        let mir_value = self.node(value, Dest::View)?;
 
         let branch_patterns = {
             let mut branch_nodes = bumpvec![];
@@ -262,20 +273,20 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
         dest: VRef<ValueMir>,
         wrapper: Option<DropFrame>,
     ) -> BranchBlock {
-        if let ret @ Some(..) = self.node(body, Some(dest)) {
+        if let ret @ Some(..) = self.node(body, Dest::MoveTo(dest)) {
             if let Some(wrapper) = wrapper {
                 self.end_scope_frame(wrapper, body.span);
             }
             let &mut dest = dest_block.get_or_insert_with(|| self.func.create_block_with_pass(ret));
             let block = self.close_block(body.span, ControlFlowMir::Goto { dest, ret });
             self.save_branch();
-            block.ok_or(false)
+            block
         } else {
             self.discard_branch();
             if let Some(wrapper) = wrapper {
                 self.discard_scope_frame(wrapper);
             }
-            Err(false)
+            None
         }
     }
 
