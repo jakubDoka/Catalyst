@@ -51,8 +51,6 @@ fn [] main() -> uint  { () ret var0
         var26 = var25
         var27 = var5.1
         var28 = var27
-        access var26
-        access var28
         var0 = uint + uint(val26, val28)
         goto block3 with var0
     }
@@ -60,7 +58,7 @@ fn [] main() -> uint  { () ret var0
     block6 {
         var23 = var5.0
         var24 = var23
-        var0 = access var24
+        var0 = var24
         goto block3 with var0
     }
 

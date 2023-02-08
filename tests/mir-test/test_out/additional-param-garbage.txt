@@ -15,7 +15,7 @@ error: amount of arguments passed to the function is incorrect
 info: mir repr of functions:
 fn [] pass(var0: param0) -> param0  { (var3: param0) ret var0
     block0 {
-        var0 = access var3
+        var0 = var3
         return var0
     }
 

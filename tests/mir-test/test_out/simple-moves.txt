@@ -44,9 +44,7 @@ fn [] double_move() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        access var4
         var1 = drop[0\A](val4)
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -64,7 +62,6 @@ fn [] conditional_double_move() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var1 = drop[0\A](val4)
         goto block3 with var1
     }
@@ -74,7 +71,6 @@ fn [] conditional_double_move() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -92,7 +88,6 @@ fn [] conditional_move() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -102,7 +97,6 @@ fn [] conditional_move() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -113,11 +107,8 @@ fn [] reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        access var4
         var1 = drop[0\A](val4)
-        access var4
         var4 ={}
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -128,7 +119,6 @@ fn [] conditional_reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        access var4
         var1 = drop[0\A](val4)
         var6 = 0
         var7 = 0
@@ -137,19 +127,16 @@ fn [] conditional_reassign() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var4 ={}
         goto block3 with var1
     }
 
     block2 {
-        access var4
         var4 ={}
         goto block3 with var1
     }
 
     block3 {
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -160,7 +147,6 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var0
     block0 {
         var3 ={}
         var4 = var3
-        access var4
         var1 = drop[0\A](val4)
         var6 = 0
         var7 = 0
@@ -169,7 +155,6 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var4 ={}
         goto block3 with var1
     }
@@ -179,7 +164,6 @@ fn [] conditional_incomplete_reassign() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var1 = drop[0\A](val4)
         return var1
     }
@@ -192,7 +176,6 @@ fn [] enum_move() -> ()  { () ret var0
         var3 = 0
         var4 ={}
         var6 = var5
-        access var6
         var7 = var6.0
         var8 = 0
         var9 = u8 == u8(val7, val8)
@@ -203,7 +186,6 @@ fn [] enum_move() -> ()  { () ret var0
     block1 {
         var11 = var6.1
         var12 = var11
-        access var12
         var1 = drop[0\A](val12)
         goto block3 with var1
     }
@@ -213,7 +195,6 @@ fn [] enum_move() -> ()  { () ret var0
     }
 
     block3 {
-        access var6
         var1 = drop[0\E](val6)
         return var1
     }
@@ -226,7 +207,6 @@ fn [] enum_just_match() -> ()  { () ret var0
         var3 = 0
         var4 ={}
         var6 = var5
-        access var6
         var7 = var6.0
         var8 = 0
         var9 = u8 == u8(val7, val8)
@@ -243,7 +223,6 @@ fn [] enum_just_match() -> ()  { () ret var0
     }
 
     block3 {
-        access var6
         var1 = drop[0\E](val6)
         return var1
     }
@@ -256,7 +235,6 @@ fn [] enum_whole_move() -> ()  { () ret var0
         var3 = 0
         var4 ={}
         var6 = var5
-        access var6
         var7 = var6.0
         var8 = 0
         var9 = u8 == u8(val7, val8)
@@ -274,7 +252,6 @@ fn [] enum_whole_move() -> ()  { () ret var0
     }
 
     block3 {
-        access var6
         var1 = drop[0\E](val6)
         return var1
     }

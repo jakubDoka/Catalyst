@@ -16,7 +16,6 @@ fn [] main() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var6 = &var4
         var1 = do_something(val6)
         goto block5 with var1

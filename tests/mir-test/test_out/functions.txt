@@ -9,7 +9,7 @@ fn [] main() -> uint  { () ret var0
 
 fn [] pass(var0: uint) -> uint  { (var3: uint) ret var0
     block0 {
-        var0 = access var3
+        var0 = var3
         return var0
     }
 

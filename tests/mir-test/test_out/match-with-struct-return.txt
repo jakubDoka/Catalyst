@@ -17,7 +17,7 @@ fn [] main() -> uint  { () ret var0
     block2 {
         var9 = var4
         var3 ={var10, var11}
-        var10 = access var9
+        var10 = var9
         var11 = 0
         goto block3 with var3
     }

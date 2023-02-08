@@ -3,7 +3,6 @@ fn [] main() -> uint  { () ret var0
     block0 {
         var3 = 0
         var4 = var3
-        access var4
         var9 = &var4
         var8 = &var9
         var7 = reference(val8)
@@ -17,7 +16,7 @@ fn [] main() -> uint  { () ret var0
 
 fn [] reference(var0: ^^uint) -> ^^uint  { (var3: ^^uint) ret var0
     block0 {
-        var0 = access var3
+        var0 = var3
         return var0
     }
 
@@ -25,7 +24,7 @@ fn [] reference(var0: ^^uint) -> ^^uint  { (var3: ^^uint) ret var0
 
 fn [] dereference(var0: uint) -> uint  { (var3: uint) ret var0
     block0 {
-        var0 = access var3
+        var0 = var3
         return var0
     }
 

@@ -32,13 +32,10 @@ fn [] double_move() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var5 = var4.0
         var1 = drop[0\A](val5)
-        access var4
         var6 = var4.1
         var1 = drop[0\A](val6)
-        access var4
         var7 = var4.0
         var1 = drop[0\A](val7)
         return var1
@@ -50,10 +47,8 @@ fn [] move_of_partially_moved() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var5 = var4.0
         var1 = drop[0\A](val5)
-        access var4
         var1 = drop[0\B](val4)
         return var1
     }
@@ -64,13 +59,10 @@ fn [] partial_move_and_assign() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var5 = var4.0
         var1 = drop[0\A](val5)
-        access var4
         var6 = var4.0
         var6 ={}
-        access var4
         var1 = drop[0\B](val4)
         return var1
     }
@@ -88,7 +80,6 @@ fn [] conditional_partial_move() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var8 = var4.0
         var1 = drop[0\A](val8)
         goto block4
@@ -109,7 +100,6 @@ fn [] conditional_partial_move() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var1 = drop[0\B](val4)
         return var1
     }
@@ -120,7 +110,6 @@ fn [] conditional_assign() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var5 = var4.0
         var1 = drop[0\A](val5)
         var7 = 0
@@ -130,7 +119,6 @@ fn [] conditional_assign() -> ()  { () ret var0
     }
 
     block1 {
-        access var4
         var9 = var4.0
         var9 ={}
         goto block3 with var1
@@ -141,7 +129,6 @@ fn [] conditional_assign() -> ()  { () ret var0
     }
 
     block3 {
-        access var4
         var1 = drop[0\B](val4)
         return var1
     }
@@ -152,10 +139,8 @@ fn [] reference_partial_move() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var5 = var4.0
         var1 = drop[0\A](val5)
-        access var4
         var6 = &var4
         var7 = var6
         return var1
@@ -167,9 +152,7 @@ fn [] partial_reference_move() -> ()  { () ret var0
     block0 {
         var3 = new()
         var4 = var3
-        access var4
         var1 = drop[0\B](val4)
-        access var4
         var6 = var4.0
         var5 = &var6
         var7 = var5

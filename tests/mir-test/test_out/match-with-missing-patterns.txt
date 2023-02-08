@@ -56,7 +56,7 @@ fn [] main() -> uint  { () ret var0
     block5 {
         var20 = var5.0
         var21 = var20
-        var0 = access var21
+        var0 = var21
         goto block3 with var0
     }
 
