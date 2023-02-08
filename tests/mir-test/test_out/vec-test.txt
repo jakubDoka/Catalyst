@@ -19,16 +19,15 @@ fn [] main() -> uint  { () ret var0
         var12 = var11
         access var12
         var13 = &var12
-        access var4
-        var1 = push[0\Vec[uint]](val13, val4)
+        var14 = access var4
+        var1 = push[0\Vec[uint]](val13, val14)
         access var12
-        var15 = &var12
-        var16 = 0
-        var14 = get_mut_ptr[0\Vec[uint]](val15, val16)
-        var17 = 3
-        var1 = push[uint](val14, val17)
+        var16 = &var12
+        var17 = 0
+        var15 = get_mut_ptr[0\Vec[uint]](val16, val17)
+        var18 = 3
+        var1 = push[uint](val15, val18)
         var0 = 0
-        drop var4
         drop var12
         return var0
     }

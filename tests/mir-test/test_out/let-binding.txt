@@ -9,12 +9,12 @@ fn [] main() -> uint  { () ret var0
         var8 = var5.1
         var9 = var8
         access var7
-        access var7
-        access var9
-        var7 = uint + uint(val7, val9)
-        access var7
-        var10 = 3
-        var0 = uint - uint(val7, val10)
+        var10 = access var7
+        var11 = access var9
+        var7 = uint + uint(val10, val11)
+        var12 = access var7
+        var13 = 3
+        var0 = uint - uint(val12, val13)
         return var0
     }
 
