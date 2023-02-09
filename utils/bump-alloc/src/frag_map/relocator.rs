@@ -269,7 +269,7 @@ impl FragMarkShard {
                         remining = iter.len();
                         let len = cursor.len();
                         let Some(split) = cursor.split_first_mut() else {
-                            break 'o len; 
+                            break 'o len;
                         };
                         (current, cursor) = split;
                         *current = addr;
@@ -586,7 +586,7 @@ where
         let new_map = DashMap::with_capacity_and_hasher(self.len(), self.hasher().clone());
         for (mut key, mut value) in mem::replace(self, new_map).into_iter() {
             if key.remap(ctx).is_none() || value.remap(ctx).is_none() {
-                ontinue;
+                continue;
             }
             self.insert(key, value);
         }
