@@ -11,9 +11,9 @@ use std::{
     },
 };
 
-use crate::{DynFragMap, Relocated};
+use crate::{DynFragMap, FragMarks, Relocated};
 
-use super::*;
+use super::{relocator::FragMarkShard, *};
 
 pub struct SyncFragMap<T, A: Allocator + Default = Global> {
     pub(crate) base: SyncFragBase<T, A>,
@@ -234,16 +234,20 @@ impl<T, A: Allocator + Default> SyncFragBase<T, A> {
 impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
     for SyncFragBase<T, A>
 {
-    fn mark(&self, FragAddr { index, thread, .. }: FragAddr, marker: &mut crate::FragRelocMarker) {
+    fn mark(
+        &self,
+        FragSliceAddr { index, thread, len }: FragSliceAddr,
+        marker: &mut crate::FragRelocMarker,
+    ) {
         let thread = &self.views[thread as usize];
         unsafe {
             ArcVecInner::data(thread.inner.load().0, thread.len.as_mut_ptr().read())
-                [index as usize]
+                [index as usize..index as usize + len as usize]
                 .mark(marker);
         }
     }
 
-    fn remap(&mut self, ctx: &crate::FragRelocMapping) {
+    fn remap(&mut self, ctx: &FragMarks) {
         self.views
             .iter()
             .flat_map(|v| unsafe { ArcVecInner::full_data_mut(v.inner.load().0) })
@@ -252,12 +256,11 @@ impl<T: Relocated + 'static, A: Allocator + Default + Send + Sync> DynFragMap
             })
     }
 
-    fn filter(&mut self, marks: &mut crate::FragMarks, mapping: &mut crate::FragRelocMapping) {
+    fn filter(&mut self, marks: &mut FragMarkShard) {
         marks.filter_base(
             self.views
                 .iter()
                 .map(|v| (v.inner.load(), |len| v.len.store(len, Ordering::Relaxed))),
-            mapping,
         )
     }
 

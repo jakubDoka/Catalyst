@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, ops::Range};
 
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 
@@ -146,5 +146,9 @@ impl FragSliceAddr {
 
     pub const fn addr(self) -> Self {
         self
+    }
+
+    pub const fn range(self) -> Range<u32> {
+        self.index..self.index + self.len as u32
     }
 }

@@ -441,7 +441,7 @@ impl Worker {
                 &mut task.interner,
             );
 
-            let mut builder = GenBuilder::new(
+            let builder = GenBuilder::new(
                 isa,
                 body,
                 &module,
@@ -476,7 +476,7 @@ impl Worker {
                 &task.resources.compile_requests,
                 shared.resources,
             )
-            .generate(signature, view.ret, view.args, &params, root, &mut builder);
+            .generate(signature, view.ret, view.args, &params, root, builder);
 
             let name = task.interner.get(id.ident());
             if let Some(ref mut dump) = task.ir_dump {

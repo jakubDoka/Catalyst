@@ -685,14 +685,11 @@ impl Typec {
                 ..default()
             };
 
-            let func = if let Some(water_drop) = Func::lookup_water_drop(id.get(interner)) {
+            if let Some(water_drop) = Func::lookup_water_drop(id.get(interner)) {
                 self.cache.funcs[water_drop] = func;
-                water_drop
             } else {
-                self.cache.funcs.push(func)
-            };
-
-            builtin_functions.push(func);
+                builtin_functions.push(self.cache.funcs.push(func));
+            }
         };
 
         fn op_to_ty(
@@ -806,8 +803,14 @@ impl Typec {
             .to_owned();
 
         let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
-
-        debug_assert_eq!(self[ty], base);
+        debug_assert_eq!(
+            self[ty],
+            base,
+            "{ty:?}, {:?}, {:?}, {:?}",
+            id.get(interner),
+            self.display_ty(base, interner),
+            self.display_ty(self[ty], interner)
+        );
 
         Pointer::new(ty, mutability, depth)
     }

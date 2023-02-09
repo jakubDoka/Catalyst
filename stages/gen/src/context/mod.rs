@@ -38,10 +38,12 @@ pub struct GenLookup {
 
 impl Relocated for GenLookup {
     fn mark(&self, marker: &mut FragRelocMarker) {
-        self.funcs.mark(marker);
+        for entry in self.funcs.iter() {
+            //entry.value().mark(marker);
+        }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.funcs.remap(ctx);
         self.consts.remap(ctx);
         Some(())
@@ -615,6 +617,10 @@ impl<'a, 'b> GenBuilder<'a, 'b> {
         self.inner.declare_var(var, repr);
         self.def_var(var, init);
         var
+    }
+
+    pub fn finalize(self) {
+        self.inner.finalize();
     }
 }
 

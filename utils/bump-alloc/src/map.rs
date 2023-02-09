@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{DashMapArchiver, Relocated};
+use crate::{DashMapArchiver, FragMarks, Relocated};
 use dashmap::{DashMap, DashSet};
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ impl<K: Relocated + Eq + Hash, V: Relocated> Relocated for CMap<K, V> {
         self.inner.mark(marker);
     }
 
-    fn remap(&mut self, ctx: &crate::FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.inner.remap(ctx)
     }
 }

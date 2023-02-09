@@ -24,7 +24,7 @@ impl Generator<'_> {
         args: &[VRef<ValueMir>],
         params: &[Ty],
         root: VRef<BlockMir>,
-        builder: &mut GenBuilder,
+        mut builder: GenBuilder,
     ) {
         builder.func.clear();
         self.gen_resources.clear();
@@ -63,7 +63,7 @@ impl Generator<'_> {
             .zip(pass_signature.args.drain(..))
         {
             let (value, must_load) = self
-                .load_abi_value(builder, arg, pass, &mut params)
+                .load_abi_value(&mut builder, arg, pass, &mut params)
                 .expect("there should be enough parameters");
 
             let (value, must_load) = if builder.body.values[arg].referenced() && let ComputedValue::Value(v) = value {
@@ -83,9 +83,9 @@ impl Generator<'_> {
             };
         }
 
-        self.block(root, entry_block, true, builder, true);
+        self.block(root, entry_block, true, &mut builder, true);
         while let Some((block, seal, ir_block)) = self.gen_resources.block_stack.pop() {
-            self.block(block, ir_block, seal, builder, false);
+            self.block(block, ir_block, seal, &mut builder, false);
         }
 
         builder.finalize();
@@ -577,7 +577,7 @@ impl Generator<'_> {
             PassMode::Single(t, ..) => {
                 let arg = params.next()?;
                 let casted = match t != layout.repr {
-                    true => builder.ins().bitcast(layout.repr, arg),
+                    true => builder.ins().bitcast(layout.repr, MemFlags::new(), arg),
                     false => arg,
                 };
                 (ComputedValue::Value(casted), false)
@@ -1010,7 +1010,7 @@ impl Generator<'_> {
                         builder.func.dfg.value_type(resized),
                         builder.func.display(),
                     );
-                    builder.ins().bitcast(layout.repr, resized)
+                    builder.ins().bitcast(layout.repr, MemFlags::new(), resized)
                 }
                 false => resized,
             }
@@ -1025,7 +1025,7 @@ impl Generator<'_> {
                 (av, Some(bv))
             }
             PassMode::Single(ty, ..) => match layout.repr != ty {
-                true => (builder.ins().bitcast(ty, source), None),
+                true => (builder.ins().bitcast(ty, MemFlags::new(), source), None),
                 false => (source, None),
             },
             PassMode::Indirect(..) => (source, None),
@@ -1094,7 +1094,9 @@ impl Generator<'_> {
         let source_repr = builder.func.dfg.value_type(source);
         let target_repr = builder.func.dfg.value_type(target);
         let casted = match source_repr.as_int() != source_repr {
-            true => builder.ins().bitcast(source_repr.as_int(), source),
+            true => builder
+                .ins()
+                .bitcast(source_repr.as_int(), MemFlags::new(), source),
             false => source,
         };
 

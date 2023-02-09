@@ -22,7 +22,8 @@
     int_roundings,
     const_option,
     const_slice_index,
-    specialization
+    specialization,
+    slice_iter_mut_as_mut_slice
 )]
 
 mod alloc_tree;
@@ -43,8 +44,8 @@ pub use {
         addr::{FragAddr, FragSliceAddr, NonMaxError, NonMaxU16, NonMaxU32, NonMaxU64},
         interner::{ident::Ident, Interner, InternerBase},
         relocator::{
-            DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMapping, FragRelocMarker,
-            FragRelocator, IsMarked, Relocated, RelocatedObjects,
+            DashMapFilterUnmarkedKeys, DynFragMap, FragMarks, FragRelocMarker, FragRelocator,
+            IsMarked, Relocated, RelocatedObjects,
         },
         sync::{FragSliceKey, SyncFragBase, SyncFragMap, SyncFragView},
         ArcSwapArchiver, DashMapArchiver, FragBase, FragMap, NoInteriorMutability,

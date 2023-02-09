@@ -1,10 +1,3 @@
-/*
-    Lets say we have separate allocation for each thread.
-    Thread can reallocate everything, but it allocation is ref-counted.
-    At each control join will thread update its local view and take views
-    of other threads. The storage items must not implement drop.
-*/
-
 use std::{
     alloc::{Allocator, Global, Layout},
     borrow::Borrow,
@@ -18,6 +11,7 @@ use std::{
     sync::atomic::{self, AtomicUsize},
 };
 
+use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
 use arc_swap::{strategy::Strategy, ArcSwapAny, RefCnt};
 use dashmap::{mapref::multiple::RefMulti, DashMap};
 use rkyv::{
@@ -28,8 +22,6 @@ use rkyv::{
     Archive, Archived, Deserialize, Fallible, Resolver, Serialize,
 };
 use smallvec::SmallVec;
-
-use crate::{FragAddr, FragRef, FragSlice, FragSliceAddr};
 
 pub mod addr;
 //pub mod objects;
@@ -225,6 +217,12 @@ impl<T, A: Allocator> FragBase<T, A> {
         Self { threads }
     }
 
+    unsafe fn slice_unique(&self, addr: FragSliceAddr) -> &[T] {
+        let FragSliceAddr { index, thread, len } = addr;
+        let thread = &self.threads[thread as usize];
+        &ArcVecInner::full_data(thread.inner.0)[index as usize..index as usize + len as usize]
+    }
+
     pub fn split(&self) -> impl Iterator<Item = FragMap<T, A>> + '_
     where
         A: Clone,
@@ -239,11 +237,11 @@ impl<T, A: Allocator> FragBase<T, A> {
             .all(|t| unsafe { ArcVecInner::is_unique(t.inner.0) })
     }
 
-    unsafe fn index_unique(&self, index: FragRef<T>) -> &T {
-        let FragAddr { index, thread, .. } = index.0;
-        let thread = &self.threads[thread as usize];
-        &ArcVecInner::full_data(thread.inner.0)[index as usize]
-    }
+    // unsafe fn index_unique(&self, index: FragAddr) -> &T {
+    //     let FragAddr { index, thread, .. } = index;
+    //     let thread = &self.threads[thread as usize];
+    //     &ArcVecInner::full_data(thread.inner.0)[index as usize]
+    // }
 }
 
 impl<T: NoInteriorMutability, A: Allocator> Index<FragRef<T>> for FragBase<T, A> {

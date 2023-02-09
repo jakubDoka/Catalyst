@@ -158,8 +158,8 @@ impl Relocated for Pointer {
         marker.mark(self.ty());
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
-        let FragAddr { index, thread, .. } = ctx.project(self.ty())?.addr();
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        let FragSliceAddr { index, thread, .. } = ctx.project(self.ty().as_slice())?.addr();
         self.index = index;
         self.thread = thread;
         Some(())

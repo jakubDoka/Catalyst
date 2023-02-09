@@ -766,7 +766,6 @@ impl Middleware {
             threads[thread].push(item);
         }
 
-        let mut frags = RelocatedObjects::default();
         frags.add_root(&mut builtin_functions);
         frags.add_static_root(&Func::ALL);
         frags.add_static_root(&Enum::ALL);

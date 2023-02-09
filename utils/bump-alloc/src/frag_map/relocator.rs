@@ -4,14 +4,14 @@ use std::{
     default::default,
     hash::{BuildHasher, Hash},
     iter, mem,
-    ops::Deref,
+    ops::{Deref, Range},
     ptr,
     sync::Arc,
     thread,
 };
 
 use dashmap::DashMap;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 use crate::*;
 
@@ -19,7 +19,7 @@ use super::{ArcVec, ArcVecInner};
 
 pub trait Relocated: Send + Sync {
     fn mark(&self, marker: &mut FragRelocMarker);
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()>;
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()>;
 }
 
 impl<'a, T: Relocated + ?Sized> Relocated for &'a mut T {
@@ -27,7 +27,7 @@ impl<'a, T: Relocated + ?Sized> Relocated for &'a mut T {
         (**self).mark(marker);
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         (**self).remap(ctx)
     }
 }
@@ -37,67 +37,28 @@ impl<'a, T: Relocated + ?Sized> Relocated for &'a T {
         (**self).mark(marker);
     }
 
-    fn remap(&mut self, _ctx: &FragRelocMapping) -> Option<()> {
-        Some(())
-    }
-}
-
-#[derive(Default)]
-pub struct FragRelocMapping {
-    marked: Map<DynFragId, DynFragId>,
-    edges: Map<(TypeId, u8), usize>,
-}
-
-impl FragRelocMapping {
-    pub fn project<T: 'static>(&self, frag: FragRef<T>) -> Option<FragRef<T>> {
-        self.marked
-            .get(&DynFragId::new(frag))
-            .and_then(|id| id.downcast())
-            .or_else(|| {
-                let FragAddr { index, thread, .. } = frag.addr();
-                let &guard = self.edges.get(&(TypeId::of::<T>(), thread))?;
-                (index as usize <= guard).then_some(frag)
-            })
-    }
-
-    pub fn project_slice<T: 'static>(&self, slice: FragSlice<T>) -> FragSlice<T> {
-        let Some(start) = slice.keys().next() else {
-            return FragSlice::empty();
-        };
-
-        let Some(projected) = self.project(start) else {
-            return FragSlice::empty();
-        };
-
-        let FragAddr { index, thread, .. } = projected.addr();
-
-        FragSlice::new(FragSliceAddr::new(index, thread, slice.len() as u16))
-    }
-
-    fn clear(&mut self) {
-        self.marked.clear();
-        self.edges.clear();
+    fn remap(&mut self, _ctx: &FragMarks) -> Option<()> {
+        None
     }
 }
 
 pub trait DynFragMap: Send + Sync {
     fn is_unique(&self) -> bool;
-    fn mark(&self, addr: FragAddr, marker: &mut FragRelocMarker);
-    fn remap(&mut self, ctx: &FragRelocMapping);
-    fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping);
+    fn mark(&self, addr: FragSliceAddr, marker: &mut FragRelocMarker);
+    fn remap(&mut self, ctx: &FragMarks);
+    fn filter(&mut self, marks: &mut FragMarkShard);
     fn item_id(&self) -> TypeId;
 }
 
 impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase<T, A> {
-    fn mark(&self, addr: FragAddr, marker: &mut FragRelocMarker) {
-        let addr = FragRef::<T>::new(addr);
+    fn mark(&self, addr: FragSliceAddr, marker: &mut FragRelocMarker) {
         // SAFETY: is_unique should be asserted
         unsafe {
-            self.index_unique(addr).mark(marker);
+            self.slice_unique(addr).mark(marker);
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) {
+    fn remap(&mut self, ctx: &FragMarks) {
         self.threads
             .iter_mut()
             .flat_map(|t| t.unique_data())
@@ -106,16 +67,13 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase
             })
     }
 
-    fn filter(&mut self, marks: &mut FragMarks, mapping: &mut FragRelocMapping) {
-        marks.filter_base(
-            self.threads.iter_mut().map(|t| {
-                (&t.inner, |len| {
-                    t.len = len;
-                    t.frozen = len * (t.frozen != 0) as usize;
-                })
-            }),
-            mapping,
-        );
+    fn filter(&mut self, marks: &mut FragMarkShard) {
+        marks.filter_base(self.threads.iter_mut().map(|t| {
+            (&t.inner, |len| {
+                t.len = len;
+                t.frozen = len * (t.frozen != 0) as usize;
+            })
+        }));
     }
 
     fn is_unique(&self) -> bool {
@@ -129,26 +87,19 @@ impl<T: Relocated + 'static, A: Allocator + Send + Sync> DynFragMap for FragBase
 
 #[derive(Default)]
 pub struct FragRelocator {
-    marked: Map<TypeId, FragMarks>,
+    marked: FragMarks,
     markers: Vec<FragRelocMarker>,
-    mapping: Vec<FragRelocMapping>,
 }
 
 impl FragRelocator {
     fn clear(&mut self) {
-        self.marked.values_mut().for_each(FragMarks::clear);
+        self.marked.clear();
         self.markers.iter_mut().for_each(FragRelocMarker::clear);
-        self.mapping.iter_mut().for_each(FragRelocMapping::clear);
     }
 
     fn collect_markers(&mut self, thread_count: usize) {
-        for marker in self.markers.iter_mut() {
-            for (&id, marks) in marker.marked.iter_mut() {
-                self.marked
-                    .entry(id)
-                    .or_default()
-                    .append(marks, thread_count);
-            }
+        for (&id, marks) in self.markers.iter_mut().flat_map(|m| m.marked.iter_mut()) {
+            self.marked.append(id, marks, thread_count);
         }
     }
 
@@ -191,7 +142,6 @@ impl FragRelocator {
 
         let threads_len = threads.len();
         self.markers.resize_with(threads_len, default);
-        self.mapping.resize_with(threads_len, default);
 
         assert!(frags.maps.iter().all(|(.., m)| m.is_unique()));
 
@@ -217,91 +167,120 @@ impl FragRelocator {
         let mut frag_vec = frags
             .maps
             .drain()
-            .map(|(id, frag)| (id, frag, self.marked.remove(&id).unwrap_or_default()))
+            .map(|(id, frag)| (id, frag, self.marked.marks.remove(&id).unwrap_or_default()))
             .collect::<Vec<_>>();
 
-        thread::scope(|scope| {
-            let iter = chunks_mut(&mut frag_vec, threads_len).zip(self.mapping.iter_mut());
+        assert!(self.marked.marks.is_empty(), "{:?}", self.marked.marks);
 
-            for (maps, mapping) in iter {
+        thread::scope(|scope| {
+            let iter = chunks_mut(&mut frag_vec, threads_len);
+
+            for maps in iter {
                 scope.spawn(move || {
                     for (.., frag, marks) in maps {
                         marks.optimize();
-                        frag.filter(marks, mapping);
+                        frag.filter(marks);
                     }
                 });
             }
         });
 
-        self.fold_mapping();
+        let mut frag_vec = frag_vec
+            .into_iter()
+            .map(|(id, frag, marks)| {
+                self.marked.marks.insert(id, marks);
+                (id, frag)
+            })
+            .collect::<Vec<_>>();
 
         thread::scope(|scope| {
-            let folded_mapping = &self.mapping[0];
             let iter = chunks_mut(&mut frag_vec, threads_len)
                 .zip(threads.iter_mut())
                 .zip(chunks_mut(&mut frags.roots, threads_len))
                 .zip(chunks_mut(&mut frags.cleared, threads_len));
 
             for (((maps, thread), roots), cleared) in iter {
-                scope.spawn(move || {
-                    for (.., frag, _) in maps {
-                        frag.remap(folded_mapping);
+                scope.spawn(|| {
+                    for (.., frag) in maps {
+                        frag.remap(&self.marked);
                     }
                     for root in thread {
-                        root.remap(folded_mapping);
+                        root.remap(&self.marked);
                     }
                     for root in roots {
-                        root.remap(folded_mapping);
+                        root.remap(&self.marked);
                     }
                     for clear in cleared {
-                        clear.remap(folded_mapping);
+                        clear.remap(&self.marked);
                     }
                 });
             }
         });
 
-        frag_vec.into_iter().for_each(|(id, frag, marks)| {
-            frags.maps.insert(id, frag);
-            self.marked.insert(id, marks);
-        });
-    }
-
-    fn fold_mapping(&mut self) {
-        let (first, rest) = self.mapping.split_first_mut().unwrap();
-        let needed_cap = rest.iter().map(|m| m.marked.len()).sum();
-        first.marked.reserve(needed_cap);
-        for mapping in rest {
-            first.marked.extend(mapping.marked.drain());
-            first.edges.extend(mapping.edges.drain());
-        }
+        frags.maps.extend(frag_vec.into_iter());
     }
 }
 
-#[derive(Default)]
-pub struct FragMarks {
-    marks: Vec<Vec<FragAddr>>,
-    temp: Vec<FragAddr>,
+#[derive(Default, Debug)]
+pub struct FragMarkShard {
+    data: Vec<Vec<(u32, Range<u32>)>>,
 }
 
-impl FragMarks {
-    fn append(&mut self, data: &mut Set<FragAddr>, thread_count: usize) {
-        self.marks.resize(thread_count, Vec::new());
-        for addr in data.drain() {
-            let thread = addr.thread as usize;
-            self.marks[thread].push(addr);
+impl FragMarkShard {
+    fn project<T: 'static>(&self, slice: FragSlice<T>) -> Option<FragSlice<T>> {
+        let FragSliceAddr { thread, index, len } = slice.0;
+        let range_index = self.data[thread as usize]
+            .binary_search_by_key(&index, |(.., r)| r.start)
+            .map_or_else(|i| i.checked_sub(1), Some)?;
+        let (reloc_index, range) = self.data[thread as usize].get(range_index)?.clone();
+        let c = range.contains(&index) || len == 0;
+        let index = index.checked_sub(range.start)?;
+        if index + len as u32 > range.len() as u32 {
+            return None;
         }
+        assert!(c, "{:?} {index:?} {len}", self.data[thread as usize]);
+        let index = index + reloc_index;
+        Some(FragSlice::new(FragSliceAddr { thread, index, len }))
     }
 
     fn optimize(&mut self) {
-        for thread in self.marks.iter_mut() {
-            self.temp.clear();
-            thread.sort_unstable();
+        fn union(a: Range<u32>, b: Range<u32>) -> Option<Range<u32>> {
+            let [a, b] = match a.start > b.start {
+                true => [b, a],
+                false => [a, b],
+            };
+
+            (a.end >= b.start).then(|| a.start..b.end.max(a.end))
+        }
+
+        for thread in self.data.iter_mut() {
+            thread.sort_unstable_by(|a, b| a.1.start.cmp(&b.1.start));
             thread.dedup();
-            thread
-                .group_by(|&a, &b| b.right_after(a))
-                .flat_map(|g| [g[0], g[g.len() - 1]])
-                .collect_into(&mut self.temp);
-            mem::swap(thread, &mut self.temp);
+
+            let Some((mut current, mut cursor)) = thread.split_first_mut() else {
+                continue;
+            };
+            let mut remining = cursor.len();
+            let remine = 'o: loop {
+                let len = cursor.len();
+                let mut iter = cursor[len - remining..].iter();
+                for addr in iter.by_ref().cloned() {
+                    let Some(joined) = union(current.1.clone(), addr.1.clone()) else {
+                        remining = iter.len();
+                        let len = cursor.len();
+                        let Some(split) = cursor.split_first_mut() else {
+                            break 'o len; 
+                        };
+                        (current, cursor) = split;
+                        *current = addr;
+                        continue 'o;
+                    };
+                    current.1 = joined;
+                }
+                break len;
+            };
+            let new_len = thread.len() - remine;
+            thread.truncate(new_len);
         }
     }
 
@@ -314,60 +293,45 @@ impl FragMarks {
     >(
         &mut self,
         base_threads: impl Iterator<Item = (V, S)>,
-        mapping: &mut FragRelocMapping,
     ) {
-        for (id, (marks, (thread, len_setter))) in self.marks.iter().zip(base_threads).enumerate() {
-            let map = |index: usize| DynFragId {
-                repr: FragAddr::new(index as u32, id as u8),
-                type_id: TypeId::of::<T>(),
-            };
-
+        for (marks, (thread, len_setter)) in self.data.iter_mut().zip(base_threads) {
             assert!(unsafe { ArcVecInner::is_unique(thread.0) });
             let (base, current_len) = unsafe {
                 let slice = ArcVecInner::full_data_mut(thread.0);
                 (slice.as_mut_ptr(), slice.len())
             };
 
-            // drop all unmarked items
-            let reminder = iter::once((
-                marks.last().map_or(FragAddr::new(0, 0), |&r| r),
-                FragAddr::new(current_len as u32, 0),
-            ));
+            let extras: SmallVec<[Range<u32>; 2]> = match marks.as_slice() {
+                [first, .., last] => {
+                    smallvec![0..first.1.start, last.1.end..current_len as u32]
+                }
+                [first] => smallvec![0..first.1.start, first.1.end..current_len as u32],
+                [] => smallvec![0..current_len as u32],
+            };
 
-            for (start, end) in marks
-                .get(1..)
-                .map(|s| s.chunks_exact(2))
-                .into_iter()
-                .flatten()
-                .map(|s| (s[0], s[1]))
-                .chain(reminder)
+            for range in marks
+                .windows(2)
+                .map(|s| s[0].1.end..s[1].1.start)
+                .chain(extras)
             {
-                // drop all items between start and end
-                for index in start.index + 1..end.index {
-                    unsafe {
-                        base.add(index as usize).drop_in_place();
-                    }
+                unsafe {
+                    ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
+                        base.add(range.start as usize),
+                        range.len() as usize,
+                    ));
                 }
             }
 
-            // get rid of gaps
             let mut cursor = 0;
-            for (start, end) in marks.chunks_exact(2).map(|s| (s[0], s[1])) {
-                let len = (end.index - start.index) as usize + 1;
+            for (index, range) in marks.iter_mut() {
+                let len = range.len() as usize;
                 unsafe {
-                    let source = base.add(start.index as usize);
+                    let source = base.add(range.start as usize);
                     let offset = base.add(cursor);
                     if offset != source {
                         ptr::copy(source, offset, len);
-                        let iter = (start.index as usize..=end.index as usize)
-                            .map(map)
-                            .zip((cursor..cursor + len).map(map));
-                        mapping.marked.extend(iter)
-                    } else {
-                        mapping
-                            .edges
-                            .insert((TypeId::of::<T>(), id as u8), end.index as usize);
                     }
+                    *index = cursor as u32;
                     cursor += len;
                 }
             }
@@ -377,13 +341,39 @@ impl FragMarks {
                 ptr::addr_of_mut!((*thread.0.as_ptr()).len).write(cursor);
             }
         }
+    }
 
-        self.clear();
+    fn append(&mut self, data: &mut Set<FragSliceAddr>, thread_count: usize) {
+        self.data.resize(thread_count, Vec::new());
+        for addr in data.drain() {
+            let thread = addr.thread as usize;
+            self.data[thread].push((0, addr.range()));
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct FragMarks {
+    marks: Map<TypeId, FragMarkShard>,
+}
+
+impl FragMarks {
+    pub fn project<T: 'static>(&self, slice: FragSlice<T>) -> Option<FragSlice<T>> {
+        self.marks.get(&TypeId::of::<T>())?.project(slice)
+    }
+
+    fn append(&mut self, tid: TypeId, data: &mut Set<FragSliceAddr>, thread_count: usize) {
+        self.marks
+            .entry(tid)
+            .or_default()
+            .append(data, thread_count);
     }
 
     fn clear(&mut self) {
-        self.marks.iter_mut().for_each(Vec::clear);
-        self.temp.clear();
+        self.marks
+            .values_mut()
+            .flat_map(|s| &mut s.data)
+            .for_each(Vec::clear);
     }
 }
 
@@ -421,8 +411,8 @@ impl<'a> RelocatedObjects<'a> {
 
 #[derive(Default)]
 pub struct FragRelocMarker {
-    marked: Map<TypeId, Set<FragAddr>>,
-    frontier: Vec<(TypeId, FragAddr)>,
+    marked: Map<TypeId, Set<FragSliceAddr>>,
+    frontier: Vec<(TypeId, FragSliceAddr)>,
 }
 
 impl FragRelocMarker {
@@ -445,27 +435,27 @@ impl FragRelocMarker {
     pub fn is_marked<T: 'static>(&self, frag: FragRef<T>) -> bool {
         self.marked
             .get(&TypeId::of::<T>())
-            .filter(|s| s.contains(&frag.0))
+            .filter(|s| s.contains(&frag.0.as_slice()))
             .is_some()
     }
 
     pub fn mark<T: 'static>(&mut self, frag: FragRef<T>) -> bool {
-        self.marked
-            .entry(TypeId::of::<T>())
-            .or_default()
-            .insert(frag.0)
-            .then(|| self.frontier.push((TypeId::of::<T>(), frag.0)))
-            .is_some()
+        if std::any::type_name::<T>().ends_with("Struct") && frag.0.index == 7 {
+            panic!()
+        }
+        self.mark_slice(frag.as_slice())
     }
 
-    pub fn mark_slice<T: 'static>(&mut self, frags: FragSlice<T>) {
-        let entry = self.marked.entry(TypeId::of::<T>()).or_default();
-        frags
-            .0
-            .keys()
-            .filter(|&f| entry.insert(f))
-            .map(|f| (TypeId::of::<T>(), f))
-            .collect_into(&mut self.frontier);
+    pub fn mark_slice<T: 'static>(&mut self, frags: FragSlice<T>) -> bool {
+        self.marked
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| {
+                dbg!(TypeId::of::<T>(), std::any::type_name::<T>());
+                default()
+            })
+            .insert(frags.0)
+            .then(|| self.frontier.push((TypeId::of::<T>(), frags.0)))
+            .is_some()
     }
 
     fn clear(&mut self) {
@@ -473,54 +463,6 @@ impl FragRelocMarker {
         self.frontier.clear();
     }
 }
-
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-struct DynFragId {
-    repr: FragAddr,
-    type_id: TypeId,
-}
-
-impl DynFragId {
-    fn new<T: 'static>(frag: FragRef<T>) -> Self {
-        Self {
-            repr: frag.0,
-            type_id: TypeId::of::<T>(),
-        }
-    }
-
-    fn downcast<T: 'static>(self) -> Option<FragRef<T>> {
-        if self.type_id == TypeId::of::<T>() {
-            Some(FragRef::new(self.repr))
-        } else {
-            None
-        }
-    }
-}
-
-// #[test]
-// fn bench_thread_spawn() {
-
-//     let now = Instant::now();
-//     let threads = (0..10)
-//         .map(|_| thread::spawn(|| ()))
-//         .collect::<Vec<_>>();
-//     let el = now.elapsed();
-
-//     threads.into_iter().for_each(|t| t.join().unwrap());
-
-//     let le2 = now.elapsed();
-
-//     println!("spawn: {:?}", el);
-//     println!("join: {:?}", le2);
-
-//     let now = Instant::now();
-//     thread::scope(|scope| {
-//         for _ in 0..10 {
-//             scope.spawn(|| ());
-//         }
-//     });
-//     println!("scope: {:?}", now.elapsed());
-// }
 
 #[macro_export]
 macro_rules! derive_relocated {
@@ -530,7 +472,7 @@ macro_rules! derive_relocated {
             fn mark(&self, marker: &mut $crate::FragRelocMarker) {
                 $(self.$field.mark(marker);)*
             }
-            fn remap(&mut self, ctx: &$crate::FragRelocMapping) -> Option<()> {
+            fn remap(&mut self, ctx: &$crate::FragMarks) -> Option<()> {
                 $(self.$field.remap(ctx)?;)*
                 Some(())
             }
@@ -547,7 +489,7 @@ macro_rules! derive_relocated {
                     },)*
                 }
             }
-            fn remap(&mut self, ctx: &$crate::FragRelocMapping) -> Option<()> {
+            fn remap(&mut self, ctx: &$crate::FragMarks) -> Option<()> {
                 use $ty::*;
                 match self {
                     $($pat => {
@@ -565,8 +507,8 @@ impl<T: 'static> Relocated for FragRef<T> {
         marker.mark(*self);
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
-        *self = ctx.project(*self)?;
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        self.0.index = ctx.project(self.as_slice())?.0.index;
         Some(())
     }
 }
@@ -576,8 +518,8 @@ impl<T: 'static> Relocated for FragSlice<T> {
         marker.mark_slice(*self);
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
-        *self = ctx.project_slice(*self);
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
+        *self = ctx.project(*self)?;
         Some(())
     }
 }
@@ -588,7 +530,7 @@ impl<A: Relocated, B: Relocated> Relocated for (A, B) {
         self.1.mark(marker);
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.0.remap(ctx)?;
         self.1.remap(ctx)
     }
@@ -622,7 +564,7 @@ where
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.0.remap(ctx)
     }
 }
@@ -640,11 +582,11 @@ where
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         let new_map = DashMap::with_capacity_and_hasher(self.len(), self.hasher().clone());
         for (mut key, mut value) in mem::replace(self, new_map).into_iter() {
             if key.remap(ctx).is_none() || value.remap(ctx).is_none() {
-                continue;
+                ontinue;
             }
             self.insert(key, value);
         }
@@ -659,7 +601,7 @@ impl<T: Relocated> Relocated for [T] {
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         for item in self {
             item.remap(ctx)?;
         }
@@ -675,7 +617,7 @@ impl<T: Relocated> Relocated for Option<T> {
         }
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         if let Some(item) = self {
             item.remap(ctx)?;
         }
@@ -693,7 +635,7 @@ macro_rules! impl_relocated_for_deref {
                     (**self).mark(marker);
                 }
 
-                fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+                fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
                     (**self).remap(ctx)
                 }
             }
@@ -712,7 +654,7 @@ macro_rules! impl_blanc_relocated {
         $(
             impl Relocated for $ty {
                 fn mark(&self, _: &mut FragRelocMarker) {}
-                fn remap(&mut self, _: &FragRelocMapping) -> Option<()> { Some(()) }
+                fn remap(&mut self, _: &FragMarks) -> Option<()> { Some(()) }
             }
         )*
     };
@@ -727,7 +669,7 @@ impl<T: Relocated> Relocated for Arc<T> {
         (**self).mark(marker);
     }
 
-    fn remap(&mut self, ctx: &FragRelocMapping) -> Option<()> {
+    fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         let s = Arc::get_mut(self).expect("arc was expected to be unique for remapping");
         s.remap(ctx)
     }

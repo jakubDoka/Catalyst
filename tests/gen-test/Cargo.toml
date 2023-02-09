@@ -19,7 +19,7 @@ storage = { version = "0.1.0", path = "../../utils/storage" }
 testing = { version = "0.1.0", path = "../../utils/testing" }
 typec = { version = "0.1.0", path = "../../stages/typec" }
 typec-t = { version = "0.1.0", path = "../../types/typec-t" }
-cranelift-codegen = "0.90.0"
-cranelift-frontend = "0.90.0"
+cranelift-codegen = "0.92.0"
+cranelift-frontend = "0.92.0"
 target-lexicon = "0.12.4"
 cc = "1.0.73"
