@@ -317,7 +317,7 @@ pub enum InstMir {
     Assign(VRef<ValueMir>, VRef<ValueMir>),
     ConstAccess(FragRef<Const>, VRef<ValueMir>),
     Call(VRef<CallMir>, VRef<ValueMir>),
-    Ctor(VRefSlice<ValueMir>, VRef<ValueMir>, bool),
+    Ctor(VRefSlice<ValueMir>, VRef<ValueMir>),
     Deref(VRef<ValueMir>, VRef<ValueMir>),
     Ref(VRef<ValueMir>, VRef<ValueMir>),
     Field(VRef<ValueMir>, u32, VRef<ValueMir>),
@@ -439,5 +439,26 @@ impl ValueMir {
 
     pub fn new(ty: VRef<MirTy>) -> Self {
         Self { ty }
+    }
+}
+
+pub fn swap_mir_types(
+    view: &FuncMirView,
+    dependant_types: &mut PushMap<MirTy>,
+    params: &[Ty],
+    typec: &mut Typec,
+    interner: &mut Interner,
+) {
+    dependant_types.clear();
+    dependant_types.extend(view.types.values().cloned());
+
+    if params.is_empty() {
+        return;
+    }
+
+    for &mir_ty in view.generic_types {
+        let ty = dependant_types[mir_ty].ty;
+        let new_ty = typec.instantiate(ty, params, interner);
+        dependant_types[mir_ty].ty = new_ty;
     }
 }

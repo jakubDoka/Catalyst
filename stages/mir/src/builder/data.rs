@@ -24,10 +24,7 @@ impl<'i, 'm> MirBuilder<'i, 'm> {
             .module
             .value_args
             .extend(mir_fields.iter().copied());
-        self.inst(
-            InstMir::Ctor(pushed_fields, final_dest, !dest.is_view()),
-            span,
-        );
+        self.inst(InstMir::Ctor(pushed_fields, final_dest), span);
 
         // this ensures values are dropped if construction is not completed
         let frame = self.start_scope_frame();

@@ -342,6 +342,7 @@ impl Worker {
                 params: default(),
                 block: body.entry(),
                 values: default(),
+                offsets: default(),
                 types: default(),
                 instr: 0,
                 frame_base: 0,
@@ -352,10 +353,10 @@ impl Worker {
                 .types
                 .extend(body.view(module).types.values().copied());
 
-            self.state.interpreter.fuel = 10_000;
+            let prepared_ctx = self.state.interpreter.prepare(1 << 20, 10_000);
 
             let mut interp = Interpreter {
-                ctx: &mut self.state.interpreter,
+                ctx: prepared_ctx,
                 typec: &mut task.typec,
                 interner: &mut task.interner,
                 mir: &mut task.mir,
@@ -366,7 +367,7 @@ impl Worker {
 
             let value = match interp.interpret() {
                 Ok(v) => v,
-                Err(InterpreterError::OutOfFuel) => {
+                Err(..) => {
                     todo!();
                 }
             };

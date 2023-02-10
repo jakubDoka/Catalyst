@@ -1,5 +1,7 @@
 use cranelift_codegen::ir::{AbiParam, StackSlotData, StackSlotKind};
 
+use crate::interpreter::IValue;
+
 use {
     crate::*,
     cranelift_codegen::{
@@ -37,11 +39,7 @@ pub struct GenLookup {
 }
 
 impl Relocated for GenLookup {
-    fn mark(&self, marker: &mut FragRelocMarker) {
-        for entry in self.funcs.iter() {
-            //entry.value().mark(marker);
-        }
-    }
+    fn mark(&self, _: &mut FragRelocMarker) {}
 
     fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.funcs.remap(ctx);
@@ -52,7 +50,7 @@ impl Relocated for GenLookup {
 
 #[derive(Serialize, Archive, Deserialize)]
 pub struct ComputedConst {
-    value: Option<IValue>,
+    value: Option<IRegister>,
 }
 
 derive_relocated!(
@@ -121,11 +119,25 @@ impl Gen {
     }
 
     pub fn save_const(&mut self, id: FragRef<Const>, value: Option<IValue>) {
-        self.lookup.consts.insert(id, ComputedConst { value });
+        match value {
+            Some(IValue::Register(reg)) => {
+                self.lookup
+                    .consts
+                    .insert(id, ComputedConst { value: Some(reg) });
+            }
+            Some(_) => todo!(),
+            None => {
+                self.lookup.consts.insert(id, ComputedConst { value: None });
+            }
+        }
     }
 
     pub fn get_const(&self, id: FragRef<Const>) -> Option<IValue> {
-        self.lookup.consts.get(&id).and_then(|value| value.value)
+        self.lookup
+            .consts
+            .get(&id)
+            .and_then(|value| value.value)
+            .map(IValue::Register)
     }
 
     pub fn get_or_insert_func(

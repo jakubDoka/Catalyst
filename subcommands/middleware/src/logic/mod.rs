@@ -766,6 +766,7 @@ impl Middleware {
             threads[thread].push(item);
         }
 
+        let mut frags = RelocatedObjects::default();
         frags.add_root(&mut builtin_functions);
         frags.add_static_root(&Func::ALL);
         frags.add_static_root(&Enum::ALL);
@@ -1156,27 +1157,6 @@ impl<'a> DiagnosticView<'a> {
                 diagnostics + "\n\n Compilation failed."
             }
         })
-    }
-}
-
-fn swap_mir_types(
-    view: &FuncMirView,
-    dependant_types: &mut PushMap<MirTy>,
-    params: &[Ty],
-    typec: &mut Typec,
-    interner: &mut Interner,
-) {
-    dependant_types.clear();
-    dependant_types.extend(view.types.values().cloned());
-
-    if params.is_empty() {
-        return;
-    }
-
-    for &mir_ty in view.generic_types {
-        let ty = dependant_types[mir_ty].ty;
-        let new_ty = typec.instantiate(ty, params, interner);
-        dependant_types[mir_ty].ty = new_ty;
     }
 }
 

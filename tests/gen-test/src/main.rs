@@ -144,6 +144,15 @@ fn main() {
             fn main -> uint => SUM - 40;
         }
 
+        simple "constants-with-calls" {
+            fn add(a: uint, b: uint) -> uint => a + b;
+            break;
+            const NUM: uint = add(10, 10);
+            const SUM: uint = add(NUM, NUM);
+            #[entry];
+            fn main -> uint => SUM - 40;
+        }
+
         simple "recursion" {
             #[entry];
             fn main -> uint => 0;

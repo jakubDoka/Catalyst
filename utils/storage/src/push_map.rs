@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     default::default,
     fmt::Debug,
     mem,
@@ -27,6 +28,22 @@ impl<T> PushMapView<T> {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+}
+
+impl<T: Clone> ToOwned for PushMapView<T> {
+    type Owned = PushMap<T>;
+
+    fn to_owned(&self) -> Self::Owned {
+        PushMap {
+            data: self.data.to_owned(),
+        }
+    }
+}
+
+impl<T> Borrow<PushMapView<T>> for PushMap<T> {
+    fn borrow(&self) -> &PushMapView<T> {
+        self.as_view()
     }
 }
 

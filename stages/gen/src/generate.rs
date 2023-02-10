@@ -11,7 +11,7 @@ use storage::*;
 
 use typec_t::*;
 
-use crate::{context::ComputedValue, *};
+use crate::{context::ComputedValue, interpreter::IValue, *};
 
 pub mod function_loading;
 pub mod size_calc;
@@ -157,9 +157,7 @@ impl Generator<'_> {
             }
             InstMir::ConstAccess(r#const, ret) => self.const_access(r#const, ret, builder),
             InstMir::Call(call, ret) => self.call(call, ret, builder),
-            InstMir::Ctor(fields, ret, needs_instance) => {
-                self.constructor(fields, ret, needs_instance, builder)
-            }
+            InstMir::Ctor(fields, ret) => self.constructor(fields, ret, builder),
             InstMir::Deref(target, ret) => self.deref(target, ret, builder),
             InstMir::Ref(target, ret) => self.r#ref(target, ret, builder),
             InstMir::Field(header, field, ret) => self.field(header, field, ret, builder),
@@ -180,7 +178,10 @@ impl Generator<'_> {
         if layout.is_zero_sized() {
             return;
         }
-        let bits = self.gen.get_const(r#const).unwrap();
+        let bits = match self.gen.get_const(r#const) {
+            Some(IValue::Register(v)) => v,
+            _ => todo!(),
+        };
         let value = match layout.repr {
             ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64 => {
                 builder.ins().iconst(layout.repr, bits as i64)
@@ -386,17 +387,6 @@ impl Generator<'_> {
     }
 
     fn r#ref(&mut self, target: VRef<ValueMir>, ret: VRef<ValueMir>, builder: &mut GenBuilder) {
-        if !self.is_representable(target, builder) {
-            self.save_value(
-                ret,
-                builder.ins().iconst(self.gen_layouts.ptr_ty, 1),
-                0,
-                false,
-                builder,
-            );
-            return;
-        }
-
         let GenValue {
             computed,
             offset,
@@ -471,7 +461,6 @@ impl Generator<'_> {
         &mut self,
         fields: VRefSlice<ValueMir>,
         ret: VRef<ValueMir>,
-        _needs_instance: bool,
         builder: &mut GenBuilder,
     ) {
         let layout = self.ty_layout(builder.value_ty(ret));
