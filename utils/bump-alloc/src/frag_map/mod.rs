@@ -24,8 +24,8 @@ use rkyv::{
 use smallvec::SmallVec;
 
 pub mod addr;
-//pub mod objects;
 pub mod interner;
+// pub mod objects;
 pub mod relocator;
 pub mod sync;
 

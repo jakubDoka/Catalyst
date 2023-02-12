@@ -323,11 +323,11 @@ impl Worker {
             assert_eq!(module, mir_module);
             self.state.module.clear();
 
-            self.fold_constants(task, shared);
+            self.fold_constants(source, task, shared);
         }
     }
 
-    fn fold_constants(&mut self, task: &mut Task, _shared: &Shared) {
+    fn fold_constants(&mut self, _source: VRef<Source>, task: &mut Task, shared: &Shared) {
         for constant in self.state.just_compiled_consts.drain(..) {
             let body = task
                 .mir
@@ -367,12 +367,25 @@ impl Worker {
 
             let value = match interp.interpret() {
                 Ok(v) => v,
-                Err(..) => {
-                    todo!();
+                Err(err) => {
+                    let snip = TodoSnippet {
+                        message: format!("Failed to fold constant: {:?}", err),
+                        loc: task.typec[constant]
+                            .loc
+                            .source_loc(&task.typec, shared.resources),
+                    };
+                    task.workspace.push(snip);
+                    continue;
                 }
             };
 
-            task.gen.save_const(constant, value)
+            task.gen.save_const(
+                constant,
+                value,
+                &mut self.state.jit_layouts,
+                &mut task.typec,
+                &mut task.interner,
+            );
         }
     }
 

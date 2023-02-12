@@ -153,6 +153,61 @@ fn main() {
             fn main -> uint => SUM - 40;
         }
 
+        simple "constants-control-flow" {
+            fn fib(a: uint) -> uint => match a {
+                0 => 0;
+                1 => 1;
+                _ => fib(a - 1) + fib(a - 2);
+            };
+
+            fn iterative_fib(a: uint) -> uint {
+                let mut a = a;
+                let mut b = 0;
+                let mut c = 1;
+                loop if a == 0 => break else {
+                    let d = b;
+                    b = c;
+                    c = d + c;
+                    a = a - 1;
+                };
+                b
+            };
+
+            fn iter_recur_fib(prev: uint, acc: uint, c: uint) -> uint =>;
+                if c == 0 => prev;
+                else => iter_recur_fib(acc, prev + acc, c - 1);
+
+            break;
+
+            const NUM: uint = iter_recur_fib(0, 1, 10) - iterative_fib(10) + fib(10);
+            #[entry];
+            fn main -> uint => NUM - 55;
+        }
+
+        simple "constants-pointers" {
+            const NUM: uint = 10;
+            const PTR_TEST: uint = **** **** **** ^^^^ ^^^^ ^^^^ NUM;
+            #[entry];
+            fn main -> uint => PTR_TEST - NUM;
+        }
+
+        simple "constant-structures" {
+            struct Test {
+                a: uint;
+                b: uint;
+            };
+
+            struct TestSmall {
+                a: u8;
+                b: u8;
+            };
+
+            const TEST: uint = Test::{ a: 10, b: 20 }.a;
+            const TEST_SMALL: TestSmall = ::{ a: 10, b: 20 };
+            #[entry];
+            fn main -> uint => TEST - TEST_SMALL.b.uint() + TEST_SMALL.a.uint();
+        }
+
         simple "recursion" {
             #[entry];
             fn main -> uint => 0;

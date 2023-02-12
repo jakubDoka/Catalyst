@@ -449,10 +449,7 @@ impl FragRelocMarker {
     pub fn mark_slice<T: 'static>(&mut self, frags: FragSlice<T>) -> bool {
         self.marked
             .entry(TypeId::of::<T>())
-            .or_insert_with(|| {
-                dbg!(TypeId::of::<T>(), std::any::type_name::<T>());
-                default()
-            })
+            .or_default()
             .insert(frags.0)
             .then(|| self.frontier.push((TypeId::of::<T>(), frags.0)))
             .is_some()

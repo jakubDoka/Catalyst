@@ -97,7 +97,6 @@ impl<'m> LspRuntime<'m> {
         eprintln!("Catalyst LSP server started");
         let params = self.initialize(&connection)?;
         eprintln!("Catalyst LSP server initialized");
-
         self.middleware_args.path = params
             .root_uri
             .or_else(|| {

@@ -4,6 +4,8 @@
 #![feature(iter_collect_into)]
 #![feature(trivial_bounds)]
 #![feature(int_roundings)]
+#![feature(allocator_api)]
+#![feature(slice_ptr_get)]
 
 mod context;
 mod generate;

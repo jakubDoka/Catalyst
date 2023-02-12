@@ -140,7 +140,7 @@ ctl_errors! {
     #[info => "{message}"]
     pub error TodoSnippet: fatal {
         #[err loc]
-        message: &'static str,
+        message ref: String,
         loc: SourceLoc
     }
 }

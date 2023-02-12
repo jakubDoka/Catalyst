@@ -11,7 +11,11 @@ use storage::*;
 
 use typec_t::*;
 
-use crate::{context::ComputedValue, interpreter::IValue, *};
+use crate::{
+    context::{ComputedConst, ComputedValue},
+    //interpreter::{ISlot, IValue},
+    *,
+};
 
 pub mod function_loading;
 pub mod size_calc;
@@ -178,8 +182,9 @@ impl Generator<'_> {
         if layout.is_zero_sized() {
             return;
         }
-        let bits = match self.gen.get_const(r#const) {
-            Some(IValue::Register(v)) => v,
+        let bits = match self.gen.get_const(r#const).as_deref() {
+            Some(&ComputedConst::Scalar(v)) => v,
+            Some(ComputedConst::Unit) => unreachable!(),
             _ => todo!(),
         };
         let value = match layout.repr {
@@ -392,7 +397,7 @@ impl Generator<'_> {
             offset,
             must_load,
         } = self.gen_resources.values[target];
-        assert!(must_load);
+        assert!(must_load || computed.is_none());
         let ty = builder.value_ty(target);
         let addr = self.ref_low(computed, ty, offset, builder);
         self.save_value(ret, addr, 0, false, builder);

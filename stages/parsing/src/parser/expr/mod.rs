@@ -68,7 +68,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
                 "*" => Some(UnitExprAst::Deref(self.advance(), self.unit_expr().map(|e| self.arena.alloc(e))?)),
                 "^" => Some(UnitExprAst::Ref(self.advance(), self.mutability()?, self.unit_expr().map(|e| self.arena.alloc(e))?)),
                 @ => self.workspace.push(TodoSnippet {
-                    message: "unary operators are not yet implemented",
+                    message: "unary operators are not yet implemented".into(),
                     loc: SourceLoc { origin: self.source, span: self.state.current.span}
                 })?,
             }},

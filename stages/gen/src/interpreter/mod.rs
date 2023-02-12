@@ -9,7 +9,7 @@ use mir_t::*;
 use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use typec_t::*;
 
-use crate::{Gen, GenLayouts, Layout};
+use crate::{context::ComputedConst, Gen, GenLayouts, Layout};
 
 pub type IRegister = i64;
 
@@ -35,20 +35,18 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
                     if let Some(pushed) = self.ctx.frames.pop() {
                         self.pop_call(pushed, data);
                     } else {
-                        return Ok(data);
+                        return Ok(data.and_then(|data| self.current.unpack_slot_low(data)));
                     }
                 }
                 StepError::Call => (),
-                StepError::StackOverflow => {
-                    return Err(InterpreterError::StackOverflow);
-                }
+                StepError::Inerpreter(err) => return Err(err),
             }
         }
 
         Err(InterpreterError::OutOfFuel)
     }
 
-    fn pop_call(&mut self, mut pushed: PushedFrame, value: Option<IValue>) {
+    fn pop_call(&mut self, mut pushed: PushedFrame, value: Option<ISlot>) {
         self.ctx.stack.truncate(self.current.frame_base as usize);
         pushed.frame.values[pushed.return_value] = value;
         *self.current = pushed.frame;
@@ -69,7 +67,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             .mir
             .bodies
             .get(&BodyOwner::Func(func))
-            .unwrap()
+            .ok_or(StepError::Inerpreter(InterpreterError::MissingBody))?
             .to_owned();
         let module = &self.mir.modules[body.module()];
         let next_view = body.view(module);
@@ -98,7 +96,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
 
         let frame = mem::replace(self.current, frame);
         for (&source, &targer) in view.value_args[args].iter().zip(next_view.args) {
-            let Some(source_value) = frame.values[source] else {continue};
+            let Some(source_value) = frame.unpack_slot(source) else {continue};
             self.assign(source_value, frame.offsets[source], targer, &next_view)?;
         }
 
@@ -120,19 +118,25 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
 
         let ((value, offset), dest) = match inst {
             InstMir::Var(init, dest) => ((self.current.values[init], 0), dest),
-            InstMir::Int(i, ret) => ((Some(IValue::Register(i)), 0), ret),
-            InstMir::Float(f, ret) => ((Some(IValue::Register(f.to_bits() as IRegister)), 0), ret),
+            InstMir::Int(i, ret) => ((Some(ISlot::Value(IValue::Register(i))), 0), ret),
+            InstMir::Float(f, ret) => (
+                (
+                    Some(ISlot::Value(IValue::Register(f.to_bits() as IRegister))),
+                    0,
+                ),
+                ret,
+            ),
             InstMir::Assign(target, dest) => ((self.current.values[target], 0), dest),
-            InstMir::ConstAccess(c, ret) => ((self.gen.get_const(c), 0), ret),
+            InstMir::ConstAccess(c, ret) => ((self.constant(c), 0), ret),
             InstMir::Call(call, ret) => ((self.call(call, ret, &func)?, 0), ret),
             InstMir::Ctor(fields, ret) => ((self.ctor(fields, ret, &func)?, 0), ret),
             InstMir::Deref(target, ret) => ((self.dereference(target, ret, &func), 0), ret),
             InstMir::Ref(target, ret) => ((self.reference(target, ret, &func), 0), ret),
-            InstMir::Field(target, field, ret) => (self.field(target, field, ret, &func), ret),
+            InstMir::Field(target, field, ret) => (self.field(target, field, &func), ret),
             InstMir::Drop(_) => todo!(),
         };
 
-        if let Some(value) = value {
+        if let Some(value) = value && let Some(value) = self.current.unpack_slot_low(value) {
             self.assign(value, offset, dest, &func)?;
         }
         self.current.instr += 1;
@@ -140,22 +144,31 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         Ok(())
     }
 
+    fn constant(&mut self, c: FragRef<Const>) -> Option<ISlot> {
+        let slot = self.gen.get_const(c);
+        match slot.as_deref()? {
+            &ComputedConst::Scalar(s) => Some(ISlot::Value(IValue::Register(s))),
+            //ComputedConst::Memory(m) => Some(ISlot::Value(IValue::Memory(m.as_ptr()))),
+            ComputedConst::Unit => None,
+        }
+    }
+
     fn ctor(
         &mut self,
         fields: VRefSlice<ValueMir>,
         dest: VRef<ValueMir>,
         view: &FuncMirView,
-    ) -> Result<Option<IValue>, StepError> {
+    ) -> Result<Option<ISlot>, StepError> {
         let ty = self.current.value_ty(dest, view);
         let layout = self.layout(ty);
-        let ret_value = self.ensure_dest(dest, view, layout)?;
+        self.ensure_dest(dest, view, layout)?;
 
         let base_offset = self.current.offsets[dest];
         for (&value, &offset) in view.value_args[fields]
             .iter()
             .zip(&self.layouts.offsets[layout.offsets])
         {
-            self.current.values[value] = Some(ret_value);
+            self.current.values[value] = Some(ISlot::Variable(dest));
             self.current.offsets[value] = base_offset + offset;
         }
 
@@ -167,7 +180,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         call: VRef<CallMir>,
         return_value: VRef<ValueMir>,
         view: &FuncMirView,
-    ) -> Result<Option<IValue>, StepError> {
+    ) -> Result<Option<ISlot>, StepError> {
         let CallMir {
             callable,
             params,
@@ -194,7 +207,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         params: VRefSlice<MirTy>,
         args: VRefSlice<ValueMir>,
         view: &FuncMirView,
-    ) -> Result<Option<IValue>, StepError> {
+    ) -> Result<Option<ISlot>, StepError> {
         let Func {
             name, signature, ..
         } = self.typec[func];
@@ -207,7 +220,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
 
         let args = view.value_args[args]
             .iter()
-            .map(|&arg| match self.current.values[arg] {
+            .map(|&arg| match self.current.unpack_slot(arg) {
                 Some(IValue::Register(value)) => value,
                 _ => unreachable!(),
             })
@@ -228,7 +241,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             _ => Self::dispatch_op(op_str, args.as_slice(), float, signed),
         };
 
-        Ok(Some(IValue::Register(value)))
+        Ok(Some(ISlot::Value(IValue::Register(value))))
     }
 
     fn dispatch_op(op_str: &str, args: &[i64], float: bool, signed: bool) -> i64 {
@@ -310,10 +323,9 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
                 otherwise,
             } => {
                 let cond = self.current.load_register(cond);
-                let new_block = [then, otherwise][cond as usize];
+                let new_block = [otherwise, then][cond as usize];
                 self.current.block = new_block;
                 self.current.instr = 0;
-
                 self.load_inst_low(view)
             }
             ControlFlowMir::Goto { dest, ret } => {
@@ -347,22 +359,30 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
 
         let dest_value = self.ensure_dest(dest, view, layout)?;
 
-        let dest_offset = self.current.offsets[dest];
-        let mask = 1_i64.wrapping_shl(layout.size * 8).wrapping_sub(1);
+        let mask = || {
+            if layout.size == 8 {
+                -1
+            } else {
+                (1 << (layout.size * 8)) - 1
+            }
+        };
 
-        let get_bit_field = |value: i64| (value >> (dest_offset * 8)) & mask;
+        let dest_offset = self.current.offsets[dest];
+        let dest = self.current.root_value(dest);
+
+        let get_bit_field = |value: i64| (value >> (source_offset * 8)) & mask();
 
         let set_bit_field = |value: i64, dest: i64| {
             let value = value << (dest_offset * 8);
-            let mask = mask << (dest_offset * 8);
+            let mask = mask() << (dest_offset * 8);
             (dest & !mask) | value
         };
 
         match (source, dest_value) {
             (IValue::Register(val), IValue::Register(dest_value)) => {
                 let val = get_bit_field(val);
-                let dest_value = set_bit_field(val, dest_value);
-                self.current.values[dest] = Some(IValue::Register(dest_value));
+                let dest_value = dbg!(set_bit_field(dbg!(val), dbg!(dest_value)));
+                self.current.values[dest] = Some(ISlot::Value(IValue::Register(dest_value)));
             }
             (IValue::Register(val), IValue::Memory(mem)) => {
                 let val = get_bit_field(val);
@@ -384,7 +404,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
                     );
                 }
                 let value = set_bit_field(val, value);
-                self.current.values[dest] = Some(IValue::Register(value));
+                self.current.values[dest] = Some(ISlot::Value(IValue::Register(value)));
             }
             (IValue::Memory(mem_from), IValue::Memory(mem_to)) => unsafe {
                 copy_nonoverlapping(
@@ -408,7 +428,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         view: &FuncMirView,
         layout: Layout,
     ) -> Result<IValue, StepError> {
-        if let Some(dest) = self.current.values[dest] {
+        if let Some(dest) = self.current.unpack_slot(dest) {
             return Ok(dest);
         }
 
@@ -419,7 +439,8 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
             IValue::Register(0)
         };
 
-        self.current.values[dest] = Some(value);
+        let dest = self.current.root_value(dest);
+        self.current.values[dest] = Some(ISlot::Value(value));
         Ok(value)
     }
 
@@ -428,18 +449,18 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         target: VRef<ValueMir>,
         ret: VRef<ValueMir>,
         view: &FuncMirView,
-    ) -> Option<IValue> {
-        let target = self.current.values[target].unwrap();
+    ) -> Option<ISlot> {
+        let target = self.current.unpack_slot(target).unwrap();
         let ty = self.current.value_ty(ret, view);
         let layout = self.layout(ty);
         if layout.is_zero_sized() {
             return None;
         }
 
-        Some(match target {
+        Some(ISlot::Value(match target {
             IValue::Register(target) => IValue::Memory(target as *mut u8),
             mem => mem,
-        })
+        }))
     }
 
     fn reference(
@@ -447,37 +468,31 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         target: VRef<ValueMir>,
         ret: VRef<ValueMir>,
         view: &FuncMirView,
-    ) -> Option<IValue> {
-        let target = self.current.values[target].unwrap();
+    ) -> Option<ISlot> {
+        let target = self.current.unpack_slot(target).unwrap();
         let ty = self.current.value_ty(ret, view);
         let layout = self.layout(ty);
         if layout.is_zero_sized() {
             return None;
         }
 
-        Some(match target {
+        Some(ISlot::Value(match target {
             IValue::Memory(target) => IValue::Register(target as i64),
             mem => mem,
-        })
+        }))
     }
 
     fn field(
         &mut self,
         target: VRef<ValueMir>,
         field: u32,
-        ret: VRef<ValueMir>,
         func: &FuncMirView,
-    ) -> (Option<IValue>, u32) {
+    ) -> (Option<ISlot>, u32) {
         let ty = self.current.value_ty(target, func);
         let layout = self.layout(ty);
         let offset =
             self.layouts.offsets[layout.offsets][field as usize] + self.current.offsets[target];
-        if self.current.values[ret].is_none() {
-            return (self.current.values[target], offset);
-        }
-        self.current.offsets[ret] = offset;
-        self.current.values[ret] = self.current.values[target];
-        (None, 0)
+        (self.current.values[target], offset)
     }
 }
 
@@ -503,6 +518,7 @@ pub struct InterpreterCtx {
     frames: Vec<PushedFrame>,
     fuel: usize,
 }
+
 impl InterpreterCtx {
     pub fn prepare(&mut self, stack_size: usize, fuel: usize) -> PreparedInterpreterCtx {
         self.stack.clear();
@@ -518,7 +534,7 @@ impl InterpreterCtx {
             let padding = current.align_offset(layout.align.get() as usize);
             let add = layout.size as usize + padding;
             if self.stack.len() + add > self.stack.capacity() {
-                return Err(StepError::StackOverflow);
+                return Err(StepError::Inerpreter(InterpreterError::StackOverflow));
             }
             self.stack.set_len(self.stack.len() + add);
             Ok(current.add(padding))
@@ -534,7 +550,7 @@ struct PushedFrame {
 pub struct StackFrame {
     pub params: Vec<Ty>,
     pub block: VRef<BlockMir>,
-    pub values: ShadowMap<ValueMir, Option<IValue>>,
+    pub values: ShadowMap<ValueMir, Option<ISlot>>,
     pub offsets: ShadowMap<ValueMir, u32>,
     pub types: PushMap<MirTy>,
     pub instr: u32,
@@ -544,11 +560,28 @@ pub struct StackFrame {
 
 impl StackFrame {
     fn load_register(&self, reg: VRef<ValueMir>) -> i64 {
-        let Some(IValue::Register(value)) = self.values[reg] else {
-            unreachable!()
-        };
+        match self.unpack_slot(reg) {
+            Some(IValue::Register(reg)) => reg,
+            _ => unreachable!(),
+        }
+    }
 
-        value
+    fn unpack_slot(&self, reg: VRef<ValueMir>) -> Option<IValue> {
+        self.unpack_slot_low(self.values[reg]?)
+    }
+
+    fn unpack_slot_low(&self, reg: ISlot) -> Option<IValue> {
+        match reg {
+            ISlot::Variable(reg) => self.unpack_slot(reg),
+            ISlot::Value(value) => Some(value),
+        }
+    }
+
+    fn root_value(&self, reg: VRef<ValueMir>) -> VRef<ValueMir> {
+        match self.values[reg] {
+            Some(ISlot::Variable(reg)) => self.root_value(reg),
+            _ => reg,
+        }
     }
 
     fn value_ty(&self, value: VRef<ValueMir>, view: &FuncMirView) -> Ty {
@@ -556,7 +589,13 @@ impl StackFrame {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
+pub enum ISlot {
+    Variable(VRef<ValueMir>),
+    Value(IValue),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum IValue {
     Register(IRegister),
     Memory(*mut u8),
@@ -566,13 +605,15 @@ impl IValue {}
 
 unsafe impl Send for IValue {}
 
+#[derive(Debug)]
 pub enum InterpreterError {
     OutOfFuel,
     StackOverflow,
+    MissingBody,
 }
 
 enum StepError {
-    Return(Option<IValue>),
+    Return(Option<ISlot>),
     Call,
-    StackOverflow,
+    Inerpreter(InterpreterError),
 }

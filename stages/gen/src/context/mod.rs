@@ -1,3 +1,8 @@
+//use std::{
+//    alloc::{Allocator, Global},
+//    ptr::{self, NonNull},
+//};
+
 use cranelift_codegen::ir::{AbiParam, StackSlotData, StackSlotKind};
 
 use crate::interpreter::IValue;
@@ -49,9 +54,38 @@ impl Relocated for GenLookup {
 }
 
 #[derive(Serialize, Archive, Deserialize)]
-pub struct ComputedConst {
-    value: Option<IRegister>,
+pub enum ComputedConst {
+    Scalar(IRegister),
+    //    Memory(ComputedConstMemory),
+    Unit,
 }
+
+// pub struct ComputedConstMemory {
+//     data: *mut u8,
+//     layout: alloc::Layout,
+// }
+//
+// impl ComputedConstMemory {
+//     pub fn new(layout: alloc::Layout) -> Self {
+//         let data = Global.allocate(layout).unwrap().as_ptr().as_mut_ptr();
+//         Self { data, layout }
+//     }
+//
+//     pub fn as_ptr(&self) -> *mut u8 {
+//         self.data
+//     }
+// }
+//
+// impl Drop for ComputedConstMemory {
+//     fn drop(&mut self) {
+//         unsafe {
+//             Global.deallocate(NonNull::new_unchecked(self.data), self.layout);
+//         }
+//     }
+// }
+
+// unsafe impl Send for ComputedConstMemory {}
+// unsafe impl Sync for ComputedConstMemory {}
 
 derive_relocated!(
     struct ComputedConst {}
@@ -118,26 +152,37 @@ impl Gen {
         self.lookup.funcs.get(&id.0).unwrap()
     }
 
-    pub fn save_const(&mut self, id: FragRef<Const>, value: Option<IValue>) {
-        match value {
-            Some(IValue::Register(reg)) => {
-                self.lookup
-                    .consts
-                    .insert(id, ComputedConst { value: Some(reg) });
+    pub fn save_const(
+        &mut self,
+        id: FragRef<Const>,
+        value: Option<IValue>,
+        _layouts: &mut GenLayouts,
+        _typec: &mut Typec,
+        _interner: &mut Interner,
+    ) {
+        let computed = match value {
+            Some(IValue::Register(reg)) => ComputedConst::Scalar(reg),
+            Some(IValue::Memory(_ptr)) => {
+                //let ty = typec[id].ty;
+                //let layout = layouts.ty_layout(ty, &[], typec, interner);
+                //let mem = ComputedConstMemory::new(layout.rust_layout());
+                //unsafe {
+                //    ptr::copy_nonoverlapping(ptr, mem.as_ptr(), layout.size as usize);
+                //}
+                //ComputedConst::Memory(mem)
+                todo!()
             }
-            Some(_) => todo!(),
-            None => {
-                self.lookup.consts.insert(id, ComputedConst { value: None });
-            }
-        }
+            None => ComputedConst::Unit,
+        };
+
+        self.lookup.consts.insert(id, computed);
     }
 
-    pub fn get_const(&self, id: FragRef<Const>) -> Option<IValue> {
-        self.lookup
-            .consts
-            .get(&id)
-            .and_then(|value| value.value)
-            .map(IValue::Register)
+    pub fn get_const(
+        &self,
+        id: FragRef<Const>,
+    ) -> Option<Ref<FragRef<Const>, ComputedConst, FvnBuildHasher>> {
+        self.lookup.consts.get(&id)
     }
 
     pub fn get_or_insert_func(
