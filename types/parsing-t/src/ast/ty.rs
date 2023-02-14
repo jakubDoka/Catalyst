@@ -38,6 +38,7 @@ pub enum TyAst<'a, M = NoTokenMeta> {
     Path(PathAst<'a, M>),
     Pointer(&'a TyPointerAst<'a, M>),
     Tuple(ListAst<'a, TyAst<'a, M>, M>),
+    Array(&'a TyArrayAst<'a, M>),
     Wildcard(SourceInfo<M>),
 }
 
@@ -47,8 +48,24 @@ impl<'a, M> Spanned for TyAst<'a, M> {
             TyAst::Path(path) => path.span(),
             TyAst::Pointer(pointer) => pointer.span(),
             TyAst::Tuple(tuple) => tuple.span(),
+            TyAst::Array(array) => array.span(),
             TyAst::Wildcard(wildcard) => wildcard.span,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TyArrayAst<'a, M = NoTokenMeta> {
+    pub start: SourceInfo<M>,
+    pub ty: TyAst<'a, M>,
+    pub semi: SourceInfo<M>,
+    pub size: ExprAst<'a, M>,
+    pub end: SourceInfo<M>,
+}
+
+impl<'a, M> Spanned for TyArrayAst<'a, M> {
+    fn span(&self) -> Span {
+        self.start.span.joined(self.end.span)
     }
 }
 

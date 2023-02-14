@@ -62,12 +62,18 @@ impl TyChecker<'_> {
                 (TyPathResult::Spec(..), ..) => todo!(),
             },
             TyAst::Pointer(&pointer) => self.pointer(pointer).map(Into::into),
-            TyAst::Tuple(tuple) => self.tuple(tuple),
+            TyAst::Tuple(tuple) => self.tuple_ty(tuple),
+            TyAst::Array(&array) => self.array_ty(array).map(Into::into),
             TyAst::Wildcard(..) => todo!(),
         }
     }
 
-    pub fn tuple(&mut self, tuple_ast: ListAst<TyAst>) -> Option<Ty> {
+    fn array_ty(&mut self, array_ast: TyArrayAst) -> Option<Ty> {
+        let _ty = self.ty(array_ast.ty)?;
+        todo!()
+    }
+
+    pub fn tuple_ty(&mut self, tuple_ast: ListAst<TyAst>) -> Option<Ty> {
         let types = tuple_ast
             .iter()
             .map(|&ty_ast| self.ty(ty_ast))

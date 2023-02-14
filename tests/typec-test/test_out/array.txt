@@ -1,0 +1,17 @@
+error: amount of arguments passed to the function is incorrect
+ --> array/root.ctl:3:32
+  |
+3 | fn main() -> uint => cast\[u32]() - 256.u32()
+  |                                ^^ here
+  |
+  = info: expected 1, but got 0
+
+info: tir repr of functions:
+fn [] take_array() -> () {
+    {
+    }
+    return
+}
+
+
+

@@ -12,6 +12,7 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             },
             LeftParen => self.list("tuple", Self::ty, Tk::LeftParen, Tk::Comma, Tk::RightParen)
                 .map(TyAst::Tuple),
+            LeftBracket => self.array_ty().map(|p| self.arena.alloc(p)).map(TyAst::Array),
             Operator(_ = 0) => branch!(str self => {
                 "^" => self.pointer()
                     .map(|p| self.arena.alloc(p))
@@ -20,6 +21,16 @@ impl<'ctx, 'arena, M: TokenMeta> Parser<'ctx, 'arena, M> {
             }),
             @"type",
         }}
+    }
+
+    fn array_ty(&mut self) -> Option<TyArrayAst<'arena, M>> {
+        Some(TyArrayAst {
+            start: self.advance(),
+            ty: self.ty()?,
+            semi: self.advance(),
+            size: self.expr()?,
+            end: self.advance(),
+        })
     }
 
     fn pointer(&mut self) -> Option<TyPointerAst<'arena, M>> {

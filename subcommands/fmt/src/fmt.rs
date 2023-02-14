@@ -562,8 +562,18 @@ impl<'ctx> Fmt<'ctx> {
                 self.mutability(p.mutability);
                 self.ty(&p.ty);
             }
+            TyAst::Array(a) => self.array_ty(a),
             TyAst::Wildcard(w) => self.source_info(w),
         }
+    }
+
+    fn array_ty(&mut self, array: &TyArrayAst<u32>) {
+        self.source_info(array.start);
+        self.ty(&array.ty);
+        self.source_info(array.semi);
+        self.buffer.push(' ');
+        self.expr(&array.size);
+        self.source_info(array.end);
     }
 
     fn mutability(&mut self, mutability: Option<MutabilityAst<u32>>) {

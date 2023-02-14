@@ -13,6 +13,59 @@
 #![feature(let_chains)]
 
 #[macro_export]
+macro_rules! wrapper_enum {
+    (
+        $(#[$meta:meta])*
+        enum $name:ident: $($relocated:ident)? {
+            $(
+                $variant:ident: $ty:ty $(=> $readable_name:literal)?,
+            )*
+        }
+    ) => {
+        $(#[$meta])*
+        pub enum $name {
+            $(
+                $variant($ty),
+            )*
+        }
+
+        $(
+            impl From<$ty> for $name {
+                fn from(value: $ty) -> Self {
+                    Self::$variant(value)
+                }
+            }
+        )*
+
+        impl $name {
+            pub const fn name(&self) -> &'static str {
+                match *self {
+                    $(
+                        Self::$variant(..) => wrapper_enum!($variant $($readable_name)?),
+                    )*
+                }
+            }
+        }
+
+        wrapper_enum!(@relocated $($relocated)? enum $name { $($variant(a) => a,)* });
+    };
+
+    ($variant:ident) => {
+        stringify!($variant)
+    };
+
+    ($variant:ident $readable_name:literal) => {
+        $readable_name
+    };
+
+    (@relocated relocated enum $($tt:tt)*) => {
+        derive_relocated!(enum $($tt)*);
+    };
+
+    (@relocated $($tt:tt)*) => {};
+}
+
+#[macro_export]
 macro_rules! function_pointer {
     ($($name:ident$(($($arg_name:ident: $arg:ty),*))? $(-> $ret:ty)?,)+) => {
         $(

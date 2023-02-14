@@ -461,28 +461,12 @@ pub struct GenValue {
     pub must_load: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum ComputedValue {
-    Value(ir::Value),
-    StackSlot(ir::StackSlot),
-    Variable(Variable),
-}
-
-impl From<ir::Value> for ComputedValue {
-    fn from(val: ir::Value) -> Self {
-        Self::Value(val)
-    }
-}
-
-impl From<ir::StackSlot> for ComputedValue {
-    fn from(slot: ir::StackSlot) -> Self {
-        Self::StackSlot(slot)
-    }
-}
-
-impl From<Variable> for ComputedValue {
-    fn from(var: Variable) -> Self {
-        Self::Variable(var)
+wrapper_enum! {
+    #[derive(Clone, Copy, Debug)]
+    enum ComputedValue: {
+        Value: ir::Value,
+        StackSlot: ir::StackSlot,
+        Variable: Variable,
     }
 }
 

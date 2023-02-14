@@ -381,7 +381,7 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
         match (source, dest_value) {
             (IValue::Register(val), IValue::Register(dest_value)) => {
                 let val = get_bit_field(val);
-                let dest_value = dbg!(set_bit_field(dbg!(val), dbg!(dest_value)));
+                let dest_value = set_bit_field(val, dest_value);
                 self.current.values[dest] = Some(ISlot::Value(IValue::Register(dest_value)));
             }
             (IValue::Register(val), IValue::Memory(mem)) => {

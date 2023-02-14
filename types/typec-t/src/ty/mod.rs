@@ -284,19 +284,14 @@ derive_relocated! {
     struct SpecInstance { base args }
 }
 
-#[derive(
-    Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Archive, Serialize,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub enum Spec {
-    Base(FragRef<SpecBase>),
-    Instance(FragRef<SpecInstance>),
-}
-
-derive_relocated! {
-    enum Spec {
-        Base(b) => b,
-        Instance(i) => i,
+wrapper_enum! {
+    #[derive(
+        Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Deserialize, Archive, Serialize,
+    )]
+    #[archive_attr(derive(PartialEq, Eq, Hash))]
+    enum Spec: relocated {
+        Base: FragRef<SpecBase>,
+        Instance: FragRef<SpecInstance>,
     }
 }
 
@@ -309,29 +304,11 @@ impl Spec {
     }
 }
 
-impl From<FragRef<SpecBase>> for Spec {
-    fn from(base: FragRef<SpecBase>) -> Self {
-        Spec::Base(base)
-    }
-}
-
-impl From<FragRef<SpecInstance>> for Spec {
-    fn from(instance: FragRef<SpecInstance>) -> Self {
-        Spec::Instance(instance)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Archive, Serialize)]
-
-pub enum GenericTy {
-    Struct(FragRef<Struct>),
-    Enum(FragRef<Enum>),
-}
-
-derive_relocated! {
-    enum GenericTy {
-        Struct(s) => s,
-        Enum(e) => e,
+wrapper_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Archive, Serialize)]
+    enum GenericTy: relocated {
+        Struct: FragRef<Struct>,
+        Enum: FragRef<Enum>,
     }
 }
 
@@ -351,49 +328,29 @@ impl GenericTy {
     }
 }
 
-impl From<FragRef<Struct>> for GenericTy {
-    fn from(s: FragRef<Struct>) -> Self {
-        GenericTy::Struct(s)
+wrapper_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
+    enum ComputedTypecItem: relocated {
+        Pointer: FragRef<Ty>,
+        Instance: FragRef<Instance>,
+        SpecInstance: FragRef<SpecInstance>,
+        SpecSum: FragSlice<Spec>,
     }
 }
 
-impl From<FragRef<Enum>> for GenericTy {
-    fn from(e: FragRef<Enum>) -> Self {
-        GenericTy::Enum(e)
+wrapper_enum! {
+    #[derive(
+        Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
+    )]
+    #[archive_attr(derive(PartialEq, Eq, Hash))]
+    enum Ty: {
+        Struct: FragRef<Struct>,
+        Enum: FragRef<Enum>,
+        Instance: FragRef<Instance>,
+        Pointer: Pointer,
+        Param: u8,
+        Builtin: Builtin,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Archive)]
-
-pub enum ComputedTypecItem {
-    Pointer(FragRef<Ty>),
-    Instance(FragRef<Instance>),
-    SpecInstance(FragRef<SpecInstance>),
-    SpecSum(FragSlice<Spec>),
-}
-
-derive_relocated! {
-    enum ComputedTypecItem {
-        Pointer(p) => p,
-        Instance(i) => i,
-        SpecInstance(i) => i,
-        SpecSum(s) => s,
-    }
-}
-
-const _: () = assert!(size_of::<FragRef<Pointer>>() == size_of::<Option<FragRef<Pointer>>>());
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Archive,
-)]
-#[archive_attr(derive(PartialEq, Eq, Hash))]
-pub enum Ty {
-    Struct(FragRef<Struct>),
-    Enum(FragRef<Enum>),
-    Instance(FragRef<Instance>),
-    Pointer(Pointer),
-    Param(u8),
-    Builtin(Builtin),
 }
 
 derive_relocated! {
@@ -627,36 +584,6 @@ impl Ty {
                 )
                 .is_some(),
         }
-    }
-}
-
-impl From<FragRef<Struct>> for Ty {
-    fn from(s: FragRef<Struct>) -> Self {
-        Ty::Struct(s)
-    }
-}
-
-impl From<FragRef<Enum>> for Ty {
-    fn from(e: FragRef<Enum>) -> Self {
-        Ty::Enum(e)
-    }
-}
-
-impl From<FragRef<Instance>> for Ty {
-    fn from(i: FragRef<Instance>) -> Self {
-        Ty::Instance(i)
-    }
-}
-
-impl From<Pointer> for Ty {
-    fn from(p: Pointer) -> Self {
-        Ty::Pointer(p)
-    }
-}
-
-impl From<Builtin> for Ty {
-    fn from(b: Builtin) -> Self {
-        Ty::Builtin(b)
     }
 }
 

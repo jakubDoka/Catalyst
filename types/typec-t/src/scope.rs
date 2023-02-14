@@ -230,98 +230,28 @@ impl ModuleItem {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
-
-pub enum ModuleItemPtr {
-    Func(FragRef<Func>),
-    Ty(Ty),
-    SpecBase(FragRef<SpecBase>),
-    Impl(FragRef<Impl>),
-    Const(FragRef<Const>),
-}
-
-derive_relocated!(enum ModuleItemPtr {
-    Func(f) => f,
-    Ty(t) => t,
-    SpecBase(b) => b,
-    Impl(i) => i,
-    Const(c) => c,
-});
-
-impl From<FragRef<Func>> for ModuleItemPtr {
-    fn from(func: FragRef<Func>) -> Self {
-        Self::Func(func)
+wrapper_enum! {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
+    enum ModuleItemPtr: relocated {
+        Func: FragRef<Func>,
+        Ty: Ty,
+        SpecBase: FragRef<SpecBase>,
+        Impl: FragRef<Impl>,
+        Const: FragRef<Const>,
     }
 }
 
-impl From<Ty> for ModuleItemPtr {
-    fn from(ty: Ty) -> Self {
-        Self::Ty(ty)
-    }
-}
-
-impl From<FragRef<SpecBase>> for ModuleItemPtr {
-    fn from(base: FragRef<SpecBase>) -> Self {
-        Self::SpecBase(base)
-    }
-}
-
-impl From<FragRef<Impl>> for ModuleItemPtr {
-    fn from(r#impl: FragRef<Impl>) -> Self {
-        Self::Impl(r#impl)
-    }
-}
-
-impl From<FragRef<Const>> for ModuleItemPtr {
-    fn from(r#const: FragRef<Const>) -> Self {
-        Self::Const(r#const)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeItem {
-    Func(FragRef<Func>),
-    SpecFunc(FragRef<SpecFunc>),
-    Ty(Ty),
-    SpecBase(FragRef<SpecBase>),
-    VarHeaderTir(VRef<VarHeaderTir>),
-    Module(VRef<Module>),
-    LoopHeaderTir(VRef<LoopHeaderTir>),
-    Const(FragRef<Const>),
-}
-
-macro_rules! gen_scope_item {
-    ($($ref:ident $name:ident),*) => {
-        $(
-            impl From<$ref<$name>> for ScopeItem {
-                fn from(item: $ref<$name>) -> Self {
-                    Self::$name(item)
-                }
-            }
-        )*
-    }
-}
-
-impl ScopeItem {
-    pub fn name(&self) -> &'static str {
-        match *self {
-            ScopeItem::Func(..) => "function",
-            ScopeItem::SpecFunc(..) => "spec function",
-            ScopeItem::Ty(..) => "type",
-            ScopeItem::SpecBase(..) => "spec",
-            ScopeItem::VarHeaderTir(..) => "variable",
-            ScopeItem::Module(..) => "module",
-            ScopeItem::LoopHeaderTir(..) => "loop label",
-            ScopeItem::Const(..) => "constant",
-        }
-    }
-}
-
-gen_scope_item!(FragRef SpecFunc, FragRef Func, VRef VarHeaderTir, VRef Module, FragRef SpecBase, VRef LoopHeaderTir, FragRef Const);
-
-impl From<Ty> for ScopeItem {
-    fn from(item: Ty) -> Self {
-        Self::Ty(item)
+wrapper_enum! {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, Archive)]
+    enum ScopeItem: {
+        Func: FragRef<Func> => "function",
+        Ty: Ty => "type",
+        SpecFunc: FragRef<SpecFunc> => "spec function",
+        SpecBase: FragRef<SpecBase> => "spec",
+        VarHeaderTir: VRef<VarHeaderTir> => "variable",
+        Module: VRef<Module> => "module",
+        LoopHeaderTir: VRef<LoopHeaderTir> => "loop label",
+        Const: FragRef<Const> => "constant",
     }
 }
 

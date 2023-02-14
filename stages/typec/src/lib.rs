@@ -22,6 +22,7 @@ macro_rules! lookup {
     };
 }
 
+mod context;
 mod func_builder;
 mod item_collector;
 mod state_gen;

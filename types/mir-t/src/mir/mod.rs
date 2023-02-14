@@ -334,12 +334,13 @@ pub struct CallMir {
 
 derive_relocated!(struct CallMir { callable });
 
-#[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
-
-pub enum CallableMir {
-    Func(FragRef<Func>),
-    SpecFunc(FragRef<SpecFunc>),
-    Pointer(VRef<ValueMir>),
+wrapper_enum! {
+    #[derive(Serialize, Deserialize, Archive, Clone, Copy, Debug)]
+    enum CallableMir: {
+        Func: FragRef<Func>,
+        SpecFunc: FragRef<SpecFunc>,
+        Pointer: VRef<ValueMir>,
+    }
 }
 
 derive_relocated! {
@@ -347,24 +348,6 @@ derive_relocated! {
         Func(f) => f,
         SpecFunc(f) => f,
         Pointer(..) =>,
-    }
-}
-
-impl From<FragRef<Func>> for CallableMir {
-    fn from(f: FragRef<Func>) -> Self {
-        CallableMir::Func(f)
-    }
-}
-
-impl From<FragRef<SpecFunc>> for CallableMir {
-    fn from(f: FragRef<SpecFunc>) -> Self {
-        CallableMir::SpecFunc(f)
-    }
-}
-
-impl From<VRef<ValueMir>> for CallableMir {
-    fn from(v: VRef<ValueMir>) -> Self {
-        CallableMir::Pointer(v)
     }
 }
 

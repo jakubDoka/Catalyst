@@ -115,8 +115,20 @@ impl Length for TyAst<'_, u32> {
             TyAst::Path(p) => p.length(fmt),
             TyAst::Pointer(p) => p.length(fmt),
             TyAst::Tuple(t) => t.length(fmt),
+            TyAst::Array(a) => a.length(fmt),
             TyAst::Wildcard(w) => w.length(fmt),
         }
+    }
+}
+
+impl Length for TyArrayAst<'_, u32> {
+    fn length_low(&self, fmt: &mut Fmt) -> usize {
+        self.start.length(fmt)
+            + self.ty.length(fmt)
+            + self.semi.length(fmt)
+            + " ".len()
+            + self.size.length(fmt)
+            + self.end.length(fmt)
     }
 }
 
