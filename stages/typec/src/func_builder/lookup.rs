@@ -3,7 +3,7 @@ use {super::*, lexing::*};
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub(super) fn find_loop(&mut self, label: Option<NameAst>) -> OptVRef<LoopHeaderTir> {
         let Some(label) = label else {
-            return self.ctx.first_unlabeled_loop().or_else(|| { 
+            return self.ctx.first_unlabeled_loop().or_else(|| {
                 self.ext.workspace.push(TodoSnippet {
                     loc: self.meta.loc(label.span()),
                     message: "no unlabeled loop to break from".into(),
