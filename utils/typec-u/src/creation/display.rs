@@ -270,6 +270,8 @@ pub fn display_bin_op(
     to: &mut String,
 ) -> fmt::Result {
     lhs.display(typec, interner, to)?;
+    to.push(' ');
     to.push_str(op.get(interner));
+    to.push(' ');
     rhs.display(typec, interner, to)
 }

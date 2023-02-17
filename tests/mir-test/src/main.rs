@@ -11,17 +11,17 @@ use storage::*;
 use testing::*;
 use typec::*;
 use typec_t::*;
+use typec_u::type_creator;
 
 #[derive(Default)]
 struct TestState {
     interner: Interner,
-    scope: Scope,
     typec: Typec,
     workspace: Workspace,
     resources: Resources,
     package_graph: PackageGraph,
-    typec_ctx: TyCheckerCtx,
-    ast_transfer: AstTransfer<'static>,
+    typec_ctx: TypecCtx,
+    typec_transfere: TypecTransfere<'static>,
     mir_ctx: ReusedMirCtx,
     arena: Arena,
     functions: String,
@@ -32,13 +32,12 @@ struct TestState {
 
 impl Scheduler for TestState {
     fn init(&mut self, _: &Path) {
-        self.typec.init(&mut self.interner, &mut self.builtin_funcs);
+        type_creator!(self).init(&mut self.builtin_funcs);
     }
 
     fn before_parsing(&mut self, module: storage::VRef<Module>) {
-        typec::build_scope(
+        self.typec_ctx.build_scope(
             module,
-            &mut self.scope,
             &self.resources,
             &self.typec,
             &mut self.interner,
@@ -47,28 +46,24 @@ impl Scheduler for TestState {
     }
 
     fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
-        let mut type_checked_funcs = bumpvec![];
-        let mut type_checked_consts = bumpvec![];
-        let mut ctx = TirBuilderCtx::default();
-        let arena = mem::take(&mut self.arena);
-        let mut transfer = mem::take(&mut self.ast_transfer);
-        {
-            ty_checker!(self, module).execute(
-                &arena,
-                items,
-                &mut self.typec_ctx,
-                &mut ctx,
-                transfer.activate(),
-                &mut type_checked_funcs,
-                &mut type_checked_consts,
-            );
-        }
+        let mut active = Active::take(&mut self.typec_transfere);
+        let ext = TypecExternalCtx {
+            typec: &mut self.typec,
+            interner: &mut self.interner,
+            workspace: &mut self.workspace,
+            resources: &self.resources,
+            transfere: &mut active,
+            folder: &mut ConstFolderImpl {},
+        };
+        let meta = TypecMeta::new(&self.resources, module);
+
+        TypecParser::new(&self.arena, &mut self.typec_ctx, ext, meta).execute(items);
 
         let mir_module = self.mir.modules.next();
         mir::compile_functions(
             module,
             mir_module,
-            &type_checked_funcs,
+            active.checked_funcs(),
             &mut MirCompilationCtx {
                 module_ent: &mut self.module,
                 reused: &mut self.mir_ctx,
@@ -90,14 +85,13 @@ impl Scheduler for TestState {
                 mir: &self.mir,
             }
             .display_funcs(
-                type_checked_funcs.iter().map(|&(f, ..)| f),
+                active.checked_funcs().iter().map(|&(f, ..)| f),
                 &mut self.functions,
             )
             .unwrap();
         }
 
-        self.arena = arena;
-        self.ast_transfer = transfer;
+        self.typec_transfere = active.erase();
         self.module.clear();
     }
 
@@ -109,6 +103,13 @@ impl Scheduler for TestState {
 
     fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
         package_loader!(self, *resources)
+    }
+}
+
+struct ConstFolderImpl {}
+impl ConstFolder for ConstFolderImpl {
+    fn fold(&mut self, _: Ty, _: TirNode, _: ConstFolderContext) -> FolderValue {
+        unimplemented!()
     }
 }
 

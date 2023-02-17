@@ -28,3 +28,4 @@ cranelift-frontend = "0.92.0"
 target-lexicon = "0.12.4"
 
 rkyv = { version = "0.7.39", features = ["copy", "alloc"] }
+typec-u = { version = "0.1.0", path = "../../utils/typec-u" }

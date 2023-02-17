@@ -1,20 +1,25 @@
 use {super::*, lexing::*};
 
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
-    pub fn find_loop(&mut self, label: Option<NameAst>) -> OptVRef<LoopHeaderTir> {
+    pub(super) fn find_loop(&mut self, label: Option<NameAst>) -> OptVRef<LoopHeaderTir> {
         let Some(label) = label else {
-            return self.ctx.first_unlabeled_loop();
+            return self.ctx.first_unlabeled_loop().or_else(|| { 
+                self.ext.workspace.push(TodoSnippet {
+                    loc: self.meta.loc(label.span()),
+                    message: "no unlabeled loop to break from".into(),
+                })?
+            });
         };
 
         Some(lookup!(LoopHeaderTir self, label.ident, label.span))
     }
 
-    pub fn enum_path<'a>(
+    pub(super) fn enum_path<'a>(
         &mut self,
         path: PathAst<'a>,
         inference: Inference,
     ) -> Option<(FragRef<Enum>, NameAst, Option<ListAst<'a, TyAst<'a>>>)> {
-        pub fn resolve<'arena>(
+        fn resolve<'arena>(
             s: &mut TirBuilder<'_, '_>,
             enum_ty: FragRef<Enum>,
             segments: &[PathSegmentAst<'arena>],
@@ -106,7 +111,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         resolve(self, enum_ty, segments, r#enum.span)
     }
 
-    pub fn dot_path(
+    pub(super) fn dot_path(
         &mut self,
         ty: Ty,
         path @ PathAst { slash, start, .. }: PathAst,
@@ -132,7 +137,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(DotPathResult::Field(field as u32, mutable, field_ty))
     }
 
-    pub fn func_path<'b>(
+    pub(super) fn func_path<'b>(
         &mut self,
         PathAst {
             start,
@@ -247,7 +252,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         )
     }
 
-    pub fn method_path<'b>(
+    pub(super) fn method_path<'b>(
         &mut self,
         ty: Ty,
         path @ PathAst {
@@ -396,7 +401,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn assert_no_slash(&mut self, slash: Option<SourceInfo>) -> Option<()> {
+    fn assert_no_slash(&mut self, slash: Option<SourceInfo>) -> Option<()> {
         if let Some(slash) = slash {
             InvalidPathSegment {
                 loc: self.meta.loc(slash.span),
@@ -407,7 +412,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(())
     }
 
-    pub fn value_path(
+    pub(super) fn value_path(
         &mut self,
         path @ PathAst {
             slash,
@@ -499,7 +504,12 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         })
     }
 
-    pub fn find_binary_func(&mut self, op: NameAst, lhs_ty: Ty, rhs_ty: Ty) -> OptFragRef<Func> {
+    pub(super) fn find_binary_func(
+        &mut self,
+        op: NameAst,
+        lhs_ty: Ty,
+        rhs_ty: Ty,
+    ) -> OptFragRef<Func> {
         let base_id = op.ident;
         let id = self.ext.interner.intern_with(|s, t| {
             typec_u::display_bin_op(self.ext.typec, s, base_id, lhs_ty, rhs_ty, t)
@@ -507,7 +517,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(lookup!(Func self, id, op.span))
     }
 
-    pub fn find_field(
+    pub(super) fn find_field(
         &mut self,
         struct_ty: FragRef<Struct>,
         params: impl TypecCtxSlice<Ty>,
@@ -544,7 +554,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             })
     }
 
-    pub fn can_access(
+    fn can_access(
         &mut self,
         loc: Option<Loc>,
         vis: Option<Vis>,
@@ -555,7 +565,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .can_access(loc, vis, code_span, def_span, &mut self.ext)
     }
 
-    pub fn grab_trailing_params<'a>(
+    fn grab_trailing_params<'a>(
         &mut self,
         segments: &[PathSegmentAst<'a>],
         backup_span: Span,
@@ -591,11 +601,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .fold(start.as_end(), Span::joined)
     }
 
-    pub fn lookup(&mut self, sym: Ident, span: Span, what: &'static str) -> Option<ScopeItem> {
+    fn lookup(&mut self, sym: Ident, span: Span, what: &'static str) -> Option<ScopeItem> {
         self.ctx.lookup(sym, span, what, &mut self.ext, &self.meta)
     }
 
-    pub fn invalid_symbol_type(
+    fn invalid_symbol_type(
         &mut self,
         item: ScopeItem,
         span: Span,

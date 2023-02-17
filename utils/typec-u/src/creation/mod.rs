@@ -235,9 +235,10 @@ impl<'ctx> TypeCreator<'ctx> {
     }
 
     pub fn pointer_to(&mut self, mutability: RawMutability, base: Ty) -> Pointer {
-        let id = self
-            .interner
-            .intern_with(|s, t| base.display(self.typec, s, t));
+        let id = self.interner.intern_with(|s, t| {
+            t.push_str("ptr ");
+            base.display(self.typec, s, t)
+        });
         let depth = base.ptr_depth() + 1;
         let ty = self
             .typec
@@ -248,7 +249,7 @@ impl<'ctx> TypeCreator<'ctx> {
             .to_owned();
 
         let ComputedTypecItem::Pointer(ty) = ty else { unreachable!() };
-        debug_assert_eq!(self.typec[ty], base,);
+        debug_assert_eq!(self.typec[ty], base);
 
         Pointer::new(ty, mutability, depth)
     }

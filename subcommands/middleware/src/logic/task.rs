@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use rkyv::{Archive, Deserialize, Serialize};
+use typec_u::type_creator;
 
 use super::*;
 
@@ -26,7 +27,7 @@ impl TaskBase {
             let t = s.split(false).next();
             t
         } {
-            t.typec.init(&mut t.interner, builtin_functions);
+            type_creator!(t).init(builtin_functions);
             t.commit_unique(&mut s);
         }
 
@@ -136,8 +137,7 @@ impl Task {
                 &view,
                 &mut dependant_types,
                 &task.resources.compile_requests.ty_slices[params],
-                &mut task.typec,
-                &mut task.interner,
+                type_creator!(task),
             );
 
             let mut drops = bumpvec![cap view.drops.len()];
@@ -220,13 +220,11 @@ impl Task {
         seen: &mut Set<CompiledFuncRef>,
     ) {
         while let Some(ty) = type_frontier.pop() {
-            if !self.typec.may_need_drop(ty, &mut self.interner) {
+            if !type_creator!(self).may_need_drop(ty) {
                 continue;
             }
 
-            if let Some(Some((r#impl, params))) =
-                ty.is_drop(generics, &mut self.typec, &mut self.interner)
-            {
+            if let Some(Some((r#impl, params))) = type_creator!(self).is_drop(ty, generics) {
                 let func = self.typec[self.typec[r#impl].methods][0];
                 let params = self.typec[params].to_bumpvec();
                 frontier.push(self.load_call(CallableMir::Func(func), params, task_id, isa, seen));
@@ -250,26 +248,14 @@ impl Task {
                 }
                 Ty::Instance(i) => {
                     let Instance { base, args } = self.typec[i];
-                    match base {
-                        GenericTy::Struct(s) => {
-                            self.typec[self.typec[s].fields]
-                                .to_bumpvec()
-                                .into_iter()
-                                .rev()
-                                .map(|f| self.typec.instantiate(f.ty, args, &mut self.interner))
-                                .collect_into(&mut **type_frontier);
-                        }
-                        GenericTy::Enum(e) => {
-                            self.typec[self.typec[e].variants]
-                                .to_bumpvec()
-                                .into_iter()
-                                .rev()
-                                .map(|v| self.typec.instantiate(v.ty, args, &mut self.interner))
-                                .collect_into(&mut **type_frontier);
-                        }
-                    }
+                    let types = match base {
+                        GenericTy::Struct(s) => type_creator!(self).instantiate_fields(s, args),
+                        GenericTy::Enum(e) => type_creator!(self).instantiate_variants(e, args),
+                    };
+                    type_frontier.extend(types);
                 }
                 Ty::Pointer(..) | Ty::Param(..) | Ty::Builtin(..) => (),
+                Ty::Array(..) => todo!(),
             }
         }
     }
@@ -326,12 +312,11 @@ impl Task {
         let used_spec = if upper.is_empty() {
             Spec::Base(parent)
         } else {
-            Spec::Instance(self.typec.spec_instance(parent, upper, &mut self.interner))
+            Spec::Instance(type_creator!(self).spec_instance(parent, upper))
         };
 
-        let (r#impl, params) = self
-            .typec
-            .find_implementation(caller, used_spec, &[][..], &mut None, &mut self.interner)
+        let (r#impl, params) = type_creator!(self)
+            .find_implementation(caller, used_spec, &[][..], &mut None)
             .unwrap()
             .unwrap();
         let func_id = self.typec[self.typec[r#impl].methods][index];

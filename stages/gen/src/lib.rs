@@ -22,7 +22,7 @@ pub use {
         GenFuncConstant, GenItemName, GenReloc, GenResources, GenValue, Isa, IsaCreationError,
     },
     generate::function_loading::abi::{PassMode, PassSignature},
-    interpreter::{IRegister, Interpreter, InterpreterCtx, InterpreterError, StackFrame},
+    interpreter::{IRegister, IValue, Interpreter, InterpreterCtx, InterpreterError, StackFrame},
     jit::{JitContext, JitRelocError},
     native::{ObjectContext, ObjectCreationError, ObjectRelocationError},
     state_gen::Generator,

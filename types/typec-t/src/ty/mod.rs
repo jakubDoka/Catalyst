@@ -9,11 +9,11 @@ use lexing_t::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use storage::*;
 
-#[derive(Clone, Copy, Archive, Serialize, Deserialize)]
-
+#[derive(Archive, Serialize, Deserialize)]
 pub struct Const {
     pub name: Ident,
     pub ty: Ty,
+    pub value: FolderValue,
     pub loc: Loc,
 }
 

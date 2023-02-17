@@ -13,7 +13,7 @@ use {
 
 #[allow(clippy::type_complexity)]
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
-    pub fn collect<T: CollectGroup<'arena>>(
+    pub(super) fn collect<T: CollectGroup<'arena>>(
         &mut self,
         items: GroupedItemSlice<T>,
         collector: fn(&mut Self, T, &[TopLevelAttrAst]) -> Option<FragRef<T::Output>>,
@@ -29,19 +29,15 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self
     }
 
-    pub fn collect_impls<'a>(
-        &mut self,
-        items: GroupedItemSlice<ImplAst<'a>>,
-        transfer: &mut TypecTransfere<'a>,
-    ) -> &mut Self {
+    pub(super) fn collect_impls(&mut self, items: GroupedItemSlice<ImplAst<'arena>>) -> &mut Self {
         for &(item, attributes) in items.iter() {
-            self.collect_impl(item, attributes, transfer);
+            self.collect_impl(item, attributes);
         }
 
         self
     }
 
-    pub fn collect_impl<'a>(
+    fn collect_impl(
         &mut self,
         r#impl @ ImplAst {
             target,
@@ -49,9 +45,8 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             generics,
             body,
             ..
-        }: ImplAst<'a>,
+        }: ImplAst<'arena>,
         _: &[TopLevelAttrAst],
-        transfer: &mut TypecTransfere<'a>,
     ) -> Option<()> {
         let frame = self.ctx.start_frame();
 
@@ -91,7 +86,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
 
                         let id = self.collect_func_low(func, &[], &mut spec_set, scope_data)?;
 
-                        transfer.impl_funcs.push((func, id));
+                        self.ext.transfere.impl_funcs.push((func, id));
                         Some((id, func.signature.name.span))
                     })
                     .collect::<BumpVec<_>>()
@@ -116,7 +111,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
             })
             .transpose()?;
 
-        transfer.close_impl_frame(r#impl, impl_id);
+        self.ext.transfere.close_impl_frame(r#impl, impl_id);
 
         self.ctx.end_frame(frame);
 
@@ -259,7 +254,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some(self.ext.typec.cache.func_slices.extend(methods))
     }
 
-    pub fn collect_spec(
+    pub(super) fn collect_spec(
         &mut self,
         SpecAst { vis, name, .. }: SpecAst,
         attributes: &[TopLevelAttrAst],
@@ -277,7 +272,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some(self.insert_humid_item(spec, meta))
     }
 
-    pub fn collect_func(
+    pub(super) fn collect_func(
         &mut self,
         func: FuncDefAst,
         attributes: &[TopLevelAttrAst],
@@ -376,7 +371,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         })
     }
 
-    pub fn collect_signature(
+    pub(super) fn collect_signature(
         &mut self,
         FuncSigAst {
             cc,
@@ -417,7 +412,12 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some((signature, generics))
     }
 
-    pub fn take_generics(&mut self, offset: usize, len: usize, spec_set: &mut SpecSet) -> Generics {
+    pub(super) fn take_generics(
+        &mut self,
+        offset: usize,
+        len: usize,
+        spec_set: &mut SpecSet,
+    ) -> Generics {
         let mut collected_generics = spec_set.iter();
         let prev_len = collected_generics
             .by_ref()
@@ -440,7 +440,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ext.typec.cache.params.extend(generics)
     }
 
-    pub fn collect_struct(
+    pub(super) fn collect_struct(
         &mut self,
         StructAst {
             vis,
@@ -459,9 +459,15 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some(self.insert_humid_item(s, meta))
     }
 
-    pub fn collect_const(
+    pub(super) fn collect_const(
         &mut self,
-        ConstAst { vis, name, ty, .. }: ConstAst,
+        ConstAst {
+            vis,
+            name,
+            ty,
+            value,
+            ..
+        }: ConstAst,
         _: &[TopLevelAttrAst],
     ) -> Option<FragRef<Const>> {
         let loc = {
@@ -471,17 +477,19 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
                 .insert_scope_item(item, &mut self.ext, &self.meta)?
         };
 
+        // since we inserted const into scope we have to recover here
+        let ty = self.ty(ty).unwrap_or_default();
         let r#const = Const {
             name: name.ident,
-            // since we inserted const into scope we have to recover here
-            ty: self.ty(ty).unwrap_or(Ty::UNIT),
+            ty,
+            value: self.const_fold(ty, value).unwrap_or_default(),
             loc,
         };
 
         Some(self.ext.typec.cache.consts.push(r#const))
     }
 
-    pub fn collect_enum(
+    pub(super) fn collect_enum(
         &mut self,
         EnumAst {
             vis,

@@ -1,4 +1,4 @@
-use std::{default::default, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     ctx::{DropFrame, FuncMirCtx},
@@ -94,41 +94,6 @@ pub fn compile_functions(
         .build(args, tir.body) else {continue};
 
         ctx.mir.bodies.insert(BodyOwner::Func(func), body);
-    }
-}
-
-pub fn compile_constants(
-    module: VRef<Module>,
-    module_ref: FragRef<ModuleMir>,
-    funcs: &[(FragRef<Const>, TirNode)],
-    ctx: MirCompilationCtx<'_, '_>,
-) {
-    for &(r#const, tir) in funcs {
-        let meta = MirBuildMeta {
-            source: ctx.resources.modules[module].source,
-            module,
-            no_moves: false,
-        };
-
-        let ret = ctx.typec[r#const].ty;
-
-        let Some(body) = MirBuilder::new(
-            ret,
-            &[],
-            ExternalMirCtx {
-                typec: ctx.typec,
-                interner: ctx.interner,
-                workspace: ctx.workspace,
-                arena: ctx.arena,
-                resources: ctx.resources
-            },
-            meta,
-            ctx.module_ent,
-            module_ref,
-            ctx.reused,
-        )
-        .build(default(), tir) else {continue};
-        ctx.mir.bodies.insert(BodyOwner::Const(r#const), body);
     }
 }
 

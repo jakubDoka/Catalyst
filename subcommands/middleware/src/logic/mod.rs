@@ -33,7 +33,6 @@ use {
         num::NonZeroU8,
         os::unix::prelude::MetadataExt,
         path::*,
-        slice,
         str::FromStr,
         sync::{
             atomic::AtomicBool,
@@ -116,7 +115,7 @@ impl Middleware {
             .deserialize(&mut MiddlewareDeserializer(SharedDeserializeMap::default()))?)
     }
 
-    pub fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn load(&mut self, incremental: &[u8]) -> Result<(), Box<dyn Error + Send + Sync>> {
         let _t = QuickTimer::new("incremental data load");
 
         let check_size = mem::size_of::<i64>();

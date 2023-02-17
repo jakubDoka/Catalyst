@@ -48,11 +48,9 @@ impl<T, A: Allocator + Default> SyncFragMap<T, A> {
         slice
     }
 
-    /// # Safety
-    /// Caller must ensure the slice is last one pushed
-    pub unsafe fn unextend(&mut self, slice: FragSlice<T>) {
+    pub fn unextend(&mut self, slice: FragSlice<T>) -> impl Iterator<Item = T> + '_ {
         let FragSliceAddr { index, thread, len } = slice.0;
-        self.base.views[thread as usize].unextend(index, len);
+        self.base.views[thread as usize].unextend(index, len)
     }
 
     pub fn push(&mut self, value: T) -> FragRef<T>
@@ -324,12 +322,12 @@ impl<T, A: Allocator + Default> SyncFragView<T, A> {
         (slice, possibly_new.is_some())
     }
 
-    unsafe fn unextend(&self, index: u32, len: u16) {
-        ArcVecInner::unextend(self.inner.load().0, index, len);
+    fn unextend(&self, index: u32, len: u16) -> impl Iterator<Item = T> + '_ {
         self.len.store(
             self.len.load(Ordering::Relaxed) - len as usize,
             Ordering::Relaxed,
-        )
+        );
+        unsafe { ArcVecInner::unextend(self.inner.load().0, index, len) }
     }
 }
 

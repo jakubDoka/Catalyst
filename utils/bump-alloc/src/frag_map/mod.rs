@@ -27,6 +27,7 @@ pub mod addr;
 pub mod interner;
 // pub mod objects;
 pub mod relocator;
+pub mod shadow;
 pub mod sync;
 
 /// # Safety
@@ -199,7 +200,7 @@ pub struct FragBase<T, A: Allocator = Global> {
     threads: Box<[FragVecView<T, A>]>,
 }
 
-impl<T: Clone> FragBase<T> {
+impl<T> FragBase<T> {
     pub fn new(thread_count: u8) -> Self {
         Self::new_in(thread_count, Global)
     }
@@ -548,13 +549,32 @@ impl<T, A: Allocator> ArcVecInner<T, A> {
         Self::data_mut(inner, 0..len)
     }
 
-    pub(crate) unsafe fn unextend(load: NonNull<ArcVecInner<T, A>>, index: u32, len: u16) {
-        debug_assert_eq!(field!(load => len) - len as usize, index as usize);
+    pub(crate) unsafe fn unextend(
+        load: NonNull<ArcVecInner<T, A>>,
+        index: u32,
+        len: u16,
+    ) -> impl Iterator<Item = T> {
+        assert_eq!(field!(load => len) - len as usize, index as usize);
         let base = Self::get_item(load, index as usize);
-        for i in 0..len as usize {
-            base.add(i).drop_in_place();
-        }
         field!(load => mut len) -= len as usize;
+
+        struct Finalizer<I: Iterator>(I);
+
+        impl<I: Iterator> Drop for Finalizer<I> {
+            fn drop(&mut self) {
+                self.0.by_ref().for_each(drop);
+            }
+        }
+
+        impl<I: Iterator> Iterator for Finalizer<I> {
+            type Item = I::Item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next()
+            }
+        }
+
+        Finalizer((0..len as usize).map(move |i| base.add(i).read()))
     }
 
     unsafe fn full_data<'a>(inner: NonNull<ArcVecInner<T, A>>) -> &'a [T] {

@@ -5,8 +5,6 @@
 
 use cranelift_codegen::ir::{AbiParam, StackSlotData, StackSlotKind};
 
-use crate::interpreter::IValue;
-
 use {
     crate::*,
     cranelift_codegen::{
@@ -40,7 +38,6 @@ pub mod layout;
 #[derive(Serialize, Deserialize, Archive, Default)]
 pub struct GenLookup {
     funcs: CMap<FragRef<&'static str>, CompiledFunc>,
-    consts: CMap<FragRef<Const>, ComputedConst>,
 }
 
 impl Relocated for GenLookup {
@@ -48,7 +45,6 @@ impl Relocated for GenLookup {
 
     fn remap(&mut self, ctx: &FragMarks) -> Option<()> {
         self.funcs.remap(ctx);
-        self.consts.remap(ctx);
         Some(())
     }
 }
@@ -150,39 +146,6 @@ impl Gen {
         id: CompiledFuncRef,
     ) -> Ref<FragRef<&'static str>, CompiledFunc, FvnBuildHasher> {
         self.lookup.funcs.get(&id.0).unwrap()
-    }
-
-    pub fn save_const(
-        &mut self,
-        id: FragRef<Const>,
-        value: Option<IValue>,
-        _layouts: &mut GenLayouts,
-        _typec: &mut Typec,
-        _interner: &mut Interner,
-    ) {
-        let computed = match value {
-            Some(IValue::Register(reg)) => ComputedConst::Scalar(reg),
-            Some(IValue::Memory(_ptr)) => {
-                //let ty = typec[id].ty;
-                //let layout = layouts.ty_layout(ty, &[], typec, interner);
-                //let mem = ComputedConstMemory::new(layout.rust_layout());
-                //unsafe {
-                //    ptr::copy_nonoverlapping(ptr, mem.as_ptr(), layout.size as usize);
-                //}
-                //ComputedConst::Memory(mem)
-                todo!()
-            }
-            None => ComputedConst::Unit,
-        };
-
-        self.lookup.consts.insert(id, computed);
-    }
-
-    pub fn get_const(
-        &self,
-        id: FragRef<Const>,
-    ) -> Option<Ref<FragRef<Const>, ComputedConst, FvnBuildHasher>> {
-        self.lookup.consts.get(&id)
     }
 
     pub fn get_or_insert_func(

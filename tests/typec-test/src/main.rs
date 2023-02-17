@@ -9,30 +9,30 @@ use storage::*;
 use testing::*;
 use typec::*;
 use typec_t::*;
+use typec_u::type_creator;
 
 #[derive(Default)]
 struct TestState {
     interner: Interner,
-    scope: Scope,
     typec: Typec,
     workspace: Workspace,
     resources: Resources,
     package_graph: PackageGraph,
-    typec_ctx: TyCheckerCtx,
-    ast_transfer: AstTransfer<'static>,
+    typec_ctx: TypecCtx,
+    typec_transfere: TypecTransfere<'static>,
+    arena: Arena,
     functions: String,
     builtin_funcs: Vec<FragRef<Func>>,
 }
 
 impl Scheduler for TestState {
     fn init(&mut self, _: &Path) {
-        self.typec.init(&mut self.interner, &mut self.builtin_funcs);
+        type_creator!(self).init(&mut self.builtin_funcs);
     }
 
-    fn before_parsing(&mut self, module: VRef<Module>) {
-        typec::build_scope(
+    fn before_parsing(&mut self, module: storage::VRef<Module>) {
+        self.typec_ctx.build_scope(
             module,
-            &mut self.scope,
             &self.resources,
             &self.typec,
             &mut self.interner,
@@ -40,27 +40,26 @@ impl Scheduler for TestState {
         );
     }
 
-    fn parse_segment(&mut self, module: VRef<Module>, items: GroupedItemsAst) {
-        let mut type_checked_funcs = bumpvec![];
-        let mut type_checked_consts = bumpvec![];
-        let arena = Arena::new();
-        let mut ctx = TirBuilderCtx::default();
+    fn parse_segment(&mut self, module: storage::VRef<Module>, items: GroupedItemsAst) {
+        let mut active = Active::take(&mut self.typec_transfere);
+        let mut ext = TypecExternalCtx {
+            typec: &mut self.typec,
+            interner: &mut self.interner,
+            workspace: &mut self.workspace,
+            resources: &self.resources,
+            transfere: &mut active,
+            folder: &mut ConstFolderImpl {},
+        };
+        let meta = TypecMeta::new(&self.resources, module);
 
-        let mut checker = ty_checker!(self, module);
-        checker.execute(
-            &arena,
-            items,
-            &mut self.typec_ctx,
-            &mut ctx,
-            self.ast_transfer.activate(),
-            &mut type_checked_funcs,
-            &mut type_checked_consts,
-        );
+        TypecParser::new(&self.arena, &mut self.typec_ctx, ext.clone_borrow(), meta).execute(items);
         if !self.resources.is_external(module) {
-            checker
-                .display_funcs(&type_checked_funcs, &mut self.functions)
-                .unwrap();
+            let funcs = ext.transfere.checked_funcs().to_bumpvec();
+            ext.display_funcs(&funcs, &mut self.functions).unwrap();
         }
+
+        self.typec_transfere = active.erase();
+        self.arena.clear();
     }
 
     fn finally(&mut self) {
@@ -71,6 +70,13 @@ impl Scheduler for TestState {
 
     fn loader<'a>(&'a mut self, resources: &'a mut dyn ResourceDb) -> PackageLoader<'a> {
         package_loader!(self, *resources)
+    }
+}
+
+struct ConstFolderImpl {}
+impl ConstFolder for ConstFolderImpl {
+    fn fold(&mut self, _: Ty, _: TirNode, _: ConstFolderContext) -> FolderValue {
+        unimplemented!()
     }
 }
 

@@ -17,6 +17,7 @@ pub struct TypecExternalCtx<'arena, 'ctx> {
     pub workspace: &'ctx mut Workspace,
     pub resources: &'ctx Resources,
     pub transfere: &'ctx mut Active<TypecTransfere<'arena>>,
+    pub folder: &'ctx mut (dyn ConstFolder + 'ctx),
 }
 
 impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
@@ -27,6 +28,7 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             workspace: self.workspace,
             resources: self.resources,
             transfere: self.transfere,
+            folder: self.folder,
         }
     }
 
@@ -214,6 +216,17 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
             interner: self.interner,
         }
     }
+
+    pub(crate) fn const_fold(&mut self, ret: Ty, body: TirNode) -> FolderValue {
+        let ctx = ConstFolderContext {
+            typec: self.typec,
+            interner: self.interner,
+            resources: self.resources,
+            workspace: self.workspace,
+        };
+
+        self.folder.fold(ret, body, ctx)
+    }
 }
 
 pub enum SignatureCheckError {
@@ -262,7 +275,7 @@ ctl_errors! {
 
     #[err => "missing spec inherits"]
     #[info => "'{ty}: {missing}' is not implemented"]
-    error MissingSpecInherits: fatal {
+    pub error MissingSpecInherits: fatal {
         #[err loc]
         ty ref: String,
         missing ref: String,
@@ -298,17 +311,24 @@ ctl_errors! {
 
 #[derive(Default)]
 pub struct TypecCtx {
-    extern_funcs: Vec<FragRef<Func>>,
     ty_graph: ProjectedCycleDetector<NewTy>,
     scope: Scope,
     vars: Vec<VarHeaderTir>,
     generics: Vec<FragSlice<Spec>>,
     cast_checks: Vec<CastCheck>,
-    _macros: Vec<MacroCompileRequest>,
     loops: PushMap<LoopHeaderTir>,
 }
 
 impl TypecCtx {
+    pub fn clear(&mut self) {
+        self.ty_graph.clear();
+        // self.scope.clear(); // cleared when building scope
+        assert!(self.vars.is_empty());
+        // self.generics.clear(); // cleared on load
+        assert!(self.cast_checks.is_empty());
+        assert!(self.loops.is_empty());
+    }
+
     pub fn insert_generics(
         &mut self,
         generics_ast: Option<ListAst<ParamAst>>,
@@ -358,13 +378,10 @@ impl TypecCtx {
 
     pub fn build_scope(
         &mut self,
-        &TypecMeta { module, .. }: &TypecMeta,
-        TypecExternalCtx {
-            typec,
-            interner,
-            resources,
-            ..
-        }: &mut TypecExternalCtx,
+        module: VRef<Module>,
+        resources: &Resources,
+        typec: &Typec,
+        interner: &mut Interner,
         builtin_funcs: &[FragRef<Func>],
     ) -> BumpVec<MacroCompileRequest> {
         self.scope.clear();
@@ -402,16 +419,16 @@ impl TypecCtx {
 
     pub fn detect_infinite_types(
         &mut self,
-        transfer: &Active<TypecTransfere>,
         TypecExternalCtx {
             typec,
             interner,
             workspace,
+            transfere,
             ..
         }: &mut TypecExternalCtx,
         meta: &TypecMeta,
     ) {
-        let nodes = transfer.new_types();
+        let nodes = transfere.new_types();
 
         if nodes.clone().next().is_none() {
             return;
@@ -458,17 +475,11 @@ impl TypecCtx {
         };
     }
 
-    pub fn clear(&mut self) {
-        self.extern_funcs.clear();
-        self.ty_graph.clear();
-        self.scope.clear();
-    }
-
     pub(crate) fn first_unlabeled_loop(&self) -> Option<VRef<LoopHeaderTir>> {
         self.loops
             .iter()
             .rev()
-            .find_map(|(id, l)| l.label.is_some().then_some(id))
+            .find_map(|(id, l)| l.label.is_none().then_some(id))
     }
 
     pub(crate) fn pop_loop(&mut self) -> Ty {
@@ -635,6 +646,10 @@ impl TypecCtx {
 
         Some(meta.item_loc(typec, item))
     }
+
+    pub fn cast_checks(&mut self) -> impl Iterator<Item = CastCheck> + '_ {
+        self.cast_checks.drain(..)
+    }
 }
 
 ctl_errors! {
@@ -797,6 +812,8 @@ gen_erasable! {
         pub(crate) impl_funcs: TypecOutput<FuncDefAst<'a>, Func>,
         pub(crate) consts: TypecOutput<ConstAst<'a>, Const>,
         pub(crate) impl_frames: ImplFrames<'a>,
+        pub(crate) checked_funcs: Vec<(FragRef<Func>, TirFunc<'a>)>,
+        pub(crate) extern_funcs: Vec<FragRef<Func>>,
     }
 }
 pub type ImplFrames<'a> = Vec<(ImplAst<'a>, Option<FragRef<Impl>>, usize)>;
@@ -811,6 +828,10 @@ impl<'a> TypecTransfere<'a> {
             .iter()
             .map(|&(_, ty)| ty.into())
             .chain(self.enums.iter().map(|&(_, ty)| ty.into()))
+    }
+
+    pub fn checked_funcs(&self) -> &[(FragRef<Func>, TirFunc<'a>)] {
+        &self.checked_funcs
     }
 }
 

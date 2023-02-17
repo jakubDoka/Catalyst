@@ -3,7 +3,7 @@ use crate::context::ArgCountMismatch;
 use super::*;
 
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
-    pub fn call(
+    pub(super) fn call(
         &mut self,
         call @ CallAst { callable, .. }: CallAst,
         inference: Inference,
@@ -41,7 +41,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
     }
 
-    pub fn direct_call(
+    fn direct_call(
         &mut self,
         func: FragRef<Func>,
         params: Option<ListAst<TyAst>>,
@@ -98,7 +98,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn direct_spec_call(
+    fn direct_spec_call(
         &mut self,
         func: FragRef<SpecFunc>,
         params: Option<ListAst<TyAst>>,
@@ -154,38 +154,9 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    #[inline]
-    pub fn unpack_param_slots(
-        &mut self,
-        params: impl Iterator<Item = Option<Ty>> + Clone + ExactSizeIterator,
-        span: Span,
-
-        something: &'static str,
-        syntax: &'static str,
-    ) -> Option<&'arena [Ty]> {
-        if let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() {
-            return Some(self.arena.alloc_iter(params));
-        }
-
-        let missing = params
-            .enumerate()
-            .filter_map(|(i, param)| param.is_none().then_some(i))
-            .map(|i| format!("#{i}"))
-            .intersperse_with(|| ", ".into())
-            .collect::<String>();
-
-        UnknownTypeParameters {
-            loc: self.meta.loc(span),
-            missing,
-            something,
-            syntax,
-        }
-        .add(self.ext.workspace)?
-    }
-
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub fn call_internals(
+    fn call_internals(
         &mut self,
         generics: &[FragSlice<Spec>],
         param_slots: &mut [Option<Ty>],
@@ -194,7 +165,6 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         args: ListAst<ExprAst>,
         signature: Signature,
         inference: Inference,
-
         func: &dyn Fn(&mut Self) -> Option<SourceLoc>,
     ) -> Option<(&'arena [TirNode<'arena>], &'arena [Ty], Ty)> {
         let arg_types = self.ext.typec[signature.args].to_bumpvec();
@@ -296,17 +266,6 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
 }
 
 ctl_errors! {
-    #[err => "not all {something} parameters can be inferred"]
-    #[info => "missing parameters: {missing}"]
-    #[help => "provide the parameters {syntax}"]
-    error UnknownTypeParameters: fatal {
-        #[err loc]
-        missing ref: String,
-        loc: SourceLoc,
-        something: &'static str,
-        syntax: &'static str,
-    }
-
     #[err => "not all parameter specs are satisfied"]
     #[info => "missing implementations:\n {missing_impls}"]
     error ParamImplMissing: fatal {

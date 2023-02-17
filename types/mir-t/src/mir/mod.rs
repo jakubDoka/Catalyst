@@ -38,19 +38,17 @@ impl MirBase {
 #[archive_attr(derive(Hash, Eq, PartialEq))]
 pub enum BodyOwner {
     Func(FragRef<Func>),
-    Const(FragRef<Const>),
 }
 
 impl IsMarked for BodyOwner {
     fn is_marked(&self, marker: &FragRelocMarker) -> bool {
         match *self {
             BodyOwner::Func(f) => marker.is_marked(f),
-            BodyOwner::Const(c) => marker.is_marked(c),
         }
     }
 }
 
-derive_relocated!(enum BodyOwner { Func(f) => f, Const(c) => c, });
+derive_relocated!(enum BodyOwner { Func(f) => f,  });
 
 pub struct Mir {
     pub bodies: Arc<CMap<BodyOwner, FuncMir>>,
@@ -168,6 +166,12 @@ macro_rules! gen_module {
                     )*
                 }
             }
+
+            fn roll_back_low(&mut self, check: FuncMirEntities) {
+                $(
+                    self.$name.truncate(check.$name.range().start);
+                )*
+            }
         }
 
         pub struct ModuleMirCheck<'a> {
@@ -256,6 +260,10 @@ impl ModuleMir {
             module,
             entities,
         )
+    }
+
+    pub fn roll_back(&mut self, body: FuncMir) {
+        self.roll_back_low(body.entities);
     }
 }
 

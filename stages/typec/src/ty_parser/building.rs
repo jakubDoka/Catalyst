@@ -1,21 +1,133 @@
-use crate::ty_parser::TypecParser;
+use std::{iter, mem};
+
+use diags::AddCtlError;
+
+use crate::{context::MissingSpecInherits, ty_parser::TypecParser};
+
+use super::collecting::CollectGroup;
 
 use {parsing_t::*, std::default::default, storage::*, typec_t::*};
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
-    // pub fn build<T: CollectGroup>(
-    //     &mut self,
-    //     builder: fn(&mut Self, FragRef<T::Output>, T),
-    //     types: &TypecOutput<T, T::Output>,
-    // ) -> &mut Self {
-    //     for &(ast, ty) in types {
-    //         builder(self, ty, ast);
-    //     }
+    pub(super) fn build_impl_funcs(&mut self) -> &mut Self {
+        let impl_frames = mem::take(&mut self.ext.transfere.impl_frames);
+        let impl_funcs = mem::take(&mut self.ext.transfere.impl_funcs);
+        let iter = iter::once(0)
+            .chain(impl_frames.iter().map(|&(.., i)| i))
+            .zip(impl_frames.iter().copied());
 
-    //     self
-    // }
+        for (start, (impl_ast, impl_ref, end)) in iter {
+            let funcs = &impl_funcs[start..end];
 
-    pub fn build_spec(
+            let Some(&(.., first)) = funcs.first() else {
+                 continue;
+             };
+
+            let frame = self.ctx.start_frame();
+
+            let Func {
+                generics, owner, ..
+            } = self.ext.typec[first];
+            let offset = self.ctx.insert_generics(impl_ast.generics, 0);
+            self.ctx
+                .insert_spec_functions(generics, 0, self.ext.typec, self.ext.interner);
+
+            if let Some(impl_ref) = impl_ref {
+                self.build_spec_impl(impl_ref);
+            }
+            if let Some(owner) = owner {
+                self.ctx.push_self(owner, impl_ast.target.span());
+            }
+            self.build_funcs(funcs, offset);
+
+            self.ctx.end_frame(frame);
+        }
+
+        self
+    }
+
+    fn build_spec_impl(&mut self, impl_ref: FragRef<Impl>) {
+        let Impl {
+            key: ImplKey { ty, spec },
+            generics,
+            loc,
+            ..
+        } = self.ext.typec[impl_ref];
+
+        let spec_base = spec.base(self.ext.typec);
+        // if SpecBase::is_macro(spec_base) && let Some(mut macro_impl) = self.ext.typec.macros.get_mut(&ty) {
+        //      macro_impl.r#impl = Some(impl_ref);
+        //      ctx.macros.push(MacroCompileRequest {
+        //          name: macro_impl.name,
+        //          ty,
+        //          r#impl: impl_ref,
+        //          params: macro_impl.params,
+        //      });
+        //  }
+        let spec_ent = self.ext.typec[spec_base];
+
+        // check that all inherits are implemented
+        // this is necessary for the validation but also grants
+        // nice optimizations since impl of this spec will imply
+        // impl of all inherits
+        {
+            let params = match spec {
+                Spec::Base(..) => default(),
+                Spec::Instance(i) => self.ext.typec[i].args,
+            };
+
+            let missing_impls = self.ext.typec[spec_ent.inherits]
+                .to_bumpvec()
+                .into_iter()
+                .filter_map(|inherit| {
+                    self.ext
+                        .creator()
+                        .find_implementation(ty, inherit, generics, &mut None)
+                        .is_none()
+                        .then(|| self.ext.creator().instantiate_spec(inherit, params))
+                        .map(|instance| self.ext.creator().display(instance))
+                })
+                .intersperse_with(|| " + ".into())
+                .collect::<String>();
+
+            if !missing_impls.is_empty() {
+                MissingSpecInherits {
+                    ty: self.ext.creator().display(ty),
+                    missing: missing_impls,
+                    loc: loc.source_loc(self.ext.typec, self.ext.resources),
+                }
+                .add(self.ext.workspace);
+            }
+        }
+    }
+    pub(super) fn build<T: CollectGroup<'arena>>(
+        &mut self,
+        builder: fn(&mut Self, FragRef<T::Output>, T),
+    ) -> &mut Self {
+        let output = mem::take(T::output(self.ext.transfere));
+        for &(ast, ty) in output.iter() {
+            builder(self, ty, ast);
+        }
+        *T::output(self.ext.transfere) = output;
+        self
+    }
+
+    pub(super) fn build_funcs(&mut self, funcs: &[(FuncDefAst, FragRef<Func>)], offset: usize) {
+        for &(ast, func) in funcs.iter() {
+            let Func { signature, .. } = self.ext.typec[func];
+            match self.builder(signature.ret).build_func(ast, func, offset) {
+                Some(Some(body)) => {
+                    self.ext.transfere.checked_funcs.push((func, body));
+                }
+                Some(None) => {
+                    self.ext.transfere.extern_funcs.push(func);
+                }
+                None => (),
+            };
+        }
+    }
+
+    pub(super) fn build_spec(
         &mut self,
         spec: FragRef<SpecBase>,
         SpecAst {
@@ -87,7 +199,11 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ext.typec.cache.spec_funcs.extend(methods)
     }
 
-    pub fn build_enum(&mut self, r#enum: FragRef<Enum>, EnumAst { generics, body, .. }: EnumAst) {
+    pub(super) fn build_enum(
+        &mut self,
+        r#enum: FragRef<Enum>,
+        EnumAst { generics, body, .. }: EnumAst,
+    ) {
         let frame = self.ctx.start_frame();
 
         let generics_len = self.ctx.insert_generics(generics, 0);
@@ -104,7 +220,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ctx.end_frame(frame);
     }
 
-    pub fn enum_variants(
+    fn enum_variants(
         &mut self,
         body: Option<ListAst<EnumVariantAst>>,
         spec_set: &mut SpecSet,
@@ -125,7 +241,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ext.typec.cache.variants.extend(variants)
     }
 
-    pub fn build_struct(
+    pub(super) fn build_struct(
         &mut self,
         ty: FragRef<Struct>,
         StructAst { generics, body, .. }: StructAst,

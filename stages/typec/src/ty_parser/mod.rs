@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::{context::*, TirBuilder};
 
 use {diags::*, lexing_t::*, parsing_t::*, std::iter, storage::*, typec_t::*};
@@ -6,10 +8,10 @@ mod building;
 mod collecting;
 
 pub struct TypecParser<'arena, 'ctx> {
-    pub(crate) arena: &'arena Arena,
-    pub(crate) ctx: &'ctx mut TypecCtx,
-    pub(crate) ext: TypecExternalCtx<'arena, 'ctx>,
-    pub(crate) meta: TypecMeta,
+    arena: &'arena Arena,
+    ctx: &'ctx mut TypecCtx,
+    ext: TypecExternalCtx<'arena, 'ctx>,
+    meta: TypecMeta,
 }
 
 impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
@@ -27,11 +29,33 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }
     }
 
-    pub fn span_str(&self, span: Span) -> &'ctx str {
+    pub fn execute(&mut self, items: GroupedItemsAst<'arena>) {
+        self.ctx.clear();
+
+        self.collect(items.specs, Self::collect_spec)
+            .collect(items.structs, Self::collect_struct)
+            .collect(items.enums, Self::collect_enum)
+            .build(Self::build_spec)
+            .build(Self::build_struct)
+            .build(Self::build_enum)
+            .collect(items.consts, Self::collect_const)
+            .collect(items.funcs, Self::collect_func)
+            .collect_impls(items.impls);
+
+        self.ctx.detect_infinite_types(&mut self.ext, &self.meta);
+
+        let funcs = mem::take(&mut self.ext.transfere.funcs);
+        self.build_funcs(&funcs, 0);
+        self.ext.transfere.funcs = funcs;
+
+        self.build_impl_funcs();
+    }
+
+    fn span_str(&self, span: Span) -> &'ctx str {
         self.meta.span_str(span, self.ext.resources)
     }
 
-    pub fn generics(
+    fn generics(
         &mut self,
         generic_ast: Option<ListAst<ParamAst>>,
         set: &mut SpecSet,
@@ -51,7 +75,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }
     }
 
-    pub fn ty(&mut self, ty_ast: TyAst) -> Option<Ty> {
+    pub(crate) fn ty(&mut self, ty_ast: TyAst) -> Option<Ty> {
         match ty_ast {
             TyAst::Path(ident) => match self.ty_path(ident)? {
                 (TyPathResult::Ty(ty), None) => Some(ty),
@@ -75,22 +99,16 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
     }
 
     fn array_ty(&mut self, array_ast: TyArrayAst) -> Option<Ty> {
-        let _ty = self.ty(array_ast.ty)?;
-        let size = self
-            .builder(Ty::UINT)
-            .expr_body(array_ast.size, Inference::Strong(Ty::UINT))?;
-        let _size_const = match size.kind {
-            TirKind::ConstAccess(const_id) => const_id,
-            _ => todo!(),
-        };
-        todo!()
+        let ty = self.ty(array_ast.ty)?;
+        let size = self.const_fold(Ty::UINT, array_ast.size)?.as_array_size()?;
+        Some(Ty::Array(self.ext.creator().array_of(ty, size)))
     }
 
-    pub fn builder(&mut self, ty: Ty) -> TirBuilder<'arena, '_> {
-        TirBuilder::new(self.arena, ty, self.ctx, self.ext.clone_borrow(), self.meta)
+    fn builder(&mut self, ty: Ty) -> TirBuilder<'arena, '_> {
+        TirBuilder::new(ty, self.arena, self.ctx, self.ext.clone_borrow(), self.meta)
     }
 
-    pub fn tuple_ty(&mut self, tuple_ast: ListAst<TyAst>) -> Option<Ty> {
+    fn tuple_ty(&mut self, tuple_ast: ListAst<TyAst>) -> Option<Ty> {
         let types = tuple_ast
             .iter()
             .map(|&ty_ast| self.ty(ty_ast))
@@ -102,7 +120,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         }
     }
 
-    pub fn spec_sum<'a>(
+    fn spec_sum<'a>(
         &mut self,
         specs: impl Iterator<Item = &'a SpecExprAst<'a>>,
         spec_set: &mut SpecSet,
@@ -116,7 +134,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         Some(self.ext.creator().spec_sum(specs.iter().copied()))
     }
 
-    pub fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {
+    fn spec(&mut self, spec_ast: SpecExprAst) -> Option<Spec> {
         match self.ty_path(spec_ast.path)? {
             (TyPathResult::Ty(..), ..) => todo!(),
             (TyPathResult::Spec(spec), None) => Some(Spec::Base(spec)),
@@ -142,7 +160,10 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         )
     }
 
-    pub fn mutability(&mut self, mutability_ast: Option<MutabilityAst>) -> Option<Mutability> {
+    pub(crate) fn mutability(
+        &mut self,
+        mutability_ast: Option<MutabilityAst>,
+    ) -> Option<Mutability> {
         Some(match mutability_ast {
             Some(MutabilityAst::Mut(..)) => Mutability::Mutable,
             None => Mutability::Immutable,
@@ -161,7 +182,7 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         })
     }
 
-    pub fn ty_path<'a>(
+    pub(crate) fn ty_path<'a>(
         &mut self,
         path @ PathAst {
             start, segments, ..
@@ -198,11 +219,16 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         ))
     }
 
-    pub fn lookup(&mut self, sym: Ident, span: Span, what: &'static str) -> Option<ScopeItem> {
+    pub(crate) fn lookup(
+        &mut self,
+        sym: Ident,
+        span: Span,
+        what: &'static str,
+    ) -> Option<ScopeItem> {
         self.ctx.lookup(sym, span, what, &mut self.ext, &self.meta)
     }
 
-    pub fn invalid_symbol_type(
+    pub(crate) fn invalid_symbol_type(
         &mut self,
         item: ScopeItem,
         span: Span,
@@ -211,9 +237,23 @@ impl<'arena, 'ctx> TypecParser<'arena, 'ctx> {
         self.ctx
             .invalid_symbol_type(item, span, what, self.ext.workspace, &self.meta)
     }
+
+    fn const_fold(&mut self, ty: Ty, value: ExprAst) -> Option<FolderValue> {
+        let body = self.builder(ty).expr_body(value, Inference::Strong(ty))?;
+        if let Some(shortcut) = self.const_fold_shortcut(body) {
+            return Some(shortcut);
+        }
+        Some(self.ext.const_fold(ty, body))
+    }
+
+    fn const_fold_shortcut(&mut self, _body: TirNode) -> Option<FolderValue> {
+        // TODO: this may prove usefull for general cases like just literals or just a constant
+        // access
+        None
+    }
 }
 
-pub enum TyPathResult {
+pub(crate) enum TyPathResult {
     Ty(Ty),
     Spec(FragRef<SpecBase>),
 }

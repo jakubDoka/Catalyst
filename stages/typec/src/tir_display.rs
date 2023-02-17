@@ -39,13 +39,16 @@ impl<'arena, 'ctx> TypecExternalCtx<'arena, 'ctx> {
         buffer: &mut String,
     ) -> fmt::Result {
         self.typec[func].display(self.typec, self.interner, buffer)?;
-        let Func { signature, loc, .. } = self.typec[func];
+        buffer.push(' ');
+        let Func { signature, loc: Some(loc), .. } = self.typec[func] else {
+            return Ok(());
+        };
         self.display_tir(
             tir,
             buffer,
             0,
             &mut signature.args.len(),
-            self.resources.modules[loc.unwrap().module].source,
+            self.resources.modules[loc.module].source,
         )
     }
 

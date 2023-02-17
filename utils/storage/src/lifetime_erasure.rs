@@ -41,6 +41,13 @@ pub unsafe trait Erasable {
 pub struct Active<T>(T);
 
 impl<T: Erasable> Active<T> {
+    pub fn take(e: &mut T::Erased) -> Self
+    where
+        T::Erased: Default,
+    {
+        Self::new(std::mem::take(e))
+    }
+
     pub fn new(e: T::Erased) -> Self {
         const {
             assert!(std::mem::size_of::<T>() == std::mem::size_of::<T::Erased>());

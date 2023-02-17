@@ -15,19 +15,3 @@ macro_rules! type_creator {
         }
     };
 }
-
-pub struct FolderValue(u64);
-
-impl FolderValue {
-    pub fn new_register(value: u64) -> Self {
-        FolderValue(value)
-    }
-
-    pub fn as_array_size(&self) -> Option<ArraySize> {
-        Some(self.0 as ArraySize)
-    }
-}
-
-pub trait ConstFolder {
-    fn fold(&mut self, code: TirNode, typec: &mut Typec, interner: &mut Interner) -> FolderValue;
-}

@@ -13,7 +13,7 @@ use typec_t::*;
 use typec_u::type_creator;
 
 use crate::{
-    context::{ComputedConst, ComputedValue},
+    context::ComputedValue,
     //interpreter::{ISlot, IValue},
     *,
 };
@@ -183,11 +183,7 @@ impl Generator<'_> {
         if layout.is_zero_sized() {
             return;
         }
-        let bits = match self.gen.get_const(r#const).as_deref() {
-            Some(&ComputedConst::Scalar(v)) => v,
-            Some(ComputedConst::Unit) => unreachable!(),
-            _ => todo!(),
-        };
+        let bits = self.typec[r#const].value.as_register().unwrap();
         let value = match layout.repr {
             ir::types::I8 | ir::types::I16 | ir::types::I32 | ir::types::I64 => {
                 builder.ins().iconst(layout.repr, bits as i64)

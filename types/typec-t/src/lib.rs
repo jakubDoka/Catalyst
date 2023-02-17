@@ -87,8 +87,9 @@ pub use {
         SpecBase, SpecFunc, SpecInstance, SpecSet, Struct, Ty, TyFlags, Variant,
     },
     typec::{
-        lookup_water_drop, sorted_water_drops, ImplList, ImplLookup, Implemented, Loc, MacroImpl,
-        Macros, Mapping, MayNeedDrop, ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase,
-        TypecCache, TypecCacheBase, TypecCtxSlice, TypecLookup,
+        lookup_water_drop, sorted_water_drops, ConstFolder, ConstFolderContext, FolderValue,
+        ImplList, ImplLookup, Implemented, Loc, MacroImpl, Macros, Mapping, MayNeedDrop,
+        ModuleItems, ParamPresence, SpecCmpError, Typec, TypecBase, TypecCache, TypecCacheBase,
+        TypecCtxSlice, TypecLookup,
     },
 };

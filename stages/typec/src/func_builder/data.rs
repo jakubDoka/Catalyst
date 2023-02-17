@@ -5,7 +5,7 @@ use super::{
 };
 
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
-    pub fn struct_ctor(
+    pub(super) fn struct_ctor(
         &mut self,
         ctor @ StructCtorAst { path, body, .. }: StructCtorAst,
         inference: Inference,
@@ -149,7 +149,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn balance_pointers(&mut self, node: &mut TirNode<'arena>, ty: Ty) -> Option<()> {
+    pub(super) fn balance_pointers(&mut self, node: &mut TirNode<'arena>, ty: Ty) -> Option<()> {
         let (desired_pointer_depth, mutability) = match ty {
             Ty::Pointer(ptr) => (ptr.depth, ptr.mutability),
             _ => (0, RawMutability::IMMUTABLE),
@@ -200,7 +200,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(())
     }
 
-    pub fn int(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
+    pub(super) fn int(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::INTEGERS, Ty::UINT);
@@ -211,7 +211,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn float(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
+    pub(super) fn float(&mut self, span: Span, inference: Inference) -> ExprRes<'arena> {
         let span_str = self.span_str(span);
         let (ty, postfix_len) =
             Self::infer_constant_type(span_str, inference, &Ty::FLOATS, Ty::F32);
@@ -253,11 +253,11 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .unwrap_or((default, 0))
     }
 
-    pub fn char(&mut self, span: Span) -> ExprRes<'arena> {
+    pub(super) fn char(&mut self, span: Span) -> ExprRes<'arena> {
         Some(TirNode::new(Ty::CHAR, TirKind::Char, span))
     }
 
-    pub fn bool(&mut self, span: Span) -> ExprRes<'static> {
+    pub(super) fn bool(&mut self, span: Span) -> ExprRes<'static> {
         Some(TirNode::new(
             Ty::BOOL,
             TirKind::Bool(self.span_str(span).starts_with('t')),
@@ -265,7 +265,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn deref(&mut self, expr: UnitExprAst, _inference: Inference) -> ExprRes<'arena> {
+    pub(super) fn deref(&mut self, expr: UnitExprAst, _inference: Inference) -> ExprRes<'arena> {
         let expr = self.unit_expr(expr, Inference::None)?;
         let Ty::Pointer(ptr) = expr.ty else {
             NonPointerDereference {
@@ -287,7 +287,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn r#ref(
+    pub(super) fn r#ref(
         &mut self,
         mutability: Option<MutabilityAst>,
         expr: UnitExprAst,
@@ -314,7 +314,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn r#let(
+    pub(super) fn r#let(
         &mut self,
         r#let @ LetAst { pat, ty, value, .. }: LetAst,
         _inference: Inference,

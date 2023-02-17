@@ -1,5 +1,7 @@
 use std::sync::mpsc::SendError;
 
+use typec_u::type_creator;
+
 use super::*;
 
 pub struct WorkerConnections {
@@ -241,7 +243,7 @@ impl Worker {
         module: VRef<Module>,
         arena: &mut Arena,
         task: &mut Task,
-        jit_ctx: &mut JitContext,
+        _jit_ctx: &mut JitContext,
         shared: &Shared,
         handler: &mut S,
     ) {
@@ -282,9 +284,8 @@ impl Worker {
         let Some(result) = handler.parse_imports(parser!()) else {return};
         handler.imports(result, ctx!());
 
-        let mut macros = typec::build_scope(
+        self.state.typec_ctx.build_scope(
             module,
-            &mut self.state.scope,
             shared.resources,
             &task.typec,
             &mut task.interner,
@@ -308,10 +309,10 @@ impl Worker {
             arena.clear();
 
             // self.state.macro_ctx = macro_ctx.clear();
-            let mut local_macros = mem::take(&mut self.state.tir_builder_ctx.macros);
-            self.compile_macros(&local_macros, task, jit_ctx, shared);
-            macros.extend(local_macros.drain(..));
-            self.state.tir_builder_ctx.macros = local_macros;
+            // let mut local_macros = mem::take(&mut self.state.typec_ctx.macros);
+            // self.compile_macros(&local_macros, task, jit_ctx, shared);
+            // macros.extend(local_macros.drain(..));
+            // self.state.tir_builder_ctx.macros = local_macros;
 
             if last {
                 break;
@@ -323,100 +324,100 @@ impl Worker {
             assert_eq!(module, mir_module);
             self.state.module.clear();
 
-            self.fold_constants(source, task, shared);
+            //self.fold_constants(source, task, shared);
         }
     }
 
-    fn fold_constants(&mut self, _source: VRef<Source>, task: &mut Task, shared: &Shared) {
-        for constant in self.state.just_compiled_consts.drain(..) {
-            let body = task
-                .mir
-                .bodies
-                .get(&BodyOwner::Const(constant))
-                .unwrap()
-                .to_owned();
+    // fn fold_constants(&mut self, _source: VRef<Source>, task: &mut Task, shared: &Shared) {
+    //     for constant in self.state.just_compiled_consts.drain(..) {
+    //         let body = task
+    //             .mir
+    //             .bodies
+    //             .get(&BodyOwner::Const(constant))
+    //             .unwrap()
+    //             .to_owned();
 
-            let module = &task.mir.modules[body.module()];
+    //         let module = &task.mir.modules[body.module()];
 
-            let mut current = StackFrame {
-                params: default(),
-                block: body.entry(),
-                values: default(),
-                offsets: default(),
-                types: default(),
-                instr: 0,
-                frame_base: 0,
-                func: body,
-            };
+    //         let mut current = StackFrame {
+    //             params: default(),
+    //             block: body.entry(),
+    //             values: default(),
+    //             offsets: default(),
+    //             types: default(),
+    //             instr: 0,
+    //             frame_base: 0,
+    //             func: body,
+    //         };
 
-            current
-                .types
-                .extend(body.view(module).types.values().copied());
+    //         current
+    //             .types
+    //             .extend(body.view(module).types.values().copied());
 
-            let prepared_ctx = self.state.interpreter.prepare(1 << 20, 10_000);
+    //         let prepared_ctx = self.state.interpreter.prepare(1 << 20, 10_000);
 
-            let mut interp = Interpreter {
-                ctx: prepared_ctx,
-                typec: &mut task.typec,
-                interner: &mut task.interner,
-                mir: &mut task.mir,
-                layouts: &mut self.state.jit_layouts,
-                current: &mut current,
-                gen: &task.gen,
-            };
+    //         let mut interp = Interpreter {
+    //             ctx: prepared_ctx,
+    //             typec: &mut task.typec,
+    //             interner: &mut task.interner,
+    //             mir: &mut task.mir,
+    //             layouts: &mut self.state.jit_layouts,
+    //             current: &mut current,
+    //             gen: &task.gen,
+    //         };
 
-            let value = match interp.interpret() {
-                Ok(v) => v,
-                Err(err) => {
-                    let snip = TodoSnippet {
-                        message: format!("Failed to fold constant: {:?}", err),
-                        loc: task.typec[constant]
-                            .loc
-                            .source_loc(&task.typec, shared.resources),
-                    };
-                    task.workspace.push(snip);
-                    continue;
-                }
-            };
+    //         let value = match interp.interpret() {
+    //             Ok(v) => v,
+    //             Err(err) => {
+    //                 let snip = TodoSnippet {
+    //                     message: format!("Failed to fold constant: {:?}", err),
+    //                     loc: task.typec[constant]
+    //                         .loc
+    //                         .source_loc(&task.typec, shared.resources),
+    //                 };
+    //                 task.workspace.push(snip);
+    //                 continue;
+    //             }
+    //         };
 
-            task.gen.save_const(
-                constant,
-                value,
-                &mut self.state.jit_layouts,
-                &mut task.typec,
-                &mut task.interner,
-            );
-        }
-    }
+    //         task.gen.save_const(
+    //             constant,
+    //             value,
+    //             &mut self.state.jit_layouts,
+    //             &mut task.typec,
+    //             &mut task.interner,
+    //         );
+    //     }
+    // }
 
-    fn compile_macros(
-        &mut self,
-        macros: &[MacroCompileRequest],
-        task: &mut Task,
-        jit_ctx: &mut JitContext,
-        shared: &Shared,
-    ) {
-        if macros.is_empty() || task.workspace.has_errors() {
-            return;
-        }
+    //fn compile_macros(
+    //    &mut self,
+    //    macros: &[MacroCompileRequest],
+    //    task: &mut Task,
+    //    jit_ctx: &mut JitContext,
+    //    shared: &Shared,
+    //) {
+    //    if macros.is_empty() || task.workspace.has_errors() {
+    //        return;
+    //    }
 
-        let imported = self.push_macro_compile_requests(macros, task, shared);
-        let mut layouts = mem::take(&mut self.state.jit_layouts);
-        let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
-        task.compile_requests.clear();
-        self.state.jit_layouts = layouts;
+    //    let imported = self.push_macro_compile_requests(macros, task, shared);
+    //    let mut layouts = mem::take(&mut self.state.jit_layouts);
+    //    let compiled = self.compile_current_requests(task, shared, shared.jit_isa, &mut layouts);
+    //    task.compile_requests.clear();
+    //    self.state.jit_layouts = layouts;
 
-        jit_ctx
-            .load_functions(
-                compiled.into_iter().chain(imported),
-                &task.gen,
-                &task.typec,
-                &task.interner,
-                false,
-            )
-            .unwrap();
-        jit_ctx.prepare_for_execution();
-    }
+    //    jit_ctx
+    //        .load_functions(
+    //            compiled.into_iter().chain(imported),
+    //            &task.gen,
+    //            &task.typec,
+    //            &task.interner,
+    //            false,
+    //        )
+    //        .unwrap();
+    //    jit_ctx.prepare_for_execution();
+    //}
 
     fn compile_current_requests(
         &mut self,
@@ -451,8 +452,7 @@ impl Worker {
                 &view,
                 &mut self.state.temp_dependant_types,
                 &params,
-                &mut task.typec,
-                &mut task.interner,
+                type_creator!(task),
             );
 
             let builder = GenBuilder::new(
@@ -501,7 +501,6 @@ impl Worker {
                 .context
                 .compile(&*isa.inner)
                 .map_err(|err| format!("{err:?}"))
-                // borrow checker
                 .map(|_| ())
             {
                 panic!("{:?}, {} {}", err, name, self.context.func.display());
@@ -514,49 +513,49 @@ impl Worker {
         compiled
     }
 
-    fn push_macro_compile_requests(
-        &mut self,
-        macros: &[MacroCompileRequest],
-        task: &mut Task,
-        shared: &Shared,
-    ) -> BumpVec<CompiledFuncRef> {
-        let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
-            let Impl { methods, .. } = task.typec[r#impl];
+    //fn push_macro_compile_requests(
+    //    &mut self,
+    //    macros: &[MacroCompileRequest],
+    //    task: &mut Task,
+    //    shared: &Shared,
+    //) -> BumpVec<CompiledFuncRef> {
+    //    let extractor = |&MacroCompileRequest { r#impl, params, .. }| {
+    //        let Impl { methods, .. } = task.typec[r#impl];
 
-            let params = task.typec[params].to_bumpvec();
-            // todo try to avoid moving and allocate ty VSlice right away
-            let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
+    //        let params = task.typec[params].to_bumpvec();
+    //        // todo try to avoid moving and allocate ty VSlice right away
+    //        let pushed_params = task.compile_requests.ty_slices.bump_slice(&params);
 
-            let collector = |&func| {
-                let key = Generator::func_instance_name(
-                    true,
-                    &shared.jit_isa.triple,
-                    func,
-                    params.iter().copied(),
-                    &task.typec,
-                    &mut task.interner,
-                );
-                let id = task.gen.get_or_insert_func(key, func);
-                (
-                    CompileRequestChild {
-                        func,
-                        id,
-                        params: pushed_params,
-                    },
-                    // we only have one thread
-                    Ok(0),
-                )
-            };
-            let frontier = task.typec[methods]
-                .iter()
-                .map(collector)
-                .collect::<BumpVec<_>>();
+    //        let collector = |&func| {
+    //            let key = Generator::func_instance_name(
+    //                true,
+    //                &shared.jit_isa.triple,
+    //                func,
+    //                params.iter().copied(),
+    //                &task.typec,
+    //                &mut task.interner,
+    //            );
+    //            let id = task.gen.get_or_insert_func(key, func);
+    //            (
+    //                CompileRequestChild {
+    //                    func,
+    //                    id,
+    //                    params: pushed_params,
+    //                },
+    //                // we only have one thread
+    //                Ok(0),
+    //            )
+    //        };
+    //        let frontier = task.typec[methods]
+    //            .iter()
+    //            .map(collector)
+    //            .collect::<BumpVec<_>>();
 
-            Task::traverse_compile_requests(frontier, slice::from_mut(task), shared.jit_isa)
-        };
+    //        Task::traverse_compile_requests(frontier, slice::from_mut(task), shared.jit_isa)
+    //    };
 
-        macros.iter().flat_map(extractor).collect()
-    }
+    //    macros.iter().flat_map(extractor).collect()
+    //}
 
     // fn load_macros<'macros>(
     //     &mut self,
@@ -635,27 +634,28 @@ impl Worker {
         task: &mut Task,
         shared: &Shared,
     ) {
-        let mut type_checked_funcs = bumpvec![];
-        let mut type_checked_consts = bumpvec![];
-        TyChecker::new(
-            module,
-            &mut task.interner,
-            &mut self.state.scope,
-            &mut task.typec,
-            &mut task.resources.workspace,
-            shared.resources,
-        )
-        .execute(
-            arena,
-            grouped_items,
-            &mut self.state.ty_checker_ctx,
-            &mut self.state.tir_builder_ctx,
-            self.state.ast_transfer.activate(),
-            &mut type_checked_funcs,
-            &mut type_checked_consts,
-        )
-        //.dbg_funcs(&type_checked_funcs)
-        ;
+        let mut active = Active::take(&mut self.state.typec_transfere);
+        let ext = TypecExternalCtx {
+            typec: &mut task.typec,
+            interner: &mut task.interner,
+            workspace: &mut task.resources.workspace,
+            resources: shared.resources,
+            transfere: &mut active,
+            folder: &mut ConstFolderImpl {
+                module,
+                module_ref,
+                arena,
+                reused: &mut self.state.mir_ctx,
+                module_ent: &mut self.state.module,
+                interpreter: &mut self.state.interpreter,
+                mir: &mut task.mir,
+                layouts: &mut self.state.jit_layouts,
+                gen: &mut task.gen,
+            },
+        };
+        let meta = TypecMeta::new(shared.resources, module);
+
+        TypecParser::new(arena, &mut self.state.typec_ctx, ext, meta).execute(grouped_items);
 
         let mut ctx = MirCompilationCtx {
             module_ent: &mut self.state.module,
@@ -668,98 +668,190 @@ impl Worker {
             resources: shared.resources,
         };
 
-        mir::compile_functions(module, module_ref, &type_checked_funcs, &mut ctx);
-        mir::compile_constants(module, module_ref, &type_checked_consts, ctx);
+        mir::compile_functions(module, module_ref, active.checked_funcs(), &mut ctx);
 
-        type_checked_funcs
-            .into_iter()
-            .filter(|&(func, ..)| task.typec[func].flags.contains(FuncFlags::ENTRY))
+        active
+            .checked_funcs()
+            .iter()
+            .filter(|&&(func, ..)| task.typec[func].flags.contains(FuncFlags::ENTRY))
             .map(|(func, ..)| func)
             .collect_into(&mut task.resources.entry_points);
-        type_checked_consts
-            .into_iter()
-            .map(|(r#const, ..)| r#const)
-            .collect_into(&mut self.state.just_compiled_consts);
 
         let source = shared.resources.modules[module].source;
         Self::check_casts(
-            &mut task.typec,
-            &mut task.interner,
+            task,
             &mut self.state.gen_layouts,
             source,
-            &mut task.resources.workspace,
-            &mut self.state.tir_builder_ctx.cast_checks,
-        )
+            self.state.typec_ctx.cast_checks(),
+        );
+        self.state.typec_transfere = active.erase();
     }
 
     fn check_casts(
-        typec: &mut Typec,
-        interner: &mut Interner,
+        task: &mut Task,
         layouts: &mut GenLayouts,
         origin: VRef<Source>,
-        workspace: &mut Workspace,
-        checks: &mut Vec<CastCheck>,
+        checks: impl Iterator<Item = CastCheck>,
     ) {
-        for CastCheck {
-            loc: span,
-            from,
-            to,
-        } in checks.drain(..)
-        {
-            let from_param_presence = typec.contains_params_low(from);
-            let to_param_presence = typec.contains_params_low(to);
+        for CastCheck { loc, from, to } in checks {
+            let loc = SourceLoc { origin, span: loc };
+            let from_param_presence = task.typec.contains_params_low(from);
+            let to_param_presence = task.typec.contains_params_low(to);
             match from_param_presence.combine(to_param_presence) {
                 ParamPresence::Present => {
-                    workspace.push(CastBetweenGenericTypes {
-                        from: typec.display_ty(from, interner),
-                        to: typec.display_ty(to, interner),
-                        loc: SourceLoc { origin, span },
-                    });
+                    CastBetweenGenericTypes {
+                        from: type_creator!(task).display(from),
+                        to: type_creator!(task).display(to),
+                        loc,
+                    }
+                    .add(&mut task.workspace);
                     continue;
                 }
                 ParamPresence::BehindPointer => continue,
                 ParamPresence::Absent => (),
             }
 
-            let from_layout = layouts.ty_layout(from, &[], typec, interner);
-            let to_layout = layouts.ty_layout(to, &[], typec, interner);
+            let from_layout = layouts.ty_layout(from, &[], type_creator!(task));
+            let to_layout = layouts.ty_layout(to, &[], type_creator!(task));
             if from_layout.size != to_layout.size {
-                workspace.push(CastSizeMismatch {
-                    from: typec.display_ty(from, interner),
+                CastSizeMismatch {
+                    from: type_creator!(task).display(from),
                     from_size: from_layout.size,
-                    to: typec.display_ty(to, interner),
+                    to: type_creator!(task).display(to),
                     to_size: to_layout.size,
-                    loc: SourceLoc { origin, span },
-                });
+                    loc,
+                }
+                .add(&mut task.workspace);
             } else if from_layout.align < to_layout.align {
-                workspace.push(CastAlignMismatch {
-                    from: typec.display_ty(from, interner),
+                CastAlignMismatch {
+                    from: type_creator!(task).display(from),
                     from_align: from_layout.align,
-                    to: typec.display_ty(to, interner),
+                    to: type_creator!(task).display(to),
                     to_align: to_layout.align,
-                    loc: SourceLoc { origin, span },
-                });
+                    loc,
+                }
+                .add(&mut task.workspace);
             }
+        }
+    }
+}
+
+struct ConstFolderImpl<'arena, 'ctx> {
+    module: VRef<Module>,
+    module_ref: FragRef<ModuleMir>,
+
+    arena: &'arena Arena,
+    reused: &'ctx mut ReusedMirCtx,
+    module_ent: &'ctx mut ModuleMir,
+    interpreter: &'ctx mut InterpreterCtx,
+    mir: &'ctx mut Mir,
+    layouts: &'ctx mut GenLayouts,
+    gen: &'ctx Gen,
+}
+
+impl<'arena, 'ctx> ConstFolderImpl<'arena, 'ctx> {
+    fn fold(&mut self, ret: Ty, tir_body: TirNode, ctx: ConstFolderContext) -> Option<IValue> {
+        let ext = ExternalMirCtx {
+            typec: ctx.typec,
+            interner: ctx.interner,
+            workspace: ctx.workspace,
+            arena: self.arena,
+            resources: ctx.resources,
+        };
+        let meta = MirBuildMeta {
+            source: ctx.resources.modules[self.module].source,
+            module: self.module,
+            no_moves: false,
+        };
+        let body = MirBuilder::new(
+            ret,
+            &[],
+            ext,
+            meta,
+            self.module_ent,
+            self.module_ref,
+            self.reused,
+        )
+        .build(default(), tir_body)?;
+
+        let mut current = StackFrame {
+            params: default(),
+            block: body.entry(),
+            values: default(),
+            offsets: default(),
+            types: default(),
+            instr: 0,
+            frame_base: 0,
+            func: body,
+        };
+
+        current
+            .types
+            .extend(body.view(self.module_ent).types.values().copied());
+        self.mir.modules.push(mem::take(self.module_ent));
+
+        let prepared_ctx = self.interpreter.prepare(1 << 20, 10_000);
+
+        let mut interp = Interpreter {
+            ctx: prepared_ctx,
+            typec: ctx.typec,
+            interner: ctx.interner,
+            mir: self.mir,
+            layouts: self.layouts,
+            current: &mut current,
+            gen: &self.gen,
+        };
+
+        let value = match interp.interpret() {
+            Ok(v) => v,
+            Err(err) => {
+                let snip = TodoSnippet {
+                    message: format!("Failed to fold constant: {:?}", err),
+                    loc: meta.source_loc(tir_body.span),
+                };
+                ctx.workspace.push(snip)?;
+            }
+        };
+
+        *self.module_ent = self
+            .mir
+            .modules
+            .unextend(self.module_ref.as_slice())
+            .next()
+            .expect("module was pushed previously");
+
+        self.module_ent.roll_back(body);
+
+        value
+    }
+}
+
+impl ConstFolder for ConstFolderImpl<'_, '_> {
+    fn fold(&mut self, ty: Ty, body: TirNode, ctx: ConstFolderContext) -> FolderValue {
+        let Some(value) = self.fold(ty, body, ctx) else {
+            return default();
+        };
+
+        match value {
+            IValue::Register(val) => FolderValue::new_register(val as u64),
+            IValue::Memory(_) => todo!(),
         }
     }
 }
 
 #[derive(Default)]
 pub struct WorkerState {
-    scope: Scope,
-    ty_checker_ctx: TyCheckerCtx,
-    ast_transfer: AstTransfer<'static>,
+    typec_ctx: TypecCtx,
+    typec_transfere: TypecTransfere<'static>,
     mir_ctx: ReusedMirCtx,
     module: ModuleMir,
     // pub token_macros: Map<FragRef<Impl>, TokenMacroOwnedSpec>,
     // pub macro_ctx: MacroCtx<'static>,
-    tir_builder_ctx: TirBuilderCtx,
     temp_dependant_types: PushMap<MirTy>,
     gen_resources: GenResources,
     jit_layouts: GenLayouts,
     gen_layouts: GenLayouts,
     interpreter: InterpreterCtx,
-    just_compiled_consts: Vec<FragRef<Const>>,
 }
 
 // #[derive(Default)]

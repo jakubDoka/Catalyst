@@ -10,7 +10,7 @@ use storage::{FragRef, Interner, PushMap, ShadowMap, SmallVec, VRef, VRefSlice};
 use typec_t::*;
 use typec_u::type_creator;
 
-use crate::{context::ComputedConst, Gen, GenLayouts, Layout};
+use crate::{Gen, GenLayouts, Layout};
 
 pub type IRegister = i64;
 
@@ -145,12 +145,10 @@ impl<'ctx, 'ext> Interpreter<'ctx, 'ext> {
     }
 
     fn constant(&mut self, c: FragRef<Const>) -> Option<ISlot> {
-        let slot = self.gen.get_const(c);
-        match slot.as_deref()? {
-            &ComputedConst::Scalar(s) => Some(ISlot::Value(IValue::Register(s))),
-            //ComputedConst::Memory(m) => Some(ISlot::Value(IValue::Memory(m.as_ptr()))),
-            ComputedConst::Unit => None,
-        }
+        self.typec[c]
+            .value
+            .as_register()
+            .map(|r| ISlot::Value(IValue::Register(r as i64)))
     }
 
     fn ctor(

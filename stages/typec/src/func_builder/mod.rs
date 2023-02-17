@@ -18,13 +18,12 @@ mod consts;
 mod control_flow;
 mod data;
 mod lookup;
-mod spec;
 
 pub type ExprRes<'arena> = Option<TirNode<'arena>>;
 
 pub struct TirBuilder<'arena, 'ctx> {
-    arena: &'arena Arena,
     ret: Ty,
+    arena: &'arena Arena,
     ctx: &'ctx mut TypecCtx,
     ext: TypecExternalCtx<'arena, 'ctx>,
     meta: TypecMeta,
@@ -32,8 +31,8 @@ pub struct TirBuilder<'arena, 'ctx> {
 
 impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
     pub fn new(
-        arena: &'arena Arena,
         ret: Ty,
+        arena: &'arena Arena,
         ctx: &'ctx mut TypecCtx,
         ext: TypecExternalCtx<'arena, 'ctx>,
         meta: TypecMeta,
@@ -47,7 +46,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
     }
 
-    pub fn build_func(
+    pub(crate) fn build_func(
         mut self,
         FuncDefAst {
             signature: FuncSigAst { generics, args, .. },
@@ -104,7 +103,36 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(Some(TirFunc { args, body }))
     }
 
-    pub fn expr(&mut self, expr: ExprAst, inference: Inference) -> ExprRes<'arena> {
+    #[inline]
+    fn unpack_param_slots(
+        &mut self,
+        params: impl Iterator<Item = Option<Ty>> + Clone + ExactSizeIterator,
+        span: Span,
+
+        something: &'static str,
+        syntax: &'static str,
+    ) -> Option<&'arena [Ty]> {
+        if let Some(params) = params.clone().collect::<Option<BumpVec<_>>>() {
+            return Some(self.arena.alloc_iter(params));
+        }
+
+        let missing = params
+            .enumerate()
+            .filter_map(|(i, param)| param.is_none().then_some(i))
+            .map(|i| format!("#{i}"))
+            .intersperse_with(|| ", ".into())
+            .collect::<String>();
+
+        UnknownTypeParameters {
+            loc: self.meta.loc(span),
+            missing,
+            something,
+            syntax,
+        }
+        .add(self.ext.workspace)?
+    }
+
+    fn expr(&mut self, expr: ExprAst, inference: Inference) -> ExprRes<'arena> {
         let value = match expr {
             ExprAst::Unit(&unit) => self.unit_expr(unit, inference),
             ExprAst::Binary(&binary) => self.binary_expr(binary),
@@ -117,7 +145,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         Some(value)
     }
 
-    pub fn unit_expr(&mut self, unit_ast: UnitExprAst, inference: Inference) -> ExprRes<'arena> {
+    fn unit_expr(&mut self, unit_ast: UnitExprAst, inference: Inference) -> ExprRes<'arena> {
         use UnitExprAst::*;
         match unit_ast {
             Path(path) => self.value_path(path, inference),
@@ -142,7 +170,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
     }
 
-    pub fn dot_expr(
+    fn dot_expr(
         &mut self,
         DotExprAst { lhs, rhs, .. }: DotExprAst,
         _inference: Inference,
@@ -165,7 +193,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         })
     }
 
-    pub fn pattern(&mut self, pattern: PatAst, ty: Ty) -> Option<PatTir<'arena>> {
+    fn pattern(&mut self, pattern: PatAst, ty: Ty) -> Option<PatTir<'arena>> {
         match pattern {
             PatAst::Binding(mutable, name) => {
                 let var = self.ctx.create_var(mutable.is_some(), ty, name);
@@ -320,7 +348,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         }
     }
 
-    pub fn infer_params(
+    fn infer_params(
         &mut self,
         params: &mut [Option<Ty>],
         reference: Ty,
@@ -341,7 +369,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
             .ok()
     }
 
-    pub fn binary_expr(
+    fn binary_expr(
         &mut self,
         binary_ast @ BinaryExprAst { lhs, op, rhs }: BinaryExprAst,
     ) -> ExprRes<'arena> {
@@ -381,7 +409,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         ))
     }
 
-    pub fn args(
+    fn args(
         &mut self,
         types: FragSlice<Ty>,
         args: Option<ListAst<FuncArgAst>>,
@@ -396,7 +424,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         self.arena.alloc_iter(args)
     }
 
-    pub fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
+    fn type_check(&mut self, expected: Ty, got: Ty, span: Span) -> Option<()> {
         self.type_check_detailed(expected, got, |s| {
             GenericTypeMismatch {
                 expected: s.ext.creator().display(expected),
@@ -407,7 +435,7 @@ impl<'arena, 'ctx> TirBuilder<'arena, 'ctx> {
         })
     }
 
-    pub fn type_check_detailed<A>(
+    fn type_check_detailed<A>(
         &mut self,
         expected: Ty,
         got: Ty,
@@ -502,5 +530,16 @@ ctl_errors! {
         #[warn loc]
         loc: SourceLoc,
         prev: Span,
+    }
+
+    #[err => "not all {something} parameters can be inferred"]
+    #[info => "missing parameters: {missing}"]
+    #[help => "provide the parameters {syntax}"]
+    error UnknownTypeParameters: fatal {
+        #[err loc]
+        missing ref: String,
+        loc: SourceLoc,
+        something: &'static str,
+        syntax: &'static str,
     }
 }

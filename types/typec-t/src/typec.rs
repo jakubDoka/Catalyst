@@ -8,7 +8,7 @@ use std::{mem, ops::Deref};
 
 use crate::*;
 
-use diags::SourceLoc;
+use diags::{SourceLoc, Workspace};
 use packaging_t::{Module, Resources};
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -653,4 +653,32 @@ impl<T: 'static> TypecCtxSlice<T> for &[T] {
     fn is_empty(&self) -> bool {
         (*self).is_empty()
     }
+}
+
+#[derive(Archive, Serialize, Deserialize, Default)]
+pub struct FolderValue(u64);
+
+impl FolderValue {
+    pub fn new_register(value: u64) -> Self {
+        FolderValue(value)
+    }
+
+    pub fn as_array_size(&self) -> Option<ArraySize> {
+        Some(self.0 as ArraySize)
+    }
+
+    pub fn as_register(&self) -> Option<u64> {
+        Some(self.0)
+    }
+}
+
+pub struct ConstFolderContext<'ctx> {
+    pub typec: &'ctx mut Typec,
+    pub interner: &'ctx mut Interner,
+    pub resources: &'ctx Resources,
+    pub workspace: &'ctx mut Workspace,
+}
+
+pub trait ConstFolder {
+    fn fold(&mut self, ty: Ty, code: TirNode, ctx: ConstFolderContext) -> FolderValue;
 }
